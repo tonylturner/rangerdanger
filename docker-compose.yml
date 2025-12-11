@@ -4,8 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    ports:
-      - "18000:8080"
     environment:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/otlab.db
@@ -21,12 +19,9 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8080/api
+      NEXT_PUBLIC_API_URL: /api
     depends_on:
       - backend
-      - proxy
-    ports:
-      - "13000:3000"
     networks:
       - it_net
 
@@ -50,8 +45,6 @@ services:
   hmi_scada:
     image: frangoteam/fuxa:latest
     container_name: hmi_scada
-    ports:
-      - "1881:1881"
     networks:
       - dmz_net
       - ot_control_net
@@ -87,7 +80,6 @@ services:
     image: tuttas/openplc_v3:latest
     container_name: plc_trainer
     ports:
-      - "18080:8080"
       - "1502:502"
     networks:
       - ot_control_net
@@ -99,7 +91,6 @@ services:
     image: tuttas/openplc_v3:latest
     container_name: sis_plc
     ports:
-      - "18081:8080"
       - "1503:502"
     networks:
       - ot_safety_net
@@ -121,6 +112,8 @@ services:
       - grafana
       - jump_host
       - ids
+      - backend
+      - frontend
     networks:
       - it_net
       - dmz_net

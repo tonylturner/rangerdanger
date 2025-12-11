@@ -64,6 +64,25 @@ export type LabTopology = {
   scenarios?: Scenario[];
 };
 
+export type GraphNodeData = {
+  label: string;
+  zone: string;
+  networks: string[];
+  status?: string;
+  ip?: string;
+  ui_path?: string;
+};
+
+export type GraphNode = {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: GraphNodeData;
+};
+
+export type GraphEdge = { id: string; source: string; target: string; label?: string };
+export type LabGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
+
 export type ScenarioStep = { title: string; description: string };
 export type Scenario = {
   id: string;
@@ -110,11 +129,19 @@ export async function getLabTopology(id: string) {
   return res.topology;
 }
 
+export async function getLabGraph(id: string) {
+  return request<LabGraph>(`/labs/instances/${id}/graph`);
+}
+
 export async function createLabInstance(templateId: string, name: string) {
   return request<LabInstance>("/labs/instances", {
     method: "POST",
     body: JSON.stringify({ template_id: templateId, name })
   });
+}
+
+export async function seedTemplates() {
+  return request<{ status: string }>("/admin/seed", { method: "POST" });
 }
 
 export async function startLabInstance(id: string) {

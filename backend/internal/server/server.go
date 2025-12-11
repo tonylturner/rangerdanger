@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,6 +26,40 @@ type Server struct {
 	db           *gorm.DB
 	loader       *labs.Loader
 	orchestrator *orchestrator.Orchestrator
+}
+
+type graphNodeData struct {
+	Label    string   `json:"label"`
+	Zone     string   `json:"zone"`
+	Networks []string `json:"networks"`
+	Status   string   `json:"status,omitempty"`
+	IP       string   `json:"ip,omitempty"`
+	UIPath   string   `json:"ui_path,omitempty"`
+}
+
+type graphNode struct {
+	ID       string        `json:"id"`
+	Type     string        `json:"type"`
+	Position gin.H         `json:"position"`
+	Data     graphNodeData `json:"data"`
+}
+
+type graphEdge struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Label  string `json:"label,omitempty"`
+}
+
+type nodeMetadata struct {
+	Networks []string     `json:"networks,omitempty"`
+	UI       *nodeUIProxy `json:"ui,omitempty"`
+}
+
+type nodeUIProxy struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	Path string `json:"path,omitempty"`
 }
 
 // New constructs a server with routes registered.
@@ -79,9 +116,11 @@ func (s *Server) registerRoutes() {
 			labsGroup.POST("/instances/:id/stop", s.handleStopLabInstance)
 			labsGroup.DELETE("/instances/:id", s.handleDeleteLabInstance)
 			labsGroup.GET("/instances/:id/topology", s.handleGetTopology)
+			labsGroup.GET("/instances/:id/graph", s.handleGetInstanceGraph)
 			labsGroup.PATCH("/instances/:id/topology", s.handlePatchTopology)
 			labsGroup.GET("/instances/:id/metrics", s.handleGetMetrics)
 			labsGroup.GET("/instances/:id/events", s.handleGetEvents)
+			labsGroup.Any("/instances/:id/nodes/:nodeId/ui/*path", s.handleProxyNodeUI)
 		}
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
@@ -268,6 +307,113 @@ func (s *Server) handleGetTopology(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"topology": topology})
 }
 
+func (s *Server) handleGetInstanceGraph(c *gin.Context) {
+	id := c.Param("id")
+	var instance models.LabInstance
+	if err := s.db.Preload("Template").Preload("Nodes").First(&instance, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	var topo struct {
+		Networks []labs.NetworkYAML `json:"networks"`
+		Nodes    []labs.NodeYAML    `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(instance.Template.Topology), &topo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
+		return
+	}
+
+	nodeLookup := map[string]models.NodeDefinition{}
+	for _, n := range instance.Nodes {
+		nodeLookup[n.ID] = n
+	}
+
+	zoneOrder := []string{"it_net", "dmz_net", "ot_control_net", "ot_safety_net"}
+	zoneCounts := map[string]int{}
+
+	var nodes []graphNode
+	for idx, zone := range zoneOrder {
+		nodes = append(nodes, graphNode{
+			ID:   "zone-" + zone,
+			Type: "zone",
+			Position: gin.H{
+				"x": float64(idx * 260),
+				"y": 0,
+			},
+			Data: graphNodeData{
+				Label:    strings.ToUpper(zone),
+				Zone:     zone,
+				Networks: []string{zone},
+				Status:   "zone",
+			},
+		})
+	}
+
+	var edges []graphEdge
+
+	for _, n := range topo.Nodes {
+		def := nodeLookup[n.ID]
+		meta := decodeNodeMetadata(def.Metadata, n.Networks)
+
+		zone := ""
+		if len(meta.Networks) > 0 {
+			zone = meta.Networks[0]
+		}
+
+		if zone == "" && len(n.Networks) > 0 {
+			zone = n.Networks[0]
+		}
+		column := 0
+		for idx, z := range zoneOrder {
+			if z == zone {
+				column = idx
+				break
+			}
+		}
+		count := zoneCounts[zone]
+		zoneCounts[zone] = count + 1
+
+		status := def.Status
+		if status == "" {
+			status = "unknown"
+		}
+
+		uiPath := ""
+		if meta.UI != nil && meta.UI.Host != "" && meta.UI.Port != 0 {
+			uiPath = fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui", id, n.ID)
+		}
+
+		nodes = append(nodes, graphNode{
+			ID:   n.ID,
+			Type: n.Type,
+			Position: gin.H{
+				"x": float64(column * 260),
+				"y": float64(160 + count*170),
+			},
+			Data: graphNodeData{
+				Label:    n.Name,
+				Zone:     zone,
+				Networks: meta.Networks,
+				Status:   status,
+				IP:       def.IP,
+				UIPath:   uiPath,
+			},
+		})
+
+		if zone != "" {
+			edges = append(edges, graphEdge{
+				ID:     fmt.Sprintf("edge-%s-%s", zone, n.ID),
+				Source: "zone-" + zone,
+				Target: n.ID,
+				Label:  zone,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "edges": edges})
+}
+
 func (s *Server) handlePatchTopology(c *gin.Context) {
 	id := c.Param("id")
 	var payload map[string]any
@@ -392,4 +538,72 @@ func (s *Server) handleGetEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"events": runs})
+}
+
+func (s *Server) handleProxyNodeUI(c *gin.Context) {
+	labID := c.Param("id")
+	nodeID := c.Param("nodeId")
+	var node models.NodeDefinition
+	if err := s.db.First(&node, "id = ? AND lab_instance_id = ?", nodeID, labID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	meta := decodeNodeMetadata(node.Metadata, nil)
+	if meta.UI == nil || meta.UI.Host == "" || meta.UI.Port == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ui proxy not configured"})
+		return
+	}
+
+	target, err := url.Parse(fmt.Sprintf("http://%s:%d", meta.UI.Host, meta.UI.Port))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid upstream host"})
+		return
+	}
+
+	path := c.Param("path")
+	if path == "" {
+		path = "/"
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+		req.URL.Path = singleJoiningSlash(target.Path, path)
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		rw.WriteHeader(http.StatusBadGateway)
+		_, _ = rw.Write([]byte("proxy error: " + err.Error()))
+	}
+
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func decodeNodeMetadata(raw string, fallbackNetworks []string) nodeMetadata {
+	if raw == "" {
+		return nodeMetadata{Networks: fallbackNetworks}
+	}
+	var meta nodeMetadata
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return nodeMetadata{Networks: fallbackNetworks}
+	}
+	if len(meta.Networks) == 0 {
+		meta.Networks = fallbackNetworks
+	}
+	return meta
+}
+
+// Mirrors httputil.singleJoiningSlash without importing unexported logic.
+func singleJoiningSlash(a, b string) string {
+	aslash := strings.HasSuffix(a, "/")
+	bslash := strings.HasPrefix(b, "/")
+	switch {
+	case aslash && bslash:
+		return a + b[1:]
+	case !aslash && !bslash:
+		return a + "/" + b
+	}
+	return a + b
 }
