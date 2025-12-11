@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import { ClientProviders } from "../components/client-providers";
 
 const navLinks = [
+  { href: "/console", label: "Console" },
   { href: "/", label: "Dashboard" },
   { href: "/labs", label: "Labs" },
   { href: "/scenarios", label: "Scenarios" },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ReactFlow, {
   Background,
+  BackgroundVariant,
   Controls,
   Edge,
   addEdge,
@@ -158,16 +159,16 @@ export function TopologyBuilder() {
           </div>
           <Button
             className="w-full"
-            disabled={nodes.length === 0 || saveMutation.isLoading}
+            disabled={nodes.length === 0 || saveMutation.isPending}
             onClick={() => saveMutation.mutate()}
           >
-            {saveMutation.isLoading ? "Saving..." : "Save Template"}
+            {saveMutation.isPending ? "Saving..." : "Save Template"}
           </Button>
         </aside>
 
         <div className="h-[520px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
           <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} fitView>
-            <Background variant="dots" gap={16} size={1} />
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
             <MiniMap pannable zoomable />
             <Controls />
           </ReactFlow>

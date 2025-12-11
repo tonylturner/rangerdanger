@@ -2,30 +2,31 @@ name: ot-lab-trainer
 services:
   backend:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.backend
+      context: .
+      dockerfile: Dockerfile.backend
     ports:
-      - "8080:8080"
+      - "18000:8080"
     environment:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/otlab.db
       OTLAB_LAB_DEFINITIONS_PATH: /lab-definitions
     volumes:
-      - ../backend/data:/data
-      - ../lab-definitions:/lab-definitions:ro
+      - ./backend/data:/data
+      - ./lab-definitions:/lab-definitions:ro
     networks:
       - it_net
 
   frontend:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile.frontend
+      context: .
+      dockerfile: Dockerfile.frontend
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8080/api
     depends_on:
       - backend
+      - proxy
     ports:
-      - "3000:3000"
+      - "13000:3000"
     networks:
       - it_net
 
@@ -47,10 +48,18 @@ services:
       - it_net
 
   hmi_scada:
-    image: ghcr.io/frangoteam/fuxa:latest
+    image: frangoteam/fuxa:latest
+    container_name: hmi_scada
+    ports:
+      - "1881:1881"
     networks:
       - dmz_net
       - ot_control_net
+    volumes:
+      - ./fuxa_appdata:/usr/src/app/FUXA/server/_appdata
+      - ./fuxa_db:/usr/src/app/FUXA/server/_db
+      - ./fuxa_logs:/usr/src/app/FUXA/server/_logs
+    restart: unless-stopped
 
   historian:
     image: influxdb:2
@@ -67,27 +76,56 @@ services:
 
   ids:
     image: jasonish/suricata:latest
-    command: ["/bin/sh", "-c", "suricata -i eth0"]
+    command: ["suricata", "-c", "/etc/suricata/suricata.yaml", "-i", "eth0"]
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     networks:
       - dmz_net
 
   plc_trainer:
-    image: openplc/openplc:latest
+    image: tuttas/openplc_v3:latest
+    container_name: plc_trainer
+    ports:
+      - "18080:8080"
+      - "1502:502"
     networks:
       - ot_control_net
     environment:
       - TZ=UTC
-    volumes:
-      - plc_programs:/lab/plc/programs
+    restart: unless-stopped
 
   sis_plc:
-    image: openplc/openplc:latest
+    image: tuttas/openplc_v3:latest
+    container_name: sis_plc
+    ports:
+      - "18081:8080"
+      - "1503:502"
     networks:
       - ot_safety_net
     environment:
       - TZ=UTC
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: otlab-proxy
     volumes:
-      - sis_programs:/lab/plc/programs
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8088:8080"
+    depends_on:
+      - hmi_scada
+      - plc_trainer
+      - sis_plc
+      - grafana
+      - jump_host
+      - ids
+    networks:
+      - it_net
+      - dmz_net
+      - ot_control_net
+      - ot_safety_net
 
 volumes:
   plc_programs:

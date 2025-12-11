@@ -37,10 +37,10 @@ export function LabsSummary() {
           <Button
             className="mt-2"
             variant="outline"
-            disabled={!defaultTemplateId || createLab.isLoading}
+            disabled={!defaultTemplateId || createLab.isPending}
             onClick={() => defaultTemplateId && createLab.mutate(defaultTemplateId)}
           >
-            {createLab.isLoading ? "Launching..." : "Start Default Lab"}
+            {createLab.isPending ? "Launching..." : "Start Default Lab"}
           </Button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import ReactFlow, { Background, Controls, MiniMap, Node, Edge } from "reactflow";
+import ReactFlow, { Background, BackgroundVariant, Controls, MiniMap, Node, Edge } from "reactflow";
 import "reactflow/dist/style.css";
 
 const initialNodes: Node[] = [
@@ -20,7 +20,7 @@ export function TopologyPreview() {
   return (
     <div className="h-80 rounded-2xl border border-slate-800 bg-slate-950">
       <ReactFlow nodes={initialNodes} edges={initialEdges} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}>
-        <Background variant="dots" />
+        <Background variant={BackgroundVariant.Dots} />
         <MiniMap pannable zoomable />
         <Controls />
       </ReactFlow>

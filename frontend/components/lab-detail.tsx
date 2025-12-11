@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactFlow, { Background, Controls, Edge, MiniMap, Node } from "reactflow";
+import ReactFlow, { Background, BackgroundVariant, Controls, Edge, MiniMap, Node } from "reactflow";
 import "reactflow/dist/style.css";
 
 import { getLabInstance, getLabTopology, LabTopology, startLabInstance, stopLabInstance } from "../lib/api";
@@ -63,13 +63,13 @@ export function LabDetail({ labId }: LabDetailProps) {
           </span>
           <Button
             variant="outline"
-            disabled={lab.status === "running" || startMutation.isLoading}
+            disabled={lab.status === "running" || startMutation.isPending}
             onClick={() => startMutation.mutate()}
           >
-            {startMutation.isLoading ? "Starting..." : "Start"}
+            {startMutation.isPending ? "Starting..." : "Start"}
           </Button>
-          <Button variant="outline" disabled={lab.status !== "running" || stopMutation.isLoading} onClick={() => stopMutation.mutate()}>
-            {stopMutation.isLoading ? "Stopping..." : "Stop"}
+          <Button variant="outline" disabled={lab.status !== "running" || stopMutation.isPending} onClick={() => stopMutation.mutate()}>
+            {stopMutation.isPending ? "Stopping..." : "Stop"}
           </Button>
         </div>
       </header>
@@ -96,7 +96,7 @@ export function LabDetail({ labId }: LabDetailProps) {
       {activeTab === "topology" && (
         <div className="h-[500px] overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
           <ReactFlow nodes={nodes} edges={edges} fitView nodesDraggable={false} nodesConnectable={false} elementsSelectable={false}>
-            <Background variant="dots" gap={16} size={1} />
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
             <MiniMap pannable zoomable />
             <Controls />
           </ReactFlow>

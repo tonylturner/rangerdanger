@@ -25,3 +25,26 @@ backend/.gocache/
 
 # env file
 .env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+Icon
+
+# Node / Next.js
+node_modules/
+.next/
+npm-debug.log*
+pnpm-debug.log*
+*.log
+
+# Build artifacts
+frontend/.next/
+frontend/node_modules/
+frontend/package-lock.json
+backend/server

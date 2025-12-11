@@ -44,7 +44,6 @@ scripts/   # helper scripts for dev + seeding
    Seeds default YAML definitions into the backend via the `/api/admin/seed` endpoint.
 5. **Production-style stack**:
    ```bash
-   cd deploy
    docker compose up -d --build
    ```
 

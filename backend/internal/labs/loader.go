@@ -66,8 +66,8 @@ func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 		Description:      def.Description,
 		Topology:         string(topologyJSON),
 		DefaultScenarios: string(defaultScenariosJSON),
-		ComposeFile:      "deploy/docker-compose.yml",
-	}
+        ComposeFile:      "docker-compose.yml",
+    }
 
 	if err := db.WithContext(ctx).Where(models.LabTemplate{ID: def.ID}).Assign(tmpl).FirstOrCreate(&tmpl).Error; err != nil {
 		return err

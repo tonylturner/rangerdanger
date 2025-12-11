@@ -1,0 +1,36 @@
+# Ignore VCS
+.git
+.gitignore
+
+# Node / frontend artifacts
+frontend/node_modules
+frontend/.next
+frontend/package-lock.json
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Go build artifacts and caches
+backend/.gomodcache
+backend/.gocache
+backend/server
+
+# OS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+Icon
+
+# Docker metadata
+.dockerignore
+
+# Editor / tooling
+*.swp
+*.swo
+.idea
+.vscode
+.env

@@ -8,7 +8,7 @@ import { Button } from "./ui/button";
 
 export function LabsTable() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["lab-instances"], queryFn: listLabInstances });
+  const { data, isPending } = useQuery({ queryKey: ["lab-instances"], queryFn: listLabInstances });
 
   const startMutation = useMutation({
     mutationFn: (labId: string) => startLabInstance(labId),
@@ -20,7 +20,7 @@ export function LabsTable() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["lab-instances"] })
   });
 
-  if (isLoading) {
+  if (isPending) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">Loading labs...</div>;
   }
 
@@ -50,18 +50,18 @@ export function LabsTable() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={lab.status === "running" || startMutation.isLoading}
+                    disabled={lab.status === "running" || startMutation.isPending}
                     onClick={() => startMutation.mutate(lab.id)}
                   >
-                    {startMutation.isLoading && startMutation.variables === lab.id ? "Starting..." : "Start"}
+                    {startMutation.isPending && startMutation.variables === lab.id ? "Starting..." : "Start"}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={lab.status !== "running" || stopMutation.isLoading}
+                    disabled={lab.status !== "running" || stopMutation.isPending}
                     onClick={() => stopMutation.mutate(lab.id)}
                   >
-                    {stopMutation.isLoading && stopMutation.variables === lab.id ? "Stopping..." : "Stop"}
+                    {stopMutation.isPending && stopMutation.variables === lab.id ? "Stopping..." : "Stop"}
                   </Button>
                   <Button asChild variant="ghost" size="sm">
                     <Link href={`/labs/${lab.id}`}>
