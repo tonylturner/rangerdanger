@@ -1,0 +1,14 @@
+FROM golang:1.21 AS builder
+WORKDIR /app
+COPY backend/go.mod backend/go.sum ./backend/
+COPY backend ./backend
+WORKDIR /app/backend
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go build -o /bin/otlab ./cmd/server
+
+FROM gcr.io/distroless/base-debian12
+COPY --from=builder /bin/otlab /bin/otlab
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["/bin/otlab"]

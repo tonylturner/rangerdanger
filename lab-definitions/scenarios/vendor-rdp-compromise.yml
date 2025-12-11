@@ -1,0 +1,16 @@
+id: vendor-rdp-compromise
+name: "Vendor RDP Compromise"
+description: "Simulate a third-party vendor account misuse that pivots through the DMZ."
+tags:
+  - rdp
+  - phishing
+  - dmz
+steps:
+  - title: Phishing Setup
+    description: "Review the provided phishing email artifact and identify the payload."
+  - title: Initial Access
+    description: "Use leaked vendor VPN credentials to access the HMI jump box."
+  - title: Privilege Escalation
+    description: "Escalate within the HMI VM and pivot toward the OT control zone."
+  - title: Containment
+    description: "Document firewall rule adjustments needed to stop the compromise."

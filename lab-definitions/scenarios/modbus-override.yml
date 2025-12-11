@@ -1,0 +1,14 @@
+id: modbus-override
+name: "Modbus Override Walkthrough"
+description: "Guide trainees through abusing insecure Modbus functions to force pump states."
+tags:
+  - modbus
+  - plc
+  - offense
+steps:
+  - title: Passive Discovery
+    description: "Capture OT traffic via the IDS span interface to map PLC registers."
+  - title: Credential Guessing
+    description: "Use default OpenPLC credentials on the HMI to collect register metadata."
+  - title: Execute Override
+    description: "From the jump host, run modbus-cli to overwrite the holding register controlling pump speed."

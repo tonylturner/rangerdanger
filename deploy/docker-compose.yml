@@ -1,0 +1,104 @@
+name: ot-lab-trainer
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    ports:
+      - "8080:8080"
+    environment:
+      OTLAB_HTTP_PORT: 8080
+      OTLAB_DB_PATH: /data/otlab.db
+      OTLAB_LAB_DEFINITIONS_PATH: /lab-definitions
+    volumes:
+      - ../backend/data:/data
+      - ../lab-definitions:/lab-definitions:ro
+    networks:
+      - it_net
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8080/api
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - it_net
+
+  ews:
+    image: ghcr.io/linuxserver/webtop:ubuntu-mate
+    environment:
+      - TZ=UTC
+    networks:
+      - it_net
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  jump_host:
+    image: kalilinux/kali-rolling
+    command: ["sleep", "infinity"]
+    networks:
+      - it_net
+
+  hmi_scada:
+    image: ghcr.io/frangoteam/fuxa:latest
+    networks:
+      - dmz_net
+      - ot_control_net
+
+  historian:
+    image: influxdb:2
+    networks:
+      - dmz_net
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    networks:
+      - dmz_net
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  ids:
+    image: jasonish/suricata:latest
+    command: ["/bin/sh", "-c", "suricata -i eth0"]
+    networks:
+      - dmz_net
+
+  plc_trainer:
+    image: openplc/openplc:latest
+    networks:
+      - ot_control_net
+    environment:
+      - TZ=UTC
+    volumes:
+      - plc_programs:/lab/plc/programs
+
+  sis_plc:
+    image: openplc/openplc:latest
+    networks:
+      - ot_safety_net
+    environment:
+      - TZ=UTC
+    volumes:
+      - sis_programs:/lab/plc/programs
+
+volumes:
+  plc_programs:
+  sis_programs:
+
+networks:
+  it_net:
+    driver: bridge
+  dmz_net:
+    driver: bridge
+  ot_control_net:
+    driver: bridge
+  ot_safety_net:
+    driver: bridge

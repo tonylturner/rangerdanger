@@ -1,0 +1,57 @@
+id: "default-oil-plant"
+name: "Default Oil Plant Lab"
+description: "Basic OT lab with PLC, HMI, SIS, historian, IDS, jump host, and OPNsense firewall."
+networks:
+  - name: it_net
+    cidr: 10.10.10.0/24
+  - name: dmz_net
+    cidr: 10.20.20.0/24
+  - name: ot_control_net
+    cidr: 10.30.30.0/24
+  - name: ot_safety_net
+    cidr: 10.40.40.0/24
+nodes:
+  - id: ews-1
+    type: ews
+    name: Engineering Workstation
+    networks: [it_net]
+  - id: plc-1
+    type: plc_trainer
+    name: Process PLC
+    networks: [ot_control_net]
+  - id: sis-1
+    type: sis_plc
+    name: Safety PLC
+    networks: [ot_safety_net]
+  - id: hmi-1
+    type: hmi_scada
+    name: HMI / SCADA
+    networks: [dmz_net, ot_control_net]
+  - id: ids-1
+    type: ot_ids
+    name: Suricata IDS
+    networks: [dmz_net]
+  - id: hist-1
+    type: historian
+    name: Historian
+    networks: [dmz_net]
+  - id: jump-1
+    type: jump_host
+    name: Pentest Jump Box
+    networks: [it_net]
+  - id: fw-1
+    type: opnsense_external
+    name: OPNsense Firewall
+    networks: [it_net, dmz_net, ot_control_net, ot_safety_net]
+scenarios:
+  - id: modbus-pump-speed-override
+    name: "Modbus Pump Speed Override"
+    description: "Manipulate Modbus registers to force unsafe pump speeds."
+    tags: ["modbus", "plc", "attack"]
+    steps:
+      - title: Reconnaissance
+        description: "Use the jump host to inventory PLC endpoints over Modbus TCP."
+      - title: Override Pump Speed
+        description: "Issue a Modbus write_single_register call to change pump speed."
+      - title: Validate Safety Trip
+        description: "Confirm SIS logic detects unsafe speed and trips the pump."

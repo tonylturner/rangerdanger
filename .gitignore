@@ -20,6 +20,8 @@
 # Go workspace file
 go.work
 go.work.sum
+backend/.gomodcache/
+backend/.gocache/
 
 # env file
 .env
