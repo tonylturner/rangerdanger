@@ -1,6 +1,6 @@
 id: "default-oil-plant"
 name: "Default Oil Plant Lab"
-description: "Basic OT lab with PLC, HMI, SIS, historian, IDS, jump host, and OPNsense firewall."
+description: "Basic OT lab with PLC, HMI, SIS, historian, IDS, jump host, and containd NGFW."
 networks:
   - name: it_net
     cidr: 10.10.10.0/24
@@ -40,8 +40,8 @@ nodes:
     name: Pentest Jump Box
     networks: [it_net]
   - id: fw-1
-    type: opnsense_external
-    name: OPNsense Firewall
+    type: containd_ngfw
+    name: containd NGFW
     networks: [it_net, dmz_net, ot_control_net, ot_safety_net]
 scenarios:
   - id: modbus-pump-speed-override

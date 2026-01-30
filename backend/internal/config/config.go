@@ -12,6 +12,7 @@ type Config struct {
     DBPath              string
     AllowedOrigins      []string
     LabDefinitionsPath  string
+    ContaindAPIURL      string
 }
 
 // Load reads configuration from environment variables and optional config files.
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
     v.SetDefault("db_path", "backend/data/otlab.db")
     v.SetDefault("allowed_origins", []string{"*"})
     v.SetDefault("lab_definitions_path", "lab-definitions")
+    v.SetDefault("containd_api_url", "http://firewall:8080")
 
     if err := v.ReadInConfig(); err != nil {
         // Config file is optional; ignore if not found.
@@ -33,6 +35,7 @@ func Load() (*Config, error) {
         HTTPPort:           v.GetInt("http_port"),
         DBPath:             v.GetString("db_path"),
         LabDefinitionsPath: v.GetString("lab_definitions_path"),
+        ContaindAPIURL:     v.GetString("containd_api_url"),
     }
 
     if origins := v.GetStringSlice("allowed_origins"); len(origins) > 0 {

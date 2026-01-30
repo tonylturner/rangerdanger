@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ClientProviders>
           <div className="flex min-h-screen">
             <aside className="hidden w-64 flex-col border-r border-slate-900 bg-slate-950/70 px-6 py-8 md:flex">
-              <div className="mb-8 text-lg font-semibold">OT Lab Trainer</div>
+              <div className="mb-8 text-lg font-semibold">RangerDanger</div>
               <nav className="space-y-2 text-sm text-slate-400">
                 {navLinks.map((link) => (
                   <Link
