@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -57,6 +58,7 @@ type nodeMetadata struct {
 	Networks      []string          `json:"networks,omitempty"`
 	UI            *nodeUIProxy      `json:"ui,omitempty"`
 	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`  // network -> IP for multi-homed nodes
+	UIPath        string            `json:"ui_path,omitempty"`         // override UI path (e.g., for proxied access)
 	ExternalUIURL string            `json:"external_ui_url,omitempty"` // direct URL for external UI access
 }
 
@@ -140,6 +142,9 @@ func (s *Server) registerRoutes() {
 		api.GET("/scenarios/:id", s.handleGetScenario)
 		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
 		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)
+
+		// Containd proxy - enables same-origin access to containd UI
+		api.Any("/containd/*path", s.handleProxyContaind)
 	}
 }
 
@@ -423,8 +428,8 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 			status = "unknown"
 		}
 
-		uiPath := ""
-		if meta.UI != nil && meta.UI.Host != "" && meta.UI.Port != 0 {
+		uiPath := meta.UIPath // Use explicit path from metadata if set
+		if uiPath == "" && meta.UI != nil && meta.UI.Host != "" && meta.UI.Port != 0 {
 			uiPath = fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui", id, n.ID)
 		}
 
@@ -652,4 +657,67 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
+}
+
+// handleProxyContaind proxies requests to the containd firewall UI.
+// This enables same-origin access, allowing the containd UI to be embedded
+// in iframes with full authentication/cookie support.
+func (s *Server) handleProxyContaind(c *gin.Context) {
+	containdURL := s.cfg.ContaindAPIURL
+	if containdURL == "" {
+		containdURL = "http://firewall:8080"
+	}
+
+	target, err := url.Parse(containdURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid containd url"})
+		return
+	}
+
+	path := c.Param("path")
+	if path == "" {
+		path = "/"
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+		req.URL.Path = singleJoiningSlash(target.Path, path)
+		req.URL.RawQuery = c.Request.URL.RawQuery
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		rw.WriteHeader(http.StatusBadGateway)
+		_, _ = rw.Write([]byte("containd proxy error: " + err.Error()))
+	}
+
+	// Rewrite HTML responses to fix asset paths
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/html") {
+			return nil
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		// Rewrite asset and link paths to go through the proxy
+		// Use a placeholder to avoid double-replacement
+		modified := string(body)
+		modified = strings.ReplaceAll(modified, `"/_next/`, `"__CONTAIND_PROXY__/_next/`)
+		modified = strings.ReplaceAll(modified, `"/api/`, `"__CONTAIND_PROXY__/api/`)
+		modified = strings.ReplaceAll(modified, `href="/`, `href="__CONTAIND_PROXY__/`)
+		modified = strings.ReplaceAll(modified, `__CONTAIND_PROXY__`, `/api/containd`)
+
+		resp.Body = io.NopCloser(strings.NewReader(modified))
+		resp.ContentLength = int64(len(modified))
+		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(modified)))
+		return nil
+	}
+
+	proxy.ServeHTTP(c.Writer, c.Request)
 }

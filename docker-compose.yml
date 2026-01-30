@@ -3,7 +3,7 @@ name: rangerdanger
 services:
   # containd NGFW - central gateway for all zone traffic
   firewall:
-    image: ghcr.io/tturner/containd:latest
+    image: containd:local
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
@@ -11,6 +11,7 @@ services:
     environment:
       - CONTAIND_MODE=all
       - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
+      - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
     volumes:
       - ./data/firewall:/data
     ports:
