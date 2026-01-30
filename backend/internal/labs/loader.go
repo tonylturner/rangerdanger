@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 
-	"github.com/tturner/rangerrocks/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
 // Loader imports YAML definitions into persistence.

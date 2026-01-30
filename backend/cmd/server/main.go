@@ -4,11 +4,11 @@ import (
     "context"
     "log"
 
-    "github.com/tturner/rangerrocks/backend/internal/config"
-    "github.com/tturner/rangerrocks/backend/internal/db"
-    "github.com/tturner/rangerrocks/backend/internal/labs"
-    "github.com/tturner/rangerrocks/backend/internal/orchestrator"
-    "github.com/tturner/rangerrocks/backend/internal/server"
+    "github.com/tturner/rangerdanger/backend/internal/config"
+    "github.com/tturner/rangerdanger/backend/internal/db"
+    "github.com/tturner/rangerdanger/backend/internal/labs"
+    "github.com/tturner/rangerdanger/backend/internal/orchestrator"
+    "github.com/tturner/rangerdanger/backend/internal/server"
 )
 
 func main() {

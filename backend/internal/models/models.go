@@ -40,6 +40,8 @@ type NodeDefinition struct {
 	IP            string    `json:"ip"`
 	Status        string    `json:"status"`
 	Metadata      string    `json:"metadata"`
+	ContainerID   string    `json:"container_id"`
+	ContainerName string    `json:"container_name"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

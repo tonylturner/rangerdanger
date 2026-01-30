@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowRightIcon } from "@radix-ui/react-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listLabInstances, startLabInstance, stopLabInstance } from "../lib/api";
+import { listLabInstances, startLabInstance, stopLabInstance, deleteLabInstance } from "../lib/api";
 import { Button } from "./ui/button";
 
 export function LabsTable() {
@@ -17,6 +17,11 @@ export function LabsTable() {
 
   const stopMutation = useMutation({
     mutationFn: (labId: string) => stopLabInstance(labId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["lab-instances"] })
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (labId: string) => deleteLabInstance(labId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["lab-instances"] })
   });
 
@@ -67,6 +72,19 @@ export function LabsTable() {
                     <Link href={`/labs/${lab.id}`}>
                       View <ArrowRightIcon className="ml-2" />
                     </Link>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950/50"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => {
+                      if (confirm(`Delete lab "${lab.name || lab.id}"?`)) {
+                        deleteMutation.mutate(lab.id);
+                      }
+                    }}
+                  >
+                    {deleteMutation.isPending && deleteMutation.variables === lab.id ? "Deleting..." : "Delete"}
                   </Button>
                 </div>
               </td>

@@ -13,10 +13,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/tturner/rangerrocks/backend/internal/config"
-	"github.com/tturner/rangerrocks/backend/internal/labs"
-	"github.com/tturner/rangerrocks/backend/internal/models"
-	"github.com/tturner/rangerrocks/backend/internal/orchestrator"
+	"github.com/tturner/rangerdanger/backend/internal/config"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/models"
+	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
 // Server wraps the Gin router and dependencies.
@@ -121,7 +121,13 @@ func (s *Server) registerRoutes() {
 			labsGroup.GET("/instances/:id/metrics", s.handleGetMetrics)
 			labsGroup.GET("/instances/:id/events", s.handleGetEvents)
 			labsGroup.Any("/instances/:id/nodes/:nodeId/ui/*path", s.handleProxyNodeUI)
+			labsGroup.GET("/instances/:id/nodes/:nodeId/terminal", s.handleTerminal)
+			labsGroup.GET("/instances/:id/live-events", s.handleGetLiveEvents)
 		}
+
+		// Firewall endpoints
+		api.GET("/firewall/health", s.handleGetFirewallHealth)
+		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
@@ -267,15 +273,49 @@ func (s *Server) handleGetLabInstance(c *gin.Context) {
 }
 
 func (s *Server) handleStartLabInstance(c *gin.Context) {
-	s.updateInstanceStatus(c, "running")
+	id := c.Param("id")
+
+	// Start containers via orchestrator
+	if err := s.orchestrator.StartLabContainers(c.Request.Context(), s.db, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update instance status
+	if err := s.db.Model(&models.LabInstance{}).Where("id = ?", id).Update("status", "running").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "running"})
 }
 
 func (s *Server) handleStopLabInstance(c *gin.Context) {
-	s.updateInstanceStatus(c, "stopped")
+	id := c.Param("id")
+
+	// Stop containers via orchestrator
+	if err := s.orchestrator.StopLabContainers(c.Request.Context(), s.db, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update instance status
+	if err := s.db.Model(&models.LabInstance{}).Where("id = ?", id).Update("status", "stopped").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "stopped"})
 }
 
 func (s *Server) handleDeleteLabInstance(c *gin.Context) {
 	id := c.Param("id")
+
+	// Remove containers via orchestrator
+	if err := s.orchestrator.RemoveLabContainers(c.Request.Context(), s.db, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Delete from database
 	if err := s.db.Delete(&models.LabInstance{}, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
