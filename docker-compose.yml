@@ -12,6 +12,14 @@ services:
       - CONTAIND_MODE=all
       - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
+      - NGFW_ENGINE_URL=http://127.0.0.1:8081
+      # Config persistence
+      - NGFW_CONFIG_DB=/data/config.db
+      # Auto-assign subnet mapping for RangerDanger networks
+      - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
+      - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
+      - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
+      - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
     volumes:
       - ./data/firewall:/data
     ports:
