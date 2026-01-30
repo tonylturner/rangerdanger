@@ -29,12 +29,14 @@ type Server struct {
 }
 
 type graphNodeData struct {
-	Label    string   `json:"label"`
-	Zone     string   `json:"zone"`
-	Networks []string `json:"networks"`
-	Status   string   `json:"status,omitempty"`
-	IP       string   `json:"ip,omitempty"`
-	UIPath   string   `json:"ui_path,omitempty"`
+	Label         string            `json:"label"`
+	Zone          string            `json:"zone"`
+	Networks      []string          `json:"networks"`
+	Status        string            `json:"status,omitempty"`
+	IP            string            `json:"ip,omitempty"`
+	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`  // network -> IP for multi-homed nodes
+	UIPath        string            `json:"ui_path,omitempty"`
+	ExternalUIURL string            `json:"external_ui_url,omitempty"` // direct URL for external UI access
 }
 
 type graphNode struct {
@@ -52,8 +54,10 @@ type graphEdge struct {
 }
 
 type nodeMetadata struct {
-	Networks []string     `json:"networks,omitempty"`
-	UI       *nodeUIProxy `json:"ui,omitempty"`
+	Networks      []string          `json:"networks,omitempty"`
+	UI            *nodeUIProxy      `json:"ui,omitempty"`
+	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`  // network -> IP for multi-homed nodes
+	ExternalUIURL string            `json:"external_ui_url,omitempty"` // direct URL for external UI access
 }
 
 type nodeUIProxy struct {
@@ -432,12 +436,14 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 				"y": float64(160 + count*170),
 			},
 			Data: graphNodeData{
-				Label:    n.Name,
-				Zone:     zone,
-				Networks: meta.Networks,
-				Status:   status,
-				IP:       def.IP,
-				UIPath:   uiPath,
+				Label:         n.Name,
+				Zone:          zone,
+				Networks:      meta.Networks,
+				Status:        status,
+				IP:            def.IP,
+				InterfaceIPs:  meta.InterfaceIPs,
+				UIPath:        uiPath,
+				ExternalUIURL: meta.ExternalUIURL,
 			},
 		})
 

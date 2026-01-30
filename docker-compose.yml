@@ -18,12 +18,14 @@ services:
       - "9443:8443"   # containd HTTPS
       - "2222:2222"   # SSH console
     networks:
-      wan:
-        ipv4_address: 192.168.240.2
-      dmz:
-        ipv4_address: 192.168.241.2
-      ot_control:
-        ipv4_address: 192.168.242.2
+      it_net:
+        ipv4_address: 10.10.10.2
+      dmz_net:
+        ipv4_address: 10.20.20.2
+      ot_control_net:
+        ipv4_address: 10.30.30.2
+      ot_safety_net:
+        ipv4_address: 10.40.40.2
     restart: unless-stopped
 
   backend:
@@ -41,8 +43,8 @@ services:
       - ./lab-definitions:/lab-definitions:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      wan:
-        ipv4_address: 192.168.240.10
+      it_net:
+        ipv4_address: 10.10.10.10
     depends_on:
       - firewall
 
@@ -56,8 +58,8 @@ services:
     depends_on:
       - backend
     networks:
-      wan:
-        ipv4_address: 192.168.240.11
+      it_net:
+        ipv4_address: 10.10.10.11
 
   proxy:
     image: nginx:1.27-alpine
@@ -71,18 +73,18 @@ services:
       - backend
       - frontend
     networks:
-      wan:
-        ipv4_address: 192.168.240.3
+      it_net:
+        ipv4_address: 10.10.10.3
 
   # ICS Lab Containers - wired through containd firewall
   hmi_scada:
     image: frangoteam/fuxa:latest
     container_name: rangerdanger-hmi
     networks:
-      dmz:
-        ipv4_address: 192.168.241.10
-      ot_control:
-        ipv4_address: 192.168.242.10
+      dmz_net:
+        ipv4_address: 10.20.20.10
+      ot_control_net:
+        ipv4_address: 10.30.30.10
     volumes:
       - ./data/fuxa_appdata:/usr/src/app/FUXA/server/_appdata
       - ./data/fuxa_db:/usr/src/app/FUXA/server/_db
@@ -95,8 +97,8 @@ services:
     image: tuttas/openplc_v3:latest
     container_name: rangerdanger-plc
     networks:
-      ot_control:
-        ipv4_address: 192.168.242.20
+      ot_control_net:
+        ipv4_address: 10.30.30.20
     environment:
       - TZ=UTC
     restart: unless-stopped
@@ -104,21 +106,27 @@ services:
       - firewall
 
 networks:
-  wan:
+  it_net:
     driver: bridge
     ipam:
       config:
-        - subnet: 192.168.240.0/24
-          gateway: 192.168.240.1
-  dmz:
+        - subnet: 10.10.10.0/24
+          gateway: 10.10.10.1
+  dmz_net:
     driver: bridge
     ipam:
       config:
-        - subnet: 192.168.241.0/24
-          gateway: 192.168.241.1
-  ot_control:
+        - subnet: 10.20.20.0/24
+          gateway: 10.20.20.1
+  ot_control_net:
     driver: bridge
     ipam:
       config:
-        - subnet: 192.168.242.0/24
-          gateway: 192.168.242.1
+        - subnet: 10.30.30.0/24
+          gateway: 10.30.30.1
+  ot_safety_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.40.40.0/24
+          gateway: 10.40.40.1

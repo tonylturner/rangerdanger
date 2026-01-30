@@ -6,15 +6,25 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"gorm.io/gorm"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
+
+// Network name mapping from lab definition to Docker network names
+var networkNameMap = map[string]string{
+	"it_net":         "rangerdanger_it_net",
+	"dmz_net":        "rangerdanger_dmz_net",
+	"ot_control_net": "rangerdanger_ot_control_net",
+	"ot_safety_net":  "rangerdanger_ot_safety_net",
+}
 
 // Orchestrator manages Docker containers for lab instances.
 type Orchestrator struct {
@@ -48,11 +58,11 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 
 	// UI proxy configuration for known node types
 	uiMap := map[string]map[string]any{
-		"containd_ngfw":   {"host": "192.168.240.2", "port": 8080},
+		"containd_ngfw":   {"host": "10.10.10.2", "port": 8080},
 		"ews":             {"host": "ews", "port": 3000},
-		"plc_trainer":     {"host": "192.168.242.20", "port": 8080},
+		"plc_trainer":     {"host": "10.30.30.20", "port": 8080},
 		"sis_plc":         {"host": "sis_plc", "port": 8080},
-		"hmi_scada":       {"host": "192.168.241.10", "port": 1881},
+		"hmi_scada":       {"host": "10.20.20.10", "port": 1881},
 		"grafana":         {"host": "grafana", "port": 3000},
 		"ot_ids":          {"host": "ids", "port": 80},
 		"jump_host":       {"host": "jump_host", "port": 6080},
@@ -83,6 +93,25 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		if n.Type == "containd_ngfw" {
 			node.Status = "running"
 			node.ContainerName = "rangerdanger-firewall"
+			node.IP = "10.10.10.2" // IT network interface IP (primary)
+
+			// Add all interface IPs to metadata for multi-homed firewall
+			firewallMeta := map[string]any{
+				"networks": n.Networks,
+				"interface_ips": map[string]string{
+					"it_net":         "10.10.10.2",
+					"dmz_net":        "10.20.20.2",
+					"ot_control_net": "10.30.30.2",
+					"ot_safety_net":  "10.40.40.2",
+				},
+				"external_ui_url": "http://localhost:9080", // Direct access to containd UI
+			}
+			if cfg, ok := uiMap[n.Type]; ok {
+				firewallMeta["ui"] = cfg
+			}
+			firewallMetaJSON, _ := json.Marshal(firewallMeta)
+			node.Metadata = string(firewallMetaJSON)
+
 			nodes = append(nodes, node)
 			continue
 		}
@@ -106,9 +135,10 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		nodes = append(nodes, node)
 	}
 
-	if len(nodes) > 0 {
-		if err := db.WithContext(ctx).Create(&nodes).Error; err != nil {
-			return err
+	// Save nodes using upsert to handle re-provisioning
+	for _, node := range nodes {
+		if err := db.WithContext(ctx).Save(&node).Error; err != nil {
+			o.logger.Printf("[lab %s] failed to save node %s: %v", instance.ID, node.ID, err)
 		}
 	}
 
@@ -116,7 +146,7 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	return db.WithContext(ctx).Save(instance).Error
 }
 
-// createContainer creates a Docker container for a node.
+// createContainer creates a Docker container for a node and connects it to proper networks.
 func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, labID string) (string, string, error) {
 	// Find the node template in catalog
 	var nodeTemplate *labs.NodeTemplate
@@ -136,8 +166,8 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 	config := &container.Config{
 		Image: nodeTemplate.Image,
 		Labels: map[string]string{
-			"rangerdanger.lab_id": labID,
-			"rangerdanger.node_id": node.ID,
+			"rangerdanger.lab_id":    labID,
+			"rangerdanger.node_id":   node.ID,
 			"rangerdanger.node_type": node.Type,
 		},
 	}
@@ -146,10 +176,33 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 	}
 
+	// Determine the primary network for initial container creation
+	var networkConfig *network.NetworkingConfig
+	if len(node.Networks) > 0 {
+		primaryNetwork := node.Networks[0]
+		if dockerNet, ok := networkNameMap[primaryNetwork]; ok {
+			networkConfig = &network.NetworkingConfig{
+				EndpointsConfig: map[string]*network.EndpointSettings{
+					dockerNet: {},
+				},
+			}
+		}
+	}
+
 	// Create container
-	resp, err := o.dockerClient.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
+	resp, err := o.dockerClient.ContainerCreate(ctx, config, hostConfig, networkConfig, nil, containerName)
 	if err != nil {
 		return "", "", fmt.Errorf("create container: %w", err)
+	}
+
+	// Connect to additional networks
+	for i := 1; i < len(node.Networks); i++ {
+		if dockerNet, ok := networkNameMap[node.Networks[i]]; ok {
+			err := o.dockerClient.NetworkConnect(ctx, dockerNet, resp.ID, nil)
+			if err != nil {
+				o.logger.Printf("[container %s] failed to connect to network %s: %v", containerName, dockerNet, err)
+			}
+		}
 	}
 
 	return resp.ID, containerName, nil
@@ -228,7 +281,7 @@ func (o *Orchestrator) GetContainerLogs(ctx context.Context, containerID string,
 	return string(logs), nil
 }
 
-// StartLabContainers starts all containers for a lab instance.
+// StartLabContainers starts all containers for a lab instance and updates their IPs.
 func (o *Orchestrator) StartLabContainers(ctx context.Context, db *gorm.DB, instanceID string) error {
 	var nodes []models.NodeDefinition
 	if err := db.Where("lab_instance_id = ?", instanceID).Find(&nodes).Error; err != nil {
@@ -242,11 +295,44 @@ func (o *Orchestrator) StartLabContainers(ctx context.Context, db *gorm.DB, inst
 		if err := o.StartContainer(ctx, node.ContainerID); err != nil {
 			o.logger.Printf("[lab %s] failed to start container %s: %v", instanceID, node.ID, err)
 		} else {
-			db.Model(&node).Update("status", "running")
+			// Get container IP address
+			ip := o.getContainerIP(ctx, node.ContainerID)
+			db.Model(&node).Updates(map[string]interface{}{
+				"status": "running",
+				"ip":     ip,
+			})
 		}
 	}
 
 	return nil
+}
+
+// getContainerIP retrieves the IP address of a container from its first network.
+func (o *Orchestrator) getContainerIP(ctx context.Context, containerID string) string {
+	if o.dockerClient == nil {
+		return ""
+	}
+
+	inspect, err := o.dockerClient.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return ""
+	}
+
+	// Return IP from first available network (prefer zone networks over bridge)
+	for netName, netSettings := range inspect.NetworkSettings.Networks {
+		if strings.HasPrefix(netName, "rangerdanger_") && netSettings.IPAddress != "" {
+			return netSettings.IPAddress
+		}
+	}
+
+	// Fallback to any available IP
+	for _, netSettings := range inspect.NetworkSettings.Networks {
+		if netSettings.IPAddress != "" {
+			return netSettings.IPAddress
+		}
+	}
+
+	return ""
 }
 
 // StopLabContainers stops all containers for a lab instance.

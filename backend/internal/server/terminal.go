@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
@@ -28,12 +29,13 @@ func (s *Server) handleTerminal(c *gin.Context) {
 		return
 	}
 
-	// For containd_ngfw, use the firewall container
-	containerID := node.ContainerID
+	// containd_ngfw uses SSH instead of docker exec
 	if node.Type == "containd_ngfw" {
-		containerID = "rangerdanger-firewall"
+		s.handleContaindTerminal(c)
+		return
 	}
 
+	containerID := node.ContainerID
 	if containerID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no container associated with node"})
 		return
@@ -83,6 +85,116 @@ func (s *Server) handleTerminal(c *gin.Context) {
 				return
 			}
 			if _, err := hijack.Conn.Write(message); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Wait for connection to close
+	<-done
+}
+
+// handleContaindTerminal connects to containd firewall via SSH
+func (s *Server) handleContaindTerminal(c *gin.Context) {
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer ws.Close()
+
+	ws.WriteMessage(websocket.TextMessage, []byte("\x1b[36mConnecting to containd NGFW via SSH...\x1b[0m\r\n"))
+
+	// SSH config - containd uses containd/containd by default
+	config := &ssh.ClientConfig{
+		User: "containd",
+		Auth: []ssh.AuthMethod{
+			ssh.Password("containd"),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	// Connect to containd SSH (internal docker network address)
+	client, err := ssh.Dial("tcp", "rangerdanger-firewall:2222", config)
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mSSH connection failed: "+err.Error()+"\x1b[0m\r\n"))
+		ws.WriteMessage(websocket.TextMessage, []byte("\r\nYou can connect directly via: \x1b[36mssh -p 2222 containd@localhost\x1b[0m\r\n"))
+		// Keep open so user can see the message
+		for {
+			if _, _, err := ws.ReadMessage(); err != nil {
+				break
+			}
+		}
+		return
+	}
+	defer client.Close()
+
+	// Create SSH session
+	session, err := client.NewSession()
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to create SSH session: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+	defer session.Close()
+
+	// Request PTY
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm-256color", 40, 120, modes); err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to request PTY: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+
+	// Get stdin/stdout pipes
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to get stdin: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to get stdout: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+
+	// Start shell
+	if err := session.Shell(); err != nil {
+		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to start shell: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+
+	done := make(chan struct{})
+
+	// Read from SSH, write to WebSocket
+	go func() {
+		defer close(done)
+		buf := make([]byte, 1024)
+		for {
+			n, err := stdout.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					ws.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[33m[SSH connection closed]\x1b[0m\r\n"))
+				}
+				return
+			}
+			if err := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Read from WebSocket, write to SSH
+	go func() {
+		for {
+			_, message, err := ws.ReadMessage()
+			if err != nil {
+				stdin.Close()
+				return
+			}
+			if _, err := stdin.Write(message); err != nil {
 				return
 			}
 		}
