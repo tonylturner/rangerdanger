@@ -23,8 +23,9 @@ import { saveLabTemplate } from "../lib/api";
 import { Button } from "./ui/button";
 import { nodeTypes, zoneColors } from "./topology-nodes";
 
-// All available node types
+// All available node types - network zone first, then devices
 const nodeTypeOptions = [
+  { type: "network_zone", label: "Network Zone", description: "Visual network segment", rfType: "zone", isZone: true },
   { type: "containd_ngfw", label: "containd NGFW", description: "ICS-aware firewall", rfType: "firewall" },
   { type: "ews", label: "Engineering WS", description: "noVNC desktop & PLC IDE", rfType: "host" },
   { type: "jump_host", label: "Jump Host", description: "Kali-lite pentest box", rfType: "host" },
@@ -128,6 +129,23 @@ export function TopologyBuilder() {
       const id = generateId();
       const network = networks.find((n) => n.id === selectedNetwork);
 
+      // Handle network zone nodes differently
+      if ((selectedNodeType as any).isZone) {
+        const zoneNode: Node = {
+          id: `zone-${selectedNetwork}-${id.slice(0, 8)}`,
+          type: "zone",
+          position,
+          data: {
+            label: network?.name || selectedNetwork,
+            zone: selectedNetwork,
+            subnet: network?.cidr,
+          },
+          draggable: true,
+        };
+        setNodes((prev) => [...prev, zoneNode]);
+        return;
+      }
+
       const newNode: Node = {
         id,
         type: selectedNodeType.rfType,
@@ -193,13 +211,16 @@ export function TopologyBuilder() {
         description,
         topology: {
           networks: networks.map((n) => ({ name: n.id, cidr: n.cidr })),
-          nodes: nodes.map((node) => ({
-            id: node.id,
-            name: node.data?.label ?? node.id,
-            type: node.data?.nodeType ?? "node",
-            networks: [node.data?.zone ?? "it_net"],
-            position: node.position,
-          })),
+          // Filter out zone nodes - they're visual only, not actual containers
+          nodes: nodes
+            .filter((node) => node.type !== "zone")
+            .map((node) => ({
+              id: node.id,
+              name: node.data?.label ?? node.id,
+              type: node.data?.nodeType ?? "node",
+              networks: [node.data?.zone ?? "it_net"],
+              position: node.position,
+            })),
           edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
         },
       }),
@@ -364,7 +385,11 @@ export function TopologyBuilder() {
             <div className="absolute top-3 left-3 z-10 bg-slate-900/90 border border-slate-700 rounded-lg px-3 py-2 text-sm">
               <span className="text-slate-400">Placing: </span>
               <span className="text-white font-medium">{selectedNodeType.label}</span>
-              <span className="text-slate-400"> in </span>
+              {(selectedNodeType as any).isZone ? (
+                <span className="text-slate-400"> for </span>
+              ) : (
+                <span className="text-slate-400"> in </span>
+              )}
               <span style={{ color: networks.find((n) => n.id === selectedNetwork)?.color }}>
                 {networks.find((n) => n.id === selectedNetwork)?.name}
               </span>

@@ -70,7 +70,9 @@ export type GraphNodeData = {
   networks: string[];
   status?: string;
   ip?: string;
+  interface_ips?: Record<string, string>; // network -> IP for multi-homed nodes
   ui_path?: string;
+  external_ui_url?: string; // direct URL for external UI access
 };
 
 export type GraphNode = {
