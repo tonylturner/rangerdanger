@@ -104,7 +104,8 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 					"ot_control_net": "10.30.30.2",
 					"ot_safety_net":  "10.40.40.2",
 				},
-				"external_ui_url": "http://localhost:9080", // Direct access to containd UI
+				"ui_path":         "/containd/",              // Proxied access via nginx (same-origin, auth works)
+				"external_ui_url": "http://localhost:9080",  // Direct access for "open in new tab"
 			}
 			if cfg, ok := uiMap[n.Type]; ok {
 				firewallMeta["ui"] = cfg
