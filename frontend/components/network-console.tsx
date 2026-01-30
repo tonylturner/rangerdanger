@@ -26,7 +26,7 @@ import {
 import { Button } from "./ui/button";
 import { NodeTerminal } from "./node-terminal";
 import { nodeTypes, zoneColors } from "./topology-nodes";
-import { Maximize2, X, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 // All supported zone names (new and legacy)
 const zones = [
@@ -52,7 +52,6 @@ export function NetworkConsole() {
   const [inspectorNode, setInspectorNode] = useState<Node | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [showExpandedModal, setShowExpandedModal] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const queryClient = useQueryClient();
 
@@ -289,8 +288,8 @@ export function NetworkConsole() {
             <div className="flex items-start justify-between rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">
               <span className="text-slate-400 shrink-0 mr-3">IPs</span>
               <div className="flex flex-wrap gap-1.5 justify-end">
-                {inspectorNode.data?.interface_ips && Object.keys(inspectorNode.data.interface_ips).length > 0 ? (
-                  Object.entries(inspectorNode.data.interface_ips as Record<string, string>).map(([net, ip]) => (
+                {inspectorNode.data?.interface_ips && typeof inspectorNode.data.interface_ips === 'object' && Object.keys(inspectorNode.data.interface_ips).length > 0 ? (
+                  Object.entries(inspectorNode.data.interface_ips).map(([net, ip]) => (
                     <span
                       key={net}
                       className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium cursor-help"
@@ -301,18 +300,17 @@ export function NetworkConsole() {
                       }}
                       title={net.replace(/_net$/, "").replace(/_/g, " ")}
                     >
-                      {ip}
+                      {String(ip)}
                     </span>
                   ))
                 ) : inspectorNode.data?.ip ? (
                   <span
                     className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
                     style={{
-                      backgroundColor: `${zoneColors[inspectorNode.data?.zone]?.border || "#64748b"}20`,
-                      color: zoneColors[inspectorNode.data?.zone]?.text || "#94a3b8",
-                      border: `1px solid ${zoneColors[inspectorNode.data?.zone]?.border || "#64748b"}40`,
+                      backgroundColor: `${zoneColors[inspectorNode.data?.zone || ""]?.border || "#64748b"}20`,
+                      color: zoneColors[inspectorNode.data?.zone || ""]?.text || "#94a3b8",
+                      border: `1px solid ${zoneColors[inspectorNode.data?.zone || ""]?.border || "#64748b"}40`,
                     }}
-                    title={inspectorNode.data?.zone?.replace(/_net$/, "").replace(/_/g, " ") || ""}
                   >
                     {inspectorNode.data.ip}
                   </span>
@@ -323,30 +321,19 @@ export function NetworkConsole() {
             </div>
           </div>
 
-          <div className="mt-6 flex gap-2">
-            {/* UI button - opens external URL in new tab if available, otherwise uses iframe */}
+          <div className="mt-6 flex gap-3">
             <Button
               className="flex-1"
-              variant={!showTerminal && iframeUrl ? "default" : "outline"}
+              variant={!showTerminal ? "default" : "outline"}
               disabled={!inspectorNode.data?.ui_path && !inspectorNode.data?.external_ui_url}
               onClick={() => {
-                if (inspectorNode.data?.external_ui_url) {
-                  // Open external URL directly in new tab (for UIs that don't support iframes)
-                  window.open(inspectorNode.data.external_ui_url, "_blank");
-                } else if (inspectorNode.data?.ui_path) {
-                  setIframeUrl(inspectorNode.data.ui_path);
+                if (inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url) {
+                  setIframeUrl(inspectorNode.data.ui_path || inspectorNode.data.external_ui_url);
                   setShowTerminal(false);
                 }
               }}
             >
-              {inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url ? (
-                <>
-                  UI
-                  {inspectorNode.data?.external_ui_url && <ExternalLink size={14} className="ml-1.5" />}
-                </>
-              ) : (
-                "No UI"
-              )}
+              {inspectorNode.data?.ui_path || inspectorNode.data?.external_ui_url ? "UI" : "No UI"}
             </Button>
             <Button
               className="flex-1"
@@ -358,81 +345,54 @@ export function NetworkConsole() {
             >
               Terminal
             </Button>
+            {inspectorNode.data?.external_ui_url && (
+              <Button
+                variant="outline"
+                className="px-3"
+                onClick={() => window.open(inspectorNode.data.external_ui_url, "_blank")}
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
-          <div className="mt-6 relative">
-            {/* Expand button for iframe - only show if using iframe (not external URL) */}
-            {iframeUrl && !showTerminal && !inspectorNode.data?.external_ui_url && (
-              <button
-                className="absolute top-2 right-2 z-10 p-1.5 rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                onClick={() => setShowExpandedModal(true)}
-                title="Expand to fullscreen"
-              >
-                <Maximize2 size={16} />
-              </button>
-            )}
-            <div className="h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black">
-              {showTerminal && selectedLab ? (
-                <NodeTerminal
-                  nodeId={inspectorNode.id}
-                  labId={selectedLab.id}
-                  onClose={() => setShowTerminal(false)}
-                />
-              ) : inspectorNode.data?.external_ui_url ? (
-                <div className="flex h-full flex-col items-center justify-center text-sm text-slate-400 gap-3">
-                  <p>This UI opens in a new browser tab.</p>
+          <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black">
+            {showTerminal && selectedLab ? (
+              <NodeTerminal
+                nodeId={inspectorNode.id}
+                labId={selectedLab.id}
+                onClose={() => setShowTerminal(false)}
+              />
+            ) : iframeUrl ? (
+              // Check if this is an external URL (containd, etc.) - these can't be embedded due to CORS
+              inspectorNode.data?.external_ui_url && iframeUrl === inspectorNode.data.external_ui_url ? (
+                <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+                  <div className="text-slate-400 text-sm">
+                    <p className="mb-2">This UI cannot be embedded due to cross-origin restrictions.</p>
+                    <p className="text-xs text-slate-500">The containd firewall UI must be opened in a separate tab.</p>
+                  </div>
                   <Button
                     variant="outline"
-                    onClick={() => window.open(inspectorNode.data?.external_ui_url, "_blank")}
+                    onClick={() => window.open(iframeUrl, "_blank")}
+                    className="gap-2"
                   >
-                    <ExternalLink size={16} className="mr-2" />
-                    Open {inspectorNode.data?.label || "UI"}
+                    <ExternalLink className="h-4 w-4" />
+                    Open containd UI
                   </Button>
                 </div>
-              ) : iframeUrl ? (
-                <iframe title="Embedded UI" src={iframeUrl} className="h-full w-full border-0" />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                  Select UI or Terminal to view here.
-                </div>
-              )}
-            </div>
+                <iframe title="Embedded UI" src={iframeUrl} className="h-full w-full border-0" />
+              )
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                Select UI or Terminal to view here.
+              </div>
+            )}
           </div>
         </aside>
       )}
 
-      {/* Expanded UI Modal */}
-      {showExpandedModal && iframeUrl && inspectorNode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="relative w-[90vw] h-[90vh] bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
-            {/* Modal Header */}
-            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-slate-900/95 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <span
-                  className="text-xs font-semibold uppercase tracking-[0.25em]"
-                  style={{ color: zoneColors[inspectorNode.data?.zone]?.text || "#94a3b8" }}
-                >
-                  {inspectorNode.data?.zone}
-                </span>
-                <span className="text-slate-600">|</span>
-                <h3 className="text-lg font-semibold text-white">{inspectorNode.data?.label}</h3>
-              </div>
-              <button
-                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                onClick={() => setShowExpandedModal(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {/* Modal Content */}
-            <iframe
-              title="Expanded UI"
-              src={iframeUrl}
-              className="w-full h-full pt-14 border-0"
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
