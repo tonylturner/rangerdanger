@@ -1,0 +1,26 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    netcat-openbsd \
+    curl \
+    wget \
+    tcpdump \
+    nmap \
+    dnsutils \
+    traceroute \
+    iptables \
+    procps \
+    vim-tiny \
+    less \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and set up entrypoint script for route configuration
+COPY scripts/tools-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+# Keep container running
+CMD ["sleep", "infinity"]

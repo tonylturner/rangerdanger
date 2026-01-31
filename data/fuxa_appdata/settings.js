@@ -68,7 +68,7 @@ module.exports = {
     // Please use exact origin urls for better and safe CORS (Wild Cards not Recommended)
     // "allowedOrigins": ["https://example.com", "https://dashboard.example.com"]
     // Default: ["http://localhost", "http://127.0.0.1", "http://192.168.*", "http://10.*"]
-    "allowedOrigins": ["http://localhost", "http://127.0.0.1", "http://192.168.*", "http://10.*", "http://localhost:4200"],
+    "allowedOrigins": ["http://localhost", "http://127.0.0.1", "http://192.168.*", "http://10.*", "http://localhost:4200", "http://localhost:8088"],
 
 
     // The maximum size of HTTP request that will be accepted by the runtime api.
