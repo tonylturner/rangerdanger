@@ -15,6 +15,9 @@ services:
       - NGFW_ENGINE_URL=http://127.0.0.1:8081
       # Config persistence
       - NGFW_CONFIG_DB=/data/config.db
+      # Dataplane - capture traffic on all interfaces, enable enforcement
+      - NGFW_CAPTURE_IFACES=eth0,eth1,eth2,eth3
+      - NGFW_ENFORCE_ENABLED=1
       # Auto-assign subnet mapping for RangerDanger networks
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
@@ -54,6 +57,12 @@ services:
     networks:
       it_net:
         ipv4_address: 10.10.10.10
+      dmz_net:
+        ipv4_address: 10.20.20.200
+      ot_control_net:
+        ipv4_address: 10.30.30.200
+      ot_safety_net:
+        ipv4_address: 10.40.40.200
     depends_on:
       - firewall
 
@@ -81,9 +90,15 @@ services:
       - firewall
       - backend
       - frontend
+      - hmi_scada
+      - plc_process
     networks:
       it_net:
         ipv4_address: 10.10.10.3
+      dmz_net:
+        ipv4_address: 10.20.20.3
+      ot_control_net:
+        ipv4_address: 10.30.30.3
 
   # ICS Lab Containers - wired through containd firewall
   hmi_scada:
@@ -102,17 +117,118 @@ services:
     depends_on:
       - firewall
 
-  plc_trainer:
+  # PLC-101: Process Control (Separator, Inlet Pump, Valves)
+  plc_process:
     image: tuttas/openplc_v3:latest
-    container_name: rangerdanger-plc
+    container_name: rangerdanger-plc-process
+    hostname: plc-101
     networks:
       ot_control_net:
         ipv4_address: 10.30.30.20
     environment:
       - TZ=UTC
+    volumes:
+      - ./data/plc_process:/workdir
     restart: unless-stopped
     depends_on:
       - firewall
+
+  # PLC-201: Compressor Control (Gas Compressor)
+  plc_compressor:
+    image: tuttas/openplc_v3:latest
+    container_name: rangerdanger-plc-compressor
+    hostname: plc-201
+    networks:
+      ot_control_net:
+        ipv4_address: 10.30.30.21
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./data/plc_compressor:/workdir
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # SIS-301: Safety Instrumented System (ESD, Safety Interlocks)
+  plc_safety:
+    image: tuttas/openplc_v3:latest
+    container_name: rangerdanger-plc-safety
+    hostname: sis-301
+    networks:
+      ot_safety_net:
+        ipv4_address: 10.40.40.20
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./data/plc_safety:/workdir
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # PLC-401: Utilities (Water Treatment, Tank Farm)
+  plc_utilities:
+    image: tuttas/openplc_v3:latest
+    container_name: rangerdanger-plc-utilities
+    hostname: plc-401
+    networks:
+      ot_control_net:
+        ipv4_address: 10.30.30.22
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./data/plc_utilities:/workdir
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # Lab tools containers - full OS with networking tools for testing/training
+  tools_it:
+    build:
+      context: .
+      dockerfile: Dockerfile.labtools
+    container_name: rangerdanger-tools-it
+    hostname: tools-it
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      it_net:
+        ipv4_address: 10.10.10.100
+    depends_on:
+      - firewall
+    restart: unless-stopped
+
+  tools_dmz:
+    build:
+      context: .
+      dockerfile: Dockerfile.labtools
+    container_name: rangerdanger-tools-dmz
+    hostname: tools-dmz
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.20.100
+    depends_on:
+      - firewall
+    restart: unless-stopped
+
+  tools_ot:
+    build:
+      context: .
+      dockerfile: Dockerfile.labtools
+    container_name: rangerdanger-tools-ot
+    hostname: tools-ot
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      ot_control_net:
+        ipv4_address: 10.30.30.100
+    depends_on:
+      - firewall
+    restart: unless-stopped
 
 networks:
   it_net:

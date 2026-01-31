@@ -15,14 +15,30 @@ nodes:
     type: ews
     name: Engineering Workstation
     networks: [it_net]
-  - id: plc-1
+  - id: plc-101
     type: plc_trainer
-    name: Process PLC
+    name: PLC-101 Process Control
     networks: [ot_control_net]
-  - id: sis-1
+    container: rangerdanger-plc-process
+    ip: 10.30.30.20
+  - id: plc-201
+    type: plc_trainer
+    name: PLC-201 Compressor
+    networks: [ot_control_net]
+    container: rangerdanger-plc-compressor
+    ip: 10.30.30.21
+  - id: plc-401
+    type: plc_trainer
+    name: PLC-401 Utilities
+    networks: [ot_control_net]
+    container: rangerdanger-plc-utilities
+    ip: 10.30.30.22
+  - id: sis-301
     type: sis_plc
-    name: Safety PLC
+    name: SIS-301 Safety System
     networks: [ot_safety_net]
+    container: rangerdanger-plc-safety
+    ip: 10.40.40.20
   - id: hmi-1
     type: hmi_scada
     name: HMI / SCADA

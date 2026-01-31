@@ -617,12 +617,45 @@ func (s *Server) handleProxyNodeUI(c *gin.Context) {
 		path = "/"
 	}
 
+	// Base path for rewriting HTML base href
+	basePath := fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID)
+
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 		req.Host = target.Host
 		req.URL.Path = singleJoiningSlash(target.Path, path)
+		// Preserve query string for socket.io polling
+		req.URL.RawQuery = c.Request.URL.RawQuery
+	}
+
+	// Handle WebSocket upgrades for socket.io
+	if c.GetHeader("Upgrade") == "websocket" {
+		proxy.ServeHTTP(c.Writer, c.Request)
+		return
+	}
+
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		// Only modify HTML responses
+		contentType := resp.Header.Get("Content-Type")
+		if !strings.Contains(contentType, "text/html") {
+			return nil
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		// Rewrite <base href="/"> to use our proxy path
+		modified := strings.Replace(string(body), `<base href="/">`, `<base href="`+basePath+`">`, 1)
+
+		resp.Body = io.NopCloser(strings.NewReader(modified))
+		resp.ContentLength = int64(len(modified))
+		resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(modified)))
+		return nil
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 		rw.WriteHeader(http.StatusBadGateway)

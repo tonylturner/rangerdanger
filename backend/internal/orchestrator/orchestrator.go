@@ -56,37 +56,27 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	}
 	_ = json.Unmarshal([]byte(template.Topology), &topo)
 
-	// UI proxy configuration for known node types
-	uiMap := map[string]map[string]any{
-		"containd_ngfw":   {"host": "10.10.10.2", "port": 8080},
-		"ews":             {"host": "ews", "port": 3000},
-		"plc_trainer":     {"host": "10.30.30.20", "port": 8080},
-		"sis_plc":         {"host": "sis_plc", "port": 8080},
-		"hmi_scada":       {"host": "10.20.20.10", "port": 1881},
-		"grafana":         {"host": "grafana", "port": 3000},
-		"ot_ids":          {"host": "ids", "port": 80},
-		"jump_host":       {"host": "jump_host", "port": 6080},
-		"historian":       {"host": "historian", "port": 80},
-		"opnsense_external": {"host": "opnsense", "port": 443},
+	// UI port configuration for known node types (host will be set from container IP)
+	uiPortMap := map[string]int{
+		"containd_ngfw": 8080,
+		"ews":           3000,
+		"plc_trainer":   8080,
+		"sis_plc":       8080,
+		"hmi_scada":     1881,
+		"grafana":       3000,
+		"ot_ids":        9999, // Suricata doesn't have a web UI
+		"jump_host":     0,    // No web UI, terminal only
+		"historian":     8086, // InfluxDB UI
 	}
 
 	var nodes []models.NodeDefinition
 	for _, n := range topo.Nodes {
-		meta := map[string]any{
-			"networks": n.Networks,
-		}
-		if cfg, ok := uiMap[n.Type]; ok {
-			meta["ui"] = cfg
-		}
-		metaJSON, _ := json.Marshal(meta)
-
 		node := models.NodeDefinition{
 			ID:            n.ID,
 			LabInstanceID: instance.ID,
 			Type:          n.Type,
 			Name:          n.Name,
 			Status:        "pending",
-			Metadata:      string(metaJSON),
 		}
 
 		// Skip container creation for containd_ngfw (always running as infrastructure)
@@ -104,11 +94,9 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 					"ot_control_net": "10.30.30.2",
 					"ot_safety_net":  "10.40.40.2",
 				},
-				"ui_path":         "/containd/",              // Proxied access via nginx (same-origin, auth works)
-				"external_ui_url": "http://localhost:9080",  // Direct access for "open in new tab"
-			}
-			if cfg, ok := uiMap[n.Type]; ok {
-				firewallMeta["ui"] = cfg
+				"ui_path":         "/containd/",             // Proxied access via nginx (same-origin, auth works)
+				"external_ui_url": "http://localhost:9080", // Direct access for "open in new tab"
+				"ui":              map[string]any{"host": "10.10.10.2", "port": 8080},
 			}
 			firewallMetaJSON, _ := json.Marshal(firewallMeta)
 			node.Metadata = string(firewallMetaJSON)
@@ -123,14 +111,36 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 			if err != nil {
 				o.logger.Printf("[lab %s] container creation failed for %s: %v", instance.ID, n.ID, err)
 				node.Status = "error"
+				// Set metadata without UI since container failed
+				meta := map[string]any{"networks": n.Networks}
+				metaJSON, _ := json.Marshal(meta)
+				node.Metadata = string(metaJSON)
 			} else {
 				node.ContainerID = containerID
 				node.ContainerName = containerName
-				node.Status = "created"
+				// Start the container immediately after creation
+				if err := o.StartContainer(ctx, containerID); err != nil {
+					o.logger.Printf("[lab %s] container start failed for %s: %v", instance.ID, n.ID, err)
+					node.Status = "error"
+				} else {
+					node.Status = "running"
+					node.IP = o.getContainerIP(ctx, containerID)
+				}
+
+				// Build metadata with actual container IP for UI proxy
+				meta := map[string]any{"networks": n.Networks}
+				if port, ok := uiPortMap[n.Type]; ok && port > 0 && node.IP != "" {
+					meta["ui"] = map[string]any{"host": node.IP, "port": port}
+				}
+				metaJSON, _ := json.Marshal(meta)
+				node.Metadata = string(metaJSON)
 			}
 		} else {
 			// Stub mode - just mark as running
 			node.Status = "running"
+			meta := map[string]any{"networks": n.Networks}
+			metaJSON, _ := json.Marshal(meta)
+			node.Metadata = string(metaJSON)
 		}
 
 		nodes = append(nodes, node)
@@ -171,6 +181,11 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 			"rangerdanger.node_id":   node.ID,
 			"rangerdanger.node_type": node.Type,
 		},
+	}
+
+	// Override command if specified in catalog
+	if len(nodeTemplate.Cmd) > 0 {
+		config.Cmd = nodeTemplate.Cmd
 	}
 
 	hostConfig := &container.HostConfig{
