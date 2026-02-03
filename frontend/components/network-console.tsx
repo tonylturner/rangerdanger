@@ -6,6 +6,8 @@ import ReactFlow, {
   BackgroundVariant,
   Controls,
   Edge,
+  EdgeProps,
+  getBezierPath,
   MiniMap,
   Node,
   NodeChange,
@@ -16,12 +18,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createLabInstance,
   getLabGraph,
+  getFirewallRules,
   listLabInstances,
   listLabTemplates,
   seedTemplates,
   LabGraph,
   LabInstance,
   GraphNode as ApiGraphNode,
+  ZoneRuleSummary,
 } from "../lib/api";
 import { Button } from "./ui/button";
 import { NodeTerminal } from "./node-terminal";
@@ -34,6 +38,140 @@ const zones = [
   // Legacy zone names
   "it_net", "dmz_net", "ot_control_net", "ot_safety_net"
 ] as const;
+
+// Custom edge component with tooltip for firewall policy details
+function PolicyEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+  style,
+  markerEnd,
+}: EdgeProps) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  const [edgePath] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  // Position label closer to target (75% along the path) to avoid overlap
+  const labelX = sourceX + (targetX - sourceX) * 0.75;
+  const labelY = sourceY + (targetY - sourceY) * 0.75;
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    if (data?.details && data.details.length > 0) {
+      setTooltipPos({ x: e.clientX, y: e.clientY });
+      setShowTooltip(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false);
+  };
+
+  const label = data?.label || "";
+  const color = data?.color || "#64748b";
+  const action = data?.action || "ALLOW";
+  const details = data?.details || [];
+
+  // Action indicator icon
+  const actionIcon = action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "";
+
+  // Calculate label width based on content
+  const labelWidth = Math.max(70, label.length * 6 + 20);
+
+  return (
+    <>
+      <path
+        id={id}
+        style={style}
+        className="react-flow__edge-path"
+        d={edgePath}
+        markerEnd={markerEnd}
+      />
+      {label && (
+        <g
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          style={{ cursor: details.length > 0 ? "help" : "default" }}
+        >
+          <rect
+            x={labelX - labelWidth / 2}
+            y={labelY - 10}
+            width={labelWidth}
+            height={20}
+            rx={4}
+            fill="#0f172a"
+            fillOpacity={0.95}
+            stroke={color}
+            strokeWidth={1}
+            strokeOpacity={0.3}
+          />
+          <text
+            x={labelX}
+            y={labelY + 4}
+            textAnchor="middle"
+            fontSize={10}
+            fontWeight={500}
+            fill={color}
+          >
+            {actionIcon && (
+              <tspan fill={action === "DENY" ? "#ef4444" : "#f59e0b"}>
+                {actionIcon}{" "}
+              </tspan>
+            )}
+            {label}
+          </text>
+        </g>
+      )}
+      {showTooltip && details.length > 0 && (
+        <foreignObject
+          x={labelX - 120}
+          y={labelY + 15}
+          width={240}
+          height={Math.min(details.length * 24 + 32, 200)}
+          style={{ overflow: "visible" }}
+        >
+          <div
+            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl"
+            style={{ fontSize: 11 }}
+          >
+            <div className="mb-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Firewall Rules
+            </div>
+            <ul className="space-y-1">
+              {details.slice(0, 6).map((detail: string, i: number) => (
+                <li key={i} className="text-slate-200 leading-tight">
+                  {detail}
+                </li>
+              ))}
+              {details.length > 6 && (
+                <li className="text-slate-500 italic">
+                  +{details.length - 6} more rules...
+                </li>
+              )}
+            </ul>
+          </div>
+        </foreignObject>
+      )}
+    </>
+  );
+}
+
+// Edge types registration
+const edgeTypes = {
+  policyEdge: PolicyEdge,
+};
 
 export function NetworkConsole() {
   const {
@@ -53,6 +191,7 @@ export function NetworkConsole() {
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const queryClient = useQueryClient();
 
@@ -74,6 +213,7 @@ export function NetworkConsole() {
       setSelectedLab(lab);
       setInspectorNode(null);
       setIframeUrl(null);
+      setShowTerminalModal(false);
     }
   });
 
@@ -84,6 +224,7 @@ export function NetworkConsole() {
       setInspectorNode(null);
       setIframeUrl(null);
       setShowTerminal(false);
+      setShowTerminalModal(false);
       return;
     }
 
@@ -97,6 +238,7 @@ export function NetworkConsole() {
     setInspectorNode(null);
     setIframeUrl(null);
     setShowTerminal(false);
+    setShowTerminalModal(false);
   }, [labsData, selectedLab?.id]);
 
   const {
@@ -110,7 +252,15 @@ export function NetworkConsole() {
     enabled: Boolean(selectedLab?.id)
   });
 
-  const { nodes: layoutNodes, edges } = useStyledGraph(graph);
+  // Fetch firewall rules for dynamic edge labels
+  const { data: firewallRulesData } = useQuery({
+    queryKey: ["firewall-rules"],
+    queryFn: getFirewallRules,
+    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 10000,
+  });
+
+  const { nodes: layoutNodes, edges } = useStyledGraph(graph, firewallRulesData?.summaries);
 
   // Apply saved positions to nodes (for drag persistence)
   const nodes = useMemo(() => {
@@ -177,6 +327,7 @@ export function NetworkConsole() {
                 const lab = labsData?.instances.find((l) => l.id === e.target.value);
                 setSelectedLab(lab);
                 setInspectorNode(null);
+                setShowTerminalModal(false);
               }}
             >
               {(labsData?.instances ?? []).map((lab) => (
@@ -211,6 +362,7 @@ export function NetworkConsole() {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onNodeClick={handleNodeClick}
           fitView
@@ -252,7 +404,7 @@ export function NetworkConsole() {
               <h3 className="text-xl font-semibold text-white">{inspectorNode.data?.label}</h3>
               <p className="text-sm text-slate-400">{inspectorNode.data?.nodeType || inspectorNode.type}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); }}>
+            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); }}>
               Close
             </Button>
           </div>
@@ -360,24 +512,50 @@ export function NetworkConsole() {
 
           <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black relative">
             {showTerminal && selectedLab ? (
-              <NodeTerminal
-                nodeId={inspectorNode.id}
-                labId={selectedLab.id}
-                onClose={() => setShowTerminal(false)}
-              />
-            ) : iframeUrl ? (
               <>
-                <iframe title="Embedded UI" src={iframeUrl} className="h-full w-full border-0" />
+                <NodeTerminal
+                  nodeId={inspectorNode.id}
+                  labId={selectedLab.id}
+                  onClose={() => setShowTerminal(false)}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="absolute top-2 right-2 bg-slate-900/80 hover:bg-slate-800"
-                  onClick={() => setShowModal(true)}
-                  title="Expand"
+                  className="absolute top-2 right-10 bg-slate-900/80 hover:bg-slate-800 z-20"
+                  onClick={() => setShowTerminalModal(true)}
+                  title="Expand terminal"
                 >
                   <Maximize2 className="h-4 w-4" />
                 </Button>
               </>
+            ) : iframeUrl ? (
+              <div className="relative h-full w-full overflow-hidden">
+                {/* Scaled minimap view - iframe is rendered at 2x size and scaled down */}
+                <div
+                  className="absolute origin-top-left"
+                  style={{
+                    width: '200%',
+                    height: '200%',
+                    transform: 'scale(0.5)',
+                  }}
+                >
+                  <iframe
+                    title="Embedded UI"
+                    src={iframeUrl}
+                    className="border-0"
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute top-2 right-2 bg-slate-900/80 hover:bg-slate-800 z-20"
+                  onClick={() => setShowModal(true)}
+                  title="Expand to full size"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              </div>
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-500">
                 Select UI or Terminal to view here.
@@ -420,6 +598,38 @@ export function NetworkConsole() {
         </div>
       )}
 
+      {/* Expanded Terminal Modal */}
+      {showTerminalModal && inspectorNode && selectedLab && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <h3 className="text-white font-medium">{inspectorNode?.data?.label || "Terminal"}</h3>
+              <span className="text-xs text-slate-500">
+                {inspectorNode?.data?.ip || inspectorNode?.id}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowTerminalModal(false)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-hidden p-4">
+            <div className="h-full w-full rounded-lg border border-slate-700 overflow-hidden bg-slate-950">
+              <NodeTerminal
+                nodeId={inspectorNode.id}
+                labId={selectedLab.id}
+                expanded={true}
+                hideHeader={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -433,7 +643,79 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function useStyledGraph(graph?: LabGraph) {
+// Map containd zone names to our network names
+const containdZoneToNetwork: Record<string, string[]> = {
+  wan: ["wan", "it_net"],
+  dmz: ["dmz", "dmz_net"],
+  lan1: ["ot_control", "ot_control_net"],
+  lan2: ["ot_safety", "ot_safety_net"],
+};
+
+// Get policy info for a zone from firewall rules
+function getZonePolicyInfo(
+  zone: string,
+  ruleSummaries?: ZoneRuleSummary[]
+): { label: string; details: string[]; action: string } {
+  // Default/fallback labels - concise single labels per zone
+  const fallbackLabels: Record<string, { label: string; action: string }> = {
+    wan: { label: "IT Access", action: "ALLOW" },
+    it_net: { label: "IT Access", action: "ALLOW" },
+    it_workstations: { label: "IT Access", action: "ALLOW" },
+    dmz: { label: "DMZ Access", action: "ALLOW" },
+    dmz_net: { label: "DMZ Access", action: "ALLOW" },
+    ot_control: { label: "Modbus R/W", action: "ALLOW" },
+    ot_control_net: { label: "Modbus R/W", action: "ALLOW" },
+    ot_safety: { label: "Read Only", action: "DENY" },
+    ot_safety_net: { label: "Read Only", action: "DENY" },
+  };
+
+  if (!ruleSummaries || ruleSummaries.length === 0) {
+    const fallback = fallbackLabels[zone] || { label: "", action: "ALLOW" };
+    return { label: fallback.label, details: [], action: fallback.action };
+  }
+
+  // Find rules that apply to this zone (as destination from firewall)
+  const containdZones = Object.entries(containdZoneToNetwork)
+    .filter(([_, networks]) => networks.includes(zone))
+    .map(([cz]) => cz);
+
+  const relevantRules = ruleSummaries.filter(
+    (r) => containdZones.includes(r.dest_zone) || r.dest_zone === "any"
+  );
+
+  if (relevantRules.length === 0) {
+    const fallback = fallbackLabels[zone] || { label: "", action: "ALLOW" };
+    return { label: fallback.label, details: [], action: fallback.action };
+  }
+
+  // Collect all rule details for tooltip
+  const details = relevantRules.flatMap((r) => r.rule_details);
+  const hasAllow = relevantRules.some((r) => r.action === "ALLOW");
+  const hasDeny = relevantRules.some((r) => r.action === "DENY");
+  const action = hasAllow && hasDeny ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
+
+  // Use a single concise label - prioritize the most relevant rule's summary
+  // or use our fallback label which is zone-appropriate
+  const primaryRule = relevantRules.find((r) => r.action === (hasDeny ? "DENY" : "ALLOW"));
+  let label = primaryRule?.summary || relevantRules[0]?.summary || "";
+
+  // Truncate long labels and show count if multiple rules
+  if (label.length > 12) {
+    label = label.substring(0, 10) + "...";
+  }
+  if (relevantRules.length > 1) {
+    label = `${label} +${relevantRules.length - 1}`;
+  }
+
+  // If label is still empty or too generic, use fallback
+  if (!label || label === "ALLOW" || label === "DENY") {
+    label = fallbackLabels[zone]?.label || action;
+  }
+
+  return { label, details, action };
+}
+
+function useStyledGraph(graph?: LabGraph, ruleSummaries?: ZoneRuleSummary[]) {
   return useMemo(() => {
     if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
 
@@ -574,16 +856,33 @@ function useStyledGraph(graph?: LabGraph) {
     // Create edges
     const styledEdges: Edge[] = [];
 
-    // Edges from firewall to zones
+    // Edges from firewall to zones (with dynamic policy labels)
     if (firewallNode) {
       activeZones.forEach((zone) => {
         const color = zoneColors[zone]?.border || "#64748b";
+        const policyInfo = getZonePolicyInfo(zone, ruleSummaries);
+
+        // Color the label based on action
+        const labelColor =
+          policyInfo.action === "DENY"
+            ? "#ef4444"
+            : policyInfo.action === "MIXED"
+            ? "#f59e0b"
+            : color;
+
         styledEdges.push({
           id: `fw-to-${zone}`,
           source: firewallNode.id,
           target: `zone-${zone}`,
+          type: "policyEdge",
           style: { stroke: color, strokeWidth: 2 },
           animated: true,
+          data: {
+            label: policyInfo.label,
+            details: policyInfo.details,
+            action: policyInfo.action,
+            color: labelColor,
+          },
         });
       });
     }
@@ -606,5 +905,5 @@ function useStyledGraph(graph?: LabGraph) {
     });
 
     return { nodes: styledNodes, edges: styledEdges };
-  }, [graph]);
+  }, [graph, ruleSummaries]);
 }

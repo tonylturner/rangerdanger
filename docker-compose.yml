@@ -11,6 +11,7 @@ services:
     environment:
       - CONTAIND_MODE=all
       - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
+      - CONTAIND_LAB_MODE=1
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
       - NGFW_ENGINE_URL=http://127.0.0.1:8081
       # Config persistence
@@ -30,6 +31,8 @@ services:
       - "9443:8443"   # containd HTTPS
       - "2222:2222"   # SSH console
     networks:
+      mgmt_net:
+        ipv4_address: 10.99.99.2
       it_net:
         ipv4_address: 10.10.10.2
       dmz_net:
@@ -49,12 +52,16 @@ services:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/rangerdanger.db
       OTLAB_LAB_DEFINITIONS_PATH: /lab-definitions
-      CONTAIND_API_URL: http://firewall:8080
+      # Use management network IP to bypass firewall rules
+      CONTAIND_API_URL: http://10.99.99.2:8080
+      CONTAIND_JWT_SECRET: ${CONTAIND_JWT_SECRET:-rangerdanger-dev}
     volumes:
       - ./backend/data:/data
       - ./lab-definitions:/lab-definitions:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
+      mgmt_net:
+        ipv4_address: 10.99.99.10
       it_net:
         ipv4_address: 10.10.10.10
       dmz_net:
@@ -90,7 +97,8 @@ services:
       - firewall
       - backend
       - frontend
-      - hmi_scada
+      - hmi_view
+      - hmi_control
       - plc_process
     networks:
       it_net:
@@ -100,19 +108,98 @@ services:
       ot_control_net:
         ipv4_address: 10.30.30.3
 
-  # ICS Lab Containers - wired through containd firewall
-  hmi_scada:
+  # HMI View - Read-only HMI in DMZ (can monitor all PLCs including safety)
+  hmi_view:
     image: frangoteam/fuxa:latest
-    container_name: rangerdanger-hmi
+    container_name: rangerdanger-hmi-view
+    hostname: hmi-view
     networks:
       dmz_net:
         ipv4_address: 10.20.20.10
       ot_control_net:
         ipv4_address: 10.30.30.10
+      ot_safety_net:
+        ipv4_address: 10.40.40.10
     volumes:
-      - ./data/fuxa_appdata:/usr/src/app/FUXA/server/_appdata
-      - ./data/fuxa_db:/usr/src/app/FUXA/server/_db
-      - ./data/fuxa_logs:/usr/src/app/FUXA/server/_logs
+      - ./data/fuxa_view_appdata:/usr/src/app/FUXA/server/_appdata
+      - ./data/fuxa_view_db:/usr/src/app/FUXA/server/_db
+      - ./data/fuxa_view_logs:/usr/src/app/FUXA/server/_logs
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # HMI Control - Full-control HMI in OT Control zone
+  hmi_control:
+    image: frangoteam/fuxa:latest
+    container_name: rangerdanger-hmi-control
+    hostname: hmi-control
+    networks:
+      ot_control_net:
+        ipv4_address: 10.30.30.11
+    volumes:
+      - ./data/fuxa_control_appdata:/usr/src/app/FUXA/server/_appdata
+      - ./data/fuxa_control_db:/usr/src/app/FUXA/server/_db
+      - ./data/fuxa_control_logs:/usr/src/app/FUXA/server/_logs
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # Engineering Workstation in DMZ
+  ews:
+    image: linuxserver/webtop:ubuntu-mate
+    container_name: rangerdanger-ews
+    hostname: ews
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.20.50
+    volumes:
+      - ./data/ews_config:/config
+    shm_size: "1gb"
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # Kali Pentest Box in IT network (full tools)
+  kali_pentest:
+    build:
+      context: .
+      dockerfile: Dockerfile.kali
+    container_name: rangerdanger-kali
+    hostname: kali-pentest
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      it_net:
+        ipv4_address: 10.10.10.50
+    volumes:
+      - ./data/kali_home:/home/kali
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # Ubuntu Jump Box in DMZ - only host allowed to access OT Control
+  ubuntu_jumpbox:
+    image: linuxserver/webtop:ubuntu-xfce
+    container_name: rangerdanger-jumpbox
+    hostname: ubuntu-jumpbox
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    cap_add:
+      - NET_ADMIN
+    networks:
+      dmz_net:
+        ipv4_address: 10.20.20.60
+    volumes:
+      - ./data/jumpbox_config:/config
+      - ./data/vpn_profiles:/vpn:ro
+    shm_size: "1gb"
     restart: unless-stopped
     depends_on:
       - firewall
@@ -231,6 +318,14 @@ services:
     restart: unless-stopped
 
 networks:
+  # Management network - NOT captured by containd firewall
+  # Used for RangerDanger app <-> containd API communication
+  mgmt_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.99.99.0/24
+          gateway: 10.99.99.1
   it_net:
     driver: bridge
     ipam:

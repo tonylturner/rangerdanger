@@ -1,6 +1,6 @@
 id: "default-oil-plant"
 name: "Default Oil Plant Lab"
-description: "Basic OT lab with PLC, HMI, SIS, historian, IDS, jump host, and containd NGFW."
+description: "OT lab with segmented HMI (view/control), process PLCs, SIS, engineering workstation, and containd NGFW with ICS DPI."
 networks:
   - name: it_net
     cidr: 10.10.10.0/24
@@ -11,54 +11,93 @@ networks:
   - name: ot_safety_net
     cidr: 10.40.40.0/24
 nodes:
+  # IT Network
+  - id: kali-1
+    type: kali_pentest
+    name: Kali Pentest Box
+    networks: [it_net]
+    container: rangerdanger-kali
+    ip: 10.10.10.50
+
+  # DMZ
+  - id: hmi-view-1
+    type: hmi_view
+    name: HMI View (Read-Only)
+    networks: [dmz_net, ot_control_net, ot_safety_net]
+    container: rangerdanger-hmi-view
+    ip: 10.20.20.10
+
   - id: ews-1
     type: ews
     name: Engineering Workstation
-    networks: [it_net]
+    networks: [dmz_net]
+    container: rangerdanger-ews
+    ip: 10.20.20.50
+
+  - id: jumpbox-1
+    type: ubuntu_jumpbox
+    name: Ubuntu Jump Box
+    networks: [dmz_net]
+    container: rangerdanger-jumpbox
+    ip: 10.20.20.60
+
+  - id: ids-1
+    type: ot_ids
+    name: Suricata IDS
+    networks: [dmz_net]
+    ip: 10.20.20.70
+
+  - id: hist-1
+    type: historian
+    name: Historian
+    networks: [dmz_net]
+    ip: 10.20.20.80
+
+  # OT Control
+  - id: hmi-control-1
+    type: hmi_control
+    name: HMI Control (Full Access)
+    networks: [ot_control_net]
+    container: rangerdanger-hmi-control
+    ip: 10.30.30.11
+
   - id: plc-101
     type: plc_trainer
     name: PLC-101 Process Control
     networks: [ot_control_net]
     container: rangerdanger-plc-process
     ip: 10.30.30.20
+
   - id: plc-201
     type: plc_trainer
     name: PLC-201 Compressor
     networks: [ot_control_net]
     container: rangerdanger-plc-compressor
     ip: 10.30.30.21
+
   - id: plc-401
     type: plc_trainer
     name: PLC-401 Utilities
     networks: [ot_control_net]
     container: rangerdanger-plc-utilities
     ip: 10.30.30.22
+
+  # OT Safety (Read-Only access enforced by firewall)
   - id: sis-301
     type: sis_plc
     name: SIS-301 Safety System
     networks: [ot_safety_net]
     container: rangerdanger-plc-safety
     ip: 10.40.40.20
-  - id: hmi-1
-    type: hmi_scada
-    name: HMI / SCADA
-    networks: [dmz_net, ot_control_net]
-  - id: ids-1
-    type: ot_ids
-    name: Suricata IDS
-    networks: [dmz_net]
-  - id: hist-1
-    type: historian
-    name: Historian
-    networks: [dmz_net]
-  - id: jump-1
-    type: jump_host
-    name: Pentest Jump Box
-    networks: [it_net]
+
+  # Firewall (multi-homed: .2 on each network)
   - id: fw-1
     type: containd_ngfw
     name: containd NGFW
     networks: [it_net, dmz_net, ot_control_net, ot_safety_net]
+    container: rangerdanger-firewall
+    ip: 10.10.10.2
+
 scenarios:
   - id: modbus-pump-speed-override
     name: "Modbus Pump Speed Override"
@@ -66,8 +105,20 @@ scenarios:
     tags: ["modbus", "plc", "attack"]
     steps:
       - title: Reconnaissance
-        description: "Use the jump host to inventory PLC endpoints over Modbus TCP."
+        description: "Use the jump box to inventory PLC endpoints over Modbus TCP."
       - title: Override Pump Speed
         description: "Issue a Modbus write_single_register call to change pump speed."
       - title: Validate Safety Trip
         description: "Confirm SIS logic detects unsafe speed and trips the pump."
+
+  - id: safety-write-bypass-attempt
+    name: "Safety Zone Write Bypass"
+    description: "Attempt to write to safety PLC - should be blocked by firewall DPI."
+    tags: ["modbus", "sis", "firewall", "dpi"]
+    steps:
+      - title: Reconnaissance
+        description: "From HMI View, confirm read access to SIS-301 registers."
+      - title: Attempt Write
+        description: "Attempt to write to SIS-301 coil or register from HMI View."
+      - title: Verify Block
+        description: "Confirm firewall DPI blocked the Modbus write function code."

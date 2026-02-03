@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
@@ -22,22 +24,45 @@ func (s *Server) handleTerminal(c *gin.Context) {
 	labID := c.Param("id")
 	nodeID := c.Param("nodeId")
 
-	// Get node definition from database
-	var node models.NodeDefinition
-	if err := s.db.First(&node, "id = ? AND lab_instance_id = ?", nodeID, labID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+	// Get lab instance with template to access topology
+	var instance models.LabInstance
+	if err := s.db.Preload("Template").First(&instance, "id = ?", labID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "lab not found"})
+		return
+	}
+
+	// Parse topology to find node config
+	var topo struct {
+		Nodes []labs.NodeYAML `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(instance.Template.Topology), &topo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
+		return
+	}
+
+	// Find the node in topology
+	var nodeConfig *labs.NodeYAML
+	for i := range topo.Nodes {
+		if topo.Nodes[i].ID == nodeID {
+			nodeConfig = &topo.Nodes[i]
+			break
+		}
+	}
+	if nodeConfig == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found in topology"})
 		return
 	}
 
 	// containd_ngfw uses SSH instead of docker exec
-	if node.Type == "containd_ngfw" {
+	if nodeConfig.Type == "containd_ngfw" {
 		s.handleContaindTerminal(c)
 		return
 	}
 
-	containerID := node.ContainerID
-	if containerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no container associated with node"})
+	// Get container name from topology
+	containerName := nodeConfig.Container
+	if containerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no container configured for node"})
 		return
 	}
 
@@ -48,8 +73,8 @@ func (s *Server) handleTerminal(c *gin.Context) {
 	}
 	defer ws.Close()
 
-	// Execute shell in container
-	hijack, err := s.orchestrator.ExecShell(c.Request.Context(), containerID)
+	// Execute shell in container (using container name)
+	hijack, err := s.orchestrator.ExecShell(c.Request.Context(), containerName)
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Error: "+err.Error()+"\r\n"))
 		return

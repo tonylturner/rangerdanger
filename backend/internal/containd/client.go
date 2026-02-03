@@ -1,16 +1,22 @@
 package containd
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
 // Client communicates with the containd NGFW API.
 type Client struct {
 	BaseURL    string
+	AuthToken  string
 	httpClient *http.Client
 }
 
@@ -52,19 +58,99 @@ type HealthStatus struct {
 	EventRate int    `json:"event_rate"` // Events per second
 }
 
-// NewClient creates a containd API client.
+// FirewallRule represents a single firewall rule from containd config.
+type FirewallRule struct {
+	ID          string     `json:"id"`
+	Description string     `json:"description"`
+	SourceZones []string   `json:"sourceZones,omitempty"`
+	DestZones   []string   `json:"destZones,omitempty"`
+	Sources     []string   `json:"sources,omitempty"`
+	Protocols   []Protocol `json:"protocols,omitempty"`
+	ICS         *ICSConfig `json:"ics,omitempty"`
+	Action      string     `json:"action"` // "ALLOW" or "DENY"
+}
+
+// Protocol defines protocol matching for a rule.
+type Protocol struct {
+	Name string `json:"name"`
+	Port string `json:"port,omitempty"`
+}
+
+// ICSConfig defines ICS-specific DPI settings.
+type ICSConfig struct {
+	Protocol      string `json:"protocol,omitempty"`      // "modbus", "dnp3", etc.
+	FunctionCodes []int  `json:"functionCodes,omitempty"` // Allowed function codes
+}
+
+// FirewallConfig represents the firewall section of containd config.
+type FirewallConfig struct {
+	DefaultAction string         `json:"defaultAction"`
+	Rules         []FirewallRule `json:"rules"`
+}
+
+// ZoneRuleSummary summarizes rules for a specific zone pair.
+type ZoneRuleSummary struct {
+	SourceZone  string   `json:"source_zone"`
+	DestZone    string   `json:"dest_zone"`
+	Summary     string   `json:"summary"`      // Brief summary for edge label
+	RuleDetails []string `json:"rule_details"` // Full descriptions for tooltip
+	Action      string   `json:"action"`       // Primary action (ALLOW/DENY/MIXED)
+}
+
+// NewClient creates a containd API client with JWT authentication.
 func NewClient(baseURL string) *Client {
+	// Get JWT secret from environment (same as containd uses)
+	secret := os.Getenv("CONTAIND_JWT_SECRET")
+	if secret == "" {
+		secret = "rangerdanger-dev" // Default matches docker-compose
+	}
+
+	// Generate a simple JWT token for API access
+	token := generateJWT(secret)
+
 	return &Client{
-		BaseURL: baseURL,
+		BaseURL:   baseURL,
+		AuthToken: token,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
+// generateJWT creates a minimal JWT token for containd API auth.
+func generateJWT(secret string) string {
+	// JWT header: {"alg":"HS256","typ":"JWT"}
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+
+	// JWT payload with admin role and long expiry
+	exp := time.Now().Add(24 * time.Hour).Unix()
+	payload := fmt.Sprintf(`{"sub":"rangerdanger-backend","role":"admin","exp":%d}`, exp)
+	payloadEnc := base64.RawURLEncoding.EncodeToString([]byte(payload))
+
+	// Sign with HMAC-SHA256
+	message := header + "." + payloadEnc
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(message))
+	signature := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+
+	return message + "." + signature
+}
+
+// doRequest performs an authenticated HTTP request.
+func (c *Client) doRequest(method, url string) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
+	}
+	return c.httpClient.Do(req)
+}
+
 // GetHealth returns the firewall health status.
 func (c *Client) GetHealth() (*HealthStatus, error) {
-	resp, err := c.httpClient.Get(c.BaseURL + "/api/v1/health")
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/health")
 	if err != nil {
 		return nil, fmt.Errorf("health check failed: %w", err)
 	}
@@ -89,7 +175,7 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 		url += "&since=" + since
 	}
 
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.doRequest("GET", url)
 	if err != nil {
 		return nil, fmt.Errorf("get events failed: %w", err)
 	}
@@ -112,7 +198,7 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 
 // GetSessions returns active sessions through the firewall.
 func (c *Client) GetSessions() ([]Session, error) {
-	resp, err := c.httpClient.Get(c.BaseURL + "/api/v1/sessions")
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/sessions")
 	if err != nil {
 		return nil, fmt.Errorf("get sessions failed: %w", err)
 	}
@@ -136,4 +222,134 @@ func (c *Client) GetSessions() ([]Session, error) {
 func (c *Client) IsAvailable() bool {
 	status, err := c.GetHealth()
 	return err == nil && status.Status != ""
+}
+
+// GetFirewallRules returns the firewall rules from containd config.
+func (c *Client) GetFirewallRules() ([]FirewallRule, error) {
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/config")
+	if err != nil {
+		return nil, fmt.Errorf("get config failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get config returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var config struct {
+		Firewall FirewallConfig `json:"firewall"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+
+	return config.Firewall.Rules, nil
+}
+
+// GetZoneRuleSummaries returns summarized rules grouped by zone pairs.
+func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
+	rules, err := c.GetFirewallRules()
+	if err != nil {
+		return nil, err
+	}
+
+	// Group rules by zone pair
+	type zonePair struct {
+		src, dst string
+	}
+	pairRules := make(map[zonePair][]FirewallRule)
+
+	for _, rule := range rules {
+		srcZones := rule.SourceZones
+		if len(srcZones) == 0 {
+			srcZones = []string{"any"}
+		}
+		dstZones := rule.DestZones
+		if len(dstZones) == 0 {
+			dstZones = []string{"any"}
+		}
+
+		for _, src := range srcZones {
+			for _, dst := range dstZones {
+				pair := zonePair{src: src, dst: dst}
+				pairRules[pair] = append(pairRules[pair], rule)
+			}
+		}
+	}
+
+	// Create summaries
+	var summaries []ZoneRuleSummary
+	for pair, rules := range pairRules {
+		summary := ZoneRuleSummary{
+			SourceZone:  pair.src,
+			DestZone:    pair.dst,
+			RuleDetails: make([]string, 0, len(rules)),
+		}
+
+		allowCount := 0
+		denyCount := 0
+		var protocols []string
+
+		for _, rule := range rules {
+			summary.RuleDetails = append(summary.RuleDetails, rule.Description)
+
+			if rule.Action == "ALLOW" {
+				allowCount++
+			} else if rule.Action == "DENY" {
+				denyCount++
+			}
+
+			// Collect protocol info for summary
+			for _, p := range rule.Protocols {
+				if p.Port != "" {
+					protocols = append(protocols, p.Port)
+				} else if p.Name != "" {
+					protocols = append(protocols, p.Name)
+				}
+			}
+
+			// Check for ICS protocols
+			if rule.ICS != nil && rule.ICS.Protocol != "" {
+				if len(rule.ICS.FunctionCodes) > 0 && len(rule.ICS.FunctionCodes) <= 4 {
+					protocols = append(protocols, rule.ICS.Protocol+" R/O")
+				} else {
+					protocols = append(protocols, rule.ICS.Protocol)
+				}
+			}
+		}
+
+		// Determine action
+		if denyCount > 0 && allowCount > 0 {
+			summary.Action = "MIXED"
+		} else if denyCount > 0 {
+			summary.Action = "DENY"
+		} else {
+			summary.Action = "ALLOW"
+		}
+
+		// Create brief summary
+		if len(protocols) > 0 {
+			// Deduplicate and limit
+			seen := make(map[string]bool)
+			var unique []string
+			for _, p := range protocols {
+				if !seen[p] {
+					seen[p] = true
+					unique = append(unique, p)
+				}
+			}
+			if len(unique) > 3 {
+				summary.Summary = fmt.Sprintf("%s +%d more", unique[0], len(unique)-1)
+			} else {
+				summary.Summary = strings.Join(unique, ", ")
+			}
+		} else {
+			summary.Summary = summary.Action
+		}
+
+		summaries = append(summaries, summary)
+	}
+
+	return summaries, nil
 }

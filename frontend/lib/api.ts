@@ -177,3 +177,22 @@ export async function saveLabTemplate(payload: { id?: string; name: string; desc
     })
   });
 }
+
+// Firewall rule summaries for topology edge labels
+export type ZoneRuleSummary = {
+  source_zone: string;
+  dest_zone: string;
+  summary: string;
+  rule_details: string[];
+  action: "ALLOW" | "DENY" | "MIXED";
+};
+
+export type FirewallRulesResponse = {
+  summaries: ZoneRuleSummary[];
+  source: "containd" | "static";
+  error?: string;
+};
+
+export async function getFirewallRules() {
+  return request<FirewallRulesResponse>("/firewall/rules");
+}
