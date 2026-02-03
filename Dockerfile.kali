@@ -1,0 +1,57 @@
+FROM kalilinux/kali-rolling
+
+# Avoid prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update and install common pentest tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Network tools
+    nmap \
+    netcat-openbsd \
+    tcpdump \
+    wireshark-common \
+    tshark \
+    dnsutils \
+    whois \
+    traceroute \
+    iputils-ping \
+    iproute2 \
+    net-tools \
+    curl \
+    wget \
+    # ICS/OT tools
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Exploitation
+    metasploit-framework \
+    # Password tools
+    hydra \
+    john \
+    hashcat \
+    # Web tools
+    nikto \
+    dirb \
+    sqlmap \
+    # Misc
+    vim \
+    tmux \
+    git \
+    openssh-client \
+    socat \
+    proxychains4 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python OT/ICS tools
+RUN pip3 install --break-system-packages \
+    pymodbus \
+    scapy \
+    impacket
+
+# Create workspace
+RUN mkdir -p /home/kali/workspace
+WORKDIR /home/kali
+
+# Keep container running
+CMD ["sleep", "infinity"]

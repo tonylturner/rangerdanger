@@ -46,25 +46,39 @@ docker compose down
 
 RangerDanger uses the `containd` firewall as the central L3 gateway. All zone traffic transits through containd for DPI and policy enforcement.
 
-| Zone | containd Interface | Subnet | Purpose |
-|------|-------------------|--------|---------|
-| `wan` | eth0 | 192.168.240.0/24 | External/management access |
-| `dmz` | eth1 | 192.168.241.0/24 | HMI, Historian, IDS sensors |
-| `ot_control` | eth2 | 192.168.242.0/24 | Process PLCs, field I/O |
-| `ot_safety` | eth3 | 192.168.243.0/24 | Safety PLCs (SIS) |
-| `it_workstations` | eth4 | 192.168.244.0/24 | Engineering WS, Jump hosts |
+| Zone | containd Interface | Subnet | Purpose | Firewall Policy |
+|------|-------------------|--------|---------|-----------------|
+| `it_net` | eth0 (wan) | 10.10.10.0/24 | IT/Management, Pentest | SSH/HTTP/S/RDP to DMZ |
+| `dmz_net` | eth1 (dmz) | 10.20.20.0/24 | HMI View, EWS, Jump Box, Historian, IDS | Modbus R/O to OT zones |
+| `ot_control_net` | eth2 (lan1) | 10.30.30.0/24 | HMI Control, Process PLCs | Modbus R/W internal |
+| `ot_safety_net` | eth3 (lan2) | 10.40.40.0/24 | Safety PLCs (SIS) | **READ ONLY** (DPI enforced) |
 
 ### Node Types (ICS Containers)
-| Type | Image | Zone | Description |
-|------|-------|------|-------------|
-| `ews` | linuxserver/webtop:ubuntu-mate | it_workstations | Engineering Workstation (noVNC) |
-| `jump_host` | kalilinux/kali-rolling | it_workstations | Pentest tooling |
-| `plc_trainer` | tuttas/openplc_v3:latest | ot_control | Process PLC (OpenPLC) |
-| `sis_plc` | tuttas/openplc_v3:latest | ot_safety | Safety PLC |
-| `hmi_scada` | frangoteam/fuxa:latest | dmz | HMI/SCADA (FUXA) |
-| `historian` | influxdb:2 | dmz | Time-series database |
-| `grafana` | grafana/grafana | dmz | Metrics visualization |
-| `ot_ids` | jasonish/suricata:latest | dmz | OT IDS sensor |
+| Type | Image | Zone | IP | Description |
+|------|-------|------|-----|-------------|
+| `kali_pentest` | kalilinux/kali-rolling | it_net | 10.10.10.50 | Penetration testing box |
+| `hmi_view` | frangoteam/fuxa:latest | dmz/ot_ctrl/ot_safety | 10.20.20.10 | Read-only HMI (firewall enforced) |
+| `ews` | linuxserver/webtop:ubuntu-mate | dmz_net | 10.20.20.50 | Engineering Workstation (noVNC) |
+| `ubuntu_jumpbox` | linuxserver/webtop:ubuntu-xfce | dmz_net | 10.20.20.60 | Jump host (sole gateway to OT Control) |
+| `hmi_control` | frangoteam/fuxa:latest | ot_control_net | 10.30.30.11 | Full-control HMI |
+| `plc_trainer` | tuttas/openplc_v3:latest | ot_control_net | 10.30.30.20-22 | Process PLCs (OpenPLC) |
+| `sis_plc` | tuttas/openplc_v3:latest | ot_safety_net | 10.40.40.20 | Safety PLC (read-only access) |
+| `historian` | influxdb:2 | dmz_net | - | Time-series database |
+| `ot_ids` | jasonish/suricata:latest | dmz_net | - | OT IDS sensor |
+
+### Firewall Rules (ICS DPI)
+
+The containd firewall enforces zone-based policies with Modbus function code filtering:
+
+| Rule | Source | Destination | Policy |
+|------|--------|-------------|--------|
+| IT to DMZ | wan (IT) | dmz | Allow SSH, HTTP/S, RDP, VNC |
+| Jumpbox to OT | dmz (10.20.20.60) | lan1 (OT Control) | Allow Modbus R/W |
+| HMI View to OT | dmz (10.30.30.10) | lan1 (OT Control) | Allow Modbus READ only (FC 1-4) |
+| HMI View to Safety | dmz (10.40.40.10) | lan2 (OT Safety) | Allow Modbus READ only (FC 1-4) |
+| HMI Control internal | lan1 | lan1 | Allow Modbus R/W |
+| HMI Control to Safety | lan1 (10.30.30.11) | lan2 | Allow Modbus READ only (FC 1-4) |
+| **Block writes to Safety** | any | lan2 (OT Safety) | **DENY Modbus FC 5,6,15,16,22,23** |
 
 ### containd Integration
 
@@ -150,31 +164,37 @@ frontend/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Host (exposed ports: 8088 proxy, 8080 containd UI)             │
+│  Host (ports: 8088 proxy, 9080 containd UI, 2222 SSH)           │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  containd NGFW (all zones attached)                             │
-│  ├── wan (eth0)  ─── proxy, frontend, backend                   │
-│  ├── dmz (eth1)  ─── hmi, historian, grafana, ids               │
-│  ├── ot_control (eth2) ─── plc_trainer                          │
-│  ├── ot_safety (eth3)  ─── sis_plc                              │
-│  └── it_workstations (eth4) ─── ews, jump_host                  │
+│  containd NGFW (all zones, ICS DPI enabled)                     │
+│  ├── it_net (10.10.10.2)   ─── proxy, frontend, backend, kali   │
+│  ├── dmz_net (10.20.20.2)  ─── hmi_view, ews, jumpbox, ids      │
+│  ├── ot_control (10.30.30.2) ─── hmi_control, plc_process/comp  │
+│  └── ot_safety (10.40.40.2)  ─── plc_safety (READ ONLY)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 All inter-zone traffic flows through containd, enabling:
 - DPI visibility into Modbus traffic between HMI and PLCs
-- Policy enforcement (e.g., block Modbus writes from DMZ)
-- IDS alerts on suspicious OT activity
+- Policy enforcement: **Block Modbus writes to safety zone**
+- One-way monitoring: HMI View can read safety PLC but not control
+- Jump box as sole gateway from DMZ to OT Control
 
 ### Services to Orchestrate
-- `containd` - NGFW gateway (always running)
+- `firewall` - containd NGFW gateway (always running)
 - `proxy` - Nginx reverse proxy for web access
 - `backend` - RangerDanger API
 - `frontend` - RangerDanger UI
-- ICS containers - dynamically started/stopped per lab
+- `hmi_view` - Read-only HMI in DMZ (multi-homed to all OT zones)
+- `hmi_control` - Full-control HMI in OT Control zone only
+- `ews` - Engineering workstation in DMZ
+- `kali_pentest` - Penetration testing box in IT
+- `ubuntu_jumpbox` - Jump host in DMZ (sole gateway to OT)
+- `plc_*` - OpenPLC containers for process control
+- `plc_safety` - Safety PLC (read-only access enforced)
 
 ## containd Integration
 
@@ -194,16 +214,19 @@ All inter-zone traffic flows through containd, enabling:
 # In RangerDanger's docker-compose.yml
 services:
   firewall:
-    image: ghcr.io/tturner/containd:latest
+    image: containd:local  # or ghcr.io/tturner/containd:latest
     cap_add: [NET_ADMIN, NET_RAW]
     networks:
-      wan: { ipv4_address: 192.168.240.2 }
-      dmz: { ipv4_address: 192.168.241.2 }
-      ot_control: { ipv4_address: 192.168.242.2 }
-      ot_safety: { ipv4_address: 192.168.243.2 }
-      it_workstations: { ipv4_address: 192.168.244.2 }
+      it_net: { ipv4_address: 10.10.10.2 }
+      dmz_net: { ipv4_address: 10.20.20.2 }
+      ot_control_net: { ipv4_address: 10.30.30.2 }
+      ot_safety_net: { ipv4_address: 10.40.40.2 }
     environment:
       - CONTAIND_MODE=all
+      - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
+      - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
+      - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
+      - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
     volumes:
       - ./data/firewall:/data
 ```
@@ -241,32 +264,35 @@ services:
 ## Current State & Gaps
 
 ### Implemented
-- REST API scaffolding
+- REST API with full lab CRUD and orchestration
 - Frontend pages (Dashboard, Labs, Topology, Console)
-- React Flow topology visualization
+- React Flow topology visualization with zone coloring and firewall rule labels
 - YAML-based lab definitions
+- Docker SDK integration for container lifecycle
+- containd integration with ICS DPI (Modbus function code filtering)
+- Terminal access via WebSocket (Docker exec + SSH to firewall)
+- SSE event streaming from containd
+- Split HMI architecture (view-only in DMZ, full-control in OT)
+- Safety zone one-way traffic (read-only enforced by DPI)
+- Ubuntu jump box as sole gateway to OT Control
+- Kali pentest box in IT network
 
-### Critical Gaps to Address
-1. **Rename to RangerDanger** - project name, branding, package names
-2. **Docker SDK integration** - real container start/stop/destroy
-3. **containd integration** - pull image from registry, wire zones through NGFW as gateway
-4. **Terminal access** - xterm.js WebSocket to container shells (via Docker exec or SSH)
-5. **Unified event stream** - poll containd API for DPI/IDS events, merge with lab events
-6. **Scenario automation** - execute steps, validate outcomes
+### Remaining Gaps
+1. **Scenario automation** - execute steps, validate outcomes automatically
+2. **PCAP capture/replay** - per scenario traffic recording
+3. **Multi-user RBAC** - instructor vs student modes
+4. **VPN client setup** - OpenVPN/WireGuard profiles on jump box
+5. **IDS alerts integration** - Suricata alerts in activity feed
 
-### Nice-to-Have
-- PCAP capture/replay per scenario
-- Instructor vs student modes
-- Multi-user RBAC
-- containd ICS policy templates for common scenarios
+## Access Points
 
-## Rename Checklist
-
-When renaming from rangerrocks → RangerDanger:
-- [ ] `go.mod` module path
-- [ ] Docker image names
-- [ ] Frontend package.json name
-- [ ] UI branding (logo, title, nav)
-- [ ] docker-compose service names
-- [ ] GitHub repo name (if applicable)
-- [ ] CLAUDE.md and agents.md references
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| RangerDanger UI | http://localhost:8088 | N/A |
+| HMI View | http://localhost:8088/apps/hmi/ | N/A |
+| HMI Control | http://localhost:8088/apps/hmi-control/ | N/A |
+| Engineering WS | http://localhost:8088/apps/ews/ | N/A |
+| Jump Box | http://localhost:8088/apps/jumpbox/ | N/A |
+| containd UI | http://localhost:9080 | N/A |
+| containd SSH | ssh -p 2222 containd@localhost | containd/containd |
+| OpenPLC (PLC-101) | http://localhost:8088/apps/plc/ | openplc/openplc |

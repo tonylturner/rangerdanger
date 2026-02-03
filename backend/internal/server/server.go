@@ -134,6 +134,7 @@ func (s *Server) registerRoutes() {
 		// Firewall endpoints
 		api.GET("/firewall/health", s.handleGetFirewallHealth)
 		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
+		api.GET("/firewall/rules", s.handleGetFirewallRules)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
@@ -405,13 +406,12 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 		def := nodeLookup[n.ID]
 		meta := decodeNodeMetadata(def.Metadata, n.Networks)
 
+		// Prefer networks from YAML topology (source of truth)
 		zone := ""
-		if len(meta.Networks) > 0 {
-			zone = meta.Networks[0]
-		}
-
-		if zone == "" && len(n.Networks) > 0 {
+		if len(n.Networks) > 0 {
 			zone = n.Networks[0]
+		} else if len(meta.Networks) > 0 {
+			zone = meta.Networks[0]
 		}
 		column := 0
 		for idx, z := range zoneOrder {
@@ -425,12 +425,28 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 
 		status := def.Status
 		if status == "" {
-			status = "unknown"
+			status = "running" // Default to running for active containers
 		}
 
-		uiPath := meta.UIPath // Use explicit path from metadata if set
-		if uiPath == "" && meta.UI != nil && meta.UI.Host != "" && meta.UI.Port != 0 {
-			uiPath = fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui", id, n.ID)
+		// Prefer IP from YAML topology (source of truth), fall back to database
+		ip := n.IP
+		if ip == "" {
+			ip = def.IP
+		}
+
+		// Generate UI path and external URL based on node type
+		uiPath, externalURL := getNodeUIConfig(n.Type, n.Container, id, n.ID)
+		if meta.UIPath != "" {
+			uiPath = meta.UIPath
+		}
+		if meta.ExternalUIURL != "" {
+			externalURL = meta.ExternalUIURL
+		}
+
+		// Build interface IPs for multi-homed nodes
+		interfaceIPs := meta.InterfaceIPs
+		if interfaceIPs == nil && len(n.Networks) > 1 && n.IP != "" {
+			interfaceIPs = buildInterfaceIPs(n.Networks, n.IP)
 		}
 
 		nodes = append(nodes, graphNode{
@@ -443,12 +459,12 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 			Data: graphNodeData{
 				Label:         n.Name,
 				Zone:          zone,
-				Networks:      meta.Networks,
+				Networks:      n.Networks,
 				Status:        status,
-				IP:            def.IP,
-				InterfaceIPs:  meta.InterfaceIPs,
+				IP:            ip,
+				InterfaceIPs:  interfaceIPs,
 				UIPath:        uiPath,
-				ExternalUIURL: meta.ExternalUIURL,
+				ExternalUIURL: externalURL,
 			},
 		})
 
@@ -594,19 +610,44 @@ func (s *Server) handleGetEvents(c *gin.Context) {
 func (s *Server) handleProxyNodeUI(c *gin.Context) {
 	labID := c.Param("id")
 	nodeID := c.Param("nodeId")
-	var node models.NodeDefinition
-	if err := s.db.First(&node, "id = ? AND lab_instance_id = ?", nodeID, labID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+
+	// Get lab instance with template to access topology
+	var instance models.LabInstance
+	if err := s.db.Preload("Template").First(&instance, "id = ?", labID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "lab not found"})
 		return
 	}
 
-	meta := decodeNodeMetadata(node.Metadata, nil)
-	if meta.UI == nil || meta.UI.Host == "" || meta.UI.Port == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ui proxy not configured"})
+	// Parse topology to find node config
+	var topo struct {
+		Nodes []labs.NodeYAML `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(instance.Template.Topology), &topo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
 		return
 	}
 
-	target, err := url.Parse(fmt.Sprintf("http://%s:%d", meta.UI.Host, meta.UI.Port))
+	// Find the node in topology
+	var nodeConfig *labs.NodeYAML
+	for i := range topo.Nodes {
+		if topo.Nodes[i].ID == nodeID {
+			nodeConfig = &topo.Nodes[i]
+			break
+		}
+	}
+	if nodeConfig == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found in topology"})
+		return
+	}
+
+	// Get UI host and port based on node type and container
+	host, port := getNodeUIHostPort(nodeConfig.Type, nodeConfig.Container)
+	if host == "" || port == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ui proxy not configured for this node type"})
+		return
+	}
+
+	target, err := url.Parse(fmt.Sprintf("http://%s:%d", host, port))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid upstream host"})
 		return
@@ -677,6 +718,96 @@ func decodeNodeMetadata(raw string, fallbackNetworks []string) nodeMetadata {
 		meta.Networks = fallbackNetworks
 	}
 	return meta
+}
+
+// getNodeUIConfig returns UI path and external URL based on node type.
+func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externalURL string) {
+	// Map node types to their UI configurations
+	switch nodeType {
+	case "containd_ngfw":
+		return "/apps/firewall/", "http://localhost:9080"
+	case "hmi_view":
+		return "/apps/hmi-view/", ""
+	case "hmi_control":
+		return "/apps/hmi-control/", ""
+	case "hmi_scada":
+		return "/apps/fuxa/", ""
+	case "plc_trainer", "sis_plc":
+		// OpenPLC has a web UI on port 8080
+		if container != "" {
+			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
+		}
+		return "", ""
+	case "ews", "ubuntu_jumpbox":
+		// Webtop desktop environments
+		if container != "" {
+			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
+		}
+		return "", ""
+	case "kali_pentest":
+		// Kali doesn't have a web UI by default, but has terminal
+		return "", ""
+	case "historian":
+		// InfluxDB has a web UI on port 8086
+		return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
+	case "ot_ids":
+		// Suricata doesn't have a web UI
+		return "", ""
+	default:
+		return "", ""
+	}
+}
+
+// buildInterfaceIPs creates interface IP mapping for multi-homed nodes.
+// This is a simple implementation - in production you'd query Docker for actual IPs.
+func buildInterfaceIPs(networks []string, primaryIP string) map[string]string {
+	if len(networks) <= 1 {
+		return nil
+	}
+	// For now, we just return the primary IP for the first network
+	// A full implementation would query container inspect for all IPs
+	ips := make(map[string]string)
+	ips[networks[0]] = primaryIP
+	return ips
+}
+
+// getNodeUIHostPort returns the host and port for a node's web UI based on type.
+func getNodeUIHostPort(nodeType, container string) (string, int) {
+	// Use container name as host if available, otherwise derive from type
+	host := container
+	if host == "" {
+		// Default container naming convention
+		switch nodeType {
+		case "plc_trainer":
+			host = "plc_process"
+		case "sis_plc":
+			host = "plc_safety"
+		case "hmi_view":
+			host = "hmi_view"
+		case "hmi_control":
+			host = "hmi_control"
+		case "ews":
+			host = "ews"
+		case "ubuntu_jumpbox":
+			host = "ubuntu_jumpbox"
+		default:
+			return "", 0
+		}
+	}
+
+	// Determine port based on node type
+	switch nodeType {
+	case "plc_trainer", "sis_plc":
+		return host, 8080 // OpenPLC web UI
+	case "hmi_view", "hmi_control", "hmi_scada":
+		return host, 1881 // FUXA
+	case "ews", "ubuntu_jumpbox":
+		return host, 3000 // Webtop/noVNC
+	case "historian":
+		return host, 8086 // InfluxDB
+	default:
+		return "", 0
+	}
 }
 
 // Mirrors httputil.singleJoiningSlash without importing unexported logic.

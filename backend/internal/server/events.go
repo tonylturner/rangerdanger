@@ -155,3 +155,40 @@ func (s *Server) handleGetFirewallSessions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
 }
+
+// handleGetFirewallRules returns summarized firewall rules grouped by zone pairs.
+func (s *Server) handleGetFirewallRules(c *gin.Context) {
+	containdURL := s.cfg.ContaindAPIURL
+	if containdURL == "" {
+		containdURL = "http://firewall:8080"
+	}
+
+	client := containd.NewClient(containdURL)
+	summaries, err := client.GetZoneRuleSummaries()
+	if err != nil {
+		// Return fallback static rules if containd is unavailable
+		c.JSON(http.StatusOK, gin.H{
+			"summaries": getStaticRuleSummaries(),
+			"source":    "static",
+			"error":     err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"summaries": summaries,
+		"source":    "containd",
+	})
+}
+
+// getStaticRuleSummaries returns fallback rule summaries when containd is unavailable.
+func getStaticRuleSummaries() []containd.ZoneRuleSummary {
+	return []containd.ZoneRuleSummary{
+		{SourceZone: "wan", DestZone: "dmz", Summary: "SSH/HTTP/S/RDP", Action: "ALLOW", RuleDetails: []string{"IT to DMZ: Standard protocols"}},
+		{SourceZone: "dmz", DestZone: "lan1", Summary: "Modbus R/O", Action: "ALLOW", RuleDetails: []string{"HMI View to OT Control: Modbus READ only", "Jumpbox to OT Control: Modbus R/W"}},
+		{SourceZone: "dmz", DestZone: "lan2", Summary: "READ ONLY", Action: "ALLOW", RuleDetails: []string{"HMI View to OT Safety: Modbus READ only"}},
+		{SourceZone: "lan1", DestZone: "lan1", Summary: "Modbus R/W", Action: "ALLOW", RuleDetails: []string{"HMI Control to PLCs: Full Modbus access"}},
+		{SourceZone: "lan1", DestZone: "lan2", Summary: "READ ONLY", Action: "ALLOW", RuleDetails: []string{"HMI Control to Safety: Modbus READ only"}},
+		{SourceZone: "any", DestZone: "lan2", Summary: "DENY WRITES", Action: "DENY", RuleDetails: []string{"Block all Modbus WRITE to Safety Zone"}},
+	}
+}

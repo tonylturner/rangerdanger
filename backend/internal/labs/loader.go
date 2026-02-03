@@ -140,10 +140,12 @@ type NetworkYAML struct {
 
 // NodeYAML describes a node template in YAML.
 type NodeYAML struct {
-	ID       string   `yaml:"id"`
-	Type     string   `yaml:"type"`
-	Name     string   `yaml:"name"`
-	Networks []string `yaml:"networks"`
+	ID        string   `yaml:"id" json:"id"`
+	Type      string   `yaml:"type" json:"type"`
+	Name      string   `yaml:"name" json:"name"`
+	Networks  []string `yaml:"networks" json:"networks"`
+	IP        string   `yaml:"ip" json:"ip,omitempty"`
+	Container string   `yaml:"container" json:"container,omitempty"`
 }
 
 // ScenarioYAML defines scenario metadata loaded from YAML.
