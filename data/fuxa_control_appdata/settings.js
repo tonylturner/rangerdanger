@@ -36,7 +36,7 @@ module.exports = {
 
     // DAQ Enabled
     // Default: true
-    daqEnabled: true,
+    daqEnabled: false,
 
     // DAQ DB to Tokenizer the file and save in archive
     // Default: 24 Hours (1 Day), 0 is disabled only 1 DB file
@@ -50,7 +50,7 @@ module.exports = {
     // Tags value to be broadcast,
     // if false will be send to frontend only the tags bind to current visualized views
     // if true all configured tags will be send to frontend
-    broadcastAll: false,
+    broadcastAll: true,
 
     // By default, server accepts connections on all IPv4 interfaces.
     // To listen on all IPv6 addresses, set uiHost to "::",
