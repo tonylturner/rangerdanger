@@ -206,7 +206,9 @@ services:
 
   # PLC-101: Process Control (Separator, Inlet Pump, Valves)
   plc_process:
-    image: tuttas/openplc_v3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc
     container_name: rangerdanger-plc-process
     hostname: plc-101
     networks:
@@ -222,7 +224,9 @@ services:
 
   # PLC-201: Compressor Control (Gas Compressor)
   plc_compressor:
-    image: tuttas/openplc_v3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc
     container_name: rangerdanger-plc-compressor
     hostname: plc-201
     networks:
@@ -238,7 +242,9 @@ services:
 
   # SIS-301: Safety Instrumented System (ESD, Safety Interlocks)
   plc_safety:
-    image: tuttas/openplc_v3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc
     container_name: rangerdanger-plc-safety
     hostname: sis-301
     networks:
@@ -254,7 +260,9 @@ services:
 
   # PLC-401: Utilities (Water Treatment, Tank Farm)
   plc_utilities:
-    image: tuttas/openplc_v3:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc
     container_name: rangerdanger-plc-utilities
     hostname: plc-401
     networks:

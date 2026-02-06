@@ -1,0 +1,13 @@
+FROM tuttas/openplc_v3:latest
+
+# Install sqlite3 for database manipulation, curl for API calls, net-tools for netstat
+RUN apt-get update && apt-get install -y sqlite3 curl net-tools && rm -rf /var/lib/apt/lists/*
+
+# Copy the entrypoint script
+COPY scripts/openplc-entrypoint.sh /openplc-entrypoint.sh
+RUN chmod +x /openplc-entrypoint.sh
+
+# The workdir is mounted at runtime with the ST file
+WORKDIR /root/OpenPLC_v3/webserver
+
+ENTRYPOINT ["/openplc-entrypoint.sh"]
