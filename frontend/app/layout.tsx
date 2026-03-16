@@ -6,6 +6,7 @@ import { ClientProviders } from "../components/client-providers";
 const navLinks = [
   { href: "/console", label: "Console" },
   { href: "/", label: "Dashboard" },
+  { href: "/substation", label: "Substation" },
   { href: "/labs", label: "Labs" },
   { href: "/scenarios", label: "Scenarios" },
   { href: "/topology", label: "Topology" },

@@ -6,14 +6,15 @@ import (
 
 // LabTemplate describes a reusable lab topology definition.
 type LabTemplate struct {
-	ID               string    `gorm:"primaryKey" json:"id"`
-	Name             string    `json:"name"`
-	Description      string    `json:"description"`
-	Topology         string    `json:"topology"`
-	DefaultScenarios string    `json:"default_scenarios"`
-	ComposeFile      string    `json:"compose_file"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                 string    `gorm:"primaryKey" json:"id"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	Topology           string    `json:"topology"`
+	DefaultScenarios   string    `json:"default_scenarios"`
+	ComposeFile        string    `json:"compose_file"`
+	FirewallConfigPath string    `json:"firewall_config_path"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // LabInstance represents a running or stopped lab derived from a template.

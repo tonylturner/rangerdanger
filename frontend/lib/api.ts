@@ -196,3 +196,70 @@ export type FirewallRulesResponse = {
 export async function getFirewallRules() {
   return request<FirewallRulesResponse>("/firewall/rules");
 }
+
+// Substation data types (from rtac-sim via backend proxy)
+export type SubstationTags = {
+  tags: Record<string, number | boolean | string>;
+  last_poll: string;
+};
+
+export type SubstationState = {
+  devices: {
+    relay?: Record<string, number | boolean>;
+    recloser?: Record<string, number | boolean>;
+    regulator?: Record<string, number | boolean>;
+  };
+  electrical: {
+    substation_bus_voltage_kv?: number;
+    substation_bus_voltage_v?: number;
+    downstream_voltage_v?: number;
+    critical_load_voltage_v?: number;
+    feeder_current_a?: number;
+    general_load_energized?: boolean;
+    critical_load_energized?: boolean;
+    general_load_kw?: number;
+    critical_load_kw?: number;
+    breaker_closed?: boolean;
+    recloser_closed?: boolean;
+    regulator_tap?: number;
+  };
+  device_comms: Record<string, boolean>;
+  last_poll: string;
+};
+
+export type AuditEntry = {
+  timestamp: string;
+  source: string;
+  target: string;
+  command: string;
+  result: string;
+  detail: string;
+};
+
+export async function getSubstationTags() {
+  return request<SubstationTags>("/substation/tags");
+}
+
+export async function getSubstationState() {
+  return request<SubstationState>("/substation/state");
+}
+
+export async function sendSubstationCommand(device: string, command: string, source?: string) {
+  return request<{ result: string; detail: string }>(`/substation/command/${device}`, {
+    method: "POST",
+    body: JSON.stringify({ command, source: source || "web-ui" }),
+  });
+}
+
+export async function getSubstationAudit() {
+  return request<{ entries: AuditEntry[] }>("/substation/audit");
+}
+
+export async function getSubstationHealth() {
+  return request<{
+    status: string;
+    service: string;
+    device_comms: Record<string, boolean>;
+    last_poll: string;
+  }>("/substation/health");
+}

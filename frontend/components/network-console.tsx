@@ -744,8 +744,11 @@ function useStyledGraph(graph?: LabGraph, ruleSummaries?: ZoneRuleSummary[]) {
 
     // Define preferred zone order for layout
     const zoneOrder = [
-      "wan", "it_net", "it_workstations", "dmz", "dmz_net",
-      "ot_control", "ot_control_net", "ot_safety", "ot_safety_net"
+      "enterprise_net", "wan", "it_net",
+      "vendor_net", "dmz", "dmz_net",
+      "ot_ops_net", "lan1", "ot_control", "ot_control_net",
+      "field_net", "lan2", "ot_safety", "ot_safety_net",
+      "physics_net",
     ];
     const activeZones = Object.keys(nodesByZone)
       .filter(z => zones.includes(z as typeof zones[number]))

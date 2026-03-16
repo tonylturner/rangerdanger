@@ -1,0 +1,258 @@
+id: substation-segmentation
+name: Substation Segmentation Validation Lab
+description: >
+  Electric cooperative distribution substation segmentation lab.
+  Students validate and improve network segmentation to protect critical
+  substation control functions from enterprise compromise, vendor access
+  abuse, and OT east-west lateral movement.
+
+firewall_config: firewall/substation-weak.json
+
+networks:
+  - id: enterprise_net
+    name: Enterprise Zone
+    subnet: 10.10.10.0/24
+    zone: wan
+    description: Corporate IT environment — lowest trust, common attacker foothold
+
+  - id: vendor_net
+    name: Vendor / Engineering Zone
+    subnet: 10.20.20.0/24
+    zone: dmz
+    description: Remote support, contractor access, engineering maintenance
+
+  - id: ot_ops_net
+    name: OT Operations Zone
+    subnet: 10.30.30.0/24
+    zone: lan1
+    description: Substation operational services — HMI, RTAC, supervisory control
+
+  - id: field_net
+    name: Field Device Zone
+    subnet: 10.40.40.0/24
+    zone: lan2
+    description: Substation and feeder control endpoints — relay, recloser, regulator
+
+  - id: physics_net
+    name: Process / Physics Zone
+    subnet: 10.50.50.0/24
+    description: Electrical truth engine — feeder model and consequence calculation
+
+nodes:
+  # Zone 7: Security Infrastructure
+  - id: fw-1
+    type: containd_ngfw
+    name: Containd Firewall
+    container: rangerdanger-firewall
+    networks:
+      - enterprise_net
+      - vendor_net
+      - ot_ops_net
+      - field_net
+    ip: 10.10.10.2
+
+  # Zone 1: Enterprise
+  - id: corp-ws-1
+    type: corp_workstation
+    name: Corporate Workstation
+    container: rangerdanger-corp-ws
+    networks:
+      - enterprise_net
+    ip: 10.10.10.10
+
+  # Zone 6: Adversary (in enterprise_net)
+  - id: kali-1
+    type: kali_pentest
+    name: Kali Attacker
+    container: rangerdanger-kali
+    networks:
+      - enterprise_net
+    ip: 10.10.10.50
+
+  # Zone 2: Vendor / Engineering
+  - id: vendor-jump-1
+    type: vendor_jumpbox
+    name: Vendor Jump Box
+    container: rangerdanger-vendor-jump
+    networks:
+      - vendor_net
+    ip: 10.20.20.10
+
+  - id: eng-ws-1
+    type: eng_workstation
+    name: Engineering Workstation
+    container: rangerdanger-eng-ws
+    networks:
+      - vendor_net
+    ip: 10.20.20.20
+
+  # Zone 3: OT Operations
+  - id: hmi-1
+    type: fuxa_hmi
+    name: Substation HMI
+    container: rangerdanger-fuxa-hmi
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.10
+
+  - id: rtac-1
+    type: rtac_sim
+    name: RTAC / Supervisory Controller
+    container: rangerdanger-rtac-sim
+    networks:
+      - ot_ops_net
+      - field_net
+      - physics_net
+    ip: 10.30.30.20
+
+  - id: openplc-1
+    type: openplc
+    name: Substation Automation PLC
+    container: rangerdanger-openplc
+    networks:
+      - ot_ops_net
+      - field_net
+    ip: 10.30.30.30
+
+  # Zone 4: Field Devices
+  - id: relay-1
+    type: relay_sim
+    name: Feeder Breaker / Relay
+    container: rangerdanger-relay-sim
+    networks:
+      - field_net
+    ip: 10.40.40.20
+
+  - id: recloser-1
+    type: recloser_sim
+    name: Mid-Feeder Recloser
+    container: rangerdanger-recloser-sim
+    networks:
+      - field_net
+    ip: 10.40.40.21
+
+  - id: regulator-1
+    type: regulator_sim
+    name: Voltage Regulator
+    container: rangerdanger-regulator-sim
+    networks:
+      - field_net
+    ip: 10.40.40.22
+
+  # Zone 5: Physics / Simulation
+  - id: physics-1
+    type: opendss_sim
+    name: Feeder Physics Engine
+    container: rangerdanger-opendss-sim
+    networks:
+      - physics_net
+    ip: 10.50.50.20
+
+scenarios:
+  - id: enterprise-to-breaker
+    name: "Scenario 1: Enterprise to Breaker Attack"
+    description: >
+      An attacker compromises an enterprise workstation and attempts to
+      trip the feeder breaker. Students must use Containd to block
+      enterprise-originated control paths to field devices while
+      preserving legitimate monitoring and operations.
+    tags:
+      - attack
+      - segmentation
+      - enterprise
+    steps:
+      - title: "Observe baseline"
+        description: >
+          Load the lab and verify the feeder is energized.
+          Check that the HMI shows normal breaker status and all
+          loads are served.
+      - title: "Launch attack from enterprise zone"
+        description: >
+          From the Kali box (10.10.10.50), send a trip command
+          directly to the relay-sim (10.40.40.20):
+          curl -X POST http://10.40.40.20:8080/api/command -d '{"command":"trip","source":"kali"}'
+      - title: "Observe operational consequence"
+        description: >
+          With the weak baseline, the trip command succeeds.
+          The feeder breaker opens. All downstream loads lose power.
+          Check the HMI — general and critical loads should show de-energized.
+      - title: "Improve segmentation"
+        description: >
+          Use Containd to block enterprise zone (wan) from directly
+          reaching field device zone (lan2). Import the improved
+          firewall config or create rules manually.
+      - title: "Re-test attack"
+        description: >
+          Repeat the curl command from Kali. The command should now
+          be blocked by the firewall. Verify the breaker remains closed
+          and all loads stay energized.
+      - title: "Validate operations"
+        description: >
+          Verify that the HMI can still read device state through
+          the RTAC and that legitimate control paths still work.
+
+  - id: vendor-access-abuse
+    name: "Scenario 2: Vendor Access Abuse"
+    description: >
+      A vendor remote-access path is compromised. The attacker
+      disables auto-reclose on the feeder recloser, then injects
+      a fault. Without auto-reclose, a temporary fault causes
+      a sustained outage. Students constrain vendor access.
+    tags:
+      - attack
+      - vendor
+      - segmentation
+    steps:
+      - title: "Observe normal fault recovery"
+        description: >
+          Inject a fault on the recloser and observe that auto-reclose
+          restores service automatically within seconds.
+      - title: "Attack from vendor zone"
+        description: >
+          From vendor-jump (10.20.20.10), disable reclose on the recloser:
+          curl -X POST http://10.40.40.21:8080/api/command -d '{"command":"disable_reclose","source":"vendor-jump"}'
+      - title: "Inject fault after disabling reclose"
+        description: >
+          Inject a fault. Without auto-reclose, the recloser trips
+          and locks out. Downstream loads experience sustained outage.
+      - title: "Improve segmentation"
+        description: >
+          Block vendor zone (dmz) from direct access to field devices.
+          Only allow vendor access to approved OT operations services.
+      - title: "Re-test"
+        description: >
+          The vendor disable_reclose command is now blocked.
+          Fault recovery works normally.
+
+  - id: ot-east-west-pivot
+    name: "Scenario 3: OT East-West Pivot"
+    description: >
+      A node in the OT operations zone is compromised. The attacker
+      attempts lateral movement to manipulate voltage regulator
+      settings, causing voltage quality issues at critical loads.
+      Students enforce segmentation within OT zones.
+    tags:
+      - attack
+      - lateral-movement
+      - segmentation
+    steps:
+      - title: "Observe normal voltage"
+        description: >
+          Verify critical load voltage is within normal range (114-126V).
+      - title: "Simulate OT compromise"
+        description: >
+          From a compromised OT operations node, directly manipulate
+          the regulator tap position to an extreme value:
+          curl -X POST http://10.40.40.22:8080/api/command -d '{"command":"set_tap","value":-16,"source":"compromised-ot-node"}'
+      - title: "Observe voltage degradation"
+        description: >
+          Critical load voltage drops below acceptable levels.
+          Low voltage alarm activates.
+      - title: "Improve segmentation"
+        description: >
+          Enforce that only the RTAC (10.40.40.10) on the field_net
+          can send commands to field devices. Block other OT operations
+          nodes from direct field device access.
+      - title: "Re-test"
+        description: >
+          The unauthorized tap change is blocked. Voltage remains normal.

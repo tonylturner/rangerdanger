@@ -138,6 +138,16 @@ func (s *Server) registerRoutes() {
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
+		// Substation data (proxied from rtac-sim)
+		sub := api.Group("/substation")
+		{
+			sub.GET("/tags", s.handleSubstationTags)
+			sub.GET("/state", s.handleSubstationState)
+			sub.POST("/command/:device", s.handleSubstationCommand)
+			sub.GET("/audit", s.handleSubstationAudit)
+			sub.GET("/health", s.handleSubstationHealth)
+		}
+
 		api.GET("/scenarios", s.handleListScenarios)
 		api.POST("/scenarios", s.handleCreateScenario)
 		api.GET("/scenarios/:id", s.handleGetScenario)
@@ -379,7 +389,10 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 		nodeLookup[n.ID] = n
 	}
 
-	zoneOrder := []string{"it_net", "dmz_net", "ot_control_net", "ot_safety_net"}
+	zoneOrder := []string{
+		"enterprise_net", "vendor_net", "ot_ops_net", "field_net", "physics_net",
+		"it_net", "dmz_net", "ot_control_net", "ot_safety_net",
+	}
 	zoneCounts := map[string]int{}
 
 	var nodes []graphNode
@@ -732,26 +745,32 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 		return "/apps/hmi-control/", ""
 	case "hmi_scada":
 		return "/apps/fuxa/", ""
-	case "plc_trainer", "sis_plc":
-		// OpenPLC has a web UI on port 8080
+	case "fuxa_hmi":
+		return "/apps/fuxa-hmi/", ""
+	case "plc_trainer", "sis_plc", "openplc":
 		if container != "" {
 			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 		}
-		return "", ""
+		return "/apps/openplc/", ""
 	case "ews", "ubuntu_jumpbox":
-		// Webtop desktop environments
 		if container != "" {
 			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 		}
 		return "", ""
+	case "corp_workstation":
+		return "/apps/corp-ws/", ""
+	case "vendor_jumpbox":
+		return "/apps/vendor-jump/", ""
+	case "eng_workstation":
+		return "/apps/eng-ws/", ""
 	case "kali_pentest":
-		// Kali doesn't have a web UI by default, but has terminal
 		return "", ""
 	case "historian":
-		// InfluxDB has a web UI on port 8086
 		return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 	case "ot_ids":
-		// Suricata doesn't have a web UI
+		return "", ""
+	case "rtac_sim", "relay_sim", "recloser_sim", "regulator_sim", "opendss_sim":
+		// Simulators have API but no web UI for direct access
 		return "", ""
 	default:
 		return "", ""
@@ -776,35 +795,43 @@ func getNodeUIHostPort(nodeType, container string) (string, int) {
 	// Use container name as host if available, otherwise derive from type
 	host := container
 	if host == "" {
-		// Default container naming convention
 		switch nodeType {
 		case "plc_trainer":
 			host = "plc_process"
 		case "sis_plc":
 			host = "plc_safety"
+		case "openplc":
+			host = "openplc"
 		case "hmi_view":
 			host = "hmi_view"
 		case "hmi_control":
 			host = "hmi_control"
+		case "fuxa_hmi":
+			host = "fuxa_hmi"
 		case "ews":
 			host = "ews"
 		case "ubuntu_jumpbox":
 			host = "ubuntu_jumpbox"
+		case "corp_workstation":
+			host = "corp_ws"
+		case "vendor_jumpbox":
+			host = "vendor_jump"
+		case "eng_workstation":
+			host = "eng_workstation"
 		default:
 			return "", 0
 		}
 	}
 
-	// Determine port based on node type
 	switch nodeType {
-	case "plc_trainer", "sis_plc":
-		return host, 8080 // OpenPLC web UI
-	case "hmi_view", "hmi_control", "hmi_scada":
-		return host, 1881 // FUXA
-	case "ews", "ubuntu_jumpbox":
-		return host, 3000 // Webtop/noVNC
+	case "plc_trainer", "sis_plc", "openplc":
+		return host, 8080
+	case "hmi_view", "hmi_control", "hmi_scada", "fuxa_hmi":
+		return host, 1881
+	case "ews", "ubuntu_jumpbox", "corp_workstation", "vendor_jumpbox", "eng_workstation":
+		return host, 3000
 	case "historian":
-		return host, 8086 // InfluxDB
+		return host, 8086
 	default:
 		return "", 0
 	}

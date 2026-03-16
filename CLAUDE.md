@@ -42,47 +42,57 @@ docker compose down
 
 ## Architecture
 
+### Active Scenario: Substation Segmentation Validation Lab
+
+Electric cooperative distribution substation segmentation lab. Students validate and improve network segmentation to protect critical substation control functions.
+
 ### Network Zones (via containd NGFW)
 
 RangerDanger uses the `containd` firewall as the central L3 gateway. All zone traffic transits through containd for DPI and policy enforcement.
 
-| Zone | containd Interface | Subnet | Purpose | Firewall Policy |
-|------|-------------------|--------|---------|-----------------|
-| `it_net` | eth0 (wan) | 10.10.10.0/24 | IT/Management, Pentest | SSH/HTTP/S/RDP to DMZ |
-| `dmz_net` | eth1 (dmz) | 10.20.20.0/24 | HMI View, EWS, Jump Box, Historian, IDS | Modbus R/O to OT zones |
-| `ot_control_net` | eth2 (lan1) | 10.30.30.0/24 | HMI Control, Process PLCs | Modbus R/W internal |
-| `ot_safety_net` | eth3 (lan2) | 10.40.40.0/24 | Safety PLCs (SIS) | **READ ONLY** (DPI enforced) |
+| Zone | containd Interface | Subnet | Purpose |
+|------|-------------------|--------|---------|
+| `enterprise_net` | eth0 (wan) | 10.10.10.0/24 | Enterprise IT, Kali attacker |
+| `vendor_net` | eth1 (dmz) | 10.20.20.0/24 | Vendor jump box, engineering workstation |
+| `ot_ops_net` | eth2 (lan1) | 10.30.30.0/24 | HMI, RTAC, OpenPLC |
+| `field_net` | eth3 (lan2) | 10.40.40.0/24 | Relay, recloser, regulator |
+| `physics_net` | (not firewalled) | 10.50.50.0/24 | Feeder physics simulation engine |
 
-### Node Types (ICS Containers)
-| Type | Image | Zone | IP | Description |
-|------|-------|------|-----|-------------|
-| `kali_pentest` | kalilinux/kali-rolling | it_net | 10.10.10.50 | Penetration testing box |
-| `hmi_view` | frangoteam/fuxa:latest | dmz/ot_ctrl/ot_safety | 10.20.20.10 | Read-only HMI (firewall enforced) |
-| `ews` | linuxserver/webtop:ubuntu-mate | dmz_net | 10.20.20.50 | Engineering Workstation (noVNC) |
-| `ubuntu_jumpbox` | linuxserver/webtop:ubuntu-xfce | dmz_net | 10.20.20.60 | Jump host (sole gateway to OT Control) |
-| `hmi_control` | frangoteam/fuxa:latest | ot_control_net | 10.30.30.11 | Full-control HMI |
-| `plc_trainer` | tuttas/openplc_v3:latest | ot_control_net | 10.30.30.20-22 | Process PLCs (OpenPLC) |
-| `sis_plc` | tuttas/openplc_v3:latest | ot_safety_net | 10.40.40.20 | Safety PLC (read-only access) |
-| `historian` | influxdb:2 | dmz_net | - | Time-series database |
-| `ot_ids` | jasonish/suricata:latest | dmz_net | - | OT IDS sensor |
+### Node Types
+| Type | Zone | IP | Description |
+|------|------|-----|-------------|
+| `corp_workstation` | enterprise | 10.10.10.10 | Corporate desktop |
+| `kali_pentest` | enterprise | 10.10.10.50 | Attacker box |
+| `vendor_jumpbox` | vendor | 10.20.20.10 | Vendor remote access |
+| `eng_workstation` | vendor | 10.20.20.20 | Engineering desktop |
+| `fuxa_hmi` | ot_ops | 10.30.30.10 | Substation HMI (FUXA) |
+| `rtac_sim` | ot_ops+field+physics | 10.30.30.20 | Supervisory controller / broker |
+| `openplc` | ot_ops+field | 10.30.30.30 | Substation automation PLC |
+| `relay_sim` | field | 10.40.40.20 | Feeder breaker / relay |
+| `recloser_sim` | field | 10.40.40.21 | Mid-feeder recloser |
+| `regulator_sim` | field | 10.40.40.22 | Voltage regulator |
+| `opendss_sim` | physics | 10.50.50.20 | Feeder physics engine |
 
-### Firewall Rules (ICS DPI)
+### Firewall Configs
 
-The containd firewall enforces zone-based policies with Modbus function code filtering:
+Two firewall configs exist in `lab-definitions/firewall/`:
+- **substation-weak.json** — Intentionally permissive baseline (enterprise→field ALLOWED)
+- **substation-improved.json** — Target hardened state (only RTAC→field allowed)
 
-| Rule | Source | Destination | Policy |
-|------|--------|-------------|--------|
-| IT to DMZ | wan (IT) | dmz | Allow SSH, HTTP/S, RDP, VNC |
-| Jumpbox to OT | dmz (10.20.20.60) | lan1 (OT Control) | Allow Modbus R/W |
-| HMI View to OT | dmz (10.30.30.10) | lan1 (OT Control) | Allow Modbus READ only (FC 1-4) |
-| HMI View to Safety | dmz (10.40.40.10) | lan2 (OT Safety) | Allow Modbus READ only (FC 1-4) |
-| HMI Control internal | lan1 | lan1 | Allow Modbus R/W |
-| HMI Control to Safety | lan1 (10.30.30.11) | lan2 | Allow Modbus READ only (FC 1-4) |
-| **Block writes to Safety** | any | lan2 (OT Safety) | **DENY Modbus FC 5,6,15,16,22,23** |
+### Simulator Services
+
+Custom Go services in `services/` directory:
+- `relay-sim` — Feeder breaker with trip/close, lockout, fault injection
+- `recloser-sim` — Auto-reclose with shot counting, lockout, disable-reclose
+- `regulator-sim` — Load tap changer with ±16 tap range, voltage regulation
+- `rtac-sim` — Aggregator/broker polling field devices, physics engine, command forwarding
+- `opendss-sim` — Simplified feeder model calculating energization and voltage
+
+All expose `GET /api/state`, `POST /api/command`, `GET /api/audit`, `GET /api/health` on port 8080.
 
 ### containd Integration
 
-The `containd` NGFW (from `/Users/tturner/Documents/GitHub/containd`) provides:
+The `containd` NGFW ([github.com/tonylturner/containd](https://github.com/tonylturner/containd)) provides:
 - **Zone-based firewall** with nftables enforcement
 - **ICS DPI** - Modbus/TCP function code filtering, register ranges, read-only modes
 - **IT DPI** - DNS, TLS/SNI, HTTP, SSH, RDP, SMB visibility
@@ -169,39 +179,43 @@ frontend/
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  containd NGFW (all zones, ICS DPI enabled)                     │
-│  ├── it_net (10.10.10.2)   ─── proxy, frontend, backend, kali   │
-│  ├── dmz_net (10.20.20.2)  ─── hmi_view, ews, jumpbox, ids      │
-│  ├── ot_control (10.30.30.2) ─── hmi_control, plc_process/comp  │
-│  └── ot_safety (10.40.40.2)  ─── plc_safety (READ ONLY)         │
+│  containd NGFW (all zones, DPI enabled)                         │
+│  ├── enterprise_net (10.10.10.2) ─── corp-ws, kali, proxy       │
+│  ├── vendor_net (10.20.20.2)     ─── vendor-jump, eng-ws        │
+│  ├── ot_ops_net (10.30.30.2)     ─── fuxa-hmi, rtac, openplc    │
+│  └── field_net (10.40.40.2)      ─── relay, recloser, regulator │
+│                                                                  │
+│  physics_net (10.50.50.0/24) ─── opendss-sim (not firewalled)   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 All inter-zone traffic flows through containd, enabling:
-- DPI visibility into Modbus traffic between HMI and PLCs
-- Policy enforcement: **Block Modbus writes to safety zone**
-- One-way monitoring: HMI View can read safety PLC but not control
-- Jump box as sole gateway from DMZ to OT Control
+- DPI visibility into control traffic between OT ops and field devices
+- Policy enforcement: enterprise/vendor cannot reach field devices directly
+- Segmentation validation: only RTAC can control field devices in improved config
+- Attack path demonstration: weak baseline allows full access for training
 
 ### Services to Orchestrate
 - `firewall` - containd NGFW gateway (always running)
 - `proxy` - Nginx reverse proxy for web access
 - `backend` - RangerDanger API
 - `frontend` - RangerDanger UI
-- `hmi_view` - Read-only HMI in DMZ (multi-homed to all OT zones)
-- `hmi_control` - Full-control HMI in OT Control zone only
-- `ews` - Engineering workstation in DMZ
-- `kali_pentest` - Penetration testing box in IT
-- `ubuntu_jumpbox` - Jump host in DMZ (sole gateway to OT)
-- `plc_*` - OpenPLC containers for process control
-- `plc_safety` - Safety PLC (read-only access enforced)
+- `corp_ws` - Corporate workstation in enterprise zone
+- `kali` - Attacker box in enterprise zone
+- `vendor_jump` - Vendor remote access in vendor zone
+- `eng_workstation` - Engineering desktop in vendor zone
+- `fuxa_hmi` - Substation HMI in OT operations zone
+- `rtac_sim` - Supervisory controller / broker (multi-homed)
+- `openplc` - Substation automation PLC
+- `relay_sim` / `recloser_sim` / `regulator_sim` - Field device simulators
+- `opendss_sim` - Feeder physics engine
 
 ## containd Integration
 
-**containd is a separate project** - built independently and published to a container registry (e.g., `ghcr.io/tturner/containd:latest`). RangerDanger pulls it as a standard Docker image dependency.
+**containd is a separate project** ([github.com/tonylturner/containd](https://github.com/tonylturner/containd)) - built independently and published to GHCR. RangerDanger pulls `ghcr.io/tonylturner/containd:latest` as a dependency. Only config-level changes (firewall rules, IDS rule provisioning) are made from RangerDanger; code changes happen in the containd repo.
 
 ### containd Capabilities (consumed via image)
-- **Single appliance image** - `ghcr.io/tturner/containd:latest`
+- **Single appliance image** - `ghcr.io/tonylturner/containd:latest`
 - **Multi-zone networking** - 8 interfaces (wan, dmz, lan1-lan6)
 - **ICS DPI** - Modbus/TCP function code filtering, register ranges
 - **IT DPI** - DNS, TLS/SNI, HTTP, SSH, RDP, SMB visibility
@@ -211,22 +225,20 @@ All inter-zone traffic flows through containd, enabling:
 
 ### Integration Pattern
 ```yaml
-# In RangerDanger's docker-compose.yml
 services:
   firewall:
-    image: containd:local  # or ghcr.io/tturner/containd:latest
+    image: ghcr.io/tonylturner/containd:latest
+    pull_policy: always
     cap_add: [NET_ADMIN, NET_RAW]
     networks:
-      it_net: { ipv4_address: 10.10.10.2 }
-      dmz_net: { ipv4_address: 10.20.20.2 }
-      ot_control_net: { ipv4_address: 10.30.30.2 }
-      ot_safety_net: { ipv4_address: 10.40.40.2 }
+      enterprise_net: { ipv4_address: 10.10.10.2 }
+      vendor_net: { ipv4_address: 10.20.20.2 }
+      ot_ops_net: { ipv4_address: 10.30.30.2 }
+      field_net: { ipv4_address: 10.40.40.2 }
     environment:
       - CONTAIND_MODE=all
-      - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
-      - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
-      - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
-      - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
+      - CONTAIND_LAB_MODE=1
+      - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
     volumes:
       - ./data/firewall:/data
 ```
@@ -238,9 +250,9 @@ services:
 4. **Sessions**: `GET /api/v1/sessions` - active connections for topology overlay
 
 ### Development Workflow
-- containd repo: `/Users/tturner/Documents/GitHub/containd`
-- Build & push: `docker build -f Dockerfile.mgmt -t ghcr.io/tturner/containd:dev . && docker push ...`
-- RangerDanger pulls tagged images; no source dependency
+- containd repo: `github.com/tonylturner/containd` (separate project, do not modify locally)
+- RangerDanger always pulls `ghcr.io/tonylturner/containd:latest` with `pull_policy: always`
+- Only config-level changes (firewall rules, IDS rules) are made from RangerDanger
 
 ## Development Guidelines
 
@@ -267,32 +279,31 @@ services:
 - REST API with full lab CRUD and orchestration
 - Frontend pages (Dashboard, Labs, Topology, Console)
 - React Flow topology visualization with zone coloring and firewall rule labels
-- YAML-based lab definitions
+- YAML-based lab definitions (auto-loads all *.yml in lab-definitions/)
 - Docker SDK integration for container lifecycle
-- containd integration with ICS DPI (Modbus function code filtering)
+- containd integration with JWT auth (lab mode)
 - Terminal access via WebSocket (Docker exec + SSH to firewall)
 - SSE event streaming from containd
-- Split HMI architecture (view-only in DMZ, full-control in OT)
-- Safety zone one-way traffic (read-only enforced by DPI)
-- Ubuntu jump box as sole gateway to OT Control
-- Kali pentest box in IT network
+- Substation segmentation scenario with 3 attack exercises
+- Field device simulators (relay, recloser, regulator) with HTTP APIs
+- RTAC supervisory controller aggregating device state
+- Feeder physics engine with energization/voltage calculation
+- Weak baseline + improved firewall configs for progressive learning
+- Kali attacker in enterprise zone
 
 ### Remaining Gaps
-1. **Scenario automation** - execute steps, validate outcomes automatically
-2. **PCAP capture/replay** - per scenario traffic recording
-3. **Multi-user RBAC** - instructor vs student modes
-4. **VPN client setup** - OpenVPN/WireGuard profiles on jump box
-5. **IDS alerts integration** - Suricata alerts in activity feed
+1. **FUXA HMI screens** - One-line diagram, alarm view, segmentation impact view need configuration
+2. **Scenario automation** - execute steps, validate outcomes automatically
+3. **Command audit correlation UI** - cyber-to-process event mapping in frontend
+4. **PCAP capture/replay** - per scenario traffic recording
+5. **Multi-user RBAC** - instructor vs student modes
+6. **Capbank simulator** - optional capacitor bank device
+7. **IDS alerts integration** - Suricata alerts in activity feed
 
 ## Access Points
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | RangerDanger UI | http://localhost:8088 | N/A |
-| HMI View | http://localhost:8088/apps/hmi/ | N/A |
-| HMI Control | http://localhost:8088/apps/hmi-control/ | N/A |
-| Engineering WS | http://localhost:8088/apps/ews/ | N/A |
-| Jump Box | http://localhost:8088/apps/jumpbox/ | N/A |
 | containd UI | http://localhost:9080 | N/A |
 | containd SSH | ssh -p 2222 containd@localhost | containd/containd |
-| OpenPLC (PLC-101) | http://localhost:8088/apps/plc/ | openplc/openplc |
