@@ -13,6 +13,7 @@ type Config struct {
     AllowedOrigins      []string
     LabDefinitionsPath  string
     ContaindAPIURL      string
+    ContaindConfigPath  string
 }
 
 // Load reads configuration from environment variables and optional config files.
@@ -26,6 +27,7 @@ func Load() (*Config, error) {
     v.SetDefault("allowed_origins", []string{"*"})
     v.SetDefault("lab_definitions_path", "lab-definitions")
     v.SetDefault("containd_api_url", "http://firewall:8080")
+    v.SetDefault("containd_config_path", "lab-definitions/firewall/substation-weak.json")
 
     if err := v.ReadInConfig(); err != nil {
         // Config file is optional; ignore if not found.
@@ -36,6 +38,7 @@ func Load() (*Config, error) {
         DBPath:             v.GetString("db_path"),
         LabDefinitionsPath: v.GetString("lab_definitions_path"),
         ContaindAPIURL:     v.GetString("containd_api_url"),
+        ContaindConfigPath: v.GetString("containd_config_path"),
     }
 
     if origins := v.GetStringSlice("allowed_origins"); len(origins) > 0 {

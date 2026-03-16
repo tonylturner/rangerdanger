@@ -1,0 +1,135 @@
+{
+  "schema_version": "0.1.0",
+  "system": {
+    "hostname": "containd",
+    "mgmt": {
+      "listenAddr": ":8080",
+      "enableHTTP": true,
+      "enableHTTPS": true,
+      "httpListenAddr": ":8080",
+      "httpsListenAddr": ":8443",
+      "tlsCertFile": "/data/tls/server.crt",
+      "tlsKeyFile": "/data/tls/server.key"
+    },
+    "ssh": {}
+  },
+  "interfaces": [
+    { "name": "wan", "device": "eth0", "zone": "wan", "access": {} },
+    { "name": "dmz", "device": "eth1", "zone": "dmz", "access": {} },
+    { "name": "ot_control", "device": "eth2", "zone": "lan1", "access": {} },
+    { "name": "ot_safety", "device": "eth3", "zone": "lan2", "access": {} }
+  ],
+  "zones": [
+    { "name": "wan", "description": "IT Network - Management and external access" },
+    { "name": "dmz", "description": "DMZ - HMI View, EWS, Jump Box, Historian, IDS" },
+    { "name": "lan1", "description": "OT Control - Process PLCs, HMI Control" },
+    { "name": "lan2", "description": "OT Safety - SIS PLCs (read-only access enforced)" }
+  ],
+  "routing": {},
+  "dataplane": {},
+  "pcap": { "filter": {} },
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {
+        "id": "allow-mgmt-ui",
+        "description": "Allow management UI/API access",
+        "protocols": [{ "name": "tcp", "port": "8080" }],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "it-to-dmz-standard",
+        "description": "IT to DMZ: SSH, HTTP/S, RDP, HMI, VNC",
+        "sourceZones": ["wan"],
+        "destZones": ["dmz"],
+        "protocols": [
+          { "name": "tcp", "port": "22" },
+          { "name": "tcp", "port": "80" },
+          { "name": "tcp", "port": "443" },
+          { "name": "tcp", "port": "3389" },
+          { "name": "tcp", "port": "1881" },
+          { "name": "tcp", "port": "3000" },
+          { "name": "tcp", "port": "5900" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "jumpbox-to-ot-modbus-rw",
+        "description": "Jumpbox to OT Control: Modbus R/W",
+        "sourceZones": ["dmz"],
+        "destZones": ["lan1"],
+        "sources": ["10.20.20.60/32"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus" },
+        "action": "ALLOW"
+      },
+      {
+        "id": "hmi-view-to-ot-control-modbus-ro",
+        "description": "HMI View to OT Control: Modbus READ only",
+        "sourceZones": ["dmz"],
+        "destZones": ["lan1"],
+        "sources": ["10.30.30.10/32"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus", "functionCodes": [1, 2, 3, 4] },
+        "action": "ALLOW"
+      },
+      {
+        "id": "hmi-view-to-ot-safety-modbus-ro",
+        "description": "HMI View to OT Safety: Modbus READ only",
+        "sourceZones": ["dmz"],
+        "destZones": ["lan2"],
+        "sources": ["10.40.40.10/32"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus", "functionCodes": [1, 2, 3, 4] },
+        "action": "ALLOW"
+      },
+      {
+        "id": "hmi-control-intrazone",
+        "description": "HMI Control to PLCs: Modbus R/W (same zone)",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan1"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus" },
+        "action": "ALLOW"
+      },
+      {
+        "id": "hmi-control-to-safety-ro",
+        "description": "HMI Control to Safety: Modbus READ only",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan2"],
+        "sources": ["10.30.30.11/32"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus", "functionCodes": [1, 2, 3, 4] },
+        "action": "ALLOW"
+      },
+      {
+        "id": "deny-write-to-safety",
+        "description": "BLOCK: All Modbus WRITE to Safety Zone",
+        "destZones": ["lan2"],
+        "protocols": [{ "name": "tcp", "port": "502" }],
+        "ics": { "protocol": "modbus", "functionCodes": [5, 6, 15, 16, 22, 23] },
+        "action": "DENY"
+      },
+      {
+        "id": "allow-return-traffic",
+        "description": "Allow established return traffic",
+        "state": ["ESTABLISHED", "RELATED"],
+        "ics": {},
+        "action": "ALLOW"
+      }
+    ],
+    "nat": { "enabled": false }
+  },
+  "ids": { "enabled": false },
+  "services": {
+    "syslog": { "forwarders": [], "format": "rfc5424", "batchSize": 500, "flushEvery": 2 },
+    "dns": { "enabled": false },
+    "ntp": { "enabled": false },
+    "proxy": { "forward": { "enabled": false }, "reverse": { "enabled": false } },
+    "dhcp": { "enabled": false },
+    "vpn": { "wireguard": { "enabled": false }, "openvpn": { "enabled": false } },
+    "av": { "enabled": false, "icap": {}, "clamav": {} }
+  }
+}

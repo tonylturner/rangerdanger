@@ -1,6 +1,8 @@
 package containd
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -142,6 +144,19 @@ func (c *Client) doRequest(method, url string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
+	}
+	return c.httpClient.Do(req)
+}
+
+// doRequestWithBody performs an authenticated HTTP request with a body.
+func (c *Client) doRequestWithBody(method, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	if c.AuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
 	}
@@ -352,4 +367,40 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 	}
 
 	return summaries, nil
+}
+
+// ImportConfig sends a full JSON config to containd's import endpoint.
+func (c *Client) ImportConfig(configJSON []byte) error {
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/import", configJSON)
+	if err != nil {
+		return fmt.Errorf("import config request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("import config returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// WaitReady polls containd health until it responds or the context is cancelled.
+func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("containd not ready after %s: %w", timeout, ctx.Err())
+		case <-ticker.C:
+			if c.IsAvailable() {
+				return nil
+			}
+		}
+	}
 }

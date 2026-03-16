@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -14,12 +16,21 @@ import (
 	"github.com/docker/docker/client"
 	"gorm.io/gorm"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-// Network name mapping from lab definition to Docker network names
+// Network name mapping from lab definition to Docker network names.
+// Supports both the new substation scenario and legacy oil-plant names.
 var networkNameMap = map[string]string{
+	// Substation segmentation lab
+	"enterprise_net": "rangerdanger_enterprise_net",
+	"vendor_net":     "rangerdanger_vendor_net",
+	"ot_ops_net":     "rangerdanger_ot_ops_net",
+	"field_net":      "rangerdanger_field_net",
+	"physics_net":    "rangerdanger_physics_net",
+	// Legacy oil-plant names (backward compat)
 	"it_net":         "rangerdanger_it_net",
 	"dmz_net":        "rangerdanger_dmz_net",
 	"ot_control_net": "rangerdanger_ot_control_net",
@@ -28,18 +39,20 @@ var networkNameMap = map[string]string{
 
 // Orchestrator manages Docker containers for lab instances.
 type Orchestrator struct {
-	logger       *log.Logger
-	dockerClient *client.Client
+	logger         *log.Logger
+	dockerClient   *client.Client
+	containdClient *containd.Client
+	labDefsDir     string
 }
 
 // New creates a new orchestrator with Docker SDK client.
-func New() *Orchestrator {
+func New(containdClient *containd.Client, labDefsDir string) *Orchestrator {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Printf("WARNING: Docker client init failed: %v (orchestrator will use stub mode)", err)
-		return &Orchestrator{logger: log.Default(), dockerClient: nil}
+		return &Orchestrator{logger: log.Default(), dockerClient: nil, containdClient: containdClient, labDefsDir: labDefsDir}
 	}
-	return &Orchestrator{logger: log.Default(), dockerClient: cli}
+	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
 }
 
 // ProvisionLabInstance creates containers for lab nodes.
@@ -58,15 +71,29 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 
 	// UI port configuration for known node types (host will be set from container IP)
 	uiPortMap := map[string]int{
-		"containd_ngfw": 8080,
+		"containd_ngfw":    8080,
+		"fuxa_hmi":         1881,
+		"rtac_sim":         8080,
+		"relay_sim":        8080,
+		"recloser_sim":     8080,
+		"regulator_sim":    8080,
+		"capbank_sim":      8080,
+		"opendss_sim":      8080,
+		"openplc":          8080,
+		"corp_workstation": 3000,
+		"vendor_jumpbox":   3000,
+		"eng_workstation":  3000,
+		"kali_pentest":     3000,
+		// Legacy types
 		"ews":           3000,
+		"ubuntu_jumpbox": 3000,
 		"plc_trainer":   8080,
 		"sis_plc":       8080,
+		"hmi_view":      1881,
+		"hmi_control":   1881,
 		"hmi_scada":     1881,
-		"grafana":       3000,
-		"ot_ids":        9999, // Suricata doesn't have a web UI
-		"jump_host":     0,    // No web UI, terminal only
-		"historian":     8086, // InfluxDB UI
+		"historian":     8086,
+		"ot_ids":        9999,
 	}
 
 	var nodes []models.NodeDefinition
@@ -150,6 +177,19 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	for _, node := range nodes {
 		if err := db.WithContext(ctx).Save(&node).Error; err != nil {
 			o.logger.Printf("[lab %s] failed to save node %s: %v", instance.ID, node.ID, err)
+		}
+	}
+
+	// Push lab-specific firewall config to containd
+	if template.FirewallConfigPath != "" && o.containdClient != nil {
+		cfgPath := filepath.Join(o.labDefsDir, template.FirewallConfigPath)
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			o.logger.Printf("[lab %s] failed to read firewall config %s: %v", instance.ID, cfgPath, err)
+		} else if err := o.containdClient.ImportConfig(data); err != nil {
+			o.logger.Printf("[lab %s] failed to import firewall config: %v", instance.ID, err)
+		} else {
+			o.logger.Printf("[lab %s] firewall config imported from %s", instance.ID, cfgPath)
 		}
 	}
 

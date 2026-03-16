@@ -1,6 +1,7 @@
 id: "default-oil-plant"
 name: "Default Oil Plant Lab"
 description: "OT lab with segmented HMI (view/control), process PLCs, SIS, engineering workstation, and containd NGFW with ICS DPI."
+firewall_config: firewall/default-oil-plant.json
 networks:
   - name: it_net
     cidr: 10.10.10.0/24
