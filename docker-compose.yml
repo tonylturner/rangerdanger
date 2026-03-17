@@ -260,6 +260,7 @@ services:
       - opendss_sim
 
   openplc:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.openplc
