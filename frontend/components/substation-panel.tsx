@@ -9,6 +9,7 @@ import {
   getActiveFirewallConfig,
   applyFirewallConfig,
   sendSubstationCommand,
+  executeScenarioStep,
   type SubstationState,
   type AuditEntry,
   type NetworkEvent,
@@ -19,7 +20,6 @@ export function SubstationPanel() {
   const [state, setState] = useState<SubstationState | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
-  const [policyDiff, setPolicyDiff] = useState<PolicyComparison | null>(null);
   const [tab, setTab] = useState<"diagram" | "commands" | "correlation" | "segmentation">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
 
@@ -43,10 +43,6 @@ export function SubstationPanel() {
     const id = setInterval(poll, 3000);
     return () => clearInterval(id);
   }, [poll]);
-
-  useEffect(() => {
-    getFirewallComparison().then(setPolicyDiff).catch(() => {});
-  }, []);
 
   const elec = state?.electrical;
   const relay = state?.devices?.relay;
@@ -102,7 +98,7 @@ export function SubstationPanel() {
           />
         )}
         {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
-        {tab === "segmentation" && <SegmentationView comparison={policyDiff} />}
+        {tab === "segmentation" && <SegmentationView />}
       </div>
     </div>
   );
@@ -517,23 +513,53 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
 
 // ── containd Segmentation View ───────────────────────────────────
 
-function SegmentationView({ comparison }: { comparison: PolicyComparison | null }) {
+function SegmentationView() {
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<PolicyComparison | null>(null);
   const [applying, setApplying] = useState(false);
+  const [lastApply, setLastApply] = useState(0);
+  const [testResult, setTestResult] = useState<{blocked: boolean; detail: string} | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     getActiveFirewallConfig().then((r) => setActiveConfig(r.active_config)).catch(() => {});
-  }, []);
+    getFirewallComparison().then(setComparison).catch(() => {});
+  }, [lastApply]);
 
   const handleApply = async (config: "weak" | "improved") => {
     setApplying(true);
     try {
       const res = await applyFirewallConfig(config);
       setActiveConfig(res.active_config);
+      setLastApply((c) => c + 1);
+      setTestResult(null);
     } catch {
       // error
     } finally {
       setApplying(false);
+    }
+  };
+
+  const handleTestConfig = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Use the step execution endpoint to test an enterprise->field command
+      const res = await executeScenarioStep("enterprise-to-breaker", 5);
+      // Step 5 is "Re-test attack" which sends trip from 10.10.10.50
+      const blocked = !res.success;
+      setTestResult({
+        blocked,
+        detail: res.results?.[0]?.detail || (blocked ? "Command blocked by containd" : "Command reached field device"),
+      });
+      // If the command actually succeeded (weak config), restore the breaker
+      if (!blocked) {
+        await executeScenarioStep("enterprise-to-breaker", 3); // restore step
+      }
+    } catch (e) {
+      setTestResult({ blocked: false, detail: `Test error: ${e}` });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -587,9 +613,34 @@ function SegmentationView({ comparison }: { comparison: PolicyComparison | null 
             >
               {activeConfig === "improved" ? "Hardened (active)" : "Apply Hardened"}
             </button>
+            <button
+              onClick={handleTestConfig}
+              disabled={testing}
+              className="rounded border border-sky-700 bg-sky-950/30 px-3 py-1.5 text-[11px] font-medium text-sky-400 hover:bg-sky-900/30 disabled:opacity-40 transition-colors"
+            >
+              {testing ? "Testing..." : "Test Segmentation"}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Test result */}
+      {testResult && (
+        <div className={`rounded border p-3 text-xs ${
+          testResult.blocked
+            ? "border-green-800/60 bg-green-950/20 text-green-400"
+            : "border-red-800/60 bg-red-950/20 text-red-400"
+        }`}>
+          <span className="font-bold">{testResult.blocked ? "BLOCKED" : "ALLOWED"}</span>
+          <span className="ml-2 text-slate-400">{testResult.detail}</span>
+          {!testResult.blocked && activeConfig === "improved" && (
+            <div className="mt-1 text-yellow-400">Warning: Command should be blocked with hardened policy</div>
+          )}
+          {testResult.blocked && activeConfig === "improved" && (
+            <div className="mt-1">Enterprise→field traffic correctly blocked by containd NGFW</div>
+          )}
+        </div>
+      )}
 
       {/* Zone-pair rules — simplified */}
       <div className="space-y-1.5">

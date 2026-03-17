@@ -366,3 +366,21 @@ export async function executeScenarioStep(scenarioId: string, stepIdx: number) {
     method: "POST",
   });
 }
+
+export type WorkshopStatus = {
+  workshop_id: string;
+  workshop_name: string;
+  rtac_online: boolean;
+  firewall_online: boolean;
+  firewall_config: string;
+  scenario_count: number;
+  device_comms: Record<string, boolean>;
+};
+
+export async function getWorkshopGraph(): Promise<LabGraph> {
+  return request<LabGraph>("/workshop/graph");
+}
+
+export async function getWorkshopStatus(): Promise<WorkshopStatus> {
+  return request<WorkshopStatus>("/workshop/status");
+}
