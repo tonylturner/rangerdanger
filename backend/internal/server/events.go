@@ -55,7 +55,7 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 			for _, e := range events {
 				eventData, _ := json.Marshal(e)
 				c.SSEvent("event", string(eventData))
-				lastEventID = e.ID
+				lastEventID = string(e.ID)
 			}
 			c.Writer.Flush()
 

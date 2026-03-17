@@ -181,6 +181,27 @@ type ScenarioYAML struct {
 
 // ScenarioStep describes a single scenario instruction.
 type ScenarioStep struct {
-	Title       string `yaml:"title"`
-	Description string `yaml:"description"`
+	Title       string      `yaml:"title" json:"title"`
+	Description string      `yaml:"description" json:"description"`
+	Action      *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
+}
+
+// StepAction defines an executable action for a scenario step.
+type StepAction struct {
+	Type     string            `yaml:"type" json:"type"`                           // "command", "check", "firewall", "sequence"
+	Device   string            `yaml:"device,omitempty" json:"device,omitempty"`   // for type=command
+	Command  string            `yaml:"command,omitempty" json:"command,omitempty"` // for type=command
+	Source   string            `yaml:"source,omitempty" json:"source,omitempty"`   // for type=command
+	Value    *float64          `yaml:"value,omitempty" json:"value,omitempty"`     // for type=command (e.g. set_tap)
+	Config   string            `yaml:"config,omitempty" json:"config,omitempty"`   // for type=firewall
+	Expect   map[string]any    `yaml:"expect,omitempty" json:"expect,omitempty"`   // for type=check
+	Commands []StepActionCmd   `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
+}
+
+// StepActionCmd is a single command in a sequence action.
+type StepActionCmd struct {
+	Device  string   `yaml:"device" json:"device"`
+	Command string   `yaml:"command" json:"command"`
+	Source  string   `yaml:"source,omitempty" json:"source,omitempty"`
+	Value   *float64 `yaml:"value,omitempty" json:"value,omitempty"`
 }

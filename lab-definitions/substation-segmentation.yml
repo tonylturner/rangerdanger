@@ -166,30 +166,73 @@ scenarios:
           Load the lab and verify the feeder is energized.
           Check that the HMI shows normal breaker status and all
           loads are served.
+        action:
+          type: check
+          expect:
+            breaker_closed: true
+            loads_energized: true
+
       - title: "Launch attack from enterprise zone"
         description: >
           From the Kali box (10.10.10.50), send a trip command
           directly to the relay-sim (10.40.40.20):
           curl -X POST http://10.40.40.20:8080/api/command -d '{"command":"trip","source":"kali"}'
+        action:
+          type: command
+          device: relay
+          command: trip
+          source: "10.10.10.50"
+
       - title: "Observe operational consequence"
         description: >
           With the weak baseline, the trip command succeeds.
           The feeder breaker opens. All downstream loads lose power.
           Check the HMI — general and critical loads should show de-energized.
+        action:
+          type: check
+          expect:
+            breaker_closed: false
+
+      - title: "Restore service"
+        description: >
+          Close the feeder breaker to restore power before
+          applying the improved segmentation policy.
+        action:
+          type: command
+          device: relay
+          command: close
+          source: "operator"
+
       - title: "Improve segmentation"
         description: >
           Use Containd to block enterprise zone (wan) from directly
           reaching field device zone (lan2). Import the improved
           firewall config or create rules manually.
+        action:
+          type: firewall
+          config: improved
+
       - title: "Re-test attack"
         description: >
-          Repeat the curl command from Kali. The command should now
-          be blocked by the firewall. Verify the breaker remains closed
-          and all loads stay energized.
+          Repeat the trip command from the enterprise zone. The
+          command should now be blocked by containd. Verify the
+          breaker remains closed and all loads stay energized.
+        action:
+          type: command
+          device: relay
+          command: trip
+          source: "10.10.10.50"
+
       - title: "Validate operations"
         description: >
           Verify that the HMI can still read device state through
           the RTAC and that legitimate control paths still work.
+        action:
+          type: check
+          expect:
+            breaker_closed: true
+            loads_energized: true
+            firewall_config: improved
 
   - id: vendor-access-abuse
     name: "Scenario 2: Vendor Access Abuse"
@@ -207,22 +250,66 @@ scenarios:
         description: >
           Inject a fault on the recloser and observe that auto-reclose
           restores service automatically within seconds.
+        action:
+          type: check
+          expect:
+            recloser_closed: true
+            reclose_enabled: true
+
       - title: "Attack from vendor zone"
         description: >
           From vendor-jump (10.20.20.10), disable reclose on the recloser:
           curl -X POST http://10.40.40.21:8080/api/command -d '{"command":"disable_reclose","source":"vendor-jump"}'
+        action:
+          type: command
+          device: recloser
+          command: disable_reclose
+          source: "10.20.20.10"
+
       - title: "Inject fault after disabling reclose"
         description: >
           Inject a fault. Without auto-reclose, the recloser trips
           and locks out. Downstream loads experience sustained outage.
+        action:
+          type: command
+          device: recloser
+          command: inject_fault
+          source: "10.20.20.10"
+
+      - title: "Restore service"
+        description: >
+          Reset the recloser lockout, re-enable auto-reclose,
+          and close the recloser to restore normal operation.
+        action:
+          type: sequence
+          commands:
+            - device: recloser
+              command: reset_lockout
+              source: "operator"
+            - device: recloser
+              command: enable_reclose
+              source: "operator"
+            - device: recloser
+              command: close
+              source: "operator"
+
       - title: "Improve segmentation"
         description: >
           Block vendor zone (dmz) from direct access to field devices.
           Only allow vendor access to approved OT operations services.
+        action:
+          type: firewall
+          config: improved
+
       - title: "Re-test"
         description: >
           The vendor disable_reclose command is now blocked.
           Fault recovery works normally.
+        action:
+          type: command
+          device: recloser
+          command: disable_reclose
+          source: "10.20.20.10"
 
   - id: ot-east-west-pivot
     name: "Scenario 3: OT East-West Pivot"
@@ -239,20 +326,62 @@ scenarios:
       - title: "Observe normal voltage"
         description: >
           Verify critical load voltage is within normal range (114-126V).
+        action:
+          type: check
+          expect:
+            voltage_normal: true
+
       - title: "Simulate OT compromise"
         description: >
           From a compromised OT operations node, directly manipulate
           the regulator tap position to an extreme value:
           curl -X POST http://10.40.40.22:8080/api/command -d '{"command":"set_tap","value":-16,"source":"compromised-ot-node"}'
+        action:
+          type: command
+          device: regulator
+          command: set_tap
+          source: "10.30.30.30"
+          value: -16
+
       - title: "Observe voltage degradation"
         description: >
           Critical load voltage drops below acceptable levels.
           Low voltage alarm activates.
+        action:
+          type: check
+          expect:
+            voltage_normal: false
+
+      - title: "Restore voltage"
+        description: >
+          Reset the regulator to automatic mode and restore
+          normal tap position.
+        action:
+          type: sequence
+          commands:
+            - device: regulator
+              command: set_auto
+              source: "operator"
+            - device: regulator
+              command: set_tap
+              source: "operator"
+              value: 0
+
       - title: "Improve segmentation"
         description: >
-          Enforce that only the RTAC (10.40.40.10) on the field_net
+          Enforce that only the RTAC (10.30.30.20) on the field_net
           can send commands to field devices. Block other OT operations
           nodes from direct field device access.
+        action:
+          type: firewall
+          config: improved
+
       - title: "Re-test"
         description: >
           The unauthorized tap change is blocked. Voltage remains normal.
+        action:
+          type: command
+          device: regulator
+          command: set_tap
+          source: "10.30.30.30"
+          value: -16

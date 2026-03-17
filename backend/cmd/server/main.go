@@ -34,8 +34,12 @@ func main() {
     containdClient := containd.NewClient(cfg.ContaindAPIURL)
     go containd.SeedConfigIfNeeded(containdClient, cfg.ContaindConfigPath)
 
-    orchestrator := orchestrator.New(containdClient, cfg.LabDefinitionsPath)
-    srv := server.New(cfg, database, loader, orchestrator)
+    orch := orchestrator.New(containdClient, cfg.LabDefinitionsPath)
+
+    // Provision container gateways to route all traffic through containd
+    go orch.ProvisionGateways(ctx)
+
+    srv := server.New(cfg, database, loader, orch, containdClient)
 
     if err := srv.Run(ctx); err != nil {
         log.Fatalf("run server: %v", err)

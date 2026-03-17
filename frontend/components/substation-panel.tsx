@@ -4,22 +4,35 @@ import { useEffect, useState, useCallback } from "react";
 import {
   getSubstationState,
   getSubstationAudit,
+  getSubstationNetworkEvents,
+  getFirewallComparison,
+  getActiveFirewallConfig,
+  applyFirewallConfig,
   sendSubstationCommand,
   type SubstationState,
   type AuditEntry,
+  type NetworkEvent,
+  type PolicyComparison,
 } from "../lib/api";
 
 export function SubstationPanel() {
   const [state, setState] = useState<SubstationState | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [tab, setTab] = useState<"diagram" | "commands" | "correlation">("diagram");
+  const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
+  const [policyDiff, setPolicyDiff] = useState<PolicyComparison | null>(null);
+  const [tab, setTab] = useState<"diagram" | "commands" | "correlation" | "segmentation">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
     try {
-      const [s, a] = await Promise.all([getSubstationState(), getSubstationAudit()]);
+      const [s, a, ne] = await Promise.all([
+        getSubstationState(),
+        getSubstationAudit(),
+        getSubstationNetworkEvents(),
+      ]);
       setState(s);
       setAudit(a.entries ?? []);
+      setNetworkEvents(ne.events ?? []);
     } catch {
       // offline
     }
@@ -27,9 +40,13 @@ export function SubstationPanel() {
 
   useEffect(() => {
     poll();
-    const id = setInterval(poll, 2000);
+    const id = setInterval(poll, 3000);
     return () => clearInterval(id);
   }, [poll]);
+
+  useEffect(() => {
+    getFirewallComparison().then(setPolicyDiff).catch(() => {});
+  }, []);
 
   const elec = state?.electrical;
   const relay = state?.devices?.relay;
@@ -39,7 +56,7 @@ export function SubstationPanel() {
   const execCmd = async (device: string, command: string, value?: number) => {
     try {
       const res = await sendSubstationCommand(device, command, undefined, value);
-      setCmdResult(`${device}/${command}: ${res.result} — ${res.process_impact || res.detail}`);
+      setCmdResult(`${res.result}: ${res.process_impact || res.detail}`);
       setTimeout(poll, 500);
     } catch (e) {
       setCmdResult(`Error: ${e}`);
@@ -47,9 +64,10 @@ export function SubstationPanel() {
   };
 
   const tabs = [
-    { id: "diagram" as const, label: "One-Line Diagram" },
+    { id: "diagram" as const, label: "Feeder One-Line" },
     { id: "commands" as const, label: "Supervisory Control" },
-    { id: "correlation" as const, label: "Cyber → Process" },
+    { id: "correlation" as const, label: "Command Audit" },
+    { id: "segmentation" as const, label: "containd Segmentation" },
   ];
 
   return (
@@ -83,7 +101,8 @@ export function SubstationPanel() {
             cmdResult={cmdResult}
           />
         )}
-        {tab === "correlation" && <CyberProcessCorrelation entries={audit} />}
+        {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
+        {tab === "segmentation" && <SegmentationView comparison={policyDiff} />}
       </div>
     </div>
   );
@@ -108,185 +127,185 @@ function OneLine({
   const genEnergized = elec?.general_load_energized ?? false;
   const critEnergized = elec?.critical_load_energized ?? false;
 
-  // Alarm conditions
   const lowVoltage = (elec?.critical_load_voltage_v ?? 120) < 114;
   const highVoltage = (elec?.critical_load_voltage_v ?? 120) > 126;
   const recloseOff = recloser && !recloser.reclose_enabled;
   const anyAlarm = !bkrClosed || !rclClosed || lowVoltage || highVoltage || recloseOff;
 
+  const totalKw = (elec?.general_load_kw ?? 0) + (elec?.critical_load_kw ?? 0);
+
   return (
     <div className="space-y-3">
-      {/* Alarm banner */}
+      {/* Alarm banner — operational language */}
       {anyAlarm && (
-        <div className="rounded border border-red-800 bg-red-950/60 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-red-400">
+        <div className="rounded border border-red-800 bg-red-950/50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-red-400">
             <span className="animate-pulse">ALARM</span>
-            {!bkrClosed && <span className="rounded bg-red-900/70 px-2 py-0.5">BREAKER 52 OPEN</span>}
-            {!rclClosed && <span className="rounded bg-red-900/70 px-2 py-0.5">RECLOSER 79 OPEN</span>}
-            {recloseOff && <span className="rounded bg-yellow-900/70 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED</span>}
-            {lowVoltage && <span className="rounded bg-red-900/70 px-2 py-0.5">LOW VOLTAGE</span>}
-            {highVoltage && <span className="rounded bg-red-900/70 px-2 py-0.5">HIGH VOLTAGE</span>}
+            {!bkrClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">FEEDER BREAKER OPEN — customers without power</span>}
+            {bkrClosed && !rclClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">RECLOSER OPEN — downstream loads lost</span>}
+            {recloseOff && <span className="rounded bg-yellow-900/60 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED — no fault recovery</span>}
+            {lowVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">LOW VOLTAGE — equipment damage risk</span>}
+            {highVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">HIGH VOLTAGE — equipment damage risk</span>}
           </div>
         </div>
       )}
 
       <div className="font-mono text-xs leading-relaxed">
-        {/* Zone header */}
-        <div className="mb-2 rounded bg-slate-900 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-          Feeder 101 — Distribution Substation
-        </div>
-
-        {/* Substation Bus */}
-        <div className="flex items-center gap-2">
-          <span className="w-32 text-right text-slate-500">12.47 kV Bus</span>
-          <span className="text-sky-400 font-bold">
-            {elec?.substation_bus_voltage_v?.toFixed(1) ?? "--"}V
-          </span>
-          <span className="text-slate-600 text-[10px]">
-            ({elec?.substation_bus_voltage_kv?.toFixed(2) ?? "--"} kV)
+        {/* Substation bus */}
+        <div className="flex items-center gap-3 mb-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-28 text-right">12.47 kV Bus</span>
+          <span className="text-sky-400 font-bold text-sm">
+            {elec?.substation_bus_voltage_v?.toFixed(0) ?? "--"}V
           </span>
         </div>
 
-        {/* Vertical line */}
-        <div className="ml-[8.5rem] border-l-2 border-sky-800 pl-3">
+        {/* Main feeder path */}
+        <div className="ml-[7.5rem] border-l-2 border-sky-800/60 pl-4 space-y-0.5">
 
-          {/* Device 52: Feeder Breaker */}
+          {/* Breaker 52 */}
           <div className="py-1">
             <div className="flex items-center gap-2">
-              <DeviceSymbol closed={bkrClosed} label="52" />
-              <span className="text-slate-400">Feeder Breaker</span>
-              {relay?.lockout && <Tag color="red">LOCKOUT</Tag>}
-              {relay?.fault_seen && <Tag color="yellow">FAULT</Tag>}
-              {relay?.remote_control_enabled && <Tag color="slate">REMOTE</Tag>}
+              <BreakerSymbol closed={bkrClosed} label="52" />
+              <span className="text-slate-300 font-medium">Feeder Breaker</span>
+              {relay?.lockout && <StatusBadge color="red">LOCKED OUT</StatusBadge>}
+              {relay?.fault_seen && <StatusBadge color="yellow">FAULT DETECTED</StatusBadge>}
             </div>
-            <div className="ml-8 text-slate-600">
-              Last cmd: <span className="text-slate-400">{relay?.last_command_source ?? "—"}</span>
-            </div>
+            {relay?.last_command_source && relay.last_command_source !== "—" && (
+              <div className="ml-10 text-[10px] text-slate-600">
+                Last command from: <span className="text-slate-400">{String(relay.last_command_source)}</span>
+              </div>
+            )}
           </div>
 
-          <div className={`border-l-2 pl-3 ${bkrClosed ? "border-green-800" : "border-red-900"}`}>
-            {/* Current measurement */}
-            <div className="py-0.5 text-slate-500">
-              Feeder: <span className="text-amber-400">{elec?.feeder_current_a?.toFixed(1) ?? "0"}A</span>
-              {" / "}
-              <VoltageIndicator voltage={elec?.downstream_voltage_v} label="downstream" />
+          {/* Energized/de-energized section */}
+          <div className={`border-l-2 pl-4 space-y-0.5 ${bkrClosed ? "border-green-800/50" : "border-red-900/50"}`}>
+            <div className="flex items-center gap-2 text-slate-500 text-[10px]">
+              <span className="text-amber-400 font-bold">{elec?.feeder_current_a?.toFixed(0) ?? "0"}A</span>
+              <span>/</span>
+              <VoltageChip voltage={elec?.downstream_voltage_v} />
             </div>
 
-            {/* Device 79: Recloser */}
+            {/* Recloser 79 */}
             <div className="py-1">
               <div className="flex items-center gap-2">
-                <DeviceSymbol closed={rclClosed} label="79" />
-                <span className="text-slate-400">Recloser</span>
-                {recloser?.lockout && <Tag color="red">LOCKOUT</Tag>}
+                <BreakerSymbol closed={rclClosed} label="79" />
+                <span className="text-slate-300 font-medium">Recloser</span>
+                {recloser?.lockout && <StatusBadge color="red">LOCKED OUT</StatusBadge>}
                 {recloser?.reclose_enabled
-                  ? <Tag color="green">AUTO-RECLOSE</Tag>
-                  : <Tag color="yellow">RECLOSE OFF</Tag>
+                  ? <StatusBadge color="green">Auto-reclose ON</StatusBadge>
+                  : <StatusBadge color="yellow">Auto-reclose OFF</StatusBadge>
                 }
-                <span className="text-slate-600">shots: {recloser?.shot_count ?? 0}/3</span>
-              </div>
-              <div className="ml-8 text-slate-600">
-                Last cmd: <span className="text-slate-400">{recloser?.last_command_source ?? "—"}</span>
+                <span className="text-slate-600 text-[10px]">shots {String(recloser?.shot_count ?? 0)}/3</span>
               </div>
             </div>
 
-            <div className={`border-l-2 pl-3 ${rclClosed ? "border-green-800" : "border-red-900"}`}>
-              {/* Branch A */}
+            <div className={`border-l-2 pl-4 ${rclClosed ? "border-green-800/50" : "border-red-900/50"}`}>
+              {/* General load */}
               <div className="flex items-center gap-2 py-1">
-                <span className="text-slate-500">Branch A:</span>
+                <LoadSymbol energized={genEnergized} />
                 <span className="text-slate-400">General Load</span>
-                <LoadIndicator energized={genEnergized} kw={elec?.general_load_kw} />
+                <span className={`font-bold text-xs ${genEnergized ? "text-green-400" : "text-red-400"}`}>
+                  {genEnergized ? `${elec?.general_load_kw ?? 0} kW` : "NO POWER"}
+                </span>
               </div>
 
-              {/* Branch B with regulator */}
+              {/* Critical load with regulator */}
               <div className="py-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-500">Branch B:</span>
-                  <span className="text-slate-400">Critical Load</span>
-                  <LoadIndicator energized={critEnergized} kw={elec?.critical_load_kw} />
+                  <LoadSymbol energized={critEnergized} critical />
+                  <span className="text-slate-300 font-medium">Critical Load</span>
+                  <span className={`font-bold text-xs ${critEnergized ? "text-green-400" : "text-red-400"}`}>
+                    {critEnergized ? `${elec?.critical_load_kw ?? 0} kW` : "NO POWER"}
+                  </span>
                 </div>
 
-                {/* Device 90: Voltage Regulator */}
-                <div className="ml-4 mt-1 flex items-center gap-2">
-                  <span className="rounded border border-cyan-800 bg-cyan-950/30 px-1.5 py-0.5 text-cyan-400 font-bold">
+                {/* Regulator 90 */}
+                <div className="ml-6 mt-1 flex items-center gap-2 text-[11px]">
+                  <span className="rounded border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
                     90
                   </span>
-                  <span className="text-slate-400">Voltage Regulator</span>
+                  <span className="text-slate-500">Voltage Regulator</span>
                   <span className="text-cyan-400 font-bold">
-                    Tap: {tap > 0 ? "+" : ""}{tap}
+                    Tap {tap > 0 ? "+" : ""}{tap}
                   </span>
                   <span className="text-slate-600">
-                    ({regulator?.manual_mode ? "MANUAL" : "AUTO"})
+                    {regulator?.manual_mode ? "MANUAL" : "AUTO"}
                   </span>
-                  <span className="text-slate-500">→</span>
-                  <VoltageIndicator voltage={elec?.critical_load_voltage_v} label="critical" />
+                  <VoltageChip voltage={elec?.critical_load_voltage_v} critical />
                 </div>
+                {!critEnergized && (
+                  <div className="ml-6 mt-0.5 text-[10px] text-red-400 font-medium">
+                    Hospital and fire station without power
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Zone boundary legend */}
-        <div className="mt-3 flex items-center gap-4 border-t border-slate-800 pt-2 text-[10px] text-slate-600">
-          <span>Zone: OT Operations (10.30.30.0/24) + Field Devices (10.40.40.0/24)</span>
-          <span>|</span>
-          <span>Physics: OpenDSS engine (10.50.50.0/24)</span>
+        {/* Service summary */}
+        <div className="mt-3 flex items-center gap-4 border-t border-slate-800/60 pt-2 text-[10px]">
+          <span className={`font-bold ${totalKw > 0 ? "text-green-400" : "text-red-400"}`}>
+            {totalKw > 0 ? `${totalKw} kW serving ~${Math.round(totalKw * 3)} customers` : "ALL CUSTOMERS WITHOUT POWER"}
+          </span>
+          <span className="ml-auto text-slate-600">
+            RTAC polls field devices on 10.40.40.x via containd
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function DeviceSymbol({ closed, label }: { closed: boolean; label: string }) {
+function BreakerSymbol({ closed, label }: { closed: boolean; label: string }) {
   return (
-    <span
-      className={`inline-flex h-6 w-8 items-center justify-center rounded border font-bold text-[10px] ${
-        closed
-          ? "border-green-700 bg-green-950/50 text-green-400"
-          : "border-red-700 bg-red-950/50 text-red-400"
-      }`}
-    >
+    <span className={`inline-flex h-6 w-8 items-center justify-center rounded font-bold text-[10px] ${
+      closed
+        ? "border border-green-700/60 bg-green-950/40 text-green-400"
+        : "border-2 border-red-600 bg-red-950/60 text-red-400"
+    }`}>
       {label}
     </span>
   );
 }
 
-function Tag({ color, children }: { color: string; children: React.ReactNode }) {
+function LoadSymbol({ energized, critical }: { energized?: boolean; critical?: boolean }) {
+  const baseColor = energized ? "border-green-700/50" : "border-red-700/50";
+  return (
+    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-[8px] font-bold ${baseColor} ${
+      critical ? "text-amber-400" : "text-slate-500"
+    }`}>
+      {critical ? "!" : "~"}
+    </span>
+  );
+}
+
+function StatusBadge({ color, children }: { color: string; children: React.ReactNode }) {
   const cls: Record<string, string> = {
-    red: "border-red-800 bg-red-950/50 text-red-400",
-    yellow: "border-yellow-800 bg-yellow-950/50 text-yellow-400",
-    green: "border-green-800 bg-green-950/50 text-green-400",
-    slate: "border-slate-700 bg-slate-900/50 text-slate-400",
+    red: "border-red-800/60 bg-red-950/40 text-red-400",
+    yellow: "border-yellow-800/60 bg-yellow-950/40 text-yellow-400",
+    green: "border-green-800/60 bg-green-950/40 text-green-400",
   };
   return (
-    <span className={`rounded border px-1 py-0.5 text-[9px] font-bold ${cls[color] || cls.slate}`}>
+    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls[color] || cls.red}`}>
       {children}
     </span>
   );
 }
 
-function LoadIndicator({ energized, kw }: { energized?: boolean; kw?: number }) {
+function VoltageChip({ voltage, critical }: { voltage?: number; critical?: boolean }) {
+  if (voltage === undefined || voltage === 0) return <span className="text-red-400 font-bold text-[10px]">0V DEAD</span>;
+  const low = voltage < 108;
+  const warnLow = voltage < 114;
+  const high = voltage > 132;
+  const warnHigh = voltage > 126;
+  const color = low || high ? "text-red-400 font-bold" : warnLow || warnHigh ? "text-yellow-400" : "text-green-400";
   return (
-    <span className={`font-bold ${energized ? "text-green-400" : "text-red-400"}`}>
-      {energized ? "ENERGIZED" : "DE-ENERGIZED"}
-      <span className="ml-1 text-amber-400 font-normal">{kw ?? 0} kW</span>
-    </span>
-  );
-}
-
-function VoltageIndicator({ voltage, label }: { voltage?: number; label?: string }) {
-  if (voltage === undefined || voltage === 0) return <span className="text-slate-600">--V</span>;
-  const isLow = voltage < 108;
-  const isWarnLow = voltage < 114;
-  const isHigh = voltage > 132;
-  const isWarnHigh = voltage > 126;
-  const color = isLow || isHigh ? "text-red-400 font-bold" : isWarnLow || isWarnHigh ? "text-yellow-400" : "text-green-400";
-  return (
-    <span className={color}>
-      {voltage.toFixed(1)}V
-      {isLow && " BELOW RANGE B"}
-      {!isLow && isWarnLow && " RANGE B"}
-      {isHigh && " ABOVE RANGE B"}
-      {!isHigh && isWarnHigh && " RANGE B"}
+    <span className={`${color} text-[10px]`}>
+      {voltage.toFixed(0)}V
+      {(low || high) && " DANGER"}
+      {(!low && warnLow) && " LOW"}
+      {(!high && warnHigh) && " HIGH"}
     </span>
   );
 }
@@ -309,57 +328,61 @@ function CommandPanel({
   return (
     <div className="space-y-4">
       {cmdResult && (
-        <div className={`rounded border px-3 py-2 font-mono text-xs ${
+        <div className={`rounded border px-3 py-2 text-xs ${
           cmdResult.includes("executed") || cmdResult.includes("CLOSED") || cmdResult.includes("ENABLED")
-            ? "border-green-800 bg-green-950/30 text-green-400"
+            ? "border-green-800/60 bg-green-950/20 text-green-400"
             : cmdResult.includes("Error") || cmdResult.includes("rejected")
-            ? "border-red-800 bg-red-950/30 text-red-400"
+            ? "border-red-800/60 bg-red-950/20 text-red-400"
             : "border-slate-700 bg-slate-900 text-slate-300"
         }`}>
           {cmdResult}
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <DeviceGroup title="Device 52 — Feeder Breaker" color="text-sky-400">
+      <div className="grid gap-3 md:grid-cols-3">
+        <DeviceGroup title="Feeder Breaker (52)" subtitle="10.40.40.20">
           <CmdButton label="TRIP" onClick={() => execCmd("relay", "trip")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("relay", "close")} variant="success" />
-          <div className="w-full border-t border-slate-800 my-1" />
           <CmdButton label="Lockout" onClick={() => execCmd("relay", "lockout")} variant="warning" />
           <CmdButton label="Unlock" onClick={() => execCmd("relay", "unlock")} />
-          <div className="w-full border-t border-slate-800 my-1" />
+          <div className="w-full border-t border-slate-800/50 my-0.5" />
           <CmdButton label="Inject Fault" onClick={() => execCmd("relay", "inject_fault")} variant="danger" />
           <CmdButton label="Clear Fault" onClick={() => execCmd("relay", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Device 79 — Recloser" color="text-orange-400">
+        <DeviceGroup title="Recloser (79)" subtitle="10.40.40.21">
           <CmdButton label="OPEN" onClick={() => execCmd("recloser", "open")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("recloser", "close")} variant="success" />
-          <div className="w-full border-t border-slate-800 my-1" />
           <CmdButton label="Enable Reclose" onClick={() => execCmd("recloser", "enable_reclose")} variant="success" />
           <CmdButton label="Disable Reclose" onClick={() => execCmd("recloser", "disable_reclose")} variant="warning" />
           <CmdButton label="Reset Lockout" onClick={() => execCmd("recloser", "reset_lockout")} />
-          <div className="w-full border-t border-slate-800 my-1" />
+          <div className="w-full border-t border-slate-800/50 my-0.5" />
           <CmdButton label="Inject Fault" onClick={() => execCmd("recloser", "inject_fault")} variant="danger" />
           <CmdButton label="Clear Fault" onClick={() => execCmd("recloser", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Device 90 — Voltage Regulator" color="text-cyan-400">
-          <CmdButton label="Raise Tap (+)" onClick={() => execCmd("regulator", "raise_tap")} />
-          <CmdButton label="Lower Tap (−)" onClick={() => execCmd("regulator", "lower_tap")} />
-          <div className="w-full border-t border-slate-800 my-1" />
-          <CmdButton label="Set Manual" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
-          <CmdButton label="Set Auto" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
+        <DeviceGroup title="Voltage Regulator (90)" subtitle="10.40.40.22">
+          <CmdButton label="Raise Tap" onClick={() => execCmd("regulator", "raise_tap")} />
+          <CmdButton label="Lower Tap" onClick={() => execCmd("regulator", "lower_tap")} />
+          <div className="w-full border-t border-slate-800/50 my-0.5" />
+          <CmdButton label="Manual Mode" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
+          <CmdButton label="Auto Mode" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
         </DeviceGroup>
+      </div>
+
+      <div className="text-[10px] text-slate-600">
+        Commands are sent through the RTAC to field devices on the 10.40.40.0/24 network.
+        The containd firewall controls which zones can reach these devices.
       </div>
     </div>
   );
 }
 
-function DeviceGroup({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
+function DeviceGroup({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-      <h4 className={`mb-2 text-xs font-bold uppercase tracking-wider ${color}`}>{title}</h4>
+      <h4 className="text-xs font-bold text-slate-300">{title}</h4>
+      <div className="text-[9px] text-slate-600 mb-2">{subtitle}</div>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -367,11 +390,11 @@ function DeviceGroup({ title, color, children }: { title: string; color: string;
 
 function CmdButton({ label, onClick, variant }: { label: string; onClick: () => void; variant?: "danger" | "success" | "warning" }) {
   const colors = {
-    danger: "border-red-800 bg-red-950/50 text-red-400 hover:bg-red-900/50",
-    success: "border-green-800 bg-green-950/50 text-green-400 hover:bg-green-900/50",
-    warning: "border-yellow-800 bg-yellow-950/50 text-yellow-400 hover:bg-yellow-900/50",
+    danger: "border-red-800/60 bg-red-950/40 text-red-400 hover:bg-red-900/40",
+    success: "border-green-800/60 bg-green-950/40 text-green-400 hover:bg-green-900/40",
+    warning: "border-yellow-800/60 bg-yellow-950/40 text-yellow-400 hover:bg-yellow-900/40",
   };
-  const cls = variant ? colors[variant] : "border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700/50";
+  const cls = variant ? colors[variant] : "border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40";
   return (
     <button onClick={onClick} className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
       {label}
@@ -379,84 +402,243 @@ function CmdButton({ label, onClick, variant }: { label: string; onClick: () => 
   );
 }
 
-// ── Cyber → Process Correlation View ─────────────────────────────
+// ── Command Audit View ───────────────────────────────────────────
 
-function CyberProcessCorrelation({ entries }: { entries: AuditEntry[] }) {
-  if (entries.length === 0) {
-    return <div className="py-8 text-center text-sm text-slate-500">No commands recorded yet. Run a scenario to see cyber-to-process event correlation.</div>;
+function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
+  const [showDPI, setShowDPI] = useState(false);
+
+  if (entries.length === 0 && networkEvents.length === 0) {
+    return <div className="py-8 text-center text-sm text-slate-500">No commands recorded yet. Run an exercise to see the audit trail.</div>;
   }
 
-  const zoneColors: Record<string, string> = {
-    enterprise: "text-red-400 bg-red-950/40 border-red-800",
-    vendor: "text-purple-400 bg-purple-950/40 border-purple-800",
-    ot_ops: "text-orange-400 bg-orange-950/40 border-orange-800",
-    field: "text-cyan-400 bg-cyan-950/40 border-cyan-800",
-    operator: "text-sky-400 bg-sky-950/40 border-sky-800",
-    unknown: "text-slate-400 bg-slate-900/40 border-slate-700",
+  // Zone labels that make sense for substation context
+  const zoneLabel: Record<string, string> = {
+    enterprise: "Enterprise",
+    vendor: "Vendor",
+    ot_ops: "OT Ops",
+    field: "Field",
+    operator: "Operator",
   };
 
-  const resultColors: Record<string, string> = {
-    executed: "text-green-400",
-    rejected: "text-yellow-400",
-    blocked: "text-red-400",
-    error: "text-red-400",
+  const zoneBorder: Record<string, string> = {
+    enterprise: "border-l-red-500",
+    vendor: "border-l-purple-500",
+    ot_ops: "border-l-orange-500",
+    field: "border-l-green-500",
+    operator: "border-l-sky-500",
   };
 
   return (
-    <div className="space-y-4">
-      <div className="text-xs text-slate-500">
-        Shows each command with its source zone, firewall decision, and physical process consequence.
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-slate-500">
+          Who sent commands, from which zone, and what happened to the feeder.
+        </span>
+        {networkEvents.length > 0 && (
+          <button
+            onClick={() => setShowDPI(!showDPI)}
+            className={`rounded border px-2 py-1 text-[10px] font-medium ${
+              showDPI ? "border-purple-700 bg-purple-950/30 text-purple-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
+            }`}
+          >
+            {showDPI ? "Hide DPI Events" : "Show DPI Events"}
+          </button>
+        )}
       </div>
 
-      <div className="max-h-[500px] overflow-y-auto space-y-2">
-        {entries.slice().reverse().map((e, i) => (
-          <div key={i} className="rounded border border-slate-800 bg-slate-900/50 p-2 text-xs">
-            {/* Header row: time, source zone, command */}
+      <div className="max-h-[500px] overflow-y-auto space-y-1">
+        {entries.map((e, i) => {
+          const zone = e.source_zone || "unknown";
+          const wasAttack = zone === "enterprise" || zone === "vendor";
+          const succeeded = e.result === "executed";
+          const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
+
+          return (
+            <div key={`a-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-600 w-14 shrink-0 text-[10px]">
+                  {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">
+                  {zoneLabel[zone] || zone}
+                </span>
+                <span className="text-slate-600">sent</span>
+                <span className="text-amber-400 font-medium">{e.command}</span>
+                <span className="text-slate-600">to</span>
+                <span className="text-slate-300 font-medium">{e.target}</span>
+                <span className="ml-auto">
+                  {succeeded ? (
+                    harmful ? (
+                      <span className="text-red-400 font-bold">SUCCEEDED</span>
+                    ) : (
+                      <span className="text-green-400 font-bold">OK</span>
+                    )
+                  ) : (
+                    <span className="text-yellow-400 font-bold">BLOCKED</span>
+                  )}
+                </span>
+              </div>
+              {/* Operational consequence — always prominent */}
+              {e.process_impact && e.process_impact !== "command executed" && (
+                <div className={`mt-1 ml-14 rounded px-2 py-1 text-[11px] font-medium ${
+                  succeeded && harmful
+                    ? "bg-red-950/30 text-red-300 border border-red-900/40"
+                    : succeeded
+                    ? "bg-green-950/20 text-green-300 border border-green-900/30"
+                    : "bg-slate-800/40 text-slate-400"
+                }`}>
+                  {wasAttack && succeeded && harmful ? "Attack impact: " : ""}
+                  {e.process_impact}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {showDPI && networkEvents.map((e, i) => (
+          <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className="text-slate-600 w-16 shrink-0">
+              <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                 {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
               </span>
-              <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${zoneColors[e.source_zone || "unknown"] || zoneColors.unknown}`}>
-                {(e.source_zone || "unknown").toUpperCase()}
-              </span>
-              <span className="text-slate-500">→</span>
-              <span className="text-sky-400 font-bold">{e.target}</span>
-              <span className="text-slate-500">/</span>
-              <span className="text-amber-400">{e.command}</span>
-              <span className="ml-auto">
-                <span className={`font-bold ${resultColors[e.result] || "text-slate-400"}`}>
-                  {e.result?.toUpperCase()}
-                </span>
-              </span>
+              <span className="text-[10px] font-bold text-purple-400">DPI</span>
+              <span className="text-slate-500">{e.source} → {e.dest}</span>
+              {e.protocol && e.protocol !== "-" && (
+                <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
+              )}
             </div>
-
-            {/* Detail */}
-            {e.detail && (
-              <div className="mt-1 ml-[4.5rem] text-slate-500">
-                {e.detail}
-              </div>
-            )}
-
-            {/* Process impact */}
-            {e.process_impact && e.process_impact !== "command executed" && (
-              <div className={`mt-1 ml-[4.5rem] rounded px-2 py-1 text-[11px] ${
-                e.result === "executed"
-                  ? e.process_impact.includes("de-energized") || e.process_impact.includes("DISABLED") || e.process_impact.includes("OPENED") || e.process_impact.includes("LOCKED")
-                    ? "bg-red-950/40 text-red-300 border border-red-900/50"
-                    : "bg-green-950/40 text-green-300 border border-green-900/50"
-                  : "bg-slate-800/50 text-slate-400"
-              }`}>
-                Process: {e.process_impact}
-              </div>
-            )}
-
-            {/* Source attribution */}
-            <div className="mt-1 ml-[4.5rem] text-[10px] text-slate-600">
-              src: {e.source}
-            </div>
+            {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+// ── containd Segmentation View ───────────────────────────────────
+
+function SegmentationView({ comparison }: { comparison: PolicyComparison | null }) {
+  const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    getActiveFirewallConfig().then((r) => setActiveConfig(r.active_config)).catch(() => {});
+  }, []);
+
+  const handleApply = async (config: "weak" | "improved") => {
+    setApplying(true);
+    try {
+      const res = await applyFirewallConfig(config);
+      setActiveConfig(res.active_config);
+    } catch {
+      // error
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  if (!comparison) {
+    return <div className="py-8 text-center text-sm text-slate-500">Loading policy comparison...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* containd as the central element */}
+      <div className={`rounded-lg border-2 p-4 ${
+        activeConfig === "improved"
+          ? "border-green-700/60 bg-green-950/10"
+          : "border-red-700/60 bg-red-950/10"
+      }`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              containd NGFW — Active Policy
+            </div>
+            <div className={`text-lg font-bold mt-0.5 ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
+              {activeConfig === "improved" ? "Hardened Segmentation" : "Weak Baseline (vulnerable)"}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              {activeConfig === "improved"
+                ? "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked."
+                : "All zones can reach field devices directly. Attackers have clear paths to breakers and regulators."
+              }
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleApply("weak")}
+              disabled={applying || activeConfig === "weak"}
+              className={`rounded border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+                activeConfig === "weak"
+                  ? "border-red-700/60 bg-red-950/30 text-red-400"
+                  : "border-slate-600 text-slate-400 hover:border-red-700 hover:text-red-400"
+              }`}
+            >
+              {activeConfig === "weak" ? "Weak (active)" : "Reset to Weak"}
+            </button>
+            <button
+              onClick={() => handleApply("improved")}
+              disabled={applying || activeConfig === "improved"}
+              className={`rounded border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+                activeConfig === "improved"
+                  ? "border-green-700/60 bg-green-950/30 text-green-400"
+                  : "border-slate-600 text-slate-400 hover:border-green-700 hover:text-green-400"
+              }`}
+            >
+              {activeConfig === "improved" ? "Hardened (active)" : "Apply Hardened"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Zone-pair rules — simplified */}
+      <div className="space-y-1.5">
+        {comparison.diffs.map((d, i) => {
+          const tightened = d.change === "tightened" || d.change === "added";
+          return (
+            <div key={i} className={`rounded border p-3 text-xs ${
+              tightened ? "border-green-900/40 bg-green-950/10" : "border-slate-800/60 bg-slate-900/30"
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300 font-medium">{d.zone_pair}</span>
+                <div className="flex items-center gap-2">
+                  <ActionChip action={d.weak_action} label="Weak" />
+                  {d.improved_action !== d.weak_action && (
+                    <>
+                      <span className="text-slate-600">→</span>
+                      <ActionChip action={d.improved_action} label="Hardened" />
+                    </>
+                  )}
+                  {tightened && (
+                    <span className="text-[9px] font-bold text-green-400 uppercase">
+                      tightened
+                    </span>
+                  )}
+                </div>
+              </div>
+              {tightened && d.improved_rule && (
+                <div className="mt-1.5 text-[10px] text-slate-500">{d.improved_rule}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Core principle — single sentence */}
+      <div className="text-[10px] text-slate-600 border-t border-slate-800/40 pt-2">
+        The hardened policy ensures only the RTAC (10.40.40.10) can send control commands to field devices.
+        Enterprise and vendor zones are blocked from direct field device access.
+      </div>
+    </div>
+  );
+}
+
+function ActionChip({ action, label }: { action: string; label: string }) {
+  if (!action) return null;
+  const cls = action === "ALLOW"
+    ? "text-green-400 border-green-800/40"
+    : action === "DENY"
+    ? "text-red-400 border-red-800/40"
+    : "text-yellow-400 border-yellow-800/40";
+  return <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>{action}</span>;
 }

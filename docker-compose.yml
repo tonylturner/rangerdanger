@@ -51,6 +51,8 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: rangerdanger-backend
+    cap_add:
+      - NET_ADMIN
     environment:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/rangerdanger.db
@@ -78,6 +80,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: rangerdanger-frontend
+    cap_add:
+      - NET_ADMIN
     environment:
       NEXT_PUBLIC_API_URL: /api
     depends_on:
@@ -89,6 +93,8 @@ services:
   proxy:
     image: nginx:1.27-alpine
     container_name: rangerdanger-proxy
+    cap_add:
+      - NET_ADMIN
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
@@ -193,6 +199,8 @@ services:
     image: frangoteam/fuxa:latest
     container_name: rangerdanger-fuxa-hmi
     hostname: fuxa-hmi
+    cap_add:
+      - NET_ADMIN
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.10
@@ -211,6 +219,8 @@ services:
       target: rtac-sim
     container_name: rangerdanger-rtac-sim
     hostname: rtac-sim
+    cap_add:
+      - NET_ADMIN
     environment:
       - RELAY_SIM_HOST=relay-sim:8080
       - RECLOSER_SIM_HOST=recloser-sim:8080
@@ -262,6 +272,8 @@ services:
       target: relay-sim
     container_name: rangerdanger-relay-sim
     hostname: relay-sim
+    cap_add:
+      - NET_ADMIN
     networks:
       field_net:
         ipv4_address: 10.40.40.20
@@ -276,6 +288,8 @@ services:
       target: recloser-sim
     container_name: rangerdanger-recloser-sim
     hostname: recloser-sim
+    cap_add:
+      - NET_ADMIN
     networks:
       field_net:
         ipv4_address: 10.40.40.21
@@ -290,6 +304,8 @@ services:
       target: regulator-sim
     container_name: rangerdanger-regulator-sim
     hostname: regulator-sim
+    cap_add:
+      - NET_ADMIN
     networks:
       field_net:
         ipv4_address: 10.40.40.22
@@ -307,6 +323,8 @@ services:
       target: opendss-sim
     container_name: rangerdanger-opendss-sim
     hostname: opendss-sim
+    cap_add:
+      - NET_ADMIN
     networks:
       physics_net:
         ipv4_address: 10.50.50.20

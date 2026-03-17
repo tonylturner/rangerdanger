@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -22,9 +23,28 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// EventID handles containd returning IDs as either strings or numbers.
+type EventID string
+
+func (e *EventID) UnmarshalJSON(data []byte) error {
+	// Try string first, then number
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*e = EventID(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*e = EventID(n.String())
+		return nil
+	}
+	*e = EventID(string(data))
+	return nil
+}
+
 // Event represents a containd DPI/IDS event.
 type Event struct {
-	ID        string    `json:"id"`
+	ID        EventID   `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
 	Type      string    `json:"type"`      // "connection", "modbus", "dns", "alert"
 	Source    string    `json:"source"`    // Source IP
@@ -201,14 +221,25 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 		return nil, fmt.Errorf("get events returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Events []Event `json:"events"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode events: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read events body: %w", err)
 	}
 
-	return result.Events, nil
+	// containd may return events as a raw array or as {"events": [...]}
+	var events []Event
+	if err := json.Unmarshal(body, &events); err != nil {
+		// Try wrapped format
+		var result struct {
+			Events []Event `json:"events"`
+		}
+		if err2 := json.Unmarshal(body, &result); err2 != nil {
+			return nil, fmt.Errorf("decode events: %w (also tried array: %w)", err2, err)
+		}
+		events = result.Events
+	}
+
+	return events, nil
 }
 
 // GetSessions returns active sessions through the firewall.
@@ -369,8 +400,57 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 	return summaries, nil
 }
 
-// ImportConfig sends a full JSON config to containd's import endpoint.
+// ImportConfig sends a full JSON config to containd using the candidate/commit flow.
+// Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
+// Falls back to legacy /api/v1/config/import if candidate endpoint is unavailable.
 func (c *Client) ImportConfig(configJSON []byte) error {
+	// Try the preferred candidate/commit flow first
+	err := c.importViaCandidate(configJSON)
+	if err == nil {
+		return nil
+	}
+
+	// Fall back to legacy import endpoint
+	log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
+	return c.importLegacy(configJSON)
+}
+
+// importViaCandidate uses the appliance candidate/commit flow:
+// 1. POST /api/v1/config/candidate — stages the config
+// 2. POST /api/v1/config/commit — applies it (triggers nftables compilation)
+func (c *Client) importViaCandidate(configJSON []byte) error {
+	// Stage the candidate config
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
+	if err != nil {
+		return fmt.Errorf("post candidate config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("candidate endpoint not available (404)")
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Commit the staged config
+	resp2, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/commit", nil)
+	if err != nil {
+		return fmt.Errorf("commit config: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp2.Body)
+		return fmt.Errorf("commit returned %d: %s", resp2.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// importLegacy uses the older /api/v1/config/import endpoint.
+func (c *Client) importLegacy(configJSON []byte) error {
 	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/import", configJSON)
 	if err != nil {
 		return fmt.Errorf("import config request failed: %w", err)
