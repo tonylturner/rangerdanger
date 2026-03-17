@@ -405,7 +405,7 @@ function CmdButton({ label, onClick, variant }: { label: string; onClick: () => 
 // ── Command Audit View ───────────────────────────────────────────
 
 function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
-  const [showDPI, setShowDPI] = useState(false);
+  const [showDPI, setShowDPI] = useState(networkEvents.length > 0);
 
   if (entries.length === 0 && networkEvents.length === 0) {
     return <div className="py-8 text-center text-sm text-slate-500">No commands recorded yet. Run an exercise to see the audit trail.</div>;
@@ -441,7 +441,7 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
               showDPI ? "border-purple-700 bg-purple-950/30 text-purple-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
             }`}
           >
-            {showDPI ? "Hide DPI Events" : "Show DPI Events"}
+            {showDPI ? "Hide" : "Show"} DPI ({networkEvents.length})
           </button>
         )}
       </div>

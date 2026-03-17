@@ -1,14 +1,96 @@
 id: modbus-override
-name: "Modbus Override Walkthrough"
-description: "Guide trainees through abusing insecure Modbus functions to force pump states."
+name: "Modbus Register Override Attack"
+description: >
+  An attacker with network access to the OT operations zone
+  exploits unauthenticated Modbus TCP to directly write field
+  device registers, bypassing the RTAC supervisory controller.
+  Students must enforce that only the RTAC can issue Modbus
+  writes to field devices.
 tags:
   - modbus
-  - plc
+  - field-device
   - offense
+  - segmentation
 steps:
-  - title: Passive Discovery
-    description: "Capture OT traffic via the IDS span interface to map PLC registers."
-  - title: Credential Guessing
-    description: "Use default OpenPLC credentials on the HMI to collect register metadata."
-  - title: Execute Override
-    description: "From the jump host, run modbus-cli to overwrite the holding register controlling pump speed."
+  - title: "Verify normal operations"
+    description: >
+      Confirm all field devices are communicating through the RTAC.
+      The regulator should be in auto mode with tap position near 0.
+      Critical load voltage should be within ANSI C84.1 Range A (114-126V).
+    action:
+      type: check
+      expect:
+        voltage_normal: true
+        breaker_closed: true
+
+  - title: "Direct Modbus write from OT zone"
+    description: >
+      From a compromised OT operations node (10.30.30.30 — OpenPLC),
+      send a direct Modbus write to the regulator (10.40.40.22) to
+      force the tap position to an extreme value (-16). This bypasses
+      the RTAC's supervisory control:
+
+      curl -X POST http://10.40.40.22:8080/api/command -d '{"command":"set_tap","value":-16,"source":"10.30.30.30"}'
+    action:
+      type: command
+      device: regulator
+      command: set_tap
+      source: "10.30.30.30"
+      value: -16
+
+  - title: "Observe voltage impact"
+    description: >
+      The unauthorized tap change causes critical load voltage to
+      drop below ANSI C84.1 Range A. Hospital and fire station
+      equipment may malfunction at sustained low voltage.
+    action:
+      type: check
+      expect:
+        voltage_normal: false
+
+  - title: "Restore regulator"
+    description: >
+      Reset the regulator to automatic mode and restore
+      tap position to 0 (normal).
+    action:
+      type: sequence
+      commands:
+        - device: regulator
+          command: set_auto
+          source: "operator"
+        - device: regulator
+          command: set_tap
+          source: "operator"
+          value: 0
+
+  - title: "Apply containd segmentation"
+    description: >
+      Use containd to enforce that only the RTAC (10.30.30.20
+      via its field_net interface at 10.40.40.10) can send
+      Modbus commands to field devices on 10.40.40.0/24.
+      Block all other OT operations nodes from direct field access.
+    action:
+      type: firewall
+      config: improved
+
+  - title: "Re-test Modbus override"
+    description: >
+      Repeat the tap change from the compromised OT node.
+      containd should block the connection. The regulator
+      remains at its normal tap position and voltage stays stable.
+    action:
+      type: command
+      device: regulator
+      command: set_tap
+      source: "10.30.30.30"
+      value: -16
+
+  - title: "Validate segmentation"
+    description: >
+      Verify the regulator tap is still normal, voltage is within
+      range, and the hardened firewall policy is active.
+    action:
+      type: check
+      expect:
+        voltage_normal: true
+        firewall_config: improved
