@@ -113,6 +113,7 @@ services:
 
   # ─────────────────────────────────────────────────────────────
   # Zone 1: Enterprise Zone
+  # All inter-zone traffic routes through containd (10.10.10.2)
   # ─────────────────────────────────────────────────────────────
   corp_ws:
     image: linuxserver/webtop:ubuntu-mate
@@ -124,6 +125,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
+      - GATEWAY=10.10.10.2
+    volumes:
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
     networks:
       enterprise_net:
         ipv4_address: 10.10.10.10
@@ -144,17 +148,21 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    environment:
+      - GATEWAY=10.10.10.2
     networks:
       enterprise_net:
         ipv4_address: 10.10.10.50
     volumes:
       - ./data/kali_home:/home/kali
+      - ./scripts/set-gateway.sh:/usr/local/bin/set-gateway.sh:ro
     restart: unless-stopped
     depends_on:
       - firewall
 
   # ─────────────────────────────────────────────────────────────
   # Zone 2: Vendor / Engineering Access Zone
+  # All inter-zone traffic routes through containd (10.20.20.2)
   # ─────────────────────────────────────────────────────────────
   vendor_jump:
     image: linuxserver/webtop:ubuntu-xfce
@@ -164,8 +172,11 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
+      - GATEWAY=10.20.20.2
     cap_add:
       - NET_ADMIN
+    volumes:
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
     networks:
       vendor_net:
         ipv4_address: 10.20.20.10
@@ -184,6 +195,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
+      - GATEWAY=10.20.20.2
+    volumes:
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
     networks:
       vendor_net:
         ipv4_address: 10.20.20.20
@@ -194,6 +208,7 @@ services:
 
   # ─────────────────────────────────────────────────────────────
   # Zone 3: OT Operations Zone
+  # Inter-zone traffic routes through containd (10.30.30.2)
   # ─────────────────────────────────────────────────────────────
   fuxa_hmi:
     image: frangoteam/fuxa:latest
@@ -201,6 +216,8 @@ services:
     hostname: fuxa-hmi
     cap_add:
       - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.10
@@ -226,6 +243,7 @@ services:
       - RECLOSER_SIM_HOST=recloser-sim:8080
       - REGULATOR_SIM_HOST=regulator-sim:8080
       - OPENDSS_SIM_HOST=opendss-sim:8080
+      - GATEWAY=10.30.30.2
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.20
@@ -256,6 +274,7 @@ services:
         ipv4_address: 10.40.40.30
     environment:
       - TZ=UTC
+      - GATEWAY=10.30.30.2
     volumes:
       - ./data/openplc:/workdir
     restart: unless-stopped
@@ -264,6 +283,7 @@ services:
 
   # ─────────────────────────────────────────────────────────────
   # Zone 4: Field Device Zone
+  # Inter-zone traffic routes through containd (10.40.40.2)
   # ─────────────────────────────────────────────────────────────
   relay_sim:
     build:
@@ -274,6 +294,8 @@ services:
     hostname: relay-sim
     cap_add:
       - NET_ADMIN
+    environment:
+      - GATEWAY=10.40.40.2
     networks:
       field_net:
         ipv4_address: 10.40.40.20
@@ -290,6 +312,8 @@ services:
     hostname: recloser-sim
     cap_add:
       - NET_ADMIN
+    environment:
+      - GATEWAY=10.40.40.2
     networks:
       field_net:
         ipv4_address: 10.40.40.21
@@ -306,6 +330,8 @@ services:
     hostname: regulator-sim
     cap_add:
       - NET_ADMIN
+    environment:
+      - GATEWAY=10.40.40.2
     networks:
       field_net:
         ipv4_address: 10.40.40.22
@@ -314,7 +340,7 @@ services:
       - firewall
 
   # ─────────────────────────────────────────────────────────────
-  # Zone 5: Process / Physics Zone
+  # Zone 5: Process / Physics Zone (not firewalled)
   # ─────────────────────────────────────────────────────────────
   opendss_sim:
     build:

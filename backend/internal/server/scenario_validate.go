@@ -56,6 +56,10 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		checks = validateVendorAccessAbuse(state, audit, activeConfig)
 	case "ot-east-west-pivot":
 		checks = validateOTEastWestPivot(state, audit, activeConfig)
+	case "modbus-override":
+		checks = validateModbusOverride(state, audit, activeConfig)
+	case "vendor-rdp-compromise":
+		checks = validateVendorRDPCompromise(state, audit, activeConfig)
 	default:
 		c.JSON(http.StatusNotFound, gin.H{"error": "unknown scenario: " + scenarioID})
 		return
@@ -211,6 +215,105 @@ func validateOTEastWestPivot(state map[string]any, audit []map[string]any, activ
 	} else {
 		checks = append(checks, ValidationCheck{"Audit: unauthorized tap changes", "warn",
 			strings.Replace("N unauthorized set_tap command(s) detected", "N", itoa(badTaps), 1)})
+	}
+
+	return checks
+}
+
+// ── Scenario 4: Modbus Override ──────────────────────────────────
+
+func validateModbusOverride(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	// Check 1: Regulator tap near normal
+	elec := mapGet(state, "electrical")
+	tap := intGet(elec, "regulator_tap")
+	if tap >= -3 && tap <= 3 {
+		checks = append(checks, ValidationCheck{"Regulator tap", "pass",
+			"Tap position is " + itoa(tap) + " (normal range)"})
+	} else {
+		checks = append(checks, ValidationCheck{"Regulator tap", "fail",
+			"Tap position is " + itoa(tap) + " — unauthorized Modbus write may have succeeded"})
+	}
+
+	// Check 2: Voltage within ANSI C84.1 Range A
+	critV := floatGet(elec, "critical_load_voltage_v")
+	if critV >= 114 && critV <= 126 {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "pass",
+			fmtFloat(critV) + "V — within normal range"})
+	} else if critV > 0 {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail",
+			fmtFloat(critV) + "V — outside normal range, possible equipment damage"})
+	} else {
+		checks = append(checks, ValidationCheck{"Critical load voltage", "fail", "Voltage is 0V — loads de-energized"})
+	}
+
+	// Check 3: Firewall config
+	if activeConfig == "improved" {
+		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Improved config active — only RTAC can write to field devices"})
+	} else {
+		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — any OT node can send Modbus writes"})
+	}
+
+	// Check 4: No unauthorized set_tap from non-RTAC
+	badTaps := countAuditNonRTACCommand(audit, "set_tap")
+	if badTaps == 0 {
+		checks = append(checks, ValidationCheck{"Audit: unauthorized writes", "pass", "No unauthorized Modbus writes in audit log"})
+	} else {
+		checks = append(checks, ValidationCheck{"Audit: unauthorized writes", "warn",
+			strings.Replace("N unauthorized set_tap command(s) detected", "N", itoa(badTaps), 1)})
+	}
+
+	return checks
+}
+
+// ── Scenario 5: Vendor RDP Compromise ───────────────────────────
+
+func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	// Check 1: Recloser should be closed
+	elec := mapGet(state, "electrical")
+	rclClosed := boolGet(elec, "recloser_closed")
+	if rclClosed {
+		checks = append(checks, ValidationCheck{"Recloser status", "pass", "Recloser is CLOSED — feeder serving downstream loads"})
+	} else {
+		checks = append(checks, ValidationCheck{"Recloser status", "fail", "Recloser is OPEN — sustained outage in progress"})
+	}
+
+	// Check 2: Auto-reclose enabled
+	devices := mapGet(state, "devices")
+	recloser := mapGet(devices, "recloser")
+	recloseEnabled := boolGet(recloser, "reclose_enabled")
+	if recloseEnabled {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose is ENABLED — fault recovery active"})
+	} else {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "fail", "Auto-reclose is DISABLED — attacker may have succeeded"})
+	}
+
+	// Check 3: All loads energized
+	critEnergized := boolGet(elec, "critical_load_energized")
+	genEnergized := boolGet(elec, "general_load_energized")
+	if critEnergized && genEnergized {
+		checks = append(checks, ValidationCheck{"Load status", "pass", "All loads energized — hospital and fire station online"})
+	} else {
+		checks = append(checks, ValidationCheck{"Load status", "fail", "Loads de-energized — customer outage"})
+	}
+
+	// Check 4: Firewall config
+	if activeConfig == "improved" {
+		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Improved config active — vendor zone cannot reach field devices"})
+	} else {
+		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — vendor can still access field devices"})
+	}
+
+	// Check 5: No vendor disable_reclose
+	vendorDisable := countAuditByZoneAndCommand(audit, "vendor", "disable_reclose")
+	if vendorDisable == 0 {
+		checks = append(checks, ValidationCheck{"Audit: vendor commands", "pass", "No disable_reclose from vendor zone"})
+	} else {
+		checks = append(checks, ValidationCheck{"Audit: vendor commands", "warn",
+			strings.Replace("N disable_reclose command(s) from vendor zone", "N", itoa(vendorDisable), 1)})
 	}
 
 	return checks

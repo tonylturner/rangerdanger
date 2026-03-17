@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -128,7 +129,26 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 }
 
 // executeCommand sends a command to a field device via RTAC.
+// When the improved firewall config is active, it enforces source authorization:
+// only the RTAC and operator sources can reach field devices.
 func (s *Server) executeCommand(device, command, source string, value *float64) StepActionResult {
+	// Check if the source is authorized under the current firewall policy.
+	// In "improved" mode, only RTAC (10.30.30.20 / 10.40.40.10) and "operator"
+	// can send commands to field devices — all other sources are blocked by containd.
+	s.activeConfigMu.RLock()
+	activeConfig := s.activeConfig
+	s.activeConfigMu.RUnlock()
+
+	if activeConfig == "improved" && !isAuthorizedSource(source) {
+		zone := sourceZoneLabel(source)
+		return StepActionResult{
+			Action:  fmt.Sprintf("%s/%s from %s", device, command, source),
+			Success: false,
+			Detail:  fmt.Sprintf("BLOCKED by containd — %s not authorized to reach field devices", source),
+			Impact:  fmt.Sprintf("containd NGFW blocked %s→%s traffic [%s zone denied]", source, device, zone),
+		}
+	}
+
 	payload := map[string]any{
 		"command": command,
 		"source":  source,
@@ -168,6 +188,34 @@ func (s *Server) executeCommand(device, command, source string, value *float64) 
 		Success: succeeded,
 		Detail:  detail,
 		Impact:  impact,
+	}
+}
+
+// isAuthorizedSource returns true if the source is allowed to command field
+// devices under the hardened ("improved") firewall policy.
+func isAuthorizedSource(source string) bool {
+	switch source {
+	case "operator", "rtac", "rtac-sim",
+		"10.30.30.20", // RTAC on ot_ops_net
+		"10.40.40.10": // RTAC on field_net
+		return true
+	}
+	return false
+}
+
+// sourceZoneLabel returns a human-readable zone label for a source IP.
+func sourceZoneLabel(source string) string {
+	switch {
+	case strings.HasPrefix(source, "10.10.10."):
+		return "enterprise"
+	case strings.HasPrefix(source, "10.20.20."):
+		return "vendor"
+	case strings.HasPrefix(source, "10.30.30."):
+		return "ot_ops"
+	case strings.HasPrefix(source, "10.40.40."):
+		return "field"
+	default:
+		return "unknown"
 	}
 }
 

@@ -8,10 +8,12 @@ import {
   applyFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
+  getSubstationAudit,
   type Scenario,
   type ValidationResult,
   type SubstationState,
   type StepExecutionResult,
+  type AuditEntry,
 } from "../lib/api";
 
 type RunnerProps = {
@@ -29,12 +31,18 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [cmdLog, setCmdLog] = useState<string[]>([]);
   const [executing, setExecuting] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
+  const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
 
   const pollState = useCallback(async () => {
     try {
-      const [s, fw] = await Promise.all([getSubstationState(), getActiveFirewallConfig()]);
+      const [s, fw, a] = await Promise.all([
+        getSubstationState(),
+        getActiveFirewallConfig(),
+        getSubstationAudit(),
+      ]);
       setState(s);
       setActiveConfig(fw.active_config);
+      setRecentAudit((a.entries ?? []).slice(-5));
     } catch {
       // offline
     }
@@ -336,6 +344,42 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   {msg}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Live audit trail */}
+          {recentAudit.length > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                Recent Activity (via containd)
+              </div>
+              <div className="space-y-1">
+                {recentAudit.map((e, i) => {
+                  const zone = e.source_zone || "unknown";
+                  const succeeded = e.result === "executed";
+                  const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED");
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-[11px]">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        zone === "enterprise" ? "bg-red-500"
+                        : zone === "vendor" ? "bg-purple-500"
+                        : zone === "ot_ops" ? "bg-orange-500"
+                        : zone === "operator" ? "bg-sky-500"
+                        : "bg-slate-500"
+                      }`} />
+                      <span className="text-slate-500">{zone}</span>
+                      <span className="text-amber-400">{e.command}</span>
+                      <span className="text-slate-600">→</span>
+                      <span className="text-slate-300">{e.target}</span>
+                      <span className={`ml-auto font-bold text-[10px] ${
+                        succeeded && harmful ? "text-red-400" : succeeded ? "text-green-400" : "text-yellow-400"
+                      }`}>
+                        {succeeded ? (harmful ? "ATTACK" : "OK") : "BLOCKED"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
