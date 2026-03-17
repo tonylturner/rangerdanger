@@ -85,7 +85,18 @@ export type GraphNode = {
 export type GraphEdge = { id: string; source: string; target: string; label?: string };
 export type LabGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
 
-export type ScenarioStep = { title: string; description: string };
+export type StepAction = {
+  type: "command" | "check" | "firewall" | "sequence" | "manual";
+  device?: string;
+  command?: string;
+  source?: string;
+  value?: number;
+  config?: string;
+  expect?: Record<string, unknown>;
+  commands?: { device: string; command: string; source?: string; value?: number }[];
+};
+
+export type ScenarioStep = { title: string; description: string; action?: StepAction };
 export type Scenario = {
   id: string;
   name: string;
@@ -264,4 +275,94 @@ export async function getSubstationHealth() {
     device_comms: Record<string, boolean>;
     last_poll: string;
   }>("/substation/health");
+}
+
+// Network DPI events from containd filtered to substation traffic
+export type NetworkEvent = {
+  id: string;
+  timestamp: string;
+  type: string;
+  source: string;
+  dest: string;
+  protocol: string;
+  src_port: number;
+  dst_port: number;
+  details: string;
+  severity: string;
+  zone: string;
+};
+
+export async function getSubstationNetworkEvents() {
+  return request<{ events: NetworkEvent[]; source: string; message?: string }>("/substation/network-events");
+}
+
+// Firewall policy comparison (weak vs improved)
+export type PolicyRuleDiff = {
+  zone_pair: string;
+  weak_rule: string;
+  improved_rule: string;
+  weak_action: string;
+  improved_action: string;
+  change: "tightened" | "added" | "removed" | "unchanged";
+};
+
+export type PolicyComparison = {
+  weak_config: string;
+  improved_config: string;
+  diffs: PolicyRuleDiff[];
+  summary: string;
+};
+
+export async function getFirewallComparison() {
+  return request<PolicyComparison>("/firewall/compare");
+}
+
+export async function getActiveFirewallConfig() {
+  return request<{ active_config: string }>("/firewall/active");
+}
+
+export type ValidationCheck = {
+  name: string;
+  status: "pass" | "fail" | "warn";
+  detail: string;
+};
+
+export type ValidationResult = {
+  scenario_id: string;
+  outcome: "PASS" | "FAIL" | "PARTIAL";
+  checks: ValidationCheck[];
+  timestamp: string;
+};
+
+export async function validateScenario(scenarioId: string) {
+  return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`);
+}
+
+export async function applyFirewallConfig(config: "weak" | "improved") {
+  return request<{ status: string; active_config: string }>("/firewall/apply", {
+    method: "POST",
+    body: JSON.stringify({ config }),
+  });
+}
+
+export type StepActionResult = {
+  action: string;
+  success: boolean;
+  detail: string;
+  impact?: string;
+};
+
+export type StepExecutionResult = {
+  step_index: number;
+  step_title: string;
+  action_type: string;
+  success: boolean;
+  results: StepActionResult[];
+  timestamp: string;
+};
+
+export async function executeScenarioStep(scenarioId: string, stepIdx: number) {
+  return request<StepExecutionResult>(`/scenarios/${encodeURIComponent(scenarioId)}/steps/${stepIdx}/execute`, {
+    method: "POST",
+  });
 }

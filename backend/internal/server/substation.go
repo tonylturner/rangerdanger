@@ -3,9 +3,12 @@ package server
 import (
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
 // Substation data proxy — forwards requests to rtac-sim running in the OT ops zone.
@@ -57,6 +60,50 @@ func (s *Server) proxyRTAC(c *gin.Context, path string) {
 
 	body, _ := io.ReadAll(resp.Body)
 	c.Data(resp.StatusCode, "application/json", body)
+}
+
+// handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
+func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
+	containdURL := s.cfg.ContaindAPIURL
+	if containdURL == "" {
+		containdURL = "http://firewall:8080"
+	}
+
+	client := containd.NewClient(containdURL)
+	events, err := client.GetEvents("", 50)
+	if err != nil {
+		// Return empty with source info rather than error
+		c.JSON(http.StatusOK, gin.H{
+			"events":  []any{},
+			"source":  "unavailable",
+			"message": "containd not reachable: " + err.Error(),
+		})
+		return
+	}
+
+	// Filter to OT-relevant subnets: 10.30.30.x (OT ops), 10.40.40.x (field), 10.10.10.x (enterprise attacking field)
+	var filtered []containd.Event
+	for _, e := range events {
+		if isSubstationRelevant(e.Source, e.Dest) {
+			filtered = append(filtered, e)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"events": filtered,
+		"source": "containd",
+	})
+}
+
+// isSubstationRelevant checks if traffic involves OT/field subnets.
+func isSubstationRelevant(src, dest string) bool {
+	relevantPrefixes := []string{"10.30.30.", "10.40.40.", "10.10.10.", "10.20.20."}
+	for _, prefix := range relevantPrefixes {
+		if strings.HasPrefix(src, prefix) || strings.HasPrefix(dest, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) proxyRTACPost(c *gin.Context, path string) {

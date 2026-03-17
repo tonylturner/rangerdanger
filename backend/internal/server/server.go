@@ -14,7 +14,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"sync"
+
 	"github.com/tturner/rangerdanger/backend/internal/config"
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
@@ -22,11 +25,14 @@ import (
 
 // Server wraps the Gin router and dependencies.
 type Server struct {
-	engine       *gin.Engine
-	cfg          *config.Config
-	db           *gorm.DB
-	loader       *labs.Loader
-	orchestrator *orchestrator.Orchestrator
+	engine         *gin.Engine
+	cfg            *config.Config
+	db             *gorm.DB
+	loader         *labs.Loader
+	orchestrator   *orchestrator.Orchestrator
+	containdClient *containd.Client
+	activeConfigMu sync.RWMutex
+	activeConfig   string // "weak" or "improved"
 }
 
 type graphNodeData struct {
@@ -69,12 +75,21 @@ type nodeUIProxy struct {
 }
 
 // New constructs a server with routes registered.
-func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator) *Server {
+func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator, containdClient *containd.Client) *Server {
 	engine := gin.Default()
+
+	// Determine initial active config from seed path
+	activeConfig := "weak"
+	if strings.Contains(cfg.ContaindConfigPath, "improved") {
+		activeConfig = "improved"
+	}
+
 	s := &Server{
-		engine:       engine,
-		cfg:          cfg,
-		db:           db,
+		engine:         engine,
+		cfg:            cfg,
+		db:             db,
+		containdClient: containdClient,
+		activeConfig:   activeConfig,
 		loader:       loader,
 		orchestrator: orchestrator,
 	}
@@ -135,6 +150,9 @@ func (s *Server) registerRoutes() {
 		api.GET("/firewall/health", s.handleGetFirewallHealth)
 		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
 		api.GET("/firewall/rules", s.handleGetFirewallRules)
+		api.GET("/firewall/compare", s.handleFirewallCompare)
+		api.GET("/firewall/active", s.handleFirewallActive)
+		api.POST("/firewall/apply", s.handleFirewallApply)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
@@ -146,6 +164,7 @@ func (s *Server) registerRoutes() {
 			sub.POST("/command/:device", s.handleSubstationCommand)
 			sub.GET("/audit", s.handleSubstationAudit)
 			sub.GET("/health", s.handleSubstationHealth)
+			sub.GET("/network-events", s.handleSubstationNetworkEvents)
 		}
 
 		api.GET("/scenarios", s.handleListScenarios)
@@ -153,6 +172,8 @@ func (s *Server) registerRoutes() {
 		api.GET("/scenarios/:id", s.handleGetScenario)
 		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
 		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)
+		api.GET("/scenarios/:id/validate", s.handleValidateScenario)
+		api.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
 
 		// Containd proxy - enables same-origin access to containd UI
 		api.Any("/containd/*path", s.handleProxyContaind)
