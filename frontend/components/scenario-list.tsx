@@ -3,17 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { listScenarios, type Scenario } from "../lib/api";
 
-export function ScenarioList({ templateId, fetchAll = false, onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
-  const enabled = fetchAll || Boolean(templateId);
+export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["scenarios", fetchAll ? "all" : templateId ?? "all"],
-    queryFn: () => listScenarios(fetchAll ? undefined : templateId),
-    enabled
+    queryKey: ["scenarios", "substation-segmentation"],
+    queryFn: () => listScenarios("substation-segmentation"),
   });
-
-  if (!enabled) {
-    return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Select a template to load scenarios.</div>;
-  }
 
   if (isLoading) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Loading scenarios...</div>;

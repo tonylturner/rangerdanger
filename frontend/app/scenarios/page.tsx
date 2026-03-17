@@ -19,10 +19,9 @@ export default function ScenariosPage() {
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-10">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold text-white">Scenarios</h1>
+        <h1 className="text-3xl font-semibold text-white">Exercises</h1>
         <p className="text-slate-400">
-          Build modular exercises with attacker playbooks, defender guidance, and automation hooks that run inside the lab
-          networks.
+          Step-by-step attack and defense exercises for distribution substation segmentation validation.
         </p>
       </div>
       <div className="mt-6 space-y-4">

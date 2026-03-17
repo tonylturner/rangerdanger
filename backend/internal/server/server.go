@@ -154,6 +154,10 @@ func (s *Server) registerRoutes() {
 		api.GET("/firewall/active", s.handleFirewallActive)
 		api.POST("/firewall/apply", s.handleFirewallApply)
 
+		// Workshop endpoints
+		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
+		api.GET("/workshop/status", s.handleGetWorkshopStatus)
+
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
 		// Substation data (proxied from rtac-sim)

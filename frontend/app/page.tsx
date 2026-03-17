@@ -4,30 +4,19 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { MetricsOverview } from "../components/metrics-overview";
 import { TopologyPreview } from "../components/topology-preview";
-import { listScenarios, getSubstationHealth, getActiveFirewallConfig } from "../lib/api";
+import { getWorkshopStatus } from "../lib/api";
 
 export default function DashboardPage() {
-  const { data: scenarios } = useQuery({
-    queryKey: ["scenarios", "all"],
-    queryFn: () => listScenarios(),
-  });
-
-  const { data: health } = useQuery({
-    queryKey: ["substation-health"],
-    queryFn: getSubstationHealth,
+  const { data: ws } = useQuery({
+    queryKey: ["workshop-status"],
+    queryFn: getWorkshopStatus,
     refetchInterval: 5000,
   });
 
-  const { data: fwConfig } = useQuery({
-    queryKey: ["fw-active"],
-    queryFn: getActiveFirewallConfig,
-    refetchInterval: 10000,
-  });
-
-  const rtacOnline = health?.status === "ok" || health?.status === "healthy";
-  const deviceCount = health?.device_comms ? Object.keys(health.device_comms).length : 0;
-  const devicesOk = health?.device_comms ? Object.values(health.device_comms).filter(Boolean).length : 0;
-  const scenarioCount = scenarios?.scenarios.length ?? 0;
+  const rtacOnline = ws?.rtac_online ?? false;
+  const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
+  const devicesOk = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
+  const scenarioCount = ws?.scenario_count ?? 0;
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
@@ -56,8 +45,8 @@ export default function DashboardPage() {
         />
         <StatusCard
           label="Firewall Policy"
-          value={fwConfig?.active_config === "improved" ? "Hardened" : "Weak Baseline"}
-          ok={fwConfig?.active_config === "improved"}
+          value={ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
+          ok={ws?.firewall_config === "improved"}
         />
         <StatusCard
           label="Scenarios"
