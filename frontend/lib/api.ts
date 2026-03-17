@@ -230,10 +230,12 @@ export type SubstationState = {
 export type AuditEntry = {
   timestamp: string;
   source: string;
+  source_zone: string;
   target: string;
   command: string;
   result: string;
   detail: string;
+  process_impact: string;
 };
 
 export async function getSubstationTags() {
@@ -244,10 +246,10 @@ export async function getSubstationState() {
   return request<SubstationState>("/substation/state");
 }
 
-export async function sendSubstationCommand(device: string, command: string, source?: string) {
-  return request<{ result: string; detail: string }>(`/substation/command/${device}`, {
+export async function sendSubstationCommand(device: string, command: string, source?: string, value?: number) {
+  return request<{ result: string; detail: string; process_impact?: string; source_zone?: string }>(`/substation/command/${device}`, {
     method: "POST",
-    body: JSON.stringify({ command, source: source || "web-ui" }),
+    body: JSON.stringify({ command, source: source || "web-ui", ...(value !== undefined && { value }) }),
   });
 }
 

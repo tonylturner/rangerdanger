@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
-// AuditEntry records a command attempt for the command/event audit trail.
+// AuditEntry records a command attempt with its process-level consequence.
 type AuditEntry struct {
-	Timestamp  time.Time `json:"timestamp"`
-	Source     string    `json:"source"`
-	Target     string    `json:"target"`
-	Command    string    `json:"command"`
-	Result     string    `json:"result"` // "executed", "rejected", "blocked"
-	Detail     string    `json:"detail,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
+	Source        string    `json:"source"`
+	SourceZone    string    `json:"source_zone,omitempty"`    // enterprise, vendor, ot_ops, field, unknown
+	Target        string    `json:"target"`
+	Command       string    `json:"command"`
+	Result        string    `json:"result"`                   // "executed", "rejected", "blocked"
+	Detail        string    `json:"detail,omitempty"`
+	ProcessImpact string    `json:"process_impact,omitempty"` // human-readable consequence
 }
 
 // AuditLog is a thread-safe bounded audit log.
@@ -34,6 +37,9 @@ func (a *AuditLog) Add(e AuditEntry) {
 	defer a.mu.Unlock()
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now()
+	}
+	if e.SourceZone == "" {
+		e.SourceZone = ClassifyZone(e.Source)
 	}
 	a.entries = append(a.entries, e)
 	if len(a.entries) > a.max {
@@ -54,6 +60,37 @@ type CommandRequest struct {
 	Command string  `json:"command"`
 	Source  string  `json:"source,omitempty"`
 	Value   float64 `json:"value,omitempty"`
+}
+
+// ClassifyZone maps a source IP or label to a network zone name.
+func ClassifyZone(source string) string {
+	if source == "" {
+		return "unknown"
+	}
+	s := strings.ToLower(source)
+	switch {
+	case strings.HasPrefix(source, "10.10.10."):
+		return "enterprise"
+	case strings.HasPrefix(source, "10.20.20."):
+		return "vendor"
+	case strings.HasPrefix(source, "10.30.30."):
+		return "ot_ops"
+	case strings.HasPrefix(source, "10.40.40."):
+		return "field"
+	case strings.HasPrefix(source, "10.50.50."):
+		return "physics"
+	case strings.Contains(s, "kali") || strings.Contains(s, "enterprise"):
+		return "enterprise"
+	case strings.Contains(s, "vendor") || strings.Contains(s, "jump"):
+		return "vendor"
+	case strings.Contains(s, "compromised") || strings.Contains(s, "openplc") || strings.Contains(s, "hmi"):
+		return "ot_ops"
+	case strings.Contains(s, "rtac") || strings.Contains(s, "reset-script") || strings.Contains(s, "scenario-script"):
+		return "ot_ops"
+	case strings.Contains(s, "web-ui"):
+		return "operator"
+	}
+	return "unknown"
 }
 
 // JSON helpers

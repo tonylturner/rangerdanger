@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -77,8 +78,10 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		} else {
 			state.TapPosition++
 			state.LastCommandSource = source
+			estimatedV := 117.6 + float64(state.TapPosition)*voltsPerTap
+			state.Alarm = estimatedV < 108.0 || estimatedV > 132.0
 			entry.Result = "executed"
-			entry.Detail = "tap raised"
+			entry.Detail = fmt.Sprintf("tap raised to %d", state.TapPosition)
 			log.Printf("RAISE TAP from %s -> position %d", source, state.TapPosition)
 		}
 	case "lower_tap":
@@ -88,8 +91,10 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		} else {
 			state.TapPosition--
 			state.LastCommandSource = source
+			estimatedV := 117.6 + float64(state.TapPosition)*voltsPerTap
+			state.Alarm = estimatedV < 108.0 || estimatedV > 132.0
 			entry.Result = "executed"
-			entry.Detail = "tap lowered"
+			entry.Detail = fmt.Sprintf("tap lowered to %d", state.TapPosition)
 			log.Printf("LOWER TAP from %s -> position %d", source, state.TapPosition)
 		}
 	case "set_manual":
@@ -115,9 +120,16 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		} else {
 			state.TapPosition = tap
 			state.LastCommandSource = source
+			// Set alarm if tap position would cause voltage outside acceptable range
+			// Downstream ~117.6V + tap*0.75V: alarm if result < 108V or > 132V
+			estimatedV := 117.6 + float64(tap)*voltsPerTap
+			state.Alarm = estimatedV < 108.0 || estimatedV > 132.0
 			entry.Result = "executed"
 			entry.Detail = "tap set directly"
-			log.Printf("SET TAP from %s -> position %d", source, state.TapPosition)
+			if state.Alarm {
+				entry.Detail = "tap set — VOLTAGE ALARM: estimated " + fmt.Sprintf("%.1fV", estimatedV)
+			}
+			log.Printf("SET TAP from %s -> position %d (est. %.1fV, alarm=%v)", source, state.TapPosition, estimatedV, state.Alarm)
 		}
 	default:
 		entry.Result = "rejected"
