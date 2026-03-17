@@ -278,6 +278,7 @@ func isLowVoltageCritical() bool {
 
 func main() {
 	go pollDevices()
+	go startModbusServer()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/tags", handleTags)

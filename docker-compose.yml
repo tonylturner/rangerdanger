@@ -112,6 +112,8 @@ services:
     image: linuxserver/webtop:ubuntu-mate
     container_name: rangerdanger-corp-ws
     hostname: corp-ws
+    cap_add:
+      - NET_ADMIN
     environment:
       - PUID=1000
       - PGID=1000
@@ -170,6 +172,8 @@ services:
     image: linuxserver/webtop:ubuntu-mate
     container_name: rangerdanger-eng-ws
     hostname: eng-workstation
+    cap_add:
+      - NET_ADMIN
     environment:
       - PUID=1000
       - PGID=1000
@@ -233,6 +237,8 @@ services:
       dockerfile: Dockerfile.openplc
     container_name: rangerdanger-openplc
     hostname: openplc
+    cap_add:
+      - NET_ADMIN
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.30
