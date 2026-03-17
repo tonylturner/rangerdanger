@@ -189,6 +189,27 @@ pause() {
     fi
 }
 
+# Print a crisp scenario outcome banner
+scenario_result() {
+    local scenario_name=$1
+    local outcome=$2  # "PASS" or "FAIL"
+    local description=$3
+    echo ""
+    if [ "$outcome" = "PASS" ]; then
+        echo -e "${BOLD}${GREEN}┌─────────────────────────────────────────────────────┐${NC}"
+        echo -e "${BOLD}${GREEN}│  RESULT: PASS                                       │${NC}"
+        echo -e "${BOLD}${GREEN}│  ${scenario_name}${NC}"
+        echo -e "${BOLD}${GREEN}│  ${description}${NC}"
+        echo -e "${BOLD}${GREEN}└─────────────────────────────────────────────────────┘${NC}"
+    else
+        echo -e "${BOLD}${RED}┌─────────────────────────────────────────────────────┐${NC}"
+        echo -e "${BOLD}${RED}│  RESULT: FAIL — ACTION REQUIRED                     │${NC}"
+        echo -e "${BOLD}${RED}│  ${scenario_name}${NC}"
+        echo -e "${BOLD}${RED}│  ${description}${NC}"
+        echo -e "${BOLD}${RED}└─────────────────────────────────────────────────────┘${NC}"
+    fi
+}
+
 # Send a reset command to a device (uses docker exec to reach internal network)
 _reset_cmd() {
     local url=$1
