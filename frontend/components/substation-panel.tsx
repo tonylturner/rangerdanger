@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getSubstationState,
   getSubstationAudit,
@@ -865,6 +866,7 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
 // ── containd Segmentation View ───────────────────────────────────
 
 function SegmentationView() {
+  const queryClient = useQueryClient();
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
   const [comparison, setComparison] = useState<PolicyComparison | null>(null);
   const [applying, setApplying] = useState(false);
@@ -884,6 +886,9 @@ function SegmentationView() {
       setActiveConfig(res.active_config);
       setLastApply((c) => c + 1);
       setTestResult(null);
+      // Invalidate firewall-rules so the network topology updates immediately
+      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
     } catch {
       // error
     } finally {
