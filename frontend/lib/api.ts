@@ -372,6 +372,70 @@ export async function executeScenarioStep(scenarioId: string, stepIdx: number) {
   });
 }
 
+// PCAP capture (via containd /api/v1/pcap/* with tcpdump fallback)
+export type PcapStatus = {
+  capturing: boolean;
+  duration_sec: number;
+  started_at: string;
+  file_ready: boolean;
+  file_prefix?: string;
+  files?: string[];       // filenames from containd (one per interface)
+  last_error?: string;
+};
+
+export type PcapFileInfo = {
+  name: string;
+  interface: string;
+  sizeBytes: number;
+  createdAt: string;
+  tags: string[];
+  status: string;
+};
+
+export async function startPcapCapture(durationSec?: number, name?: string) {
+  return request<{ status: string; duration_sec: number; file_prefix?: string }>("/pcap/start", {
+    method: "POST",
+    body: JSON.stringify({ duration_sec: durationSec || 30, name: name || "" }),
+  });
+}
+
+export async function stopPcapCapture() {
+  return request<{ status: string; files?: string[] }>("/pcap/stop", { method: "POST" });
+}
+
+export async function getPcapStatus() {
+  return request<PcapStatus>("/pcap/status");
+}
+
+export async function listPcapFiles() {
+  return request<{ files: PcapFileInfo[] }>("/pcap/list");
+}
+
+export function getPcapDownloadUrl(filename?: string) {
+  if (filename) {
+    return `${API_BASE_URL}/pcap/download/${encodeURIComponent(filename)}`;
+  }
+  return `${API_BASE_URL}/pcap/download`;
+}
+
+// Traffic generation
+export type TrafficStatus = {
+  generating: boolean;
+  started_at: string;
+  flows_generated: number;
+};
+
+export async function startTrafficGeneration(durationSec?: number) {
+  return request<{ status: string; duration_sec: number }>("/traffic/generate", {
+    method: "POST",
+    body: JSON.stringify({ duration_sec: durationSec || 30 }),
+  });
+}
+
+export async function getTrafficStatus() {
+  return request<TrafficStatus>("/traffic/status");
+}
+
 export type WorkshopStatus = {
   workshop_id: string;
   workshop_name: string;

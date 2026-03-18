@@ -11,17 +11,25 @@ import {
   applyFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
+  startPcapCapture,
+  stopPcapCapture,
+  getPcapStatus,
+  getPcapDownloadUrl,
+  startTrafficGeneration,
+  getTrafficStatus,
   type SubstationState,
   type AuditEntry,
   type NetworkEvent,
   type PolicyComparison,
+  type PcapStatus,
+  type TrafficStatus,
 } from "../lib/api";
 
 export function SubstationPanel() {
   const [state, setState] = useState<SubstationState | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
-  const [tab, setTab] = useState<"diagram" | "commands" | "correlation" | "segmentation" | "electrical">("diagram");
+  const [tab, setTab] = useState<"diagram" | "commands" | "traffic" | "correlation" | "segmentation" | "electrical">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
@@ -63,6 +71,7 @@ export function SubstationPanel() {
   const tabs = [
     { id: "diagram" as const, label: "Feeder One-Line" },
     { id: "commands" as const, label: "Supervisory Control" },
+    { id: "traffic" as const, label: "Traffic Matrix" },
     { id: "correlation" as const, label: "Command Audit" },
     { id: "segmentation" as const, label: "containd Segmentation" },
     { id: "electrical" as const, label: "Electrical Detail" },
@@ -99,6 +108,7 @@ export function SubstationPanel() {
             cmdResult={cmdResult}
           />
         )}
+        {tab === "traffic" && <TrafficAnalysisView entries={audit} networkEvents={networkEvents} />}
         {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
         {tab === "segmentation" && <SegmentationView />}
         {tab === "electrical" && (
@@ -420,10 +430,12 @@ const HOST_NAMES: Record<string, string> = {
   "10.30.30.10": "fuxa-hmi",
   "10.30.30.20": "rtac",
   "10.30.30.30": "openplc",
+  "10.30.30.40": "historian",
+  "10.30.30.50": "gps-time",
   "10.40.40.20": "relay",
   "10.40.40.21": "recloser",
   "10.40.40.22": "regulator",
-  "10.50.50.20": "opendss",
+  "10.40.40.23": "capbank",
   "10.10.10.2": "fw-ent",
   "10.20.20.2": "fw-dmz",
   "10.30.30.2": "fw-ot",
@@ -435,7 +447,6 @@ const ZONE_FOR_IP: Record<string, string> = {
   "10.20.20": "vendor",
   "10.30.30": "ot_ops",
   "10.40.40": "field",
-  "10.50.50": "physics",
 };
 
 function ipToZone(ip: string): string {
@@ -540,7 +551,6 @@ const ZONE_COLORS: Record<string, string> = {
   vendor: "text-purple-400",
   ot_ops: "text-orange-400",
   field: "text-green-400",
-  physics: "text-cyan-400",
 };
 
 const ZONE_BG: Record<string, string> = {
@@ -548,7 +558,6 @@ const ZONE_BG: Record<string, string> = {
   vendor: "bg-purple-950/20",
   ot_ops: "bg-orange-950/20",
   field: "bg-green-950/20",
-  physics: "bg-cyan-950/20",
 };
 
 const PROTOCOL_COLORS: Record<string, string> = {
@@ -630,7 +639,6 @@ function TrafficMatrixView({ entries, networkEvents }: { entries: AuditEntry[]; 
           <option value="vendor">Vendor</option>
           <option value="ot_ops">OT Ops</option>
           <option value="field">Field</option>
-          <option value="physics">Physics</option>
         </select>
         <button
           onClick={() => setCrossZoneOnly(!crossZoneOnly)}
@@ -727,7 +735,6 @@ function TrafficMatrixView({ entries, networkEvents }: { entries: AuditEntry[]; 
 }
 
 function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
-  const [view, setView] = useState<"timeline" | "matrix">("timeline");
   const [showDPI, setShowDPI] = useState(networkEvents.length > 0);
 
   if (entries.length === 0 && networkEvents.length === 0) {
@@ -753,27 +760,12 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
 
   return (
     <div className="space-y-3">
-      {/* View toggle + controls */}
+      {/* Controls */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setView("timeline")}
-            className={`rounded border px-2 py-1 text-[10px] font-medium ${
-              view === "timeline" ? "border-sky-700 bg-sky-950/30 text-sky-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
-            }`}
-          >
-            Timeline
-          </button>
-          <button
-            onClick={() => setView("matrix")}
-            className={`rounded border px-2 py-1 text-[10px] font-medium ${
-              view === "matrix" ? "border-amber-700 bg-amber-950/30 text-amber-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
-            }`}
-          >
-            Traffic Matrix
-          </button>
-        </div>
-        {view === "timeline" && networkEvents.length > 0 && (
+        <span className="text-[10px] text-slate-500">
+          Who sent commands, from which zone, and what happened to the feeder.
+        </span>
+        {networkEvents.length > 0 && (
           <button
             onClick={() => setShowDPI(!showDPI)}
             className={`rounded border px-2 py-1 text-[10px] font-medium ${
@@ -785,15 +777,8 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
         )}
       </div>
 
-      {view === "matrix" ? (
-        <TrafficMatrixView entries={entries} networkEvents={networkEvents} />
-      ) : (
-        <>
-          <span className="text-[10px] text-slate-500">
-            Who sent commands, from which zone, and what happened to the feeder.
-          </span>
-          <div className="max-h-[500px] overflow-y-auto space-y-1">
-            {entries.map((e, i) => {
+      <div className="max-h-[500px] overflow-y-auto space-y-1">
+        {entries.map((e, i) => {
               const zone = e.source_zone || "unknown";
               const wasAttack = zone === "enterprise" || zone === "vendor";
               const succeeded = e.result === "executed";
@@ -841,24 +826,175 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
               );
             })}
 
-            {showDPI && networkEvents.map((e, i) => (
-              <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-600 w-14 shrink-0 text-[10px]">
-                    {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
-                  </span>
-                  <span className="text-[10px] font-bold text-purple-400">DPI</span>
-                  <span className="text-slate-500">{e.source} → {e.dest}</span>
-                  {e.protocol && e.protocol !== "-" && (
-                    <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
-                  )}
-                </div>
-                {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
-              </div>
-            ))}
+        {showDPI && networkEvents.map((e, i) => (
+          <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-600 w-14 shrink-0 text-[10px]">
+                {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
+              </span>
+              <span className="text-[10px] font-bold text-purple-400">DPI</span>
+              <span className="text-slate-500">{e.source} → {e.dest}</span>
+              {e.protocol && e.protocol !== "-" && (
+                <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
+              )}
+            </div>
+            {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
           </div>
-        </>
-      )}
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Traffic Analysis View (own tab) ──────────────────────────────
+
+function TrafficAnalysisView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
+  const [pcapStatus, setPcapStatus] = useState<PcapStatus | null>(null);
+  const [trafficStatus, setTrafficStatus] = useState<TrafficStatus | null>(null);
+  const [captureDuration, setCaptureDuration] = useState(30);
+
+  // Poll status while capturing or generating
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const [ps, ts] = await Promise.all([getPcapStatus(), getTrafficStatus()]);
+        setPcapStatus(ps);
+        setTrafficStatus(ts);
+      } catch {
+        // offline
+      }
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  const capturing = pcapStatus?.capturing ?? false;
+  const generating = trafficStatus?.generating ?? false;
+
+  const handleStartCapture = async () => {
+    try {
+      // Start traffic generation and PCAP capture together
+      await startTrafficGeneration(captureDuration);
+      await startPcapCapture(captureDuration);
+    } catch {
+      // error
+    }
+  };
+
+  const handleStopCapture = async () => {
+    try {
+      await stopPcapCapture();
+    } catch {
+      // error
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* PCAP Capture Controls */}
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Traffic Capture & Analysis
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              Generate representative OT traffic from all containers and capture as PCAP for analysis.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-slate-500">Duration:</span>
+            <select
+              value={captureDuration}
+              onChange={(e) => setCaptureDuration(Number(e.target.value))}
+              disabled={capturing || generating}
+              className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300 disabled:opacity-40"
+            >
+              <option value={15}>15 sec</option>
+              <option value={30}>30 sec</option>
+              <option value={60}>60 sec</option>
+              <option value={120}>2 min</option>
+            </select>
+          </div>
+
+          {!capturing && !generating ? (
+            <button
+              onClick={handleStartCapture}
+              className="rounded border border-sky-700 bg-sky-950/30 px-3 py-1.5 text-[11px] font-medium text-sky-400 hover:bg-sky-900/30 transition-colors"
+            >
+              Generate Traffic & Capture PCAP
+            </button>
+          ) : (
+            <button
+              onClick={handleStopCapture}
+              className="rounded border border-red-700 bg-red-950/30 px-3 py-1.5 text-[11px] font-medium text-red-400 hover:bg-red-900/30 transition-colors"
+            >
+              Stop Capture
+            </button>
+          )}
+
+          {pcapStatus?.file_ready && !capturing && !pcapStatus?.files?.length && (
+            <a
+              href={getPcapDownloadUrl()}
+              className="rounded border border-green-700 bg-green-950/30 px-3 py-1.5 text-[11px] font-medium text-green-400 hover:bg-green-900/30 transition-colors"
+              download
+            >
+              Download PCAP
+            </a>
+          )}
+        </div>
+
+        {/* Status indicators */}
+        {(capturing || generating) && (
+          <div className="mt-3 flex items-center gap-4 text-[10px]">
+            {generating && (
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+                <span className="text-sky-400">Generating traffic: {trafficStatus?.flows_generated ?? 0} flows</span>
+              </div>
+            )}
+            {capturing && (
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-red-400 animate-pulse" />
+                <span className="text-red-400">Capturing packets on containd interfaces</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {pcapStatus?.file_ready && !capturing && (pcapStatus?.files?.length ?? 0) > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <div className="text-[10px] text-slate-500">
+              {pcapStatus!.files!.length} PCAP file{pcapStatus!.files!.length > 1 ? "s" : ""} ready (one per interface). Open in Wireshark or the EmberOT PCAP Analyzer on the engineering workstation (10.20.20.20).
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {pcapStatus!.files!.map((filename) => (
+                <a
+                  key={filename}
+                  href={getPcapDownloadUrl(filename)}
+                  className="rounded border border-green-700 bg-green-950/30 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/30 transition-colors"
+                  download
+                >
+                  {filename}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {pcapStatus?.file_ready && !capturing && !(pcapStatus?.files?.length) && (
+          <div className="mt-2 text-[10px] text-slate-500">
+            PCAP ready for download. Open in Wireshark or the EmberOT PCAP Analyzer on the engineering workstation (10.20.20.20).
+          </div>
+        )}
+      </div>
+
+      {/* Traffic Matrix */}
+      <TrafficMatrixView entries={entries} networkEvents={networkEvents} />
     </div>
   );
 }

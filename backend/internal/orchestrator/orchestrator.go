@@ -55,6 +55,12 @@ func New(containdClient *containd.Client, labDefsDir string) *Orchestrator {
 	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
 }
 
+// DockerClient returns the underlying Docker client for direct API access.
+// Returns nil if Docker is not available (stub mode).
+func (o *Orchestrator) DockerClient() *client.Client {
+	return o.dockerClient
+}
+
 // ProvisionLabInstance creates containers for lab nodes.
 func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, instance *models.LabInstance) error {
 	o.logger.Printf("[lab %s] provisioning", instance.ID)

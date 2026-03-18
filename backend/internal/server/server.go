@@ -23,6 +23,27 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
+// pcapState tracks an active PCAP capture session.
+// containd has no capture ID — we track by filePrefix + startedAt and
+// match resulting files from the list endpoint.
+type pcapState struct {
+	Capturing   bool     `json:"capturing"`
+	DurationSec int      `json:"duration_sec"`
+	StartedAt   string   `json:"started_at,omitempty"`
+	FileReady   bool     `json:"file_ready"`
+	FilePrefix  string   `json:"file_prefix,omitempty"`  // prefix used in containd config
+	Files       []string `json:"files,omitempty"`         // resulting PCAP filenames from containd
+	Fallback    bool     `json:"fallback"`                // true when using tcpdump fallback
+}
+
+// trafficState tracks an active traffic generation session.
+type trafficState struct {
+	Generating     bool   `json:"generating"`
+	DurationSec    int    `json:"duration_sec"`
+	StartedAt      string `json:"started_at,omitempty"`
+	FlowsGenerated int    `json:"flows_generated"`
+}
+
 // Server wraps the Gin router and dependencies.
 type Server struct {
 	engine         *gin.Engine
@@ -33,6 +54,10 @@ type Server struct {
 	containdClient *containd.Client
 	activeConfigMu sync.RWMutex
 	activeConfig   string // "weak" or "improved"
+	pcapMu         sync.Mutex
+	pcap           pcapState
+	trafficMu      sync.Mutex
+	traffic        trafficState
 }
 
 type graphNodeData struct {
@@ -171,6 +196,21 @@ func (s *Server) registerRoutes() {
 			sub.GET("/health", s.handleSubstationHealth)
 			sub.GET("/network-events", s.handleSubstationNetworkEvents)
 		}
+
+		// PCAP capture endpoints (containd API with tcpdump fallback)
+		pcap := api.Group("/pcap")
+		{
+			pcap.POST("/start", s.handlePcapStart)
+			pcap.POST("/stop", s.handlePcapStop)
+			pcap.GET("/status", s.handlePcapStatus)
+			pcap.GET("/download", s.handlePcapDownload)
+			pcap.GET("/download/:name", s.handlePcapDownloadFile)
+			pcap.GET("/list", s.handlePcapList)
+		}
+
+		// Traffic generation for Scenario 0
+		api.POST("/traffic/generate", s.handleTrafficGenerate)
+		api.GET("/traffic/status", s.handleTrafficStatus)
 
 		api.GET("/scenarios", s.handleListScenarios)
 		api.POST("/scenarios", s.handleCreateScenario)

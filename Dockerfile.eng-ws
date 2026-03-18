@@ -1,0 +1,44 @@
+FROM linuxserver/webtop:ubuntu-mate
+
+# Copy EmberOT PCAP Analyzer installer
+COPY ["tools/pcap-analyzer/PCAP Analyzer-amd64-installer.deb", "/tmp/pcap-analyzer.deb"]
+
+# Install OT analysis tools, Modbus testing, and PCAP Analyzer in a single layer
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        wireshark \
+        tshark \
+        tcpdump \
+        nmap \
+        mbpoll \
+        python3 \
+        python3-pip && \
+    pip3 install --no-cache-dir --break-system-packages pymodbus && \
+    dpkg -i /tmp/pcap-analyzer.deb || true && \
+    apt-get -f install -y --no-install-recommends && \
+    rm /tmp/pcap-analyzer.deb && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Create MATE desktop shortcuts and a pcaps directory
+RUN mkdir -p /config/Desktop /home/abc/pcaps && \
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Type=Application' \
+        'Name=Wireshark' \
+        'Comment=Network Protocol Analyzer' \
+        'Exec=wireshark' \
+        'Icon=wireshark' \
+        'Terminal=false' \
+        'Categories=Network;' \
+        > /config/Desktop/wireshark.desktop && \
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Type=Application' \
+        'Name=PCAP Analyzer' \
+        'Comment=EmberOT OT PCAP Analyzer' \
+        'Exec=sh -c "exec $(find /opt -name \"pcap-analyzer\" -o -name \"PCAP Analyzer\" 2>/dev/null | head -1) || echo No PCAP Analyzer found"' \
+        'Terminal=false' \
+        'Categories=Network;' \
+        > /config/Desktop/pcap-analyzer.desktop && \
+    chmod +x /config/Desktop/*.desktop

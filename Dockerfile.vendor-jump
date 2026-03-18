@@ -1,0 +1,17 @@
+FROM linuxserver/webtop:ubuntu-xfce
+
+# Install OT security tools for vendor access scenario exercises.
+# In a real substation environment, a vendor laptop would commonly have
+# Python-based OT tools for commissioning and diagnostics.
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        mbpoll \
+        python3 \
+        python3-pip \
+        ncat \
+        nmap \
+        tcpdump \
+        iproute2 && \
+    pip3 install --no-cache-dir --break-system-packages pymodbus && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
