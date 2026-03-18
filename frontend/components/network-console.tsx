@@ -133,28 +133,35 @@ function PolicyEdge({
       )}
       {showTooltip && details.length > 0 && (
         <foreignObject
-          x={labelX - 120}
+          x={labelX - 150}
           y={labelY + 15}
-          width={240}
-          height={Math.min(details.length * 24 + 32, 200)}
+          width={300}
+          height={Math.min(details.length * 28 + 40, 250)}
           style={{ overflow: "visible" }}
         >
           <div
             className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl"
             style={{ fontSize: 11 }}
           >
-            <div className="mb-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Firewall Rules
+            <div className="mb-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              Active Rules ({details.length})
             </div>
             <ul className="space-y-1">
-              {details.slice(0, 6).map((detail: string, i: number) => (
-                <li key={i} className="text-slate-200 leading-tight">
-                  {detail}
-                </li>
-              ))}
-              {details.length > 6 && (
-                <li className="text-slate-500 italic">
-                  +{details.length - 6} more rules...
+              {details.slice(0, 8).map((detail: string, i: number) => {
+                const isAllow = detail.startsWith("ALLOW");
+                const isDeny = detail.startsWith("DENY");
+                return (
+                  <li key={i} className="flex items-start gap-1.5 leading-tight">
+                    <span className={`shrink-0 text-[10px] font-bold ${isDeny ? "text-red-400" : isAllow ? "text-green-400" : "text-slate-400"}`}>
+                      {isDeny ? "\u2715" : isAllow ? "\u2713" : "\u2022"}
+                    </span>
+                    <span className="text-slate-200">{detail.replace(/^(ALLOW|DENY)\s*/, "")}</span>
+                  </li>
+                );
+              })}
+              {details.length > 8 && (
+                <li className="text-slate-500 italic pl-4">
+                  +{details.length - 8} more rules...
                 </li>
               )}
             </ul>
@@ -195,12 +202,13 @@ export function NetworkConsole() {
     refetchInterval: 10000,
   });
 
-  // Fetch firewall rules for dynamic edge labels
+  // Fetch firewall rules for dynamic edge labels — poll every 5s so
+  // topology updates promptly after a config change in the segmentation tab.
   const { data: firewallRulesData } = useQuery({
     queryKey: ["firewall-rules"],
     queryFn: getFirewallRules,
-    refetchInterval: 30000,
-    staleTime: 10000,
+    refetchInterval: 5000,
+    staleTime: 2000,
   });
 
   const { nodes: layoutNodes, edges } = useStyledGraph(graph, firewallRulesData?.summaries);
@@ -580,21 +588,23 @@ const containdZoneToNetwork: Record<string, string[]> = {
   lan2: ["field_net"],
 };
 
-// Get policy info for a zone from firewall rules
+// Build policy info for a zone from the live containd rules.
+// Shows actual rule action + protocols on the edge label, and
+// structured rule summaries in the hover tooltip.
 function getZonePolicyInfo(
   zone: string,
   ruleSummaries?: ZoneRuleSummary[]
 ): { label: string; details: string[]; action: string } {
-  // Default/fallback labels - concise single labels per zone
+  // Fallback when containd is unreachable
   const fallbackLabels: Record<string, { label: string; action: string }> = {
-    enterprise_net: { label: "IT Access", action: "ALLOW" },
-    vendor_net: { label: "DMZ Access", action: "ALLOW" },
-    ot_ops_net: { label: "Modbus R/W", action: "ALLOW" },
-    field_net: { label: "Read Only", action: "DENY" },
+    enterprise_net: { label: "No rules", action: "ALLOW" },
+    vendor_net: { label: "No rules", action: "ALLOW" },
+    ot_ops_net: { label: "No rules", action: "ALLOW" },
+    field_net: { label: "No rules", action: "ALLOW" },
   };
 
   if (!ruleSummaries || ruleSummaries.length === 0) {
-    const fallback = fallbackLabels[zone] || { label: "", action: "ALLOW" };
+    const fallback = fallbackLabels[zone] || { label: "No rules", action: "ALLOW" };
     return { label: fallback.label, details: [], action: fallback.action };
   }
 
@@ -608,31 +618,44 @@ function getZonePolicyInfo(
   );
 
   if (relevantRules.length === 0) {
-    const fallback = fallbackLabels[zone] || { label: "", action: "ALLOW" };
+    const fallback = fallbackLabels[zone] || { label: "No rules", action: "ALLOW" };
     return { label: fallback.label, details: [], action: fallback.action };
   }
 
-  // Collect all rule details for tooltip
-  const details = relevantRules.flatMap((r) => r.rule_details);
+  // Determine aggregate action
   const hasAllow = relevantRules.some((r) => r.action === "ALLOW");
   const hasDeny = relevantRules.some((r) => r.action === "DENY");
   const action = hasAllow && hasDeny ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
 
-  // Use a single concise label - prioritize the most relevant rule's summary
-  const primaryRule = relevantRules.find((r) => r.action === (hasDeny ? "DENY" : "ALLOW"));
-  let label = primaryRule?.summary || relevantRules[0]?.summary || "";
+  // Build structured details for tooltip: "ACTION src→dst: summary"
+  const details = relevantRules.map((r) => {
+    const src = r.source_zone || "any";
+    const dst = r.dest_zone || "any";
+    const desc = r.rule_details.length > 0 ? r.rule_details[0] : r.summary;
+    return `${r.action} ${src}→${dst}: ${desc}`;
+  });
 
-  // Truncate long labels and show count if multiple rules
-  if (label.length > 12) {
-    label = label.substring(0, 10) + "...";
-  }
-  if (relevantRules.length > 1) {
-    label = `${label} +${relevantRules.length - 1}`;
+  // Edge label: show action + protocol summary from the rules
+  // Collect unique protocol summaries across all relevant rules
+  const summaries = relevantRules
+    .map((r) => r.summary)
+    .filter((s) => s && s !== "ALLOW" && s !== "DENY");
+  const uniqueSummaries = [...new Set(summaries)];
+
+  let label: string;
+  if (uniqueSummaries.length === 0) {
+    // No protocol info — just show action and rule count
+    label = `${action} (${relevantRules.length})`;
+  } else if (uniqueSummaries.length === 1) {
+    label = `${action} ${uniqueSummaries[0]}`;
+  } else {
+    // Multiple rule summaries — show first + count
+    label = `${action} ${uniqueSummaries[0]} +${uniqueSummaries.length - 1}`;
   }
 
-  // If label is still empty or too generic, use fallback
-  if (!label || label === "ALLOW" || label === "DENY") {
-    label = fallbackLabels[zone]?.label || action;
+  // Cap label length for readability (but more generous than before)
+  if (label.length > 24) {
+    label = label.substring(0, 22) + "..";
   }
 
   return { label, details, action };
