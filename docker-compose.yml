@@ -165,7 +165,9 @@ services:
   # All inter-zone traffic routes through containd (10.20.20.2)
   # ─────────────────────────────────────────────────────────────
   vendor_jump:
-    image: linuxserver/webtop:ubuntu-xfce
+    build:
+      context: .
+      dockerfile: Dockerfile.vendor-jump
     container_name: rangerdanger-vendor-jump
     hostname: vendor-jump
     environment:
@@ -186,7 +188,9 @@ services:
       - firewall
 
   eng_workstation:
-    image: linuxserver/webtop:ubuntu-mate
+    build:
+      context: .
+      dockerfile: Dockerfile.eng-ws
     container_name: rangerdanger-eng-ws
     hostname: eng-workstation
     cap_add:
@@ -198,6 +202,7 @@ services:
       - GATEWAY=10.20.20.2
     volumes:
       - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+      - ./data/firewall/captures:/home/abc/pcaps:ro
     networks:
       vendor_net:
         ipv4_address: 10.20.20.20

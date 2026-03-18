@@ -23,7 +23,7 @@
     { "name": "wan", "description": "Enterprise Zone - Corporate IT environment" },
     { "name": "dmz", "description": "Vendor / Engineering Zone - Remote support and maintenance" },
     { "name": "lan1", "description": "OT Operations Zone - HMI, RTAC, supervisory control" },
-    { "name": "lan2", "description": "Field Device Zone - Relay, recloser, regulator" }
+    { "name": "lan2", "description": "Field Device Zone - Relay, recloser, regulator, capbank" }
   ],
   "routing": {},
   "dataplane": {},
@@ -68,7 +68,7 @@
       },
       {
         "id": "enterprise-to-field-weak",
-        "description": "WEAK: Enterprise direct access to Field Devices (should be blocked)",
+        "description": "WEAK: Enterprise direct Modbus/HTTP access to Field Devices (should be blocked)",
         "sourceZones": ["wan"],
         "destZones": ["lan2"],
         "protocols": [
@@ -80,7 +80,7 @@
       },
       {
         "id": "vendor-to-ot-weak",
-        "description": "WEAK: Vendor broad access to OT Operations (should be narrowed)",
+        "description": "WEAK: Vendor broad access to OT Operations including Modbus (should be narrowed)",
         "sourceZones": ["dmz"],
         "destZones": ["lan1"],
         "protocols": [
@@ -94,7 +94,7 @@
       },
       {
         "id": "vendor-to-field-weak",
-        "description": "WEAK: Vendor direct access to Field Devices (should be blocked)",
+        "description": "WEAK: Vendor direct Modbus/HTTP access to Field Devices (should be blocked)",
         "sourceZones": ["dmz"],
         "destZones": ["lan2"],
         "protocols": [
@@ -106,7 +106,7 @@
       },
       {
         "id": "ot-to-field-broad",
-        "description": "WEAK: All OT Operations nodes can reach all Field Devices (should be RTAC only)",
+        "description": "WEAK: All OT Operations nodes can Modbus/HTTP to all Field Devices (should be RTAC only)",
         "sourceZones": ["lan1"],
         "destZones": ["lan2"],
         "protocols": [
@@ -118,13 +118,14 @@
       },
       {
         "id": "ot-intrazone",
-        "description": "OT Operations internal communication",
+        "description": "OT Operations internal: HMI↔RTAC Modbus, HTTP, FUXA",
         "sourceZones": ["lan1"],
         "destZones": ["lan1"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
           { "name": "tcp", "port": "1881" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "udp", "port": "123" }
         ],
         "ics": {},
         "action": "ALLOW"
@@ -137,6 +138,17 @@
         "protocols": [
           { "name": "tcp", "port": "8080" },
           { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "ntp-ot-to-field",
+        "description": "WEAK: NTP time sync from OT ops to field (no source restriction)",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "udp", "port": "123" }
         ],
         "ics": {},
         "action": "ALLOW"

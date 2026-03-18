@@ -47,3 +47,6 @@ backend/server
 # Nothing in data/ needs to be in the repo
 data/
 backend/data/
+
+# Large binary tools (not in git, fetched separately)
+tools/pcap-analyzer/*.deb

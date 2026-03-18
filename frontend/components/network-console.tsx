@@ -184,6 +184,8 @@ export function NetworkConsole() {
   const [showModal, setShowModal] = useState(false);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  // Track which nodes have active (alive) terminal sessions
+  const [activeTerminals, setActiveTerminals] = useState<Set<string>>(new Set());
 
   const {
     data: graph,
@@ -233,15 +235,16 @@ export function NetworkConsole() {
     });
   }, []);
 
-  // Handle node click - don't close terminal if clicking same node
+  // Handle node click - preserve terminal sessions across node switches
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type === "zone") return;
     if (inspectorNode?.id === node.id) return;
 
     setInspectorNode(node);
     setIframeUrl(null);
-    setShowTerminal(false);
-  }, [inspectorNode?.id]);
+    // If the new node already has an active terminal, show it; otherwise show placeholder
+    setShowTerminal(activeTerminals.has(node.id));
+  }, [inspectorNode?.id, activeTerminals]);
 
   const errors = useMemo(() => {
     const list: string[] = [];
@@ -332,7 +335,7 @@ export function NetworkConsole() {
               <h3 className="text-xl font-semibold text-white">{inspectorNode.data?.label}</h3>
               <p className="text-sm text-slate-400">{inspectorNode.data?.nodeType || inspectorNode.type}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); }}>
+            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); setActiveTerminals(new Set()); }}>
               Close
             </Button>
           </div>
@@ -422,6 +425,7 @@ export function NetworkConsole() {
               onClick={() => {
                 setShowTerminal(true);
                 setIframeUrl(null);
+                setActiveTerminals((prev) => new Set(prev).add(inspectorNode.id));
               }}
             >
               Terminal
@@ -439,24 +443,35 @@ export function NetworkConsole() {
           </div>
 
           <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black relative">
-            {showTerminal ? (
-              <>
-                <NodeTerminal
-                  nodeId={inspectorNode.id}
-                  labId="workshop"
-                  onClose={() => setShowTerminal(false)}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute top-2 right-10 bg-slate-900/80 hover:bg-slate-800 z-20"
-                  onClick={() => setShowTerminalModal(true)}
-                  title="Expand terminal"
+            {/* Keep all active terminals mounted but hidden — preserves scrollback + WebSocket */}
+            {Array.from(activeTerminals).map((termNodeId) => {
+              const isVisible = showTerminal && inspectorNode.id === termNodeId;
+              return (
+                <div
+                  key={termNodeId}
+                  className="absolute inset-0"
+                  style={{ display: isVisible ? "block" : "none" }}
                 >
-                  <Maximize2 className="h-4 w-4" />
-                </Button>
-              </>
-            ) : iframeUrl ? (
+                  <NodeTerminal
+                    nodeId={termNodeId}
+                    labId="workshop"
+                    onClose={() => setShowTerminal(false)}
+                  />
+                </div>
+              );
+            })}
+            {showTerminal && activeTerminals.has(inspectorNode.id) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute top-2 right-10 bg-slate-900/80 hover:bg-slate-800 z-20"
+                onClick={() => setShowTerminalModal(true)}
+                title="Expand terminal"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            )}
+            {!showTerminal && iframeUrl ? (
               <div className="relative h-full w-full overflow-hidden">
                 {/* Scaled minimap view - iframe is rendered at 2x size and scaled down */}
                 <div
@@ -484,11 +499,11 @@ export function NetworkConsole() {
                   <Maximize2 className="h-4 w-4" />
                 </Button>
               </div>
-            ) : (
+            ) : !showTerminal && !iframeUrl ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-500">
                 Select UI or Terminal to view here.
               </div>
-            )}
+            ) : null}
           </div>
         </aside>
       )}
