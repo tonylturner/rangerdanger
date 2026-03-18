@@ -10,9 +10,9 @@ RUN CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim
 RUN CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim
 RUN CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim
 RUN CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim
-RUN CGO_ENABLED=0 go build -o /bin/opendss-sim ./opendss-sim
 
 FROM alpine:3.21 AS sim-base
+
 RUN apk add --no-cache iproute2
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
 RUN chmod +x /usr/local/bin/set-gateway.sh
@@ -37,7 +37,3 @@ COPY --from=builder /bin/rtac-sim /usr/local/bin/rtac-sim
 EXPOSE 8080
 CMD ["sh", "-c", "set-gateway.sh && rtac-sim"]
 
-FROM sim-base AS opendss-sim
-COPY --from=builder /bin/opendss-sim /usr/local/bin/opendss-sim
-EXPOSE 8080
-CMD ["sh", "-c", "set-gateway.sh && opendss-sim"]

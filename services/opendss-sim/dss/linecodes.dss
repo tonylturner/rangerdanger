@@ -1,0 +1,17 @@
+! IEEE 13-bus line impedance data — configurations 601 and 602
+! Used for realistic distribution feeder impedances.
+!
+! Config 601: 336,400 26/7 ACSR overhead, 4/0 6/1 ACSR neutral
+! Config 602: 4/0 6/1 ACSR overhead, 4/0 6/1 ACSR neutral
+
+New Linecode.601 nphases=3 BaseFreq=60
+~ rmatrix = (0.0654 | 0.0313  0.0654 | 0.0313  0.0313  0.0654)
+~ xmatrix = (0.1405 | 0.0529  0.1405 | 0.0529  0.0529  0.1405)
+~ cmatrix = (2.8    | -0.6    2.8    | -0.6   -0.6     2.8)
+~ units=mi
+
+New Linecode.602 nphases=3 BaseFreq=60
+~ rmatrix = (0.0907 | 0.0313  0.0907 | 0.0313  0.0313  0.0907)
+~ xmatrix = (0.1581 | 0.0529  0.1581 | 0.0529  0.0529  0.1581)
+~ cmatrix = (2.4    | -0.6    2.4    | -0.6   -0.6     2.4)
+~ units=mi
