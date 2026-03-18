@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { MetricsOverview } from "../components/metrics-overview";
-import { TopologyPreview } from "../components/topology-preview";
 import { getWorkshopStatus } from "../lib/api";
 
 export default function DashboardPage() {
@@ -81,11 +80,6 @@ export default function DashboardPage() {
       </div>
 
       <MetricsOverview />
-
-      <div>
-        <h2 className="mb-2 text-sm font-bold text-white">Network Architecture</h2>
-        <TopologyPreview />
-      </div>
     </main>
   );
 }

@@ -157,6 +157,7 @@ func (s *Server) registerRoutes() {
 		// Workshop endpoints
 		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
 		api.GET("/workshop/status", s.handleGetWorkshopStatus)
+		api.GET("/workshop/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 

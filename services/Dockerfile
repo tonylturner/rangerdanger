@@ -19,17 +19,17 @@ RUN chmod +x /usr/local/bin/set-gateway.sh
 
 FROM sim-base AS relay-sim
 COPY --from=builder /bin/relay-sim /usr/local/bin/relay-sim
-EXPOSE 8080
+EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && relay-sim"]
 
 FROM sim-base AS recloser-sim
 COPY --from=builder /bin/recloser-sim /usr/local/bin/recloser-sim
-EXPOSE 8080
+EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && recloser-sim"]
 
 FROM sim-base AS regulator-sim
 COPY --from=builder /bin/regulator-sim /usr/local/bin/regulator-sim
-EXPOSE 8080
+EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 
 FROM sim-base AS rtac-sim

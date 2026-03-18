@@ -63,7 +63,9 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
     term.writeln("\x1b[36mConnecting to container...\x1b[0m");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/api/labs/instances/${labId}/nodes/${nodeId}/terminal`;
+    const wsUrl = labId === "workshop"
+      ? `${protocol}//${window.location.host}/api/workshop/nodes/${nodeId}/terminal`
+      : `${protocol}//${window.location.host}/api/labs/instances/${labId}/nodes/${nodeId}/terminal`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
