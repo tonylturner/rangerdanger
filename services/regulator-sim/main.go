@@ -149,6 +149,8 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	go startModbusServer()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", handleState)
 	mux.HandleFunc("POST /api/command", handleCommand)

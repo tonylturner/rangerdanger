@@ -400,7 +400,323 @@ function CmdButton({ label, onClick, variant }: { label: string; onClick: () => 
 
 // ── Command Audit View ───────────────────────────────────────────
 
+// Known host IP → friendly name mapping for the substation lab
+const HOST_NAMES: Record<string, string> = {
+  "10.10.10.10": "corp-ws",
+  "10.10.10.50": "kali",
+  "10.20.20.10": "vendor-jump",
+  "10.20.20.20": "eng-ws",
+  "10.30.30.10": "fuxa-hmi",
+  "10.30.30.20": "rtac",
+  "10.30.30.30": "openplc",
+  "10.40.40.20": "relay",
+  "10.40.40.21": "recloser",
+  "10.40.40.22": "regulator",
+  "10.50.50.20": "opendss",
+  "10.10.10.2": "fw-ent",
+  "10.20.20.2": "fw-dmz",
+  "10.30.30.2": "fw-ot",
+  "10.40.40.2": "fw-field",
+};
+
+const ZONE_FOR_IP: Record<string, string> = {
+  "10.10.10": "enterprise",
+  "10.20.20": "vendor",
+  "10.30.30": "ot_ops",
+  "10.40.40": "field",
+  "10.50.50": "physics",
+};
+
+function ipToZone(ip: string): string {
+  const prefix = ip.split(".").slice(0, 3).join(".");
+  return ZONE_FOR_IP[prefix] || "unknown";
+}
+
+function hostLabel(ip: string): string {
+  return HOST_NAMES[ip] || ip;
+}
+
+type MatrixEntry = {
+  source: string;
+  dest: string;
+  protocols: Record<string, number>;
+  totalEvents: number;
+  srcZone: string;
+  dstZone: string;
+  crossZone: boolean;
+};
+
+function buildTrafficMatrix(entries: AuditEntry[], networkEvents: NetworkEvent[]): MatrixEntry[] {
+  const map = new Map<string, MatrixEntry>();
+
+  // Derive source IPs from audit entries using known zone→subnet mapping
+  const zoneToSubnet: Record<string, string> = {
+    enterprise: "10.10.10",
+    vendor: "10.20.20",
+    ot_ops: "10.30.30",
+    field: "10.40.40",
+  };
+
+  // Build from audit entries (command-level)
+  for (const e of entries) {
+    // Source: use source field or infer from zone
+    let srcIP = e.source;
+    if (!srcIP.includes(".")) {
+      // Not an IP — try to map from zone
+      const subnet = zoneToSubnet[e.source_zone];
+      srcIP = subnet ? `${subnet}.x` : e.source;
+    }
+
+    // Target: map device names to IPs
+    const targetIPs: Record<string, string> = {
+      "relay-sim": "10.40.40.20",
+      "recloser-sim": "10.40.40.21",
+      "regulator-sim": "10.40.40.22",
+      "rtac-sim": "10.30.30.20",
+    };
+    const dstIP = targetIPs[e.target] || e.target;
+    const key = `${srcIP}→${dstIP}`;
+
+    if (!map.has(key)) {
+      const srcZone = ipToZone(srcIP);
+      const dstZone = ipToZone(dstIP);
+      map.set(key, {
+        source: srcIP,
+        dest: dstIP,
+        protocols: {},
+        totalEvents: 0,
+        srcZone,
+        dstZone,
+        crossZone: srcZone !== dstZone,
+      });
+    }
+    const entry = map.get(key)!;
+    const proto = "HTTP/API";
+    entry.protocols[proto] = (entry.protocols[proto] || 0) + 1;
+    entry.totalEvents++;
+  }
+
+  // Build from DPI network events
+  for (const e of networkEvents) {
+    const srcIP = e.source.split(":")[0]; // strip port
+    const dstIP = e.dest.split(":")[0];
+    const key = `${srcIP}→${dstIP}`;
+
+    if (!map.has(key)) {
+      const srcZone = ipToZone(srcIP);
+      const dstZone = ipToZone(dstIP);
+      map.set(key, {
+        source: srcIP,
+        dest: dstIP,
+        protocols: {},
+        totalEvents: 0,
+        srcZone,
+        dstZone,
+        crossZone: srcZone !== dstZone,
+      });
+    }
+    const entry = map.get(key)!;
+    const proto = e.protocol && e.protocol !== "-" ? e.protocol : `port/${e.dst_port || "?"}`;
+    entry.protocols[proto] = (entry.protocols[proto] || 0) + 1;
+    entry.totalEvents++;
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.totalEvents - a.totalEvents);
+}
+
+const ZONE_COLORS: Record<string, string> = {
+  enterprise: "text-red-400",
+  vendor: "text-purple-400",
+  ot_ops: "text-orange-400",
+  field: "text-green-400",
+  physics: "text-cyan-400",
+};
+
+const ZONE_BG: Record<string, string> = {
+  enterprise: "bg-red-950/20",
+  vendor: "bg-purple-950/20",
+  ot_ops: "bg-orange-950/20",
+  field: "bg-green-950/20",
+  physics: "bg-cyan-950/20",
+};
+
+const PROTOCOL_COLORS: Record<string, string> = {
+  "Modbus/TCP": "bg-amber-900/40 text-amber-300 border-amber-800/50",
+  "HTTP/API": "bg-blue-900/40 text-blue-300 border-blue-800/50",
+  "HTTP": "bg-blue-900/40 text-blue-300 border-blue-800/50",
+  "DNS": "bg-teal-900/40 text-teal-300 border-teal-800/50",
+  "SSH": "bg-emerald-900/40 text-emerald-300 border-emerald-800/50",
+  "TLS": "bg-indigo-900/40 text-indigo-300 border-indigo-800/50",
+};
+
+function protoColor(proto: string): string {
+  return PROTOCOL_COLORS[proto] || "bg-slate-800/40 text-slate-300 border-slate-700/50";
+}
+
+function TrafficMatrixView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
+  const [filterZone, setFilterZone] = useState<string>("all");
+  const [crossZoneOnly, setCrossZoneOnly] = useState(false);
+
+  const matrix = buildTrafficMatrix(entries, networkEvents);
+  const filtered = matrix.filter((m) => {
+    if (crossZoneOnly && !m.crossZone) return false;
+    if (filterZone !== "all" && m.srcZone !== filterZone && m.dstZone !== filterZone) return false;
+    return true;
+  });
+
+  // Collect unique protocols across all entries
+  const allProtocols = new Set<string>();
+  for (const m of matrix) {
+    for (const p of Object.keys(m.protocols)) allProtocols.add(p);
+  }
+
+  // Summary stats
+  const uniquePairs = matrix.length;
+  const crossZonePairs = matrix.filter((m) => m.crossZone).length;
+  const totalFlows = matrix.reduce((sum, m) => sum + m.totalEvents, 0);
+
+  if (matrix.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-slate-500">
+        No traffic observed yet. Run scenarios or generate traffic to build the communication matrix.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Summary bar */}
+      <div className="flex items-center gap-4 text-[10px]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">Pairs:</span>
+          <span className="text-slate-300 font-bold">{uniquePairs}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">Cross-zone:</span>
+          <span className="text-amber-400 font-bold">{crossZonePairs}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">Flows:</span>
+          <span className="text-slate-300 font-bold">{totalFlows}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">Protocols:</span>
+          {Array.from(allProtocols).map((p) => (
+            <span key={p} className={`rounded border px-1 py-0.5 text-[9px] ${protoColor(p)}`}>{p}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2">
+        <select
+          value={filterZone}
+          onChange={(e) => setFilterZone(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300"
+        >
+          <option value="all">All Zones</option>
+          <option value="enterprise">Enterprise</option>
+          <option value="vendor">Vendor</option>
+          <option value="ot_ops">OT Ops</option>
+          <option value="field">Field</option>
+          <option value="physics">Physics</option>
+        </select>
+        <button
+          onClick={() => setCrossZoneOnly(!crossZoneOnly)}
+          className={`rounded border px-2 py-1 text-[10px] font-medium ${
+            crossZoneOnly
+              ? "border-amber-700 bg-amber-950/30 text-amber-400"
+              : "border-slate-700 bg-slate-800/40 text-slate-500"
+          }`}
+        >
+          Cross-zone only
+        </button>
+      </div>
+
+      {/* Matrix table */}
+      <div className="max-h-[440px] overflow-y-auto">
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="border-b border-slate-800 text-left text-[10px] text-slate-500">
+              <th className="pb-1.5 pr-2 font-medium">Source</th>
+              <th className="pb-1.5 pr-2 font-medium">Dest</th>
+              <th className="pb-1.5 pr-2 font-medium">Protocols</th>
+              <th className="pb-1.5 pr-2 font-medium text-right">Events</th>
+              <th className="pb-1.5 font-medium">Seg. Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((m, i) => (
+              <tr key={i} className={`border-b border-slate-800/40 ${m.crossZone ? "bg-amber-950/5" : ""}`}>
+                <td className="py-1.5 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${m.srcZone === "enterprise" ? "bg-red-500" : m.srcZone === "vendor" ? "bg-purple-500" : m.srcZone === "ot_ops" ? "bg-orange-500" : m.srcZone === "field" ? "bg-green-500" : "bg-cyan-500"}`} />
+                    <span className={`font-medium ${ZONE_COLORS[m.srcZone] || "text-slate-300"}`}>{hostLabel(m.source)}</span>
+                    <span className="text-slate-600 text-[9px]">{m.source}</span>
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${m.dstZone === "enterprise" ? "bg-red-500" : m.dstZone === "vendor" ? "bg-purple-500" : m.dstZone === "ot_ops" ? "bg-orange-500" : m.dstZone === "field" ? "bg-green-500" : "bg-cyan-500"}`} />
+                    <span className={`font-medium ${ZONE_COLORS[m.dstZone] || "text-slate-300"}`}>{hostLabel(m.dest)}</span>
+                    <span className="text-slate-600 text-[9px]">{m.dest}</span>
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2">
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(m.protocols).map(([proto, count]) => (
+                      <span key={proto} className={`rounded border px-1 py-0 text-[9px] ${protoColor(proto)}`}>
+                        {proto} ({count})
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="py-1.5 pr-2 text-right font-mono text-slate-400">{m.totalEvents}</td>
+                <td className="py-1.5 text-[10px]">
+                  {m.crossZone ? (
+                    <span className="text-amber-400">
+                      {m.srcZone} → {m.dstZone}
+                    </span>
+                  ) : (
+                    <span className="text-slate-600">intra-zone</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Segmentation insights */}
+      {crossZonePairs > 0 && (
+        <div className="rounded border border-amber-900/30 bg-amber-950/10 p-2.5 text-[10px]">
+          <div className="font-medium text-amber-400 mb-1">Segmentation Planning Insights</div>
+          <div className="space-y-0.5 text-slate-400">
+            {Array.from(new Set(matrix.filter((m) => m.crossZone).map((m) => `${m.srcZone}→${m.dstZone}`))).map((pair) => {
+              const flows = matrix.filter((m) => `${m.srcZone}→${m.dstZone}` === pair);
+              const protos = new Set(flows.flatMap((f) => Object.keys(f.protocols)));
+              return (
+                <div key={pair} className="flex items-center gap-2">
+                  <span className="text-amber-300/70 font-medium w-28">{pair}</span>
+                  <span className="text-slate-500">{flows.length} host pair(s) via</span>
+                  {Array.from(protos).map((p) => (
+                    <span key={p} className={`rounded border px-1 py-0 text-[9px] ${protoColor(p)}`}>{p}</span>
+                  ))}
+                </div>
+              );
+            })}
+            <div className="mt-1.5 text-slate-500 italic">
+              Use this matrix to define containd DPI allow-rules for each cross-zone pair.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
+  const [view, setView] = useState<"timeline" | "matrix">("timeline");
   const [showDPI, setShowDPI] = useState(networkEvents.length > 0);
 
   if (entries.length === 0 && networkEvents.length === 0) {
@@ -426,11 +742,27 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
 
   return (
     <div className="space-y-3">
+      {/* View toggle + controls */}
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-slate-500">
-          Who sent commands, from which zone, and what happened to the feeder.
-        </span>
-        {networkEvents.length > 0 && (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setView("timeline")}
+            className={`rounded border px-2 py-1 text-[10px] font-medium ${
+              view === "timeline" ? "border-sky-700 bg-sky-950/30 text-sky-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
+            }`}
+          >
+            Timeline
+          </button>
+          <button
+            onClick={() => setView("matrix")}
+            className={`rounded border px-2 py-1 text-[10px] font-medium ${
+              view === "matrix" ? "border-amber-700 bg-amber-950/30 text-amber-400" : "border-slate-700 bg-slate-800/40 text-slate-500"
+            }`}
+          >
+            Traffic Matrix
+          </button>
+        </div>
+        {view === "timeline" && networkEvents.length > 0 && (
           <button
             onClick={() => setShowDPI(!showDPI)}
             className={`rounded border px-2 py-1 text-[10px] font-medium ${
@@ -442,71 +774,80 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
         )}
       </div>
 
-      <div className="max-h-[500px] overflow-y-auto space-y-1">
-        {entries.map((e, i) => {
-          const zone = e.source_zone || "unknown";
-          const wasAttack = zone === "enterprise" || zone === "vendor";
-          const succeeded = e.result === "executed";
-          const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
+      {view === "matrix" ? (
+        <TrafficMatrixView entries={entries} networkEvents={networkEvents} />
+      ) : (
+        <>
+          <span className="text-[10px] text-slate-500">
+            Who sent commands, from which zone, and what happened to the feeder.
+          </span>
+          <div className="max-h-[500px] overflow-y-auto space-y-1">
+            {entries.map((e, i) => {
+              const zone = e.source_zone || "unknown";
+              const wasAttack = zone === "enterprise" || zone === "vendor";
+              const succeeded = e.result === "executed";
+              const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
 
-          return (
-            <div key={`a-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-600 w-14 shrink-0 text-[10px]">
-                  {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
-                </span>
-                <span className="text-[10px] font-bold text-slate-400">
-                  {zoneLabel[zone] || zone}
-                </span>
-                <span className="text-slate-600">sent</span>
-                <span className="text-amber-400 font-medium">{e.command}</span>
-                <span className="text-slate-600">to</span>
-                <span className="text-slate-300 font-medium">{e.target}</span>
-                <span className="ml-auto">
-                  {succeeded ? (
-                    harmful ? (
-                      <span className="text-red-400 font-bold">SUCCEEDED</span>
-                    ) : (
-                      <span className="text-green-400 font-bold">OK</span>
-                    )
-                  ) : (
-                    <span className="text-yellow-400 font-bold">BLOCKED</span>
+              return (
+                <div key={`a-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-600 w-14 shrink-0 text-[10px]">
+                      {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {zoneLabel[zone] || zone}
+                    </span>
+                    <span className="text-slate-600">sent</span>
+                    <span className="text-amber-400 font-medium">{e.command}</span>
+                    <span className="text-slate-600">to</span>
+                    <span className="text-slate-300 font-medium">{e.target}</span>
+                    <span className="ml-auto">
+                      {succeeded ? (
+                        harmful ? (
+                          <span className="text-red-400 font-bold">SUCCEEDED</span>
+                        ) : (
+                          <span className="text-green-400 font-bold">OK</span>
+                        )
+                      ) : (
+                        <span className="text-yellow-400 font-bold">BLOCKED</span>
+                      )}
+                    </span>
+                  </div>
+                  {/* Operational consequence — always prominent */}
+                  {e.process_impact && e.process_impact !== "command executed" && (
+                    <div className={`mt-1 ml-14 rounded px-2 py-1 text-[11px] font-medium ${
+                      succeeded && harmful
+                        ? "bg-red-950/30 text-red-300 border border-red-900/40"
+                        : succeeded
+                        ? "bg-green-950/20 text-green-300 border border-green-900/30"
+                        : "bg-slate-800/40 text-slate-400"
+                    }`}>
+                      {wasAttack && succeeded && harmful ? "Attack impact: " : ""}
+                      {e.process_impact}
+                    </div>
                   )}
-                </span>
-              </div>
-              {/* Operational consequence — always prominent */}
-              {e.process_impact && e.process_impact !== "command executed" && (
-                <div className={`mt-1 ml-14 rounded px-2 py-1 text-[11px] font-medium ${
-                  succeeded && harmful
-                    ? "bg-red-950/30 text-red-300 border border-red-900/40"
-                    : succeeded
-                    ? "bg-green-950/20 text-green-300 border border-green-900/30"
-                    : "bg-slate-800/40 text-slate-400"
-                }`}>
-                  {wasAttack && succeeded && harmful ? "Attack impact: " : ""}
-                  {e.process_impact}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
 
-        {showDPI && networkEvents.map((e, i) => (
-          <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-600 w-14 shrink-0 text-[10px]">
-                {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
-              </span>
-              <span className="text-[10px] font-bold text-purple-400">DPI</span>
-              <span className="text-slate-500">{e.source} → {e.dest}</span>
-              {e.protocol && e.protocol !== "-" && (
-                <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
-              )}
-            </div>
-            {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
+            {showDPI && networkEvents.map((e, i) => (
+              <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-600 w-14 shrink-0 text-[10px]">
+                    {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
+                  </span>
+                  <span className="text-[10px] font-bold text-purple-400">DPI</span>
+                  <span className="text-slate-500">{e.source} → {e.dest}</span>
+                  {e.protocol && e.protocol !== "-" && (
+                    <span className="text-purple-400 text-[10px]">[{e.protocol}]</span>
+                  )}
+                </div>
+                {e.details && <div className="mt-0.5 ml-14 text-slate-500 text-[10px]">{e.details}</div>}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
