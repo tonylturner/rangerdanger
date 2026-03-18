@@ -5,33 +5,129 @@ import { Handle, Position, NodeProps } from "reactflow";
 import {
   Shield,
   Server,
-  Monitor,
-  Cpu,
-  Database,
-  LineChart,
-  Radio,
-  Laptop,
-  Wrench,
   Network,
-  Cloud,
-  ShieldAlert,
   Waypoints,
-  type LucideIcon,
+  Monitor,
+  Database,
+  ShieldAlert,
+  Satellite,
+  Clock,
 } from "lucide-react";
 
+// ── Custom SVG icons ──────────────────────────────────────────────
+
+function DockerIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 3h2v2h-2V3zm-3 0h2v2h-2V3zm-3 0h2v2H7V3zm6 3h2v2h-2V6zm-3 0h2v2h-2V6zm-3 0h2v2H7V6zM4 6h2v2H4V6zm3 3h2v2H7V9zm-3 0h2v2H4V9z" fill={color} />
+      <path d="M22 10.5c-.7-.4-1.5-.5-2.3-.4-.2-1.2-1-2.2-2-2.8l-.4-.3-.3.4c-.4.6-.6 1.3-.5 2 0 .5.1 1 .4 1.4-.6.3-1.2.5-1.8.5H1.1l-.1.6c-.1 1.5.2 3 .9 4.3 1 1.6 2.6 2.4 4.5 2.4 4.2 0 7.4-1.9 8.9-5.4.6.1 1.7.1 2.3-.9l.1-.2-.3-.2c-.5-.2-1.5-.5-2.4.1z" fill={color} />
+    </svg>
+  );
+}
+
+function TuxIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2C9.5 2 8 4.5 8 7c0 1.5.5 2.8 1 3.5-.5 1-1.5 2.5-2 4-.5 1.5-.5 3 0 4 .3.5.7 1 1.2 1.3-.2.4-.2.8-.2 1.2h2c0-.3.1-.5.2-.7.3.1.5.2.8.2.3 0 .6-.1.8-.2.1.2.2.4.2.7h2c0-.4-.1-.8-.2-1.2.5-.3.9-.8 1.2-1.3.5-1 .5-2.5 0-4-.5-1.5-1.5-3-2-4 .5-.7 1-2 1-3.5 0-2.5-1.5-5-4-5z" fill={color} />
+      <circle cx="10.5" cy="6" r=".8" fill="#0f172a" />
+      <circle cx="13.5" cy="6" r=".8" fill="#0f172a" />
+      <ellipse cx="12" cy="8.5" rx="1" ry=".5" fill="#f59e0b" />
+    </svg>
+  );
+}
+
+function KaliIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L6 8l2 2-4 4 3 3 2-2 1 5h4l1-5 2 2 3-3-4-4 2-2L12 2z" fill={color} />
+      <path d="M10 10l2-2 2 2-2 2-2-2z" fill="#0f172a" />
+    </svg>
+  );
+}
+
+function OpenPLCIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="3" width="16" height="18" rx="2" stroke={color} strokeWidth="1.5" fill="none" />
+      <rect x="6" y="5" width="5" height="3" rx=".5" fill={color} fillOpacity=".3" />
+      <rect x="13" y="5" width="5" height="3" rx=".5" fill={color} fillOpacity=".3" />
+      <circle cx="7.5" cy="12" r="1" fill="#22c55e" />
+      <circle cx="10.5" cy="12" r="1" fill="#22c55e" />
+      <circle cx="13.5" cy="12" r="1" fill={color} fillOpacity=".4" />
+      <circle cx="16.5" cy="12" r="1" fill={color} fillOpacity=".4" />
+      <line x1="6" y1="15" x2="7" y2="15" stroke={color} strokeWidth="1" />
+      <line x1="6" y1="17" x2="7" y2="17" stroke={color} strokeWidth="1" />
+      <line x1="6" y1="19" x2="7" y2="19" stroke={color} strokeWidth="1" />
+      <line x1="17" y1="15" x2="18" y2="15" stroke={color} strokeWidth="1" />
+      <line x1="17" y1="17" x2="18" y2="17" stroke={color} strokeWidth="1" />
+      <line x1="17" y1="19" x2="18" y2="19" stroke={color} strokeWidth="1" />
+      <text x="12" y="18" textAnchor="middle" fontSize="4" fontWeight="bold" fill={color}>PLC</text>
+    </svg>
+  );
+}
+
+// Icon component type for rendering
+type IconComponent = React.FC<{ size?: number; color?: string }>;
+
+// Lucide icons wrapped as IconComponent
+const LucideShield: IconComponent = ({ size, color }) => <Shield size={size} color={color} />;
+const LucideServer: IconComponent = ({ size, color }) => <Server size={size} color={color} />;
+const LucideMonitor: IconComponent = ({ size, color }) => <Monitor size={size} color={color} />;
+const LucideDatabase: IconComponent = ({ size, color }) => <Database size={size} color={color} />;
+const LucideShieldAlert: IconComponent = ({ size, color }) => <ShieldAlert size={size} color={color} />;
+const LucideSatellite: IconComponent = ({ size, color }) => <Satellite size={size} color={color} />;
+const LucideClock: IconComponent = ({ size, color }) => <Clock size={size} color={color} />;
+
 // Icon mapping for node types
-const nodeTypeIcons: Record<string, LucideIcon> = {
-  containd_ngfw: Shield,
-  ews: Laptop,
-  jump_host: Wrench,
-  hmi_scada: Monitor,
-  plc_trainer: Cpu,
-  sis_plc: ShieldAlert,
-  ot_ids: Radio,
-  historian: Database,
-  grafana: LineChart,
-  opnsense_external: Shield,
-  default: Server,
+const nodeTypeIcons: Record<string, IconComponent> = {
+  // Firewall — keep as shield
+  containd_ngfw: LucideShield,
+  opnsense_external: LucideShield,
+
+  // Stub/fake Go services — Docker whale
+  relay_sim: DockerIcon,
+  recloser_sim: DockerIcon,
+  regulator_sim: DockerIcon,
+  capbank_sim: DockerIcon,
+  rtac_sim: DockerIcon,
+
+  // OT infrastructure sims — distinctive icons
+  historian_sim: LucideDatabase,
+  gps_sim: LucideSatellite,
+
+  // Full Linux containers — Tux penguin
+  corp_workstation: TuxIcon,
+  vendor_jumpbox: TuxIcon,
+  eng_workstation: TuxIcon,
+  ews: TuxIcon,
+  jump_host: TuxIcon,
+  ubuntu_jumpbox: TuxIcon,
+
+  // FUXA HMI — monitor (real SCADA application)
+  fuxa_hmi: LucideMonitor,
+  hmi_view: LucideMonitor,
+  hmi_control: LucideMonitor,
+  hmi_scada: LucideMonitor,
+
+  // Kali
+  kali_pentest: KaliIcon,
+
+  // OpenPLC
+  openplc: OpenPLCIcon,
+  plc_trainer: OpenPLCIcon,
+  sis_plc: OpenPLCIcon,
+
+  // Suricata / IDS
+  ot_ids: LucideShieldAlert,
+
+  // InfluxDB historian
+  historian: LucideDatabase,
+
+  // GPS / time server
+  gps_clock: LucideClock,
+
+  // Default
+  default: LucideServer,
 };
 
 // Zone colors - substation segmentation lab + legacy zone names
@@ -41,7 +137,6 @@ const zoneColors: Record<string, { border: string; bg: string; text: string }> =
   vendor_net:     { border: "#a855f7", bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7" },  // purple
   ot_ops_net:     { border: "#f97316", bg: "rgba(249, 115, 22, 0.1)", text: "#f97316" },  // orange
   field_net:      { border: "#22c55e", bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e" },   // green
-  physics_net:    { border: "#06b6d4", bg: "rgba(6, 182, 212, 0.1)", text: "#06b6d4" },   // cyan
   // Containd zone names (from firewall config)
   wan:        { border: "#38bdf8", bg: "rgba(56, 189, 248, 0.1)", text: "#38bdf8" },
   dmz:        { border: "#a855f7", bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7" },
@@ -118,7 +213,7 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
           boxShadow: selected ? `0 0 20px ${colors.border}40` : "0 4px 12px rgba(0,0,0,0.3)",
         }}
       >
-        <Icon size={28} style={{ color: colors.text }} />
+        <Icon size={28} color={colors.text} />
       </div>
 
       {/* Label */}

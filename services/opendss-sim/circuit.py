@@ -221,10 +221,10 @@ class FeederSolver:
 
         return {
             "substation_bus_voltage_kv": NOMINAL_KV_LL,
-            "substation_bus_voltage_v": round(sub_v, 1),
-            "downstream_voltage_v": round(down_v, 1),
-            "critical_load_voltage_v": round(crit_v, 1),
-            "feeder_current_a": round(feeder_current, 1),
+            "substation_bus_voltage_v": round(sub_v, 2),
+            "downstream_voltage_v": round(down_v, 2),
+            "critical_load_voltage_v": round(crit_v, 2),
+            "feeder_current_a": round(feeder_current, 2),
             "general_load_energized": gen_energized,
             "critical_load_energized": crit_energized,
             "general_load_kw": round(gen_kw, 1),

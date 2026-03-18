@@ -416,7 +416,7 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 	}
 
 	zoneOrder := []string{
-		"enterprise_net", "vendor_net", "ot_ops_net", "field_net", "physics_net",
+		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
 		"it_net", "dmz_net", "ot_control_net", "ot_safety_net",
 	}
 	zoneCounts := map[string]int{}

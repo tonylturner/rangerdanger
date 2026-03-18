@@ -10,13 +10,12 @@ import { Button } from "./ui/button";
 import { ScenarioList } from "./scenario-list";
 import { MetricsOverview } from "./metrics-overview";
 
-const zones = ["enterprise_net", "vendor_net", "ot_ops_net", "field_net", "physics_net", "it_net", "dmz_net", "ot_control_net", "ot_safety_net"] as const;
+const zones = ["enterprise_net", "vendor_net", "ot_ops_net", "field_net", "it_net", "dmz_net", "ot_control_net", "ot_safety_net"] as const;
 const zoneColors: Record<string, string> = {
   enterprise_net: "#38bdf8",
   vendor_net: "#a855f7",
   ot_ops_net: "#f97316",
   field_net: "#22c55e",
-  physics_net: "#06b6d4",
   // Legacy
   it_net: "#38bdf8",
   dmz_net: "#a855f7",

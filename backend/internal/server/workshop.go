@@ -33,7 +33,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	}
 
 	zoneOrder := []string{
-		"enterprise_net", "vendor_net", "ot_ops_net", "field_net", "physics_net",
+		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
 	}
 	zoneCounts := map[string]int{}
 
@@ -169,9 +169,8 @@ func buildWorkshopInterfaceIPs(n labs.NodeYAML) map[string]string {
 	// Known multi-homed node IPs from docker-compose
 	knownIPs := map[string]map[string]string{
 		"rtac": {
-			"ot_ops_net":  "10.30.30.20",
-			"field_net":   "10.40.40.10",
-			"physics_net": "10.50.50.10",
+			"ot_ops_net": "10.30.30.20",
+			"field_net":  "10.40.40.10",
 		},
 		"openplc": {
 			"ot_ops_net": "10.30.30.30",

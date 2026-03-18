@@ -340,6 +340,62 @@ services:
     depends_on:
       - firewall
 
+  capbank_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: capbank-sim
+    container_name: rangerdanger-capbank-sim
+    hostname: capbank-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.40.40.2
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.23
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  historian_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: historian-sim
+    container_name: rangerdanger-historian-sim
+    hostname: historian-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
+      - RTAC_ENDPOINT=http://10.30.30.20:8080
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.40
+    restart: unless-stopped
+    depends_on:
+      - firewall
+      - rtac_sim
+
+  gps_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: gps-sim
+    container_name: rangerdanger-gps-sim
+    hostname: gps-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.50
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
   # ─────────────────────────────────────────────────────────────
   # Zone 5: Process / Physics Zone (not firewalled)
   # ─────────────────────────────────────────────────────────────
