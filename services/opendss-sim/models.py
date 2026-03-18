@@ -1,23 +1,31 @@
-"""Pydantic models matching the existing opendss-sim API contract."""
+"""Pydantic models matching the existing opendss-sim API contract.
 
-from pydantic import BaseModel
+RTAC sends full device state (with extra fields like lockout, comms_ok, etc.)
+so all sub-models must allow extra fields.
+"""
+
+from pydantic import BaseModel, ConfigDict
 
 
 class RelayState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     breaker_closed: bool = True
 
 
 class RecloserState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     closed: bool = True
     reclose_enabled: bool = True
     fault_seen: bool = False
 
 
 class RegulatorState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     tap_position: int = 0
 
 
 class DeviceStates(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     relay: RelayState = RelayState()
     recloser: RecloserState = RecloserState()
     regulator: RegulatorState = RegulatorState()
