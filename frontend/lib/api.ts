@@ -216,9 +216,9 @@ export type SubstationTags = {
 
 export type SubstationState = {
   devices: {
-    relay?: Record<string, number | boolean>;
-    recloser?: Record<string, number | boolean>;
-    regulator?: Record<string, number | boolean>;
+    relay?: Record<string, number | boolean | string>;
+    recloser?: Record<string, number | boolean | string>;
+    regulator?: Record<string, number | boolean | string>;
   };
   electrical: {
     substation_bus_voltage_kv?: number;
@@ -233,6 +233,11 @@ export type SubstationState = {
     breaker_closed?: boolean;
     recloser_closed?: boolean;
     regulator_tap?: number;
+    // OpenDSS power flow fields
+    total_losses_kw?: number;
+    power_factor?: number;
+    source_power_kw?: number;
+    fault_current_a?: number;
   };
   device_comms: Record<string, boolean>;
   last_poll: string;

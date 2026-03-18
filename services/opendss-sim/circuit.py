@@ -1,12 +1,19 @@
 """OpenDSS circuit builder, power flow solver, and result extraction.
 
-Uses opendssdirect.py to run real 3-phase unbalanced power flow on a
-custom distribution feeder circuit modeled after the lab's substation topology.
+Uses opendssdirect.py (DSS-Extensions) to run real 3-phase unbalanced power
+flow on a custom distribution feeder circuit modeled after the lab's substation
+topology, with IEEE 13-bus line codes for realistic impedances.
+
+Learn more about OpenDSS:
+  https://www.epri.com/pages/sa/opendss
+  https://dss-extensions.org/
+  https://github.com/dss-extensions/OpenDSSDirect.py
 """
 
 import logging
 import math
 import os
+import random
 import threading
 from pathlib import Path
 
@@ -25,6 +32,16 @@ NOMINAL_V_SECONDARY = 120.0  # 120V base for per-unit display
 # Tap calculation: ±10% range over 32 steps = 0.625% per step
 TAP_STEP_PU = 0.00625
 
+# Load variation: ±3% random walk around nominal to simulate real demand
+# fluctuation on a distribution feeder. Each solve applies a small random
+# multiplier to each load's kW, producing realistic drift in voltage,
+# current, and power flow values between polling cycles.
+LOAD_VARIATION_PCT = 0.03
+
+# Nominal load values (must match substation_feeder.dss)
+GENERAL_LOAD_KW = 500.0
+CRITICAL_LOAD_KW = 200.0
+
 
 class FeederSolver:
     """Thread-safe wrapper around the OpenDSS engine for the substation feeder."""
@@ -34,6 +51,9 @@ class FeederSolver:
         self._compiled = False
         self._dss_file = str(DSS_DIR / "substation_feeder.dss")
         self._has_fault = False
+        # Load multipliers — random-walk state that persists between solves
+        self._gen_load_mult = 1.0
+        self._crit_load_mult = 1.0
 
     def compile_circuit(self) -> None:
         """Compile the DSS circuit and run a validation solve."""
@@ -67,6 +87,22 @@ class FeederSolver:
                 sub_v, down_v, cur,
             )
 
+    def _update_load_multipliers(self) -> None:
+        """Random-walk the load multipliers to simulate demand fluctuation.
+
+        Each call nudges the multiplier by a small random step (±0.5% per cycle),
+        clamped to ±LOAD_VARIATION_PCT of nominal. This produces realistic slow
+        drift rather than jumpy noise.
+        """
+        step = 0.005  # max step per poll cycle
+        self._gen_load_mult += random.uniform(-step, step)
+        self._crit_load_mult += random.uniform(-step, step)
+        # Clamp to variation band
+        lo = 1.0 - LOAD_VARIATION_PCT
+        hi = 1.0 + LOAD_VARIATION_PCT
+        self._gen_load_mult = max(lo, min(hi, self._gen_load_mult))
+        self._crit_load_mult = max(lo, min(hi, self._crit_load_mult))
+
     def solve(
         self,
         breaker_closed: bool,
@@ -87,6 +123,13 @@ class FeederSolver:
             if self._has_fault:
                 dss.Text.Command("Disable Fault.F1")
                 self._has_fault = False
+
+            # -- Apply demand variation --
+            self._update_load_multipliers()
+            gen_kw = GENERAL_LOAD_KW * self._gen_load_mult
+            crit_kw = CRITICAL_LOAD_KW * self._crit_load_mult
+            dss.Text.Command(f"Load.GeneralLoad.kw={gen_kw:.2f}")
+            dss.Text.Command(f"Load.CriticalLoad.kw={crit_kw:.2f}")
 
             # -- Set breaker state --
             if not breaker_closed:
