@@ -32,17 +32,17 @@ class FeederSolver:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._compiled = False
+        self._dss_file = str(DSS_DIR / "substation_feeder.dss")
+        self._has_fault = False
 
     def compile_circuit(self) -> None:
-        """Compile the DSS circuit. Call once at startup."""
+        """Compile the DSS circuit and run a validation solve."""
         with self._lock:
-            dss_file = str(DSS_DIR / "substation_feeder.dss")
-            if not os.path.exists(dss_file):
-                raise FileNotFoundError(f"DSS circuit file not found: {dss_file}")
+            if not os.path.exists(self._dss_file):
+                raise FileNotFoundError(f"DSS circuit file not found: {self._dss_file}")
 
-            dss.Text.Command(f'Compile "{dss_file}"')
+            dss.Text.Command(f'Compile "{self._dss_file}"')
 
-            # Verify compilation
             if dss.Circuit.Name() == "":
                 raise RuntimeError("Failed to compile OpenDSS circuit")
 
@@ -54,18 +54,17 @@ class FeederSolver:
             )
             self._compiled = True
 
-            # Run initial solve to validate
-            result = self.solve(
-                breaker_closed=True,
-                recloser_closed=True,
-                tap_position=0,
-                fault_seen=False,
-            )
+            # Validation solve (same thread, lock already held)
+            dss.Solution.Solve()
+            if not dss.Solution.Converged():
+                raise RuntimeError("Initial power flow did not converge")
+
+            sub_v = self._get_bus_voltage_pu("sourcebus") * NOMINAL_V_SECONDARY
+            down_v = self._get_bus_voltage_pu("load_bus") * NOMINAL_V_SECONDARY
+            cur = self._get_element_current("Line.Breaker")
             logger.info(
-                "Initial solve OK: downstream=%.1fV, critical=%.1fV, current=%.1fA",
-                result["downstream_voltage_v"],
-                result["critical_load_voltage_v"],
-                result["feeder_current_a"],
+                "Initial solve OK: source=%.1fV, downstream=%.1fV, current=%.1fA",
+                sub_v, down_v, cur,
             )
 
     def solve(
@@ -80,9 +79,14 @@ class FeederSolver:
             if not self._compiled:
                 raise RuntimeError("Circuit not compiled")
 
-            # Re-compile to reset state cleanly each solve
-            dss_file = str(DSS_DIR / "substation_feeder.dss")
-            dss.Text.Command(f'Compile "{dss_file}"')
+            # Reset switches to closed (default state from compile)
+            dss.Text.Command("Close Line.Breaker 1")
+            dss.Text.Command("Close Line.Recloser 1")
+
+            # Remove any previous fault
+            if self._has_fault:
+                dss.Text.Command("Disable Fault.F1")
+                self._has_fault = False
 
             # -- Set breaker state --
             if not breaker_closed:
@@ -98,9 +102,13 @@ class FeederSolver:
 
             # -- Add fault if requested --
             if fault_seen and breaker_closed and recloser_closed:
-                dss.Text.Command(
-                    "New Fault.F1 bus1=recloser_bus phases=3 r=0.01"
-                )
+                if not self._has_fault:
+                    dss.Text.Command(
+                        "New Fault.F1 bus1=recloser_bus phases=3 r=0.01"
+                    )
+                else:
+                    dss.Text.Command("Enable Fault.F1")
+                self._has_fault = True
 
             # -- Solve power flow --
             dss.Solution.Solve()
@@ -132,7 +140,6 @@ class FeederSolver:
             gen_energized = True
             crit_energized = True
         else:
-            # Recloser open — downstream de-energized
             down_v = 0.0
             crit_v = 0.0
             gen_energized = False
@@ -145,9 +152,7 @@ class FeederSolver:
         gen_kw = self._get_load_power("Load.GeneralLoad") if gen_energized else 0.0
         crit_kw = self._get_load_power("Load.CriticalLoad") if crit_energized else 0.0
 
-        # Circuit-wide metrics
-        losses_kw = sum(dss.Circuit.Losses()) / 1000.0 if (breaker_closed and recloser_closed) else 0.0
-        # Losses() returns [real_watts, reactive_vars] — we want real only
+        # Losses — Losses() returns [real_watts, reactive_vars]
         loss_vals = dss.Circuit.Losses()
         losses_kw = loss_vals[0] / 1000.0 if loss_vals else 0.0
 
@@ -158,9 +163,9 @@ class FeederSolver:
         total_kw = gen_kw + crit_kw
         total_kvar = 0.0
         if gen_energized:
-            total_kvar += gen_kw * math.tan(math.acos(0.9))  # general load PF=0.9
+            total_kvar += gen_kw * math.tan(math.acos(0.9))
         if crit_energized:
-            total_kvar += crit_kw * math.tan(math.acos(0.95))  # critical load PF=0.95
+            total_kvar += crit_kw * math.tan(math.acos(0.95))
         if total_kw > 0:
             pf = math.cos(math.atan2(total_kvar, total_kw))
         else:
@@ -169,7 +174,7 @@ class FeederSolver:
         # Fault current
         fault_current = 0.0
         if fault_seen and breaker_closed and recloser_closed:
-            fault_current = feeder_current  # During fault, feeder current IS the fault current
+            fault_current = feeder_current
 
         return {
             "substation_bus_voltage_kv": NOMINAL_KV_LL,
@@ -219,7 +224,6 @@ class FeederSolver:
         pu_vals = dss.Bus.puVmagAngle()
         if not pu_vals:
             return 0.0
-        # puVmagAngle returns [mag1, ang1, mag2, ang2, ...] — take magnitudes
         magnitudes = [pu_vals[i] for i in range(0, len(pu_vals), 2)]
         return sum(magnitudes) / len(magnitudes) if magnitudes else 0.0
 
@@ -229,8 +233,6 @@ class FeederSolver:
         currents = dss.CktElement.CurrentsMagAng()
         if not currents:
             return 0.0
-        # CurrentsMagAng returns [mag1, ang1, mag2, ang2, ...] for all terminals
-        # Take first terminal (first 3 phases)
         n_phases = dss.CktElement.NumPhases()
         magnitudes = [currents[i * 2] for i in range(n_phases)]
         return sum(magnitudes) / len(magnitudes) if magnitudes else 0.0
@@ -241,7 +243,6 @@ class FeederSolver:
         powers = dss.CktElement.Powers()
         if not powers:
             return 0.0
-        # Powers returns [P1, Q1, P2, Q2, ...] for each terminal/phase
         n_phases = dss.CktElement.NumPhases()
         kw = sum(powers[i * 2] for i in range(n_phases))
         return abs(kw)
