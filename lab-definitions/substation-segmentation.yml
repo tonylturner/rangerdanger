@@ -33,11 +33,6 @@ networks:
     zone: lan2
     description: Substation and feeder control endpoints — relay, recloser, regulator
 
-  - id: physics_net
-    name: Process / Physics Zone
-    subnet: 10.50.50.0/24
-    description: Electrical truth engine — feeder model and consequence calculation
-
 nodes:
   # Zone 7: Security Infrastructure
   - id: fw-1
@@ -102,7 +97,6 @@ nodes:
     networks:
       - ot_ops_net
       - field_net
-      - physics_net
     ip: 10.30.30.20
 
   - id: openplc-1
@@ -113,6 +107,22 @@ nodes:
       - ot_ops_net
       - field_net
     ip: 10.30.30.30
+
+  - id: historian-1
+    type: historian_sim
+    name: Data Historian
+    container: rangerdanger-historian-sim
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.40
+
+  - id: gps-1
+    type: gps_sim
+    name: GPS Time Server
+    container: rangerdanger-gps-sim
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.50
 
   # Zone 4: Field Devices
   - id: relay-1
@@ -139,14 +149,13 @@ nodes:
       - field_net
     ip: 10.40.40.22
 
-  # Zone 5: Physics / Simulation
-  - id: physics-1
-    type: opendss_sim
-    name: Feeder Physics Engine
-    container: rangerdanger-opendss-sim
+  - id: capbank-1
+    type: capbank_sim
+    name: Capacitor Bank
+    container: rangerdanger-capbank-sim
     networks:
-      - physics_net
-    ip: 10.50.50.20
+      - field_net
+    ip: 10.40.40.23
 
 scenarios:
   - id: enterprise-to-breaker

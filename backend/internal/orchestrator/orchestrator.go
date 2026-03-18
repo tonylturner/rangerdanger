@@ -78,6 +78,8 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		"recloser_sim":     8080,
 		"regulator_sim":    8080,
 		"capbank_sim":      8080,
+		"historian_sim":    8080,
+		"gps_sim":          8080,
 		"opendss_sim":      8080,
 		"openplc":          8080,
 		"corp_workstation": 3000,

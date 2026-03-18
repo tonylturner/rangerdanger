@@ -10,6 +10,9 @@ RUN CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim
 RUN CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim
 RUN CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim
 RUN CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim
+RUN CGO_ENABLED=0 go build -o /bin/capbank-sim ./capbank-sim
+RUN CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim
+RUN CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
 FROM alpine:3.21 AS sim-base
 
@@ -36,4 +39,19 @@ FROM sim-base AS rtac-sim
 COPY --from=builder /bin/rtac-sim /usr/local/bin/rtac-sim
 EXPOSE 8080
 CMD ["sh", "-c", "set-gateway.sh && rtac-sim"]
+
+FROM sim-base AS capbank-sim
+COPY --from=builder /bin/capbank-sim /usr/local/bin/capbank-sim
+EXPOSE 8080 502
+CMD ["sh", "-c", "set-gateway.sh && capbank-sim"]
+
+FROM sim-base AS historian-sim
+COPY --from=builder /bin/historian-sim /usr/local/bin/historian-sim
+EXPOSE 8080 502
+CMD ["sh", "-c", "set-gateway.sh && historian-sim"]
+
+FROM sim-base AS gps-sim
+COPY --from=builder /bin/gps-sim /usr/local/bin/gps-sim
+EXPOSE 8080 502
+CMD ["sh", "-c", "set-gateway.sh && gps-sim"]
 

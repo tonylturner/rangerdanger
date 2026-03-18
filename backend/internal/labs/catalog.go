@@ -25,17 +25,18 @@ var NodeCatalog = []NodeTemplate{
 
 	// OT Operations Zone
 	{Type: "fuxa_hmi", Name: "Substation HMI", Description: "FUXA HMI for substation visualization and control", DefaultNetworks: []string{"ot_ops_net"}, Image: "frangoteam/fuxa:latest"},
-	{Type: "rtac_sim", Name: "RTAC / Supervisory Controller", Description: "Supervisory controller and protocol broker", DefaultNetworks: []string{"ot_ops_net", "field_net", "physics_net"}, Image: "rangerdanger-rtac-sim"},
+	{Type: "rtac_sim", Name: "RTAC / Supervisory Controller", Description: "Supervisory controller and protocol broker", DefaultNetworks: []string{"ot_ops_net", "field_net"}, Image: "rangerdanger-rtac-sim"},
 	{Type: "openplc", Name: "Substation Automation PLC", Description: "OpenPLC runtime for local automation logic", DefaultNetworks: []string{"ot_ops_net", "field_net"}, Image: "tuttas/openplc_v3:latest"},
 
 	// Field Device Zone
 	{Type: "relay_sim", Name: "Feeder Breaker / Relay", Description: "Substation feeder breaker and protective relay simulator", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-relay-sim"},
 	{Type: "recloser_sim", Name: "Mid-Feeder Recloser", Description: "Automatic recloser with fault recovery logic", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-recloser-sim"},
 	{Type: "regulator_sim", Name: "Voltage Regulator", Description: "Load tap changer for voltage regulation", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-regulator-sim"},
-	{Type: "capbank_sim", Name: "Capacitor Bank", Description: "Switched capacitor bank for reactive support", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-capbank-sim"},
+	{Type: "capbank_sim", Name: "Capacitor Bank", Description: "Switched capacitor bank for reactive power support", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-capbank-sim"},
 
-	// Physics / Simulation Zone
-	{Type: "opendss_sim", Name: "Feeder Physics Engine", Description: "Simplified feeder model for electrical consequence calculation", DefaultNetworks: []string{"physics_net"}, Image: "rangerdanger-opendss-sim"},
+	// OT Infrastructure
+	{Type: "historian_sim", Name: "Data Historian", Description: "OT data historian collecting time-series SCADA data from RTAC", DefaultNetworks: []string{"ot_ops_net"}, Image: "rangerdanger-historian-sim"},
+	{Type: "gps_sim", Name: "GPS Time Server", Description: "GPS-synchronized clock providing NTP/IRIG-B time to substation devices", DefaultNetworks: []string{"ot_ops_net"}, Image: "rangerdanger-gps-sim"},
 
 	// Legacy types (oil-plant scenario)
 	{Type: "ews", Name: "Engineering Workstation (Legacy)", Description: "Legacy type - use eng_workstation instead", DefaultNetworks: []string{"vendor_net"}, Image: "linuxserver/webtop:ubuntu-mate"},

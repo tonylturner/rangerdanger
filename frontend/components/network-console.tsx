@@ -30,7 +30,7 @@ import { ExternalLink, Maximize2, X } from "lucide-react";
 
 // All supported zone names
 const zones = [
-  "enterprise_net", "vendor_net", "ot_ops_net", "field_net", "physics_net",
+  "enterprise_net", "vendor_net", "ot_ops_net", "field_net",
   // Legacy zone names
   "wan", "dmz", "ot_control", "ot_safety", "it_workstations",
   "it_net", "dmz_net", "ot_control_net", "ot_safety_net"
@@ -591,7 +591,6 @@ function getZonePolicyInfo(
     vendor_net: { label: "DMZ Access", action: "ALLOW" },
     ot_ops_net: { label: "Modbus R/W", action: "ALLOW" },
     field_net: { label: "Read Only", action: "DENY" },
-    physics_net: { label: "Simulation", action: "ALLOW" },
   };
 
   if (!ruleSummaries || ruleSummaries.length === 0) {
@@ -671,7 +670,6 @@ function useStyledGraph(graph?: LabGraph, ruleSummaries?: ZoneRuleSummary[]) {
       "vendor_net", "dmz", "dmz_net",
       "ot_ops_net", "lan1", "ot_control", "ot_control_net",
       "field_net", "lan2", "ot_safety", "ot_safety_net",
-      "physics_net",
     ];
     const activeZones = Object.keys(nodesByZone)
       .filter(z => zones.includes(z as typeof zones[number]))
@@ -716,7 +714,6 @@ function useStyledGraph(graph?: LabGraph, ruleSummaries?: ZoneRuleSummary[]) {
       vendor_net: "Vendor / Engineering",
       ot_ops_net: "OT Operations",
       field_net: "Field Devices",
-      physics_net: "Physics / Simulation",
       wan: "Enterprise Zone",
       dmz: "Vendor / Engineering",
       ot_control: "OT Operations",
@@ -733,7 +730,6 @@ function useStyledGraph(graph?: LabGraph, ruleSummaries?: ZoneRuleSummary[]) {
       vendor_net: "10.20.20.0/24",
       ot_ops_net: "10.30.30.0/24",
       field_net: "10.40.40.0/24",
-      physics_net: "10.50.50.0/24",
       wan: "10.10.10.0/24",
       dmz: "10.20.20.0/24",
       ot_control: "10.30.30.0/24",
