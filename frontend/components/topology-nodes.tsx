@@ -25,13 +25,19 @@ function DockerIcon({ size = 28, color = "currentColor" }: { size?: number; colo
   );
 }
 
-function TuxIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+function UbuntuIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
+  // Ubuntu "Circle of Friends" logo
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 2C9.5 2 8 4.5 8 7c0 1.5.5 2.8 1 3.5-.5 1-1.5 2.5-2 4-.5 1.5-.5 3 0 4 .3.5.7 1 1.2 1.3-.2.4-.2.8-.2 1.2h2c0-.3.1-.5.2-.7.3.1.5.2.8.2.3 0 .6-.1.8-.2.1.2.2.4.2.7h2c0-.4-.1-.8-.2-1.2.5-.3.9-.8 1.2-1.3.5-1 .5-2.5 0-4-.5-1.5-1.5-3-2-4 .5-.7 1-2 1-3.5 0-2.5-1.5-5-4-5z" fill={color} />
-      <circle cx="10.5" cy="6" r=".8" fill="#0f172a" />
-      <circle cx="13.5" cy="6" r=".8" fill="#0f172a" />
-      <ellipse cx="12" cy="8.5" rx="1" ry=".5" fill="#f59e0b" />
+      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth="1.5" fill="none" />
+      {/* Three "friends" circles at 120° intervals */}
+      <circle cx="12" cy="4.5" r="2" fill={color} />
+      <circle cx="5.5" cy="16" r="2" fill={color} />
+      <circle cx="18.5" cy="16" r="2" fill={color} />
+      {/* Connecting arcs represented as lines */}
+      <path d="M13.7 6.2C15.8 7.4 17.2 9.6 17.2 12.1" stroke={color} strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      <path d="M7.5 14.5C6.8 13.2 6.5 11.7 6.8 10.2" stroke={color} strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      <path d="M16.8 17.2C15.5 18.2 13.8 18.8 12 18.8C10.8 18.8 9.6 18.5 8.5 17.9" stroke={color} strokeWidth="1.5" strokeLinecap="round" fill="none" />
     </svg>
   );
 }
@@ -96,12 +102,12 @@ const nodeTypeIcons: Record<string, IconComponent> = {
   gps_sim: LucideSatellite,
 
   // Full Linux containers — Tux penguin
-  corp_workstation: TuxIcon,
-  vendor_jumpbox: TuxIcon,
-  eng_workstation: TuxIcon,
-  ews: TuxIcon,
-  jump_host: TuxIcon,
-  ubuntu_jumpbox: TuxIcon,
+  corp_workstation: UbuntuIcon,
+  vendor_jumpbox: UbuntuIcon,
+  eng_workstation: UbuntuIcon,
+  ews: UbuntuIcon,
+  jump_host: UbuntuIcon,
+  ubuntu_jumpbox: UbuntuIcon,
 
   // FUXA HMI — monitor (real SCADA application)
   fuxa_hmi: LucideMonitor,
