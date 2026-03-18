@@ -345,9 +345,8 @@ services:
   # ─────────────────────────────────────────────────────────────
   opendss_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
-      target: opendss-sim
+      context: .
+      dockerfile: services/opendss-sim/Dockerfile
     container_name: rangerdanger-opendss-sim
     hostname: opendss-sim
     cap_add:
