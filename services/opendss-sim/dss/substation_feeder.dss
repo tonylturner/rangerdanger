@@ -19,7 +19,7 @@ Redirect linecodes.dss
 
 ! ── Feeder Breaker (relay-sim) ──────────────────────────────────────
 New Line.Breaker  bus1=sourcebus  bus2=breaker_bus  phases=3
-~ switch=yes  length=0  units=ft
+~ switch=yes  r1=0.001  x1=0.001  r0=0.001  x0=0.001  c1=0  c0=0  length=1  units=ft
 
 ! ── Main Feeder Segment (2000 ft, config 601 — 336 ACSR) ───────────
 New Line.Feeder_Main  bus1=breaker_bus  bus2=recloser_bus  phases=3
@@ -27,7 +27,7 @@ New Line.Feeder_Main  bus1=breaker_bus  bus2=recloser_bus  phases=3
 
 ! ── Mid-feeder Recloser ─────────────────────────────────────────────
 New Line.Recloser  bus1=recloser_bus  bus2=load_bus  phases=3
-~ switch=yes  length=0  units=ft
+~ switch=yes  r1=0.001  x1=0.001  r0=0.001  x0=0.001  c1=0  c0=0  length=1  units=ft
 
 ! ── General Load (500 kW, 0.9 PF) ──────────────────────────────────
 New Load.GeneralLoad  bus1=load_bus  phases=3

@@ -85,18 +85,12 @@ class FeederSolver:
             dss.Text.Command(f'Compile "{dss_file}"')
 
             # -- Set breaker state --
-            dss.Circuit.SetActiveElement("Line.Breaker")
-            if breaker_closed:
-                dss.CktElement.Enabled(True)
-            else:
-                dss.CktElement.Enabled(False)
+            if not breaker_closed:
+                dss.Text.Command("Open Line.Breaker 1")
 
             # -- Set recloser state --
-            dss.Circuit.SetActiveElement("Line.Recloser")
-            if recloser_closed:
-                dss.CktElement.Enabled(True)
-            else:
-                dss.CktElement.Enabled(False)
+            if not recloser_closed:
+                dss.Text.Command("Open Line.Recloser 1")
 
             # -- Set regulator tap --
             tap_pu = 1.0 + (tap_position * TAP_STEP_PU)
