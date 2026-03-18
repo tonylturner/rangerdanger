@@ -85,9 +85,9 @@ export function MetricsOverview() {
         />
         <OpCard
           label="Voltage Quality"
-          value={critV === 0 ? "Dead" : voltageOk ? `${critV.toFixed(0)}V Normal` : `${critV.toFixed(0)}V Out of Range`}
+          value={critV === 0 ? "Dead" : voltageOk ? `${(critV / 120).toFixed(3)} pu` : `${(critV / 120).toFixed(3)} pu — Out of Band`}
           ok={critV > 0 && voltageOk}
-          detail={critV === 0 ? "No voltage at critical load" : `Regulator tap ${tap > 0 ? "+" : ""}${tap}`}
+          detail={critV === 0 ? "12.47 kV feeder de-energized" : `${critV.toFixed(1)}V · Tap ${tap > 0 ? "+" : ""}${tap}`}
         />
         <OpCard
           label="Critical Load"
