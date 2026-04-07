@@ -1,14 +1,18 @@
 package containd
 
 import (
+	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -20,9 +24,28 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// EventID handles containd returning IDs as either strings or numbers.
+type EventID string
+
+func (e *EventID) UnmarshalJSON(data []byte) error {
+	// Try string first, then number
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*e = EventID(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*e = EventID(n.String())
+		return nil
+	}
+	*e = EventID(string(data))
+	return nil
+}
+
 // Event represents a containd DPI/IDS event.
 type Event struct {
-	ID        string    `json:"id"`
+	ID        EventID   `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
 	Type      string    `json:"type"`      // "connection", "modbus", "dns", "alert"
 	Source    string    `json:"source"`    // Source IP
@@ -148,6 +171,19 @@ func (c *Client) doRequest(method, url string) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
+// doRequestWithBody performs an authenticated HTTP request with a body.
+func (c *Client) doRequestWithBody(method, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
+	}
+	return c.httpClient.Do(req)
+}
+
 // GetHealth returns the firewall health status.
 func (c *Client) GetHealth() (*HealthStatus, error) {
 	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/health")
@@ -186,14 +222,25 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 		return nil, fmt.Errorf("get events returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Events []Event `json:"events"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode events: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read events body: %w", err)
 	}
 
-	return result.Events, nil
+	// containd may return events as a raw array or as {"events": [...]}
+	var events []Event
+	if err := json.Unmarshal(body, &events); err != nil {
+		// Try wrapped format
+		var result struct {
+			Events []Event `json:"events"`
+		}
+		if err2 := json.Unmarshal(body, &result); err2 != nil {
+			return nil, fmt.Errorf("decode events: %w (also tried array: %w)", err2, err)
+		}
+		events = result.Events
+	}
+
+	return events, nil
 }
 
 // GetSessions returns active sessions through the firewall.
@@ -339,6 +386,7 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 					unique = append(unique, p)
 				}
 			}
+			sort.Strings(unique)
 			if len(unique) > 3 {
 				summary.Summary = fmt.Sprintf("%s +%d more", unique[0], len(unique)-1)
 			} else {
@@ -351,5 +399,307 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 		summaries = append(summaries, summary)
 	}
 
+	// Sort deterministically so frontend labels don't flicker between polls
+	sort.Slice(summaries, func(i, j int) bool {
+		if summaries[i].SourceZone != summaries[j].SourceZone {
+			return summaries[i].SourceZone < summaries[j].SourceZone
+		}
+		return summaries[i].DestZone < summaries[j].DestZone
+	})
+
 	return summaries, nil
+}
+
+// ImportConfig sends a full JSON config to containd using the candidate/commit flow.
+// Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
+// Falls back to legacy /api/v1/config/import if candidate endpoint is unavailable.
+func (c *Client) ImportConfig(configJSON []byte) error {
+	// Try the preferred candidate/commit flow first
+	err := c.importViaCandidate(configJSON)
+	if err == nil {
+		return nil
+	}
+
+	// Fall back to legacy import endpoint
+	log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
+	return c.importLegacy(configJSON)
+}
+
+// importViaCandidate uses the appliance candidate/commit flow:
+// 1. POST /api/v1/config/candidate — stages the config
+// 2. POST /api/v1/config/commit — applies it (triggers nftables compilation)
+func (c *Client) importViaCandidate(configJSON []byte) error {
+	// Stage the candidate config
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
+	if err != nil {
+		return fmt.Errorf("post candidate config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("candidate endpoint not available (404)")
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Commit the staged config
+	resp2, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/commit", nil)
+	if err != nil {
+		return fmt.Errorf("commit config: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp2.Body)
+		return fmt.Errorf("commit returned %d: %s", resp2.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// importLegacy uses the older /api/v1/config/import endpoint.
+func (c *Client) importLegacy(configJSON []byte) error {
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/import", configJSON)
+	if err != nil {
+		return fmt.Errorf("import config request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("import config returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// ── PCAP Capture API (containd /api/v1/pcap/*) ─────────────────
+
+// PcapFilter defines the structured filter for containd captures.
+// containd does NOT accept BPF strings — only structured src/dst/proto.
+type PcapFilter struct {
+	Src   string `json:"src,omitempty"`   // source CIDR or IP
+	Dst   string `json:"dst,omitempty"`   // destination CIDR or IP
+	Proto string `json:"proto,omitempty"` // "tcp", "udp", "icmp", "any"
+}
+
+// PcapConfig is the body for POST /api/v1/pcap/config and /api/v1/pcap/start.
+type PcapConfig struct {
+	Enabled       bool       `json:"enabled,omitempty"`
+	Interfaces    []string   `json:"interfaces,omitempty"`
+	Snaplen       int        `json:"snaplen,omitempty"`       // default 262144
+	MaxSizeMB     int        `json:"maxSizeMB,omitempty"`     // default 64
+	MaxFiles      int        `json:"maxFiles,omitempty"`      // default 8
+	Mode          string     `json:"mode,omitempty"`          // "rolling" or "once"
+	Promisc       bool       `json:"promisc,omitempty"`
+	BufferMB      int        `json:"bufferMB,omitempty"`      // default 4
+	RotateSeconds int        `json:"rotateSeconds,omitempty"` // default 300
+	FilePrefix    string     `json:"filePrefix,omitempty"`    // default "capture"
+	Filter        PcapFilter `json:"filter,omitempty"`
+}
+
+// PcapStatus is the response from GET /api/v1/pcap/status and POST start/stop.
+type PcapStatus struct {
+	Running    bool     `json:"running"`
+	Interfaces []string `json:"interfaces,omitempty"`
+	StartedAt  string   `json:"startedAt,omitempty"`
+	LastError  string   `json:"lastError,omitempty"`
+}
+
+// PcapFileInfo is one item from GET /api/v1/pcap/list (returns raw array).
+// File name format: {filePrefix}_{interface}_{timestamp}_{seq}.pcap
+type PcapFileInfo struct {
+	Name      string   `json:"name"`
+	Interface string   `json:"interface"`
+	SizeBytes int64    `json:"sizeBytes"`
+	CreatedAt string   `json:"createdAt"`
+	Tags      []string `json:"tags,omitempty"`
+	Status    string   `json:"status,omitempty"` // "ready", "capturing"
+}
+
+// SetPcapConfig updates the PCAP configuration on containd.
+func (c *Client) SetPcapConfig(cfg PcapConfig) error {
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/config", body)
+	if err != nil {
+		return fmt.Errorf("set pcap config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("set pcap config returned %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// StartPcap starts packet capture. Accepts an optional PcapConfig override.
+// Returns the capture status.
+func (c *Client) StartPcap(cfg *PcapConfig) (*PcapStatus, error) {
+	var body []byte
+	if cfg != nil {
+		var err error
+		body, err = json.Marshal(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/start", body)
+	if err != nil {
+		return nil, fmt.Errorf("start pcap: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusConflict {
+		return nil, fmt.Errorf("capture already in progress")
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("start pcap returned %d: %s", resp.StatusCode, string(b))
+	}
+
+	var status PcapStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("decode pcap start response: %w", err)
+	}
+	return &status, nil
+}
+
+// StopPcap stops an active capture.
+func (c *Client) StopPcap() (*PcapStatus, error) {
+	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/stop", nil)
+	if err != nil {
+		return nil, fmt.Errorf("stop pcap: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("stop pcap returned %d: %s", resp.StatusCode, string(b))
+	}
+
+	var status PcapStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("decode pcap stop response: %w", err)
+	}
+	return &status, nil
+}
+
+// GetPcapStatus returns the current capture status.
+func (c *Client) GetPcapStatus() (*PcapStatus, error) {
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/status")
+	if err != nil {
+		return nil, fmt.Errorf("pcap status: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("pcap status returned %d", resp.StatusCode)
+	}
+
+	var status PcapStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, fmt.Errorf("decode pcap status: %w", err)
+	}
+	return &status, nil
+}
+
+// ListPcapFiles returns all stored PCAP files. containd returns a raw array.
+func (c *Client) ListPcapFiles() ([]PcapFileInfo, error) {
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/list")
+	if err != nil {
+		return nil, fmt.Errorf("list pcap files: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list pcap files returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read pcap list body: %w", err)
+	}
+
+	// containd returns a raw JSON array, not wrapped in an object
+	var files []PcapFileInfo
+	if err := json.Unmarshal(body, &files); err != nil {
+		// Try wrapped format as fallback
+		var wrapped struct {
+			Files []PcapFileInfo `json:"files"`
+		}
+		if err2 := json.Unmarshal(body, &wrapped); err2 != nil {
+			return nil, fmt.Errorf("decode pcap list: %w (also tried array: %w)", err2, err)
+		}
+		files = wrapped.Files
+	}
+	return files, nil
+}
+
+// DownloadPcapFile streams a PCAP file from containd by filename.
+func (c *Client) DownloadPcapFile(name string) (io.ReadCloser, string, error) {
+	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/download/"+name)
+	if err != nil {
+		return nil, "", fmt.Errorf("download pcap: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, "", fmt.Errorf("download pcap returned %d", resp.StatusCode)
+	}
+
+	filename := name
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		if i := strings.Index(cd, "filename="); i != -1 {
+			filename = strings.Trim(cd[i+9:], "\" ")
+		}
+	}
+
+	return resp.Body, filename, nil
+}
+
+// DeletePcapFile removes a stored PCAP file by name.
+func (c *Client) DeletePcapFile(name string) error {
+	req, err := http.NewRequest("DELETE", c.BaseURL+"/api/v1/pcap/"+name, nil)
+	if err != nil {
+		return err
+	}
+	if c.AuthToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete pcap file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("delete pcap file returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// WaitReady polls containd health until it responds or the context is cancelled.
+func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("containd not ready after %s: %w", timeout, ctx.Err())
+		case <-ticker.C:
+			if c.IsAvailable() {
+				return nil
+			}
+		}
+	}
 }

@@ -1,16 +1,118 @@
 id: vendor-rdp-compromise
-name: "Vendor RDP Compromise"
-description: "Simulate a third-party vendor account misuse that pivots through the DMZ."
+name: "Vendor Remote Access Compromise"
+description: >
+  A vendor's remote access credentials are compromised via phishing.
+  The attacker uses the vendor jump box to pivot through the DMZ
+  and disable protective functions on field devices. Students must
+  constrain vendor zone access to prevent field device manipulation.
 tags:
-  - rdp
+  - vendor
   - phishing
-  - dmz
+  - segmentation
+  - defense
 steps:
-  - title: Phishing Setup
-    description: "Review the provided phishing email artifact and identify the payload."
-  - title: Initial Access
-    description: "Use leaked vendor VPN credentials to access the HMI jump box."
-  - title: Privilege Escalation
-    description: "Escalate within the HMI VM and pivot toward the OT control zone."
-  - title: Containment
-    description: "Document firewall rule adjustments needed to stop the compromise."
+  - title: "Review initial posture"
+    description: >
+      Verify the feeder is energized with normal protection.
+      Auto-reclose should be enabled and the recloser closed.
+      Note the current firewall policy (weak baseline allows
+      vendor zone to reach field devices directly).
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
+
+  - title: "Simulate vendor credential compromise"
+    description: >
+      The attacker has obtained vendor-jump credentials (simulated).
+      From the vendor jump box (10.20.20.10), reach directly into
+      the field device zone and disable auto-reclose on the recloser:
+
+      curl -X POST http://10.40.40.21:8080/api/command -d '{"command":"disable_reclose","source":"10.20.20.10"}'
+
+      With the weak baseline policy, containd allows this traffic.
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.20.20.10"
+
+  - title: "Trigger sustained outage"
+    description: >
+      With auto-reclose disabled, inject a fault on the recloser.
+      Normally the recloser would automatically restore service,
+      but with reclose disabled it trips and locks out — causing
+      a sustained downstream outage.
+    action:
+      type: command
+      device: recloser
+      command: inject_fault
+      source: "10.20.20.10"
+
+  - title: "Observe customer impact"
+    description: >
+      The recloser is now locked out. Downstream loads including
+      the hospital and fire station have lost power. Auto-reclose
+      cannot restore service because it was disabled by the attacker.
+    action:
+      type: check
+      expect:
+        recloser_closed: false
+
+  - title: "Restore service"
+    description: >
+      As the operator, restore the feeder to normal operation:
+      reset the recloser lockout, re-enable auto-reclose,
+      clear the fault, and close the recloser.
+    action:
+      type: sequence
+      commands:
+        - device: recloser
+          command: reset_lockout
+          source: "operator"
+        - device: recloser
+          command: enable_reclose
+          source: "operator"
+        - device: recloser
+          command: clear_fault
+          source: "operator"
+        - device: recloser
+          command: close
+          source: "operator"
+
+  - title: "Harden containd policy"
+    description: >
+      Apply the improved firewall configuration. This blocks
+      vendor zone (DMZ) from directly reaching field devices.
+      Vendor access is restricted to approved OT operations
+      services only — the RTAC remains the sole authorized
+      controller for field devices.
+    action:
+      type: firewall
+      config: improved
+
+  - title: "Verify vendor access blocked"
+    description: >
+      Re-attempt the vendor compromise. The disable_reclose
+      command from the vendor zone should now be blocked by
+      containd. Auto-reclose remains enabled.
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.20.20.10"
+
+  - title: "Validate final state"
+    description: >
+      Verify: recloser closed, auto-reclose enabled,
+      feeder energized, containd hardened policy active.
+    action:
+      type: check
+      expect:
+        recloser_closed: true
+        reclose_enabled: true
+        breaker_closed: true
+        loads_energized: true
+        firewall_config: improved

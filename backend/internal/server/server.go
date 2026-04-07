@@ -14,19 +14,50 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"sync"
+
 	"github.com/tturner/rangerdanger/backend/internal/config"
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
+// pcapState tracks an active PCAP capture session.
+// containd has no capture ID — we track by filePrefix + startedAt and
+// match resulting files from the list endpoint.
+type pcapState struct {
+	Capturing   bool     `json:"capturing"`
+	DurationSec int      `json:"duration_sec"`
+	StartedAt   string   `json:"started_at,omitempty"`
+	FileReady   bool     `json:"file_ready"`
+	FilePrefix  string   `json:"file_prefix,omitempty"`  // prefix used in containd config
+	Files       []string `json:"files,omitempty"`         // resulting PCAP filenames from containd
+	Fallback    bool     `json:"fallback"`                // true when using tcpdump fallback
+}
+
+// trafficState tracks an active traffic generation session.
+type trafficState struct {
+	Generating     bool   `json:"generating"`
+	DurationSec    int    `json:"duration_sec"`
+	StartedAt      string `json:"started_at,omitempty"`
+	FlowsGenerated int    `json:"flows_generated"`
+}
+
 // Server wraps the Gin router and dependencies.
 type Server struct {
-	engine       *gin.Engine
-	cfg          *config.Config
-	db           *gorm.DB
-	loader       *labs.Loader
-	orchestrator *orchestrator.Orchestrator
+	engine         *gin.Engine
+	cfg            *config.Config
+	db             *gorm.DB
+	loader         *labs.Loader
+	orchestrator   *orchestrator.Orchestrator
+	containdClient *containd.Client
+	activeConfigMu sync.RWMutex
+	activeConfig   string // "weak" or "improved"
+	pcapMu         sync.Mutex
+	pcap           pcapState
+	trafficMu      sync.Mutex
+	traffic        trafficState
 }
 
 type graphNodeData struct {
@@ -69,12 +100,21 @@ type nodeUIProxy struct {
 }
 
 // New constructs a server with routes registered.
-func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator) *Server {
+func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator, containdClient *containd.Client) *Server {
 	engine := gin.Default()
+
+	// Determine initial active config from seed path
+	activeConfig := "weak"
+	if strings.Contains(cfg.ContaindConfigPath, "improved") {
+		activeConfig = "improved"
+	}
+
 	s := &Server{
-		engine:       engine,
-		cfg:          cfg,
-		db:           db,
+		engine:         engine,
+		cfg:            cfg,
+		db:             db,
+		containdClient: containdClient,
+		activeConfig:   activeConfig,
 		loader:       loader,
 		orchestrator: orchestrator,
 	}
@@ -135,14 +175,50 @@ func (s *Server) registerRoutes() {
 		api.GET("/firewall/health", s.handleGetFirewallHealth)
 		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
 		api.GET("/firewall/rules", s.handleGetFirewallRules)
+		api.GET("/firewall/compare", s.handleFirewallCompare)
+		api.GET("/firewall/active", s.handleFirewallActive)
+		api.POST("/firewall/apply", s.handleFirewallApply)
+
+		// Workshop endpoints
+		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
+		api.GET("/workshop/status", s.handleGetWorkshopStatus)
+		api.GET("/workshop/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
+
+		// Substation data (proxied from rtac-sim)
+		sub := api.Group("/substation")
+		{
+			sub.GET("/tags", s.handleSubstationTags)
+			sub.GET("/state", s.handleSubstationState)
+			sub.POST("/command/:device", s.handleSubstationCommand)
+			sub.GET("/audit", s.handleSubstationAudit)
+			sub.GET("/health", s.handleSubstationHealth)
+			sub.GET("/network-events", s.handleSubstationNetworkEvents)
+		}
+
+		// PCAP capture endpoints (containd API with tcpdump fallback)
+		pcap := api.Group("/pcap")
+		{
+			pcap.POST("/start", s.handlePcapStart)
+			pcap.POST("/stop", s.handlePcapStop)
+			pcap.GET("/status", s.handlePcapStatus)
+			pcap.GET("/download", s.handlePcapDownload)
+			pcap.GET("/download/:name", s.handlePcapDownloadFile)
+			pcap.GET("/list", s.handlePcapList)
+		}
+
+		// Traffic generation for Scenario 0
+		api.POST("/traffic/generate", s.handleTrafficGenerate)
+		api.GET("/traffic/status", s.handleTrafficStatus)
 
 		api.GET("/scenarios", s.handleListScenarios)
 		api.POST("/scenarios", s.handleCreateScenario)
 		api.GET("/scenarios/:id", s.handleGetScenario)
 		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
 		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)
+		api.GET("/scenarios/:id/validate", s.handleValidateScenario)
+		api.POST("/scenarios/:id/steps/:stepIdx/execute", s.handleExecuteStep)
 
 		// Containd proxy - enables same-origin access to containd UI
 		api.Any("/containd/*path", s.handleProxyContaind)
@@ -379,7 +455,10 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 		nodeLookup[n.ID] = n
 	}
 
-	zoneOrder := []string{"it_net", "dmz_net", "ot_control_net", "ot_safety_net"}
+	zoneOrder := []string{
+		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
+		"it_net", "dmz_net", "ot_control_net", "ot_safety_net",
+	}
 	zoneCounts := map[string]int{}
 
 	var nodes []graphNode
@@ -732,26 +811,32 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 		return "/apps/hmi-control/", ""
 	case "hmi_scada":
 		return "/apps/fuxa/", ""
-	case "plc_trainer", "sis_plc":
-		// OpenPLC has a web UI on port 8080
+	case "fuxa_hmi":
+		return "/apps/fuxa-hmi/", ""
+	case "plc_trainer", "sis_plc", "openplc":
 		if container != "" {
 			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 		}
-		return "", ""
+		return "/apps/openplc/", ""
 	case "ews", "ubuntu_jumpbox":
-		// Webtop desktop environments
 		if container != "" {
 			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 		}
 		return "", ""
+	case "corp_workstation":
+		return "/apps/corp-ws/", ""
+	case "vendor_jumpbox":
+		return "/apps/vendor-jump/", ""
+	case "eng_workstation":
+		return "/apps/eng-ws/", ""
 	case "kali_pentest":
-		// Kali doesn't have a web UI by default, but has terminal
 		return "", ""
 	case "historian":
-		// InfluxDB has a web UI on port 8086
 		return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 	case "ot_ids":
-		// Suricata doesn't have a web UI
+		return "", ""
+	case "rtac_sim", "relay_sim", "recloser_sim", "regulator_sim", "opendss_sim":
+		// Simulators have API but no web UI for direct access
 		return "", ""
 	default:
 		return "", ""
@@ -776,35 +861,43 @@ func getNodeUIHostPort(nodeType, container string) (string, int) {
 	// Use container name as host if available, otherwise derive from type
 	host := container
 	if host == "" {
-		// Default container naming convention
 		switch nodeType {
 		case "plc_trainer":
 			host = "plc_process"
 		case "sis_plc":
 			host = "plc_safety"
+		case "openplc":
+			host = "openplc"
 		case "hmi_view":
 			host = "hmi_view"
 		case "hmi_control":
 			host = "hmi_control"
+		case "fuxa_hmi":
+			host = "fuxa_hmi"
 		case "ews":
 			host = "ews"
 		case "ubuntu_jumpbox":
 			host = "ubuntu_jumpbox"
+		case "corp_workstation":
+			host = "corp_ws"
+		case "vendor_jumpbox":
+			host = "vendor_jump"
+		case "eng_workstation":
+			host = "eng_workstation"
 		default:
 			return "", 0
 		}
 	}
 
-	// Determine port based on node type
 	switch nodeType {
-	case "plc_trainer", "sis_plc":
-		return host, 8080 // OpenPLC web UI
-	case "hmi_view", "hmi_control", "hmi_scada":
-		return host, 1881 // FUXA
-	case "ews", "ubuntu_jumpbox":
-		return host, 3000 // Webtop/noVNC
+	case "plc_trainer", "sis_plc", "openplc":
+		return host, 8080
+	case "hmi_view", "hmi_control", "hmi_scada", "fuxa_hmi":
+		return host, 1881
+	case "ews", "ubuntu_jumpbox", "corp_workstation", "vendor_jumpbox", "eng_workstation":
+		return host, 3000
 	case "historian":
-		return host, 8086 // InfluxDB
+		return host, 8086
 	default:
 		return "", 0
 	}

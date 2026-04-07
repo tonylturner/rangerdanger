@@ -1,0 +1,59 @@
+! RangerDanger Substation Feeder Circuit
+! Realistic distribution feeder using IEEE 13-bus line codes.
+!
+! Topology:
+!   Vsource (12.47 kV) -> Breaker -> Feeder_Main -> Recloser -> Loads
+!                                                       |
+!                                                  General Load (500 kW)
+!                                                       |
+!                                                  Lateral -> VReg -> Critical Load (200 kW)
+
+Clear
+
+New Circuit.SubstationFeeder
+~ basekv=12.47  pu=1.0  phases=3  bus1=sourcebus
+~ angle=0  frequency=60  mvasc3=200  mvasc1=200
+
+! Load line impedance definitions
+Redirect linecodes.dss
+
+! ── Feeder Breaker (relay-sim) ──────────────────────────────────────
+New Line.Breaker  bus1=sourcebus  bus2=breaker_bus  phases=3
+~ switch=yes  r1=0.001  x1=0.001  r0=0.001  x0=0.001  c1=0  c0=0  length=1  units=ft
+
+! ── Main Feeder Segment (2000 ft, config 601 — 336 ACSR) ───────────
+New Line.Feeder_Main  bus1=breaker_bus  bus2=recloser_bus  phases=3
+~ linecode=601  length=2000  units=ft
+
+! ── Mid-feeder Recloser ─────────────────────────────────────────────
+New Line.Recloser  bus1=recloser_bus  bus2=load_bus  phases=3
+~ switch=yes  r1=0.001  x1=0.001  r0=0.001  x0=0.001  c1=0  c0=0  length=1  units=ft
+
+! ── General Load (500 kW, 0.9 PF) ──────────────────────────────────
+New Load.GeneralLoad  bus1=load_bus  phases=3
+~ kv=12.47  kw=500  pf=0.9  model=1  conn=wye
+
+! ── Lateral to Regulator (500 ft, config 602 — 4/0 ACSR) ───────────
+New Line.Lateral_B  bus1=load_bus  bus2=vreg_hi  phases=3
+~ linecode=602  length=500  units=ft
+
+! ── Voltage Regulator (single-phase LTC ±10%, 32 steps) ────────────
+New Transformer.VReg  phases=3  windings=2
+~ wdg=1  bus=vreg_hi  kv=12.47  kva=5000  conn=wye  %r=0.01
+~ wdg=2  bus=reg_bus  kv=12.47  kva=5000  conn=wye  %r=0.01
+
+New RegControl.VRegCtrl  transformer=VReg  winding=2
+~ vreg=120  band=2  ptratio=60  ctprim=300
+~ maxtapchange=0
+! maxtapchange=0 => manual mode; we set tap externally from Python
+
+! ── Critical Load (200 kW, 0.95 PF) ────────────────────────────────
+New Load.CriticalLoad  bus1=reg_bus  phases=3
+~ kv=12.47  kw=200  pf=0.95  model=1  conn=wye
+
+! ── Solve settings ──────────────────────────────────────────────────
+Set voltagebases=[12.47]
+Calcvoltagebases
+Set mode=snapshot
+Set maxiterations=100
+Set tolerance=0.0001

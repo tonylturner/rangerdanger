@@ -1,0 +1,176 @@
+{
+  "schema_version": "0.1.0",
+  "system": {
+    "hostname": "containd",
+    "mgmt": {
+      "listenAddr": ":8080",
+      "enableHTTP": true,
+      "enableHTTPS": true,
+      "httpListenAddr": ":8080",
+      "httpsListenAddr": ":8443",
+      "tlsCertFile": "/data/tls/server.crt",
+      "tlsKeyFile": "/data/tls/server.key"
+    },
+    "ssh": {}
+  },
+  "interfaces": [
+    { "name": "enterprise", "device": "eth0", "zone": "wan", "access": {} },
+    { "name": "vendor", "device": "eth1", "zone": "dmz", "access": {} },
+    { "name": "ot_ops", "device": "eth2", "zone": "lan1", "access": {} },
+    { "name": "field_devices", "device": "eth3", "zone": "lan2", "access": {} }
+  ],
+  "zones": [
+    { "name": "wan", "description": "Enterprise Zone - Corporate IT environment" },
+    { "name": "dmz", "description": "Vendor / Engineering Zone - Remote support and maintenance" },
+    { "name": "lan1", "description": "OT Operations Zone - HMI, RTAC, supervisory control" },
+    { "name": "lan2", "description": "Field Device Zone - Relay, recloser, regulator, capbank" }
+  ],
+  "routing": {},
+  "dataplane": {},
+  "pcap": { "filter": {} },
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {
+        "id": "allow-mgmt-ui",
+        "description": "Allow management UI/API access",
+        "protocols": [{ "name": "tcp", "port": "8080" }],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "enterprise-to-vendor",
+        "description": "Enterprise to Vendor: SSH, HTTP/S, RDP",
+        "sourceZones": ["wan"],
+        "destZones": ["dmz"],
+        "protocols": [
+          { "name": "tcp", "port": "22" },
+          { "name": "tcp", "port": "80" },
+          { "name": "tcp", "port": "443" },
+          { "name": "tcp", "port": "3389" },
+          { "name": "tcp", "port": "3000" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "enterprise-to-ot-weak",
+        "description": "WEAK: Enterprise direct access to OT Operations (should be blocked)",
+        "sourceZones": ["wan"],
+        "destZones": ["lan1"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "1881" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "enterprise-to-field-weak",
+        "description": "WEAK: Enterprise direct Modbus/HTTP access to Field Devices (should be blocked)",
+        "sourceZones": ["wan"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "vendor-to-ot-weak",
+        "description": "WEAK: Vendor broad access to OT Operations including Modbus (should be narrowed)",
+        "sourceZones": ["dmz"],
+        "destZones": ["lan1"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "1881" },
+          { "name": "tcp", "port": "22" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "vendor-to-field-weak",
+        "description": "WEAK: Vendor direct Modbus/HTTP access to Field Devices (should be blocked)",
+        "sourceZones": ["dmz"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "ot-to-field-broad",
+        "description": "WEAK: All OT Operations nodes can Modbus/HTTP to all Field Devices (should be RTAC only)",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "ot-intrazone",
+        "description": "OT Operations internal: HMI↔RTAC Modbus, HTTP, FUXA",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan1"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "1881" },
+          { "name": "tcp", "port": "502" },
+          { "name": "udp", "port": "123" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "field-intrazone",
+        "description": "Field device internal communication",
+        "sourceZones": ["lan2"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "tcp", "port": "8080" },
+          { "name": "tcp", "port": "502" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "ntp-ot-to-field",
+        "description": "WEAK: NTP time sync from OT ops to field (no source restriction)",
+        "sourceZones": ["lan1"],
+        "destZones": ["lan2"],
+        "protocols": [
+          { "name": "udp", "port": "123" }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      {
+        "id": "allow-return-traffic",
+        "description": "Allow established return traffic",
+        "state": ["ESTABLISHED", "RELATED"],
+        "ics": {},
+        "action": "ALLOW"
+      }
+    ],
+    "nat": { "enabled": false }
+  },
+  "ids": { "enabled": false },
+  "services": {
+    "syslog": { "forwarders": [], "format": "rfc5424", "batchSize": 500, "flushEvery": 2 },
+    "dns": { "enabled": false },
+    "ntp": { "enabled": false },
+    "proxy": { "forward": { "enabled": false }, "reverse": { "enabled": false } },
+    "dhcp": { "enabled": false },
+    "vpn": { "wireguard": { "enabled": false }, "openvpn": { "enabled": false } },
+    "av": { "enabled": false, "icap": {}, "clamav": {} }
+  }
+}

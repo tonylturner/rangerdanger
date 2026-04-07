@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -17,6 +18,20 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins for development
 	},
+}
+
+// handleWorkshopTerminal handles WebSocket terminal connections for workshop mode.
+// Resolves nodes from the workshop template instead of a lab instance.
+func (s *Server) handleWorkshopTerminal(c *gin.Context) {
+	nodeID := c.Param("nodeId")
+
+	nodeConfig, err := s.resolveWorkshopNode(nodeID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	s.connectTerminal(c, nodeConfig)
 }
 
 // handleTerminal handles WebSocket connections for container terminal access.
@@ -53,6 +68,33 @@ func (s *Server) handleTerminal(c *gin.Context) {
 		return
 	}
 
+	s.connectTerminal(c, nodeConfig)
+}
+
+// resolveWorkshopNode finds a node in the workshop template topology.
+func (s *Server) resolveWorkshopNode(nodeID string) (*labs.NodeYAML, error) {
+	var template models.LabTemplate
+	if err := s.db.First(&template, "id = ?", workshopTemplateID).Error; err != nil {
+		return nil, fmt.Errorf("workshop template not found")
+	}
+
+	var topo struct {
+		Nodes []labs.NodeYAML `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(template.Topology), &topo); err != nil {
+		return nil, fmt.Errorf("invalid topology")
+	}
+
+	for i := range topo.Nodes {
+		if topo.Nodes[i].ID == nodeID {
+			return &topo.Nodes[i], nil
+		}
+	}
+	return nil, fmt.Errorf("node %s not found in topology", nodeID)
+}
+
+// connectTerminal upgrades the connection to WebSocket and connects to the container.
+func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 	// containd_ngfw uses SSH instead of docker exec
 	if nodeConfig.Type == "containd_ngfw" {
 		s.handleContaindTerminal(c)

@@ -1,9 +1,12 @@
 name: rangerdanger
 
 services:
-  # containd NGFW - central gateway for all zone traffic
+  # ─────────────────────────────────────────────────────────────
+  # Zone 7: Security Infrastructure — containd NGFW
+  # ─────────────────────────────────────────────────────────────
   firewall:
-    image: containd:local
+    image: ghcr.io/tonylturner/containd:latest
+    pull_policy: always
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
@@ -14,12 +17,9 @@ services:
       - CONTAIND_LAB_MODE=1
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
       - NGFW_ENGINE_URL=http://127.0.0.1:8081
-      # Config persistence
       - NGFW_CONFIG_DB=/data/config.db
-      # Dataplane - capture traffic on all interfaces, enable enforcement
       - NGFW_CAPTURE_IFACES=eth0,eth1,eth2,eth3
       - NGFW_ENFORCE_ENABLED=1
-      # Auto-assign subnet mapping for RangerDanger networks
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
       - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
@@ -33,28 +33,33 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.2
-      it_net:
+      enterprise_net:
         ipv4_address: 10.10.10.2
-      dmz_net:
+      vendor_net:
         ipv4_address: 10.20.20.2
-      ot_control_net:
+      ot_ops_net:
         ipv4_address: 10.30.30.2
-      ot_safety_net:
+      field_net:
         ipv4_address: 10.40.40.2
     restart: unless-stopped
 
+  # ─────────────────────────────────────────────────────────────
+  # Platform services — backend, frontend, proxy
+  # ─────────────────────────────────────────────────────────────
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: rangerdanger-backend
+    cap_add:
+      - NET_ADMIN
     environment:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/rangerdanger.db
       OTLAB_LAB_DEFINITIONS_PATH: /lab-definitions
-      # Use management network IP to bypass firewall rules
       CONTAIND_API_URL: http://10.99.99.2:8080
       CONTAIND_JWT_SECRET: ${CONTAIND_JWT_SECRET:-rangerdanger-dev}
+      OTLAB_CONTAIND_CONFIG_PATH: /lab-definitions/firewall/substation-weak.json
     volumes:
       - ./backend/data:/data
       - ./lab-definitions:/lab-definitions:ro
@@ -62,33 +67,34 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.10
-      it_net:
-        ipv4_address: 10.10.10.10
-      dmz_net:
-        ipv4_address: 10.20.20.200
-      ot_control_net:
+      enterprise_net:
+        ipv4_address: 10.10.10.200
+      ot_ops_net:
         ipv4_address: 10.30.30.200
-      ot_safety_net:
-        ipv4_address: 10.40.40.200
     depends_on:
       - firewall
+      - rtac_sim
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: rangerdanger-frontend
+    cap_add:
+      - NET_ADMIN
     environment:
       NEXT_PUBLIC_API_URL: /api
     depends_on:
       - backend
     networks:
-      it_net:
+      enterprise_net:
         ipv4_address: 10.10.10.11
 
   proxy:
     image: nginx:1.27-alpine
     container_name: rangerdanger-proxy
+    cap_add:
+      - NET_ADMIN
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
@@ -97,264 +103,360 @@ services:
       - firewall
       - backend
       - frontend
-      - hmi_view
-      - hmi_control
-      - plc_process
     networks:
-      it_net:
+      enterprise_net:
         ipv4_address: 10.10.10.3
-      dmz_net:
+      vendor_net:
         ipv4_address: 10.20.20.3
-      ot_control_net:
+      ot_ops_net:
         ipv4_address: 10.30.30.3
 
-  # HMI View - Read-only HMI in DMZ (can monitor all PLCs including safety)
-  hmi_view:
-    image: frangoteam/fuxa:latest
-    container_name: rangerdanger-hmi-view
-    hostname: hmi-view
-    networks:
-      dmz_net:
-        ipv4_address: 10.20.20.10
-      ot_control_net:
-        ipv4_address: 10.30.30.10
-      ot_safety_net:
-        ipv4_address: 10.40.40.10
-    volumes:
-      - ./data/fuxa_view_appdata:/usr/src/app/FUXA/server/_appdata
-      - ./data/fuxa_view_db:/usr/src/app/FUXA/server/_db
-      - ./data/fuxa_view_logs:/usr/src/app/FUXA/server/_logs
-    restart: unless-stopped
-    depends_on:
-      - firewall
-
-  # HMI Control - Full-control HMI in OT Control zone
-  hmi_control:
-    image: frangoteam/fuxa:latest
-    container_name: rangerdanger-hmi-control
-    hostname: hmi-control
-    networks:
-      ot_control_net:
-        ipv4_address: 10.30.30.11
-    volumes:
-      - ./data/fuxa_control_appdata:/usr/src/app/FUXA/server/_appdata
-      - ./data/fuxa_control_db:/usr/src/app/FUXA/server/_db
-      - ./data/fuxa_control_logs:/usr/src/app/FUXA/server/_logs
-    restart: unless-stopped
-    depends_on:
-      - firewall
-
-  # Engineering Workstation in DMZ
-  ews:
+  # ─────────────────────────────────────────────────────────────
+  # Zone 1: Enterprise Zone
+  # All inter-zone traffic routes through containd (10.10.10.2)
+  # ─────────────────────────────────────────────────────────────
+  corp_ws:
     image: linuxserver/webtop:ubuntu-mate
-    container_name: rangerdanger-ews
-    hostname: ews
+    container_name: rangerdanger-corp-ws
+    hostname: corp-ws
+    cap_add:
+      - NET_ADMIN
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
-    networks:
-      dmz_net:
-        ipv4_address: 10.20.20.50
+      - GATEWAY=10.10.10.2
     volumes:
-      - ./data/ews_config:/config
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+    networks:
+      enterprise_net:
+        ipv4_address: 10.10.10.10
     shm_size: "1gb"
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # Kali Pentest Box in IT network (full tools)
-  kali_pentest:
+  # ─────────────────────────────────────────────────────────────
+  # Zone 6: Adversary Zone (placed in enterprise_net for scenario 1)
+  # ─────────────────────────────────────────────────────────────
+  kali:
     build:
       context: .
       dockerfile: Dockerfile.kali
     container_name: rangerdanger-kali
-    hostname: kali-pentest
+    hostname: kali
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    environment:
+      - GATEWAY=10.10.10.2
     networks:
-      it_net:
+      enterprise_net:
         ipv4_address: 10.10.10.50
     volumes:
       - ./data/kali_home:/home/kali
+      - ./scripts/set-gateway.sh:/usr/local/bin/set-gateway.sh:ro
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # Ubuntu Jump Box in DMZ - only host allowed to access OT Control
-  ubuntu_jumpbox:
-    image: linuxserver/webtop:ubuntu-xfce
-    container_name: rangerdanger-jumpbox
-    hostname: ubuntu-jumpbox
+  # ─────────────────────────────────────────────────────────────
+  # Zone 2: Vendor / Engineering Access Zone
+  # All inter-zone traffic routes through containd (10.20.20.2)
+  # ─────────────────────────────────────────────────────────────
+  vendor_jump:
+    build:
+      context: .
+      dockerfile: Dockerfile.vendor-jump
+    container_name: rangerdanger-vendor-jump
+    hostname: vendor-jump
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
+      - GATEWAY=10.20.20.2
     cap_add:
       - NET_ADMIN
-    networks:
-      dmz_net:
-        ipv4_address: 10.20.20.60
     volumes:
-      - ./data/jumpbox_config:/config
-      - ./data/vpn_profiles:/vpn:ro
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+    networks:
+      vendor_net:
+        ipv4_address: 10.20.20.10
     shm_size: "1gb"
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # PLC-101: Process Control (Separator, Inlet Pump, Valves)
-  plc_process:
+  eng_workstation:
     build:
       context: .
-      dockerfile: Dockerfile.openplc
-    container_name: rangerdanger-plc-process
-    hostname: plc-101
+      dockerfile: Dockerfile.eng-ws
+    container_name: rangerdanger-eng-ws
+    hostname: eng-workstation
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - GATEWAY=10.20.20.2
+    volumes:
+      - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+      - ./data/firewall/captures:/home/abc/pcaps:ro
     networks:
-      ot_control_net:
+      vendor_net:
+        ipv4_address: 10.20.20.20
+    shm_size: "1gb"
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # ─────────────────────────────────────────────────────────────
+  # Zone 3: OT Operations Zone
+  # Inter-zone traffic routes through containd (10.30.30.2)
+  # ─────────────────────────────────────────────────────────────
+  fuxa_hmi:
+    image: frangoteam/fuxa:latest
+    container_name: rangerdanger-fuxa-hmi
+    hostname: fuxa-hmi
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.10
+    volumes:
+      - ./data/fuxa_hmi_appdata:/usr/src/app/FUXA/server/_appdata
+      - ./data/fuxa_hmi_db:/usr/src/app/FUXA/server/_db
+      - ./data/fuxa_hmi_logs:/usr/src/app/FUXA/server/_logs
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  rtac_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: rtac-sim
+    container_name: rangerdanger-rtac-sim
+    hostname: rtac-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - RELAY_SIM_HOST=relay-sim:8080
+      - RECLOSER_SIM_HOST=recloser-sim:8080
+      - REGULATOR_SIM_HOST=regulator-sim:8080
+      - OPENDSS_SIM_HOST=opendss-sim:8080
+      - GATEWAY=10.30.30.2
+    networks:
+      ot_ops_net:
         ipv4_address: 10.30.30.20
+      field_net:
+        ipv4_address: 10.40.40.10
+      physics_net:
+        ipv4_address: 10.50.50.10
+    restart: unless-stopped
+    depends_on:
+      - firewall
+      - relay_sim
+      - recloser_sim
+      - regulator_sim
+      - opendss_sim
+
+  openplc:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc
+    container_name: rangerdanger-openplc
+    hostname: openplc
+    cap_add:
+      - NET_ADMIN
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.30
+      field_net:
+        ipv4_address: 10.40.40.30
     environment:
       - TZ=UTC
+      - GATEWAY=10.30.30.2
     volumes:
-      - ./data/plc_process:/workdir
+      - ./data/openplc:/workdir
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # PLC-201: Compressor Control (Gas Compressor)
-  plc_compressor:
+  # ─────────────────────────────────────────────────────────────
+  # Zone 4: Field Device Zone
+  # Inter-zone traffic routes through containd (10.40.40.2)
+  # ─────────────────────────────────────────────────────────────
+  relay_sim:
     build:
-      context: .
-      dockerfile: Dockerfile.openplc
-    container_name: rangerdanger-plc-compressor
-    hostname: plc-201
-    networks:
-      ot_control_net:
-        ipv4_address: 10.30.30.21
+      context: ./services
+      dockerfile: Dockerfile
+      target: relay-sim
+    container_name: rangerdanger-relay-sim
+    hostname: relay-sim
+    cap_add:
+      - NET_ADMIN
     environment:
-      - TZ=UTC
-    volumes:
-      - ./data/plc_compressor:/workdir
-    restart: unless-stopped
-    depends_on:
-      - firewall
-
-  # SIS-301: Safety Instrumented System (ESD, Safety Interlocks)
-  plc_safety:
-    build:
-      context: .
-      dockerfile: Dockerfile.openplc
-    container_name: rangerdanger-plc-safety
-    hostname: sis-301
+      - GATEWAY=10.40.40.2
     networks:
-      ot_safety_net:
+      field_net:
         ipv4_address: 10.40.40.20
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  recloser_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: recloser-sim
+    container_name: rangerdanger-recloser-sim
+    hostname: recloser-sim
+    cap_add:
+      - NET_ADMIN
     environment:
-      - TZ=UTC
-    volumes:
-      - ./data/plc_safety:/workdir
+      - GATEWAY=10.40.40.2
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.21
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # PLC-401: Utilities (Water Treatment, Tank Farm)
-  plc_utilities:
+  regulator_sim:
     build:
-      context: .
-      dockerfile: Dockerfile.openplc
-    container_name: rangerdanger-plc-utilities
-    hostname: plc-401
-    networks:
-      ot_control_net:
-        ipv4_address: 10.30.30.22
+      context: ./services
+      dockerfile: Dockerfile
+      target: regulator-sim
+    container_name: rangerdanger-regulator-sim
+    hostname: regulator-sim
+    cap_add:
+      - NET_ADMIN
     environment:
-      - TZ=UTC
-    volumes:
-      - ./data/plc_utilities:/workdir
+      - GATEWAY=10.40.40.2
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.22
     restart: unless-stopped
     depends_on:
       - firewall
 
-  # Lab tools containers - full OS with networking tools for testing/training
-  tools_it:
+  capbank_sim:
     build:
-      context: .
-      dockerfile: Dockerfile.labtools
-    container_name: rangerdanger-tools-it
-    hostname: tools-it
+      context: ./services
+      dockerfile: Dockerfile
+      target: capbank-sim
+    container_name: rangerdanger-capbank-sim
+    hostname: capbank-sim
     cap_add:
       - NET_ADMIN
-      - NET_RAW
+    environment:
+      - GATEWAY=10.40.40.2
     networks:
-      it_net:
-        ipv4_address: 10.10.10.100
-    depends_on:
-      - firewall
+      field_net:
+        ipv4_address: 10.40.40.23
     restart: unless-stopped
-
-  tools_dmz:
-    build:
-      context: .
-      dockerfile: Dockerfile.labtools
-    container_name: rangerdanger-tools-dmz
-    hostname: tools-dmz
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    networks:
-      dmz_net:
-        ipv4_address: 10.20.20.100
     depends_on:
       - firewall
+
+  historian_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: historian-sim
+    container_name: rangerdanger-historian-sim
+    hostname: historian-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
+      - RTAC_ENDPOINT=http://10.30.30.20:8080
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.40
     restart: unless-stopped
-
-  tools_ot:
-    build:
-      context: .
-      dockerfile: Dockerfile.labtools
-    container_name: rangerdanger-tools-ot
-    hostname: tools-ot
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    networks:
-      ot_control_net:
-        ipv4_address: 10.30.30.100
     depends_on:
       - firewall
+      - rtac_sim
+
+  gps_sim:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+      target: gps-sim
+    container_name: rangerdanger-gps-sim
+    hostname: gps-sim
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - GATEWAY=10.30.30.2
+    networks:
+      ot_ops_net:
+        ipv4_address: 10.30.30.50
+    restart: unless-stopped
+    depends_on:
+      - firewall
+
+  # ─────────────────────────────────────────────────────────────
+  # Zone 5: Process / Physics Zone (not firewalled)
+  # ─────────────────────────────────────────────────────────────
+  opendss_sim:
+    build:
+      context: .
+      dockerfile: services/opendss-sim/Dockerfile
+    container_name: rangerdanger-opendss-sim
+    hostname: opendss-sim
+    cap_add:
+      - NET_ADMIN
+    networks:
+      physics_net:
+        ipv4_address: 10.50.50.20
     restart: unless-stopped
 
 networks:
-  # Management network - NOT captured by containd firewall
-  # Used for RangerDanger app <-> containd API communication
+  # Management network — NOT captured by containd firewall
   mgmt_net:
     driver: bridge
     ipam:
       config:
         - subnet: 10.99.99.0/24
           gateway: 10.99.99.1
-  it_net:
+  # Zone 1: Enterprise
+  enterprise_net:
     driver: bridge
     ipam:
       config:
         - subnet: 10.10.10.0/24
           gateway: 10.10.10.1
-  dmz_net:
+  # Zone 2: Vendor / Engineering
+  vendor_net:
     driver: bridge
     ipam:
       config:
         - subnet: 10.20.20.0/24
           gateway: 10.20.20.1
-  ot_control_net:
+  # Zone 3: OT Operations
+  ot_ops_net:
     driver: bridge
     ipam:
       config:
         - subnet: 10.30.30.0/24
           gateway: 10.30.30.1
-  ot_safety_net:
+  # Zone 4: Field Devices
+  field_net:
     driver: bridge
     ipam:
       config:
         - subnet: 10.40.40.0/24
           gateway: 10.40.40.1
+  # Zone 5: Physics / Simulation (not firewalled)
+  physics_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.50.50.0/24
+          gateway: 10.50.50.1

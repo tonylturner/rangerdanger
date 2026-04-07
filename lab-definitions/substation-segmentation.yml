@@ -1,0 +1,822 @@
+id: substation-segmentation
+name: Substation Segmentation Validation Lab
+description: >
+  Electric cooperative distribution substation segmentation lab.
+  Students validate and improve network segmentation to protect critical
+  substation control functions from enterprise compromise, vendor access
+  abuse, and OT east-west lateral movement.
+
+firewall_config: firewall/substation-weak.json
+
+networks:
+  - id: enterprise_net
+    name: Enterprise Zone
+    subnet: 10.10.10.0/24
+    zone: wan
+    description: Corporate IT environment — lowest trust, common attacker foothold
+
+  - id: vendor_net
+    name: Vendor / Engineering Zone
+    subnet: 10.20.20.0/24
+    zone: dmz
+    description: Remote support, contractor access, engineering maintenance
+
+  - id: ot_ops_net
+    name: OT Operations Zone
+    subnet: 10.30.30.0/24
+    zone: lan1
+    description: Substation operational services — HMI, RTAC, supervisory control
+
+  - id: field_net
+    name: Field Device Zone
+    subnet: 10.40.40.0/24
+    zone: lan2
+    description: Substation and feeder control endpoints — relay, recloser, regulator
+
+nodes:
+  # Zone 7: Security Infrastructure
+  - id: fw-1
+    type: containd_ngfw
+    name: Containd Firewall
+    container: rangerdanger-firewall
+    networks:
+      - enterprise_net
+      - vendor_net
+      - ot_ops_net
+      - field_net
+    ip: 10.10.10.2
+
+  # Zone 1: Enterprise
+  - id: corp-ws-1
+    type: corp_workstation
+    name: Corporate Workstation
+    container: rangerdanger-corp-ws
+    networks:
+      - enterprise_net
+    ip: 10.10.10.10
+
+  # Zone 6: Adversary (in enterprise_net)
+  - id: kali-1
+    type: kali_pentest
+    name: Kali Attacker
+    container: rangerdanger-kali
+    networks:
+      - enterprise_net
+    ip: 10.10.10.50
+
+  # Zone 2: Vendor / Engineering
+  - id: vendor-jump-1
+    type: vendor_jumpbox
+    name: Vendor Jump Box
+    container: rangerdanger-vendor-jump
+    networks:
+      - vendor_net
+    ip: 10.20.20.10
+
+  - id: eng-ws-1
+    type: eng_workstation
+    name: Engineering Workstation
+    container: rangerdanger-eng-ws
+    networks:
+      - vendor_net
+    ip: 10.20.20.20
+
+  # Zone 3: OT Operations
+  - id: hmi-1
+    type: fuxa_hmi
+    name: Substation HMI
+    container: rangerdanger-fuxa-hmi
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.10
+
+  - id: rtac-1
+    type: rtac_sim
+    name: RTAC / Supervisory Controller
+    container: rangerdanger-rtac-sim
+    networks:
+      - ot_ops_net
+      - field_net
+    ip: 10.30.30.20
+
+  - id: openplc-1
+    type: openplc
+    name: Substation Automation PLC
+    container: rangerdanger-openplc
+    networks:
+      - ot_ops_net
+      - field_net
+    ip: 10.30.30.30
+
+  - id: historian-1
+    type: historian_sim
+    name: Data Historian
+    container: rangerdanger-historian-sim
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.40
+
+  - id: gps-1
+    type: gps_sim
+    name: GPS Time Server
+    container: rangerdanger-gps-sim
+    networks:
+      - ot_ops_net
+    ip: 10.30.30.50
+
+  # Zone 4: Field Devices
+  - id: relay-1
+    type: relay_sim
+    name: Feeder Breaker / Relay
+    container: rangerdanger-relay-sim
+    networks:
+      - field_net
+    ip: 10.40.40.20
+
+  - id: recloser-1
+    type: recloser_sim
+    name: Mid-Feeder Recloser
+    container: rangerdanger-recloser-sim
+    networks:
+      - field_net
+    ip: 10.40.40.21
+
+  - id: regulator-1
+    type: regulator_sim
+    name: Voltage Regulator
+    container: rangerdanger-regulator-sim
+    networks:
+      - field_net
+    ip: 10.40.40.22
+
+  - id: capbank-1
+    type: capbank_sim
+    name: Capacitor Bank
+    container: rangerdanger-capbank-sim
+    networks:
+      - field_net
+    ip: 10.40.40.23
+
+scenarios:
+  - id: traffic-baseline-analysis
+    name: "Scenario 0: Baseline Traffic Analysis"
+    description: >
+      Before attacking or defending anything, students must understand what
+      normal operational traffic looks like in a substation network. This
+      exercise generates representative traffic using correct OT protocols:
+      Modbus/TCP for SCADA polling, NTP for time sync, HTTP for engineering
+      access. Students analyze the PCAP to identify critical communication
+      paths, protocols, and cross-zone flows — the foundation for building
+      segmentation policy.
+    tags:
+      - baseline
+      - traffic-analysis
+      - pcap
+      - modbus
+      - planning
+    steps:
+      - title: "Generate baseline operational traffic"
+        description: >
+          Use the Traffic Matrix tab to generate representative traffic from
+          all lab containers using correct substation protocols:
+
+
+          Modbus/TCP (port 502) — primary SCADA protocol:
+          - RTAC → relay, recloser, regulator, capbank (FC1/FC3/FC4 reads)
+          - HMI → RTAC (FC3/FC4 reads for operator display)
+          - Historian → RTAC (FC3/FC4 reads for data archival)
+
+          NTP (UDP 123) — time synchronization:
+          - GPS Time Server → RTAC, relay, recloser (SOE timestamping)
+
+          HTTP (ports 8080, 1881) — management/engineering:
+          - Engineering WS → RTAC (maintenance access, cross-zone)
+          - Vendor Jump → HMI web UI (remote monitoring, cross-zone)
+          - Corporate WS → web proxy (enterprise browsing)
+          - RTAC → OpenDSS physics engine (simulation, not firewalled)
+
+          Suspicious traffic (anomalies to detect):
+          - Kali → field devices (Modbus reads from enterprise zone)
+          - Kali → RTAC (Modbus probe from enterprise zone)
+
+
+          Click "Generate Traffic & Capture PCAP" in the Traffic Matrix tab.
+          Use a 30-60 second capture duration.
+
+      - title: "Download and examine the PCAP"
+        description: >
+          Download the PCAP files from the Traffic Matrix tab. containd
+          captures one file per firewall interface (eth0-eth3), so you
+          will see separate files for each zone boundary. Analyze with:
+
+
+          1. Wireshark on the engineering workstation (10.20.20.20) —
+             filter by "modbus" to see SCADA traffic, or "tcp.port==502"
+          2. EmberOT PCAP Analyzer on the engineering workstation — gives
+             automatic OT protocol identification and flow analysis
+          3. Any local tool — standard pcap format
+
+
+          Key things to identify in each interface capture:
+          - eth0 (enterprise): HTTP browsing, Kali recon attempts
+          - eth1 (vendor): Engineering HTTP to OT ops
+          - eth2 (ot_ops): HMI↔RTAC Modbus, historian Modbus, NTP sync
+          - eth3 (field): RTAC Modbus polling of relay/recloser/regulator
+
+
+          In Wireshark, use these filters:
+          - modbus — all Modbus/TCP traffic
+          - modbus.func_code == 3 — FC3 Read Holding Registers
+          - modbus.func_code == 5 — FC5 Write Single Coil (attacks!)
+          - ntp — time sync traffic
+          - tcp.port == 502 && ip.src == 10.10.10.50 — Kali Modbus (suspicious)
+
+      - title: "Identify critical communication paths"
+        description: >
+          From the PCAP and traffic matrix, document the critical paths
+          that segmentation must preserve:
+
+
+          REQUIRED PATHS (must ALLOW):
+          1. RTAC (10.40.40.10) → field devices (10.40.40.20-23) — Modbus TCP 502
+             Function codes: FC1 (read coils), FC3 (read holding regs),
+             FC4 (read input regs), FC5 (write coil), FC6 (write reg)
+          2. HMI (10.30.30.10) → RTAC (10.30.30.20) — Modbus TCP 502
+             Read-only: FC1, FC3, FC4 for operator display
+          3. Historian (10.30.30.40) → RTAC (10.30.30.20) — Modbus TCP 502
+             Read-only: FC3, FC4 for data collection
+          4. GPS (10.30.30.50) → RTAC, field devices — NTP UDP 123
+          5. Engineering WS → RTAC — HTTP 8080 (maintenance)
+          6. RTAC → physics engine (10.50.50.20) — HTTP 8080 (not firewalled)
+
+
+          SUSPICIOUS/DENY PATHS:
+          1. Enterprise (10.10.10.x) → field devices on 502 — NO legitimate reason
+          2. Enterprise → OT ops on 502 — should be blocked
+          3. Vendor (10.20.20.x) → field devices on 502 — NO direct access needed
+          4. Any source → field devices with FC5/FC6 except RTAC — write access abuse
+
+      - title: "Review the traffic matrix"
+        description: >
+          Check the Traffic Matrix tab to see a structured view of all
+          observed communication pairs, grouped by zone. The matrix shows:
+
+
+          - Source and destination with zone coloring
+          - Protocols detected (Modbus/TCP, HTTP, NTP)
+          - Cross-zone flows highlighted in amber
+          - Modbus function codes visible in DPI events
+
+
+          This matrix directly informs what containd firewall rules you
+          need. Every cross-zone flow on port 502 must be explicitly
+          allowed or denied. Pay special attention to:
+          - Which hosts send Modbus WRITE commands (FC5/FC6)
+          - Which hosts only READ (FC1/FC2/FC3/FC4)
+          - Whether NTP flows cross zone boundaries
+
+      - title: "Plan segmentation policy"
+        description: >
+          Based on your traffic analysis, define the segmentation rules
+          you would apply to containd. Think in terms of both network
+          segmentation AND protocol-level controls:
+
+
+          Network segmentation (zone boundaries):
+          1. DENY enterprise → field (block all IT-to-ICS paths)
+          2. DENY enterprise → ot_ops (block IT-to-OT Modbus/HTTP)
+          3. DENY vendor → field (no direct vendor-to-device access)
+          4. ALLOW lan1 → lan2 ONLY from RTAC (10.40.40.10) on 502 + 8080
+          5. ALLOW GPS (10.30.30.50) → field on UDP 123 only
+
+          Protocol-level controls (ICS DPI):
+          6. RTAC → field: Allow Modbus FC1-6 (read + write for supervisory)
+          7. HMI → RTAC: Allow Modbus FC1-4 only (read-only, no writes)
+          8. Historian → RTAC: Allow Modbus FC3-4 only (read-only)
+
+          Compare your plan against the "containd Segmentation" tab to see
+          how the weak and hardened configs implement these rules. You will
+          apply these in Scenarios 1-3 after demonstrating the attacks they
+          prevent.
+
+  - id: enterprise-to-breaker
+    name: "Scenario 1: Enterprise to Breaker — Modbus Coil Write"
+    description: >
+      An attacker with enterprise network access uses Modbus/TCP to trip
+      the feeder breaker relay. This mirrors real ICS attacks (e.g.,
+      CRASHOVERRIDE/Industroyer) where adversaries use native OT protocols
+      to manipulate protection equipment. Students must segment enterprise
+      traffic from field device Modbus services.
+
+
+      TOOLS: All commands run on the Kali box (10.10.10.50).
+      Available tools: mbpoll, nmap, ncat, Metasploit, tcpdump, pymodbus.
+      Access Kali via the topology node console or: ssh kali@10.10.10.50
+    tags:
+      - attack
+      - segmentation
+      - enterprise
+      - modbus
+    steps:
+      - title: "Verify baseline — feeder energized"
+        description: >
+          Confirm the feeder is energized and all loads are served.
+          Check the Substation Process View tab, or verify via Modbus
+          from Kali by reading the RTAC's breaker status coil.
+
+
+          [Run on: Kali — 10.10.10.50]
+
+          mbpoll -a 1 -t 0 -r 1 -c 1 -1 10.30.30.20
+
+          This reads coil 1 (breaker_closed) from the RTAC via Modbus
+          FC1. Expected: [1] = 1 (breaker closed = ON).
+
+
+          If this read succeeds from the enterprise zone, it confirms
+          the weak config allows enterprise → OT ops Modbus traffic.
+        action:
+          type: check
+          expect:
+            breaker_closed: true
+            loads_energized: true
+
+      - title: "Recon — scan for Modbus services"
+        description: >
+          Scan the field device zone for Modbus/TCP services on port 502.
+          This is how attackers discover ICS endpoints after gaining
+          network access.
+
+
+          [Run on: Kali — 10.10.10.50]
+
+          nmap -sV -p 502 10.40.40.20-23 --script modbus-discover
+
+
+          Expected: port 502/tcp open on all four field devices:
+          - relay (10.40.40.20)
+          - recloser (10.40.40.21)
+          - regulator (10.40.40.22)
+          - capbank (10.40.40.23)
+
+
+          This scan crosses the enterprise → field zone boundary.
+          With the weak config, containd allows it. The scan generates
+          DPI events visible in the containd event log.
+
+      - title: "Attack — trip breaker via Modbus FC5 Write Coil"
+        description: >
+          Write coil 1 (breaker_closed) to OFF on the relay at
+          10.40.40.20. This uses Modbus FC5 (Write Single Coil) — the
+          same technique CRASHOVERRIDE used in the 2016 Ukraine attack.
+
+
+          [Run on: Kali — 10.10.10.50]
+
+          mbpoll -a 1 -t 0 -r 1 -1 10.40.40.20 0
+
+          This writes 0 (OFF) to coil 1 on the relay — opening the
+          feeder breaker and de-energizing all downstream loads.
+
+
+          Breakdown: -a 1 (unit ID 1), -t 0 (coil type), -r 1 (coil
+          address 1 = breaker_closed), -1 (single poll), 0 (value OFF).
+        action:
+          type: command
+          device: relay
+          command: trip
+          source: "10.10.10.50"
+
+      - title: "Observe — feeder de-energized"
+        description: >
+          The feeder breaker is now open. All downstream loads lose power.
+          Read the relay coils to confirm.
+
+
+          [Run on: Kali — 10.10.10.50]
+
+          mbpoll -a 1 -t 0 -r 1 -c 4 -1 10.40.40.20
+
+          Expected output:
+          [1]: 0  (breaker_closed = OFF)
+          [2]: 1  (remote_control = ON)
+          [3]: 0  (lockout)
+          [4]: 0  (fault_seen)
+
+
+          Also check the Substation Process View — downstream voltage
+          should read 0V and loads should show as de-energized.
+        action:
+          type: check
+          expect:
+            breaker_closed: false
+
+      - title: "Restore — close breaker"
+        description: >
+          Restore power by closing the breaker. Use the Substation
+          Process View "Close" button, or re-close via Modbus:
+
+
+          [Run on: Kali — 10.10.10.50, or use the web UI]
+
+          mbpoll -a 1 -t 0 -r 1 -1 10.40.40.20 1
+
+          Writes 1 (ON) to coil 1 (breaker_closed) — closing the breaker.
+        action:
+          type: command
+          device: relay
+          command: close
+          source: "operator"
+
+      - title: "Defend — apply segmentation policy"
+        description: >
+          Apply the improved containd policy to block enterprise zone
+          (wan/10.10.10.0/24) from reaching field devices (lan2/10.40.40.0/24)
+          on any port — including Modbus/TCP port 502.
+
+
+          Use the "containd Segmentation" tab → click "Apply Improved Config",
+          or apply via the containd web UI at http://localhost:9080.
+
+
+          Key rules in the improved config:
+          - deny-enterprise-to-field: DENY wan → lan2 on 502 + 8080
+          - deny-enterprise-to-ot: DENY wan → lan1 on 502 + 8080 + 1881
+          - rtac-to-field-modbus: ALLOW only 10.40.40.10 → lan2 on 502
+        action:
+          type: firewall
+          config: improved
+
+      - title: "Validate — repeat attack (should be blocked)"
+        description: >
+          Re-run the same Modbus trip command from Kali. With the improved
+          policy, containd drops the TCP SYN to 10.40.40.20:502 at the
+          firewall. The connection times out and the breaker stays closed.
+
+
+          [Run on: Kali — 10.10.10.50]
+
+          mbpoll -a 1 -t 0 -r 1 -1 -o 3 10.40.40.20 0
+
+          The -o 3 sets a 3-second timeout. Expected: connection timeout
+          or "Connection failed" error. Check containd's event log for
+          the DENY entry showing the blocked attempt.
+        action:
+          type: command
+          device: relay
+          command: trip
+          source: "10.10.10.50"
+
+      - title: "Validate — legitimate RTAC operations preserved"
+        description: >
+          Verify the RTAC can still poll field devices via Modbus and
+          that the HMI reflects accurate breaker status. The improved
+          policy allows only the RTAC (10.40.40.10 on field_net) to
+          reach field devices on port 502.
+
+
+          Check the Substation Process View — breaker should show closed,
+          loads energized, and voltage values updating normally. The RTAC
+          is still polling field devices every 1 second.
+        action:
+          type: check
+          expect:
+            breaker_closed: true
+            loads_energized: true
+            firewall_config: improved
+
+  - id: vendor-access-abuse
+    name: "Scenario 2: Vendor Access — Disable Auto-Reclose"
+    description: >
+      A compromised vendor remote-access session is used to disable
+      auto-reclose on the mid-feeder recloser via Modbus, then trigger
+      a fault. Without auto-reclose, a temporary fault causes a sustained
+      outage instead of the normal automatic recovery. This demonstrates
+      how vendor access abuse can degrade grid reliability without
+      directly tripping breakers.
+
+
+      TOOLS: All commands run on the Vendor Jump Box (10.20.20.10).
+      Available tools: mbpoll, nmap, ncat, tcpdump, pymodbus.
+      Access via the topology node console or the webtop GUI.
+    tags:
+      - attack
+      - vendor
+      - segmentation
+      - modbus
+    steps:
+      - title: "Verify baseline — reclose enabled"
+        description: >
+          Confirm the recloser is closed and auto-reclose is enabled
+          by reading coils from the vendor jump box.
+
+
+          [Run on: Vendor Jump Box — 10.20.20.10]
+
+          mbpoll -a 1 -t 0 -r 1 -c 5 -1 10.40.40.21
+
+          Expected output:
+          [1]: 1  (closed = ON)
+          [2]: 1  (reclose_enabled = ON)
+          [3]: 0  (lockout)
+          [4]: 0  (fault_seen)
+          [5]: 1  (auto_mode = ON)
+
+
+          Note: This Modbus read crosses the vendor (dmz) → field (lan2)
+          zone boundary. With the weak config, this is allowed.
+        action:
+          type: check
+          expect:
+            recloser_closed: true
+            reclose_enabled: true
+
+      - title: "Attack — disable auto-reclose via Modbus"
+        description: >
+          Write coil 2 (reclose_enabled) to OFF on the recloser. This
+          uses Modbus FC5 to silently disable the automatic fault
+          recovery mechanism.
+
+
+          [Run on: Vendor Jump Box — 10.20.20.10]
+
+          mbpoll -a 1 -t 0 -r 2 -1 10.40.40.21 0
+
+          This writes 0 (OFF) to coil 2 (reclose_enabled).
+
+
+          This is a subtle attack — the recloser looks completely normal
+          until a fault occurs and it fails to automatically restore.
+          An operator watching the HMI would see no immediate change.
+        action:
+          type: command
+          device: recloser
+          command: disable_reclose
+          source: "10.20.20.10"
+
+      - title: "Trigger fault — sustained outage"
+        description: >
+          With auto-reclose disabled, open the recloser to simulate a
+          fault trip. Normally the recloser would auto-close after a
+          brief delay. With reclose disabled, the outage persists —
+          requiring a crew dispatch to manually restore.
+
+
+          [Run on: Vendor Jump Box — 10.20.20.10]
+
+          mbpoll -a 1 -t 0 -r 1 -1 10.40.40.21 0
+
+          Then verify the state:
+
+          mbpoll -a 1 -t 0 -r 1 -c 5 -1 10.40.40.21
+
+          Expected: [1]=0 (open), [2]=0 (reclose disabled).
+
+
+          Check the Substation Process View — downstream loads should
+          show de-energized. The recloser stays open because auto-reclose
+          was silently disabled in the previous step.
+        action:
+          type: command
+          device: recloser
+          command: inject_fault
+          source: "10.20.20.10"
+
+      - title: "Restore service"
+        description: >
+          Reset the recloser to normal operation. Use the Substation
+          Process View buttons or the automated restore action:
+
+          1. Reset lockout (clear fault counter)
+          2. Re-enable auto-reclose
+          3. Close the recloser
+        action:
+          type: sequence
+          commands:
+            - device: recloser
+              command: reset_lockout
+              source: "operator"
+            - device: recloser
+              command: enable_reclose
+              source: "operator"
+            - device: recloser
+              command: close
+              source: "operator"
+
+      - title: "Defend — block vendor-to-field Modbus"
+        description: >
+          Apply the improved containd policy to block vendor zone
+          (dmz/10.20.20.0/24) from reaching field devices on Modbus
+          port 502 or HTTP port 8080.
+
+
+          Use the "containd Segmentation" tab → click "Apply Improved Config".
+
+
+          Key rules:
+          - deny-vendor-to-field: DENY dmz → lan2 on 502 + 8080
+          - vendor-to-ot-restricted: ALLOW dmz → lan1 on 443 + 22 only
+          - Vendor access is limited to monitoring (HTTPS to OT ops) —
+            no direct field device control
+        action:
+          type: firewall
+          config: improved
+
+      - title: "Validate — vendor Modbus blocked"
+        description: >
+          Re-attempt the disable_reclose from the vendor jump box. With
+          the improved policy, containd blocks the TCP SYN to port 502.
+
+
+          [Run on: Vendor Jump Box — 10.20.20.10]
+
+          mbpoll -a 1 -t 0 -r 2 -1 -o 3 10.40.40.21 0
+
+          Expected: Connection timeout or "Connection failed" error.
+          The vendor can still reach OT ops services (HTTPS, SSH) for
+          legitimate monitoring, but cannot directly control field devices.
+        action:
+          type: command
+          device: recloser
+          command: disable_reclose
+          source: "10.20.20.10"
+
+  - id: eng-ws-lateral-pivot
+    name: "Scenario 3: Lateral Movement — Voltage Manipulation via Compromised Engineering Workstation"
+    description: >
+      An attacker compromises the engineering workstation (10.20.20.20)
+      in the vendor zone — a realistic scenario since vendor/contractor
+      laptops commonly have OT commissioning tools installed. Using the
+      workstation's existing Modbus tools, the attacker directly
+      manipulates the voltage regulator tap position, causing undervoltage
+      at critical loads. Students must enforce segmentation so only the
+      RTAC can control field devices — not engineering tools.
+
+
+      TOOLS: All commands run on the Engineering Workstation (10.20.20.20).
+      Available tools: mbpoll, nmap, Wireshark, tcpdump, pymodbus.
+      Access via the topology node GUI console (webtop desktop).
+    tags:
+      - attack
+      - lateral-movement
+      - segmentation
+      - modbus
+    steps:
+      - title: "Verify baseline — normal voltage"
+        description: >
+          Read the regulator holding registers via Modbus to confirm
+          normal tap position and voltage.
+
+
+          [Run on: Engineering Workstation — 10.20.20.20]
+
+          mbpoll -a 1 -t 4 -r 1 -c 3 -1 10.40.40.22
+
+          Expected output:
+          [1]: 0      (tap_position = 0, neutral)
+          [2]: 0      (manual_mode = OFF, auto control)
+          [3]: 1200   (voltage_setpoint_x10 = 120.0V)
+
+
+          Note: This Modbus read crosses the vendor (dmz) → field (lan2)
+          zone boundary. With the weak config, this is allowed — the
+          engineering workstation can directly reach field devices.
+
+
+          Also check the Substation Process View — critical load voltage
+          should be ~117-120V (normal range).
+        action:
+          type: check
+          expect:
+            voltage_normal: true
+
+      - title: "Attack — drive tap to extreme via Modbus FC6"
+        description: >
+          From the compromised engineering workstation, write holding
+          register 1 (tap_position) to 65520 (-16 as unsigned uint16).
+          This drives the regulator to minimum tap, causing voltage to
+          drop well below ANSI C84.1 limits.
+
+
+          [Run on: Engineering Workstation — 10.20.20.20]
+
+          mbpoll -a 1 -t 4 -r 1 -1 10.40.40.22 65520
+
+          This writes 65520 (= -16 in signed int16) to holding
+          register 1 (tap_position) via Modbus FC6. The regulator
+          immediately adjusts, dropping voltage at critical loads.
+
+
+          To also force manual mode (prevent auto-correction):
+
+          mbpoll -a 1 -t 4 -r 2 -1 10.40.40.22 1
+
+
+          This is a realistic attack vector — engineering workstations
+          typically have Modbus commissioning tools that attackers can
+          repurpose after gaining access via compromised vendor credentials
+          or a supply-chain attack.
+        action:
+          type: command
+          device: regulator
+          command: set_tap
+          source: "10.20.20.20"
+          value: -16
+
+      - title: "Observe — voltage degradation"
+        description: >
+          Critical load voltage drops below acceptable levels (under
+          114V = warning, under 108V = danger). Verify via Modbus or
+          the Substation Process View.
+
+
+          [Run on: Engineering Workstation — 10.20.20.20]
+
+          mbpoll -a 1 -t 3 -r 1 -c 2 -1 10.40.40.22
+
+          This reads input registers (FC4):
+          [1]: 65520  (tap_position = -16)
+          [2]: negative value (voltage_offset_x10)
+
+          Also check the alarm coil:
+
+          mbpoll -a 1 -t 0 -r 2 -c 1 -1 10.40.40.22
+
+          Expected: [2]: 1 (alarm = ON)
+
+
+          The Substation Process View should show critical load voltage
+          in the red/danger zone with warning coloring. Open Wireshark
+          on this same workstation to see the Modbus FC6 write in the
+          packet capture.
+        action:
+          type: check
+          expect:
+            voltage_normal: false
+
+      - title: "Restore — reset tap position"
+        description: >
+          Reset the regulator to auto mode and restore normal tap
+          position. Use the Substation Process View controls or the
+          automated restore action.
+        action:
+          type: sequence
+          commands:
+            - device: regulator
+              command: set_auto
+              source: "operator"
+            - device: regulator
+              command: set_tap
+              source: "operator"
+              value: 0
+
+      - title: "Defend — block non-RTAC field access"
+        description: >
+          Apply the improved containd policy. This enforces that only the
+          RTAC (10.40.40.10 on field_net) can initiate Modbus connections
+          to field devices. Engineering workstations, HMI, and other OT
+          nodes are blocked from direct field device access.
+
+
+          Use the "containd Segmentation" tab → click "Apply Improved Config".
+
+
+          Key rules:
+          - deny-vendor-to-field: DENY dmz → lan2 on 502 + 8080
+            (blocks engineering workstation, vendor jump from field devices)
+          - rtac-to-field-modbus: ALLOW 10.40.40.10 → lan2 on 502
+            with ICS DPI (Modbus FC1-6 allowed)
+          - deny-ot-to-field-direct: DENY lan1 → lan2 on 502 + 8080
+            (blocks HMI, OpenPLC, historian from direct field access)
+          - gps-to-field-ntp: ALLOW 10.30.30.50 → lan2 on UDP 123 only
+        action:
+          type: firewall
+          config: improved
+
+      - title: "Validate — engineering workstation Modbus blocked"
+        description: >
+          Re-attempt the tap manipulation from the engineering workstation.
+          containd blocks the connection because the vendor zone (dmz)
+          is denied access to field devices (lan2).
+
+
+          [Run on: Engineering Workstation — 10.20.20.20]
+
+          mbpoll -a 1 -t 4 -r 1 -1 -o 3 10.40.40.22 65520
+
+          Expected: Connection timeout or "Connection failed" error.
+          The RTAC continues to poll field devices normally because
+          its field_net address (10.40.40.10) matches the allow rule.
+
+
+          This demonstrates that even with legitimate OT tools installed,
+          network segmentation prevents unauthorized hosts from controlling
+          field devices — the tools alone are not enough without the
+          network path.
+        action:
+          type: command
+          device: regulator
+          command: set_tap
+          source: "10.20.20.20"
+          value: -16
+

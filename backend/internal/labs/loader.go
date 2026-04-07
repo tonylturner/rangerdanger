@@ -23,25 +23,41 @@ func NewLoader(definitionsDir string) *Loader {
 	return &Loader{DefinitionsDir: definitionsDir}
 }
 
-// SeedFromDisk ingests default YAML files at startup.
+// SeedFromDisk ingests all YAML lab definition files at startup.
 func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 	if l.DefinitionsDir == "" {
 		return fmt.Errorf("definitions dir not configured")
 	}
 
-	defaultFile := filepath.Join(l.DefinitionsDir, "default-lab.yml")
-	if _, err := os.Stat(defaultFile); err != nil {
-		return err
+	// Load all *.yml files in the definitions directory
+	ymlFiles, _ := filepath.Glob(filepath.Join(l.DefinitionsDir, "*.yml"))
+	if len(ymlFiles) == 0 {
+		return fmt.Errorf("no lab definition YAML files found in %s", l.DefinitionsDir)
 	}
 
-	data, err := os.ReadFile(defaultFile)
+	for _, file := range ymlFiles {
+		if err := l.importLabFile(ctx, db, file); err != nil {
+			return fmt.Errorf("import %s: %w", filepath.Base(file), err)
+		}
+	}
+
+	return nil
+}
+
+// importLabFile imports a single lab definition YAML file.
+func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) error {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read default lab: %w", err)
+		return fmt.Errorf("read lab: %w", err)
 	}
 
 	var def LabYAML
 	if err := yaml.Unmarshal(data, &def); err != nil {
-		return fmt.Errorf("unmarshal default lab: %w", err)
+		return fmt.Errorf("unmarshal lab: %w", err)
+	}
+
+	if def.ID == "" {
+		return fmt.Errorf("lab definition missing id in %s", filepath.Base(path))
 	}
 
 	topology := map[string]any{
@@ -61,13 +77,14 @@ func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 	defaultScenariosJSON, _ := json.Marshal(defaultScenarioIDs)
 
 	tmpl := models.LabTemplate{
-		ID:               def.ID,
-		Name:             def.Name,
-		Description:      def.Description,
-		Topology:         string(topologyJSON),
-		DefaultScenarios: string(defaultScenariosJSON),
-        ComposeFile:      "docker-compose.yml",
-    }
+		ID:                 def.ID,
+		Name:               def.Name,
+		Description:        def.Description,
+		Topology:           string(topologyJSON),
+		DefaultScenarios:   string(defaultScenariosJSON),
+		ComposeFile:        "docker-compose.yml",
+		FirewallConfigPath: def.FirewallConfig,
+	}
 
 	if err := db.WithContext(ctx).Where(models.LabTemplate{ID: def.ID}).Assign(tmpl).FirstOrCreate(&tmpl).Error; err != nil {
 		return err
@@ -124,18 +141,23 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 
 // LabYAML mirrors the YAML schema for lab templates.
 type LabYAML struct {
-	ID          string         `yaml:"id"`
-	Name        string         `yaml:"name"`
-	Description string         `yaml:"description"`
-	Networks    []NetworkYAML  `yaml:"networks"`
-	Nodes       []NodeYAML     `yaml:"nodes"`
-	Scenarios   []ScenarioYAML `yaml:"scenarios"`
+	ID             string         `yaml:"id"`
+	Name           string         `yaml:"name"`
+	Description    string         `yaml:"description"`
+	FirewallConfig string         `yaml:"firewall_config"` // path relative to lab-definitions dir
+	Networks       []NetworkYAML  `yaml:"networks"`
+	Nodes          []NodeYAML     `yaml:"nodes"`
+	Scenarios      []ScenarioYAML `yaml:"scenarios"`
 }
 
 // NetworkYAML defines a virtual network.
 type NetworkYAML struct {
-	Name string `yaml:"name"`
-	CIDR string `yaml:"cidr"`
+	ID          string `yaml:"id" json:"id,omitempty"`
+	Name        string `yaml:"name" json:"name"`
+	CIDR        string `yaml:"cidr" json:"cidr,omitempty"`
+	Subnet      string `yaml:"subnet" json:"subnet,omitempty"`
+	Zone        string `yaml:"zone" json:"zone,omitempty"`
+	Description string `yaml:"description" json:"description,omitempty"`
 }
 
 // NodeYAML describes a node template in YAML.
@@ -159,6 +181,27 @@ type ScenarioYAML struct {
 
 // ScenarioStep describes a single scenario instruction.
 type ScenarioStep struct {
-	Title       string `yaml:"title"`
-	Description string `yaml:"description"`
+	Title       string      `yaml:"title" json:"title"`
+	Description string      `yaml:"description" json:"description"`
+	Action      *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
+}
+
+// StepAction defines an executable action for a scenario step.
+type StepAction struct {
+	Type     string            `yaml:"type" json:"type"`                           // "command", "check", "firewall", "sequence"
+	Device   string            `yaml:"device,omitempty" json:"device,omitempty"`   // for type=command
+	Command  string            `yaml:"command,omitempty" json:"command,omitempty"` // for type=command
+	Source   string            `yaml:"source,omitempty" json:"source,omitempty"`   // for type=command
+	Value    *float64          `yaml:"value,omitempty" json:"value,omitempty"`     // for type=command (e.g. set_tap)
+	Config   string            `yaml:"config,omitempty" json:"config,omitempty"`   // for type=firewall
+	Expect   map[string]any    `yaml:"expect,omitempty" json:"expect,omitempty"`   // for type=check
+	Commands []StepActionCmd   `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
+}
+
+// StepActionCmd is a single command in a sequence action.
+type StepActionCmd struct {
+	Device  string   `yaml:"device" json:"device"`
+	Command string   `yaml:"command" json:"command"`
+	Source  string   `yaml:"source,omitempty" json:"source,omitempty"`
+	Value   *float64 `yaml:"value,omitempty" json:"value,omitempty"`
 }

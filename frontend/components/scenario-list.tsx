@@ -1,19 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { listScenarios } from "../lib/api";
+import { listScenarios, type Scenario } from "../lib/api";
 
-export function ScenarioList({ templateId, fetchAll = false }: { templateId?: string; fetchAll?: boolean }) {
-  const enabled = fetchAll || Boolean(templateId);
+export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["scenarios", fetchAll ? "all" : templateId ?? "all"],
-    queryFn: () => listScenarios(fetchAll ? undefined : templateId),
-    enabled
+    queryKey: ["scenarios", "substation-segmentation"],
+    queryFn: () => listScenarios("substation-segmentation"),
   });
-
-  if (!enabled) {
-    return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Select a template to load scenarios.</div>;
-  }
 
   if (isLoading) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Loading scenarios...</div>;
@@ -24,31 +18,41 @@ export function ScenarioList({ templateId, fetchAll = false }: { templateId?: st
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       {data?.scenarios.map((scenario) => (
-        <article key={scenario.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-semibold text-white">{scenario.name}</h2>
-              <p className="text-sm text-slate-400">{scenario.description}</p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs uppercase tracking-wide text-amber-300">
-              {scenario.tags.map((tag) => (
-                <span key={tag} className="rounded-full border border-amber-400/40 px-2 py-1">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-          <ol className="mt-4 list-decimal space-y-2 pl-6 text-sm text-slate-200">
-            {scenario.steps.map((step) => (
-              <li key={step.title}>
-                <span className="font-semibold text-white">{step.title}:</span> {step.description}
-              </li>
-            ))}
-          </ol>
-        </article>
+        <ScenarioCard key={scenario.id} scenario={scenario} onStartExercise={onStartExercise} />
       ))}
     </div>
+  );
+}
+
+function ScenarioCard({ scenario, onStartExercise }: { scenario: Scenario; onStartExercise?: (scenario: Scenario) => void }) {
+  return (
+    <article className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-white">{scenario.name}</h2>
+          <p className="mt-0.5 text-xs text-slate-500">{scenario.description}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {scenario.tags.map((tag) => (
+              <span key={tag} className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400">
+                {tag}
+              </span>
+            ))}
+            <span className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-500">
+              {scenario.steps.length} steps
+            </span>
+          </div>
+        </div>
+        {onStartExercise && (
+          <button
+            onClick={() => onStartExercise(scenario)}
+            className="shrink-0 rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50"
+          >
+            Start Exercise
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
