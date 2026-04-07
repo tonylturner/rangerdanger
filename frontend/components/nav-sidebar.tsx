@@ -7,6 +7,7 @@ const navLinks = [
   { href: "/", label: "Overview" },
   { href: "/scenarios", label: "Exercises" },
   { href: "/substation", label: "Feeder HMI" },
+  { href: "/hmi", label: "Advanced HMI" },
   { href: "/console", label: "Network Map" },
   { href: "/labs", label: "Lab Instances" },
 ];
