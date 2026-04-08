@@ -562,6 +562,10 @@ const ZONE_BG: Record<string, string> = {
 
 const PROTOCOL_COLORS: Record<string, string> = {
   "Modbus/TCP": "bg-amber-900/40 text-amber-300 border-amber-800/50",
+  "modbus": "bg-amber-900/40 text-amber-300 border-amber-800/50",
+  "DNP3": "bg-rose-900/40 text-rose-300 border-rose-800/50",
+  "dnp3": "bg-rose-900/40 text-rose-300 border-rose-800/50",
+  "port/20000": "bg-rose-900/40 text-rose-300 border-rose-800/50",
   "HTTP/API": "bg-blue-900/40 text-blue-300 border-blue-800/50",
   "HTTP": "bg-blue-900/40 text-blue-300 border-blue-800/50",
   "DNS": "bg-teal-900/40 text-teal-300 border-teal-800/50",

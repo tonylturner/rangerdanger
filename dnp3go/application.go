@@ -167,6 +167,15 @@ func ParseAPDU(data []byte) (*APDU, error) {
 			oh.Start = uint16(data[offset])
 			oh.Stop = uint16(data[offset+1])
 			offset += 2
+			// Consume inline object data for response messages
+			count := int(oh.Stop-oh.Start) + 1
+			objSize := objectDataSize(oh.Group, oh.Variation)
+			totalBytes := count * objSize
+			if objSize > 0 && offset+totalBytes <= len(data) {
+				oh.Data = make([]byte, totalBytes)
+				copy(oh.Data, data[offset:offset+totalBytes])
+				offset += totalBytes
+			}
 		case QualStartStop16:
 			if offset+4 > len(data) {
 				break
@@ -174,6 +183,15 @@ func ParseAPDU(data []byte) (*APDU, error) {
 			oh.Start = binary.LittleEndian.Uint16(data[offset:])
 			oh.Stop = binary.LittleEndian.Uint16(data[offset+2:])
 			offset += 4
+			// Consume inline object data for response messages
+			count16 := int(oh.Stop-oh.Start) + 1
+			objSize16 := objectDataSize(oh.Group, oh.Variation)
+			totalBytes16 := count16 * objSize16
+			if objSize16 > 0 && offset+totalBytes16 <= len(data) {
+				oh.Data = make([]byte, totalBytes16)
+				copy(oh.Data, data[offset:offset+totalBytes16])
+				offset += totalBytes16
+			}
 		case QualCount8Pfx8:
 			if offset+1 > len(data) {
 				break

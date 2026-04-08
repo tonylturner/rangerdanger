@@ -17,6 +17,12 @@ steps:
       Confirm all field devices are communicating through the RTAC.
       The regulator should be in auto mode with tap position near 0.
       Critical load voltage should be within ANSI C84.1 Range A (114-126V).
+
+      Read the regulator's current state via Modbus from any OT node:
+
+        mbpoll -a 1 -t 4:float -r 1 10.40.40.22 -c 2 -1
+
+      This reads input registers 0-1 (tap position and voltage offset).
     action:
       type: check
       expect:
@@ -25,12 +31,19 @@ steps:
 
   - title: "Direct Modbus write from OT zone"
     description: >
-      From a compromised OT operations node (10.30.30.30 — OpenPLC),
-      send a direct Modbus write to the regulator (10.40.40.22) to
-      force the tap position to an extreme value (-16). This bypasses
-      the RTAC's supervisory control:
+      From a compromised OT operations node (e.g., OpenPLC at
+      10.30.30.30), send a direct Modbus write to the regulator
+      (10.40.40.22) to force the tap position to -16 (extreme low).
+      This bypasses the RTAC's supervisory control. Via Modbus:
 
-      curl -X POST http://10.40.40.22:8080/api/command -d '{"command":"set_tap","value":-16,"source":"10.30.30.30"}'
+        mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- -16
+
+      Or via REST:
+
+        curl -X POST http://10.40.40.22:8080/api/command \
+          -d '{"command":"set_tap","value":-16,"source":"10.30.30.30"}'
+
+      Under the weak policy, any OT node can reach field devices.
     action:
       type: command
       device: regulator
@@ -43,6 +56,12 @@ steps:
       The unauthorized tap change causes critical load voltage to
       drop below ANSI C84.1 Range A. Hospital and fire station
       equipment may malfunction at sustained low voltage.
+
+      Read the voltage from the RTAC:
+
+        mbpoll -a 1 -t 4:float -r 3 10.30.30.20 -c 1 -1
+
+      Input register 2 on the RTAC shows critical_load_voltage_v.
     action:
       type: check
       expect:
@@ -51,7 +70,13 @@ steps:
   - title: "Restore regulator"
     description: >
       Reset the regulator to automatic mode and restore
-      tap position to 0 (normal).
+      tap position to 0 (normal). Via the RangerDanger HMI
+      Supervisory Control tab, or from the command line:
+
+        curl -X POST http://10.40.40.22:8080/api/command \
+          -d '{"command":"set_auto","source":"operator"}'
+        curl -X POST http://10.40.40.22:8080/api/command \
+          -d '{"command":"set_tap","value":0,"source":"operator"}'
     action:
       type: sequence
       commands:
@@ -65,10 +90,11 @@ steps:
 
   - title: "Apply containd segmentation"
     description: >
-      Use containd to enforce that only the RTAC (10.30.30.20
-      via its field_net interface at 10.40.40.10) can send
-      Modbus commands to field devices on 10.40.40.0/24.
-      Block all other OT operations nodes from direct field access.
+      Use the containd Segmentation tab to apply the improved
+      firewall policy. This enforces that only the RTAC
+      (10.40.40.10) can send Modbus and DNP3 commands to field
+      devices on 10.40.40.0/24. All other OT operations nodes
+      are blocked from direct field device access.
     action:
       type: firewall
       config: improved
@@ -76,8 +102,12 @@ steps:
   - title: "Re-test Modbus override"
     description: >
       Repeat the tap change from the compromised OT node.
-      containd should block the connection. The regulator
-      remains at its normal tap position and voltage stays stable.
+      containd should block the Modbus connection:
+
+        mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- -16
+
+      The connection should time out. The regulator remains
+      at its normal tap position and voltage stays stable.
     action:
       type: command
       device: regulator

@@ -1,3 +1,9 @@
+FROM golang:1.24-alpine AS dnp3-builder
+WORKDIR /src
+COPY dnp3go/ .
+RUN CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll && \
+    CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
+
 FROM kalilinux/kali-rolling
 
 # Avoid prompts during package installation
@@ -45,10 +51,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python OT/ICS tools
+# DNP3 attack scripts in ~/workspace/dnp3/ use raw sockets (no library needed)
 RUN pip3 install --break-system-packages \
     pymodbus \
     scapy \
     impacket
+
+# Install DNP3 CLI tools (dnp3poll, dnp3cmd)
+COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
+COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
 
 # Create workspace
 RUN mkdir -p /home/kali/workspace
