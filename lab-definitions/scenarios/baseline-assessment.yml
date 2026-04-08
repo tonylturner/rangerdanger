@@ -1,0 +1,109 @@
+id: baseline-assessment
+order: 0
+name: "Network Discovery & Baseline Assessment"
+summary: "Discover assets, map communication flows, and identify segmentation weaknesses in the weak baseline."
+description: >
+  Before hardening, you must understand what you're protecting.
+  Using standard network tools, discover all assets on the
+  substation network, identify which protocols are in use
+  (Modbus TCP, DNP3, HTTP), map zone-to-zone communication
+  flows, and document what the weak firewall baseline allows.
+  This exercise builds the situational awareness needed to
+  write effective segmentation requirements.
+tags:
+  - assessment
+  - discovery
+  - baseline
+  - defense
+steps:
+  - title: "Explore the lab topology"
+    description: >
+      Open the RangerDanger Network Map page to see the full
+      substation topology. Identify the four network zones and
+      the devices in each:
+
+        Enterprise (10.10.10.0/24): corp-ws, kali
+        Vendor/DMZ (10.20.20.0/24): vendor-jump, eng-ws
+        OT Operations (10.30.30.0/24): fuxa-hmi, rtac, openplc, historian, gps
+        Field Devices (10.40.40.0/24): relay, recloser, regulator, capbank
+
+      Note which devices are multi-homed (RTAC spans OT ops + field zones).
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+
+  - title: "Scan the field device zone from enterprise"
+    description: >
+      From the Kali attacker box (10.10.10.50), scan the field
+      device zone to see what's reachable under the weak baseline:
+
+        nmap -sV -p 502,8080,20000 10.40.40.20-23
+
+      Document which ports are open on each device. Under the
+      weak config, enterprise can reach field devices directly —
+      this is the core segmentation failure.
+
+  - title: "Read field device state via Modbus"
+    description: >
+      From Kali, use mbpoll to read Modbus registers from
+      the relay (10.40.40.20):
+
+        mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 4 -1
+
+      This reads coils 0-3 (breaker state, remote control,
+      lockout, fault). The fact that an enterprise host can
+      read OT device state over Modbus is a finding.
+
+  - title: "Read field device state via DNP3"
+    description: >
+      Use dnp3poll to read the recloser's DNP3 outstation:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      Document the binary inputs, binary outputs, and analog
+      inputs returned. Enterprise→field DNP3 access is another
+      segmentation failure.
+
+  - title: "Check the RTAC aggregated view"
+    description: >
+      The RTAC (10.30.30.20) aggregates all field device state.
+      Read its DNP3 outstation for the full picture:
+
+        dnp3poll 10.30.30.20:20000 -a 10
+
+      Or via REST:
+
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+      Note: the RTAC should be the ONLY path to field devices,
+      not a bypass.
+
+  - title: "Capture baseline traffic"
+    description: >
+      From the engineering workstation, capture OT protocol
+      traffic to see what's on the wire:
+
+        tshark -i eth0 -f "tcp port 502 or tcp port 20000" -c 50
+
+      Observe the RTAC polling field devices via Modbus and DNP3.
+      Note which source IPs are communicating with field devices —
+      in a properly segmented network, only the RTAC (10.40.40.10)
+      should appear.
+
+  - title: "Review the weak firewall configuration"
+    description: >
+      Open the RangerDanger Feeder HMI and go to the containd
+      Segmentation tab. Review the weak baseline rules.
+
+      Key findings to document:
+      - Enterprise can reach field devices (Modbus, DNP3, HTTP)
+      - Vendor/DMZ can reach field devices directly
+      - All OT ops nodes can reach field devices (not just RTAC)
+      - No protocol-specific DPI rules (no function code filtering)
+
+      These are the gaps you'll fix in the next exercises.
+    action:
+      type: check
+      expect:
+        breaker_closed: true

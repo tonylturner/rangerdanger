@@ -96,7 +96,9 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 		scenario := models.Scenario{
 			ID:            sc.ID,
 			Name:          sc.Name,
+			Summary:       sc.Summary,
 			Description:   sc.Description,
+			Order:         sc.Order,
 			LabTemplateID: def.ID,
 			Tags:          string(tagsJSON),
 			Steps:         string(stepsJSON),
@@ -131,7 +133,9 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 	scenario := models.Scenario{
 		ID:            sc.ID,
 		Name:          sc.Name,
+		Summary:       sc.Summary,
 		Description:   sc.Description,
+		Order:         sc.Order,
 		LabTemplateID: templateID,
 		Tags:          string(tagsJSON),
 		Steps:         string(stepsJSON),
@@ -174,7 +178,9 @@ type NodeYAML struct {
 type ScenarioYAML struct {
 	ID          string         `yaml:"id"`
 	Name        string         `yaml:"name"`
+	Summary     string         `yaml:"summary"`
 	Description string         `yaml:"description"`
+	Order       int            `yaml:"order"`
 	Tags        []string       `yaml:"tags"`
 	Steps       []ScenarioStep `yaml:"steps"`
 }

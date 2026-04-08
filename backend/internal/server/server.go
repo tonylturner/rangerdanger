@@ -589,7 +589,7 @@ func (s *Server) handleListScenarios(c *gin.Context) {
 	if templateID := c.Query("lab_template_id"); templateID != "" {
 		query = query.Where("lab_template_id = ?", templateID)
 	}
-	if err := query.Find(&scenarios).Error; err != nil {
+	if err := query.Order("\"order\" ASC, name ASC").Find(&scenarios).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

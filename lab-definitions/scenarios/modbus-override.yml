@@ -1,11 +1,14 @@
 id: modbus-override
+order: 3
 name: "Modbus Register Override Attack"
+summary: "Direct Modbus writes from a compromised OT node bypass the RTAC to manipulate the voltage regulator."
 description: >
   An attacker with network access to the OT operations zone
   exploits unauthenticated Modbus TCP to directly write field
   device registers, bypassing the RTAC supervisory controller.
-  Students must enforce that only the RTAC can issue Modbus
-  writes to field devices.
+  The regulator tap is forced to an extreme position causing
+  voltage violations. Students must enforce that only the RTAC
+  can issue Modbus writes to field devices.
 tags:
   - modbus
   - field-device

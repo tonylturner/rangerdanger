@@ -1,11 +1,15 @@
 id: dnp3-command-injection
+order: 4
 name: "DNP3 Direct Operate Command Injection"
+summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault."
 description: >
-  An attacker with network access exploits unauthenticated DNP3 TCP
-  to send Direct Operate commands to field devices, disabling the
-  recloser's auto-reclose function. Without auto-reclose, a transient
-  fault causes a permanent outage. Students must enforce that only the
-  RTAC can reach field device DNP3 outstations on port 20000.
+  An attacker on the enterprise network exploits unauthenticated
+  DNP3 TCP to send Direct Operate commands to field devices,
+  disabling the recloser's auto-reclose function. Without
+  auto-reclose, a transient fault causes a permanent outage
+  affecting the hospital and fire station. Students must apply
+  containd segmentation to block enterprise→field DNP3 access
+  on port 20000.
 tags:
   - dnp3
   - field-device

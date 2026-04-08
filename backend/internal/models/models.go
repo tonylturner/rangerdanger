@@ -51,7 +51,9 @@ type NodeDefinition struct {
 type Scenario struct {
 	ID            string    `gorm:"primaryKey" json:"id"`
 	Name          string    `json:"name"`
+	Summary       string    `json:"summary"`
 	Description   string    `json:"description"`
+	Order         int       `json:"order"`
 	LabTemplateID string    `json:"lab_template_id"`
 	Tags          string    `json:"tags"`
 	Steps         string    `json:"steps"`

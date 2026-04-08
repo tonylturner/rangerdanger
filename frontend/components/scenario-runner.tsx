@@ -133,9 +133,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">Exercise Mode</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
+            Exercise{scenario.order !== undefined ? ` ${scenario.order}` : ""}
+          </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
-          <p className="text-xs text-slate-500">{scenario.description}</p>
+          <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
         <button
           onClick={onExit}
