@@ -183,6 +183,9 @@ func (s *Server) registerRoutes() {
 		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
 		api.GET("/workshop/status", s.handleGetWorkshopStatus)
 		api.GET("/workshop/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
+		api.POST("/workshop/nodes/:nodeId/exec", s.handleWorkshopExec)
+		api.POST("/workshop/reset", s.handleWorkshopReset)
+		api.POST("/workshop/test-suite", s.handleWorkshopTestSuite)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 

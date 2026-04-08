@@ -93,6 +93,7 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 	for _, sc := range def.Scenarios {
 		tagsJSON, _ := json.Marshal(sc.Tags)
 		stepsJSON, _ := json.Marshal(sc.Steps)
+		nodesJSON, _ := json.Marshal(sc.Nodes)
 		scenario := models.Scenario{
 			ID:            sc.ID,
 			Name:          sc.Name,
@@ -102,6 +103,7 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 			LabTemplateID: def.ID,
 			Tags:          string(tagsJSON),
 			Steps:         string(stepsJSON),
+			Nodes:         string(nodesJSON),
 		}
 		if err := db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error; err != nil {
 			return err
@@ -130,6 +132,7 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 
 	tagsJSON, _ := json.Marshal(sc.Tags)
 	stepsJSON, _ := json.Marshal(sc.Steps)
+	nodesJSON, _ := json.Marshal(sc.Nodes)
 	scenario := models.Scenario{
 		ID:            sc.ID,
 		Name:          sc.Name,
@@ -139,6 +142,7 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 		LabTemplateID: templateID,
 		Tags:          string(tagsJSON),
 		Steps:         string(stepsJSON),
+		Nodes:         string(nodesJSON),
 	}
 	return db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error
 }
@@ -181,6 +185,7 @@ type ScenarioYAML struct {
 	Summary     string         `yaml:"summary"`
 	Description string         `yaml:"description"`
 	Order       int            `yaml:"order"`
+	Nodes       []string       `yaml:"nodes,omitempty"`
 	Tags        []string       `yaml:"tags"`
 	Steps       []ScenarioStep `yaml:"steps"`
 }
@@ -190,6 +195,7 @@ type ScenarioStep struct {
 	Title       string      `yaml:"title" json:"title"`
 	Description string      `yaml:"description" json:"description"`
 	Action      *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
+	Node        string      `yaml:"node,omitempty" json:"node,omitempty"`
 }
 
 // StepAction defines an executable action for a scenario step.
