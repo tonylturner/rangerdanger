@@ -3,9 +3,11 @@
 
 FROM golang:1.24-alpine AS builder
 WORKDIR /app
-COPY go.mod ./
+# Copy dnp3go library first (standalone module, referenced via replace directive)
+COPY dnp3go/ /dnp3go/
+COPY services/go.mod ./
 RUN go mod download
-COPY . .
+COPY services/ .
 RUN CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim
 RUN CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim
 RUN CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim
@@ -22,22 +24,22 @@ RUN chmod +x /usr/local/bin/set-gateway.sh
 
 FROM sim-base AS relay-sim
 COPY --from=builder /bin/relay-sim /usr/local/bin/relay-sim
-EXPOSE 8080 502
+EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && relay-sim"]
 
 FROM sim-base AS recloser-sim
 COPY --from=builder /bin/recloser-sim /usr/local/bin/recloser-sim
-EXPOSE 8080 502
+EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && recloser-sim"]
 
 FROM sim-base AS regulator-sim
 COPY --from=builder /bin/regulator-sim /usr/local/bin/regulator-sim
-EXPOSE 8080 502
+EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 
 FROM sim-base AS rtac-sim
 COPY --from=builder /bin/rtac-sim /usr/local/bin/rtac-sim
-EXPOSE 8080
+EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && rtac-sim"]
 
 FROM sim-base AS capbank-sim

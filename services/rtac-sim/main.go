@@ -354,6 +354,7 @@ func isHighVoltageCritical() bool {
 func main() {
 	go pollDevices()
 	go startModbusServer()
+	go startDNP3Server()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/tags", handleTags)
