@@ -8,6 +8,8 @@ description: >
   and disable protective functions on field devices via Modbus TCP.
   Students must apply containd firewall rules to block vendor zone
   from directly reaching field devices.
+nodes:
+  - vendor_jump
 tags:
   - vendor
   - phishing

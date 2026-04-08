@@ -28,13 +28,16 @@ export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAl
 
 function ScenarioCard({ scenario, onStartExercise }: { scenario: Scenario; onStartExercise?: (scenario: Scenario) => void }) {
   const cardText = scenario.summary || scenario.description;
+  const isBonus = scenario.tags.includes("bonus");
 
   return (
-    <article className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+    <article className={`rounded-lg border p-4 ${isBonus ? "border-slate-800/50 bg-slate-900/40 opacity-75" : "border-slate-800 bg-slate-900/70"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex items-start gap-3">
           {scenario.order !== undefined && (
-            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sky-950/60 text-xs font-bold text-sky-400">
+            <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold ${
+              isBonus ? "bg-slate-800/60 text-slate-500" : "bg-sky-950/60 text-sky-400"
+            }`}>
               {scenario.order}
             </span>
           )}

@@ -57,6 +57,7 @@ type Scenario struct {
 	LabTemplateID string    `json:"lab_template_id"`
 	Tags          string    `json:"tags"`
 	Steps         string    `json:"steps"`
+	Nodes         string    `json:"nodes"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

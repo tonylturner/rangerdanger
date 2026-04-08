@@ -9,29 +9,138 @@ import {
   sendSubstationCommand,
   executeScenarioStep,
   getSubstationAudit,
+  execOnNode,
+  resetWorkshop,
   type Scenario,
   type ValidationResult,
   type SubstationState,
   type StepExecutionResult,
   type AuditEntry,
 } from "../lib/api";
+import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
+import { TerminalViewport, useTerminalContext } from "./terminal-context";
 
 type RunnerProps = {
   scenario: Scenario;
   onExit: () => void;
 };
 
+// ── LocalStorage persistence helpers ──────────────────────────────
+function storageKey(scenarioId: string) { return `rd-exercise-${scenarioId}`; }
+
+type SavedState = {
+  completedSteps: number[];
+  notes: Record<number, string>;
+  cmdLog: string[];
+};
+
+function loadSaved(scenarioId: string): SavedState {
+  try {
+    const raw = localStorage.getItem(storageKey(scenarioId));
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { completedSteps: [], notes: {}, cmdLog: [] };
+}
+
+function saveToDisk(scenarioId: string, state: SavedState) {
+  try { localStorage.setItem(storageKey(scenarioId), JSON.stringify(state)); } catch { /* ignore */ }
+}
+
 export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
+  const saved = loadSaved(scenario.id);
   const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(saved.completedSteps));
+  const [notes, setNotes] = useState<Record<number, string>>(saved.notes);
+  const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [state, setState] = useState<SubstationState | null>(null);
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
-  const [cmdLog, setCmdLog] = useState<string[]>([]);
+  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
   const [executing, setExecuting] = useState(false);
+  const [autoRunning, setAutoRunning] = useState<number | null>(null);
+  const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
+  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  const [showTerminalPanel, setShowTerminalPanel] = useState(false);
+  const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    saveToDisk(scenario.id, { completedSteps: [...completedSteps], notes, cmdLog });
+  }, [completedSteps, notes, cmdLog, scenario.id]);
+
+  const updateNote = (stepIdx: number, text: string) => {
+    setNotes((prev) => ({ ...prev, [stepIdx]: text }));
+  };
+
+  const resetProgress = () => {
+    setCompletedSteps(new Set());
+    setNotes({});
+    setCurrentStep(0);
+    setCmdLog([]);
+    setValidation(null);
+    setStepResult(null);
+    try { localStorage.removeItem(storageKey(scenario.id)); } catch { /* ignore */ }
+  };
+
+  const handleAutoRun = async (cmd: string, cmdIdx: number, stepDesc: string) => {
+    const step = scenario.steps[currentStep];
+    const nodeId = step?.node
+      || inferNodeFromDescription(stepDesc)
+      || (EXERCISE_NODE_MAP[scenario.id]?.primary)
+      || exerciseNodes[0];
+
+    if (!nodeId) {
+      setCmdLog((prev) => [`[ERROR] No target node for command — open terminal and run manually`, ...prev].slice(0, 100));
+      return;
+    }
+
+    setAutoRunning(cmdIdx);
+    const nodeLabel = NODE_LABELS[nodeId] || nodeId;
+    setCmdLog((prev) => [`[RUN on ${nodeLabel}] ${cmd}`, ...prev].slice(0, 100));
+
+    try {
+      const result = await execOnNode(nodeId, cmd, 30);
+      const lines = (result.stdout || result.stderr || "").split("\n").filter(Boolean);
+      const output = lines.length > 20
+        ? [...lines.slice(0, 18), `... (${lines.length - 18} more lines)`]
+        : lines;
+      const status = result.exit_code === 0 ? "OK" : `EXIT ${result.exit_code}`;
+      setCmdLog((prev) => [
+        `[${status}] completed in ${result.duration_ms}ms`,
+        ...output.map((l) => "  " + l),
+        ...prev,
+      ].slice(0, 100));
+      setTimeout(pollState, 500);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 100));
+    } finally {
+      setAutoRunning(null);
+    }
+  };
+
+  const handleLabReset = async () => {
+    setResettingLab(true);
+    setCmdLog((prev) => [`[RESET] Restoring lab to default state...`, ...prev].slice(0, 100));
+    try {
+      const result = await resetWorkshop();
+      const actionLines = result.actions.map(
+        (a) => `  ${a.success ? "\u2713" : "\u2717"} ${a.action}: ${a.detail}`
+      );
+      setCmdLog((prev) => [
+        `[RESET] ${result.success ? "Lab restored" : "Reset had errors"} (${result.actions.length} actions)`,
+        ...actionLines,
+        ...prev,
+      ].slice(0, 100));
+      setTimeout(pollState, 500);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Reset failed: ${e}`, ...prev].slice(0, 100));
+    } finally {
+      setResettingLab(false);
+    }
+  };
 
   const pollState = useCallback(async () => {
     try {
@@ -139,12 +248,47 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
-        <button
-          onClick={onExit}
-          className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
-        >
-          Exit Exercise
-        </button>
+        <div className="flex items-center gap-2">
+          {completedSteps.size > 0 && (
+            <button
+              onClick={() => setShowSummary(!showSummary)}
+              className="rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
+            >
+              {showSummary ? "Back to Exercise" : "View Summary"}
+            </button>
+          )}
+          {exerciseNodes.length > 0 && (
+            <button
+              onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+              className={`rounded border px-3 py-1.5 text-xs transition-colors ${
+                showTerminalPanel
+                  ? "border-cyan-700 bg-cyan-950/40 text-cyan-400"
+                  : "border-slate-700 bg-slate-800/50 text-slate-400 hover:text-cyan-400"
+              }`}
+            >
+              {showTerminalPanel ? "Hide Terminal" : "Terminal"}
+            </button>
+          )}
+          <button
+            onClick={handleLabReset}
+            disabled={resettingLab}
+            className="rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
+          >
+            {resettingLab ? "Resetting..." : "Reset Lab"}
+          </button>
+          <button
+            onClick={resetProgress}
+            className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
+          >
+            Reset Progress
+          </button>
+          <button
+            onClick={onExit}
+            className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+          >
+            Exit Exercise
+          </button>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -160,7 +304,18 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {/* ── Summary View ──────────────────────────────────────── */}
+      {showSummary && (
+        <ExerciseSummary
+          scenario={scenario}
+          completedSteps={completedSteps}
+          notes={notes}
+          activeConfig={activeConfig}
+        />
+      )}
+
+      {/* ── Exercise View ─────────────────────────────────────── */}
+      {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         {/* Left: Step navigator */}
         <div className="space-y-1">
           {scenario.steps.map((s, i) => {
@@ -226,11 +381,47 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               {step?.description}
             </p>
 
-            {step?.description?.includes("curl") && (
-              <div className="mt-3 rounded border border-slate-700 bg-slate-950 p-3 font-mono text-[11px] text-amber-400">
-                {extractCommand(step.description)}
+            {/* Command blocks — extract all CLI commands from description */}
+            {step?.description && extractCommands(step.description).length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {extractCommands(step.description).map((cmd, i) => (
+                  <div key={i} className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+                    <span className="pr-24">{cmd}</span>
+                    <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+                      {exerciseNodes.length > 0 && (
+                        <button
+                          onClick={() => handleAutoRun(cmd, i, step?.description || "")}
+                          disabled={autoRunning !== null}
+                          className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+                        >
+                          {autoRunning === i ? "Running..." : "Run"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => navigator.clipboard?.writeText(cmd)}
+                        className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
+                      >
+                        copy
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* Notes field — student documents findings */}
+            <div className="mt-3">
+              <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Your Notes
+              </label>
+              <textarea
+                value={notes[currentStep] || ""}
+                onChange={(e) => updateNote(currentStep, e.target.value)}
+                placeholder="Document your findings, observations, or answers here..."
+                className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-none resize-y min-h-[60px]"
+                rows={3}
+              />
+            </div>
           </div>
 
           {/* Step execution result */}
@@ -327,20 +518,32 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           </div>
 
-          {/* Command log */}
+          {/* Command log — persistent, scrollable */}
           {cmdLog.length > 0 && (
-            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 max-h-32 overflow-y-auto">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Command Results
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 max-h-64 overflow-y-auto">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Command Log ({cmdLog.length} entries)
+                </div>
+                <button
+                  onClick={() => setCmdLog([])}
+                  className="text-[9px] text-slate-600 hover:text-slate-400"
+                >
+                  clear
+                </button>
               </div>
               {cmdLog.map((msg, i) => (
                 <div key={i} className={`font-mono text-[11px] ${
-                  msg.startsWith("[SUCCEEDED]")
+                  msg.startsWith("[SUCCEEDED]") || msg.startsWith("[OK]")
                     ? "text-green-400"
-                    : msg.startsWith("[BLOCKED]")
+                    : msg.startsWith("[BLOCKED]") || msg.startsWith("[RESET]")
                     ? "text-amber-400"
-                    : msg.startsWith("[ERROR]")
+                    : msg.startsWith("[ERROR]") || msg.startsWith("[EXIT")
                     ? "text-red-400"
+                    : msg.startsWith("[RUN")
+                    ? "text-sky-400"
+                    : msg.startsWith("  ")
+                    ? "text-slate-500"
                     : "text-slate-400"
                 }`}>
                   {msg}
@@ -427,7 +630,36 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           )}
         </div>
-      </div>
+      </div>}
+
+      {/* ── Node Terminal Panel ────────────────────────────────── */}
+      {showTerminalPanel && exerciseNodes.length > 0 && !showSummary && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+          {/* Node switcher tabs */}
+          <div className="flex items-center border-b border-slate-800 px-2 py-1 gap-1">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mr-2">Node</span>
+            {exerciseNodes.map((nodeId) => (
+              <button
+                key={nodeId}
+                onClick={() => setActiveTerminalNode(nodeId)}
+                className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                  activeTerminalNode === nodeId
+                    ? "bg-cyan-950/60 text-cyan-400 border border-cyan-800/50"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                }`}
+              >
+                {NODE_LABELS[nodeId] || nodeId}
+              </button>
+            ))}
+          </div>
+          {/* Terminal viewport */}
+          <div className="h-[300px]">
+            {activeTerminalNode && (
+              <TerminalViewport nodeId={activeTerminalNode} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -540,9 +772,119 @@ function MiniStatus({ label, value, ok }: { label: string; value: string; ok?: b
   );
 }
 
-function extractCommand(description: string): string {
-  const match = description.match(/curl\s+.*$/m);
-  return match ? match[0].trim() : "";
+// Extract all CLI commands from step descriptions
+function extractCommands(description: string): string[] {
+  const commands: string[] = [];
+  const lines = description.split("\n");
+  const toolPattern = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget)\s/;
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (toolPattern.test(trimmed)) {
+      let cmd = trimmed;
+      // Collect backslash continuation lines
+      while (cmd.endsWith("\\") && i + 1 < lines.length) {
+        i++;
+        cmd += "\n  " + lines[i].trim();
+      }
+      commands.push(cmd);
+    }
+    i++;
+  }
+  return commands;
+}
+
+// ── Exercise Summary Component ───────────────────────────────────
+
+function ExerciseSummary({
+  scenario,
+  completedSteps,
+  notes,
+  activeConfig,
+}: {
+  scenario: Scenario;
+  completedSteps: Set<number>;
+  notes: Record<number, string>;
+  activeConfig: string | null;
+}) {
+  const completionPct = Math.round((completedSteps.size / scenario.steps.length) * 100);
+  const timestamp = new Date().toLocaleString();
+
+  const summaryText = [
+    `Exercise ${scenario.order ?? ""}: ${scenario.name}`,
+    `Completed: ${completedSteps.size}/${scenario.steps.length} steps (${completionPct}%)`,
+    `Firewall Config: ${activeConfig || "unknown"}`,
+    `Date: ${timestamp}`,
+    "",
+    ...scenario.steps.map((s, i) => {
+      const done = completedSteps.has(i) ? "[x]" : "[ ]";
+      const note = notes[i] ? `\n    Notes: ${notes[i]}` : "";
+      return `${done} Step ${i + 1}: ${s.title}${note}`;
+    }),
+  ].join("\n");
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-white">Exercise Summary</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigator.clipboard?.writeText(summaryText)}
+              className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1 text-[10px] text-slate-400 hover:text-slate-200"
+            >
+              Copy to Clipboard
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3 mb-4">
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Completion</div>
+            <div className={`text-lg font-bold ${completionPct === 100 ? "text-green-400" : "text-sky-400"}`}>
+              {completionPct}%
+            </div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Firewall Config</div>
+            <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
+              {activeConfig || "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes Captured</div>
+            <div className="text-lg font-bold text-slate-300">
+              {Object.values(notes).filter(Boolean).length}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {scenario.steps.map((s, i) => {
+            const done = completedSteps.has(i);
+            const note = notes[i];
+            return (
+              <div key={i} className={`rounded border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold ${done ? "text-green-400" : "text-slate-600"}`}>
+                    {done ? "\u2713" : "\u2022"}
+                  </span>
+                  <span className={`text-xs font-medium ${done ? "text-slate-300" : "text-slate-500"}`}>
+                    Step {i + 1}: {s.title}
+                  </span>
+                </div>
+                {note && (
+                  <div className="mt-1 ml-5 text-xs text-slate-400 italic">
+                    {note}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function isSegmentationStep(title?: string): boolean {

@@ -9,6 +9,10 @@ description: >
   flows are blocked). Capture packet captures as evidence and
   document the results. This is the validation step required
   before any segmentation change goes to production.
+nodes:
+  - kali
+  - vendor_jump
+  - eng_workstation
 tags:
   - validation
   - testing

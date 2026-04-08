@@ -10,6 +10,10 @@ description: >
   flows, and document what the weak firewall baseline allows.
   This exercise builds the situational awareness needed to
   write effective segmentation requirements.
+nodes:
+  - kali
+  - eng_workstation
+  - rtac_sim
 tags:
   - assessment
   - discovery

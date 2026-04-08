@@ -10,6 +10,8 @@ description: >
   affecting the hospital and fire station. Students must apply
   containd segmentation to block enterprise→field DNP3 access
   on port 20000.
+nodes:
+  - kali
 tags:
   - dnp3
   - field-device
