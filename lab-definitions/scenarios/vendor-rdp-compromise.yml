@@ -17,6 +17,10 @@ steps:
       Auto-reclose should be enabled and the recloser closed.
       Note the current firewall policy (weak baseline allows
       vendor zone to reach field devices directly).
+
+      From the vendor jump box, verify you can reach field devices:
+
+        nmap -p 502,8080,20000 10.40.40.21
     action:
       type: check
       expect:
@@ -27,12 +31,18 @@ steps:
   - title: "Simulate vendor credential compromise"
     description: >
       The attacker has obtained vendor-jump credentials (simulated).
-      From the vendor jump box (10.20.20.10), reach directly into
-      the field device zone and disable auto-reclose on the recloser:
+      From the vendor jump box (10.20.20.10), disable auto-reclose
+      on the recloser. Via Modbus:
 
-      curl -X POST http://10.40.40.21:8080/api/command -d '{"command":"disable_reclose","source":"10.20.20.10"}'
+        mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
 
-      With the weak baseline policy, containd allows this traffic.
+      Or via the REST API:
+
+        curl -X POST http://10.40.40.21:8080/api/command \
+          -d '{"command":"disable_reclose","source":"10.20.20.10"}'
+
+      With the weak baseline policy, containd allows this traffic
+      from the vendor zone to field devices.
     action:
       type: command
       device: recloser
@@ -45,6 +55,15 @@ steps:
       Normally the recloser would automatically restore service,
       but with reclose disabled it trips and locks out — causing
       a sustained downstream outage.
+
+      From the vendor jump box, inject a fault via Modbus:
+
+        mbpoll -a 1 -t 0 -r 4 10.40.40.21 1
+
+      Or via REST:
+
+        curl -X POST http://10.40.40.21:8080/api/command \
+          -d '{"command":"inject_fault","source":"10.20.20.10"}'
     action:
       type: command
       device: recloser
@@ -56,6 +75,16 @@ steps:
       The recloser is now locked out. Downstream loads including
       the hospital and fire station have lost power. Auto-reclose
       cannot restore service because it was disabled by the attacker.
+
+      Verify from the vendor box via Modbus:
+
+        mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 5 -1
+
+      Or check state via REST:
+
+        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
+
+      Coil 0 (closed) should be OFF, coil 1 (reclose) OFF, coil 2 (lockout) ON.
     action:
       type: check
       expect:
@@ -63,9 +92,10 @@ steps:
 
   - title: "Restore service"
     description: >
-      As the operator, restore the feeder to normal operation:
-      reset the recloser lockout, re-enable auto-reclose,
-      clear the fault, and close the recloser.
+      As the operator, restore the feeder to normal operation
+      using the RangerDanger HMI. Use the Supervisory Control tab
+      to: reset lockout, enable auto-reclose, clear fault, and
+      close the recloser.
     action:
       type: sequence
       commands:
@@ -84,20 +114,27 @@ steps:
 
   - title: "Harden containd policy"
     description: >
-      Apply the improved firewall configuration. This blocks
-      vendor zone (DMZ) from directly reaching field devices.
-      Vendor access is restricted to approved OT operations
-      services only — the RTAC remains the sole authorized
-      controller for field devices.
+      Apply the improved firewall configuration via the containd
+      Segmentation tab in the RangerDanger HMI. This blocks
+      vendor zone (DMZ) from directly reaching field devices
+      on Modbus (502), DNP3 (20000), and HTTP (8080).
     action:
       type: firewall
       config: improved
 
   - title: "Verify vendor access blocked"
     description: >
-      Re-attempt the vendor compromise. The disable_reclose
-      command from the vendor zone should now be blocked by
-      containd. Auto-reclose remains enabled.
+      Re-attempt the vendor compromise. From the vendor jump box,
+      try to reach the recloser via Modbus:
+
+        mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+
+      The connection should time out — containd blocks vendor→field.
+      Also try DNP3:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      This should also fail. Auto-reclose remains enabled.
     action:
       type: command
       device: recloser
@@ -106,8 +143,8 @@ steps:
 
   - title: "Validate final state"
     description: >
-      Verify: recloser closed, auto-reclose enabled,
-      feeder energized, containd hardened policy active.
+      Verify the feeder is operating normally with protection
+      intact and the hardened firewall policy active.
     action:
       type: check
       expect:

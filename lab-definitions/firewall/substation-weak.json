@@ -61,70 +61,76 @@
         "protocols": [
           { "name": "tcp", "port": "8080" },
           { "name": "tcp", "port": "1881" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
       },
       {
         "id": "enterprise-to-field-weak",
-        "description": "WEAK: Enterprise direct Modbus/HTTP access to Field Devices (should be blocked)",
+        "description": "WEAK: Enterprise direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
         "sourceZones": ["wan"],
         "destZones": ["lan2"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
       },
       {
         "id": "vendor-to-ot-weak",
-        "description": "WEAK: Vendor broad access to OT Operations including Modbus (should be narrowed)",
+        "description": "WEAK: Vendor broad access to OT Operations including Modbus/DNP3 (should be narrowed)",
         "sourceZones": ["dmz"],
         "destZones": ["lan1"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
           { "name": "tcp", "port": "1881" },
           { "name": "tcp", "port": "22" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
       },
       {
         "id": "vendor-to-field-weak",
-        "description": "WEAK: Vendor direct Modbus/HTTP access to Field Devices (should be blocked)",
+        "description": "WEAK: Vendor direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
         "sourceZones": ["dmz"],
         "destZones": ["lan2"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
       },
       {
         "id": "ot-to-field-broad",
-        "description": "WEAK: All OT Operations nodes can Modbus/HTTP to all Field Devices (should be RTAC only)",
+        "description": "WEAK: All OT Operations nodes can Modbus/DNP3/HTTP to all Field Devices (should be RTAC only)",
         "sourceZones": ["lan1"],
         "destZones": ["lan2"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
       },
       {
         "id": "ot-intrazone",
-        "description": "OT Operations internal: HMI↔RTAC Modbus, HTTP, FUXA",
+        "description": "OT Operations internal: HMI↔RTAC Modbus, DNP3, HTTP, FUXA",
         "sourceZones": ["lan1"],
         "destZones": ["lan1"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
           { "name": "tcp", "port": "1881" },
           { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" },
           { "name": "udp", "port": "123" }
         ],
         "ics": {},
@@ -137,7 +143,8 @@
         "destZones": ["lan2"],
         "protocols": [
           { "name": "tcp", "port": "8080" },
-          { "name": "tcp", "port": "502" }
+          { "name": "tcp", "port": "502" },
+          { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
         "action": "ALLOW"
