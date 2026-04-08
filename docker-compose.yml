@@ -236,8 +236,8 @@ services:
 
   rtac_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: rtac-sim
     container_name: rangerdanger-rtac-sim
     hostname: rtac-sim
@@ -293,8 +293,8 @@ services:
   # ─────────────────────────────────────────────────────────────
   relay_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: relay-sim
     container_name: rangerdanger-relay-sim
     hostname: relay-sim
@@ -311,8 +311,8 @@ services:
 
   recloser_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: recloser-sim
     container_name: rangerdanger-recloser-sim
     hostname: recloser-sim
@@ -329,8 +329,8 @@ services:
 
   regulator_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: regulator-sim
     container_name: rangerdanger-regulator-sim
     hostname: regulator-sim
@@ -347,8 +347,8 @@ services:
 
   capbank_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: capbank-sim
     container_name: rangerdanger-capbank-sim
     hostname: capbank-sim
@@ -365,8 +365,8 @@ services:
 
   historian_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: historian-sim
     container_name: rangerdanger-historian-sim
     hostname: historian-sim
@@ -385,8 +385,8 @@ services:
 
   gps_sim:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
       target: gps-sim
     container_name: rangerdanger-gps-sim
     hostname: gps-sim
