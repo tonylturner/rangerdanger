@@ -100,7 +100,9 @@ export type ScenarioStep = { title: string; description: string; action?: StepAc
 export type Scenario = {
   id: string;
   name: string;
+  summary?: string;
   description: string;
+  order?: number;
   lab_template_id: string;
   tags: string[];
   steps: ScenarioStep[];

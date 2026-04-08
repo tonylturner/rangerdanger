@@ -1,15 +1,19 @@
 id: vendor-rdp-compromise
-name: "Vendor Remote Access Compromise"
+order: 2
+name: "Vendor Remote Access Compromise (Bonus)"
+summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus."
 description: >
   A vendor's remote access credentials are compromised via phishing.
   The attacker uses the vendor jump box to pivot through the DMZ
-  and disable protective functions on field devices. Students must
-  constrain vendor zone access to prevent field device manipulation.
+  and disable protective functions on field devices via Modbus TCP.
+  Students must apply containd firewall rules to block vendor zone
+  from directly reaching field devices.
 tags:
   - vendor
   - phishing
   - segmentation
   - defense
+  - bonus
 steps:
   - title: "Review initial posture"
     description: >
