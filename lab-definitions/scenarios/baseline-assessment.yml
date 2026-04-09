@@ -11,8 +11,8 @@ description: >
   operational flows that segmentation must not break.
 nodes:
   - fw-1
-  - eng_workstation
-  - kali
+  - eng-ws-1
+  - kali-1
 tags:
   - assessment
   - pcap
@@ -86,7 +86,7 @@ steps:
       502 (Modbus) and 20000 (DNP3).
 
   - title: "Analyze the capture on the engineering workstation"
-    node: eng_workstation
+    node: eng-ws-1
     description: >
       Open the engineering workstation GUI (click the UI button
       for eng_workstation on the Network Map, or navigate to

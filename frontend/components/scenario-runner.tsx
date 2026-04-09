@@ -23,7 +23,8 @@ import {
   type AuditEntry,
 } from "../lib/api";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
-import { TerminalViewport, useTerminalContext } from "./terminal-context";
+import { SharedTerminalPanel } from "./terminal-context";
+import { NODE_UI_URLS } from "../lib/exercise-nodes";
 
 type RunnerProps = {
   scenario: Scenario;
@@ -70,6 +71,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
+  const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
   const [generatingTraffic, setGeneratingTraffic] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
@@ -718,16 +720,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </div>
       </div>}
 
-      {/* ── Node Terminal Panel ────────────────────────────────── */}
+      {/* ── Node Terminal/UI Panel ─────────────────────────────── */}
       {showTerminalPanel && exerciseNodes.length > 0 && !showSummary && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
-          {/* Node switcher tabs */}
+          {/* Node switcher + Terminal/UI toggle */}
           <div className="flex items-center border-b border-slate-800 px-2 py-1 gap-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mr-2">Node</span>
             {exerciseNodes.map((nodeId) => (
               <button
                 key={nodeId}
-                onClick={() => setActiveTerminalNode(nodeId)}
+                onClick={() => { setActiveTerminalNode(nodeId); setPanelMode("terminal"); }}
                 className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
                   activeTerminalNode === nodeId
                     ? "bg-cyan-950/60 text-cyan-400 border border-cyan-800/50"
@@ -737,11 +738,43 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 {NODE_LABELS[nodeId] || nodeId}
               </button>
             ))}
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => setPanelMode("terminal")}
+                className={`rounded px-2 py-1 text-[9px] font-medium ${
+                  panelMode === "terminal" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Terminal
+              </button>
+              {NODE_UI_URLS[activeTerminalNode] && (
+                <button
+                  onClick={() => setPanelMode("ui")}
+                  className={`rounded px-2 py-1 text-[9px] font-medium ${
+                    panelMode === "ui" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  UI
+                </button>
+              )}
+            </div>
           </div>
-          {/* Terminal viewport */}
-          <div className="h-[300px]">
-            {activeTerminalNode && (
-              <TerminalViewport nodeId={activeTerminalNode} />
+
+          {/* Content */}
+          <div className="h-[300px] relative">
+            {panelMode === "terminal" && (
+              <SharedTerminalPanel
+                nodes={exerciseNodes}
+                activeNode={activeTerminalNode}
+                height={300}
+              />
+            )}
+            {panelMode === "ui" && NODE_UI_URLS[activeTerminalNode] && (
+              <iframe
+                title={`${NODE_LABELS[activeTerminalNode] || activeTerminalNode} UI`}
+                src={NODE_UI_URLS[activeTerminalNode]}
+                className="h-full w-full border-0"
+              />
             )}
           </div>
         </div>
