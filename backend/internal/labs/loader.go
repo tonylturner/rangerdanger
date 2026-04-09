@@ -117,6 +117,26 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 		}
 	}
 
+	// Collect all valid exercise IDs and delete stale DB entries
+	validIDs := make(map[string]bool)
+	for _, sc := range def.Scenarios {
+		validIDs[sc.ID] = true
+	}
+	for _, file := range scenarioFiles {
+		data, _ := os.ReadFile(file)
+		var sc ScenarioYAML
+		if yaml.Unmarshal(data, &sc) == nil && sc.ID != "" {
+			validIDs[sc.ID] = true
+		}
+	}
+	if len(validIDs) > 0 {
+		var ids []string
+		for id := range validIDs {
+			ids = append(ids, id)
+		}
+		db.WithContext(ctx).Where("lab_template_id = ? AND id NOT IN ?", def.ID, ids).Delete(&models.Scenario{})
+	}
+
 	return nil
 }
 

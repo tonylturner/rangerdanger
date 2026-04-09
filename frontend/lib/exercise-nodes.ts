@@ -7,7 +7,7 @@ export type ExerciseNodeInfo = {
 };
 
 export const EXERCISE_NODE_MAP: Record<string, ExerciseNodeInfo> = {
-  "baseline-assessment":       { primary: "kali",         others: ["eng_workstation", "rtac_sim"] },
+  "baseline-assessment":       { primary: "fw-1",         others: ["eng_workstation", "kali"] },
   "segmentation-requirements": { primary: "",             others: [] },
   "vendor-rdp-compromise":     { primary: "vendor_jump",  others: [] },
   "modbus-override":           { primary: "kali",         others: [] },
@@ -16,6 +16,7 @@ export const EXERCISE_NODE_MAP: Record<string, ExerciseNodeInfo> = {
 };
 
 export const NODE_LABELS: Record<string, string> = {
+  "fw-1":              "Firewall (containd)",
   "kali":              "Kali (10.10.10.50)",
   "vendor_jump":       "Vendor Jump (10.20.20.10)",
   "eng_workstation":   "Eng WS (10.20.20.20)",

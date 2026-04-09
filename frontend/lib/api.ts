@@ -109,7 +109,7 @@ export type Scenario = {
   nodes?: string[];
 };
 
-type RawScenario = Omit<Scenario, "tags" | "steps"> & { tags: string; steps: string };
+type RawScenario = Omit<Scenario, "tags" | "steps" | "nodes"> & { tags: string; steps: string; nodes?: string };
 
 function safeParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -124,7 +124,8 @@ function hydrateScenario(raw: RawScenario): Scenario {
   return {
     ...raw,
     tags: safeParse<string[]>(raw.tags, []),
-    steps: safeParse<ScenarioStep[]>(raw.steps, [])
+    steps: safeParse<ScenarioStep[]>(raw.steps, []),
+    nodes: safeParse<string[]>(raw.nodes, []),
   };
 }
 
