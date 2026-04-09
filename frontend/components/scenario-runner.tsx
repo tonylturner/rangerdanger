@@ -11,6 +11,11 @@ import {
   getSubstationAudit,
   execOnNode,
   resetWorkshop,
+  startTrafficGeneration,
+  getTrafficStatus,
+  startPcapCapture,
+  getPcapStatus,
+  getPcapDownloadUrl,
   type Scenario,
   type ValidationResult,
   type SubstationState,
@@ -65,6 +70,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
+  const [generatingTraffic, setGeneratingTraffic] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
   // Persist to localStorage on change
   useEffect(() => {
@@ -139,6 +146,52 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       setCmdLog((prev) => [`[ERROR] Reset failed: ${e}`, ...prev].slice(0, 100));
     } finally {
       setResettingLab(false);
+    }
+  };
+
+  const handleGenerateTraffic = async (durationSec = 45) => {
+    setGeneratingTraffic(true);
+    setCmdLog((prev) => [`[TRAFFIC] Generating ${durationSec}s of representative OT traffic...`, ...prev].slice(0, 100));
+    try {
+      await startTrafficGeneration(durationSec);
+      setCmdLog((prev) => [`[TRAFFIC] Generation started — ${durationSec}s of Modbus, DNP3, HTTP, NTP flows`, ...prev].slice(0, 100));
+      // Poll for completion
+      const pollId = setInterval(async () => {
+        try {
+          const status = await getTrafficStatus();
+          if (!status.generating) {
+            clearInterval(pollId);
+            setGeneratingTraffic(false);
+            setCmdLog((prev) => [`[TRAFFIC] Complete — ${status.flows_generated || 0} flows generated`, ...prev].slice(0, 100));
+          }
+        } catch { clearInterval(pollId); setGeneratingTraffic(false); }
+      }, 3000);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Traffic generation failed: ${e}`, ...prev].slice(0, 100));
+      setGeneratingTraffic(false);
+    }
+  };
+
+  const handleStartCapture = async (durationSec = 60, name = "baseline") => {
+    setCapturing(true);
+    setCmdLog((prev) => [`[CAPTURE] Starting ${durationSec}s packet capture on firewall...`, ...prev].slice(0, 100));
+    try {
+      await startPcapCapture(durationSec, name);
+      setCmdLog((prev) => [`[CAPTURE] Recording on all firewall interfaces`, ...prev].slice(0, 100));
+      const pollId = setInterval(async () => {
+        try {
+          const status = await getPcapStatus();
+          if (!status.capturing) {
+            clearInterval(pollId);
+            setCapturing(false);
+            const url = getPcapDownloadUrl();
+            setCmdLog((prev) => [`[CAPTURE] Complete — download at ${url}`, ...prev].slice(0, 100));
+          }
+        } catch { clearInterval(pollId); setCapturing(false); }
+      }, 3000);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Capture failed: ${e}`, ...prev].slice(0, 100));
+      setCapturing(false);
     }
   };
 
@@ -243,7 +296,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-            Exercise{scenario.order !== undefined ? ` ${scenario.order}` : ""}
+            Exercise {scenario.order ?? 0}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
@@ -406,6 +459,39 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Quick action buttons for traffic/capture steps */}
+            {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
+              <div className="mt-2">
+                <button
+                  onClick={() => handleGenerateTraffic(45)}
+                  disabled={generatingTraffic}
+                  className="rounded border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
+                >
+                  {generatingTraffic ? "Generating Traffic..." : "Generate Traffic (45s)"}
+                </button>
+              </div>
+            )}
+            {step?.description && (step.description.includes("pcap/start") || step.description.includes("packet capture")) && !step.description.includes("representative traffic") && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => handleStartCapture(60, "baseline")}
+                  disabled={capturing}
+                  className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                >
+                  {capturing ? "Capturing..." : "Start 60s Capture"}
+                </button>
+                {!capturing && (
+                  <a
+                    href={getPcapDownloadUrl()}
+                    className="text-[10px] text-slate-500 hover:text-sky-400"
+                    download
+                  >
+                    Download Last Capture
+                  </a>
+                )}
               </div>
             )}
 
@@ -595,7 +681,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               disabled={validating}
               className="rounded border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
             >
-              {validating ? "Validating..." : "Validate Scenario"}
+              {validating ? "Validating..." : "Validate Exercise"}
             </button>
             {validation && (
               <span className={`text-sm font-bold ${

@@ -1,113 +1,148 @@
 id: baseline-assessment
 order: 0
-name: "Network Discovery & Baseline Assessment"
-summary: "Discover assets, map communication flows, and identify segmentation weaknesses in the weak baseline."
+name: "Baseline Traffic Analysis"
+summary: "Capture and analyze normal OT traffic to identify required communication flows before segmentation."
 description: >
-  Before hardening, you must understand what you're protecting.
-  Using standard network tools, discover all assets on the
-  substation network, identify which protocols are in use
-  (Modbus TCP, DNP3, HTTP), map zone-to-zone communication
-  flows, and document what the weak firewall baseline allows.
-  This exercise builds the situational awareness needed to
-  write effective segmentation requirements.
+  Before you can segment a network, you need to know what traffic
+  is legitimate and must be preserved. In this exercise you'll
+  capture traffic at the firewall — the same chokepoint where you'd
+  place a TAP or SPAN in a real environment — then analyze the PCAP
+  to identify source-destination pairs, protocols, and the critical
+  operational flows that segmentation must not break.
 nodes:
-  - kali
+  - fw-1
   - eng_workstation
-  - rtac_sim
+  - kali
 tags:
   - assessment
-  - discovery
+  - pcap
   - baseline
   - defense
 steps:
-  - title: "Explore the lab topology"
+  - title: "Review the substation topology"
     description: >
-      Open the RangerDanger Network Map page to see the full
-      substation topology. Identify the four network zones and
-      the devices in each:
+      Open the RangerDanger Network Map page. Identify the four
+      network zones and the key devices in each:
 
         Enterprise (10.10.10.0/24): corp-ws, kali
         Vendor/DMZ (10.20.20.0/24): vendor-jump, eng-ws
         OT Operations (10.30.30.0/24): fuxa-hmi, rtac, openplc, historian, gps
         Field Devices (10.40.40.0/24): relay, recloser, regulator, capbank
 
-      Note which devices are multi-homed (RTAC spans OT ops + field zones).
+      The containd firewall sits between all four zones. All
+      inter-zone traffic passes through it — this is where we
+      capture.
     action:
       type: check
       expect:
         breaker_closed: true
 
-  - title: "Scan the field device zone from enterprise"
+  - title: "Start a packet capture on the firewall"
+    node: fw-1
     description: >
-      From the Kali attacker box (10.10.10.50), scan the field
-      device zone to see what's reachable under the weak baseline:
+      Open the firewall terminal and start a 60-second capture
+      on all interfaces. This is what you'd do with a TAP or
+      SPAN port in a real substation:
 
-        nmap -sV -p 502,8080,20000 10.40.40.20-23
+        tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1
 
-      Document which ports are open on each device. Under the
-      weak config, enterprise can reach field devices directly —
-      this is the core segmentation failure.
+      This writes to /data/captures/ which is shared with the
+      engineering workstation at /home/abc/pcaps/.
 
-  - title: "Read field device state via Modbus"
+      Alternatively, use the RangerDanger API:
+
+        curl -X POST http://localhost:8088/api/pcap/start \
+          -d '{"duration_sec":60,"name":"baseline"}'
+
+  - title: "Generate representative traffic"
     description: >
-      From Kali, use mbpoll to read Modbus registers from
-      the relay (10.40.40.20):
+      The lab needs traffic to capture. In a real environment,
+      this traffic already exists — SCADA polling, HMI reads,
+      historian collection. In the lab, we generate it:
 
-        mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 4 -1
+        curl -X POST http://localhost:8088/api/traffic/generate \
+          -d '{"duration_sec":45}'
 
-      This reads coils 0-3 (breaker state, remote control,
-      lockout, fault). The fact that an enterprise host can
-      read OT device state over Modbus is a finding.
+      This produces ~23 realistic OT flows per cycle: RTAC
+      polling field devices via Modbus and DNP3, HMI reading
+      the RTAC, historian collecting data, GPS time sync, and
+      some enterprise→OT traffic that shouldn't be there.
 
-  - title: "Read field device state via DNP3"
+      Wait for the capture duration to complete.
+
+  - title: "Verify the capture file"
+    node: fw-1
     description: >
-      Use dnp3poll to read the recloser's DNP3 outstation:
+      Check that the capture file was created:
 
-        dnp3poll 10.40.40.21:20000 -a 2
+        ls -lh /data/captures/baseline.pcap
 
-      Document the binary inputs, binary outputs, and analog
-      inputs returned. Enterprise→field DNP3 access is another
-      segmentation failure.
+      Get a quick summary of what's in it:
 
-  - title: "Check the RTAC aggregated view"
+        tcpdump -r /data/captures/baseline.pcap -q | head -20
+
+      You should see traffic between the OT operations zone
+      (10.30.30.x) and field devices (10.40.40.x) on ports
+      502 (Modbus) and 20000 (DNP3).
+
+  - title: "Analyze the capture on the engineering workstation"
+    node: eng_workstation
     description: >
-      The RTAC (10.30.30.20) aggregates all field device state.
-      Read its DNP3 outstation for the full picture:
+      Open the engineering workstation GUI (click the UI button
+      for eng_workstation on the Network Map, or navigate to
+      its webtop URL).
 
-        dnp3poll 10.30.30.20:20000 -a 10
+      The capture is available at /home/abc/pcaps/baseline.pcap.
 
-      Or via REST:
+      Option A — Open PCAP Analyzer (desktop shortcut):
+      Load baseline.pcap. Review the Asset Summary and Protocol
+      Breakdown to see all communicating devices and protocols.
 
-        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+      Option B — Use Wireshark (desktop shortcut):
+      Open baseline.pcap. Apply display filter:
 
-      Note: the RTAC should be the ONLY path to field devices,
-      not a bypass.
+        modbus || dnp3 || tcp.port==20000
 
-  - title: "Capture baseline traffic"
+      Review the conversations (Statistics → Conversations →
+      TCP tab) to see which IPs are talking to which.
+
+      Option C — Use tshark from the terminal:
+
+        tshark -r /home/abc/pcaps/baseline.pcap \
+          -T fields -e ip.src -e ip.dst -e tcp.dstport \
+          | sort | uniq -c | sort -rn | head -20
+
+  - title: "Identify required communication flows"
     description: >
-      From the engineering workstation, capture OT protocol
-      traffic to see what's on the wire:
+      From your analysis, document the communication flows that
+      are required for normal substation operations. These are
+      the flows that segmentation MUST preserve:
 
-        tshark -i eth0 -f "tcp port 502 or tcp port 20000" -c 50
+      Required flows to identify:
+      - RTAC (10.30.30.20 / 10.40.40.10) → field devices on Modbus 502
+      - RTAC → field devices on DNP3 20000
+      - RTAC → OpenDSS physics engine on HTTP 8080
+      - HMI (10.30.30.10) → RTAC on Modbus 502 and HTTP 8080
+      - Historian (10.30.30.40) → RTAC on HTTP 8080
+      - GPS (10.30.30.50) → field devices on NTP 123
 
-      Observe the RTAC polling field devices via Modbus and DNP3.
-      Note which source IPs are communicating with field devices —
-      in a properly segmented network, only the RTAC (10.40.40.10)
-      should appear.
+      Suspicious flows to flag:
+      - Enterprise (10.10.10.x) → field devices (should not exist)
+      - Enterprise → OT operations (should be restricted)
+      - Any direct non-RTAC → field device traffic
 
-  - title: "Review the weak firewall configuration"
+      Use the Notes field below to document your findings.
+      These become the requirements for Exercise 1.
+
+  - title: "Validate baseline state"
     description: >
-      Open the RangerDanger Feeder HMI and go to the containd
-      Segmentation tab. Review the weak baseline rules.
-
-      Key findings to document:
-      - Enterprise can reach field devices (Modbus, DNP3, HTTP)
-      - Vendor/DMZ can reach field devices directly
-      - All OT ops nodes can reach field devices (not just RTAC)
-      - No protocol-specific DPI rules (no function code filtering)
-
-      These are the gaps you'll fix in the next exercises.
+      Confirm the substation is operating normally — all devices
+      communicating, loads energized, protection active. This
+      is the "known good" state that your segmentation rules
+      must preserve.
     action:
       type: check
       expect:
         breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true

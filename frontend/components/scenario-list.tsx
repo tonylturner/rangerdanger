@@ -3,6 +3,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { listScenarios, type Scenario } from "../lib/api";
 
+// Maps exercise IDs to workshop workbook sections
+const WORKBOOK_SECTION: Record<string, string> = {
+  "baseline-assessment":       "1.2",
+  "segmentation-requirements": "1.3",
+  "vendor-rdp-compromise":     "2.3",
+  "modbus-override":           "2.3",
+  "dnp3-command-injection":    "2.3",
+  "validation-evidence":       "2.4",
+};
+
 export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ["scenarios", "substation-segmentation"],
@@ -45,7 +55,12 @@ function ScenarioCard({ scenario, onStartExercise }: { scenario: Scenario; onSta
             <h2 className="text-sm font-bold text-white">{scenario.name}</h2>
             <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {scenario.tags.map((tag) => (
+              {WORKBOOK_SECTION[scenario.id] && (
+                <span className="rounded-full border border-sky-800/50 bg-sky-950/30 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+                  Section {WORKBOOK_SECTION[scenario.id]}
+                </span>
+              )}
+              {scenario.tags.filter(t => t !== "bonus").map((tag) => (
                 <span key={tag} className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400">
                   {tag}
                 </span>
