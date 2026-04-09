@@ -11,7 +11,7 @@ description: >
   containd segmentation to block enterprise→field DNP3 access
   on port 20000.
 nodes:
-  - kali
+  - kali-1
 tags:
   - dnp3
   - field-device

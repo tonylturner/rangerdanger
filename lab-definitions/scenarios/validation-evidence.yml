@@ -10,9 +10,9 @@ description: >
   document the results. This is the validation step required
   before any segmentation change goes to production.
 nodes:
-  - kali
-  - vendor_jump
-  - eng_workstation
+  - kali-1
+  - vendor-jump-1
+  - eng-ws-1
 tags:
   - validation
   - testing

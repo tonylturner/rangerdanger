@@ -10,7 +10,7 @@ description: >
   voltage violations. Students must enforce that only the RTAC
   can issue Modbus writes to field devices.
 nodes:
-  - kali
+  - kali-1
 tags:
   - modbus
   - field-device

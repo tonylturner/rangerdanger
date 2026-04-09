@@ -9,7 +9,7 @@ description: >
   Students must apply containd firewall rules to block vendor zone
   from directly reaching field devices.
 nodes:
-  - vendor_jump
+  - vendor-jump-1
 tags:
   - vendor
   - phishing
