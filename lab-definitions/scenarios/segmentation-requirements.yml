@@ -50,9 +50,12 @@ steps:
         OT Ops → Field Devices: RTAC ONLY — Modbus (502), DNP3 (20000), HTTP (8080)
         Other OT nodes → Field Devices: DENY
 
-      Critical: only the RTAC (via its field interface at 10.40.40.10)
-      should control field devices. A compromised HMI or OpenPLC
-      must not be able to reach relays directly.
+      Critical: only the RTAC (source IP 10.30.30.20, its OT Ops
+      interface, after host-level hardening routes field traffic
+      through the firewall) should control field devices. A
+      compromised HMI or OpenPLC must not be able to reach relays
+      directly, and the firewall pin enforces this at the network
+      layer.
 
   - title: "Define protocol-specific constraints"
     description: >
@@ -78,7 +81,7 @@ steps:
       Check how your requirements map to the actual rules:
       - Enterprise→OT/Field: DENY rules with explicit port lists
       - Vendor→Field: DENY on 502, 20000, 8080
-      - RTAC→Field: ALLOW with source pinned to 10.40.40.10
+      - RTAC→Field: ALLOW with source pinned to 10.30.30.20
       - RTAC→Field Modbus: ICS DPI with functionCodes [1,2,3,4,5,6]
       - RTAC→Field DNP3: ICS DPI with protocol "dnp3"
 

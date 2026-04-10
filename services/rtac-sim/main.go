@@ -354,6 +354,7 @@ func isHighVoltageCritical() bool {
 func main() {
 	go pollDevices()
 	go pollDNP3Devices()
+	go pollModbusDevices()
 	go startModbusServer()
 	go startDNP3Server()
 

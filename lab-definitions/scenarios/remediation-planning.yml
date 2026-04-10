@@ -143,11 +143,12 @@ steps:
         - id: pin-rtac-to-field
           title: "Pin field-device access to RTAC source IP"
           why: >
-            Restricts OT Ops → field rules to source
-            10.40.40.10 only (the RTAC's field-side interface),
+            Restricts OT Ops → field rules to source 10.30.30.20
+            only (the RTAC's OT Ops interface, which is the
+            wire-visible source after RTAC host-level hardening),
             so a compromised OpenPLC or historian cannot reach
-            relays directly even from inside OT Ops. Closes
-            the Modbus override lateral path in Exercise 4.
+            relays directly even from inside OT Ops. Closes the
+            Modbus override lateral path in Exercise 4.
           effort_hours: 40
           roles: ["Firewall Admin", "OT Engineer"]
           tags: ["ot-lateral"]
@@ -185,17 +186,20 @@ steps:
           roles: ["Firewall Admin", "Security Analyst"]
           tags: ["visibility"]
         - id: rtac-architecture-review
-          title: "Review RTAC multi-homing architecture"
+          title: "Validate and document RTAC hardening"
           why: >
-            The RTAC's direct field connection bypasses the
-            firewall entirely. Document this blind spot, add
-            host-based controls or compensating monitoring on
-            the RTAC itself, and open a longer-term project
-            to move RTAC-to-field through an inspected interface.
-            This is the finding the firewall cannot solve.
-          effort_hours: 120
-          roles: ["OT Engineer", "Network Engineer", "Security Analyst"]
-          tags: ["architecture"]
+            The RTAC is multi-homed across OT Ops and Field for
+            realism but is hardened at the host level so its
+            application traffic to field devices is forced through
+            the firewall. Validate that the hardening is in place
+            (ip_forward=0, FORWARD DROP, policy routing for field
+            subnet via OT Ops firewall), document it as a compensating
+            control for auditors, and add a periodic check to detect
+            drift. Defense in depth for the intra-zone flows the
+            firewall still cannot see.
+          effort_hours: 30
+          roles: ["OT Engineer", "Security Analyst"]
+          tags: ["architecture", "defense-in-depth"]
         - id: tighten-firewall-objects
           title: "Tighten firewall object hygiene"
           why: >

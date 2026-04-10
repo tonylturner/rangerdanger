@@ -109,7 +109,7 @@
         "description": "RTAC to Field Devices: Modbus TCP read/write (supervisory control only)",
         "sourceZones": ["lan1"],
         "destZones": ["lan2"],
-        "sources": ["10.40.40.10/32"],
+        "sources": ["10.30.30.20/32"],
         "protocols": [
           { "name": "tcp", "port": "502" }
         ],
@@ -124,7 +124,7 @@
         "description": "RTAC to Field Devices: DNP3 TCP (supervisory SCADA polling and control)",
         "sourceZones": ["lan1"],
         "destZones": ["lan2"],
-        "sources": ["10.40.40.10/32"],
+        "sources": ["10.30.30.20/32"],
         "protocols": [
           { "name": "tcp", "port": "20000" }
         ],
@@ -138,7 +138,7 @@
         "description": "RTAC to Field Devices: HTTP API (supervisory management)",
         "sourceZones": ["lan1"],
         "destZones": ["lan2"],
-        "sources": ["10.40.40.10/32"],
+        "sources": ["10.30.30.20/32"],
         "protocols": [
           { "name": "tcp", "port": "8080" }
         ],

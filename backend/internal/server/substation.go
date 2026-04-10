@@ -13,8 +13,12 @@ import (
 
 // Substation data proxy — forwards requests to rtac-sim running in the OT ops zone.
 // This gives the frontend access to live substation state without direct OT network access.
+//
+// The backend runs on mgmt_net only, so it reaches rtac-sim over the shared
+// mgmt_net leg. Using the container hostname lets Docker DNS resolve to
+// whichever IP is reachable from the backend's networks (mgmt_net first).
 
-const rtacSimDefault = "http://10.30.30.20:8080"
+const rtacSimDefault = "http://rtac-sim:8080"
 
 func (s *Server) rtacURL() string {
 	return rtacSimDefault

@@ -18,9 +18,12 @@ RUN CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
 FROM alpine:3.21 AS sim-base
 
-RUN apk add --no-cache iproute2
+# iproute2: ip(8) for route manipulation in harden scripts
+# iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
+RUN apk add --no-cache iproute2 iptables
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
-RUN chmod +x /usr/local/bin/set-gateway.sh
+COPY scripts/rtac-harden.sh /usr/local/bin/rtac-harden.sh
+RUN chmod +x /usr/local/bin/set-gateway.sh /usr/local/bin/rtac-harden.sh
 
 FROM sim-base AS relay-sim
 COPY --from=builder /bin/relay-sim /usr/local/bin/relay-sim
@@ -40,7 +43,10 @@ CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 FROM sim-base AS rtac-sim
 COPY --from=builder /bin/rtac-sim /usr/local/bin/rtac-sim
 EXPOSE 8080 502 20000
-CMD ["sh", "-c", "set-gateway.sh && rtac-sim"]
+# set-gateway.sh: installs the OT Ops firewall as the default route
+# rtac-harden.sh: disables forwarding, sets FORWARD DROP, and routes
+# field_net traffic through the firewall so the RTAC cannot bypass it
+CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-sim"]
 
 FROM sim-base AS capbank-sim
 COPY --from=builder /bin/capbank-sim /usr/local/bin/capbank-sim

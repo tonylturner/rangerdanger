@@ -25,30 +25,11 @@ import {
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
-import Link from "next/link";
 import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
-
-/** Parse inline [text](/path) links within a prose string. */
-function renderLinks(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let last = 0;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
-    parts.push(
-      <Link key={match.index} href={match[2]} className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
-        {match[1]}
-      </Link>
-    );
-    last = re.lastIndex;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
-}
+import { MarkdownProse } from "./markdown-prose";
 
 const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
@@ -138,10 +119,8 @@ function HintBlock({ title, body }: { title: string; body: string }) {
         )}
       </button>
       {open && (
-        <div className="border-t border-amber-900/40 px-4 py-3">
-          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-            {renderLinks(body.replace(/^\n+|\n+$/g, ""))}
-          </p>
+        <div className="border-t border-amber-900/40 px-4 py-3 space-y-2">
+          <MarkdownProse>{body.replace(/^\n+|\n+$/g, "")}</MarkdownProse>
         </div>
       )}
     </div>
@@ -625,9 +604,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                       const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
                       if (!trimmed) return null;
                       return (
-                        <p key={si} className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                          {renderLinks(trimmed)}
-                        </p>
+                        <div key={si} className="space-y-2">
+                          <MarkdownProse>{trimmed}</MarkdownProse>
+                        </div>
                       );
                     }
                     if (seg.type === "hint") {

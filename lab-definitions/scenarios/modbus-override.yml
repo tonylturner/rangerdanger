@@ -96,10 +96,12 @@ steps:
   - title: "Apply containd segmentation"
     description: >
       Use the containd Segmentation tab to apply the improved
-      firewall policy. This enforces that only the RTAC
-      (10.40.40.10) can send Modbus and DNP3 commands to field
-      devices on 10.40.40.0/24. All other OT operations nodes
-      are blocked from direct field device access.
+      firewall policy. This enforces that only the RTAC (source
+      IP 10.30.30.20, its OT Ops interface after host-level
+      hardening routes field traffic through the firewall) can
+      send Modbus and DNP3 commands to field devices on
+      10.40.40.0/24. All other OT operations nodes are blocked
+      from direct field device access.
     action:
       type: firewall
       config: improved
