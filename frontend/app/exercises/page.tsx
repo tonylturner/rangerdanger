@@ -1,20 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ExerciseList } from "../../components/exercise-list";
-import { ExerciseRunner } from "../../components/exercise-runner";
 import type { Scenario } from "../../lib/api";
 
 export default function ExercisesPage() {
-  const [activeExercise, setActiveExercise] = useState<Scenario | null>(null);
+  const router = useRouter();
 
-  if (activeExercise) {
-    return (
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        <ExerciseRunner scenario={activeExercise} onExit={() => setActiveExercise(null)} />
-      </main>
-    );
-  }
+  const handleStart = (scenario: Scenario) => {
+    router.push(`/exercises/${encodeURIComponent(scenario.id)}`);
+  };
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-10">
@@ -25,7 +20,7 @@ export default function ExercisesPage() {
         </p>
       </div>
       <div className="mt-6 space-y-4">
-        <ExerciseList onStartExercise={setActiveExercise} />
+        <ExerciseList onStartExercise={handleStart} />
       </div>
     </main>
   );

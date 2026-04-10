@@ -133,8 +133,8 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 // only the RTAC and operator sources can reach field devices.
 func (s *Server) executeCommand(device, command, source string, value *float64) StepActionResult {
 	// Check if the source is authorized under the current firewall policy.
-	// In "improved" mode, only RTAC (10.30.30.20 / 10.40.40.10) and "operator"
-	// can send commands to field devices — all other sources are blocked by containd.
+	// In "improved" mode, only RTAC (10.30.30.20) and "operator" can send
+	// commands to field devices — all other sources are blocked by containd.
 	s.activeConfigMu.RLock()
 	activeConfig := s.activeConfig
 	s.activeConfigMu.RUnlock()
@@ -193,11 +193,15 @@ func (s *Server) executeCommand(device, command, source string, value *float64) 
 
 // isAuthorizedSource returns true if the source is allowed to command field
 // devices under the hardened ("improved") firewall policy.
+//
+// After the RTAC harden fix, all RTAC -> field traffic is routed through the
+// OT Ops firewall and the wire-visible source IP is 10.30.30.20. The RTAC's
+// field_net interface (10.40.40.10) still exists for realism but is no
+// longer used as an active source for any routed traffic.
 func isAuthorizedSource(source string) bool {
 	switch source {
 	case "operator", "rtac", "rtac-sim",
-		"10.30.30.20", // RTAC on ot_ops_net
-		"10.40.40.10": // RTAC on field_net
+		"10.30.30.20": // RTAC on ot_ops_net (the only routed source)
 		return true
 	}
 	return false

@@ -180,9 +180,12 @@ func TestImprovedConfigVendorToFieldDeny(t *testing.T) {
 
 func TestImprovedConfigRTACToFieldAllow(t *testing.T) {
 	cfg := loadConfig(t, "substation-improved.json")
-	rule := findRuleByID(cfg.Firewall.Rules, "rtac-to-field-control")
+	// After the RTAC harden fix, the RTAC's field_net interface (10.40.40.10)
+	// is still attached but all routed traffic to field devices uses the
+	// OT Ops interface, so the wire-visible source IP is 10.30.30.20.
+	rule := findRuleByID(cfg.Firewall.Rules, "rtac-to-field-modbus")
 	if rule == nil {
-		t.Fatal("missing rule rtac-to-field-control")
+		t.Fatal("missing rule rtac-to-field-modbus")
 	}
 	if rule.Action != "ALLOW" {
 		t.Errorf("expected ALLOW, got %s", rule.Action)
@@ -190,13 +193,13 @@ func TestImprovedConfigRTACToFieldAllow(t *testing.T) {
 	// Verify source constraint
 	foundSource := false
 	for _, s := range rule.Sources {
-		if s == "10.40.40.10/32" {
+		if s == "10.30.30.20/32" {
 			foundSource = true
 			break
 		}
 	}
 	if !foundSource {
-		t.Errorf("expected source constraint 10.40.40.10/32, got sources: %v", rule.Sources)
+		t.Errorf("expected source constraint 10.30.30.20/32, got sources: %v", rule.Sources)
 	}
 	// Verify zone pair
 	srcMatch := false

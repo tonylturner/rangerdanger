@@ -145,7 +145,8 @@ steps:
       Apply the improved firewall configuration via the containd
       Segmentation tab. This blocks enterprise, vendor, and all
       non-RTAC OT nodes from reaching field device DNP3 outstations
-      on port 20000. Only the RTAC (10.40.40.10) is allowed.
+      on port 20000. Only the RTAC (source IP 10.30.30.20 after
+      host-level hardening) is allowed.
     action:
       type: firewall
       config: improved
