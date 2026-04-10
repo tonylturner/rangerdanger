@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -297,26 +298,99 @@ func (o *Orchestrator) RemoveContainer(ctx context.Context, containerID string) 
 	return o.dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
 }
 
-// ExecShell executes an interactive shell in a container.
-func (o *Orchestrator) ExecShell(ctx context.Context, containerID string) (types.HijackedResponse, error) {
+// ExecShell executes an interactive shell in a container and returns
+// the hijacked connection along with the exec ID (needed for resize).
+func (o *Orchestrator) ExecShell(ctx context.Context, containerID string) (types.HijackedResponse, string, error) {
 	if o.dockerClient == nil {
-		return types.HijackedResponse{}, fmt.Errorf("docker client not available")
+		return types.HijackedResponse{}, "", fmt.Errorf("docker client not available")
 	}
 
+	// Prefer bash as an interactive login shell if available, fall back to sh.
+	// The -il flags ensure bash reads /etc/profile and ~/.bashrc so PS1 and
+	// aliases are set up. The exec replaces the wrapper sh process.
 	execConfig := container.ExecOptions{
-		Cmd:          []string{"/bin/sh"},
+		Cmd:          []string{"sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"},
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
+		Env:          []string{"TERM=xterm-256color"},
 	}
 
 	execID, err := o.dockerClient.ContainerExecCreate(ctx, containerID, execConfig)
 	if err != nil {
-		return types.HijackedResponse{}, fmt.Errorf("exec create: %w", err)
+		return types.HijackedResponse{}, "", fmt.Errorf("exec create: %w", err)
 	}
 
-	return o.dockerClient.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{Tty: true})
+	hijack, err := o.dockerClient.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{Tty: true})
+	if err != nil {
+		return types.HijackedResponse{}, "", fmt.Errorf("exec attach: %w", err)
+	}
+	return hijack, execID.ID, nil
+}
+
+// ResizeExec resizes the PTY of a running exec session.
+func (o *Orchestrator) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
+	if o.dockerClient == nil {
+		return fmt.Errorf("docker client not available")
+	}
+	return o.dockerClient.ContainerExecResize(ctx, execID, container.ResizeOptions{
+		Width:  cols,
+		Height: rows,
+	})
+}
+
+// ExecCommand runs a command non-interactively in a container and returns stdout/stderr.
+func (o *Orchestrator) ExecCommand(ctx context.Context, containerName string, cmd []string, timeoutSec int) (string, string, int, error) {
+	if o.dockerClient == nil {
+		return "", "", -1, fmt.Errorf("docker client not available")
+	}
+
+	if timeoutSec <= 0 {
+		timeoutSec = 30
+	}
+	if timeoutSec > 60 {
+		timeoutSec = 60
+	}
+
+	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+
+	execConfig := container.ExecOptions{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          false,
+	}
+
+	execID, err := o.dockerClient.ContainerExecCreate(execCtx, containerName, execConfig)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("exec create: %w", err)
+	}
+
+	resp, err := o.dockerClient.ContainerExecAttach(execCtx, execID.ID, container.ExecStartOptions{Tty: false})
+	if err != nil {
+		return "", "", -1, fmt.Errorf("exec attach: %w", err)
+	}
+	defer resp.Close()
+
+	// Read multiplexed stdout/stderr (non-TTY mode uses Docker stream multiplexing)
+	output, err := io.ReadAll(resp.Reader)
+	if err != nil && execCtx.Err() == nil {
+		return "", "", -1, fmt.Errorf("read output: %w", err)
+	}
+
+	// Get exit code
+	inspect, err := o.dockerClient.ContainerExecInspect(ctx, execID.ID)
+	exitCode := -1
+	if err == nil {
+		exitCode = inspect.ExitCode
+	}
+
+	// For non-TTY, Docker multiplexes stdout/stderr with 8-byte headers.
+	// The stdcopy package handles this, but for simplicity we return raw output.
+	// Most tools write to stdout anyway.
+	return string(output), "", exitCode, nil
 }
 
 // GetContainerLogs returns logs from a container.

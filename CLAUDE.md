@@ -88,7 +88,16 @@ Custom Go services in `services/` directory:
 - `rtac-sim` — Aggregator/broker polling field devices, physics engine, command forwarding
 - `opendss-sim` — Simplified feeder model calculating energization and voltage
 
-All expose `GET /api/state`, `POST /api/command`, `GET /api/audit`, `GET /api/health` on port 8080.
+All expose three protocol interfaces on the same shared state:
+- **HTTP REST** on port 8080: `GET /api/state`, `POST /api/command`, `GET /api/audit`, `GET /api/health`
+- **Modbus TCP** on port 502: FC1/FC3/FC4 read, FC5/FC6 write (hand-written, no library)
+- **DNP3 TCP** on port 20000: Read (FC01), Direct Operate (FC05), Select/Operate (FC03/04) via `dnp3go` standalone library
+
+### dnp3go Standalone Library
+
+`dnp3go/` is a standalone Go module (`github.com/tonylturner/dnp3go`) at the repo root with its own `go.mod`. Zero external dependencies. Implements CRC-16/DNP, data link framing, transport reassembly, application layer parsing, and an outstation TCP server. Services import it via `replace` directive in `services/go.mod`.
+
+DNP3 outstation addresses: relay=1, recloser=2, regulator=3, rtac=10 (read-only).
 
 ### containd Integration
 
@@ -285,11 +294,15 @@ services:
 - Terminal access via WebSocket (Docker exec + SSH to firewall)
 - SSE event streaming from containd
 - Substation segmentation scenario with 3 attack exercises
-- Field device simulators (relay, recloser, regulator) with HTTP APIs
+- Field device simulators (relay, recloser, regulator) with HTTP + Modbus TCP + DNP3 TCP
+- Hand-written Modbus TCP outstations on port 502 (all field devices)
+- DNP3 TCP outstations on port 20000 via standalone `dnp3go` library
 - RTAC supervisory controller aggregating device state
 - Feeder physics engine with energization/voltage calculation
-- Weak baseline + improved firewall configs for progressive learning
-- Kali attacker in enterprise zone
+- Weak baseline + improved firewall configs for progressive learning (Modbus + DNP3 rules)
+- Kali attacker in enterprise zone (with pymodbus, pydnp3, dnp3-python)
+- Advanced HMI page (/hmi) with SVG SCADA one-line diagram
+- 3 attack scenarios: vendor RDP compromise, Modbus override, DNP3 command injection
 
 ### Remaining Gaps
 1. **FUXA HMI screens** - One-line diagram, alarm view, segmentation impact view need configuration
@@ -297,8 +310,9 @@ services:
 3. **Command audit correlation UI** - cyber-to-process event mapping in frontend
 4. **PCAP capture/replay** - per scenario traffic recording
 5. **Multi-user RBAC** - instructor vs student modes
-6. **Capbank simulator** - optional capacitor bank device
-7. **IDS alerts integration** - Suricata alerts in activity feed
+6. **IDS alerts integration** - Suricata alerts in activity feed
+7. **RTAC as DNP3 master** - RTAC currently polls field devices via HTTP; could poll via DNP3 for realistic wire traffic
+8. **dnp3go publish** - Extract dnp3go/ to its own GitHub repo (github.com/tonylturner/dnp3go)
 
 ## Access Points
 

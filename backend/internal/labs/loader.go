@@ -93,13 +93,17 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 	for _, sc := range def.Scenarios {
 		tagsJSON, _ := json.Marshal(sc.Tags)
 		stepsJSON, _ := json.Marshal(sc.Steps)
+		nodesJSON, _ := json.Marshal(sc.Nodes)
 		scenario := models.Scenario{
 			ID:            sc.ID,
 			Name:          sc.Name,
+			Summary:       sc.Summary,
 			Description:   sc.Description,
+			Order:         sc.Order,
 			LabTemplateID: def.ID,
 			Tags:          string(tagsJSON),
 			Steps:         string(stepsJSON),
+			Nodes:         string(nodesJSON),
 		}
 		if err := db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error; err != nil {
 			return err
@@ -111,6 +115,26 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 		if err := l.importScenarioFile(ctx, db, file, def.ID); err != nil {
 			return err
 		}
+	}
+
+	// Collect all valid exercise IDs and delete stale DB entries
+	validIDs := make(map[string]bool)
+	for _, sc := range def.Scenarios {
+		validIDs[sc.ID] = true
+	}
+	for _, file := range scenarioFiles {
+		data, _ := os.ReadFile(file)
+		var sc ScenarioYAML
+		if yaml.Unmarshal(data, &sc) == nil && sc.ID != "" {
+			validIDs[sc.ID] = true
+		}
+	}
+	if len(validIDs) > 0 {
+		var ids []string
+		for id := range validIDs {
+			ids = append(ids, id)
+		}
+		db.WithContext(ctx).Where("lab_template_id = ? AND id NOT IN ?", def.ID, ids).Delete(&models.Scenario{})
 	}
 
 	return nil
@@ -128,13 +152,17 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 
 	tagsJSON, _ := json.Marshal(sc.Tags)
 	stepsJSON, _ := json.Marshal(sc.Steps)
+	nodesJSON, _ := json.Marshal(sc.Nodes)
 	scenario := models.Scenario{
 		ID:            sc.ID,
 		Name:          sc.Name,
+		Summary:       sc.Summary,
 		Description:   sc.Description,
+		Order:         sc.Order,
 		LabTemplateID: templateID,
 		Tags:          string(tagsJSON),
 		Steps:         string(stepsJSON),
+		Nodes:         string(nodesJSON),
 	}
 	return db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error
 }
@@ -174,7 +202,10 @@ type NodeYAML struct {
 type ScenarioYAML struct {
 	ID          string         `yaml:"id"`
 	Name        string         `yaml:"name"`
+	Summary     string         `yaml:"summary"`
 	Description string         `yaml:"description"`
+	Order       int            `yaml:"order"`
+	Nodes       []string       `yaml:"nodes,omitempty"`
 	Tags        []string       `yaml:"tags"`
 	Steps       []ScenarioStep `yaml:"steps"`
 }
@@ -184,6 +215,7 @@ type ScenarioStep struct {
 	Title       string      `yaml:"title" json:"title"`
 	Description string      `yaml:"description" json:"description"`
 	Action      *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
+	Node        string      `yaml:"node,omitempty" json:"node,omitempty"`
 }
 
 // StepAction defines an executable action for a scenario step.

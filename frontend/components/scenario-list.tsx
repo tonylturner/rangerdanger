@@ -3,6 +3,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { listScenarios, type Scenario } from "../lib/api";
 
+// Maps exercise IDs to workshop workbook sections
+const WORKBOOK_SECTION: Record<string, string> = {
+  "baseline-assessment":       "1.2",
+  "segmentation-requirements": "1.3",
+  "vendor-rdp-compromise":     "2.3",
+  "modbus-override":           "2.3",
+  "dnp3-command-injection":    "2.3",
+  "validation-evidence":       "2.4",
+};
+
 export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ["scenarios", "substation-segmentation"],
@@ -27,21 +37,38 @@ export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAl
 }
 
 function ScenarioCard({ scenario, onStartExercise }: { scenario: Scenario; onStartExercise?: (scenario: Scenario) => void }) {
+  const cardText = scenario.summary || scenario.description;
+  const isBonus = scenario.tags.includes("bonus");
+
   return (
-    <article className="rounded-lg border border-slate-800 bg-slate-900/70 p-4">
+    <article className={`rounded-lg border p-4 ${isBonus ? "border-slate-800/50 bg-slate-900/40 opacity-75" : "border-slate-800 bg-slate-900/70"}`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-bold text-white">{scenario.name}</h2>
-          <p className="mt-0.5 text-xs text-slate-500">{scenario.description}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {scenario.tags.map((tag) => (
-              <span key={tag} className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400">
-                {tag}
-              </span>
-            ))}
-            <span className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-500">
-              {scenario.steps.length} steps
+        <div className="min-w-0 flex items-start gap-3">
+          {scenario.order !== undefined && (
+            <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold ${
+              isBonus ? "bg-slate-800/60 text-slate-500" : "bg-sky-950/60 text-sky-400"
+            }`}>
+              {scenario.order}
             </span>
+          )}
+          <div>
+            <h2 className="text-sm font-bold text-white">{scenario.name}</h2>
+            <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {WORKBOOK_SECTION[scenario.id] && (
+                <span className="rounded-full border border-sky-800/50 bg-sky-950/30 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+                  Section {WORKBOOK_SECTION[scenario.id]}
+                </span>
+              )}
+              {scenario.tags.filter(t => t !== "bonus").map((tag) => (
+                <span key={tag} className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400">
+                  {tag}
+                </span>
+              ))}
+              <span className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-500">
+                {scenario.steps.length} steps
+              </span>
+            </div>
           </div>
         </div>
         {onStartExercise && (

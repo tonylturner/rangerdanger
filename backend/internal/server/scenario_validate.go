@@ -1,13 +1,17 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
 // ValidationCheck is a single pass/fail condition.
@@ -50,19 +54,21 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	var checks []ValidationCheck
 
 	switch scenarioID {
-	case "enterprise-to-breaker":
-		checks = validateEnterpriseToBreaker(state, audit, activeConfig)
-	case "vendor-access-abuse":
-		checks = validateVendorAccessAbuse(state, audit, activeConfig)
-	case "ot-east-west-pivot":
-		checks = validateOTEastWestPivot(state, audit, activeConfig)
-	case "modbus-override":
-		checks = validateModbusOverride(state, audit, activeConfig)
+	case "baseline-assessment":
+		checks = s.validateBaselineAssessment(state, audit, activeConfig)
+	case "segmentation-requirements":
+		checks = validateSegmentationRequirements(state, audit, activeConfig)
 	case "vendor-rdp-compromise":
 		checks = validateVendorRDPCompromise(state, audit, activeConfig)
+	case "modbus-override":
+		checks = validateModbusOverride(state, audit, activeConfig)
+	case "dnp3-command-injection":
+		checks = validateDNP3CommandInjection(state, audit, activeConfig)
+	case "validation-evidence":
+		checks = validateValidationEvidence(state, audit, activeConfig)
 	default:
-		c.JSON(http.StatusNotFound, gin.H{"error": "unknown scenario: " + scenarioID})
-		return
+		// Generic validation: check basic operational state
+		checks = validateGeneric(state, activeConfig)
 	}
 
 	// Determine overall outcome
@@ -443,6 +449,263 @@ func countAuditByZoneAndCommand(entries []map[string]any, zone, command string) 
 		}
 	}
 	return count
+}
+
+// ── Exercise 0: Baseline Assessment ─────────────────────────────
+
+func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	elec := mapGet(state, "electrical")
+	devices := mapGet(state, "devices")
+	comms := mapGet(state, "device_comms")
+
+	// 1. Check if a PCAP capture file exists (student completed the capture step)
+	pcapExists := s.checkPcapFileExists()
+	if pcapExists {
+		checks = append(checks, ValidationCheck{"PCAP captured", "pass", "Baseline capture file found — traffic was recorded"})
+	} else {
+		checks = append(checks, ValidationCheck{"PCAP captured", "fail", "No capture file found — complete Step 2 to capture baseline traffic"})
+	}
+
+	// 2. RTAC communicating with all field devices (the primary required flow)
+	relayComms := boolGet(comms, "relay")
+	recloserComms := boolGet(comms, "recloser")
+	regulatorComms := boolGet(comms, "regulator")
+	if relayComms && recloserComms && regulatorComms {
+		checks = append(checks, ValidationCheck{"RTAC → field device comms", "pass", "RTAC polling relay, recloser, regulator — primary required flow confirmed"})
+	} else {
+		detail := "RTAC not reaching:"
+		if !relayComms { detail += " relay" }
+		if !recloserComms { detail += " recloser" }
+		if !regulatorComms { detail += " regulator" }
+		checks = append(checks, ValidationCheck{"RTAC → field device comms", "fail", detail + " — these flows must be preserved"})
+	}
+
+	// 3. Normal operating state — the baseline we're documenting
+	bkrClosed := boolGet(elec, "breaker_closed")
+	rclClosed := boolGet(elec, "recloser_closed")
+	if bkrClosed && rclClosed {
+		checks = append(checks, ValidationCheck{"Protection active", "pass", "Breaker and recloser CLOSED — protection is normal baseline"})
+	} else {
+		checks = append(checks, ValidationCheck{"Protection active", "fail", "Breaker or recloser OPEN — reset lab before capturing baseline"})
+	}
+
+	// 4. Auto-reclose enabled (key protective function to preserve)
+	recloser := mapGet(devices, "recloser")
+	if boolGet(recloser, "reclose_enabled") {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose ENABLED — fault recovery is part of normal operations"})
+	} else {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "warn", "Auto-reclose DISABLED — this is not normal baseline state"})
+	}
+
+	// 5. All loads energized
+	critEnergized := boolGet(elec, "critical_load_energized")
+	genEnergized := boolGet(elec, "general_load_energized")
+	if critEnergized && genEnergized {
+		checks = append(checks, ValidationCheck{"Loads served", "pass", "All loads energized — hospital, fire station, general customers online"})
+	} else {
+		checks = append(checks, ValidationCheck{"Loads served", "fail", "Loads de-energized — not a valid baseline"})
+	}
+
+	// 6. Voltage within normal range
+	critV := floatGet(elec, "critical_load_voltage_v")
+	if critV >= 114 && critV <= 126 {
+		checks = append(checks, ValidationCheck{"Voltage", "pass",
+			fmtFloat(critV) + "V — within ANSI C84.1 Range A (114-126V)"})
+	} else if critV > 0 {
+		checks = append(checks, ValidationCheck{"Voltage", "warn",
+			fmtFloat(critV) + "V — outside normal range"})
+	} else {
+		checks = append(checks, ValidationCheck{"Voltage", "fail", "0V — no power"})
+	}
+
+	return checks
+}
+
+// ── Exercise 1: Segmentation Requirements ───────────────────────
+
+func validateSegmentationRequirements(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	elec := mapGet(state, "electrical")
+	bkrClosed := boolGet(elec, "breaker_closed")
+
+	if bkrClosed {
+		checks = append(checks, ValidationCheck{"Feeder status", "pass", "Feeder operating normally"})
+	} else {
+		checks = append(checks, ValidationCheck{"Feeder status", "fail", "Feeder breaker open"})
+	}
+
+	// This exercise ends with applying improved config
+	if activeConfig == "improved" {
+		checks = append(checks, ValidationCheck{"Hardened config applied", "pass", "Improved firewall configuration is active"})
+	} else {
+		checks = append(checks, ValidationCheck{"Hardened config applied", "warn", "Improved config not yet applied — complete step 6"})
+	}
+
+	// Check RTAC can still communicate (improved config should allow RTAC→field)
+	comms := mapGet(state, "device_comms")
+	if boolGet(comms, "relay") && boolGet(comms, "recloser") && boolGet(comms, "regulator") {
+		checks = append(checks, ValidationCheck{"RTAC still operational", "pass", "RTAC communicating with all field devices through hardened firewall"})
+	} else {
+		checks = append(checks, ValidationCheck{"RTAC still operational", "fail", "RTAC lost communication — firewall may be blocking authorized traffic"})
+	}
+
+	return checks
+}
+
+// ── Exercise 4: DNP3 Command Injection ──────────────────────────
+
+func validateDNP3CommandInjection(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	devices := mapGet(state, "devices")
+	recloser := mapGet(devices, "recloser")
+	recloseEnabled := boolGet(recloser, "reclose_enabled")
+
+	if recloseEnabled {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose is ENABLED — attack was blocked or restored"})
+	} else {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "fail", "Auto-reclose is DISABLED — DNP3 attack may have succeeded"})
+	}
+
+	elec := mapGet(state, "electrical")
+	rclClosed := boolGet(elec, "recloser_closed")
+	if rclClosed {
+		checks = append(checks, ValidationCheck{"Recloser status", "pass", "Recloser CLOSED — downstream loads served"})
+	} else {
+		checks = append(checks, ValidationCheck{"Recloser status", "fail", "Recloser OPEN — outage in progress"})
+	}
+
+	if activeConfig == "improved" {
+		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Improved config active — enterprise→field DNP3 blocked"})
+	} else {
+		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — DNP3 attack path still open"})
+	}
+
+	entDNP3 := countAuditByZoneAndCommand(audit, "enterprise", "crob_reclose")
+	if entDNP3 == 0 {
+		checks = append(checks, ValidationCheck{"Audit: enterprise DNP3", "pass", "No DNP3 reclose commands from enterprise zone"})
+	} else {
+		checks = append(checks, ValidationCheck{"Audit: enterprise DNP3", "warn",
+			strings.Replace("N DNP3 command(s) from enterprise zone detected", "N", itoa(entDNP3), 1)})
+	}
+
+	return checks
+}
+
+// ── Exercise 5: Validation & Evidence ───────────────────────────
+
+func validateValidationEvidence(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	// Must be on improved config
+	if activeConfig == "improved" {
+		checks = append(checks, ValidationCheck{"Hardened config", "pass", "Improved firewall configuration is active"})
+	} else {
+		checks = append(checks, ValidationCheck{"Hardened config", "fail", "Improved config not active — apply it first"})
+	}
+
+	// All devices operational
+	elec := mapGet(state, "electrical")
+	bkrClosed := boolGet(elec, "breaker_closed")
+	rclClosed := boolGet(elec, "recloser_closed")
+	critEnergized := boolGet(elec, "critical_load_energized")
+
+	if bkrClosed && rclClosed {
+		checks = append(checks, ValidationCheck{"Protection status", "pass", "Breaker and recloser CLOSED — normal protection"})
+	} else {
+		checks = append(checks, ValidationCheck{"Protection status", "fail", "Breaker or recloser OPEN — not normal"})
+	}
+
+	if critEnergized {
+		checks = append(checks, ValidationCheck{"Critical loads", "pass", "Hospital and fire station energized"})
+	} else {
+		checks = append(checks, ValidationCheck{"Critical loads", "fail", "Critical loads de-energized"})
+	}
+
+	// RTAC still communicating through hardened firewall
+	comms := mapGet(state, "device_comms")
+	allComms := boolGet(comms, "relay") && boolGet(comms, "recloser") && boolGet(comms, "regulator")
+	if allComms {
+		checks = append(checks, ValidationCheck{"RTAC→field comms", "pass", "RTAC polling all field devices through containd"})
+	} else {
+		checks = append(checks, ValidationCheck{"RTAC→field comms", "fail", "RTAC lost communication with field devices"})
+	}
+
+	devices := mapGet(state, "devices")
+	recloser := mapGet(devices, "recloser")
+	if boolGet(recloser, "reclose_enabled") {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose enabled"})
+	} else {
+		checks = append(checks, ValidationCheck{"Auto-reclose", "fail", "Auto-reclose disabled"})
+	}
+
+	return checks
+}
+
+// ── Generic validation (fallback) ───────────────────────────────
+
+func validateGeneric(state map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	elec := mapGet(state, "electrical")
+	if boolGet(elec, "breaker_closed") {
+		checks = append(checks, ValidationCheck{"Breaker", "pass", "Feeder breaker CLOSED"})
+	} else {
+		checks = append(checks, ValidationCheck{"Breaker", "fail", "Feeder breaker OPEN"})
+	}
+
+	if boolGet(elec, "critical_load_energized") {
+		checks = append(checks, ValidationCheck{"Critical load", "pass", "Energized"})
+	} else {
+		checks = append(checks, ValidationCheck{"Critical load", "fail", "De-energized"})
+	}
+
+	checks = append(checks, ValidationCheck{"Firewall config", "pass", "Active: " + activeConfig})
+
+	return checks
+}
+
+// checkPcapFileExists checks if any PCAP capture files are available.
+func (s *Server) checkPcapFileExists() bool {
+	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+		execCfg := container.ExecOptions{
+			Cmd:          []string{"sh", "-c", "test -s /data/captures/baseline.pcap && echo YES"},
+			AttachStdout: true,
+		}
+		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		if err == nil {
+			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
+			if err == nil {
+				out, _ := io.ReadAll(resp.Reader)
+				resp.Close()
+				if strings.Contains(string(out), "YES") {
+					return true
+				}
+			}
+		}
+	}
+
+	// 2. Check containd PCAP API (covers API-initiated captures)
+	containdURL := s.cfg.ContaindAPIURL
+	if containdURL == "" {
+		containdURL = "http://firewall:8080"
+	}
+	client := containd.NewClient(containdURL)
+	files, err := client.ListPcapFiles()
+	if err == nil && len(files) > 0 {
+		return true
+	}
+
+	// 3. Check the backend's own capture tracking
+	s.pcapMu.Lock()
+	hasCapture := s.pcap.FileReady
+	s.pcapMu.Unlock()
+
+	return hasCapture
 }
 
 func countAuditNonRTACCommand(entries []map[string]any, command string) int {

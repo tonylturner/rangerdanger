@@ -183,6 +183,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	go startModbusServer()
+	go startDNP3Server()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", handleState)

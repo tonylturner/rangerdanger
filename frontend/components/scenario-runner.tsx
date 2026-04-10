@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   validateScenario,
   getSubstationState,
@@ -9,29 +9,277 @@ import {
   sendSubstationCommand,
   executeScenarioStep,
   getSubstationAudit,
+  execOnNode,
+  resetWorkshop,
+  startTrafficGeneration,
+  getTrafficStatus,
+  startPcapCapture,
+  getPcapStatus,
+  getPcapDownloadUrl,
   type Scenario,
   type ValidationResult,
   type SubstationState,
   type StepExecutionResult,
   type AuditEntry,
 } from "../lib/api";
+import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
+import { SharedTerminalPanel } from "./terminal-context";
+import { NODE_UI_URLS } from "../lib/exercise-nodes";
+import Link from "next/link";
+import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+
+/** Parse inline [text](/path) links within a prose string. */
+function renderLinks(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(
+      <Link key={match.index} href={match[2]} className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
+        {match[1]}
+      </Link>
+    );
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+
+/** Split description into interleaved prose segments and command blocks. */
+function splitDescription(text: string): { type: "prose" | "cmd"; value: string }[] {
+  const result: { type: "prose" | "cmd"; value: string }[] = [];
+  const lines = text.split("\n");
+  let prose: string[] = [];
+  let i = 0;
+
+  const flushProse = () => {
+    if (prose.length > 0) {
+      result.push({ type: "prose", value: prose.join("\n") });
+      prose = [];
+    }
+  };
+
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (CMD_TOOL_RE.test(trimmed)) {
+      flushProse();
+      let cmd = trimmed;
+      while (cmd.endsWith("\\") && i + 1 < lines.length) {
+        i++;
+        cmd += "\n  " + lines[i].trim();
+      }
+      result.push({ type: "cmd", value: cmd });
+    } else {
+      prose.push(lines[i]);
+    }
+    i++;
+  }
+  flushProse();
+  return result;
+}
 
 type RunnerProps = {
   scenario: Scenario;
   onExit: () => void;
 };
 
+// ── LocalStorage persistence helpers ──────────────────────────────
+function storageKey(scenarioId: string) { return `rd-exercise-${scenarioId}`; }
+
+type SavedState = {
+  completedSteps: number[];
+  notes: string;
+  cmdLog: string[];
+};
+
+function loadSaved(scenarioId: string): SavedState {
+  try {
+    const raw = localStorage.getItem(storageKey(scenarioId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate from per-step notes (Record<number, string>) to single shared note
+      if (parsed.notes && typeof parsed.notes === "object" && !Array.isArray(parsed.notes)) {
+        const merged = Object.values(parsed.notes as Record<string, string>).filter(Boolean).join("\n\n");
+        return { ...parsed, notes: merged };
+      }
+      return parsed;
+    }
+  } catch { /* ignore */ }
+  return { completedSteps: [], notes: "", cmdLog: [] };
+}
+
+function saveToDisk(scenarioId: string, state: SavedState) {
+  try { localStorage.setItem(storageKey(scenarioId), JSON.stringify(state)); } catch { /* ignore */ }
+}
+
 export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
+  const saved = loadSaved(scenario.id);
   const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(saved.completedSteps));
+  const [notes, setNotes] = useState<string>(saved.notes);
+  const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [state, setState] = useState<SubstationState | null>(null);
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
-  const [cmdLog, setCmdLog] = useState<string[]>([]);
+  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
   const [executing, setExecuting] = useState(false);
+  const [autoRunning, setAutoRunning] = useState<number | null>(null);
+  const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
+  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  const [showTerminalPanel, setShowTerminalPanel] = useState(false);
+  const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
+  const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
+  const [panelHeight, setPanelHeight] = useState(300);
+  const resizingRef = useRef(false);
+  const resizeStartRef = useRef({ y: 0, h: 0 });
+  const [generatingTraffic, setGeneratingTraffic] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  // Panel resize handlers
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    resizeStartRef.current = { y: e.clientY, h: panelHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = resizeStartRef.current.y - ev.clientY;
+      const next = Math.max(200, Math.min(800, resizeStartRef.current.h + delta));
+      setPanelHeight(next);
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [panelHeight]);
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    saveToDisk(scenario.id, { completedSteps: [...completedSteps], notes, cmdLog });
+  }, [completedSteps, notes, cmdLog, scenario.id]);
+
+  const resetProgress = () => {
+    setCompletedSteps(new Set());
+    setNotes("");
+    setCurrentStep(0);
+    setCmdLog([]);
+    setValidation(null);
+    setStepResult(null);
+    try { localStorage.removeItem(storageKey(scenario.id)); } catch { /* ignore */ }
+  };
+
+  const handleAutoRun = async (cmd: string, cmdIdx: number, stepDesc: string) => {
+    const step = scenario.steps[currentStep];
+    const nodeId = step?.node
+      || inferNodeFromDescription(stepDesc)
+      || (EXERCISE_NODE_MAP[scenario.id]?.primary)
+      || exerciseNodes[0];
+
+    if (!nodeId) {
+      setCmdLog((prev) => [`[ERROR] No target node for command — open terminal and run manually`, ...prev].slice(0, 100));
+      return;
+    }
+
+    setAutoRunning(cmdIdx);
+    const nodeLabel = NODE_LABELS[nodeId] || nodeId;
+    setCmdLog((prev) => [`[RUN on ${nodeLabel}] ${cmd}`, ...prev].slice(0, 100));
+
+    try {
+      const result = await execOnNode(nodeId, cmd, 30);
+      const lines = (result.stdout || result.stderr || "").split("\n").filter(Boolean);
+      const output = lines.length > 20
+        ? [...lines.slice(0, 18), `... (${lines.length - 18} more lines)`]
+        : lines;
+      const status = result.exit_code === 0 ? "OK" : `EXIT ${result.exit_code}`;
+      setCmdLog((prev) => [
+        `[${status}] completed in ${result.duration_ms}ms`,
+        ...output.map((l) => "  " + l),
+        ...prev,
+      ].slice(0, 100));
+      setTimeout(pollState, 500);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 100));
+    } finally {
+      setAutoRunning(null);
+    }
+  };
+
+  const handleLabReset = async () => {
+    setResettingLab(true);
+    setCmdLog((prev) => [`[RESET] Restoring lab to default state...`, ...prev].slice(0, 100));
+    try {
+      const result = await resetWorkshop();
+      const actionLines = result.actions.map(
+        (a) => `  ${a.success ? "\u2713" : "\u2717"} ${a.action}: ${a.detail}`
+      );
+      setCmdLog((prev) => [
+        `[RESET] ${result.success ? "Lab restored" : "Reset had errors"} (${result.actions.length} actions)`,
+        ...actionLines,
+        ...prev,
+      ].slice(0, 100));
+      setTimeout(pollState, 500);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Reset failed: ${e}`, ...prev].slice(0, 100));
+    } finally {
+      setResettingLab(false);
+    }
+  };
+
+  const handleGenerateTraffic = async (durationSec = 45) => {
+    setGeneratingTraffic(true);
+    setCmdLog((prev) => [`[TRAFFIC] Generating ${durationSec}s of representative OT traffic...`, ...prev].slice(0, 100));
+    try {
+      await startTrafficGeneration(durationSec);
+      setCmdLog((prev) => [`[TRAFFIC] Generation started — ${durationSec}s of Modbus, DNP3, HTTP, NTP flows`, ...prev].slice(0, 100));
+      // Poll for completion
+      const pollId = setInterval(async () => {
+        try {
+          const status = await getTrafficStatus();
+          if (!status.generating) {
+            clearInterval(pollId);
+            setGeneratingTraffic(false);
+            setCmdLog((prev) => [`[TRAFFIC] Complete — ${status.flows_generated || 0} flows generated`, ...prev].slice(0, 100));
+          }
+        } catch { clearInterval(pollId); setGeneratingTraffic(false); }
+      }, 3000);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Traffic generation failed: ${e}`, ...prev].slice(0, 100));
+      setGeneratingTraffic(false);
+    }
+  };
+
+  const handleStartCapture = async (durationSec = 60, name = "baseline") => {
+    setCapturing(true);
+    setCmdLog((prev) => [`[CAPTURE] Starting ${durationSec}s packet capture on firewall...`, ...prev].slice(0, 100));
+    try {
+      await startPcapCapture(durationSec, name);
+      setCmdLog((prev) => [`[CAPTURE] Recording on all firewall interfaces`, ...prev].slice(0, 100));
+      const pollId = setInterval(async () => {
+        try {
+          const status = await getPcapStatus();
+          if (!status.capturing) {
+            clearInterval(pollId);
+            setCapturing(false);
+            const url = getPcapDownloadUrl();
+            setCmdLog((prev) => [`[CAPTURE] Complete — download at ${url}`, ...prev].slice(0, 100));
+          }
+        } catch { clearInterval(pollId); setCapturing(false); }
+      }, 3000);
+    } catch (e) {
+      setCmdLog((prev) => [`[ERROR] Capture failed: ${e}`, ...prev].slice(0, 100));
+      setCapturing(false);
+    }
+  };
 
   const pollState = useCallback(async () => {
     try {
@@ -133,16 +381,83 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">Exercise Mode</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
+            Exercise {scenario.order ?? 0}
+          </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
-          <p className="text-xs text-slate-500">{scenario.description}</p>
+          <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
-        <button
-          onClick={onExit}
-          className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
-        >
-          Exit Exercise
-        </button>
+        <div className="flex items-center gap-2">
+          {completedSteps.size > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowSummary(!showSummary)}
+                  aria-label={showSummary ? "Back to Exercise" : "View Summary"}
+                  className="inline-flex items-center justify-center rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
+                >
+                  {showSummary ? <ArrowLeft className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{showSummary ? "Back to Exercise" : "View Summary"}</TooltipContent>
+            </Tooltip>
+          )}
+          {exerciseNodes.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+                  aria-label={showTerminalPanel ? "Hide terminal" : "Show terminal"}
+                  className={`inline-flex items-center justify-center rounded border px-3 py-1.5 text-xs transition-all ${
+                    showTerminalPanel
+                      ? "border-cyan-400 bg-cyan-950/60 text-cyan-300 ring-2 ring-cyan-400/60 ring-offset-0"
+                      : "border-slate-700 bg-slate-800/50 text-slate-400 hover:text-cyan-400 hover:border-slate-600"
+                  }`}
+                >
+                  <TerminalIcon className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{showTerminalPanel ? "Hide terminal" : "Show terminal"}</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleLabReset}
+                disabled={resettingLab}
+                aria-label="Reset Lab"
+                className="inline-flex items-center justify-center rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
+              >
+                <RotateCcw className={`h-4 w-4 ${resettingLab ? "animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{resettingLab ? "Resetting lab..." : "Reset Lab"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={resetProgress}
+                aria-label="Reset Progress"
+                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
+              >
+                <Eraser className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Reset Progress</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onExit}
+                aria-label="Exit Exercise"
+                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Exit Exercise</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -158,7 +473,18 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {/* ── Summary View ──────────────────────────────────────── */}
+      {showSummary && (
+        <ExerciseSummary
+          scenario={scenario}
+          completedSteps={completedSteps}
+          notes={notes}
+          activeConfig={activeConfig}
+        />
+      )}
+
+      {/* ── Exercise View ─────────────────────────────────────── */}
+      {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         {/* Left: Step navigator */}
         <div className="space-y-1">
           {scenario.steps.map((s, i) => {
@@ -220,15 +546,97 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-              {step?.description}
-            </p>
+            {/* Description with inline command blocks */}
+            {step?.description && (() => {
+              const segments = splitDescription(step.description);
+              let cmdIdx = 0;
+              return (
+                <div className="space-y-2">
+                  {segments.map((seg, si) => {
+                    if (seg.type === "prose") {
+                      const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
+                      if (!trimmed) return null;
+                      return (
+                        <p key={si} className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                          {renderLinks(trimmed)}
+                        </p>
+                      );
+                    }
+                    const ci = cmdIdx++;
+                    const cmd = seg.value;
+                    return (
+                      <div key={si} className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+                        <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
+                        <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+                          {exerciseNodes.length > 0 && (
+                            <button
+                              onClick={() => handleAutoRun(cmd, ci, step.description)}
+                              disabled={autoRunning !== null}
+                              className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+                            >
+                              {autoRunning === ci ? "Running..." : "Run"}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => navigator.clipboard?.writeText(cmd)}
+                            className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
+                          >
+                            copy
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
-            {step?.description?.includes("curl") && (
-              <div className="mt-3 rounded border border-slate-700 bg-slate-950 p-3 font-mono text-[11px] text-amber-400">
-                {extractCommand(step.description)}
+            {/* Quick action buttons for traffic/capture steps */}
+            {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
+              <div className="mt-2">
+                <button
+                  onClick={() => handleGenerateTraffic(45)}
+                  disabled={generatingTraffic}
+                  className="rounded border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
+                >
+                  {generatingTraffic ? "Generating Traffic..." : "Generate Traffic (45s)"}
+                </button>
               </div>
             )}
+            {step?.description && (step.description.includes("pcap/start") || step.description.includes("packet capture")) && !step.description.includes("representative traffic") && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => handleStartCapture(60, "baseline")}
+                  disabled={capturing}
+                  className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                >
+                  {capturing ? "Capturing..." : "Start 60s Capture"}
+                </button>
+                {!capturing && (
+                  <a
+                    href={getPcapDownloadUrl()}
+                    className="text-[10px] text-slate-500 hover:text-sky-400"
+                    download
+                  >
+                    Download Last Capture
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Shared notes — persists across all steps */}
+            <div className="mt-3">
+              <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Exercise Notes
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Document your findings, observations, or answers here. Notes persist across all steps."
+                className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-none resize-y min-h-[60px]"
+                rows={3}
+              />
+            </div>
           </div>
 
           {/* Step execution result */}
@@ -325,20 +733,32 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           </div>
 
-          {/* Command log */}
+          {/* Command log — persistent, scrollable */}
           {cmdLog.length > 0 && (
-            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 max-h-32 overflow-y-auto">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Command Results
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 max-h-64 overflow-y-auto">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Command Log ({cmdLog.length} entries)
+                </div>
+                <button
+                  onClick={() => setCmdLog([])}
+                  className="text-[9px] text-slate-600 hover:text-slate-400"
+                >
+                  clear
+                </button>
               </div>
               {cmdLog.map((msg, i) => (
                 <div key={i} className={`font-mono text-[11px] ${
-                  msg.startsWith("[SUCCEEDED]")
+                  msg.startsWith("[SUCCEEDED]") || msg.startsWith("[OK]")
                     ? "text-green-400"
-                    : msg.startsWith("[BLOCKED]")
+                    : msg.startsWith("[BLOCKED]") || msg.startsWith("[RESET]")
                     ? "text-amber-400"
-                    : msg.startsWith("[ERROR]")
+                    : msg.startsWith("[ERROR]") || msg.startsWith("[EXIT")
                     ? "text-red-400"
+                    : msg.startsWith("[RUN")
+                    ? "text-sky-400"
+                    : msg.startsWith("  ")
+                    ? "text-slate-500"
                     : "text-slate-400"
                 }`}>
                   {msg}
@@ -390,7 +810,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               disabled={validating}
               className="rounded border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
             >
-              {validating ? "Validating..." : "Validate Scenario"}
+              {validating ? "Validating..." : "Validate Exercise"}
             </button>
             {validation && (
               <span className={`text-sm font-bold ${
@@ -425,7 +845,74 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           )}
         </div>
-      </div>
+      </div>}
+
+      {/* ── Node Terminal/UI Panel ─────────────────────────────── */}
+      {showTerminalPanel && exerciseNodes.length > 0 && !showSummary && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+          {/* Resize handle */}
+          <div
+            onMouseDown={onResizeStart}
+            className="h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-slate-700/50 transition-colors group"
+          >
+            <div className="w-8 h-0.5 rounded-full bg-slate-700 group-hover:bg-slate-500" />
+          </div>
+          {/* Node switcher + Terminal/UI toggle */}
+          <div className="flex items-center border-b border-slate-800 px-2 py-1 gap-1">
+            {exerciseNodes.map((nodeId) => (
+              <button
+                key={nodeId}
+                onClick={() => { setActiveTerminalNode(nodeId); setPanelMode("terminal"); }}
+                className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                  activeTerminalNode === nodeId
+                    ? "bg-cyan-950/60 text-cyan-400 border border-cyan-800/50"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent"
+                }`}
+              >
+                {NODE_LABELS[nodeId] || nodeId}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => { setPanelMode("terminal"); if (panelHeight > 400) setPanelHeight(300); }}
+                className={`rounded px-2 py-1 text-[9px] font-medium ${
+                  panelMode === "terminal" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Terminal
+              </button>
+              {NODE_UI_URLS[activeTerminalNode] && (
+                <button
+                  onClick={() => { setPanelMode("ui"); if (panelHeight < 400) setPanelHeight(500); }}
+                  className={`rounded px-2 py-1 text-[9px] font-medium ${
+                    panelMode === "ui" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  UI
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="relative" style={{ height: panelHeight }}>
+            {panelMode === "terminal" && (
+              <SharedTerminalPanel
+                nodes={exerciseNodes}
+                activeNode={activeTerminalNode}
+                height={panelHeight}
+              />
+            )}
+            {panelMode === "ui" && NODE_UI_URLS[activeTerminalNode] && (
+              <iframe
+                title={`${NODE_LABELS[activeTerminalNode] || activeTerminalNode} UI`}
+                src={NODE_UI_URLS[activeTerminalNode]}
+                className="h-full w-full border-0"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -538,9 +1025,97 @@ function MiniStatus({ label, value, ok }: { label: string; value: string; ok?: b
   );
 }
 
-function extractCommand(description: string): string {
-  const match = description.match(/curl\s+.*$/m);
-  return match ? match[0].trim() : "";
+// ── Exercise Summary Component ───────────────────────────────────
+
+function ExerciseSummary({
+  scenario,
+  completedSteps,
+  notes,
+  activeConfig,
+}: {
+  scenario: Scenario;
+  completedSteps: Set<number>;
+  notes: string;
+  activeConfig: string | null;
+}) {
+  const completionPct = Math.round((completedSteps.size / scenario.steps.length) * 100);
+  const timestamp = new Date().toLocaleString();
+
+  const summaryText = [
+    `Exercise ${scenario.order ?? ""}: ${scenario.name}`,
+    `Completed: ${completedSteps.size}/${scenario.steps.length} steps (${completionPct}%)`,
+    `Firewall Config: ${activeConfig || "unknown"}`,
+    `Date: ${timestamp}`,
+    "",
+    ...scenario.steps.map((s, i) => {
+      const done = completedSteps.has(i) ? "[x]" : "[ ]";
+      return `${done} Step ${i + 1}: ${s.title}`;
+    }),
+    ...(notes ? ["", "Notes:", notes] : []),
+  ].join("\n");
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-white">Exercise Summary</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigator.clipboard?.writeText(summaryText)}
+              className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1 text-[10px] text-slate-400 hover:text-slate-200"
+            >
+              Copy to Clipboard
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3 mb-4">
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Completion</div>
+            <div className={`text-lg font-bold ${completionPct === 100 ? "text-green-400" : "text-sky-400"}`}>
+              {completionPct}%
+            </div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Firewall Config</div>
+            <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
+              {activeConfig || "—"}
+            </div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes</div>
+            <div className="text-lg font-bold text-slate-300">
+              {notes ? `${notes.split("\n").length} lines` : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {scenario.steps.map((s, i) => {
+            const done = completedSteps.has(i);
+            return (
+              <div key={i} className={`rounded border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold ${done ? "text-green-400" : "text-slate-600"}`}>
+                    {done ? "\u2713" : "\u2022"}
+                  </span>
+                  <span className={`text-xs font-medium ${done ? "text-slate-300" : "text-slate-500"}`}>
+                    Step {i + 1}: {s.title}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+          {notes && (
+            <div className="rounded border border-slate-800 bg-slate-950/50 p-3 mt-2">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Exercise Notes</div>
+              <div className="text-xs text-slate-400 whitespace-pre-line">{notes}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function isSegmentationStep(title?: string): boolean {

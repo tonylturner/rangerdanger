@@ -1,0 +1,106 @@
+id: segmentation-requirements
+order: 1
+name: "Segmentation Requirements & Rule Design"
+summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
+description: >
+  Using the baseline assessment findings, define what
+  communications should be allowed between each zone pair.
+  Apply the principle of least privilege: deny by default,
+  allow only named flows required for operations. Then
+  compare your requirements to the improved containd
+  configuration to see how they translate to firewall rules.
+tags:
+  - requirements
+  - planning
+  - segmentation
+  - defense
+steps:
+  - title: "Define enterprise zone requirements"
+    description: >
+      The enterprise zone (10.10.10.0/24) contains corporate
+      workstations and the Kali attacker box. Define what this
+      zone SHOULD be allowed to reach:
+
+        Enterprise → Vendor/DMZ: SSH (22), HTTP/S (80, 443) for jump box access
+        Enterprise → OT Ops: DENY (no direct access)
+        Enterprise → Field Devices: DENY (no direct access)
+
+      Key principle: Enterprise should never initiate connections
+      into OT or field zones. All access goes through the DMZ
+      jump host.
+
+  - title: "Define vendor/DMZ zone requirements"
+    description: >
+      The vendor zone (10.20.20.0/24) contains the jump host
+      and engineering workstation. Define allowed flows:
+
+        Vendor/DMZ → OT Ops: SSH (22), HTTPS (443) only — for monitoring
+        Vendor/DMZ → Field Devices: DENY (no direct access)
+
+      Vendor access to field devices should be brokered through
+      the RTAC, never direct. This is the lesson from Exercise 2
+      (Vendor RDP Compromise).
+
+  - title: "Define OT operations zone requirements"
+    description: >
+      The OT ops zone (10.30.30.0/24) contains the HMI, RTAC,
+      OpenPLC, historian, and GPS. Define internal and outbound flows:
+
+        OT Ops intra-zone: Modbus (502), DNP3 (20000), HTTP (8080), FUXA (1881), NTP (123)
+        OT Ops → Field Devices: RTAC ONLY — Modbus (502), DNP3 (20000), HTTP (8080)
+        Other OT nodes → Field Devices: DENY
+
+      Critical: only the RTAC (via its field interface at 10.40.40.10)
+      should control field devices. A compromised HMI or OpenPLC
+      must not be able to reach relays directly.
+
+  - title: "Define protocol-specific constraints"
+    description: >
+      Beyond port-level rules, define what protocol operations
+      should be allowed at the DPI level:
+
+        Modbus: RTAC may read (FC1-4) and write (FC5-6) to field devices
+        Modbus: Other sources — deny all function codes
+        DNP3: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate)
+        DNP3: Other sources — deny all
+
+      The containd NGFW supports ICS DPI with function code filtering.
+      Slide 87 from the training shows the read/write split pattern:
+      allow reads from monitoring systems, deny writes except from
+      authorized controllers.
+
+  - title: "Compare to the improved configuration"
+    description: >
+      Open the RangerDanger Feeder HMI and go to the containd
+      Segmentation tab. Click "Compare Policies" to see the
+      weak vs improved configuration side by side.
+
+      Check how your requirements map to the actual rules:
+      - Enterprise→OT/Field: DENY rules with explicit port lists
+      - Vendor→Field: DENY on 502, 20000, 8080
+      - RTAC→Field: ALLOW with source pinned to 10.40.40.10
+      - RTAC→Field Modbus: ICS DPI with functionCodes [1,2,3,4,5,6]
+      - RTAC→Field DNP3: ICS DPI with protocol "dnp3"
+
+      Note any differences between your requirements and the
+      improved config. Are there rules you'd add or tighten?
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+
+  - title: "Apply the improved configuration"
+    description: >
+      Apply the improved firewall config via the containd
+      Segmentation tab. This is the configuration you'll
+      validate in the attack exercises that follow.
+
+      After applying, verify the RTAC can still poll field devices:
+
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+      All devices should show comms_ok: true. The segmentation
+      blocks unauthorized access without disrupting operations.
+    action:
+      type: firewall
+      config: improved

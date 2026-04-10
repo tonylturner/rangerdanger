@@ -1,0 +1,167 @@
+id: validation-evidence
+order: 5
+name: "Post-Change Validation & Evidence Collection"
+summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package."
+description: >
+  After applying the hardened firewall configuration, validate
+  that segmentation is working correctly with both positive tests
+  (authorized flows still work) and negative tests (unauthorized
+  flows are blocked). Capture packet captures as evidence and
+  document the results. This is the validation step required
+  before any segmentation change goes to production.
+nodes:
+  - kali-1
+  - vendor-jump-1
+  - eng-ws-1
+tags:
+  - validation
+  - testing
+  - pcap
+  - evidence
+  - defense
+steps:
+  - title: "Verify improved config is active"
+    description: >
+      Confirm the hardened firewall policy is loaded. Check via
+      the RangerDanger containd Segmentation tab, or via API:
+
+        curl -s http://localhost:8088/api/firewall/active
+
+      The active config should be "improved". If not, apply it
+      from the Segmentation tab first.
+    action:
+      type: check
+      expect:
+        firewall_config: improved
+
+  - title: "Positive test: RTAC → field device Modbus"
+    description: >
+      Verify the RTAC can still read and write to field devices
+      via Modbus. This is the authorized path that must keep working.
+
+      Check RTAC state aggregation:
+
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+      All three field devices should show in the response with
+      current state data. device_comms should all be true.
+
+      The RTAC polls field devices every 1 second via HTTP and
+      every 5 seconds via DNP3. Both paths should be operational.
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+
+  - title: "Positive test: RTAC → field device DNP3"
+    description: >
+      Verify DNP3 polling from the RTAC is working through the
+      firewall. From the RTAC or any OT ops host:
+
+        dnp3poll 10.40.40.20:20000 -a 1
+        dnp3poll 10.40.40.21:20000 -a 2
+        dnp3poll 10.40.40.22:20000 -a 3
+
+      All three should return point data. This confirms the
+      rtac-to-field-dnp3 ALLOW rule is working.
+
+  - title: "Positive test: HMI → RTAC communication"
+    description: >
+      Verify the HMI can still reach the RTAC within the OT ops
+      zone (intra-zone traffic):
+
+        curl -s http://10.30.30.20:8080/api/health
+
+      Should return status: ok. OT intra-zone rules allow
+      Modbus, DNP3, HTTP, and FUXA between OT ops nodes.
+
+  - title: "Negative test: Enterprise → field device blocked"
+    description: >
+      From Kali (10.10.10.50), verify enterprise cannot reach
+      field devices on any ICS protocol:
+
+        nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
+
+      All ports should show as filtered (blocked by containd).
+
+      Try Modbus:
+
+        mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
+
+      Should time out. Try DNP3:
+
+        dnp3poll 10.40.40.20:20000 -a 1
+
+      Should fail to connect. Document each blocked attempt.
+
+  - title: "Negative test: Vendor → field device blocked"
+    description: >
+      From the vendor jump box (10.20.20.10), verify vendor
+      zone cannot reach field devices:
+
+        nmap -p 502,20000 10.40.40.21 --max-retries 1 -T4
+
+      Should show filtered. Try:
+
+        mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
+
+      Should time out. This confirms the vendor compromise
+      attack path from Exercise 2 is now blocked.
+
+  - title: "Negative test: Non-RTAC OT node → field device blocked"
+    description: >
+      From a non-RTAC OT operations node (e.g., OpenPLC at
+      10.30.30.30), verify direct field device access is blocked:
+
+        nmap -p 502,20000 10.40.40.22 --max-retries 1 -T4
+
+      Should show filtered. Only the RTAC's field interface
+      (10.40.40.10) is allowed through. This confirms the
+      Modbus override attack path from Exercise 3 is blocked.
+
+  - title: "Capture PCAP evidence"
+    description: >
+      From the engineering workstation, capture traffic across
+      the OT and field zones to document the segmentation:
+
+        tshark -i eth0 -f "tcp port 502 or tcp port 20000" \
+          -a duration:30 -w /home/abc/pcaps/validation.pcap
+
+      After 30 seconds, examine the capture:
+
+        tshark -r /home/abc/pcaps/validation.pcap \
+          -T fields -e ip.src -e ip.dst -e tcp.dstport \
+          | sort | uniq -c | sort -rn
+
+      The only Modbus/DNP3 traffic to field devices should be
+      from the RTAC (10.40.40.10). No enterprise, vendor, or
+      other OT source IPs should appear talking to 10.40.40.x.
+
+  - title: "Document validation results"
+    description: >
+      Summarize your evidence package:
+
+      Positive tests (PASS = authorized traffic works):
+      - RTAC → relay Modbus: PASS / FAIL
+      - RTAC → recloser DNP3: PASS / FAIL
+      - RTAC → regulator DNP3: PASS / FAIL
+      - HMI → RTAC HTTP: PASS / FAIL
+
+      Negative tests (PASS = unauthorized traffic blocked):
+      - Enterprise → field Modbus: PASS / FAIL
+      - Enterprise → field DNP3: PASS / FAIL
+      - Vendor → field Modbus: PASS / FAIL
+      - Non-RTAC OT → field Modbus: PASS / FAIL
+
+      Evidence artifacts:
+      - PCAP file: validation.pcap
+      - Firewall config: improved (active)
+      - Containd rule hit counts from Segmentation tab
+
+      This evidence package is what you'd present to a change
+      board before moving segmentation changes to production.
+    action:
+      type: check
+      expect:
+        firewall_config: improved
+        breaker_closed: true

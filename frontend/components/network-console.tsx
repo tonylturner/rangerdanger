@@ -25,6 +25,7 @@ import {
 } from "../lib/api";
 import { Button } from "./ui/button";
 import { NodeTerminal } from "./node-terminal";
+import { SharedTerminalPanel, useTerminals } from "./terminal-context";
 import { nodeTypes, zoneColors } from "./topology-nodes";
 import { ExternalLink, Maximize2, X } from "lucide-react";
 
@@ -184,8 +185,8 @@ export function NetworkConsole() {
   const [showModal, setShowModal] = useState(false);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  // Track which nodes have active (alive) terminal sessions
-  const [activeTerminals, setActiveTerminals] = useState<Set<string>>(new Set());
+  // Shared terminal state — persists across page navigations
+  const { openTerminals: activeTerminals, open: openSharedTerminal } = useTerminals();
 
   const {
     data: graph,
@@ -335,7 +336,7 @@ export function NetworkConsole() {
               <h3 className="text-xl font-semibold text-white">{inspectorNode.data?.label}</h3>
               <p className="text-sm text-slate-400">{inspectorNode.data?.nodeType || inspectorNode.type}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); setActiveTerminals(new Set()); }}>
+            <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); }}>
               Close
             </Button>
           </div>
@@ -425,7 +426,7 @@ export function NetworkConsole() {
               onClick={() => {
                 setShowTerminal(true);
                 setIframeUrl(null);
-                setActiveTerminals((prev) => new Set(prev).add(inspectorNode.id));
+                openSharedTerminal(inspectorNode.id);
               }}
             >
               Terminal
@@ -443,23 +444,14 @@ export function NetworkConsole() {
           </div>
 
           <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black relative">
-            {/* Keep all active terminals mounted but hidden — preserves scrollback + WebSocket */}
-            {Array.from(activeTerminals).map((termNodeId) => {
-              const isVisible = showTerminal && inspectorNode.id === termNodeId;
-              return (
-                <div
-                  key={termNodeId}
-                  className="absolute inset-0"
-                  style={{ display: isVisible ? "block" : "none" }}
-                >
-                  <NodeTerminal
-                    nodeId={termNodeId}
-                    labId="workshop"
-                    onClose={() => setShowTerminal(false)}
-                  />
-                </div>
-              );
-            })}
+            {/* Shared terminals — state tracked across pages */}
+            {showTerminal && (
+              <SharedTerminalPanel
+                nodes={[inspectorNode.id]}
+                activeNode={inspectorNode.id}
+                height={320}
+              />
+            )}
             {showTerminal && activeTerminals.has(inspectorNode.id) && (
               <Button
                 variant="ghost"

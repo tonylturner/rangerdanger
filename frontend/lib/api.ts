@@ -96,17 +96,20 @@ export type StepAction = {
   commands?: { device: string; command: string; source?: string; value?: number }[];
 };
 
-export type ScenarioStep = { title: string; description: string; action?: StepAction };
+export type ScenarioStep = { title: string; description: string; action?: StepAction; node?: string };
 export type Scenario = {
   id: string;
   name: string;
+  summary?: string;
   description: string;
+  order?: number;
   lab_template_id: string;
   tags: string[];
   steps: ScenarioStep[];
+  nodes?: string[];
 };
 
-type RawScenario = Omit<Scenario, "tags" | "steps"> & { tags: string; steps: string };
+type RawScenario = Omit<Scenario, "tags" | "steps" | "nodes"> & { tags: string; steps: string; nodes?: string };
 
 function safeParse<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -121,7 +124,8 @@ function hydrateScenario(raw: RawScenario): Scenario {
   return {
     ...raw,
     tags: safeParse<string[]>(raw.tags, []),
-    steps: safeParse<ScenarioStep[]>(raw.steps, [])
+    steps: safeParse<ScenarioStep[]>(raw.steps, []),
+    nodes: safeParse<string[]>(raw.nodes, []),
   };
 }
 
@@ -452,4 +456,35 @@ export async function getWorkshopGraph(): Promise<LabGraph> {
 
 export async function getWorkshopStatus(): Promise<WorkshopStatus> {
   return request<WorkshopStatus>("/workshop/status");
+}
+
+// ── Exercise Exec & Reset ────────────────────────────────────────
+
+export type ExecResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+};
+
+export async function execOnNode(nodeId: string, command: string, timeoutSec?: number) {
+  return request<ExecResult>(`/workshop/nodes/${encodeURIComponent(nodeId)}/exec`, {
+    method: "POST",
+    body: JSON.stringify({ command, timeout_sec: timeoutSec || 30 }),
+  });
+}
+
+export type ResetAction = {
+  action: string;
+  success: boolean;
+  detail: string;
+};
+
+export type ResetResult = {
+  success: boolean;
+  actions: ResetAction[];
+};
+
+export async function resetWorkshop() {
+  return request<ResetResult>("/workshop/reset", { method: "POST" });
 }

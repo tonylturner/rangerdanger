@@ -183,6 +183,9 @@ func (s *Server) registerRoutes() {
 		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
 		api.GET("/workshop/status", s.handleGetWorkshopStatus)
 		api.GET("/workshop/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
+		api.POST("/workshop/nodes/:nodeId/exec", s.handleWorkshopExec)
+		api.POST("/workshop/reset", s.handleWorkshopReset)
+		api.POST("/workshop/test-suite", s.handleWorkshopTestSuite)
 
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
@@ -589,7 +592,7 @@ func (s *Server) handleListScenarios(c *gin.Context) {
 	if templateID := c.Query("lab_template_id"); templateID != "" {
 		query = query.Where("lab_template_id = ?", templateID)
 	}
-	if err := query.Find(&scenarios).Error; err != nil {
+	if err := query.Order("\"order\" ASC, name ASC").Find(&scenarios).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
