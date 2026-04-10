@@ -189,7 +189,10 @@ func pollRTAC() {
 		state.mu.RUnlock()
 
 		if recording {
-			resp, err := client.Get(endpoint + "/api/substation/state")
+			// Poll the RTAC's canonical state endpoint. The old path
+			// /api/substation/state was a RangerDanger backend proxy
+			// path, not an RTAC endpoint, so it 404'd silently.
+			resp, err := client.Get(endpoint + "/api/state")
 			if err != nil {
 				state.mu.Lock()
 				state.CommsOK = false

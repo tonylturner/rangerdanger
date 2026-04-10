@@ -1,5 +1,5 @@
 id: vendor-rdp-compromise
-order: 2
+order: 3
 name: "Vendor Remote Access Compromise (Bonus)"
 summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus."
 description: >

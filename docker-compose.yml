@@ -48,13 +48,16 @@ services:
   # ─────────────────────────────────────────────────────────────
   # Platform services — backend, frontend, proxy
   # ─────────────────────────────────────────────────────────────
+  # RangerDanger platform services live on mgmt_net only. They never
+  # attach to zone networks — so their traffic never shows up in any
+  # capture taken at the firewall's zone interfaces. Lab containers
+  # that expose user-facing UIs get a mgmt_net leg so the nginx proxy
+  # can reach them out-of-band without crossing the data plane.
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: rangerdanger-backend
-    cap_add:
-      - NET_ADMIN
     environment:
       OTLAB_HTTP_PORT: 8080
       OTLAB_DB_PATH: /data/rangerdanger.db
@@ -69,10 +72,6 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.10
-      enterprise_net:
-        ipv4_address: 10.10.10.200
-      ot_ops_net:
-        ipv4_address: 10.30.30.200
     depends_on:
       - firewall
       - rtac_sim
@@ -82,21 +81,17 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: rangerdanger-frontend
-    cap_add:
-      - NET_ADMIN
     environment:
       NEXT_PUBLIC_API_URL: /api
     depends_on:
       - backend
     networks:
-      enterprise_net:
-        ipv4_address: 10.10.10.11
+      mgmt_net:
+        ipv4_address: 10.99.99.11
 
   proxy:
     image: nginx:1.27-alpine
     container_name: rangerdanger-proxy
-    cap_add:
-      - NET_ADMIN
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
@@ -106,12 +101,8 @@ services:
       - backend
       - frontend
     networks:
-      enterprise_net:
-        ipv4_address: 10.10.10.3
-      vendor_net:
-        ipv4_address: 10.20.20.3
-      ot_ops_net:
-        ipv4_address: 10.30.30.3
+      mgmt_net:
+        ipv4_address: 10.99.99.3
 
   # ─────────────────────────────────────────────────────────────
   # Zone 1: Enterprise Zone
@@ -133,6 +124,8 @@ services:
     networks:
       enterprise_net:
         ipv4_address: 10.10.10.10
+      mgmt_net:
+        ipv4_address: 10.99.99.70
     shm_size: "1gb"
     restart: unless-stopped
     depends_on:
@@ -185,6 +178,8 @@ services:
     networks:
       vendor_net:
         ipv4_address: 10.20.20.10
+      mgmt_net:
+        ipv4_address: 10.99.99.60
     shm_size: "1gb"
     restart: unless-stopped
     depends_on:
@@ -209,6 +204,8 @@ services:
     networks:
       vendor_net:
         ipv4_address: 10.20.20.20
+      mgmt_net:
+        ipv4_address: 10.99.99.61
     shm_size: "1gb"
     restart: unless-stopped
     depends_on:
@@ -229,6 +226,8 @@ services:
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.10
+      mgmt_net:
+        ipv4_address: 10.99.99.50
     volumes:
       - ./data/fuxa_hmi_appdata:/usr/src/app/FUXA/server/_appdata
       - ./data/fuxa_hmi_db:/usr/src/app/FUXA/server/_db
@@ -236,6 +235,35 @@ services:
     restart: unless-stopped
     depends_on:
       - firewall
+
+  # HMI poller sidecar — shares fuxa_hmi's network namespace so its
+  # traffic has source IP 10.30.30.10 (the HMI). Runs a simple Modbus
+  # read against the RTAC every 2 seconds. This is intra-OT-Ops traffic
+  # (not cross-zone) and therefore never transits the firewall, but it
+  # keeps the HMI visibly "alive" from the RTAC's perspective and
+  # matches how a real operator HMI polls its SCADA aggregator.
+  hmi_poller:
+    image: alpine:3.21
+    container_name: rangerdanger-hmi-poller
+    network_mode: "service:fuxa_hmi"
+    command:
+      - sh
+      - -c
+      - |
+        # Busybox nc is included in alpine and supports -w. Send a raw
+        # Modbus FC3 Read Holding Registers request (12-byte frame) to
+        # the RTAC at 10.30.30.20:502 on a steady interval. No output
+        # is needed; the goal is producing observable Modbus wire
+        # traffic from the HMI container.
+        MODBUS_FRAME='\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x0a'
+        while true; do
+          printf "$$MODBUS_FRAME" | nc -w 1 10.30.30.20 502 > /dev/null 2>&1 || true
+          sleep 2
+        done
+    restart: unless-stopped
+    depends_on:
+      - fuxa_hmi
+      - rtac_sim
 
   rtac_sim:
     build:
@@ -246,6 +274,23 @@ services:
     hostname: rtac-sim
     cap_add:
       - NET_ADMIN
+    # RTAC hardening sysctls — prevent the RTAC from ever acting as a
+    # router or transit node between its multiple zone interfaces.
+    # /proc/sys is read-only inside the container, so these must be set
+    # via docker-compose sysctls: (namespaced network sysctls that Docker
+    # applies at container creation).
+    sysctls:
+      net.ipv4.ip_forward: 0
+      net.ipv4.conf.all.forwarding: 0
+      net.ipv4.conf.default.forwarding: 0
+      net.ipv4.conf.all.proxy_arp: 0
+      net.ipv4.conf.default.proxy_arp: 0
+      net.ipv4.conf.all.send_redirects: 0
+      net.ipv4.conf.default.send_redirects: 0
+      net.ipv4.conf.all.accept_redirects: 0
+      net.ipv4.conf.default.accept_redirects: 0
+      net.ipv4.conf.all.rp_filter: 1
+      net.ipv4.conf.default.rp_filter: 1
     environment:
       - RELAY_SIM_HOST=relay-sim:8080
       - RECLOSER_SIM_HOST=recloser-sim:8080
@@ -259,6 +304,8 @@ services:
         ipv4_address: 10.40.40.10
       physics_net:
         ipv4_address: 10.50.50.10
+      mgmt_net:
+        ipv4_address: 10.99.99.20
     restart: unless-stopped
     depends_on:
       - firewall
@@ -281,6 +328,8 @@ services:
         ipv4_address: 10.30.30.30
       field_net:
         ipv4_address: 10.40.40.30
+      mgmt_net:
+        ipv4_address: 10.99.99.30
     environment:
       - TZ=UTC
       - GATEWAY=10.30.30.2

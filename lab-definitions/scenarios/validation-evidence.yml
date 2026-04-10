@@ -1,5 +1,5 @@
 id: validation-evidence
-order: 5
+order: 6
 name: "Post-Change Validation & Evidence Collection"
 summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package."
 description: >
@@ -115,9 +115,11 @@ steps:
 
         nmap -p 502,20000 10.40.40.22 --max-retries 1 -T4
 
-      Should show filtered. Only the RTAC's field interface
-      (10.40.40.10) is allowed through. This confirms the
-      Modbus override attack path from Exercise 3 is blocked.
+      Should show filtered. Only the RTAC (source IP 10.30.30.20,
+      the OT Ops interface — host-level hardening routes field
+      traffic through the firewall) is allowed through. This
+      confirms the Modbus override attack path from Exercise 3
+      is blocked.
 
   - title: "Capture PCAP evidence"
     description: >
@@ -134,8 +136,9 @@ steps:
           | sort | uniq -c | sort -rn
 
       The only Modbus/DNP3 traffic to field devices should be
-      from the RTAC (10.40.40.10). No enterprise, vendor, or
-      other OT source IPs should appear talking to 10.40.40.x.
+      from the RTAC (source IP 10.30.30.20). No enterprise,
+      vendor, or other OT source IPs should appear talking to
+      10.40.40.x.
 
   - title: "Document validation results"
     description: >

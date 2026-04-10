@@ -1,18 +1,18 @@
 id: baseline-assessment
 order: 0
 name: "Baseline Traffic Analysis"
-summary: "Capture and analyze normal OT traffic at the firewall to identify cross-zone communication flows before segmentation."
+summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like."
 description: >
-  Before you can segment a network, you need to know what traffic
-  is legitimate and must be preserved. In this exercise you'll
-  capture traffic at the containd firewall — the same chokepoint
-  where you'd place a TAP or SPAN in a real environment — then
-  analyze the PCAP to identify cross-zone communication flows
-  and understand which traffic the firewall can and cannot see.
+  Before you can segment a substation network, you need to
+  understand two things: what traffic actually exists between
+  zones, and which of those flows are required for normal
+  operations. In this exercise you'll capture live traffic at
+  the firewall, use it to identify the critical conduits
+  operations depends on, and frame concrete success criteria
+  for segmentation — without building diagrams or matrices.
 nodes:
   - fw-1
   - eng-ws-1
-  - kali-1
 tags:
   - assessment
   - pcap
@@ -20,182 +20,255 @@ tags:
   - defense
 steps:
   - title: "Review the substation topology"
-    description: >
-      Open the [Network Map](/console) page and identify the four
-      network zones and the key devices in each:
+    description: |
+      Open the [Network Map](/console) and identify the four network zones:
 
-        Enterprise  (10.10.10.0/24): corp-ws, kali
-        Vendor/DMZ  (10.20.20.0/24): vendor-jump, eng-ws
-        OT Ops      (10.30.30.0/24): fuxa-hmi, rtac, openplc, historian, gps
-        Field       (10.40.40.0/24): relay, recloser, regulator, capbank
+      | Zone | Subnet | Hosts |
+      |------|--------|-------|
+      | **Enterprise** | `10.10.10.0/24` | corp-ws, kali |
+      | **Vendor / DMZ** | `10.20.20.0/24` | vendor-jump, eng-ws |
+      | **OT Ops** | `10.30.30.0/24` | fuxa-hmi, rtac, openplc, historian, gps |
+      | **Field** | `10.40.40.0/24` | relay, recloser, regulator, capbank |
 
-      The containd firewall (fw-1) connects to all four zones
-      and acts as the default gateway. Any traffic that crosses
-      a zone boundary passes through the firewall — this is
-      where we will capture.
+      The **containd firewall** sits between all four zones and acts as the default gateway. Any traffic crossing a zone boundary passes through it — that is where we capture and analyze communication.
 
-      Note: The RTAC is multi-homed — it has interfaces on both
-      OT Ops (10.30.30.20) and Field (10.40.40.10). Its direct
-      communication with field devices stays on the Field subnet
-      and does NOT transit the firewall. This is an important
-      architectural detail.
+      > The **RTAC** acts as the central communication node between OT Ops and the Field network. In this lab, its communication with field devices is visible at the firewall, allowing you to observe protocols like **Modbus** and **DNP3** as they traverse zone boundaries.
     action:
       type: check
       expect:
         breaker_closed: true
 
-  - title: "Generate representative traffic"
-    description: >
-      Before we capture, we need traffic flowing. In a real
-      substation, SCADA polling and HMI reads run continuously.
-      In the lab, we start the traffic generator to simulate
-      normal operations across all zones.
+  - title: "Generate scenario traffic"
+    description: |
+      The substation's **autonomous baseline** is already running continuously:
 
-      Run this from any terminal or your browser console:
+      - RTAC polling field devices via Modbus and DNP3
+      - GPS distributing NTP to protection relays
+      - HMI and historian reading state from the RTAC
+
+      You will see that traffic in your capture without doing anything.
+
+      What the traffic generator adds is **scenario-driven** activity — engineering workstation maintenance access and vendor remote monitoring. These represent things students would see during an exercise that models engineering or vendor activity. **They are not part of the 24×7 baseline.**
+
+      Start the generator so the scenario flows appear in your capture window:
 
         curl -X POST http://localhost:8088/api/traffic/generate \
           -H 'Content-Type: application/json' \
           -d '{"duration_sec":50}'
 
-      This produces realistic OT communication flows each cycle:
+      Leave the generator running — we start the capture next.
 
-        - Eng workstation → RTAC (HTTP on port 8080, vendor→OT ops)
-        - Eng workstation → OpenPLC (HTTP on port 8080, vendor→OT ops)
-        - Vendor jump box → HMI (HTTP on port 1881, vendor→OT ops)
-        - GPS clock → field devices (NTP on port 123, OT ops→field)
-        - RTAC → field devices (Modbus on port 502, within field subnet)
-        - HMI → RTAC (Modbus on port 502, within OT ops subnet)
-        - Historian → RTAC (Modbus on port 502, within OT ops subnet)
-        - Corp workstation → proxy (HTTP, within enterprise subnet)
-
-      Leave the generator running — we will start the capture next.
-
-  - title: "Start a packet capture on the firewall"
+  - title: "Capture traffic at the firewall"
     node: fw-1
-    description: >
-      Open the firewall terminal (use the terminal panel below,
-      or click the fw-1 terminal on the [Network Map](/console) page).
+    description: |
+      Open the firewall terminal below (or `fw-1` on the [Network Map](/console)). The firewall runs a Linux shell with `tcpdump`. Start a 60-second capture across all zone interfaces:
 
-      The firewall runs a Linux shell with tcpdump. Start a
-      60-second capture on all interfaces:
+        tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'
 
-        tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1
+      Wait for tcpdump to print its packet count and exit. The promiscuous-mode warning on the `"any"` device is normal and can be ignored.
 
-      You will see: "listening on any, link-type LINUX_SLL2".
-      The -G 60 flag rotates after 60 seconds and -W 1 stops
-      after one file. Wait for it to finish — tcpdump will
-      print a packet count and exit.
+      > **About the filter:** the only thing we exclude is `127.0.0.1` (loopback), which carries containd's own internal dataplane-to-engine RPC and is unrelated to the substation scenario. Every other packet in the capture is real scenario traffic — no management UI traffic, no platform telemetry, no external browser flows, because the RangerDanger platform runs on its own out-of-band management network and does not appear on any zone interface the firewall sees.
 
-      The warning about promiscuous mode on the "any" device
-      is normal and can be ignored — capture still works.
-
-  - title: "Verify the capture file"
+  - title: "Analyze cross-zone flows"
     node: fw-1
-    description: >
-      Once tcpdump exits, verify the capture file was created:
+    description: |
+      Confirm the capture file, then run a handful of `tcpdump` queries to see what traffic actually crosses zones.
+
+      ### Sanity check
+
+      File present, packet count non-zero:
 
         ls -lh /data/captures/baseline.pcap
-
-      You should see a file in the range of 500KB-1MB. Now
-      get a quick packet count:
-
         tcpdump -r /data/captures/baseline.pcap -nn -q 2>&1 | grep -c "IP "
 
-      You should see several hundred packets.
+      ### Build a flow inventory
 
-  - title: "Identify cross-zone traffic at the firewall"
-    node: fw-1
-    description: >
-      The firewall only sees traffic that crosses zone boundaries.
-      Filter for the interesting cross-zone flows:
+      Get a deduplicated list of every unique `src → dst` flow observed at the firewall. This is your flow inventory — you will use it to answer the next step:
 
-      Vendor zone → OT Ops zone (eng-ws and vendor-jump reaching
-      into OT systems — HTTP management and HMI access):
+        tcpdump -r /data/captures/baseline.pcap -nn -q 2>&1 | awk '/IP / { sub(/:$/,"",$5); sub(/:$/,"",$7); print $5" -> "$7 }' | sort | uniq -c | sort -rn | head -20
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.20.20.0/24' 2>&1 | head -20
+      ### Targeted filters
 
-      OT Ops → Field zone (GPS time sync crossing from OT ops
-      to field devices):
+      **Who in Vendor/DMZ is reaching into OT Operations?**
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.30.30.0/24 and dst net 10.40.40.0/24' 2>&1 | head -20
+        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.20.20.0/24' 2>&1 | head -15
 
-      Check for any Enterprise → OT or Enterprise → Field traffic
-      (this should not exist in normal operations):
+      **What leaves OT Operations heading for Field devices?**
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.30.30.0/24 and dst net 10.40.40.0/24' 2>&1 | head -15
+
+      **Modbus TCP activity on port 502** — the primary SCADA control protocol:
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'tcp port 502' 2>&1 | head -15
+
+      **DNP3 TCP activity on port 20000** — the secondary SCADA polling protocol:
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'tcp port 20000' 2>&1 | head -15
+
+      **All RTAC-originated traffic** (Modbus + DNP3 + HTTP):
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'host 10.30.30.20 or host 10.40.40.10' 2>&1 | head -20
+
+      **Is Enterprise speaking to OT or Field directly?** (Should be empty in a healthy baseline.)
 
         tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.10.10.0/24 and (dst net 10.30.30.0/24 or dst net 10.40.40.0/24)' 2>&1 | head -10
 
-  - title: "Analyze the capture on the engineering workstation"
-    node: eng-ws-1
-    description: >
-      The capture file is shared with the engineering workstation
-      via a mounted volume at /home/abc/pcaps/.
+      > **Note on RTAC visibility:** the RTAC is multi-homed (`10.30.30.20` on OT Ops, `10.40.40.10` on Field) but it is hardened so its routed application traffic always traverses the firewall. When you see RTAC → field device Modbus or DNP3 in the capture, the source IP will be `10.30.30.20`, not `10.40.40.10`, because the RTAC routes via its OT Ops interface through the firewall rather than direct on `field_net`.
 
-      Open the eng-ws terminal (terminal panel below, or eng-ws-1
-      on the [Network Map](/console)) and verify you can see the file:
+      ### What the firewall still cannot see
 
-        ls -lh /home/abc/pcaps/baseline.pcap
+      Intra-zone flows — for example HMI → RTAC or Historian → RTAC within OT Ops. Those conversations stay on a single Docker network and never cross a zone boundary. You can confirm their existence by querying the RTAC state API from the engineering workstation:
 
-      Use tshark to build a traffic matrix of unique source→
-      destination flows and their destination ports:
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
-        tshark -r /home/abc/pcaps/baseline.pcap \
-          -T fields -e ip.src -e ip.dst -e tcp.dstport \
-          | sort | uniq -c | sort -rn | head -20
+      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with — proof that the underlying control flows are alive even when they are intra-subnet.
 
-      Alternatively, open the eng-ws GUI (click the UI toggle
-      above the terminal) and use Wireshark from the desktop
-      to open /home/abc/pcaps/baseline.pcap.
+  - title: "Critical conduits — what MUST flow"
+    description: |
+      Shift from *"what traffic exists"* to *"what traffic is required for the substation to run."*
 
-  - title: "Document required communication flows"
-    description: >
-      From your capture analysis, identify and document the
-      cross-zone flows that are required for normal substation
-      operations. These are the flows segmentation MUST preserve.
+      From the flow inventory you built with the aggregation command in the previous step, and from the RTAC state API output, identify the **critical conduits** — the flows this substation cannot lose without breaking operations.
 
-      Cross-zone flows visible at the firewall:
+      ### Answer three questions in your Exercise Notes
 
-        - Eng WS (10.20.20.20) → RTAC (10.30.30.20) on HTTP 8080
-          Engineering maintenance access (vendor → OT ops)
+      1. **Q1.** Which cross-zone flows did you see at the firewall that look operationally required?
+      2. **Q2.** Which flows are *not* visible in the firewall capture but must exist for operations? (Look at the RTAC state API.)
+      3. **Q3.** If the firewall allowed only the required flows and denied everything else between zones, would the substation still run normally?
 
-        - Eng WS (10.20.20.20) → OpenPLC (10.30.30.30) on HTTP 8080
-          PLC programming interface (vendor → OT ops)
+      > Reason from the output you just produced. You do not need to build a matrix or diagram. If you get stuck, expand the hint below to see the expected answer.
 
-        - Vendor jump (10.20.20.10) → HMI (10.30.30.10) on HTTP 1881
-          Vendor remote monitoring via HMI web interface (vendor → OT ops)
+      :::hint Reveal expected answer
+      The substation has **two categories of required flows**:
 
-        - GPS (10.30.30.50) → field devices (10.40.40.x) on NTP 123
-          Time synchronization for sequence-of-events (OT ops → field)
+      - **Autonomous baseline** — runs 24×7 regardless of students or exercises
+      - **Scenario-driven** — only appears when the traffic generator is running to model engineering or vendor activity
 
-      Same-subnet flows NOT visible at the firewall:
+      Both are "required" — they represent legitimate operations — but they have very different semantic meaning in a capture.
 
-        - RTAC (10.40.40.10) → relay/recloser/regulator on Modbus 502
-          Primary SCADA polling (field subnet, does not cross zones)
+      ### Group 1 — Cross-zone autonomous baseline
 
-        - RTAC (10.40.40.10) → field devices on DNP3 20000
-          DNP3 supervisory polling (field subnet, does not cross zones)
+      Always running, independent of the traffic generator. Write firewall rules to **preserve** these.
 
-        - HMI (10.30.30.10) → RTAC (10.30.30.20) on Modbus 502
-          Operator reads of aggregated state (OT ops subnet)
+      | Flow | Source → Destination | Protocol | Rule |
+      |------|---------------------|----------|------|
+      | **A. GPS → field NTP** | `10.30.30.50` → `10.40.40.{20,21,22,23}` | UDP 123 | `ALLOW`, pin source to `10.30.30.50` |
+      | **E. RTAC → field Modbus** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 502 | `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (function codes) |
+      | **E. RTAC → field DNP3** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 20000 | `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (object groups) |
 
-        - Historian (10.30.30.40) → RTAC (10.30.30.20) on Modbus 502
-          Data collection for trending (OT ops subnet)
+      > **Why the RTAC's source IP is `10.30.30.20`, not `10.40.40.10`:** the RTAC is multi-homed (it also has a field_net interface at `10.40.40.10` for realism), but host-level routing on the RTAC deliberately sends all field-bound traffic through the OT Ops firewall. The wire-visible source is the OT Ops interface.
 
-      Key insight: Because the RTAC is multi-homed on both OT Ops
-      and Field subnets, its control traffic to field devices
-      bypasses the firewall entirely. The firewall cannot inspect
-      or block RTAC→field device traffic. This is by design in
-      many real substations, but it means DPI rules on the firewall
-      only protect against unauthorized cross-zone access.
+      ### Group 2 — Cross-zone scenario flows
 
-      Use the Notes field to document your findings. These become
-      the requirements input for the next exercise.
+      Only present when the traffic generator is running (engineering or vendor activity). Write firewall rules to **restrict and pin** these.
 
-  - title: "Validate baseline state"
-    description: >
-      Confirm the substation is operating normally — all devices
-      communicating, loads energized, protection active. This
-      is the "known good" state your segmentation rules must
-      preserve.
+      | Flow | Source → Destination | Protocol | Rule |
+      |------|---------------------|----------|------|
+      | **B. Eng-ws → RTAC** | `10.20.20.20` → `10.30.30.20` | HTTP 8080 | `ALLOW`, pin source to eng-ws |
+      | **C. Eng-ws → OpenPLC** | `10.20.20.20` → `10.30.30.30` | HTTP 8080 | `ALLOW`, pin source to eng-ws |
+      | **D. Vendor-jump → HMI** | `10.20.20.10` → `10.30.30.10` | FUXA 1881 | **Required but restrict** — legitimate pattern, but the baseline is too broad. Should be HTTPS-only, monitoring-only. Flagged for hardening in the next exercise. |
+
+      ### Group 3 — Intra-zone, invisible to the firewall
+
+      These happen on a single Docker subnet and never transit the firewall. You can prove they exist by querying the RTAC state API or by running `tcpdump` inside the HMI / historian containers directly. They must be protected by **host-level trust**, not firewall rules.
+
+      | Flow | Source → Destination | Protocol | Proof it exists |
+      |------|---------------------|----------|-----------------|
+      | **F. HMI → RTAC** | `10.30.30.10` → `10.30.30.20` | Modbus 502 (every 2s) | RTAC's `device_comms` and the HMI poller sidecar being alive |
+      | **G. Historian → RTAC** | `10.30.30.40` → `10.30.30.20` | HTTP 8080 (every 5s) | Historian's `last_poll_time` and `last_reading` with live RTAC data |
+
+      ### Answers to the three questions
+
+      - **Q1.** Flows **A** and **E** are the autonomous cross-zone flows (present in every capture regardless of the generator). Flows **B**, **C**, and **D** are the scenario cross-zone flows (present because you ran the generator). Together these five are the cross-zone flows you need firewall rules for.
+      - **Q2.** Flows **F** and **G** exist and are critical, but are invisible in the firewall capture because they are intra-zone.
+      - **Q3.** *Yes* — operations would still run, because these seven flows together cover every operational dependency. Anything else in the capture that isn't on this list is **exposure**, not a required flow.
+
+      ### Key insights
+
+      > **Insight #1 — The cross-zone firewall rules govern five flows.**
+      > Two (A, E) are the 24×7 operational baseline. Three (B, C, D) are legitimate but scenario-driven — they represent access patterns you'd narrow during hardening.
+
+      > **Insight #2 — Flows F and G are invisible to the firewall.**
+      > They still need to be protected — but by host-level trust, network access controls within OT Ops, or physical security of the control room. The firewall is a powerful layer but it is not the whole story; defense in depth still applies to intra-zone communication.
+
+      ### Counting methodology
+
+      The packet counts you see in a capture include **both directions** (request plus reply), TCP handshake frames (`SYN`, `SYN-ACK`, `ACK`), data frames, and connection teardown (`FIN`).
+
+      - A single Modbus FC3 read transaction typically produces **8–10 packets** on the wire.
+      - A simple HTTP `GET` request produces **~15–25 packets**.
+      - When a table lists "504 Modbus packets in 30 seconds," that is a bidirectional packet count — it maps to roughly **60 Modbus transactions at 2/sec**, which is exactly what the RTAC's autonomous poller produces.
+      :::
+
+  - title: "Required vs risky — what you'd block"
+    description: |
+      Now look at the same traffic through a security lens. For each category below, decide: would you allow this in production, or is it exposure you'd block?
+
+      Walk through each of these, referencing your flow inventory from step 4:
+
+      - [ ] **Enterprise → Field** on Modbus 502 or DNP3 20000 — legitimate operational flow, or ransomware / lateral-movement risk?
+      - [ ] **Enterprise → OT Ops** on any ICS port — does corporate IT need to speak control-plane?
+      - [ ] **Vendor DMZ → OT Ops** on Modbus or HMI control — should the vendor be able to write, or only read and monitor?
+      - [ ] **Any non-RTAC OT Ops host → Field devices** — should every OT host reach relays, or only the RTAC?
+      - [ ] **Unauthorized Modbus writes / DNP3 Direct Operate** — are these blocked and visible, or silent and allowed?
+
+      Write your decisions into the Exercise Notes. These become the input to the next exercise. No matrix, no diagram — just the list of exposures you want to close.
+
+      :::hint Reveal expected answer
+      In a hardened substation, the answers are:
+
+      1. **Enterprise → Field on Modbus/DNP3:** `BLOCK`.
+         Corporate IT should never speak control-plane protocols to field devices. This is the attack path demonstrated in the **DNP3 Command Injection** exercise.
+
+      2. **Enterprise → OT Ops on ICS ports:** `BLOCK`.
+         Enterprise may reach OT only through constrained management paths, never on Modbus/DNP3. This closes the **Modbus Override** staging path.
+
+      3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`.
+         Vendor remote access should be read-only monitoring and encrypted management (HTTPS, SSH). Direct Modbus writes or HMI control from the vendor DMZ are the vector demonstrated in the **Vendor RDP Compromise** exercise.
+
+      4. **Non-RTAC OT Ops → Field:** `BLOCK`.
+         Only the RTAC (pinned to source IP `10.30.30.20`, the OT Ops interface, because host-level hardening routes its field traffic through the firewall) should reach field devices. A compromised OpenPLC or historian must not become an attack path. This is the lateral-movement vector in the **Modbus Override** exercise.
+
+      5. **Unauthorized Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`.
+         This requires **ICS DPI** — port-level filtering is not enough. The firewall needs to understand protocol function codes.
+      :::
+
+  - title: "Define success criteria for segmentation"
+    description: |
+      Before you start changing anything, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in Exercise 6 to validate your changes worked.
+
+      ### Good segmentation for this substation means
+
+      1. **Enterprise cannot directly reach Field devices.**
+         *Test:* `tcpdump` on the firewall's field interface should show zero packets originating from `10.10.10.0/24`.
+
+      2. **Vendor access to OT Ops is constrained and brokered.**
+         *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
+
+      3. **Unauthorized writes are blocked and logged.**
+         *Test:* a Modbus FC6 write or DNP3 Direct Operate from a non-RTAC source should be denied and produce a firewall event.
+
+      4. **Enterprise ransomware cannot propagate into OT.**
+         *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
+
+      5. **Operations are not broken by the segmentation change.**
+         *Test:* after applying rules, all five critical conduits from the previous step continue to work.
+
+      > **Operational continuity is a hard constraint.** If your segmentation blocks any of the critical conduits you identified earlier, you will break operations.
+
+  - title: "Transition — decide what to fix first"
+    description: |
+      You have now:
+
+      - **Observed** real traffic at the firewall
+      - **Identified** the five critical conduits operations depends on
+      - **Listed** the exposures you'd want to block
+      - **Written** concrete success criteria
+
+      > You cannot fix everything at once. Firewall work, protocol-aware DPI, architecture review, and validation testing all compete for the same limited team capacity.
+
+      In the next exercise — [Remediation Planning](/exercises/remediation-planning) — you will choose which fixes to execute this quarter under a real labor budget with per-role capacity caps. Your decisions there will determine which attack paths remain open in later exercises.
+
+      Before moving on, confirm the substation is still operating normally. This is your **"known good"** baseline — the state your segmentation must preserve.
     action:
       type: check
       expect:

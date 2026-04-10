@@ -475,111 +475,45 @@ func (s *Server) handleTrafficStatus(c *gin.Context) {
 	})
 }
 
-// Raw Modbus TCP frames for realistic OT traffic generation.
-// All frames use Unit ID 0x01 and transaction ID 0x00 0x01.
+// runTrafficGeneration generates SCENARIO-DRIVEN traffic only. The
+// autonomous OT baseline (RTAC polling, HMI polling, historian polling,
+// GPS NTP broadcast) runs continuously inside the simulator services
+// themselves and does NOT need to be triggered by the generator.
 //
-// Frame format: [txn_id:2][proto_id:2][length:2][unit_id:1][fc:1][data...]
-const (
-	// FC3: Read Holding Registers — start=0, count=10
-	// Used for: RTAC reading device config, historian collecting data
-	modbusFC3Read10 = `\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x0a`
-
-	// FC4: Read Input Registers — start=0, count=8
-	// Used for: RTAC reading analog measurements (voltage, current)
-	modbusFC4Read8 = `\x00\x02\x00\x00\x00\x06\x01\x04\x00\x00\x00\x08`
-
-	// FC1: Read Coils — start=0, count=16
-	// Used for: RTAC reading device status bits (breaker state, alarms)
-	modbusFC1Read16 = `\x00\x03\x00\x00\x00\x06\x01\x01\x00\x00\x00\x10`
-
-	// FC2: Read Discrete Inputs — start=0, count=8
-	// Used for: RTAC reading alarm/status discrete inputs
-	modbusFC2Read8 = `\x00\x04\x00\x00\x00\x06\x01\x02\x00\x00\x00\x08`
-)
-
-// modbusRead sends a raw Modbus TCP read frame and discards the response.
-// Uses busybox nc available in Alpine containers.
-func modbusReadCmd(host string, frame string) string {
-	return fmt.Sprintf("echo -ne '%s' | nc -w 2 %s 502 > /dev/null 2>&1 || true", frame, host)
-}
-
-// runTrafficGeneration generates representative OT traffic from actual source
-// containers to simulate a live substation environment. Includes:
+// What this function produces:
 //
-//   - RTAC → field devices:  Modbus TCP reads (FC1/FC3/FC4) on port 502
-//   - RTAC → field devices:  HTTP REST polling on port 8080 (SCADA state reads)
-//   - RTAC → physics engine: HTTP REST on port 8080
-//   - HMI → RTAC:           Modbus TCP reads (FC3/FC4) on port 502
-//   - Historian → RTAC:     Modbus TCP reads (FC3/FC4) on port 502
-//   - GPS → RTAC/devices:   NTP time sync (UDP 123)
-//   - Eng WS → RTAC:        HTTP (engineering management access)
-//   - Vendor jump → HMI:    HTTP (HMI web UI)
-//   - Corp WS → proxy:      HTTP (web browsing)
-//   - DNS lookups:           hostname resolution from various containers
+//   - Eng WS → RTAC:         HTTP (cross-zone engineering maintenance access)
+//   - Eng WS → OpenPLC:      HTTP (cross-zone PLC programming access)
+//   - Vendor jump → HMI:     HTTP (cross-zone vendor remote monitoring)
 //
-// Note: RTAC DNP3 polling (port 20000) runs autonomously in the rtac-sim
-// service and does not need to be generated here.
+// These are "scenario setup" flows — they represent things a student
+// would see while running an exercise that models engineering or vendor
+// activity. They do not represent the 24x7 steady-state baseline.
+//
+// What the autonomous model handles instead (see services/*/):
+//
+//   - RTAC → field devices:  Modbus TCP reads  (rtac-sim:modbus_poll.go)
+//   - RTAC → field devices:  DNP3 class 0 polls (rtac-sim:dnp3_poll.go)
+//   - RTAC → field devices:  HTTP REST polling (rtac-sim:main.go pollDevices)
+//   - HMI → RTAC:            Modbus via hmi_poller sidecar (docker-compose)
+//   - Historian → RTAC:      HTTP via historian-sim pollRTAC()
+//   - GPS → field devices:   NTP broadcast via gps-sim broadcastNTP()
 func (s *Server) runTrafficGeneration(durationSec int) {
 	ctx := context.Background()
 	deadline := time.Now().Add(time.Duration(durationSec) * time.Second)
 	flows := 0
 
-	// Traffic patterns organized by source container and protocol.
-	// Each entry represents one realistic communication flow.
+	// Scenario-driven traffic only. The autonomous baseline runs
+	// continuously in the simulator services and is NEVER produced here.
 	targets := []struct {
 		container string
 		cmd       string
 		desc      string // for logging
 	}{
-		// ── RTAC → field devices: Modbus TCP polling (within field subnet) ──
-		// RTAC supervisory controller polls all field devices via Modbus reads.
-		// This is the primary OT control traffic and the most important to preserve.
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.20", modbusFC1Read16), "rtac→relay modbus FC1"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.20", modbusFC4Read8), "rtac→relay modbus FC4"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.20", modbusFC3Read10), "rtac→relay modbus FC3"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.21", modbusFC1Read16), "rtac→recloser modbus FC1"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.21", modbusFC3Read10), "rtac→recloser modbus FC3"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.21", modbusFC4Read8), "rtac→recloser modbus FC4"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.22", modbusFC3Read10), "rtac→regulator modbus FC3"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.22", modbusFC4Read8), "rtac→regulator modbus FC4"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.23", modbusFC1Read16), "rtac→capbank modbus FC1"},
-		{"rangerdanger-rtac-sim", modbusReadCmd("10.40.40.23", modbusFC3Read10), "rtac→capbank modbus FC3"},
-
-		// ── RTAC → field devices: HTTP REST polling (within field subnet) ──
-		// RTAC reads device state via REST API — supplements Modbus/DNP3 polling.
-		{"rangerdanger-rtac-sim", "wget -qO- http://10.40.40.20:8080/api/state 2>/dev/null || true", "rtac→relay http"},
-		{"rangerdanger-rtac-sim", "wget -qO- http://10.40.40.21:8080/api/state 2>/dev/null || true", "rtac→recloser http"},
-		{"rangerdanger-rtac-sim", "wget -qO- http://10.40.40.22:8080/api/state 2>/dev/null || true", "rtac→regulator http"},
-		{"rangerdanger-rtac-sim", "wget -qO- http://10.40.40.23:8080/api/state 2>/dev/null || true", "rtac→capbank http"},
-
-		// ── RTAC → physics engine: HTTP (physics subnet, not firewalled) ──
-		{"rangerdanger-rtac-sim", "wget -qO- http://10.50.50.20:8080/api/electrical 2>/dev/null || true", "rtac→opendss http"},
-
-		// ── HMI → RTAC: Modbus TCP reads (within OT ops subnet) ──
-		// Operator HMI reads aggregated state from RTAC via Modbus.
-		{"rangerdanger-fuxa-hmi", modbusReadCmd("10.30.30.20", modbusFC3Read10), "hmi→rtac modbus FC3"},
-		{"rangerdanger-fuxa-hmi", modbusReadCmd("10.30.30.20", modbusFC1Read16), "hmi→rtac modbus FC1"},
-		{"rangerdanger-fuxa-hmi", modbusReadCmd("10.30.30.20", modbusFC4Read8), "hmi→rtac modbus FC4"},
-
-		// ── HMI → RTAC: HTTP REST (within OT ops subnet) ──
-		{"rangerdanger-fuxa-hmi", "wget -qO- http://10.30.30.20:8080/api/state 2>/dev/null || true", "hmi→rtac http"},
-
-		// ── Historian → RTAC: Modbus TCP reads (within OT ops subnet) ──
-		// Data historian collects measurements from RTAC for trending/archival.
-		{"rangerdanger-historian-sim", modbusReadCmd("10.30.30.20", modbusFC3Read10), "historian→rtac modbus FC3"},
-		{"rangerdanger-historian-sim", modbusReadCmd("10.30.30.20", modbusFC4Read8), "historian→rtac modbus FC4"},
-		{"rangerdanger-historian-sim", modbusReadCmd("10.30.30.20", modbusFC2Read8), "historian→rtac modbus FC2"},
-
-		// ── GPS time server → devices: NTP time sync (OT ops → field, cross-zone) ──
-		// GPS clock broadcasts time to RTAC and field devices for SOE timestamping.
-		{"rangerdanger-gps-sim", "echo -ne '\\x1b\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | nc -u -w 1 10.30.30.20 123 2>/dev/null || true", "gps→rtac ntp"},
-		{"rangerdanger-gps-sim", "echo -ne '\\x1b\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | nc -u -w 1 10.40.40.20 123 2>/dev/null || true", "gps→relay ntp"},
-		{"rangerdanger-gps-sim", "echo -ne '\\x1b\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | nc -u -w 1 10.40.40.21 123 2>/dev/null || true", "gps→recloser ntp"},
-		{"rangerdanger-gps-sim", "echo -ne '\\x1b\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | nc -u -w 1 10.40.40.22 123 2>/dev/null || true", "gps→regulator ntp"},
-		{"rangerdanger-gps-sim", "echo -ne '\\x1b\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | nc -u -w 1 10.40.40.23 123 2>/dev/null || true", "gps→capbank ntp"},
-
 		// ── Engineering workstation → RTAC: HTTP (vendor → OT ops, cross-zone) ──
-		// Engineering maintenance access — legitimate but should be monitored.
+		// Engineering maintenance access — legitimate but restricted to eng-ws
+		// in a hardened policy. The student sees this pattern and decides how
+		// to govern it.
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http state"},
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "eng-ws→rtac http health"},
 
@@ -587,18 +521,10 @@ func (s *Server) runTrafficGeneration(durationSec int) {
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.30:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
 
 		// ── Vendor jump box → HMI: HTTP (vendor → OT ops, cross-zone) ──
-		// Vendor remote access to HMI web interface for monitoring.
+		// Vendor remote monitoring via the FUXA web interface. Currently
+		// unrestricted in the weak baseline; the improved policy narrows
+		// vendor access to HTTPS/SSH only.
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi http"},
-
-		// ── Corporate workstation → proxy: HTTP (within enterprise) ──
-		{"rangerdanger-corp-ws", "curl -sf http://10.10.10.3:8080/ > /dev/null 2>&1 || true", "corp→proxy http"},
-
-		// ── DNS lookups: hostname resolution from various zones ──
-		// Triggers DNS and ARP traffic as containers resolve names.
-		{"rangerdanger-rtac-sim", "nslookup rangerdanger-relay-sim 2>/dev/null || true", "rtac dns relay"},
-		{"rangerdanger-eng-ws", "nslookup rangerdanger-rtac-sim 2>/dev/null || true", "eng-ws dns rtac"},
-		{"rangerdanger-kali", "nslookup rangerdanger-firewall 2>/dev/null || true", "kali dns firewall"},
-		{"rangerdanger-corp-ws", "nslookup rangerdanger-proxy 2>/dev/null || true", "corp dns proxy"},
 	}
 
 	dockerCli := s.orchestrator.DockerClient()
