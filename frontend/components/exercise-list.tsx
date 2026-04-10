@@ -6,6 +6,7 @@ import { listScenarios, type Scenario } from "../lib/api";
 // Maps exercise IDs to workshop workbook sections
 const WORKBOOK_SECTION: Record<string, string> = {
   "baseline-assessment":       "1.2",
+  "remediation-planning":      "1.4",
   "segmentation-requirements": "1.3",
   "vendor-rdp-compromise":     "2.3",
   "modbus-override":           "2.3",

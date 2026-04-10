@@ -85,8 +85,22 @@ export type GraphNode = {
 export type GraphEdge = { id: string; source: string; target: string; label?: string };
 export type LabGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
 
+export type DecisionRole = {
+  name: string;
+  capacity_hours: number;
+};
+
+export type DecisionAction = {
+  id: string;
+  title: string;
+  why: string;
+  effort_hours: number;
+  roles: string[];
+  tags?: string[];
+};
+
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual";
+  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision";
   device?: string;
   command?: string;
   source?: string;
@@ -94,6 +108,10 @@ export type StepAction = {
   config?: string;
   expect?: Record<string, unknown>;
   commands?: { device: string; command: string; source?: string; value?: number }[];
+  // Decision action fields (type === "decision")
+  budget_hours?: number;
+  roles?: DecisionRole[];
+  actions?: DecisionAction[];
 };
 
 export type ScenarioStep = { title: string; description: string; action?: StepAction; node?: string };

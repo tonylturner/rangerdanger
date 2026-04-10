@@ -26,8 +26,10 @@ import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
 import Link from "next/link";
-import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } from "lucide-react";
+import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { DecisionPanel } from "./decision-panel";
+import { RemediationPlanBanner } from "./remediation-plan-banner";
 
 /** Parse inline [text](/path) links within a prose string. */
 function renderLinks(text: string): React.ReactNode[] {
@@ -50,9 +52,20 @@ function renderLinks(text: string): React.ReactNode[] {
 
 const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
-/** Split description into interleaved prose segments and command blocks. */
-function splitDescription(text: string): { type: "prose" | "cmd"; value: string }[] {
-  const result: { type: "prose" | "cmd"; value: string }[] = [];
+// :::hint Title  ...content...  :::
+// Opens a collapsible hint panel in the rendered description. Anything
+// between the opening and closing fence is captured as the hint body.
+const HINT_OPEN_RE = /^:::hint(?:\s+(.+))?$/;
+const HINT_CLOSE_RE = /^:::$/;
+
+type Segment =
+  | { type: "prose"; value: string }
+  | { type: "cmd"; value: string }
+  | { type: "hint"; title: string; value: string };
+
+/** Split description into interleaved prose, command, and hint segments. */
+function splitDescription(text: string): Segment[] {
+  const result: Segment[] = [];
   const lines = text.split("\n");
   let prose: string[] = [];
   let i = 0;
@@ -66,6 +79,21 @@ function splitDescription(text: string): { type: "prose" | "cmd"; value: string 
 
   while (i < lines.length) {
     const trimmed = lines[i].trim();
+    const hintOpen = HINT_OPEN_RE.exec(trimmed);
+    if (hintOpen) {
+      flushProse();
+      const title = hintOpen[1]?.trim() || "Reveal answer";
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        body.push(lines[i]);
+        i++;
+      }
+      // Skip the closing fence
+      if (i < lines.length) i++;
+      result.push({ type: "hint", title, value: body.join("\n") });
+      continue;
+    }
     if (CMD_TOOL_RE.test(trimmed)) {
       flushProse();
       let cmd = trimmed;
@@ -81,6 +109,43 @@ function splitDescription(text: string): { type: "prose" | "cmd"; value: string 
   }
   flushProse();
   return result;
+}
+
+// HintBlock is a collapsible "reveal answer" panel rendered inside step
+// descriptions where the YAML contains a :::hint Title / ::: fence.
+// Default state is collapsed — the student has to click to see the answer.
+function HintBlock({ title, body }: { title: string; body: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-amber-900/60 bg-amber-950/20">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-amber-950/40 transition-colors"
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        )}
+        <Lightbulb className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+          {title}
+        </span>
+        {!open && (
+          <span className="ml-auto text-[10px] text-amber-700 italic">
+            click to reveal
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-amber-900/40 px-4 py-3">
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+            {renderLinks(body.replace(/^\n+|\n+$/g, ""))}
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type RunnerProps = {
@@ -473,6 +538,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </span>
       </div>
 
+      {/* ── Remediation Plan Banner (shown on later exercises) ── */}
+      {!showSummary && <RemediationPlanBanner currentExerciseId={scenario.id} />}
+
       {/* ── Summary View ──────────────────────────────────────── */}
       {showSummary && (
         <ExerciseSummary
@@ -546,7 +614,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 )}
               </div>
             </div>
-            {/* Description with inline command blocks */}
+            {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
               const segments = splitDescription(step.description);
               let cmdIdx = 0;
@@ -560,6 +628,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         <p key={si} className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
                           {renderLinks(trimmed)}
                         </p>
+                      );
+                    }
+                    if (seg.type === "hint") {
+                      return (
+                        <HintBlock
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          title={seg.title}
+                          body={seg.value}
+                        />
                       );
                     }
                     const ci = cmdIdx++;
@@ -622,6 +699,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   </a>
                 )}
               </div>
+            )}
+
+            {/* Decision panel — only for steps with action.type === "decision" */}
+            {step?.action?.type === "decision" && (
+              <DecisionPanel exerciseId={scenario.id} action={step.action} />
             )}
 
             {/* Shared notes — persists across all steps */}

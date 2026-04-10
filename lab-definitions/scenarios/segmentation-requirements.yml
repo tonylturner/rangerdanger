@@ -1,5 +1,5 @@
 id: segmentation-requirements
-order: 1
+order: 2
 name: "Segmentation Requirements & Rule Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
 description: >
