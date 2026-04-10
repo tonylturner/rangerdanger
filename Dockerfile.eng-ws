@@ -6,10 +6,7 @@ RUN CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll && \
 
 FROM linuxserver/webtop:ubuntu-mate
 
-# Copy EmberOT PCAP Analyzer installer
-COPY ["tools/pcap-analyzer/PCAP Analyzer-amd64-installer.deb", "/tmp/pcap-analyzer.deb"]
-
-# Install OT analysis tools, Modbus testing, and PCAP Analyzer in a single layer
+# Install OT analysis tools and Modbus testing
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         wireshark \
@@ -20,9 +17,6 @@ RUN apt-get update && \
         python3 \
         python3-pip && \
     pip3 install --no-cache-dir --break-system-packages pymodbus && \
-    dpkg -i /tmp/pcap-analyzer.deb || true && \
-    apt-get -f install -y --no-install-recommends && \
-    rm /tmp/pcap-analyzer.deb && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

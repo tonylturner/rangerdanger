@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
@@ -668,24 +670,37 @@ func validateGeneric(state map[string]any, activeConfig string) []ValidationChec
 
 // checkPcapFileExists checks if any PCAP capture files are available.
 func (s *Server) checkPcapFileExists() bool {
+	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+		execCfg := container.ExecOptions{
+			Cmd:          []string{"sh", "-c", "test -s /data/captures/baseline.pcap && echo YES"},
+			AttachStdout: true,
+		}
+		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		if err == nil {
+			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
+			if err == nil {
+				out, _ := io.ReadAll(resp.Reader)
+				resp.Close()
+				if strings.Contains(string(out), "YES") {
+					return true
+				}
+			}
+		}
+	}
+
+	// 2. Check containd PCAP API (covers API-initiated captures)
 	containdURL := s.cfg.ContaindAPIURL
 	if containdURL == "" {
 		containdURL = "http://firewall:8080"
 	}
-
 	client := containd.NewClient(containdURL)
 	files, err := client.ListPcapFiles()
 	if err == nil && len(files) > 0 {
 		return true
 	}
 
-	// Fallback: check if capture was active (meaning files were/are being created)
-	status, err := client.GetPcapStatus()
-	if err == nil && (status.Running || len(status.Interfaces) > 0) {
-		return true
-	}
-
-	// Last resort: check the backend's own capture tracking
+	// 3. Check the backend's own capture tracking
 	s.pcapMu.Lock()
 	hasCapture := s.pcap.FileReady
 	s.pcapMu.Unlock()

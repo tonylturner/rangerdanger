@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   validateScenario,
   getSubstationState,
@@ -25,6 +25,63 @@ import {
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
+import Link from "next/link";
+import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+
+/** Parse inline [text](/path) links within a prose string. */
+function renderLinks(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(
+      <Link key={match.index} href={match[2]} className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
+        {match[1]}
+      </Link>
+    );
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+
+/** Split description into interleaved prose segments and command blocks. */
+function splitDescription(text: string): { type: "prose" | "cmd"; value: string }[] {
+  const result: { type: "prose" | "cmd"; value: string }[] = [];
+  const lines = text.split("\n");
+  let prose: string[] = [];
+  let i = 0;
+
+  const flushProse = () => {
+    if (prose.length > 0) {
+      result.push({ type: "prose", value: prose.join("\n") });
+      prose = [];
+    }
+  };
+
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (CMD_TOOL_RE.test(trimmed)) {
+      flushProse();
+      let cmd = trimmed;
+      while (cmd.endsWith("\\") && i + 1 < lines.length) {
+        i++;
+        cmd += "\n  " + lines[i].trim();
+      }
+      result.push({ type: "cmd", value: cmd });
+    } else {
+      prose.push(lines[i]);
+    }
+    i++;
+  }
+  flushProse();
+  return result;
+}
 
 type RunnerProps = {
   scenario: Scenario;
@@ -36,16 +93,24 @@ function storageKey(scenarioId: string) { return `rd-exercise-${scenarioId}`; }
 
 type SavedState = {
   completedSteps: number[];
-  notes: Record<number, string>;
+  notes: string;
   cmdLog: string[];
 };
 
 function loadSaved(scenarioId: string): SavedState {
   try {
     const raw = localStorage.getItem(storageKey(scenarioId));
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate from per-step notes (Record<number, string>) to single shared note
+      if (parsed.notes && typeof parsed.notes === "object" && !Array.isArray(parsed.notes)) {
+        const merged = Object.values(parsed.notes as Record<string, string>).filter(Boolean).join("\n\n");
+        return { ...parsed, notes: merged };
+      }
+      return parsed;
+    }
   } catch { /* ignore */ }
-  return { completedSteps: [], notes: {}, cmdLog: [] };
+  return { completedSteps: [], notes: "", cmdLog: [] };
 }
 
 function saveToDisk(scenarioId: string, state: SavedState) {
@@ -56,7 +121,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const saved = loadSaved(scenario.id);
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(saved.completedSteps));
-  const [notes, setNotes] = useState<Record<number, string>>(saved.notes);
+  const [notes, setNotes] = useState<string>(saved.notes);
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
@@ -72,21 +137,40 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
+  const [panelHeight, setPanelHeight] = useState(300);
+  const resizingRef = useRef(false);
+  const resizeStartRef = useRef({ y: 0, h: 0 });
   const [generatingTraffic, setGeneratingTraffic] = useState(false);
   const [capturing, setCapturing] = useState(false);
+
+  // Panel resize handlers
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    resizeStartRef.current = { y: e.clientY, h: panelHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = resizeStartRef.current.y - ev.clientY;
+      const next = Math.max(200, Math.min(800, resizeStartRef.current.h + delta));
+      setPanelHeight(next);
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [panelHeight]);
 
   // Persist to localStorage on change
   useEffect(() => {
     saveToDisk(scenario.id, { completedSteps: [...completedSteps], notes, cmdLog });
   }, [completedSteps, notes, cmdLog, scenario.id]);
 
-  const updateNote = (stepIdx: number, text: string) => {
-    setNotes((prev) => ({ ...prev, [stepIdx]: text }));
-  };
-
   const resetProgress = () => {
     setCompletedSteps(new Set());
-    setNotes({});
+    setNotes("");
     setCurrentStep(0);
     setCmdLog([]);
     setValidation(null);
@@ -305,44 +389,74 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         </div>
         <div className="flex items-center gap-2">
           {completedSteps.size > 0 && (
-            <button
-              onClick={() => setShowSummary(!showSummary)}
-              className="rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
-            >
-              {showSummary ? "Back to Exercise" : "View Summary"}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowSummary(!showSummary)}
+                  aria-label={showSummary ? "Back to Exercise" : "View Summary"}
+                  className="inline-flex items-center justify-center rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
+                >
+                  {showSummary ? <ArrowLeft className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{showSummary ? "Back to Exercise" : "View Summary"}</TooltipContent>
+            </Tooltip>
           )}
           {exerciseNodes.length > 0 && (
-            <button
-              onClick={() => setShowTerminalPanel(!showTerminalPanel)}
-              className={`rounded border px-3 py-1.5 text-xs transition-colors ${
-                showTerminalPanel
-                  ? "border-cyan-700 bg-cyan-950/40 text-cyan-400"
-                  : "border-slate-700 bg-slate-800/50 text-slate-400 hover:text-cyan-400"
-              }`}
-            >
-              {showTerminalPanel ? "Hide Terminal" : "Terminal"}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+                  aria-label={showTerminalPanel ? "Hide terminal" : "Show terminal"}
+                  className={`inline-flex items-center justify-center rounded border px-3 py-1.5 text-xs transition-all ${
+                    showTerminalPanel
+                      ? "border-cyan-400 bg-cyan-950/60 text-cyan-300 ring-2 ring-cyan-400/60 ring-offset-0"
+                      : "border-slate-700 bg-slate-800/50 text-slate-400 hover:text-cyan-400 hover:border-slate-600"
+                  }`}
+                >
+                  <TerminalIcon className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{showTerminalPanel ? "Hide terminal" : "Show terminal"}</TooltipContent>
+            </Tooltip>
           )}
-          <button
-            onClick={handleLabReset}
-            disabled={resettingLab}
-            className="rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
-          >
-            {resettingLab ? "Resetting..." : "Reset Lab"}
-          </button>
-          <button
-            onClick={resetProgress}
-            className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
-          >
-            Reset Progress
-          </button>
-          <button
-            onClick={onExit}
-            className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
-          >
-            Exit Exercise
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleLabReset}
+                disabled={resettingLab}
+                aria-label="Reset Lab"
+                className="inline-flex items-center justify-center rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
+              >
+                <RotateCcw className={`h-4 w-4 ${resettingLab ? "animate-spin" : ""}`} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{resettingLab ? "Resetting lab..." : "Reset Lab"}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={resetProgress}
+                aria-label="Reset Progress"
+                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
+              >
+                <Eraser className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Reset Progress</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onExit}
+                aria-label="Exit Exercise"
+                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Exit Exercise</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -432,37 +546,50 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 )}
               </div>
             </div>
-            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-              {step?.description}
-            </p>
-
-            {/* Command blocks — extract all CLI commands from description */}
-            {step?.description && extractCommands(step.description).length > 0 && (
-              <div className="mt-3 space-y-1.5">
-                {extractCommands(step.description).map((cmd, i) => (
-                  <div key={i} className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-                    <span className="pr-24">{cmd}</span>
-                    <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
-                      {exerciseNodes.length > 0 && (
-                        <button
-                          onClick={() => handleAutoRun(cmd, i, step?.description || "")}
-                          disabled={autoRunning !== null}
-                          className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
-                        >
-                          {autoRunning === i ? "Running..." : "Run"}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => navigator.clipboard?.writeText(cmd)}
-                        className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
-                      >
-                        copy
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Description with inline command blocks */}
+            {step?.description && (() => {
+              const segments = splitDescription(step.description);
+              let cmdIdx = 0;
+              return (
+                <div className="space-y-2">
+                  {segments.map((seg, si) => {
+                    if (seg.type === "prose") {
+                      const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
+                      if (!trimmed) return null;
+                      return (
+                        <p key={si} className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                          {renderLinks(trimmed)}
+                        </p>
+                      );
+                    }
+                    const ci = cmdIdx++;
+                    const cmd = seg.value;
+                    return (
+                      <div key={si} className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+                        <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
+                        <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+                          {exerciseNodes.length > 0 && (
+                            <button
+                              onClick={() => handleAutoRun(cmd, ci, step.description)}
+                              disabled={autoRunning !== null}
+                              className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+                            >
+                              {autoRunning === ci ? "Running..." : "Run"}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => navigator.clipboard?.writeText(cmd)}
+                            className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
+                          >
+                            copy
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Quick action buttons for traffic/capture steps */}
             {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
@@ -497,15 +624,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </div>
             )}
 
-            {/* Notes field — student documents findings */}
+            {/* Shared notes — persists across all steps */}
             <div className="mt-3">
               <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Your Notes
+                Exercise Notes
               </label>
               <textarea
-                value={notes[currentStep] || ""}
-                onChange={(e) => updateNote(currentStep, e.target.value)}
-                placeholder="Document your findings, observations, or answers here..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Document your findings, observations, or answers here. Notes persist across all steps."
                 className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-none resize-y min-h-[60px]"
                 rows={3}
               />
@@ -723,6 +850,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       {/* ── Node Terminal/UI Panel ─────────────────────────────── */}
       {showTerminalPanel && exerciseNodes.length > 0 && !showSummary && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+          {/* Resize handle */}
+          <div
+            onMouseDown={onResizeStart}
+            className="h-1.5 cursor-ns-resize flex items-center justify-center hover:bg-slate-700/50 transition-colors group"
+          >
+            <div className="w-8 h-0.5 rounded-full bg-slate-700 group-hover:bg-slate-500" />
+          </div>
           {/* Node switcher + Terminal/UI toggle */}
           <div className="flex items-center border-b border-slate-800 px-2 py-1 gap-1">
             {exerciseNodes.map((nodeId) => (
@@ -740,7 +874,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             ))}
             <div className="ml-auto flex items-center gap-1">
               <button
-                onClick={() => setPanelMode("terminal")}
+                onClick={() => { setPanelMode("terminal"); if (panelHeight > 400) setPanelHeight(300); }}
                 className={`rounded px-2 py-1 text-[9px] font-medium ${
                   panelMode === "terminal" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
                 }`}
@@ -749,7 +883,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </button>
               {NODE_UI_URLS[activeTerminalNode] && (
                 <button
-                  onClick={() => setPanelMode("ui")}
+                  onClick={() => { setPanelMode("ui"); if (panelHeight < 400) setPanelHeight(500); }}
                   className={`rounded px-2 py-1 text-[9px] font-medium ${
                     panelMode === "ui" ? "bg-slate-800 text-slate-200" : "text-slate-500 hover:text-slate-300"
                   }`}
@@ -761,12 +895,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           </div>
 
           {/* Content */}
-          <div className="h-[300px] relative">
+          <div className="relative" style={{ height: panelHeight }}>
             {panelMode === "terminal" && (
               <SharedTerminalPanel
                 nodes={exerciseNodes}
                 activeNode={activeTerminalNode}
-                height={300}
+                height={panelHeight}
               />
             )}
             {panelMode === "ui" && NODE_UI_URLS[activeTerminalNode] && (
@@ -891,28 +1025,6 @@ function MiniStatus({ label, value, ok }: { label: string; value: string; ok?: b
   );
 }
 
-// Extract all CLI commands from step descriptions
-function extractCommands(description: string): string[] {
-  const commands: string[] = [];
-  const lines = description.split("\n");
-  const toolPattern = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget)\s/;
-  let i = 0;
-  while (i < lines.length) {
-    const trimmed = lines[i].trim();
-    if (toolPattern.test(trimmed)) {
-      let cmd = trimmed;
-      // Collect backslash continuation lines
-      while (cmd.endsWith("\\") && i + 1 < lines.length) {
-        i++;
-        cmd += "\n  " + lines[i].trim();
-      }
-      commands.push(cmd);
-    }
-    i++;
-  }
-  return commands;
-}
-
 // ── Exercise Summary Component ───────────────────────────────────
 
 function ExerciseSummary({
@@ -923,7 +1035,7 @@ function ExerciseSummary({
 }: {
   scenario: Scenario;
   completedSteps: Set<number>;
-  notes: Record<number, string>;
+  notes: string;
   activeConfig: string | null;
 }) {
   const completionPct = Math.round((completedSteps.size / scenario.steps.length) * 100);
@@ -937,9 +1049,9 @@ function ExerciseSummary({
     "",
     ...scenario.steps.map((s, i) => {
       const done = completedSteps.has(i) ? "[x]" : "[ ]";
-      const note = notes[i] ? `\n    Notes: ${notes[i]}` : "";
-      return `${done} Step ${i + 1}: ${s.title}${note}`;
+      return `${done} Step ${i + 1}: ${s.title}`;
     }),
+    ...(notes ? ["", "Notes:", notes] : []),
   ].join("\n");
 
   return (
@@ -971,9 +1083,9 @@ function ExerciseSummary({
             </div>
           </div>
           <div className="rounded border border-slate-800 bg-slate-950 p-3">
-            <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes Captured</div>
+            <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes</div>
             <div className="text-lg font-bold text-slate-300">
-              {Object.values(notes).filter(Boolean).length}
+              {notes ? `${notes.split("\n").length} lines` : "—"}
             </div>
           </div>
         </div>
@@ -981,7 +1093,6 @@ function ExerciseSummary({
         <div className="space-y-2">
           {scenario.steps.map((s, i) => {
             const done = completedSteps.has(i);
-            const note = notes[i];
             return (
               <div key={i} className={`rounded border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
                 <div className="flex items-center gap-2">
@@ -992,14 +1103,15 @@ function ExerciseSummary({
                     Step {i + 1}: {s.title}
                   </span>
                 </div>
-                {note && (
-                  <div className="mt-1 ml-5 text-xs text-slate-400 italic">
-                    {note}
-                  </div>
-                )}
               </div>
             );
           })}
+          {notes && (
+            <div className="rounded border border-slate-800 bg-slate-950/50 p-3 mt-2">
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Exercise Notes</div>
+              <div className="text-xs text-slate-400 whitespace-pre-line">{notes}</div>
+            </div>
+          )}
         </div>
       </div>
     </div>

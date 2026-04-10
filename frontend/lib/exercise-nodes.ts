@@ -34,10 +34,10 @@ export const NODE_LABELS: Record<string, string> = {
 
 // Nodes that have a web UI accessible via iframe
 export const NODE_UI_URLS: Record<string, string> = {
-  "fw-1":              "/api/containd/ui/",
-  "eng-ws-1":          "http://10.20.20.20:3000/",
-  "hmi-1":             "http://10.30.30.10:1881/",
-  "openplc-1":         "http://10.30.30.30:8080/",
+  "fw-1":              "/containd/",
+  "eng-ws-1":          "/apps/eng-ws/",
+  "hmi-1":             "/apps/fuxa-hmi/",
+  "openplc-1":         "/apps/openplc/",
 };
 
 // Get all node IDs for an exercise, using scenario metadata or fallback map.
