@@ -14,6 +14,13 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
+// resizeMsg is a client → server message to resize the PTY.
+type resizeMsg struct {
+	Type string `json:"type"`
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins for development
@@ -116,7 +123,7 @@ func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 	defer ws.Close()
 
 	// Execute shell in container (using container name)
-	hijack, err := s.orchestrator.ExecShell(c.Request.Context(), containerName)
+	hijack, execID, err := s.orchestrator.ExecShell(c.Request.Context(), containerName)
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Error: "+err.Error()+"\r\n"))
 		return
@@ -144,12 +151,20 @@ func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 		}
 	}()
 
-	// Read from WebSocket, write to container
+	// Read from WebSocket, write to container. Text messages are first
+	// checked for resize JSON; everything else is written to the shell stdin.
 	go func() {
 		for {
-			_, message, err := ws.ReadMessage()
+			msgType, message, err := ws.ReadMessage()
 			if err != nil {
 				return
+			}
+			if msgType == websocket.TextMessage && len(message) > 0 && message[0] == '{' {
+				var rm resizeMsg
+				if err := json.Unmarshal(message, &rm); err == nil && rm.Type == "resize" && rm.Cols > 0 && rm.Rows > 0 {
+					_ = s.orchestrator.ResizeExec(c.Request.Context(), execID, uint(rm.Cols), uint(rm.Rows))
+					continue
+				}
 			}
 			if _, err := hijack.Conn.Write(message); err != nil {
 				return
@@ -209,7 +224,7 @@ func (s *Server) handleContaindTerminal(c *gin.Context) {
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
-	if err := session.RequestPty("xterm-256color", 40, 120, modes); err != nil {
+	if err := session.RequestPty("xterm-256color", 24, 80, modes); err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("\x1b[31mFailed to request PTY: "+err.Error()+"\x1b[0m\r\n"))
 		return
 	}
@@ -233,6 +248,12 @@ func (s *Server) handleContaindTerminal(c *gin.Context) {
 		return
 	}
 
+	// Upgrade to an interactive login bash so /etc/profile is sourced and
+	// PS1 is properly set. The exec replaces the current shell process.
+	// clear wipes the scrollback artifacts from the prior shell's banner.
+	_, _ = stdin.Write([]byte("exec bash -il\n"))
+	_, _ = stdin.Write([]byte("clear\n"))
+
 	done := make(chan struct{})
 
 	// Read from SSH, write to WebSocket
@@ -253,13 +274,21 @@ func (s *Server) handleContaindTerminal(c *gin.Context) {
 		}
 	}()
 
-	// Read from WebSocket, write to SSH
+	// Read from WebSocket, write to SSH. Text messages are first checked for
+	// resize JSON; everything else is written to the SSH session stdin.
 	go func() {
 		for {
-			_, message, err := ws.ReadMessage()
+			msgType, message, err := ws.ReadMessage()
 			if err != nil {
 				stdin.Close()
 				return
+			}
+			if msgType == websocket.TextMessage && len(message) > 0 && message[0] == '{' {
+				var rm resizeMsg
+				if err := json.Unmarshal(message, &rm); err == nil && rm.Type == "resize" && rm.Cols > 0 && rm.Rows > 0 {
+					_ = session.WindowChange(int(rm.Rows), int(rm.Cols))
+					continue
+				}
 			}
 			if _, err := stdin.Write(message); err != nil {
 				return

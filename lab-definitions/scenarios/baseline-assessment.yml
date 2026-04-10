@@ -1,14 +1,14 @@
 id: baseline-assessment
 order: 0
 name: "Baseline Traffic Analysis"
-summary: "Capture and analyze normal OT traffic to identify required communication flows before segmentation."
+summary: "Capture and analyze normal OT traffic at the firewall to identify cross-zone communication flows before segmentation."
 description: >
   Before you can segment a network, you need to know what traffic
   is legitimate and must be preserved. In this exercise you'll
-  capture traffic at the firewall — the same chokepoint where you'd
-  place a TAP or SPAN in a real environment — then analyze the PCAP
-  to identify source-destination pairs, protocols, and the critical
-  operational flows that segmentation must not break.
+  capture traffic at the containd firewall — the same chokepoint
+  where you'd place a TAP or SPAN in a real environment — then
+  analyze the PCAP to identify cross-zone communication flows
+  and understand which traffic the firewall can and cannot see.
 nodes:
   - fw-1
   - eng-ws-1
@@ -21,125 +21,181 @@ tags:
 steps:
   - title: "Review the substation topology"
     description: >
-      Open the RangerDanger Network Map page. Identify the four
+      Open the [Network Map](/console) page and identify the four
       network zones and the key devices in each:
 
-        Enterprise (10.10.10.0/24): corp-ws, kali
-        Vendor/DMZ (10.20.20.0/24): vendor-jump, eng-ws
-        OT Operations (10.30.30.0/24): fuxa-hmi, rtac, openplc, historian, gps
-        Field Devices (10.40.40.0/24): relay, recloser, regulator, capbank
+        Enterprise  (10.10.10.0/24): corp-ws, kali
+        Vendor/DMZ  (10.20.20.0/24): vendor-jump, eng-ws
+        OT Ops      (10.30.30.0/24): fuxa-hmi, rtac, openplc, historian, gps
+        Field       (10.40.40.0/24): relay, recloser, regulator, capbank
 
-      The containd firewall sits between all four zones. All
-      inter-zone traffic passes through it — this is where we
-      capture.
+      The containd firewall (fw-1) connects to all four zones
+      and acts as the default gateway. Any traffic that crosses
+      a zone boundary passes through the firewall — this is
+      where we will capture.
+
+      Note: The RTAC is multi-homed — it has interfaces on both
+      OT Ops (10.30.30.20) and Field (10.40.40.10). Its direct
+      communication with field devices stays on the Field subnet
+      and does NOT transit the firewall. This is an important
+      architectural detail.
     action:
       type: check
       expect:
         breaker_closed: true
 
+  - title: "Generate representative traffic"
+    description: >
+      Before we capture, we need traffic flowing. In a real
+      substation, SCADA polling and HMI reads run continuously.
+      In the lab, we start the traffic generator to simulate
+      normal operations across all zones.
+
+      Run this from any terminal or your browser console:
+
+        curl -X POST http://localhost:8088/api/traffic/generate \
+          -H 'Content-Type: application/json' \
+          -d '{"duration_sec":50}'
+
+      This produces realistic OT communication flows each cycle:
+
+        - Eng workstation → RTAC (HTTP on port 8080, vendor→OT ops)
+        - Eng workstation → OpenPLC (HTTP on port 8080, vendor→OT ops)
+        - Vendor jump box → HMI (HTTP on port 1881, vendor→OT ops)
+        - GPS clock → field devices (NTP on port 123, OT ops→field)
+        - RTAC → field devices (Modbus on port 502, within field subnet)
+        - HMI → RTAC (Modbus on port 502, within OT ops subnet)
+        - Historian → RTAC (Modbus on port 502, within OT ops subnet)
+        - Corp workstation → proxy (HTTP, within enterprise subnet)
+
+      Leave the generator running — we will start the capture next.
+
   - title: "Start a packet capture on the firewall"
     node: fw-1
     description: >
-      Open the firewall terminal and start a 60-second capture
-      on all interfaces. This is what you'd do with a TAP or
-      SPAN port in a real substation:
+      Open the firewall terminal (use the terminal panel below,
+      or click the fw-1 terminal on the [Network Map](/console) page).
+
+      The firewall runs a Linux shell with tcpdump. Start a
+      60-second capture on all interfaces:
 
         tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1
 
-      This writes to /data/captures/ which is shared with the
-      engineering workstation at /home/abc/pcaps/.
+      You will see: "listening on any, link-type LINUX_SLL2".
+      The -G 60 flag rotates after 60 seconds and -W 1 stops
+      after one file. Wait for it to finish — tcpdump will
+      print a packet count and exit.
 
-      Alternatively, use the RangerDanger API:
-
-        curl -X POST http://localhost:8088/api/pcap/start \
-          -d '{"duration_sec":60,"name":"baseline"}'
-
-  - title: "Generate representative traffic"
-    description: >
-      The lab needs traffic to capture. In a real environment,
-      this traffic already exists — SCADA polling, HMI reads,
-      historian collection. In the lab, we generate it:
-
-        curl -X POST http://localhost:8088/api/traffic/generate \
-          -d '{"duration_sec":45}'
-
-      This produces ~23 realistic OT flows per cycle: RTAC
-      polling field devices via Modbus and DNP3, HMI reading
-      the RTAC, historian collecting data, GPS time sync, and
-      some enterprise→OT traffic that shouldn't be there.
-
-      Wait for the capture duration to complete.
+      The warning about promiscuous mode on the "any" device
+      is normal and can be ignored — capture still works.
 
   - title: "Verify the capture file"
     node: fw-1
     description: >
-      Check that the capture file was created:
+      Once tcpdump exits, verify the capture file was created:
 
         ls -lh /data/captures/baseline.pcap
 
-      Get a quick summary of what's in it:
+      You should see a file in the range of 500KB-1MB. Now
+      get a quick packet count:
 
-        tcpdump -r /data/captures/baseline.pcap -q | head -20
+        tcpdump -r /data/captures/baseline.pcap -nn -q 2>&1 | grep -c "IP "
 
-      You should see traffic between the OT operations zone
-      (10.30.30.x) and field devices (10.40.40.x) on ports
-      502 (Modbus) and 20000 (DNP3).
+      You should see several hundred packets.
+
+  - title: "Identify cross-zone traffic at the firewall"
+    node: fw-1
+    description: >
+      The firewall only sees traffic that crosses zone boundaries.
+      Filter for the interesting cross-zone flows:
+
+      Vendor zone → OT Ops zone (eng-ws and vendor-jump reaching
+      into OT systems — HTTP management and HMI access):
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.20.20.0/24' 2>&1 | head -20
+
+      OT Ops → Field zone (GPS time sync crossing from OT ops
+      to field devices):
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.30.30.0/24 and dst net 10.40.40.0/24' 2>&1 | head -20
+
+      Check for any Enterprise → OT or Enterprise → Field traffic
+      (this should not exist in normal operations):
+
+        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.10.10.0/24 and (dst net 10.30.30.0/24 or dst net 10.40.40.0/24)' 2>&1 | head -10
 
   - title: "Analyze the capture on the engineering workstation"
     node: eng-ws-1
     description: >
-      Open the engineering workstation GUI (click the UI button
-      for eng_workstation on the Network Map, or navigate to
-      its webtop URL).
+      The capture file is shared with the engineering workstation
+      via a mounted volume at /home/abc/pcaps/.
 
-      The capture is available at /home/abc/pcaps/baseline.pcap.
+      Open the eng-ws terminal (terminal panel below, or eng-ws-1
+      on the [Network Map](/console)) and verify you can see the file:
 
-      Option A — Open PCAP Analyzer (desktop shortcut):
-      Load baseline.pcap. Review the Asset Summary and Protocol
-      Breakdown to see all communicating devices and protocols.
+        ls -lh /home/abc/pcaps/baseline.pcap
 
-      Option B — Use Wireshark (desktop shortcut):
-      Open baseline.pcap. Apply display filter:
-
-        modbus || dnp3 || tcp.port==20000
-
-      Review the conversations (Statistics → Conversations →
-      TCP tab) to see which IPs are talking to which.
-
-      Option C — Use tshark from the terminal:
+      Use tshark to build a traffic matrix of unique source→
+      destination flows and their destination ports:
 
         tshark -r /home/abc/pcaps/baseline.pcap \
           -T fields -e ip.src -e ip.dst -e tcp.dstport \
           | sort | uniq -c | sort -rn | head -20
 
-  - title: "Identify required communication flows"
+      Alternatively, open the eng-ws GUI (click the UI toggle
+      above the terminal) and use Wireshark from the desktop
+      to open /home/abc/pcaps/baseline.pcap.
+
+  - title: "Document required communication flows"
     description: >
-      From your analysis, document the communication flows that
-      are required for normal substation operations. These are
-      the flows that segmentation MUST preserve:
+      From your capture analysis, identify and document the
+      cross-zone flows that are required for normal substation
+      operations. These are the flows segmentation MUST preserve.
 
-      Required flows to identify:
-      - RTAC (10.30.30.20 / 10.40.40.10) → field devices on Modbus 502
-      - RTAC → field devices on DNP3 20000
-      - RTAC → OpenDSS physics engine on HTTP 8080
-      - HMI (10.30.30.10) → RTAC on Modbus 502 and HTTP 8080
-      - Historian (10.30.30.40) → RTAC on HTTP 8080
-      - GPS (10.30.30.50) → field devices on NTP 123
+      Cross-zone flows visible at the firewall:
 
-      Suspicious flows to flag:
-      - Enterprise (10.10.10.x) → field devices (should not exist)
-      - Enterprise → OT operations (should be restricted)
-      - Any direct non-RTAC → field device traffic
+        - Eng WS (10.20.20.20) → RTAC (10.30.30.20) on HTTP 8080
+          Engineering maintenance access (vendor → OT ops)
 
-      Use the Notes field below to document your findings.
-      These become the requirements for Exercise 1.
+        - Eng WS (10.20.20.20) → OpenPLC (10.30.30.30) on HTTP 8080
+          PLC programming interface (vendor → OT ops)
+
+        - Vendor jump (10.20.20.10) → HMI (10.30.30.10) on HTTP 1881
+          Vendor remote monitoring via HMI web interface (vendor → OT ops)
+
+        - GPS (10.30.30.50) → field devices (10.40.40.x) on NTP 123
+          Time synchronization for sequence-of-events (OT ops → field)
+
+      Same-subnet flows NOT visible at the firewall:
+
+        - RTAC (10.40.40.10) → relay/recloser/regulator on Modbus 502
+          Primary SCADA polling (field subnet, does not cross zones)
+
+        - RTAC (10.40.40.10) → field devices on DNP3 20000
+          DNP3 supervisory polling (field subnet, does not cross zones)
+
+        - HMI (10.30.30.10) → RTAC (10.30.30.20) on Modbus 502
+          Operator reads of aggregated state (OT ops subnet)
+
+        - Historian (10.30.30.40) → RTAC (10.30.30.20) on Modbus 502
+          Data collection for trending (OT ops subnet)
+
+      Key insight: Because the RTAC is multi-homed on both OT Ops
+      and Field subnets, its control traffic to field devices
+      bypasses the firewall entirely. The firewall cannot inspect
+      or block RTAC→field device traffic. This is by design in
+      many real substations, but it means DPI rules on the firewall
+      only protect against unauthorized cross-zone access.
+
+      Use the Notes field to document your findings. These become
+      the requirements input for the next exercise.
 
   - title: "Validate baseline state"
     description: >
       Confirm the substation is operating normally — all devices
       communicating, loads energized, protection active. This
-      is the "known good" state that your segmentation rules
-      must preserve.
+      is the "known good" state your segmentation rules must
+      preserve.
     action:
       type: check
       expect:

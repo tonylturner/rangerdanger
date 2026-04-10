@@ -18,14 +18,29 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
 
-  // Fit terminal to container
+  // Fit terminal to container, send resize to server, and refresh the prompt.
   const fitTerminal = useCallback(() => {
-    if (fitAddonRef.current && terminalRef.current) {
-      try {
-        fitAddonRef.current.fit();
-      } catch {
-        // Ignore fit errors during unmount
+    const term = terminalRef.current;
+    const fit = fitAddonRef.current;
+    const container = containerRef.current;
+    const ws = wsRef.current;
+    if (!term || !fit || !container) return;
+    // Skip fit while container is hidden (display:none → 0 size). fit() at
+    // zero dimensions corrupts xterm's cached column count.
+    if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
+    try {
+      fit.fit();
+      // Tell the server (Docker exec or SSH) to resize its PTY so bash's
+      // stty size matches and the prompt draws at the correct width.
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        // Redraw the current line (Ctrl+L clears screen; Ctrl+R then Ctrl+R
+        // would redraw the prompt from history, but Ctrl+L is simpler and
+        // bash/readline handles it correctly).
+        term.refresh(0, term.rows - 1);
       }
+    } catch {
+      // Ignore fit errors during unmount
     }
   }, []);
 
@@ -57,7 +72,7 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
 
     // Initial fit after a brief delay to ensure container is rendered
     requestAnimationFrame(() => {
-      fitAddon.fit();
+      fitTerminal();
     });
 
     term.writeln("\x1b[36mConnecting to container...\x1b[0m");
@@ -72,8 +87,9 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
     ws.onopen = () => {
       setStatus("connected");
       term.writeln("\x1b[32mConnected!\x1b[0m\r\n");
-      // Re-fit after connection to ensure proper sizing
-      requestAnimationFrame(() => fitAddon.fit());
+      // Re-fit after connection to ensure proper sizing and send the
+      // initial resize so the remote PTY matches the local xterm.
+      requestAnimationFrame(() => fitTerminal());
     };
 
     ws.onmessage = (e) => {
@@ -102,26 +118,40 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
 
     // Handle window resize
     const handleResize = () => {
-      requestAnimationFrame(() => fitAddon.fit());
+      requestAnimationFrame(() => fitTerminal());
     };
     window.addEventListener("resize", handleResize);
 
     // Use ResizeObserver for container size changes
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => fitAddon.fit());
+      requestAnimationFrame(() => fitTerminal());
     });
     resizeObserver.observe(containerRef.current);
+
+    // Use IntersectionObserver to detect when the panel becomes visible again
+    // (e.g. after switching back from another node tab). ResizeObserver does
+    // not always fire on display:none → display:block transitions, so this
+    // catches the visibility change and triggers a re-fit + PTY resize.
+    const intersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio > 0) {
+          requestAnimationFrame(() => fitTerminal());
+        }
+      }
+    }, { threshold: [0, 0.01] });
+    intersectionObserver.observe(containerRef.current);
 
     return () => {
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
+      intersectionObserver.disconnect();
       ws.close();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [nodeId, labId, expanded]);
+  }, [nodeId, labId, expanded, fitTerminal]);
 
   // Re-fit when expanded changes
   useEffect(() => {
