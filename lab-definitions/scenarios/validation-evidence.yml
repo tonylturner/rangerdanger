@@ -1,5 +1,5 @@
 id: validation-evidence
-order: 5
+order: 6
 name: "Post-Change Validation & Evidence Collection"
 summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package."
 description: >

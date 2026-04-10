@@ -1,5 +1,5 @@
 id: modbus-override
-order: 3
+order: 4
 name: "Modbus Register Override Attack"
 summary: "Direct Modbus writes from a compromised OT node bypass the RTAC to manipulate the voltage regulator."
 description: >

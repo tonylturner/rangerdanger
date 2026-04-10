@@ -1,0 +1,243 @@
+id: remediation-planning
+order: 1
+name: "Remediation Planning Under Constraint"
+summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
+description: >
+  You have a list of findings from the baseline assessment.
+  You do not have unlimited time, people, or political capital.
+  Your job in this exercise is to pick which remediations to
+  execute this quarter — knowing that some attack paths will
+  remain open because you cannot fix everything at once.
+
+  The choices you make here will be referenced by later
+  exercises. If you do not restrict vendor access, the vendor
+  attack path in Exercise 3 remains easier. If you do not
+  apply protocol-aware filtering, the Modbus and DNP3 abuse
+  exercises remain easier. Your plan has consequences.
+nodes: []
+tags:
+  - planning
+  - requirements
+  - defense
+  - tradeoffs
+steps:
+  - title: "Review the findings you captured"
+    description: >
+      Open your Exercise Notes from the [Baseline Assessment](/exercises/baseline-assessment)
+      and review the five findings you documented:
+
+        1. Vendor zone access is too broad.
+        2. Enterprise zone can reach ICS protocols.
+        3. No protocol-aware constraints on ICS ports.
+        4. Any OT Ops host can reach field devices.
+        5. Firewall visibility has a blind spot at the RTAC.
+
+      Each of the actions in the next step maps to one or
+      more of these findings. As you read them, mentally
+      connect each action back to which finding it addresses.
+
+  - title: "Understand the team budget"
+    description: >
+      You have 500 hours of total labor for this quarter's
+      segmentation work. That total is split across four
+      roles, and each role has its own capacity cap:
+
+        - OT Engineer — 120 hours
+          The person who understands substation operations and
+          must sign off on any change that could affect control
+          traffic or protection.
+
+        - Firewall Admin — 140 hours
+          The person who owns containd policy and applies rules.
+
+        - Network Engineer — 120 hours
+          The person who handles VLANs, routing, and
+          zone/interface configuration.
+
+        - Security Analyst — 120 hours
+          The person who writes requirements, runs PCAP reviews,
+          and validates evidence.
+
+      Actions require one or more roles simultaneously. If you
+      schedule more work than a role has hours for, that team
+      is overloaded and the work is not realistic — even if the
+      total 500-hour budget still has room.
+
+      Watch the role utilization bars as you select actions
+      in the next step. A role in red cannot absorb more work.
+
+  - title: "Choose your remediation plan"
+    description: >
+      Select the actions you will execute this quarter. The
+      total effort must fit inside 500 hours AND each role's
+      individual capacity. You will not be able to select
+      every action — that is the point.
+
+      Cost model: each action lists a total effort in hours
+      and the roles that must collaborate on it. The effort
+      is split evenly across the required roles — an 80-hour
+      action requiring 3 roles costs ~27 hours to each of
+      those three teams.
+
+      Before clicking, read each action's "why" and consider
+      which finding it addresses.
+
+      When you are done, review the Remaining hours and
+      per-role utilization. If any role is red, remove an
+      action or choose a lighter one.
+    action:
+      type: decision
+      budget_hours: 500
+      roles:
+        - name: OT Engineer
+          capacity_hours: 120
+        - name: Firewall Admin
+          capacity_hours: 140
+        - name: Network Engineer
+          capacity_hours: 120
+        - name: Security Analyst
+          capacity_hours: 120
+      actions:
+        - id: block-enterprise-to-field
+          title: "Block enterprise → field direct access"
+          why: >
+            Removes the Modbus 502, DNP3 20000, and HTTP 8080
+            paths from the corporate IT zone straight to relays
+            and reclosers. Closes the DNP3 command injection
+            attack surface used in Exercise 5.
+          effort_hours: 40
+          roles: ["Firewall Admin", "Security Analyst"]
+          tags: ["enterprise-field"]
+        - id: block-enterprise-to-ot
+          title: "Block enterprise → OT Operations ICS ports"
+          why: >
+            Removes enterprise access to HMI, RTAC, and OpenPLC
+            on Modbus, DNP3, HMI web, and management HTTP.
+            Blocks the Modbus override staging path that
+            assumes an enterprise foothold.
+          effort_hours: 30
+          roles: ["Firewall Admin", "Security Analyst"]
+          tags: ["enterprise-ot"]
+        - id: restrict-vendor-to-ot
+          title: "Restrict vendor → OT to SSH/HTTPS only"
+          why: >
+            Vendor remote access should be monitoring and
+            administration via encrypted management protocols,
+            not direct Modbus or HMI web. Reduces the blast
+            radius of a compromised vendor credential and
+            closes the Exercise 3 vendor RDP pivot path.
+          effort_hours: 50
+          roles: ["Firewall Admin", "Network Engineer", "OT Engineer"]
+          tags: ["vendor"]
+        - id: block-vendor-to-field
+          title: "Block vendor → field devices entirely"
+          why: >
+            There is no legitimate reason for the vendor DMZ
+            to reach field devices directly. The engineering
+            workstation should drive field work through the
+            RTAC or via OT Ops, not via bare Modbus or DNP3
+            from the vendor zone.
+          effort_hours: 30
+          roles: ["Firewall Admin", "OT Engineer"]
+          tags: ["vendor", "vendor-field"]
+        - id: pin-rtac-to-field
+          title: "Pin field-device access to RTAC source IP"
+          why: >
+            Restricts OT Ops → field rules to source
+            10.40.40.10 only (the RTAC's field-side interface),
+            so a compromised OpenPLC or historian cannot reach
+            relays directly even from inside OT Ops. Closes
+            the Modbus override lateral path in Exercise 4.
+          effort_hours: 40
+          roles: ["Firewall Admin", "OT Engineer"]
+          tags: ["ot-lateral"]
+        - id: modbus-dpi
+          title: "Apply Modbus ICS DPI — limit function codes"
+          why: >
+            Configure containd to filter Modbus by function
+            code. Allow reads (FC1–4) broadly; restrict writes
+            (FC5/6) to the RTAC only. Turns the firewall from
+            an L4 port filter into a protocol-aware control.
+            Blocks unauthorized writes even from otherwise-
+            allowed sources.
+          effort_hours: 70
+          roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
+          tags: ["dpi", "modbus"]
+        - id: dnp3-dpi
+          title: "Apply DNP3 ICS DPI — restrict Direct Operate"
+          why: >
+            Configure containd to recognize DNP3 and block
+            Direct Operate (FC05) from sources other than the
+            RTAC. Reads and integrity polls stay available for
+            monitoring. Closes the DNP3 command injection
+            attack path at the protocol layer.
+          effort_hours: 80
+          roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
+          tags: ["dpi", "dnp3"]
+        - id: improve-logging
+          title: "Improve firewall logging and PCAP retention"
+          why: >
+            Enable per-rule logging, keep rolling PCAPs on
+            cross-zone interfaces, and forward events to
+            syslog. Without this, post-incident review of
+            attempted attacks is blind.
+          effort_hours: 50
+          roles: ["Firewall Admin", "Security Analyst"]
+          tags: ["visibility"]
+        - id: rtac-architecture-review
+          title: "Review RTAC multi-homing architecture"
+          why: >
+            The RTAC's direct field connection bypasses the
+            firewall entirely. Document this blind spot, add
+            host-based controls or compensating monitoring on
+            the RTAC itself, and open a longer-term project
+            to move RTAC-to-field through an inspected interface.
+            This is the finding the firewall cannot solve.
+          effort_hours: 120
+          roles: ["OT Engineer", "Network Engineer", "Security Analyst"]
+          tags: ["architecture"]
+        - id: tighten-firewall-objects
+          title: "Tighten firewall object hygiene"
+          why: >
+            Replace broad /24 matches with host objects for
+            RTAC, HMI, historian, GPS. Name and document
+            each rule. Reduces drift and makes the next audit
+            defensible.
+          effort_hours: 40
+          roles: ["Firewall Admin", "Network Engineer"]
+          tags: ["hygiene"]
+        - id: positive-validation
+          title: "Post-change positive/negative validation"
+          why: >
+            Build a test plan that verifies legitimate flows
+            still work and illegitimate flows are blocked,
+            with captured PCAP evidence. Required for
+            acceptance of the change and for Exercise 6.
+          effort_hours: 60
+          roles: ["Security Analyst", "OT Engineer"]
+          tags: ["validation"]
+
+  - title: "Reflect — what are you accepting?"
+    description: >
+      Use your Exercise Notes to answer three questions
+      briefly. These answers become part of your plan of
+      record and travel with you into the remaining exercises.
+
+      Question 1 — What did you choose NOT to fix this quarter,
+      and why? (Cost? Dependency on another change? Political
+      risk? Low severity?)
+
+      Question 2 — What residual risk remains in the
+      substation after your plan is executed? Which of the
+      five baseline findings is still at least partially
+      open?
+
+      Question 3 — Which role is your biggest constraint?
+      Which team would you need to grow first to execute a
+      more aggressive plan next quarter?
+
+      The selections you made in the previous step are saved
+      to your exercise state. Later exercises will read them
+      to reflect the consequences of your plan — if you did
+      not block a path, that attack will remain easier to
+      execute.
