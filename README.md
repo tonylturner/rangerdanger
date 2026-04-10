@@ -216,6 +216,12 @@ The Substation Segmentation scenario is fully implemented and all six exercises 
 - Suricata IDS alerts not yet integrated into activity feed
 - PCAP replay and per-scenario traffic recording deferred
 
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — Full zone model, node inventory, service breakdown, and data flow
+- [`docs/api-spec.md`](docs/api-spec.md) — REST API reference including workshop endpoints, scenario validators, PCAP management, and WebSocket terminal protocol
+- [`CLAUDE.md`](CLAUDE.md) — Project conventions and guidance for AI-assisted development
+
 ## Related projects
 
 - [containd](https://github.com/tonylturner/containd) — The ICS-aware NGFW at the heart of the lab
