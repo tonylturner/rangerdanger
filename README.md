@@ -1,66 +1,226 @@
-# OT Cyber Lab Trainer
+# RangerDanger
 
-The OT Cyber Lab Trainer is a containerized industrial control system (ICS) cyber range intended for hands-on training. It orchestrates a realistic OT network, wraps it with a Go + Gin API, and offers a modern Next.js UI for scheduling, visualizing, and monitoring labs.
+**An OT/ICS cyber range for hands-on network segmentation training.**
 
-## Repository Layout
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose)
+[![containd](https://img.shields.io/badge/containd-NGFW-f97316)](https://github.com/tonylturner/containd)
+
+RangerDanger spins up a realistic electric distribution substation inside Docker — complete with multi-zone networks, field devices speaking Modbus and DNP3, a multi-homed supervisory controller, and a real deep-packet-inspection firewall at the edge. Students work through guided exercises to identify required traffic flows, design segmentation rules, execute attacks against a weak baseline, and validate that a hardened policy prevents them.
+
+> This project is for isolated lab environments only. Do not connect these containers or networks to production systems.
+
+## What makes it different
+
+Most OT training labs fall back to iptables and pretend. RangerDanger uses [containd](https://github.com/tonylturner/containd), a purpose-built NGFW with ICS deep-packet inspection, so students can see and control Modbus function codes, DNP3 Direct Operate commands, and traffic flows at a level that matches what modern OT-aware firewalls actually do.
+
+| Typical OT lab | RangerDanger |
+|----------------|--------------|
+| Basic iptables or OPNsense | containd NGFW with ICS DPI (Modbus, DNP3, CIP) |
+| Separate tools for capture, IDS, SCADA | Unified web UI with embedded DPI visibility |
+| Static, manually-provisioned containers | Dynamic docker-compose orchestration per exercise |
+| Notion workbooks or PDFs for exercises | Interactive exercise runner with inline terminals and auto-validation |
+| Real VMs per lab seat | Lightweight containers — runs on a laptop |
+
+## Scenario: Substation Segmentation Validation Lab
+
+Students operate an electric cooperative distribution substation and must validate and improve the network segmentation protecting critical control functions.
+
+### Network zones
+
+All traffic between zones transits the containd firewall for inspection and policy enforcement.
+
+| Zone | Subnet | Hosts |
+|------|--------|-------|
+| Enterprise | 10.10.10.0/24 | Corporate workstation, Kali attacker |
+| Vendor / DMZ | 10.20.20.0/24 | Vendor jump box, engineering workstation |
+| OT Operations | 10.30.30.0/24 | FUXA HMI, RTAC, OpenPLC, historian, GPS clock |
+| Field Devices | 10.40.40.0/24 | Relay, recloser, regulator, capacitor bank |
+| Physics | 10.50.50.0/24 | OpenDSS feeder simulation engine (not firewalled) |
+
+### Exercises
+
+Aligned to the DefendICS OT Network Segmentation workshop agenda.
+
+| # | Lab | Exercise | Focus |
+|---|-----|----------|-------|
+| 0 | 1.2 | Baseline Traffic Analysis | Capture and analyze normal flows at the firewall |
+| 1 | 1.3 | Segmentation Requirements & Rule Design | Write requirements, compare to improved config |
+| 2 | 2.3 | Vendor Remote Access Compromise (bonus) | Pivot from vendor DMZ to field devices via Modbus |
+| 3 | 2.3 | Modbus Register Override Attack | Direct writes bypassing the RTAC |
+| 4 | 2.3 | DNP3 Direct Operate Command Injection | Disable auto-reclose from the enterprise zone |
+| 5 | 2.4 | Post-Change Validation & Evidence Collection | Verify the hardened policy with PCAP evidence |
+
+Each exercise includes inline terminal access to every relevant node, auto-run buttons for CLI commands, per-exercise notes, and backend validators that check substation state, capture files, and firewall policy.
+
+## Architecture
 
 ```
-backend/   # Go + Gin API, GORM + SQLite, orchestration service
-frontend/  # Next.js + TypeScript + shadcn/ui dashboard
-deploy/    # Dockerfiles and docker-compose definitions
+┌──────────────────────────────────────────────────────────────┐
+│  Browser (localhost:8088)                                    │
+│  Next.js UI — exercise runner, network console, HMI         │
+└──────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Nginx reverse proxy — /apps/*, /containd/, /api/            │
+└──────────────────────────────────────────────────────────────┘
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+    ┌──────────┐   ┌──────────┐   ┌──────────────┐
+    │ Backend  │   │ Frontend │   │ Containd NGFW│
+    │ Go+Gin   │   │ Next.js  │   │ (port 2222   │
+    │ :8080    │   │ :3000    │   │  SSH, :8080  │
+    └──────────┘   └──────────┘   │  web UI)     │
+          │                       └──────────────┘
+          │                              │
+          │                    ┌─────────┼─────────┬─────────┐
+          │                    ▼         ▼         ▼         ▼
+          │              enterprise  vendor    ot_ops    field
+          │                  net       net       net       net
+          │                    │         │         │         │
+          │                  kali    eng-ws     rtac      relay
+          │                 corp-ws  vendor-   fuxa-     recloser
+          │                           jump      hmi      regulator
+          │                                   openplc    capbank
+          │                                  historian
+          │                                    gps
+          └────── Docker SDK ──────────────────────┘
+```
+
+### Backend (Go + Gin)
+
+Gin HTTP API at `:8080` managing lab state, terminal sessions, firewall policy, traffic generation, PCAP capture, and scenario validation. Uses GORM + SQLite for persistence and the Docker SDK for container orchestration. Integrates with containd over REST and SSE for events.
+
+Key endpoints:
+
+- `GET /api/scenarios` — list exercises
+- `GET /api/scenarios/:id/validate` — run validators for an exercise
+- `POST /api/traffic/generate` — start representative OT traffic generation
+- `POST /api/pcap/start` — start a firewall packet capture
+- `POST /api/workshop/nodes/:nodeId/exec` — run a command on a lab node
+- `GET /api/workshop/nodes/:nodeId/terminal` — WebSocket terminal session
+- `POST /api/workshop/reset` — reset lab state
+
+### Frontend (Next.js + TypeScript)
+
+Dark-themed, command-and-control-style UI with React Flow topology visualization, xterm.js terminals, and inline exercise runner. Built with Tailwind CSS, shadcn/ui primitives, lucide-react icons, and @radix-ui for tooltips and other interactive components.
+
+Pages:
+
+- `/` — Dashboard with node status and activity feed
+- `/exercises` — Exercise library with completion tracking
+- `/exercises/[id]` — Step-by-step exercise runner with inline terminals
+- `/console` — Network Map with clickable topology and per-node terminals
+- `/hmi` — SCADA one-line diagram with interactive device controls
+
+### Simulators (Go)
+
+Custom Go services implementing hand-written Modbus TCP, DNP3 TCP (via the [dnp3go](https://github.com/tonylturner/dnp3go) standalone library — zero external dependencies), and REST APIs for each field device. All expose the same shared state across protocols:
+
+- **relay-sim** — Feeder breaker with trip, close, lockout, fault injection
+- **recloser-sim** — Auto-reclose with shot counting and lockout
+- **regulator-sim** — Load tap changer with ±16 tap range
+- **rtac-sim** — Supervisory controller polling all field devices via Modbus, DNP3, and HTTP
+- **opendss-sim** — Feeder physics engine calculating energization and voltage
+
+### Firewall: containd
+
+[containd](https://github.com/tonylturner/containd) is a separate project providing zone-based firewalling with nftables, ICS DPI (Modbus/TCP function code filtering, DNP3 protocol awareness), IT DPI (DNS, TLS/SNI, HTTP, SSH, RDP, SMB), a web UI, and SSH console access. RangerDanger consumes it as a published container image (`ghcr.io/tonylturner/containd:latest`) and configures it through JSON policy files.
+
+Two firewall configurations ship with the lab:
+
+- **substation-weak.json** — Intentionally permissive baseline that allows the attacks in exercises 2-4 to succeed
+- **substation-improved.json** — Hardened policy that blocks all attack paths while preserving legitimate flows
+
+## Getting started
+
+### Prerequisites
+
+- Docker Desktop or Docker Engine with Compose v2
+- 8 GB RAM minimum, 16 GB recommended
+- Apple Silicon or x86_64 host
+
+### Quick start
+
+```bash
+git clone https://github.com/tonylturner/rangerdanger
+cd rangerdanger
+docker compose up -d --build
+```
+
+The first build takes several minutes while the Go simulators, Kali image, and engineering workstation are built.
+
+### Access points
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| RangerDanger UI | http://localhost:8088 | — |
+| containd Web UI | http://localhost:9080 | — |
+| containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
+| FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | — |
+| OpenPLC | http://localhost:8088/apps/openplc/ | — |
+
+Open [http://localhost:8088/exercises](http://localhost:8088/exercises) and start with Exercise 0.
+
+### Development
+
+Rebuild a single service without tearing down the stack:
+
+```bash
+docker compose build backend && docker compose up -d backend
+docker compose build frontend && docker compose up -d frontend
+```
+
+Run tests:
+
+```bash
+cd backend && go test ./...
+cd frontend && npm run build
+```
+
+## Repository layout
+
+```
+backend/               Go + Gin API, orchestration, scenario validators
+frontend/              Next.js + TypeScript + shadcn/ui dashboard
+services/              Go simulators (relay, recloser, regulator, rtac, opendss)
+dnp3go/                Standalone DNP3 library (separate Go module)
 lab-definitions/
-  default-lab.yml
-  scenarios/
-    modbus-override.yml
-    vendor-rdp-compromise.yml
-scripts/   # helper scripts for dev + seeding
+  substation-segmentation.yml    Topology definition
+  scenarios/                     Exercise YAML files
+  firewall/                      Weak and improved containd configs
+proxy/                 Nginx reverse proxy config
+scripts/               Dev helper scripts
+docs/                  Architecture and API documentation
 ```
 
-## Core Features (v1)
+## Current status
 
-- **Three-zone OT topology** with it_net, dmz_net, ot_control_net, and ot_safety_net networks plus an external OPNsense firewall representation.
-- **Node catalog** including Engineering Workstation, PLC trainer, SIS, HMI/SCADA, Historian, OT IDS, Jump Host, and management portal.
-- **Lab orchestration** via Docker networks/containers, described as LabTemplates that can be instantiated into LabInstances.
-- **Scenario engine** for guided training exercises and telemetry capture.
-- **Web dashboard** with React Flow topology visualization, scenario controls, and D3/Recharts metrics.
+The Substation Segmentation scenario is fully implemented and all six exercises are playable end-to-end. Recent work:
 
-## Getting Started
+- **containd v0.1.18 Linux shell mode** — tcpdump, bash, and standard Linux tooling available directly in the firewall SSH console
+- **Traffic generator overhaul** — produces realistic cross-zone Modbus, DNP3, HTTP, and NTP traffic; Kali attack traffic removed from baseline generation
+- **Exercise runner UX** — inline command blocks with Run/Copy buttons, markdown links between pages, resizable terminal panel, per-exercise shared notes, icon buttons with styled tooltips
+- **PTY resize propagation** — switching between node tabs now properly resizes the remote shell via Docker exec resize and SSH window-change
+- **Validator improvements** — exercise 0 now detects manually-created tcpdump captures alongside API-initiated ones
 
-1. **Install prerequisites**: Docker, Docker Compose v2, Go 1.21+, Node.js 18+, and pnpm.
-2. **Install dependencies**:
-   ```bash
-   (cd backend && go mod tidy)   # fetch Go modules
-   (cd frontend && pnpm install) # install Node deps
-   ```
-3. **Dev environment**:
-   ```bash
-   ./scripts/dev-up.sh
-   ```
-   This boots the backend (Gin + Air) and frontend (Next.js) against local SQLite storage. Use `./scripts/dev-down.sh` to stop everything.
-4. **Seed lab definitions**:
-   ```bash
-   ./scripts/seed-labs.sh
-   ```
-   Seeds default YAML definitions into the backend via the `/api/admin/seed` endpoint.
-5. **Production-style stack**:
-   ```bash
-   docker compose up -d --build
-   ```
+### Known gaps
 
-## Frontend Experience
+- FUXA HMI screens are unconfigured (blank canvas)
+- Multi-user RBAC (instructor vs student modes) not implemented
+- Suricata IDS alerts not yet integrated into activity feed
+- PCAP replay and per-scenario traffic recording deferred
 
-- **Dashboard** cards show running labs, templates, topology preview, and telemetry quick charts.
-- **Labs detail** view adds topology/scenario/metrics/nodes tabs with React Flow visualizations and start/stop actions.
-- **Scenario library** surfaces YAML-driven exercise steps with tags.
-- **Topology Builder** lets you drag template nodes, auto-layout by zone, and push them into lab templates via the API.
+## Related projects
 
-## Documentation
+- [containd](https://github.com/tonylturner/containd) — The ICS-aware NGFW at the heart of the lab
+- [dnp3go](https://github.com/tonylturner/dnp3go) — Zero-dependency Go DNP3 library used by the field device simulators
 
-- `docs/architecture.md` – zone model, node inventory, orchestration overview.
-- `docs/api-spec.md` – REST endpoints for labs, scenarios, telemetry, and nodes.
+## License
 
-## Stretch Goals
-
-- Capture/replay PCAPs, instructor vs. student modes, authentication & RBAC, scenario scripting DSL, and deeper protocol coverage (CIP, DNP3, OPC UA).
-
-> ⚠️ This project is for isolated lab environments only. Exposing these containers or networks to production systems is unsafe.
+Apache License 2.0. See [LICENSE](LICENSE).
