@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import ReactFlow, {
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   Edge,
   EdgeProps,
@@ -38,6 +39,7 @@ import {
   Activity,
   ChevronLeft,
   ExternalLink,
+  Map as MapIcon,
   Maximize2,
   ScrollText,
   Shield,
@@ -492,6 +494,9 @@ export function NetworkConsole() {
   // firewall config changes, then auto-clears. Skips the initial
   // load so we don't pulse on first paint.
   const [rookGlow, setRookGlow] = useState(false);
+  // Minimap visibility — toggled from a custom button inside the
+  // React Flow Controls panel. Default on.
+  const [showMinimap, setShowMinimap] = useState(true);
   // Left drawer menu. The strip is mounted whenever Policy view is
   // on; the strip shows two stacked icons (Segmentation, Traffic
   // Matrix). Clicking either expands the drawer to 420px showing
@@ -760,21 +765,32 @@ export function NetworkConsole() {
             color="#0c4a6e"
             style={{ opacity: 0.35 }}
           />
-          <MiniMap
-            pannable
-            zoomable
-            position="bottom-right"
-            nodeColor={(node) => {
-              const zone = node.data?.zone;
-              return zoneColors[zone]?.border || "#64748b";
-            }}
-            maskColor="rgba(15, 23, 42, 0.8)"
-            style={{ backgroundColor: "#0f172a", border: "1px solid #334155" }}
-          />
+          {showMinimap && (
+            <MiniMap
+              pannable
+              zoomable
+              position="bottom-right"
+              nodeColor={(node) => {
+                const zone = node.data?.zone;
+                return zoneColors[zone]?.border || "#64748b";
+              }}
+              maskColor="rgba(15, 23, 42, 0.8)"
+              style={{ backgroundColor: "#0f172a", border: "1px solid #334155" }}
+            />
+          )}
           <Controls
             className="!bg-slate-800 !border-slate-700"
             position="top-right"
-          />
+            showInteractive={false}
+          >
+            <ControlButton
+              onClick={() => setShowMinimap((v) => !v)}
+              title={showMinimap ? "Hide minimap" : "Show minimap"}
+              className={showMinimap ? "minimap-toggle-on" : ""}
+            >
+              <MapIcon size={14} />
+            </ControlButton>
+          </Controls>
         </ReactFlow>
         {viewMode.policyDim && (
           <LeftDrawerMenu

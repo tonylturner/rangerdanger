@@ -44,6 +44,20 @@ body {
   fill: currentColor;
 }
 
+/* Active state for the minimap toggle inside the React Flow Controls
+   panel — sky-blue border + tinted background so it reads as
+   "currently on" without changing the button shape. */
+.react-flow__controls-button.minimap-toggle-on {
+  background-color: #0c4a6e !important; /* sky-900 */
+  color: #7dd3fc !important;            /* sky-300 */
+  fill: #7dd3fc !important;
+  box-shadow: inset 0 0 0 1px #0ea5e9 !important; /* sky-500 inner border */
+}
+
+.react-flow__controls-button.minimap-toggle-on:hover {
+  background-color: #075985 !important; /* sky-800 */
+}
+
 /* Hide React Flow connection handles. We don't expose edge creation
    in this lab UI, so the small dots that React Flow draws on every
    node are visual noise. The handles still exist in the DOM and edges
