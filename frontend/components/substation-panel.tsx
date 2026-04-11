@@ -1,16 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   getSubstationState,
   getSubstationAudit,
   getSubstationNetworkEvents,
-  getFirewallComparison,
-  getActiveFirewallConfig,
-  applyFirewallConfig,
   sendSubstationCommand,
-  executeScenarioStep,
   startPcapCapture,
   stopPcapCapture,
   getPcapStatus,
@@ -20,7 +15,6 @@ import {
   type SubstationState,
   type AuditEntry,
   type NetworkEvent,
-  type PolicyComparison,
   type PcapStatus,
   type TrafficStatus,
 } from "../lib/api";
@@ -29,7 +23,7 @@ export function SubstationPanel() {
   const [state, setState] = useState<SubstationState | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
-  const [tab, setTab] = useState<"diagram" | "commands" | "traffic" | "correlation" | "segmentation" | "electrical">("diagram");
+  const [tab, setTab] = useState<"diagram" | "commands" | "traffic" | "correlation" | "electrical">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
@@ -73,7 +67,6 @@ export function SubstationPanel() {
     { id: "commands" as const, label: "Supervisory Control" },
     { id: "traffic" as const, label: "Traffic Matrix" },
     { id: "correlation" as const, label: "Command Audit" },
-    { id: "segmentation" as const, label: "containd Segmentation" },
     { id: "electrical" as const, label: "Electrical Detail" },
   ];
 
@@ -110,7 +103,6 @@ export function SubstationPanel() {
         )}
         {tab === "traffic" && <TrafficAnalysisView entries={audit} networkEvents={networkEvents} />}
         {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
-        {tab === "segmentation" && <SegmentationView />}
         {tab === "electrical" && (
           <ElectricalDetailView
             elec={elec}
@@ -1003,183 +995,6 @@ function TrafficAnalysisView({ entries, networkEvents }: { entries: AuditEntry[]
   );
 }
 
-// ── containd Segmentation View ───────────────────────────────────
-
-function SegmentationView() {
-  const queryClient = useQueryClient();
-  const [activeConfig, setActiveConfig] = useState<string | null>(null);
-  const [comparison, setComparison] = useState<PolicyComparison | null>(null);
-  const [applying, setApplying] = useState(false);
-  const [lastApply, setLastApply] = useState(0);
-  const [testResult, setTestResult] = useState<{blocked: boolean; detail: string} | null>(null);
-  const [testing, setTesting] = useState(false);
-
-  useEffect(() => {
-    getActiveFirewallConfig().then((r) => setActiveConfig(r.active_config)).catch(() => {});
-    getFirewallComparison().then(setComparison).catch(() => {});
-  }, [lastApply]);
-
-  const handleApply = async (config: "weak" | "improved") => {
-    setApplying(true);
-    try {
-      const res = await applyFirewallConfig(config);
-      setActiveConfig(res.active_config);
-      setLastApply((c) => c + 1);
-      setTestResult(null);
-      // Invalidate firewall-rules so the network topology updates immediately
-      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
-    } catch {
-      // error
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  const handleTestConfig = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      // Use the step execution endpoint to test an enterprise->field command
-      const res = await executeScenarioStep("enterprise-to-breaker", 5);
-      // Step 5 is "Re-test attack" which sends trip from 10.10.10.50
-      const blocked = !res.success;
-      setTestResult({
-        blocked,
-        detail: res.results?.[0]?.detail || (blocked ? "Command blocked by containd" : "Command reached field device"),
-      });
-      // If the command actually succeeded (weak config), restore the breaker
-      if (!blocked) {
-        await executeScenarioStep("enterprise-to-breaker", 3); // restore step
-      }
-    } catch (e) {
-      setTestResult({ blocked: false, detail: `Test error: ${e}` });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  if (!comparison) {
-    return <div className="py-8 text-center text-sm text-slate-500">Loading policy comparison...</div>;
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* containd as the central element */}
-      <div className={`rounded-lg border-2 p-4 ${
-        activeConfig === "improved"
-          ? "border-green-700/60 bg-green-950/10"
-          : "border-red-700/60 bg-red-950/10"
-      }`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              containd NGFW — Active Policy
-            </div>
-            <div className={`text-lg font-bold mt-0.5 ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
-              {activeConfig === "improved" ? "Hardened Segmentation" : "Weak Baseline (vulnerable)"}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">
-              {activeConfig === "improved"
-                ? "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked."
-                : "All zones can reach field devices directly. Attackers have clear paths to breakers and regulators."
-              }
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleApply("weak")}
-              disabled={applying || activeConfig === "weak"}
-              className={`rounded border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
-                activeConfig === "weak"
-                  ? "border-red-700/60 bg-red-950/30 text-red-400"
-                  : "border-slate-600 text-slate-400 hover:border-red-700 hover:text-red-400"
-              }`}
-            >
-              {activeConfig === "weak" ? "Weak (active)" : "Reset to Weak"}
-            </button>
-            <button
-              onClick={() => handleApply("improved")}
-              disabled={applying || activeConfig === "improved"}
-              className={`rounded border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
-                activeConfig === "improved"
-                  ? "border-green-700/60 bg-green-950/30 text-green-400"
-                  : "border-slate-600 text-slate-400 hover:border-green-700 hover:text-green-400"
-              }`}
-            >
-              {activeConfig === "improved" ? "Hardened (active)" : "Apply Hardened"}
-            </button>
-            <button
-              onClick={handleTestConfig}
-              disabled={testing}
-              className="rounded border border-sky-700 bg-sky-950/30 px-3 py-1.5 text-[11px] font-medium text-sky-400 hover:bg-sky-900/30 disabled:opacity-40 transition-colors"
-            >
-              {testing ? "Testing..." : "Test Segmentation"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Test result */}
-      {testResult && (
-        <div className={`rounded border p-3 text-xs ${
-          testResult.blocked
-            ? "border-green-800/60 bg-green-950/20 text-green-400"
-            : "border-red-800/60 bg-red-950/20 text-red-400"
-        }`}>
-          <span className="font-bold">{testResult.blocked ? "BLOCKED" : "ALLOWED"}</span>
-          <span className="ml-2 text-slate-400">{testResult.detail}</span>
-          {!testResult.blocked && activeConfig === "improved" && (
-            <div className="mt-1 text-yellow-400">Warning: Command should be blocked with hardened policy</div>
-          )}
-          {testResult.blocked && activeConfig === "improved" && (
-            <div className="mt-1">Enterprise→field traffic correctly blocked by containd NGFW</div>
-          )}
-        </div>
-      )}
-
-      {/* Zone-pair rules — simplified */}
-      <div className="space-y-1.5">
-        {comparison.diffs.map((d, i) => {
-          const tightened = d.change === "tightened" || d.change === "added";
-          return (
-            <div key={i} className={`rounded border p-3 text-xs ${
-              tightened ? "border-green-900/40 bg-green-950/10" : "border-slate-800/60 bg-slate-900/30"
-            }`}>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-300 font-medium">{d.zone_pair}</span>
-                <div className="flex items-center gap-2">
-                  <ActionChip action={d.weak_action} label="Weak" />
-                  {d.improved_action !== d.weak_action && (
-                    <>
-                      <span className="text-slate-600">→</span>
-                      <ActionChip action={d.improved_action} label="Hardened" />
-                    </>
-                  )}
-                  {tightened && (
-                    <span className="text-[9px] font-bold text-green-400 uppercase">
-                      tightened
-                    </span>
-                  )}
-                </div>
-              </div>
-              {tightened && d.improved_rule && (
-                <div className="mt-1.5 text-[10px] text-slate-500">{d.improved_rule}</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Core principle — single sentence */}
-      <div className="text-[10px] text-slate-600 border-t border-slate-800/40 pt-2">
-        The hardened policy ensures only the RTAC (10.40.40.10) can send control commands to field devices.
-        Enterprise and vendor zones are blocked from direct field device access.
-      </div>
-    </div>
-  );
-}
-
 // ── Electrical Detail View ─────────────────────────────────────────
 
 function ElectricalDetailView({
@@ -1641,14 +1456,4 @@ function DeviceDetail({ ansi, name, ip, fields }: { ansi: string; name: string; 
       </div>
     </div>
   );
-}
-
-function ActionChip({ action, label }: { action: string; label: string }) {
-  if (!action) return null;
-  const cls = action === "ALLOW"
-    ? "text-green-400 border-green-800/40"
-    : action === "DENY"
-    ? "text-red-400 border-red-800/40"
-    : "text-yellow-400 border-yellow-800/40";
-  return <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>{action}</span>;
 }
