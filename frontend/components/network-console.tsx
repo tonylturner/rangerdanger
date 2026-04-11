@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactFlow, {
   Background,
@@ -206,7 +206,8 @@ function PolicyEdge({
     action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
 
   const labelWidth = Math.max(78, label.length * 6 + 28);
-  const dimOpacity = dimmed ? 0.35 : 1;
+  const dimOpacity = dimmed ? 0.45 : 1;
+  const pulse = data?.pulse === true;
 
   const zoneMeta = data?.zoneMeta as
     | {
@@ -238,7 +239,7 @@ function PolicyEdge({
         <path
           id={id}
           style={style}
-          className="react-flow__edge-path"
+          className={`react-flow__edge-path ${pulse ? "tron-pulse" : ""}`}
           d={edgePath}
         />
         {/* Wide transparent hit-path so the tooltip triggers anywhere
@@ -483,6 +484,10 @@ export function NetworkConsole() {
     // on (same condition that mounts the drawer).
     traffic: true,
   });
+  // Rook glow flag — flips true for ~1.4s whenever the active
+  // firewall config changes, then auto-clears. Skips the initial
+  // load so we don't pulse on first paint.
+  const [rookGlow, setRookGlow] = useState(false);
   // Left drawer menu. The strip is mounted whenever Policy view is
   // on; the strip shows two stacked icons (Segmentation, Traffic
   // Matrix). Clicking either expands the drawer to 420px showing
@@ -511,6 +516,19 @@ export function NetworkConsole() {
     queryFn: getWorkshopStatus,
     refetchInterval: 10000,
   });
+
+  // Pulse Rook briefly whenever the firewall config changes. Initial
+  // load is skipped via the ref so we don't pulse on first paint.
+  const lastFirewallConfigRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const cfg = workshopStatus?.firewall_config;
+    if (cfg && lastFirewallConfigRef.current && cfg !== lastFirewallConfigRef.current) {
+      setRookGlow(true);
+      const t = setTimeout(() => setRookGlow(false), 1500);
+      return () => clearTimeout(t);
+    }
+    lastFirewallConfigRef.current = cfg;
+  }, [workshopStatus?.firewall_config]);
 
   // Fetch firewall rules for dynamic edge labels — poll every 5s so
   // topology updates promptly after a config change in the segmentation tab.
@@ -650,10 +668,21 @@ export function NetworkConsole() {
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Network Map</p>
-          <h1 className="text-3xl font-semibold text-white">Substation Network Map</h1>
-          <p className="text-sm text-slate-400">Distribution co-op feeder topology. Click a node to inspect, open UI, or terminal.</p>
+        <div className="flex items-center gap-3">
+          {/* Rook — operator/control symbol. Sits next to the title
+              as a small clean logo and pulses briefly when the active
+              firewall config flips (rule change beat). */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/rook-quarter-turn-wink-transparent-web.png"
+            alt=""
+            className={`h-12 w-12 shrink-0 ${rookGlow ? "rook-pulse" : ""}`}
+          />
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Network Map</p>
+            <h1 className="text-3xl font-semibold text-white">Substation Network Map</h1>
+            <p className="text-sm text-slate-400">Distribution co-op feeder topology. Click a node to inspect, open UI, or terminal.</p>
+          </div>
         </div>
         {workshopStatus && (
           <div className="flex items-center gap-3 text-[10px]">
@@ -705,7 +734,26 @@ export function NetworkConsole() {
           defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
           proOptions={{ hideAttribution: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
+          {/* Subtle Tron grid — two layers: a fine cyan dot mesh for
+              texture, then a wider line grid for the segmentation
+              feel. Both are very low opacity so they read as
+              "structured background" not "decoration". */}
+          <Background
+            id="tron-dots"
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1}
+            color="#0e7490"
+            style={{ opacity: 0.25 }}
+          />
+          <Background
+            id="tron-grid"
+            variant={BackgroundVariant.Lines}
+            gap={120}
+            lineWidth={0.5}
+            color="#0c4a6e"
+            style={{ opacity: 0.35 }}
+          />
           <MiniMap
             pannable
             zoomable
@@ -1877,26 +1925,28 @@ function useStyledGraph(
     // even when the current policy has no DENY rules.
     if (firewallNode) {
       activeZones.forEach((zone) => {
-        const color = zoneColors[zone]?.border || "#64748b";
+        const zoneStroke = zoneColors[zone]?.border || "#64748b";
         const policyInfo = getZonePolicyInfo(zone, ruleSummaries);
-
-        const isDeny = policyInfo.action === "DENY";
-        const isMixed = policyInfo.action === "MIXED";
-
         const policyOn = viewMode.policyDim;
-        const labelColor = !policyOn
-          ? "#94a3b8"
-          : isDeny
-          ? "#ef4444"
-          : isMixed
-          ? "#f59e0b"
-          : color;
-        const strokeColor = !policyOn
-          ? "#475569"
-          : isDeny
-          ? "#ef4444"
-          : color;
-        const dimmed = policyOn && isDeny;
+
+        // State encoding driven by `permissiveness`:
+        //   allowed → steady cyan/zone glow
+        //   over    → thicker amber/orange + soft pulse (warning)
+        //   blocked → dim dashed red
+        //   unknown → faint grey
+        // Policy view OFF flattens everything to neutral grey.
+        const state = policyOn ? policyInfo.permissiveness : "topology";
+        const styleByState: Record<
+          string,
+          { stroke: string; width: number; dash?: string; opacity: number; glow: number }
+        > = {
+          allowed: { stroke: zoneStroke, width: 2.4, opacity: 1, glow: 5 },
+          over: { stroke: "#f59e0b", width: 3.4, opacity: 1, glow: 8 },
+          blocked: { stroke: "#ef4444", width: 1.6, dash: "6 4", opacity: 0.55, glow: 3 },
+          unknown: { stroke: "#64748b", width: 1.4, opacity: 0.7, glow: 0 },
+          topology: { stroke: "#475569", width: 1.4, opacity: 0.85, glow: 0 },
+        };
+        const cfg = styleByState[state];
 
         styledEdges.push({
           id: `fw-to-${zone}`,
@@ -1904,18 +1954,24 @@ function useStyledGraph(
           target: `zone-${zone}`,
           type: "policyEdge",
           style: {
-            stroke: strokeColor,
-            strokeWidth: !policyOn ? 1.5 : isDeny ? 1.5 : 2.4,
-            strokeDasharray: policyOn && isDeny ? "6 4" : undefined,
-            opacity: dimmed ? 0.5 : 1,
+            stroke: cfg.stroke,
+            strokeWidth: cfg.width,
+            strokeDasharray: cfg.dash,
+            opacity: cfg.opacity,
+            filter: cfg.glow ? `drop-shadow(0 0 ${cfg.glow}px ${cfg.stroke})` : undefined,
           },
-          animated: policyOn && !isDeny,
+          // Allowed paths animate (energized conduit). Over-permissive
+          // edges get the CSS pulse class via data.pulse so a student
+          // catches the warning at a glance.
+          animated: state === "allowed",
           data: {
             label: policyOn ? policyInfo.label : "",
             details: policyInfo.details,
             action: policyInfo.action,
-            color: labelColor,
-            dimmed,
+            permissiveness: policyInfo.permissiveness,
+            color: cfg.stroke,
+            dimmed: state === "blocked",
+            pulse: state === "over",
             zoneMeta: ZONE_INTERFACE_META[zone],
           },
         });

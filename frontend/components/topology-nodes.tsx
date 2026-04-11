@@ -7,7 +7,6 @@ import {
   Shield,
   Server,
   Network,
-  Waypoints,
   Monitor,
   Database,
   ShieldAlert,
@@ -293,15 +292,17 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
     >
       {/* Firewall icon container — wraps the icon AND the handles so
           edges attach to the visible 64×64 icon box, not the outer
-          140px wide label column. */}
+          140px wide label column. The persistent multi-ring amber
+          glow reinforces "this is the control plane" — every conduit
+          on the map converges here. */}
       <div
         className="relative flex h-16 w-16 items-center justify-center rounded-lg border-2 shadow-xl"
         style={{
           borderColor: "#f59e0b",
-          background: "linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.1) 100%)",
+          background: "linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.1) 100%)",
           boxShadow: selected
-            ? "0 0 25px rgba(245, 158, 11, 0.4)"
-            : "0 4px 16px rgba(0,0,0,0.4)",
+            ? "0 0 32px rgba(245, 158, 11, 0.55), 0 0 64px rgba(245, 158, 11, 0.25)"
+            : "0 0 18px rgba(245, 158, 11, 0.45), 0 0 42px rgba(245, 158, 11, 0.18)",
         }}
       >
         {/* Connection handles — invisible, pinned to the icon box edges */}
