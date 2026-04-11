@@ -9,3 +9,52 @@
 body {
   font-family: "Inter", "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+/* React Flow control panel — match the rest of the app's dark slate
+   theme. The default styles use a white pill with grey buttons that
+   reads as a light-mode artifact on the network map. */
+.react-flow__controls {
+  background-color: #1e293b !important; /* slate-800 */
+  border: 1px solid #334155 !important; /* slate-700 */
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background-color: #1e293b !important;
+  border-bottom: 1px solid #334155 !important;
+  color: #cbd5e1 !important; /* slate-300 */
+  fill: #cbd5e1 !important;
+  width: 26px;
+  height: 26px;
+}
+
+.react-flow__controls-button:hover {
+  background-color: #334155 !important; /* slate-700 */
+  color: #f8fafc !important;
+  fill: #f8fafc !important;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* Hide React Flow connection handles. We don't expose edge creation
+   in this lab UI, so the small dots that React Flow draws on every
+   node are visual noise. The handles still exist in the DOM and edges
+   still attach to them — we only hide the visual representation. */
+.react-flow__handle {
+  background: transparent !important;
+  border: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none;
+}

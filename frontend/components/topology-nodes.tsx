@@ -175,6 +175,19 @@ type HostNodeData = {
   ip?: string;
   networks?: string[];
   ui_path?: string;
+  multiHomedZones?: string[];
+};
+
+// Hidden handle style — React Flow needs the handles in the DOM to
+// attach edges, but they shouldn't be visually rendered as dots on
+// every node. Width/height of 1 keeps them clickable for edge layout
+// while making them effectively invisible.
+const HIDDEN_HANDLE: React.CSSProperties = {
+  width: 1,
+  height: 1,
+  opacity: 0,
+  border: "none",
+  background: "transparent",
 };
 
 // Custom Host Node - represents a container/server
@@ -182,44 +195,57 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
   const colors = zoneColors[data.zone] || defaultColors;
   const Icon = nodeTypeIcons[data.nodeType] || nodeTypeIcons.default;
   const statusColor = statusColors[data.status || "unknown"];
+  const multiHomed = (data.multiHomedZones?.length ?? 0) > 0;
 
   return (
     <div
-      className={`relative flex flex-col items-center transition-all ${
+      className={`flex flex-col items-center transition-all ${
         selected ? "scale-105" : ""
       }`}
       style={{ minWidth: 120 }}
     >
-      {/* Connection handles */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!bg-slate-600 !border-slate-500"
-        style={{ width: 8, height: 8 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!bg-slate-600 !border-slate-500"
-        style={{ width: 8, height: 8 }}
-      />
-
-      {/* Status indicator */}
+      {/* Icon container — wraps the icon, its corner badges, AND the
+          React Flow handles so edges attach to the visible 56×56 icon
+          edge instead of the 120px-wide outer flex container (which
+          would put "right" handles ~30px past the icon). Side handles
+          let traffic edges attach horizontally without colliding with
+          the vertical zone-membership edges. */}
       <div
-        className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900"
-        style={{ backgroundColor: statusColor }}
-      />
-
-      {/* Icon container */}
-      <div
-        className="flex h-14 w-14 items-center justify-center rounded-xl border-2 shadow-lg"
+        className="relative flex h-14 w-14 items-center justify-center rounded-xl border-2 shadow-lg"
         style={{
           borderColor: colors.border,
           backgroundColor: colors.bg,
           boxShadow: selected ? `0 0 20px ${colors.border}40` : "0 4px 12px rgba(0,0,0,0.3)",
         }}
       >
+        {/* Connection handles — invisible, pinned to the icon box
+            edges so edge paths connect directly to the icon. */}
+        <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
+        <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
+        <Handle id="left-source" type="source" position={Position.Left} style={HIDDEN_HANDLE} />
+        <Handle id="left-target" type="target" position={Position.Left} style={HIDDEN_HANDLE} />
+        <Handle id="right-source" type="source" position={Position.Right} style={HIDDEN_HANDLE} />
+        <Handle id="right-target" type="target" position={Position.Right} style={HIDDEN_HANDLE} />
+
         <Icon size={28} color={colors.text} />
+
+        {/* Status indicator — attached to the top-right corner of the
+            icon box itself. */}
+        <div
+          className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900"
+          style={{ backgroundColor: statusColor }}
+        />
+
+        {/* Multi-homed badge — shown only when this node has
+            interfaces in more than one zone. */}
+        {multiHomed && (
+          <div
+            className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow"
+            title={`Multi-homed: also has an interface in ${data.multiHomedZones!.join(", ")}. Cross-zone traffic still traverses the firewall — see inspector.`}
+          >
+            MULTI
+          </div>
+        )}
       </div>
 
       {/* Label */}
@@ -246,48 +272,14 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
 
   return (
     <div
-      className={`relative flex flex-col items-center transition-all ${
+      className={`flex flex-col items-center transition-all ${
         selected ? "scale-105" : ""
       }`}
       style={{ minWidth: 140 }}
     >
-      {/* Multiple handles for zone connections */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="top"
-        className="!bg-amber-500 !border-amber-400"
-        style={{ width: 10, height: 10 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="bottom"
-        className="!bg-amber-500 !border-amber-400"
-        style={{ width: 10, height: 10 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="left"
-        className="!bg-amber-500 !border-amber-400"
-        style={{ width: 10, height: 10 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="right"
-        className="!bg-amber-500 !border-amber-400"
-        style={{ width: 10, height: 10 }}
-      />
-
-      {/* Status indicator */}
-      <div
-        className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 z-10"
-        style={{ backgroundColor: statusColor }}
-      />
-
-      {/* Firewall icon container - hexagonal feel */}
+      {/* Firewall icon container — wraps the icon AND the handles so
+          edges attach to the visible 64×64 icon box, not the outer
+          140px wide label column. */}
       <div
         className="relative flex h-16 w-16 items-center justify-center rounded-lg border-2 shadow-xl"
         style={{
@@ -298,6 +290,18 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
             : "0 4px 16px rgba(0,0,0,0.4)",
         }}
       >
+        {/* Connection handles — invisible, pinned to the icon box edges */}
+        <Handle type="target" position={Position.Top} id="top" style={HIDDEN_HANDLE} />
+        <Handle type="source" position={Position.Bottom} id="bottom" style={HIDDEN_HANDLE} />
+        <Handle type="source" position={Position.Left} id="left" style={HIDDEN_HANDLE} />
+        <Handle type="source" position={Position.Right} id="right" style={HIDDEN_HANDLE} />
+
+        {/* Status indicator */}
+        <div
+          className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 z-10"
+          style={{ backgroundColor: statusColor }}
+        />
+
         <Shield size={32} className="text-amber-500" />
         {/* Flame accent */}
         <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
@@ -328,26 +332,16 @@ export const ZoneNode = memo(({ data }: NodeProps<ZoneNodeData>) => {
 
   return (
     <div className="flex flex-col items-center">
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!bg-slate-600 !border-slate-500"
-        style={{ width: 8, height: 8 }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!bg-slate-600 !border-slate-500"
-        style={{ width: 8, height: 8 }}
-      />
       <div
-        className="flex h-12 w-12 items-center justify-center rounded-lg border-2"
+        className="relative flex h-12 w-12 items-center justify-center rounded-lg border-2"
         style={{
           borderColor: colors.border,
           backgroundColor: colors.bg,
           boxShadow: `0 0 15px ${colors.border}30`,
         }}
       >
+        <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
+        <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
         <Waypoints size={24} style={{ color: colors.text }} />
       </div>
       <div className="mt-1 text-center">
@@ -370,10 +364,10 @@ export const SwitchNode = memo(({ data, selected }: NodeProps<{ label: string; z
 
   return (
     <div className="relative flex flex-col items-center">
-      <Handle type="target" position={Position.Top} className="!bg-slate-600" />
-      <Handle type="source" position={Position.Bottom} className="!bg-slate-600" />
-      <Handle type="source" position={Position.Left} className="!bg-slate-600" />
-      <Handle type="source" position={Position.Right} className="!bg-slate-600" />
+      <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
+      <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
+      <Handle type="source" position={Position.Left} style={HIDDEN_HANDLE} />
+      <Handle type="source" position={Position.Right} style={HIDDEN_HANDLE} />
 
       <div
         className="flex h-8 w-16 items-center justify-center rounded border"
