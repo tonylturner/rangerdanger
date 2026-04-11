@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import { Handle, Position, NodeProps } from "reactflow";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import {
   Shield,
   Server,
@@ -159,13 +160,6 @@ const zoneColors: Record<string, { border: string; bg: string; text: string }> =
 
 const defaultColors = { border: "#64748b", bg: "rgba(100, 116, 139, 0.1)", text: "#64748b" };
 
-// Status indicator colors
-const statusColors: Record<string, string> = {
-  running: "#22c55e",
-  stopped: "#ef4444",
-  pending: "#eab308",
-  unknown: "#64748b",
-};
 
 type HostNodeData = {
   label: string;
@@ -176,6 +170,11 @@ type HostNodeData = {
   networks?: string[];
   ui_path?: string;
   multiHomedZones?: string[];
+  // Live health, derived in useStyledGraph from workshopStatus.
+  // "ok" / "down" = real telemetry is available (renders a dot).
+  // undefined = no probe for this node (no dot rendered).
+  health?: "ok" | "down";
+  healthSource?: string; // e.g. "RTAC device_comms[relay]"
 };
 
 // Hidden handle style — React Flow needs the handles in the DOM to
@@ -194,7 +193,6 @@ const HIDDEN_HANDLE: React.CSSProperties = {
 export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
   const colors = zoneColors[data.zone] || defaultColors;
   const Icon = nodeTypeIcons[data.nodeType] || nodeTypeIcons.default;
-  const statusColor = statusColors[data.status || "unknown"];
   const multiHomed = (data.multiHomedZones?.length ?? 0) > 0;
 
   return (
@@ -229,12 +227,29 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
 
         <Icon size={28} color={colors.text} />
 
-        {/* Status indicator — attached to the top-right corner of the
-            icon box itself. */}
-        <div
-          className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900"
-          style={{ backgroundColor: statusColor }}
-        />
+        {/* Live status dot — only rendered for nodes whose health
+            comes from a real probe (set in useStyledGraph from
+            workshopStatus). Hover the dot to see which API endpoint
+            backs it. */}
+        {data.health && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={`absolute -top-1 -right-1 h-3 w-3 cursor-help rounded-full border-2 border-slate-900 ${
+                  data.health === "ok" ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="text-[10px] font-bold uppercase tracking-wider">
+                {data.health}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                source: {data.healthSource || "unknown"}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Multi-homed badge — shown only when this node has
             interfaces in more than one zone. */}
@@ -268,7 +283,6 @@ HostNode.displayName = "HostNode";
 
 // Firewall Node - special styling for the NGFW
 export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
-  const statusColor = statusColors[data.status || "unknown"];
 
   return (
     <div
@@ -296,11 +310,27 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
         <Handle type="source" position={Position.Left} id="left" style={HIDDEN_HANDLE} />
         <Handle type="source" position={Position.Right} id="right" style={HIDDEN_HANDLE} />
 
-        {/* Status indicator */}
-        <div
-          className="absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-900 z-10"
-          style={{ backgroundColor: statusColor }}
-        />
+        {/* Live status dot for the firewall, sourced from
+            workshopStatus.firewall_online (containd health check). */}
+        {data.health && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={`absolute -top-1 -right-1 z-10 h-3 w-3 cursor-help rounded-full border-2 border-slate-900 ${
+                  data.health === "ok" ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="text-[10px] font-bold uppercase tracking-wider">
+                {data.health}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                source: {data.healthSource || "unknown"}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         <Shield size={32} className="text-amber-500" />
         {/* Flame accent */}
@@ -326,37 +356,91 @@ type ZoneNodeData = {
   subnet?: string;
 };
 
-// Zone Group Node - represents a network zone
-export const ZoneNode = memo(({ data }: NodeProps<ZoneNodeData>) => {
-  const colors = zoneColors[data.zone] || defaultColors;
-
+// Zone Group Node — now a 1×1 invisible anchor used only as an edge
+// target so firewall→zone conduits have a fixed connection point
+// inside the zone column. The visible zone label and tinted boundary
+// are rendered by ZoneBoundaryNode.
+export const ZoneNode = memo(() => {
   return (
-    <div className="flex flex-col items-center">
-      <div
-        className="relative flex h-12 w-12 items-center justify-center rounded-lg border-2"
-        style={{
-          borderColor: colors.border,
-          backgroundColor: colors.bg,
-          boxShadow: `0 0 15px ${colors.border}30`,
-        }}
-      >
-        <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
-        <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
-        <Waypoints size={24} style={{ color: colors.text }} />
-      </div>
-      <div className="mt-1 text-center">
-        <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: colors.text }}>
-          {data.label}
-        </div>
-        {data.subnet && (
-          <div className="text-[9px] text-slate-500 font-mono">{data.subnet}</div>
-        )}
-      </div>
+    <div style={{ width: 1, height: 1, opacity: 0 }}>
+      <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
+      <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
     </div>
   );
 });
 
 ZoneNode.displayName = "ZoneNode";
+
+// Zone Boundary - large translucent container that visually groups
+// the hosts inside a zone. Renders BEHIND the host nodes (added
+// first to the styled nodes array) and is non-interactive so clicks
+// pass through to the actual hosts. The combination of soft tinted
+// background + glowing outline + zone label at the top makes the
+// segmentation grouping unmistakable without adding any heavy box.
+type ZoneBoundaryData = {
+  zone: string;
+  label: string;
+  subnet?: string;
+  width: number;
+  height: number;
+};
+
+export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => {
+  const colors = zoneColors[data.zone] || defaultColors;
+  return (
+    <div
+      style={{
+        width: data.width,
+        height: data.height,
+        borderRadius: 18,
+        border: `1px solid ${colors.border}55`,
+        backgroundColor: `${colors.border}0d`,
+        boxShadow: `inset 0 0 36px ${colors.border}1a, 0 0 18px ${colors.border}22`,
+        pointerEvents: "none",
+        position: "relative",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: 10,
+          left: 14,
+          right: 14,
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.2em",
+            textTransform: "uppercase",
+            color: colors.text,
+            opacity: 0.9,
+          }}
+        >
+          {data.label}
+        </div>
+        {data.subnet && (
+          <div
+            style={{
+              fontSize: 9,
+              fontFamily: "monospace",
+              color: colors.text,
+              opacity: 0.55,
+            }}
+          >
+            {data.subnet}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+ZoneBoundaryNode.displayName = "ZoneBoundaryNode";
 
 // Network Switch Node - optional for more complex topologies
 export const SwitchNode = memo(({ data, selected }: NodeProps<{ label: string; zone: string }>) => {
@@ -390,6 +474,7 @@ export const nodeTypes = {
   host: HostNode,
   firewall: FirewallNode,
   zone: ZoneNode,
+  zoneBoundary: ZoneBoundaryNode,
   switch: SwitchNode,
 };
 

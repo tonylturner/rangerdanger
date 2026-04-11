@@ -17,14 +17,18 @@
 // by hand. Nothing in this drawer reaches around containd or invents
 // its own protocol path.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { Activity, ArrowRight, Router, Zap } from "lucide-react";
+import { Activity, ArrowRight, Download, Router, Square, Zap } from "lucide-react";
 import {
+  getPcapDownloadUrl,
+  getPcapStatus,
   getTrafficStatus,
   getWorkshopStatus,
+  startPcapCapture,
   startTrafficGeneration,
+  stopPcapCapture,
 } from "../lib/api";
 import {
   OBSERVED_FLOWS,
@@ -159,6 +163,9 @@ export function TrafficMatrixView({
   onToggleCanvasEdges?: () => void;
 } = {}) {
   const queryClient = useQueryClient();
+  const [captureDuration, setCaptureDuration] = useState(30);
+  const [filterZone, setFilterZone] = useState<string>("all");
+  const [crossZoneOnly, setCrossZoneOnly] = useState(false);
 
   // Same React Query keys as the rest of the app so we share cache
   // and so invalidation from this drawer (after Generate Traffic)
@@ -173,11 +180,31 @@ export function TrafficMatrixView({
     queryFn: getTrafficStatus,
     refetchInterval: 3000,
   });
+  const { data: pcapStatus } = useQuery({
+    queryKey: ["pcap-status"],
+    queryFn: getPcapStatus,
+    refetchInterval: 2000,
+  });
 
-  const rows = useMemo(
+  const allRows = useMemo(
     () => aggregate(OBSERVED_FLOWS, workshopStatus?.device_comms, workshopStatus?.rtac_online ?? false, trafficStatus),
     [workshopStatus, trafficStatus],
   );
+
+  // Apply filter UI to the aggregated rows. The summary stats below
+  // still reflect the unfiltered totals so the user can see what's
+  // being hidden.
+  const rows = useMemo(() => {
+    return allRows.filter((r) => {
+      if (crossZoneOnly && !r.crossZone) return false;
+      if (filterZone !== "all") {
+        const sZone = nodeZone(r.source);
+        const tZone = nodeZone(r.target);
+        if (sZone !== filterZone && tZone !== filterZone) return false;
+      }
+      return true;
+    });
+  }, [allRows, crossZoneOnly, filterZone]);
 
   // Track per-pair last-seen-active timestamps. We use a ref so the
   // map persists across renders without itself triggering renders;
@@ -194,25 +221,56 @@ export function TrafficMatrixView({
     }
   }, [rows]);
 
+  // Summary chips reflect the unfiltered totals so a student can see
+  // what the filter is hiding.
   const summary = useMemo(() => {
     let active = 0, idle = 0, down = 0, cross = 0;
-    for (const r of rows) {
+    for (const r of allRows) {
       if (r.status === "active") active++;
       else if (r.status === "down") down++;
       else idle++;
       if (r.crossZone) cross++;
     }
-    return { total: rows.length, active, idle, down, cross };
-  }, [rows]);
+    return { total: allRows.length, active, idle, down, cross };
+  }, [allRows]);
 
   const generating = trafficStatus?.generating ?? false;
+  const capturing = pcapStatus?.capturing ?? false;
+  const pcapFiles = pcapStatus?.files ?? [];
+  const pcapReady = (pcapStatus?.file_ready ?? false) && !capturing;
 
   const handleGenerate = async () => {
     try {
-      await startTrafficGeneration(30);
+      await startTrafficGeneration(captureDuration);
       queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
     } catch (err) {
       console.error("startTrafficGeneration failed:", err);
+    }
+  };
+
+  // Combined "Generate + Capture" — fires the scenario traffic
+  // generator and starts a containd PCAP capture for the selected
+  // duration. Both run from the same backend handlers students hit
+  // from terminals.
+  const handleGenerateAndCapture = async () => {
+    try {
+      await Promise.all([
+        startTrafficGeneration(captureDuration),
+        startPcapCapture(captureDuration),
+      ]);
+      queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
+      queryClient.invalidateQueries({ queryKey: ["pcap-status"] });
+    } catch (err) {
+      console.error("Generate + capture failed:", err);
+    }
+  };
+
+  const handleStopCapture = async () => {
+    try {
+      await stopPcapCapture();
+      queryClient.invalidateQueries({ queryKey: ["pcap-status"] });
+    } catch (err) {
+      console.error("stopPcapCapture failed:", err);
     }
   };
 
@@ -267,12 +325,124 @@ export function TrafficMatrixView({
         </div>
       </div>
 
-      {generating && (
-        <div className="flex items-center gap-1.5 rounded border border-cyan-800/50 bg-cyan-950/20 px-2 py-1 text-[10px] text-cyan-400">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-          Scenario generator running — eng-ws and vendor-jump emitting curl bursts
+      {/* ── Capture & Generate controls ─────────────────────────── */}
+      <div className="space-y-1.5 rounded border border-slate-800 bg-slate-900/40 p-2">
+        <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+          Generate & Capture
         </div>
-      )}
+        <div className="flex items-center gap-1.5">
+          <label className="text-[10px] text-slate-500">Duration:</label>
+          <select
+            value={captureDuration}
+            onChange={(e) => setCaptureDuration(Number(e.target.value))}
+            disabled={capturing || generating}
+            className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200 disabled:opacity-50"
+          >
+            <option value={15}>15 sec</option>
+            <option value={30}>30 sec</option>
+            <option value={60}>60 sec</option>
+            <option value={120}>2 min</option>
+          </select>
+          {!capturing ? (
+            <button
+              onClick={handleGenerateAndCapture}
+              disabled={generating}
+              className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-700/60 bg-cyan-950/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Zap className="h-3 w-3" fill="currentColor" />
+              Generate + PCAP
+            </button>
+          ) : (
+            <button
+              onClick={handleStopCapture}
+              className="ml-auto inline-flex items-center gap-1 rounded border border-red-700/60 bg-red-950/30 px-2 py-0.5 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-900/40"
+            >
+              <Square className="h-3 w-3" fill="currentColor" />
+              Stop
+            </button>
+          )}
+        </div>
+
+        {/* Live activity strip */}
+        {(generating || capturing) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+            {generating && (
+              <span className="flex items-center gap-1 text-cyan-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+                Generating · {trafficStatus?.flows_generated ?? 0} flows
+              </span>
+            )}
+            {capturing && (
+              <span className="flex items-center gap-1 text-red-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" />
+                Capturing on containd interfaces
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* PCAP downloads */}
+        {pcapReady && pcapFiles.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-[9px] uppercase tracking-wider text-slate-500">
+              {pcapFiles.length} PCAP file{pcapFiles.length === 1 ? "" : "s"} ready
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {pcapFiles.map((filename) => (
+                <a
+                  key={filename}
+                  href={getPcapDownloadUrl(filename)}
+                  download
+                  className="inline-flex items-center gap-1 rounded border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
+                >
+                  <Download className="h-2.5 w-2.5" />
+                  {filename}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+        {pcapReady && pcapFiles.length === 0 && (
+          <a
+            href={getPcapDownloadUrl()}
+            download
+            className="inline-flex items-center gap-1 rounded border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
+          >
+            <Download className="h-2.5 w-2.5" />
+            Download PCAP
+          </a>
+        )}
+      </div>
+
+      {/* ── Filters ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5">
+        <select
+          value={filterZone}
+          onChange={(e) => setFilterZone(e.target.value)}
+          className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200"
+        >
+          <option value="all">All zones</option>
+          <option value="enterprise">Enterprise</option>
+          <option value="vendor">Vendor / DMZ</option>
+          <option value="ot_ops">OT Ops</option>
+          <option value="field">Field</option>
+        </select>
+        <button
+          onClick={() => setCrossZoneOnly(!crossZoneOnly)}
+          className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+            crossZoneOnly
+              ? "border-amber-700 bg-amber-950/30 text-amber-300"
+              : "border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          Cross-zone only
+        </button>
+        {(filterZone !== "all" || crossZoneOnly) && (
+          <span className="ml-auto text-[10px] text-slate-500">
+            {rows.length} of {allRows.length}
+          </span>
+        )}
+      </div>
 
       {/* Summary chips */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">

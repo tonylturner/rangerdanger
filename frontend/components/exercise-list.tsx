@@ -37,7 +37,20 @@ export function ExerciseList({
   }
 
   if (!data || data.scenarios.length === 0) {
-    return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-300">No exercises defined yet.</div>;
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/70 px-5 py-10 text-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/rook-quarter-turn-wink-transparent-web.png"
+          alt=""
+          className="h-28 w-28 opacity-90"
+        />
+        <div className="text-sm font-medium text-slate-300">No exercises defined yet.</div>
+        <div className="text-xs text-slate-500">
+          Drop a YAML into <code className="rounded bg-slate-950 px-1 font-mono text-amber-300">lab-definitions/scenarios/</code> and run the seed.
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -68,6 +81,7 @@ function ExerciseCard({
 }) {
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
+  const isOffense = exercise.tags.includes("offense");
   const pct = getCompletionPct(exercise.id, exercise.steps.length);
   const section = WORKBOOK_SECTION[exercise.id];
 
@@ -103,7 +117,19 @@ function ExerciseCard({
           </div>
 
           <div>
-            <h2 className="text-sm font-bold text-white">
+            <h2 className="flex items-center gap-1.5 text-sm font-bold text-white">
+              {isOffense && (
+                // Aggressive raccoon marks an offense / attack exercise
+                // so a student scanning the list can immediately see
+                // which scenarios are red-team content vs analysis.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src="/rook-forward-aggressive-transparent-web.png"
+                  alt=""
+                  className="h-5 w-5 shrink-0"
+                  title="Offense / attack exercise"
+                />
+              )}
               Exercise {index}: {exercise.name}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>

@@ -38,8 +38,8 @@ import {
   Activity,
   ChevronLeft,
   ExternalLink,
-  Filter,
   Maximize2,
+  ScrollText,
   Shield,
   X,
 } from "lucide-react";
@@ -208,6 +208,29 @@ function PolicyEdge({
   const labelWidth = Math.max(78, label.length * 6 + 28);
   const dimOpacity = dimmed ? 0.35 : 1;
 
+  const zoneMeta = data?.zoneMeta as
+    | {
+        label: string;
+        iface: string;
+        role: string;
+        subnet: string;
+        fwIp: string;
+        description: string;
+      }
+    | undefined;
+  const hasTooltip = (details && details.length > 0) || !!zoneMeta;
+
+  // Hover handler used by both the edge label and the wide invisible
+  // hit-path so a student can hover anywhere on the line and get the
+  // tooltip — not just the label pill.
+  const showTip = (e: React.MouseEvent) => {
+    if (hasTooltip) setTip({ visible: true, x: e.clientX, y: e.clientY });
+  };
+  const moveTip = (e: React.MouseEvent) => {
+    if (tip.visible) setTip({ visible: true, x: e.clientX, y: e.clientY });
+  };
+  const hideTip = () => setTip((t) => ({ ...t, visible: false }));
+
   return (
     <>
       {/* Edge path + label group: dim with the policy view */}
@@ -218,16 +241,24 @@ function PolicyEdge({
           className="react-flow__edge-path"
           d={edgePath}
         />
+        {/* Wide transparent hit-path so the tooltip triggers anywhere
+            along the line, not only over the small label pill. */}
+        <path
+          d={edgePath}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={20}
+          onMouseEnter={showTip}
+          onMouseMove={moveTip}
+          onMouseLeave={hideTip}
+          style={{ cursor: hasTooltip ? "help" : "default" }}
+        />
         {label && (
           <g
-            onMouseEnter={(e) =>
-              details.length > 0 && setTip({ visible: true, x: e.clientX, y: e.clientY })
-            }
-            onMouseMove={(e) =>
-              tip.visible && setTip({ visible: true, x: e.clientX, y: e.clientY })
-            }
-            onMouseLeave={() => setTip((t) => ({ ...t, visible: false }))}
-            style={{ cursor: details.length > 0 ? "help" : "default" }}
+            onMouseEnter={showTip}
+            onMouseMove={moveTip}
+            onMouseLeave={hideTip}
+            style={{ cursor: hasTooltip ? "help" : "default" }}
           >
             <rect
               x={labelX - labelWidth / 2}
@@ -255,34 +286,58 @@ function PolicyEdge({
         )}
       </g>
       <MapTooltip visible={tip.visible} x={tip.x} y={tip.y}>
-        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Active Rules ({details.length})
-        </div>
-        <ul className="space-y-1">
-          {details.slice(0, 8).map((detail: string, i: number) => {
-            const isAllow = detail.startsWith("ALLOW");
-            const isDeny = detail.startsWith("DENY");
-            return (
-              <li key={i} className="flex items-start gap-1.5 leading-tight">
-                <span
-                  className={`shrink-0 text-[10px] font-bold ${
-                    isDeny ? "text-red-400" : isAllow ? "text-green-400" : "text-slate-400"
-                  }`}
-                >
-                  {isDeny ? "\u2715" : isAllow ? "\u2713" : "\u2022"}
-                </span>
-                <span className="text-slate-200">
-                  {detail.replace(/^(ALLOW|DENY)\s*/, "")}
-                </span>
-              </li>
-            );
-          })}
-          {details.length > 8 && (
-            <li className="pl-4 italic text-slate-500">
-              +{details.length - 8} more rules...
-            </li>
-          )}
-        </ul>
+        {zoneMeta && (
+          <>
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-sky-300">
+              {zoneMeta.label} Interface
+            </div>
+            <div className="mb-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+              <span className="text-slate-500">Iface</span>
+              <span className="font-mono text-slate-200">
+                {zoneMeta.iface} <span className="text-slate-500">({zoneMeta.role})</span>
+              </span>
+              <span className="text-slate-500">Subnet</span>
+              <span className="font-mono text-slate-200">{zoneMeta.subnet}</span>
+              <span className="text-slate-500">FW IP</span>
+              <span className="font-mono text-slate-200">{zoneMeta.fwIp}</span>
+            </div>
+            <div className="mb-2 text-[10px] leading-snug text-slate-400">
+              {zoneMeta.description}
+            </div>
+          </>
+        )}
+        {details.length > 0 && (
+          <>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Active Rules ({details.length})
+            </div>
+            <ul className="space-y-1">
+              {details.slice(0, 8).map((detail: string, i: number) => {
+                const isAllow = detail.startsWith("ALLOW");
+                const isDeny = detail.startsWith("DENY");
+                return (
+                  <li key={i} className="flex items-start gap-1.5 leading-tight">
+                    <span
+                      className={`shrink-0 text-[10px] font-bold ${
+                        isDeny ? "text-red-400" : isAllow ? "text-green-400" : "text-slate-400"
+                      }`}
+                    >
+                      {isDeny ? "\u2715" : isAllow ? "\u2713" : "\u2022"}
+                    </span>
+                    <span className="text-slate-200">
+                      {detail.replace(/^(ALLOW|DENY)\s*/, "")}
+                    </span>
+                  </li>
+                );
+              })}
+              {details.length > 8 && (
+                <li className="pl-4 italic text-slate-500">
+                  +{details.length - 8} more rules...
+                </li>
+              )}
+            </ul>
+          </>
+        )}
       </MapTooltip>
     </>
   );
@@ -482,6 +537,7 @@ export function NetworkConsole() {
     workshopStatus?.device_comms,
     workshopStatus?.rtac_online,
     trafficStatus,
+    workshopStatus?.firewall_online,
   );
 
   // Apply saved positions to nodes (for drag persistence)
@@ -677,8 +733,16 @@ export function NetworkConsole() {
           />
         )}
         {graphLoading && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-950/60 text-slate-200">
-            Loading console…
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950/70 text-slate-200">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/rook-quarter-turn-wink-transparent-web.png"
+              alt=""
+              className="h-32 w-32 animate-pulse"
+            />
+            <div className="text-sm font-medium tracking-wide text-slate-300">
+              Loading console…
+            </div>
           </div>
         )}
       </div>
@@ -980,6 +1044,9 @@ function StatusDot({
 
 // Prominent policy state pill so the student can't miss whether they're
 // looking at the weak baseline or the hardened post-remediation config.
+// In the weak state we render the aggressive raccoon as a small visual
+// alarm — it pairs with the red coloring to push the "this is dangerous"
+// signal harder than text alone.
 function PolicyBadge({ hardened }: { hardened: boolean }) {
   return (
     <span
@@ -994,7 +1061,16 @@ function PolicyBadge({ hardened }: { hardened: boolean }) {
           : "Weak baseline: enterprise→OT and vendor→field allowed"
       }
     >
-      <Shield className="h-3 w-3" />
+      {hardened ? (
+        <Shield className="h-3 w-3" />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src="/rook-forward-aggressive-transparent-web.png"
+          alt=""
+          className="h-4 w-4"
+        />
+      )}
       Firewall · {hardened ? "Hardened" : "Weak baseline"}
     </span>
   );
@@ -1165,7 +1241,7 @@ function ViewModeToolbar({
         on={viewMode.policyDim}
         onClick={() => onChange({ ...viewMode, policyDim: !viewMode.policyDim })}
         label="Policy"
-        Icon={Filter}
+        Icon={ScrollText}
         activeBorder="border-green-700/60"
         activeBg="bg-green-950/30"
         activeText="text-green-400"
@@ -1387,15 +1463,77 @@ const containdZoneToNetwork: Record<string, string[]> = {
   lan2: ["field_net"],
 };
 
+// Per-zone interface metadata for the firewall→zone tooltip. Pulled
+// from the lab's docker-compose layout: containd binds one interface
+// per zone, and each interface is the default gateway for its subnet.
+// Surfacing this in the tooltip lets students answer "which side of
+// the firewall am I looking at?" without leaving the network map.
+const ZONE_INTERFACE_META: Record<
+  string,
+  {
+    label: string;       // human zone name
+    iface: string;       // containd interface name (ethN)
+    role: string;        // containd zone label (wan/dmz/lan1/lan2)
+    subnet: string;      // CIDR
+    fwIp: string;        // firewall's interface IP in this zone
+    description: string; // one-line teaching hint
+  }
+> = {
+  enterprise_net: {
+    label: "Enterprise",
+    iface: "eth0",
+    role: "wan",
+    subnet: "10.10.10.0/24",
+    fwIp: "10.10.10.2",
+    description: "Corporate IT zone. Hosts: corp-ws, kali (attacker).",
+  },
+  vendor_net: {
+    label: "Vendor / DMZ",
+    iface: "eth1",
+    role: "dmz",
+    subnet: "10.20.20.0/24",
+    fwIp: "10.20.20.2",
+    description: "Vendor remote-access DMZ. Hosts: vendor-jump, eng-ws.",
+  },
+  ot_ops_net: {
+    label: "OT Operations",
+    iface: "eth2",
+    role: "lan1",
+    subnet: "10.30.30.0/24",
+    fwIp: "10.30.30.2",
+    description: "Supervisory control plane. Hosts: rtac, fuxa-hmi, openplc, historian, gps.",
+  },
+  field_net: {
+    label: "Field Devices",
+    iface: "eth3",
+    role: "lan2",
+    subnet: "10.40.40.0/24",
+    fwIp: "10.40.40.2",
+    description: "Protective devices. Hosts: relay, recloser, regulator, capbank.",
+  },
+};
+
 // Build policy info for a zone from the live containd rules. The label
 // favors protocol names over raw port numbers — students don't need to
 // know that 502 is Modbus, they need to know "Modbus is allowed."
+type Permissiveness = "allowed" | "over" | "blocked" | "unknown";
+
 function getZonePolicyInfo(
   zone: string,
-  ruleSummaries?: ZoneRuleSummary[]
-): { label: string; details: string[]; action: string } {
+  ruleSummaries?: ZoneRuleSummary[],
+): {
+  label: string;
+  details: string[];
+  action: string;
+  permissiveness: Permissiveness;
+} {
   if (!ruleSummaries || ruleSummaries.length === 0) {
-    return { label: "No policy data", details: [], action: "ALLOW" };
+    return {
+      label: "No policy data",
+      details: [],
+      action: "ALLOW",
+      permissiveness: "unknown",
+    };
   }
 
   // Find rules that apply to this zone (as destination from firewall)
@@ -1408,13 +1546,31 @@ function getZonePolicyInfo(
   );
 
   if (relevantRules.length === 0) {
-    return { label: "No matching rules", details: [], action: "ALLOW" };
+    return {
+      label: "No matching rules",
+      details: [],
+      action: "ALLOW",
+      permissiveness: "unknown",
+    };
   }
 
   // Aggregate action
   const hasAllow = relevantRules.some((r) => r.action === "ALLOW");
   const hasDeny = relevantRules.some((r) => r.action === "DENY");
   const action = hasAllow && hasDeny ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
+
+  // Detect over-permissive: any allow rule whose detail starts with
+  // "WEAK:" — that's the lab definition's convention for "this rule
+  // should be tightened in the improved policy". When the active
+  // config is the weak baseline, those rules are still in effect and
+  // should read visually as warnings.
+  const overPermissive = relevantRules.some(
+    (r) =>
+      r.action !== "DENY" &&
+      r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
+  );
+  const permissiveness: Permissiveness =
+    action === "DENY" ? "blocked" : overPermissive ? "over" : "allowed";
 
   // Structured details for tooltip
   const details = relevantRules.map((r) => {
@@ -1449,7 +1605,42 @@ function getZonePolicyInfo(
     label = `Multiple flows (${protos.length})`;
   }
 
-  return { label, details, action };
+  return { label, details, action, permissiveness };
+}
+
+// Map a workshop graph node id to the runtime telemetry source that
+// drives its status dot. Nodes not in the map don't get a dot — we
+// only render dots for nodes whose health we actually probe.
+function deriveNodeHealth(
+  nodeId: string,
+  workshopOnline: { firewall?: boolean; rtac?: boolean; deviceComms?: Record<string, boolean> },
+): { health?: "ok" | "down"; healthSource?: string } {
+  if (nodeId === "fw-1") {
+    return {
+      health: workshopOnline.firewall ? "ok" : "down",
+      healthSource: "containd /api/v1/health",
+    };
+  }
+  if (nodeId === "rtac-1") {
+    return {
+      health: workshopOnline.rtac ? "ok" : "down",
+      healthSource: "RTAC /api/state",
+    };
+  }
+  const deviceMap: Record<string, string> = {
+    "relay-1": "relay",
+    "recloser-1": "recloser",
+    "regulator-1": "regulator",
+  };
+  const dev = deviceMap[nodeId];
+  if (dev) {
+    const ok = workshopOnline.deviceComms?.[dev];
+    return {
+      health: ok ? "ok" : "down",
+      healthSource: `RTAC device_comms[${dev}]`,
+    };
+  }
+  return {};
 }
 
 function useStyledGraph(
@@ -1459,9 +1650,16 @@ function useStyledGraph(
   deviceComms?: Record<string, boolean>,
   rtacOnline?: boolean,
   trafficStatus?: TrafficStatus,
+  firewallOnline?: boolean,
 ) {
   return useMemo(() => {
     if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
+
+    const workshopOnline = {
+      firewall: firewallOnline,
+      rtac: rtacOnline,
+      deviceComms,
+    };
 
     // Layout configuration
     const ZONE_SPACING_X = 240;
@@ -1510,6 +1708,7 @@ function useStyledGraph(
 
     // Add firewall node at top center
     if (firewallNode) {
+      const fwHealth = deriveNodeHealth(firewallNode.id, workshopOnline);
       styledNodes.push({
         id: firewallNode.id,
         type: "firewall",
@@ -1524,6 +1723,8 @@ function useStyledGraph(
           networks: firewallNode.data.networks,
           ui_path: firewallNode.data.ui_path,
           external_ui_url: firewallNode.data.external_ui_url,
+          health: fwHealth.health,
+          healthSource: fwHealth.healthSource,
         },
         draggable: true,
       });
@@ -1561,23 +1762,64 @@ function useStyledGraph(
       ot_safety_net: "10.40.40.0/24",
     };
 
+    // Boundary box geometry shared across all zones. The boundary
+    // wraps a zone column with enough room to clear the icons + the
+    // host labels below them.
+    const BOUNDARY_HALF_WIDTH = 100;
+    const BOUNDARY_TOP_PAD = 36;
+    const BOUNDARY_BOTTOM_PAD = 70;
+    const BOUNDARY_TOP_Y = ZONE_START_Y - BOUNDARY_TOP_PAD;
+
+    // Add zone BOUNDARY nodes first so they render BEHIND the hosts.
+    // Each boundary is a translucent rounded panel that visually
+    // groups the hosts inside the zone — the segmentation grouping
+    // becomes immediately legible without any heavy borders.
+    activeZones.forEach((zone, zoneIdx) => {
+      const zoneX = startX + zoneIdx * ZONE_SPACING_X;
+      const zoneNodes = nodesByZone[zone] || [];
+      const lastNodeY = ZONE_START_Y + 100 + Math.max(0, zoneNodes.length - 1) * NODE_SPACING_Y;
+      const boundaryHeight = lastNodeY + BOUNDARY_BOTTOM_PAD - BOUNDARY_TOP_Y;
+      styledNodes.push({
+        id: `zone-boundary-${zone}`,
+        type: "zoneBoundary",
+        position: {
+          x: zoneX - BOUNDARY_HALF_WIDTH,
+          y: BOUNDARY_TOP_Y,
+        },
+        data: {
+          zone,
+          label: zoneLabels[zone] || zone.toUpperCase(),
+          subnet: zoneSubnets[zone],
+          width: BOUNDARY_HALF_WIDTH * 2,
+          height: boundaryHeight,
+        },
+        selectable: false,
+        draggable: false,
+        zIndex: 0,
+      });
+    });
+
     // Add zone nodes and host nodes
     activeZones.forEach((zone, zoneIdx) => {
       const zoneX = startX + zoneIdx * ZONE_SPACING_X;
       const zoneNodes = nodesByZone[zone] || [];
 
-      // Add zone label node
+      // Tiny invisible anchor node so firewall→zone edges still have
+      // a defined target inside the zone column. We keep using the
+      // existing "zone-<name>" id for the edge target so the rest of
+      // the wiring stays unchanged. Renders as an empty 1x1 div.
       styledNodes.push({
         id: `zone-${zone}`,
         type: "zone",
-        position: { x: zoneX, y: ZONE_START_Y },
+        position: { x: zoneX, y: ZONE_START_Y + 24 },
         data: {
-          label: zoneLabels[zone] || zone.toUpperCase(),
-          zone: zone,
-          subnet: zoneSubnets[zone],
+          label: "",
+          zone,
+          subnet: undefined,
         },
         selectable: false,
         draggable: false,
+        zIndex: 1,
       });
 
       // Add host nodes below the zone label
@@ -1589,6 +1831,8 @@ function useStyledGraph(
           ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
           : (n.data.networks || []);
         const additionalZones = allInterfaceZones.filter((z) => z !== zone);
+
+        const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
 
         styledNodes.push({
           id: n.id,
@@ -1608,6 +1852,8 @@ function useStyledGraph(
             ui_path: n.data.ui_path,
             external_ui_url: n.data.external_ui_url,
             multiHomedZones: additionalZones,
+            health: nodeHealth.health,
+            healthSource: nodeHealth.healthSource,
           },
           draggable: true,
         });
@@ -1670,6 +1916,7 @@ function useStyledGraph(
             action: policyInfo.action,
             color: labelColor,
             dimmed,
+            zoneMeta: ZONE_INTERFACE_META[zone],
           },
         });
       });
@@ -1777,5 +2024,6 @@ function useStyledGraph(
     deviceComms,
     rtacOnline,
     trafficStatus,
+    firewallOnline,
   ]);
 }

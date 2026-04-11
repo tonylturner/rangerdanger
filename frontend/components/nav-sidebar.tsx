@@ -17,9 +17,21 @@ export function NavSidebar() {
 
   return (
     <aside className="hidden w-48 flex-col border-r border-slate-900 bg-slate-950/70 px-3 py-5 md:flex">
-      <Link href="/" className="mb-5 px-3">
-        <span className="text-sm font-bold text-white tracking-tight">RangerDanger</span>
-        <span className="block text-[9px] uppercase tracking-widest text-slate-600 mt-0.5">Substation Lab</span>
+      <Link href="/" className="mb-5 block px-2">
+        {/* Brand lockup. Native <img> rather than next/image because
+            the SVG wraps an embedded PNG and we want it to scale
+            cleanly without any optimization pass. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/rangerdanger-lockup-web.png"
+          alt="RangerDanger"
+          className="block w-full"
+          width={170}
+          height={78}
+        />
+        <span className="mt-1 block px-1 text-[9px] uppercase tracking-widest text-slate-600">
+          Substation Lab
+        </span>
       </Link>
 
       <nav className="space-y-0.5 text-[13px]">

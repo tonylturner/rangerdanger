@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CheckCircle2, Loader2, XCircle, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 export type ToastKind = "loading" | "success" | "error";
 
@@ -42,8 +42,25 @@ export function Toast({
       >
         <div className={`mt-0.5 shrink-0 ${style.icon}`}>
           {toast.kind === "loading" && <Loader2 className="h-5 w-5 animate-spin" />}
-          {toast.kind === "success" && <CheckCircle2 className="h-5 w-5" />}
-          {toast.kind === "error" && <XCircle className="h-5 w-5" />}
+          {toast.kind === "success" && (
+            // Wink raccoon for the celebratory beat.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/rook-quarter-turn-wink-transparent-web.png"
+              alt=""
+              className="h-7 w-7"
+            />
+          )}
+          {toast.kind === "error" && (
+            // Aggressive raccoon for failures — pairs visually with
+            // the wink-on-success above.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/rook-forward-aggressive-transparent-web.png"
+              alt=""
+              className="h-7 w-7"
+            />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-white">{toast.title}</div>
