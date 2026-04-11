@@ -70,58 +70,97 @@ steps:
       > **About the filter:** the only thing we exclude is `127.0.0.1` (loopback), which carries containd's own internal dataplane-to-engine RPC and is unrelated to the substation scenario. Every other packet in the capture is real scenario traffic — no management UI traffic, no platform telemetry, no external browser flows, because the RangerDanger platform runs on its own out-of-band management network and does not appear on any zone interface the firewall sees.
 
   - title: "Analyze cross-zone flows"
-    node: fw-1
+    node: eng-ws-1
     description: |
-      Confirm the capture file, then run a handful of `tcpdump` queries to see what traffic actually crosses zones.
+      Analysis happens on the **engineering workstation**, not on the firewall. The PCAP you just captured is shared with eng-ws at `/home/abc/pcaps/baseline.pcap` via a read-only volume mount — no copy needed. The eng-ws terminal has `tshark` installed, which gives us purpose-built statistics commands that are much shorter and clearer than raw `tcpdump` + `awk`.
+
+      Switch to the **eng-ws** terminal tab (below, or on the [Network Map](/console)) for the rest of this step.
 
       ### Sanity check
 
       File present, packet count non-zero:
 
-        ls -lh /data/captures/baseline.pcap
-        tcpdump -r /data/captures/baseline.pcap -nn -q 2>&1 | grep -c "IP "
+        ls -lh /home/abc/pcaps/baseline.pcap
+        tshark -r /home/abc/pcaps/baseline.pcap 2>/dev/null | wc -l
 
       ### Build a flow inventory
 
-      Get a deduplicated list of every unique `src → dst` flow observed at the firewall. This is your flow inventory — you will use it to answer the next step:
+      We'll build the flow inventory in **three progressively finer views**. Each answers a different question.
 
-        tcpdump -r /data/captures/baseline.pcap -nn -q 2>&1 | awk '/IP / { sub(/:$/,"",$5); sub(/:$/,"",$7); print $5" -> "$7 }' | sort | uniq -c | sort -rn | head -20
+      **View 1 — Protocol volume.** Uses `tshark -z io,stat` with one filter per ICS protocol. Answers *"what protocols are flowing?"*:
+
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,"tcp.port==502","tcp.port==20000","tcp.port==8080","tcp.port==1881","udp.port==123" 2>/dev/null
+
+      The columns are, in order: Modbus TCP/502, DNP3 TCP/20000, HTTP TCP/8080, FUXA TCP/1881, NTP UDP/123. You should see all five protocols present. HTTP traffic will typically dominate, while Modbus and DNP3 appear as steady polling traffic. NTP will be minimal.
+
+      **View 2 — Host-pair conversations.** Uses `tshark -z conv,ip` to collapse all the ephemeral TCP source ports and show one row per source-IP / destination-IP pair. Answers *"which host is talking to which?"*:
+
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip 2>/dev/null
+
+      This is the view you'll use most when reasoning about cross-zone conversations. `10.30.30.20 <-> 10.40.40.21` means the RTAC and the recloser are in contact; the frame and byte counts tell you how much.
+
+      **View 3 — TCP conversation detail.** Uses `tshark -z conv,tcp` to show every TCP 5-tuple with frame counts. Useful when you want per-connection detail:
+
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,tcp 2>/dev/null | head -20
+
+      > **Why three views?** Short-lived TCP connections (Modbus, DNP3, and the HTTP poller) open a new TCP connection per request with a fresh ephemeral source port each time. The raw TCP view fragments each logical "RTAC polls the relay" conversation into 30+ tiny rows. The protocol and host-pair views collapse that noise so the real structure is visible at a glance.
 
       ### Targeted filters
 
+      tshark uses **display filters** (the same syntax Wireshark uses) with `-Y`. Subnets can be matched with `==` and CIDR notation, for example `ip.src==10.20.20.0/24`.
+
       **Who in Vendor/DMZ is reaching into OT Operations?**
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.20.20.0/24' 2>&1 | head -15
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.20.20.0/24 and ip.dst==10.30.30.0/24' 2>/dev/null | head -15
 
       **What leaves OT Operations heading for Field devices?**
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.30.30.0/24 and dst net 10.40.40.0/24' 2>&1 | head -15
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.0/24 and ip.dst==10.40.40.0/24' 2>/dev/null | head -15
 
       **Modbus TCP activity on port 502** — the primary SCADA control protocol:
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'tcp port 502' 2>&1 | head -15
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==502' 2>/dev/null | head -10
 
       **DNP3 TCP activity on port 20000** — the secondary SCADA polling protocol:
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'tcp port 20000' 2>&1 | head -15
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==20000' 2>/dev/null | head -10
 
       **All RTAC-originated traffic** (Modbus + DNP3 + HTTP):
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'host 10.30.30.20 or host 10.40.40.10' 2>&1 | head -20
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.20 or ip.src==10.40.40.10' 2>/dev/null | head -20
 
       **Is Enterprise speaking to OT or Field directly?** (Should be empty in a healthy baseline.)
 
-        tcpdump -r /data/captures/baseline.pcap -nn 'src net 10.10.10.0/24 and (dst net 10.30.30.0/24 or dst net 10.40.40.0/24)' 2>&1 | head -10
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.10.10.0/24 and (ip.dst==10.30.30.0/24 or ip.dst==10.40.40.0/24)' 2>/dev/null
 
-      > **Note on RTAC visibility:** the RTAC is multi-homed (`10.30.30.20` on OT Ops, `10.40.40.10` on Field) but it is hardened so its routed application traffic always traverses the firewall. When you see RTAC → field device Modbus or DNP3 in the capture, the source IP will be `10.30.30.20`, not `10.40.40.10`, because the RTAC routes via its OT Ops interface through the firewall rather than direct on `field_net`.
+      > The RTAC has interfaces in both OT Ops and Field for realism, but in this lab its communication with field devices is routed through the firewall. This ensures Modbus and DNP3 traffic is visible for analysis.
 
-      ### What the firewall still cannot see
+      ### Key insight: not all important traffic is visible
 
-      Intra-zone flows — for example HMI → RTAC or Historian → RTAC within OT Ops. Those conversations stay on a single Docker network and never cross a zone boundary. You can confirm their existence by querying the RTAC state API from the engineering workstation:
+      Not all operationally important traffic crosses a zone boundary.
+
+      For example:
+
+      - **HMI → RTAC**
+      - **Historian → RTAC**
+
+      These flows occur entirely within the OT Ops network and do not traverse the firewall.
+
+      This is intentional:
+
+      - The firewall shows cross-zone communication.
+      - It does not show all system communication.
+
+      To confirm that these internal control relationships exist even when not visible in the PCAP, query the RTAC directly:
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
       The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with — proof that the underlying control flows are alive even when they are intra-subnet.
+
+      ### Reflection
+
+      > You have visibility into all cross-zone traffic from the firewall capture.
+      > **What important system relationships are you missing?**
 
   - title: "Critical conduits — what MUST flow"
     description: |

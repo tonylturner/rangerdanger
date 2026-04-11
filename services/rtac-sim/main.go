@@ -63,9 +63,26 @@ func envOr(key, fallback string) string {
 
 // pollDevices periodically fetches state from all field device simulators
 // and the physics engine.
+//
+// HTTP keep-alive is deliberately disabled: we want each poll to open a
+// new TCP connection, close it, and move on. This matches the behavior of
+// the Modbus and DNP3 pollers (which also open fresh connections per
+// poll) so the resulting wire traffic has consistent per-poll flow
+// semantics across all three protocols. Without this, Go's default http
+// transport reuses connections and the capture shows a handful of huge
+// persistent HTTP flows that drown out Modbus and DNP3 in the flow
+// table.
 func pollDevices() {
-	client := &http.Client{Timeout: 3 * time.Second}
-	ticker := time.NewTicker(1 * time.Second)
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{
+		Timeout:   3 * time.Second,
+		Transport: transport,
+	}
+	// 2-second interval balances HTTP volume with Modbus (3s) and DNP3 (5s)
+	// so no single protocol drowns out the others in a firewall capture.
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
