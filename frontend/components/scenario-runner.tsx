@@ -75,7 +75,12 @@ function splitDescription(text: string): Segment[] {
       result.push({ type: "hint", title, value: body.join("\n") });
       continue;
     }
-    if (CMD_TOOL_RE.test(trimmed)) {
+    // A line is a command block only if it is indented (has leading
+    // whitespace) AND starts with a recognized tool prefix. The indentation
+    // requirement distinguishes a code snippet from a prose sentence that
+    // happens to begin with a tool name, e.g. "tshark uses display filters".
+    const isIndented = /^\s+\S/.test(lines[i]);
+    if (isIndented && CMD_TOOL_RE.test(trimmed)) {
       flushProse();
       let cmd = trimmed;
       while (cmd.endsWith("\\") && i + 1 < lines.length) {

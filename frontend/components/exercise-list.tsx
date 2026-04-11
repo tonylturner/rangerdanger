@@ -1,18 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { FileText } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { listScenarios, type Scenario } from "../lib/api";
-
-// Maps exercise IDs to workshop workbook sections
-const WORKBOOK_SECTION: Record<string, string> = {
-  "baseline-assessment":       "1.2",
-  "remediation-planning":      "1.4",
-  "segmentation-requirements": "1.3",
-  "vendor-rdp-compromise":     "2.3",
-  "modbus-override":           "2.3",
-  "dnp3-command-injection":    "2.3",
-  "validation-evidence":       "2.4",
-};
+import { WORKBOOK_SECTION } from "../lib/workbook-sections";
 
 // Read completion from localStorage
 function getCompletionPct(exerciseId: string, totalSteps: number): number {
@@ -28,7 +20,13 @@ function getCompletionPct(exerciseId: string, totalSteps: number): number {
   }
 }
 
-export function ExerciseList({ onStartExercise }: { onStartExercise?: (scenario: Scenario) => void }) {
+export function ExerciseList({
+  onStartExercise,
+  onExportExercise,
+}: {
+  onStartExercise?: (scenario: Scenario) => void;
+  onExportExercise?: (scenario: Scenario) => void | Promise<void>;
+}) {
   const { data, isLoading } = useQuery({
     queryKey: ["scenarios", "substation-segmentation"],
     queryFn: () => listScenarios("substation-segmentation"),
@@ -45,17 +43,38 @@ export function ExerciseList({ onStartExercise }: { onStartExercise?: (scenario:
   return (
     <div className="grid gap-3">
       {data?.scenarios.map((exercise, index) => (
-        <ExerciseCard key={exercise.id} exercise={exercise} index={index} onStartExercise={onStartExercise} />
+        <ExerciseCard
+          key={exercise.id}
+          exercise={exercise}
+          index={index}
+          onStartExercise={onStartExercise}
+          onExportExercise={onExportExercise}
+        />
       ))}
     </div>
   );
 }
 
-function ExerciseCard({ exercise, index, onStartExercise }: { exercise: Scenario; index: number; onStartExercise?: (scenario: Scenario) => void }) {
+function ExerciseCard({
+  exercise,
+  index,
+  onStartExercise,
+  onExportExercise,
+}: {
+  exercise: Scenario;
+  index: number;
+  onStartExercise?: (scenario: Scenario) => void;
+  onExportExercise?: (scenario: Scenario) => void | Promise<void>;
+}) {
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
   const pct = getCompletionPct(exercise.id, exercise.steps.length);
   const section = WORKBOOK_SECTION[exercise.id];
+
+  const handleExportPDF = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onExportExercise?.(exercise);
+  };
 
   return (
     <article className={`rounded-lg border p-4 ${isBonus ? "border-slate-800/50 bg-slate-900/40 opacity-75" : "border-slate-800 bg-slate-900/70"}`}>
@@ -105,14 +124,30 @@ function ExerciseCard({ exercise, index, onStartExercise }: { exercise: Scenario
             </div>
           </div>
         </div>
-        {onStartExercise && (
-          <button
-            onClick={() => onStartExercise(exercise)}
-            className="shrink-0 rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50"
-          >
-            {pct > 0 && pct < 100 ? "Continue" : pct === 100 ? "Review" : "Start"}
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {onExportExercise && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleExportPDF}
+                  aria-label="Export exercise as PDF"
+                  className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-2 py-1.5 text-slate-400 transition-colors hover:text-sky-400 hover:border-slate-600"
+                >
+                  <FileText className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Export as PDF</TooltipContent>
+            </Tooltip>
+          )}
+          {onStartExercise && (
+            <button
+              onClick={() => onStartExercise(exercise)}
+              className="rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50"
+            >
+              {pct > 0 && pct < 100 ? "Continue" : pct === 100 ? "Review" : "Start"}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
