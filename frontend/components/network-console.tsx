@@ -191,9 +191,13 @@ function PolicyEdge({
     targetPosition,
   });
 
-  // Position label closer to target (75% along the path) to avoid overlap
-  const labelX = sourceX + (targetX - sourceX) * 0.75;
-  const labelY = sourceY + (targetY - sourceY) * 0.75;
+  // Position the label ~60% along the path. With the firewall at
+  // y≈50 and the zone-anchor target sitting on the boundary's top
+  // edge, this puts the policy pill just above where the conduit
+  // meets the zone — close enough to associate, far enough to clear
+  // the boundary header label.
+  const labelX = sourceX + (targetX - sourceX) * 0.6;
+  const labelY = sourceY + (targetY - sourceY) * 0.6;
 
   const label = data?.label || "";
   const color = data?.color || "#64748b";
@@ -591,9 +595,11 @@ export function NetworkConsole() {
       const cw = container?.clientWidth || 1200;
       const ch = container?.clientHeight || 700;
 
-      // Drawer minimized = 36px strip + gap. Expanded = 420px + gap.
+      // Drawer minimized = 36px strip + gap. Expanded = 36px strip
+      // + 420px panel + small breathing buffer so the leftmost zone
+      // boundary clears the drawer's right edge.
       // Hidden = no left reservation.
-      const leftPad = drawerExpanded ? 440 : drawerVisible ? 56 : 24;
+      const leftPad = drawerExpanded ? 488 : drawerVisible ? 56 : 24;
       const rightPad = 200;  // minimap + a small gap
       const topPad = 56;     // view-mode toolbar
       const bottomPad = 24;
@@ -1713,7 +1719,9 @@ function useStyledGraph(
     const ZONE_SPACING_X = 240;
     const NODE_SPACING_Y = 130;
     const FIREWALL_Y = 50;
-    const ZONE_START_Y = 220;
+    // Pushed down from 220 to give the firewall icon, its label,
+    // and the zone boundary headers room to breathe vertically.
+    const ZONE_START_Y = 290;
 
     // Find the firewall node (containd_ngfw or opnsense_external)
     const firewallNode = graph.nodes.find((n) =>
@@ -1760,7 +1768,9 @@ function useStyledGraph(
       styledNodes.push({
         id: firewallNode.id,
         type: "firewall",
-        position: { x: centerX, y: FIREWALL_Y },
+        // Firewall wrapper is 160px wide; shift -80 so the icon
+        // centers on the canvas centerline.
+        position: { x: centerX - 80, y: FIREWALL_Y },
         data: {
           label: firewallNode.data.label || "containd NGFW",
           nodeType: firewallNode.type,
@@ -1815,7 +1825,11 @@ function useStyledGraph(
     // host labels below them.
     const BOUNDARY_HALF_WIDTH = 100;
     const BOUNDARY_TOP_PAD = 36;
-    const BOUNDARY_BOTTOM_PAD = 70;
+    // The host wrapper at `lastNodeY` is the icon (56) + margin
+    // (8) + label (up to ~32 if it wraps) + IP (14) ≈ 110px tall.
+    // We need that plus a comfortable cushion below the IP so the
+    // metadata never bleeds past the boundary's bottom edge.
+    const BOUNDARY_BOTTOM_PAD = 140;
     const BOUNDARY_TOP_Y = ZONE_START_Y - BOUNDARY_TOP_PAD;
 
     // Add zone BOUNDARY nodes first so they render BEHIND the hosts.
@@ -1852,14 +1866,16 @@ function useStyledGraph(
       const zoneX = startX + zoneIdx * ZONE_SPACING_X;
       const zoneNodes = nodesByZone[zone] || [];
 
-      // Tiny invisible anchor node so firewall→zone edges still have
-      // a defined target inside the zone column. We keep using the
-      // existing "zone-<name>" id for the edge target so the rest of
-      // the wiring stays unchanged. Renders as an empty 1x1 div.
+      // Tiny invisible anchor node sitting EXACTLY on the top edge of
+      // the zone boundary panel. Firewall→zone conduits terminate
+      // here so they visually end at the zone border (not floating
+      // in dead space inside the panel and not piercing through to
+      // the devices). Reinforces the segmentation model: the
+      // conduit stops at the policy enforcement boundary.
       styledNodes.push({
         id: `zone-${zone}`,
         type: "zone",
-        position: { x: zoneX, y: ZONE_START_Y + 24 },
+        position: { x: zoneX, y: BOUNDARY_TOP_Y },
         data: {
           label: "",
           zone,
@@ -1882,11 +1898,14 @@ function useStyledGraph(
 
         const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
 
+        // React Flow positions are top-left of the node wrapper.
+        // Host wrappers are 120px wide (minWidth) so we shift by -60
+        // to put the visible icon right on the zone column center.
         styledNodes.push({
           id: n.id,
           type: "host",
           position: {
-            x: zoneX,
+            x: zoneX - 60,
             y: ZONE_START_Y + 100 + nodeIdx * NODE_SPACING_Y,
           },
           data: {
@@ -1978,23 +1997,12 @@ function useStyledGraph(
       });
     }
 
-    // Edges from zones to their host nodes — these are pure topology
-    // (which host belongs to which zone), so they stay neutral grey
-    // with no policy semantics.
-    activeZones.forEach((zone) => {
-      const zoneNodes = nodesByZone[zone] || [];
-      const color = zoneColors[zone]?.border || "#64748b";
-
-      zoneNodes.forEach((n, idx) => {
-        const sourceId = idx === 0 ? `zone-${zone}` : zoneNodes[idx - 1].id;
-        styledEdges.push({
-          id: `${sourceId}-to-${n.id}`,
-          source: sourceId,
-          target: n.id,
-          style: { stroke: color, strokeWidth: 1.2, opacity: 0.55 },
-        });
-      });
-    });
+    // (No zone→host topology chain edges anymore. The ZoneBoundary
+    // node now visually groups all hosts in a zone, so the thin
+    // connecting lines from the old design are redundant. They were
+    // also being read as "the firewall conduit went dotted" because
+    // the chain ran straight down from the zone anchor through the
+    // hosts at low opacity.)
 
     // Traffic view: render observed host-to-host flows when the toggle
     // is on. We aggregate by source-target pair so a single line

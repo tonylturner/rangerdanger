@@ -201,18 +201,20 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
       }`}
       style={{ minWidth: 120 }}
     >
-      {/* Icon container — wraps the icon, its corner badges, AND the
-          React Flow handles so edges attach to the visible 56×56 icon
-          edge instead of the 120px-wide outer flex container (which
-          would put "right" handles ~30px past the icon). Side handles
-          let traffic edges attach horizontally without colliding with
-          the vertical zone-membership edges. */}
+      {/* Icon container — circular Tron-style node. Thick zone-tinted
+          ring + inner glow + outer halo so each host reads like a
+          live disc on the grid. The 56×56 box doubles as the React
+          Flow edge anchor so conduits land right on the disc edge. */}
       <div
-        className="relative flex h-14 w-14 items-center justify-center rounded-xl border-2 shadow-lg"
+        className="relative flex h-14 w-14 items-center justify-center rounded-full"
         style={{
           borderColor: colors.border,
+          borderWidth: 3.5,
+          borderStyle: "solid",
           backgroundColor: colors.bg,
-          boxShadow: selected ? `0 0 20px ${colors.border}40` : "0 4px 12px rgba(0,0,0,0.3)",
+          boxShadow: selected
+            ? `0 0 22px ${colors.border}cc, 0 0 44px ${colors.border}66, inset 0 0 14px ${colors.border}55`
+            : `0 0 14px ${colors.border}99, 0 0 28px ${colors.border}44, inset 0 0 10px ${colors.border}33`,
         }}
       >
         {/* Connection handles — invisible, pinned to the icon box
@@ -288,21 +290,25 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
       className={`flex flex-col items-center transition-all ${
         selected ? "scale-105" : ""
       }`}
-      style={{ minWidth: 140 }}
+      style={{ minWidth: 160 }}
     >
-      {/* Firewall icon container — wraps the icon AND the handles so
-          edges attach to the visible 64×64 icon box, not the outer
-          140px wide label column. The persistent multi-ring amber
-          glow reinforces "this is the control plane" — every conduit
-          on the map converges here. */}
+      {/* Firewall icon container — Master Control disc.
+          Circular Tron-style node, ~28% larger than host discs so
+          it visually anchors the entire grid. Red warning ring on
+          the outside (control plane = critical), warm amber core
+          on the inside (the system the firewall protects). Every
+          conduit on the map converges here. */}
       <div
-        className="relative flex h-16 w-16 items-center justify-center rounded-lg border-2 shadow-xl"
+        className="relative flex h-[88px] w-[88px] items-center justify-center rounded-full"
         style={{
-          borderColor: "#f59e0b",
-          background: "linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.1) 100%)",
+          borderColor: "#ef4444",
+          borderWidth: 5,
+          borderStyle: "solid",
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.42) 0%, rgba(217, 119, 6, 0.18) 55%, rgba(15, 23, 42, 0.5) 100%)",
           boxShadow: selected
-            ? "0 0 32px rgba(245, 158, 11, 0.55), 0 0 64px rgba(245, 158, 11, 0.25)"
-            : "0 0 18px rgba(245, 158, 11, 0.45), 0 0 42px rgba(245, 158, 11, 0.18)",
+            ? "0 0 44px rgba(239, 68, 68, 0.9), 0 0 88px rgba(239, 68, 68, 0.45), inset 0 0 22px rgba(245, 158, 11, 0.65)"
+            : "0 0 30px rgba(239, 68, 68, 0.75), 0 0 68px rgba(239, 68, 68, 0.32), inset 0 0 18px rgba(245, 158, 11, 0.45)",
         }}
       >
         {/* Connection handles — invisible, pinned to the icon box edges */}
@@ -333,11 +339,20 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
           </Tooltip>
         )}
 
-        <Shield size={32} className="text-amber-500" />
-        {/* Flame accent */}
-        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-          <div className="h-2 w-4 rounded-b bg-gradient-to-t from-orange-600 to-transparent" />
-        </div>
+        {/* Substation vector icon — represents the lab system the
+            firewall guards. Transparent variant so the radial amber
+            fill behind it shows through. drop-shadow gives the icon
+            its own glow on top of the container's halo. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/substation-icon-transparent.svg"
+          alt=""
+          className="h-16 w-16"
+          style={{
+            filter:
+              "drop-shadow(0 0 6px rgba(252, 211, 77, 0.6)) drop-shadow(0 0 12px rgba(245, 158, 11, 0.4))",
+          }}
+        />
       </div>
 
       {/* Label */}
@@ -415,12 +430,13 @@ export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => 
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 800,
-            letterSpacing: "0.2em",
+            letterSpacing: "0.22em",
             textTransform: "uppercase",
             color: colors.text,
-            opacity: 0.9,
+            opacity: 1,
+            textShadow: `0 0 10px ${colors.border}99`,
           }}
         >
           {data.label}
@@ -428,10 +444,12 @@ export const ZoneBoundaryNode = memo(({ data }: NodeProps<ZoneBoundaryData>) => 
         {data.subnet && (
           <div
             style={{
-              fontSize: 9,
+              fontSize: 11,
+              fontWeight: 600,
               fontFamily: "monospace",
               color: colors.text,
-              opacity: 0.55,
+              opacity: 0.95,
+              textShadow: `0 0 8px ${colors.border}88`,
             }}
           >
             {data.subnet}
