@@ -59,12 +59,12 @@ body {
 }
 
 .react-flow__handle {
-  background: red !important;
-  border: 1px solid yellow !important;
-  width: 8px !important;
-  height: 8px !important;
-  opacity: 1 !important;
-  z-index: 999 !important;
+  background: transparent !important;
+  border: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 /* Zone boundary nodes are large HTML divs that cover the entire zone
