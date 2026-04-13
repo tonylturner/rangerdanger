@@ -171,11 +171,12 @@ type HostNodeData = {
   networks?: string[];
   ui_path?: string;
   multiHomedZones?: string[];
-  // Live health, derived in useStyledGraph from workshopStatus.
-  // "ok" / "down" = real telemetry is available (renders a dot).
-  // undefined = no probe for this node (no dot rendered).
   health?: "ok" | "down";
-  healthSource?: string; // e.g. "RTAC device_comms[relay]"
+  healthSource?: string;
+  // When true, only top/bottom handles are rendered (for 62443
+  // stacked-band layout). When false/absent, side handles are
+  // used (for default policy view column layout).
+  verticalOnly?: boolean;
   // IEC 62443 conduit assessment (firewall node only, set when
   // the 62443 layout is active).
   conduitSL?: number;
@@ -204,11 +205,20 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
       }`}
       style={{ minWidth: 120 }}
     >
-      {/* Source exits from icon's right edge, target enters from
-          icon's left edge. Icon is 56×56 centered in 120px wrapper,
-          so icon edges are 32px inward from wrapper edges. */}
-      <Handle type="source" position={Position.Right} style={{ ...HIDDEN_HANDLE, top: 28, right: 32 }} />
-      <Handle type="target" position={Position.Left} style={{ ...HIDDEN_HANDLE, top: 28, left: 32 }} />
+      {/* Handle set depends on layout mode:
+          - verticalOnly (62443 stacked bands): top/bottom only
+          - default (policy view columns): left/right only */}
+      {data.verticalOnly ? (
+        <>
+          <Handle type="source" position={Position.Bottom} style={{ ...HIDDEN_HANDLE, left: 60, top: 56 }} />
+          <Handle type="target" position={Position.Top} style={{ ...HIDDEN_HANDLE, left: 60, top: 0 }} />
+        </>
+      ) : (
+        <>
+          <Handle type="source" position={Position.Right} style={{ ...HIDDEN_HANDLE, top: 28, right: 32 }} />
+          <Handle type="target" position={Position.Left} style={{ ...HIDDEN_HANDLE, top: 28, left: 32 }} />
+        </>
+      )}
 
       {/* Icon container */}
       <div

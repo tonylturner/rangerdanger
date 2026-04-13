@@ -2164,6 +2164,7 @@ function useStyledGraph(
               multiHomedZones: additionalZones,
               health: nodeHealth.health,
               healthSource: nodeHealth.healthSource,
+              verticalOnly: true,
             },
             draggable: true,
           });
