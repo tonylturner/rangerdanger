@@ -58,20 +58,13 @@ body {
   background-color: #075985 !important; /* sky-800 */
 }
 
-/* Hide React Flow connection handles visually while keeping them
-   measurable for edge routing. Handles need enough size (8×8) so
-   React Flow's getBoundingClientRect can reliably compute their
-   position — 1×1 caused side handles to be undetectable, making
-   edges fall back to top/bottom defaults. */
 .react-flow__handle {
-  background: transparent !important;
-  border: none !important;
+  background: red !important;
+  border: 1px solid yellow !important;
   width: 8px !important;
   height: 8px !important;
-  min-width: 8px !important;
-  min-height: 8px !important;
-  opacity: 0 !important;
-  pointer-events: none;
+  opacity: 1 !important;
+  z-index: 999 !important;
 }
 
 /* Zone boundary nodes are large HTML divs that cover the entire zone

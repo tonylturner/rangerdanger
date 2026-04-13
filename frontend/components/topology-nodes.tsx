@@ -183,14 +183,9 @@ type HostNodeData = {
   conduitMet?: boolean;
 };
 
-// Hidden handle style — React Flow needs the handles in the DOM to
-// attach edges and measure their bounding rects for edge routing.
-// 8×8 keeps them large enough for React Flow to measure reliably
-// (1×1 caused side handles to be undetectable, falling back to
-// top/bottom defaults) while opacity:0 hides them visually.
 const HIDDEN_HANDLE: React.CSSProperties = {
-  width: 8,
-  height: 8,
+  width: 1,
+  height: 1,
   opacity: 0,
   border: "none",
   background: "transparent",
@@ -204,15 +199,18 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
 
   return (
     <div
-      className={`flex flex-col items-center transition-all ${
+      className={`relative flex flex-col items-center transition-all ${
         selected ? "scale-105" : ""
       }`}
       style={{ minWidth: 120 }}
     >
-      {/* Icon container — circular Tron-style node. Thick zone-tinted
-          ring + inner glow + outer halo so each host reads like a
-          live disc on the grid. The 56×56 box doubles as the React
-          Flow edge anchor so conduits land right on the disc edge. */}
+      {/* One source (right) and one target (left). No IDs — React
+          Flow picks the only available handle of each type. top:28
+          centers on the icon, not the wrapper. */}
+      <Handle type="source" position={Position.Right} style={{ ...HIDDEN_HANDLE, top: 28 }} />
+      <Handle type="target" position={Position.Left} style={{ ...HIDDEN_HANDLE, top: 28 }} />
+
+      {/* Icon container */}
       <div
         className="relative flex h-14 w-14 items-center justify-center rounded-full"
         style={{
@@ -225,15 +223,6 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
             : `0 0 14px ${colors.border}99, 0 0 28px ${colors.border}44, inset 0 0 10px ${colors.border}33`,
         }}
       >
-        {/* Connection handles — invisible, pinned to the icon box
-            edges so edge paths connect directly to the icon. */}
-        <Handle type="target" position={Position.Top} style={HIDDEN_HANDLE} />
-        <Handle type="source" position={Position.Bottom} style={HIDDEN_HANDLE} />
-        <Handle id="left-source" type="source" position={Position.Left} style={HIDDEN_HANDLE} />
-        <Handle id="left-target" type="target" position={Position.Left} style={HIDDEN_HANDLE} />
-        <Handle id="right-source" type="source" position={Position.Right} style={HIDDEN_HANDLE} />
-        <Handle id="right-target" type="target" position={Position.Right} style={HIDDEN_HANDLE} />
-
         <Icon size={28} color={colors.text} />
 
         {/* Live status dot — only rendered for nodes whose health

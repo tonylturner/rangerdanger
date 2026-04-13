@@ -10,6 +10,7 @@ import ReactFlow, {
   Edge,
   EdgeLabelRenderer,
   EdgeProps,
+  Position,
   getBezierPath,
   MiniMap,
   Node,
@@ -424,7 +425,6 @@ function TrafficEdge({
   const overrideOpacity = dimmedByHighlight ? 0.2 : undefined;
   const labelWidth = Math.max(56, label.length * 6 + 16);
 
-  // Direction vector from source to target for arrow + blocked-X placement.
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
   const edgeLen = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -2302,13 +2302,9 @@ function useStyledGraph(
               ? protocols.join(" + ")
               : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
 
-          const srcNode = nodeIndex.get(first.source);
-          const dstNode = nodeIndex.get(first.target);
-          const srcX = srcNode?.position.x ?? 0;
-          const dstX = dstNode?.position.x ?? 0;
-          const srcOnLeft = srcX <= dstX;
-          const sourceHandle = srcOnLeft ? "right-source" : "left-source";
-          const targetHandle = srcOnLeft ? "left-target" : "right-target";
+          // No sourceHandle/targetHandle — HostNodes have exactly one
+          // source (right) and one target (left) so React Flow picks
+          // them automatically.
 
           const tooltipLines = [
             `${first.source} \u2192 ${first.target}`,
@@ -2330,8 +2326,6 @@ function useStyledGraph(
             id: `traffic-${key}`,
             source: first.source,
             target: first.target,
-            sourceHandle,
-            targetHandle,
             type: "trafficEdge",
             animated: status === "active" && !isDimmedByHighlight && !blockedByFw,
             data: {
