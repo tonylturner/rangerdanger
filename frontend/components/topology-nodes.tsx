@@ -204,11 +204,11 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
       }`}
       style={{ minWidth: 120 }}
     >
-      {/* One source (right) and one target (left). No IDs — React
-          Flow picks the only available handle of each type. top:28
-          centers on the icon, not the wrapper. */}
-      <Handle type="source" position={Position.Right} style={{ ...HIDDEN_HANDLE, top: 28 }} />
-      <Handle type="target" position={Position.Left} style={{ ...HIDDEN_HANDLE, top: 28 }} />
+      {/* Source exits from icon's right edge, target enters from
+          icon's left edge. Icon is 56×56 centered in 120px wrapper,
+          so icon edges are 32px inward from wrapper edges. */}
+      <Handle type="source" position={Position.Right} style={{ ...HIDDEN_HANDLE, top: 28, right: 32 }} />
+      <Handle type="target" position={Position.Left} style={{ ...HIDDEN_HANDLE, top: 28, left: 32 }} />
 
       {/* Icon container */}
       <div
