@@ -10,6 +10,7 @@ export const WORKBOOK_SECTION: Record<string, string> = {
   "modbus-override": "2.3",
   "dnp3-command-injection": "2.3",
   "validation-evidence": "2.4",
+  "capbank-switching-attack": "2.3",
 };
 
 export function workbookSection(scenarioId: string): string | undefined {

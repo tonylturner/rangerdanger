@@ -158,14 +158,35 @@ function aggregate(
 export function TrafficMatrixView({
   canvasEdgesOn,
   onToggleCanvasEdges,
+  filter,
+  onFilterChange,
+  highlightedPair,
+  onHighlightPair,
 }: {
   canvasEdgesOn?: boolean;
   onToggleCanvasEdges?: () => void;
+  filter?: { zone: string; crossZoneOnly: boolean };
+  onFilterChange?: (f: { zone: string; crossZoneOnly: boolean }) => void;
+  highlightedPair?: string | null;
+  onHighlightPair?: (key: string | null) => void;
 } = {}) {
   const queryClient = useQueryClient();
   const [captureDuration, setCaptureDuration] = useState(30);
-  const [filterZone, setFilterZone] = useState<string>("all");
-  const [crossZoneOnly, setCrossZoneOnly] = useState(false);
+
+  // Filters can be controlled from the parent (so the canvas mirrors
+  // them) or local-only if no parent callbacks are provided.
+  const [localZone, setLocalZone] = useState("all");
+  const [localCross, setLocalCross] = useState(false);
+  const filterZone = filter?.zone ?? localZone;
+  const crossZoneOnly = filter?.crossZoneOnly ?? localCross;
+  const setFilterZone = (z: string) => {
+    setLocalZone(z);
+    onFilterChange?.({ zone: z, crossZoneOnly });
+  };
+  const setCrossZoneOnly = (v: boolean) => {
+    setLocalCross(v);
+    onFilterChange?.({ zone: filterZone, crossZoneOnly: v });
+  };
 
   // Same React Query keys as the rest of the app so we share cache
   // and so invalidation from this drawer (after Generate Traffic)
@@ -473,14 +494,23 @@ export function TrafficMatrixView({
           const statusStyle = STATUS_COLOR[r.status];
           const sZone = nodeZone(r.source);
           const tZone = nodeZone(r.target);
+          const pairKey = `${r.source}->${r.target}`;
+          const isHighlighted = highlightedPair === pairKey;
           return (
             <div
-              key={`${r.source}->${r.target}`}
-              className={`rounded border p-2 text-[10px] ${
-                r.crossZone
-                  ? "border-amber-900/40 bg-amber-950/10"
-                  : "border-slate-800 bg-slate-900/40"
+              key={pairKey}
+              className={`cursor-pointer rounded border p-2 text-[10px] transition-colors ${
+                isHighlighted
+                  ? "border-sky-500 bg-sky-950/30 ring-1 ring-sky-500/40"
+                  : r.crossZone
+                  ? "border-amber-900/40 bg-amber-950/10 hover:border-amber-700/60"
+                  : "border-slate-800 bg-slate-900/40 hover:border-slate-700"
               }`}
+              onMouseEnter={() => onHighlightPair?.(pairKey)}
+              onMouseLeave={() => onHighlightPair?.(null)}
+              onClick={() =>
+                onHighlightPair?.(isHighlighted ? null : pairKey)
+              }
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1.5">

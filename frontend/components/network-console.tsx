@@ -8,6 +8,7 @@ import ReactFlow, {
   ControlButton,
   Controls,
   Edge,
+  EdgeLabelRenderer,
   EdgeProps,
   getBezierPath,
   MiniMap,
@@ -16,12 +17,13 @@ import ReactFlow, {
   ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getWorkshopGraph,
   getWorkshopStatus,
   getFirewallRules,
   getTrafficStatus,
+  applyFirewallConfig,
   LabGraph,
   GraphNode as ApiGraphNode,
   ZoneRuleSummary,
@@ -34,11 +36,13 @@ import { SharedTerminalPanel, useTerminals } from "./terminal-context";
 import { nodeTypes, zoneColors } from "./topology-nodes";
 import { SegmentationView } from "./segmentation-view";
 import { TrafficMatrixView } from "./traffic-matrix-view";
-import { OBSERVED_FLOWS, resolveLiveness, type ObservedFlow } from "../lib/observed-flows";
+import { OBSERVED_FLOWS, resolveLiveness, nodeZone, isCrossZone, type ObservedFlow } from "../lib/observed-flows";
 import {
   Activity,
+  ChevronDown,
   ChevronLeft,
   ExternalLink,
+  Layers,
   Map as MapIcon,
   Maximize2,
   ScrollText,
@@ -129,6 +133,7 @@ const INTRA_ZONE_FLOWS: Array<{
 type ViewMode = {
   policyDim: boolean; // color edges by firewall action
   traffic: boolean;   // overlay observed host-to-host flows
+  iec62443: boolean;  // IEC 62443 Zone & Conduit horizontal band layout
 };
 
 // Portal-based tooltip rendered in document.body. Tooltips inside SVG
@@ -368,6 +373,7 @@ function TrafficEdge({
   style,
 }: EdgeProps) {
   const [tip, setTip] = useState({ visible: false, x: 0, y: 0 });
+  const [blockedTip, setBlockedTip] = useState({ visible: false, x: 0, y: 0 });
 
   const [edgePath, centerX, centerY] = getBezierPath({
     sourceX,
@@ -387,21 +393,62 @@ function TrafficEdge({
 
   const isActive = status === "active";
   const isDown = status === "down";
-  const stroke = isActive ? "#22d3ee" : isDown ? "#64748b" : "#64748b";
-  const labelColor = isActive ? "#67e8f9" : "#94a3b8";
+  const isScenario = data?.category === "scenario";
+  const highlighted = data?.highlighted === true;
+  const dimmedByHighlight = data?.dimmedByHighlight === true;
+  const blockedByFw = data?.blockedByFirewall === true;
+
+  // Scenario-generated traffic renders in amber so students can
+  // instantly distinguish "what the lab injected" from "what the
+  // autonomous baseline is doing" (which stays cyan).
+  const baselineActive = "#22d3ee";  // cyan-400
+  const scenarioActive = "#f59e0b";  // amber-500
+  const activeColor = isScenario ? scenarioActive : baselineActive;
+
+  // Line color stays normal regardless of blocked state — red lines
+  // are reserved for future attack traffic. Blocked flows are
+  // indicated only by a red ✕ at the target device.
+  const stroke = highlighted
+    ? "#ffffff"
+    : isActive
+    ? activeColor
+    : isDown ? "#64748b" : "#64748b";
+  const labelColor = highlighted
+    ? "#ffffff"
+    : isActive
+    ? (isScenario ? "#fbbf24" : "#67e8f9")
+    : "#94a3b8";
+  const extraGlow = highlighted
+    ? `drop-shadow(0 0 10px ${activeColor}) drop-shadow(0 0 20px ${activeColor}88)`
+    : undefined;
+  const overrideOpacity = dimmedByHighlight ? 0.2 : undefined;
   const labelWidth = Math.max(56, label.length * 6 + 16);
 
-  // Arrow angle approximated from the source→target chord. It's not
-  // the exact bezier tangent at the endpoint, but it's within a few
-  // degrees and reads cleanly at the scales this lab uses.
+  // Direction vector from source to target for arrow + blocked-X placement.
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
+  const edgeLen = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+  const ux = dx / edgeLen;
+  const uy = dy / edgeLen;
+
+  // Triangle sits close to the node (6px inset). The red ✕ sits
+  // further back (22px) so there's hover room for its tooltip.
+  const triX = targetX - ux * 6;
+  const triY = targetY - uy * 6;
+  const xMarkX = targetX - ux * 22;
+  const xMarkY = targetY - uy * 22;
+
+  // Labels sit at the bezier midpoint — no perpendicular offset.
+  // The natural curve of the bezier + the vertical stagger of
+  // nodes within each zone column creates a clean vertical column
+  // of labels between zones.
+
   const arrowSize = 8;
   const arrowAngle = Math.atan2(dy, dx);
-  const a1x = targetX - arrowSize * Math.cos(arrowAngle - Math.PI / 6);
-  const a1y = targetY - arrowSize * Math.sin(arrowAngle - Math.PI / 6);
-  const a2x = targetX - arrowSize * Math.cos(arrowAngle + Math.PI / 6);
-  const a2y = targetY - arrowSize * Math.sin(arrowAngle + Math.PI / 6);
+  const a1x = triX - arrowSize * Math.cos(arrowAngle - Math.PI / 6);
+  const a1y = triY - arrowSize * Math.sin(arrowAngle - Math.PI / 6);
+  const a2x = triX - arrowSize * Math.cos(arrowAngle + Math.PI / 6);
+  const a2y = triY - arrowSize * Math.sin(arrowAngle + Math.PI / 6);
 
   return (
     <>
@@ -422,40 +469,93 @@ function TrafficEdge({
           fill="none"
           style={{
             stroke,
-            strokeWidth: isActive ? 2 : 1.3,
+            strokeWidth: highlighted ? 3 : isActive ? 2 : 1.3,
             strokeDasharray: isActive ? "6 4" : "3 4",
-            opacity: isDown ? 0.45 : isActive ? 0.95 : 0.65,
+            opacity: overrideOpacity ?? (isDown ? 0.45 : isActive ? 0.95 : 0.65),
+            filter: extraGlow,
             ...style,
           }}
         />
-        {/* Direction triangle at the target end */}
-        <polygon
-          points={`${targetX},${targetY} ${a1x},${a1y} ${a2x},${a2y}`}
-          fill={stroke}
-          opacity={isDown ? 0.5 : isActive ? 1 : 0.8}
-        />
-        <rect
-          x={labelX - labelWidth / 2}
-          y={labelY - 9}
-          width={labelWidth}
-          height={18}
-          rx={9}
-          fill="#0f172a"
-          stroke={stroke}
-          strokeOpacity={0.8}
-          strokeWidth={1}
-        />
-        <text
-          x={labelX}
-          y={labelY + 4}
-          textAnchor="middle"
-          fontSize={9}
-          fontWeight={600}
-          fill={labelColor}
-        >
-          {label}
-        </text>
+        {/* Direction triangle — SVG, stays in edge layer */}
+        {!blockedByFw && (
+          <polygon
+            points={`${triX},${triY} ${a1x},${a1y} ${a2x},${a2y}`}
+            fill={stroke}
+            opacity={isDown ? 0.5 : isActive ? 1 : 0.8}
+          />
+        )}
       </g>
+
+      {/* Protocol label + red X rendered via EdgeLabelRenderer so
+          they sit in the HTML layer ABOVE nodes. SVG edge elements
+          render below nodes and can't receive hover when a node
+          div overlaps them. */}
+      <EdgeLabelRenderer>
+        {/* Protocol label pill */}
+        <div
+          className="nodrag nopan pointer-events-auto"
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+          }}
+          onMouseEnter={(e) =>
+            tooltipLines.length > 0 &&
+            setTip({ visible: true, x: e.clientX, y: e.clientY })
+          }
+          onMouseMove={(e) =>
+            tip.visible &&
+            setTip({ visible: true, x: e.clientX, y: e.clientY })
+          }
+          onMouseLeave={() => setTip((t) => ({ ...t, visible: false }))}
+        >
+          <div
+            className="cursor-help whitespace-nowrap rounded-full border px-2 py-0.5 text-center text-[9px] font-semibold"
+            style={{
+              backgroundColor: '#0f172a',
+              borderColor: `${stroke}cc`,
+              color: labelColor,
+            }}
+          >
+            {label}
+          </div>
+        </div>
+
+        {/* Red X blocked marker */}
+        {blockedByFw && (
+          <div
+            className="nodrag nopan pointer-events-auto"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${xMarkX}px, ${xMarkY}px)`,
+            }}
+            onMouseEnter={(e) =>
+              setBlockedTip({ visible: true, x: e.clientX, y: e.clientY })
+            }
+            onMouseMove={(e) =>
+              blockedTip.visible &&
+              setBlockedTip({ visible: true, x: e.clientX, y: e.clientY })
+            }
+            onMouseLeave={() =>
+              setBlockedTip((t) => ({ ...t, visible: false }))
+            }
+          >
+            <div
+              className="flex h-7 w-7 cursor-help items-center justify-center rounded-full"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                boxShadow: '0 0 8px rgba(239, 68, 68, 0.3)',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14">
+                <line x1="2" y1="2" x2="12" y2="12" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+                <line x1="12" y1="2" x2="2" y2="12" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            </div>
+          </div>
+        )}
+      </EdgeLabelRenderer>
+
+      {/* Tooltips via portal */}
       <MapTooltip visible={tip.visible} x={tip.x} y={tip.y}>
         <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-400">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: stroke }} />
@@ -464,6 +564,20 @@ function TrafficEdge({
         {tooltipLines.map((l, i) => (
           <div key={i} className="text-slate-200">{l}</div>
         ))}
+      </MapTooltip>
+      <MapTooltip visible={blockedTip.visible} x={blockedTip.x} y={blockedTip.y}>
+        <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-red-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          Blocked by firewall
+        </div>
+        <div className="text-[10px] text-slate-200">
+          {data?.tooltipLines?.[0] || ''}
+        </div>
+        {data?.blockReason && (
+          <div className="mt-1 rounded border border-red-800/40 bg-red-950/20 px-2 py-1 text-[10px] leading-snug text-red-300">
+            {data.blockReason}
+          </div>
+        )}
       </MapTooltip>
     </>
   );
@@ -489,6 +603,7 @@ export function NetworkConsole() {
     // button. The canvas still only renders them when policyDim is
     // on (same condition that mounts the drawer).
     traffic: true,
+    iec62443: false,
   });
   // Rook glow flag — flips true for ~1.4s whenever the active
   // firewall config changes, then auto-clears. Skips the initial
@@ -497,6 +612,14 @@ export function NetworkConsole() {
   // Minimap visibility — toggled from a custom button inside the
   // React Flow Controls panel. Default on.
   const [showMinimap, setShowMinimap] = useState(true);
+
+  // Traffic matrix filter + highlight — lifted from the drawer so
+  // the canvas edges can mirror whatever the student selects.
+  const [trafficFilter, setTrafficFilter] = useState({
+    zone: "all",
+    crossZoneOnly: false,
+  });
+  const [highlightedTrafficPair, setHighlightedTrafficPair] = useState<string | null>(null);
   // Left drawer menu. The strip is mounted whenever Policy view is
   // on; the strip shows two stacked icons (Segmentation, Traffic
   // Matrix). Clicking either expands the drawer to 420px showing
@@ -565,6 +688,8 @@ export function NetworkConsole() {
     workshopStatus?.rtac_online,
     trafficStatus,
     workshopStatus?.firewall_online,
+    trafficFilter,
+    highlightedTrafficPair,
   );
 
   // Apply saved positions to nodes (for drag persistence)
@@ -644,7 +769,7 @@ export function NetworkConsole() {
     });
     return () => cancelAnimationFrame(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rfInstance, drawerVisible, drawerExpanded, nodes.length]);
+  }, [rfInstance, drawerVisible, drawerExpanded, nodes.length, viewMode.iec62443]);
 
   // Handle node changes (dragging)
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -715,7 +840,7 @@ export function NetworkConsole() {
               tooltipTitle="Field protection layer"
               tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken — device down, network issue, or firewall rule change."
             />
-            <PolicyBadge hardened={workshopStatus.firewall_config === "improved"} />
+            <PolicyBadge activeConfig={workshopStatus.firewall_config} />
           </div>
         )}
       </header>
@@ -800,6 +925,10 @@ export function NetworkConsole() {
             onToggleTrafficEdges={() =>
               setViewMode((v) => ({ ...v, traffic: !v.traffic }))
             }
+            trafficFilter={trafficFilter}
+            onTrafficFilterChange={setTrafficFilter}
+            highlightedTrafficPair={highlightedTrafficPair}
+            onHighlightTrafficPair={setHighlightedTrafficPair}
           />
         )}
         {graphLoading && (
@@ -1112,37 +1241,112 @@ function StatusDot({
   );
 }
 
-// Prominent policy state pill so the student can't miss whether they're
-// looking at the weak baseline or the hardened post-remediation config.
-// In the weak state we render the aggressive raccoon as a small visual
-// alarm — it pairs with the red coloring to push the "this is dangerous"
-// signal harder than text alone.
-function PolicyBadge({ hardened }: { hardened: boolean }) {
+// Policy badge + quick-switch dropdown in the header. Styled as a
+// rounded rectangle (matching the drawer button shapes) that doubles
+// as a dropdown trigger. Clicking reveals a small menu of available
+// policies so the student can switch without opening the drawer.
+function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
+  const [open, setOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const queryClient = useQueryClient();
+
+  const hardened = activeConfig === "improved";
+
+  const policies = [
+    { id: "weak", label: "Weak Baseline", desc: "All zones allowed — over-permissive" },
+    { id: "improved", label: "Hardened", desc: "Deny-default, RTAC-only field access" },
+  ];
+
+  const handleApply = async (config: string) => {
+    if (config === activeConfig || applying) return;
+    setApplying(true);
+    setOpen(false);
+    try {
+      await applyFirewallConfig(config as "weak" | "improved");
+      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
+      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
+    } catch {
+      // swallow
+    } finally {
+      setApplying(false);
+    }
+  };
+
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${
-        hardened
-          ? "border-green-600/60 bg-green-950/40 text-green-300"
-          : "border-red-600/60 bg-red-950/40 text-red-300"
-      }`}
-      title={
-        hardened
-          ? "Hardened policy: only RTAC→field, vendor restricted to HMI HTTPS"
-          : "Weak baseline: enterprise→OT and vendor→field allowed"
-      }
-    >
-      {hardened ? (
-        <Shield className="h-3 w-3" />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src="/rook-forward-aggressive-transparent-web.png"
-          alt=""
-          className="h-4 w-4"
-        />
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+          hardened
+            ? "border-green-600/60 bg-green-950/40 text-green-300 hover:bg-green-950/60"
+            : "border-red-600/60 bg-red-950/40 text-red-300 hover:bg-red-950/60"
+        }`}
+      >
+        {hardened ? (
+          <Shield className="h-3 w-3" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src="/rook-forward-aggressive-transparent-web.png"
+            alt=""
+            className="h-4 w-4"
+          />
+        )}
+        <span>Firewall · {hardened ? "Hardened" : "Weak baseline"}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <>
+          {/* Click-outside backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur">
+            <div className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+              Select Policy
+            </div>
+            {policies.map((p) => {
+              const isActive = p.id === activeConfig;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => handleApply(p.id)}
+                  disabled={isActive || applying}
+                  className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
+                    isActive
+                      ? "bg-slate-800/60"
+                      : "hover:bg-slate-800/40"
+                  } disabled:cursor-default`}
+                >
+                  <span
+                    className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+                      isActive
+                        ? p.id === "improved" ? "bg-green-400" : "bg-red-400"
+                        : "bg-slate-600"
+                    }`}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-slate-200">
+                      {p.label}
+                      {isActive && (
+                        <span className="ml-1.5 text-[9px] font-bold uppercase text-slate-500">
+                          active
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] leading-snug text-slate-500">
+                      {p.desc}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
-      Firewall · {hardened ? "Hardened" : "Weak baseline"}
-    </span>
+    </div>
   );
 }
 
@@ -1179,11 +1383,19 @@ function LeftDrawerMenu({
   onChange,
   trafficEdgesOn,
   onToggleTrafficEdges,
+  trafficFilter,
+  onTrafficFilterChange,
+  highlightedTrafficPair,
+  onHighlightTrafficPair,
 }: {
   active: DrawerKey | null;
   onChange: (id: DrawerKey | null) => void;
   trafficEdgesOn: boolean;
   onToggleTrafficEdges: () => void;
+  trafficFilter: { zone: string; crossZoneOnly: boolean };
+  onTrafficFilterChange: (f: { zone: string; crossZoneOnly: boolean }) => void;
+  highlightedTrafficPair: string | null;
+  onHighlightTrafficPair: (key: string | null) => void;
 }) {
   const activeMeta = active ? DRAWER_META[active] : null;
 
@@ -1194,6 +1406,10 @@ function LeftDrawerMenu({
         <TrafficMatrixView
           canvasEdgesOn={trafficEdgesOn}
           onToggleCanvasEdges={onToggleTrafficEdges}
+          filter={trafficFilter}
+          onFilterChange={onTrafficFilterChange}
+          highlightedPair={highlightedTrafficPair}
+          onHighlightPair={onHighlightTrafficPair}
         />
       );
     }
@@ -1312,6 +1528,15 @@ function ViewModeToolbar({
         onClick={() => onChange({ ...viewMode, policyDim: !viewMode.policyDim })}
         label="Policy"
         Icon={ScrollText}
+        activeBorder="border-green-700/60"
+        activeBg="bg-green-950/30"
+        activeText="text-green-400"
+      />
+      <IconToggle
+        on={viewMode.iec62443}
+        onClick={() => onChange({ ...viewMode, iec62443: !viewMode.iec62443 })}
+        label="IEC 62443 Zone & Conduit View"
+        Icon={Layers}
         activeBorder="border-green-700/60"
         activeBg="bg-green-950/30"
         activeText="text-green-400"
@@ -1533,6 +1758,52 @@ const containdZoneToNetwork: Record<string, string[]> = {
   lan2: ["field_net"],
 };
 
+// Reverse map: our network names → containd zone name
+const networkToContaindZone: Record<string, string> = {
+  enterprise_net: "wan",
+  enterprise: "wan",
+  vendor_net: "dmz",
+  vendor: "dmz",
+  ot_ops_net: "lan1",
+  ot_ops: "lan1",
+  field_net: "lan2",
+  field: "lan2",
+};
+
+// Check whether a specific host-to-host flow is blocked by the live
+// firewall rules. Maps the source/target to containd zone names and
+// looks up the matching rule summary. For MIXED zone pairs (like
+// lan1→lan2 where RTAC is pinned as the only allowed source), the
+// flow is blocked unless the source is the RTAC.
+// Returns null if allowed, or a description of the blocking rule if denied.
+function getFlowBlockReason(
+  sourceNodeId: string,
+  targetNodeId: string,
+  ruleSummaries: ZoneRuleSummary[] | undefined,
+): string | null {
+  if (!ruleSummaries || ruleSummaries.length === 0) return null;
+
+  const srcZone = networkToContaindZone[nodeZone(sourceNodeId)];
+  const dstZone = networkToContaindZone[nodeZone(targetNodeId)];
+  if (!srcZone || !dstZone) return null;
+  if (srcZone === dstZone) return null;
+
+  const rule = ruleSummaries.find(
+    (r) => r.source_zone === srcZone && r.dest_zone === dstZone,
+  );
+
+  if (!rule) return null;
+  if (rule.action === "DENY") {
+    const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: DENY`;
+    return detail;
+  }
+  if (rule.action === "MIXED" && sourceNodeId !== "rtac-1") {
+    const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: source not authorized`;
+    return `${detail} (only RTAC is source-pinned)`;
+  }
+  return null;
+}
+
 // Per-zone interface metadata for the firewall→zone tooltip. Pulled
 // from the lab's docker-compose layout: containd binds one interface
 // per zone, and each interface is the default gateway for its subnet.
@@ -1701,6 +1972,7 @@ function deriveNodeHealth(
     "relay-1": "relay",
     "recloser-1": "recloser",
     "regulator-1": "regulator",
+    "capbank-1": "capbank",
   };
   const dev = deviceMap[nodeId];
   if (dev) {
@@ -1716,11 +1988,13 @@ function deriveNodeHealth(
 function useStyledGraph(
   graph?: LabGraph,
   ruleSummaries?: ZoneRuleSummary[],
-  viewMode: ViewMode = { policyDim: true, traffic: false },
+  viewMode: ViewMode = { policyDim: true, traffic: false, iec62443: false },
   deviceComms?: Record<string, boolean>,
   rtacOnline?: boolean,
   trafficStatus?: TrafficStatus,
   firewallOnline?: boolean,
+  trafficFilter?: { zone: string; crossZoneOnly: boolean },
+  highlightedTrafficPair?: string | null,
 ) {
   return useMemo(() => {
     if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
@@ -1769,6 +2043,315 @@ function useStyledGraph(
         const bIdx = zoneOrder.indexOf(b);
         return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
       });
+
+    // ── IEC 62443 Zone & Conduit layout ──────────────────────────
+    // Horizontal bands stacked top-to-bottom, mapping zones to
+    // Purdue levels. The firewall sits on the IDMZ boundary between
+    // DMZ and Supervisory levels.
+    if (viewMode.iec62443) {
+      // ── IEC 62443 Zone & Conduit Layout ─────────────────────
+      //
+      // Horizontal Purdue-level bands stacked top-to-bottom, each
+      // showing a Security Level (SL). The firewall/conduit sits
+      // to the RIGHT of the bands so the student can evaluate
+      // whether the conduit's SL meets the target SL (= max of
+      // all connected zone SLs). Conduit lines run horizontally
+      // from each band's right edge to the firewall.
+      //
+      // In the weak baseline the conduit is SL 1 (pass-through),
+      // which fails the SL 3 target set by OT Operations. In the
+      // hardened config it's SL 3 (deny-default, DPI, source-pin).
+
+      const BAND_WIDTH = 700;
+      const BAND_HEIGHT = 180;
+      const BAND_GAP = 30;
+      const BAND_START_X = -400;
+      const NODE_START_X_OFFSET = 30;
+      const NODE_SPACING_X = 130;
+      const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
+
+      // IEC 62443 Security Level assignments for each zone.
+      // SL 0 = none, SL 1 = casual, SL 2 = intentional/simple,
+      // SL 3 = sophisticated, SL 4 = state-sponsored.
+      const ZONE_SL: Record<string, number> = {
+        enterprise_net: 1, // IT-managed, casual threat model
+        vendor_net: 2,     // authenticated remote access
+        ot_ops_net: 3,     // critical SCADA, sophisticated threats
+        field_net: 2,      // limited compute, physical hardening
+      };
+
+      // Purdue level mapping — ALL levels top to bottom (firewall is NOT between them)
+      const purdueOrder: Array<{ zone: string; label: string }> = [
+        { zone: "enterprise_net", label: "Level 4 \u00B7 Enterprise" },
+        { zone: "vendor_net", label: "Level 3.5 \u00B7 DMZ" },
+        { zone: "ot_ops_net", label: "Level 3 \u00B7 Supervisory" },
+        { zone: "field_net", label: "Level 1 \u00B7 Field Devices" },
+      ];
+      const activeLevels = purdueOrder.filter((p) => activeZones.includes(p.zone));
+
+      const zoneSubnets62443: Record<string, string> = {
+        enterprise_net: "10.10.10.0/24",
+        vendor_net: "10.20.20.0/24",
+        ot_ops_net: "10.30.30.0/24",
+        field_net: "10.40.40.0/24",
+      };
+
+      const styledNodes: Node[] = [];
+      let curY = 0;
+
+      // Render all Purdue bands sequentially
+      for (const level of activeLevels) {
+        const sl = ZONE_SL[level.zone] ?? 0;
+
+        styledNodes.push({
+          id: `zone-boundary-${level.zone}`,
+          type: "zoneBoundary",
+          position: { x: BAND_START_X, y: curY },
+          data: {
+            zone: level.zone,
+            label: `${level.label}  \u00B7  SL-${sl}`,
+            subnet: zoneSubnets62443[level.zone],
+            width: BAND_WIDTH,
+            height: BAND_HEIGHT,
+            securityLevel: sl,
+          },
+          selectable: false,
+          draggable: false,
+          zIndex: 0,
+        });
+
+        // Zone anchor at the RIGHT EDGE of the band, vertically
+        // centered — conduit lines go from here to the firewall.
+        styledNodes.push({
+          id: `zone-${level.zone}`,
+          type: "zone",
+          position: {
+            x: BAND_START_X + BAND_WIDTH,
+            y: curY + BAND_HEIGHT / 2,
+          },
+          data: { label: "", zone: level.zone, subnet: undefined },
+          selectable: false,
+          draggable: false,
+          zIndex: 1,
+        });
+
+        // Host nodes inside the band
+        const zoneNodes = nodesByZone[level.zone] || [];
+        zoneNodes.forEach((n, nodeIdx) => {
+          const allInterfaceZones = n.data.interface_ips
+            ? Object.keys(n.data.interface_ips).filter((z) => zones.includes(z as typeof zones[number]))
+            : (n.data.networks || []);
+          const additionalZones = allInterfaceZones.filter((z) => z !== level.zone);
+          const nodeHealth = deriveNodeHealth(n.id, workshopOnline);
+
+          styledNodes.push({
+            id: n.id,
+            type: "host",
+            position: {
+              x: BAND_START_X + NODE_START_X_OFFSET + nodeIdx * NODE_SPACING_X,
+              y: curY + 50,
+            },
+            data: {
+              label: n.data.label || n.id,
+              nodeType: n.type,
+              zone: level.zone,
+              status: n.data.status || "running",
+              ip: n.data.ip,
+              interface_ips: n.data.interface_ips,
+              networks: n.data.networks,
+              ui_path: n.data.ui_path,
+              external_ui_url: n.data.external_ui_url,
+              multiHomedZones: additionalZones,
+              health: nodeHealth.health,
+              healthSource: nodeHealth.healthSource,
+            },
+            draggable: true,
+          });
+        });
+
+        curY += BAND_HEIGHT + BAND_GAP;
+      }
+
+      // Conduit Security Level assessment. The conduit (firewall)
+      // must meet or exceed the highest SL of any zone it connects.
+      // In the weak baseline it's SL 1 (pass-through, no DPI);
+      // in the hardened config it's SL 3 (deny-default, source-pin,
+      // protocol-aware DPI). This drives the green/red indicator
+      // on the firewall label.
+      const targetSL = Math.max(...activeLevels.map((l) => ZONE_SL[l.zone] ?? 0));
+      const isHardened = firewallOnline !== undefined
+        ? (ruleSummaries || []).every((r) =>
+            !r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
+          )
+        : false;
+      const conduitSL = isHardened ? 3 : 1;
+      const conduitMet = conduitSL >= targetSL;
+
+      // Firewall positioned to the RIGHT of all bands, vertically
+      // centered, so conduit lines run horizontally from each band.
+      if (firewallNode) {
+        const fwHealth = deriveNodeHealth(firewallNode.id, workshopOnline);
+        const fwCenterY = (curY - BAND_GAP) / 2 - 50; // vertically center among all bands
+        styledNodes.push({
+          id: firewallNode.id,
+          type: "firewall",
+          position: { x: FW_X, y: fwCenterY },
+          data: {
+            label: `Conduit \u00B7 SL-${conduitSL}`,
+            nodeType: firewallNode.type,
+            zone: "enterprise_net",
+            status: firewallNode.data.status || "running",
+            ip: firewallNode.data.ip,
+            interface_ips: firewallNode.data.interface_ips,
+            networks: firewallNode.data.networks,
+            ui_path: firewallNode.data.ui_path,
+            external_ui_url: firewallNode.data.external_ui_url,
+            health: fwHealth.health,
+            healthSource: fwHealth.healthSource,
+            // Extra 62443 fields for the label area
+            conduitSL,
+            targetSL,
+            conduitMet,
+          },
+          draggable: true,
+        });
+      }
+
+      // Conduit edges — in the 62443 view these are ALWAYS solid
+      // zone-colored lines with a glow. The policy state (allowed /
+      // over-permissive / blocked) is NOT encoded on individual
+      // conduit lines because the 62443 view expresses policy
+      // compliance as the SL assessment on the firewall/conduit
+      // node itself. Edges run from the zone's RIGHT handle to the
+      // firewall's LEFT handle so they converge on one side.
+      const styledEdges: Edge[] = [];
+      if (firewallNode) {
+        activeZones.forEach((zone) => {
+          const zoneStroke = zoneColors[zone]?.border || "#64748b";
+          const policyInfo = getZonePolicyInfo(zone, ruleSummaries);
+
+          styledEdges.push({
+            id: `fw-to-${zone}`,
+            source: `zone-${zone}`,
+            sourceHandle: "right",
+            target: firewallNode.id,
+            targetHandle: "left",
+            type: "policyEdge",
+            style: {
+              stroke: zoneStroke,
+              strokeWidth: 2.4,
+              opacity: 1,
+              filter: `drop-shadow(0 0 5px ${zoneStroke})`,
+            },
+            animated: false,
+            data: {
+              label: policyInfo.label || "",
+              details: policyInfo.details,
+              action: policyInfo.action,
+              permissiveness: policyInfo.permissiveness,
+              color: zoneStroke,
+              dimmed: false,
+              pulse: false,
+              zoneMeta: ZONE_INTERFACE_META[zone],
+            },
+          });
+        });
+      }
+
+      // Traffic edges — same logic as default layout
+      if (viewMode.traffic) {
+        const presentNodeIds = new Set(styledNodes.map((n) => n.id));
+        const nodeIndex = new Map(styledNodes.map((n) => [n.id, n]));
+
+        const groups = new Map<string, ObservedFlow[]>();
+        for (const flow of OBSERVED_FLOWS) {
+          if (!presentNodeIds.has(flow.source) || !presentNodeIds.has(flow.target)) continue;
+          const key = `${flow.source}->${flow.target}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(flow);
+        }
+
+        const fZone = trafficFilter?.zone ?? "all";
+        const fCrossOnly = trafficFilter?.crossZoneOnly ?? false;
+        const anyHighlight = !!highlightedTrafficPair;
+
+        Array.from(groups.entries()).forEach(([key, flows]) => {
+          const first = flows[0];
+          const sZone = nodeZone(first.source);
+          const tZone = nodeZone(first.target);
+          const crossZone = isCrossZone(first.source, first.target);
+
+          if (fCrossOnly && !crossZone) return;
+          if (fZone !== "all" && sZone !== fZone && tZone !== fZone) return;
+
+          const statuses = flows.map((f) =>
+            resolveLiveness(f, deviceComms, rtacOnline ?? false, trafficStatus),
+          );
+          const status: "active" | "idle" | "down" = statuses.includes("active")
+            ? "active"
+            : statuses.every((s) => s === "down")
+            ? "down"
+            : "idle";
+
+          const protocols: string[] = [];
+          for (const f of flows) {
+            if (!protocols.includes(f.protocol)) protocols.push(f.protocol);
+          }
+          const label =
+            protocols.length <= 3
+              ? protocols.join(" + ")
+              : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
+
+          const srcNode = nodeIndex.get(first.source);
+          const dstNode = nodeIndex.get(first.target);
+          const srcX = srcNode?.position.x ?? 0;
+          const dstX = dstNode?.position.x ?? 0;
+          const srcOnLeft = srcX <= dstX;
+          const sourceHandle = srcOnLeft ? "right-source" : "left-source";
+          const targetHandle = srcOnLeft ? "left-target" : "right-target";
+
+          const tooltipLines = [
+            `${first.source} \u2192 ${first.target}`,
+            ...flows.map((f) => `${f.protocol} on tcp/${f.port} \u00B7 ${f.cadence}`),
+            `category: ${first.category}`,
+          ];
+
+          const isHighlighted = highlightedTrafficPair === key;
+          const isDimmedByHighlight = anyHighlight && !isHighlighted;
+          // Only check firewall blocking when Policy view is active —
+          // the red ✕ is a policy concept and shouldn't show in pure
+          // topology mode.
+          const blockReason = viewMode.policyDim
+            ? getFlowBlockReason(first.source, first.target, ruleSummaries)
+            : null;
+          const blockedByFw = blockReason !== null;
+
+          styledEdges.push({
+            id: `traffic-${key}`,
+            source: first.source,
+            target: first.target,
+            sourceHandle,
+            targetHandle,
+            type: "trafficEdge",
+            animated: status === "active" && !isDimmedByHighlight && !blockedByFw,
+            data: {
+              label,
+              status,
+              category: first.category,
+              highlighted: isHighlighted,
+              dimmedByHighlight: isDimmedByHighlight,
+              blockedByFirewall: blockedByFw,
+              blockReason: blockReason,
+              tooltipLines,
+            },
+          });
+        });
+      }
+
+      return { nodes: styledNodes, edges: styledEdges };
+    }
+
+    // ── Default vertical-column layout ───────────────────────────
 
     // Calculate layout dimensions
     const numZones = activeZones.length;
@@ -2040,8 +2623,21 @@ function useStyledGraph(
         groups.get(key)!.push(flow);
       }
 
+      const fZone = trafficFilter?.zone ?? "all";
+      const fCrossOnly = trafficFilter?.crossZoneOnly ?? false;
+      const anyHighlight = !!highlightedTrafficPair;
+
       Array.from(groups.entries()).forEach(([key, flows]) => {
         const first = flows[0];
+        const sZone = nodeZone(first.source);
+        const tZone = nodeZone(first.target);
+        const crossZone = isCrossZone(first.source, first.target);
+
+        // Apply the same filter the drawer uses so the canvas and
+        // the matrix show the same subset. Filtered-out edges are
+        // simply not emitted (no dim, just gone).
+        if (fCrossOnly && !crossZone) return;
+        if (fZone !== "all" && sZone !== fZone && tZone !== fZone) return;
         // A pair is "active" if any of its constituent flows is active.
         const statuses = flows.map((f) =>
           resolveLiveness(f, deviceComms, rtacOnline ?? false, trafficStatus),
@@ -2062,21 +2658,28 @@ function useStyledGraph(
             ? protocols.join(" + ")
             : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
 
-        // Pick handles based on the relative x of source vs target so
-        // the edge always exits the side closest to the target node.
-        const srcNode = nodeIndex.get(first.source);
-        const dstNode = nodeIndex.get(first.target);
-        const srcX = srcNode?.position.x ?? 0;
-        const dstX = dstNode?.position.x ?? 0;
-        const srcOnLeft = srcX <= dstX;
-        const sourceHandle = srcOnLeft ? "right-source" : "left-source";
-        const targetHandle = srcOnLeft ? "left-target" : "right-target";
+        // In the 62443 view, bands are stacked vertically, so traffic
+        // flows top→bottom. Use default handles (no named handle) so
+        // React Flow routes the bezier vertically from the source
+        // node's bottom to the target node's top. Each node's unique
+        // horizontal position within its band naturally spreads the
+        // bezier midpoints horizontally — avoiding the overlap that
+        // occurs when all edges share side handles.
+        const sourceHandle = undefined;
+        const targetHandle = undefined;
 
         const tooltipLines = [
           `${first.source} → ${first.target}`,
           ...flows.map((f) => `${f.protocol} on tcp/${f.port} · ${f.cadence}`),
           `category: ${first.category}`,
         ];
+
+        const isHighlighted = highlightedTrafficPair === key;
+        const isDimmedByHighlight = anyHighlight && !isHighlighted;
+        const blockReason = viewMode.policyDim
+          ? getFlowBlockReason(first.source, first.target, ruleSummaries)
+          : null;
+        const blockedByFw = blockReason !== null;
 
         styledEdges.push({
           id: `traffic-${key}`,
@@ -2085,10 +2688,15 @@ function useStyledGraph(
           sourceHandle,
           targetHandle,
           type: "trafficEdge",
-          animated: status === "active",
+          animated: status === "active" && !isDimmedByHighlight && !blockedByFw,
           data: {
             label,
             status,
+            category: first.category,
+            highlighted: isHighlighted,
+            dimmedByHighlight: isDimmedByHighlight,
+            blockedByFirewall: blockedByFw,
+            blockReason: blockReason,
             tooltipLines,
           },
         });
@@ -2101,9 +2709,12 @@ function useStyledGraph(
     ruleSummaries,
     viewMode.policyDim,
     viewMode.traffic,
+    viewMode.iec62443,
     deviceComms,
     rtacOnline,
     trafficStatus,
     firewallOnline,
+    trafficFilter,
+    highlightedTrafficPair,
   ]);
 }

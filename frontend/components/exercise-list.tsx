@@ -81,7 +81,6 @@ function ExerciseCard({
 }) {
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
-  const isOffense = exercise.tags.includes("offense");
   const pct = getCompletionPct(exercise.id, exercise.steps.length);
   const section = WORKBOOK_SECTION[exercise.id];
 
@@ -117,19 +116,7 @@ function ExerciseCard({
           </div>
 
           <div>
-            <h2 className="flex items-center gap-1.5 text-sm font-bold text-white">
-              {isOffense && (
-                // Aggressive raccoon marks an offense / attack exercise
-                // so a student scanning the list can immediately see
-                // which scenarios are red-team content vs analysis.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src="/rook-forward-aggressive-transparent-web.png"
-                  alt=""
-                  className="h-5 w-5 shrink-0"
-                  title="Offense / attack exercise"
-                />
-              )}
+            <h2 className="text-sm font-bold text-white">
               Exercise {index}: {exercise.name}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>

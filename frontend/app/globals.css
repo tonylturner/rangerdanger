@@ -58,20 +58,46 @@ body {
   background-color: #075985 !important; /* sky-800 */
 }
 
-/* Hide React Flow connection handles. We don't expose edge creation
-   in this lab UI, so the small dots that React Flow draws on every
-   node are visual noise. The handles still exist in the DOM and edges
-   still attach to them — we only hide the visual representation. */
+/* Hide React Flow connection handles visually while keeping them
+   measurable for edge routing. Handles need enough size (8×8) so
+   React Flow's getBoundingClientRect can reliably compute their
+   position — 1×1 caused side handles to be undetectable, making
+   edges fall back to top/bottom defaults. */
 .react-flow__handle {
   background: transparent !important;
   border: none !important;
-  width: 1px !important;
-  height: 1px !important;
-  min-width: 1px !important;
-  min-height: 1px !important;
+  width: 8px !important;
+  height: 8px !important;
+  min-width: 8px !important;
+  min-height: 8px !important;
   opacity: 0 !important;
   pointer-events: none;
 }
+
+/* Zone boundary nodes are large HTML divs that cover the entire zone
+   area. Their inner content already has pointer-events: none but
+   React Flow's node wrapper <div class="react-flow__node"> still
+   captures events, blocking hover on EdgeLabelRenderer content
+   (protocol labels, blocked ✕ markers) that sits underneath.
+   Making the wrapper pass-through lets mouse events fall through
+   to the label renderer layer. The boundaries are already
+   selectable: false and draggable: false so they don't need events. */
+.react-flow__node[data-id^="zone-boundary-"] {
+  pointer-events: none !important;
+}
+
+/* Raise the edge label renderer ABOVE the nodes layer so traffic
+   protocol pills and blocked ✕ markers receive hover even when a
+   host node icon overlaps them. React Flow's default stacking:
+   edges SVG < edgelabel-renderer < nodes. We flip the last two. */
+.react-flow__edgelabel-renderer {
+  z-index: 5 !important;
+  pointer-events: none;
+}
+/* Only the label/marker divs inside need pointer-events, not the
+   renderer container itself (which would block node clicks). The
+   individual label divs already have pointer-events-auto via the
+   className="pointer-events-auto" set in TrafficEdge. */
 
 /* Tron pulse — used by PolicyEdge over-permissive paths to draw the
    eye to rules that should be tightened. Subtle on purpose: opacity
