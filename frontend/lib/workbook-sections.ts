@@ -4,8 +4,9 @@
 // in instructor-led delivery.
 export const WORKBOOK_SECTION: Record<string, string> = {
   "baseline-assessment": "1.2",
-  "remediation-planning": "1.4",
   "segmentation-requirements": "1.3",
+  "remediation-planning": "1.4",
+  "firewall-implementation": "2.2",
   "vendor-rdp-compromise": "2.3",
   "modbus-override": "2.3",
   "dnp3-command-injection": "2.3",

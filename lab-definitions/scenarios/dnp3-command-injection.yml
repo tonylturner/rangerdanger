@@ -1,5 +1,5 @@
 id: dnp3-command-injection
-order: 5
+order: 6
 name: "DNP3 Direct Operate Command Injection"
 summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault."
 description: >

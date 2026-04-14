@@ -7,9 +7,9 @@ const navLinks = [
   { href: "/", label: "Overview" },
   { href: "/exercises", label: "Exercises" },
   { href: "/substation", label: "Feeder HMI" },
-  { href: "/hmi", label: "Advanced HMI" },
   { href: "/console", label: "Network Map" },
   { href: "/labs", label: "Lab Instances" },
+  { href: "/knowledge", label: "Knowledge" },
 ];
 
 export function NavSidebar() {

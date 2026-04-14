@@ -103,6 +103,26 @@ body {
   animation: tron-pulse 2.2s ease-in-out infinite;
 }
 
+/* Knowledge article markdown styling */
+.knowledge-article p { margin-bottom: 0.75rem; }
+.knowledge-article p:last-child { margin-bottom: 0; }
+.knowledge-article h1, .knowledge-article h2, .knowledge-article h3 {
+  color: #e2e8f0; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem;
+}
+.knowledge-article h2 { font-size: 1rem; }
+.knowledge-article h3 { font-size: 0.875rem; color: #7dd3fc; }
+.knowledge-article ul, .knowledge-article ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+.knowledge-article li { margin-bottom: 0.25rem; }
+.knowledge-article code {
+  background: #1e293b; color: #fbbf24; padding: 0.1rem 0.3rem;
+  border-radius: 3px; font-size: 0.85em;
+}
+.knowledge-article strong { color: #e2e8f0; }
+.knowledge-article blockquote {
+  border-left: 3px solid #0891b2; background: #0c4a6e20;
+  padding: 0.5rem 0.75rem; margin: 0.75rem 0; border-radius: 2px;
+}
+
 /* Rook pulse on rule changes — quick attention beat that fades. */
 @keyframes rook-pulse {
   0%   { filter: drop-shadow(0 0 0px rgba(56, 189, 248, 0)); transform: scale(1); }

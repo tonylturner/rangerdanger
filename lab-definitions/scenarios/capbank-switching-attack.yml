@@ -1,5 +1,5 @@
 id: capbank-switching-attack
-order: 7
+order: 8
 name: "Capacitor Bank Switching Attack (Bonus)"
 summary: "Optional — Rapid capacitor bank switching from Kali causes voltage transients and triggers a contact-wear lockout."
 description: >
