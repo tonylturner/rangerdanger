@@ -23,7 +23,7 @@ export function SubstationPanel() {
   const [state, setState] = useState<SubstationState | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
-  const [tab, setTab] = useState<"diagram" | "commands" | "traffic" | "correlation" | "electrical">("diagram");
+  const [tab, setTab] = useState<"diagram" | "commands" | "correlation" | "electrical">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
@@ -65,7 +65,6 @@ export function SubstationPanel() {
   const tabs = [
     { id: "diagram" as const, label: "Feeder One-Line" },
     { id: "commands" as const, label: "Supervisory Control" },
-    { id: "traffic" as const, label: "Traffic Matrix" },
     { id: "correlation" as const, label: "Command Audit" },
     { id: "electrical" as const, label: "Electrical Detail" },
   ];
@@ -101,7 +100,6 @@ export function SubstationPanel() {
             cmdResult={cmdResult}
           />
         )}
-        {tab === "traffic" && <TrafficAnalysisView entries={audit} networkEvents={networkEvents} />}
         {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
         {tab === "electrical" && (
           <ElectricalDetailView

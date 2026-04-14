@@ -147,57 +147,22 @@ steps:
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
-      Now create specific allow rules for the flows you identified in Exercise 2. These are the only cross-zone flows the substation requires.
+      Now create specific allow rules for the flows you identified in Exercise 2. These are the only cross-zone flows the substation requires. Everything else stays denied.
 
-      ### Rule 1: RTAC to Field Devices (Modbus TCP)
+      ### Required Rules
 
-      - **Source:** `10.30.30.20` (RTAC, OT Ops interface only)
-      - **Destination:** `10.40.40.0/24` (all field devices)
-      - **Protocol:** TCP
-      - **Port:** 502
-      - **Action:** ALLOW
+      | # | Source | Destination | Proto | Port(s) | Action | Purpose |
+      |---|--------|-------------|-------|---------|--------|---------|
+      | 1 | `10.30.30.20` | `10.40.40.0/24` | TCP | 502 | ALLOW | RTAC Modbus polling to field devices |
+      | 2 | `10.30.30.20` | `10.40.40.0/24` | TCP | 20000 | ALLOW | RTAC DNP3 polling to field devices |
+      | 3 | `10.30.30.20` | `10.40.40.0/24` | TCP | 8080 | ALLOW | RTAC HTTP API to field devices |
+      | 4 | `10.30.30.50` | `10.40.40.0/24` | UDP | 123 | ALLOW | GPS NTP time sync to field devices |
+      | 5 | `10.20.20.0/24` | `10.30.30.0/24` | TCP | 22, 443 | ALLOW | Vendor management access (SSH/HTTPS only) |
+      | 6 | `10.10.10.0/24` | `10.20.20.0/24` | TCP | 22, 80, 443 | ALLOW | Enterprise to vendor management |
 
-      ### Rule 2: RTAC to Field Devices (DNP3 TCP)
+      > **Critical:** Rules 1-3 are source-pinned to `10.30.30.20` (the RTAC). Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly. The RTAC is the single authorized cross-zone controller.
 
-      - **Source:** `10.30.30.20`
-      - **Destination:** `10.40.40.0/24`
-      - **Protocol:** TCP
-      - **Port:** 20000
-      - **Action:** ALLOW
-
-      ### Rule 3: RTAC to Field Devices (HTTP API)
-
-      - **Source:** `10.30.30.20`
-      - **Destination:** `10.40.40.0/24`
-      - **Protocol:** TCP
-      - **Port:** 8080
-      - **Action:** ALLOW
-
-      ### Rule 4: GPS to Field Devices (NTP)
-
-      - **Source:** `10.30.30.50` (GPS time server)
-      - **Destination:** `10.40.40.0/24`
-      - **Protocol:** UDP
-      - **Port:** 123
-      - **Action:** ALLOW
-
-      ### Rule 5: Vendor/DMZ to OT Ops (Management Only)
-
-      - **Source:** `10.20.20.0/24`
-      - **Destination:** `10.30.30.0/24`
-      - **Protocol:** TCP
-      - **Ports:** 22, 443
-      - **Action:** ALLOW
-
-      ### Rule 6: Enterprise to Vendor/DMZ (Management Only)
-
-      - **Source:** `10.10.10.0/24`
-      - **Destination:** `10.20.20.0/24`
-      - **Protocol:** TCP
-      - **Ports:** 22, 80, 443
-      - **Action:** ALLOW
-
-      **Critical:** Rules 1-3 are source-pinned to the RTAC IP `10.30.30.20`. Do not use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not be able to reach field devices directly. The RTAC is the single authorized controller.
+      Create these six rules in the containd firewall. Use either the web UI or the CLI.
 
       :::hint Creating rules via the containd web UI
       In the containd UI, navigate to the policy editor. Each rule needs a source address or range, destination address or range, protocol, port, and action. Create them one at a time and verify each appears in the rule list before moving on.
@@ -210,7 +175,7 @@ steps:
             -H 'Content-Type: application/json' \
             -d '{"src":"10.30.30.20/32","dst":"10.40.40.0/24","proto":"tcp","dport":502,"action":"allow","description":"RTAC to field Modbus"}'
 
-      Repeat for each rule, changing the source, destination, port, and description.
+      Repeat for each rule, changing the source, destination, port, and description as shown in the table above.
       :::
 
   - title: "Phase 4 - Enable logging and visibility"
