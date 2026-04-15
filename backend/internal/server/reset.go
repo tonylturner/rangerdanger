@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,6 +42,10 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		{"recloser", "enable_reclose", "Enable auto-reclose"},
 		{"recloser", "close", "Close recloser"},
 		{"regulator", "set_auto", "Set regulator to auto mode"},
+		{"capbank", "clear_alarm", "Clear capbank alarm"},
+		{"capbank", "reset_lockout", "Reset capbank lockout"},
+		{"capbank", "switch_in", "Switch capbank in"},
+		{"capbank", "set_auto", "Set capbank to auto mode"},
 	}
 
 	for _, cmd := range resetCommands {
@@ -59,6 +65,25 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		Success: tapResult.Success,
 		Detail:  tapResult.Detail,
 	})
+
+	// Clear PCAP captures so validators reflect fresh state
+	s.pcapMu.Lock()
+	s.pcap.FileReady = false
+	s.pcapMu.Unlock()
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+		execCfg := container.ExecOptions{
+			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
+		}
+		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		if err == nil {
+			dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{})
+		}
+		actions = append(actions, resetAction{
+			Action:  "Clear PCAP captures",
+			Success: err == nil,
+			Detail:  boolDetail(err == nil, "capture files removed", errStr(err)),
+		})
+	}
 
 	// Wait for state propagation
 	time.Sleep(500 * time.Millisecond)

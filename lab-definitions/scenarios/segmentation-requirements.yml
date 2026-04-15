@@ -1,5 +1,5 @@
 id: segmentation-requirements
-order: 1
+order: 2
 name: "Segmentation Requirements & Rule Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration (20 min)."
 description: >
@@ -16,6 +16,7 @@ tags:
   - defense
 steps:
   - title: "Define enterprise zone requirements"
+    expected_config: weak
     description: >
       The enterprise zone (10.10.10.0/24) contains corporate
       workstations and the Kali attacker box. Define what this
@@ -32,6 +33,7 @@ steps:
       **Time budget:** 20 minutes.
 
   - title: "Define vendor/DMZ zone requirements"
+    expected_config: weak
     description: >
       The vendor zone (10.20.20.0/24) contains the jump host
       and engineering workstation. Define allowed flows:
@@ -43,6 +45,7 @@ steps:
       the RTAC, never direct. This is the lesson from the Vendor RDP Compromise exercise.
 
   - title: "Define OT operations zone requirements"
+    expected_config: weak
     description: >
       The OT ops zone (10.30.30.0/24) contains the HMI, RTAC,
       OpenPLC, historian, and GPS. Define internal and outbound flows:
@@ -59,6 +62,7 @@ steps:
       layer.
 
   - title: "Define protocol-specific constraints"
+    expected_config: weak
     description: >
       Beyond port-level rules, define what protocol operations
       should be allowed at the DPI level:
@@ -77,6 +81,7 @@ steps:
       more broadly for monitoring.
 
   - title: "Compare to the improved configuration"
+    expected_config: weak
     description: >
       Open the RangerDanger Feeder HMI and go to the containd
       Segmentation tab. Click "Compare Policies" to see the
@@ -96,11 +101,14 @@ steps:
       expect:
         breaker_closed: true
 
-  - title: "Apply the improved configuration"
+  - title: "Preview the improved configuration"
     description: >
-      Apply the improved firewall config via the containd
-      Segmentation tab. This is the configuration you'll
-      validate in the attack exercises that follow.
+      To see what a hardened policy looks like in practice, apply the
+      improved firewall config using the **Apply Hardened** button
+      in the firewall policy panel below. This is a reference
+      implementation — in the Firewall Implementation exercise you
+      will build your own policy based on the decisions you make
+      in the Remediation Planning exercise.
 
       After applying, verify the RTAC can still poll field devices.
       From the RTAC terminal, confirm Modbus to the relay works:
@@ -111,13 +119,26 @@ steps:
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
-      All devices should show comms_ok: true. The segmentation
-      blocks unauthorized access without disrupting operations.
+      All devices should show comms_ok: true. The hardened config
+      blocks unauthorized cross-zone access without disrupting
+      legitimate operations. This is the goal you are working toward.
     action:
       type: firewall
       config: improved
 
+  - title: "Return to the weak baseline"
+    description: >
+      Now that you have seen what a hardened policy looks like,
+      restore the weak baseline using the **Reset to Weak** button.
+      The next exercises need the weak config active so you can
+      plan your remediations and then build your own policy from
+      scratch in the Firewall Implementation exercise.
+    action:
+      type: firewall
+      config: weak
+
   - title: "Capture your findings"
+    expected_config: weak
     description: |
       Before moving on, write down the five key findings from your baseline assessment and requirements analysis. These findings are the input to the next exercise (Remediation Planning), where you will decide which ones to fix first.
 

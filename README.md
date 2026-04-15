@@ -47,15 +47,15 @@ Aligned to the DefendICS OT Network Segmentation workshop agenda.
 
 | # | Lab | Exercise | Time | Focus |
 |---|-----|----------|------|-------|
-| 0 | 1.2 | Baseline Traffic Analysis | 30 min | Capture and analyze normal flows at the firewall |
-| 1 | 1.3 | Segmentation Requirements & Rule Design | 20 min | Write requirements, compare to improved config |
-| 2 | 1.4 | Remediation Planning Under Constraint | 25 min | Choose what to fix with a finite labor budget |
-| 3 | 2.2 | Firewall Policy Implementation | 30 min | Build least-privilege containd policy from your plan |
-| 4 | 2.3 | Vendor Remote Access Compromise (bonus) | 15 min | Pivot from vendor DMZ to field devices via Modbus |
+| 1 | 1.2 | Baseline Traffic Analysis | 30 min | Capture and analyze normal flows at the firewall |
+| 2 | 1.3 | Segmentation Requirements & Rule Design | 20 min | Write requirements, compare to improved config |
+| 3 | 1.4 | Remediation Planning Under Constraint | 25 min | Choose what to fix with a finite labor budget |
+| 4 | 2.2 | Firewall Policy Implementation | 30 min | Build least-privilege containd policy from your plan |
 | 5 | 2.3 | Modbus Register Override Attack | 15 min | Direct writes bypassing the RTAC |
 | 6 | 2.3 | DNP3 Direct Operate Command Injection | 15 min | Disable auto-reclose from the enterprise zone |
-| 7 | 2.4 | Post-Change Validation & Evidence Collection | 20 min | Verify the hardened policy with PCAP evidence |
+| 7 | 2.3 | Vendor Remote Access Compromise (bonus) | 15 min | Pivot from vendor DMZ to field devices via Modbus |
 | 8 | 2.3 | Capacitor Bank Switching Attack (bonus) | 15 min | Manipulate capbank switching via Modbus |
+| 9 | 2.4 | Post-Change Validation & Evidence Collection | 20 min | Verify the hardened policy with PCAP evidence |
 
 Each exercise includes inline terminal access to every relevant node, auto-run buttons for CLI commands, per-exercise notes, and backend validators that check substation state, capture files, and firewall policy.
 

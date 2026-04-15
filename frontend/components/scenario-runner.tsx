@@ -784,6 +784,30 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 )}
               </div>
             </div>
+            {/* Config mismatch warning */}
+            {step?.expected_config && activeConfig && (() => {
+              const expected = step.expected_config;
+              const actual = activeConfig;
+              const match = expected === "weak"
+                ? actual === "weak"
+                : expected === "hardened"
+                ? actual === "improved" || actual === "custom"
+                : true;
+              if (match) return null;
+              const needLabel = expected === "weak" ? "weak baseline" : "hardened (improved or custom)";
+              const hasLabel = actual === "weak" ? "weak baseline" : actual;
+              const action = expected === "weak"
+                ? "Use the Reset to Weak button to restore the weak baseline."
+                : "Use the Apply Hardened or Apply Your Plan button to apply a hardened policy.";
+              return (
+                <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 px-4 py-3 mb-3">
+                  <div className="text-[11px] text-amber-400">
+                    <span className="font-bold">Config mismatch:</span> This step expects the <span className="font-bold">{needLabel}</span> config,
+                    but the firewall is currently on <span className="font-bold">{hasLabel}</span>. {action}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
               step && titleMatches(step.title, PHASE3_TITLES) && (

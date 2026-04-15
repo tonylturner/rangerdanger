@@ -1,5 +1,5 @@
 id: remediation-planning
-order: 2
+order: 3
 name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work (25 min)."
 description: >
@@ -22,6 +22,7 @@ tags:
   - tradeoffs
 steps:
   - title: "Review the findings you captured"
+    expected_config: weak
     description: >
       Open your Exercise Notes from the [Baseline Assessment](/exercises/baseline-assessment)
       and review the five findings you documented:

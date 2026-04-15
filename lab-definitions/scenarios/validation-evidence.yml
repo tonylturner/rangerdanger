@@ -1,5 +1,5 @@
 id: validation-evidence
-order: 7
+order: 9
 name: "Post-Change Validation & Evidence Collection"
 summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package (20 min)."
 description: >
@@ -21,14 +21,16 @@ tags:
   - defense
 steps:
   - title: "Verify improved config is active"
+    expected_config: hardened
     description: >
-      Confirm the hardened firewall policy is loaded. Check via
-      the RangerDanger containd Segmentation tab, or via API:
+      Confirm a hardened firewall policy is loaded. Check via API:
 
         curl -s http://localhost:8088/api/firewall/active
 
-      The active config should be "improved". If not, apply it
-      from the Segmentation tab first.
+      The active config should be "improved" or "custom" (if you
+      built your own policy in the Firewall Implementation exercise).
+      If the weak baseline is still active, apply the hardened
+      config using the **Apply Hardened** or **Apply Your Plan** button.
 
       **Time budget:** 20 minutes.
     action:

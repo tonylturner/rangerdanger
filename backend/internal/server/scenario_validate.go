@@ -284,7 +284,7 @@ func validateModbusOverride(state map[string]any, audit []map[string]any, active
 func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
-	// Check 1: Recloser should be closed
+	// Check 1: Recloser should be closed (restored)
 	elec := mapGet(state, "electrical")
 	rclClosed := boolGet(elec, "recloser_closed")
 	if rclClosed {
@@ -313,19 +313,10 @@ func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, a
 	}
 
 	// Check 4: Firewall config
-	if activeConfig == "improved" {
-		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Improved config active — vendor zone cannot reach field devices"})
+	if activeConfig == "improved" || activeConfig == "custom" {
+		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Hardened config active — vendor zone cannot reach field devices"})
 	} else {
 		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — vendor can still access field devices"})
-	}
-
-	// Check 5: No vendor disable_reclose
-	vendorDisable := countAuditByZoneAndCommand(audit, "vendor", "disable_reclose")
-	if vendorDisable == 0 {
-		checks = append(checks, ValidationCheck{"Audit: vendor commands", "pass", "No disable_reclose from vendor zone"})
-	} else {
-		checks = append(checks, ValidationCheck{"Audit: vendor commands", "warn",
-			strings.Replace("N disable_reclose command(s) from vendor zone", "N", itoa(vendorDisable), 1)})
 	}
 
 	return checks
@@ -488,7 +479,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 		checks = append(checks, ValidationCheck{"RTAC → field device comms", "fail", detail + " — these flows must be preserved"})
 	}
 
-	// 3. Normal operating state — the baseline we're documenting
+	// 4. Normal operating state — the baseline we're documenting
 	bkrClosed := boolGet(elec, "breaker_closed")
 	rclClosed := boolGet(elec, "recloser_closed")
 	if bkrClosed && rclClosed {
@@ -497,7 +488,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 		checks = append(checks, ValidationCheck{"Protection active", "fail", "Breaker or recloser OPEN — reset lab before capturing baseline"})
 	}
 
-	// 4. Auto-reclose enabled (key protective function to preserve)
+	// 5. Auto-reclose enabled (key protective function to preserve)
 	recloser := mapGet(devices, "recloser")
 	if boolGet(recloser, "reclose_enabled") {
 		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose ENABLED — fault recovery is part of normal operations"})
@@ -505,7 +496,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 		checks = append(checks, ValidationCheck{"Auto-reclose", "warn", "Auto-reclose DISABLED — this is not normal baseline state"})
 	}
 
-	// 5. All loads energized
+	// 6. All loads energized
 	critEnergized := boolGet(elec, "critical_load_energized")
 	genEnergized := boolGet(elec, "general_load_energized")
 	if critEnergized && genEnergized {
@@ -514,7 +505,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 		checks = append(checks, ValidationCheck{"Loads served", "fail", "Loads de-energized — not a valid baseline"})
 	}
 
-	// 6. Voltage within normal range
+	// 7. Voltage within normal range
 	critV := floatGet(elec, "critical_load_voltage_v")
 	if critV >= 114 && critV <= 126 {
 		checks = append(checks, ValidationCheck{"Voltage", "pass",
@@ -543,19 +534,19 @@ func validateSegmentationRequirements(state map[string]any, audit []map[string]a
 		checks = append(checks, ValidationCheck{"Feeder status", "fail", "Feeder breaker open"})
 	}
 
-	// This exercise ends with applying improved config
-	if activeConfig == "improved" {
-		checks = append(checks, ValidationCheck{"Hardened config applied", "pass", "Improved firewall configuration is active"})
+	// This exercise previews the improved config then returns to weak
+	if activeConfig == "weak" {
+		checks = append(checks, ValidationCheck{"Weak baseline restored", "pass", "Weak baseline is active — ready for remediation planning and implementation"})
 	} else {
-		checks = append(checks, ValidationCheck{"Hardened config applied", "warn", "Improved config not yet applied — complete step 6"})
+		checks = append(checks, ValidationCheck{"Weak baseline restored", "warn", "Firewall is on " + activeConfig + " config — complete the 'Return to weak baseline' step before moving on"})
 	}
 
-	// Check RTAC can still communicate (improved config should allow RTAC→field)
+	// RTAC should still be communicating on the weak config
 	comms := mapGet(state, "device_comms")
 	if boolGet(comms, "relay") && boolGet(comms, "recloser") && boolGet(comms, "regulator") {
-		checks = append(checks, ValidationCheck{"RTAC still operational", "pass", "RTAC communicating with all field devices through hardened firewall"})
+		checks = append(checks, ValidationCheck{"RTAC operational", "pass", "RTAC communicating with all field devices"})
 	} else {
-		checks = append(checks, ValidationCheck{"RTAC still operational", "fail", "RTAC lost communication — firewall may be blocking authorized traffic"})
+		checks = append(checks, ValidationCheck{"RTAC operational", "fail", "RTAC lost communication with field devices"})
 	}
 
 	return checks
@@ -606,11 +597,11 @@ func validateDNP3CommandInjection(state map[string]any, audit []map[string]any, 
 func validateValidationEvidence(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
-	// Must be on improved config
-	if activeConfig == "improved" {
-		checks = append(checks, ValidationCheck{"Hardened config", "pass", "Improved firewall configuration is active"})
+	// Must be on a hardened config (improved or custom from Exercise 3)
+	if activeConfig == "improved" || activeConfig == "custom" {
+		checks = append(checks, ValidationCheck{"Hardened config", "pass", "Hardened firewall configuration is active (" + activeConfig + ")"})
 	} else {
-		checks = append(checks, ValidationCheck{"Hardened config", "fail", "Improved config not active — apply it first"})
+		checks = append(checks, ValidationCheck{"Hardened config", "fail", "Hardened config not active — apply it using Apply Hardened or Apply Your Plan"})
 	}
 
 	// All devices operational
@@ -810,6 +801,43 @@ func validateGeneric(state map[string]any, activeConfig string) []ValidationChec
 	checks = append(checks, ValidationCheck{"Firewall config", "pass", "Active: " + activeConfig})
 
 	return checks
+}
+
+// checkPcapFileOnDisk checks if PCAP capture files exist on the filesystem
+// or via the containd API. Does NOT check the in-memory flag, which can be
+// stale from a previous session and survive lab resets.
+func (s *Server) checkPcapFileOnDisk() bool {
+	// 1. Check filesystem inside the firewall container
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+		execCfg := container.ExecOptions{
+			Cmd:          []string{"sh", "-c", "ls /data/captures/*.pcap 2>/dev/null | head -1"},
+			AttachStdout: true,
+		}
+		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		if err == nil {
+			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
+			if err == nil {
+				out, _ := io.ReadAll(resp.Reader)
+				resp.Close()
+				if strings.Contains(string(out), ".pcap") {
+					return true
+				}
+			}
+		}
+	}
+
+	// 2. Check containd PCAP API
+	containdURL := s.cfg.ContaindAPIURL
+	if containdURL == "" {
+		containdURL = "http://firewall:8080"
+	}
+	client := containd.NewClient(containdURL)
+	files, err := client.ListPcapFiles()
+	if err == nil && len(files) > 0 {
+		return true
+	}
+
+	return false
 }
 
 // checkPcapFileExists checks if any PCAP capture files are available.

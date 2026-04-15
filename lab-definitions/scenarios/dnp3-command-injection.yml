@@ -19,6 +19,7 @@ tags:
   - segmentation
 steps:
   - title: "Verify normal operations"
+    expected_config: weak
     description: >
       Confirm all field devices are online and communicating through
       the RTAC. The recloser should be closed with auto-reclose
@@ -41,6 +42,7 @@ steps:
         reclose_enabled: true
 
   - title: "Reconnaissance — scan for DNP3 outstations"
+    expected_config: weak
     description: >
       From the Kali attacker box (10.10.10.50), scan the field
       device network for DNP3 TCP outstations:
@@ -58,6 +60,7 @@ steps:
         dnp3poll 10.40.40.22:20000 -a 3
 
   - title: "DNP3 Direct Operate — disable auto-reclose"
+    expected_config: weak
     description: >
       From Kali, send a DNP3 Direct Operate command to the recloser
       (outstation addr 2) to disable auto-reclose. Use dnp3cmd to
@@ -77,6 +80,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Inject fault — observe permanent outage"
+    expected_config: weak
     description: >
       Inject a transient fault on the recloser. Normally,
       auto-reclose would restore power after the fault clears.
@@ -93,6 +97,7 @@ steps:
       source: "scenario-script"
 
   - title: "Observe impact"
+    expected_config: weak
     description: >
       The recloser is open and locked out. Critical and general
       loads downstream of the recloser are without power.
@@ -114,6 +119,7 @@ steps:
         reclose_enabled: false
 
   - title: "Restore operations"
+    expected_config: weak
     description: >
       Use the RangerDanger HMI Supervisory Control tab to restore
       the feeder: clear fault, re-enable auto-reclose, reset
@@ -136,16 +142,18 @@ steps:
 
   - title: "Apply containd segmentation"
     description: >
-      Apply the improved firewall configuration via the containd
-      Segmentation tab. This blocks enterprise, vendor, and all
-      non-RTAC OT nodes from reaching field device DNP3 outstations
-      on port 20000. Only the RTAC (source IP 10.30.30.20 after
-      host-level hardening) is allowed.
+      Apply the hardened firewall configuration using the
+      **Apply Hardened** button, or use the **Apply Your Plan**
+      button if you built a custom policy in the Firewall
+      Implementation exercise. This blocks enterprise, vendor,
+      and all non-RTAC nodes from reaching field device DNP3
+      outstations on port 20000.
     action:
       type: firewall
       config: improved
 
   - title: "Re-test DNP3 attack"
+    expected_config: hardened
     description: >
       From Kali, re-attempt the DNP3 attack:
 
@@ -164,6 +172,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Validate segmentation"
+    expected_config: hardened
     description: >
       Verify auto-reclose is still enabled, all loads are
       energized, and the hardened firewall policy is active.

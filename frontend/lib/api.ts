@@ -114,7 +114,7 @@ export type StepAction = {
   actions?: DecisionAction[];
 };
 
-export type ScenarioStep = { title: string; description: string; action?: StepAction; node?: string };
+export type ScenarioStep = { title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
 export type Scenario = {
   id: string;
   name: string;

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/models"
@@ -252,6 +254,20 @@ func (s *Server) resetLabState() {
 
 	tapZero := float64(0)
 	s.executeCommand("regulator", "set_tap", "reset-script", &tapZero)
+
+	// Clear PCAP captures so validators don't see stale files
+	s.pcapMu.Lock()
+	s.pcap.FileReady = false
+	s.pcapMu.Unlock()
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+		execCfg := container.ExecOptions{
+			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
+		}
+		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		if err == nil {
+			dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{})
+		}
+	}
 
 	time.Sleep(500 * time.Millisecond)
 }

@@ -1,5 +1,5 @@
 id: baseline-assessment
-order: 0
+order: 1
 name: "Baseline Traffic Analysis"
 summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like (30 min)."
 description: >
@@ -20,6 +20,7 @@ tags:
   - defense
 steps:
   - title: "Review the substation topology"
+    expected_config: weak
     description: |
       Open the [Network Map](/console) and identify the four network zones:
 

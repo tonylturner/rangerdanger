@@ -28,6 +28,7 @@ tags:
   - bonus
 steps:
   - title: "Verify normal operations"
+    expected_config: weak
     description: >
       Confirm all field devices are online and communicating
       through the RTAC. The capacitor bank should be switched
@@ -53,6 +54,7 @@ steps:
         reclose_enabled: true
 
   - title: "Reconnaissance — discover the capacitor bank"
+    expected_config: weak
     description: >
       From the Kali attacker box (10.10.10.50), scan the field
       device subnet for Modbus and DNP3 services:
@@ -77,6 +79,7 @@ steps:
       vacuum contacts from wear.
 
   - title: "Attack — rapid switching via Modbus"
+    expected_config: weak
     description: >
       From Kali, use mbpoll to write to the capbank's Modbus
       coil register. The capbank-sim maps coil 0 to switch_in
@@ -117,6 +120,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Observe impact"
+    expected_config: weak
     description: >
       The capacitor bank is now locked out. Check the state via DNP3:
 
@@ -142,6 +146,7 @@ steps:
         breaker_closed: true
 
   - title: "Restore operations"
+    expected_config: weak
     description: >
       Reset the capacitor bank lockout and clear the alarm.
       In a real substation this would require a crew dispatch.
@@ -162,16 +167,18 @@ steps:
 
   - title: "Apply containd segmentation"
     description: >
-      Apply the hardened firewall configuration via the
-      Segmentation Policy panel on the Network Map (or via the
-      containd Segmentation drawer). This blocks enterprise and
-      vendor zones from reaching field device Modbus (502) and
-      DNP3 (20000) ports. Only the RTAC is allowed.
+      Apply the hardened firewall configuration using the
+      **Apply Hardened** button, or use the **Apply Your Plan**
+      button if you built a custom policy in the Firewall
+      Implementation exercise. This blocks enterprise and vendor
+      zones from reaching field device Modbus (502) and DNP3
+      (20000) ports. Only the RTAC is allowed.
     action:
       type: firewall
       config: improved
 
   - title: "Re-test attack"
+    expected_config: hardened
     description: >
       From Kali, re-attempt the Modbus write:
 
@@ -198,6 +205,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Validate segmentation"
+    expected_config: hardened
     description: >
       Confirm that:
 

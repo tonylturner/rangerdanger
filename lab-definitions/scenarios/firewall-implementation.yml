@@ -1,5 +1,5 @@
 id: firewall-implementation
-order: 3
+order: 4
 name: "Firewall Policy Implementation"
 summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules (30 min)."
 description: >
@@ -22,6 +22,7 @@ tags:
   - containd
 steps:
   - title: "Exercise overview"
+    expected_config: weak
     description: |
       In the Baseline Assessment, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, identified the five critical conduits the substation depends on, and designed zone-pair requirements with specific source-pinned rules. This exercise is where those requirements become real firewall policy.
 
@@ -39,6 +40,7 @@ steps:
       **Time budget:** 30 minutes. The containd firewall supports both a web UI and a CLI. Use whichever you prefer.
 
   - title: "Why this matters"
+    expected_config: weak
     description: |
       Segmentation is only real when it is enforced in policy and validated through observed traffic.
 
@@ -52,6 +54,7 @@ steps:
       That is what you will build in the next 30 minutes.
 
   - title: "Verify access to containd"
+    expected_config: weak
     description: |
       Confirm you can reach the containd NGFW through both interfaces.
 
@@ -84,6 +87,7 @@ steps:
       If you see rules that allow broad cross-zone traffic (enterprise to field, vendor to field, any-to-any on ICS ports), the weak baseline is active. That is your starting point.
 
   - title: "Phase 1 - Verify current access under the weak baseline"
+    expected_config: weak
     description: |
       Before you change anything, document what the weak baseline allows. This is your "before" picture. Every test below should succeed right now, and should fail after you finish building your policy.
 
@@ -118,6 +122,7 @@ steps:
       All of these should return data. That is the problem. Kali (an attacker box in the enterprise zone) can speak Modbus and DNP3 directly to field protection relays. The engineering workstation can bypass the RTAC entirely. This is what you are about to fix.
 
   - title: "Phase 2 - Remove broad trust and establish default-deny"
+    expected_config: weak
     description: |
       Open the containd web UI at [http://localhost:9080](http://localhost:9080) and navigate to the firewall policy section. Alternatively, use the CLI.
 
@@ -219,6 +224,7 @@ steps:
       :::
 
   - title: "Phase 5 - Validate allowed traffic"
+    expected_config: hardened
     description: |
       Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
 
@@ -250,6 +256,7 @@ steps:
       If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
 
   - title: "Phase 6 - Validate blocked traffic"
+    expected_config: hardened
     description: |
       Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
 
@@ -286,6 +293,7 @@ steps:
       If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.
 
   - title: "Export your policy"
+    expected_config: hardened
     description: |
       You have built a working least-privilege firewall policy. Export it so you have a record of what you built.
 

@@ -17,6 +17,9 @@ package main
 //     7: relay_comms_ok
 //     8: recloser_comms_ok
 //     9: regulator_comms_ok
+//    10: capbank_switched_in
+//    11: capbank_auto_mode
+//    12: capbank_comms_ok
 //
 //   Discrete Inputs (FC2, 0-based) - Alarms:
 //     0: comm_loss
@@ -28,6 +31,8 @@ package main
 //     6: recloser_fault
 //     7: recloser_lockout
 //     8: regulator_alarm
+//     9: capbank_lockout
+//    10: capbank_alarm
 //
 //   Holding Registers (FC3, 0-based):
 //     0: breaker_closed (0/1)
@@ -38,6 +43,10 @@ package main
 //     5: recloser_shot_count
 //     6: relay_lockout (0/1)
 //     7: recloser_lockout (0/1)
+//     8: capbank_switched_in (0/1)
+//     9: capbank_auto_mode (0/1)
+//    10: capbank_switch_count
+//    11: capbank_lockout (0/1)
 //
 //   Input Registers (FC4, 0-based) - Analog measurements (x10 scaling):
 //     0: substation_bus_voltage_v * 10
@@ -48,6 +57,7 @@ package main
 //     5: critical_load_kw
 //     6: relay_measured_current_a * 10
 //     7: relay_measured_voltage_kv * 100
+//     8: capbank_kvar_rating * 10
 
 import (
 	"encoding/binary"
@@ -145,7 +155,7 @@ func getCoils() []bool {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
 
-	coils := make([]bool, 10)
+	coils := make([]bool, 13)
 	if relay, ok := agg.Devices["relay"]; ok {
 		coils[0], _ = relay["breaker_closed"].(bool)
 		coils[5], _ = relay["remote_control_enabled"].(bool)
@@ -158,6 +168,10 @@ func getCoils() []bool {
 		manual, _ := regulator["manual_mode"].(bool)
 		coils[6] = !manual // auto mode = not manual
 	}
+	if capbank, ok := agg.Devices["capbank"]; ok {
+		coils[10], _ = capbank["switched_in"].(bool)
+		coils[11], _ = capbank["auto_mode"].(bool)
+	}
 	if elec := agg.Electrical; elec != nil {
 		coils[2], _ = elec["general_load_energized"].(bool)
 		coils[3], _ = elec["critical_load_energized"].(bool)
@@ -165,6 +179,7 @@ func getCoils() []bool {
 	coils[7] = agg.DeviceComms["relay"]
 	coils[8] = agg.DeviceComms["recloser"]
 	coils[9] = agg.DeviceComms["regulator"]
+	coils[12] = agg.DeviceComms["capbank"]
 	return coils
 }
 
@@ -173,7 +188,7 @@ func getDiscreteInputs() []bool {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
 
-	alarms := make([]bool, 9)
+	alarms := make([]bool, 11)
 	alarms[0] = hasCommLoss()
 	alarms[1] = isBreakerOpenUnexpected()
 	alarms[2] = isRecloseDisabled()
@@ -190,6 +205,10 @@ func getDiscreteInputs() []bool {
 	if regulator, ok := agg.Devices["regulator"]; ok {
 		alarms[8], _ = regulator["alarm"].(bool)
 	}
+	if capbank, ok := agg.Devices["capbank"]; ok {
+		alarms[9], _ = capbank["lockout"].(bool)
+		alarms[10], _ = capbank["alarm"].(bool)
+	}
 	return alarms
 }
 
@@ -198,7 +217,7 @@ func getHoldingRegisters() []uint16 {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
 
-	regs := make([]uint16, 8)
+	regs := make([]uint16, 12)
 	if relay, ok := agg.Devices["relay"]; ok {
 		regs[0] = boolToUint16(relay["breaker_closed"])
 		regs[6] = boolToUint16(relay["lockout"])
@@ -217,6 +236,14 @@ func getHoldingRegisters() []uint16 {
 		}
 		regs[4] = boolToUint16(regulator["manual_mode"])
 	}
+	if capbank, ok := agg.Devices["capbank"]; ok {
+		regs[8] = boolToUint16(capbank["switched_in"])
+		regs[9] = boolToUint16(capbank["auto_mode"])
+		if sc, ok := capbank["switch_count"].(float64); ok {
+			regs[10] = uint16(sc)
+		}
+		regs[11] = boolToUint16(capbank["lockout"])
+	}
 	return regs
 }
 
@@ -225,7 +252,7 @@ func getInputRegisters() []uint16 {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
 
-	regs := make([]uint16, 8)
+	regs := make([]uint16, 9)
 	if elec := agg.Electrical; elec != nil {
 		regs[0] = floatToScaled(elec["substation_bus_voltage_v"], 10)
 		regs[1] = floatToScaled(elec["downstream_voltage_v"], 10)
@@ -237,6 +264,9 @@ func getInputRegisters() []uint16 {
 	if relay, ok := agg.Devices["relay"]; ok {
 		regs[6] = floatToScaled(relay["measured_current_a"], 10)
 		regs[7] = floatToScaled(relay["measured_voltage_kv"], 100)
+	}
+	if capbank, ok := agg.Devices["capbank"]; ok {
+		regs[8] = floatToScaled(capbank["kvar_rating"], 10)
 	}
 	return regs
 }

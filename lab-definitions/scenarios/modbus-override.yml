@@ -19,6 +19,7 @@ tags:
   - segmentation
 steps:
   - title: "Verify normal operations"
+    expected_config: weak
     description: >
       Confirm all field devices are communicating through the RTAC.
       The regulator should be in auto mode with tap position near 0.
@@ -41,6 +42,7 @@ steps:
         breaker_closed: true
 
   - title: "Direct Modbus write from Kali"
+    expected_config: weak
     description: >
       From Kali (10.10.10.50, simulating an attacker with enterprise
       network access who, under the weak baseline, can reach field
@@ -59,6 +61,7 @@ steps:
       value: -16
 
   - title: "Observe voltage impact"
+    expected_config: weak
     description: >
       The unauthorized tap change causes critical load voltage to
       drop below ANSI C84.1 Range A. Hospital and fire station
@@ -76,6 +79,7 @@ steps:
         voltage_normal: false
 
   - title: "Restore regulator"
+    expected_config: weak
     description: >
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
       to set the regulator back to Auto mode and reset the tap
@@ -93,18 +97,18 @@ steps:
 
   - title: "Apply containd segmentation"
     description: >
-      Use the containd Segmentation tab to apply the improved
-      firewall policy. This enforces that only the RTAC (source
-      IP 10.30.30.20, its OT Ops interface after host-level
-      hardening routes field traffic through the firewall) can
-      send Modbus and DNP3 commands to field devices on
-      10.40.40.0/24. All other OT operations nodes are blocked
-      from direct field device access.
+      Apply the hardened firewall policy using the **Apply Hardened**
+      button, or use the **Apply Your Plan** button if you built
+      a custom policy in the Firewall Implementation exercise.
+      This enforces that only the RTAC (source IP 10.30.30.20)
+      can send Modbus and DNP3 to field devices on 10.40.40.0/24.
+      All other sources are blocked from direct field device access.
     action:
       type: firewall
       config: improved
 
   - title: "Re-test Modbus override"
+    expected_config: hardened
     description: >
       Repeat the tap change from Kali. containd should now
       block the Modbus connection from the enterprise zone:
@@ -121,6 +125,7 @@ steps:
       value: -16
 
   - title: "Validate segmentation"
+    expected_config: hardened
     description: >
       Verify the regulator tap is still normal, voltage is within
       range, and the hardened firewall policy is active.
