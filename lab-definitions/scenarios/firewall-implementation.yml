@@ -1,7 +1,7 @@
 id: firewall-implementation
 order: 3
 name: "Firewall Policy Implementation"
-summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules."
+summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules (30 min)."
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
@@ -23,7 +23,7 @@ tags:
 steps:
   - title: "Exercise overview"
     description: |
-      In Exercises 0 through 2 you captured baseline traffic, identified the five critical conduits the substation depends on, and designed zone-pair requirements with specific source-pinned rules. This exercise is where those requirements become real firewall policy.
+      In the Baseline Assessment, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, identified the five critical conduits the substation depends on, and designed zone-pair requirements with specific source-pinned rules. This exercise is where those requirements become real firewall policy.
 
       You will:
 
@@ -61,7 +61,7 @@ steps:
 
       **Option 2: CLI via SSH**
 
-      Use the `fw-1` terminal tab on the [Network Map](/console), or SSH directly:
+      Use the `fw-1` terminal tab on the [Network Map](/console), or SSH directly from your laptop's terminal (not from inside another container):
 
           ssh -p 2222 containd@localhost
 
@@ -97,15 +97,19 @@ steps:
 
           dnp3poll 10.40.40.20:20000 -a 1
 
-      Test HTTP API from enterprise to field recloser:
+      Test DNP3 poll from enterprise to field recloser:
 
-          curl -sf http://10.40.40.21:8080/api/state | python3 -m json.tool | head -10
+          dnp3poll 10.40.40.21:20000 -a 2
+
+      Test Modbus read from enterprise to field recloser:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21
 
       **From the eng-ws terminal** (`eng-ws-1` on the [Network Map](/console)):
 
-      Test direct HTTP to field regulator:
+      Test Modbus read from vendor to field regulator:
 
-          curl -sf http://10.40.40.22:8080/api/state | python3 -m json.tool | head -10
+          mbpoll -m tcp -a 1 -r 1 -c 2 -1 -t 4 10.40.40.22
 
       Test Modbus to field capbank:
 
@@ -133,9 +137,9 @@ steps:
 
       After setting default-deny, verify that cross-zone traffic is blocked:
 
-          curl -sf --connect-timeout 3 http://10.40.40.20:8080/api/state
+          mbpoll -m tcp -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
 
-      This should timeout or fail. If it still works, the default-deny is not active yet.
+      This should timeout or fail. If it still returns register data, the default-deny is not active yet.
 
       :::hint Checking default policy via CLI
       From the firewall terminal:
@@ -147,7 +151,7 @@ steps:
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
-      Now create specific allow rules for the flows you identified in Exercise 2. These are the only cross-zone flows the substation requires. Everything else stays denied.
+      Now create specific allow rules for the flows you identified in the Segmentation Requirements exercise. These are the only cross-zone flows the substation requires. Everything else stays denied.
 
       ### Required Rules
 
@@ -196,11 +200,11 @@ steps:
 
       From the kali terminal, attempt a connection that should be blocked:
 
-          curl -sf --connect-timeout 3 http://10.40.40.20:8080/api/state
+          mbpoll -m tcp -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
 
       Then check the containd event log:
 
-          curl -s http://localhost:9080/api/v1/events?limit=10 | python3 -m json.tool
+          curl -s http://localhost:8080/api/v1/events?limit=10 | python3 -m json.tool
 
       You should see a deny event for the kali IP (`10.10.10.50`) attempting to reach the field device. If you do not see the event, logging is not enabled on the default-deny rule.
 
@@ -218,22 +222,20 @@ steps:
     description: |
       Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
 
-      **RTAC to field devices (Modbus):**
-
-      From the RTAC terminal or by querying the RTAC API:
-
-          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
-
-      Check that `device_comms` shows all field devices with `comms_ok: true`. The RTAC polls continuously, so if Modbus and DNP3 are working, you will see recent timestamps.
-
-      **RTAC to field devices (direct protocol test):**
+      **RTAC to field devices (protocol test):**
 
       From the RTAC terminal (`rtac-1` on the [Network Map](/console)):
 
           mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
           dnp3poll 10.40.40.20:20000 -a 1
 
-      Both should return data.
+      Both should return data. This confirms the RTAC-to-field ALLOW rules are working for Modbus and DNP3.
+
+      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
+
+          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+      The `device_comms` section shows all field devices with `comms_ok: true` and recent timestamps.
 
       **HMI to RTAC (intra-zone, should still work):**
 
@@ -261,15 +263,7 @@ steps:
 
           dnp3poll 10.40.40.20:20000 -a 1 -t 3
 
-      HTTP to field recloser (enterprise to field, should be blocked):
-
-          curl -sf --connect-timeout 3 http://10.40.40.21:8080/api/state
-
       **From eng-ws** (`eng-ws-1` on the [Network Map](/console)):
-
-      HTTP to field regulator (vendor/DMZ to field, should be blocked):
-
-          curl -sf --connect-timeout 3 http://10.40.40.22:8080/api/state
 
       Modbus to field capbank (vendor/DMZ to field, should be blocked):
 
@@ -287,7 +281,7 @@ steps:
 
       After each failed attempt, check the containd event log to confirm the deny was logged:
 
-          curl -s http://localhost:9080/api/v1/events?limit=5 | python3 -m json.tool
+          curl -s http://localhost:8080/api/v1/events?limit=5 | python3 -m json.tool
 
       If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.
 
@@ -297,7 +291,7 @@ steps:
 
       **Export via API:**
 
-          curl -s http://localhost:9080/api/v1/config > student-policy.json
+          curl -s http://localhost:8080/api/v1/config > student-policy.json
 
       **Review your export:**
 

@@ -2,16 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { listScenarios, type Scenario } from "../lib/api";
-
-// Maps exercise IDs to workshop workbook sections
-const WORKBOOK_SECTION: Record<string, string> = {
-  "baseline-assessment":       "1.2",
-  "segmentation-requirements": "1.3",
-  "vendor-rdp-compromise":     "2.3",
-  "modbus-override":           "2.3",
-  "dnp3-command-injection":    "2.3",
-  "validation-evidence":       "2.4",
-};
+import { WORKBOOK_SECTION } from "../lib/workbook-sections";
 
 export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({

@@ -117,7 +117,7 @@ function ExerciseCard({
 
           <div>
             <h2 className="text-sm font-bold text-white">
-              Exercise {index}: {exercise.name}
+              Exercise {exercise.order ?? (index + 1)}: {exercise.name}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">

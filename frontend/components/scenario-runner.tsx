@@ -6,6 +6,7 @@ import {
   getSubstationState,
   getActiveFirewallConfig,
   applyFirewallConfig,
+  applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
   getSubstationAudit,
@@ -30,6 +31,15 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { MarkdownProse } from "./markdown-prose";
+import {
+  loadDynamicPlan,
+  renderRuleTable,
+  positiveValidationTests,
+  negativeValidationTests,
+  buildContaindConfig,
+  type DynamicExercisePlan,
+  type ActionSummary,
+} from "../lib/remediation-to-rules";
 
 const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
@@ -132,6 +142,170 @@ function HintBlock({ title, body }: { title: string; body: string }) {
   );
 }
 
+// Plan summary panel rendered in Exercise 3 Phase 3 — shows selected and
+// unselected remediation actions as styled cards rather than markdown text.
+function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
+  const [showUnselected, setShowUnselected] = useState(false);
+
+  if (!plan.hasRemediationPlan) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 p-4">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-3">
+          Your Remediation Plan — {plan.selectedActions.length} actions selected
+        </div>
+        <div className="space-y-2">
+          {plan.selectedSummary.map((a) => (
+            <PlanActionCard key={a.id} action={a} selected />
+          ))}
+        </div>
+        {plan.includeDpi && (
+          <div className="mt-3 rounded border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
+            <span className="font-bold">ICS DPI enabled</span> — containd will filter by Modbus/DNP3 function code, not just port number
+          </div>
+        )}
+        {plan.enableLogging && (
+          <div className="mt-2 rounded border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
+            <span className="font-bold">Logging enabled</span> — set <code className="bg-slate-800 px-1 rounded text-[10px]">"log": true</code> on DENY rules and critical ALLOW rules
+          </div>
+        )}
+      </div>
+
+      {plan.unselectedSummary.length > 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/30">
+          <button
+            onClick={() => setShowUnselected(!showUnselected)}
+            className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-slate-900/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Not selected — {plan.unselectedSummary.length} actions deferred
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-600">{showUnselected ? "hide" : "show"}</span>
+          </button>
+          {showUnselected && (
+            <div className="border-t border-slate-800 p-4 space-y-2">
+              <div className="text-[10px] text-slate-500 mb-2">
+                These actions were not in your plan. The attack paths they address remain open.
+              </div>
+              {plan.unselectedSummary.map((a) => (
+                <PlanActionCard key={a.id} action={a} selected={false} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanActionCard({ action, selected }: { action: ActionSummary; selected: boolean }) {
+  return (
+    <div className={`flex items-start gap-2.5 rounded border px-3 py-2 ${
+      selected
+        ? "border-sky-800/40 bg-sky-950/30"
+        : "border-slate-800/40 bg-slate-950/30 opacity-60"
+    }`}>
+      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
+        selected ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-500"
+      }`}>
+        {selected ? "✓" : "—"}
+      </div>
+      <div className="min-w-0">
+        <div className={`text-[11px] font-bold ${selected ? "text-sky-300" : "text-slate-500"}`}>
+          {action.title}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-0.5">{action.description}</div>
+        {selected && action.hasRules && (
+          <div className="text-[9px] text-sky-600 mt-0.5">→ produces firewall rules below</div>
+        )}
+        {selected && !action.hasRules && (
+          <div className="text-[9px] text-slate-600 mt-0.5">configuration / process change (no firewall rule)</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Step title fragments used to identify dynamic phases in firewall-implementation.
+const PHASE3_TITLES = ["create minimal", "phase 3"];
+const PHASE5_TITLES = ["validate allowed", "phase 5"];
+const PHASE6_TITLES = ["validate blocked", "phase 6"];
+
+function titleMatches(title: string, fragments: string[]): boolean {
+  const lower = title.toLowerCase();
+  return fragments.some((f) => lower.includes(f));
+}
+
+// For firewall-implementation, generate full step descriptions from the
+// student's remediation plan. Uses step titles (stable) rather than
+// regex matching inside description text (fragile).
+function injectDynamicContent(
+  desc: string,
+  stepTitle: string,
+  plan: DynamicExercisePlan | null,
+): string {
+  if (!plan) return desc;
+
+  if (titleMatches(stepTitle, PHASE3_TITLES)) {
+    const ruleTable = renderRuleTable(plan);
+
+    const noPlan = !plan.hasRemediationPlan
+      ? `You have not completed a remediation plan yet. The rules below are the minimum baseline — RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/remediation-planning) exercise to build a plan that drives additional rules.\n\n`
+      : "";
+
+    return `Now create the firewall rules your remediation plan requires. Everything not explicitly allowed stays denied.
+
+${noPlan}### Firewall Rules to Implement
+
+${ruleTable}
+
+> **Critical:** RTAC rules are source-pinned to \`10.30.30.20\`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
+
+Create these rules in the containd firewall. Use either the web UI or the CLI.
+
+:::hint Creating rules via the CLI
+From the firewall terminal, you can push rules via the containd API:
+
+    curl -X POST http://localhost:8080/api/v1/policies \\
+      -H 'Content-Type: application/json' \\
+      -d '{"src":"10.30.30.20/32","dst":"10.40.40.0/24","proto":"tcp","dport":502,"action":"allow","description":"RTAC to field Modbus"}'
+
+Repeat for each rule, changing the source, destination, port, and description as shown in the table above.
+:::`;
+  }
+
+  if (titleMatches(stepTitle, PHASE5_TITLES)) {
+    const tests = positiveValidationTests(plan);
+    return `Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
+
+**Positive validation commands (based on your plan):**
+
+${tests.join("\n\n")}
+
+If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.`;
+  }
+
+  if (titleMatches(stepTitle, PHASE6_TITLES)) {
+    const tests = negativeValidationTests(plan);
+    return `Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
+
+**Negative validation commands (based on your plan):**
+
+${tests.join("\n\n")}
+
+After each failed attempt, check the containd event log to confirm the deny was logged:
+
+    curl -s http://localhost:8080/api/v1/events?limit=5 | python3 -m json.tool
+
+If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.`;
+  }
+
+  return desc;
+}
+
 type RunnerProps = {
   scenario: Scenario;
   onExit: () => void;
@@ -183,6 +357,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
+    scenario.id === "firewall-implementation" ? loadDynamicPlan() : null
+  );
+  useEffect(() => {
+    if (scenario.id !== "firewall-implementation") return;
+    setDynamicPlan(loadDynamicPlan());
+    const onFocus = () => setDynamicPlan(loadDynamicPlan());
+    document.addEventListener("visibilitychange", onFocus);
+    return () => document.removeEventListener("visibilitychange", onFocus);
+  }, [scenario.id]);
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
@@ -218,6 +402,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   }, [completedSteps, notes, cmdLog, scenario.id]);
 
   const resetProgress = () => {
+    if (!window.confirm("Reset all exercise progress? This clears completed steps, notes, and command log.")) return;
     setCompletedSteps(new Set());
     setNotes("");
     setCurrentStep(0);
@@ -264,6 +449,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   };
 
   const handleLabReset = async () => {
+    if (!window.confirm("Reset the lab environment? This restores the weak baseline firewall config and resets all field device state.")) return;
     setResettingLab(true);
     setCmdLog((prev) => [`[RESET] Restoring lab to default state...`, ...prev].slice(0, 100));
     try {
@@ -431,7 +617,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-            Exercise {scenario.order ?? 0}
+            Exercise {scenario.order ?? ""}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
@@ -598,9 +784,19 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 )}
               </div>
             </div>
+            {/* Dynamic plan summary for Exercise 3 Phase 3 */}
+            {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
+              step && titleMatches(step.title, PHASE3_TITLES) && (
+              <div className="mb-3">
+                <RemediationPlanSummary plan={dynamicPlan} />
+              </div>
+            )}
             {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
-              const segments = splitDescription(step.description);
+              const effectiveDesc = scenario.id === "firewall-implementation" && dynamicPlan
+                ? injectDynamicContent(step.description, step.title, dynamicPlan)
+                : step.description;
+              const segments = splitDescription(effectiveDesc);
               let cmdIdx = 0;
               return (
                 <div className="space-y-2">
@@ -751,6 +947,19 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                       className="rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] text-green-400 hover:bg-green-900/50"
                     >
                       Apply Hardened
+                    </button>
+                  )}
+                  {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan && (
+                    <button
+                      onClick={async () => {
+                        const config = buildContaindConfig(dynamicPlan);
+                        await applyCustomFirewallConfig(config);
+                        pollState();
+                        setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
+                      }}
+                      className="rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] text-sky-400 hover:bg-sky-900/50"
+                    >
+                      Apply Your Plan
                     </button>
                   )}
                   {activeConfig === "improved" && isBaselineStep(step?.title) && (

@@ -1,14 +1,15 @@
 id: modbus-override
 order: 5
 name: "Modbus Register Override Attack"
-summary: "Direct Modbus writes from a compromised OT node bypass the RTAC to manipulate the voltage regulator."
+summary: "Direct Modbus writes bypass the RTAC to manipulate the voltage regulator (15 min)."
 description: >
-  An attacker with network access to the OT operations zone
-  exploits unauthenticated Modbus TCP to directly write field
-  device registers, bypassing the RTAC supervisory controller.
-  The regulator tap is forced to an extreme position causing
-  voltage violations. Students must enforce that only the RTAC
-  can issue Modbus writes to field devices.
+  An attacker with enterprise network access (Kali) exploits the
+  weak baseline firewall, which allows enterprise-to-field traffic,
+  to send unauthenticated Modbus TCP writes directly to field device
+  registers, bypassing the RTAC supervisory controller. The regulator
+  tap is forced to an extreme position causing voltage violations.
+  Students must enforce that only the RTAC can issue Modbus writes
+  to field devices.
 nodes:
   - kali-1
 tags:
@@ -23,37 +24,38 @@ steps:
       The regulator should be in auto mode with tap position near 0.
       Critical load voltage should be within ANSI C84.1 Range A (114-126V).
 
-      Read the regulator's current state via Modbus from any OT node:
+      Read the regulator's current state via Modbus from Kali
+      (simulating an attacker with enterprise network access who,
+      under the weak baseline, can reach field devices directly):
 
-        mbpoll -a 1 -t 4:float -r 1 10.40.40.22 -c 2 -1
+        mbpoll -a 1 -t 4 -r 1 10.40.40.22 -c 2 -1
 
-      This reads input registers 0-1 (tap position and voltage offset).
+      This reads input registers 0-1 (tap position and voltage x10 —
+      divide by 10 to get actual voltage in volts).
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
         voltage_normal: true
         breaker_closed: true
 
-  - title: "Direct Modbus write from OT zone"
+  - title: "Direct Modbus write from Kali"
     description: >
-      From a compromised OT operations node (e.g., OpenPLC at
-      10.30.30.30), send a direct Modbus write to the regulator
+      From Kali (10.10.10.50, simulating an attacker with enterprise
+      network access who, under the weak baseline, can reach field
+      devices directly), send a Modbus write to the regulator
       (10.40.40.22) to force the tap position to -16 (extreme low).
       This bypasses the RTAC's supervisory control. Via Modbus:
 
-        mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- -16
+        mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
 
-      Or via REST:
-
-        curl -X POST http://10.40.40.22:8080/api/command \
-          -d '{"command":"set_tap","value":-16,"source":"10.30.30.30"}'
-
-      Under the weak policy, any OT node can reach field devices.
+      Under the weak policy, enterprise can reach field devices directly.
     action:
       type: command
       device: regulator
       command: set_tap
-      source: "10.30.30.30"
+      source: "10.10.10.50"
       value: -16
 
   - title: "Observe voltage impact"
@@ -64,9 +66,10 @@ steps:
 
       Read the voltage from the RTAC:
 
-        mbpoll -a 1 -t 4:float -r 3 10.30.30.20 -c 1 -1
+        mbpoll -a 1 -t 4 -r 3 10.30.30.20 -c 1 -1
 
-      Input register 2 on the RTAC shows critical_load_voltage_v.
+      Input register 2 on the RTAC shows critical_load_voltage
+      (value is x10 — divide by 10 to get volts).
     action:
       type: check
       expect:
@@ -74,14 +77,9 @@ steps:
 
   - title: "Restore regulator"
     description: >
-      Reset the regulator to automatic mode and restore
-      tap position to 0 (normal). Via the RangerDanger HMI
-      Supervisory Control tab, or from the command line:
-
-        curl -X POST http://10.40.40.22:8080/api/command \
-          -d '{"command":"set_auto","source":"operator"}'
-        curl -X POST http://10.40.40.22:8080/api/command \
-          -d '{"command":"set_tap","value":0,"source":"operator"}'
+      Use the Supervisory Control tab in the [Feeder HMI](/substation)
+      to set the regulator back to Auto mode and reset the tap
+      position to 0.
     action:
       type: sequence
       commands:
@@ -108,10 +106,10 @@ steps:
 
   - title: "Re-test Modbus override"
     description: >
-      Repeat the tap change from the compromised OT node.
-      containd should block the Modbus connection:
+      Repeat the tap change from Kali. containd should now
+      block the Modbus connection from the enterprise zone:
 
-        mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- -16
+        mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
 
       The connection should time out. The regulator remains
       at its normal tap position and voltage stays stable.
@@ -119,7 +117,7 @@ steps:
       type: command
       device: regulator
       command: set_tap
-      source: "10.30.30.30"
+      source: "10.10.10.50"
       value: -16
 
   - title: "Validate segmentation"

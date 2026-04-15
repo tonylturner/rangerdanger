@@ -1,7 +1,7 @@
 id: remediation-planning
 order: 2
 name: "Remediation Planning Under Constraint"
-summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
+summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work (25 min)."
 description: >
   You have a list of findings from the baseline assessment.
   You do not have unlimited time, people, or political capital.
@@ -11,7 +11,7 @@ description: >
 
   The choices you make here will be referenced by later
   exercises. If you do not restrict vendor access, the vendor
-  attack path in Exercise 3 remains easier. If you do not
+  attack path in the Vendor RDP Compromise exercise remains easier. If you do not
   apply protocol-aware filtering, the Modbus and DNP3 abuse
   exercises remain easier. Your plan has consequences.
 nodes: []
@@ -35,6 +35,8 @@ steps:
       Each of the actions in the next step maps to one or
       more of these findings. As you read them, mentally
       connect each action back to which finding it addresses.
+
+      **Time budget:** 25 minutes.
 
   - title: "Understand the team budget"
     description: >
@@ -104,7 +106,7 @@ steps:
             Removes the Modbus 502, DNP3 20000, and HTTP 8080
             paths from the corporate IT zone straight to relays
             and reclosers. Closes the DNP3 command injection
-            attack surface used in Exercise 5.
+            attack surface used in the DNP3 Command Injection exercise.
           effort_hours: 40
           roles: ["Firewall Admin", "Security Analyst"]
           tags: ["enterprise-field"]
@@ -125,7 +127,7 @@ steps:
             administration via encrypted management protocols,
             not direct Modbus or HMI web. Reduces the blast
             radius of a compromised vendor credential and
-            closes the Exercise 3 vendor RDP pivot path.
+            closes the Vendor RDP Compromise pivot path.
           effort_hours: 50
           roles: ["Firewall Admin", "Network Engineer", "OT Engineer"]
           tags: ["vendor"]
@@ -148,7 +150,7 @@ steps:
             wire-visible source after RTAC host-level hardening),
             so a compromised OpenPLC or historian cannot reach
             relays directly even from inside OT Ops. Closes the
-            Modbus override lateral path in Exercise 4.
+            Modbus override lateral path in the Modbus Override exercise.
           effort_hours: 40
           roles: ["Firewall Admin", "OT Engineer"]
           tags: ["ot-lateral"]
@@ -216,7 +218,7 @@ steps:
             Build a test plan that verifies legitimate flows
             still work and illegitimate flows are blocked,
             with captured PCAP evidence. Required for
-            acceptance of the change and for Exercise 6.
+            acceptance of the change and for the Validation Evidence exercise.
           effort_hours: 60
           roles: ["Security Analyst", "OT Engineer"]
           tags: ["validation"]

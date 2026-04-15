@@ -595,7 +595,12 @@ export function NetworkConsole() {
   const [showTerminal, setShowTerminal] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>(() => {
+    try {
+      const raw = localStorage.getItem("rd-node-positions");
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
   const [viewMode, setViewMode] = useState<ViewMode>({
     policyDim: true,
     // Traffic edges default on — they're governed by the toggle
@@ -771,14 +776,19 @@ export function NetworkConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rfInstance, drawerVisible, drawerExpanded, nodes.length, viewMode.iec62443]);
 
-  // Handle node changes (dragging)
+  // Handle node changes (dragging) — debounce localStorage writes
+  const positionSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     changes.forEach((change) => {
       if (change.type === "position" && change.position) {
-        setNodePositions((prev) => ({
-          ...prev,
-          [change.id]: change.position!,
-        }));
+        setNodePositions((prev) => {
+          const next = { ...prev, [change.id]: change.position! };
+          if (positionSaveTimer.current) clearTimeout(positionSaveTimer.current);
+          positionSaveTimer.current = setTimeout(() => {
+            try { localStorage.setItem("rd-node-positions", JSON.stringify(next)); } catch { /* ignore */ }
+          }, 300);
+          return next;
+        });
       }
     });
   }, []);

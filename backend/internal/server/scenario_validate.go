@@ -58,6 +58,10 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		checks = s.validateBaselineAssessment(state, audit, activeConfig)
 	case "segmentation-requirements":
 		checks = validateSegmentationRequirements(state, audit, activeConfig)
+	case "remediation-planning":
+		checks = validateRemediationPlanning(state, activeConfig)
+	case "firewall-implementation":
+		checks = validateFirewallImplementation(state, audit, activeConfig)
 	case "vendor-rdp-compromise":
 		checks = validateVendorRDPCompromise(state, audit, activeConfig)
 	case "modbus-override":
@@ -66,6 +70,8 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 		checks = validateDNP3CommandInjection(state, audit, activeConfig)
 	case "validation-evidence":
 		checks = validateValidationEvidence(state, audit, activeConfig)
+	case "capbank-switching-attack":
+		checks = validateCapbankSwitchingAttack(state, audit, activeConfig)
 	default:
 		// Generic validation: check basic operational state
 		checks = validateGeneric(state, activeConfig)
@@ -640,6 +646,144 @@ func validateValidationEvidence(state map[string]any, audit []map[string]any, ac
 		checks = append(checks, ValidationCheck{"Auto-reclose", "pass", "Auto-reclose enabled"})
 	} else {
 		checks = append(checks, ValidationCheck{"Auto-reclose", "fail", "Auto-reclose disabled"})
+	}
+
+	return checks
+}
+
+// ── Exercise 2: Remediation Planning ───────────────────────────
+
+func validateRemediationPlanning(state map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	// Planning exercise: substation should still be in normal state
+	elec := mapGet(state, "electrical")
+	bkrClosed := boolGet(elec, "breaker_closed")
+	rclClosed := boolGet(elec, "recloser_closed")
+	critEnergized := boolGet(elec, "critical_load_energized")
+
+	if bkrClosed && rclClosed && critEnergized {
+		checks = append(checks, ValidationCheck{"Substation operational", "pass", "All protection closed, loads energized — no unintended changes during planning"})
+	} else {
+		checks = append(checks, ValidationCheck{"Substation operational", "fail", "Substation not in normal state — reset lab before planning"})
+	}
+
+	// Planning is a student decision exercise — no automated check for plan quality
+	checks = append(checks, ValidationCheck{"Plan saved", "pass", "Remediation plan selections are saved in browser — referenced by later exercises"})
+
+	return checks
+}
+
+// ── Exercise 3: Firewall Implementation ────────────────────────
+
+func validateFirewallImplementation(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	// Firewall should no longer be on the weak baseline
+	if activeConfig == "weak" {
+		checks = append(checks, ValidationCheck{"Firewall policy changed", "fail", "Still on weak baseline — apply your custom policy or the improved config"})
+	} else {
+		checks = append(checks, ValidationCheck{"Firewall policy changed", "pass", "Firewall policy updated from weak baseline (active: " + activeConfig + ")"})
+	}
+
+	// RTAC must still communicate with field devices
+	comms := mapGet(state, "device_comms")
+	relayOk := boolGet(comms, "relay")
+	recloserOk := boolGet(comms, "recloser")
+	regulatorOk := boolGet(comms, "regulator")
+	capbankOk := boolGet(comms, "capbank")
+	if relayOk && recloserOk && regulatorOk {
+		detail := "RTAC polling relay, recloser, regulator"
+		if capbankOk {
+			detail += ", capbank"
+		}
+		checks = append(checks, ValidationCheck{"RTAC → field comms", "pass", detail + " — authorized flows preserved"})
+	} else {
+		detail := "RTAC lost communication with:"
+		if !relayOk {
+			detail += " relay"
+		}
+		if !recloserOk {
+			detail += " recloser"
+		}
+		if !regulatorOk {
+			detail += " regulator"
+		}
+		checks = append(checks, ValidationCheck{"RTAC → field comms", "fail", detail + " — check your ALLOW rules"})
+	}
+
+	// Normal operating state preserved
+	elec := mapGet(state, "electrical")
+	bkrClosed := boolGet(elec, "breaker_closed")
+	rclClosed := boolGet(elec, "recloser_closed")
+	critEnergized := boolGet(elec, "critical_load_energized")
+	if bkrClosed && rclClosed && critEnergized {
+		checks = append(checks, ValidationCheck{"Operations preserved", "pass", "Breaker/recloser CLOSED, loads energized — segmentation did not break operations"})
+	} else {
+		checks = append(checks, ValidationCheck{"Operations preserved", "fail", "Feeder not in normal state — your rules may be too restrictive"})
+	}
+
+	// Voltage within range
+	critV := floatGet(elec, "critical_load_voltage_v")
+	if critV >= 114 && critV <= 126 {
+		checks = append(checks, ValidationCheck{"Voltage quality", "pass", fmtFloat(critV) + "V — within ANSI C84.1 Range A"})
+	} else if critV > 0 {
+		checks = append(checks, ValidationCheck{"Voltage quality", "warn", fmtFloat(critV) + "V — outside normal range"})
+	} else {
+		checks = append(checks, ValidationCheck{"Voltage quality", "fail", "0V — no power"})
+	}
+
+	return checks
+}
+
+// ── Exercise 8: Capbank Switching Attack ───────────────────────
+
+func validateCapbankSwitchingAttack(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+	var checks []ValidationCheck
+
+	devices := mapGet(state, "devices")
+	capbank := mapGet(devices, "capbank")
+
+	// Capbank should be switched in and not locked out (restored state)
+	switchedIn := boolGet(capbank, "switched_in")
+	if switchedIn {
+		checks = append(checks, ValidationCheck{"Capbank status", "pass", "Capacitor bank is SWITCHED IN — reactive support online"})
+	} else {
+		checks = append(checks, ValidationCheck{"Capbank status", "fail", "Capacitor bank is SWITCHED OUT — attack may have succeeded"})
+	}
+
+	lockout := boolGet(capbank, "lockout")
+	if !lockout {
+		checks = append(checks, ValidationCheck{"Capbank lockout", "pass", "No lockout — normal operations"})
+	} else {
+		checks = append(checks, ValidationCheck{"Capbank lockout", "fail", "Capbank is LOCKED OUT — switching attack caused excessive operations"})
+	}
+
+	// Firewall config
+	if activeConfig == "improved" || activeConfig == "custom" {
+		checks = append(checks, ValidationCheck{"Firewall policy", "pass", "Hardened config active — enterprise→field blocked"})
+	} else {
+		checks = append(checks, ValidationCheck{"Firewall policy", "warn", "Weak baseline active — enterprise can still switch capbank"})
+	}
+
+	// Check for unauthorized switching commands
+	badSwitch := countAuditNonRTACCommand(audit, "switch_out")
+	badSwitch += countAuditNonRTACCommand(audit, "switch_in")
+	if badSwitch == 0 {
+		checks = append(checks, ValidationCheck{"Audit: unauthorized switching", "pass", "No unauthorized capbank switch commands"})
+	} else {
+		checks = append(checks, ValidationCheck{"Audit: unauthorized switching", "warn",
+			strings.Replace("N unauthorized capbank switching command(s) detected", "N", itoa(badSwitch), 1)})
+	}
+
+	// Feeder still operational
+	elec := mapGet(state, "electrical")
+	bkrClosed := boolGet(elec, "breaker_closed")
+	critEnergized := boolGet(elec, "critical_load_energized")
+	if bkrClosed && critEnergized {
+		checks = append(checks, ValidationCheck{"Feeder operational", "pass", "Feeder serving loads normally"})
+	} else {
+		checks = append(checks, ValidationCheck{"Feeder operational", "fail", "Feeder not operational — loads may be de-energized"})
 	}
 
 	return checks

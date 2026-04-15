@@ -1,7 +1,7 @@
 id: dnp3-command-injection
 order: 6
 name: "DNP3 Direct Operate Command Injection"
-summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault."
+summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault (15 min)."
 description: >
   An attacker on the enterprise network exploits unauthenticated
   DNP3 TCP to send Direct Operate commands to field devices,
@@ -24,12 +24,15 @@ steps:
       the RTAC. The recloser should be closed with auto-reclose
       enabled. All loads should be energized.
 
-      Use dnp3poll from the RTAC or any OT host to verify:
+      Use dnp3poll from Kali to verify (dnp3poll is installed
+      on kali-1 and eng-ws-1):
 
         dnp3poll 10.40.40.21:20000 -a 2
 
       Binary Output [0] (closed) should be ON, Binary Output [1]
       (reclose_enabled) should be ON.
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
@@ -66,10 +69,6 @@ steps:
 
         dnp3poll 10.40.40.21:20000 -a 2
 
-      Or check via REST:
-
-        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
-
       Binary Output [1] / reclose_enabled should now be OFF/false.
     action:
       type: command
@@ -87,11 +86,6 @@ steps:
       From Kali, trip the recloser via DNP3:
 
         dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
-
-      Or via REST:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"inject_fault","source":"10.10.10.50"}'
     action:
       type: command
       device: recloser

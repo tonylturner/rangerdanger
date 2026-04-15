@@ -46,8 +46,7 @@
         "protocols": [
           { "name": "tcp", "port": "22" },
           { "name": "tcp", "port": "80" },
-          { "name": "tcp", "port": "443" },
-          { "name": "tcp", "port": "3000" }
+          { "name": "tcp", "port": "443" }
         ],
         "ics": {},
         "action": "ALLOW"
@@ -64,7 +63,8 @@
           { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
-        "action": "DENY"
+        "action": "DENY",
+        "log": true
       },
       {
         "id": "deny-enterprise-to-field",
@@ -77,7 +77,8 @@
           { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
-        "action": "DENY"
+        "action": "DENY",
+        "log": true
       },
       {
         "id": "vendor-to-ot-restricted",
@@ -89,7 +90,8 @@
           { "name": "tcp", "port": "22" }
         ],
         "ics": {},
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "log": true
       },
       {
         "id": "deny-vendor-to-field",
@@ -102,7 +104,8 @@
           { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
-        "action": "DENY"
+        "action": "DENY",
+        "log": true
       },
       {
         "id": "rtac-to-field-modbus",
@@ -117,7 +120,8 @@
           "protocol": "modbus",
           "functionCodes": [1, 2, 3, 4, 5, 6]
         },
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "log": true
       },
       {
         "id": "rtac-to-field-dnp3",
@@ -131,7 +135,8 @@
         "ics": {
           "protocol": "dnp3"
         },
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "log": true
       },
       {
         "id": "rtac-to-field-http",
@@ -143,7 +148,8 @@
           { "name": "tcp", "port": "8080" }
         ],
         "ics": {},
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "log": true
       },
       {
         "id": "deny-ot-to-field-direct",
@@ -156,7 +162,8 @@
           { "name": "tcp", "port": "20000" }
         ],
         "ics": {},
-        "action": "DENY"
+        "action": "DENY",
+        "log": true
       },
       {
         "id": "ot-intrazone-ops",
@@ -183,7 +190,8 @@
           { "name": "udp", "port": "123" }
         ],
         "ics": {},
-        "action": "ALLOW"
+        "action": "ALLOW",
+        "log": true
       },
       {
         "id": "allow-return-traffic",

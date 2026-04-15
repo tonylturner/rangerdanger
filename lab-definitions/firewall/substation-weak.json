@@ -47,8 +47,7 @@
           { "name": "tcp", "port": "22" },
           { "name": "tcp", "port": "80" },
           { "name": "tcp", "port": "443" },
-          { "name": "tcp", "port": "3389" },
-          { "name": "tcp", "port": "3000" }
+          { "name": "tcp", "port": "3389" }
         ],
         "ics": {},
         "action": "ALLOW"

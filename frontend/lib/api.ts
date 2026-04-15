@@ -372,6 +372,13 @@ export async function applyFirewallConfig(config: "weak" | "improved") {
   });
 }
 
+export async function applyCustomFirewallConfig(configJson: object) {
+  return request<{ status: string; active_config: string }>("/firewall/apply-custom", {
+    method: "POST",
+    body: JSON.stringify(configJson),
+  });
+}
+
 export type StepActionResult = {
   action: string;
   success: boolean;

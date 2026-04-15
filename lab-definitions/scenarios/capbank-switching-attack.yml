@@ -1,7 +1,7 @@
 id: capbank-switching-attack
 order: 8
 name: "Capacitor Bank Switching Attack (Bonus)"
-summary: "Optional — Rapid capacitor bank switching from Kali causes voltage transients and triggers a contact-wear lockout."
+summary: "Optional — Rapid capacitor bank switching from Kali causes voltage transients and triggers a contact-wear lockout (15 min)."
 description: >
   An attacker on the enterprise network discovers an unprotected
   capacitor bank controller on the field network. By rapidly
@@ -33,13 +33,9 @@ steps:
       through the RTAC. The capacitor bank should be switched
       out (de-energized) with auto mode enabled and no lockout.
 
-      Check capbank state via the RTAC REST API:
+      Poll the capbank directly via Modbus from Kali:
 
-        curl -s http://10.30.30.20:8080/api/tags | python3 -m json.tool | grep capbank
-
-      Or poll the capbank directly via Modbus from Kali:
-
-        mbpoll -m tcp -a 1 -r 1 -c 10 -1 -t 1 10.40.40.23
+        mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 1 10.40.40.23
 
       Or poll via DNP3:
 
@@ -47,6 +43,8 @@ steps:
 
       Binary Input [0] (switched_in) should be OFF, Binary
       Input [2] (lockout) should be OFF.
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
@@ -67,7 +65,7 @@ steps:
 
       Poll its Modbus holding registers to see the current state:
 
-        mbpoll -m tcp -a 1 -r 1 -c 10 -1 -t 1 10.40.40.23
+        mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 1 10.40.40.23
 
       And its DNP3 outstation to enumerate points:
 
@@ -115,16 +113,12 @@ steps:
     action:
       type: command
       device: capbank
-      command: switch_in
+      command: switch_out
       source: "10.10.10.50"
 
   - title: "Observe impact"
     description: >
-      The capacitor bank is now locked out. Check the state:
-
-        curl -s http://10.40.40.23:8080/api/state | python3 -m json.tool
-
-      Or via DNP3:
+      The capacitor bank is now locked out. Check the state via DNP3:
 
         dnp3poll 10.40.40.23:20000 -a 4
 
@@ -135,7 +129,8 @@ steps:
       - `alarm`: true
       - `switch_count`: 6 (at the limit)
 
-      The RTAC audit log also records each switching event:
+      The RTAC audit log also records each switching event
+      (lab convenience API):
 
         curl -s http://10.30.30.20:8080/api/audit | python3 -m json.tool | tail -30
 
@@ -149,16 +144,15 @@ steps:
   - title: "Restore operations"
     description: >
       Reset the capacitor bank lockout and clear the alarm.
-      In a real substation this would require a crew dispatch;
-      in the lab we can reset via the RTAC command API:
+      In a real substation this would require a crew dispatch.
 
-        curl -X POST http://10.30.30.20:8080/api/command/capbank \
-          -H 'Content-Type: application/json' \
-          -d '{"command":"reset_lockout","source":"operator"}'
+      Use the Supervisory Control tab in the [Feeder HMI](/substation)
+      to reset the capbank lockout, or reset the lab via the
+      Reset Lab button.
 
-      Verify the lockout is cleared:
+      Verify the lockout is cleared via DNP3:
 
-        curl -s http://10.40.40.23:8080/api/state | python3 -m json.tool
+        dnp3poll 10.40.40.23:20000 -a 4
     action:
       type: sequence
       commands:
@@ -196,11 +190,11 @@ steps:
       Verify the bank is still in its last known state (not
       switched by the attacker):
 
-        curl -s http://10.30.30.20:8080/api/tags | python3 -m json.tool | grep capbank
+        dnp3poll 10.40.40.23:20000 -a 4
     action:
       type: command
       device: capbank
-      command: switch_in
+      command: switch_out
       source: "10.10.10.50"
 
   - title: "Validate segmentation"
