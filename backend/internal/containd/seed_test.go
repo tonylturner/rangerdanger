@@ -11,16 +11,19 @@ import (
 )
 
 // TestSeedConfigIfNeededSuccess verifies end-to-end seeding: wait for
-// containd to become ready, then import the config file.
+// containd to become ready, then import the config via candidate/commit.
 func TestSeedConfigIfNeededSuccess(t *testing.T) {
-	var healthCalls, importCalls int32
+	var healthCalls, candidateCalls, commitCalls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/health":
 			atomic.AddInt32(&healthCalls, 1)
 			json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
-		case "/api/v1/config/import":
-			atomic.AddInt32(&importCalls, 1)
+		case "/api/v1/config/candidate":
+			atomic.AddInt32(&candidateCalls, 1)
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/config/commit":
+			atomic.AddInt32(&commitCalls, 1)
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -39,8 +42,11 @@ func TestSeedConfigIfNeededSuccess(t *testing.T) {
 	if atomic.LoadInt32(&healthCalls) < 1 {
 		t.Error("expected at least one health check")
 	}
-	if atomic.LoadInt32(&importCalls) != 1 {
-		t.Errorf("expected exactly 1 import call, got %d", atomic.LoadInt32(&importCalls))
+	if atomic.LoadInt32(&candidateCalls) != 1 {
+		t.Errorf("expected exactly 1 candidate call, got %d", atomic.LoadInt32(&candidateCalls))
+	}
+	if atomic.LoadInt32(&commitCalls) != 1 {
+		t.Errorf("expected exactly 1 commit call, got %d", atomic.LoadInt32(&commitCalls))
 	}
 }
 

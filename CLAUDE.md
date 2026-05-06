@@ -71,6 +71,9 @@ RangerDanger uses the `containd` firewall as the central L3 gateway. All zone tr
 | `relay_sim` | field | 10.40.40.20 | Feeder breaker / relay |
 | `recloser_sim` | field | 10.40.40.21 | Mid-feeder recloser |
 | `regulator_sim` | field | 10.40.40.22 | Voltage regulator |
+| `capbank_sim` | field | 10.40.40.23 | Capacitor bank / VAR support |
+| `historian_sim` | ot_ops | 10.30.30.40 | Data historian polling RTAC |
+| `gps_sim` | ot_ops | 10.30.30.50 | GPS time source (NTP) |
 | `opendss_sim` | physics | 10.50.50.20 | Feeder physics engine |
 
 ### Firewall Configs
@@ -140,7 +143,7 @@ backend/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OTLAB_HTTP_PORT` | 8080 | API server port |
-| `OTLAB_DB_PATH` | backend/data/otlab.db | SQLite path |
+| `OTLAB_DB_PATH` | /data/rangerdanger.db | SQLite path |
 | `OTLAB_LAB_DEFINITIONS_PATH` | lab-definitions | YAML definitions |
 
 ## Frontend (Next.js + TypeScript)
@@ -293,16 +296,16 @@ services:
 - containd integration with JWT auth (lab mode)
 - Terminal access via WebSocket (Docker exec + SSH to firewall)
 - SSE event streaming from containd
-- Substation segmentation scenario with 3 attack exercises
-- Field device simulators (relay, recloser, regulator) with HTTP + Modbus TCP + DNP3 TCP
+- Substation segmentation lab with 7 exercises (see `lab-definitions/scenarios/`)
+- Field device simulators (relay, recloser, regulator, capbank) with HTTP + Modbus TCP + DNP3 TCP
 - Hand-written Modbus TCP outstations on port 502 (all field devices)
 - DNP3 TCP outstations on port 20000 via standalone `dnp3go` library
-- RTAC supervisory controller aggregating device state
+- RTAC supervisory controller polling field devices via DNP3 master (`services/rtac-sim/dnp3_poll.go`)
+- Historian and GPS clock simulators on OT operations zone
 - Feeder physics engine with energization/voltage calculation
 - Weak baseline + improved firewall configs for progressive learning (Modbus + DNP3 rules)
 - Kali attacker in enterprise zone (with pymodbus, pydnp3, dnp3-python)
-- Advanced HMI page (/hmi) with SVG SCADA one-line diagram
-- 3 attack scenarios: vendor RDP compromise, Modbus override, DNP3 command injection
+- Advanced HMI page (`/hmi`) with SVG SCADA one-line diagram
 
 ### Remaining Gaps
 1. **FUXA HMI screens** - One-line diagram, alarm view, segmentation impact view need configuration
@@ -311,8 +314,17 @@ services:
 4. **PCAP capture/replay** - per scenario traffic recording
 5. **Multi-user RBAC** - instructor vs student modes
 6. **IDS alerts integration** - Suricata alerts in activity feed
-7. **RTAC as DNP3 master** - RTAC currently polls field devices via HTTP; could poll via DNP3 for realistic wire traffic
-8. **dnp3go publish** - Extract dnp3go/ to its own GitHub repo (github.com/tonylturner/dnp3go)
+
+### Deliberate non-gaps
+
+- **`dnp3go/` stays vendored in-repo.** It is a standalone Go module
+  (`github.com/tonylturner/dnp3go`) with its own `go.mod`, consumed
+  via a `replace` directive in `services/go.mod` and via direct
+  `COPY` in `Dockerfile.kali` / `Dockerfile.eng-ws`. Publishing it as
+  a separate GitHub repo was considered but deferred — the monorepo
+  arrangement avoids the operational cost of needing to release
+  dnp3go before services/ can pick up changes. See `dnp3go/README.md`
+  for the module description.
 
 ## Access Points
 

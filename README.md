@@ -48,11 +48,12 @@ Aligned to the DefendICS OT Network Segmentation workshop agenda.
 | # | Lab | Exercise | Focus |
 |---|-----|----------|-------|
 | 0 | 1.2 | Baseline Traffic Analysis | Capture and analyze normal flows at the firewall |
-| 1 | 1.3 | Segmentation Requirements & Rule Design | Write requirements, compare to improved config |
-| 2 | 2.3 | Vendor Remote Access Compromise (bonus) | Pivot from vendor DMZ to field devices via Modbus |
-| 3 | 2.3 | Modbus Register Override Attack | Direct writes bypassing the RTAC |
-| 4 | 2.3 | DNP3 Direct Operate Command Injection | Disable auto-reclose from the enterprise zone |
-| 5 | 2.4 | Post-Change Validation & Evidence Collection | Verify the hardened policy with PCAP evidence |
+| 1 | 1.3 | Remediation Planning Under Constraint | Choose what to fix first under finite labor budget |
+| 2 | 1.3 | Segmentation Requirements & Rule Design | Write requirements, compare to improved config |
+| 3 | 2.3 | Vendor Remote Access Compromise (bonus) | Pivot from vendor DMZ to field devices via Modbus |
+| 4 | 2.3 | Modbus Register Override Attack | Direct writes bypassing the RTAC |
+| 5 | 2.3 | DNP3 Direct Operate Command Injection | Disable auto-reclose from the enterprise zone |
+| 6 | 2.4 | Post-Change Validation & Evidence Collection | Verify the hardened policy with PCAP evidence |
 
 Each exercise includes inline terminal access to every relevant node, auto-run buttons for CLI commands, per-exercise notes, and backend validators that check substation state, capture files, and firewall policy.
 
@@ -120,7 +121,7 @@ Pages:
 
 ### Simulators (Go)
 
-Custom Go services implementing hand-written Modbus TCP, DNP3 TCP (via the [dnp3go](https://github.com/tonylturner/dnp3go) standalone library — zero external dependencies), and REST APIs for each field device. All expose the same shared state across protocols:
+Custom Go services implementing hand-written Modbus TCP, DNP3 TCP (via the [dnp3go](dnp3go/) standalone library — zero external dependencies, vendored in this repo as a separate Go module), and REST APIs for each field device. All expose the same shared state across protocols:
 
 - **relay-sim** — Feeder breaker with trip, close, lockout, fault injection
 - **recloser-sim** — Auto-reclose with shot counting and lockout
@@ -225,7 +226,7 @@ The Substation Segmentation scenario is fully implemented and all six exercises 
 ## Related projects
 
 - [containd](https://github.com/tonylturner/containd) — The ICS-aware NGFW at the heart of the lab
-- [dnp3go](https://github.com/tonylturner/dnp3go) — Zero-dependency Go DNP3 library used by the field device simulators
+- [`dnp3go/`](dnp3go/) — Zero-dependency Go DNP3 library used by the field device simulators (standalone module vendored in this repo)
 
 ## License
 

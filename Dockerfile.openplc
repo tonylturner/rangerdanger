@@ -1,4 +1,6 @@
-FROM tuttas/openplc_v3:latest
+# OpenPLC :latest snapshot pinned by digest for reproducibility.
+# To update: docker buildx imagetools inspect tuttas/openplc_v3:<tag>
+FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722
 
 # Install sqlite3 for database manipulation, curl for API calls, net-tools for netstat
 RUN apt-get update && apt-get install -y sqlite3 curl net-tools && rm -rf /var/lib/apt/lists/*

@@ -5,8 +5,9 @@ services:
   # Zone 7: Security Infrastructure — containd NGFW
   # ─────────────────────────────────────────────────────────────
   firewall:
-    image: ghcr.io/tonylturner/containd:latest
-    pull_policy: always
+    # containd v0.1.18 — pinned by digest for reproducible releases.
+    # To update: docker buildx imagetools inspect ghcr.io/tonylturner/containd:<tag>
+    image: ghcr.io/tonylturner/containd:v0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
@@ -216,7 +217,9 @@ services:
   # Inter-zone traffic routes through containd (10.30.30.2)
   # ─────────────────────────────────────────────────────────────
   fuxa_hmi:
-    image: frangoteam/fuxa:latest
+    # FUXA :latest as of 2026-05-04 — pinned by digest for reproducibility.
+    # To update: docker buildx imagetools inspect frangoteam/fuxa:<tag>
+    image: frangoteam/fuxa:latest@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f
     container_name: rangerdanger-fuxa-hmi
     hostname: fuxa-hmi
     cap_add:

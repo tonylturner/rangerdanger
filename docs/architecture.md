@@ -34,10 +34,12 @@ The RTAC is intentionally multi-homed on OT Operations, Field, and Physics netwo
 | Regulator | `regulator_sim` | field | 10.40.40.22 | Load tap changer (±16 positions) |
 | Capacitor bank | `capbank_sim` | field | 10.40.40.23 | Var support |
 | OpenDSS | `opendss_sim` | physics | 10.50.50.20 | Feeder physics engine |
-| Firewall | `firewall` | all | .2 on each zone | containd NGFW |
-| Backend | `backend` | enterprise + ot_ops + mgmt | 10.10.10.200 / 10.30.30.200 / 10.99.99.10 | RangerDanger API |
-| Frontend | `frontend` | enterprise | 10.10.10.11 | Next.js UI |
-| Proxy | `proxy` | enterprise + vendor + ot_ops | .3 on each zone | Nginx reverse proxy to all node UIs |
+| Firewall | `firewall` | all (incl. mgmt) | .2 on each zone | containd NGFW |
+| Backend | `backend` | mgmt | 10.99.99.10 | RangerDanger API |
+| Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
+| Proxy | `proxy` | mgmt | 10.99.99.3 | Nginx reverse proxy to all node UIs |
+
+The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; the firewall (containd) sits on every zone.
 
 ## Services
 

@@ -72,36 +72,54 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs deci
 
 ### A4. CI is red on day 1
 
-- [ ] Fix 2 failing tests in `backend/internal/containd/`:
-  `client_test.go:402` and `seed_test.go:26` still expect
-  `/api/v1/config/import`; client now uses `candidate → commit` flow.
+- [x] Fixed 2 failing tests in `backend/internal/containd/`:
+  `TestImportConfigSuccess` and `TestSeedConfigIfNeededSuccess` updated
+  to expect the candidate/commit flow. Added
+  `TestImportConfigLegacyFallback` to cover the 404→`/config/import`
+  fallback path. `go test ./...` now green.
 
 ### A5. Stale `agents.md` actively misleads
 
-- [ ] Delete `agents.md` (or rewrite). Currently titled "Agent
-  Instructions for OT Lab Trainer", references `it_net`/`dmz_net`/
-  `ot_safety_net`, OPNsense, Suricata-in-DMZ — none of which exist.
+- [x] Deleted `agents.md`. (Was titled "Agent Instructions for OT Lab
+  Trainer", referenced `it_net`/`dmz_net`/`ot_safety_net`, OPNsense,
+  Suricata-in-DMZ — none of which exist.)
 
 ### A6. Documentation drifted from reality
 
-- [ ] **`docs/architecture.md:38-40`** — backend/frontend/proxy network
-  table is wrong. All three are actually on `mgmt_net` only
-  (`docker-compose.yml:72-105`).
-- [ ] **`CLAUDE.md`** — fix:
-  - "3 attack scenarios" → 9 (per `lab-definitions/scenarios/`)
-  - Remove `/hmi` page reference (no such page; FUXA is the HMI)
-  - Add `historian_sim`, `gps_sim`, `capbank_sim` to node table
-  - `OTLAB_DB_PATH` default text says `backend/data/otlab.db`; compose
-    uses `/data/rangerdanger.db`
-  - Remove "dnp3go publish" and "RTAC as DNP3 master" from Remaining
-    Gaps (already done)
+- [x] **`docs/architecture.md:38-40`** — backend/frontend/proxy network
+  table corrected. All three pinned to `mgmt_net` only with explanatory
+  paragraph about which lab nodes get the optional mgmt leg.
+- [x] **`CLAUDE.md`** — fixed:
+  - Exercise count "3 attack scenarios" → "7 exercises"
+    (`lab-definitions/scenarios/` actually contains 7 YAMLs:
+    baseline, remediation-planning, segmentation-requirements,
+    vendor-rdp, modbus-override, dnp3-injection, validation-evidence)
+  - Added `historian_sim`, `gps_sim`, `capbank_sim` to node table
+  - `OTLAB_DB_PATH` default fixed to `/data/rangerdanger.db`
+  - Removed "RTAC as DNP3 master" from Remaining Gaps (done — see
+    `services/rtac-sim/dnp3_poll.go`)
+  - Kept "dnp3go publish" in Remaining Gaps with note that the GitHub
+    repo `tonylturner/dnp3go` does not yet exist (verified via
+    `gh repo view`); README badges link to that future repo.
+  - Note: `/hmi` route claim is **correct** —
+    `frontend/app/hmi/page.tsx` does exist (the original audit agent
+    missed it in its enumeration).
+- [x] **`README.md`** — exercise table updated from 6 → 7 entries
+  (was missing `remediation-planning` at order=1).
 
 ### A7. `:latest` image pins
 
-- [ ] Pin `docker-compose.yml:8` `ghcr.io/tonylturner/containd:latest` →
-  versioned tag or `@sha256:` digest.
-- [ ] Pin `docker-compose.yml:219` `frangoteam/fuxa:latest` similarly.
-- [ ] Pin `Dockerfile.openplc:1` `tuttas/openplc_v3:latest` similarly.
+- [x] Pinned `docker-compose.yml` `ghcr.io/tonylturner/containd:latest`
+  → `:v0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6`.
+- [x] Pinned `docker-compose.yml` `frangoteam/fuxa:latest`
+  → `@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f`
+  (multi-arch index, fuxa 1.3.1 series).
+- [x] Pinned `Dockerfile.openplc` `tuttas/openplc_v3:latest`
+  → `@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722`.
+- [ ] Future: also pin `linuxserver/webtop:ubuntu-{mate,xfce}` (used by
+  corp_ws and as Dockerfile bases for eng-ws and vendor-jump). These
+  ship floating distro tags only — pin by digest. Out of A7's original
+  scope, tracked in C polish.
 
 ---
 
@@ -198,12 +216,13 @@ Once CI exists, add:
 
 ### B10. `dnp3go` replace directive
 
-- [?] **Decision needed:** keep monorepo (status quo, document that
-  external Go consumers must clone whole repo) **or** publish `dnp3go`
-  as standalone module and drop `services/go.mod` replace directive?
-  README badges already link `github.com/tonylturner/dnp3go` so this
-  was previously intended. Verify whether that repo exists and matches
-  the in-tree version.
+- [x] **Decision: keep monorepo.** `dnp3go/` stays vendored as a
+  standalone Go module within RangerDanger, consumed via the
+  `replace` directive in `services/go.mod` and direct `COPY` in
+  `Dockerfile.kali` / `Dockerfile.eng-ws`. Verified the GitHub repo
+  `tonylturner/dnp3go` does not exist; updated README links 124 +
+  229 to point to `dnp3go/` in-tree, added `dnp3go/README.md`, and
+  documented the choice in CLAUDE.md "Deliberate non-gaps".
 
 ---
 
@@ -245,7 +264,8 @@ Once CI exists, add:
 2. **A3 auth/exec posture**: harden `handleWorkshopExec` properly, or
    ship as "lab-only, localhost-bound, no auth" with prominent README
    warning?
-3. **B10 dnp3go**: keep monorepo, or publish as standalone module?
+3. ~~**B10 dnp3go**: keep monorepo, or publish as standalone module?~~
+   **Resolved 2026-05-06:** keep monorepo; `dnp3go/` stays vendored.
 4. **Repo name mismatch**: GitHub remote is
    `git@github.com:tonylturner/rangerrocks.git` but the project is
    called rangerdanger throughout the code, README, badges, and image

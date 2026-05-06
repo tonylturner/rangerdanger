@@ -390,26 +390,33 @@ func TestGetZoneRuleSummariesMixedAction(t *testing.T) {
 	}
 }
 
-// TestImportConfigSuccess verifies config import via POST.
+// TestImportConfigSuccess verifies config import via the candidate/commit flow.
 func TestImportConfigSuccess(t *testing.T) {
-	var receivedBody []byte
+	var candidateBody []byte
+	var sawCandidate, sawCommit bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/v1/config/import" {
+		switch r.URL.Path {
+		case "/api/v1/config/candidate":
+			sawCandidate = true
+			if r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+			}
+			var err error
+			candidateBody, err = io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("failed to read body: %v", err)
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/config/commit":
+			sawCommit = true
+			w.WriteHeader(http.StatusOK)
+		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
-		}
-		var err error
-		receivedBody, err = io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatalf("failed to read body: %v", err)
-		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
@@ -419,8 +426,40 @@ func TestImportConfigSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if string(receivedBody) != string(configJSON) {
-		t.Errorf("body mismatch: got %s", string(receivedBody))
+	if !sawCandidate {
+		t.Error("expected POST /api/v1/config/candidate to be called")
+	}
+	if !sawCommit {
+		t.Error("expected POST /api/v1/config/commit to be called")
+	}
+	if string(candidateBody) != string(configJSON) {
+		t.Errorf("body mismatch: got %s", string(candidateBody))
+	}
+}
+
+// TestImportConfigLegacyFallback verifies the client falls back to
+// /api/v1/config/import when the candidate endpoint returns 404.
+func TestImportConfigLegacyFallback(t *testing.T) {
+	var sawImport bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/config/candidate":
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/v1/config/import":
+			sawImport = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv.URL)
+	if err := client.ImportConfig([]byte(`{}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !sawImport {
+		t.Error("expected fallback to /api/v1/config/import")
 	}
 }
 
