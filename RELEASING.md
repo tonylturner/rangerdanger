@@ -49,21 +49,47 @@ Before tagging:
    git push origin main vX.Y.Z
    ```
 
-The `release.yml` workflow takes over from there once it is wired up
-(see `docs/release-plan.md` section B2).
+The `release.yml` workflow takes over from there. It triggers on any
+`v*` tag push and:
 
-## What the release workflow will do (when implemented)
+1. Builds all 14 first-party images in parallel via a matrix
+   (`linux/amd64` + `linux/arm64`, except `openplc` which is
+   amd64-only — upstream `tuttas/openplc_v3` is amd64-only).
+2. Injects `VERSION=vX.Y.Z`, `COMMIT=<short sha>`, `DATE=<utc rfc3339>`
+   via `--build-arg` (consumed by `Dockerfile.backend`'s ldflags).
+3. Pushes each image to `ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`.
+   Pre-release tags (anything containing `-`, e.g. `v0.0.1-alpha`)
+   do **not** retag `:latest`, so an alpha can never accidentally
+   replace the stable `:latest` pointer.
+4. Caches build layers per-image via GHA cache for faster subsequent
+   runs.
 
-1. Build all 13 first-party images for `linux/amd64` and `linux/arm64`
-   (except `openplc`, which is amd64-only — upstream constraint).
-2. Inject `VERSION=vX.Y.Z`, `COMMIT=$(git rev-parse --short HEAD)`,
-   `DATE=$(date -u +%FT%TZ)` via `--build-arg` for the backend image.
-3. Push each image to `ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`
-   and re-tag `:latest`.
-4. Generate `docker-compose.release.yml` from `docker-compose.yml` by
-   replacing every `build:` block with `image: ghcr.io/.../<svc>:vX.Y.Z`.
-5. Attach the rendered compose file plus changelog excerpt to the
-   GitHub release.
+## docker-compose.release.yml
+
+`docker-compose.release.yml` (committed alongside `docker-compose.yml`)
+is the image-only flavor for users who don't want the build toolchain.
+Every `build:` block from the dev compose is replaced with `image:
+ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`. Users:
+
+```sh
+# default — :latest
+docker compose -f docker-compose.release.yml up -d
+
+# pin to a specific release
+VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d
+```
+
+When you bump `docker-compose.yml`, mirror the change into the release
+file too.
+
+## Manual workflow run
+
+To re-trigger the release workflow for an existing tag (e.g. after
+fixing a transient registry blip):
+
+1. GitHub → Actions → `Release` → "Run workflow"
+2. Provide the existing tag name
+3. The workflow checks out at that tag and re-publishes.
 
 ## Hotfix releases
 
