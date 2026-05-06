@@ -23,17 +23,14 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs deci
 - [x] Confirm `.claude/settings.local.json` is not tracked (covered by
   user-global gitignore; project gitignore now also excludes `.claude/`
   for safety).
-- [?] **Decision needed:** rewrite git history with `git filter-repo` to
-  scrub the 3 `.key` blobs from `ba34183` / `6d9c1c9` / `0261366`?
-  - **Argument to do it:** clean history, no awkward "this was
-    secret-ish at one point" footnote. Free since no external clones
-    exist (repo is still private).
-  - **Argument to skip:** keys are throwaway self-signed lab certs,
-    never deployed; harm from leak is zero. Rewriting changes every
-    commit hash going forward.
-  - **Recommendation:** rewrite now while the repo is still private and
-    nobody else has cloned. See `A1.scrub.md` (TODO) for the exact
-    `filter-repo` command and disruption notes.
+- [x] **History rewrite executed 2026-05-06.** `git filter-repo`
+  scrubbed all 6 cert/key blobs (3 `.key` + 3 `.pem`/`.crt`) across
+  all 3 branches. Force-pushed `main`, `distribution-mvp`,
+  `oss-release` to origin. Local clone reflog-expired and gc'd.
+  Backup mirror clone preserved at `/tmp/rangerdanger-scrub.git`.
+  GitHub repo was renamed `rangerrocks` → `rangerdanger` during the
+  same window (resolves outstanding decision #4); local remote URL
+  updated.
 - [ ] Document the `CONTAIND_JWT_SECRET=rangerdanger-dev` default and
   default lab creds (`containd/containd`, `openplc/openplc`) explicitly
   as **lab-only** in README.
@@ -259,19 +256,17 @@ Once CI exists, add:
 
 ## Decisions outstanding
 
-1. **A1 history rewrite**: do it now (recommended, while repo is still
-   private) or skip?
+1. ~~**A1 history rewrite**: do it now or skip?~~
+   **Resolved 2026-05-06: done.** See A1 above.
 2. **A3 auth/exec posture**: harden `handleWorkshopExec` properly, or
    ship as "lab-only, localhost-bound, no auth" with prominent README
-   warning?
+   warning? *(Parked — need to walk through implications before
+   deciding.)*
 3. ~~**B10 dnp3go**: keep monorepo, or publish as standalone module?~~
    **Resolved 2026-05-06:** keep monorepo; `dnp3go/` stays vendored.
-4. **Repo name mismatch**: GitHub remote is
-   `git@github.com:tonylturner/rangerrocks.git` but the project is
-   called rangerdanger throughout the code, README, badges, and image
-   names. Rename the GitHub repo to `rangerdanger` before going public,
-   or rename the project? Renaming the repo on GitHub is supported
-   (auto-redirects), so renaming-the-repo is the lower-friction path.
+4. ~~**Repo name mismatch** (`rangerrocks` vs `rangerdanger`).~~
+   **Resolved 2026-05-06: GitHub repo renamed to `rangerdanger`.**
+   Local remote URL updated to match.
 
 ---
 
