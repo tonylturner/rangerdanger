@@ -244,19 +244,20 @@ SSD/airgap validation (B6).
 
 ### Compose hygiene
 
-- [ ] `healthcheck:` blocks for every sim (`/api/health` already
-  exists in the binary); switch `depends_on` to
-  `condition: service_healthy`.
+- [x] Healthchecks added to all 7 alpine sims + opendss (commit
+  `79673d6`). `rtac_sim` and `backend` `depends_on` use
+  `condition: service_healthy` to gate startup ordering.
 - [ ] Resource limits (`mem_limit`, `cpus`) — esp. webtop containers.
-- [ ] Build cache mounts on `services/Dockerfile`, `Dockerfile.kali`,
-  `Dockerfile.eng-ws` Go stages and `Dockerfile.frontend` npm stage
-  (only `Dockerfile.backend` has them currently).
+- [x] Build cache mounts added to `services/Dockerfile`,
+  `Dockerfile.kali`, `Dockerfile.eng-ws` Go stages and
+  `Dockerfile.frontend` npm stage (commit `c52918e`).
 
 ### Code
 
-- [ ] Delete or `_disabled.go` `handleContaindTerminal`
-  (`backend/internal/server/terminal.go:180-301`) — 120 lines of
-  unwired SSH-fallback with hardcoded creds + `InsecureIgnoreHostKey`.
+- [x] Deleted `handleContaindTerminal` (commit `3fe8b09`) — 124
+  lines of unwired SSH-fallback with hardcoded creds + `Insecure
+  IgnoreHostKey`. Active in-app terminal path uses docker exec via
+  `connectTerminal`; external SSH path (`ssh -p 2222`) untouched.
 - [ ] Move hardcoded `http://localhost:9080` out of source:
   `backend/internal/server/server.go`,
   `frontend/components/nav-sidebar.tsx`,
@@ -268,14 +269,20 @@ SSD/airgap validation (B6).
 
 ### Documentation
 
-- [ ] Add `frontend/README.md`, `services/README.md`,
-  `lab-definitions/README.md`.
+- [x] Added `frontend/README.md`, `services/README.md`,
+  `lab-definitions/README.md` (commit `00e5db2`).
 - [ ] `docs/api-spec.md` — document `/api/firewall/apply-custom` and
   workshop endpoints (`/api/workshop/*`).
-- [ ] Strip "OT Lab Trainer" / "lab trainer" / "oil-plant"
-  references in `scripts/dev-up.sh:7` and
-  `backend/internal/orchestrator/orchestrator.go:26`.
-- [ ] Verify `lab-networks.yml` at repo root is used or remove.
+- [x] Stripped "OT Lab Trainer" / "lab trainer" / "oil-plant"
+  references (commit `bf653f1`). Removed `scripts/dev-up.sh`/
+  `dev-down.sh` "lab trainer" banners; deleted 4 legacy network
+  mappings in `orchestrator.go`; deleted 8 legacy node types in
+  `labs/catalog.go`; deleted 4 legacy zone colors in
+  `topology-nodes.tsx`; deleted 2 dead `TestDefaultOilPlant*`
+  tests in `client_test.go` (the substation configs are fully
+  covered by `firewall_config_test.go`).
+- [x] `lab-networks.yml` removed (commit `bf653f1`) — vestigial
+  oil-plant topology file with zero references.
 - [ ] Add `docs/workshop-overview.md` summarizing the 9 exercises.
 
 ### Audit gaps from the merge — reviewed 2026-05-06
@@ -334,6 +341,14 @@ For session continuity / changelog drafting:
 | `d584932` | README CI/release badges + lab-only security callout (B7, A1 follow-up) |
 | `23eef4b` | **A3 resolved**: loopback-bind all host ports + SECURITY.md external-access runbook |
 | `9a4deb6` | **B2 + B3 done**: GHCR multi-arch release workflow + `docker-compose.release.yml` |
+| `19208c9` | Trim Kali to minimal package set (4.63 GB → 161 MB amd64 / 643 MB arm64) |
+| `88b424e` | Kali qemu fix: install `systemd-standalone-sysusers` to satisfy tcpdump+ssh deps |
+| `d162768` | **B5 done**: setup.sh / setup.ps1 installers with --from-tarballs offline mode |
+| `3fe8b09` | Removed dead `handleContaindTerminal` (124 lines, hardcoded creds + InsecureIgnoreHostKey) |
+| `c52918e` | Build cache mounts on services/, kali, eng-ws, frontend Dockerfiles |
+| `79673d6` | Healthchecks on all 8 sims; rtac/backend depends_on use service_healthy |
+| `bf653f1` | Oil-plant lab vestiges removed (-163 lines, -1 file) |
+| `00e5db2` | Subdirectory READMEs (frontend, services, lab-definitions) |
 
 History rewrite procedure preserved in git log; backup mirror clone
 at `/tmp/rangerdanger-scrub.git`.
