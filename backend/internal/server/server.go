@@ -147,7 +147,9 @@ func (s *Server) registerRoutes() {
 	api := s.engine.Group("/api")
 	{
 		api.GET("/health", s.handleHealth)
-		api.GET("/version", s.handleVersion)
+		// Note: /api/build (not /api/version) — nginx proxies /api/version
+		// to FUXA's HMI for its own version endpoint. See proxy/nginx.conf.
+		api.GET("/build", s.handleVersion)
 
 		admin := api.Group("/admin")
 		admin.POST("/seed", s.handleSeedDefinitions)
@@ -251,7 +253,12 @@ func (s *Server) corsMiddleware() gin.HandlerFunc {
 		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		// Allow-Credentials is only valid when Allow-Origin is a specific
+		// host. Browsers reject the combination with "*". Skip the header
+		// in the wildcard case (the lab default for single-tenant use).
+		if allowedOrigin != "" && allowedOrigin != "*" {
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
