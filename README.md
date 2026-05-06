@@ -180,13 +180,42 @@ Two firewall configurations ship with the lab:
 
 ### Quick start
 
+The recommended path uses the `setup.sh` / `setup.ps1` installer, which runs prereq checks, pulls pre-built images from GHCR, and prints next steps.
+
+**macOS / Linux:**
+
 ```bash
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
-docker compose up -d --build
+./setup.sh                       # latest release
+# or:  ./setup.sh --version v0.1.0
 ```
 
-The first build takes several minutes while the Go simulators, Kali image, and engineering workstation are built.
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/tonylturner/rangerdanger
+cd rangerdanger
+.\setup.ps1                      # latest release
+# or:  .\setup.ps1 -Version v0.1.0
+```
+
+**Build from source instead** (developers, contributors):
+
+```bash
+docker compose up -d --build     # builds all 14 first-party images locally
+```
+
+The first build takes several minutes while the Go simulators, Kali image, and engineering workstation are built. Subsequent runs reuse the layer cache.
+
+**Offline / SSD install** (workshops where pulling 6+ GB per student over conference Wi-Fi is impractical):
+
+```bash
+./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
+# (or: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD on Windows)
+```
+
+This expects `images-amd64.tar` / `images-arm64.tar` on the SSD; see `docs/release-plan.md` and the per-release tarballs attached to each GitHub release for staging instructions.
 
 ### Access points
 
