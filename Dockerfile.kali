@@ -6,58 +6,43 @@ RUN CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll && \
 
 FROM kalilinux/kali-rolling
 
-# Avoid prompts during package installation
+# Avoid prompts during package installation.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Update and install common pentest tools
+# Minimal package set — only what the exercises actually use.
+# An audit of lab-definitions/scenarios/*.yml showed the heavy
+# pentest tooling (metasploit-framework, hydra, john, hashcat, nikto,
+# dirb, sqlmap, proxychains4, socat) is never invoked. Removing them
+# also unblocks the multi-arch build, since metasploit-framework is
+# the package that fails on Kali's linux/arm64 repos.
+#
+# Every Python reference in the exercises is `python3 -m json.tool`
+# (stdlib pretty-printer), so python3-pip and the pymodbus/scapy/
+# impacket installs are also dropped.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Network tools
-    nmap \
-    netcat-openbsd \
-    tcpdump \
-    wireshark-common \
-    tshark \
-    dnsutils \
-    whois \
-    traceroute \
-    iputils-ping \
-    iproute2 \
-    net-tools \
-    curl \
-    wget \
-    # ICS/OT tools
-    mbpoll \
-    python3 \
-    python3-pip \
-    python3-venv \
-    # Exploitation
-    metasploit-framework \
-    # Password tools
-    hydra \
-    john \
-    hashcat \
-    # Web tools
-    nikto \
-    dirb \
-    sqlmap \
-    # Misc
-    vim \
-    tmux \
-    git \
-    openssh-client \
-    socat \
-    proxychains4 \
+        # Network basics
+        nmap \
+        netcat-openbsd \
+        iputils-ping \
+        traceroute \
+        iproute2 \
+        net-tools \
+        curl \
+        wget \
+        openssh-client \
+        # Packet analysis
+        tcpdump \
+        tshark \
+        # ICS/OT — Modbus client (DNP3 tools are copied in below)
+        mbpoll \
+        # Stdlib python for json.tool and ad-hoc scripting
+        python3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python OT/ICS tools
-# DNP3 attack scripts in ~/workspace/dnp3/ use raw sockets (no library needed)
-RUN pip3 install --break-system-packages \
-    pymodbus \
-    scapy \
-    impacket
-
-# Install DNP3 CLI tools (dnp3poll, dnp3cmd)
+# Install DNP3 CLI tools (dnp3poll, dnp3cmd) from the in-tree dnp3go
+# library. The DNP3 attack scripts in ~/workspace/dnp3/ use raw
+# sockets, so no Python DNP3 library is needed.
 COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
 
