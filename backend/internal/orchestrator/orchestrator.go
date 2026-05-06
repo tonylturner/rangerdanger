@@ -125,13 +125,13 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 			firewallMeta := map[string]any{
 				"networks": n.Networks,
 				"interface_ips": map[string]string{
-					"it_net":         "10.10.10.2",
-					"dmz_net":        "10.20.20.2",
-					"ot_control_net": "10.30.30.2",
-					"ot_safety_net":  "10.40.40.2",
+					"enterprise_net": "10.10.10.2",
+					"vendor_net":     "10.20.20.2",
+					"ot_ops_net":     "10.30.30.2",
+					"field_net":      "10.40.40.2",
 				},
-				"ui_path":         "/containd/",             // Proxied access via nginx (same-origin, auth works)
-				"external_ui_url": "http://localhost:9080", // Direct access for "open in new tab"
+				"ui_path":         "/containd/", // Proxied access via nginx (same-origin, auth works)
+				"external_ui_url": "/containd/", // Same-origin; works under any host binding without hardcoding localhost
 				"ui":              map[string]any{"host": "10.10.10.2", "port": 8080},
 			}
 			firewallMetaJSON, _ := json.Marshal(firewallMeta)

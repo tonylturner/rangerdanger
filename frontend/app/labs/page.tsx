@@ -79,7 +79,7 @@ export default function WorkshopPage() {
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
           <h2 className="text-sm font-bold text-white mb-3">Workshop Resources</h2>
           <div className="grid gap-3 sm:grid-cols-3">
-            <a href="http://localhost:9080" target="_blank" rel="noopener noreferrer"
+            <a href="/containd/" target="_blank" rel="noopener noreferrer"
               className="block rounded-lg border border-amber-800/50 bg-slate-950/50 p-3 hover:border-amber-700 transition-colors">
               <div className="text-sm font-bold text-amber-400">containd Firewall</div>
               <div className="mt-0.5 text-[11px] text-slate-500">Direct access to NGFW management UI</div>

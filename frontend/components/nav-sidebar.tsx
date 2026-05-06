@@ -54,8 +54,11 @@ export function NavSidebar() {
       </nav>
 
       <div className="mt-auto pt-4 border-t border-slate-900">
+        {/* Same-origin proxy path (nginx rewrites containd's internal */}
+        {/* URLs back to /containd/* for iframe-safe navigation), so this */}
+        {/* works under any host binding without hardcoding localhost. */}
         <a
-          href="http://localhost:9080"
+          href="/containd/"
           target="_blank"
           rel="noopener noreferrer"
           className="block rounded-md px-3 py-1.5 text-[11px] text-slate-600 hover:text-amber-400 transition-colors"

@@ -821,7 +821,10 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 	// Map node types to their UI configurations
 	switch nodeType {
 	case "containd_ngfw":
-		return "/apps/firewall/", "http://localhost:9080"
+		// Same-origin paths only — frontend can prepend window.location
+		// if it ever needs an absolute URL. Hardcoding localhost:9080
+		// here breaks any deployment that isn't bound to loopback.
+		return "/apps/firewall/", "/containd/"
 	case "hmi_view":
 		return "/apps/hmi-view/", ""
 	case "hmi_control":
