@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, oss-release]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+      - name: go test
+        working-directory: backend
+        run: go test -race ./...
+      - name: go build
+        working-directory: backend
+        run: go build ./cmd/server
+
+  services:
+    name: Services (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - name: go vet
+        working-directory: services
+        run: go vet ./...
+      - name: go test
+        working-directory: services
+        run: go test -race ./...
+      - name: go build
+        working-directory: services
+        run: go build ./...
+
+  dnp3go:
+    name: dnp3go library (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: dnp3go/go.mod
+          cache-dependency-path: dnp3go/go.sum
+      - name: go vet
+        working-directory: dnp3go
+        run: go vet ./...
+      - name: go test
+        working-directory: dnp3go
+        run: go test -race ./...
+      - name: go build
+        working-directory: dnp3go
+        run: go build ./...
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+      - name: lint
+        working-directory: frontend
+        run: npm run lint
+      - name: build
+        working-directory: frontend
+        run: npm run build
+
+  compose-validate:
+    name: Compose validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config
+        run: docker compose config -q
+
+  govulncheck:
+    # Advisory only for now — surfaces stdlib + transitive vulns without
+    # blocking PRs. Flip continue-on-error to false once the current
+    # findings are triaged (see docs/release-plan.md).
+    name: Go vulnerability scan (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: scan backend
+        working-directory: backend
+        run: govulncheck ./...
+      - name: scan services
+        working-directory: services
+        run: govulncheck ./...
+      - name: scan dnp3go
+        working-directory: dnp3go
+        run: govulncheck ./...

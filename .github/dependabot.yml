@@ -1,0 +1,61 @@
+version: 2
+updates:
+  # Backend Go module
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  # Field-device simulators Go module
+  - package-ecosystem: gomod
+    directory: /services
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  # Standalone DNP3 library
+  - package-ecosystem: gomod
+    directory: /dnp3go
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - go
+
+  # Frontend (Next.js)
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - frontend
+
+  # Dockerfiles (base image bumps)
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+
+  # GitHub Actions versions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci

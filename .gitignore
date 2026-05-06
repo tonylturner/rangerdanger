@@ -40,7 +40,6 @@ pnpm-debug.log*
 # Build artifacts
 frontend/.next/
 frontend/node_modules/
-frontend/package-lock.json
 *.tsbuildinfo
 backend/server
 dnp3go/dnp3cmd

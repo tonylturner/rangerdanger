@@ -3,12 +3,24 @@ WORKDIR /app
 COPY backend/go.mod backend/go.sum ./backend/
 COPY backend ./backend
 WORKDIR /app/backend
+
+# Build metadata injected via --build-arg from the release workflow.
+# Local `docker build` without args yields the version package's
+# defaults ("dev" / "none" / "unknown").
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    go build -o /bin/otlab ./cmd/server
+    go build \
+        -ldflags "-X github.com/tturner/rangerdanger/backend/internal/version.Version=${VERSION} \
+                  -X github.com/tturner/rangerdanger/backend/internal/version.Commit=${COMMIT} \
+                  -X github.com/tturner/rangerdanger/backend/internal/version.Date=${DATE}" \
+        -o /bin/rangerdanger-backend ./cmd/server
 
 FROM gcr.io/distroless/base-debian12
-COPY --from=builder /bin/otlab /bin/otlab
+COPY --from=builder /bin/rangerdanger-backend /bin/rangerdanger-backend
 WORKDIR /app
 EXPOSE 8080
-ENTRYPOINT ["/bin/otlab"]
+ENTRYPOINT ["/bin/rangerdanger-backend"]

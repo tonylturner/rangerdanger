@@ -132,7 +132,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
             {overRoles.length > 0 && (
               <div>
                 Overloaded teams: {overRoles.map((r) => r.name).join(", ")}. Remove an action
-                or pick one that doesn't require these roles.
+                or pick one that doesn&apos;t require these roles.
               </div>
             )}
           </div>

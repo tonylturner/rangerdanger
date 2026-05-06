@@ -21,6 +21,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
+	"github.com/tturner/rangerdanger/backend/internal/version"
 )
 
 // pcapState tracks an active PCAP capture session.
@@ -146,6 +147,7 @@ func (s *Server) registerRoutes() {
 	api := s.engine.Group("/api")
 	{
 		api.GET("/health", s.handleHealth)
+		api.GET("/version", s.handleVersion)
 
 		admin := api.Group("/admin")
 		admin.POST("/seed", s.handleSeedDefinitions)
@@ -273,6 +275,10 @@ func (s *Server) isOriginAllowed(origin string) bool {
 
 func (s *Server) handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *Server) handleVersion(c *gin.Context) {
+	c.JSON(http.StatusOK, version.Get())
 }
 
 func (s *Server) handleSeedDefinitions(c *gin.Context) {

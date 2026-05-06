@@ -1,0 +1,34 @@
+# Release workflow scaffold — not yet active.
+#
+# This workflow will be triggered on tag push (v*) once the GHCR
+# publishing strategy and versioning scaffolding (release-plan B4) land.
+# It will:
+#
+#   1. Build first-party images for linux/amd64 + linux/arm64 (except
+#      openplc, which upstream only ships amd64).
+#   2. Tag each image as :vX.Y.Z and :latest.
+#   3. Push to ghcr.io/tonylturner/rangerdanger-<svc>.
+#
+# See docs/release-plan.md section B2 for the full image inventory.
+
+name: Release (scaffold)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  noop:
+    name: Placeholder
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Release pipeline not yet wired up."
+          echo "Pending: B2 (GHCR publish), B4 (versioning)."
+          echo "See docs/release-plan.md."
