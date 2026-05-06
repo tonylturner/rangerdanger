@@ -6,15 +6,21 @@ WORKDIR /app
 # Copy dnp3go library first (standalone module, referenced via replace directive)
 COPY dnp3go/ /dnp3go/
 COPY services/go.mod ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY services/ .
-RUN CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim
-RUN CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim
-RUN CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim
-RUN CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim
-RUN CGO_ENABLED=0 go build -o /bin/capbank-sim ./capbank-sim
-RUN CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim
-RUN CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
+# All seven sims built in one RUN so the go-build + module caches are
+# shared across them, and we end up with one image layer instead of
+# seven. Caches persist between CI runs via the workflow's GHA cache.
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim \
+ && CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim \
+ && CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim \
+ && CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim \
+ && CGO_ENABLED=0 go build -o /bin/capbank-sim ./capbank-sim \
+ && CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim \
+ && CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
 FROM alpine:3.21 AS sim-base
 
