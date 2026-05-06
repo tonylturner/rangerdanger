@@ -158,9 +158,14 @@ The frontend uses a React context (`TerminalProvider`) plus a hidden-mount patte
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `OTLAB_HTTP_PORT` | 8080 | Backend listen port |
-| `OTLAB_DB_PATH` | /data/rangerdanger.db | SQLite path |
-| `OTLAB_LAB_DEFINITIONS_PATH` | lab-definitions | YAML source directory |
+| `RANGERDANGER_HTTP_PORT` | 8080 | Backend listen port |
+| `RANGERDANGER_DB_PATH` | /data/rangerdanger.db | SQLite path |
+| `RANGERDANGER_LAB_DEFINITIONS_PATH` | lab-definitions | YAML source directory |
+| `RANGERDANGER_CONTAIND_API_URL` | http://firewall:8080 | containd HTTP base URL |
+| `RANGERDANGER_CONTAIND_CONFIG_PATH` | lab-definitions/firewall/substation-weak.json | Initial firewall config |
+
+The legacy `OTLAB_*` prefix is honored as a deprecated alias —
+existing deployments continue to work but emit a warning at startup.
 | `CONTAIND_API_URL` | http://firewall:8080 | containd REST endpoint |
 | `CONTAIND_JWT_SECRET` | rangerdanger-dev | containd auth shared secret |
 | `CONTAIND_SSH_SHELL_MODE` | linux | Sets containd SSH to drop into bash |

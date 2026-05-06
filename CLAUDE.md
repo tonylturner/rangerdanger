@@ -142,9 +142,15 @@ backend/
 ### Environment Variables
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OTLAB_HTTP_PORT` | 8080 | API server port |
-| `OTLAB_DB_PATH` | /data/rangerdanger.db | SQLite path |
-| `OTLAB_LAB_DEFINITIONS_PATH` | lab-definitions | YAML definitions |
+| `RANGERDANGER_HTTP_PORT` | 8080 | API server port |
+| `RANGERDANGER_DB_PATH` | /data/rangerdanger.db | SQLite path |
+| `RANGERDANGER_LAB_DEFINITIONS_PATH` | lab-definitions | YAML definitions |
+| `RANGERDANGER_CONTAIND_API_URL` | http://firewall:8080 | containd HTTP base URL |
+| `RANGERDANGER_CONTAIND_CONFIG_PATH` | lab-definitions/firewall/substation-weak.json | Initial firewall config to seed |
+
+`OTLAB_*` is also accepted for backwards compatibility; the backend
+emits a deprecation warning at startup if any legacy var is set, and
+the alias will be removed in a future release.
 
 ## Frontend (Next.js + TypeScript)
 

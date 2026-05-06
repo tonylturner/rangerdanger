@@ -63,12 +63,12 @@ services:
       dockerfile: Dockerfile.backend
     container_name: rangerdanger-backend
     environment:
-      OTLAB_HTTP_PORT: 8080
-      OTLAB_DB_PATH: /data/rangerdanger.db
-      OTLAB_LAB_DEFINITIONS_PATH: /lab-definitions
-      CONTAIND_API_URL: http://10.99.99.2:8080
+      RANGERDANGER_HTTP_PORT: 8080
+      RANGERDANGER_DB_PATH: /data/rangerdanger.db
+      RANGERDANGER_LAB_DEFINITIONS_PATH: /lab-definitions
+      RANGERDANGER_CONTAIND_API_URL: http://10.99.99.2:8080
+      RANGERDANGER_CONTAIND_CONFIG_PATH: /lab-definitions/firewall/substation-weak.json
       CONTAIND_JWT_SECRET: ${CONTAIND_JWT_SECRET:-rangerdanger-dev}
-      OTLAB_CONTAIND_CONFIG_PATH: /lab-definitions/firewall/substation-weak.json
     volumes:
       - ./backend/data:/data
       - ./lab-definitions:/lab-definitions:ro
