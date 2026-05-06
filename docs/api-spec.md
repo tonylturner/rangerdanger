@@ -4,11 +4,12 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Request and response bodies use `snake_case` field names.
 
-## Health
+## Health and build info
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness probe. Returns `{"status": "ok"}` |
+| `GET` | `/build` | Build metadata for this binary. Returns `{"version", "commit", "date"}`. Values are injected at build time via ldflags (see `backend/internal/version`); for an unstamped local build they're `"dev"` / `"none"` / `"unknown"`. Note: this is **not** at `/version` because the nginx proxy reserves `/api/version` for FUXA's own HMI version endpoint. |
 
 ## Admin
 
@@ -109,7 +110,8 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/sessions` | Active connection table |
 | `GET` | `/firewall/active` | Which named configuration is currently applied |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
-| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` |
+| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`) |
+| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Exercise 3 (Remediation Planning) or Exercise 4 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and returns `{"applied": true, "rules_applied": N}` on success. |
 
 ## Traffic generation
 
@@ -166,15 +168,22 @@ The backend detects text-mode messages starting with `{` and parses them as cont
 
 ### Shell selection
 
-For container-local nodes (Docker exec), the backend runs:
+All terminal endpoints (including the firewall) now go through Docker
+`exec` rather than SSH. The backend runs:
 
 ```
 sh -c "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"
 ```
 
-This prefers bash as an interactive login shell when available, falling back to sh on minimal images. The environment includes `TERM=xterm-256color`.
+This prefers bash as an interactive login shell when available, falling
+back to sh on minimal images. The environment includes
+`TERM=xterm-256color`. For the firewall node, this lands in containd's
+Linux shell mode (`CONTAIND_SSH_SHELL_MODE=linux`), so the experience
+matches `ssh containd@localhost -p 2222` without an SSH dependency.
 
-For the containd firewall (node type `containd_ngfw`), the backend opens an SSH session to `rangerdanger-firewall:2222` as user `containd`, requests a PTY, starts a shell, and immediately writes `exec bash -il; clear` to upgrade the session to an interactive login bash. This is a workaround for a limitation in the containd embedded SSH server tracked in [containd#17](https://github.com/tonylturner/containd/issues/17).
+If you need a real SSH session into containd directly from outside the
+backend, the host port mapping `127.0.0.1:2222:2222` exposes it
+(`ssh -p 2222 containd@localhost`, password `containd`).
 
 ### Resize propagation
 
