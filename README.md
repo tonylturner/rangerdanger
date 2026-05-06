@@ -2,8 +2,10 @@
 
 **An OT/ICS cyber range for hands-on network segmentation training.**
 
+[![CI](https://github.com/tonylturner/rangerdanger/actions/workflows/ci.yml/badge.svg)](https://github.com/tonylturner/rangerdanger/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tonylturner/rangerdanger?include_prereleases&sort=semver)](https://github.com/tonylturner/rangerdanger/releases)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/github/go-mod/go-version/tonylturner/rangerdanger?filename=backend%2Fgo.mod&logo=go&logoColor=white)](https://go.dev)
 [![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose)
@@ -146,7 +148,32 @@ Two firewall configurations ship with the lab:
 
 - Docker Desktop or Docker Engine with Compose v2
 - 8 GB RAM minimum, 16 GB recommended
+- 30 GB free disk
 - Apple Silicon or x86_64 host
+- Host ports `8088`, `9080`, `9443`, `2222` available
+
+> ### ⚠️ Lab-only deployment
+>
+> RangerDanger is designed to run on a **single student's laptop**,
+> bound to localhost, behind no auth.
+>
+> - **No authentication.** Every backend endpoint, terminal session,
+>   exec endpoint, and proxy is open to anything that can reach the
+>   host. This is intentional for single-tenant lab use.
+> - **Default credentials are baked in** for convenience:
+>   `containd / containd`, `openplc / openplc`,
+>   `CONTAIND_JWT_SECRET=rangerdanger-dev`. They are not secrets and
+>   must never be reused outside the lab.
+> - **Self-signed TLS** on webtop and containd; browser warnings are
+>   expected.
+> - **Privileged firewall container** runs with `NET_ADMIN`,
+>   `NET_RAW`, and `SYS_TIME` so containd can manage nftables and
+>   capture traffic.
+>
+> **Do not expose the stack to a network you do not fully trust.**
+> If you need a multi-user / shared deployment, you are responsible
+> for adding authentication, TLS, and network isolation in front of
+> it. See [`SECURITY.md`](SECURITY.md) for the full security model.
 
 ### Quick start
 
