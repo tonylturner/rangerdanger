@@ -37,14 +37,4 @@ var NodeCatalog = []NodeTemplate{
 	// OT Infrastructure
 	{Type: "historian_sim", Name: "Data Historian", Description: "OT data historian collecting time-series SCADA data from RTAC", DefaultNetworks: []string{"ot_ops_net"}, Image: "rangerdanger-historian-sim"},
 	{Type: "gps_sim", Name: "GPS Time Server", Description: "GPS-synchronized clock providing NTP/IRIG-B time to substation devices", DefaultNetworks: []string{"ot_ops_net"}, Image: "rangerdanger-gps-sim"},
-
-	// Legacy types (oil-plant scenario)
-	{Type: "ews", Name: "Engineering Workstation (Legacy)", Description: "Legacy type - use eng_workstation instead", DefaultNetworks: []string{"vendor_net"}, Image: "linuxserver/webtop:ubuntu-mate"},
-	{Type: "ubuntu_jumpbox", Name: "Ubuntu Jump Box (Legacy)", Description: "Legacy type - use vendor_jumpbox instead", DefaultNetworks: []string{"vendor_net"}, Image: "linuxserver/webtop:ubuntu-xfce"},
-	{Type: "hmi_view", Name: "HMI View (Legacy)", Description: "Legacy type - use fuxa_hmi instead", DefaultNetworks: []string{"ot_ops_net"}, Image: "frangoteam/fuxa:latest"},
-	{Type: "hmi_control", Name: "HMI Control (Legacy)", Description: "Legacy type - use fuxa_hmi instead", DefaultNetworks: []string{"ot_ops_net"}, Image: "frangoteam/fuxa:latest"},
-	{Type: "plc_trainer", Name: "Process PLC (Legacy)", Description: "Legacy type - use openplc instead", DefaultNetworks: []string{"ot_ops_net"}, Image: "tuttas/openplc_v3:latest"},
-	{Type: "sis_plc", Name: "Safety PLC (Legacy)", Description: "Legacy type", DefaultNetworks: []string{"field_net"}, Image: "tuttas/openplc_v3:latest"},
-	{Type: "historian", Name: "Historian", Description: "InfluxDB for timeseries capture", DefaultNetworks: []string{"ot_ops_net"}, Image: "influxdb:2"},
-	{Type: "ot_ids", Name: "OT IDS", Description: "Suricata sensor with ICS signatures", DefaultNetworks: []string{"ot_ops_net"}, Image: "jasonish/suricata:latest", Cmd: []string{"suricata", "-c", "/etc/suricata/suricata.yaml", "-i", "eth0"}},
 }
