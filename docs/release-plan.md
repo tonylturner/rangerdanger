@@ -48,12 +48,10 @@ SSD/airgap validation (B6).
 - [x] **History rewrite executed 2026-05-06.** `git filter-repo`
   scrubbed all 6 cert/key blobs across all branches. Force-pushed to
   origin. Backup mirror at `/tmp/rangerdanger-scrub.git`.
-- [ ] **Document lab-only security posture in README quickstart.** Add
-  a callout: "Binds to localhost only. No authentication. Default
-  credentials (`containd/containd`, `openplc/openplc`,
-  `CONTAIND_JWT_SECRET=rangerdanger-dev`) are for the lab and must
-  never be reused. Never expose this stack to a network you do not
-  fully trust." This is the user-facing complement to `SECURITY.md`.
+- [x] Lab-only security callout added to README quickstart in commit
+  `d584932`. Mirrors the `SECURITY.md` model: no auth, default
+  creds, self-signed TLS, privileged firewall — all called out
+  before the `docker compose up -d --build` line.
 
 ### A2. Tracked files that shouldn't be in repo
 
@@ -74,9 +72,9 @@ SSD/airgap validation (B6).
 - [x] No-auth posture is intentional for single-student-on-laptop
   deployment. Documented in `SECURITY.md`. README documentation
   pending (covered by A1).
-- [ ] **CORS contradiction** at `server.go:248-252`:
-  `Access-Control-Allow-Origin: *` plus `Allow-Credentials: true` is
-  rejected by browsers. Pick one.
+- [x] CORS contradiction fixed in commit `e75a8d2` —
+  `Allow-Credentials: true` now only set when `Allow-Origin` is a
+  specific host, never with the wildcard.
 
 ### A4. Tests pass
 
@@ -109,12 +107,8 @@ SSD/airgap validation (B6).
   `@sha256:025e…`.
 - [x] `Dockerfile.openplc`: pinned `tuttas/openplc_v3:latest` →
   `@sha256:94fb…`.
-- [ ] Pin `linuxserver/webtop:ubuntu-mate` and
-  `linuxserver/webtop:ubuntu-xfce` by digest. Both are floating
-  rolling tags (used by `corp_ws`, `eng_workstation`, `vendor_jump`).
-  Highest-bytes images in the stack — risk of silent upstream
-  breakage at student install time. Out of A7's original strict
-  scope, but should land before `v0.1.0`.
+- [x] Pinned `linuxserver/webtop:ubuntu-mate` and
+  `linuxserver/webtop:ubuntu-xfce` by digest in commit `c1a3110`.
 
 ---
 
@@ -169,12 +163,9 @@ SSD/airgap validation (B6).
 - [x] `frontend/package.json` has `"version": "0.0.0"`.
 - [x] `CHANGELOG.md` (Keep-a-Changelog format).
 - [x] `RELEASING.md` runbook.
-- [ ] **Bug: `/api/version` proxy collision.** Backend handler
-  registered at `server.go:150` is shadowed by `proxy/nginx.conf:55`
-  which routes `/api/version` to FUXA. Fix: either rename backend
-  endpoint (suggest `/api/build`) or add an nginx override before
-  the FUXA route. The version stamping itself works; just the
-  exposing path needs fixing.
+- [x] `/api/version` proxy collision fixed in commit `e75a8d2` —
+  backend endpoint renamed to `/api/build`. Version stamping
+  unchanged; FUXA's own `/api/version` is untouched.
 - [ ] First tag: `v0.1.0` (gated on B2/B3/B5).
 
 ### B5. Scripted installation
@@ -197,14 +188,8 @@ SSD/airgap validation (B6).
 
 ### B7. README badges
 
-- [ ] Add now that CI is live and proven:
-
-```markdown
-[![CI](https://github.com/tonylturner/rangerdanger/actions/workflows/ci.yml/badge.svg)](…)
-[![Release](https://img.shields.io/github/v/release/tonylturner/rangerdanger)](…)
-[![License](https://img.shields.io/github/license/tonylturner/rangerdanger)](LICENSE)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/tonylturner/rangerdanger?filename=backend%2Fgo.mod)](…)
-```
+- [x] Added in commit `d584932`. Live CI badge, release version
+  badge, and a Go-version badge that reads from `backend/go.mod`.
 
 ### B8. Public-repo metadata
 
@@ -280,19 +265,28 @@ SSD/airgap validation (B6).
 - [ ] Verify `lab-networks.yml` at repo root is used or remove.
 - [ ] Add `docs/workshop-overview.md` summarizing the 9 exercises.
 
-### Audit gaps from the merge
+### Audit gaps from the merge — reviewed 2026-05-06
 
-The 2026-05-06 merge brought in lab content that wasn't part of the
-original audit. These should get a quick review pass before `v0.1.0`:
-
-- [ ] `lab-definitions/scenarios/capbank-switching-attack.yml`
-- [ ] `lab-definitions/scenarios/firewall-implementation.yml`
-- [ ] `services/capbank-sim/dnp3.go` — DNP3 outstation; does it
-  follow the same patterns as relay/recloser/regulator?
-- [ ] `services/capbank-sim/main.go`
-- [ ] Updates to existing exercises (baseline, dnp3-injection,
-  modbus-override, remediation-planning, segmentation-requirements,
-  validation-evidence, vendor-rdp).
+- [x] `services/capbank-sim/{main,dnp3,modbus}.go` — clean.
+  Follows the same HTTP+Modbus+DNP3 outstation pattern as
+  relay/recloser/regulator. DNP3 outstation address 4 (consistent
+  with relay=1, recloser=2, regulator=3). Lockout-after-6-operations
+  matches the recloser pattern (real-world utility behavior).
+  Audit-logged commands via `shared.AuditLog`. No tests — same gap
+  as the other sims (tracked under Tests + scanning above).
+- [x] `lab-definitions/scenarios/capbank-switching-attack.yml` —
+  well-written bonus exercise. Demonstrates a realistic attack
+  (rapid switching to exhaust contact wear), uses the lockout
+  mechanic the simulator implements, hardened policy correctly
+  blocks it.
+- [x] `lab-definitions/scenarios/firewall-implementation.yml` —
+  30-minute hands-on exercise where the student builds a
+  least-privilege containd policy from scratch. Aligns with the
+  baseline → requirements → remediation → implementation flow.
+- [ ] Quick re-read of updates to existing exercises (baseline,
+  dnp3-injection, modbus-override, remediation-planning,
+  segmentation-requirements, validation-evidence, vendor-rdp) —
+  punted to a content-review pass closer to v0.1.0.
 
 ---
 
@@ -321,6 +315,9 @@ For session continuity / changelog drafting:
 | `294b9d9` | Mark A1 / repo-rename resolved in plan                       |
 | `794a3c8` | Tighten dependabot policy (no major bumps until v0.1.0)      |
 | `66a022b` | Bump 5 frontend deps via local commit (closes 5 dependabot PRs) |
+| `c1a3110` | Pin `linuxserver/webtop:ubuntu-mate` and `:ubuntu-xfce` by digest (A7 follow-up) |
+| `e75a8d2` | Rename `/api/version` → `/api/build` (B4 fix); CORS-credentials fix |
+| `d584932` | README CI/release badges + lab-only security callout (B7, A1 follow-up) |
 
 History rewrite procedure preserved in git log; backup mirror clone
 at `/tmp/rangerdanger-scrub.git`.
