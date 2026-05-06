@@ -212,10 +212,11 @@ type ScenarioYAML struct {
 
 // ScenarioStep describes a single scenario instruction.
 type ScenarioStep struct {
-	Title       string      `yaml:"title" json:"title"`
-	Description string      `yaml:"description" json:"description"`
-	Action      *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
-	Node        string      `yaml:"node,omitempty" json:"node,omitempty"`
+	Title          string      `yaml:"title" json:"title"`
+	Description    string      `yaml:"description" json:"description"`
+	ExpectedConfig string      `yaml:"expected_config,omitempty" json:"expected_config,omitempty"`
+	Action         *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
+	Node           string      `yaml:"node,omitempty" json:"node,omitempty"`
 }
 
 // StepAction defines an executable action for a scenario step.

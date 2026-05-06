@@ -44,13 +44,40 @@ export const OBSERVED_FLOWS: ObservedFlow[] = [
   { source: "gps-1",  target: "relay-1",      protocol: "NTP",    port: 123,   cadence: "~30s", category: "baseline", livenessKey: "gps" },
   { source: "gps-1",  target: "recloser-1",   protocol: "NTP",    port: 123,   cadence: "~30s", category: "baseline", livenessKey: "gps" },
   { source: "gps-1",  target: "regulator-1",  protocol: "NTP",    port: 123,   cadence: "~30s", category: "baseline", livenessKey: "gps" },
+  { source: "rtac-1", target: "capbank-1",    protocol: "Modbus", port: 502,   cadence: "~3s",  category: "baseline", livenessKey: "rtac-capbank" },
+  { source: "rtac-1", target: "capbank-1",    protocol: "DNP3",   port: 20000, cadence: "~5s",  category: "baseline", livenessKey: "rtac-capbank" },
+  { source: "gps-1",  target: "capbank-1",    protocol: "NTP",    port: 123,   cadence: "~30s", category: "baseline", livenessKey: "gps" },
   { source: "hmi-1",  target: "rtac-1",       protocol: "Modbus", port: 502,   cadence: "~2s",  category: "baseline", livenessKey: "rtac" },
   { source: "historian-1", target: "rtac-1", protocol: "HTTP",    port: 8080,  cadence: "~5s",  category: "baseline", livenessKey: "rtac" },
 
   // ── Scenario-driven (only while traffic generator is running) ───
-  { source: "eng-ws-1",      target: "rtac-1",    protocol: "HTTP", port: 8080, cadence: "burst", category: "scenario", livenessKey: "scenario" },
-  { source: "eng-ws-1",      target: "openplc-1", protocol: "HTTP", port: 8080, cadence: "burst", category: "scenario", livenessKey: "scenario" },
-  { source: "vendor-jump-1", target: "hmi-1",     protocol: "FUXA", port: 1881, cadence: "burst", category: "scenario", livenessKey: "scenario" },
+
+  // Engineering workstation (vendor zone) → OT ops
+  { source: "eng-ws-1",      target: "rtac-1",       protocol: "HTTP",   port: 8080,  cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "openplc-1",    protocol: "HTTP",   port: 8080,  cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "hmi-1",        protocol: "FUXA",   port: 1881,  cadence: "burst", category: "scenario", livenessKey: "scenario" },
+
+  // Engineering workstation → field devices (WEAK: blocked in hardened)
+  // Uses real ICS protocol tools: mbpoll for Modbus FC03 reads,
+  // dnp3poll for DNP3 class-0 polls, plus HTTP REST reads. Students
+  // capture these with tshark and see proper Modbus/DNP3 frames.
+  // Engineering workstation → field devices: real ICS protocols only.
+  // Modbus FC03 reads via mbpoll + DNP3 class-0 polls via dnp3poll.
+  // No HTTP/8080 — real relays, reclosers, regulators, and cap banks
+  // don't run web servers. The HTTP API on port 8080 is a lab
+  // convenience for Go simulators, not a realistic field protocol.
+  { source: "eng-ws-1",      target: "relay-1",      protocol: "Modbus", port: 502,   cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "recloser-1",   protocol: "Modbus", port: 502,   cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "regulator-1",  protocol: "Modbus", port: 502,   cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "capbank-1",    protocol: "Modbus", port: 502,   cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "relay-1",      protocol: "DNP3",   port: 20000, cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "recloser-1",   protocol: "DNP3",   port: 20000, cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "regulator-1",  protocol: "DNP3",   port: 20000, cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "eng-ws-1",      target: "capbank-1",    protocol: "DNP3",   port: 20000, cadence: "burst", category: "scenario", livenessKey: "scenario" },
+
+  // Vendor jump box (vendor zone) → OT ops
+  { source: "vendor-jump-1", target: "hmi-1",        protocol: "FUXA",   port: 1881,  cadence: "burst", category: "scenario", livenessKey: "scenario" },
+  { source: "vendor-jump-1", target: "rtac-1",       protocol: "HTTP",   port: 8080,  cadence: "burst", category: "scenario", livenessKey: "scenario" },
 ];
 
 export function resolveLiveness(
@@ -62,7 +89,8 @@ export function resolveLiveness(
   switch (flow.livenessKey) {
     case "rtac-relay":
     case "rtac-recloser":
-    case "rtac-regulator": {
+    case "rtac-regulator":
+    case "rtac-capbank": {
       const dev = flow.livenessKey.split("-")[1];
       if (!rtacOnline) return "down";
       const ok = deviceComms?.[dev];

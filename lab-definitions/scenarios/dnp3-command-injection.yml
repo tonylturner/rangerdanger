@@ -1,7 +1,7 @@
 id: dnp3-command-injection
-order: 5
+order: 6
 name: "DNP3 Direct Operate Command Injection"
-summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault."
+summary: "DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on fault (15 min)."
 description: >
   An attacker on the enterprise network exploits unauthenticated
   DNP3 TCP to send Direct Operate commands to field devices,
@@ -19,17 +19,21 @@ tags:
   - segmentation
 steps:
   - title: "Verify normal operations"
+    expected_config: weak
     description: >
       Confirm all field devices are online and communicating through
       the RTAC. The recloser should be closed with auto-reclose
       enabled. All loads should be energized.
 
-      Use dnp3poll from the RTAC or any OT host to verify:
+      Use dnp3poll from Kali to verify (dnp3poll is installed
+      on kali-1 and eng-ws-1):
 
         dnp3poll 10.40.40.21:20000 -a 2
 
       Binary Output [0] (closed) should be ON, Binary Output [1]
       (reclose_enabled) should be ON.
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
@@ -38,6 +42,7 @@ steps:
         reclose_enabled: true
 
   - title: "Reconnaissance — scan for DNP3 outstations"
+    expected_config: weak
     description: >
       From the Kali attacker box (10.10.10.50), scan the field
       device network for DNP3 TCP outstations:
@@ -55,6 +60,7 @@ steps:
         dnp3poll 10.40.40.22:20000 -a 3
 
   - title: "DNP3 Direct Operate — disable auto-reclose"
+    expected_config: weak
     description: >
       From Kali, send a DNP3 Direct Operate command to the recloser
       (outstation addr 2) to disable auto-reclose. Use dnp3cmd to
@@ -66,10 +72,6 @@ steps:
 
         dnp3poll 10.40.40.21:20000 -a 2
 
-      Or check via REST:
-
-        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
-
       Binary Output [1] / reclose_enabled should now be OFF/false.
     action:
       type: command
@@ -78,6 +80,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Inject fault — observe permanent outage"
+    expected_config: weak
     description: >
       Inject a transient fault on the recloser. Normally,
       auto-reclose would restore power after the fault clears.
@@ -87,11 +90,6 @@ steps:
       From Kali, trip the recloser via DNP3:
 
         dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
-
-      Or via REST:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"inject_fault","source":"10.10.10.50"}'
     action:
       type: command
       device: recloser
@@ -99,6 +97,7 @@ steps:
       source: "scenario-script"
 
   - title: "Observe impact"
+    expected_config: weak
     description: >
       The recloser is open and locked out. Critical and general
       loads downstream of the recloser are without power.
@@ -120,6 +119,7 @@ steps:
         reclose_enabled: false
 
   - title: "Restore operations"
+    expected_config: weak
     description: >
       Use the RangerDanger HMI Supervisory Control tab to restore
       the feeder: clear fault, re-enable auto-reclose, reset
@@ -142,16 +142,18 @@ steps:
 
   - title: "Apply containd segmentation"
     description: >
-      Apply the improved firewall configuration via the containd
-      Segmentation tab. This blocks enterprise, vendor, and all
-      non-RTAC OT nodes from reaching field device DNP3 outstations
-      on port 20000. Only the RTAC (source IP 10.30.30.20 after
-      host-level hardening) is allowed.
+      Apply the hardened firewall configuration using the
+      **Apply Hardened** button, or use the **Apply Your Plan**
+      button if you built a custom policy in the Firewall
+      Implementation exercise. This blocks enterprise, vendor,
+      and all non-RTAC nodes from reaching field device DNP3
+      outstations on port 20000.
     action:
       type: firewall
       config: improved
 
   - title: "Re-test DNP3 attack"
+    expected_config: hardened
     description: >
       From Kali, re-attempt the DNP3 attack:
 
@@ -170,6 +172,7 @@ steps:
       source: "10.10.10.50"
 
   - title: "Validate segmentation"
+    expected_config: hardened
     description: >
       Verify auto-reclose is still enabled, all loads are
       energized, and the hardened firewall policy is active.

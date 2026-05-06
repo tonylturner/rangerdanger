@@ -114,7 +114,7 @@ export type StepAction = {
   actions?: DecisionAction[];
 };
 
-export type ScenarioStep = { title: string; description: string; action?: StepAction; node?: string };
+export type ScenarioStep = { title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
 export type Scenario = {
   id: string;
   name: string;
@@ -369,6 +369,13 @@ export async function applyFirewallConfig(config: "weak" | "improved") {
   return request<{ status: string; active_config: string }>("/firewall/apply", {
     method: "POST",
     body: JSON.stringify({ config }),
+  });
+}
+
+export async function applyCustomFirewallConfig(configJson: object) {
+  return request<{ status: string; active_config: string }>("/firewall/apply-custom", {
+    method: "POST",
+    body: JSON.stringify(configJson),
   });
 }
 

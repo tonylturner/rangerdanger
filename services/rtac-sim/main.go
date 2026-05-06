@@ -45,12 +45,14 @@ func init() {
 	relayHost := envOr("RELAY_SIM_HOST", "relay-sim:8080")
 	recloserHost := envOr("RECLOSER_SIM_HOST", "recloser-sim:8080")
 	regulatorHost := envOr("REGULATOR_SIM_HOST", "regulator-sim:8080")
+	capbankHost := envOr("CAPBANK_SIM_HOST", "capbank-sim:8080")
 	physicsURL = "http://" + envOr("OPENDSS_SIM_HOST", "opendss-sim:8080")
 
 	fieldDevices = []DeviceEndpoint{
 		{Name: "relay", URL: fmt.Sprintf("http://%s", relayHost)},
 		{Name: "recloser", URL: fmt.Sprintf("http://%s", recloserHost)},
 		{Name: "regulator", URL: fmt.Sprintf("http://%s", regulatorHost)},
+		{Name: "capbank", URL: fmt.Sprintf("http://%s", capbankHost)},
 	}
 }
 
@@ -141,6 +143,11 @@ func handleTags(w http.ResponseWriter, r *http.Request) {
 	if regulator, ok := agg.Devices["regulator"]; ok {
 		for k, v := range regulator {
 			tags["feeder.regulator."+k] = v
+		}
+	}
+	if capbank, ok := agg.Devices["capbank"]; ok {
+		for k, v := range capbank {
+			tags["feeder.capbank."+k] = v
 		}
 	}
 
@@ -289,6 +296,12 @@ func deriveProcessImpact(device, command, result, sourceZone string) string {
 		return fmt.Sprintf("regulator set to MANUAL — automatic voltage regulation disabled%s", zoneLabel)
 	case "regulator/set_auto":
 		return "regulator set to AUTO — automatic voltage regulation active"
+	case "capbank/switch_in":
+		return fmt.Sprintf("capacitor bank SWITCHED IN — reactive power injected, voltage rises%s", zoneLabel)
+	case "capbank/switch_out":
+		return fmt.Sprintf("capacitor bank SWITCHED OUT — reactive power removed, voltage drops%s", zoneLabel)
+	case "capbank/inject_fault":
+		return "fault injected on capacitor bank — protection will operate"
 	}
 
 	return "command executed"

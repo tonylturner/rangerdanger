@@ -296,7 +296,7 @@ services:
 - containd integration with JWT auth (lab mode)
 - Terminal access via WebSocket (Docker exec + SSH to firewall)
 - SSE event streaming from containd
-- Substation segmentation lab with 7 exercises (see `lab-definitions/scenarios/`)
+- Substation segmentation lab with 9 exercises (see `lab-definitions/scenarios/`)
 - Field device simulators (relay, recloser, regulator, capbank) with HTTP + Modbus TCP + DNP3 TCP
 - Hand-written Modbus TCP outstations on port 502 (all field devices)
 - DNP3 TCP outstations on port 20000 via standalone `dnp3go` library
@@ -305,7 +305,7 @@ services:
 - Feeder physics engine with energization/voltage calculation
 - Weak baseline + improved firewall configs for progressive learning (Modbus + DNP3 rules)
 - Kali attacker in enterprise zone (with pymodbus, pydnp3, dnp3-python)
-- Advanced HMI page (`/hmi`) with SVG SCADA one-line diagram
+- FUXA SCADA HMI as the operator interface (proxied at `/apps/fuxa-hmi/`)
 
 ### Remaining Gaps
 1. **FUXA HMI screens** - One-line diagram, alarm view, segmentation impact view need configuration

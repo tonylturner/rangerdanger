@@ -1,0 +1,334 @@
+id: firewall-implementation
+order: 4
+name: "Firewall Policy Implementation"
+summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules (30 min)."
+description: >
+  You have identified the required flows, designed your
+  requirements, and planned which remediations to execute.
+  Now you implement. In this 30-minute exercise you will
+  take the existing permissive firewall configuration on the
+  containd NGFW and replace it with a least-privilege policy
+  you build yourself. By the end, unauthorized cross-zone
+  traffic will be blocked and logged, while critical
+  substation operations continue without interruption.
+nodes:
+  - fw-1
+  - kali-1
+  - eng-ws-1
+tags:
+  - segmentation
+  - firewall
+  - defense
+  - containd
+steps:
+  - title: "Exercise overview"
+    expected_config: weak
+    description: |
+      In the Baseline Assessment, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, identified the five critical conduits the substation depends on, and designed zone-pair requirements with specific source-pinned rules. This exercise is where those requirements become real firewall policy.
+
+      You will:
+
+      1. Verify your access to the containd NGFW
+      2. Confirm the weak baseline is active and document what it allows
+      3. Remove the broad permissive rules and establish default-deny
+      4. Create minimal allow rules for each required flow
+      5. Enable logging for visibility
+      6. Validate that operations still work
+      7. Validate that unauthorized traffic is blocked
+      8. Export your finished policy
+
+      **Time budget:** 30 minutes. The containd firewall supports both a web UI and a CLI. Use whichever you prefer.
+
+  - title: "Why this matters"
+    expected_config: weak
+    description: |
+      Segmentation is only real when it is enforced in policy and validated through observed traffic.
+
+      A network diagram that shows zone boundaries is not segmentation. A requirements document that lists allowed flows is not segmentation. A firewall with permissive rules and no logging is not segmentation.
+
+      Segmentation becomes real the moment you can prove two things:
+
+      1. **Authorized traffic works.** The RTAC polls field devices. GPS delivers NTP. The HMI reads state. Operations continue.
+      2. **Unauthorized traffic fails.** A Modbus write from the enterprise zone is denied. A DNP3 command from the vendor zone is blocked. The firewall logs the attempt.
+
+      That is what you will build in the next 30 minutes.
+
+  - title: "Verify access to containd"
+    expected_config: weak
+    description: |
+      Confirm you can reach the containd NGFW through both interfaces.
+
+      **Option 1: Web UI**
+
+      Open the containd web interface at [http://localhost:9080](http://localhost:9080). You should see the containd dashboard with zone interface status for all four networks.
+
+      **Option 2: CLI via SSH**
+
+      Use the `fw-1` terminal tab on the [Network Map](/console), or SSH directly from your laptop's terminal (not from inside another container):
+
+          ssh -p 2222 containd@localhost
+
+      Password: `containd`
+
+      Once connected, verify the four zone interfaces are up:
+
+          ip addr show
+
+      You should see:
+      - `eth0` (wan) with `10.10.10.2/24`
+      - `eth1` (dmz) with `10.20.20.2/24`
+      - `eth2` (lan1) with `10.30.30.2/24`
+      - `eth3` (lan2) with `10.40.40.2/24`
+
+      Check the current firewall rules:
+
+          curl -s http://localhost:8080/api/v1/policies | python3 -m json.tool
+
+      If you see rules that allow broad cross-zone traffic (enterprise to field, vendor to field, any-to-any on ICS ports), the weak baseline is active. That is your starting point.
+
+  - title: "Phase 1 - Verify current access under the weak baseline"
+    expected_config: weak
+    description: |
+      Before you change anything, document what the weak baseline allows. This is your "before" picture. Every test below should succeed right now, and should fail after you finish building your policy.
+
+      **From the kali terminal** (`kali-1` on the [Network Map](/console)):
+
+      Test Modbus read from enterprise to field relay:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+
+      Test DNP3 poll from enterprise to field relay:
+
+          dnp3poll 10.40.40.20:20000 -a 1
+
+      Test DNP3 poll from enterprise to field recloser:
+
+          dnp3poll 10.40.40.21:20000 -a 2
+
+      Test Modbus read from enterprise to field recloser:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21
+
+      **From the eng-ws terminal** (`eng-ws-1` on the [Network Map](/console)):
+
+      Test Modbus read from vendor to field regulator:
+
+          mbpoll -m tcp -a 1 -r 1 -c 2 -1 -t 4 10.40.40.22
+
+      Test Modbus to field capbank:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23
+
+      All of these should return data. That is the problem. Kali (an attacker box in the enterprise zone) can speak Modbus and DNP3 directly to field protection relays. The engineering workstation can bypass the RTAC entirely. This is what you are about to fix.
+
+  - title: "Phase 2 - Remove broad trust and establish default-deny"
+    expected_config: weak
+    description: |
+      Open the containd web UI at [http://localhost:9080](http://localhost:9080) and navigate to the firewall policy section. Alternatively, use the CLI.
+
+      Your goal in this phase is to move from a permissive posture to default-deny for all cross-zone traffic. Do not worry about creating allow rules yet. Get to a clean deny-all baseline first.
+
+      ### Steps
+
+      1. **Review existing rules.** Identify any rules that allow broad cross-zone access. Look for:
+         - Enterprise (wan) to any zone on ICS ports (502, 20000)
+         - Any zone to Field (lan2) without source pinning
+         - Vendor (dmz) to Field (lan2) on any port
+         - "Any-any" rules that permit all traffic between zones
+
+      2. **Set default action to DENY** for all cross-zone traffic. In containd, this means setting the default policy for inter-zone forwarding to drop.
+
+      3. **Do NOT remove intra-zone rules.** Traffic within OT Ops (10.30.30.0/24) needs to keep flowing. HMI to RTAC, historian to RTAC, and internal NTP are all intra-zone and should not be affected by cross-zone deny rules.
+
+      After setting default-deny, verify that cross-zone traffic is blocked:
+
+          mbpoll -m tcp -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
+
+      This should timeout or fail. If it still returns register data, the default-deny is not active yet.
+
+      :::hint Checking default policy via CLI
+      From the firewall terminal:
+
+          curl -s http://localhost:8080/api/v1/policies | python3 -m json.tool
+
+      Look for the default action on each zone pair. If it says "allow" or "accept", change it to "deny" or "drop".
+      :::
+
+  - title: "Phase 3 - Create minimal required rules"
+    description: |
+      Now create specific allow rules for the flows you identified in the Segmentation Requirements exercise. These are the only cross-zone flows the substation requires. Everything else stays denied.
+
+      ### Required Rules
+
+      | # | Source | Destination | Proto | Port(s) | Action | Purpose |
+      |---|--------|-------------|-------|---------|--------|---------|
+      | 1 | `10.30.30.20` | `10.40.40.0/24` | TCP | 502 | ALLOW | RTAC Modbus polling to field devices |
+      | 2 | `10.30.30.20` | `10.40.40.0/24` | TCP | 20000 | ALLOW | RTAC DNP3 polling to field devices |
+      | 3 | `10.30.30.20` | `10.40.40.0/24` | TCP | 8080 | ALLOW | RTAC HTTP API to field devices |
+      | 4 | `10.30.30.50` | `10.40.40.0/24` | UDP | 123 | ALLOW | GPS NTP time sync to field devices |
+      | 5 | `10.20.20.0/24` | `10.30.30.0/24` | TCP | 22, 443 | ALLOW | Vendor management access (SSH/HTTPS only) |
+      | 6 | `10.10.10.0/24` | `10.20.20.0/24` | TCP | 22, 80, 443 | ALLOW | Enterprise to vendor management |
+
+      > **Critical:** Rules 1-3 are source-pinned to `10.30.30.20` (the RTAC). Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly. The RTAC is the single authorized cross-zone controller.
+
+      Create these six rules in the containd firewall. Use either the web UI or the CLI.
+
+      :::hint Creating rules via the containd web UI
+      In the containd UI, navigate to the policy editor. Each rule needs a source address or range, destination address or range, protocol, port, and action. Create them one at a time and verify each appears in the rule list before moving on.
+      :::
+
+      :::hint Creating rules via the CLI
+      From the firewall terminal, you can push rules via the containd API:
+
+          curl -X POST http://localhost:8080/api/v1/policies \
+            -H 'Content-Type: application/json' \
+            -d '{"src":"10.30.30.20/32","dst":"10.40.40.0/24","proto":"tcp","dport":502,"action":"allow","description":"RTAC to field Modbus"}'
+
+      Repeat for each rule, changing the source, destination, port, and description as shown in the table above.
+      :::
+
+  - title: "Phase 4 - Enable logging and visibility"
+    description: |
+      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied.
+
+      ### Configure logging
+
+      Enable logging on:
+
+      1. **All DENY actions.** Every blocked cross-zone connection attempt should produce a log entry. This is your primary detection mechanism for unauthorized access attempts.
+
+      2. **ALLOW actions on critical rules.** Log the RTAC-to-field rules (Rules 1-3) so you have an audit trail of legitimate control traffic. This is useful for forensics and for validating that operations are running normally.
+
+      3. **Enterprise/Vendor to Field attempts.** These should already be caught by the default-deny log, but explicitly logging this zone pair makes it easier to search for lateral movement attempts.
+
+      ### Verify logging works
+
+      From the kali terminal, attempt a connection that should be blocked:
+
+          mbpoll -m tcp -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
+
+      Then check the containd event log:
+
+          curl -s http://localhost:8080/api/v1/events?limit=10 | python3 -m json.tool
+
+      You should see a deny event for the kali IP (`10.10.10.50`) attempting to reach the field device. If you do not see the event, logging is not enabled on the default-deny rule.
+
+      :::hint Enabling logging via CLI
+      When creating or updating rules, include a log flag:
+
+          curl -X POST http://localhost:8080/api/v1/policies \
+            -H 'Content-Type: application/json' \
+            -d '{"src":"0.0.0.0/0","dst":"10.40.40.0/24","proto":"any","action":"deny","log":true,"description":"Deny all to field - logged"}'
+
+      The `"log":true` field tells containd to emit an event for every match.
+      :::
+
+  - title: "Phase 5 - Validate allowed traffic"
+    expected_config: hardened
+    description: |
+      Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
+
+      **RTAC to field devices (protocol test):**
+
+      From the RTAC terminal (`rtac-1` on the [Network Map](/console)):
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          dnp3poll 10.40.40.20:20000 -a 1
+
+      Both should return data. This confirms the RTAC-to-field ALLOW rules are working for Modbus and DNP3.
+
+      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
+
+          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+      The `device_comms` section shows all field devices with `comms_ok: true` and recent timestamps.
+
+      **HMI to RTAC (intra-zone, should still work):**
+
+          curl -sf http://10.30.30.10:1881 --connect-timeout 3
+
+      The FUXA HMI should respond. This is intra-zone traffic and should not be affected by your cross-zone rules.
+
+      **GPS NTP to field devices:**
+
+      From the GPS terminal or by checking a field device's NTP status. The NTP flow is UDP/123 from `10.30.30.50` to field devices.
+
+      If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
+
+  - title: "Phase 6 - Validate blocked traffic"
+    expected_config: hardened
+    description: |
+      Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
+
+      **From kali** (`kali-1` on the [Network Map](/console)):
+
+      Modbus to field relay (enterprise to field, should be blocked):
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+
+      DNP3 to field relay (enterprise to field, should be blocked):
+
+          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+
+      **From eng-ws** (`eng-ws-1` on the [Network Map](/console)):
+
+      Modbus to field capbank (vendor/DMZ to field, should be blocked):
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23
+
+      **From vendor-jump** (`vendor-jump-1` on the [Network Map](/console)):
+
+      DNP3 to field relay (vendor/DMZ to field, should be blocked):
+
+          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+
+      Modbus to field relay (vendor/DMZ to field, should be blocked):
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+
+      After each failed attempt, check the containd event log to confirm the deny was logged:
+
+          curl -s http://localhost:8080/api/v1/events?limit=5 | python3 -m json.tool
+
+      If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.
+
+  - title: "Export your policy"
+    expected_config: hardened
+    description: |
+      You have built a working least-privilege firewall policy. Export it so you have a record of what you built.
+
+      **Export via API:**
+
+          curl -s http://localhost:8080/api/v1/config > student-policy.json
+
+      **Review your export:**
+
+          cat student-policy.json | python3 -m json.tool
+
+      Your policy should contain:
+
+      - Default-deny for all cross-zone traffic
+      - RTAC (`10.30.30.20`) allowed to field on Modbus/502, DNP3/20000, HTTP/8080
+      - GPS (`10.30.30.50`) allowed to field on NTP/123
+      - Vendor/DMZ allowed to OT Ops on SSH/22 and HTTPS/443 only
+      - Enterprise allowed to Vendor/DMZ on SSH/22, HTTP/80, HTTPS/443 only
+      - Logging enabled on deny actions and critical allow rules
+
+      Compare your policy against the provided hardened configuration in the RangerDanger Feeder HMI segmentation tab. The two should be functionally equivalent. Any differences are worth discussing with your instructor: did you allow something the reference policy blocks, or did you block something the reference allows?
+
+      :::hint Expected final state summary
+      **Allowed (6 rules):**
+
+      | # | Source | Destination | Protocol/Port | Purpose |
+      |---|--------|-------------|---------------|---------|
+      | 1 | `10.30.30.20` | `10.40.40.0/24` | TCP/502 | RTAC Modbus to field |
+      | 2 | `10.30.30.20` | `10.40.40.0/24` | TCP/20000 | RTAC DNP3 to field |
+      | 3 | `10.30.30.20` | `10.40.40.0/24` | TCP/8080 | RTAC HTTP to field |
+      | 4 | `10.30.30.50` | `10.40.40.0/24` | UDP/123 | GPS NTP to field |
+      | 5 | `10.20.20.0/24` | `10.30.30.0/24` | TCP/22,443 | Vendor management to OT Ops |
+      | 6 | `10.10.10.0/24` | `10.20.20.0/24` | TCP/22,80,443 | Enterprise management to Vendor |
+
+      **Denied (default):**
+
+      Everything else. Enterprise to OT Ops, enterprise to field, vendor to field, non-RTAC OT Ops to field, and any protocol not explicitly listed above.
+      :::

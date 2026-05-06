@@ -510,21 +510,58 @@ func (s *Server) runTrafficGeneration(durationSec int) {
 		cmd       string
 		desc      string // for logging
 	}{
-		// ── Engineering workstation → RTAC: HTTP (vendor → OT ops, cross-zone) ──
-		// Engineering maintenance access — legitimate but restricted to eng-ws
-		// in a hardened policy. The student sees this pattern and decides how
-		// to govern it.
-		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http state"},
+		// ─────────────────────────────────────────────────────────
+		// Engineering workstation (10.20.20.20) — vendor zone
+		//
+		// eng-ws has mbpoll, dnp3poll, dnp3cmd, nc, ssh, nmap,
+		// curl, and python3. We use real protocol tools so the
+		// generated traffic is indistinguishable from what a human
+		// engineer or attacker would produce.
+		// ─────────────────────────────────────────────────────────
+
+		// Eng-ws → RTAC: HTTP maintenance access (vendor→OT ops)
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http"},
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "eng-ws→rtac http health"},
 
-		// ── Engineering workstation → OpenPLC: HTTP (vendor → OT ops, cross-zone) ──
+		// Eng-ws → OpenPLC: PLC programming HTTP (vendor→OT ops)
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.30:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
 
-		// ── Vendor jump box → HMI: HTTP (vendor → OT ops, cross-zone) ──
-		// Vendor remote monitoring via the FUXA web interface. Currently
-		// unrestricted in the weak baseline; the improved policy narrows
-		// vendor access to HTTPS/SSH only.
-		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi http"},
+		// Eng-ws → HMI: FUXA web interface (vendor→OT ops)
+		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "eng-ws→hmi fuxa"},
+
+		// ── Eng-ws → field devices: real ICS protocol traffic ──
+		// WEAK baseline allows these; hardened blocks them. Students
+		// see Modbus/DNP3 frames on the wire — not just HTTP curls.
+
+		// Modbus FC03 reads (mbpoll: read 5 holding registers, 1 poll, 1s timeout)
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20 > /dev/null 2>&1 || true", "eng-ws→relay modbus FC03 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21 > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC03 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.22 > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC03 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23 > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC03 (WEAK)"},
+
+		// DNP3 class 0 polls (dnp3poll: read all static data, 2s timeout)
+		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.20:20000 -a 1 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.21:20000 -a 2 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.22:20000 -a 3 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.23:20000 -a 4 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
+
+		// NOTE: No HTTP/8080 to field devices. Real relays, reclosers,
+		// regulators, and cap banks don't run web servers — Modbus
+		// and DNP3 are the realistic access protocols. The HTTP API
+		// on port 8080 is a lab convenience for the Go simulators;
+		// including it in generated traffic would teach the wrong
+		// mental model. Students should see Modbus FC03 + DNP3
+		// class-0 polls only when eng-ws reaches into the field zone.
+
+		// ─────────────────────────────────────────────────────────
+		// Vendor jump box (10.20.20.10) — vendor zone
+		// ─────────────────────────────────────────────────────────
+
+		// Vendor → HMI: remote monitoring via FUXA (vendor→OT ops)
+		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi fuxa"},
+
+		// Vendor → RTAC: support health check HTTP (vendor→OT ops)
+		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
 	}
 
 	dockerCli := s.orchestrator.DockerClient()

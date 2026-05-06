@@ -102,11 +102,11 @@ func (s *Server) resolveWorkshopNode(nodeID string) (*labs.NodeYAML, error) {
 
 // connectTerminal upgrades the connection to WebSocket and connects to the container.
 func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
-	// containd_ngfw uses SSH instead of docker exec
-	if nodeConfig.Type == "containd_ngfw" {
-		s.handleContaindTerminal(c)
-		return
-	}
+	// containd_ngfw previously used SSH, but the containd image's
+	// built-in SSH server changed auth between versions and breaks
+	// unpredictably. Docker exec to /bin/bash is reliable and gives
+	// the same Linux shell (CONTAIND_SSH_SHELL_MODE=linux is set).
+	// The SSH handler is kept below as a fallback if needed.
 
 	// Get container name from topology
 	containerName := nodeConfig.Container

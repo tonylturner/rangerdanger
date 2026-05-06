@@ -44,17 +44,91 @@ body {
   fill: currentColor;
 }
 
-/* Hide React Flow connection handles. We don't expose edge creation
-   in this lab UI, so the small dots that React Flow draws on every
-   node are visual noise. The handles still exist in the DOM and edges
-   still attach to them — we only hide the visual representation. */
+/* Active state for the minimap toggle inside the React Flow Controls
+   panel — sky-blue border + tinted background so it reads as
+   "currently on" without changing the button shape. */
+.react-flow__controls-button.minimap-toggle-on {
+  background-color: #0c4a6e !important; /* sky-900 */
+  color: #7dd3fc !important;            /* sky-300 */
+  fill: #7dd3fc !important;
+  box-shadow: inset 0 0 0 1px #0ea5e9 !important; /* sky-500 inner border */
+}
+
+.react-flow__controls-button.minimap-toggle-on:hover {
+  background-color: #075985 !important; /* sky-800 */
+}
+
 .react-flow__handle {
   background: transparent !important;
   border: none !important;
   width: 1px !important;
   height: 1px !important;
-  min-width: 1px !important;
-  min-height: 1px !important;
   opacity: 0 !important;
   pointer-events: none;
+}
+
+/* Zone boundary nodes are large HTML divs that cover the entire zone
+   area. Their inner content already has pointer-events: none but
+   React Flow's node wrapper <div class="react-flow__node"> still
+   captures events, blocking hover on EdgeLabelRenderer content
+   (protocol labels, blocked ✕ markers) that sits underneath.
+   Making the wrapper pass-through lets mouse events fall through
+   to the label renderer layer. The boundaries are already
+   selectable: false and draggable: false so they don't need events. */
+.react-flow__node[data-id^="zone-boundary-"] {
+  pointer-events: none !important;
+}
+
+/* Raise the edge label renderer ABOVE the nodes layer so traffic
+   protocol pills and blocked ✕ markers receive hover even when a
+   host node icon overlaps them. React Flow's default stacking:
+   edges SVG < edgelabel-renderer < nodes. We flip the last two. */
+.react-flow__edgelabel-renderer {
+  z-index: 5 !important;
+  pointer-events: none;
+}
+/* Only the label/marker divs inside need pointer-events, not the
+   renderer container itself (which would block node clicks). The
+   individual label divs already have pointer-events-auto via the
+   className="pointer-events-auto" set in TrafficEdge. */
+
+/* Tron pulse — used by PolicyEdge over-permissive paths to draw the
+   eye to rules that should be tightened. Subtle on purpose: opacity
+   breathing only, no color change, no hue rotate. */
+@keyframes tron-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+.tron-pulse {
+  animation: tron-pulse 2.2s ease-in-out infinite;
+}
+
+/* Knowledge article markdown styling */
+.knowledge-article p { margin-bottom: 0.75rem; }
+.knowledge-article p:last-child { margin-bottom: 0; }
+.knowledge-article h1, .knowledge-article h2, .knowledge-article h3 {
+  color: #e2e8f0; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem;
+}
+.knowledge-article h2 { font-size: 1rem; }
+.knowledge-article h3 { font-size: 0.875rem; color: #7dd3fc; }
+.knowledge-article ul, .knowledge-article ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+.knowledge-article li { margin-bottom: 0.25rem; }
+.knowledge-article code {
+  background: #1e293b; color: #fbbf24; padding: 0.1rem 0.3rem;
+  border-radius: 3px; font-size: 0.85em;
+}
+.knowledge-article strong { color: #e2e8f0; }
+.knowledge-article blockquote {
+  border-left: 3px solid #0891b2; background: #0c4a6e20;
+  padding: 0.5rem 0.75rem; margin: 0.75rem 0; border-radius: 2px;
+}
+
+/* Rook pulse on rule changes — quick attention beat that fades. */
+@keyframes rook-pulse {
+  0%   { filter: drop-shadow(0 0 0px rgba(56, 189, 248, 0)); transform: scale(1); }
+  40%  { filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.85)); transform: scale(1.06); }
+  100% { filter: drop-shadow(0 0 0px rgba(56, 189, 248, 0)); transform: scale(1); }
+}
+.rook-pulse {
+  animation: rook-pulse 1.4s ease-out 1;
 }

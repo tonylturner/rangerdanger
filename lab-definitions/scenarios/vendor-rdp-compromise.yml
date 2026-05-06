@@ -1,7 +1,7 @@
 id: vendor-rdp-compromise
-order: 3
+order: 7
 name: "Vendor Remote Access Compromise (Bonus)"
-summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus."
+summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus (15 min)."
 description: >
   A vendor's remote access credentials are compromised via phishing.
   The attacker uses the vendor jump box to pivot through the DMZ
@@ -18,6 +18,7 @@ tags:
   - bonus
 steps:
   - title: "Review initial posture"
+    expected_config: weak
     description: >
       Verify the feeder is energized with normal protection.
       Auto-reclose should be enabled and the recloser closed.
@@ -27,6 +28,8 @@ steps:
       From the vendor jump box, verify you can reach field devices:
 
         nmap -p 502,8080,20000 10.40.40.21
+
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
@@ -35,17 +38,13 @@ steps:
         reclose_enabled: true
 
   - title: "Simulate vendor credential compromise"
+    expected_config: weak
     description: >
       The attacker has obtained vendor-jump credentials (simulated).
       From the vendor jump box (10.20.20.10), disable auto-reclose
       on the recloser. Via Modbus:
 
         mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
-
-      Or via the REST API:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"disable_reclose","source":"10.20.20.10"}'
 
       With the weak baseline policy, containd allows this traffic
       from the vendor zone to field devices.
@@ -56,6 +55,7 @@ steps:
       source: "10.20.20.10"
 
   - title: "Trigger sustained outage"
+    expected_config: weak
     description: >
       With auto-reclose disabled, inject a fault on the recloser.
       Normally the recloser would automatically restore service,
@@ -64,12 +64,7 @@ steps:
 
       From the vendor jump box, inject a fault via Modbus:
 
-        mbpoll -a 1 -t 0 -r 4 10.40.40.21 1
-
-      Or via REST:
-
-        curl -X POST http://10.40.40.21:8080/api/command \
-          -d '{"command":"inject_fault","source":"10.20.20.10"}'
+        mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
     action:
       type: command
       device: recloser
@@ -77,6 +72,7 @@ steps:
       source: "10.20.20.10"
 
   - title: "Observe customer impact"
+    expected_config: weak
     description: >
       The recloser is now locked out. Downstream loads including
       the hospital and fire station have lost power. Auto-reclose
@@ -86,10 +82,6 @@ steps:
 
         mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 5 -1
 
-      Or check state via REST:
-
-        curl -s http://10.40.40.21:8080/api/state | python3 -m json.tool
-
       Coil 0 (closed) should be OFF, coil 1 (reclose) OFF, coil 2 (lockout) ON.
     action:
       type: check
@@ -97,6 +89,7 @@ steps:
         recloser_closed: false
 
   - title: "Restore service"
+    expected_config: weak
     description: >
       As the operator, restore the feeder to normal operation
       using the RangerDanger HMI. Use the Supervisory Control tab
@@ -120,15 +113,18 @@ steps:
 
   - title: "Harden containd policy"
     description: >
-      Apply the improved firewall configuration via the containd
-      Segmentation tab in the RangerDanger HMI. This blocks
-      vendor zone (DMZ) from directly reaching field devices
-      on Modbus (502), DNP3 (20000), and HTTP (8080).
+      Apply the hardened firewall configuration using the
+      **Apply Hardened** button, or use the **Apply Your Plan**
+      button if you built a custom policy in the Firewall
+      Implementation exercise. This blocks the vendor zone
+      from directly reaching field devices on Modbus (502),
+      DNP3 (20000), and HTTP (8080).
     action:
       type: firewall
       config: improved
 
   - title: "Verify vendor access blocked"
+    expected_config: hardened
     description: >
       Re-attempt the vendor compromise. From the vendor jump box,
       try to reach the recloser via Modbus:
@@ -148,6 +144,7 @@ steps:
       source: "10.20.20.10"
 
   - title: "Validate final state"
+    expected_config: hardened
     description: >
       Verify the feeder is operating normally with protection
       intact and the hardened firewall policy active.

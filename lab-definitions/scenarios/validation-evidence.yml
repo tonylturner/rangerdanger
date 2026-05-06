@@ -1,7 +1,7 @@
 id: validation-evidence
-order: 6
+order: 9
 name: "Post-Change Validation & Evidence Collection"
-summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package."
+summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package (20 min)."
 description: >
   After applying the hardened firewall configuration, validate
   that segmentation is working correctly with both positive tests
@@ -21,14 +21,18 @@ tags:
   - defense
 steps:
   - title: "Verify improved config is active"
+    expected_config: hardened
     description: >
-      Confirm the hardened firewall policy is loaded. Check via
-      the RangerDanger containd Segmentation tab, or via API:
+      Confirm a hardened firewall policy is loaded. Check via API:
 
         curl -s http://localhost:8088/api/firewall/active
 
-      The active config should be "improved". If not, apply it
-      from the Segmentation tab first.
+      The active config should be "improved" or "custom" (if you
+      built your own policy in the Firewall Implementation exercise).
+      If the weak baseline is still active, apply the hardened
+      config using the **Apply Hardened** or **Apply Your Plan** button.
+
+      **Time budget:** 20 minutes.
     action:
       type: check
       expect:
@@ -39,7 +43,11 @@ steps:
       Verify the RTAC can still read and write to field devices
       via Modbus. This is the authorized path that must keep working.
 
-      Check RTAC state aggregation:
+      From the RTAC terminal, confirm Modbus to the relay works:
+
+        mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+
+      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
@@ -106,7 +114,7 @@ steps:
         mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
 
       Should time out. This confirms the vendor compromise
-      attack path from Exercise 2 is now blocked.
+      attack path from the Vendor RDP Compromise exercise is now blocked.
 
   - title: "Negative test: Non-RTAC OT node → field device blocked"
     description: >
@@ -118,22 +126,25 @@ steps:
       Should show filtered. Only the RTAC (source IP 10.30.30.20,
       the OT Ops interface — host-level hardening routes field
       traffic through the firewall) is allowed through. This
-      confirms the Modbus override attack path from Exercise 3
+      confirms the Modbus override attack path from the Modbus Override exercise
       is blocked.
 
   - title: "Capture PCAP evidence"
     description: >
-      From the engineering workstation, capture traffic across
-      the OT and field zones to document the segmentation:
+      From the firewall terminal (fw-1 on the Network Map),
+      capture traffic on the field_net interface (eth3) to
+      document which hosts are communicating with field devices.
+      Under the improved config, RTAC-to-field ICS traffic
+      transits containd and is visible on eth3:
 
-        tshark -i eth0 -f "tcp port 502 or tcp port 20000" \
-          -a duration:30 -w /home/abc/pcaps/validation.pcap
+        tcpdump -i eth3 -w /data/captures/validation.pcap \
+          tcp port 502 or tcp port 20000
 
-      After 30 seconds, examine the capture:
+      Let it run for 30 seconds while the RTAC polls, then
+      stop with Ctrl-C. Examine the capture on fw-1:
 
-        tshark -r /home/abc/pcaps/validation.pcap \
-          -T fields -e ip.src -e ip.dst -e tcp.dstport \
-          | sort | uniq -c | sort -rn
+        tcpdump -r /data/captures/validation.pcap -nn \
+          | awk '{print $3, $5}' | sort | uniq -c | sort -rn
 
       The only Modbus/DNP3 traffic to field devices should be
       from the RTAC (source IP 10.30.30.20). No enterprise,

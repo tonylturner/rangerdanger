@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -151,6 +152,55 @@ func (s *Server) applyFirewallConfigInternal(configName string) error {
 	s.activeConfigMu.Unlock()
 
 	return nil
+}
+
+// handleFirewallApplyCustom accepts a raw JSON config and applies it to containd.
+// Used by the dynamic Exercise 3 to apply the student's remediation-plan-derived config.
+func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512*1024)
+	data, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body too large or unreadable"})
+		return
+	}
+
+	var config struct {
+		Firewall struct {
+			Rules []json.RawMessage `json:"rules"`
+		} `json:"firewall"`
+		Interfaces []json.RawMessage `json:"interfaces"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config JSON: " + err.Error()})
+		return
+	}
+	if len(config.Firewall.Rules) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include firewall.rules"})
+		return
+	}
+	if len(config.Interfaces) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include interfaces"})
+		return
+	}
+
+	if s.containdClient == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "containd client not configured"})
+		return
+	}
+
+	if err := s.containdClient.ImportConfig(data); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
+		return
+	}
+
+	s.activeConfigMu.Lock()
+	s.activeConfig = "custom"
+	s.activeConfigMu.Unlock()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":        "applied",
+		"active_config": "custom",
+	})
 }
 
 type fwConfigFile struct {

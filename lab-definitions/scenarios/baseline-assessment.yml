@@ -1,7 +1,7 @@
 id: baseline-assessment
-order: 0
+order: 1
 name: "Baseline Traffic Analysis"
-summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like."
+summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like (30 min)."
 description: >
   Before you can segment a substation network, you need to
   understand two things: what traffic actually exists between
@@ -20,6 +20,7 @@ tags:
   - defense
 steps:
   - title: "Review the substation topology"
+    expected_config: weak
     description: |
       Open the [Network Map](/console) and identify the four network zones:
 
@@ -33,6 +34,8 @@ steps:
       The **containd firewall** sits between all four zones and acts as the default gateway. Any traffic crossing a zone boundary passes through it — that is where we capture and analyze communication.
 
       > The **RTAC** acts as the central communication node between OT Ops and the Field network. In this lab, its communication with field devices is visible at the firewall, allowing you to observe protocols like **Modbus** and **DNP3** as they traverse zone boundaries.
+
+      **Time budget:** 30 minutes.
     action:
       type: check
       expect:
@@ -151,7 +154,11 @@ steps:
       - The firewall shows cross-zone communication.
       - It does not show all system communication.
 
-      To confirm that these internal control relationships exist even when not visible in the PCAP, query the RTAC directly:
+      To confirm that these internal control relationships exist even when not visible in the PCAP, poll a field device from the RTAC terminal via Modbus:
+
+        mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+
+      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
@@ -273,7 +280,7 @@ steps:
 
   - title: "Define success criteria for segmentation"
     description: |
-      Before you start changing anything, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in Exercise 6 to validate your changes worked.
+      Before you start changing anything, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in the Validation Evidence exercise to validate your changes worked.
 
       ### Good segmentation for this substation means
 

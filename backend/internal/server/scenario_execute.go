@@ -321,7 +321,9 @@ func (s *Server) executeCheck(expect map[string]any) []StepActionResult {
 			actual := s.activeConfig
 			s.activeConfigMu.RUnlock()
 			expected, _ := expectedVal.(string)
-			if actual == expected {
+			// "improved" expectation also accepts "custom" (student's own policy from Exercise 3)
+			match := actual == expected || (expected == "improved" && actual == "custom")
+			if match {
 				results = append(results, StepActionResult{Action: "Firewall policy", Success: true, Detail: "Active config: " + actual})
 			} else {
 				results = append(results, StepActionResult{Action: "Firewall policy", Success: false, Detail: fmt.Sprintf("Expected %s but got %s", expected, actual)})

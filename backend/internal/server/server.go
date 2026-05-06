@@ -180,6 +180,7 @@ func (s *Server) registerRoutes() {
 		api.GET("/firewall/compare", s.handleFirewallCompare)
 		api.GET("/firewall/active", s.handleFirewallActive)
 		api.POST("/firewall/apply", s.handleFirewallApply)
+		api.POST("/firewall/apply-custom", s.handleFirewallApplyCustom)
 
 		// Workshop endpoints
 		api.GET("/workshop/graph", s.handleGetWorkshopGraph)

@@ -28,11 +28,13 @@ func pollDNP3Devices() {
 	relayHost := envOr("RELAY_DNP3_HOST", "relay-sim:20000")
 	recloserHost := envOr("RECLOSER_DNP3_HOST", "recloser-sim:20000")
 	regulatorHost := envOr("REGULATOR_DNP3_HOST", "regulator-sim:20000")
+	capbankHost := envOr("CAPBANK_DNP3_HOST", "capbank-sim:20000")
 
 	targets := []dnp3Target{
 		{name: "relay", endpoint: relayHost, outstationAddr: 1},
 		{name: "recloser", endpoint: recloserHost, outstationAddr: 2},
 		{name: "regulator", endpoint: regulatorHost, outstationAddr: 3},
+		{name: "capbank", endpoint: capbankHost, outstationAddr: 4},
 	}
 
 	// Check if DNP3 polling is disabled (e.g., for testing without field devices)

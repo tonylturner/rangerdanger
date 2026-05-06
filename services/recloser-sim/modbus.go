@@ -11,7 +11,7 @@ package main
 //     1: reclose_enabled  (write 0x0000 = disable, 0xFF00 = enable)
 //     2: lockout          (read-only)
 //     3: fault_seen       (read-only)
-//     4: auto_mode        (read-only)
+//     4: inject/clear fault (write 0xFF00 = inject, 0x0000 = clear)
 //
 //   Holding Registers (FC3 read / FC6 write, 0-based):
 //     0: closed           (write 0 = open, 1 = close)
@@ -305,6 +305,56 @@ func handleWriteSingleCoil(data []byte) []byte {
 			Result:  "executed",
 			Detail:  detail,
 		})
+
+	case 4: // inject_fault (write 0xFF00) / clear_fault (write 0x0000)
+		state.mu.Lock()
+		if boolVal {
+			state.FaultSeen = true
+			state.LastCommandSource = "modbus-tcp"
+			detail := "FAULT INJECTED via Modbus FC5 Write Coil"
+			if state.Closed {
+				state.Closed = false
+				state.ShotCount++
+				log.Printf("MODBUS FC5 fault trip, shot %d", state.ShotCount)
+				if state.ShotCount < maxShots && state.RecloseEnabled && state.AutoMode {
+					state.mu.Unlock()
+					go state.autoReclose()
+					audit.Add(shared.AuditEntry{
+						Source: "modbus-tcp", Target: "recloser-sim",
+						Command: "inject_fault", Result: "executed", Detail: detail,
+					})
+				} else {
+					if state.ShotCount >= maxShots {
+						state.Lockout = true
+						detail = "FAULT INJECTED, lockout after max shots"
+					}
+					state.mu.Unlock()
+					audit.Add(shared.AuditEntry{
+						Source: "modbus-tcp", Target: "recloser-sim",
+						Command: "inject_fault", Result: "executed", Detail: detail,
+					})
+				}
+			} else {
+				state.mu.Unlock()
+				audit.Add(shared.AuditEntry{
+					Source: "modbus-tcp", Target: "recloser-sim",
+					Command: "inject_fault", Result: "executed", Detail: detail,
+				})
+			}
+			log.Printf("MODBUS FC5 INJECT FAULT — %s", detail)
+		} else {
+			state.FaultSeen = false
+			state.LastCommandSource = "modbus-tcp"
+			state.mu.Unlock()
+			log.Printf("MODBUS FC5 CLEAR FAULT — fault cleared via Modbus")
+			audit.Add(shared.AuditEntry{
+				Source:  "modbus-tcp",
+				Target:  "recloser-sim",
+				Command: "clear_fault",
+				Result:  "executed",
+				Detail:  "fault CLEARED via Modbus FC5 Write Coil",
+			})
+		}
 
 	default:
 		return []byte{fcWriteSingleCoil | 0x80, 0x02}

@@ -17,6 +17,12 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
+  const [connectKey, setConnectKey] = useState(0);
+
+  const reconnect = useCallback(() => {
+    setStatus("connecting");
+    setConnectKey((k) => k + 1);
+  }, []);
 
   // Fit terminal to container, send resize to server, and refresh the prompt.
   const fitTerminal = useCallback(() => {
@@ -151,7 +157,7 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
       fitAddonRef.current = null;
       wsRef.current = null;
     };
-  }, [nodeId, labId, expanded, fitTerminal]);
+  }, [nodeId, labId, expanded, fitTerminal, connectKey]);
 
   // Re-fit when expanded changes
   useEffect(() => {
@@ -164,17 +170,27 @@ export default function TerminalInner({ nodeId, labId, expanded = false }: Termi
       className="relative h-full w-full overflow-hidden"
       style={{ minHeight: 0 }}
     >
-      <div
-        className={`absolute right-2 top-2 z-10 h-2 w-2 rounded-full ${
-          status === "connected"
-            ? "bg-green-500"
-            : status === "connecting"
-            ? "bg-yellow-500 animate-pulse"
-            : status === "error"
-            ? "bg-red-500"
-            : "bg-slate-500"
-        }`}
-      />
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-2">
+        {(status === "disconnected" || status === "error") && (
+          <button
+            onClick={reconnect}
+            className="rounded border border-amber-700 bg-amber-950/80 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/80 transition-colors"
+          >
+            Reconnect
+          </button>
+        )}
+        <div
+          className={`h-2 w-2 rounded-full ${
+            status === "connected"
+              ? "bg-green-500"
+              : status === "connecting"
+              ? "bg-yellow-500 animate-pulse"
+              : status === "error"
+              ? "bg-red-500"
+              : "bg-slate-500"
+          }`}
+        />
+      </div>
       <div
         ref={termRef}
         className="h-full w-full bg-slate-950"

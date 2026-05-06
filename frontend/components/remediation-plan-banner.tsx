@@ -25,9 +25,11 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
     setPlan(loadRemediationPlan());
   }, [currentExerciseId]);
 
-  // Hide on baseline and on the planning exercise itself
+  // Hide on exercises where the banner isn't meaningful
   if (currentExerciseId === "baseline-assessment") return null;
   if (currentExerciseId === "remediation-planning") return null;
+  if (currentExerciseId === "segmentation-requirements") return null;
+  if (currentExerciseId === "firewall-implementation") return null;
 
   if (!plan || plan.selectedActionIds.length === 0) {
     return (

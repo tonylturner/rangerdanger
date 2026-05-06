@@ -45,15 +45,17 @@ All traffic between zones transits the containd firewall for inspection and poli
 
 Aligned to the DefendICS OT Network Segmentation workshop agenda.
 
-| # | Lab | Exercise | Focus |
-|---|-----|----------|-------|
-| 0 | 1.2 | Baseline Traffic Analysis | Capture and analyze normal flows at the firewall |
-| 1 | 1.3 | Remediation Planning Under Constraint | Choose what to fix first under finite labor budget |
-| 2 | 1.3 | Segmentation Requirements & Rule Design | Write requirements, compare to improved config |
-| 3 | 2.3 | Vendor Remote Access Compromise (bonus) | Pivot from vendor DMZ to field devices via Modbus |
-| 4 | 2.3 | Modbus Register Override Attack | Direct writes bypassing the RTAC |
-| 5 | 2.3 | DNP3 Direct Operate Command Injection | Disable auto-reclose from the enterprise zone |
-| 6 | 2.4 | Post-Change Validation & Evidence Collection | Verify the hardened policy with PCAP evidence |
+| # | Lab | Exercise | Time | Focus |
+|---|-----|----------|------|-------|
+| 1 | 1.2 | Baseline Traffic Analysis | 30 min | Capture and analyze normal flows at the firewall |
+| 2 | 1.3 | Segmentation Requirements & Rule Design | 20 min | Write requirements, compare to improved config |
+| 3 | 1.4 | Remediation Planning Under Constraint | 25 min | Choose what to fix with a finite labor budget |
+| 4 | 2.2 | Firewall Policy Implementation | 30 min | Build least-privilege containd policy from your plan |
+| 5 | 2.3 | Modbus Register Override Attack | 15 min | Direct writes bypassing the RTAC |
+| 6 | 2.3 | DNP3 Direct Operate Command Injection | 15 min | Disable auto-reclose from the enterprise zone |
+| 7 | 2.3 | Vendor Remote Access Compromise (bonus) | 15 min | Pivot from vendor DMZ to field devices via Modbus |
+| 8 | 2.3 | Capacitor Bank Switching Attack (bonus) | 15 min | Manipulate capbank switching via Modbus |
+| 9 | 2.4 | Post-Change Validation & Evidence Collection | 20 min | Verify the hardened policy with PCAP evidence |
 
 Each exercise includes inline terminal access to every relevant node, auto-run buttons for CLI commands, per-exercise notes, and backend validators that check substation state, capture files, and firewall policy.
 
@@ -135,7 +137,7 @@ Custom Go services implementing hand-written Modbus TCP, DNP3 TCP (via the [dnp3
 
 Two firewall configurations ship with the lab:
 
-- **substation-weak.json** — Intentionally permissive baseline that allows the attacks in exercises 2-4 to succeed
+- **substation-weak.json** — Intentionally permissive baseline that allows the attack exercises to succeed
 - **substation-improved.json** — Hardened policy that blocks all attack paths while preserving legitimate flows
 
 ## Getting started
@@ -202,7 +204,7 @@ docs/                  Architecture and API documentation
 
 ## Current status
 
-The Substation Segmentation scenario is fully implemented and all six exercises are playable end-to-end. Recent work:
+The Substation Segmentation scenario is fully implemented and all nine exercises are playable end-to-end. Recent work:
 
 - **containd v0.1.18 Linux shell mode** — tcpdump, bash, and standard Linux tooling available directly in the firewall SSH console
 - **Traffic generator overhaul** — produces realistic cross-zone Modbus, DNP3, HTTP, and NTP traffic; Kali attack traffic removed from baseline generation
