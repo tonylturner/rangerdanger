@@ -1,11 +1,37 @@
 # RangerDanger Release Plan
 
-Working punch list for the path from current state → first public release.
-Updated as items land. Severity follows the audit: **BLOCKER** (must
-resolve before flipping public), **REQUIRED** (must land before tagging
-v0.1.0), **POLISH** (nice-to-have, post-MVP fine).
+Working punch list for the path from current state → first public
+release (`v0.1.0`). Reconciled 2026-05-06 evening.
 
 Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs decision
+
+---
+
+## Status snapshot
+
+**Where we are:** repo is private but ready for public flip in most
+respects. CI is wired and giving real signal (proven against 5 dependabot
+PRs that fired today). Lab content is current (9 exercises, capbank-sim
+DNP3 outstation, firewall implementation exercise) after the
+`distribution-mvp` → `main` consolidation. Two-branch model in place.
+
+**What's blocking public flip:** documented lab-only security posture
+(A1 follow-up), `handleWorkshopExec` shell-injection decision (A3),
+`/api/version` proxy collision (B4 follow-up).
+
+**What's blocking `v0.1.0` tag:** GHCR publish workflow (B2/B3),
+release-flavor compose (B3), install scripts (B5), README badges (B7),
+SSD/airgap validation (B6).
+
+## Branch model
+
+- **`main`** — primary, stable, releasable. Where new OSS-prep work
+  generally lands.
+- **`oss-release`** — user's active working branch. Diverges as work
+  progresses, fast-forwards or PRs back to `main`.
+- No other long-lived branches. `distribution-mvp` was merged into
+  main on 2026-05-06 and deleted; its content is permanently reachable
+  as the second parent of merge commit `1b6366f`.
 
 ---
 
@@ -13,110 +39,82 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs deci
 
 ### A1. Secrets and credentials
 
-- [x] Verify the three leaked private keys in commits `ba34183` /
-  `6d9c1c9` / `0261366` are throwaway lab self-signed certs (issuer ==
-  subject; webtop and containd defaults). Confirmed on 2026-05-06: zero
-  real-world risk if they leak.
-- [x] Untrack `fuxa_appdata/node-red/.config.runtime.json` (Node-RED
-  `_credentialSecret`).
-- [x] Untrack `fuxa_appdata/users.fuxap.db` (bcrypt hash for FUXA admin).
-- [x] Confirm `.claude/settings.local.json` is not tracked (covered by
-  user-global gitignore; project gitignore now also excludes `.claude/`
-  for safety).
+- [x] Verified the three leaked private keys are throwaway lab
+  self-signed certs (issuer == subject).
+- [x] Untracked `fuxa_appdata/` (incl. Node-RED `_credentialSecret` and
+  bcrypt FUXA admin DB) and `fuxa_db/`.
+- [x] `.claude/settings.local.json` not tracked (covered by user-global
+  gitignore + project gitignore).
 - [x] **History rewrite executed 2026-05-06.** `git filter-repo`
-  scrubbed all 6 cert/key blobs (3 `.key` + 3 `.pem`/`.crt`) across
-  all 3 branches. Force-pushed `main`, `distribution-mvp`,
-  `oss-release` to origin. Local clone reflog-expired and gc'd.
-  Backup mirror clone preserved at `/tmp/rangerdanger-scrub.git`.
-  GitHub repo was renamed `rangerrocks` → `rangerdanger` during the
-  same window (resolves outstanding decision #4); local remote URL
-  updated.
-- [ ] Document the `CONTAIND_JWT_SECRET=rangerdanger-dev` default and
-  default lab creds (`containd/containd`, `openplc/openplc`) explicitly
-  as **lab-only** in README.
+  scrubbed all 6 cert/key blobs across all branches. Force-pushed to
+  origin. Backup mirror at `/tmp/rangerdanger-scrub.git`.
+- [ ] **Document lab-only security posture in README quickstart.** Add
+  a callout: "Binds to localhost only. No authentication. Default
+  credentials (`containd/containd`, `openplc/openplc`,
+  `CONTAIND_JWT_SECRET=rangerdanger-dev`) are for the lab and must
+  never be reused. Never expose this stack to a network you do not
+  fully trust." This is the user-facing complement to `SECURITY.md`.
 
 ### A2. Tracked files that shouldn't be in repo
 
-- [x] `.gitignore` updated: `.claude/`, `.cursor/`, `.idea/`, `.vscode/`,
-  `*.tsbuildinfo`, `dnp3go/dnp3cmd`, `dnp3go/dnp3poll`, `fuxa_appdata/`,
-  `fuxa_db/`, `fuxa_logs/`, `deploy/`.
-- [x] `git rm --cached` on:
-  - `fuxa_appdata/` (9 files including the credential-secret + bcrypt DB)
-  - `fuxa_db/currentTagReadings.db`
-  - `dnp3go/dnp3cmd`, `dnp3go/dnp3poll` (3.4 MB ARM64 mach-O each, built
-    fresh in Dockerfiles anyway)
-  - `frontend/tsconfig.tsbuildinfo`
-  - 7 stale `data/` files from the prior oil-plant lab (firewall config,
-    fuxa_control/view appdata, plc_compressor/process/safety/utilities)
+- [x] `.gitignore` updated.
+- [x] `git rm --cached` 20 files (fuxa_appdata, fuxa_db, dnp3go
+  binaries, tsbuildinfo, legacy `data/` files).
 - [x] Removed empty `deploy/` directory.
-- [ ] Commit the untrack changeset (separate commit from any code changes).
+- [x] Untrack changeset committed.
 
 ### A3. Security: command-injection + auth posture
 
-- [ ] **`backend/internal/server/exec.go:69`** — `handleWorkshopExec` runs
-  `[]string{"/bin/sh", "-c", req.Command}`; allowlist only checks the
-  first token, so `nmap; rm -rf /` passes. Either:
-  - drop `-c`, pass argv directly with no shell (preferred), or
-  - reject any input containing `;|&\``$( ><` in the allowlist.
-- [ ] **No auth middleware** on any backend endpoint
-  (`backend/internal/server/server.go:232-261` only sets CORS). This is
-  intentional for single-student-on-laptop deployment, but README must
-  state explicitly: "binds to localhost only, no auth, never expose to a
-  network you don't fully trust."
-- [ ] Fix CORS contradiction at `server.go:248-252`:
+- [?] **Decision parked — user wants implications walkthrough first.**
+  - **`backend/internal/server/exec.go:69`** — `handleWorkshopExec`
+    runs `[]string{"/bin/sh", "-c", req.Command}`; allowlist only
+    checks first token, so `nmap; rm -rf /` passes. Either harden
+    (drop `-c`, pass argv directly with no shell) or document
+    explicitly as lab-only (covered by A1).
+- [x] No-auth posture is intentional for single-student-on-laptop
+  deployment. Documented in `SECURITY.md`. README documentation
+  pending (covered by A1).
+- [ ] **CORS contradiction** at `server.go:248-252`:
   `Access-Control-Allow-Origin: *` plus `Allow-Credentials: true` is
   rejected by browsers. Pick one.
 
-### A4. CI is red on day 1
+### A4. Tests pass
 
-- [x] Fixed 2 failing tests in `backend/internal/containd/`:
-  `TestImportConfigSuccess` and `TestSeedConfigIfNeededSuccess` updated
-  to expect the candidate/commit flow. Added
-  `TestImportConfigLegacyFallback` to cover the 404→`/config/import`
-  fallback path. `go test ./...` now green.
+- [x] Fixed 2 stale `containd` tests after candidate/commit refactor.
+  Added `TestImportConfigLegacyFallback` for the 404 fallback path.
+  Backend tests green.
 
-### A5. Stale `agents.md` actively misleads
+### A5. Stale agents.md
 
-- [x] Deleted `agents.md`. (Was titled "Agent Instructions for OT Lab
-  Trainer", referenced `it_net`/`dmz_net`/`ot_safety_net`, OPNsense,
-  Suricata-in-DMZ — none of which exist.)
+- [x] Deleted.
 
-### A6. Documentation drifted from reality
+### A6. Documentation drift
 
-- [x] **`docs/architecture.md:38-40`** — backend/frontend/proxy network
-  table corrected. All three pinned to `mgmt_net` only with explanatory
-  paragraph about which lab nodes get the optional mgmt leg.
-- [x] **`CLAUDE.md`** — fixed:
-  - Exercise count "3 attack scenarios" → "7 exercises"
-    (`lab-definitions/scenarios/` actually contains 7 YAMLs:
-    baseline, remediation-planning, segmentation-requirements,
-    vendor-rdp, modbus-override, dnp3-injection, validation-evidence)
-  - Added `historian_sim`, `gps_sim`, `capbank_sim` to node table
-  - `OTLAB_DB_PATH` default fixed to `/data/rangerdanger.db`
-  - Removed "RTAC as DNP3 master" from Remaining Gaps (done — see
-    `services/rtac-sim/dnp3_poll.go`)
-  - Kept "dnp3go publish" in Remaining Gaps with note that the GitHub
-    repo `tonylturner/dnp3go` does not yet exist (verified via
-    `gh repo view`); README badges link to that future repo.
-  - Note: `/hmi` route claim is **correct** —
-    `frontend/app/hmi/page.tsx` does exist (the original audit agent
-    missed it in its enumeration).
-- [x] **`README.md`** — exercise table updated from 6 → 7 entries
-  (was missing `remediation-planning` at order=1).
+- [x] `docs/architecture.md` — backend/frontend/proxy network table
+  corrected to `mgmt_net` only.
+- [x] `CLAUDE.md` — exercise count corrected to **9** (after the
+  `distribution-mvp` merge added `capbank-switching-attack` and
+  `firewall-implementation`); removed obsolete `/hmi` reference (the
+  page was deleted in the merge — FUXA is the canonical HMI); added
+  historian/gps/capbank to node table; fixed `OTLAB_DB_PATH` default;
+  cleaned Remaining Gaps list.
+- [x] `README.md` — exercise table updated to 9 entries with Time
+  column (came in via the distribution-mvp merge resolution).
 
-### A7. `:latest` image pins
+### A7. Image pin policy
 
-- [x] Pinned `docker-compose.yml` `ghcr.io/tonylturner/containd:latest`
-  → `:v0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6`.
-- [x] Pinned `docker-compose.yml` `frangoteam/fuxa:latest`
-  → `@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f`
-  (multi-arch index, fuxa 1.3.1 series).
-- [x] Pinned `Dockerfile.openplc` `tuttas/openplc_v3:latest`
-  → `@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722`.
-- [ ] Future: also pin `linuxserver/webtop:ubuntu-{mate,xfce}` (used by
-  corp_ws and as Dockerfile bases for eng-ws and vendor-jump). These
-  ship floating distro tags only — pin by digest. Out of A7's original
-  scope, tracked in C polish.
+- [x] `docker-compose.yml`: pinned `containd:latest` →
+  `:v0.1.18@sha256:4674…`.
+- [x] `docker-compose.yml`: pinned `frangoteam/fuxa:latest` →
+  `@sha256:025e…`.
+- [x] `Dockerfile.openplc`: pinned `tuttas/openplc_v3:latest` →
+  `@sha256:94fb…`.
+- [ ] Pin `linuxserver/webtop:ubuntu-mate` and
+  `linuxserver/webtop:ubuntu-xfce` by digest. Both are floating
+  rolling tags (used by `corp_ws`, `eng_workstation`, `vendor_jump`).
+  Highest-bytes images in the stack — risk of silent upstream
+  breakage at student install time. Out of A7's original strict
+  scope, but should land before `v0.1.0`.
 
 ---
 
@@ -124,13 +122,19 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs deci
 
 ### B1. CI
 
-- [ ] `.github/workflows/ci.yml`: trigger on push + PR; jobs for
-  `backend`, `services`, `dnp3go`, `frontend`, `compose-validate`,
-  `govulncheck`, `trivy fs`.
-- [ ] `.github/workflows/release.yml`: trigger on tag `v*`; build + push
-  13 first-party images to GHCR (multi-arch where possible).
+- [x] `.github/workflows/ci.yml` live with 6 jobs: backend, services,
+  dnp3go, frontend, compose-validate, advisory govulncheck. **Proven
+  working** against 5 dependabot PRs on 2026-05-06.
+- [x] `.github/workflows/release.yml` scaffolded (placeholder; full
+  publish wiring tracked in B2).
 
-### B2. GHCR — images to publish on `release.yml`
+### B2. GHCR publishing — wire up `release.yml`
+
+- [ ] Build first-party images for `linux/amd64` + `linux/arm64`
+  (except openplc which is amd64-only).
+- [ ] Tag each `:vX.Y.Z` and `:latest`, push to
+  `ghcr.io/tonylturner/rangerdanger-<svc>`.
+- [ ] Login via `${{ secrets.GITHUB_TOKEN }}`.
 
 | GHCR repo                                         | Source                       | Multi-arch |
 | ------------------------------------------------- | ---------------------------- | ---------- |
@@ -149,36 +153,41 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done · `[?]` needs deci
 | `ghcr.io/tonylturner/rangerdanger-gps-sim`        | `services/Dockerfile`        | amd64+arm64 |
 | `ghcr.io/tonylturner/rangerdanger-opendss-sim`    | `services/opendss-sim/...`   | amd64+arm64 |
 
-Tag each `:vX.Y.Z` and `:latest`. Login via `${{ secrets.GITHUB_TOKEN }}`.
-
 ### B3. Release-flavor compose
 
 - [ ] `docker-compose.release.yml` — every `build:` replaced with
-  `image: ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`. Students /
-  evaluators run `docker compose -f docker-compose.release.yml up -d`
-  with no toolchain.
+  `image: ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`. Lets
+  students/evaluators do `docker compose -f docker-compose.release.yml
+  up -d` with no toolchain.
 
 ### B4. Versioning
 
-- [ ] `backend/internal/version/version.go` with `Version` const,
-  populated via `-ldflags "-X .../version.Version=$(git describe)"`.
-- [ ] `GET /api/version` endpoint in backend.
-- [ ] `frontend/package.json` `version` field.
-- [ ] `CHANGELOG.md` (Keep-a-Changelog format).
-- [ ] `RELEASING.md` runbook.
-- [ ] First tag: `v0.1.0`.
+- [x] `backend/internal/version/version.go` with `Version`/`Commit`/
+  `Date` ldflags-injected.
+- [x] `Dockerfile.backend` plumbs `--build-arg VERSION/COMMIT/DATE`.
+  Binary renamed `otlab` → `rangerdanger-backend`.
+- [x] `frontend/package.json` has `"version": "0.0.0"`.
+- [x] `CHANGELOG.md` (Keep-a-Changelog format).
+- [x] `RELEASING.md` runbook.
+- [ ] **Bug: `/api/version` proxy collision.** Backend handler
+  registered at `server.go:150` is shadowed by `proxy/nginx.conf:55`
+  which routes `/api/version` to FUXA. Fix: either rename backend
+  endpoint (suggest `/api/build`) or add an nginx override before
+  the FUXA route. The version stamping itself works; just the
+  exposing path needs fixing.
+- [ ] First tag: `v0.1.0` (gated on B2/B3/B5).
 
 ### B5. Scripted installation
 
-- [ ] `setup.sh` (mac/linux) + `setup.ps1` (windows): pre-flight (Docker
-  version, free disk ≥ 30 GB, RAM ≥ 8 GB, ports 8088/9080/9443/2222
-  free), `docker compose -f docker-compose.release.yml pull && up -d`,
-  smoke check (`curl http://localhost:8088/api/health`).
+- [ ] `setup.sh` (mac/linux) + `setup.ps1` (windows): pre-flight
+  (Docker version, free disk ≥ 30 GB, RAM ≥ 8 GB, ports 8088/9080/
+  9443/2222 free), `docker compose -f docker-compose.release.yml
+  pull && up -d`, smoke check (`curl http://localhost:8088/api/health`).
 - [ ] `--from-tarballs <PATH>` mode for SSD/airgap path.
 
 ### B6. SSD / `docker save` flow tested end-to-end
 
-- [ ] Build all 13 images for both arches on a reference machine.
+- [ ] Build all 14 images for both arches on a reference machine.
 - [ ] `docker save` per arch into `images-amd64.tar` and
   `images-arm64.tar`, plus `rangerdanger.tgz` of the repo.
 - [ ] Validate full SSD → laptop → `docker load` → `up -d` flow on:
@@ -188,7 +197,7 @@ Tag each `:vX.Y.Z` and `:latest`. Login via `${{ secrets.GITHUB_TOKEN }}`.
 
 ### B7. README badges
 
-Once CI exists, add:
+- [ ] Add now that CI is live and proven:
 
 ```markdown
 [![CI](https://github.com/tonylturner/rangerdanger/actions/workflows/ci.yml/badge.svg)](…)
@@ -199,130 +208,119 @@ Once CI exists, add:
 
 ### B8. Public-repo metadata
 
-- [ ] `SECURITY.md` (vulnerability reporting address)
-- [ ] `CONTRIBUTING.md` (test commands, code style, PR checklist)
-- [ ] `.github/dependabot.yml` (gomod ×3, npm, docker, github-actions)
-- [ ] `.github/ISSUE_TEMPLATE/` (optional)
-- [ ] Confirm `LICENSE` (Apache 2.0 currently — fine)
+- [x] `SECURITY.md` (vuln reporting at `security@sentinel24.com`).
+- [x] `CONTRIBUTING.md` (test commands, PR checklist).
+- [x] `.github/dependabot.yml` (gomod ×3, npm, docker, github-actions;
+  major-version bumps suppressed pre-1.0).
+- [x] `LICENSE` confirmed Apache 2.0.
+- [ ] `.github/ISSUE_TEMPLATE/` (optional polish).
 
 ### B9. Frontend reproducibility
 
-- [ ] Pick package manager (npm or pnpm), commit its lockfile, drop
-  `Dockerfile.frontend:3-4` `|| pnpm install` fallback.
-- [ ] Run `npx next lint --strict` once, commit `.eslintrc.json`.
+- [x] `frontend/package-lock.json` committed; `Dockerfile.frontend`
+  uses `npm ci` (no pnpm fallback).
+- [x] `frontend/.eslintrc.json` (`next/core-web-vitals`); CI lint
+  passes.
 
-### B10. `dnp3go` replace directive
+### B10. dnp3go vendoring
 
-- [x] **Decision: keep monorepo.** `dnp3go/` stays vendored as a
-  standalone Go module within RangerDanger, consumed via the
-  `replace` directive in `services/go.mod` and direct `COPY` in
-  `Dockerfile.kali` / `Dockerfile.eng-ws`. Verified the GitHub repo
-  `tonylturner/dnp3go` does not exist; updated README links 124 +
-  229 to point to `dnp3go/` in-tree, added `dnp3go/README.md`, and
-  documented the choice in CLAUDE.md "Deliberate non-gaps".
+- [x] **Decision: keep monorepo.** Documented in CLAUDE.md
+  "Deliberate non-gaps". `dnp3go/README.md` added. README links
+  point to in-tree `dnp3go/`.
 
 ---
 
-## C. Polish (post-MVP)
+## C. Polish (post-MVP-OK)
 
-- [ ] Tests for `exec.go` allowlist, firewall apply, scenario validators,
-  dnp3go round-trip; frontend smoke tests.
-- [ ] `healthcheck:` blocks for every sim (`/api/health` already exists);
-  switch `depends_on` to `condition: service_healthy`.
-- [ ] Resource limits in compose (esp. webtop containers).
+### Tests + scanning
+
+- [ ] **Triage govulncheck findings.** CI is currently
+  `continue-on-error: true` because the scan flagged 12 issues (mostly
+  stdlib + transitive `quic-go`). Once cleared, flip to
+  hard-fail. Suggest splitting into a separate `dep-scan.yml`
+  workflow that runs weekly.
+- [ ] Tests for: `backend/internal/server/exec.go` allowlist,
+  firewall apply/compare, scenario validators, `dnp3go` round-trip,
+  `services/capbank-sim` (no tests yet).
+- [ ] Frontend smoke tests (no test framework configured currently).
+
+### Compose hygiene
+
+- [ ] `healthcheck:` blocks for every sim (`/api/health` already
+  exists in the binary); switch `depends_on` to
+  `condition: service_healthy`.
+- [ ] Resource limits (`mem_limit`, `cpus`) — esp. webtop containers.
+- [ ] Build cache mounts on `services/Dockerfile`, `Dockerfile.kali`,
+  `Dockerfile.eng-ws` Go stages and `Dockerfile.frontend` npm stage
+  (only `Dockerfile.backend` has them currently).
+
+### Code
+
 - [ ] Delete or `_disabled.go` `handleContaindTerminal`
   (`backend/internal/server/terminal.go:180-301`) — 120 lines of
   unwired SSH-fallback with hardcoded creds + `InsecureIgnoreHostKey`.
 - [ ] Move hardcoded `http://localhost:9080` out of source:
-  `backend/internal/server/server.go:811`,
-  `frontend/app/labs/page.tsx:82`,
-  `frontend/components/nav-sidebar.tsx:58`.
-- [ ] Comment in `backend/internal/server/pcap.go:514-539` noting that
+  `backend/internal/server/server.go`,
+  `frontend/components/nav-sidebar.tsx`,
+  `frontend/app/labs/page.tsx`.
+- [ ] Comment in `backend/internal/server/pcap.go` noting that
   hardcoded zone IPs come from the YAML topology.
 - [ ] Rename `OTLAB_*` env vars → `RANGERDANGER_*` (with deprecation
   aliases for one release).
+
+### Documentation
+
 - [ ] Add `frontend/README.md`, `services/README.md`,
   `lab-definitions/README.md`.
-- [ ] `docs/api-spec.md` — document `/api/firewall/apply-custom`.
-- [ ] Build cache mounts on services/kali/eng-ws Go stages and frontend
-  pnpm stage.
-- [ ] Strip "OT Lab Trainer" / "lab trainer" / "oil-plant" references in
-  `scripts/dev-up.sh:7` and
+- [ ] `docs/api-spec.md` — document `/api/firewall/apply-custom` and
+  workshop endpoints (`/api/workshop/*`).
+- [ ] Strip "OT Lab Trainer" / "lab trainer" / "oil-plant"
+  references in `scripts/dev-up.sh:7` and
   `backend/internal/orchestrator/orchestrator.go:26`.
 - [ ] Verify `lab-networks.yml` at repo root is used or remove.
 - [ ] Add `docs/workshop-overview.md` summarizing the 9 exercises.
+
+### Audit gaps from the merge
+
+The 2026-05-06 merge brought in lab content that wasn't part of the
+original audit. These should get a quick review pass before `v0.1.0`:
+
+- [ ] `lab-definitions/scenarios/capbank-switching-attack.yml`
+- [ ] `lab-definitions/scenarios/firewall-implementation.yml`
+- [ ] `services/capbank-sim/dnp3.go` — DNP3 outstation; does it
+  follow the same patterns as relay/recloser/regulator?
+- [ ] `services/capbank-sim/main.go`
+- [ ] Updates to existing exercises (baseline, dnp3-injection,
+  modbus-override, remediation-planning, segmentation-requirements,
+  validation-evidence, vendor-rdp).
 
 ---
 
 ## Decisions outstanding
 
-1. ~~**A1 history rewrite**: do it now or skip?~~
-   **Resolved 2026-05-06: done.** See A1 above.
-2. **A3 auth/exec posture**: harden `handleWorkshopExec` properly, or
-   ship as "lab-only, localhost-bound, no auth" with prominent README
-   warning? *(Parked — need to walk through implications before
-   deciding.)*
-3. ~~**B10 dnp3go**: keep monorepo, or publish as standalone module?~~
-   **Resolved 2026-05-06:** keep monorepo; `dnp3go/` stays vendored.
-4. ~~**Repo name mismatch** (`rangerrocks` vs `rangerdanger`).~~
-   **Resolved 2026-05-06: GitHub repo renamed to `rangerdanger`.**
-   Local remote URL updated to match.
+1. ~~A1 history rewrite~~ — **Resolved 2026-05-06: done.**
+2. **A3 auth/exec posture** — harden `handleWorkshopExec` properly,
+   or document as lab-only? *(Parked — user wants implications
+   walkthrough.)*
+3. ~~B10 dnp3go publish~~ — **Resolved: keep monorepo.**
+4. ~~Repo name mismatch~~ — **Resolved: renamed to `rangerdanger`.**
+5. **Govulncheck strict mode** — when do we flip
+   `continue-on-error: false`? After a triage pass on the 12 findings.
 
 ---
 
-## Appendix — history rewrite procedure (PENDING SIGN-OFF)
+## Recently completed (2026-05-06)
 
-**Why now:** repo is private, 0 forks, 1 collaborator (owner). Anyone
-who has previously cloned will need to re-clone — but only the owner has
-ever cloned it, so blast radius is zero.
+For session continuity / changelog drafting:
 
-**What to scrub:** 6 blobs across 3 commits.
+| Commit  | What                                                          |
+|---------|---------------------------------------------------------------|
+| (multiple) | A1 secrets scrub, A2 untrack, A4 test fixes, A5 agents.md, A6 doc drift, A7 image pins |
+| `1b6366f` | Merge `distribution-mvp` into `oss-release`/`main` (71 files, 9 exercises, capbank-sim) |
+| `1919a33` | Versioning scaffold + CI workflows + community files (B1, B4, B8, B9) |
+| `294b9d9` | Mark A1 / repo-rename resolved in plan                       |
+| `794a3c8` | Tighten dependabot policy (no major bumps until v0.1.0)      |
+| `66a022b` | Bump 5 frontend deps via local commit (closes 5 dependabot PRs) |
 
-| Commit  | Date       | Blobs                                                      |
-| ------- | ---------- | ---------------------------------------------------------- |
-| ba34183 | 2026-01-30 | `data/firewall/tls/server.{crt,key}` (containd self-signed) |
-| 6d9c1c9 | 2026-02-02 | `data/{ews,jumpbox}_config/ssl/cert.{pem,key}` (webtop self-signed) |
-| 0261366 | 2026-03-16 | (touched the same paths in a build commit)                |
-
-**Procedure:**
-
-```bash
-# 1. Install git-filter-repo if needed
-brew install git-filter-repo
-
-# 2. From a clean clone (NOT this working tree)
-cd /tmp
-git clone --mirror git@github.com:tonylturner/rangerrocks.git rangerdanger-scrub.git
-cd rangerdanger-scrub.git
-
-# 3. Run filter-repo
-git filter-repo --invert-paths \
-  --path data/ews_config/ssl/cert.key \
-  --path data/ews_config/ssl/cert.pem \
-  --path data/jumpbox_config/ssl/cert.key \
-  --path data/jumpbox_config/ssl/cert.pem \
-  --path data/firewall/tls/server.key \
-  --path data/firewall/tls/server.crt
-
-# 4. Verify the blobs are gone
-git rev-list --all --objects | grep -E '\.(key|pem|crt)$' || echo "scrubbed"
-
-# 5. Force-push the scrubbed history back to origin
-git remote add origin git@github.com:tonylturner/rangerrocks.git
-git push --mirror --force
-
-# 6. In the working tree, fetch + reset so local matches scrubbed remote
-cd ~/Documents/GitHub/rangerdanger
-git fetch origin
-git reset --hard origin/distribution-mvp   # or whichever branch is current
-```
-
-**Disruption:** all commit SHAs from the earliest affected commit
-forward change. Any other branches, tags, or PRs would need
-re-creating. Currently zero branches besides `main` and
-`distribution-mvp`, no tags, no PRs.
-
-**Should we also scrub:** the dead-weight blobs we just untracked
-(`fuxa_appdata/`, `dnp3go/dnp3cmd`, etc.)? They aren't secrets, but
-they bloat `.git`. Adding their paths to the same `--path` list is
-~free during the rewrite and shrinks the repo.
+History rewrite procedure preserved in git log; backup mirror clone
+at `/tmp/rangerdanger-scrub.git`.
