@@ -76,9 +76,13 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.10
+    # backend gates on rtac_sim being ready so /api/substation/state
+    # works on first request — avoids a 5xx burst while sims warm up.
     depends_on:
-      - firewall
-      - rtac_sim
+      firewall:
+        condition: service_started
+      rtac_sim:
+        condition: service_healthy
 
   frontend:
     build:
@@ -317,13 +321,29 @@ services:
         ipv4_address: 10.50.50.10
       mgmt_net:
         ipv4_address: 10.99.99.20
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
+    # rtac waits for the field-device sims (Modbus/DNP3 polling
+    # targets) to be healthy before it starts polling them, so
+    # /api/state never returns half-initialised data.
     depends_on:
-      - firewall
-      - relay_sim
-      - recloser_sim
-      - regulator_sim
-      - opendss_sim
+      firewall:
+        condition: service_started
+      relay_sim:
+        condition: service_healthy
+      recloser_sim:
+        condition: service_healthy
+      regulator_sim:
+        condition: service_healthy
+      capbank_sim:
+        condition: service_healthy
+      opendss_sim:
+        condition: service_healthy
 
   openplc:
     platform: linux/amd64
@@ -354,6 +374,9 @@ services:
   # Zone 4: Field Device Zone
   # Inter-zone traffic routes through containd (10.40.40.2)
   # ─────────────────────────────────────────────────────────────
+  # Healthchecks below use busybox wget (built into alpine) to probe
+  # /api/health on each sim's HTTP server. start_period=10s gives the
+  # binary time to bind before unhealthy reports start counting.
   relay_sim:
     build:
       context: .
@@ -368,6 +391,12 @@ services:
     networks:
       field_net:
         ipv4_address: 10.40.40.20
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -386,6 +415,12 @@ services:
     networks:
       field_net:
         ipv4_address: 10.40.40.21
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -404,6 +439,12 @@ services:
     networks:
       field_net:
         ipv4_address: 10.40.40.22
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -422,6 +463,12 @@ services:
     networks:
       field_net:
         ipv4_address: 10.40.40.23
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -441,6 +488,12 @@ services:
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.40
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -460,6 +513,12 @@ services:
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.50
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     depends_on:
       - firewall
@@ -478,6 +537,18 @@ services:
     networks:
       physics_net:
         ipv4_address: 10.50.50.20
+    # opendss-sim uses python:3.12-slim, not alpine, so no busybox wget.
+    # python's urllib is always available — use it directly.
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/api/health',timeout=2).read(); sys.exit(0)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
 networks:
