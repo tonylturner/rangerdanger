@@ -30,9 +30,12 @@ services:
     volumes:
       - ./data/firewall:/data
     ports:
-      - "9080:8080"   # containd UI
-      - "9443:8443"   # containd HTTPS
-      - "2222:2222"   # SSH console
+      # Bound to 127.0.0.1 only (lab-only posture; A3 in release plan).
+      # See SECURITY.md → "Exposing the lab beyond localhost" for how
+      # to share the stack with another machine on purpose.
+      - "127.0.0.1:9080:8080"   # containd UI
+      - "127.0.0.1:9443:8443"   # containd HTTPS
+      - "127.0.0.1:2222:2222"   # containd SSH console
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.2
@@ -96,7 +99,10 @@ services:
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
-      - "8088:8080"
+      # Bound to 127.0.0.1 only (lab-only posture; A3 in release plan).
+      # See SECURITY.md → "Exposing the lab beyond localhost" for how
+      # to share the stack with another machine on purpose.
+      - "127.0.0.1:8088:8080"
     depends_on:
       - firewall
       - backend

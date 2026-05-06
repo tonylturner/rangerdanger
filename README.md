@@ -154,12 +154,14 @@ Two firewall configurations ship with the lab:
 
 > ### ⚠️ Lab-only deployment
 >
-> RangerDanger is designed to run on a **single student's laptop**,
-> bound to localhost, behind no auth.
+> RangerDanger is designed to run on a **single student's laptop**.
+> All host-exposed ports (`8088`, `9080`, `9443`, `2222`) are bound
+> to **loopback only** in `docker-compose.yml`, so the lab is not
+> reachable from the network by default.
 >
-> - **No authentication.** Every backend endpoint, terminal session,
->   exec endpoint, and proxy is open to anything that can reach the
->   host. This is intentional for single-tenant lab use.
+> - **No authentication** on backend / terminal / proxy. The lab is
+>   safe under loopback binding; it is **not** safe if you change
+>   the bindings to expose it.
 > - **Default credentials are baked in** for convenience:
 >   `containd / containd`, `openplc / openplc`,
 >   `CONTAIND_JWT_SECRET=rangerdanger-dev`. They are not secrets and
@@ -170,10 +172,11 @@ Two firewall configurations ship with the lab:
 >   `NET_RAW`, and `SYS_TIME` so containd can manage nftables and
 >   capture traffic.
 >
-> **Do not expose the stack to a network you do not fully trust.**
-> If you need a multi-user / shared deployment, you are responsible
-> for adding authentication, TLS, and network isolation in front of
-> it. See [`SECURITY.md`](SECURITY.md) for the full security model.
+> **Need to reach the lab from another machine?** Use an SSH local
+> forward (`ssh -L 8088:127.0.0.1:8088 you@lab-laptop`) or a mesh
+> VPN like Tailscale. Do **not** change the compose port bindings to
+> `0.0.0.0`. See [`SECURITY.md`](SECURITY.md#exposing-the-lab-beyond-localhost)
+> for the full runbook on safe external access patterns.
 
 ### Quick start
 
