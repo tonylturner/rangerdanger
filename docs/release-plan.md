@@ -127,11 +127,13 @@ SSD/airgap validation (B6).
 
 ### B2. GHCR publishing — wire up `release.yml`
 
-- [ ] Build first-party images for `linux/amd64` + `linux/arm64`
-  (except openplc which is amd64-only).
-- [ ] Tag each `:vX.Y.Z` and `:latest`, push to
-  `ghcr.io/tonylturner/rangerdanger-<svc>`.
-- [ ] Login via `${{ secrets.GITHUB_TOKEN }}`.
+- [x] **Done in commit `9a4deb6`.** 14-job matrix in
+  `.github/workflows/release.yml`. Triggers on any `v*` tag push;
+  builds linux/amd64+linux/arm64 (openplc amd64-only); injects
+  VERSION/COMMIT/DATE build-args; pre-release tags don't retag
+  `:latest`; per-image GHA cache scope.
+- [ ] Run a `v0.0.1-alpha` dry-run tag to validate the pipeline
+  end-to-end before tagging real `v0.1.0`.
 
 | GHCR repo                                         | Source                       | Multi-arch |
 | ------------------------------------------------- | ---------------------------- | ---------- |
@@ -152,10 +154,13 @@ SSD/airgap validation (B6).
 
 ### B3. Release-flavor compose
 
-- [ ] `docker-compose.release.yml` — every `build:` replaced with
-  `image: ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`. Lets
-  students/evaluators do `docker compose -f docker-compose.release.yml
-  up -d` with no toolchain.
+- [x] **Done in commit `9a4deb6`.** `docker-compose.release.yml`
+  uses `image: ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`
+  for every previously-built service; topology, env vars, sysctls,
+  and volumes match `docker-compose.yml` line-for-line. Users:
+  `VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d`.
+  Bind-mounts on lab-definitions/, scripts/, proxy/, data/ still
+  require the cloned repo or release tarball.
 
 ### B4. Versioning
 
@@ -323,6 +328,7 @@ For session continuity / changelog drafting:
 | `e75a8d2` | Rename `/api/version` → `/api/build` (B4 fix); CORS-credentials fix |
 | `d584932` | README CI/release badges + lab-only security callout (B7, A1 follow-up) |
 | `23eef4b` | **A3 resolved**: loopback-bind all host ports + SECURITY.md external-access runbook |
+| `9a4deb6` | **B2 + B3 done**: GHCR multi-arch release workflow + `docker-compose.release.yml` |
 
 History rewrite procedure preserved in git log; backup mirror clone
 at `/tmp/rangerdanger-scrub.git`.
