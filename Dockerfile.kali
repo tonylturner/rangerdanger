@@ -20,6 +20,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 # (stdlib pretty-printer), so python3-pip and the pymodbus/scapy/
 # impacket installs are also dropped.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        # systemd-standalone-sysusers satisfies the systemd dependency
+        # alternation in tcpdump and openssh-client without pulling in
+        # the full systemd init system. The full systemd package's
+        # postinst fails under qemu-emulated linux/arm64 builds (uses
+        # syscalls qemu doesn't fully implement), so we install this
+        # tiny standalone variant instead. See:
+        #   tcpdump depends on systemd | systemd-standalone-sysusers | systemd-sysusers
+        #   openssh-client depends on systemd | systemd-standalone-sysusers | systemd-sysusers
+        systemd-standalone-sysusers \
         # Network basics
         nmap \
         netcat-openbsd \
