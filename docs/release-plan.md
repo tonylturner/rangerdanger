@@ -178,11 +178,16 @@ SSD/airgap validation (B6).
 
 ### B5. Scripted installation
 
-- [ ] `setup.sh` (mac/linux) + `setup.ps1` (windows): pre-flight
-  (Docker version, free disk ≥ 30 GB, RAM ≥ 8 GB, ports 8088/9080/
-  9443/2222 free), `docker compose -f docker-compose.release.yml
-  pull && up -d`, smoke check (`curl http://localhost:8088/api/health`).
-- [ ] `--from-tarballs <PATH>` mode for SSD/airgap path.
+- [x] `setup.sh` and `setup.ps1` shipped in commit `d162768`.
+  Pre-flight checks: Docker reachable, Compose v2 present, arch
+  detection (arm64/amd64), free disk ≥ 30 GB (warns), Docker memory
+  ≥ 8 GB (warns), loopback ports 8088/9080/9443/2222 free (hard
+  fail). Default mode pulls from GHCR; `--version vX.Y.Z` pins a
+  release. Health-checks `/api/health` after `up -d`. Prints next
+  steps + SECURITY.md pointer.
+- [x] `--from-tarballs <PATH>` mode wired into both scripts: detects
+  host arch, loads `images-<arch>.tar` via `docker load`, then runs
+  `up -d`. Tarball staging itself is B6.
 
 ### B6. SSD / `docker save` flow tested end-to-end
 
