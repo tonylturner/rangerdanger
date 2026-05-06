@@ -4,7 +4,8 @@ COPY dnp3go/ .
 RUN CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll && \
     CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
-FROM linuxserver/webtop:ubuntu-mate
+# webtop ubuntu-mate pinned by digest (A7).
+FROM linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
 
 # Install OT analysis tools and Modbus testing
 RUN apt-get update && \

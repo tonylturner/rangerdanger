@@ -1,4 +1,5 @@
-FROM linuxserver/webtop:ubuntu-xfce
+# webtop ubuntu-xfce pinned by digest (A7).
+FROM linuxserver/webtop:ubuntu-xfce@sha256:13aa7d54b8cb013ff7cb2d83e0c9af07a7f9a2b3b846eb1bc8130f9441540f8b
 
 # Install OT security tools for vendor access scenario exercises.
 # In a real substation environment, a vendor laptop would commonly have
