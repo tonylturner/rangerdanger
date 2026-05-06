@@ -1,4 +1,9 @@
 version: 2
+
+# Pre-1.0 policy: dependabot opens minor and patch updates only. Major
+# version bumps are suppressed until v0.1.0 ships and we have CI signal
+# we trust. Re-evaluate by removing the `ignore` blocks once stable.
+
 updates:
   # Backend Go module
   - package-ecosystem: gomod
@@ -9,6 +14,9 @@ updates:
     labels:
       - dependencies
       - go
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Field-device simulators Go module
   - package-ecosystem: gomod
@@ -19,6 +27,9 @@ updates:
     labels:
       - dependencies
       - go
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Standalone DNP3 library
   - package-ecosystem: gomod
@@ -29,6 +40,9 @@ updates:
     labels:
       - dependencies
       - go
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Frontend (Next.js)
   - package-ecosystem: npm
@@ -39,6 +53,9 @@ updates:
     labels:
       - dependencies
       - frontend
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Dockerfiles (base image bumps)
   - package-ecosystem: docker
@@ -49,6 +66,9 @@ updates:
     labels:
       - dependencies
       - docker
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions versions
   - package-ecosystem: github-actions
@@ -59,3 +79,6 @@ updates:
     labels:
       - dependencies
       - ci
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
