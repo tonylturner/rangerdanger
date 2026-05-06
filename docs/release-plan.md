@@ -15,9 +15,8 @@ PRs that fired today). Lab content is current (9 exercises, capbank-sim
 DNP3 outstation, firewall implementation exercise) after the
 `distribution-mvp` → `main` consolidation. Two-branch model in place.
 
-**What's blocking public flip:** documented lab-only security posture
-(A1 follow-up), `handleWorkshopExec` shell-injection decision (A3),
-`/api/version` proxy collision (B4 follow-up).
+**What's blocking public flip:** *nothing.* All A-section blockers
+resolved 2026-05-06.
 
 **What's blocking `v0.1.0` tag:** GHCR publish workflow (B2/B3),
 release-flavor compose (B3), install scripts (B5), README badges (B7),
@@ -63,15 +62,19 @@ SSD/airgap validation (B6).
 
 ### A3. Security: command-injection + auth posture
 
-- [?] **Decision parked — user wants implications walkthrough first.**
-  - **`backend/internal/server/exec.go:69`** — `handleWorkshopExec`
-    runs `[]string{"/bin/sh", "-c", req.Command}`; allowlist only
-    checks first token, so `nmap; rm -rf /` passes. Either harden
-    (drop `-c`, pass argv directly with no shell) or document
-    explicitly as lab-only (covered by A1).
-- [x] No-auth posture is intentional for single-student-on-laptop
-  deployment. Documented in `SECURITY.md`. README documentation
-  pending (covered by A1).
+- [x] **Resolved 2026-05-06 (commit `23eef4b`) via Option 3 — loopback
+  binding.** Compose port mappings changed to `127.0.0.1:` for all
+  four host-exposed ports (8088 proxy, 9080/9443/2222 containd). The
+  lab is now genuinely unreachable from any interface but loopback,
+  so the unauthenticated `handleWorkshopExec` endpoint and the
+  WebSocket terminals stop being a network-exposed risk. The
+  exec-endpoint allowlist is preserved as the UI auto-run guardrail
+  it was always intended to be, not a security boundary. Added
+  `SECURITY.md` "Exposing the lab beyond localhost" runbook (SSH
+  local-forward, Tailscale, specific-LAN, 0.0.0.0-don't) for users
+  who need to deliberately share the stack.
+- [x] No-auth posture documented in `SECURITY.md` and the README
+  lab-only callout, framed correctly under the loopback binding.
 - [x] CORS contradiction fixed in commit `e75a8d2` —
   `Allow-Credentials: true` now only set when `Allow-Origin` is a
   specific host, never with the wildcard.
@@ -293,9 +296,10 @@ SSD/airgap validation (B6).
 ## Decisions outstanding
 
 1. ~~A1 history rewrite~~ — **Resolved 2026-05-06: done.**
-2. **A3 auth/exec posture** — harden `handleWorkshopExec` properly,
-   or document as lab-only? *(Parked — user wants implications
-   walkthrough.)*
+2. ~~A3 auth/exec posture~~ — **Resolved 2026-05-06: Option 3.**
+   Loopback binding via compose port pinning makes the unauth
+   endpoints unreachable; `SECURITY.md` documents safe patterns for
+   deliberate external access.
 3. ~~B10 dnp3go publish~~ — **Resolved: keep monorepo.**
 4. ~~Repo name mismatch~~ — **Resolved: renamed to `rangerdanger`.**
 5. **Govulncheck strict mode** — when do we flip
@@ -318,6 +322,7 @@ For session continuity / changelog drafting:
 | `c1a3110` | Pin `linuxserver/webtop:ubuntu-mate` and `:ubuntu-xfce` by digest (A7 follow-up) |
 | `e75a8d2` | Rename `/api/version` → `/api/build` (B4 fix); CORS-credentials fix |
 | `d584932` | README CI/release badges + lab-only security callout (B7, A1 follow-up) |
+| `23eef4b` | **A3 resolved**: loopback-bind all host ports + SECURITY.md external-access runbook |
 
 History rewrite procedure preserved in git log; backup mirror clone
 at `/tmp/rangerdanger-scrub.git`.
