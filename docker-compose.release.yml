@@ -131,6 +131,7 @@ services:
       mgmt_net:
         ipv4_address: 10.99.99.70
     shm_size: "1gb"
+    mem_limit: 2g
     restart: unless-stopped
     depends_on:
       - firewall
@@ -152,6 +153,7 @@ services:
       - ./data/kali_home:/home/kali
       - ./data/firewall/captures:/home/kali/pcaps:ro
       - ./scripts/set-gateway.sh:/usr/local/bin/set-gateway.sh:ro
+    mem_limit: 1g
     restart: unless-stopped
     depends_on:
       - firewall
@@ -176,6 +178,7 @@ services:
       mgmt_net:
         ipv4_address: 10.99.99.60
     shm_size: "1gb"
+    mem_limit: 2g
     restart: unless-stopped
     depends_on:
       - firewall
@@ -201,6 +204,7 @@ services:
       mgmt_net:
         ipv4_address: 10.99.99.61
     shm_size: "1gb"
+    mem_limit: 2g
     restart: unless-stopped
     depends_on:
       - firewall
@@ -222,6 +226,7 @@ services:
       - ./data/fuxa_hmi_appdata:/usr/src/app/FUXA/server/_appdata
       - ./data/fuxa_hmi_db:/usr/src/app/FUXA/server/_db
       - ./data/fuxa_hmi_logs:/usr/src/app/FUXA/server/_logs
+    mem_limit: 1g
     restart: unless-stopped
     depends_on:
       - firewall

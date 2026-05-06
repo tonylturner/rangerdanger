@@ -505,6 +505,19 @@ func (s *Server) runTrafficGeneration(durationSec int) {
 
 	// Scenario-driven traffic only. The autonomous baseline runs
 	// continuously in the simulator services and is NEVER produced here.
+	//
+	// IPs below are hard-coded against the substation lab topology
+	// (lab-definitions/substation-segmentation.yml) and the static
+	// docker-compose.yml network assignments. If the topology IPs
+	// change, this list must change too — there is no auto-discovery
+	// path. The relevant IPs:
+	//   eng-ws       10.20.20.20  (vendor zone)
+	//   rtac         10.30.30.20  (OT ops zone)
+	//   openplc      10.30.30.30
+	//   relay        10.40.40.20  (field zone)
+	//   recloser     10.40.40.21
+	//   regulator    10.40.40.22
+	//   capbank      10.40.40.23
 	targets := []struct {
 		container string
 		cmd       string
