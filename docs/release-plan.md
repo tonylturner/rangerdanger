@@ -258,21 +258,29 @@ SSD/airgap validation (B6).
   lines of unwired SSH-fallback with hardcoded creds + `Insecure
   IgnoreHostKey`. Active in-app terminal path uses docker exec via
   `connectTerminal`; external SSH path (`ssh -p 2222`) untouched.
-- [ ] Move hardcoded `http://localhost:9080` out of source:
-  `backend/internal/server/server.go`,
-  `frontend/components/nav-sidebar.tsx`,
-  `frontend/app/labs/page.tsx`.
-- [ ] Comment in `backend/internal/server/pcap.go` noting that
-  hardcoded zone IPs come from the YAML topology.
-- [ ] Rename `OTLAB_*` env vars → `RANGERDANGER_*` (with deprecation
-  aliases for one release).
+- [x] Hardcoded `http://localhost:9080` removed (commit `f8f4cea`).
+  All four sites (backend `server.go`, `orchestrator.go`,
+  `nav-sidebar.tsx`, `labs/page.tsx`) now use the same-origin
+  `/containd/` path. Bonus: orchestrator's firewall `interface_ips`
+  map keys updated from legacy zone names to current ones.
+- [x] Comment added to `backend/internal/server/pcap.go`
+  (commit `8aa4575`) listing the hardcoded zone IPs and noting they
+  come from `lab-definitions/substation-segmentation.yml` and
+  `docker-compose.yml`.
+- [x] `OTLAB_*` env vars renamed to `RANGERDANGER_*` with
+  deprecation alias (commit `7d72865`). `promoteLegacyEnv()` in
+  `internal/config/config.go` copies legacy vars at startup with a
+  warning log. Compose files + CLAUDE.md + architecture.md
+  updated; CONTAIND_JWT_SECRET unchanged (containd-owned).
 
 ### Documentation
 
 - [x] Added `frontend/README.md`, `services/README.md`,
   `lab-definitions/README.md` (commit `00e5db2`).
-- [ ] `docs/api-spec.md` — document `/api/firewall/apply-custom` and
-  workshop endpoints (`/api/workshop/*`).
+- [x] `docs/api-spec.md` updated (commit `c45d392`) — added
+  `/api/build`, `/api/firewall/apply-custom`, refreshed the
+  WebSocket terminal section to match the post-`3fe8b09` reality
+  (Docker exec for all nodes including the firewall, no SSH path).
 - [x] Stripped "OT Lab Trainer" / "lab trainer" / "oil-plant"
   references (commit `bf653f1`). Removed `scripts/dev-up.sh`/
   `dev-down.sh` "lab trainer" banners; deleted 4 legacy network
@@ -283,7 +291,10 @@ SSD/airgap validation (B6).
   covered by `firewall_config_test.go`).
 - [x] `lab-networks.yml` removed (commit `bf653f1`) — vestigial
   oil-plant topology file with zero references.
-- [ ] Add `docs/workshop-overview.md` summarizing the 9 exercises.
+- [x] `docs/workshop-overview.md` added (commit `d70ea33`) —
+  visitor-facing summary of all 9 exercises with time budgets,
+  what's simulated vs. not, the weak-baseline → hardened-target
+  arc, and a pointer to SECURITY.md for deployment posture.
 
 ### Audit gaps from the merge — reviewed 2026-05-06
 
@@ -349,6 +360,11 @@ For session continuity / changelog drafting:
 | `79673d6` | Healthchecks on all 8 sims; rtac/backend depends_on use service_healthy |
 | `bf653f1` | Oil-plant lab vestiges removed (-163 lines, -1 file) |
 | `00e5db2` | Subdirectory READMEs (frontend, services, lab-definitions) |
+| `8aa4575` | Memory limits on heavy containers (corp_ws/vendor_jump/eng_ws/kali/fuxa); pcap.go zone IPs comment |
+| `f8f4cea` | Hardcoded `localhost:9080` removed at all 4 sites; same-origin `/containd/` proxy used |
+| `d70ea33` | `docs/workshop-overview.md` — visitor-facing walkthrough of all 9 exercises |
+| `c45d392` | `docs/api-spec.md` — added `/api/build`, `/api/firewall/apply-custom`, refreshed terminal section |
+| `7d72865` | `OTLAB_*` env vars → `RANGERDANGER_*` with deprecation alias |
 
 History rewrite procedure preserved in git log; backup mirror clone
 at `/tmp/rangerdanger-scrub.git`.
