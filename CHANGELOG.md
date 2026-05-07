@@ -32,8 +32,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Lab 1.2 trimmed:** Step 4's `tshark` views narrowed to host-pair
   conversations on the main path (other two views moved to a hint).
-  Step 7 (Define success criteria) moved into Lab 1.3 where it
-  fits the design conversation.
+  Step 7 (Define success criteria) moved into Lab 1.3 where it fits
+  the design conversation.
 
 - **Lab 1.3 trimmed:** Cut Steps 5–7 (preview improved / apply /
   revert) — they spoiled the hands-on build in Lab 2.2.
@@ -43,18 +43,48 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   test pass and PCAP evidence assembly. Added a closing reflection
   step.
 
+- **Lab 2.2 / 2.4 CLI + UI rewrite.** Replaced curl-as-CLI hints
+  ("Creating rules via the CLI: `curl -X POST .../api/v1/policies`")
+  with the actual containd appliance CLI commands (`show running-config`,
+  `set firewall rule`, `delete firewall rule`, `commit`,
+  `commit confirmed 60`, `show audit`, `export config`,
+  `import config`). Web UI walkthroughs added alongside as the
+  preferred path. Remaining `curl` references are explicitly
+  labeled as lab conveniences (RTAC `/api/state`, `/api/health`,
+  FUXA HMI smoke test, traffic generator).
+
+### Frontend / UX
+
+- **In-app `fw-1` terminal lands directly in the containd CLI.**
+  Backend `ExecShell` special-cases the firewall container to launch
+  via `containd cli` with bash as the fallback. On CLI exit (typing
+  `shell`, `bash`, `exit`, `quit`, or `logout`) the wrapper drops
+  the operator into bash for low-level diagnostics.
+- New `docs/quickstart.md` carries the full install walkthrough
+  (online / build-from-source / offline-SSD), common-error guide,
+  and what a good bug report includes.
+- `README.md` reorganized — Quick Start moved above the fold (was
+  at line 179 of 298). Trimmed from 298 → 136 lines by removing
+  duplicated Repository-Layout and Current-Status sections.
+
 ### Infrastructure
 
 - **`vendor-jump` container** now runs `xrdp` (3389), `tigervnc`
   (5900, no-auth lab convenience), and `openssh-server` (22). User
   `vendor-user` (password `vendor`) is created at startup via
   `scripts/start-rdp-vnc.sh` mounted into `/custom-cont-init.d/`.
-- **`kali` container** gains `freerdp2-x11` (xfreerdp), `tigervnc-viewer`
-  (vncviewer), and `sshpass` for the vendor-rdp-compromise lab.
-- **`substation-weak.json`** firewall policy adds `tcp/5900` (VNC) to
-  the existing `enterprise-to-vendor` rule alongside SSH/HTTP/HTTPS/RDP;
-  `substation-improved.json` already restricts to 22/80/443 only,
-  so hardening blocks RDP and VNC by absence-from-allow.
+- **`kali` container** gains `freerdp-x11` (xfreerdp),
+  `xtightvncviewer`, and `sshpass` for the vendor-rdp-compromise lab.
+- **`substation-weak.json`** firewall policy adds `tcp/5900` (VNC)
+  to the existing `enterprise-to-vendor` rule alongside SSH/HTTP/
+  HTTPS/RDP; `substation-improved.json` already restricts to
+  22/80/443 only, so hardening blocks RDP and VNC by
+  absence-from-allow.
+- **containd dependency** moved from a digest-pinned per-release
+  bump to `containd:latest` in both compose files. Both repos are
+  co-developed and stay in sync by convention; `docker compose pull`
+  picks up containd security fixes (e.g., the Go 1.25.9 bump in
+  containd v0.1.20) without a RangerDanger compose change.
 
 ### Changed
 
@@ -68,36 +98,72 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from YAML on startup so no user-entered state is lost.
 
 - `orchestrator.createContainer` now fails fast with a clear error
-
   when a node references an unknown network zone, instead of silently
-  no-op'ing and letting the container land on Docker's default bridge.
-  Pinned with `backend/internal/orchestrator/orchestrator_test.go`.
+  no-op'ing and letting the container land on Docker's default
+  bridge. Pinned with `backend/internal/orchestrator/orchestrator_test.go`.
   Surfaced by Codex review on PR #26.
+
+- Backend dispatch in `handleValidateScenario` cleaned up: removed
+  case arms for the deleted exercise IDs, added a case +
+  `validateHardeningConfigurations` validator for Lab 2.3, dropped
+  ~200 lines of unreachable validator code.
+
+### Setup scripts
+
+- `setup.sh` / `setup.ps1` port-busy preflight now shows the
+  holding process (name + PID) for each conflicting port — saves
+  the "go run lsof / netstat" round-trip.
+- `setup.sh` / `setup.ps1` `docker compose pull` wrapped in a
+  3-attempt retry with 15s / 30s backoff for transient GHCR 5xx
+  during layer fetches. On final failure the diagnostic enumerates
+  the common causes (network blocks ghcr.io, GHCR down, disk
+  full).
+
+### Tests
+
+- **Backend** — 14 new tests in `scenario_validate_test.go` covering
+  the surviving validators (hardening-configurations, vendor-RDP,
+  validation-evidence, remediation-planning, generic) + helper smoke
+  tests (`mapGet`, `boolGet`, `intGet`, `countAuditByZoneAndCommand`).
+- **Frontend** — Vitest framework wired in (`vitest.config.ts`,
+  `npm test` script, CI step between lint and build). 27 new tests
+  covering `frontend/lib/remediation-to-rules.ts` (the dynamic-
+  remediation pipeline that drives Lab 2.2's adaptive content) and
+  `frontend/lib/exercise-nodes.ts` (lab → terminal node mapping).
+- **Smoke** — `scripts/smoke-test.sh` (host-runnable) +
+  `.github/workflows/smoke.yml` (CI) updated for the 7-lab
+  inventory: validates exact `(order, id)` tuples and per-lab step
+  counts via `description` occurrence count.
 
 ### CI
 
 - `release.yml` retries the `Build and push` step up to twice on
   failure (with 30s and 60s delays) to absorb transient GHCR 5xx
   during layer uploads. Each retry reuses already-pushed blobs via
-  buildkit's layer dedup, so only the failed layer actually re-uploads.
+  buildkit's layer dedup, so only the failed layer actually
+  re-uploads.
 - `ci.yml`'s `govulncheck` job is now a hard gate (was advisory).
   An allowlist of two `docker/docker` OSV IDs (GO-2026-4887,
   GO-2026-4883) — the only findings without an upstream fix — keeps
-  known exceptions passing; any new finding fails the build. Closes
-  a v0.1.x stabilization item from `docs/tasks.md`.
+  known exceptions passing; any new finding fails the build.
 
 ### Security
 
 - `backend/go.mod`: `quic-go` v0.54.0 → v0.57.0 (clears
   `GO-2025-4233`, `GO-2025-4017`); `golang.org/x/crypto` v0.44.0 →
-  v0.50.0 (clears `GO-2025-4134`, `GO-2025-4135`). Surfaced when the
-  govulncheck gate flipped above.
+  v0.50.0 (clears `GO-2025-4134`, `GO-2025-4135`). Surfaced when
+  the govulncheck gate flipped above.
 
 ### Documentation
 
-- Replaced `docs/release-plan.md` (a v0.1.0-cutover working doc) with
-  `docs/tasks.md`, a prioritized P1/P2/P3 backlog. `ROADMAP.md`
+- Replaced `docs/release-plan.md` (a v0.1.0-cutover working doc)
+  with `docs/tasks.md`, a prioritized P1/P2/P3 backlog. `ROADMAP.md`
   remains the longer-horizon view.
+- Stale references to old exercise numbering (Exercise 0, 3, 4) and
+  removed exercise IDs scrubbed from `docs/architecture.md`,
+  `docs/api-spec.md`, `docs/workshop-overview.md`, and `ROADMAP.md`.
+- GitHub repo description updated from "9 guided exercises" to
+  "7 labs aligned to the DefendICS workshop".
 
 ## [v0.1.1] - 2026-05-07
 
