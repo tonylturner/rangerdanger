@@ -320,11 +320,24 @@ func (o *Orchestrator) ExecShell(ctx context.Context, containerID string) (types
 		return types.HijackedResponse{}, "", fmt.Errorf("docker client not available")
 	}
 
-	// Prefer bash as an interactive login shell if available, fall back to sh.
-	// The -il flags ensure bash reads /etc/profile and ~/.bashrc so PS1 and
-	// aliases are set up. The exec replaces the wrapper sh process.
+	// The firewall container lands directly in the containd appliance CLI
+	// — that's the experience labs are written against (`show running-config`,
+	// `set firewall rule`, `commit`, etc.). Type `shell` from the CLI to drop
+	// to bash and `exit` to return. If the CLI errors (e.g., daemon not yet
+	// up, stale users.db), the wrapper falls through to bash so students
+	// aren't locked out of low-level diagnostics.
+	//
+	// All other containers default to bash (or sh fallback). The -il flags
+	// make bash read /etc/profile and ~/.bashrc so PS1 and aliases are set.
+	var cmd []string
+	if containerID == "rangerdanger-firewall" {
+		cmd = []string{"sh", "-c", "containd cli; exec bash -il || exec sh -i"}
+	} else {
+		cmd = []string{"sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"}
+	}
+
 	execConfig := container.ExecOptions{
-		Cmd:          []string{"sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"},
+		Cmd:          cmd,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,

@@ -69,15 +69,9 @@ steps:
       **Option 2: containd CLI**
 
       The `fw-1` terminal tab on the [Network Map](/console) opens
-      a **bash shell** on the firewall container — useful for
-      `tcpdump`, `ip`, `nft list ruleset`, and other Linux-side
-      diagnostics. To enter the containd appliance CLI from there:
-
-          containd cli
-          # logs in as containd / containd
-
-      You'll see the `containd# ` prompt. List the interfaces and
-      the running policy:
+      directly into the **containd appliance CLI**. You'll see the
+      `containd# ` prompt. List the interfaces and the running
+      policy:
 
           show interfaces
           show running-config
@@ -88,18 +82,21 @@ steps:
       field, vendor to field, any-to-any on ICS ports), the weak
       baseline is active. That is your starting point.
 
+      To drop to the underlying Linux shell on the firewall container
+      (useful for `tcpdump`, `ip`, `nft list ruleset`, and other
+      low-level diagnostics) type `exit` (or `shell` from containd
+      v0.1.19+). Run `containd cli` from bash to come back.
+
       :::hint Alternative — SSH from your laptop
       You can also reach the containd CLI from a fresh terminal on
-      your laptop (the host), which gives you a dedicated window
-      separate from the in-app terminal:
+      your laptop:
 
           ssh -p 2222 containd@localhost
           # password: containd
 
       The SSH server is configured in `linux` shell mode, so it
-      lands in bash — same as the in-app terminal. Type
-      `containd cli` (or `configure`) to enter the appliance CLI,
-      `exit` to return.
+      lands in bash. Type `containd cli` (or `configure`) to enter
+      the appliance CLI, `exit` to return to bash.
       :::
 
   - title: "Phase 1 - Verify current access under the weak baseline"
