@@ -21,7 +21,6 @@ import {
 } from "@react-pdf/renderer";
 import { marked } from "marked";
 import type { Scenario, ScenarioStep } from "./api";
-import { workbookSection } from "./workbook-sections";
 
 // Register real TTF fonts. The PDF built-in Helvetica/Courier fonts
 // have known glyph metric issues in @react-pdf/renderer that surface
@@ -792,17 +791,12 @@ function StepBlock({ step, index }: { step: ScenarioStep; index: number }) {
 // `anchorId` becomes a #-target so TOC entries can link to this header.
 function ExerciseHeader({
   scenario,
-  exerciseNumber,
   anchorId,
 }: {
   scenario: Scenario;
-  exerciseNumber: number;
   anchorId?: string;
 }) {
-  const lab = workbookSection(scenario.id);
-  const eyebrow = lab
-    ? `LAB ${lab}  ·  EXERCISE ${exerciseNumber}`
-    : `EXERCISE ${exerciseNumber}`;
+  const eyebrow = scenario.order ? `LAB ${scenario.order}` : "EXERCISE";
   return (
     <View style={styles.pageBody} id={anchorId} wrap>
       <Text style={styles.exerciseEyebrow}>{eyebrow}</Text>
@@ -832,7 +826,7 @@ function ExerciseHeader({
 // ── Exported Document components ──────────────────────────────────
 
 export function ExercisePDF({ scenario }: { scenario: Scenario }) {
-  const lab = workbookSection(scenario.id);
+  const lab = scenario.order;
   const labPrefix = lab ? `LAB ${lab}  ·  ` : "";
   const footer = `${labPrefix}${sanitizeText(scenario.name).toUpperCase()}`;
   const exerciseBookmarkTitle = lab
@@ -848,7 +842,6 @@ export function ExercisePDF({ scenario }: { scenario: Scenario }) {
       >
         <ExerciseHeader
           scenario={scenario}
-          exerciseNumber={scenario.order ?? 0}
           anchorId={`ex-${scenario.id}`}
         />
         <Text style={styles.pageFooterBrand} fixed>{footer}</Text>
@@ -925,7 +918,7 @@ export function WorkbookPDF({
 
           <Text style={styles.coverIntroHeading}>Contents</Text>
           {sorted.map((s, ei) => {
-            const lab = workbookSection(s.id);
+            const lab = s.order;
             return (
               <Link
                 key={s.id}
@@ -978,7 +971,7 @@ export function WorkbookPDF({
           leading bullet. PDF readers display the bookmarks in document
           order, which produces the right visual grouping. */}
       {sorted.flatMap((s, ei) => {
-        const lab = workbookSection(s.id);
+        const lab = s.order;
         const labPrefix = lab ? `LAB ${lab}  ·  ` : "";
         const footer = `${labPrefix}${sanitizeText(s.name).toUpperCase()}`;
         const exerciseBookmarkTitle = lab
@@ -994,7 +987,6 @@ export function WorkbookPDF({
           >
             <ExerciseHeader
               scenario={s}
-              exerciseNumber={ei}
               anchorId={`ex-${s.id}`}
             />
             <Text style={styles.pageFooterBrand} fixed>{footer}</Text>

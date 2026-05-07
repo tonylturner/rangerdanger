@@ -204,7 +204,7 @@ type ScenarioYAML struct {
 	Name        string         `yaml:"name"`
 	Summary     string         `yaml:"summary"`
 	Description string         `yaml:"description"`
-	Order       int            `yaml:"order"`
+	Order       string         `yaml:"order"`
 	Nodes       []string       `yaml:"nodes,omitempty"`
 	Tags        []string       `yaml:"tags"`
 	Steps       []ScenarioStep `yaml:"steps"`

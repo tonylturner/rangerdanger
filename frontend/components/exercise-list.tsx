@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, Star } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { listScenarios, type Scenario } from "../lib/api";
-import { WORKBOOK_SECTION } from "../lib/workbook-sections";
 
 function getCompletionPct(exerciseId: string, totalSteps: number): number {
   if (totalSteps === 0) return 0;
@@ -98,7 +97,7 @@ function ExerciseCard({
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
   const pct = getCompletionPct(exercise.id, exercise.steps.length);
-  const section = WORKBOOK_SECTION[exercise.id];
+  const section = exercise.order;
 
   const handleExportPDF = (e: React.MouseEvent) => {
     e.stopPropagation();

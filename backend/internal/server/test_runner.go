@@ -27,7 +27,7 @@ type stepTestResult struct {
 type scenarioTestResult struct {
 	ScenarioID   string           `json:"scenario_id"`
 	ScenarioName string           `json:"scenario_name"`
-	Order        int              `json:"order"`
+	Order        string           `json:"order"`
 	Steps        []stepTestResult `json:"steps"`
 	Passed       bool             `json:"passed"`
 	ResetOK      bool             `json:"reset_ok"`
@@ -64,7 +64,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	totalFailed := 0
 
 	for _, sc := range scenarios {
-		log.Printf("TEST SUITE: Running scenario %d: %s", sc.Order, sc.Name)
+		log.Printf("TEST SUITE: Running scenario %s: %s", sc.Order, sc.Name)
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
@@ -217,7 +217,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		results = append(results, scenarioResult)
-		log.Printf("TEST SUITE: Scenario %d %s: %v", sc.Order, sc.Name, scenarioResult.Passed)
+		log.Printf("TEST SUITE: Scenario %s %s: %v", sc.Order, sc.Name, scenarioResult.Passed)
 	}
 
 	c.JSON(http.StatusOK, testSuiteResult{
