@@ -13,6 +13,10 @@ either remove resolved entries or add new ones.
 
 ## Open
 
+After the Go 1.25.9 toolchain bump (commit in this batch), only
+the following findings remain. Both have rationale for acceptance
+under the loopback-bound deployment.
+
 ### docker/docker — `GO-2026-4887` and `GO-2026-4883`
 
 - **Module**: `github.com/docker/docker@v27.5.1+incompatible`
@@ -20,12 +24,12 @@ either remove resolved entries or add new ones.
   image inspection)
 - **Upstream fix**: `Fixed in: N/A` — no patched docker SDK release at
   time of writing
-- **Mitigation**: lab-only deployment is loopback-bound (A3); Docker
-  socket mount is in the always-trusted backend container; no untrusted
-  input reaches the affected SDK paths
+- **Mitigation**: lab-only deployment is loopback-bound (A3); the
+  Docker socket mount is in the always-trusted backend container; no
+  untrusted input reaches the affected SDK paths
 - **Action**: monitor https://github.com/moby/moby for a release
   containing the fix; bump when available. Until then, the
-  `docker.docker` direct dependency in `backend/go.mod` stays pinned
+  `docker/docker` direct dependency in `backend/go.mod` stays pinned
   at the current version.
 
 ### quic-go — `GO-2025-4233`
@@ -37,8 +41,8 @@ either remove resolved entries or add new ones.
   + HTTP/2 via Gin's standard server)
 - **Upstream fix**: quic-go v0.57.0
 - **Mitigation**: govulncheck flags this as reachable because gin
-  imports the http3 package even when not used. Practical exposure
-  is zero under the current deployment.
+  imports the http3 package even when the http3 server isn't
+  started. Practical exposure under our deployment is zero.
 - **Action**: clears once `gin-gonic/gin` releases a version that
   pins quic-go v0.57.0+. Tracked by dependabot's weekly gomod update
   for `/backend`. If gin lags, we can add a `replace` directive
@@ -47,24 +51,34 @@ either remove resolved entries or add new ones.
 
 ## Resolved by Go toolchain bump (2026-05-07)
 
-The following 15 stdlib findings reported by govulncheck against
-Go 1.24.3 are cleared by the toolchain bump to **Go 1.24.13** (commit
-in this batch):
+The Go toolchain pin was bumped twice this release cycle:
 
-- `GO-2026-4947`, `GO-2026-4946`, `GO-2026-4866`, `GO-2025-4175`,
-  `GO-2025-4155`, `GO-2025-4013` — `crypto/x509` (cert parsing)
-- `GO-2026-4870`, `GO-2026-4340`, `GO-2026-4337` — `crypto/tls`
-- `GO-2026-4869`, `GO-2025-4014` — `archive/tar`
-- `GO-2026-4865` — `html/template`
-- `GO-2026-4602` — `os`
-- `GO-2026-4601`, `GO-2026-4341` — `net/url`
+1. **`1.24.3 → 1.24.13`** cleared 6 stdlib findings whose `Fixed in`
+   was on the 1.24.x line: `GO-2026-4341` (net/url), `GO-2026-4340`
+   (tls), `GO-2026-4337` (tls), `GO-2025-4175` (x509), `GO-2025-4155`
+   (x509), `GO-2025-4014` (tar).
 
-The toolchain directive in `backend/go.mod` controls the version
-CI's `actions/setup-go` installs; bumping it forces the patched
-runtime everywhere `go-version-file: backend/go.mod` is used.
-`services/` and `dnp3go/` modules don't pin a toolchain (they use
-the latest 1.24.x patch the runner has installed), so they
-automatically pick up patched versions.
+2. **`1.24.13 → 1.25.9`** cleared the remaining 7 stdlib findings
+   whose `Fixed in` required the 1.25.x line:
+   - `GO-2026-4947` (x509 chain build) — Fixed in 1.25.9
+   - `GO-2026-4946` (x509 policy validation) — Fixed in 1.25.9
+   - `GO-2026-4870` (TLS 1.3 KeyUpdate DoS) — Fixed in 1.25.9
+   - `GO-2026-4869` (archive/tar sparse alloc) — Fixed in 1.25.9
+   - `GO-2026-4865` (html/template XSS) — Fixed in 1.25.9
+   - `GO-2026-4602` (os Root escape) — Fixed in 1.25.8
+   - `GO-2026-4601` (net/url IPv6 parse) — Fixed in 1.25.8
+
+The toolchain directive in each module's `go.mod` controls the
+version CI's `actions/setup-go` installs (`go-version-file:
+<module>/go.mod` reads it). `backend/go.mod`, `services/go.mod`,
+and `dnp3go/go.mod` all pin `toolchain go1.25.9`. The `go 1.24.0`
+directive (minimum language version) is left alone so the modules
+remain buildable by anyone on Go 1.24+ as a consumer.
+
+Dockerfile bases also bumped:
+`Dockerfile.backend` → `golang:1.25` (was `1.24`)
+`services/Dockerfile`, `Dockerfile.kali`, `Dockerfile.eng-ws` →
+`golang:1.25-alpine` (was `1.24-alpine`).
 
 ## Triggering the advisory job → hard-fail flip
 
@@ -83,3 +97,9 @@ govulncheck:
 
 CI then fails any PR that introduces a new finding. New findings get
 triaged into this file before merge.
+
+The current "Open" section has only the docker/docker (no upstream
+fix) and quic-go (transitive, unused HTTP/3 path) findings. Both
+have explicit acceptance rationale tied to the loopback-bound
+deployment. If you're comfortable with the rationale, this is the
+moment to make govulncheck a hard gate.
