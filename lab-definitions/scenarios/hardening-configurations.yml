@@ -7,9 +7,9 @@ description: >
   exercise stress-tests it against two attacks that ride on ports
   the firewall must allow for legitimate RTAC operation:
 
-  1. **Modbus register override** — a direct write from Kali bypasses
+  1. **Modbus register override** - a direct write from Kali bypasses
      the RTAC to manipulate the voltage regulator.
-  2. **DNP3 Direct Operate injection** — an unauthorized control
+  2. **DNP3 Direct Operate injection** - an unauthorized control
      command disables auto-reclose on the recloser, then triggers a
      permanent outage on a transient fault.
 
@@ -36,9 +36,9 @@ steps:
       - Regulator in auto, tap near 0
       - Critical-load voltage in ANSI C84.1 Range A (114–126V)
 
-      Quick check from the [Feeder HMI](/substation), or — as a
+      Quick check from the [Feeder HMI](/substation), or - as a
       lab convenience (real RTACs don't expose a JSON `/api/state`;
-      this is RangerDanger's status helper) — from any OT Ops
+      this is RangerDanger's status helper) - from any OT Ops
       terminal:
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -30
@@ -52,7 +52,7 @@ steps:
         reclose_enabled: true
         voltage_normal: true
 
-  - title: "Attack 1 — Modbus register override"
+  - title: "Attack 1 - Modbus register override"
     expected_config: weak
     node: kali-1
     description: |
@@ -62,7 +62,7 @@ steps:
 
           mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
 
-      Verify the impact — critical-load voltage drops below ANSI
+      Verify the impact - critical-load voltage drops below ANSI
       Range A:
 
           mbpoll -a 1 -t 4 -r 3 10.30.30.20 -c 1 -1
@@ -71,7 +71,7 @@ steps:
 
       **Why it worked:** the weak baseline allows enterprise → field
       Modbus 502. There's no source pinning, no function-code
-      filtering, no protocol awareness — just an open port.
+      filtering, no protocol awareness - just an open port.
     action:
       type: command
       device: regulator
@@ -79,7 +79,7 @@ steps:
       source: "10.10.10.50"
       value: -16
 
-  - title: "Attack 2 — DNP3 Direct Operate injection"
+  - title: "Attack 2 - DNP3 Direct Operate injection"
     expected_config: weak
     node: kali-1
     description: |
@@ -92,13 +92,13 @@ steps:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
 
-      Without auto-reclose, the recloser locks out — what should be a
+      Without auto-reclose, the recloser locks out - what should be a
       brief flicker becomes a sustained outage. Hospital and fire
       station downstream lose power.
 
       **Why it worked:** the weak baseline allows enterprise → field
       DNP3 20000. There's no DPI to distinguish Direct Operate
-      (FC05) from a benign read (FC01) — they ride on the same port.
+      (FC05) from a benign read (FC01) - they ride on the same port.
     action:
       type: command
       device: recloser
@@ -157,7 +157,7 @@ steps:
       type: firewall
       config: improved
 
-  - title: "Re-test Attack 1 — Modbus override"
+  - title: "Re-test Attack 1 - Modbus override"
     expected_config: hardened
     node: kali-1
     description: |
@@ -165,7 +165,7 @@ steps:
 
           mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
 
-      The connection should time out — containd blocks
+      The connection should time out - containd blocks
       enterprise → field at the L4 boundary before DPI even applies.
       The regulator stays at its normal tap.
     action:
@@ -175,7 +175,7 @@ steps:
       source: "10.10.10.50"
       value: -16
 
-  - title: "Re-test Attack 2 — DNP3 injection"
+  - title: "Re-test Attack 2 - DNP3 injection"
     expected_config: hardened
     node: kali-1
     description: |
@@ -187,7 +187,7 @@ steps:
 
       :::hint Why DPI matters even when L4 is tight
       The L4 source-pin already blocked Kali. But DPI matters in
-      the cases L4 can't catch — for example, if your management
+      the cases L4 can't catch - for example, if your management
       path allows the engineering workstation to reach the RTAC
       on DNP3 for monitoring, port-only filtering can't say
       *"reads yes, Direct Operate no."* That's the layer DPI adds.

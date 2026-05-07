@@ -25,7 +25,7 @@ steps:
       Confirm a hardened firewall policy is loaded.
 
       **Web UI:** open [http://localhost:9080](http://localhost:9080)
-      and check the policy summary on the dashboard — it should
+      and check the policy summary on the dashboard - it should
       reflect the rule set you built in Lab 2.2 (or the reference
       hardened policy if you used **Apply Hardened**).
 
@@ -45,7 +45,7 @@ steps:
       expect:
         firewall_config: improved
 
-  - title: "Positive tests — authorized flows still work"
+  - title: "Positive tests - authorized flows still work"
     description: |
       Verify the flows the substation depends on are unaffected by
       the hardened policy. From the **RTAC** terminal:
@@ -61,24 +61,24 @@ steps:
           dnp3poll 10.40.40.22:20000 -a 3
 
       All should return data. Then confirm intra-zone HMI → RTAC
-      traffic is still flowing — in real life you'd open the HMI
+      traffic is still flowing - in real life you'd open the HMI
       and check live data updates. As a lab smoke test from any
       OT Ops node:
 
           curl -s http://10.30.30.20:8080/api/health
 
-      Should return `{"status":"ok"}` (the lab's RTAC health helper —
+      Should return `{"status":"ok"}` (the lab's RTAC health helper -
       same convenience class as `/api/state`).
 
       For a single-pane view of all field-device comms, hit the lab's
-      RTAC state API (lab convenience — real RTACs don't expose a
+      RTAC state API (lab convenience - real RTACs don't expose a
       JSON `/api/state`; their status surfaces in the SCADA system):
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
       `device_comms` should be `true` for every field device.
 
-  - title: "Negative tests — unauthorized flows blocked"
+  - title: "Negative tests - unauthorized flows blocked"
     description: |
       Verify the cross-zone paths your policy closed are actually
       unreachable.
@@ -153,7 +153,7 @@ steps:
       - Per-rule logs for the deny actions you triggered
 
       Capture pass/fail for each test in your Exercise Notes. This
-      is the evidence package — a change board needs to see both
+      is the evidence package - a change board needs to see both
       that operations still work and that the new denies are real.
     action:
       type: check
@@ -161,7 +161,7 @@ steps:
         firewall_config: improved
         breaker_closed: true
 
-  - title: "Reflection — what did your plan close?"
+  - title: "Reflection - what did your plan close?"
     description: |
       Before wrapping up, take five minutes to write down answers in
       your Exercise Notes:
@@ -186,5 +186,5 @@ steps:
          would deepen defense in depth?
 
       These answers travel with you into the next planning cycle.
-      Defensible segmentation is continuous — this is the start of
+      Defensible segmentation is continuous - this is the start of
       the next iteration, not the end.

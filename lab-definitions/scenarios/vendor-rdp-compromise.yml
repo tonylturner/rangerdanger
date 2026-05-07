@@ -1,14 +1,14 @@
 id: vendor-rdp-compromise
 order: "2.3-bonus"
 name: "Vendor Remote Access Compromise (Bonus)"
-summary: "Optional — Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices (15 min)."
+summary: "Optional - Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices (15 min)."
 description: >
   A vendor's remote-access credentials are compromised via phishing.
   The attacker uses them to RDP/VNC into the vendor jump box from
   an enterprise foothold, then pivots laterally from inside that
   session to OT field devices. Students apply containd firewall
   rules that block remote-access protocols (RDP/3389, VNC/5900)
-  from enterprise into the vendor DMZ — closing the lateral path
+  from enterprise into the vendor DMZ - closing the lateral path
   before it ever reaches OT.
 
   This bonus exercise is the optional companion to Lab 2.3
@@ -40,7 +40,7 @@ steps:
 
       You should see at least one of `3389/tcp` (RDP) or
       `5900/tcp` (VNC) open. The RangerDanger lab's vendor-jump is
-      a Linux container with `xrdp` and a VNC server running — the
+      a Linux container with `xrdp` and a VNC server running - the
       same defensive lesson applies to a real Windows vendor jump
       host on RDP.
 
@@ -51,17 +51,17 @@ steps:
       From Kali, connect to the vendor jump box's remote desktop
       using the stolen credentials (`vendor-user` / `vendor`).
 
-      **Option A — RDP** (preferred when 3389 is open):
+      **Option A - RDP** (preferred when 3389 is open):
 
           xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor +clipboard /cert:ignore
 
-      **Option B — VNC** (fallback, no auth required in this lab):
+      **Option B - VNC** (fallback, no auth required in this lab):
 
           xtightvncviewer 10.20.20.10:5900
 
       You now have an interactive desktop on the vendor jump host.
       From the vendor's perspective, the connection looks
-      legitimate — credentials valid, source IP not yet anomalous,
+      legitimate - credentials valid, source IP not yet anomalous,
       and the firewall allows enterprise → vendor on remote-access
       ports. **This is the foothold.** Anything the vendor box can
       do, you can now do, from the vendor's network position.
@@ -93,8 +93,8 @@ steps:
 
           mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
 
-      The recloser locks out. Downstream loads — the hospital and
-      fire station — lose power. The attack succeeded because the
+      The recloser locks out. Downstream loads - the hospital and
+      fire station - lose power. The attack succeeded because the
       kill chain had two open links: enterprise → vendor RDP, and
       vendor → field Modbus.
     action:
@@ -140,7 +140,7 @@ steps:
         means, the second hop to field devices is denied.
 
       Either control alone breaks the kill chain. Both are
-      defense in depth — the deck case study (Slide 55) made this
+      defense in depth - the deck case study (Slide 55) made this
       design choice after a ransomware incident specifically because
       either layer can fail or be misconfigured, and the second
       stops the attack regardless.

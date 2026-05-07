@@ -6,7 +6,7 @@ description: >
   You have a list of findings from the baseline assessment.
   You do not have unlimited time, people, or political capital.
   Your job in this exercise is to pick which remediations to
-  execute this quarter — knowing that some attack paths will
+  execute this quarter - knowing that some attack paths will
   remain open because you cannot fix everything at once.
 
   The choices you make here will be referenced by later
@@ -45,25 +45,25 @@ steps:
       segmentation work. That total is split across four
       roles, and each role has its own capacity cap:
 
-        - OT Engineer — 120 hours
+        - OT Engineer - 120 hours
           The person who understands substation operations and
           must sign off on any change that could affect control
           traffic or protection.
 
-        - Firewall Admin — 140 hours
+        - Firewall Admin - 140 hours
           The person who owns containd policy and applies rules.
 
-        - Network Engineer — 120 hours
+        - Network Engineer - 120 hours
           The person who handles VLANs, routing, and
           zone/interface configuration.
 
-        - Security Analyst — 120 hours
+        - Security Analyst - 120 hours
           The person who writes requirements, runs PCAP reviews,
           and validates evidence.
 
       Actions require one or more roles simultaneously. If you
       schedule more work than a role has hours for, that team
-      is overloaded and the work is not realistic — even if the
+      is overloaded and the work is not realistic - even if the
       total 500-hour budget still has room.
 
       Watch the role utilization bars as you select actions
@@ -74,11 +74,11 @@ steps:
       Select the actions you will execute this quarter. The
       total effort must fit inside 500 hours AND each role's
       individual capacity. You will not be able to select
-      every action — that is the point.
+      every action - that is the point.
 
       Cost model: each action lists a total effort in hours
       and the roles that must collaborate on it. The effort
-      is split evenly across the required roles — an 80-hour
+      is split evenly across the required roles - an 80-hour
       action requiring 3 roles costs ~27 hours to each of
       those three teams.
 
@@ -156,7 +156,7 @@ steps:
           roles: ["Firewall Admin", "OT Engineer"]
           tags: ["ot-lateral"]
         - id: modbus-dpi
-          title: "Apply Modbus ICS DPI — limit function codes"
+          title: "Apply Modbus ICS DPI - limit function codes"
           why: >
             Configure containd to filter Modbus by function
             code. Allow reads (FC1–4) broadly; restrict writes
@@ -168,7 +168,7 @@ steps:
           roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
           tags: ["dpi", "modbus"]
         - id: dnp3-dpi
-          title: "Apply DNP3 ICS DPI — restrict Direct Operate"
+          title: "Apply DNP3 ICS DPI - restrict Direct Operate"
           why: >
             Configure containd to recognize DNP3 and block
             Direct Operate (FC05) from sources other than the
@@ -224,27 +224,27 @@ steps:
           roles: ["Security Analyst", "OT Engineer"]
           tags: ["validation"]
 
-  - title: "Reflect — what are you accepting?"
+  - title: "Reflect - what are you accepting?"
     description: >
       Use your Exercise Notes to answer three questions
       briefly. These answers become part of your plan of
       record and travel with you into the remaining exercises.
 
-      Question 1 — What did you choose NOT to fix this quarter,
+      Question 1 - What did you choose NOT to fix this quarter,
       and why? (Cost? Dependency on another change? Political
       risk? Low severity?)
 
-      Question 2 — What residual risk remains in the
+      Question 2 - What residual risk remains in the
       substation after your plan is executed? Which of the
       five baseline findings is still at least partially
       open?
 
-      Question 3 — Which role is your biggest constraint?
+      Question 3 - Which role is your biggest constraint?
       Which team would you need to grow first to execute a
       more aggressive plan next quarter?
 
       The selections you made in the previous step are saved
       to your exercise state. Later exercises will read them
-      to reflect the consequences of your plan — if you did
+      to reflect the consequences of your plan - if you did
       not block a path, that attack will remain easier to
       execute.

@@ -38,7 +38,7 @@ steps:
       The vendor zone (10.20.20.0/24) contains the jump host
       and engineering workstation. Define allowed flows:
 
-        Vendor/DMZ → OT Ops: SSH (22), HTTPS (443) only — for monitoring
+        Vendor/DMZ → OT Ops: SSH (22), HTTPS (443) only - for monitoring
         Vendor/DMZ → Field Devices: DENY (no direct access)
 
       Vendor access to field devices should be brokered through
@@ -51,7 +51,7 @@ steps:
       OpenPLC, historian, and GPS. Define internal and outbound flows:
 
         OT Ops intra-zone: Modbus (502), DNP3 (20000), HTTP (8080), FUXA (1881), NTP (123)
-        OT Ops → Field Devices: RTAC ONLY — Modbus (502), DNP3 (20000), HTTP (8080)
+        OT Ops → Field Devices: RTAC ONLY - Modbus (502), DNP3 (20000), HTTP (8080)
         Other OT nodes → Field Devices: DENY
 
       Critical: only the RTAC (source IP 10.30.30.20, its OT Ops
@@ -68,9 +68,9 @@ steps:
       should be allowed at the DPI level:
 
         Modbus: RTAC may read (FC1-4) and write (FC5-6) to field devices
-        Modbus: Other sources — deny all function codes
+        Modbus: Other sources - deny all function codes
         DNP3: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate)
-        DNP3: Other sources — deny all
+        DNP3: Other sources - deny all
 
       The containd NGFW supports ICS DPI with function code filtering.
       Modbus function codes 1-4 are read operations: FC1 Read Coils,
@@ -87,9 +87,9 @@ steps:
 
       **The five findings:**
 
-      1. **Vendor zone access is too broad.** The vendor/DMZ zone can reach OT Operations on Modbus, DNP3, and HMI ports — far more than SSH/HTTPS management.
+      1. **Vendor zone access is too broad.** The vendor/DMZ zone can reach OT Operations on Modbus, DNP3, and HMI ports - far more than SSH/HTTPS management.
       2. **Enterprise zone can reach ICS protocols.** Corporate IT hosts can speak Modbus and DNP3 directly to field relays and OT Ops devices.
-      3. **No protocol-aware constraints on ICS ports.** The firewall allows all traffic on port 502 and 20000 regardless of function code — reads and writes are treated the same.
+      3. **No protocol-aware constraints on ICS ports.** The firewall allows all traffic on port 502 and 20000 regardless of function code - reads and writes are treated the same.
       4. **Any OT Ops host can reach field devices.** The rules allow the entire 10.30.30.0/24 subnet to reach field devices, not just the RTAC. A compromised HMI or OpenPLC can talk directly to relays.
       5. **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed but host-level hardening routes its traffic through the firewall. This is not visible in the firewall config and could drift without monitoring.
 
@@ -97,7 +97,7 @@ steps:
 
   - title: "Define success criteria for segmentation"
     description: |
-      Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
+      Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements - not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
 
       ### Good segmentation for this substation means
 
