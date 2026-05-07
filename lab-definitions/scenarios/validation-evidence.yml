@@ -22,14 +22,22 @@ steps:
   - title: "Confirm hardened config is active"
     expected_config: hardened
     description: |
-      Confirm a hardened firewall policy is loaded. Check via API:
+      Confirm a hardened firewall policy is loaded.
 
-          curl -s http://localhost:8088/api/firewall/active
+      **Web UI:** open [http://localhost:9080](http://localhost:9080)
+      and check the policy summary on the dashboard — it should
+      reflect the rule set you built in Lab 2.2 (or the reference
+      hardened policy if you used **Apply Hardened**).
 
-      Active config should be `improved` or `custom` (your own
-      policy from Lab 2.2). If the weak baseline is still active,
-      apply the hardened config with **Apply Hardened** or
-      **Apply Your Plan**.
+      **CLI:** from `ssh -p 2222 containd@localhost`,
+
+          show running-config
+
+      You should see the hardened rule set: RTAC source-pinned to
+      field, vendor restricted to SSH/HTTPS, enterprise-to-field
+      removed, default deny on cross-zone. If the weak baseline is
+      still active, apply the hardened config with **Apply Hardened**
+      or **Apply Your Plan** and re-check.
 
       **Time budget:** 15 minutes.
     action:
@@ -52,15 +60,19 @@ steps:
           dnp3poll 10.40.40.21:20000 -a 2
           dnp3poll 10.40.40.22:20000 -a 3
 
-      All should return data. Then from any **OT Ops** node, confirm
-      intra-zone HMI → RTAC traffic still works:
+      All should return data. Then confirm intra-zone HMI → RTAC
+      traffic is still flowing — in real life you'd open the HMI
+      and check live data updates. As a lab smoke test from any
+      OT Ops node:
 
           curl -s http://10.30.30.20:8080/api/health
 
-      Should return `{"status":"ok"}`.
+      Should return `{"status":"ok"}` (the lab's RTAC health helper —
+      same convenience class as `/api/state`).
 
-      For a single sanity-check view of all comms, hit the lab's
-      RTAC state API (supplementary — not available on real RTACs):
+      For a single-pane view of all field-device comms, hit the lab's
+      RTAC state API (lab convenience — real RTACs don't expose a
+      JSON `/api/state`; their status surfaces in the SCADA system):
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 

@@ -36,8 +36,10 @@ steps:
       - Regulator in auto, tap near 0
       - Critical-load voltage in ANSI C84.1 Range A (114–126V)
 
-      Quick check from the [Feeder HMI](/substation), or from any
-      OT Ops terminal:
+      Quick check from the [Feeder HMI](/substation), or — as a
+      lab convenience (real RTACs don't expose a JSON `/api/state`;
+      this is RangerDanger's status helper) — from any OT Ops
+      terminal:
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -30
 

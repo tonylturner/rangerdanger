@@ -53,7 +53,10 @@ steps:
 
       What the traffic generator adds is **scenario-driven** activity — engineering workstation maintenance access and vendor remote monitoring. These represent things students would see during an exercise that models engineering or vendor activity. **They are not part of the 24×7 baseline.**
 
-      Start the generator so the scenario flows appear in your capture window:
+      The lab ships a helper that synthesizes scenario flows so
+      you can see them on the wire — this is **lab plumbing**, not
+      a production command. Click the **Generate Traffic** button
+      below (or hit the helper API directly):
 
         curl -X POST http://localhost:8088/api/traffic/generate \
           -H 'Content-Type: application/json' \
