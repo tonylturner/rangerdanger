@@ -35,13 +35,25 @@ workshop.
 
 ### Workshop (DefendICS) blockers
 
-- [ ] **Exercise 2 → Exercise 3 dynamic remediation.** Selections a
-  student makes in Exercise 2 (segmentation requirements & rule design)
-  must modify Exercise 3's instructions and the firewall config it
-  starts from. Currently Ex3 is static.
-- [ ] **Workshop agenda alignment final pass.** Re-walk all 9
-  exercises against the DefendICS workshop schedule; note any
-  timing / sequencing / depth mismatches before the cohort runs them.
+- [~] **Dynamic remediation pipeline — extend to attack exercises.**
+  The pipeline already exists end-to-end for `firewall-implementation`
+  (Ex4): Ex3 selections persist via `frontend/lib/remediation-plan.ts`,
+  `remediation-to-rules.ts` translates them into rule tables /
+  validation tests / a containd config, and `injectDynamicContent`
+  rewrites Phase 3/5/6 step text. The 5 attack & validation exercises
+  (`modbus-override`, `dnp3-command-injection`, `vendor-rdp-compromise`,
+  `capbank-switching-attack`, `validation-evidence`) currently only
+  show the consequence banner — their step text doesn't change with
+  the plan, breaking the narrative promise in `remediation-planning.yml`
+  ("if you do not block a path, that attack will remain easier").
+  **Deferred** until the manual playthrough below; if exercises get
+  rescoped or removed, Track B should be re-scoped against the new
+  shape.
+- [ ] **Manual exercise playthrough + agenda alignment.** Re-walk all
+  9 exercises end-to-end against the DefendICS workshop schedule,
+  capturing timing / sequencing / depth mismatches and any rescoping
+  decisions. Output: a list of exercise content edits + the input
+  needed to scope Track B above.
 - [ ] **Single-student-laptop lab build polish.** Final round of
   "is this comfortable for a student running the whole stack on their
   own laptop" smoothing — startup time, error-state UX, rollback after
