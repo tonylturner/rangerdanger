@@ -57,7 +57,7 @@ steps:
 
       **Option B — VNC** (fallback, no auth required in this lab):
 
-          vncviewer 10.20.20.10:5900
+          xtightvncviewer 10.20.20.10:5900
 
       You now have an interactive desktop on the vendor jump host.
       From the vendor's perspective, the connection looks
@@ -156,7 +156,7 @@ steps:
 
           nmap -p 3389,5900 10.20.20.10
           xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor /cert:ignore
-          vncviewer 10.20.20.10:5900
+          xtightvncviewer 10.20.20.10:5900
 
       Both ports should be filtered; both clients should fail to
       connect. The enterprise → vendor lateral path is closed at

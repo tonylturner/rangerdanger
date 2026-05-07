@@ -49,12 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         # Stdlib python for json.tool and ad-hoc scripting
         python3 \
         # RDP/VNC/SSH clients for the vendor-rdp-compromise lab.
-        # xfreerdp + vncviewer demonstrate the connection attempt
-        # (succeeds under the weak baseline, fails under hardened);
-        # sshpass scripts the SSH pivot used for the actual
-        # interactive session in the in-app terminal.
-        freerdp2-x11 \
-        tigervnc-viewer \
+        # freerdp-x11 provides xfreerdp; xtightvncviewer provides
+        # the eponymous VNC client. Both demonstrate the protocol
+        # connection attempt (succeeds under the weak baseline,
+        # fails under hardened). sshpass scripts the SSH-based
+        # pivot used for the actual interactive session in the
+        # in-app terminal, since X11 isn't available there.
+        freerdp-x11 \
+        xtightvncviewer \
         sshpass \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
