@@ -215,7 +215,7 @@ The first build takes several minutes while the Go simulators, Kali image, and e
 # (or: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD on Windows)
 ```
 
-This expects `images-amd64.tar` / `images-arm64.tar` on the SSD; see `docs/release-plan.md` and the per-release tarballs attached to each GitHub release for staging instructions.
+This expects `images-amd64.tar` / `images-arm64.tar` on the SSD. Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to produce them, or grab the per-release tarballs attached to each [GitHub release](https://github.com/tonylturner/rangerdanger/releases).
 
 ### Access points
 

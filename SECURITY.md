@@ -129,10 +129,12 @@ docker compose up -d   # picks up the loopback binding again
 
 ## Supported versions
 
-Once `v0.1.0` ships, the latest minor release will receive security
-fixes. Older minor releases will not.
+The latest minor release receives security fixes; older minor
+releases do not.
 
-## Hardening tracked for the public release
+## Known issues + ongoing hardening
 
-See `docs/release-plan.md` for the running list of security-related
-items being addressed before the first public release.
+Documented exceptions live in
+[`docs/security-known-issues.md`](docs/security-known-issues.md).
+Open security-relevant work is tracked in
+[`docs/tasks.md`](docs/tasks.md).

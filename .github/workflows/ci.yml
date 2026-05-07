@@ -98,7 +98,7 @@ jobs:
   govulncheck:
     # Advisory only for now — surfaces stdlib + transitive vulns without
     # blocking PRs. Flip continue-on-error to false once the current
-    # findings are triaged (see docs/release-plan.md).
+    # findings are triaged (tracked in docs/tasks.md).
     name: Go vulnerability scan (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true

@@ -13,10 +13,9 @@ import "testing"
 // from the exercise runner's pre-populated buttons; it does NOT
 // restrict what an attacker who can hit the endpoint can do.
 //
-// The endpoint is safe under the deployment posture established in
-// A3 (loopback-bound by docker-compose port mapping, see SECURITY.md).
-// If you change that posture, the allowlist alone is not sufficient
-// — see the A3 walkthrough notes in docs/release-plan.md.
+// The endpoint is safe under the deployment posture documented in
+// SECURITY.md (loopback-bound by docker-compose port mapping). If you
+// change that posture, the allowlist alone is not sufficient.
 //
 // These tests pin down the current behavior so regressions in the
 // matching logic (e.g., dropping a tool the exercises use, or
@@ -84,8 +83,8 @@ func TestIsAllowedCommand_ExactMatchesAndPrefixes(t *testing.T) {
 // TestIsAllowedCommand_ShellInjectionPasses documents the known
 // shell-injection bypass: any allowed prefix followed by shell
 // metacharacters slips through. This is intentional given the
-// loopback-bound deployment (see A3 notes in docs/release-plan.md
-// and SECURITY.md). If anyone tightens the allowlist later to also
+// loopback-bound deployment (see SECURITY.md). If anyone tightens
+// the allowlist later to also
 // reject these, this test should be updated rather than removed —
 // it's the explicit pin on "we know about this and accept it under
 // the current deployment posture."

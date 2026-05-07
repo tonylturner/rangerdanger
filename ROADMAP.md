@@ -6,7 +6,7 @@ Items in **Backlog** are wanted but not yet scheduled — open to
 discussion in [Discussions](https://github.com/tonylturner/rangerdanger/discussions)
 or pull requests.
 
-For day-to-day release tracking, see [`docs/release-plan.md`](docs/release-plan.md).
+For day-to-day open work, see [`docs/tasks.md`](docs/tasks.md).
 For shipped work, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Committed

@@ -29,7 +29,7 @@ Before tagging:
    with the configured RAM (≥8 GB) and disk (≥30 GB).
 5. **`CHANGELOG.md`** has an entry under `[Unreleased]` summarizing
    user-visible changes.
-6. **`docs/release-plan.md`** reflects the actual state of the work.
+6. **`docs/tasks.md`** reflects the current state of open work.
 
 ## Cutting the release
 
