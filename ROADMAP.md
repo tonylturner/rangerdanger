@@ -16,6 +16,13 @@ For shipped work, see [`CHANGELOG.md`](CHANGELOG.md).
 Patch / minor releases that round out v0.1.0 without changing the lab
 content or topology.
 
+- **Fail-fast on unmapped network zones in the orchestrator.**
+  `createContainer` currently silently no-ops when `node.Networks[i]`
+  isn't in `networkNameMap` — a node with a misspelled or legacy zone
+  name lands on Docker's default bridge instead of erroring. Surfaced
+  by Codex review on PR #26; theoretical for shipped lab content
+  (`lab-definitions/**` is clean) but a defensive-engineering win for
+  custom labs.
 - More test coverage for security-critical paths in the backend
   (firewall apply/compare, scenario validators, the `services/capbank-sim`
   HTTP handlers).
