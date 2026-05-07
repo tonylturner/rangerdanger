@@ -13,10 +13,16 @@ Image tag to pull (default: 'latest'). Pin to e.g. 'v0.1.0' for a release.
 Path to a directory containing 'images-amd64.tar' (or 'images-arm64.tar'
 for ARM Windows). Used for offline / SSD installs.
 
+.PARAMETER CheckOnly
+Run pre-flight checks (Docker, Compose, ports, disk, memory) and exit
+without installing. Useful for a pre-workshop "is my laptop ready?"
+check.
+
 .EXAMPLE
 .\setup.ps1
 .\setup.ps1 -Version v0.1.0
 .\setup.ps1 -FromTarballs D:\WORKSHOP
+.\setup.ps1 -CheckOnly
 
 .NOTES
 Run from the repo root (or alongside docker-compose.release.yml plus the
@@ -27,7 +33,8 @@ with the WSL2 backend; Hyper-V backend should also work but isn't tested.
 [CmdletBinding()]
 param(
     [string]$Version = "latest",
-    [string]$FromTarballs = ""
+    [string]$FromTarballs = "",
+    [switch]$CheckOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,6 +120,20 @@ if ($portsBusy.Count -gt 0) {
     Die ("Required loopback ports already in use: " + ($portsBusy -join ", ") + ". Stop whatever is bound to them, then re-run.")
 }
 Say "Loopback ports 8088, 9080, 9443, 2222 are free"
+
+# ─── check-only short-circuit ───────────────────────────────────────
+if ($CheckOnly) {
+    Banner "Pre-flight passed — laptop is ready"
+    @"
+  All checks above passed. To install:
+
+    .\setup.ps1                       # latest
+    .\setup.ps1 -Version v0.1.0       # pinned release
+
+  For offline / SSD install, use -FromTarballs <PATH>.
+"@ | Write-Host
+    exit 0
+}
 
 # ─── image acquisition ──────────────────────────────────────────────
 if ($FromTarballs) {
