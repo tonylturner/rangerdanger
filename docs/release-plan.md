@@ -215,7 +215,9 @@ SSD/airgap validation (B6).
 - [x] `.github/dependabot.yml` (gomod ×3, npm, docker, github-actions;
   major-version bumps suppressed pre-1.0).
 - [x] `LICENSE` confirmed Apache 2.0.
-- [ ] `.github/ISSUE_TEMPLATE/` (optional polish).
+- [x] `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`
+  (commit `c2b1c2d`) — bug + feature templates, security advisory
+  contact link, PR checklist tied to local-test commands.
 
 ### B9. Frontend reproducibility
 
@@ -243,9 +245,19 @@ SSD/airgap validation (B6).
   (gin imports http3 even when not used; backend doesn't serve
   HTTP/3) in `docs/security-known-issues.md`. CI job stays
   advisory until the docker SDK gets a fix release.
-- [ ] Tests for: `backend/internal/server/exec.go` allowlist,
-  firewall apply/compare, scenario validators, `dnp3go` round-trip,
-  `services/capbank-sim` (no tests yet).
+- [x] Tests for `backend/internal/server/exec.go` allowlist (commit
+  `4fc888b`) — 33 cases pinning current behavior, including the
+  documented shell-injection bypass and a guard that every tool
+  the scenarios auto-run stays in the allowlist.
+- [x] Tests for `dnp3go` round-trip (commit `82e10f6`) — link
+  frame round-trip across 7 size classes, garbage-skipping, CRC
+  rejection, APDU round-trip, encoder shape checks. Coverage on
+  `dnp3go` went from CRC-only to all four protocol layers.
+- [ ] Tests for firewall apply/compare, scenario validators,
+  `services/capbank-sim`. Punted to v0.1.x — coverage is now at
+  the most security-critical paths (exec allowlist + dnp3go
+  framing) and the substation firewall configs are already covered
+  by `firewall_config_test.go`.
 - [ ] Frontend smoke tests (no test framework configured currently).
 
 ### Compose hygiene
