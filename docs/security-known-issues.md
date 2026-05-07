@@ -1,0 +1,85 @@
+# Security: known issues
+
+Findings from `govulncheck` that the project is aware of but has not
+acted on, with rationale. Intended as the source-of-truth when the
+advisory CI job (`Go vulnerability scan (advisory)` in
+`.github/workflows/ci.yml`) reports findings — a triage entry here
+plus a CHANGELOG note is the contract before flipping the job from
+`continue-on-error: true` to a hard gate.
+
+The triage cadence is per-release. If you tag a new version, sweep
+this file against `gh run view <latest-ci-run> --log-failed` and
+either remove resolved entries or add new ones.
+
+## Open
+
+### docker/docker — `GO-2026-4887` and `GO-2026-4883`
+
+- **Module**: `github.com/docker/docker@v27.5.1+incompatible`
+- **Affects**: backend Docker SDK calls (container exec, lifecycle,
+  image inspection)
+- **Upstream fix**: `Fixed in: N/A` — no patched docker SDK release at
+  time of writing
+- **Mitigation**: lab-only deployment is loopback-bound (A3); Docker
+  socket mount is in the always-trusted backend container; no untrusted
+  input reaches the affected SDK paths
+- **Action**: monitor https://github.com/moby/moby for a release
+  containing the fix; bump when available. Until then, the
+  `docker.docker` direct dependency in `backend/go.mod` stays pinned
+  at the current version.
+
+### quic-go — `GO-2025-4233`
+
+- **Module**: `github.com/quic-go/quic-go@v0.54.0` (transitive via
+  `github.com/gin-gonic/gin` → `quic-go/quic-go/http3`)
+- **Affects**: HTTP/3 QPACK header expansion DoS — only relevant if
+  the backend serves HTTP/3, which it does not (it serves HTTP/1.1
+  + HTTP/2 via Gin's standard server)
+- **Upstream fix**: quic-go v0.57.0
+- **Mitigation**: govulncheck flags this as reachable because gin
+  imports the http3 package even when not used. Practical exposure
+  is zero under the current deployment.
+- **Action**: clears once `gin-gonic/gin` releases a version that
+  pins quic-go v0.57.0+. Tracked by dependabot's weekly gomod update
+  for `/backend`. If gin lags, we can add a `replace` directive
+  forcing quic-go v0.57.0 — defer unless the dependabot patch path
+  proves slow.
+
+## Resolved by Go toolchain bump (2026-05-07)
+
+The following 15 stdlib findings reported by govulncheck against
+Go 1.24.3 are cleared by the toolchain bump to **Go 1.24.13** (commit
+in this batch):
+
+- `GO-2026-4947`, `GO-2026-4946`, `GO-2026-4866`, `GO-2025-4175`,
+  `GO-2025-4155`, `GO-2025-4013` — `crypto/x509` (cert parsing)
+- `GO-2026-4870`, `GO-2026-4340`, `GO-2026-4337` — `crypto/tls`
+- `GO-2026-4869`, `GO-2025-4014` — `archive/tar`
+- `GO-2026-4865` — `html/template`
+- `GO-2026-4602` — `os`
+- `GO-2026-4601`, `GO-2026-4341` — `net/url`
+
+The toolchain directive in `backend/go.mod` controls the version
+CI's `actions/setup-go` installs; bumping it forces the patched
+runtime everywhere `go-version-file: backend/go.mod` is used.
+`services/` and `dnp3go/` modules don't pin a toolchain (they use
+the latest 1.24.x patch the runner has installed), so they
+automatically pick up patched versions.
+
+## Triggering the advisory job → hard-fail flip
+
+When this file's "Open" section reaches zero (or only contains
+deliberately-accepted findings with rationale), do the flip in
+`.github/workflows/ci.yml`:
+
+```yaml
+govulncheck:
+  name: Go vulnerability scan
+  runs-on: ubuntu-latest
+  # continue-on-error: true   # remove this line
+  steps:
+    ...
+```
+
+CI then fails any PR that introduces a new finding. New findings get
+triaged into this file before merge.
