@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: >-
+  If you use RangerDanger in academic work, training material, or
+  research, please cite it using the metadata below.
+title: "RangerDanger: an OT/ICS cyber range for hands-on substation network segmentation training"
+abstract: >-
+  RangerDanger is a containerized cyber range that simulates an
+  electric distribution substation — multi-zone networks, field
+  devices speaking Modbus and DNP3, a multi-homed supervisory
+  controller, and a real DPI-capable firewall (containd) at the
+  edge. Students work through nine guided exercises covering
+  baseline traffic analysis, segmentation requirements, remediation
+  planning under labor budget, hands-on firewall implementation,
+  three live attacks against a weak baseline, a bonus
+  capacitor-bank-switching attack, and post-change validation
+  with PCAP evidence collection.
+type: software
+authors:
+  - family-names: Turner
+    given-names: Tony
+    affiliation: DefendICS
+license: Apache-2.0
+repository-code: "https://github.com/tonylturner/rangerdanger"
+url: "https://github.com/tonylturner/rangerdanger"
+keywords:
+  - operational-technology
+  - industrial-control-systems
+  - ics-security
+  - cyber-range
+  - cybersecurity-training
+  - network-segmentation
+  - modbus
+  - dnp3
+  - scada
+  - substation
+preferred-citation:
+  type: software
+  title: "RangerDanger"
+  authors:
+    - family-names: Turner
+      given-names: Tony
+      affiliation: DefendICS
+  version: "0.1.0"
+  year: 2026
+  url: "https://github.com/tonylturner/rangerdanger"

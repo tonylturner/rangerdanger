@@ -22,20 +22,13 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-// Network name mapping from lab definition to Docker network names.
-// Supports both the new substation scenario and legacy oil-plant names.
+// Network name mapping from lab definition zone names to Docker network names.
 var networkNameMap = map[string]string{
-	// Substation segmentation lab
 	"enterprise_net": "rangerdanger_enterprise_net",
 	"vendor_net":     "rangerdanger_vendor_net",
 	"ot_ops_net":     "rangerdanger_ot_ops_net",
 	"field_net":      "rangerdanger_field_net",
 	"physics_net":    "rangerdanger_physics_net",
-	// Legacy oil-plant names (backward compat)
-	"it_net":         "rangerdanger_it_net",
-	"dmz_net":        "rangerdanger_dmz_net",
-	"ot_control_net": "rangerdanger_ot_control_net",
-	"ot_safety_net":  "rangerdanger_ot_safety_net",
 }
 
 // Orchestrator manages Docker containers for lab instances.

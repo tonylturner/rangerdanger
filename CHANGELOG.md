@@ -6,6 +6,101 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.1] - 2026-05-07
+
+Polish release that lands the work that didn't make the v0.1.0 cut.
+Same lab content as v0.1.0; the differences are entirely under the
+hood (security posture, test coverage, repo hygiene, contributor
+ergonomics).
+
+### Security
+
+- Go toolchain bumped **1.24.13 → 1.25.9** clearing the seven
+  remaining stdlib `govulncheck` findings whose `Fixed in` was on
+  the 1.25.x line. CI's vulnerability scan output reduced from 18
+  findings to 3 (2 `docker/docker` no-upstream-fix + 1 `quic-go`
+  transitive in unused HTTP/3 path), all documented in
+  `docs/security-known-issues.md`.
+- **Trivy image scan** added as a second advisory CI job
+  (`.github/workflows/dep-scan.yml`) covering OS-package CVEs in
+  the published images that `govulncheck` can't see (Kali rolling,
+  Linuxserver webtop bases, `python:3.12-slim`). SARIF output to
+  the GitHub Security tab.
+- `fuxa_appdata/`, `fuxa_db/`, and seven legacy `data/` files —
+  re-introduced by the v0.1.0 distribution-mvp merge — re-untracked.
+  Same lab-default-credential class as the existing `containd`/
+  `openplc` defaults documented in `SECURITY.md`; cleanup is
+  hygiene rather than vulnerability response.
+- Legacy oil-plant network mappings (`it_net`, `dmz_net`,
+  `ot_control_net`, `ot_safety_net`) finally removed from
+  `orchestrator.go` (an earlier "removed" commit message was a no-op).
+
+### Tests
+
+- `backend/internal/server/exec_test.go` — 33 cases pinning the
+  command-allowlist behavior on `/api/workshop/exec`, including
+  the documented shell-injection bypass and a regression guard
+  ensuring every tool the scenarios auto-run stays in the
+  allowlist.
+- `dnp3go/roundtrip_test.go` — link-frame round-trip across 7 size
+  classes, garbage-skipping, CRC rejection, APDU round-trip,
+  encoder shape checks. Coverage moved from CRC-only to all four
+  protocol layers.
+
+### Tooling
+
+- `setup.sh --check-only` and `setup.ps1 -CheckOnly` — runs
+  pre-flight checks (Docker, Compose, ports, disk, memory) and
+  exits without installing. Pre-workshop "is my laptop ready?"
+  verification.
+- `.github/workflows/smoke.yml` — bring-up smoke test on every PR
+  and push to main. Builds the stack, hits `/api/health` and
+  `/api/build`, confirms 9 exercises load and ≥8 services report
+  healthy, dumps logs on failure. Catches startup regressions
+  unit tests don't see.
+
+### Community / OSS polish
+
+- `ROADMAP.md` — public forward look (v0.1.x, v0.2.0, v0.3.0,
+  backlog). Linked from `README.md`.
+- `SUPPORT.md` — where to ask questions, what to expect from
+  maintainers, separate channel for security vs commercial
+  workshop support.
+- `CITATION.cff` — for academic / training / research use; GitHub
+  renders this in the sidebar.
+- `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1 with
+  `conduct@sentinel24.com` reporting address.
+- `.github/PULL_REQUEST_TEMPLATE.md` and three issue templates
+  (bug report, feature request, contact-routing config including
+  the GitHub private security advisory link).
+
+### Documentation
+
+- `docs/architecture.md` frontend pages list refreshed: removed
+  the `/hmi` and `/topology` routes that were deleted in the v0.1.0
+  merge but never reflected here; removed the `advanced-hmi.tsx`
+  reference; added `/knowledge` and an explicit note that the
+  operator HMI is FUXA at `/apps/fuxa-hmi/` (proxy route, not a
+  Next.js route).
+- README's Documentation section now lists ROADMAP/SUPPORT/SECURITY/
+  CONTRIBUTING/CHANGELOG; outdated `CLAUDE.md` link replaced with
+  the workshop-overview and security-known-issues pointers.
+- `dnp3go/README.md` — dropped the dangling "see CLAUDE.md" pointer.
+
+### Repo hygiene
+
+- `CLAUDE.md` untracked (added to `.gitignore`). Local-only AI agent
+  context; not useful to public visitors.
+- Dead code removed: `Dockerfile.labtools`, `scripts/tools-entrypoint.sh`,
+  `scripts/scenarios/` (6 pre-YAML attack scripts), `scripts/seed-fuxa.sh`,
+  `scripts/smoke-test-opendss.sh`, `scripts/configure-fuxa.py`,
+  `scripts/configure-fuxa-substation.py`. Net: 30 paths removed,
+  ~3000 lines deleted.
+- Stale `rangerrocks` placeholder in `CONTRIBUTING.md` updated to
+  the renamed repo URL.
+- Repo profile populated via `gh repo edit`: description, 13 topics,
+  GitHub Discussions enabled.
+
 ## [v0.1.0] - 2026-05-07
 
 First public release. RangerDanger is an OT/ICS cyber range built

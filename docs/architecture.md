@@ -67,17 +67,20 @@ Top-level pages:
 - `/exercises` — Exercise library with completion tracking
 - `/exercises/[id]` — Step-by-step exercise runner with inline terminals, command blocks, notes
 - `/console` — Network Map with React Flow topology and per-node terminals
-- `/hmi` — SCADA one-line diagram with click-to-control device popups
-- `/substation` — Alternate substation control panel
+- `/substation` — Substation control panel (live device state, control popups)
+- `/knowledge` — Reference material accompanying the exercises
 - `/labs` / `/labs/[id]` — Lab template and instance management
-- `/topology` — Topology builder
+- `/scenarios` — Legacy redirect to `/exercises`
+
+The operator HMI itself is **FUXA**, served via the nginx proxy at
+`/apps/fuxa-hmi/` rather than as a route inside the Next.js app.
 
 Key components:
 
 - `terminal-context.tsx` / `terminal-inner.tsx` — Shared xterm.js terminal manager with PTY resize propagation
 - `scenario-runner.tsx` — Exercise runner with inline command blocks, shared notes, styled tooltips
 - `network-console.tsx` — Cobalt Strike-style network map
-- `advanced-hmi.tsx` — SVG substation one-line with animated power flow
+- `substation-panel.tsx` — Live substation device state with command popups
 - `ui/tooltip.tsx` / `ui/button.tsx` — shadcn primitives
 
 ### Field device simulators (Go)

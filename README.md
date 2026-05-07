@@ -282,7 +282,13 @@ The Substation Segmentation scenario is fully implemented and all nine exercises
 
 - [`docs/architecture.md`](docs/architecture.md) — Full zone model, node inventory, service breakdown, and data flow
 - [`docs/api-spec.md`](docs/api-spec.md) — REST API reference including workshop endpoints, scenario validators, PCAP management, and WebSocket terminal protocol
-- [`CLAUDE.md`](CLAUDE.md) — Project conventions and guidance for AI-assisted development
+- [`docs/workshop-overview.md`](docs/workshop-overview.md) — Visitor-facing summary of the lab — exercises, what's simulated, the weak-baseline → hardened-target arc
+- [`docs/security-known-issues.md`](docs/security-known-issues.md) — Triaged govulncheck/Trivy findings with rationale
+- [`ROADMAP.md`](ROADMAP.md) — What's planned for v0.1.x, v0.2.0, v0.3.0, and the backlog
+- [`SUPPORT.md`](SUPPORT.md) — Where to ask questions and what to expect from maintainers
+- [`SECURITY.md`](SECURITY.md) — Lab security model, vuln reporting, external-access patterns
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Local dev setup, test commands, PR conventions
+- [`CHANGELOG.md`](CHANGELOG.md) — Per-release notes (Keep-a-Changelog format)
 
 ## Related projects
 
