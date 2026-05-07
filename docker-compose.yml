@@ -5,11 +5,11 @@ services:
   # Zone 7: Security Infrastructure — containd NGFW
   # ─────────────────────────────────────────────────────────────
   firewall:
-    # RangerDanger and containd are co-developed by the same author; both repos
-    # stay in sync by convention. Use :latest here so a `docker compose pull`
-    # picks up containd security fixes without a rangerdanger compose bump.
-    # If a containd release breaks RangerDanger, fix containd, not the pin.
-    image: ghcr.io/tonylturner/containd:latest
+    # NOTE: temporarily pinned back to 0.1.18 because v0.1.19/v0.1.20
+    # don't build the nft filter table even with CONTAIND_ENFORCE_ENABLED=1
+    # set, which black-holes all cross-zone traffic. Issue filed upstream;
+    # restore :latest once the regression is fixed in containd.
+    image: ghcr.io/tonylturner/containd:0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
@@ -21,10 +21,15 @@ services:
       - CONTAIND_LAB_MODE=1
       - CONTAIND_SSH_SHELL_MODE=linux
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
-      - NGFW_ENGINE_URL=http://127.0.0.1:8081
-      - NGFW_CONFIG_DB=/data/config.db
-      - NGFW_CAPTURE_IFACES=eth0,eth1,eth2,eth3
-      - NGFW_ENFORCE_ENABLED=1
+      # Containd renamed NGFW_* to CONTAIND_* in v0.1.x. The legacy
+      # names still work for most vars but enforcement defaults to OFF
+      # in the new image, which black-holes all cross-zone traffic
+      # because no nft filter table is built. Setting CONTAIND_ENFORCE_ENABLED=1
+      # explicitly is required for the lab to actually forward traffic.
+      - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
+      - CONTAIND_CONFIG_DB=/data/config.db
+      - CONTAIND_CAPTURE_IFACES=eth0,eth1,eth2,eth3
+      - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
       - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24

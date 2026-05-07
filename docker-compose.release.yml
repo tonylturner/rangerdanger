@@ -22,8 +22,9 @@ name: rangerdanger
 
 services:
   firewall:
-    # See docker-compose.yml — containd tracks :latest by design.
-    image: ghcr.io/tonylturner/containd:latest
+    # See docker-compose.yml — pinned to 0.1.18 due to v0.1.19/v0.1.20
+    # dataplane-enforcement regression. Restore :latest once fixed.
+    image: ghcr.io/tonylturner/containd:0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
@@ -35,10 +36,10 @@ services:
       - CONTAIND_LAB_MODE=1
       - CONTAIND_SSH_SHELL_MODE=linux
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
-      - NGFW_ENGINE_URL=http://127.0.0.1:8081
-      - NGFW_CONFIG_DB=/data/config.db
-      - NGFW_CAPTURE_IFACES=eth0,eth1,eth2,eth3
-      - NGFW_ENFORCE_ENABLED=1
+      - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
+      - CONTAIND_CONFIG_DB=/data/config.db
+      - CONTAIND_CAPTURE_IFACES=eth0,eth1,eth2,eth3
+      - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
       - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24

@@ -107,11 +107,61 @@ function splitDescription(text: string): Segment[] {
   return result;
 }
 
+// CommandBlock renders a single command line with copy + (optional)
+// run buttons. Used in the main step body and inside HintBlock so
+// commands look + behave the same in both places.
+type CommandBlockProps = {
+  cmd: string;
+  runId: string;
+  runningId: string | null;
+  onRun: ((cmd: string, runId: string) => void) | null;
+};
+
+function CommandBlock({ cmd, runId, runningId, onRun }: CommandBlockProps) {
+  return (
+    <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+      <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
+      <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+        {onRun && (
+          <button
+            onClick={() => onRun(cmd, runId)}
+            disabled={runningId !== null}
+            className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+          >
+            {runningId === runId ? "Running..." : "Run"}
+          </button>
+        )}
+        <button
+          onClick={() => navigator.clipboard?.writeText(cmd)}
+          className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
+        >
+          copy
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // HintBlock is a collapsible "reveal answer" panel rendered inside step
 // descriptions where the YAML contains a :::hint Title / ::: fence.
 // Default state is collapsed — the student has to click to see the answer.
-function HintBlock({ title, body }: { title: string; body: string }) {
+//
+// Hint bodies are split the same way as step descriptions, so commands
+// inside hints get the same copy + Run buttons (long tshark / nmap /
+// curl invocations are particularly painful to select-and-copy without
+// the affordance).
+type HintBlockProps = {
+  title: string;
+  body: string;
+  runIdPrefix: string;
+  runningId: string | null;
+  onRun: ((cmd: string, runId: string) => void) | null;
+};
+
+function HintBlock({ title, body, runIdPrefix, runningId, onRun }: HintBlockProps) {
   const [open, setOpen] = useState(false);
+  const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""));
+  let cmdIdx = 0;
   return (
     <div className="rounded-lg border border-amber-900/60 bg-amber-950/20">
       <button
@@ -135,7 +185,37 @@ function HintBlock({ title, body }: { title: string; body: string }) {
       </button>
       {open && (
         <div className="border-t border-amber-900/40 px-4 py-3 space-y-2">
-          <MarkdownProse>{body.replace(/^\n+|\n+$/g, "")}</MarkdownProse>
+          {segments.map((seg, si) => {
+            if (seg.type === "prose") {
+              const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
+              if (!trimmed) return null;
+              return <MarkdownProse key={si}>{trimmed}</MarkdownProse>;
+            }
+            if (seg.type === "cmd") {
+              const id = `${runIdPrefix}-${cmdIdx++}`;
+              return (
+                <CommandBlock
+                  key={si}
+                  cmd={seg.value}
+                  runId={id}
+                  runningId={runningId}
+                  onRun={onRun}
+                />
+              );
+            }
+            // Nested hints aren't expected, but render them flat just
+            // in case a YAML author does it — same context propagated.
+            return (
+              <HintBlock
+                key={si}
+                title={seg.title}
+                body={seg.value}
+                runIdPrefix={`${runIdPrefix}-h${si}`}
+                runningId={runningId}
+                onRun={onRun}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -352,7 +432,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
   const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
   const [executing, setExecuting] = useState(false);
-  const [autoRunning, setAutoRunning] = useState<number | null>(null);
+  // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
+  // each have copy/run buttons without index collisions.
+  const [autoRunning, setAutoRunning] = useState<string | null>(null);
   const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
@@ -412,7 +494,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     try { localStorage.removeItem(storageKey(scenario.id)); } catch { /* ignore */ }
   };
 
-  const handleAutoRun = async (cmd: string, cmdIdx: number, stepDesc: string) => {
+  const handleAutoRun = async (cmd: string, runId: string, stepDesc: string) => {
     const step = scenario.steps[currentStep];
     const nodeId = step?.node
       || inferNodeFromDescription(stepDesc)
@@ -424,7 +506,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       return;
     }
 
-    setAutoRunning(cmdIdx);
+    setAutoRunning(runId);
     const nodeLabel = NODE_LABELS[nodeId] || nodeId;
     setCmdLog((prev) => [`[RUN on ${nodeLabel}] ${cmd}`, ...prev].slice(0, 100));
 
@@ -821,7 +903,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 ? injectDynamicContent(step.description, step.title, dynamicPlan)
                 : step.description;
               const segments = splitDescription(effectiveDesc);
-              let cmdIdx = 0;
+              let bodyCmdIdx = 0;
+              let hintIdx = 0;
+              const runHandler = exerciseNodes.length > 0
+                ? (cmd: string, runId: string) => handleAutoRun(cmd, runId, step.description)
+                : null;
               return (
                 <div className="space-y-2">
                   {segments.map((seg, si) => {
@@ -835,37 +921,27 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                       );
                     }
                     if (seg.type === "hint") {
+                      const hi = hintIdx++;
                       return (
                         <HintBlock
                           key={`${scenario.id}-${currentStep}-${si}`}
                           title={seg.title}
                           body={seg.value}
+                          runIdPrefix={`hint-${hi}`}
+                          runningId={autoRunning}
+                          onRun={runHandler}
                         />
                       );
                     }
-                    const ci = cmdIdx++;
-                    const cmd = seg.value;
+                    const ci = bodyCmdIdx++;
                     return (
-                      <div key={si} className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-                        <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
-                        <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
-                          {exerciseNodes.length > 0 && (
-                            <button
-                              onClick={() => handleAutoRun(cmd, ci, step.description)}
-                              disabled={autoRunning !== null}
-                              className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
-                            >
-                              {autoRunning === ci ? "Running..." : "Run"}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => navigator.clipboard?.writeText(cmd)}
-                            className="text-[9px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-slate-400"
-                          >
-                            copy
-                          </button>
-                        </div>
-                      </div>
+                      <CommandBlock
+                        key={si}
+                        cmd={seg.value}
+                        runId={`body-${ci}`}
+                        runningId={autoRunning}
+                        onRun={runHandler}
+                      />
                     );
                   })}
                 </div>
