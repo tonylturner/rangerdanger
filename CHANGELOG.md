@@ -83,26 +83,47 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
 
 ### CI / release
 
-- GitHub Actions CI fires on every push and PR: backend, services,
+- **CI (`ci.yml`)** fires on every push and PR: backend, services,
   dnp3go, frontend, compose-validate, govulncheck (advisory).
-- Release workflow publishes 14 multi-arch images to GHCR on any
-  `v*` tag push. Pre-release tags (containing `-`) do not retag
-  `:latest`, so an alpha cannot replace the stable pointer.
+- **Release (`release.yml`)** publishes 14 multi-arch images to
+  GHCR on any `v*` tag push. Pre-release tags (containing `-`) do
+  not retag `:latest`, so an alpha cannot replace the stable
+  pointer.
+- **Dependency scan (`dep-scan.yml`)** — Trivy scans the published
+  images weekly and on tag push for OS-package CVEs (Kali rolling,
+  Linuxserver webtop bases, Python 3.12-slim) that govulncheck
+  can't see. Findings upload to the GitHub Security tab via SARIF.
 - `.github/dependabot.yml` covers gomod (×3), npm, docker, and
   github-actions ecosystems on a weekly cadence with major-version
   bumps suppressed pre-1.0 for stability.
-- `docs/security-known-issues.md` documents the two `docker/docker`
-  govulncheck findings and the one transitive `quic-go` finding
-  that have no upstream fix yet, with rationale for accepting them
-  under the loopback-bound deployment.
+- Go toolchain pinned to **1.25.9** in all three modules — clears
+  every stdlib finding govulncheck reported under earlier patches.
+  Only the 2 `docker/docker` (no upstream fix) and 1 `quic-go`
+  (transitive in unused HTTP/3 path) findings remain, all
+  documented in `docs/security-known-issues.md`.
 
 ### Documentation
 
 - `README.md`, `docs/architecture.md`, `docs/api-spec.md`,
-  `docs/workshop-overview.md`, `docs/release-plan.md`, plus
-  per-area READMEs in `frontend/`, `services/`, `lab-definitions/`,
-  and `dnp3go/`.
-- `CONTRIBUTING.md` and `SECURITY.md` for OSS hygiene.
+  `docs/workshop-overview.md`, `docs/release-plan.md`,
+  `docs/security-known-issues.md`, plus per-area READMEs in
+  `frontend/`, `services/`, `lab-definitions/`, and `dnp3go/`.
+- Community files: `CONTRIBUTING.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
+- GitHub workflow templates: `.github/PULL_REQUEST_TEMPLATE.md`,
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.
+
+### Tests
+
+- `dnp3go/roundtrip_test.go` — link-frame round-trip across 7 size
+  classes, garbage-skipping, CRC rejection, APDU round-trip,
+  encoder shape checks. Coverage moved from CRC-only to all four
+  protocol layers (link, transport, application, encoders).
+- `backend/internal/server/exec_test.go` — 33 cases pinning the
+  command-allowlist behavior on `/api/workshop/exec`, including
+  the documented shell-injection bypass and a regression guard
+  that every tool the scenario YAMLs auto-run stays in the
+  allowlist.
 
 [Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.0...HEAD
 [v0.1.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.0
