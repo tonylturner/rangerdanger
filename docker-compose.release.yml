@@ -22,7 +22,7 @@ name: rangerdanger
 
 services:
   firewall:
-    image: ghcr.io/tonylturner/containd:v0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
+    image: ghcr.io/tonylturner/containd:0.1.19@sha256:86f037fa46cda25594bfe337bd44043a6a7e8fbf2a30fcef8757c36e0eb8feb6
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
