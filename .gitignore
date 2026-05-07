@@ -64,3 +64,6 @@ deploy/
 
 # Large binary tools (not in git, fetched separately)
 tools/pcap-analyzer/*.deb
+
+# Local-only AI agent context (Claude Code)
+CLAUDE.md
