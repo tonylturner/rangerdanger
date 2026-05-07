@@ -13,12 +13,12 @@ workshop.
 
 ### v0.1.2 release path
 
-- [ ] **Orchestrator fail-fast on unmapped network zones.**
-  `createContainer` in `backend/internal/orchestrator/orchestrator.go`
-  silently no-ops when `node.Networks[i]` isn't in `networkNameMap`,
-  dropping the container onto Docker's default bridge instead of
-  returning an error. Add a fail-fast branch returning the error with
-  the list of valid zones. Surfaced by Codex on PR #26.
+- [x] **Orchestrator fail-fast on unmapped network zones.**
+  Resolved via `resolveNetworkName` helper in
+  `backend/internal/orchestrator/orchestrator.go`; both the primary
+  and secondary network attachment paths now return an error listing
+  valid zones when the lookup fails. Pinned with
+  `orchestrator_test.go` (12 cases). Surfaced by Codex on PR #26.
 - [ ] **`govulncheck` advisory → hard gate.** Flip
   `continue-on-error: false` on the `govulncheck` job in
   `.github/workflows/ci.yml` once the documented exceptions in

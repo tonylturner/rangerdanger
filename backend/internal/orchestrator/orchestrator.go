@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +30,22 @@ var networkNameMap = map[string]string{
 	"ot_ops_net":     "rangerdanger_ot_ops_net",
 	"field_net":      "rangerdanger_field_net",
 	"physics_net":    "rangerdanger_physics_net",
+}
+
+// resolveNetworkName looks up the Docker network for a lab-definition zone
+// name. It returns an error listing the valid zones if the name is unknown
+// — fail-fast so a misspelled zone in a custom lab definition can't silently
+// land the container on Docker's default bridge.
+func resolveNetworkName(zone string) (string, error) {
+	if dockerNet, ok := networkNameMap[zone]; ok {
+		return dockerNet, nil
+	}
+	valid := make([]string, 0, len(networkNameMap))
+	for k := range networkNameMap {
+		valid = append(valid, k)
+	}
+	sort.Strings(valid)
+	return "", fmt.Errorf("unknown network zone %q (valid: %s)", zone, strings.Join(valid, ", "))
 }
 
 // Orchestrator manages Docker containers for lab instances.
@@ -234,16 +251,20 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
 	}
 
-	// Determine the primary network for initial container creation
+	// Determine the primary network for initial container creation.
+	// Unknown zones fail-fast so a misspelled name in a custom lab
+	// definition can't silently drop the container on Docker's default
+	// bridge.
 	var networkConfig *network.NetworkingConfig
 	if len(node.Networks) > 0 {
-		primaryNetwork := node.Networks[0]
-		if dockerNet, ok := networkNameMap[primaryNetwork]; ok {
-			networkConfig = &network.NetworkingConfig{
-				EndpointsConfig: map[string]*network.EndpointSettings{
-					dockerNet: {},
-				},
-			}
+		primaryDockerNet, err := resolveNetworkName(node.Networks[0])
+		if err != nil {
+			return "", "", fmt.Errorf("node %q: %w", node.ID, err)
+		}
+		networkConfig = &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				primaryDockerNet: {},
+			},
 		}
 	}
 
@@ -253,13 +274,14 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 		return "", "", fmt.Errorf("create container: %w", err)
 	}
 
-	// Connect to additional networks
+	// Connect to additional networks.
 	for i := 1; i < len(node.Networks); i++ {
-		if dockerNet, ok := networkNameMap[node.Networks[i]]; ok {
-			err := o.dockerClient.NetworkConnect(ctx, dockerNet, resp.ID, nil)
-			if err != nil {
-				o.logger.Printf("[container %s] failed to connect to network %s: %v", containerName, dockerNet, err)
-			}
+		dockerNet, err := resolveNetworkName(node.Networks[i])
+		if err != nil {
+			return "", "", fmt.Errorf("node %q: %w", node.ID, err)
+		}
+		if err := o.dockerClient.NetworkConnect(ctx, dockerNet, resp.ID, nil); err != nil {
+			o.logger.Printf("[container %s] failed to connect to network %s: %v", containerName, dockerNet, err)
 		}
 	}
 

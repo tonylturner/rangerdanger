@@ -6,6 +6,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `orchestrator.createContainer` now fails fast with a clear error
+  when a node references an unknown network zone, instead of silently
+  no-op'ing and letting the container land on Docker's default bridge.
+  Pinned with `backend/internal/orchestrator/orchestrator_test.go`.
+  Surfaced by Codex review on PR #26.
+
+### CI
+
+- `release.yml` retries the `Build and push` step up to twice on
+  failure (with 30s and 60s delays) to absorb transient GHCR 5xx
+  during layer uploads. Each retry reuses already-pushed blobs via
+  buildkit's layer dedup, so only the failed layer actually re-uploads.
+
+### Documentation
+
+- Replaced `docs/release-plan.md` (a v0.1.0-cutover working doc) with
+  `docs/tasks.md`, a prioritized P1/P2/P3 backlog. `ROADMAP.md`
+  remains the longer-horizon view.
+
 ## [v0.1.1] - 2026-05-07
 
 Polish release that lands the work that didn't make the v0.1.0 cut.
