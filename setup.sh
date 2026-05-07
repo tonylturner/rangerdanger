@@ -6,10 +6,13 @@
 #   ./setup.sh                              # pull pre-built images from GHCR (default)
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
+#   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
 #   ./setup.sh --help
 #
 # Runs from the repo root. Validates prerequisites, brings the lab up
-# via docker-compose.release.yml, and prints next steps.
+# via docker-compose.release.yml, and prints next steps. With
+# --check-only, runs the pre-flight checks and exits — useful for a
+# pre-workshop "is my laptop ready?" check.
 
 set -euo pipefail
 
@@ -28,6 +31,7 @@ banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $
 VERSION="${VERSION:-latest}"
 TARBALL_DIR=""
 SHOW_HELP=0
+CHECK_ONLY=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -35,6 +39,7 @@ while [ $# -gt 0 ]; do
         --version=*)       VERSION="${1#*=}"; shift ;;
         --from-tarballs)   TARBALL_DIR="$2"; shift 2 ;;
         --from-tarballs=*) TARBALL_DIR="${1#*=}"; shift ;;
+        --check-only)      CHECK_ONLY=1; shift ;;
         -h|--help)         SHOW_HELP=1; shift ;;
         *) die "Unknown argument: $1 (use --help)" ;;
     esac
@@ -112,6 +117,20 @@ if [ -n "$PORTS_BUSY" ]; then
     die "Required loopback ports already in use:$PORTS_BUSY. Stop whatever is bound to them, then re-run."
 fi
 say "Loopback ports 8088, 9080, 9443, 2222 are free"
+
+# ─── check-only short-circuit ───────────────────────────────────────
+if [ "$CHECK_ONLY" -eq 1 ]; then
+    banner "Pre-flight passed — laptop is ready"
+    cat <<EOF
+  All checks above passed. To install:
+
+    ./setup.sh                       # latest
+    ./setup.sh --version v0.1.0      # pinned release
+
+  For offline / SSD install, use --from-tarballs <PATH>.
+EOF
+    exit 0
+fi
 
 # ─── image acquisition ──────────────────────────────────────────────
 if [ -n "$TARBALL_DIR" ]; then
