@@ -105,16 +105,23 @@ if docker info --format '{{.MemTotal}}' >/dev/null 2>&1; then
     fi
 fi
 
-# Required host ports
+# Required host ports — show what's holding any conflict so the user
+# doesn't have to dig with lsof themselves.
 PORTS_REQUIRED="8088 9080 9443 2222"
 PORTS_BUSY=""
+PORT_DETAILS=""
 for port in $PORTS_REQUIRED; do
     if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
         PORTS_BUSY="$PORTS_BUSY $port"
+        # Pull the first matching process line for the diagnostic message.
+        proc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, "pid="$2}')
+        PORT_DETAILS="$PORT_DETAILS\n    $port: $proc"
     fi
 done
 if [ -n "$PORTS_BUSY" ]; then
-    die "Required loopback ports already in use:$PORTS_BUSY. Stop whatever is bound to them, then re-run."
+    die "Required loopback ports already in use:$PORTS_BUSY$(printf "$PORT_DETAILS")
+  Stop whatever is bound to them, then re-run. (kill the PID above, or
+  bring down a competing dev stack.)"
 fi
 say "Loopback ports 8088, 9080, 9443, 2222 are free"
 
@@ -146,7 +153,26 @@ else
     banner "Pulling images from GHCR"
     say "Version: $VERSION"
     say "(this can take a while on first run; subsequent pulls are layer-cached)"
-    VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" pull
+    # GHCR occasionally returns transient 5xx during layer fetches —
+    # retry up to 3 times with exponential backoff before giving up.
+    PULL_OK=0
+    for attempt in 1 2 3; do
+        if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" pull; then
+            PULL_OK=1
+            break
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            wait_s=$(( attempt * 15 ))
+            warn "Pull attempt $attempt failed (likely a transient GHCR / network blip). Retrying in ${wait_s}s..."
+            sleep "$wait_s"
+        fi
+    done
+    if [ "$PULL_OK" -ne 1 ]; then
+        die "Pulling images failed after 3 attempts. Common causes:
+    - Network blocks ghcr.io (try the offline path: --from-tarballs <PATH>)
+    - GHCR is genuinely down (rare; check https://www.githubstatus.com/)
+    - Disk filled mid-pull (df -h to verify)"
+    fi
 fi
 
 # ─── start the stack ────────────────────────────────────────────────

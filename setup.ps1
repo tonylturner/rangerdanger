@@ -105,8 +105,11 @@ if ($memBytes -gt 0) {
     }
 }
 
-# Required ports — bind a TcpListener briefly to confirm free
+# Required ports — bind a TcpListener briefly to confirm free, and
+# look up the holding process when one is busy so the user doesn't
+# have to dig with netstat.
 $portsBusy = @()
+$portDetails = @()
 foreach ($port in 8088, 9080, 9443, 2222) {
     try {
         $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
@@ -114,10 +117,24 @@ foreach ($port in 8088, 9080, 9443, 2222) {
         $listener.Stop()
     } catch {
         $portsBusy += $port
+        try {
+            $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($conn) {
+                $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+                $procName = if ($proc) { $proc.ProcessName } else { "?" }
+                $portDetails += "    ${port}: $procName (pid=$($conn.OwningProcess))"
+            }
+        } catch { }
     }
 }
 if ($portsBusy.Count -gt 0) {
-    Die ("Required loopback ports already in use: " + ($portsBusy -join ", ") + ". Stop whatever is bound to them, then re-run.")
+    $msg = "Required loopback ports already in use: " + ($portsBusy -join ", ")
+    if ($portDetails.Count -gt 0) {
+        $msg += "`n" + ($portDetails -join "`n")
+    }
+    $msg += "`n  Stop whatever is bound to them, then re-run. (kill the PID above, or"
+    $msg += "`n  bring down a competing dev stack.)"
+    Die $msg
 }
 Say "Loopback ports 8088, 9080, 9443, 2222 are free"
 
@@ -150,7 +167,26 @@ if ($FromTarballs) {
     Say "Version: $Version"
     Say "(this can take a while on first run; subsequent pulls are layer-cached)"
     $env:VERSION = $Version
-    docker compose -f $ComposeFile pull
+    # GHCR occasionally returns transient 5xx during layer fetches —
+    # retry up to 3 times with exponential backoff before giving up.
+    $pullOk = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        docker compose -f $ComposeFile pull
+        if ($LASTEXITCODE -eq 0) { $pullOk = $true; break }
+        if ($attempt -lt 3) {
+            $waitS = $attempt * 15
+            Warn "Pull attempt $attempt failed (likely a transient GHCR / network blip). Retrying in ${waitS}s..."
+            Start-Sleep -Seconds $waitS
+        }
+    }
+    if (-not $pullOk) {
+        Die @"
+Pulling images failed after 3 attempts. Common causes:
+    - Network blocks ghcr.io (try the offline path: -FromTarballs <PATH>)
+    - GHCR is genuinely down (rare; check https://www.githubstatus.com/)
+    - Disk filled mid-pull
+"@
+    }
 }
 
 # ─── start the stack ────────────────────────────────────────────────
