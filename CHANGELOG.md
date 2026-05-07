@@ -21,11 +21,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   during layer uploads. Each retry reuses already-pushed blobs via
   buildkit's layer dedup, so only the failed layer actually re-uploads.
 - `ci.yml`'s `govulncheck` job is now a hard gate (was advisory).
-  An allowlist of the three documented OSV IDs from
-  `docs/security-known-issues.md` (GO-2026-4887, GO-2026-4883,
-  GO-2025-4233) keeps known exceptions passing; any new finding fails
-  the build. The flip closes a v0.1.x stabilization item from
-  `docs/tasks.md`.
+  An allowlist of two `docker/docker` OSV IDs (GO-2026-4887,
+  GO-2026-4883) — the only findings without an upstream fix — keeps
+  known exceptions passing; any new finding fails the build. Closes
+  a v0.1.x stabilization item from `docs/tasks.md`.
+
+### Security
+
+- `backend/go.mod`: `quic-go` v0.54.0 → v0.57.0 (clears
+  `GO-2025-4233`, `GO-2025-4017`); `golang.org/x/crypto` v0.44.0 →
+  v0.50.0 (clears `GO-2025-4134`, `GO-2025-4135`). Surfaced when the
+  govulncheck gate flipped above.
 
 ### Documentation
 
