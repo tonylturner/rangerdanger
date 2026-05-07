@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.2] - 2026-05-07
+
+Workshop-deck-aligned restructure plus a security + tooling
+sweep. Lab inventory shrank from 9 sequentially-numbered exercises
+to 6 labs + 1 bonus, numbered to match the DefendICS workshop deck
+(Lab 1.2, 1.3, 1.4, 2.2, 2.3, 2.3-bonus, 2.4). Vendor RDP lab
+rebuilt to actually use RDP/VNC. In-app firewall terminal lands
+directly in the containd CLI. Major doc + setup polish.
+
 ### Workshop / lab content
 
 - **Restructured lab inventory to align with the DefendICS workshop
@@ -166,6 +175,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "7 labs aligned to the DefendICS workshop".
 
 ## [v0.1.1] - 2026-05-07
+
 
 Polish release that lands the work that didn't make the v0.1.0 cut.
 Same lab content as v0.1.0; the differences are entirely under the
@@ -379,5 +389,7 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.2...HEAD
+[v0.1.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.2
+[v0.1.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.0
