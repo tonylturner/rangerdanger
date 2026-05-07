@@ -28,10 +28,12 @@ content or topology.
   HTTP handlers).
 - Frontend smoke-test framework + a handful of high-value tests
   (exercise runner page, network console).
-- Content-review pass on the seven exercises that pre-dated the
-  v0.1.0 merge (baseline, dnp3-injection, modbus-override,
-  remediation-planning, segmentation-requirements, validation-evidence,
-  vendor-rdp).
+- Content-review pass on the surviving labs after the workshop-deck
+  alignment (baseline-assessment, segmentation-requirements,
+  remediation-planning, firewall-implementation,
+  hardening-configurations, vendor-rdp-compromise,
+  validation-evidence) — the structural restructure shipped, but a
+  deeper workshop-day playthrough may surface content edits.
 - `setup.sh` / `setup.ps1` improvements driven by workshop feedback
   (better error messages, retry on transient pull failures).
 - README screenshots / GIFs walking through the exercise runner,

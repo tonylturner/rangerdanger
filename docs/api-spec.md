@@ -111,11 +111,11 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/active` | Which named configuration is currently applied |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
 | `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`) |
-| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Exercise 3 (Remediation Planning) or Exercise 4 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and returns `{"applied": true, "rules_applied": N}` on success. |
+| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and returns `{"applied": true, "rules_applied": N}` on success. |
 
 ## Traffic generation
 
-Used by Exercise 0 (Baseline Traffic Analysis) to produce representative substation traffic during a capture window.
+Used by Lab 1.2 (Baseline Traffic Analysis) to produce representative substation traffic during a capture window.
 
 | Method | Path | Description |
 |--------|------|-------------|
