@@ -1,21 +1,16 @@
 # Security: known issues
 
 Findings from `govulncheck` that the project is aware of but has not
-acted on, with rationale. Intended as the source-of-truth when the
-advisory CI job (`Go vulnerability scan (advisory)` in
-`.github/workflows/ci.yml`) reports findings — a triage entry here
-plus a CHANGELOG note is the contract before flipping the job from
-`continue-on-error: true` to a hard gate.
+acted on, with rationale. Source of truth for the `Go vulnerability
+scan` hard-gate job in `.github/workflows/ci.yml`: a triage entry
+here plus appending the GOID to the workflow's `ALLOWED` env var is
+the contract for accepting a new finding.
 
 The triage cadence is per-release. If you tag a new version, sweep
 this file against `gh run view <latest-ci-run> --log-failed` and
 either remove resolved entries or add new ones.
 
 ## Open
-
-After the Go 1.25.9 toolchain bump (commit in this batch), only
-the following findings remain. Both have rationale for acceptance
-under the loopback-bound deployment.
 
 ### docker/docker — `GO-2026-4887` and `GO-2026-4883`
 
@@ -32,22 +27,20 @@ under the loopback-bound deployment.
   `docker/docker` direct dependency in `backend/go.mod` stays pinned
   at the current version.
 
-### quic-go — `GO-2025-4233`
+## Resolved by direct dependency bumps (2026-05-07)
 
-- **Module**: `github.com/quic-go/quic-go@v0.54.0` (transitive via
-  `github.com/gin-gonic/gin` → `quic-go/quic-go/http3`)
-- **Affects**: HTTP/3 QPACK header expansion DoS — only relevant if
-  the backend serves HTTP/3, which it does not (it serves HTTP/1.1
-  + HTTP/2 via Gin's standard server)
-- **Upstream fix**: quic-go v0.57.0
-- **Mitigation**: govulncheck flags this as reachable because gin
-  imports the http3 package even when the http3 server isn't
-  started. Practical exposure under our deployment is zero.
-- **Action**: clears once `gin-gonic/gin` releases a version that
-  pins quic-go v0.57.0+. Tracked by dependabot's weekly gomod update
-  for `/backend`. If gin lags, we can add a `replace` directive
-  forcing quic-go v0.57.0 — defer unless the dependabot patch path
-  proves slow.
+When the `govulncheck` job flipped to a hard gate, three new
+findings surfaced that hadn't appeared in the prior advisory runs
+(vuln database refresh between scans). All three were upstream-fixed
+and resolved by `go get`:
+
+- **`GO-2025-4233`, `GO-2025-4017`** — `quic-go` v0.54.0 → v0.57.0.
+  Was transitive via `gin-gonic/gin` → `quic-go/http3`; direct pin
+  in `backend/go.mod`'s `require` block keeps the patched version
+  even if gin lags. Practical exposure under our loopback-bound
+  deployment was zero (we serve HTTP/1.1 + HTTP/2 only).
+- **`GO-2025-4134`, `GO-2025-4135`** — `golang.org/x/crypto`
+  v0.44.0 → v0.50.0.
 
 ## Resolved by Go toolchain bump (2026-05-07)
 
@@ -80,26 +73,16 @@ Dockerfile bases also bumped:
 `services/Dockerfile`, `Dockerfile.kali`, `Dockerfile.eng-ws` →
 `golang:1.25-alpine` (was `1.24-alpine`).
 
-## Triggering the advisory job → hard-fail flip
+## Adding a new exception
 
-When this file's "Open" section reaches zero (or only contains
-deliberately-accepted findings with rationale), do the flip in
-`.github/workflows/ci.yml`:
+The hard-gate `govulncheck` job allowlists OSV IDs via the
+`ALLOWED` env var in `.github/workflows/ci.yml`. To accept a new
+finding:
 
-```yaml
-govulncheck:
-  name: Go vulnerability scan
-  runs-on: ubuntu-latest
-  # continue-on-error: true   # remove this line
-  steps:
-    ...
-```
+1. Add a triage entry to the **Open** section above with module,
+   affected paths, upstream fix status, mitigation, and action.
+2. Append the GOID to `ALLOWED` in `.github/workflows/ci.yml`.
+3. Add a `### Security` note to `CHANGELOG.md` under `[Unreleased]`.
 
-CI then fails any PR that introduces a new finding. New findings get
-triaged into this file before merge.
-
-The current "Open" section has only the docker/docker (no upstream
-fix) and quic-go (transitive, unused HTTP/3 path) findings. Both
-have explicit acceptance rationale tied to the loopback-bound
-deployment. If you're comfortable with the rationale, this is the
-moment to make govulncheck a hard gate.
+Same PR for all three — the entry, the workflow change, and the
+changelog note travel together so the acceptance is reviewable.
