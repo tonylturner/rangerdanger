@@ -66,16 +66,18 @@ steps:
       shows zone interface status for all four networks (`wan`, `dmz`,
       `lan1`, `lan2`) and the current rule count.
 
-      **Option 2: containd CLI via SSH**
+      **Option 2: containd CLI**
 
-      Use the `fw-1` terminal tab on the [Network Map](/console), or
-      SSH directly:
+      The `fw-1` terminal tab on the [Network Map](/console) opens
+      a **bash shell** on the firewall container — useful for
+      `tcpdump`, `ip`, `nft list ruleset`, and other Linux-side
+      diagnostics. To enter the containd appliance CLI from there:
 
-          ssh -p 2222 containd@localhost
-          # password: containd
+          containd cli
+          # logs in as containd / containd
 
-      You'll land in the appliance-style containd CLI. List the
-      interfaces and the running policy:
+      You'll see the `containd# ` prompt. List the interfaces and
+      the running policy:
 
           show interfaces
           show running-config
@@ -86,10 +88,18 @@ steps:
       field, vendor to field, any-to-any on ICS ports), the weak
       baseline is active. That is your starting point.
 
-      :::hint Switching between containd CLI and Linux shell
-      The SSH session opens in `appliance` mode by default
-      (containd CLI). Type `shell` to drop to bash for `tcpdump`,
-      `ip`, etc., and `exit` to return to the CLI.
+      :::hint Alternative — SSH from your laptop
+      You can also reach the containd CLI from a fresh terminal on
+      your laptop (the host), which gives you a dedicated window
+      separate from the in-app terminal:
+
+          ssh -p 2222 containd@localhost
+          # password: containd
+
+      The SSH server is configured in `linux` shell mode, so it
+      lands in bash — same as the in-app terminal. Type
+      `containd cli` (or `configure`) to enter the appliance CLI,
+      `exit` to return.
       :::
 
   - title: "Phase 1 - Verify current access under the weak baseline"
@@ -162,7 +172,8 @@ steps:
 
       ### CLI path
 
-      From the SSH session into the containd CLI:
+      From the `fw-1` terminal, type `containd cli` to enter the
+      appliance CLI, then:
 
           show running-config
           # find the rule IDs for the broad-allow rules
@@ -217,7 +228,8 @@ steps:
       :::hint Creating rules via the containd CLI
       The granular protocol-port rule schema (with ICS DPI fields) is
       best edited via JSON in the CLI rather than typed-in argument
-      lists. From the SSH session:
+      lists. From the `fw-1` terminal (or SSH), type `containd cli`
+      to enter the appliance CLI, then:
 
           export config > /tmp/policy.json
           shell                   # drop to bash
@@ -277,7 +289,7 @@ steps:
       should see a deny event for the kali IP (`10.10.10.50`)
       attempting to reach the field device.
 
-      **CLI:** from the SSH session,
+      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
 
           show audit
 
@@ -368,7 +380,7 @@ steps:
 
       **Web UI:** the **Events** page should show recent deny entries.
 
-      **CLI:** from the SSH session,
+      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
 
           show audit
 
@@ -386,7 +398,7 @@ steps:
       **Web UI:** Settings → Export config (or similar button) to
       download the running config as JSON.
 
-      **CLI:** from the SSH session,
+      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
 
           export config > student-policy.json
           shell                       # drop to bash

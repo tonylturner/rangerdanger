@@ -29,7 +29,7 @@ steps:
       reflect the rule set you built in Lab 2.2 (or the reference
       hardened policy if you used **Apply Hardened**).
 
-      **CLI:** from `ssh -p 2222 containd@localhost`,
+      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
 
           show running-config
 
