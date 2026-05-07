@@ -22,7 +22,8 @@ name: rangerdanger
 
 services:
   firewall:
-    image: ghcr.io/tonylturner/containd:0.1.19@sha256:86f037fa46cda25594bfe337bd44043a6a7e8fbf2a30fcef8757c36e0eb8feb6
+    # See docker-compose.yml — containd tracks :latest by design.
+    image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN

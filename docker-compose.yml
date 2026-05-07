@@ -5,9 +5,11 @@ services:
   # Zone 7: Security Infrastructure — containd NGFW
   # ─────────────────────────────────────────────────────────────
   firewall:
-    # containd v0.1.19 — pinned by digest for reproducible releases.
-    # To update: docker buildx imagetools inspect ghcr.io/tonylturner/containd:<tag>
-    image: ghcr.io/tonylturner/containd:0.1.19@sha256:86f037fa46cda25594bfe337bd44043a6a7e8fbf2a30fcef8757c36e0eb8feb6
+    # RangerDanger and containd are co-developed by the same author; both repos
+    # stay in sync by convention. Use :latest here so a `docker compose pull`
+    # picks up containd security fixes without a rangerdanger compose bump.
+    # If a containd release breaks RangerDanger, fix containd, not the pin.
+    image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN
