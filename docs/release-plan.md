@@ -132,8 +132,12 @@ SSD/airgap validation (B6).
   builds linux/amd64+linux/arm64 (openplc amd64-only); injects
   VERSION/COMMIT/DATE build-args; pre-release tags don't retag
   `:latest`; per-image GHA cache scope.
-- [ ] Run a `v0.0.1-alpha` dry-run tag to validate the pipeline
-  end-to-end before tagging real `v0.1.0`.
+- [x] Pipeline dry-run validated end-to-end across multiple alpha
+  tags. Final dry-run **`v0.1.0-alpha.4`** (Go 1.25.9 toolchain
+  bump) landed **14/14 ✓**, both arches, vendor-jump 403 from
+  earlier alphas confirmed transient. `setup.sh` against published
+  GHCR images smoke-tested clean (`/api/build` returns version
+  stamp, all 9 exercises load, healthchecks fire).
 
 | GHCR repo                                         | Source                       | Multi-arch |
 | ------------------------------------------------- | ---------------------------- | ---------- |
@@ -275,7 +279,13 @@ SSD/airgap validation (B6).
 - [x] Healthchecks added to all 7 alpine sims + opendss (commit
   `79673d6`). `rtac_sim` and `backend` `depends_on` use
   `condition: service_healthy` to gate startup ordering.
-- [ ] Resource limits (`mem_limit`, `cpus`) — esp. webtop containers.
+- [x] Memory limits added (commit `8aa4575`) on the 5 heavy
+  containers: corp_ws, vendor_jump, eng_workstation @ 2g (webtop
+  bases), kali @ 1g, fuxa_hmi @ 1g. Mirrored in
+  `docker-compose.release.yml`. CPU limits skipped — Go sims and
+  the webtop containers are workload-light by default and a
+  `cpus:` cap creates more confusion than it solves on
+  Apple Silicon Docker Desktop.
 - [x] Build cache mounts added to `services/Dockerfile`,
   `Dockerfile.kali`, `Dockerfile.eng-ws` Go stages and
   `Dockerfile.frontend` npm stage (commit `c52918e`).
@@ -342,10 +352,14 @@ SSD/airgap validation (B6).
   30-minute hands-on exercise where the student builds a
   least-privilege containd policy from scratch. Aligns with the
   baseline → requirements → remediation → implementation flow.
-- [ ] Quick re-read of updates to existing exercises (baseline,
-  dnp3-injection, modbus-override, remediation-planning,
-  segmentation-requirements, validation-evidence, vendor-rdp) —
-  punted to a content-review pass closer to v0.1.0.
+- [ ] **Punted to v0.1.x**: quick re-read of updates to the seven
+  existing exercises (baseline, dnp3-injection, modbus-override,
+  remediation-planning, segmentation-requirements,
+  validation-evidence, vendor-rdp). The new content
+  (capbank-switching-attack, firewall-implementation) and the
+  capbank-sim service are reviewed clean above; the 7 pre-existing
+  YAML edits from the merge ride into v0.1.0 with the playthroughs
+  the user already ran during workshop prep.
 
 ---
 
