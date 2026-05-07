@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for all substation simulator services.
 # Usage: docker build --target <service-name> -t <tag> .
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 # Copy dnp3go library first (standalone module, referenced via replace directive)
 COPY dnp3go/ /dnp3go/
