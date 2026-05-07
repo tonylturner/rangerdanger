@@ -2,7 +2,7 @@
 
 A zero-dependency Go implementation of the [DNP3](https://en.wikipedia.org/wiki/DNP3) protocol, hand-written for use in the RangerDanger ICS cyber range.
 
-This is a **standalone Go module** (`github.com/tonylturner/dnp3go`) with its own `go.mod`. It is vendored inside the [RangerDanger](https://github.com/tonylturner/rangerdanger) repo for now and consumed via a `replace` directive in `services/go.mod`. Publishing it as a separate GitHub repo is a future option (see CLAUDE.md), not a current requirement.
+This is a **standalone Go module** (`github.com/tonylturner/dnp3go`) with its own `go.mod`. It is vendored inside the [RangerDanger](https://github.com/tonylturner/rangerdanger) repo for now and consumed via a `replace` directive in `services/go.mod`. Publishing it as a separate GitHub repo is a future option, not a current requirement.
 
 ## What it implements
 
