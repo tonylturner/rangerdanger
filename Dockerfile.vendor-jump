@@ -1,9 +1,15 @@
 # webtop ubuntu-xfce pinned by digest (A7).
 FROM linuxserver/webtop:ubuntu-xfce@sha256:13aa7d54b8cb013ff7cb2d83e0c9af07a7f9a2b3b846eb1bc8130f9441540f8b
 
-# Install OT security tools for vendor access scenario exercises.
-# In a real substation environment, a vendor laptop would commonly have
-# Python-based OT tools for commissioning and diagnostics.
+# OT vendor-tools + remote-access services.
+#
+# - mbpoll/python3/pymodbus/nmap/etc. — what a vendor laptop would
+#   typically have for substation commissioning and diagnostics.
+# - xrdp + tigervnc + openssh-server — RDP/VNC/SSH stack used by the
+#   vendor-rdp-compromise lab. Under the weak baseline these are
+#   reachable from the enterprise zone and demonstrate the lateral
+#   path described in the workshop deck (Slides 55, 88). Under the
+#   hardened policy, RDP and VNC are blocked at the perimeter.
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         mbpoll \
@@ -12,7 +18,12 @@ RUN apt-get update && \
         ncat \
         nmap \
         tcpdump \
-        iproute2 && \
+        iproute2 \
+        xrdp \
+        tigervnc-standalone-server \
+        openssh-server \
+        xfce4-terminal \
+        sudo && \
     pip3 install --no-cache-dir --break-system-packages pymodbus && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

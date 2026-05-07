@@ -172,6 +172,7 @@ services:
       - NET_ADMIN
     volumes:
       - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+      - ./scripts/start-rdp-vnc.sh:/custom-cont-init.d/20-start-rdp-vnc.sh:ro
     networks:
       vendor_net:
         ipv4_address: 10.20.20.10
