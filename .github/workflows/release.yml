@@ -137,8 +137,15 @@ jobs:
             org.opencontainers.image.revision=${{ steps.meta.outputs.commit }}
             org.opencontainers.image.licenses=Apache-2.0
 
+      # Three-attempt push chain. GHCR occasionally returns transient
+      # 5xx during layer uploads when many parallel matrix jobs push
+      # simultaneously; buildkit treats those as fatal. Each retry
+      # reuses already-pushed layers, so only the failed blob(s)
+      # actually re-upload.
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
+        continue-on-error: true
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -149,6 +156,52 @@ jobs:
           labels: ${{ steps.docker-meta.outputs.labels }}
           # Build args are consumed by Dockerfile.backend; other
           # Dockerfiles ignore unknown ARGs without erroring.
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            DATE=${{ steps.meta.outputs.date }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Wait before retry 1
+        if: steps.build.outcome == 'failure'
+        run: sleep 30
+
+      - name: Build and push (retry 1)
+        id: retry1
+        if: steps.build.outcome == 'failure'
+        uses: docker/build-push-action@v5
+        continue-on-error: true
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            DATE=${{ steps.meta.outputs.date }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Wait before retry 2
+        if: steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
+        run: sleep 60
+
+      - name: Build and push (retry 2)
+        if: steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
