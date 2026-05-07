@@ -432,8 +432,77 @@ func TestImportConfigSuccess(t *testing.T) {
 	if !sawCommit {
 		t.Error("expected POST /api/v1/config/commit to be called")
 	}
-	if string(candidateBody) != string(configJSON) {
-		t.Errorf("body mismatch: got %s", string(candidateBody))
+
+	// ImportConfig injects dataplane.enforcement=true so containd's engine
+	// actually compiles + applies the ruleset (otherwise commit succeeds but
+	// no nft rules are pushed). Re-parse the body and verify the firewall
+	// section came through unmodified and the dataplane field is set.
+	var sent map[string]any
+	if err := json.Unmarshal(candidateBody, &sent); err != nil {
+		t.Fatalf("candidate body not valid JSON: %v\n%s", err, candidateBody)
+	}
+	if dp, _ := sent["dataplane"].(map[string]any); dp == nil || dp["enforcement"] != true {
+		t.Errorf("expected dataplane.enforcement=true, got body: %s", candidateBody)
+	}
+	fw, _ := sent["firewall"].(map[string]any)
+	if fw == nil || fw["defaultAction"] != "DENY" {
+		t.Errorf("firewall section not preserved: %s", candidateBody)
+	}
+}
+
+// TestEnsureEnforcementOn pins the lab-invariant shim that ImportConfig
+// applies. The substation-weak.json / substation-improved.json files (and
+// student-authored custom policies) typically don't set
+// `dataplane.enforcement` — without this shim, containd commits the rules
+// but engine.ApplyRules silently no-ops because the compiler is nil
+// (pkg/dp/engine/engine.go:113-129 in containd).
+func TestEnsureEnforcementOn(t *testing.T) {
+	type tc struct {
+		name string
+		in   string
+	}
+	cases := []tc{
+		{"empty dataplane", `{"firewall":{"rules":[]},"dataplane":{}}`},
+		{"missing dataplane key", `{"firewall":{"rules":[]}}`},
+		{"explicitly false (must override)", `{"firewall":{"rules":[]},"dataplane":{"enforcement":false}}`},
+		{"already true (no-op)", `{"firewall":{"rules":[]},"dataplane":{"enforcement":true}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := ensureEnforcementOn([]byte(c.in))
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			var doc map[string]any
+			if err := json.Unmarshal(out, &doc); err != nil {
+				t.Fatalf("output not JSON: %v", err)
+			}
+			dp, _ := doc["dataplane"].(map[string]any)
+			if dp == nil || dp["enforcement"] != true {
+				t.Errorf("expected dataplane.enforcement=true, got: %s", out)
+			}
+			// Firewall section preserved.
+			fw, _ := doc["firewall"].(map[string]any)
+			if fw == nil {
+				t.Errorf("firewall section dropped: %s", out)
+			}
+		})
+	}
+}
+
+func TestEnsureEnforcementOn_InvalidJSON(t *testing.T) {
+	if _, err := ensureEnforcementOn([]byte("not json")); err == nil {
+		t.Error("expected error on invalid JSON")
+	}
+}
+
+func TestEnsureEnforcementOn_EmptyInput(t *testing.T) {
+	out, err := ensureEnforcementOn(nil)
+	if err != nil {
+		t.Fatalf("nil input should not error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Errorf("nil input should pass through, got %s", out)
 	}
 }
 

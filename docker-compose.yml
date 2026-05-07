@@ -5,11 +5,11 @@ services:
   # Zone 7: Security Infrastructure — containd NGFW
   # ─────────────────────────────────────────────────────────────
   firewall:
-    # NOTE: temporarily pinned back to 0.1.18 because v0.1.19/v0.1.20
-    # don't build the nft filter table even with CONTAIND_ENFORCE_ENABLED=1
-    # set, which black-holes all cross-zone traffic. Issue filed upstream;
-    # restore :latest once the regression is fixed in containd.
-    image: ghcr.io/tonylturner/containd:0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
+    # RangerDanger and containd are co-developed by the same author; both repos
+    # stay in sync by convention. Use :latest here so a `docker compose pull`
+    # picks up containd security fixes without a rangerdanger compose bump.
+    # If a containd release breaks RangerDanger, fix containd, not the pin.
+    image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN

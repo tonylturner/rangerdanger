@@ -22,9 +22,8 @@ name: rangerdanger
 
 services:
   firewall:
-    # See docker-compose.yml — pinned to 0.1.18 due to v0.1.19/v0.1.20
-    # dataplane-enforcement regression. Restore :latest once fixed.
-    image: ghcr.io/tonylturner/containd:0.1.18@sha256:4674396e309447a2ce4f84d3feb42750cc6c5719825c49e32d341e621db894d6
+    # See docker-compose.yml — containd tracks :latest by design.
+    image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
       - NET_ADMIN

@@ -413,16 +413,62 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 // ImportConfig sends a full JSON config to containd using the candidate/commit flow.
 // Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
 // Falls back to legacy /api/v1/config/import if candidate endpoint is unavailable.
+//
+// The lab assumes dataplane enforcement is on — without it, containd commits the
+// config to the running store but engine.ApplyRules silently no-ops (compiler is
+// nil when cfg.Enforce.Enabled is false), so the kernel's nft table is never
+// touched. The pre-canned substation policies and student-authored custom
+// policies generally don't bother setting `dataplane.enforcement: true` because
+// it's a containd implementation detail. Inject it here as a lab invariant.
 func (c *Client) ImportConfig(configJSON []byte) error {
-	// Try the preferred candidate/commit flow first
-	err := c.importViaCandidate(configJSON)
-	if err == nil {
-		return nil
+	patched, err := ensureEnforcementOn(configJSON)
+	if err != nil {
+		return fmt.Errorf("ensure enforcement on: %w", err)
 	}
 
-	// Fall back to legacy import endpoint
-	log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
-	return c.importLegacy(configJSON)
+	// Try the preferred candidate/commit flow first
+	if err := c.importViaCandidate(patched); err == nil {
+		return nil
+	} else {
+		// Fall back to legacy import endpoint
+		log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
+		return c.importLegacy(patched)
+	}
+}
+
+// ensureEnforcementOn parses a containd policy JSON and returns a copy with
+// `dataplane.enforcement = true`. Required because engine.ApplyRules silently
+// no-ops when enforcement is off — the running config commits cleanly but no
+// nft rules are actually pushed. See pkg/dp/engine/engine.go:113-129 in
+// containd: compiler/applier are only constructed when cfg.Enforce.Enabled.
+//
+// The function preserves all other fields verbatim. If `dataplane` is missing
+// it's created; if `enforcement` is already true it's a no-op (modulo
+// re-marshalling); if explicitly false it's overridden (with a log at warn).
+func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
+	if len(configJSON) == 0 {
+		return configJSON, nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(configJSON, &doc); err != nil {
+		return nil, fmt.Errorf("parse config JSON: %w", err)
+	}
+
+	dpRaw, ok := doc["dataplane"]
+	dp, _ := dpRaw.(map[string]any)
+	if dp == nil {
+		dp = map[string]any{}
+	}
+	if cur, hasCur := dp["enforcement"]; hasCur {
+		if b, isBool := cur.(bool); isBool && !b {
+			log.Printf("containd: policy had dataplane.enforcement=false, overriding to true (lab invariant)")
+		}
+	}
+	dp["enforcement"] = true
+	doc["dataplane"] = dp
+	_ = ok
+
+	return json.Marshal(doc)
 }
 
 // importViaCandidate uses the appliance candidate/commit flow:
