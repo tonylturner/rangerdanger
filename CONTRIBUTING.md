@@ -2,8 +2,7 @@
 
 Thanks for your interest. RangerDanger is an OT/ICS cyber range and a
 lab platform for ICS network segmentation training. The project lives
-at https://github.com/tonylturner/rangerrocks (GitHub repo will be
-renamed to `rangerdanger` before public release).
+at https://github.com/tonylturner/rangerdanger.
 
 ## Development environment
 
