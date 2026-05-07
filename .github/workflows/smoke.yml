@@ -1,0 +1,101 @@
+name: Smoke
+
+# Bring the lab up against the locally-built images, hit /api/health
+# and /api/build, then tear it down. Catches startup regressions
+# (broken healthcheck, broken depends_on chain, missing volume,
+# bad mount path) that the unit-test CI doesn't see.
+#
+# Runs on every push to main + PR. Doesn't run release.yml or
+# dep-scan.yml — purely a "the stack still boots" gate.
+#
+# Budget: ~6–8 min on a GitHub-hosted runner because we have to
+# build all 14 images locally (no cache pull). Trades runtime for
+# never depending on GHCR availability for PR feedback.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: docker compose up + health check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose syntax
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.release.yml config -q
+
+      - name: Free disk space (GH runner has ~14 GB by default)
+        run: |
+          # The 14 lab images plus their bases need more than the
+          # default runner has. Shed a few hundred MB of preinstalled
+          # tooling we don't need (Android SDK, .NET, Haskell).
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Build the stack
+        run: docker compose build --parallel
+
+      - name: Bring up the stack
+        run: docker compose up -d
+
+      - name: Wait for backend to report healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8088/api/health >/dev/null 2>&1; then
+              echo "backend healthy after ${i}0 seconds"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "backend did not report healthy in 5 minutes"
+          exit 1
+
+      - name: Probe API endpoints
+        run: |
+          curl -fsS http://localhost:8088/api/health | tee /tmp/health.json
+          curl -fsS http://localhost:8088/api/build  | tee /tmp/build.json
+          # /api/scenarios should return the 9 exercises
+          n=$(curl -fsS http://localhost:8088/api/scenarios | jq '.scenarios | length')
+          echo "exercises loaded: $n"
+          [ "$n" = "9" ] || { echo "expected 9 exercises, got $n"; exit 1; }
+
+      - name: Confirm sims report healthy
+        run: |
+          # All 7 alpine sims + opendss expose /api/health; rtac depends
+          # on the field sims being healthy via service_healthy gates.
+          # If startup ordering broke, this is where it surfaces.
+          docker compose ps --format '{{.Service}} {{.Status}}'
+          healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
+          [ "$healthy" -ge 8 ] || { echo "expected ≥8 healthy services, got $healthy"; exit 1; }
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/logs
+          for svc in backend firewall rtac_sim relay_sim recloser_sim regulator_sim capbank_sim opendss_sim fuxa_hmi proxy frontend; do
+            docker compose logs --tail=200 "$svc" > "/tmp/logs/$svc.log" 2>&1 || true
+          done
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: /tmp/logs/
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
