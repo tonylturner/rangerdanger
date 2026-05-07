@@ -48,35 +48,35 @@ export function hasSelected(plan: RemediationPlan | null, actionId: string): boo
 // harder.
 export const ACTION_IMPACT: Record<string, { defends: string[]; note: string }> = {
   "block-enterprise-to-field": {
-    defends: ["dnp3-command-injection"],
-    note: "Blocks enterprise → field DNP3 path — closes the DNP3 command injection attack vector",
+    defends: ["hardening-configurations"],
+    note: "Blocks enterprise → field — closes the DNP3 command-injection path demonstrated in Lab 2.3",
   },
   "block-enterprise-to-ot": {
-    defends: ["modbus-override"],
-    note: "Blocks enterprise → OT Ops — removes the staging foothold for Modbus override",
+    defends: ["hardening-configurations"],
+    note: "Blocks enterprise → OT Ops — removes the staging foothold for the Modbus override demonstrated in Lab 2.3",
   },
   "restrict-vendor-to-ot": {
     defends: ["vendor-rdp-compromise"],
-    note: "Restricts vendor → OT to encrypted management protocols — closes vendor pivot path",
+    note: "Restricts vendor → OT to encrypted management protocols — narrows the vendor pivot lane in Lab 2.3-bonus",
   },
   "block-vendor-to-field": {
     defends: ["vendor-rdp-compromise"],
-    note: "Blocks vendor → field entirely — kills the direct Modbus path from the vendor DMZ",
+    note: "Blocks vendor → field entirely — closes the second hop of the vendor RDP/VNC kill chain in Lab 2.3-bonus",
   },
   "pin-rtac-to-field": {
-    defends: ["modbus-override"],
-    note: "Pins field access to RTAC source IP — prevents lateral compromised-OT-host attacks",
+    defends: ["hardening-configurations"],
+    note: "Pins field access to the RTAC source IP — prevents the lateral Modbus override demonstrated in Lab 2.3",
   },
   "modbus-dpi": {
-    defends: ["modbus-override"],
-    note: "Protocol-aware Modbus filter — blocks unauthorized writes at the function-code level",
+    defends: ["hardening-configurations"],
+    note: "Protocol-aware Modbus filter — blocks unauthorized writes at the function-code level (Lab 2.3 DPI lesson)",
   },
   "dnp3-dpi": {
-    defends: ["dnp3-command-injection"],
-    note: "Protocol-aware DNP3 filter — blocks Direct Operate from non-RTAC sources",
+    defends: ["hardening-configurations"],
+    note: "Protocol-aware DNP3 filter — blocks Direct Operate from non-RTAC sources (Lab 2.3 DPI lesson)",
   },
   "positive-validation": {
     defends: ["validation-evidence"],
-    note: "Pre-planned validation testing — produces the evidence package for Exercise 6",
+    note: "Pre-planned validation testing — produces the evidence package for Lab 2.4",
   },
 };

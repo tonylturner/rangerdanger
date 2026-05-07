@@ -6,9 +6,69 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Workshop / lab content
+
+- **Restructured lab inventory to align with the DefendICS workshop
+  deck.** The 9-exercise inventory (sequentially numbered 1–9) is now
+  6 labs + 1 bonus, numbered by the deck's lab IDs:
+
+  - Lab 1.2 `baseline-assessment` — Baseline Traffic Analysis
+  - Lab 1.3 `segmentation-requirements` — Segmentation Requirements
+    & Policy Design
+  - Lab 1.4 `remediation-planning` — Remediation Planning Under
+    Constraint
+  - Lab 2.2 `firewall-implementation` — Firewall Policy Implementation
+  - Lab 2.3 `hardening-configurations` — Protocol-Hardened
+    Configurations (NEW; combines the prior Modbus-override and
+    DNP3-injection exercises into a single DPI-focused stress test)
+  - Lab 2.3-bonus `vendor-rdp-compromise` — Vendor Remote Access
+    Compromise (rebuilt from the prior Modbus-via-vendor narrative
+    to actually use RDP/VNC pivot, matching the deck case study)
+  - Lab 2.4 `validation-evidence` — Testing & Validation
+
+  Removed: `modbus-override.yml`, `dnp3-command-injection.yml`,
+  `capbank-switching-attack.yml` (capbank-sim container stays — the
+  RTAC keeps polling it; just no dedicated exercise targets it).
+
+- **Lab 1.2 trimmed:** Step 4's `tshark` views narrowed to host-pair
+  conversations on the main path (other two views moved to a hint).
+  Step 7 (Define success criteria) moved into Lab 1.3 where it
+  fits the design conversation.
+
+- **Lab 1.3 trimmed:** Cut Steps 5–7 (preview improved / apply /
+  revert) — they spoiled the hands-on build in Lab 2.2.
+
+- **Lab 2.4 trimmed:** Per-attack repetitive validations dropped
+  (those now live in Lab 2.3); kept the holistic positive/negative
+  test pass and PCAP evidence assembly. Added a closing reflection
+  step.
+
+### Infrastructure
+
+- **`vendor-jump` container** now runs `xrdp` (3389), `tigervnc`
+  (5900, no-auth lab convenience), and `openssh-server` (22). User
+  `vendor-user` (password `vendor`) is created at startup via
+  `scripts/start-rdp-vnc.sh` mounted into `/custom-cont-init.d/`.
+- **`kali` container** gains `freerdp2-x11` (xfreerdp), `tigervnc-viewer`
+  (vncviewer), and `sshpass` for the vendor-rdp-compromise lab.
+- **`substation-weak.json`** firewall policy adds `tcp/5900` (VNC) to
+  the existing `enterprise-to-vendor` rule alongside SSH/HTTP/HTTPS/RDP;
+  `substation-improved.json` already restricts to 22/80/443 only,
+  so hardening blocks RDP and VNC by absence-from-allow.
+
 ### Changed
 
+- `Scenario.Order` field changed from `int` to `string` across the
+  backend, YAML loader, and frontend, so the lab YAML's `order:`
+  field is the workshop lab number directly (`"1.2"`, `"2.3-bonus"`,
+  etc.). Removed the parallel `frontend/lib/workbook-sections.ts`
+  mapping; the UI now renders `Lab {scenario.order}` directly.
+  **DB migration note:** delete `data/labs.db` if you have an
+  existing local database from a prior build — the data is rebuilt
+  from YAML on startup so no user-entered state is lost.
+
 - `orchestrator.createContainer` now fails fast with a clear error
+
   when a node references an unknown network zone, instead of silently
   no-op'ing and letting the container land on Docker's default bridge.
   Pinned with `backend/internal/orchestrator/orchestrator_test.go`.

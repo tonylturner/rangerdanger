@@ -47,17 +47,15 @@ All traffic between zones transits the containd firewall for inspection and poli
 
 Aligned to the DefendICS OT Network Segmentation workshop agenda.
 
-| # | Lab | Exercise | Time | Focus |
-|---|-----|----------|------|-------|
-| 1 | 1.2 | Baseline Traffic Analysis | 30 min | Capture and analyze normal flows at the firewall |
-| 2 | 1.3 | Segmentation Requirements & Rule Design | 20 min | Write requirements, compare to improved config |
-| 3 | 1.4 | Remediation Planning Under Constraint | 25 min | Choose what to fix with a finite labor budget |
-| 4 | 2.2 | Firewall Policy Implementation | 30 min | Build least-privilege containd policy from your plan |
-| 5 | 2.3 | Modbus Register Override Attack | 15 min | Direct writes bypassing the RTAC |
-| 6 | 2.3 | DNP3 Direct Operate Command Injection | 15 min | Disable auto-reclose from the enterprise zone |
-| 7 | 2.3 | Vendor Remote Access Compromise (bonus) | 15 min | Pivot from vendor DMZ to field devices via Modbus |
-| 8 | 2.3 | Capacitor Bank Switching Attack (bonus) | 15 min | Manipulate capbank switching via Modbus |
-| 9 | 2.4 | Post-Change Validation & Evidence Collection | 20 min | Verify the hardened policy with PCAP evidence |
+| Lab | Title | Time | Focus |
+|-----|-------|------|-------|
+| 1.2 | Baseline Traffic Analysis | 15 min | Capture and analyze cross-zone flows; identify the critical conduits |
+| 1.3 | Segmentation Requirements & Policy Design | 15 min | Translate findings into a zone-pair rule grid + DPI policy |
+| 1.4 | Remediation Planning Under Constraint | 15 min | Choose what to fix under a finite labor + per-role budget |
+| 2.2 | Firewall Policy Implementation | 30 min | Build a least-privilege containd policy from your plan |
+| 2.3 | Protocol-Hardened Configurations | 15 min | Stress-test against Modbus override + DNP3 injection; DPI lesson |
+| 2.3-bonus | Vendor Remote Access Compromise *(optional)* | 15 min | RDP/VNC pivot from enterprise → vendor → field |
+| 2.4 | Testing & Validation | 15 min | Holistic positive/negative tests + PCAP evidence + reflection |
 
 Each exercise includes inline terminal access to every relevant node, auto-run buttons for CLI commands, per-exercise notes, and backend validators that check substation state, capture files, and firewall policy.
 

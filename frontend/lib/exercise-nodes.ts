@@ -11,11 +11,9 @@ export const EXERCISE_NODE_MAP: Record<string, ExerciseNodeInfo> = {
   "segmentation-requirements": { primary: "",              others: [] },
   "remediation-planning":      { primary: "",              others: [] },
   "firewall-implementation":   { primary: "fw-1",          others: ["kali-1", "eng-ws-1"] },
-  "vendor-rdp-compromise":     { primary: "vendor-jump-1", others: [] },
-  "modbus-override":           { primary: "kali-1",        others: [] },
-  "dnp3-command-injection":    { primary: "kali-1",        others: [] },
+  "hardening-configurations":  { primary: "kali-1",        others: [] },
+  "vendor-rdp-compromise":     { primary: "kali-1",        others: ["vendor-jump-1"] },
   "validation-evidence":       { primary: "kali-1",        others: ["vendor-jump-1", "eng-ws-1"] },
-  "capbank-switching-attack":  { primary: "kali-1",        others: [] },
 };
 
 export const NODE_LABELS: Record<string, string> = {

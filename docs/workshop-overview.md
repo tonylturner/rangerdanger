@@ -34,19 +34,19 @@ runs in the in-app exercise runner — students get inline terminals,
 auto-run buttons for CLI commands, and validators that check the
 substation state, captured PCAPs, and applied firewall policy.
 
-| # | ID | Name | Time | What it teaches |
-|---|---|---|---|---|
-| 1 | `baseline-assessment` | Baseline Traffic Analysis | 30 min | Capture cross-zone traffic at the firewall and identify the critical conduits operations depend on. The starting point — students need to know what's *required* before deciding what's allowed. |
-| 2 | `segmentation-requirements` | Segmentation Requirements & Rule Design | 20 min | Define zone-pair communication requirements and compare the student's design to the hardened reference. Establishes the framework for "least privilege but still operational." |
-| 3 | `remediation-planning` | Remediation Planning Under Constraint | 25 min | A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work. Mirrors what real OT teams face — you can't fix everything this quarter. |
-| 4 | `firewall-implementation` | Firewall Policy Implementation | 30 min | Build a least-privilege containd policy from scratch, replacing the weak baseline with enforceable rules. The hands-on translation of design into nftables-backed policy. |
-| 5 | `modbus-override` | Modbus Register Override Attack | 15 min | Direct Modbus writes from the enterprise zone bypass the RTAC to manipulate voltage regulator setpoints. Demonstrates why protocol-aware filtering matters — IP-level allow/deny isn't enough. |
-| 6 | `dnp3-command-injection` | DNP3 Direct Operate Command Injection | 15 min | DNP3 Direct Operate from Kali disables recloser auto-reclose, causing a permanent outage on the next fault. Shows that DNP3 needs the same kind of function-code filtering Modbus does. |
-| 7 | `vendor-rdp-compromise` | Vendor Remote Access Compromise (Bonus) | 15 min | Compromised vendor credentials pivot from the DMZ to field devices via Modbus. Optional. Most relevant when remediation choices in exercise 3 left vendor access broad. |
-| 8 | `capbank-switching-attack` | Capacitor Bank Switching Attack (Bonus) | 15 min | Rapid capacitor bank switching causes voltage transients and triggers a contact-wear lockout — even "passive" assets can be weaponized. Optional. |
-| 9 | `validation-evidence` | Post-Change Validation & Evidence Collection | 20 min | Run positive and negative segmentation tests, capture PCAPs, and build an evidence package. Closes the loop: "I changed the policy" → "I can prove the change does what I claim." |
+Lab numbering follows the **DefendICS workshop deck** (sections 1.x and 2.x).
 
-Total ≈ 3.5 hours of guided content; bonuses optional.
+| Lab | ID | Name | Time | What it teaches |
+|---|---|---|---|---|
+| 1.2 | `baseline-assessment` | Baseline Traffic Analysis | 15 min | Capture cross-zone traffic at the firewall and identify the critical conduits operations depend on. Output: the list of exposures + the 5 baseline findings. |
+| 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | 15 min | Translate the baseline findings into a zone-pair allow/deny grid plus DPI policy. Closes with concrete success criteria for the hardened state. |
+| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | 15 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. Selections drive Lab 2.2's content via the dynamic-content pipeline. |
+| 2.2 | `firewall-implementation` | Firewall Policy Implementation | 30 min | Build a least-privilege containd policy from your plan. Phase 3/5/6 step text adapts to the remediation choices made in Lab 1.4. |
+| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | 15 min | Stress-test the policy against Modbus override + DNP3 Direct Operate injection. The DPI lesson: function-code filtering catches what L4 port filtering can't. |
+| 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | 15 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
+| 2.4 | `validation-evidence` | Testing & Validation | 15 min | Holistic positive/negative tests, PCAP evidence assembly, and a closing reflection on residual risk. The change-board package. |
+
+Total ≈ 105 min for the 6 core labs, +15 min for the bonus.
 
 ## What's simulated
 
@@ -116,7 +116,7 @@ Two reference configurations ship with the lab:
   RTAC→field is allowed for controlled flows; Modbus write
   function codes are denied from any source other than the RTAC.
   Students compare their own designs against this and validate
-  remediation work against it in exercise 9.
+  remediation work against it in Lab 2.4.
 
 ## Single-student deployment
 
