@@ -218,6 +218,12 @@ SSD/airgap validation (B6).
 - [x] `.github/ISSUE_TEMPLATE/` and `.github/PULL_REQUEST_TEMPLATE.md`
   (commit `c2b1c2d`) — bug + feature templates, security advisory
   contact link, PR checklist tied to local-test commands.
+- [x] `CODE_OF_CONDUCT.md` (commit `d317c79`) — Contributor
+  Covenant 2.1 with `conduct@sentinel24.com` reporting address.
+- [x] **Repo profile populated**: description, 13 topics, Discussions
+  tab enabled (set via `gh repo edit` + `gh api PATCH`).
+  GitHub now renders the About sidebar with the full pitch and the
+  topic pills, and visitors can open Discussions for community Q&A.
 
 ### B9. Frontend reproducibility
 
@@ -238,13 +244,17 @@ SSD/airgap validation (B6).
 
 ### Tests + scanning
 
-- [x] **Govulncheck triage done** (commit `162ade8`). Bumped Go
-  toolchain `1.24.3 → 1.24.13` to clear 15 stdlib vulns. Documented
-  the 2 docker/docker findings (no upstream fix; lab is loopback-
-  bound so practical exposure is zero) and the 1 quic-go transitive
-  (gin imports http3 even when not used; backend doesn't serve
-  HTTP/3) in `docs/security-known-issues.md`. CI job stays
-  advisory until the docker SDK gets a fix release.
+- [x] **Govulncheck triage done.** Toolchain bumped 1.24.3 → 1.24.13
+  (commit `162ade8`) → 1.25.9 (commit `d4658ba`). CI's govulncheck
+  output dropped from 18 findings to **3**, all documented as
+  accepted in `docs/security-known-issues.md` (2 docker/docker no-
+  upstream-fix + 1 quic-go transitive in unused HTTP/3 path).
+- [x] **Trivy image scan added** as a second advisory job
+  (`.github/workflows/dep-scan.yml`, commit `44281ac`). Pairs with
+  govulncheck — govulncheck for Go-source reachability, Trivy for
+  OS package CVEs in built images (Kali rolling, webtop bases,
+  python:3.12-slim) that govulncheck can't see. SARIF upload to
+  the GitHub Security tab. Triggers weekly + on tag push.
 - [x] Tests for `backend/internal/server/exec.go` allowlist (commit
   `4fc888b`) — 33 cases pinning current behavior, including the
   documented shell-injection bypass and a guard that every tool
