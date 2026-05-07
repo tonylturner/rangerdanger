@@ -20,6 +20,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failure (with 30s and 60s delays) to absorb transient GHCR 5xx
   during layer uploads. Each retry reuses already-pushed blobs via
   buildkit's layer dedup, so only the failed layer actually re-uploads.
+- `ci.yml`'s `govulncheck` job is now a hard gate (was advisory).
+  An allowlist of the three documented OSV IDs from
+  `docs/security-known-issues.md` (GO-2026-4887, GO-2026-4883,
+  GO-2025-4233) keeps known exceptions passing; any new finding fails
+  the build. The flip closes a v0.1.x stabilization item from
+  `docs/tasks.md`.
 
 ### Documentation
 

@@ -19,11 +19,14 @@ workshop.
   and secondary network attachment paths now return an error listing
   valid zones when the lookup fails. Pinned with
   `orchestrator_test.go` (12 cases). Surfaced by Codex on PR #26.
-- [ ] **`govulncheck` advisory → hard gate.** Flip
-  `continue-on-error: false` on the `govulncheck` job in
-  `.github/workflows/ci.yml` once the documented exceptions in
-  `security-known-issues.md` (2 docker/docker, 1 quic-go) stay stable
-  across two scan cycles.
+- [x] **`govulncheck` advisory → hard gate.** Flipped to a hard gate
+  via an allowlist filter: `govulncheck -format json` runs against
+  each module, the wrapper subtracts the documented OSV IDs in
+  `security-known-issues.md` (GO-2026-4887, GO-2026-4883,
+  GO-2025-4233), and the build fails if anything new appears. To add
+  a new exception: add the triage entry to `security-known-issues.md`
+  and append the GOID to `ALLOWED` in `.github/workflows/ci.yml` in
+  the same PR.
 - [ ] **End-to-end SSD validation.** Run `./stage-ssd.sh /Volumes/SSD v0.1.1`
   and exercise the full SSD → laptop → `docker load` → `up -d` flow
   on:
