@@ -61,10 +61,26 @@ The Go toolchain pin was bumped twice this release cycle:
    - `GO-2026-4602` (os Root escape) — Fixed in 1.25.8
    - `GO-2026-4601` (net/url IPv6 parse) — Fixed in 1.25.8
 
+3. **`1.25.9 → 1.25.10`** cleared 8 new stdlib findings that
+   surfaced when the vuln-db refreshed on 2026-05-07. All 8 have
+   fixes on both 1.25.x and 1.26.x; we stayed on the 1.25 line:
+   - `GO-2026-4986` (net/mail consumeComment quadratic) — 1.25.10
+   - `GO-2026-4982` (html/template meta URL escape XSS) — 1.25.10
+   - `GO-2026-4981` (net long CNAME crash) — 1.25.10
+   - `GO-2026-4980` (html/template escaper bypass XSS) — 1.25.10
+   - `GO-2026-4977` (net/mail consumePhrase quadratic) — 1.25.10
+   - `GO-2026-4976` (httputil ReverseProxy query forwarding) — 1.25.10
+   - `GO-2026-4971` (net Dial NUL byte panic on Windows) — 1.25.10
+   - `GO-2026-4918` (http2 SETTINGS_MAX_FRAME_SIZE infinite loop) —
+     stdlib 1.25.10 + `golang.org/x/net@v0.53.0`. The x/net bump was
+     applied as a direct `require` in `backend/go.mod` so the
+     transitive pin is honored even if a future update of an
+     intermediate dep tries to pull in an older x/net.
+
 The toolchain directive in each module's `go.mod` controls the
 version CI's `actions/setup-go` installs (`go-version-file:
 <module>/go.mod` reads it). `backend/go.mod`, `services/go.mod`,
-and `dnp3go/go.mod` all pin `toolchain go1.25.9`. The `go 1.24.0`
+and `dnp3go/go.mod` all pin `toolchain go1.25.10`. The `go 1.24.0`
 directive (minimum language version) is left alone so the modules
 remain buildable by anyone on Go 1.24+ as a consumer.
 
