@@ -191,13 +191,17 @@ SSD/airgap validation (B6).
 
 ### B6. SSD / `docker save` flow tested end-to-end
 
-- [ ] Build all 14 images for both arches on a reference machine.
-- [ ] `docker save` per arch into `images-amd64.tar` and
-  `images-arm64.tar`, plus `rangerdanger.tgz` of the repo.
+- [x] **Helper script done**: `stage-ssd.sh` (commit `fe46663`)
+  produces `images-amd64.tar` + `images-arm64.tar` +
+  `rangerdanger.tgz` + auto-generated README in one command.
+  Pairs with `setup.sh --from-tarballs`.
 - [ ] Validate full SSD → laptop → `docker load` → `up -d` flow on:
   - 1 Apple Silicon Mac
   - 1 Intel Mac
   - 1 Windows + Docker Desktop (WSL2)
+  *(Manual hardware step. Once GHCR packages are public,
+  run `./stage-ssd.sh /Volumes/SSD v0.1.0-alpha.3` then plug into
+  each laptop and run `./setup.sh --from-tarballs /Volumes/SSD`.)*
 
 ### B7. README badges
 
@@ -232,11 +236,13 @@ SSD/airgap validation (B6).
 
 ### Tests + scanning
 
-- [ ] **Triage govulncheck findings.** CI is currently
-  `continue-on-error: true` because the scan flagged 12 issues (mostly
-  stdlib + transitive `quic-go`). Once cleared, flip to
-  hard-fail. Suggest splitting into a separate `dep-scan.yml`
-  workflow that runs weekly.
+- [x] **Govulncheck triage done** (commit `162ade8`). Bumped Go
+  toolchain `1.24.3 → 1.24.13` to clear 15 stdlib vulns. Documented
+  the 2 docker/docker findings (no upstream fix; lab is loopback-
+  bound so practical exposure is zero) and the 1 quic-go transitive
+  (gin imports http3 even when not used; backend doesn't serve
+  HTTP/3) in `docs/security-known-issues.md`. CI job stays
+  advisory until the docker SDK gets a fix release.
 - [ ] Tests for: `backend/internal/server/exec.go` allowlist,
   firewall apply/compare, scenario validators, `dnp3go` round-trip,
   `services/capbank-sim` (no tests yet).
