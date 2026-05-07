@@ -66,10 +66,57 @@ jobs:
         run: |
           curl -fsS http://localhost:8088/api/health | tee /tmp/health.json
           curl -fsS http://localhost:8088/api/build  | tee /tmp/build.json
-          # /api/scenarios should return the 9 exercises
-          n=$(curl -fsS http://localhost:8088/api/scenarios | jq '.scenarios | length')
-          echo "exercises loaded: $n"
-          [ "$n" = "9" ] || { echo "expected 9 exercises, got $n"; exit 1; }
+
+      - name: Validate lab inventory
+        # 6 workshop labs + 1 bonus, deck-aligned ordering. The list
+        # of (order, id) pairs is the canonical workshop inventory —
+        # add/remove rows here in lockstep with lab YAML files.
+        run: |
+          set -euo pipefail
+          inv=$(curl -fsS http://localhost:8088/api/scenarios)
+          declare -a expected=(
+            "1.2|baseline-assessment"
+            "1.3|segmentation-requirements"
+            "1.4|remediation-planning"
+            "2.2|firewall-implementation"
+            "2.3|hardening-configurations"
+            "2.3-bonus|vendor-rdp-compromise"
+            "2.4|validation-evidence"
+          )
+          n=$(echo "$inv" | jq '.scenarios | length')
+          if [ "$n" != "${#expected[@]}" ]; then
+            echo "::error::expected ${#expected[@]} scenarios, got $n"
+            echo "$inv" | jq -r '.scenarios[] | "  \(.order // "-")  \(.id)"'
+            exit 1
+          fi
+          fail=0
+          for entry in "${expected[@]}"; do
+            order="${entry%%|*}"
+            id="${entry##*|}"
+            found=$(echo "$inv" | jq -r --arg id "$id" --arg ord "$order" \
+                '.scenarios[] | select(.id == $id and .order == $ord) | .id')
+            if [ "$found" = "$id" ]; then
+              echo "  Lab $order  $id"
+            else
+              echo "::error::Lab $order $id missing or has wrong order"
+              fail=1
+            fi
+          done
+          # Every lab must have at least 3 steps. Counting via
+          # "description": occurrences in the steps string blob —
+          # each step has exactly one, action items don't have any.
+          # (Direct fromjson parsing fails because the stored steps
+          # blob has literal newlines inside string descriptions.)
+          for entry in "${expected[@]}"; do
+            id="${entry##*|}"
+            steps=$(echo "$inv" | jq -r --arg id "$id" \
+                '.scenarios[] | select(.id == $id) | .steps | [scan("\"description\":")] | length')
+            if [ "$steps" -lt 3 ]; then
+              echo "::error::$id has only $steps steps (expected >=3)"
+              fail=1
+            fi
+          done
+          exit $fail
 
       - name: Confirm sims report healthy
         run: |
@@ -78,7 +125,7 @@ jobs:
           # If startup ordering broke, this is where it surfaces.
           docker compose ps --format '{{.Service}} {{.Status}}'
           healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
-          [ "$healthy" -ge 8 ] || { echo "expected ≥8 healthy services, got $healthy"; exit 1; }
+          [ "$healthy" -ge 8 ] || { echo "expected >=8 healthy services, got $healthy"; exit 1; }
 
       - name: Dump compose logs on failure
         if: failure()
