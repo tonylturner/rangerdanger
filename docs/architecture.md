@@ -151,7 +151,7 @@ The RTAC sits on three Docker networks (ot_ops, field, physics) directly. This m
 
 ### PCAP capture
 
-Two paths: containd's native PCAP API (`POST /api/pcap/start` in the backend proxies to containd) or direct `tcpdump` from a student SSH session on the firewall. Exercise 0 uses the direct `tcpdump` path so students see the tool in action. The exercise validator checks for the capture file via Docker exec into the firewall container, covering both paths.
+Two paths: containd's native PCAP API (`POST /api/pcap/start` in the backend proxies to containd) or direct `tcpdump` from the firewall terminal. Lab 1.2 (Baseline Traffic Analysis) uses the direct `tcpdump` path so students see the tool in action. The validator checks for the capture file via Docker exec into the firewall container, covering both paths.
 
 ### Shared terminal state
 
