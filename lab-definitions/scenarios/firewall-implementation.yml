@@ -82,21 +82,29 @@ steps:
       field, vendor to field, any-to-any on ICS ports), the weak
       baseline is active. That is your starting point.
 
-      To drop to the underlying Linux shell on the firewall container
-      (useful for `tcpdump`, `ip`, `nft list ruleset`, and other
-      low-level diagnostics) type `exit` (or `shell` from containd
-      v0.1.19+). Run `containd cli` from bash to come back.
+      ### Switching between the CLI and bash
+
+      Two prompts, one terminal:
+
+      | Prompt | What you can run | How you got here |
+      |---|---|---|
+      | `containd#` | `show *`, `set *`, `commit`, `export config` — appliance commands | Default; opens here |
+      | `$` (bash) | `tcpdump`, `nft`, `ip`, generic Linux | Type `shell`, `bash`, or `exit` from `containd#` |
+
+      **From bash back to the CLI: type `containd cli`.** (`config` and
+      `configure` look like they should work but are unrelated — they
+      run the containd daemon binary. Only `containd cli` enters the
+      appliance shell.)
 
       :::hint Alternative — SSH from your laptop
-      You can also reach the containd CLI from a fresh terminal on
-      your laptop:
+      You can also reach the firewall from a fresh terminal on your
+      laptop:
 
           ssh -p 2222 containd@localhost
           # password: containd
 
-      The SSH server is configured in `linux` shell mode, so it
-      lands in bash. Type `containd cli` (or `configure`) to enter
-      the appliance CLI, `exit` to return to bash.
+      Same two-prompt model as the in-app terminal — you'll land
+      in bash; type `containd cli` to enter the appliance shell.
       :::
 
   - title: "Phase 1 - Verify current access under the weak baseline"

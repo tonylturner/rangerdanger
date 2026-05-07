@@ -136,6 +136,7 @@ services:
       - GATEWAY=10.10.10.2
     volumes:
       - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+      - ./scripts/strip-noisy-profile.sh:/custom-cont-init.d/30-strip-noisy-profile.sh:ro
     networks:
       enterprise_net:
         ipv4_address: 10.10.10.10
@@ -221,6 +222,7 @@ services:
       - GATEWAY=10.20.20.2
     volumes:
       - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+      - ./scripts/strip-noisy-profile.sh:/custom-cont-init.d/30-strip-noisy-profile.sh:ro
       - ./data/firewall/captures:/home/abc/pcaps:ro
     networks:
       vendor_net:
