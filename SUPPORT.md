@@ -35,11 +35,12 @@ work. Realistic expectations:
   There's no hosted version to log a ticket against.
 - **No SLA.** No guaranteed response time outside the security
   channel.
-- **Not a paid product.** If you need vendor-style commercial support
-  for a corporate training program — including custom exercises,
-  on-site delivery, or a guaranteed response time — reach out at
-  [sentinel24.com](https://sentinel24.com). That's a separate
-  arrangement; the OSS project itself stays free.
+- **Not a paid product.** Workshop delivery, custom exercises, and
+  instructor-led training are organized through
+  [DefendICS](https://defendics.org), the nonprofit under which
+  RangerDanger is released. Open a Discussion or use the contact
+  routing in [`SECURITY.md`](SECURITY.md) if you'd like to talk —
+  but the OSS project itself stays free.
 
 ## Before opening an issue
 

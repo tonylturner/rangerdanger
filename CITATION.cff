@@ -18,7 +18,7 @@ type: software
 authors:
   - family-names: Turner
     given-names: Tony
-    affiliation: Sentinel24
+    affiliation: DefendICS
 license: Apache-2.0
 repository-code: "https://github.com/tonylturner/rangerdanger"
 url: "https://github.com/tonylturner/rangerdanger"
@@ -39,7 +39,7 @@ preferred-citation:
   authors:
     - family-names: Turner
       given-names: Tony
-      affiliation: Sentinel24
+      affiliation: DefendICS
   version: "0.1.0"
   year: 2026
   url: "https://github.com/tonylturner/rangerdanger"
