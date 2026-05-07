@@ -1,5 +1,5 @@
 id: firewall-implementation
-order: 4
+order: "2.2"
 name: "Firewall Policy Implementation"
 summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules (30 min)."
 description: >

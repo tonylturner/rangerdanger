@@ -1,5 +1,5 @@
 id: baseline-assessment
-order: 1
+order: "1.2"
 name: "Baseline Traffic Analysis"
 summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like (30 min)."
 description: >
@@ -88,25 +88,38 @@ steps:
 
       ### Build a flow inventory
 
-      We'll build the flow inventory in **three progressively finer views**. Each answers a different question.
-
-      **View 1 — Protocol volume.** Uses `tshark -z io,stat` with one filter per ICS protocol. Answers *"what protocols are flowing?"*:
-
-        tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,"tcp.port==502","tcp.port==20000","tcp.port==8080","tcp.port==1881","udp.port==123" 2>/dev/null
-
-      The columns are, in order: Modbus TCP/502, DNP3 TCP/20000, HTTP TCP/8080, FUXA TCP/1881, NTP UDP/123. You should see all five protocols present. HTTP traffic will typically dominate, while Modbus and DNP3 appear as steady polling traffic. NTP will be minimal.
-
-      **View 2 — Host-pair conversations.** Uses `tshark -z conv,ip` to collapse all the ephemeral TCP source ports and show one row per source-IP / destination-IP pair. Answers *"which host is talking to which?"*:
+      We'll build the flow inventory using `tshark -z conv,ip` to
+      collapse ephemeral TCP source ports and show one row per
+      source-IP / destination-IP pair. This is the view you'll use most
+      when reasoning about cross-zone conversations:
 
         tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip 2>/dev/null
 
-      This is the view you'll use most when reasoning about cross-zone conversations. `10.30.30.20 <-> 10.40.40.21` means the RTAC and the recloser are in contact; the frame and byte counts tell you how much.
+      `10.30.30.20 <-> 10.40.40.21` means the RTAC and the recloser
+      are in contact; the frame and byte counts tell you how much.
 
-      **View 3 — TCP conversation detail.** Uses `tshark -z conv,tcp` to show every TCP 5-tuple with frame counts. Useful when you want per-connection detail:
+      :::hint Other helpful views (protocol volume + per-TCP-flow detail)
+      Two additional `tshark` views are useful when you want a different
+      angle on the same capture.
+
+      **Protocol volume** — answers *"what protocols are flowing?"* by
+      counting bytes per ICS port:
+
+        tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,"tcp.port==502","tcp.port==20000","tcp.port==8080","tcp.port==1881","udp.port==123" 2>/dev/null
+
+      Columns are, in order: Modbus TCP/502, DNP3 TCP/20000, HTTP
+      TCP/8080, FUXA TCP/1881, NTP UDP/123.
+
+      **Per-TCP-flow detail** — every TCP 5-tuple with frame counts:
 
         tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,tcp 2>/dev/null | head -20
 
-      > **Why three views?** Short-lived TCP connections (Modbus, DNP3, and the HTTP poller) open a new TCP connection per request with a fresh ephemeral source port each time. The raw TCP view fragments each logical "RTAC polls the relay" conversation into 30+ tiny rows. The protocol and host-pair views collapse that noise so the real structure is visible at a glance.
+      Short-lived TCP connections (Modbus, DNP3, HTTP polls) open a
+      new connection per request with a fresh ephemeral source port,
+      so this view fragments each logical "RTAC polls the relay"
+      conversation into many tiny rows. Useful when you want to count
+      transactions, not conversations.
+      :::
 
       ### Targeted filters
 
@@ -277,29 +290,6 @@ steps:
       5. **Unauthorized Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`.
          This requires **ICS DPI** — port-level filtering is not enough. The firewall needs to understand protocol function codes.
       :::
-
-  - title: "Define success criteria for segmentation"
-    description: |
-      Before you start changing anything, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in the Validation Evidence exercise to validate your changes worked.
-
-      ### Good segmentation for this substation means
-
-      1. **Enterprise cannot directly reach Field devices.**
-         *Test:* `tcpdump` on the firewall's field interface should show zero packets originating from `10.10.10.0/24`.
-
-      2. **Vendor access to OT Ops is constrained and brokered.**
-         *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
-
-      3. **Unauthorized writes are blocked and logged.**
-         *Test:* a Modbus FC6 write or DNP3 Direct Operate from a non-RTAC source should be denied and produce a firewall event.
-
-      4. **Enterprise ransomware cannot propagate into OT.**
-         *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
-
-      5. **Operations are not broken by the segmentation change.**
-         *Test:* after applying rules, all five critical conduits from the previous step continue to work.
-
-      > **Operational continuity is a hard constraint.** If your segmentation blocks any of the critical conduits you identified earlier, you will break operations.
 
   - title: "Transition — decide what to fix first"
     description: |

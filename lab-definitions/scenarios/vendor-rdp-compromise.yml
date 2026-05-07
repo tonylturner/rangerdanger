@@ -1,100 +1,114 @@
 id: vendor-rdp-compromise
-order: 7
+order: "2.3-bonus"
 name: "Vendor Remote Access Compromise (Bonus)"
-summary: "Optional — Compromised vendor credentials used to pivot from DMZ to field devices via Modbus (15 min)."
+summary: "Optional — Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices (15 min)."
 description: >
-  A vendor's remote access credentials are compromised via phishing.
-  The attacker uses the vendor jump box to pivot through the DMZ
-  and disable protective functions on field devices via Modbus TCP.
-  Students must apply containd firewall rules to block vendor zone
-  from directly reaching field devices.
+  A vendor's remote-access credentials are compromised via phishing.
+  The attacker uses them to RDP/VNC into the vendor jump box from
+  an enterprise foothold, then pivots laterally from inside that
+  session to OT field devices. Students apply containd firewall
+  rules that block remote-access protocols (RDP/3389, VNC/5900)
+  from enterprise into the vendor DMZ — closing the lateral path
+  before it ever reaches OT.
+
+  This bonus exercise is the optional companion to Lab 2.3
+  (Hardening Configurations). The deck case study (Slide 55) and
+  potential-scenario list (Slide 88) both call this kill chain out
+  explicitly: stolen vendor credentials → RDP into jump host →
+  east-west to controllers.
 nodes:
+  - kali-1
   - vendor-jump-1
 tags:
   - vendor
-  - phishing
+  - remote-access
   - segmentation
-  - defense
   - bonus
 steps:
-  - title: "Review initial posture"
+  - title: "Confirm the lateral path is open"
     expected_config: weak
-    description: >
-      Verify the feeder is energized with normal protection.
-      Auto-reclose should be enabled and the recloser closed.
-      Note the current firewall policy (weak baseline allows
-      vendor zone to reach field devices directly).
+    node: kali-1
+    description: |
+      Under the weak baseline, the enterprise zone can reach the
+      vendor DMZ on remote-access protocols. This is the lateral
+      path the attacker will exploit.
 
-      From the vendor jump box, verify you can reach field devices:
+      From Kali (10.10.10.50), scan for remote-access services on
+      the vendor jump box (10.20.20.10):
 
-        nmap -p 502,8080,20000 10.40.40.21
+          nmap -p 3389,5900 10.20.20.10
 
-      **Time budget:** 15 minutes.
-    action:
-      type: check
-      expect:
-        breaker_closed: true
-        recloser_closed: true
-        reclose_enabled: true
+      You should see at least one of `3389/tcp` (RDP) or
+      `5900/tcp` (VNC) open. The RangerDanger lab's vendor-jump is
+      a Linux container with `xrdp` and a VNC server running — the
+      same defensive lesson applies to a real Windows vendor jump
+      host on RDP.
 
-  - title: "Simulate vendor credential compromise"
+  - title: "Pivot via RDP (or VNC)"
     expected_config: weak
-    description: >
-      The attacker has obtained vendor-jump credentials (simulated).
-      From the vendor jump box (10.20.20.10), disable auto-reclose
-      on the recloser. Via Modbus:
+    node: kali-1
+    description: |
+      From Kali, connect to the vendor jump box's remote desktop
+      using the stolen credentials (`vendor-user` / `vendor`).
 
-        mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+      **Option A — RDP** (preferred when 3389 is open):
 
-      With the weak baseline policy, containd allows this traffic
-      from the vendor zone to field devices.
+          xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor +clipboard /cert:ignore
+
+      **Option B — VNC** (fallback, no auth required in this lab):
+
+          vncviewer 10.20.20.10:5900
+
+      You now have an interactive desktop on the vendor jump host.
+      From the vendor's perspective, the connection looks
+      legitimate — credentials valid, source IP not yet anomalous,
+      and the firewall allows enterprise → vendor on remote-access
+      ports. **This is the foothold.** Anything the vendor box can
+      do, you can now do, from the vendor's network position.
+
+      :::hint Headless mode (no GUI on Kali)
+      If you're running Kali in a terminal-only mode, you can pivot
+      to the same effect with SSH (port 22 is also open under the
+      weak baseline):
+
+          sshpass -p vendor ssh -o StrictHostKeyChecking=no vendor-user@10.20.20.10
+
+      The lesson is the same: an enterprise host should not have
+      open remote-access into the vendor DMZ.
+      :::
+
+  - title: "Use the vendor foothold to attack field devices"
+    expected_config: weak
+    node: vendor-jump-1
+    description: |
+      Open a terminal **inside the RDP/VNC session you just
+      established** (or use the vendor-jump terminal tab below).
+      You're now operating from the vendor zone (10.20.20.10).
+
+      Disable auto-reclose on the recloser via Modbus:
+
+          mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+
+      Then trip it (simulating a transient fault):
+
+          mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
+
+      The recloser locks out. Downstream loads — the hospital and
+      fire station — lose power. The attack succeeded because the
+      kill chain had two open links: enterprise → vendor RDP, and
+      vendor → field Modbus.
     action:
       type: command
       device: recloser
       command: disable_reclose
       source: "10.20.20.10"
 
-  - title: "Trigger sustained outage"
-    expected_config: weak
-    description: >
-      With auto-reclose disabled, inject a fault on the recloser.
-      Normally the recloser would automatically restore service,
-      but with reclose disabled it trips and locks out — causing
-      a sustained downstream outage.
-
-      From the vendor jump box, inject a fault via Modbus:
-
-        mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
-    action:
-      type: command
-      device: recloser
-      command: inject_fault
-      source: "10.20.20.10"
-
-  - title: "Observe customer impact"
-    expected_config: weak
-    description: >
-      The recloser is now locked out. Downstream loads including
-      the hospital and fire station have lost power. Auto-reclose
-      cannot restore service because it was disabled by the attacker.
-
-      Verify from the vendor box via Modbus:
-
-        mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 5 -1
-
-      Coil 0 (closed) should be OFF, coil 1 (reclose) OFF, coil 2 (lockout) ON.
-    action:
-      type: check
-      expect:
-        recloser_closed: false
-
   - title: "Restore service"
     expected_config: weak
-    description: >
-      As the operator, restore the feeder to normal operation
-      using the RangerDanger HMI. Use the Supervisory Control tab
-      to: reset lockout, enable auto-reclose, clear fault, and
-      close the recloser.
+    description: |
+      Use the Supervisory Control tab in the [Feeder HMI](/substation)
+      (or click **Reset Lab**) to restore the feeder: reset lockout,
+      enable auto-reclose, clear fault, close the recloser.
     action:
       type: sequence
       commands:
@@ -111,48 +125,68 @@ steps:
           command: close
           source: "operator"
 
-  - title: "Harden containd policy"
-    description: >
-      Apply the hardened firewall configuration using the
-      **Apply Hardened** button, or use the **Apply Your Plan**
-      button if you built a custom policy in the Firewall
-      Implementation exercise. This blocks the vendor zone
-      from directly reaching field devices on Modbus (502),
-      DNP3 (20000), and HTTP (8080).
+  - title: "Apply hardened policy"
+    description: |
+      Apply the hardened firewall configuration with **Apply Hardened**,
+      or **Apply Your Plan** if you built a custom policy in Lab 2.2.
+
+      The hardened policy closes both links of the kill chain:
+
+      - **Enterprise → vendor**: RDP (3389) and VNC (5900) blocked.
+        The attacker cannot establish the foothold from Kali in the
+        first place.
+      - **Vendor → field**: Modbus (502) and DNP3 (20000) blocked.
+        Even if the attacker did get a vendor session by some other
+        means, the second hop to field devices is denied.
+
+      Either control alone breaks the kill chain. Both are
+      defense in depth — the deck case study (Slide 55) made this
+      design choice after a ransomware incident specifically because
+      either layer can fail or be misconfigured, and the second
+      stops the attack regardless.
     action:
       type: firewall
       config: improved
 
-  - title: "Verify vendor access blocked"
+  - title: "Re-attempt the pivot"
     expected_config: hardened
-    description: >
-      Re-attempt the vendor compromise. From the vendor jump box,
-      try to reach the recloser via Modbus:
+    node: kali-1
+    description: |
+      From Kali, re-scan and re-attempt the connection:
 
-        mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+          nmap -p 3389,5900 10.20.20.10
+          xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor /cert:ignore
+          vncviewer 10.20.20.10:5900
 
-      The connection should time out — containd blocks vendor→field.
-      Also try DNP3:
+      Both ports should be filtered; both clients should fail to
+      connect. The enterprise → vendor lateral path is closed at
+      the perimeter.
 
-        dnp3poll 10.40.40.21:20000 -a 2
+      As a defense-in-depth check, even if the perimeter rule were
+      missing, the vendor → field rule would still block the second
+      hop. From the vendor-jump terminal tab below (which still
+      represents the vendor zone), retry the Modbus attack:
 
-      This should also fail. Auto-reclose remains enabled.
+          mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
+
+      Should also time out. The kill chain is broken at two points.
     action:
-      type: command
-      device: recloser
-      command: disable_reclose
-      source: "10.20.20.10"
+      type: check
+      expect:
+        firewall_config: improved
+        recloser_closed: true
+        reclose_enabled: true
 
-  - title: "Validate final state"
+  - title: "Validate"
     expected_config: hardened
-    description: >
-      Verify the feeder is operating normally with protection
-      intact and the hardened firewall policy active.
+    description: |
+      Confirm the feeder is operating normally with the hardened
+      policy in place and the vendor remote-access lateral path is
+      closed.
     action:
       type: check
       expect:
         recloser_closed: true
         reclose_enabled: true
         breaker_closed: true
-        loads_energized: true
         firewall_config: improved

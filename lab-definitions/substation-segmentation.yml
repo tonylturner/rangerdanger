@@ -157,10 +157,13 @@ nodes:
       - field_net
     ip: 10.40.40.23
 
-# Scenarios are loaded from lab-definitions/scenarios/*.yml
-# (baseline-assessment, segmentation-requirements, vendor-rdp-compromise,
-#  modbus-override, dnp3-command-injection, validation-evidence)
+# Scenarios are loaded from lab-definitions/scenarios/*.yml.
+# Workshop labs (aligned to the DefendICS slide deck):
+#   1.2 baseline-assessment
+#   1.3 segmentation-requirements
+#   1.4 remediation-planning
+#   2.2 firewall-implementation
+#   2.3 hardening-configurations
+#   2.3-bonus vendor-rdp-compromise (optional)
+#   2.4 validation-evidence
 scenarios: []
-# Legacy inline scenarios removed — replaced by standalone YAML files.
-# Old IDs: traffic-baseline-analysis, enterprise-to-breaker,
-#           vendor-access-abuse, eng-ws-lateral-pivot

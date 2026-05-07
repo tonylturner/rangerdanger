@@ -1,5 +1,5 @@
 id: remediation-planning
-order: 3
+order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work (25 min)."
 description: >

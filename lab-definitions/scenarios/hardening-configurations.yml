@@ -1,0 +1,215 @@
+id: hardening-configurations
+order: "2.3"
+name: "Protocol-Hardened Configurations"
+summary: "Stress-test your firewall against two protocol-specific attacks (Modbus override + DNP3 injection) that L4 port-only filtering can't stop. DPI is the lesson (15 min)."
+description: >
+  In Lab 2.2 you built a least-privilege firewall policy. This
+  exercise stress-tests it against two attacks that ride on ports
+  the firewall must allow for legitimate RTAC operation:
+
+  1. **Modbus register override** — a direct write from Kali bypasses
+     the RTAC to manipulate the voltage regulator.
+  2. **DNP3 Direct Operate injection** — an unauthorized control
+     command disables auto-reclose on the recloser, then triggers a
+     permanent outage on a transient fault.
+
+  Both attacks succeed under the weak baseline. Both should fail
+  under the hardened policy. The combination of source-pinning at
+  L4 and protocol-aware DPI (Modbus function-code restrictions,
+  DNP3 Direct Operate restrictions) is what closes them while
+  preserving operations.
+nodes:
+  - kali-1
+tags:
+  - dpi
+  - modbus
+  - dnp3
+  - segmentation
+  - hardening
+steps:
+  - title: "Verify normal operations"
+    expected_config: weak
+    description: |
+      Confirm the substation is healthy under the weak baseline:
+
+      - Recloser closed, auto-reclose enabled
+      - Regulator in auto, tap near 0
+      - Critical-load voltage in ANSI C84.1 Range A (114–126V)
+
+      Quick check from the [Feeder HMI](/substation), or from any
+      OT Ops terminal:
+
+          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -30
+
+      **Time budget:** 15 minutes.
+    action:
+      type: check
+      expect:
+        breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
+        voltage_normal: true
+
+  - title: "Attack 1 — Modbus register override"
+    expected_config: weak
+    node: kali-1
+    description: |
+      From Kali (10.10.10.50, enterprise zone), under the weak
+      baseline, send a Modbus FC6 write to the regulator
+      (10.40.40.22) forcing the tap to -16:
+
+          mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
+
+      Verify the impact — critical-load voltage drops below ANSI
+      Range A:
+
+          mbpoll -a 1 -t 4 -r 3 10.30.30.20 -c 1 -1
+
+      (Input register 2 on the RTAC = `critical_load_voltage × 10`.)
+
+      **Why it worked:** the weak baseline allows enterprise → field
+      Modbus 502. There's no source pinning, no function-code
+      filtering, no protocol awareness — just an open port.
+    action:
+      type: command
+      device: regulator
+      command: set_tap
+      source: "10.10.10.50"
+      value: -16
+
+  - title: "Attack 2 — DNP3 Direct Operate injection"
+    expected_config: weak
+    node: kali-1
+    description: |
+      From Kali, send a DNP3 Direct Operate to disable auto-reclose
+      on the recloser:
+
+          dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
+
+      Then inject a transient fault:
+
+          dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
+
+      Without auto-reclose, the recloser locks out — what should be a
+      brief flicker becomes a sustained outage. Hospital and fire
+      station downstream lose power.
+
+      **Why it worked:** the weak baseline allows enterprise → field
+      DNP3 20000. There's no DPI to distinguish Direct Operate
+      (FC05) from a benign read (FC01) — they ride on the same port.
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.10.10.50"
+
+  - title: "Restore the substation"
+    expected_config: weak
+    description: |
+      Use the Supervisory Control tab in the [Feeder HMI](/substation)
+      to reset the lab state, or click **Reset Lab** below:
+
+      - Regulator: set to Auto, tap to 0
+      - Recloser: clear fault, enable auto-reclose, reset lockout, close
+    action:
+      type: sequence
+      commands:
+        - device: regulator
+          command: set_auto
+          source: "operator"
+        - device: regulator
+          command: set_tap
+          source: "operator"
+          value: 0
+        - device: recloser
+          command: clear_fault
+          source: "operator"
+        - device: recloser
+          command: enable_reclose
+          source: "operator"
+        - device: recloser
+          command: reset_lockout
+          source: "operator"
+        - device: recloser
+          command: close
+          source: "operator"
+
+  - title: "Apply the hardened policy"
+    description: |
+      Apply the hardened firewall configuration with **Apply Hardened**,
+      or **Apply Your Plan** if you built a custom policy in Lab 2.2.
+
+      The hardened policy combines two layers that together close both
+      attacks:
+
+      - **L4 source-pinning:** only the RTAC (10.30.30.20) can reach
+        field devices on Modbus 502 and DNP3 20000. Enterprise and
+        vendor sources are blocked at the perimeter.
+      - **ICS DPI:** Modbus writes (FC5/6/16) restricted to the RTAC
+        even on flows where reads are allowed; DNP3 Direct Operate
+        (FC05) restricted to the RTAC.
+
+      Either layer alone breaks each attack. Together they're
+      defense in depth.
+    action:
+      type: firewall
+      config: improved
+
+  - title: "Re-test Attack 1 — Modbus override"
+    expected_config: hardened
+    node: kali-1
+    description: |
+      Repeat the Modbus tap change from Kali:
+
+          mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
+
+      The connection should time out — containd blocks
+      enterprise → field at the L4 boundary before DPI even applies.
+      The regulator stays at its normal tap.
+    action:
+      type: command
+      device: regulator
+      command: set_tap
+      source: "10.10.10.50"
+      value: -16
+
+  - title: "Re-test Attack 2 — DNP3 injection"
+    expected_config: hardened
+    node: kali-1
+    description: |
+      Repeat the DNP3 Direct Operate from Kali:
+
+          dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
+
+      Should time out. Auto-reclose stays enabled.
+
+      :::hint Why DPI matters even when L4 is tight
+      The L4 source-pin already blocked Kali. But DPI matters in
+      the cases L4 can't catch — for example, if your management
+      path allows the engineering workstation to reach the RTAC
+      on DNP3 for monitoring, port-only filtering can't say
+      *"reads yes, Direct Operate no."* That's the layer DPI adds.
+      :::
+    action:
+      type: command
+      device: recloser
+      command: disable_reclose
+      source: "10.10.10.50"
+
+  - title: "Validate"
+    expected_config: hardened
+    description: |
+      Confirm both attacks were blocked, the substation is healthy,
+      and the hardened firewall policy is active.
+
+      The cross-zone attack surface is closed. Lab 2.4 takes this
+      further with a holistic positive/negative test pass and an
+      evidence package suitable for a change board.
+    action:
+      type: check
+      expect:
+        voltage_normal: true
+        breaker_closed: true
+        recloser_closed: true
+        reclose_enabled: true
+        firewall_config: improved

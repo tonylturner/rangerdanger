@@ -1,18 +1,17 @@
 id: validation-evidence
-order: 9
-name: "Post-Change Validation & Evidence Collection"
-summary: "Run positive and negative segmentation tests, capture PCAPs, and build an evidence package (20 min)."
+order: "2.4"
+name: "Testing & Validation"
+summary: "Run a holistic positive/negative test pass against your hardened policy, capture PCAP evidence, and assemble a change-board ready package (15 min)."
 description: >
-  After applying the hardened firewall configuration, validate
-  that segmentation is working correctly with both positive tests
-  (authorized flows still work) and negative tests (unauthorized
-  flows are blocked). Capture packet captures as evidence and
-  document the results. This is the validation step required
-  before any segmentation change goes to production.
+  After applying the hardened firewall configuration in Lab 2.2 and
+  stress-testing it in Lab 2.3, this exercise builds the formal
+  evidence package: positive tests confirming authorized flows still
+  work, negative tests confirming unauthorized flows are blocked,
+  and PCAP evidence from the firewall. This is the validation step
+  required before any segmentation change goes to production.
 nodes:
   - kali-1
   - vendor-jump-1
-  - eng-ws-1
 tags:
   - validation
   - testing
@@ -20,162 +19,160 @@ tags:
   - evidence
   - defense
 steps:
-  - title: "Verify improved config is active"
+  - title: "Confirm hardened config is active"
     expected_config: hardened
-    description: >
+    description: |
       Confirm a hardened firewall policy is loaded. Check via API:
 
-        curl -s http://localhost:8088/api/firewall/active
+          curl -s http://localhost:8088/api/firewall/active
 
-      The active config should be "improved" or "custom" (if you
-      built your own policy in the Firewall Implementation exercise).
-      If the weak baseline is still active, apply the hardened
-      config using the **Apply Hardened** or **Apply Your Plan** button.
+      Active config should be `improved` or `custom` (your own
+      policy from Lab 2.2). If the weak baseline is still active,
+      apply the hardened config with **Apply Hardened** or
+      **Apply Your Plan**.
 
-      **Time budget:** 20 minutes.
+      **Time budget:** 15 minutes.
     action:
       type: check
       expect:
         firewall_config: improved
 
-  - title: "Positive test: RTAC → field device Modbus"
-    description: >
-      Verify the RTAC can still read and write to field devices
-      via Modbus. This is the authorized path that must keep working.
+  - title: "Positive tests — authorized flows still work"
+    description: |
+      Verify the flows the substation depends on are unaffected by
+      the hardened policy. From the **RTAC** terminal:
 
-      From the RTAC terminal, confirm Modbus to the relay works:
+      Modbus poll to a relay:
 
-        mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
 
-      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
+      DNP3 polls across all three field outstations:
 
-        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+          dnp3poll 10.40.40.20:20000 -a 1
+          dnp3poll 10.40.40.21:20000 -a 2
+          dnp3poll 10.40.40.22:20000 -a 3
 
-      All three field devices should show in the response with
-      current state data. device_comms should all be true.
+      All should return data. Then from any **OT Ops** node, confirm
+      intra-zone HMI → RTAC traffic still works:
 
-      The RTAC polls field devices every 1 second via HTTP and
-      every 5 seconds via DNP3. Both paths should be operational.
-    action:
-      type: check
-      expect:
-        breaker_closed: true
+          curl -s http://10.30.30.20:8080/api/health
 
-  - title: "Positive test: RTAC → field device DNP3"
-    description: >
-      Verify DNP3 polling from the RTAC is working through the
-      firewall. From the RTAC or any OT ops host:
+      Should return `{"status":"ok"}`.
 
-        dnp3poll 10.40.40.20:20000 -a 1
-        dnp3poll 10.40.40.21:20000 -a 2
-        dnp3poll 10.40.40.22:20000 -a 3
+      For a single sanity-check view of all comms, hit the lab's
+      RTAC state API (supplementary — not available on real RTACs):
 
-      All three should return point data. This confirms the
-      rtac-to-field-dnp3 ALLOW rule is working.
+          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
-  - title: "Positive test: HMI → RTAC communication"
-    description: >
-      Verify the HMI can still reach the RTAC within the OT ops
-      zone (intra-zone traffic):
+      `device_comms` should be `true` for every field device.
 
-        curl -s http://10.30.30.20:8080/api/health
+  - title: "Negative tests — unauthorized flows blocked"
+    description: |
+      Verify the cross-zone paths your policy closed are actually
+      unreachable.
 
-      Should return status: ok. OT intra-zone rules allow
-      Modbus, DNP3, HTTP, and FUXA between OT ops nodes.
+      **Enterprise → Field** (from Kali, 10.10.10.50):
 
-  - title: "Negative test: Enterprise → field device blocked"
-    description: >
-      From Kali (10.10.10.50), verify enterprise cannot reach
-      field devices on any ICS protocol:
+          nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
+          mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
+          dnp3poll 10.40.40.20:20000 -a 1
 
-        nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
+      All ports should be filtered; mbpoll/dnp3poll should time out.
 
-      All ports should show as filtered (blocked by containd).
+      **Vendor → Field** (from vendor-jump, 10.20.20.10):
 
-      Try Modbus:
+          nmap -p 502,20000 10.40.40.21 --max-retries 1 -T4
+          mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
 
-        mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
+      Should be filtered / timeout. This confirms the vendor-pivot
+      attack path (Lab 2.3-bonus) is closed.
 
-      Should time out. Try DNP3:
+      **Non-RTAC OT Ops → Field** (from any non-RTAC OT host, e.g.
+      OpenPLC at 10.30.30.30):
 
-        dnp3poll 10.40.40.20:20000 -a 1
+          nmap -p 502,20000 10.40.40.22 --max-retries 1 -T4
 
-      Should fail to connect. Document each blocked attempt.
-
-  - title: "Negative test: Vendor → field device blocked"
-    description: >
-      From the vendor jump box (10.20.20.10), verify vendor
-      zone cannot reach field devices:
-
-        nmap -p 502,20000 10.40.40.21 --max-retries 1 -T4
-
-      Should show filtered. Try:
-
-        mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
-
-      Should time out. This confirms the vendor compromise
-      attack path from the Vendor RDP Compromise exercise is now blocked.
-
-  - title: "Negative test: Non-RTAC OT node → field device blocked"
-    description: >
-      From a non-RTAC OT operations node (e.g., OpenPLC at
-      10.30.30.30), verify direct field device access is blocked:
-
-        nmap -p 502,20000 10.40.40.22 --max-retries 1 -T4
-
-      Should show filtered. Only the RTAC (source IP 10.30.30.20,
-      the OT Ops interface — host-level hardening routes field
-      traffic through the firewall) is allowed through. This
-      confirms the Modbus override attack path from the Modbus Override exercise
-      is blocked.
+      Should be filtered. Only the RTAC (source IP 10.30.30.20,
+      its OT Ops interface) is allowed through. Document each
+      blocked attempt for the evidence package.
 
   - title: "Capture PCAP evidence"
-    description: >
-      From the firewall terminal (fw-1 on the Network Map),
-      capture traffic on the field_net interface (eth3) to
-      document which hosts are communicating with field devices.
-      Under the improved config, RTAC-to-field ICS traffic
-      transits containd and is visible on eth3:
+    node: fw-1
+    description: |
+      From the firewall terminal (`fw-1`), capture traffic on the
+      field-net interface (`eth3`) to document which hosts are
+      actually communicating with field devices under the hardened
+      policy:
 
-        tcpdump -i eth3 -w /data/captures/validation.pcap \
-          tcp port 502 or tcp port 20000
+          tcpdump -i eth3 -w /data/captures/validation.pcap \
+            tcp port 502 or tcp port 20000
 
-      Let it run for 30 seconds while the RTAC polls, then
-      stop with Ctrl-C. Examine the capture on fw-1:
+      Let it run for 30 seconds while the RTAC polls, then stop with
+      Ctrl-C. Check what's on the wire:
 
-        tcpdump -r /data/captures/validation.pcap -nn \
-          | awk '{print $3, $5}' | sort | uniq -c | sort -rn
+          tcpdump -r /data/captures/validation.pcap -nn \
+            | awk '{print $3, $5}' | sort | uniq -c | sort -rn
 
-      The only Modbus/DNP3 traffic to field devices should be
-      from the RTAC (source IP 10.30.30.20). No enterprise,
-      vendor, or other OT source IPs should appear talking to
-      10.40.40.x.
+      The only Modbus / DNP3 sources reaching field devices should
+      be `10.30.30.20` (the RTAC). No enterprise, vendor, or other
+      OT source IPs should appear talking to `10.40.40.x`.
 
-  - title: "Document validation results"
-    description: >
-      Summarize your evidence package:
+  - title: "Assemble the evidence package"
+    description: |
+      Summarize the package you'd take to a change board.
 
-      Positive tests (PASS = authorized traffic works):
-      - RTAC → relay Modbus: PASS / FAIL
-      - RTAC → recloser DNP3: PASS / FAIL
-      - RTAC → regulator DNP3: PASS / FAIL
-      - HMI → RTAC HTTP: PASS / FAIL
+      **Positive tests** (PASS = authorized traffic works):
+      - RTAC → relay Modbus
+      - RTAC → recloser DNP3
+      - RTAC → regulator DNP3
+      - HMI → RTAC HTTP (intra-zone)
+      - All `device_comms` true
 
-      Negative tests (PASS = unauthorized traffic blocked):
-      - Enterprise → field Modbus: PASS / FAIL
-      - Enterprise → field DNP3: PASS / FAIL
-      - Vendor → field Modbus: PASS / FAIL
-      - Non-RTAC OT → field Modbus: PASS / FAIL
+      **Negative tests** (PASS = unauthorized traffic blocked):
+      - Enterprise → field Modbus
+      - Enterprise → field DNP3
+      - Vendor → field Modbus
+      - Non-RTAC OT → field Modbus
 
-      Evidence artifacts:
-      - PCAP file: validation.pcap
-      - Firewall config: improved (active)
-      - Containd rule hit counts from Segmentation tab
+      **Artifacts**:
+      - `/data/captures/validation.pcap`
+      - Active firewall config (`improved` or `custom`)
+      - containd rule hit counts from the Segmentation tab
+      - Per-rule logs for the deny actions you triggered
 
-      This evidence package is what you'd present to a change
-      board before moving segmentation changes to production.
+      Capture pass/fail for each test in your Exercise Notes. This
+      is the evidence package — a change board needs to see both
+      that operations still work and that the new denies are real.
     action:
       type: check
       expect:
         firewall_config: improved
         breaker_closed: true
+
+  - title: "Reflection — what did your plan close?"
+    description: |
+      Before wrapping up, take five minutes to write down answers in
+      your Exercise Notes:
+
+      1. **Which of the 5 baseline findings did your plan close?**
+         (Vendor too broad, Enterprise → ICS, no DPI, any-OT → field,
+         RTAC blind spot.) Map each finding to a remediation action
+         you selected in Lab 1.4.
+
+      2. **Which findings remain open as residual risk?** (The
+         actions you deferred in Lab 1.4 due to budget or role
+         capacity.) What's the operational impact if those
+         residuals are exploited?
+
+      3. **What would you revisit next quarter?** Given a fresh
+         labor budget, which deferred remediation would you pull
+         in first? Why?
+
+      4. **What would you change about the substation architecture
+         itself?** The firewall is one layer; what additional
+         controls (host hardening, monitoring, change management)
+         would deepen defense in depth?
+
+      These answers travel with you into the next planning cycle.
+      Defensible segmentation is continuous — this is the start of
+      the next iteration, not the end.

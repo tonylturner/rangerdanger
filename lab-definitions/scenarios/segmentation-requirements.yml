@@ -1,6 +1,6 @@
 id: segmentation-requirements
-order: 2
-name: "Segmentation Requirements & Rule Design"
+order: "1.3"
+name: "Segmentation Requirements & Policy Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration (20 min)."
 description: >
   Using the baseline assessment findings, define what
@@ -80,63 +80,6 @@ steps:
       policy restricts writes to the RTAC only while allowing reads
       more broadly for monitoring.
 
-  - title: "Compare to the improved configuration"
-    expected_config: weak
-    description: >
-      Open the RangerDanger Feeder HMI and go to the containd
-      Segmentation tab. Click "Compare Policies" to see the
-      weak vs improved configuration side by side.
-
-      Check how your requirements map to the actual rules:
-      - Enterprise→OT/Field: DENY rules with explicit port lists
-      - Vendor→Field: DENY on 502, 20000, 8080
-      - RTAC→Field: ALLOW with source pinned to 10.30.30.20
-      - RTAC→Field Modbus: ICS DPI with functionCodes [1,2,3,4,5,6]
-      - RTAC→Field DNP3: ICS DPI with protocol "dnp3"
-
-      Note any differences between your requirements and the
-      improved config. Are there rules you'd add or tighten?
-    action:
-      type: check
-      expect:
-        breaker_closed: true
-
-  - title: "Preview the improved configuration"
-    description: >
-      To see what a hardened policy looks like in practice, apply the
-      improved firewall config using the **Apply Hardened** button
-      in the firewall policy panel below. This is a reference
-      implementation — in the Firewall Implementation exercise you
-      will build your own policy based on the decisions you make
-      in the Remediation Planning exercise.
-
-      After applying, verify the RTAC can still poll field devices.
-      From the RTAC terminal, confirm Modbus to the relay works:
-
-        mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-
-      Or check the lab's RTAC status API (supplementary — not available on real RTACs):
-
-        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
-
-      All devices should show comms_ok: true. The hardened config
-      blocks unauthorized cross-zone access without disrupting
-      legitimate operations. This is the goal you are working toward.
-    action:
-      type: firewall
-      config: improved
-
-  - title: "Return to the weak baseline"
-    description: >
-      Now that you have seen what a hardened policy looks like,
-      restore the weak baseline using the **Reset to Weak** button.
-      The next exercises need the weak config active so you can
-      plan your remediations and then build your own policy from
-      scratch in the Firewall Implementation exercise.
-    action:
-      type: firewall
-      config: weak
-
   - title: "Capture your findings"
     expected_config: weak
     description: |
@@ -151,3 +94,26 @@ steps:
       5. **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed but host-level hardening routes its traffic through the firewall. This is not visible in the firewall config and could drift without monitoring.
 
       Open your **Exercise Notes** (below) and confirm you have captured these findings. Add any additional observations from your own analysis. The Remediation Planning exercise will ask you to map each remediation action back to these findings.
+
+  - title: "Define success criteria for segmentation"
+    description: |
+      Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements — not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
+
+      ### Good segmentation for this substation means
+
+      1. **Enterprise cannot directly reach Field devices.**
+         *Test:* `tcpdump` on the firewall's field interface should show zero packets originating from `10.10.10.0/24`.
+
+      2. **Vendor access to OT Ops is constrained and brokered.**
+         *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
+
+      3. **Unauthorized writes are blocked and logged.**
+         *Test:* a Modbus FC6 write or DNP3 Direct Operate from a non-RTAC source should be denied and produce a firewall event.
+
+      4. **Enterprise ransomware cannot propagate into OT.**
+         *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
+
+      5. **Operations are not broken by the segmentation change.**
+         *Test:* after applying rules, all five critical conduits from Lab 1.2 continue to work.
+
+      > **Operational continuity is a hard constraint.** If your segmentation blocks any of the critical conduits you identified earlier, you will break operations.
