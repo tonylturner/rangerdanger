@@ -45,10 +45,15 @@ total=0
 passed=0
 skipped=0
 
-note() { printf '\n=== %s ===\n' "$1"; }
-ok()   { printf '  ✓ %s\n' "$1"; passed=$((passed+1)); }
-err()  { printf '  ✗ %s\n' "$1"; fail=1; }
-skip() { printf '  ⊘ %s\n' "$1"; skipped=$((skipped+1)); }
+note()   { printf '\n=== %s ===\n' "$1"; }
+ok()     { printf '  ✓ %s\n' "$1"; passed=$((passed+1)); }
+# Pre-flight informational message — does NOT count toward passed,
+# because the matrix counters use ok() to track per-command results
+# and we don't want preflight rows in the pass/total ratio (caused
+# off-by-one "passed 65/64" output).
+infook() { printf '  ✓ %s\n' "$1"; }
+err()    { printf '  ✗ %s\n' "$1"; fail=1; }
+skip()   { printf '  ⊘ %s\n' "$1"; skipped=$((skipped+1)); }
 
 # ── Extract commands per step from YAML using python+pyyaml ─────────
 # Output format (one line per command):
@@ -274,7 +279,7 @@ run_command() {
 # ── Preflight ──────────────────────────────────────────────────────
 note "preflight"
 curl -fsS "$API/api/health" >/dev/null 2>&1 \
-    && ok "backend $API healthy" \
+    && infook "backend $API healthy" \
     || { err "backend not reachable at $API — bring stack up first"; exit 1; }
 
 if ! python3 -c 'import yaml' 2>/dev/null; then
