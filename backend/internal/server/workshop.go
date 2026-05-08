@@ -172,9 +172,11 @@ func buildWorkshopInterfaceIPs(n labs.NodeYAML) map[string]string {
 			"ot_ops_net": "10.30.30.20",
 			"field_net":  "10.40.40.10",
 		},
+		// openplc: single-homed on ot_ops_net (audit F-011). Kept in
+		// the multi-homed map as a single-entry key so callers that
+		// look up "which IP on which network" still resolve cleanly.
 		"openplc": {
 			"ot_ops_net": "10.30.30.30",
-			"field_net":  "10.40.40.30",
 		},
 	}
 

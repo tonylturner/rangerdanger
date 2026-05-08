@@ -377,11 +377,16 @@ services:
     hostname: openplc
     cap_add:
       - NET_ADMIN
+    # OpenPLC runs the substation automation overlay in
+    # data/openplc/substation_automation.st — voltage regulation,
+    # auto-reclose protection, alarm aggregation. The ladder logic
+    # is a Modbus TCP client of the RTAC (10.30.30.20) and never
+    # originates traffic to field devices directly. Single-homed
+    # on ot_ops_net so it can't bypass the firewall the way a
+    # field-leg would let it. Audit F-011.
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.30
-      field_net:
-        ipv4_address: 10.40.40.30
       mgmt_net:
         ipv4_address: 10.99.99.30
     environment:

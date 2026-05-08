@@ -26,7 +26,7 @@ var NodeCatalog = []NodeTemplate{
 	// OT Operations Zone
 	{Type: "fuxa_hmi", Name: "Substation HMI", Description: "FUXA HMI for substation visualization and control", DefaultNetworks: []string{"ot_ops_net"}, Image: "frangoteam/fuxa:latest"},
 	{Type: "rtac_sim", Name: "RTAC / Supervisory Controller", Description: "Supervisory controller and protocol broker", DefaultNetworks: []string{"ot_ops_net", "field_net"}, Image: "rangerdanger-rtac-sim"},
-	{Type: "openplc", Name: "Substation Automation PLC", Description: "OpenPLC runtime for local automation logic", DefaultNetworks: []string{"ot_ops_net", "field_net"}, Image: "tuttas/openplc_v3:latest"},
+	{Type: "openplc", Name: "Substation Automation PLC", Description: "OpenPLC runtime for local automation logic", DefaultNetworks: []string{"ot_ops_net"}, Image: "tuttas/openplc_v3:latest"},
 
 	// Field Device Zone
 	{Type: "relay_sim", Name: "Feeder Breaker / Relay", Description: "Substation feeder breaker and protective relay simulator", DefaultNetworks: []string{"field_net"}, Image: "rangerdanger-relay-sim"},

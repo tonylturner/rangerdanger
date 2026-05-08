@@ -381,7 +381,7 @@ export function negativeValidationTests(plan: DynamicExercisePlan): string[] {
 
   if (plan.selectedActions.includes("pin-rtac-to-field")) {
     tests.push(
-      "# Non-RTAC OT host → field (should be BLOCKED):\n# If you have an openplc-1 terminal:\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20"
+      "# Non-RTAC OT host → field (should be BLOCKED):\n# From historian-1 or openplc-1 (any single-homed OT host):\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20"
     );
   }
 

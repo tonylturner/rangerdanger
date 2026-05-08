@@ -91,31 +91,30 @@ read -r -d '' MATRIX <<EOF || true
 rangerdanger-rtac-sim|10.40.40.20|502|allow|RTAC Modbus poll to relay|authorized
 rangerdanger-rtac-sim|10.40.40.21|20000|allow|RTAC DNP3 poll to recloser|authorized
 rangerdanger-rtac-sim|10.40.40.22|20000|allow|RTAC DNP3 poll to regulator|authorized
-rangerdanger-rtac-sim|10.40.40.30|8080|allow|RTAC HTTP API to OpenPLC|authorized
+rangerdanger-rtac-sim|10.30.30.30|8080|allow|RTAC HTTP API to OpenPLC (intra-zone)|authorized
 rangerdanger-fuxa-hmi|10.30.30.20|8080|allow|HMI to RTAC HTTP intra-zone|authorized
 rangerdanger-historian-sim|10.30.30.20|8080|allow|Historian to RTAC intra-zone|authorized
 rangerdanger-vendor-jump|10.30.30.20|22|allow|Vendor SSH mgmt to RTAC|authorized
 rangerdanger-vendor-jump|10.30.30.20|443|allow|Vendor HTTPS mgmt to RTAC|authorized
 rangerdanger-kali|10.40.40.20|502|deny|Enterprise Modbus to field relay|unauthorized
 rangerdanger-kali|10.40.40.20|20000|deny|Enterprise DNP3 to field relay|unauthorized
-rangerdanger-kali|10.40.40.30|8080|deny|Enterprise HTTP to OpenPLC|unauthorized
+rangerdanger-kali|10.30.30.30|8080|deny|Enterprise HTTP to OpenPLC|unauthorized
 rangerdanger-kali|10.30.30.20|8080|deny|Enterprise HTTP to RTAC|unauthorized
 rangerdanger-kali|10.30.30.20|502|deny|Enterprise Modbus to RTAC|unauthorized
 rangerdanger-eng-ws|10.40.40.21|502|deny|Vendor Modbus to field recloser|unauthorized
 rangerdanger-eng-ws|10.40.40.21|20000|deny|Vendor DNP3 to field recloser|unauthorized
-rangerdanger-eng-ws|10.40.40.30|8080|deny|Vendor HTTP to OpenPLC (only 443/22 allowed)|unauthorized
+rangerdanger-eng-ws|10.30.30.30|8080|deny|Vendor HTTP to OpenPLC (only 443/22 allowed)|unauthorized
 rangerdanger-vendor-jump|10.30.30.20|502|deny|Vendor Modbus to RTAC (improved blocks non-mgmt)|unauthorized
 rangerdanger-historian-sim|10.40.40.22|502|deny|Non-RTAC OT (historian) to field regulator (Modbus)|unauthorized
 rangerdanger-historian-sim|10.40.40.22|20000|deny|Non-RTAC OT (historian) to field regulator (DNP3)|unauthorized
 EOF
-# Note: historian-sim is the canonical "non-RTAC OT" probe source
-# because it's lan1-only — it has no direct field interface, so
-# every probe to 10.40.40.x must traverse the firewall. OpenPLC
-# was used in earlier drafts but is multi-homed (lan1 + field) and
-# bypasses the firewall for traffic from its field-side interface,
-# making the probe result indeterminate. The OpenPLC multi-homed
-# bypass is itself a finding — see Lab 2.4 step 5 "Other
-# observations" — but it's not a clean test of firewall enforcement.
+# historian-sim is the canonical "non-RTAC OT" probe source. It's
+# single-homed on ot_ops_net so every probe to 10.40.40.x must
+# traverse the firewall — clean enforcement test. OpenPLC used to
+# be multi-homed on field_net too but was single-homed on
+# ot_ops_net in audit F-011 (it's a Modbus client of the RTAC, not
+# a field-device originator), so it's now the same shape as
+# historian for these probes.
 
 # ── Apply hardened policy ────────────────────────────────────────────
 err "applying hardened policy via $API/api/firewall/apply"
@@ -134,7 +133,7 @@ err "starting PCAP capture (${PCAP_DURATION_SECS}s, $PCAP_PATH)"
 docker exec rangerdanger-firewall mkdir -p /data/captures 2>/dev/null
 docker exec -d rangerdanger-firewall sh -c \
     "timeout $PCAP_DURATION_SECS tcpdump -i any -w $PCAP_PATH \
-      'host 10.40.40.20 or host 10.40.40.21 or host 10.40.40.22 or host 10.40.40.23 or host 10.40.40.30' 2>/dev/null"
+      'host 10.40.40.20 or host 10.40.40.21 or host 10.40.40.22 or host 10.40.40.23' 2>/dev/null"
 sleep 1   # let tcpdump open the file
 
 # ── Run probes ───────────────────────────────────────────────────────

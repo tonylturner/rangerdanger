@@ -127,8 +127,12 @@ steps:
 
       Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action — even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
 
-      :::hint Why historian-sim and not OpenPLC for this test
-      OpenPLC is also "non-RTAC OT," but it's multi-homed onto both `ot_ops_net` (10.30.30.0/24) and `field_net` (10.40.40.0/24) — it has a direct interface to the field zone. A probe from OpenPLC to a field device uses that direct interface and never traverses the firewall, so the result tells you nothing about firewall enforcement. Multi-homed hosts that bypass the firewall are themselves a finding (the same architectural issue the RTAC has, which is why the RTAC has host-level hardening); for *firewall-enforcement* validation, pick a non-multi-homed source like historian or HMI.
+      :::hint Pick any single-homed OT host as the probe source
+      historian-sim, fuxa-hmi, and openplc all live on `ot_ops_net`
+      only — single-homed, no direct field interface, every probe
+      to `10.40.40.x` must traverse the firewall. Any of them is
+      a clean enforcement test. The example uses historian; you'd
+      see the same result from any of the three.
       :::
 
   - title: "Capture PCAP evidence"
@@ -212,8 +216,7 @@ steps:
 
       ### Other observations from Lab 2.2 / 2.3
 
-      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed but its application traffic is routed through containd by host-level hardening (the `rtac-architecture-review` action). Worth noting as a compensating control on your evidence package, not a network-layer enforcement.
-      - **OpenPLC is also multi-homed.** OpenPLC sits on both `ot_ops_net` and `field_net` because it represents a PLC that talks directly to field devices — realistic for substation automation. But that means traffic from OpenPLC to a field device uses its direct field interface and bypasses the firewall entirely. Same architectural issue as the RTAC, but unhardened. A real change board would want either (a) a host-level harden script forcing field traffic through the firewall (the rtac-harden.sh pattern), or (b) explicit acceptance that OpenPLC's east-west reach is out of scope for network segmentation. As-is, the firewall cannot enforce non-RTAC OT → field for OpenPLC source traffic.
+      - **Firewall visibility blind spot at the RTAC.** The RTAC is multi-homed (it polls field devices over DNP3/Modbus) but its application traffic is routed through containd by host-level hardening (the `rtac-architecture-review` action). Worth noting as a compensating control on your evidence package, not a network-layer enforcement. The RTAC is the *only* host with a leg in field_net — every other OT host is single-homed on ot_ops_net.
       - **No protocol-aware constraints by default.** L4 port filtering doesn't distinguish reads from writes; the `modbus-dpi` and `dnp3-dpi` actions close that gap.
 
       ### What your plan closed vs deferred

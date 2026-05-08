@@ -315,11 +315,14 @@ services:
     hostname: openplc
     cap_add:
       - NET_ADMIN
+    # Single-homed on ot_ops_net — the ladder logic is a Modbus
+    # client of the RTAC and never originates field-device traffic.
+    # Removing the field_net leg eliminates the firewall-bypass
+    # surface that historian-sim probes used to demonstrate. Audit
+    # F-011 (paired with docker-compose.yml).
     networks:
       ot_ops_net:
         ipv4_address: 10.30.30.30
-      field_net:
-        ipv4_address: 10.40.40.30
       mgmt_net:
         ipv4_address: 10.99.99.30
     environment:

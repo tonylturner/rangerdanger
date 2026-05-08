@@ -26,7 +26,7 @@ The RTAC is intentionally multi-homed on OT Operations, Field, and Physics netwo
 | Engineering workstation | `eng_workstation` | vendor | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
 | FUXA HMI | `fuxa_hmi` | ot_ops | 10.30.30.10 | Operator HMI (SCADA) |
 | RTAC | `rtac_sim` | ot_ops + field + physics | 10.30.30.20 / 10.40.40.10 / 10.50.50.10 | Supervisory controller / protocol broker |
-| OpenPLC | `openplc` | ot_ops + field | 10.30.30.30 / 10.40.40.30 | Substation automation PLC |
+| OpenPLC | `openplc` | ot_ops | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
 | Historian | `historian_sim` | ot_ops | 10.30.30.40 | Data historian polling the RTAC |
 | GPS clock | `gps_sim` | ot_ops | 10.30.30.50 | Time source for SOE timestamping |
 | Relay | `relay_sim` | field | 10.40.40.20 | Feeder breaker with trip/close/lockout |

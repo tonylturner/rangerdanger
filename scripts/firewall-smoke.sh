@@ -172,18 +172,18 @@ rangerdanger-kali|10.20.20.10|tcp|5900|allow|deny|kali->vendor VNC (improved blo
 rangerdanger-kali|10.30.30.20|tcp|8080|allow|deny|kali->rtac HTTP API
 rangerdanger-kali|10.30.30.20|tcp|502|allow|deny|kali->rtac Modbus (multi-proto pin)
 rangerdanger-kali|10.30.30.20|tcp|20000|allow|deny|kali->rtac DNP3 (multi-proto pin)
-rangerdanger-kali|10.40.40.30|tcp|8080|allow|deny|kali->openplc HTTP
-rangerdanger-kali|10.40.40.30|tcp|502|allow|deny|kali->openplc Modbus (multi-proto pin)
+rangerdanger-kali|10.30.30.30|tcp|8080|allow|deny|kali->openplc HTTP
+rangerdanger-kali|10.30.30.30|tcp|502|allow|deny|kali->openplc Modbus (multi-proto pin)
 rangerdanger-eng-ws|10.30.30.20|tcp|8080|allow|deny|eng->rtac HTTP (weak wide)
 rangerdanger-vendor-jump|10.30.30.20|tcp|22|allow|allow|vendor->rtac SSH mgmt (improved keeps for monitoring)
 rangerdanger-vendor-jump|10.30.30.20|tcp|443|allow|allow|vendor->rtac HTTPS mgmt (improved keeps for monitoring)
 rangerdanger-vendor-jump|10.30.30.20|tcp|502|allow|deny|vendor->rtac Modbus (improved blocks)
-rangerdanger-eng-ws|10.40.40.30|tcp|502|allow|deny|eng->openplc Modbus (weak wide)
-rangerdanger-fuxa-hmi|10.40.40.30|tcp|502|allow|deny|fuxa(non-rtac OT)->openplc Modbus
-rangerdanger-historian-sim|10.40.40.30|tcp|502|allow|deny|historian(non-rtac OT)->openplc Modbus
-rangerdanger-rtac-sim|10.40.40.30|tcp|502|allow|allow|rtac->openplc Modbus (canonical narrow-allow)
-rangerdanger-rtac-sim|10.40.40.30|tcp|20000|allow|allow|rtac->openplc DNP3 (canonical narrow-allow)
-rangerdanger-rtac-sim|10.40.40.30|tcp|8080|allow|allow|rtac->openplc HTTP (canonical narrow-allow)
+rangerdanger-eng-ws|10.30.30.30|tcp|502|allow|deny|eng->openplc Modbus (weak wide)
+rangerdanger-fuxa-hmi|10.30.30.30|tcp|502|allow|allow|fuxa(intra-zone OT)->openplc Modbus
+rangerdanger-historian-sim|10.30.30.30|tcp|502|allow|allow|historian(intra-zone OT)->openplc Modbus
+rangerdanger-rtac-sim|10.30.30.30|tcp|502|allow|allow|rtac->openplc Modbus (intra-zone)
+rangerdanger-rtac-sim|10.30.30.30|tcp|20000|allow|allow|rtac->openplc DNP3 (intra-zone)
+rangerdanger-rtac-sim|10.30.30.30|tcp|8080|allow|allow|rtac->openplc HTTP (intra-zone)
 rangerdanger-kali|${FW_WAN}|tcp|8080|allow|deny|kali->fw mgmt (improved blocks wan)
 rangerdanger-kali|${FW_WAN}|tcp|2222|allow|deny|kali->fw SSH (improved blocks wan)
 rangerdanger-eng-ws|${FW_DMZ}|tcp|8080|allow|allow|eng->fw mgmt (always allowed)
@@ -297,8 +297,8 @@ declare -a LISTENERS=(
   "10.30.30.20:20000|rtac DNP3"
   "10.30.30.20:22|rtac SSH mgmt"
   "10.30.30.20:443|rtac HTTPS mgmt"
-  "10.40.40.30:502|openplc Modbus"
-  "10.40.40.30:8080|openplc HTTP"
+  "10.30.30.30:502|openplc Modbus"
+  "10.30.30.30:8080|openplc HTTP"
   "10.40.40.20:502|relay Modbus"
   "10.20.20.10:8082|vendor-jump kasm"
   "10.20.20.10:22|vendor-jump SSH"
