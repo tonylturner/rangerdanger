@@ -29,6 +29,8 @@ network model.
 | vendor-jump (DMZ)  | `10.20.20.10`  | HTTPS            | 443       | Same page over TLS (self-signed cert). |
 | vendor-jump (DMZ)  | `10.20.20.10`  | RDP (xrdp)       | 3389      | Drops you into an XFCE desktop session. |
 | vendor-jump (DMZ)  | `10.20.20.10`  | VNC (x11vnc)     | 5900      | Shares the running kasm desktop session. |
+| rtac-sim (OT Ops)  | `10.30.30.20`  | SSH              | 22        | RTAC management shell. Improved policy keeps vendor → OT:22 open for monitoring. |
+| rtac-sim (OT Ops)  | `10.30.30.20`  | HTTPS            | 443       | RTAC mgmt portal (self-signed cert). Improved policy keeps vendor → OT:443 open for monitoring. |
 
 Containd's own management plane has separate credentials (the
 `containd / containd` admin user; password change forced on first
@@ -54,8 +56,13 @@ matrix encodes this contrast.
 
 ## Where the user is created
 
-`rangerdanger` is created by `scripts/vendor-jump-services.sh` at
-container startup (linuxserver/webtop's `/custom-cont-init.d/`
-hook). Adding new credentialed services elsewhere should reuse the
+`rangerdanger` is created at container startup by:
+- `scripts/vendor-jump-services.sh` on vendor-jump (linuxserver/webtop's
+  `/custom-cont-init.d/` hook) — for SSH/HTTP/HTTPS/RDP/VNC.
+- `scripts/rtac-mgmt-init.sh` on rtac-sim (alpine, runs as part of
+  the `rtac-sim` CMD before the Go binary execs) — for SSH/HTTPS
+  only.
+
+Adding new credentialed services elsewhere should reuse the
 same user/password so the matrix above stays consistent — update
 the table above when you do.

@@ -83,10 +83,10 @@ probe_tcp() {
 # Test matrix is intentionally narrower than firewall-smoke. Probes
 # only target ports where the destination has a listener — without a
 # listener, an "allow" decision lands on a fast TCP RST that Docker
-# Desktop's bridge sometimes drops (mac-only quirk, but big enough
-# to make the report unreliable). Vendor-management rules in the
-# policy (SSH/HTTPS to OT) are validated by reading the policy, not
-# by probing nonexistent listeners.
+# Desktop's bridge sometimes drops (mac-only quirk, big enough to
+# make the report unreliable). RTAC now hosts sshd on :22 + nginx
+# on :443 (services/Dockerfile rtac-sim stage) so the vendor →
+# RTAC management rows in the improved policy are probeable.
 read -r -d '' MATRIX <<EOF || true
 rangerdanger-rtac-sim|10.40.40.20|502|allow|RTAC Modbus poll to relay|authorized
 rangerdanger-rtac-sim|10.40.40.21|20000|allow|RTAC DNP3 poll to recloser|authorized
@@ -94,6 +94,8 @@ rangerdanger-rtac-sim|10.40.40.22|20000|allow|RTAC DNP3 poll to regulator|author
 rangerdanger-rtac-sim|10.40.40.30|8080|allow|RTAC HTTP API to OpenPLC|authorized
 rangerdanger-fuxa-hmi|10.30.30.20|8080|allow|HMI to RTAC HTTP intra-zone|authorized
 rangerdanger-historian-sim|10.30.30.20|8080|allow|Historian to RTAC intra-zone|authorized
+rangerdanger-vendor-jump|10.30.30.20|22|allow|Vendor SSH mgmt to RTAC|authorized
+rangerdanger-vendor-jump|10.30.30.20|443|allow|Vendor HTTPS mgmt to RTAC|authorized
 rangerdanger-kali|10.40.40.20|502|deny|Enterprise Modbus to field relay|unauthorized
 rangerdanger-kali|10.40.40.20|20000|deny|Enterprise DNP3 to field relay|unauthorized
 rangerdanger-kali|10.40.40.30|8080|deny|Enterprise HTTP to OpenPLC|unauthorized
@@ -102,6 +104,7 @@ rangerdanger-kali|10.30.30.20|502|deny|Enterprise Modbus to RTAC|unauthorized
 rangerdanger-eng-ws|10.40.40.21|502|deny|Vendor Modbus to field recloser|unauthorized
 rangerdanger-eng-ws|10.40.40.21|20000|deny|Vendor DNP3 to field recloser|unauthorized
 rangerdanger-eng-ws|10.40.40.30|8080|deny|Vendor HTTP to OpenPLC (only 443/22 allowed)|unauthorized
+rangerdanger-vendor-jump|10.30.30.20|502|deny|Vendor Modbus to RTAC (improved blocks non-mgmt)|unauthorized
 rangerdanger-historian-sim|10.40.40.22|502|deny|Non-RTAC OT (historian) to field regulator (Modbus)|unauthorized
 rangerdanger-historian-sim|10.40.40.22|20000|deny|Non-RTAC OT (historian) to field regulator (DNP3)|unauthorized
 EOF

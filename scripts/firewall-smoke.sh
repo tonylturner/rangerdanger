@@ -147,10 +147,13 @@ probe() {
 # Matrix runner. Each row: src_container | dst_ip | proto | port | weak | improved
 #
 # Probe ports are chosen so the destination listens on them today.
-# Workshop-narrative ports without listeners (vendor:22 SSH,
-# vendor:3389 RDP, eng->rtac:22/443) are intentionally omitted —
-# they'll come back when believable services are added (separate
-# track from this smoke test).
+# rtac-sim now hosts sshd on :22 and nginx on :443 (see
+# services/Dockerfile rtac-sim stage + rtac-mgmt-init.sh) so the
+# vendor → OT mgmt rows are probeable. Other workshop-narrative
+# ports without listeners (vendor:3389 RDP, eng->rtac:22/443 from
+# enterprise) remain omitted until corresponding listeners are
+# added — see scripts/lab-commands-smoke.sh for the broader
+# CLI-command coverage matrix.
 # ---------------------------------------------------------------------
 
 # Firewall zone-side IPs (each zone reaches firewall on its own subnet).
@@ -172,6 +175,9 @@ rangerdanger-kali|10.30.30.20|tcp|20000|allow|deny|kali->rtac DNP3 (multi-proto 
 rangerdanger-kali|10.40.40.30|tcp|8080|allow|deny|kali->openplc HTTP
 rangerdanger-kali|10.40.40.30|tcp|502|allow|deny|kali->openplc Modbus (multi-proto pin)
 rangerdanger-eng-ws|10.30.30.20|tcp|8080|allow|deny|eng->rtac HTTP (weak wide)
+rangerdanger-vendor-jump|10.30.30.20|tcp|22|allow|allow|vendor->rtac SSH mgmt (improved keeps for monitoring)
+rangerdanger-vendor-jump|10.30.30.20|tcp|443|allow|allow|vendor->rtac HTTPS mgmt (improved keeps for monitoring)
+rangerdanger-vendor-jump|10.30.30.20|tcp|502|allow|deny|vendor->rtac Modbus (improved blocks)
 rangerdanger-eng-ws|10.40.40.30|tcp|502|allow|deny|eng->openplc Modbus (weak wide)
 rangerdanger-fuxa-hmi|10.40.40.30|tcp|502|allow|deny|fuxa(non-rtac OT)->openplc Modbus
 rangerdanger-historian-sim|10.40.40.30|tcp|502|allow|deny|historian(non-rtac OT)->openplc Modbus

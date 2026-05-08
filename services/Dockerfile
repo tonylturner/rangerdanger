@@ -84,26 +84,35 @@ CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 # rtac-sim is a special case: the validation-evidence and
 # hardening-configurations labs document "from RTAC" diagnostic
 # commands students are expected to run — mbpoll, dnp3poll, curl,
-# python3 to pretty-print API state. We stay on alpine (low CVE
-# surface) and pull in:
+# python3 to pretty-print API state. The improved firewall policy
+# also allows vendor (DMZ) → OT (lan1) on tcp/22 + tcp/443, so
+# this stage hosts an sshd + nginx-on-443 management surface for
+# Lab 2.4 to probe against. We stay on alpine (low CVE surface)
+# and pull in:
 #   - libmodbus runtime + the mbpoll binary built in mbpoll-builder
 #     (mbpoll isn't in any alpine repo, see comment on that stage)
 #   - dnp3poll/dnp3cmd built from our dnp3go module
 #   - curl, python3 for the documented API-poking commands
+#   - openssh-server, openssh-keygen for the :22 management listener
+#   - nginx, openssl for the :443 management portal listener
 FROM sim-base AS rtac-sim
-RUN apk add --no-cache libmodbus curl python3
+RUN apk add --no-cache libmodbus curl python3 openssh-server openssh-keygen nginx openssl shadow
 COPY --from=mbpoll-builder /src/build/bin/mbpoll /usr/local/bin/mbpoll
 COPY --from=builder        /bin/rtac-sim         /usr/local/bin/rtac-sim
 COPY --from=dnp3-builder   /bin/dnp3poll         /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder   /bin/dnp3cmd          /usr/local/bin/dnp3cmd
-EXPOSE 8080 502 20000
+COPY scripts/rtac-mgmt-init.sh /usr/local/bin/rtac-mgmt-init.sh
+RUN chmod +x /usr/local/bin/rtac-mgmt-init.sh
+EXPOSE 22 443 8080 502 20000
 # set-gateway.sh: installs the OT Ops firewall as the default route
 # rtac-harden.sh: disables forwarding, sets FORWARD DROP, and routes
 # field_net traffic through the firewall so the RTAC cannot bypass it
 # rtac-route-monitor.sh: re-installs the default + indirect field
 # route if docker network reconciliation wipes them. Without this,
 # RTAC silently loses cross-zone reachability when peers restart.
-CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-route-monitor.sh & exec rtac-sim"]
+# rtac-mgmt-init.sh: starts sshd on :22 and nginx on :443 so the
+# vendor-to-ot-restricted firewall rule has real listeners to probe.
+CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-mgmt-init.sh && rtac-route-monitor.sh & exec rtac-sim"]
 
 FROM sim-base AS capbank-sim
 COPY --from=builder /bin/capbank-sim /usr/local/bin/capbank-sim

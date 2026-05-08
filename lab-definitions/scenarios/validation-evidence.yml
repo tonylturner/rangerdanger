@@ -88,6 +88,18 @@ steps:
 
       `device_comms` should be `true` for every field device.
 
+      **Vendor management to OT** (from vendor-jump, 10.20.20.10) — the
+      improved policy keeps SSH and HTTPS open from DMZ → OT for vendor
+      monitoring. Verify the listener responds:
+
+          ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname'
+          curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\n'
+
+      Both should succeed (SSH banner + `200`). This proves the
+      "encrypted-management-only" allowance is enforced, not just
+      declared. Modbus / DNP3 from vendor-jump to RTAC must still
+      be blocked — `firewall-smoke.sh` covers that contrast row.
+
   - title: "Negative tests - unauthorized flows blocked"
     description: |
       Verify the cross-zone paths your policy closed are actually
