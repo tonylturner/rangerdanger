@@ -14,11 +14,23 @@ You will need:
 - **Go 1.24+** for backend, services, and the `dnp3go` library.
 - **Node.js 20+** and **npm** for the frontend.
 
-Bring up the stack:
+Bring up the stack — either invocation works:
 
 ```sh
-docker compose up -d --build
+./scripts/dev-up.sh           # build-from-source path; passes extra args through
+docker compose up -d --build  # equivalent if you prefer the raw command
 ```
+
+`dev-up.sh` is a thin wrapper around `docker compose up --build -d`
+that resolves the compose file relative to the script (so it works
+from any cwd) and forwards extra args. To stop:
+
+```sh
+./scripts/dev-down.sh         # → docker compose down
+```
+
+Both scripts target `docker-compose.yml` (the source-build file).
+For the release-image path see [`docs/quickstart.md`](docs/quickstart.md).
 
 Open http://localhost:8088 — the UI is the entry point.
 
