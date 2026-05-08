@@ -54,6 +54,7 @@ import {
   type Segment,
   type FindingsPanelItem,
 } from "../lib/scenario-description";
+import { decisionStorageKey } from "../lib/decision-storage";
 
 // CommandBlock renders a single command line with copy + (optional)
 // run buttons. Used in the main step body and inside HintBlock so
@@ -117,10 +118,6 @@ type DecisionBlockProps = {
    */
   correct?: string;
 };
-
-function decisionStorageKey(scenarioId: string, decisionId: string): string {
-  return `decision:${scenarioId}:${decisionId}`;
-}
 
 function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, correct }: DecisionBlockProps) {
   const storageKey = decisionStorageKey(scenarioId, decisionId);
