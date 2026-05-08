@@ -189,7 +189,7 @@ rangerdanger-kali|${FW_WAN}|tcp|2222|allow|deny|kali->fw SSH (improved blocks wa
 rangerdanger-eng-ws|${FW_DMZ}|tcp|8080|allow|allow|eng->fw mgmt (always allowed)
 rangerdanger-eng-ws|${FW_DMZ}|tcp|2222|allow|allow|eng->fw SSH (always allowed)
 rangerdanger-rtac-sim|${FW_LAN1}|tcp|8080|allow|allow|rtac->fw mgmt (always allowed)
-rangerdanger-openplc|${FW_LAN2}|tcp|8080|allow|deny|openplc->fw mgmt (improved blocks lan2)
+rangerdanger-relay-sim|${FW_LAN2}|tcp|8080|allow|deny|relay->fw mgmt (improved blocks lan2; openplc moved off lan2 in F-011)
 EOF
 
 apply_policy() {
