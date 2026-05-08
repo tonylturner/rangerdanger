@@ -146,6 +146,17 @@ steps:
       design choice after a ransomware incident specifically because
       either layer can fail or be misconfigured, and the second
       stops the attack regardless.
+
+      :::plan-coverage title="Your plan vs the kill chain"
+      :::
+
+      The two requirements that close this kill chain in your Lab 1.4
+      plan are `vendor-to-ot` (BLOCK or RESTRICT — closes the
+      enterprise → vendor → OT pivot) and `non-rtac-to-field`
+      (BLOCK — pins the vendor box out of field even if the perimeter
+      rule misses). If either is uncovered above, the matching
+      re-test in the next step may still succeed under "Apply Your
+      Plan" — re-attempt with **Apply Hardened** to compare.
     action:
       type: firewall
       config: improved
