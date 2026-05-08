@@ -6,6 +6,127 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.3] - 2026-05-08
+
+Audit-driven hardening pass on top of v0.1.2's deck-aligned
+restructure. Fixes a vendor-jump dual-bootstrap conflict, closes a
+silent backend-test cache miss, gives the RTAC real SSH/HTTPS
+listeners so the "vendor → OT for monitoring" lesson is actually
+demonstrable, fixes setup.sh on Linux native Docker, and folds in a
+month of lab-content audit work that landed since v0.1.2.
+
+### Workshop / lab content
+
+- **Lab 1.2 audit pass.** Split into separate observe-vs-decide
+  activities — passive-observation findings on step 6, active probe
+  step (7) that surfaces latent exposure passive monitoring missed.
+  Step 6 now uses dropdown widgets with green/red feedback chips.
+  Static findings list deconflicted from the actual 1.2 capture so
+  Lab 1.4 step 1 doesn't show stale data.
+- **Lab 1.3 audit pass.** Re-titled to "Segmentation Requirements
+  & Policy Design", trimmed to 2 hands-on steps (cut Steps 5–7 that
+  spoiled the Lab 2.2 build), added BLOCK-and-LOG verdict option,
+  styled the dropdown for dark mode, restored the answer-key hint
+  block, and added an "active confirm requirements from your
+  assessment" step. New resourcing-readiness step.
+- **Lab 1.4 audit pass.** Per-action requirement-source badges
+  driven by 1.3 design verdicts and readiness flags. Sticky-bottom
+  coverage summary so feedback stays in view as the student picks.
+  Dynamic-content connection to 1.3 wired without removing the
+  action picker.
+- **Lab 2.2 audit pass.** Replaced bogus `curl ... /api/v1/policies`
+  hints with real containd Web UI walkthrough + appliance CLI
+  (`show running-config`, `set firewall rule`, `commit`,
+  `show audit`, `export config`). Added missing dnp3 tools to
+  vendor-jump for the Phase 6 commands.
+- **Lab 2.4 audit pass.** Dynamic findings list, OpenPLC tooling
+  fixes, and the new `:::plan-coverage` fence — surfaces in real
+  time which Lab 1.3 requirements the student's Lab 1.4 plan
+  addressed vs deferred.
+- **Vendor → OT management listeners (audit F-004).** rtac-sim now
+  hosts sshd on :22 and nginx on :443 with the standard
+  `rangerdanger:rangerdanger` credentials. The improved policy's
+  `vendor-to-ot-restricted` rule (dmz → lan1 on 22 + 443) now has
+  real listeners to probe against, so the "encrypted-management-only"
+  lesson is demonstrable not just declared. Lab 2.4 step 2 has an
+  explicit positive-test row for this. `firewall-smoke.sh` and
+  `validation-report.sh` matrices include the corresponding rows.
+- **`:::plan-coverage` fence type.** New lab-authoring fence that
+  renders, for any scenario that has access to the student's
+  remediationPlan, the action-by-action coverage of 1.3 verdicts.
+  See `docs/lab-authoring.md` for the full vocabulary.
+- **Workshop overview rewrite.** `docs/workshop-overview.md` now
+  uses the OBSERVE / DECIDE-design / DECIDE-implementation activity-
+  type framing for the 1.2 / 1.3 / 1.4 planning labs and refreshed
+  the lab table descriptions to match current YAML.
+- **Em-dash normalization.** Replaced 108 em-dashes with hyphens
+  across all 7 labs (xterm.js shell terminals don't render em-dash
+  consistently; rendered as `?` on certain locales).
+
+### Setup + ops
+
+- **`setup.sh` cross-platform fixes (audit F-005, F-006).**
+  - Disk check now uses `df --output=avail -BG` on Linux (always
+    pure-numeric) with `df -g` as the BSD/mac fallback. Both
+    branches floor to int via awk so the integer comparison can't
+    choke on `30.0G` formatting.
+  - Memory check falls back to `/proc/meminfo` when
+    `docker info -f '{{.MemTotal}}'` returns 0 (Linux native Docker
+    Engine, no VM memory limit). Source labelled in the output so
+    the student knows whether Docker Desktop's slider applies.
+- **Docker compose dual-bootstrap fix (audit F-001).**
+  `docker-compose.release.yml` no longer mounts
+  `scripts/start-rdp-vnc.sh` — the in-image `vendor-jump-services.sh`
+  is the single source of truth, with `rangerdanger:rangerdanger`
+  as the only vendor user. Removed the orphan script.
+- **`scripts/lab-commands-smoke.sh` counter fix (audit F-009).**
+  Pre-flight backend-health row no longer bumps the `passed`
+  counter; "ran 64, passed 65" is gone.
+
+### CI / tests
+
+- **Backend test cache fix (audit F-002).** Backend `go test` runs
+  with `-count=1` in CI to defeat Go's test cache for the firewall
+  config tests. They `os.ReadFile` from `lab-definitions/firewall/`
+  at runtime and Go's cache hashes only the binary plus env/args,
+  not external data — so a JSON-only edit silently kept the cached
+  PASS. Test names now reflect the lan3 mgmt-net addition (5 zones,
+  not 4) with an inline comment explaining the workaround.
+- **`scripts/firewall-smoke.sh` listener wait + matrix expansion.**
+  Probes wait for canonical listeners to come up before running, so
+  cold-start runs no longer false-positive a "deny" verdict on the
+  no-listener race. Matrix now includes vendor-jump → rtac:22 / 443
+  / 502 rows.
+- **`scripts/lab-commands-smoke.sh`.** Smoke runs every command
+  block documented in the 7 lab YAMLs — from the right source
+  container, under the right policy. Wired into CI on every PR.
+- **`scripts/validation-report.sh`.** Generates a change-board-ready
+  evidence-package markdown from a clean run.
+- **31 parser unit tests** for the lab-description parser, extracted
+  to `frontend/lib/scenario-description.ts` and exercised via
+  `frontend/lib/scenario-description.test.ts`.
+
+### Docs
+
+- **`docs/lab-authoring.md`.** Authoring guide for the runner-
+  specific YAML extensions (`:::hint`, `:::decision`,
+  `:::findings-panel`, `:::plan-coverage`, default-from inheritance).
+- **`docs/lab-credentials.md`.** Documented rtac-sim SSH/HTTPS
+  creds and the second creation site for `rangerdanger`.
+- **`docs/tasks.md` refresh.** Workshop blockers now reflect that
+  1.2 / 1.3 / 1.4 / 2.2 / 2.4 audits have landed; 2.3 + 2.3-bonus
+  remain. Release path bumped to v0.1.3.
+- **`docs/workshop-overview.md`.** Replaced "produce the 5 baseline
+  findings" framing (pre-refactor wording) with the activity-type
+  framing the planning labs actually use.
+- **UX polish.** Silenced webtop terminal noise; clearer CLI / bash
+  switching docs.
+
+### Security
+
+- **Go toolchain bumped to 1.25.10**, `golang.org/x/net` to 0.53.0
+  (advisory clearances).
+
 ## [v0.1.2] - 2026-05-07
 
 Workshop-deck-aligned restructure plus a security + tooling
