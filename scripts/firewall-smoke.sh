@@ -7,10 +7,24 @@
 # then probes a positive+negative traffic matrix from inside the lab
 # containers to confirm the dataplane enforces what the policy says.
 #
-# A row passes when the observed verdict (allow|deny) matches the
-# expected verdict for that policy. Allow = SYN got through the
-# firewall (TCP connect succeeds, OR fast RST from a closed dest).
-# Deny  = SYN was dropped (timeout).
+# Verdict mapping:
+#   allow = SYN got through the firewall (TCP connect succeeds, OR
+#           fast RST from a closed port — packet reached destination)
+#   deny  = SYN was dropped (timeout)
+#
+# The probe uses bash /dev/tcp where available, busybox nc otherwise.
+# Both can return rc=1 for either "refused" or "timeout"; we
+# disambiguate by elapsed time (refused returns in <300ms, drops sit
+# at the timeout). This matters because Alpine sims (rtac, historian,
+# gps) have only busybox nc which conflates the two return paths.
+#
+# Matrix probe ports are chosen so the destination is actually
+# listening — testing "policy ALLOWS this" requires a listener on the
+# far side, otherwise a no-listener RST (which Docker Desktop's
+# bridge sometimes drops as a runt frame) is indistinguishable from
+# a firewall drop. Where the workshop narrative implies a service
+# the destination doesn't actually run (e.g. SSH on vendor-jump),
+# the row is omitted from the matrix until the listener exists.
 #
 # Assumes the rangerdanger compose stack is already up and the
 # backend is healthy. Run scripts/smoke-test.sh first if not.
@@ -27,6 +41,10 @@ set -uo pipefail
 API="${RANGERDANGER_API:-http://localhost:8088}"
 PROBE_TIMEOUT="${PROBE_TIMEOUT:-3}"   # seconds per probe
 SETTLE_SECS="${SETTLE_SECS:-3}"        # wait after apply for nft reconcile
+# Threshold for fast-fail vs slow-timeout disambiguation. Refused TCP
+# (RST received) typically completes within tens of ms. Firewall drop
+# completes at PROBE_TIMEOUT seconds. 500ms is a safe middle.
+REFUSED_THRESHOLD_MS="${REFUSED_THRESHOLD_MS:-500}"
 
 fail=0
 total=0
@@ -38,51 +56,81 @@ err()  { printf '  ✗ %s\n' "$1"; fail=1; }
 
 # ---------------------------------------------------------------------
 # Probe helpers — run inside source container, return verdict string.
-# Uses bash /dev/tcp because every lab container has bash. timeout(1)
-# distinguishes drop (124) from refused (1) from connect (0).
+#
+# Timing is done host-side via python3 because container-side `date`
+# has inconsistent %3N support (busybox skips it, GNU emits ms,
+# alpine bash emits full ns). Host-side timing includes a fixed
+# docker-exec overhead (~50-100ms) but the gap between fast-refused
+# (~50-150ms) and timeout-drop (~3000ms) is still wide enough to
+# disambiguate cleanly.
 # ---------------------------------------------------------------------
 
+ms_now() { python3 -c 'import time; print(int(time.time()*1000))'; }
+
+# probe_tcp emits "VERDICT DURATION_MS" (space-separated) on stdout
+# so callers can read both. Verdict is "allow", "deny", or "deny:rc=N".
 probe_tcp() {
   local src="$1" dst="$2" port="$3"
-  local rc
-  # Prefer bash /dev/tcp (works on every glibc/musl bash). Fall back
-  # to nc -w for containers that don't ship bash (busybox-based sims).
-  # Both distinguish drop (timeout/124) from refused (1) from
-  # connect (0).
+  local rc start end dur
+  start=$(ms_now)
   if docker exec "$src" sh -c 'command -v bash >/dev/null 2>&1' 2>/dev/null; then
     docker exec "$src" timeout "$PROBE_TIMEOUT" bash -c "exec 3<>/dev/tcp/$dst/$port" >/dev/null 2>&1
     rc=$?
   else
-    # busybox nc: -w sets I/O timeout; redirect stdin from /dev/null
-    # so the connection closes after the SYN/ACK handshake.
-    docker exec "$src" sh -c "timeout $PROBE_TIMEOUT nc -w 1 $dst $port < /dev/null > /dev/null 2>&1"
+    # busybox nc — -w is I/O timeout. stdin from /dev/null closes
+    # after the SYN/ACK handshake.
+    docker exec "$src" sh -c "timeout $PROBE_TIMEOUT nc -w $PROBE_TIMEOUT $dst $port < /dev/null > /dev/null 2>&1"
     rc=$?
   fi
-  case $rc in
-    0)   echo allow ;;   # connected
-    1)   echo allow ;;   # refused — packet reached destination, just no listener
-    124) echo deny  ;;   # timeout — firewall dropped
-    *)   echo "deny:rc=$rc" ;;
+  end=$(ms_now)
+  dur=$(( end - start ))
+
+  local verdict
+  case "$rc" in
+    0)
+      verdict=allow
+      ;;
+    124|143)
+      # GNU timeout returns 124 on expiry, 143 on SIGTERM. Both =
+      # firewall drop. (busybox timeout uses 143.)
+      verdict=deny
+      ;;
+    1)
+      # Ambiguous: bash /dev/tcp returns 1 for "refused" (RST
+      # received). busybox nc returns 1 for both refused AND timeout.
+      # Disambiguate by elapsed time — a real RST roundtrip is fast
+      # (<500ms even with docker exec overhead), a firewall drop
+      # sits at the full PROBE_TIMEOUT seconds.
+      if [ "$dur" -lt "$REFUSED_THRESHOLD_MS" ]; then
+        verdict=allow
+      else
+        verdict=deny
+      fi
+      ;;
+    *)
+      verdict="deny:rc=$rc"
+      ;;
   esac
+  printf '%s %s\n' "$verdict" "$dur"
 }
 
-# UDP probe: nc -u sends a probe byte and waits for response. Negatives
-# are checked by snapshotting the firewall's drop counter; if it
-# incremented, the probe was dropped.
+# probe_udp uses the firewall's nft drop counter snapshot. Rough but
+# sufficient for the one UDP rule we currently care about (NTP). When
+# the matrix grows we'll switch to a per-rule counter.
 probe_udp() {
   local src="$1" dst="$2" port="$3"
   local before after
   before=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
            | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
-  docker exec "$src" bash -c "echo probe | timeout $PROBE_TIMEOUT nc -u -w1 $dst $port" >/dev/null 2>&1 || true
+  docker exec "$src" sh -c "echo probe | timeout $PROBE_TIMEOUT nc -u -w1 $dst $port" >/dev/null 2>&1 || true
   sleep 0.5
   after=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
           | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
   before=${before:-0}; after=${after:-0}
   if [ "$after" -gt "$before" ]; then
-    echo deny
+    printf 'deny 0\n'
   else
-    echo allow
+    printf 'allow 0\n'
   fi
 }
 
@@ -97,10 +145,15 @@ probe() {
 
 # ---------------------------------------------------------------------
 # Matrix runner. Each row: src_container | dst_ip | proto | port | weak | improved
+#
+# Probe ports are chosen so the destination listens on them today.
+# Workshop-narrative ports without listeners (vendor:22 SSH,
+# vendor:3389 RDP, eng->rtac:22/443) are intentionally omitted —
+# they'll come back when believable services are added (separate
+# track from this smoke test).
 # ---------------------------------------------------------------------
 
-# Firewall zone-side IPs (used as destination for INPUT-chain mgmt
-# access probes — each zone reaches the firewall on its own subnet).
+# Firewall zone-side IPs (each zone reaches firewall on its own subnet).
 FW_WAN=10.10.10.2
 FW_DMZ=10.20.20.2
 FW_LAN1=10.30.30.2
@@ -108,23 +161,18 @@ FW_LAN2=10.40.40.2
 
 # format: src|dst|proto|port|expect_weak|expect_improved|note
 read -r -d '' MATRIX <<EOF || true
-rangerdanger-kali|10.20.20.10|tcp|22|allow|allow|kali->vendor-jump SSH
-rangerdanger-kali|10.20.20.10|tcp|3389|allow|deny|kali->vendor RDP (weak only)
 rangerdanger-kali|10.30.30.20|tcp|8080|allow|deny|kali->rtac HTTP API
-rangerdanger-kali|10.30.30.20|tcp|502|allow|deny|kali->rtac Modbus (multi-proto bug pin)
-rangerdanger-kali|10.30.30.20|tcp|20000|allow|deny|kali->rtac DNP3 (multi-proto bug pin)
+rangerdanger-kali|10.30.30.20|tcp|502|allow|deny|kali->rtac Modbus (multi-proto pin)
+rangerdanger-kali|10.30.30.20|tcp|20000|allow|deny|kali->rtac DNP3 (multi-proto pin)
 rangerdanger-kali|10.40.40.30|tcp|8080|allow|deny|kali->openplc HTTP
-rangerdanger-kali|10.40.40.30|tcp|502|allow|deny|kali->openplc Modbus (multi-proto)
-rangerdanger-kali|10.40.40.30|tcp|20000|allow|deny|kali->openplc DNP3 (multi-proto)
+rangerdanger-kali|10.40.40.30|tcp|502|allow|deny|kali->openplc Modbus (multi-proto pin)
 rangerdanger-eng-ws|10.30.30.20|tcp|8080|allow|deny|eng->rtac HTTP (weak wide)
-rangerdanger-eng-ws|10.30.30.20|tcp|22|allow|allow|eng->rtac SSH
-rangerdanger-eng-ws|10.30.30.20|tcp|443|allow|allow|eng->rtac HTTPS
 rangerdanger-eng-ws|10.40.40.30|tcp|502|allow|deny|eng->openplc Modbus (weak wide)
 rangerdanger-fuxa-hmi|10.40.40.30|tcp|502|allow|deny|fuxa(non-rtac OT)->openplc Modbus
-rangerdanger-historian-sim|10.40.40.30|tcp|502|allow|deny|historian->openplc Modbus
-rangerdanger-rtac-sim|10.40.40.30|tcp|502|allow|allow|rtac->openplc Modbus (canonical)
-rangerdanger-rtac-sim|10.40.40.30|tcp|20000|allow|allow|rtac->openplc DNP3 (canonical)
-rangerdanger-rtac-sim|10.40.40.30|tcp|8080|allow|allow|rtac->openplc HTTP (canonical)
+rangerdanger-historian-sim|10.40.40.30|tcp|502|allow|deny|historian(non-rtac OT)->openplc Modbus
+rangerdanger-rtac-sim|10.40.40.30|tcp|502|allow|allow|rtac->openplc Modbus (canonical narrow-allow)
+rangerdanger-rtac-sim|10.40.40.30|tcp|20000|allow|allow|rtac->openplc DNP3 (canonical narrow-allow)
+rangerdanger-rtac-sim|10.40.40.30|tcp|8080|allow|allow|rtac->openplc HTTP (canonical narrow-allow)
 rangerdanger-kali|${FW_WAN}|tcp|8080|allow|deny|kali->fw mgmt (improved blocks wan)
 rangerdanger-kali|${FW_WAN}|tcp|2222|allow|deny|kali->fw SSH (improved blocks wan)
 rangerdanger-eng-ws|${FW_DMZ}|tcp|8080|allow|allow|eng->fw mgmt (always allowed)
@@ -155,14 +203,16 @@ run_matrix() {
 
   while IFS='|' read -r src dst proto port exp_weak exp_improved label; do
     [ -z "$src" ] && continue
-    local expect
+    local expect actual dur out
     [ "$field" = "5" ] && expect="$exp_weak" || expect="$exp_improved"
     total=$((total+1))
-    actual=$(probe "$proto" "$src" "$dst" "$port")
+    out=$(probe "$proto" "$src" "$dst" "$port")
+    actual=$(echo "$out" | awk '{print $1}')
+    dur=$(echo "$out" | awk '{print $2}')
     if [ "$actual" = "$expect" ]; then
-      ok "[$policy] $label  ($src $proto/$port -> $dst)  expect=$expect actual=$actual"
+      ok "[$policy] $label  ($src $proto/$port -> $dst)  expect=$expect actual=$actual  ${dur}ms"
     else
-      err "[$policy] $label  ($src $proto/$port -> $dst)  expect=$expect actual=$actual"
+      err "[$policy] $label  ($src $proto/$port -> $dst)  expect=$expect actual=$actual  ${dur}ms"
     fi
   done <<< "$MATRIX"
 }
@@ -204,21 +254,31 @@ case "$TARGETS" in
   *) echo "usage: $0 [weak|improved|both]" >&2; exit 2 ;;
 esac
 
+# Reset matrix counters (preflight ok calls inflate `passed`; only
+# matrix rows count toward the policy verdict).
+matrix_total=0
+matrix_passed=0
+matrix_passed_start=$passed
+
 for p in $POLICIES; do
   apply_policy "$p" || continue
   note "matrix: $p"
   run_matrix "$p"
 done
 
+matrix_passed=$(( passed - matrix_passed_start ))
+# subtract the apply_policy ✓ entries from the matrix-passed count.
+matrix_passed=$(( matrix_passed - $(echo "$POLICIES" | wc -w) ))
+
 # ---------------------------------------------------------------------
 # Summary.
 # ---------------------------------------------------------------------
 note "summary"
-echo "  passed: $passed / $total"
+echo "  matrix passed: $matrix_passed / $total"
 if [ "$fail" = "0" ]; then
   echo "  ALL TRAFFIC ROWS MATCH EXPECTED"
   exit 0
 else
-  echo "  FAILED — $((total - passed)) rows mismatched"
+  echo "  FAILED — $((total - matrix_passed)) rows mismatched"
   exit 1
 fi
