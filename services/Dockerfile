@@ -29,7 +29,10 @@ FROM alpine:3.21 AS sim-base
 RUN apk add --no-cache iproute2 iptables
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
 COPY scripts/rtac-harden.sh /usr/local/bin/rtac-harden.sh
-RUN chmod +x /usr/local/bin/set-gateway.sh /usr/local/bin/rtac-harden.sh
+COPY scripts/rtac-route-monitor.sh /usr/local/bin/rtac-route-monitor.sh
+RUN chmod +x /usr/local/bin/set-gateway.sh \
+              /usr/local/bin/rtac-harden.sh \
+              /usr/local/bin/rtac-route-monitor.sh
 
 FROM sim-base AS relay-sim
 COPY --from=builder /bin/relay-sim /usr/local/bin/relay-sim
@@ -52,7 +55,10 @@ EXPOSE 8080 502 20000
 # set-gateway.sh: installs the OT Ops firewall as the default route
 # rtac-harden.sh: disables forwarding, sets FORWARD DROP, and routes
 # field_net traffic through the firewall so the RTAC cannot bypass it
-CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-sim"]
+# rtac-route-monitor.sh: re-installs the default + indirect field
+# route if docker network reconciliation wipes them. Without this,
+# RTAC silently loses cross-zone reachability when peers restart.
+CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-route-monitor.sh & exec rtac-sim"]
 
 FROM sim-base AS capbank-sim
 COPY --from=builder /bin/capbank-sim /usr/local/bin/capbank-sim
