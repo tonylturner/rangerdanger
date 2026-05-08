@@ -49,11 +49,13 @@ steps:
     node: kali-1
     description: |
       From Kali, connect to the vendor jump box's remote desktop
-      using the stolen credentials (`vendor-user` / `vendor`).
+      using the stolen credentials (`rangerdanger` / `rangerdanger`
+      — the standard lab account documented in
+      `docs/lab-credentials.md`).
 
       **Option A - RDP** (preferred when 3389 is open):
 
-          xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor +clipboard /cert:ignore
+          xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger +clipboard /cert:ignore
 
       **Option B - VNC** (fallback, no auth required in this lab):
 
@@ -71,7 +73,7 @@ steps:
       to the same effect with SSH (port 22 is also open under the
       weak baseline):
 
-          sshpass -p vendor ssh -o StrictHostKeyChecking=no vendor-user@10.20.20.10
+          sshpass -p rangerdanger ssh -o StrictHostKeyChecking=no rangerdanger@10.20.20.10
 
       The lesson is the same: an enterprise host should not have
       open remote-access into the vendor DMZ.
@@ -155,7 +157,7 @@ steps:
       From Kali, re-scan and re-attempt the connection:
 
           nmap -p 3389,5900 10.20.20.10
-          xfreerdp /v:10.20.20.10:3389 /u:vendor-user /p:vendor /cert:ignore
+          xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger /cert:ignore
           xtightvncviewer 10.20.20.10:5900
 
       Both ports should be filtered; both clients should fail to

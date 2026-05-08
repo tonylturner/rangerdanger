@@ -510,7 +510,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.3...HEAD
+[v0.1.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.3
 [v0.1.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.0
