@@ -715,14 +715,32 @@ ${ruleTable}
 
 Create these rules in the containd firewall. Use either the web UI or the CLI.
 
-:::hint Creating rules via the CLI
-From the firewall terminal, you can push rules via the containd API:
+:::hint Creating rules via the containd CLI
+The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal (or SSH), type \`containd cli\` to enter the appliance shell, then:
 
-    curl -X POST http://localhost:8080/api/v1/policies \\
-      -H 'Content-Type: application/json' \\
-      -d '{"src":"10.30.30.20/32","dst":"10.40.40.0/24","proto":"tcp","dport":502,"action":"allow","description":"RTAC to field Modbus"}'
+    export config > /tmp/policy.json
+    shell                   # drop to bash
+    vi /tmp/policy.json     # edit the firewall.rules array to add each rule above
+    exit                    # back to containd CLI
+    import config /tmp/policy.json
+    show diff               # confirm what will change
+    commit
 
-Repeat for each rule, changing the source, destination, port, and description as shown in the table above.
+Each rule object in \`firewall.rules\` looks like:
+
+    {
+      "id": "rtac-to-field-modbus",
+      "description": "RTAC Modbus polling to field devices",
+      "sourceZones": ["lan1"],
+      "destZones": ["lan2"],
+      "sources": ["10.30.30.20/32"],
+      "protocols": [{"name": "tcp", "port": "502"}],
+      "ics": {},
+      "action": "ALLOW",
+      "log": true
+    }
+
+Tip: \`commit confirmed 60\` commits with auto-rollback after 60 seconds unless you type \`confirm\` — useful when pushing rules and you don't want to lock yourself out.
 :::`;
   }
 
@@ -745,9 +763,11 @@ If any test fails, check your rules. The most common mistake is forgetting to al
 
 ${tests.join("\n\n")}
 
-After each failed attempt, check the containd event log to confirm the deny was logged:
+After each failed attempt, check the containd event log to confirm the deny was logged. From the \`fw-1\` terminal, type \`containd cli\`, then:
 
-    curl -s http://localhost:8080/api/v1/events?limit=5 | python3 -m json.tool
+    show audit
+
+…and look for the most recent deny entries. If you don't see your test attempts, logging isn't enabled on the deny rules.
 
 If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.`;
   }

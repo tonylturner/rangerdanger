@@ -1,3 +1,11 @@
+FROM golang:1.25-alpine AS dnp3-builder
+WORKDIR /src
+COPY dnp3go/ .
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/dnp3poll ./cmd/dnp3poll \
+ && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
+
 # webtop ubuntu-xfce pinned by digest (A7).
 FROM linuxserver/webtop:ubuntu-xfce@sha256:13aa7d54b8cb013ff7cb2d83e0c9af07a7f9a2b3b846eb1bc8130f9441540f8b
 
@@ -34,6 +42,12 @@ RUN apt-get update && \
     pip3 install --no-cache-dir --break-system-packages pymodbus && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# DNP3 CLI tools — Lab 2.2 Phase 6 and the vendor-rdp-compromise lab
+# both expect dnp3poll / dnp3cmd to be available on the vendor jump
+# host (a vendor support laptop would realistically have these).
+COPY --from=dnp3-builder /bin/dnp3poll /usr/local/bin/dnp3poll
+COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
 
 # linuxserver/webtop runs anything in /custom-cont-init.d/ once at
 # startup (s6-overlay hook). The init script creates the lab user,
