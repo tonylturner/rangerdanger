@@ -265,15 +265,29 @@ steps:
     description: |
       Now look at the same traffic through a security lens. For each category below, decide: would you allow this in production, or is it exposure you'd block?
 
-      Walk through each of these, referencing your flow inventory from step 4:
+      Pick a verdict for each prompt. Your selections persist across page refreshes and feed into Lab 1.3 and 1.4.
 
-      - [ ] **Enterprise → Field** on Modbus 502 or DNP3 20000 - legitimate operational flow, or ransomware / lateral-movement risk?
-      - [ ] **Enterprise → OT Ops** on any ICS port - does corporate IT need to speak control-plane?
-      - [ ] **Vendor DMZ → OT Ops** on Modbus or HMI control - should the vendor be able to write, or only read and monitor?
-      - [ ] **Any non-RTAC OT Ops host → Field devices** - should every OT host reach relays, or only the RTAC?
-      - [ ] **Unauthorized Modbus writes / DNP3 Direct Operate** - are these blocked and visible, or silent and allowed?
+      :::decision id=enterprise-to-field
+      **Enterprise → Field** on Modbus 502 or DNP3 20000 — legitimate operational flow, or ransomware / lateral-movement risk?
+      :::
 
-      Write your decisions into the Exercise Notes. These become the input to the next exercise. No matrix, no diagram - just the list of exposures you want to close.
+      :::decision id=enterprise-to-ot
+      **Enterprise → OT Ops** on any ICS port — does corporate IT need to speak control-plane?
+      :::
+
+      :::decision id=vendor-to-ot
+      **Vendor DMZ → OT Ops** on Modbus or HMI control — should the vendor be able to write, or only read and monitor?
+      :::
+
+      :::decision id=non-rtac-to-field
+      **Any non-RTAC OT Ops host → Field devices** — should every OT host reach relays, or only the RTAC?
+      :::
+
+      :::decision id=unauth-modbus-writes
+      **Unauthorized Modbus writes / DNP3 Direct Operate** — are these blocked and visible, or silent and allowed?
+      :::
+
+      No matrix, no diagram — just the list of exposures you want to close. Your selections become the input to Lab 1.3.
 
       :::hint Reveal expected answer
       In a hardened substation, the answers are:

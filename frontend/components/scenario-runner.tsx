@@ -49,10 +49,34 @@ const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telne
 const HINT_OPEN_RE = /^:::hint(?:\s+(.+))?$/;
 const HINT_CLOSE_RE = /^:::$/;
 
+// :::decision id=enterprise-to-field [options=BLOCK,RESTRICT,ALLOW,LOG]
+// Question prose (markdown allowed)
+// :::
+// Renders an inline question + dropdown. The student's answer is
+// persisted to localStorage (key derived from scenario id + step
+// title + decision id) so refreshes don't lose it AND so subsequent
+// labs (1.3 -> 1.4) can read the same selections later.
+const DECISION_OPEN_RE = /^:::decision\s+(.+)$/;
+const DECISION_DEFAULT_OPTIONS = ["BLOCK", "RESTRICT", "ALLOW", "LOG"];
+
 type Segment =
   | { type: "prose"; value: string }
   | { type: "cmd"; value: string }
-  | { type: "hint"; title: string; value: string };
+  | { type: "hint"; title: string; value: string }
+  | { type: "decision"; id: string; options: string[]; body: string };
+
+// Parse `id=foo options=A,B,C` style attribute strings on the
+// decision fence. Quotes around values are tolerated.
+function parseDecisionAttrs(attrs: string): { id: string; options: string[] } {
+  const idMatch = attrs.match(/\bid=("([^"]+)"|(\S+))/);
+  const optMatch = attrs.match(/\boptions=("([^"]+)"|(\S+))/);
+  const id = (idMatch?.[2] ?? idMatch?.[3] ?? "").trim();
+  const optsRaw = (optMatch?.[2] ?? optMatch?.[3] ?? "").trim();
+  const options = optsRaw
+    ? optsRaw.split(",").map((o) => o.trim()).filter(Boolean)
+    : DECISION_DEFAULT_OPTIONS;
+  return { id, options };
+}
 
 /** Split description into interleaved prose, command, and hint segments. */
 function splitDescription(text: string): Segment[] {
@@ -83,6 +107,26 @@ function splitDescription(text: string): Segment[] {
       // Skip the closing fence
       if (i < lines.length) i++;
       result.push({ type: "hint", title, value: body.join("\n") });
+      continue;
+    }
+    const decisionOpen = DECISION_OPEN_RE.exec(trimmed);
+    if (decisionOpen) {
+      flushProse();
+      const { id, options } = parseDecisionAttrs(decisionOpen[1]);
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        body.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++;
+      // Skip silently if id is missing — author error, but better to
+      // render the question as prose than to swallow it.
+      if (id) {
+        result.push({ type: "decision", id, options, body: body.join("\n") });
+      } else {
+        prose.push(...body);
+      }
       continue;
     }
     // A line is a command block only if it is indented (has leading
@@ -142,6 +186,112 @@ function CommandBlock({ cmd, runId, runningId, onRun }: CommandBlockProps) {
   );
 }
 
+// DecisionBlock renders a question + dropdown for student-facing
+// "what would you do here?" prompts. The selected value is persisted
+// to localStorage so refreshes don't lose progress AND so later labs
+// (1.3 / 1.4) can read the student's earlier decisions and tailor
+// their content accordingly.
+//
+// Storage key: `decision:<scenario.id>:<decisionId>`. The step title
+// is intentionally NOT in the key so a renamed step doesn't orphan
+// the answer; uniqueness comes from the decision id chosen by the
+// YAML author (e.g. "enterprise-to-field").
+type DecisionBlockProps = {
+  scenarioId: string;
+  decisionId: string;
+  options: string[];
+  body: string;
+};
+
+function decisionStorageKey(scenarioId: string, decisionId: string): string {
+  return `decision:${scenarioId}:${decisionId}`;
+}
+
+function DecisionBlock({ scenarioId, decisionId, options, body }: DecisionBlockProps) {
+  const storageKey = decisionStorageKey(scenarioId, decisionId);
+  const [value, setValue] = useState<string>("");
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved && options.includes(saved)) {
+        setValue(saved);
+      }
+    } catch {
+      /* localStorage unavailable — fall back to in-memory state */
+    }
+  }, [storageKey, options]);
+
+  const onChange = (next: string) => {
+    setValue(next);
+    try {
+      if (next) {
+        window.localStorage.setItem(storageKey, next);
+      } else {
+        window.localStorage.removeItem(storageKey);
+      }
+    } catch {
+      /* swallow — UI still works without persistence */
+    }
+  };
+
+  const answered = value !== "";
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 transition-colors ${
+      answered
+        ? "border-sky-800/50 bg-sky-950/20"
+        : "border-slate-700 bg-slate-900/40"
+    }`}>
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+          answered ? "bg-sky-600 text-white" : "bg-slate-700 text-slate-300"
+        }`}>
+          {answered ? "✓" : "?"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-slate-200">
+            <MarkdownProse>{body.replace(/^\n+|\n+$/g, "")}</MarkdownProse>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <label
+              htmlFor={`decision-${decisionId}`}
+              className="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+            >
+              Your decision:
+            </label>
+            <select
+              id={`decision-${decisionId}`}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className={`rounded border bg-slate-950 px-2 py-1 text-[11px] font-mono ${
+                answered
+                  ? "border-sky-700 text-sky-300"
+                  : "border-slate-700 text-slate-400"
+              }`}
+            >
+              <option value="">Select...</option>
+              {options.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+            {answered && (
+              <button
+                onClick={() => onChange("")}
+                className="text-[10px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
+              >
+                clear
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // HintBlock is a collapsible "reveal answer" panel rendered inside step
 // descriptions where the YAML contains a :::hint Title / ::: fence.
 // Default state is collapsed — the student has to click to see the answer.
@@ -156,9 +306,10 @@ type HintBlockProps = {
   runIdPrefix: string;
   runningId: string | null;
   onRun: ((cmd: string, runId: string) => void) | null;
+  scenarioId: string;
 };
 
-function HintBlock({ title, body, runIdPrefix, runningId, onRun }: HintBlockProps) {
+function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: HintBlockProps) {
   const [open, setOpen] = useState(false);
   const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""));
   let cmdIdx = 0;
@@ -203,6 +354,17 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun }: HintBlockProp
                 />
               );
             }
+            if (seg.type === "decision") {
+              return (
+                <DecisionBlock
+                  key={si}
+                  scenarioId={scenarioId}
+                  decisionId={seg.id}
+                  options={seg.options}
+                  body={seg.body}
+                />
+              );
+            }
             // Nested hints aren't expected, but render them flat just
             // in case a YAML author does it — same context propagated.
             return (
@@ -213,6 +375,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun }: HintBlockProp
                 runIdPrefix={`${runIdPrefix}-h${si}`}
                 runningId={runningId}
                 onRun={onRun}
+                scenarioId={scenarioId}
               />
             );
           })}
@@ -930,6 +1093,18 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           runIdPrefix={`hint-${hi}`}
                           runningId={autoRunning}
                           onRun={runHandler}
+                          scenarioId={scenario.id}
+                        />
+                      );
+                    }
+                    if (seg.type === "decision") {
+                      return (
+                        <DecisionBlock
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          scenarioId={scenario.id}
+                          decisionId={seg.id}
+                          options={seg.options}
+                          body={seg.body}
                         />
                       );
                     }
