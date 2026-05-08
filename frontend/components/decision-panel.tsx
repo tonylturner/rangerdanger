@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Check } from "lucide-react";
+import { Check, AlertCircle, CircleCheck, CircleDashed } from "lucide-react";
 import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import {
+  readRequirements,
+  actionImplements,
+  computeCoverage,
+  summariseCoverage,
+  type Requirement,
+} from "../lib/requirement-coverage";
 
 type DecisionPanelProps = {
   exerciseId: string;
@@ -31,6 +38,13 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
     }
     return new Set();
   });
+
+  // Lab 1.3 verdicts (the design requirements). Read once on mount;
+  // we don't expect them to change while the student is in 1.4.
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  useEffect(() => {
+    setRequirements(readRequirements());
+  }, []);
 
   // Persist on change
   useEffect(() => {
@@ -74,8 +88,45 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
 
   const overRoles = roles.filter((r) => roleUsage[r.name] > r.capacity_hours);
 
+  // Per-requirement coverage (computed against current selection)
+  const coverage = useMemo(() => computeCoverage(requirements, selected), [requirements, selected]);
+  const coverageSummary = useMemo(() => summariseCoverage(coverage), [coverage]);
+  const hasAnyVerdict = requirements.some((r) => r.verdict !== "");
+
   return (
     <div className="mt-3 space-y-4">
+      {/* Lab 1.3 design requirements — context for the action picker */}
+      {hasAnyVerdict && (
+        <div className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">
+            Your design requirements (from Lab 1.3)
+          </div>
+          <div className="grid gap-1.5">
+            {requirements.map((req) => (
+              <div
+                key={req.id}
+                className="flex items-baseline justify-between gap-3 text-[11px]"
+              >
+                <span className="text-slate-300 truncate">{req.label}</span>
+                <span
+                  className={`font-mono shrink-0 ${
+                    req.verdict ? "text-cyan-300" : "text-slate-600 italic"
+                  }`}
+                >
+                  {req.verdict || "not set"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500 italic">
+            These are read-only — change them in the <a
+              href="/exercises/segmentation-requirements"
+              className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
+            >Segmentation Requirements</a> exercise.
+          </div>
+        </div>
+      )}
+
       {/* Budget and role meters */}
       <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
         <div className="flex items-baseline justify-between mb-2">
@@ -147,6 +198,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         {catalog.map((a) => {
           const isSelected = selected.has(a.id);
           const perRole = hoursPerRole(a);
+          const implements_ = actionImplements(a.id, requirements);
           return (
             <button
               key={a.id}
@@ -185,6 +237,23 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                         {role}
                       </span>
                     ))}
+                    {implements_.length > 0 && implements_.map((req) => (
+                      <span
+                        key={`req-${req.id}`}
+                        className="rounded border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
+                        title={`This action implements your Lab 1.3 verdict: ${req.label} = ${req.verdict}`}
+                      >
+                        ↳ {req.label.split(" on ")[0].split(" → ").join("→")}: {req.verdict}
+                      </span>
+                    ))}
+                    {implements_.length === 0 && hasAnyVerdict && (
+                      <span
+                        className="rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
+                        title="Operational hygiene / process — not tied to a specific 1.3 design verdict"
+                      >
+                        operational hygiene
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -192,6 +261,76 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
           );
         })}
       </div>
+
+      {/* Coverage summary — does the plan address the 1.3 requirements? */}
+      {hasAnyVerdict && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Plan Coverage
+            </div>
+            <div className="text-[11px] font-mono text-slate-300">
+              {coverageSummary.covered} of {coverageSummary.total - coverageSummary.na} requirements covered
+              {coverageSummary.partial > 0 && (
+                <span className="text-amber-400"> · {coverageSummary.partial} partial</span>
+              )}
+              {coverageSummary.gap > 0 && (
+                <span className="text-red-400"> · {coverageSummary.gap} gap</span>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {coverage.map((c) => {
+              if (c.status === "n/a") {
+                return (
+                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                    <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
+                    <span className="text-slate-500">
+                      <span className="font-bold text-slate-400">{c.req.label}</span>
+                      <span className="text-slate-600"> — {c.reason}</span>
+                    </span>
+                  </div>
+                );
+              }
+              if (c.status === "covered") {
+                return (
+                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                    <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
+                    <span className="text-slate-300">
+                      <span className="font-bold">{c.req.label}</span>
+                      <span className="text-slate-500"> — {c.req.verdict}, fully addressed</span>
+                    </span>
+                  </div>
+                );
+              }
+              if (c.status === "partial") {
+                return (
+                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
+                    <span className="text-slate-300">
+                      <span className="font-bold">{c.req.label}</span>
+                      <span className="text-slate-500"> — {c.req.verdict}, partial: missing </span>
+                      <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
+                    </span>
+                  </div>
+                );
+              }
+              // gap
+              return (
+                <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
+                  <span className="text-slate-300">
+                    <span className="font-bold">{c.req.label}</span>
+                    <span className="text-slate-500"> — {c.req.verdict}, no implementing action selected. Pick </span>
+                    <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
+                    <span className="text-slate-500"> to close.</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="text-[10px] text-slate-600 italic">
         Your selections are saved automatically and will be shown in later exercises
