@@ -23,19 +23,29 @@ tags:
 steps:
   - title: "Review the findings you captured"
     expected_config: weak
-    description: >
-      Open your Exercise Notes from the [Baseline Assessment](/exercises/baseline-assessment)
-      and review the five findings you documented:
+    description: |
+      Below are the findings you documented in [Lab 1.2 (Baseline Assessment)](/exercises/baseline-assessment) — both your passive capture analysis and the active probe result. Each of the actions in the next step maps to one or more of these findings. As you read the action catalog, mentally connect each one back to which finding it addresses.
 
-        1. Vendor zone access is too broad.
-        2. Enterprise zone can reach ICS protocols.
-        3. No protocol-aware constraints on ICS ports.
-        4. Any OT Ops host can reach field devices.
-        5. Firewall visibility has a blind spot at the RTAC.
+      :::findings-panel from=baseline-assessment title="Passive capture findings (Lab 1.2 step 6)"
+      enterprise-to-field: Enterprise → Field on Modbus/DNP3
+      enterprise-to-ot: Enterprise → OT Operations on ICS ports
+      vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
+      non-rtac-to-field: Non-RTAC OT hosts → Field devices
+      unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
+      :::
 
-      Each of the actions in the next step maps to one or
-      more of these findings. As you read them, mentally
-      connect each action back to which finding it addresses.
+      :::findings-panel from=baseline-assessment title="Active probe result (Lab 1.2 step 7)"
+      latent-exposure-confirmed: Latent exposure confirmed beyond passive observation
+      :::
+
+      ### Other observations you may have made
+
+      Things a thorough reviewer would also note from Lab 1.2, even though they're not in the formal findings list:
+
+      - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus function codes or DNP3 object groups. Reads and writes look identical at L4. This is the gap the *modbus-dpi* and *dnp3-dpi* actions close.
+      - **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed across OT Ops and Field for realism, but its application traffic to field devices is forced through containd by host-level hardening. The hardening is in place — but it's a compensating control, not a network-layer enforcement, and it can drift if not periodically validated. This is the gap the *rtac-architecture-review* action closes.
+
+      Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
 
       **Time budget:** 25 minutes.
 
