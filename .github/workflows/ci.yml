@@ -24,7 +24,12 @@ jobs:
         run: go vet ./...
       - name: go test
         working-directory: backend
-        run: go test -race ./...
+        # -count=1 defeats Go's test cache for this module. The
+        # firewall_config_test reads canonical policy JSONs at
+        # runtime; Go's cache doesn't track external files, so a
+        # JSON-only edit silently keeps the cached PASS. -count=1
+        # forces every run.
+        run: go test -race -count=1 ./...
       - name: go build
         working-directory: backend
         run: go build ./cmd/server

@@ -73,26 +73,42 @@ func findRulesByZonePair(rules []FirewallRule, srcZone, dstZone string) []Firewa
 
 // --- Shared structure tests ---
 
-func TestBothConfigsHave4Zones(t *testing.T) {
+// Both substation policy files declare five zones / interfaces:
+// wan / dmz / lan1 / lan2 (the four student-visible zones) plus
+// lan3 (the RangerDanger control-plane mgmt subnet — backend ↔
+// firewall API). lan3 is intentionally an interface in the policy
+// so containd's autobind builds an INPUT-chain allow rule for the
+// mgmt eth and backend's POST /api/v1/config/candidate doesn't get
+// dropped at the perimeter. Any test asserting the count must
+// match this five-interface shape — see lab-definitions/firewall/
+// substation-{weak,improved}.json for the canonical inventory.
+//
+// NB: tests in this package read JSON from the repo's
+// lab-definitions/firewall/ tree at runtime via os.ReadFile.
+// Go's test cache hashes the test BINARY plus env/args, not files
+// read at runtime, so a JSON-only edit won't invalidate the cache.
+// CI runs `go test -count=1` for the backend module to defeat the
+// cache; locally `go clean -testcache` reproduces a fresh result.
+func TestBothConfigsHave5Zones(t *testing.T) {
 	for _, file := range []string{"substation-weak.json", "substation-improved.json"} {
 		cfg := loadConfig(t, file)
-		if len(cfg.Zones) != 4 {
-			t.Errorf("%s: expected 4 zones, got %d", file, len(cfg.Zones))
+		if len(cfg.Zones) != 5 {
+			t.Errorf("%s: expected 5 zones (wan/dmz/lan1/lan2/lan3), got %d", file, len(cfg.Zones))
 		}
 	}
 }
 
-func TestBothConfigsHave4Interfaces(t *testing.T) {
+func TestBothConfigsHave5Interfaces(t *testing.T) {
 	for _, file := range []string{"substation-weak.json", "substation-improved.json"} {
 		cfg := loadConfig(t, file)
-		if len(cfg.Interfaces) != 4 {
-			t.Errorf("%s: expected 4 interfaces, got %d", file, len(cfg.Interfaces))
+		if len(cfg.Interfaces) != 5 {
+			t.Errorf("%s: expected 5 interfaces (wan/dmz/lan1/lan2/lan3), got %d", file, len(cfg.Interfaces))
 		}
 	}
 }
 
 func TestBothConfigsZoneNames(t *testing.T) {
-	expectedZones := map[string]bool{"wan": true, "dmz": true, "lan1": true, "lan2": true}
+	expectedZones := map[string]bool{"wan": true, "dmz": true, "lan1": true, "lan2": true, "lan3": true}
 
 	for _, file := range []string{"substation-weak.json", "substation-improved.json"} {
 		cfg := loadConfig(t, file)

@@ -10,32 +10,31 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ### Workshop (DefendICS) blockers
 
-- [ ] **Manual exercise playthrough + agenda alignment.** Re-walk all
-  7 labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4) end-to-end
-  against the DefendICS workshop schedule, capturing
-  timing / sequencing / depth mismatches and any rescoping decisions.
-  Output: a list of exercise content edits + the input needed to
-  scope the dynamic-remediation extension below.
+- [~] **Manual exercise playthrough + agenda alignment.** Done for
+  Labs 1.2 / 1.3 / 1.4 / 2.2 / 2.4 (recent audit pass — see
+  `CHANGELOG.md` `[Unreleased]`). Remaining: 2.3
+  (`hardening-configurations`) and 2.3-bonus
+  (`vendor-rdp-compromise`) need the same observe-vs-decide
+  framing pass and YAML-to-listener cross-check that the others
+  got.
 - [~] **Dynamic remediation pipeline — extend to attack labs.**
-  The pipeline already runs end-to-end for `firewall-implementation`
-  (Lab 2.2): Lab 1.4 selections persist via
-  `frontend/lib/remediation-plan.ts`, `remediation-to-rules.ts`
-  translates them into rule tables / validation tests / a containd
-  config, and `injectDynamicContent` rewrites Phase 3/5/6 step text.
-  The other labs (`hardening-configurations`, `vendor-rdp-compromise`,
-  `validation-evidence`) currently only show the consequence banner
-  — their step text doesn't change with the plan, breaking the
-  narrative promise in `remediation-planning.yml`. **Deferred** until
-  the manual playthrough above.
+  - `firewall-implementation` (Lab 2.2): wired end-to-end via
+    `injectDynamicContent` in `scenario-runner.tsx`.
+  - `validation-evidence` (Lab 2.4): wired via the `:::plan-coverage`
+    fence — surfaces live coverage of the student's 1.4 plan
+    against their 1.3 design verdicts.
+  - **Still unwired:** `hardening-configurations` (Lab 2.3) and
+    `vendor-rdp-compromise` (Lab 2.3-bonus). Their step text
+    doesn't yet adapt to the student's plan.
 - [ ] **Single-student-laptop lab build polish.** Final round of
   "is this comfortable for a student running the whole stack on
   their own laptop" smoothing — startup time, error-state UX,
   rollback after a wrong policy. Workshop-feedback driven.
 
-### v0.1.2 release path
+### v0.1.3 release path
 
 - [ ] **End-to-end SSD validation.** Run
-  `./stage-ssd.sh /Volumes/SSD v0.1.2` and exercise the full
+  `./stage-ssd.sh /Volumes/SSD v0.1.3` and exercise the full
   SSD → laptop → `docker load` → `up -d` flow on:
   - 1 Apple Silicon Mac
   - 1 Intel Mac
@@ -65,10 +64,6 @@ Polish + documentation that don't move correctness.
 - [ ] **README screenshots / GIFs** walking through the exercise
   runner, network console, FUXA HMI, and containd policy view.
   Requires running stack to capture.
-- [ ] **`docs/quickstart.md` split-out** from the README. README
-  keeps the pitch + 5-line quickstart; `docs/quickstart.md` owns
-  the full walkthrough (env vars, common errors, where to look
-  when X breaks).
 
 ## Recently shipped (since the last refresh of this file)
 
