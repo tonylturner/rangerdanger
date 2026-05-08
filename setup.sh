@@ -79,30 +79,64 @@ case "$ARCH_RAW" in
 esac
 say "Architecture: linux/$ARCH"
 
-# Free disk — recommend 30 GB
-DISK_AVAIL_GB=$(df -g "$ROOT_DIR" 2>/dev/null | awk 'NR==2 {print $4}' | head -1)
-if [ -z "$DISK_AVAIL_GB" ]; then
-    DISK_AVAIL_GB=$(df -BG "$ROOT_DIR" 2>/dev/null | awk 'NR==2 {gsub("G",""); print $4}' | head -1)
+# Free disk — recommend 30 GB.
+#
+# df flags differ per platform:
+#   GNU (Linux):  df --output=avail -BG <path>  → numeric "30G" rows
+#   BSD (mac):    df -g <path>                  → blocks col 4 in GB
+# We try GNU first (covers Linux students), fall back to BSD (mac
+# students). Strip any trailing 'G' / whitespace so the integer
+# comparison below doesn't choke on '30G' or '30.0'. Round
+# fractional values down to the int floor.
+DISK_AVAIL_GB=""
+if df --output=avail -BG "$ROOT_DIR" >/dev/null 2>&1; then
+    DISK_AVAIL_GB=$(df --output=avail -BG "$ROOT_DIR" 2>/dev/null \
+        | tail -n1 | tr -d 'G ' | awk '{print int($1)}')
 fi
-if [ -n "$DISK_AVAIL_GB" ]; then
+if [ -z "$DISK_AVAIL_GB" ] || [ "$DISK_AVAIL_GB" = "0" ]; then
+    DISK_AVAIL_GB=$(df -g "$ROOT_DIR" 2>/dev/null \
+        | awk 'NR==2 {print int($4)}' | head -1)
+fi
+if [ -n "$DISK_AVAIL_GB" ] && [ "$DISK_AVAIL_GB" -gt 0 ] 2>/dev/null; then
     if [ "$DISK_AVAIL_GB" -lt 30 ]; then
         warn "Only ${DISK_AVAIL_GB} GB free on this volume — recommend ≥ 30 GB. Build/pull may fail mid-flight."
     else
         say "Free disk: ${DISK_AVAIL_GB} GB"
     fi
+else
+    warn "Could not determine free disk space — recommend ≥ 30 GB; verify manually with 'df -h .'."
 fi
 
-# Docker memory — best-effort, only available on Docker Desktop
+# Docker memory.
+#
+# Docker Desktop reports a VM-allocated memory limit via
+# `docker info -f '{{.MemTotal}}'`. Linux native Docker Engine
+# returns 0 because there is no VM — the daemon uses host RAM
+# directly, so the "configured" memory is whatever the host has.
+# Read /proc/meminfo as the fallback so Linux-native students still
+# get a warning if the host itself is too small.
+MEM_GB=0
 if docker info --format '{{.MemTotal}}' >/dev/null 2>&1; then
     MEM_BYTES=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
     MEM_GB=$(( MEM_BYTES / 1073741824 ))
-    if [ "$MEM_GB" -gt 0 ]; then
-        if [ "$MEM_GB" -lt 7 ]; then
-            warn "Docker is configured with ${MEM_GB} GB RAM — recommend ≥ 8 GB. Bump in Docker Desktop → Settings → Resources."
-        else
-            say "Docker memory: ${MEM_GB} GB"
-        fi
+fi
+MEM_SOURCE="Docker"
+if [ "$MEM_GB" -le 0 ] && [ -r /proc/meminfo ]; then
+    # MemTotal is reported in kB; convert to GB (rounded down).
+    MEM_KB=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    if [ -n "$MEM_KB" ] && [ "$MEM_KB" -gt 0 ]; then
+        MEM_GB=$(( MEM_KB / 1024 / 1024 ))
+        MEM_SOURCE="host (Linux native Docker)"
     fi
+fi
+if [ "$MEM_GB" -gt 0 ]; then
+    if [ "$MEM_GB" -lt 7 ]; then
+        warn "${MEM_SOURCE} memory is ${MEM_GB} GB — recommend ≥ 8 GB. On Docker Desktop, raise Settings → Resources. On Linux native, this is host RAM and the lab will OOM-kill containers."
+    else
+        say "Memory: ${MEM_GB} GB (${MEM_SOURCE})"
+    fi
+else
+    warn "Could not determine memory — verify manually with 'free -g' or Docker Desktop → Resources."
 fi
 
 # Required host ports — show what's holding any conflict so the user
