@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Check, AlertCircle, CircleCheck, CircleDashed } from "lucide-react";
+import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
 import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
 import {
@@ -99,6 +99,12 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   const coverage = useMemo(() => computeCoverage(requirements, selected), [requirements, selected]);
   const coverageSummary = useMemo(() => summariseCoverage(coverage), [coverage]);
   const hasAnyVerdict = requirements.some((r) => r.verdict !== "");
+
+  // Coverage panel sticks to the bottom of the viewport so the
+  // student sees coverage feedback while scrolling the long action
+  // catalog. Compact-by-default; click to expand the per-requirement
+  // detail rows.
+  const [coverageOpen, setCoverageOpen] = useState(false);
 
   return (
     <div className="mt-3 space-y-4">
@@ -320,80 +326,109 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         })}
       </div>
 
-      {/* Coverage summary — does the plan address the 1.3 requirements? */}
-      {hasAnyVerdict && (
-        <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
-          <div className="flex items-baseline justify-between mb-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Plan Coverage
-            </div>
-            <div className="text-[11px] font-mono text-slate-300">
-              {coverageSummary.covered} of {coverageSummary.total - coverageSummary.na} requirements covered
-              {coverageSummary.partial > 0 && (
-                <span className="text-amber-400"> · {coverageSummary.partial} partial</span>
-              )}
-              {coverageSummary.gap > 0 && (
-                <span className="text-red-400"> · {coverageSummary.gap} gap</span>
-              )}
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            {coverage.map((c) => {
-              if (c.status === "n/a") {
-                return (
-                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
-                    <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
-                    <span className="text-slate-500">
-                      <span className="font-bold text-slate-400">{c.req.label}</span>
-                      <span className="text-slate-600"> — {c.reason}</span>
-                    </span>
-                  </div>
-                );
-              }
-              if (c.status === "covered") {
-                return (
-                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
-                    <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
-                    <span className="text-slate-300">
-                      <span className="font-bold">{c.req.label}</span>
-                      <span className="text-slate-500"> — {c.req.verdict}, fully addressed</span>
-                    </span>
-                  </div>
-                );
-              }
-              if (c.status === "partial") {
-                return (
-                  <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
-                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
-                    <span className="text-slate-300">
-                      <span className="font-bold">{c.req.label}</span>
-                      <span className="text-slate-500"> — {c.req.verdict}, partial: missing </span>
-                      <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
-                    </span>
-                  </div>
-                );
-              }
-              // gap
-              return (
-                <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
-                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
-                  <span className="text-slate-300">
-                    <span className="font-bold">{c.req.label}</span>
-                    <span className="text-slate-500"> — {c.req.verdict}, no implementing action selected. Pick </span>
-                    <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
-                    <span className="text-slate-500"> to close.</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="text-[10px] text-slate-600 italic">
+      <div className="text-[10px] text-slate-600 italic pb-12">
         Your selections are saved automatically and will be shown in later exercises
         as your remediation plan of record.
       </div>
+
+      {/* Sticky-bottom coverage summary — visible while the student
+          scrolls the action catalog. Compact bar by default; click
+          to expand per-requirement details. The pb-12 above gives
+          the bar room so it doesn't overlap the footer text. */}
+      {hasAnyVerdict && (
+        <div className="sticky bottom-2 z-10 -mx-3">
+          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur shadow-lg shadow-slate-950/50">
+            <button
+              onClick={() => setCoverageOpen(!coverageOpen)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-900/60 transition-colors rounded-lg"
+            >
+              {coverageOpen ? (
+                <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+              ) : (
+                <ChevronUp className="h-4 w-4 text-slate-500 shrink-0" />
+              )}
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Plan Coverage
+              </span>
+              <span className="ml-auto flex items-baseline gap-2 text-[11px] font-mono">
+                <span className="text-slate-300">
+                  <span className={
+                    coverageSummary.covered === (coverageSummary.total - coverageSummary.na) && coverageSummary.gap === 0
+                      ? "text-emerald-400 font-bold"
+                      : "text-slate-200 font-bold"
+                  }>
+                    {coverageSummary.covered}
+                  </span>
+                  <span className="text-slate-500">
+                    {" / "}{coverageSummary.total - coverageSummary.na} covered
+                  </span>
+                </span>
+                {coverageSummary.partial > 0 && (
+                  <span className="text-amber-400">· {coverageSummary.partial} partial</span>
+                )}
+                {coverageSummary.gap > 0 && (
+                  <span className="text-red-400">· {coverageSummary.gap} gap</span>
+                )}
+                {coverageSummary.na > 0 && (
+                  <span className="text-slate-600">· {coverageSummary.na} n/a</span>
+                )}
+              </span>
+            </button>
+            {coverageOpen && (
+              <div className="border-t border-slate-800 px-4 py-3 space-y-1.5 max-h-72 overflow-y-auto">
+                {coverage.map((c) => {
+                  if (c.status === "n/a") {
+                    return (
+                      <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                        <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
+                        <span className="text-slate-500">
+                          <span className="font-bold text-slate-400">{c.req.label}</span>
+                          <span className="text-slate-600"> — {c.reason}</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (c.status === "covered") {
+                    return (
+                      <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                        <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
+                        <span className="text-slate-300">
+                          <span className="font-bold">{c.req.label}</span>
+                          <span className="text-slate-500"> — {c.req.verdict}, fully addressed</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (c.status === "partial") {
+                    return (
+                      <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                        <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
+                        <span className="text-slate-300">
+                          <span className="font-bold">{c.req.label}</span>
+                          <span className="text-slate-500"> — {c.req.verdict}, partial: missing </span>
+                          <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  // gap
+                  return (
+                    <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
+                      <span className="text-slate-300">
+                        <span className="font-bold">{c.req.label}</span>
+                        <span className="text-slate-500"> — {c.req.verdict}, no implementing action selected. Pick </span>
+                        <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
+                        <span className="text-slate-500"> to close.</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
