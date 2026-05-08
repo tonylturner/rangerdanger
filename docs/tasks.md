@@ -10,22 +10,27 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ### Workshop (DefendICS) blockers
 
-- [~] **Manual exercise playthrough + agenda alignment.** Done for
-  Labs 1.2 / 1.3 / 1.4 / 2.2 / 2.4 (recent audit pass — see
-  `CHANGELOG.md` `[Unreleased]`). Remaining: 2.3
-  (`hardening-configurations`) and 2.3-bonus
-  (`vendor-rdp-compromise`) need the same observe-vs-decide
-  framing pass and YAML-to-listener cross-check that the others
-  got.
-- [~] **Dynamic remediation pipeline — extend to attack labs.**
-  - `firewall-implementation` (Lab 2.2): wired end-to-end via
-    `injectDynamicContent` in `scenario-runner.tsx`.
-  - `validation-evidence` (Lab 2.4): wired via the `:::plan-coverage`
-    fence — surfaces live coverage of the student's 1.4 plan
-    against their 1.3 design verdicts.
-  - **Still unwired:** `hardening-configurations` (Lab 2.3) and
-    `vendor-rdp-compromise` (Lab 2.3-bonus). Their step text
-    doesn't yet adapt to the student's plan.
+- [x] **Manual exercise playthrough + agenda alignment.** Done for
+  all seven labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4) —
+  see `CHANGELOG.md` `[Unreleased]`. The most recent pass landed
+  the 2.3 verify-step source-container fix and the 2.3-bonus
+  kill-chain framing.
+- [x] **Dynamic remediation pipeline — extend to attack labs.**
+  All four execute-mode labs now read the student's Lab 1.4 plan
+  inline:
+  - `firewall-implementation` (Lab 2.2): `injectDynamicContent`
+    rewrites Phase 3/5/6 step text from the 1.4 selections.
+  - `hardening-configurations` (Lab 2.3): `:::plan-coverage` fence
+    before the "Apply hardened policy" step + an inline note
+    flagging which actions (pin-rtac-to-field, modbus-dpi,
+    dnp3-dpi) close the two attacks.
+  - `vendor-rdp-compromise` (Lab 2.3-bonus): same `:::plan-coverage`
+    fence + a kill-chain note naming the two requirements
+    (vendor-to-ot, non-rtac-to-field) that close the deck case
+    study.
+  - `validation-evidence` (Lab 2.4): `:::plan-coverage` panel
+    surfaces real-time coverage of the student's 1.4 plan against
+    their 1.3 design verdicts.
 - [ ] **Single-student-laptop lab build polish.** Final round of
   "is this comfortable for a student running the whole stack on
   their own laptop" smoothing — startup time, error-state UX,
@@ -49,9 +54,14 @@ Important but not workshop-blocking and not on v0.1.2's critical path.
 - [ ] **Backend tests** for scenario validators (the per-step pass /
   fail logic the lab UI hinges on), firewall apply / compare paths,
   and `services/capbank-sim` HTTP handlers.
-- [ ] **Frontend smoke tests.** Vitest + Testing Library; high-value
-  component-level smokes (scenario-list renders, scenario-runner
-  renders a step, lab-detail start / stop). One CI job.
+- [~] **Frontend smoke tests.** Decision-graph contract test
+  (`frontend/lib/scenario-decision-graph.test.ts`) walks every
+  scenario YAML and asserts every `:::findings-panel` and
+  `default-from` reference resolves to a real `:::decision id=`.
+  Catches the silent-rename failure mode that motivated this
+  bullet without an `@testing-library/react` dep tree. Render
+  smokes (scenario-list renders, lab-detail start / stop) still
+  open.
 - [ ] **`setup.sh` / `setup.ps1`** improvements driven by workshop
   feedback — better error messages on common failure modes, retry
   on transient `docker pull` failures, friendlier "checking your
