@@ -20,14 +20,18 @@ steps:
     description: |
       In Lab 1.2 you **observed** five exposure categories and recorded what was present in the capture. Lab 1.3 is where you **decide** what the design should *do* about each finding — the firewall's spec, in the form of a verdict per category.
 
-      Your Lab 1.2 findings are shown below as context. For each one, commit to a design verdict: BLOCK, BLOCK and LOG, RESTRICT, or ALLOW.
+      Your Lab 1.2 findings are shown below in two panels — the passive capture findings (step 6) and the active probe result (step 7). For each design decision, commit to a design verdict: BLOCK, BLOCK and LOG, RESTRICT, or ALLOW. Your verdicts need to address **both** the exposures you observed in passive capture *and* the latent paths active probing revealed.
 
-      :::findings-panel from=baseline-assessment title="Findings from your assessment (Lab 1.2)"
+      :::findings-panel from=baseline-assessment title="Passive capture findings (Lab 1.2 step 6)"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
       enterprise-to-ot: Enterprise → OT Operations on ICS ports
       vendor-to-ot: Vendor DMZ → OT Operations on Modbus/HMI control
       non-rtac-to-field: Non-RTAC OT hosts → Field devices
       unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
+      :::
+
+      :::findings-panel from=baseline-assessment title="Active probe result (Lab 1.2 step 7)"
+      latent-exposure-confirmed: Latent exposure confirmed beyond passive observation
       :::
 
       :::decision id=enterprise-to-field
