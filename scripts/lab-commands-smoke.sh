@@ -83,8 +83,8 @@ SKIP_PATTERNS = [
     re.compile(r'docker run '),
     re.compile(r'docker rm '),
     re.compile(r'docker stop '),
-    re.compile(r'^ssh\s+-p\s+2222\b'),      # interactive containd CLI
-    re.compile(r'^ssh\s+containd@'),
+    re.compile(r'^ssh\b'),                  # interactive password prompt
+    # sshpass-prefixed lines are non-interactive and DO run.
 ]
 
 def should_skip(cmd: str) -> bool:
