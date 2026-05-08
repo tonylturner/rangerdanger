@@ -295,6 +295,8 @@ declare -a LISTENERS=(
   "10.30.30.20:8080|rtac HTTP API"
   "10.30.30.20:502|rtac Modbus"
   "10.30.30.20:20000|rtac DNP3"
+  "10.30.30.20:22|rtac SSH mgmt"
+  "10.30.30.20:443|rtac HTTPS mgmt"
   "10.40.40.30:502|openplc Modbus"
   "10.40.40.30:8080|openplc HTTP"
   "10.40.40.20:502|relay Modbus"
