@@ -15,28 +15,32 @@
   },
   "interfaces": [
     {
-      "name": "enterprise",
-      "device": "eth0",
+      "name": "wan",
       "zone": "wan",
       "access": {}
     },
     {
-      "name": "vendor",
-      "device": "eth1",
+      "name": "dmz",
       "zone": "dmz",
       "access": {}
     },
     {
-      "name": "ot_ops",
-      "device": "eth2",
+      "name": "lan1",
       "zone": "lan1",
       "access": {}
     },
     {
-      "name": "field_devices",
-      "device": "eth3",
+      "name": "lan2",
       "zone": "lan2",
       "access": {}
+    },
+    {
+      "name": "lan3",
+      "zone": "lan3",
+      "access": {
+        "mgmt": true,
+        "ssh": true
+      }
     }
   ],
   "zones": [
@@ -55,6 +59,10 @@
     {
       "name": "lan2",
       "description": "Field Device Zone - Relay, recloser, regulator, capbank"
+    },
+    {
+      "name": "lan3",
+      "description": "RangerDanger control plane - backend API access (not student-visible)"
     }
   ],
   "routing": {},
@@ -65,18 +73,6 @@
   "firewall": {
     "defaultAction": "DENY",
     "rules": [
-      {
-        "id": "allow-mgmt-ui",
-        "description": "Allow management UI/API access",
-        "protocols": [
-          {
-            "name": "tcp",
-            "port": "8080"
-          }
-        ],
-        "ics": {},
-        "action": "ALLOW"
-      },
       {
         "id": "enterprise-to-vendor",
         "description": "Enterprise to Vendor: SSH, HTTP/S, RDP, VNC",
@@ -327,16 +323,6 @@
             "name": "udp",
             "port": "123"
           }
-        ],
-        "ics": {},
-        "action": "ALLOW"
-      },
-      {
-        "id": "allow-return-traffic",
-        "description": "Allow established return traffic",
-        "state": [
-          "ESTABLISHED",
-          "RELATED"
         ],
         "ics": {},
         "action": "ALLOW"
