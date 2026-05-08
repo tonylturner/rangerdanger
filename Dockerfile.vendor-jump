@@ -5,11 +5,16 @@ FROM linuxserver/webtop:ubuntu-xfce@sha256:13aa7d54b8cb013ff7cb2d83e0c9af07a7f9a
 #
 # - mbpoll/python3/pymodbus/nmap/etc. — what a vendor laptop would
 #   typically have for substation commissioning and diagnostics.
-# - xrdp + tigervnc + openssh-server — RDP/VNC/SSH stack used by the
-#   vendor-rdp-compromise lab. Under the weak baseline these are
-#   reachable from the enterprise zone and demonstrate the lateral
-#   path described in the workshop deck (Slides 55, 88). Under the
-#   hardened policy, RDP and VNC are blocked at the perimeter.
+# - xrdp + tigervnc + openssh-server + nginx — the SSH/HTTP/HTTPS/
+#   RDP/VNC stack that the workshop's segmentation policies test
+#   against. Under the weak baseline these are reachable from the
+#   enterprise zone and demonstrate the lateral paths described in
+#   the workshop deck (Slides 55, 88). Under the hardened policy,
+#   RDP and VNC are blocked at the perimeter; SSH/HTTP/HTTPS remain.
+#   Lab credentials: rangerdanger / rangerdanger (see
+#   docs/lab-credentials.md). Bootstrap script
+#   /custom-cont-init.d/01-vendor-services.sh creates the user and
+#   starts the daemons on first boot.
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         mbpoll \
@@ -20,10 +25,23 @@ RUN apt-get update && \
         tcpdump \
         iproute2 \
         xrdp \
-        tigervnc-standalone-server \
+        x11vnc \
         openssh-server \
         xfce4-terminal \
+        nginx-light \
+        openssl \
         sudo && \
     pip3 install --no-cache-dir --break-system-packages pymodbus && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# linuxserver/webtop runs anything in /custom-cont-init.d/ once at
+# startup (s6-overlay hook). The init script creates the lab user,
+# generates SSH host keys + self-signed cert, and starts sshd, nginx,
+# and xrdp. /custom-services.d/x11vnc/run is a long-lived service
+# (s6 supervises) because Xvfb comes up after cont-init finishes,
+# so x11vnc has to wait + retry.
+COPY scripts/vendor-jump-services.sh /custom-cont-init.d/01-vendor-services.sh
+COPY scripts/vendor-jump-x11vnc-service.sh /custom-services.d/x11vnc
+RUN chmod +x /custom-cont-init.d/01-vendor-services.sh \
+              /custom-services.d/x11vnc

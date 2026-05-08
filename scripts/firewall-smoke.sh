@@ -161,6 +161,11 @@ FW_LAN2=10.40.40.2
 
 # format: src|dst|proto|port|expect_weak|expect_improved|note
 read -r -d '' MATRIX <<EOF || true
+rangerdanger-kali|10.20.20.10|tcp|22|allow|allow|kali->vendor SSH (vendor portal)
+rangerdanger-kali|10.20.20.10|tcp|80|allow|allow|kali->vendor HTTP (portal page)
+rangerdanger-kali|10.20.20.10|tcp|443|allow|allow|kali->vendor HTTPS (portal page TLS)
+rangerdanger-kali|10.20.20.10|tcp|3389|allow|deny|kali->vendor RDP (improved blocks)
+rangerdanger-kali|10.20.20.10|tcp|5900|allow|deny|kali->vendor VNC (improved blocks)
 rangerdanger-kali|10.30.30.20|tcp|8080|allow|deny|kali->rtac HTTP API
 rangerdanger-kali|10.30.30.20|tcp|502|allow|deny|kali->rtac Modbus (multi-proto pin)
 rangerdanger-kali|10.30.30.20|tcp|20000|allow|deny|kali->rtac DNP3 (multi-proto pin)
