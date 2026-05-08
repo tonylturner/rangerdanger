@@ -276,6 +276,50 @@ for entry in "${WEBTOP_GATEWAYS[@]}"; do
 done
 [ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
 
+# Wait for canonical listeners to actually accept connections.
+# `docker compose ps healthy` doesn't catch every service: openplc's
+# Modbus/DNP3 daemons start AFTER its HTTP healthcheck passes, so
+# probing openplc:502 too early lands on a closed port — busybox nc
+# returns rc=1 with high duration → our heuristic maps that to
+# "deny" → the matrix flags an enforcement failure that isn't.
+# Probe each expected listener directly from the firewall (which has
+# direct connectivity to every zone) until it accepts.
+note "wait for canonical service listeners"
+declare -a LISTENERS=(
+  "10.30.30.20:8080|rtac HTTP API"
+  "10.30.30.20:502|rtac Modbus"
+  "10.30.30.20:20000|rtac DNP3"
+  "10.40.40.30:502|openplc Modbus"
+  "10.40.40.30:8080|openplc HTTP"
+  "10.40.40.20:502|relay Modbus"
+  "10.20.20.10:8082|vendor-jump kasm"
+  "10.20.20.10:22|vendor-jump SSH"
+)
+# Apply weak briefly so listener probes can traverse zones; the matrix
+# resets policy per-iteration anyway.
+curl -fsS -X POST -H 'Content-Type: application/json' \
+     -d '{"config":"weak"}' "$API/api/firewall/apply" >/dev/null 2>&1 || true
+sleep 2
+
+for entry in "${LISTENERS[@]}"; do
+  hp="${entry%|*}"
+  label="${entry#*|}"
+  host="${hp%:*}"
+  port="${hp#*:}"
+  ready=0
+  for i in $(seq 1 30); do
+    if docker exec rangerdanger-firewall sh -c \
+        "timeout 1 bash -c 'exec 3<>/dev/tcp/$host/$port'" >/dev/null 2>&1; then
+      [ "$i" -gt 1 ] && ok "$label ($hp) listening (after ${i}s)" || ok "$label ($hp) listening"
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$ready" = "1" ] || err "$label ($hp) never came up — image still booting? service crashed?"
+done
+[ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
+
 # ---------------------------------------------------------------------
 # Run policies.
 # ---------------------------------------------------------------------
