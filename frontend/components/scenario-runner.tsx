@@ -81,7 +81,7 @@ type Segment =
   | { type: "prose"; value: string }
   | { type: "cmd"; value: string }
   | { type: "hint"; title: string; value: string }
-  | { type: "decision"; id: string; options: string[]; body: string; defaultFrom: string }
+  | { type: "decision"; id: string; options: string[]; body: string; defaultFrom: string; correct: string }
   | { type: "findingsPanel"; sourceScenario: string; title: string; items: FindingsPanelItem[] };
 
 // Parse `id=foo options=A,B,C default-from=lab:dec` style attributes
@@ -97,17 +97,26 @@ function parseDecisionAttrs(attrs: string): {
   id: string;
   options: string[];
   defaultFrom: string;
+  correct: string;
 } {
   const idMatch = attrs.match(/\bid=("([^"]+)"|(\S+))/);
   const optMatch = attrs.match(/\boptions=("([^"]+)"|(\S+))/);
   const fromMatch = attrs.match(/\bdefault-from=("([^"]+)"|(\S+))/);
+  // correct=<value> is the answer-key attribute. Set it on
+  // observation/factual decisions where there's a known-correct
+  // answer (lab 1.2 step 6 findings — the weak baseline really did
+  // show all five exposures). Leave it OFF on judgment-call
+  // decisions like lab 1.3's design verdicts (BLOCK vs RESTRICT is
+  // the student's call, not a quiz answer).
+  const correctMatch = attrs.match(/\bcorrect=("([^"]+)"|(\S+))/);
   const id = (idMatch?.[2] ?? idMatch?.[3] ?? "").trim();
   const optsRaw = (optMatch?.[2] ?? optMatch?.[3] ?? "").trim();
   const defaultFrom = (fromMatch?.[2] ?? fromMatch?.[3] ?? "").trim();
+  const correct = (correctMatch?.[2] ?? correctMatch?.[3] ?? "").trim();
   const options = optsRaw
     ? optsRaw.split(",").map((o) => o.trim()).filter(Boolean)
     : DECISION_DEFAULT_OPTIONS;
-  return { id, options, defaultFrom };
+  return { id, options, defaultFrom, correct };
 }
 
 // Parse `from=foo title="..."` attributes on the findings-panel fence.
@@ -173,7 +182,7 @@ function splitDescription(text: string): Segment[] {
     const decisionOpen = DECISION_OPEN_RE.exec(trimmed);
     if (decisionOpen) {
       flushProse();
-      const { id, options, defaultFrom } = parseDecisionAttrs(decisionOpen[1]);
+      const { id, options, defaultFrom, correct } = parseDecisionAttrs(decisionOpen[1]);
       const body: string[] = [];
       i++;
       while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
@@ -184,7 +193,7 @@ function splitDescription(text: string): Segment[] {
       // Skip silently if id is missing — author error, but better to
       // render the question as prose than to swallow it.
       if (id) {
-        result.push({ type: "decision", id, options, body: body.join("\n"), defaultFrom });
+        result.push({ type: "decision", id, options, body: body.join("\n"), defaultFrom, correct });
       } else {
         prose.push(...body);
       }
@@ -264,13 +273,22 @@ type DecisionBlockProps = {
   body: string;
   /** "<scenarioId>:<decisionId>" — initial value source if local key empty */
   defaultFrom?: string;
+  /**
+   * Known-correct answer for this decision. When set, the block
+   * renders a green/red feedback chip after the student picks. Only
+   * use on observation/factual prompts (e.g. lab 1.2 step 6 — the
+   * weak baseline really did show every exposure). Leave unset on
+   * judgment-call decisions (lab 1.3 verdicts) where no single
+   * answer is "right."
+   */
+  correct?: string;
 };
 
 function decisionStorageKey(scenarioId: string, decisionId: string): string {
   return `decision:${scenarioId}:${decisionId}`;
 }
 
-function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom }: DecisionBlockProps) {
+function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, correct }: DecisionBlockProps) {
   const storageKey = decisionStorageKey(scenarioId, decisionId);
   const [value, setValue] = useState<string>("");
   const [inheritedFrom, setInheritedFrom] = useState<string>("");
@@ -366,6 +384,23 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom }: D
                 }`}
               />
             </div>
+            {answered && correct && (
+              value === correct ? (
+                <span
+                  className="rounded border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
+                  title="Your finding matches what the baseline traffic actually shows."
+                >
+                  ✓ correct
+                </span>
+              ) : (
+                <span
+                  className="rounded border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
+                  title={`The baseline capture shows this category as ${correct}. Re-check your analysis.`}
+                >
+                  ✗ doesn&apos;t match capture
+                </span>
+              )
+            )}
             {inheritedFrom && (
               <span className="text-[10px] text-slate-500 italic">
                 inherited from earlier lab — adjust if your design has changed
@@ -522,6 +557,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   options={seg.options}
                   body={seg.body}
                   defaultFrom={seg.defaultFrom}
+                  correct={seg.correct}
                 />
               );
             }
@@ -1276,6 +1312,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           options={seg.options}
                           body={seg.body}
                           defaultFrom={seg.defaultFrom}
+                          correct={seg.correct}
                         />
                       );
                     }

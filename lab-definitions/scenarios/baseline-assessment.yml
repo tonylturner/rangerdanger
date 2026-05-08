@@ -267,23 +267,23 @@ steps:
 
       The design decisions ("what should we BLOCK / RESTRICT / ALLOW") are Lab 1.3's job — here you're just inventorying findings.
 
-      :::decision id=enterprise-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      :::decision id=enterprise-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
       **Enterprise → Field** on Modbus 502 / DNP3 20000 — did you see corporate IT addresses (`10.10.10.0/24`) reaching field devices on control-plane protocols?
       :::
 
-      :::decision id=enterprise-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      :::decision id=enterprise-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
       **Enterprise → OT Ops** on ICS ports — did you see corporate IT speaking ICS to RTAC / HMI / OpenPLC?
       :::
 
-      :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
       **Vendor DMZ → OT Ops** on Modbus or HMI control ports — was the vendor zone reaching OT on more than just SSH/HTTPS?
       :::
 
-      :::decision id=non-rtac-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      :::decision id=non-rtac-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
       **Non-RTAC OT hosts → Field devices** — did anything other than the RTAC (10.30.30.20) reach relays / recloser / regulator / capbank?
       :::
 
-      :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
       **Unauthorized Modbus writes / DNP3 Direct Operate** — did the firewall produce visibility (logs, deny events) for write attempts from non-RTAC sources, or were they silent?
       :::
 
