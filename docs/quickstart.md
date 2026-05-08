@@ -29,7 +29,7 @@ git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 ./setup.sh                   # latest release
 # or pin a specific version:
-./setup.sh --version v0.1.3
+./setup.sh --version v0.1.4
 ```
 
 PowerShell equivalent:
@@ -38,7 +38,7 @@ PowerShell equivalent:
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 .\setup.ps1                  # latest release
-.\setup.ps1 -Version v0.1.3
+.\setup.ps1 -Version v0.1.4
 ```
 
 `setup.sh` runs preflight checks (Docker reachable, Compose v2,
@@ -71,7 +71,7 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.3
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.4
 ```
 
 This produces `images-amd64.tar`, `images-arm64.tar`,

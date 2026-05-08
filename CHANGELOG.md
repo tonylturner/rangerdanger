@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.4] - 2026-05-08
+
 Post-v0.1.3 audit follow-through. Closes the remaining P1/P2
 findings from the release-readiness audit + four pass-2
 N-findings + three CI smoke-harness regressions introduced by
@@ -72,6 +74,21 @@ the audit fixes themselves.
   `compareRuleSets` against the real policy JSONs, including
   the headline ALLOW→DENY tighten on Enterprise → Field, an
   identity-comparison invariant, and stable output order.
+- **Firewall-apply handler integration tests** (audit F-010
+  closeout). New `firewall_apply_test.go` (10 tests)
+  exercises `handleFirewallApply` and
+  `handleFirewallApplyCustom` end-to-end against an httptest
+  fake of containd's candidate/commit endpoints. Pattern
+  mirrors the existing `containd/client_test.go` — no
+  interface refactor required; the real client's JWT
+  injection + dataplane-enforcement shim run as in
+  production.
+- **capbank-sim HTTP handler tests** (audit F-010 closeout).
+  New `services/capbank-sim/main_test.go` (12 tests) covers
+  /api/state, /api/command (happy paths +
+  double-switch-rejected, lockout-after-6-ops, reset-clears,
+  unknown-command rejected, malformed JSON), /api/audit, and
+  /api/health.
 
 ### Setup + ops
 
@@ -619,7 +636,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.4...HEAD
+[v0.1.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.4
 [v0.1.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.3
 [v0.1.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.1
