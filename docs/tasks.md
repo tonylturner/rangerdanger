@@ -51,9 +51,15 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 Important but not workshop-blocking and not on v0.1.2's critical path.
 
-- [ ] **Backend tests** for scenario validators (the per-step pass /
-  fail logic the lab UI hinges on), firewall apply / compare paths,
-  and `services/capbank-sim` HTTP handlers.
+- [~] **Backend tests** for scenario validators + firewall apply /
+  compare. Scenario validators covered by
+  `backend/internal/server/scenario_validate_test.go` (13+ cases).
+  Firewall compare covered by
+  `backend/internal/server/firewall_compare_test.go` (5 cases).
+  **Still open:** HTTP handler integration tests for
+  `handleFirewallApply` / `handleFirewallApplyCustom` against a
+  mocked containd client; and `services/capbank-sim` HTTP handler
+  coverage.
 - [~] **Frontend smoke tests.** Decision-graph contract test
   (`frontend/lib/scenario-decision-graph.test.ts`) walks every
   scenario YAML and asserts every `:::findings-panel` and
@@ -71,9 +77,12 @@ Important but not workshop-blocking and not on v0.1.2's critical path.
 
 Polish + documentation that don't move correctness.
 
-- [ ] **README screenshots / GIFs** walking through the exercise
+- [~] **README screenshots / GIFs** walking through the exercise
   runner, network console, FUXA HMI, and containd policy view.
-  Requires running stack to capture.
+  Hero-image polish landed (RangerDanger lockup +
+  documentation-table icons + dropped duplicated zone table).
+  Real screenshots of the running stack still outstanding —
+  requires running stack to capture.
 
 ## Recently shipped (since the last refresh of this file)
 

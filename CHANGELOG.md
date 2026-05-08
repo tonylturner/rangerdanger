@@ -6,6 +6,115 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Post-v0.1.3 audit follow-through. Closes the remaining P1/P2
+findings from the release-readiness audit + four pass-2
+N-findings + three CI smoke-harness regressions introduced by
+the audit fixes themselves.
+
+### Workshop / lab content
+
+- **Lab 2.3 audit (`hardening-configurations`).** Bound the
+  "Verify normal operations" step to `rtac-1` so the curl
+  example dispatches to a real container; added a
+  `:::plan-coverage` panel before "Apply the hardened policy"
+  with a coverage-gap note naming the actions
+  (`pin-rtac-to-field`, `modbus-dpi`, `dnp3-dpi`) that close
+  both attacks.
+- **Lab 2.3-bonus audit (`vendor-rdp-compromise`).** Same
+  `:::plan-coverage` treatment before the kill-chain re-test,
+  naming the two requirements (`vendor-to-ot`,
+  `non-rtac-to-field`) that close the deck case study.
+  Updated all RDP/SSH command examples from the deleted
+  `vendor-user/vendor` creds to the canonical
+  `rangerdanger/rangerdanger` (audit N-001 — would have
+  workshop-blocked the bonus lab).
+- **Lab 1.4 stray "five baseline findings" prose** removed
+  from step 3 question 2 (the post-1.2-refactor finding count
+  isn't fixed at five).
+- **OpenPLC single-homed on `ot_ops_net`** (audit F-011).
+  Dropped the unused `field_net` leg — the ladder logic in
+  `data/openplc/substation_automation.st` is a Modbus client
+  of the RTAC and never originates field-device traffic, so
+  multi-homing was a lab artifact that doubled the firewall-
+  bypass surface for no functional reason. Lab 2.4 narrative
+  cleanup (multi-homed-OpenPLC callout dropped, hint
+  simplified to "any single-homed OT host works"). Compose
+  files, backend catalog, topology YAML, smoke + validation-
+  report matrices, and architecture.md all updated.
+- **Vendor → OT mgmt positive test** added to Lab 2.4 step 2.
+  Lands now that rtac-sim hosts sshd + nginx for that
+  allowance (audit F-004).
+
+### Frontend / tests
+
+- **Decision-graph contract test** (audit F-007).
+  `frontend/lib/scenario-decision-graph.test.ts` walks every
+  scenario YAML and asserts every `:::findings-panel` and
+  `default-from` reference resolves to a real
+  `:::decision id=` definition. Catches silent drift if a
+  decision id gets renamed in one YAML and forgotten in
+  downstream ones — the silent failure mode the audit warned
+  about. Closes the gap without an `@testing-library/react`
+  dep tree.
+- **`frontend/lib/decision-storage.ts`** extracted from
+  scenario-runner.tsx so the storage-key shape
+  (`decision:<scenario>:<id>`) and the
+  `REMEDIATION_PLAN_STORAGE_KEY` are testable in isolation.
+- **70 frontend tests** (Vitest, was 61 in v0.1.3).
+
+### Backend / tests
+
+- **Firewall compare logic tests** (audit F-010 — the
+  scenario-validators portion was already covered by
+  `scenario_validate_test.go`). New
+  `firewall_compare_test.go` (5 tests) pins
+  `loadFirewallRules`, `zonePairLabel`, and
+  `compareRuleSets` against the real policy JSONs, including
+  the headline ALLOW→DENY tighten on Enterprise → Field, an
+  identity-comparison invariant, and stable output order.
+
+### Setup + ops
+
+- **`scripts/firewall-smoke.sh`** waits for the new rtac-sim
+  `:22` and `:443` listeners and the post-F-011 `openplc` IPs
+  (`10.30.30.30:502 / 8080`) before probing. Replaced the
+  `openplc->fw mgmt` lan2 probe with `relay-sim` since
+  openplc is no longer on lan2.
+- **`scripts/lab-commands-smoke.sh`** skips any plain `ssh`
+  (interactive password prompt). The new
+  `ssh ... rangerdanger@10.30.30.20 'hostname'` student
+  command in Lab 2.4 uses an interactive auth flow that
+  smoke can't satisfy non-interactively; `sshpass`-prefixed
+  forms still run.
+- **`vendor-to-ot-weak`** firewall rule now includes
+  `tcp/443` so the weak baseline is a true superset of
+  improved on `dmz → lan1` (smoke matrix expectation
+  alignment).
+
+### Docs
+
+- **README polish** (audit F-015 partial). Hero lockup
+  image, centered badges, dropped duplicated zone table
+  (lives in architecture.md), icon-led documentation table.
+  Real screenshots/GIFs of the running stack still
+  outstanding.
+- **`docs/tool-inventory.md`** (audit F-016). Cross-
+  reference for what CLI tool lives in which Dockerfile by
+  lab persona, plus a decision tree for "I need to add a
+  tool — which image?" Should head off the apt-list drift
+  the next audit would otherwise flag again.
+- **`CONTRIBUTING.md`** documents `scripts/dev-up.sh` and
+  `dev-down.sh` (audit F-017).
+- **`docs/quickstart.md`** version pin bumped to `v0.1.3`
+  (audit N-004 — students copy-pasting from quickstart
+  would have pulled v0.1.2 images that lacked every fix
+  in v0.1.3).
+- **`CHANGELOG.md`** reference-link block now includes
+  `[v0.1.3]` (audit N-003).
+- **`docs/lab-credentials.md`** documents rtac-sim
+  SSH/HTTPS access + flags `scripts/rtac-mgmt-init.sh`
+  as the second creation site for the `rangerdanger` user.
+
 ## [v0.1.3] - 2026-05-08
 
 Audit-driven hardening pass on top of v0.1.2's deck-aligned
