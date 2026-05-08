@@ -28,7 +28,17 @@ services:
       # explicitly is required for the lab to actually forward traffic.
       - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
       - CONTAIND_CONFIG_DB=/data/config.db
-      - CONTAIND_CAPTURE_IFACES=eth0,eth1,eth2,eth3
+      # CONTAIND_CAPTURE_IFACES intentionally unset. containd's PCAP
+      # path resolves the env value as a literal kernel interface name
+      # via netlink, not as a zone name (unlike the policy autobind in
+      # commit 5f31128 which DOES accept zone names). The previous pin
+      # `eth0,eth1,eth2,eth3` was non-deterministic because docker
+      # assigns ethN by alphabetical network name; pinning zone names
+      # here fails at boot ("interface wan not found"). The backend's
+      # PCAP fallback (`tcpdump -i any` in pcap.go) is fully drift-
+      # proof and is what's actually used in practice. Tracking
+      # upstream containd issue: make CAPTURE_IFACES accept zone names
+      # so this can be re-pinned deterministically.
       - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24

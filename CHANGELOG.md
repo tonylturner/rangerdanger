@@ -6,6 +6,127 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.5] - 2026-05-08
+
+Audit-pass-3 closeout. Codex surfaced two reproducible workshop
+blockers and twelve smaller findings on top of v0.1.4. Validated
+against three back-to-back clean rebuilds (each producing a different
+docker `ethN` ordering on the firewall — confirming the determinism
+fix holds): all three iterations passed `firewall-smoke 52/52`,
+`lab-commands-smoke 65/65`, every workshop endpoint 200, reset
+`success:true` with zero failed actions, no containd boot errors.
+
+### Workshop / lab content
+
+- **`/api/workshop/reset` no longer reports `success:false`** (audit
+  P0-A). The reset path was sending `clear_alarm` to capbank-sim,
+  which has no such handler — `reset_lockout` already clears the
+  alarm flag. Both `reset.go` and `test_runner.go` had a duplicated
+  reset-command list with the same bug; consolidated into a single
+  `resetDeviceCommands` var. New `reset_test.go` (`TestResetCommandsAreSupported`)
+  scans every sim's `case "X":` handlers and asserts every reset
+  command resolves — catches this bug class going forward.
+- **`lab-definitions/scenarios/validation-evidence.yml` PCAP
+  capture** (audit P0-B) — student tcpdump switched from
+  `tcpdump -i eth3 ...` to `tcpdump -i any -nn 'net 10.40.40.0/24
+  and (tcp port 502 or tcp port 20000)' ...`. The `eth3` pin assumed
+  a 4-network firewall; once F-002 added the mgmt zone (`lan3`),
+  Docker started shuffling field across `eth1`/`eth2`/`eth4`
+  depending on the host. The `-i any` form plus a BPF subnet filter
+  is fully drift-proof.
+
+### Backend / tests
+
+- **`backend/internal/server/pcap.go`** drops the broken
+  `Interfaces: []string{"eth0","eth1","eth2","eth3"}` pin (audit
+  P0-B). containd's PCAP path resolves entries as literal kernel
+  interface names via netlink (unlike the policy autobind in
+  commit 5f31128 which DOES accept zone names), so any `ethN`
+  pin was non-deterministic and zone names fail at boot with
+  "interface wan not found". The backend's `tcpdump -i any`
+  fallback in the same file is fully drift-proof and is what's
+  actually used at runtime; the broken containd-PCAP path is
+  no-op'd cleanly. Tracked as an upstream containd issue
+  in `docs/tasks.md`.
+
+### Setup + ops
+
+- **`docker-compose.offline.yml`** (new, audit P1-B). Override
+  setting `pull_policy: never` on every release-image service so
+  `docker compose up` after `docker load` from the SSD does not
+  reach out to GHCR. `setup.sh --from-tarballs` and `setup.ps1
+  -FromTarballs` now compose `-f release.yml -f offline.yml`
+  automatically; offline classes work without the override flag.
+- **`setup.sh` / `setup.ps1` workshop-readiness gate** (audit
+  P1-D). After the existing `/api/health` probe, both installers
+  now probe `/api/firewall/health`, apply weak + improved, and
+  `/api/workshop/reset`, failing with actionable diagnostics if
+  any returns non-2xx or non-success. New `--skip-firewall-gate`
+  / `-SkipFirewallGate` flag for developer iteration on a
+  known-broken stack. Catches containd drift / mgmt-subnet
+  misconfig / sim-warmup races at setup time rather than
+  at student-time.
+- **`stage-ssd.sh` fail-fast** (audit P1-C). Was warning-and-
+  skipping on pull failure then `docker save` against the
+  unfiltered input list (could include stale local copies or
+  fail mid-save). Now dies on any pull failure and `docker save`
+  operates on an explicit pulled-this-run list — bundle is either
+  complete or absent.
+- **`docker-compose.release.yml`** restored
+  `CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24` (lockstep drift
+  codex caught — release-image users would have hit 502 on
+  apply when the mgmt subnet fell outside containd's input
+  chain). `CONTAIND_CAPTURE_IFACES` removed from both compose
+  files since the static `ethN,...` pin was non-deterministic
+  and zone names break containd at boot (see pcap.go above).
+- **`scripts/lab-commands-smoke.sh` apply-failure detection**
+  (audit P1-A). Was `2>/dev/null` swallowing curl errors on
+  policy apply, so the script could report 65/65 PASS with
+  broken policy state — exactly the false-confidence mode the
+  audit caught. Now checks curl exit code AND verifies
+  `/api/firewall/active` reflects the requested config; fails
+  the run with a clear diagnostic on either error. The probe
+  rc 1-7-as-PASS rule (intentional for "host unreachable" /
+  "connection refused" on negative tests) is unchanged.
+
+### CI
+
+- **Smoke runs on `audit-oss` and `oss-release`** (audit P2-B).
+  Was `[main]` only; release-branch work could ship without the
+  workshop-critical Docker smoke gate.
+
+### Documentation
+
+- **`docs/architecture.md` rewrite** of the RTAC + interface
+  sections (audit P2-A). Removed the stale "RTAC field polling
+  does not transit firewall" claim — `rtac-harden.sh` has
+  forced firewall transit since v0.1.2. Corrected the multi-
+  homed table (2 networks, not 3 — there is no physics_net
+  leg). Corrected the source-pin IP (10.30.30.20, not
+  10.40.40.10). Replaced the fragile `eth0`/`eth1`/`eth2`/`eth3`
+  column with containd zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`)
+  and added an explicit note that Docker's `ethN` ordering is
+  non-deterministic across hosts (alphabetical network name,
+  not compose order) — never rely on it. New "Multi-homed RTAC
+  with kernel-pinned routing" subsection explains the
+  compensating control (FORWARD DROP + replaced field route +
+  `rtac-route-monitor.sh`).
+- **`RELEASING.md` containd image policy section** (audit P2-E).
+  Documents the "fix containd, not the pin" contract,
+  workshop-day determinism trade-off, and three mitigations
+  (pre-pull + digest lock, setup-time firewall gate, stage-to-SSD).
+- **`CONTRIBUTING.md`** frontend command now includes
+  `npm test` (audit P2-C). Was missing while CI ran it;
+  contributors could pass the documented local checks and
+  still trip CI.
+- **`docs/tasks.md`** moved `firewall_apply` integration tests
+  + capbank handler coverage from "Still open" to shipped
+  (landed in v0.1.4 — was stale carry-over). Added the
+  audit-pass-3 P0/P1/P2 items + an "Open questions" section
+  parking codex P0-001 (firewall apply 502/403 — not
+  reproduced) and the upstream containd PCAP zone-name
+  issue.
+
 ## [v0.1.4] - 2026-05-08
 
 Post-v0.1.3 audit follow-through. Closes the remaining P1/P2
@@ -636,7 +757,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.5...HEAD
+[v0.1.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.5
 [v0.1.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.4
 [v0.1.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.3
 [v0.1.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.2

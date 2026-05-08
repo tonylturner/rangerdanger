@@ -62,7 +62,7 @@ The same commands CI runs:
 (cd dnp3go && go vet ./... && go test -race ./...)
 
 # Frontend
-(cd frontend && npm ci && npm run lint && npm run build)
+(cd frontend && npm ci && npm run lint && npm test && npm run build)
 
 # Compose validation
 docker compose config -q

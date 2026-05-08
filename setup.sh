@@ -7,6 +7,9 @@
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
 #   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
+#   ./setup.sh --skip-firewall-gate         # bring stack up without the workshop
+#                                           # firewall apply/reset gate (developer
+#                                           # iteration on a known-broken stack)
 #   ./setup.sh --help
 #
 # Runs from the repo root. Validates prerequisites, brings the lab up
@@ -32,15 +35,17 @@ VERSION="${VERSION:-latest}"
 TARBALL_DIR=""
 SHOW_HELP=0
 CHECK_ONLY=0
+SKIP_FW_GATE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --version)         VERSION="$2"; shift 2 ;;
-        --version=*)       VERSION="${1#*=}"; shift ;;
-        --from-tarballs)   TARBALL_DIR="$2"; shift 2 ;;
-        --from-tarballs=*) TARBALL_DIR="${1#*=}"; shift ;;
-        --check-only)      CHECK_ONLY=1; shift ;;
-        -h|--help)         SHOW_HELP=1; shift ;;
+        --version)            VERSION="$2"; shift 2 ;;
+        --version=*)          VERSION="${1#*=}"; shift ;;
+        --from-tarballs)      TARBALL_DIR="$2"; shift 2 ;;
+        --from-tarballs=*)    TARBALL_DIR="${1#*=}"; shift ;;
+        --check-only)         CHECK_ONLY=1; shift ;;
+        --skip-firewall-gate) SKIP_FW_GATE=1; shift ;;
+        -h|--help)            SHOW_HELP=1; shift ;;
         *) die "Unknown argument: $1 (use --help)" ;;
     esac
 done
@@ -52,6 +57,17 @@ fi
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
+OFFLINE_OVERLAY="$ROOT_DIR/docker-compose.offline.yml"
+
+# Compose flag set used by every `docker compose ...` invocation below.
+# Offline (--from-tarballs) installs add the offline overlay so
+# `pull_policy: never` overrides the release file's `pull_policy: always`,
+# preventing GHCR fetches in network-blocked classroom environments.
+COMPOSE_FLAGS=(-f "$COMPOSE_FILE")
+if [ -n "$TARBALL_DIR" ]; then
+    [ -f "$OFFLINE_OVERLAY" ] || die "$OFFLINE_OVERLAY not found — required for --from-tarballs."
+    COMPOSE_FLAGS+=(-f "$OFFLINE_OVERLAY")
+fi
 
 # ─── pre-flight checks ──────────────────────────────────────────────
 banner "Pre-flight checks"
@@ -191,7 +207,7 @@ else
     # retry up to 3 times with exponential backoff before giving up.
     PULL_OK=0
     for attempt in 1 2 3; do
-        if VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" pull; then
+        if VERSION="$VERSION" docker compose "${COMPOSE_FLAGS[@]}" pull; then
             PULL_OK=1
             break
         fi
@@ -211,7 +227,7 @@ fi
 
 # ─── start the stack ────────────────────────────────────────────────
 banner "Starting RangerDanger"
-VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" up -d
+VERSION="$VERSION" docker compose "${COMPOSE_FLAGS[@]}" up -d
 say "Containers started"
 
 # ─── health smoke check ─────────────────────────────────────────────
@@ -227,6 +243,44 @@ for i in $(seq 1 $ATTEMPTS); do
     sleep 2
     [ $i -eq $ATTEMPTS ] && warn "Backend didn't report healthy in 60 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
 done
+
+# Workshop-critical surfaces. /api/health alone returned green in past
+# audits while firewall apply/reset were broken — students hit the
+# regression at lab-time, not at setup. Gate explicitly here so a
+# half-working stack never makes it past the installer banner.
+# Pass --skip-firewall-gate for developer iteration on a known-
+# broken stack.
+if [ "$SKIP_FW_GATE" -eq 1 ]; then
+    say "Skipping firewall workshop-readiness gate (--skip-firewall-gate)"
+else
+    say "Workshop-readiness gate: firewall health + apply + reset..."
+    fw_fail=0
+    if ! curl -fsS http://localhost:8088/api/firewall/health >/dev/null 2>&1; then
+        warn "  /api/firewall/health failed — containd management interface is down"
+        fw_fail=1
+    fi
+    for cfg in weak improved; do
+        if ! curl -fsS -X POST -H 'Content-Type: application/json' \
+                -d "{\"config\":\"$cfg\"}" \
+                http://localhost:8088/api/firewall/apply >/dev/null 2>&1; then
+            warn "  /api/firewall/apply ($cfg) failed — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
+            fw_fail=1
+        fi
+    done
+    reset_resp=$(curl -fsS -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
+    if ! echo "$reset_resp" | grep -q '"success":true'; then
+        warn "  /api/workshop/reset reported non-success — students hitting Reset Lab will see partial state"
+        fw_fail=1
+    fi
+    if [ "$fw_fail" -eq 1 ]; then
+        die "Workshop-readiness gate failed. Common causes:
+    - containd image drift (bump containd or pin a known-good tag)
+    - mgmt subnet not in firewall input chain (CONTAIND_AUTO_LAN3_SUBNET)
+    - sims still warming up (re-run setup, or wait 30s and re-probe)
+  Re-run with --skip-firewall-gate to bring the stack up anyway for diagnosis."
+    fi
+    say "Firewall apply/reset workshop gate passed"
+fi
 
 # ─── done ────────────────────────────────────────────────────────────
 banner "RangerDanger is up"

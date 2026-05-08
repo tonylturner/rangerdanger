@@ -19,9 +19,9 @@ name: Smoke
 
 on:
   push:
-    branches: [main]
+    branches: [main, oss-release, audit-oss]
   pull_request:
-    branches: [main]
+    branches: [main, oss-release]
   workflow_dispatch:
 
 permissions:

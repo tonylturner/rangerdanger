@@ -138,13 +138,15 @@ steps:
   - title: "Capture PCAP evidence"
     node: fw-1
     description: |
-      From the firewall terminal (`fw-1`), capture traffic on the
-      field-net interface (`eth3`) to document which hosts are
-      actually communicating with field devices under the hardened
-      policy:
+      From the firewall terminal (`fw-1`), capture all traffic going
+      to the field zone (`10.40.40.0/24`) regardless of which kernel
+      interface that subnet currently lives on. Docker's `ethN`
+      ordering varies across hosts, so a `tcpdump -i eth3` can drift
+      under you between machines and even between rebuilds; the
+      portable form is `-i any` plus a BPF subnet filter:
 
-          tcpdump -i eth3 -w /data/captures/validation.pcap \
-            tcp port 502 or tcp port 20000
+          tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' \
+            -w /data/captures/validation.pcap
 
       Let it run for 30 seconds while the RTAC polls, then stop with
       Ctrl-C. Check what's on the wire:

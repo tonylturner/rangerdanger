@@ -233,22 +233,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 func (s *Server) resetLabState() {
 	s.applyFirewallConfigInternal("weak")
 
-	resetCmds := []struct{ device, command string }{
-		{"relay", "clear_fault"},
-		{"relay", "unlock"},
-		{"relay", "close"},
-		{"recloser", "clear_fault"},
-		{"recloser", "reset_lockout"},
-		{"recloser", "enable_reclose"},
-		{"recloser", "close"},
-		{"regulator", "set_auto"},
-		{"capbank", "clear_alarm"},
-		{"capbank", "reset_lockout"},
-		{"capbank", "switch_in"},
-		{"capbank", "set_auto"},
-	}
-
-	for _, cmd := range resetCmds {
+	for _, cmd := range resetDeviceCommands {
 		s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
 	}
 

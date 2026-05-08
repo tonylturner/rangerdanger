@@ -1,0 +1,47 @@
+# Offline override for `docker-compose.release.yml`. Sets
+# `pull_policy: never` on every service that ships a RangerDanger
+# image, so `docker compose up` after `docker load` from the SSD
+# tarballs does NOT reach out to GHCR. Without this override the
+# release compose's `pull_policy: always` would attempt to refresh
+# layers and fail (or hang) on a network-blocked classroom host.
+#
+# Use:
+#
+#   docker compose \
+#       -f docker-compose.release.yml \
+#       -f docker-compose.offline.yml \
+#       up -d
+#
+# This is the file `setup.sh --from-tarballs` and `setup.ps1
+# -FromTarballs` wire automatically; no manual flag required if you
+# install via the script. See `docs/quickstart.md` → offline / SSD.
+
+services:
+  backend:
+    pull_policy: never
+  frontend:
+    pull_policy: never
+  kali:
+    pull_policy: never
+  vendor_jump:
+    pull_policy: never
+  eng_workstation:
+    pull_policy: never
+  rtac_sim:
+    pull_policy: never
+  openplc:
+    pull_policy: never
+  relay_sim:
+    pull_policy: never
+  recloser_sim:
+    pull_policy: never
+  regulator_sim:
+    pull_policy: never
+  capbank_sim:
+    pull_policy: never
+  historian_sim:
+    pull_policy: never
+  gps_sim:
+    pull_policy: never
+  opendss_sim:
+    pull_policy: never

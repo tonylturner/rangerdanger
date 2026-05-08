@@ -82,6 +82,49 @@ VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d
 When you bump `docker-compose.yml`, mirror the change into the release
 file too.
 
+## containd image policy
+
+RangerDanger and [containd](https://github.com/tonylturner/containd)
+are co-developed by the same maintainer. Both compose files reference
+`ghcr.io/tonylturner/containd:latest` rather than a per-release pinned
+tag. The contract is **"fix containd, not the pin"** — if a containd
+release breaks RangerDanger behavior, the fix lands in containd, and
+RangerDanger picks it up on the next `docker compose pull`. This keeps
+both repos honest about regressions instead of accumulating workarounds
+in the lab.
+
+The trade-off is workshop-day determinism. `:latest` resolves at pull
+time, so a containd push between your pre-flight check and the morning
+of class can shift behavior under you. **Mitigations for instructors:**
+
+1. **Pre-pull the night before** and lock the resolved digest:
+
+   ```sh
+   docker compose -f docker-compose.release.yml pull
+   docker image inspect ghcr.io/tonylturner/containd:latest \
+     --format '{{index .RepoDigests 0}}'
+   ```
+
+   Save that digest. If anything breaks the morning of class, compare
+   against `:latest` and pin to the digest if they differ.
+
+2. **Run `setup.sh` (or `setup.ps1`) right before class** — the
+   workshop-readiness gate (`/api/firewall/health` + apply weak/
+   improved + reset) fails loudly if containd drifted, so you find
+   out at setup-time rather than student-time. `--skip-firewall-gate`
+   bypasses for diagnosis.
+
+3. **Stage to SSD** for an offline class. `stage-ssd.sh` snapshots
+   whatever is currently `:latest` and produces a tarball that
+   `setup.sh --from-tarballs` consumes via `docker-compose.offline.yml`
+   (`pull_policy: never`). Once staged, the SSD is immutable.
+
+If a workshop scenario demands hard determinism (regulatory audit,
+certified curriculum), pin a known-good `containd:vX.Y.Z` tag in both
+compose files for that engagement and document the pin in the
+engagement's README. The default `:latest` posture is for the public
+project where currency-of-fixes outweighs frozen-behavior.
+
 ## Manual workflow run
 
 To re-trigger the release workflow for an existing tag (e.g. after

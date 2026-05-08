@@ -72,22 +72,30 @@ stage_arch() {
 
     # docker keeps only one platform per image:tag locally, so pulling
     # arch B after arch A overwrites the saved version. The tar must
-    # be written between pulls.
+    # be written between pulls. We fail fast on any pull error rather
+    # than warning-and-skipping — a tarball assembled from a partial
+    # pull would either include a stale local copy of a missing image
+    # or fail mid-`docker save` with a confusing "no such image"
+    # error. Better to refuse to build the bundle so the operator
+    # notices the missing image and re-runs after fixing the
+    # upstream issue (network, GHCR auth, image rename).
     local count=0
+    local pulled_csv=""
     while IFS= read -r img; do
         [ -z "$img" ] && continue
         count=$((count + 1))
         say "[$count] pull $arch  $img"
         docker pull --platform="linux/$arch" --quiet "$img" >/dev/null \
-            || warn "pull failed for $img on $arch — skipping"
+            || die "pull failed for $img on $arch — refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
+        pulled_csv="$pulled_csv $img"
     done <<< "$image_list"
 
-    # Save all currently-loaded images at once.
-    local images_csv
-    images_csv=$(echo "$image_list" | tr '\n' ' ')
+    # Save the images we actually pulled this iteration. Using the
+    # explicit pulled list (not the input list) means a stale local
+    # cached image from a prior session can't sneak into the bundle.
     say "save $arch → $tarball"
     # shellcheck disable=SC2086
-    docker save -o "$tarball" $images_csv \
+    docker save -o "$tarball" $pulled_csv \
         || die "docker save failed for $arch"
 
     local size
