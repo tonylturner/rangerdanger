@@ -57,7 +57,11 @@ const HINT_CLOSE_RE = /^:::$/;
 // title + decision id) so refreshes don't lose it AND so subsequent
 // labs (1.3 -> 1.4) can read the same selections later.
 const DECISION_OPEN_RE = /^:::decision\s+(.+)$/;
-const DECISION_DEFAULT_OPTIONS = ["BLOCK", "RESTRICT", "ALLOW", "LOG"];
+// Default options match the workshop's risk-verdict vocabulary. The
+// "BLOCK and LOG" combo is its own entry because that's how the
+// answer key for unauthorized-writes is stated (block-plus-log is
+// a different operational decision than block-without-log).
+const DECISION_DEFAULT_OPTIONS = ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW"];
 
 type Segment =
   | { type: "prose"; value: string }
@@ -293,23 +297,31 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom }: D
             >
               Your decision:
             </label>
-            <select
-              id={`decision-${decisionId}`}
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              className={`rounded border bg-slate-950 px-2 py-1 text-[11px] font-mono ${
-                answered
-                  ? "border-sky-700 text-sky-300"
-                  : "border-slate-700 text-slate-400"
-              }`}
-            >
-              <option value="">Select...</option>
-              {options.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                id={`decision-${decisionId}`}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={`appearance-none rounded border bg-slate-950 px-2 py-1 pr-7 text-[11px] font-mono cursor-pointer focus:outline-none focus:ring-1 focus:ring-cyan-700 ${
+                  answered
+                    ? "border-sky-700 text-sky-300"
+                    : "border-slate-700 text-slate-400 hover:border-slate-600"
+                }`}
+                style={{ colorScheme: "dark" }}
+              >
+                <option value="" className="bg-slate-900 text-slate-400">Select...</option>
+                {options.map((opt) => (
+                  <option key={opt} value={opt} className="bg-slate-900 text-slate-200">
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className={`pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 ${
+                  answered ? "text-sky-500" : "text-slate-500"
+                }`}
+              />
+            </div>
             {inheritedFrom && (
               <span className="text-[10px] text-slate-500 italic">
                 inherited from earlier lab — adjust if your design has changed
