@@ -78,6 +78,33 @@ steps:
       - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate); other sources blocked.
       :::
 
+  - title: "Resourcing reality check"
+    expected_config: weak
+    description: |
+      Real OT segmentation projects fail more often on resourcing than on technology — vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before you pick remediation actions in Lab 1.4, commit to your team's current state. Lab 1.4 will surface dependencies on these answers per action.
+
+      :::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE
+      **OT engineering capacity** — do you have a dedicated OT engineer for this segmentation work, or is that person also covering operations / on-call?
+      :::
+
+      :::decision id=fw-admin-skills options=IN_HOUSE,VENDOR_LED,GAP
+      **Firewall admin skills** — who actually configures containd? In-house staff who understand it, vendor-led with your team observing, or a real skills gap that needs hiring or training?
+      :::
+
+      :::decision id=vendor-change-window options=SECURED,NEGOTIATING,NOT_DISCUSSED
+      **Vendor change windows** — have you secured outage / change windows for the vendor-touching changes (vendor-to-OT restriction, vendor-to-field block)?
+      :::
+
+      :::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR,DISPUTED
+      **Risk-acceptance authority** — for residual risk in OT (e.g. an attack path you're deferring), is it clear who signs off? Or is the authority ambiguous / contested between IT, OT, and operations leadership?
+      :::
+
+      :::hint Why this matters
+      Lab 1.4 will read these answers and overlay each remediation action with the resourcing dependencies that affect it. For example, if you mark OT engineering as `STRETCHED`, the action `pin-rtac-to-field` (which requires OT Engineer review of the source-pin) gets a warning that it's harder to land than the labor-budget number suggests. If you mark vendor change windows as `NOT_DISCUSSED`, vendor-touching actions get a "blocked by readiness" flag — the technical change can't ship until that conversation happens.
+
+      Right now these annotations are observational — they don't reduce the Lab 1.4 labor budget. A future workshop iteration may drive 1.4's role caps directly from these answers (tracked in [issue #27](https://github.com/tonylturner/rangerdanger/issues/27)).
+      :::
+
   - title: "Define success criteria for segmentation"
     description: |
       Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements - not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.

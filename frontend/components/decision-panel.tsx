@@ -9,7 +9,10 @@ import {
   actionImplements,
   computeCoverage,
   summariseCoverage,
+  readReadiness,
+  readinessFlagsForAction,
   type Requirement,
+  type ReadinessAnswer,
 } from "../lib/requirement-coverage";
 
 type DecisionPanelProps = {
@@ -39,12 +42,16 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
     return new Set();
   });
 
-  // Lab 1.3 verdicts (the design requirements). Read once on mount;
-  // we don't expect them to change while the student is in 1.4.
+  // Lab 1.3 verdicts (the design requirements) + resourcing
+  // readiness answers. Both read once on mount — students aren't
+  // expected to flip back to 1.3 mid-1.4-session.
   const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessAnswer[]>([]);
   useEffect(() => {
     setRequirements(readRequirements());
+    setReadiness(readReadiness());
   }, []);
+  const hasAnyReadiness = readiness.some((r) => r.verdict !== "");
 
   // Persist on change
   useEffect(() => {
@@ -127,6 +134,37 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         </div>
       )}
 
+      {/* Resourcing readiness — observational overlays */}
+      {hasAnyReadiness && (
+        <div className="rounded-lg border border-purple-900/40 bg-purple-950/10 p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-2">
+            Your team readiness (from Lab 1.3)
+          </div>
+          <div className="grid gap-1.5">
+            {readiness.map((r) => (
+              <div
+                key={r.key}
+                className="flex items-baseline justify-between gap-3 text-[11px]"
+              >
+                <span className="text-slate-300 truncate">{r.label}</span>
+                <span
+                  className={`font-mono shrink-0 ${
+                    !r.verdict ? "text-slate-600 italic"
+                      : r.good ? "text-emerald-400"
+                      : "text-amber-400"
+                  }`}
+                >
+                  {r.verdict || "not set"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500 italic">
+            Affected actions below show the dependencies these answers create. Selections aren&apos;t blocked — this is reality-check context.
+          </div>
+        </div>
+      )}
+
       {/* Budget and role meters */}
       <div className="rounded-lg border border-slate-800 bg-slate-950 p-3">
         <div className="flex items-baseline justify-between mb-2">
@@ -199,6 +237,8 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
           const isSelected = selected.has(a.id);
           const perRole = hoursPerRole(a);
           const implements_ = actionImplements(a.id, requirements);
+          const readinessFlags = readinessFlagsForAction(a.id, readiness);
+          const hasBlocked = readinessFlags.some((f) => f.severity === "blocked");
           return (
             <button
               key={a.id}
@@ -255,6 +295,24 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                       </span>
                     )}
                   </div>
+                  {readinessFlags.length > 0 && (
+                    <div className={`mt-2 rounded border px-2 py-1.5 text-[10px] space-y-1 ${
+                      hasBlocked
+                        ? "border-red-800/50 bg-red-950/20 text-red-300"
+                        : "border-amber-800/50 bg-amber-950/20 text-amber-300"
+                    }`}>
+                      {readinessFlags.map((f, idx) => (
+                        <div key={idx} className="flex items-start gap-1.5">
+                          <span className={`mt-0.5 font-bold uppercase tracking-wider text-[8px] shrink-0 ${
+                            f.severity === "blocked" ? "text-red-400" : "text-amber-400"
+                          }`}>
+                            {f.severity === "blocked" ? "blocked" : "warn"}
+                          </span>
+                          <span className="leading-tight">{f.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </button>
