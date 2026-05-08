@@ -22,6 +22,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
  && CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim \
  && CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
+# Build dnp3poll/dnp3cmd from the dnp3go library so rtac-sim can ship
+# them as student-runnable diagnostic tools. The eng-ws Dockerfile
+# uses the same dnp3go module via its own builder stage; keeping a
+# parallel build here avoids cross-Dockerfile coupling.
+FROM golang:1.25-alpine AS dnp3-builder
+WORKDIR /src
+COPY dnp3go/ .
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/dnp3poll ./cmd/dnp3poll \
+ && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
+
 FROM alpine:3.21 AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
@@ -49,8 +61,33 @@ COPY --from=builder /bin/regulator-sim /usr/local/bin/regulator-sim
 EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 
-FROM sim-base AS rtac-sim
-COPY --from=builder /bin/rtac-sim /usr/local/bin/rtac-sim
+# rtac-sim is a special case: the lab labs (validation-evidence,
+# hardening-configurations) document "from RTAC" diagnostic commands
+# students are expected to run — mbpoll, dnp3poll, curl, python3 to
+# pretty-print API state. Alpine doesn't have mbpoll in any repo, so
+# we base RTAC on debian-slim where mbpoll is in apt. Other sims
+# (which are passive Modbus/DNP3 listeners with no student-facing
+# CLI) stay on the lighter alpine sim-base.
+FROM debian:bookworm-slim AS rtac-sim
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        mbpoll \
+        curl \
+        python3 \
+        iproute2 \
+        iptables \
+        ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+COPY scripts/set-gateway.sh        /usr/local/bin/set-gateway.sh
+COPY scripts/rtac-harden.sh        /usr/local/bin/rtac-harden.sh
+COPY scripts/rtac-route-monitor.sh /usr/local/bin/rtac-route-monitor.sh
+RUN chmod +x /usr/local/bin/set-gateway.sh \
+              /usr/local/bin/rtac-harden.sh \
+              /usr/local/bin/rtac-route-monitor.sh
+COPY --from=builder      /bin/rtac-sim /usr/local/bin/rtac-sim
+COPY --from=dnp3-builder /bin/dnp3poll /usr/local/bin/dnp3poll
+COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
 EXPOSE 8080 502 20000
 # set-gateway.sh: installs the OT Ops firewall as the default route
 # rtac-harden.sh: disables forwarding, sets FORWARD DROP, and routes
