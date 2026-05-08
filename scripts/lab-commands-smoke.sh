@@ -229,9 +229,10 @@ run_command() {
   local start end dur rc
 
   start=$(python3 -c 'import time; print(int(time.time()*1000))')
-  # /bin/bash -c so shell features (pipes, redirects, $() in some
-  # documented commands) work as a student would expect.
-  docker exec "$container" timeout "$PROBE_TIMEOUT" bash -c "$cmd" \
+  # /bin/sh because alpine-based sims (rtac-sim) don't ship bash by
+  # default. POSIX sh handles pipes, redirects, and $() — all the
+  # shell features the lab YAML commands actually use.
+  docker exec "$container" timeout "$PROBE_TIMEOUT" sh -c "$cmd" \
       >/dev/null 2>&1
   rc=$?
   end=$(python3 -c 'import time; print(int(time.time()*1000))')

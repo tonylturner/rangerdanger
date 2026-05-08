@@ -34,6 +34,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /bin/dnp3poll ./cmd/dnp3poll \
  && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
 
+# mbpoll isn't in any alpine repo (and the debian package would drag
+# in debian's CVE backlog — we want to stay on alpine). Build from
+# source against alpine's libmodbus. Resulting binary links against
+# libmodbus.so dynamically, so the final rtac-sim stage installs the
+# libmodbus runtime package alongside it.
+FROM alpine:3.21 AS mbpoll-builder
+RUN apk add --no-cache git cmake make gcc musl-dev libmodbus-dev pkgconfig
+RUN git clone --depth 1 https://github.com/epsilonrt/mbpoll /src
+WORKDIR /src
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build build
+
 FROM alpine:3.21 AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
@@ -61,33 +73,21 @@ COPY --from=builder /bin/regulator-sim /usr/local/bin/regulator-sim
 EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 
-# rtac-sim is a special case: the lab labs (validation-evidence,
-# hardening-configurations) document "from RTAC" diagnostic commands
-# students are expected to run — mbpoll, dnp3poll, curl, python3 to
-# pretty-print API state. Alpine doesn't have mbpoll in any repo, so
-# we base RTAC on debian-slim where mbpoll is in apt. Other sims
-# (which are passive Modbus/DNP3 listeners with no student-facing
-# CLI) stay on the lighter alpine sim-base.
-FROM debian:bookworm-slim AS rtac-sim
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        mbpoll \
-        curl \
-        python3 \
-        iproute2 \
-        iptables \
-        ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-COPY scripts/set-gateway.sh        /usr/local/bin/set-gateway.sh
-COPY scripts/rtac-harden.sh        /usr/local/bin/rtac-harden.sh
-COPY scripts/rtac-route-monitor.sh /usr/local/bin/rtac-route-monitor.sh
-RUN chmod +x /usr/local/bin/set-gateway.sh \
-              /usr/local/bin/rtac-harden.sh \
-              /usr/local/bin/rtac-route-monitor.sh
-COPY --from=builder      /bin/rtac-sim /usr/local/bin/rtac-sim
-COPY --from=dnp3-builder /bin/dnp3poll /usr/local/bin/dnp3poll
-COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
+# rtac-sim is a special case: the validation-evidence and
+# hardening-configurations labs document "from RTAC" diagnostic
+# commands students are expected to run — mbpoll, dnp3poll, curl,
+# python3 to pretty-print API state. We stay on alpine (low CVE
+# surface) and pull in:
+#   - libmodbus runtime + the mbpoll binary built in mbpoll-builder
+#     (mbpoll isn't in any alpine repo, see comment on that stage)
+#   - dnp3poll/dnp3cmd built from our dnp3go module
+#   - curl, python3 for the documented API-poking commands
+FROM sim-base AS rtac-sim
+RUN apk add --no-cache libmodbus curl python3
+COPY --from=mbpoll-builder /src/build/bin/mbpoll /usr/local/bin/mbpoll
+COPY --from=builder        /bin/rtac-sim         /usr/local/bin/rtac-sim
+COPY --from=dnp3-builder   /bin/dnp3poll         /usr/local/bin/dnp3poll
+COPY --from=dnp3-builder   /bin/dnp3cmd          /usr/local/bin/dnp3cmd
 EXPOSE 8080 502 20000
 # set-gateway.sh: installs the OT Ops firewall as the default route
 # rtac-harden.sh: disables forwarding, sets FORWARD DROP, and routes
