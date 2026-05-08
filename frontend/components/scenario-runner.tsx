@@ -57,17 +57,32 @@ const HINT_CLOSE_RE = /^:::$/;
 // title + decision id) so refreshes don't lose it AND so subsequent
 // labs (1.3 -> 1.4) can read the same selections later.
 const DECISION_OPEN_RE = /^:::decision\s+(.+)$/;
+
+// :::findings-panel from=<scenarioId> [title="..."]
+// id1: label1
+// id2: label2
+// :::
+// Renders a read-only panel showing the student's recorded answers
+// for a list of upstream decision ids (e.g. Lab 1.3 displays Lab
+// 1.2 findings as context). Each line in the body is
+// "<decisionId>: <human label>"; the panel reads each id's
+// localStorage value and shows it. Lets a downstream lab show
+// upstream observations / decisions without making the student
+// re-input them or pre-filling new dropdowns.
+const FINDINGS_PANEL_OPEN_RE = /^:::findings-panel(?:\s+(.+))?$/;
 // Default options match the workshop's risk-verdict vocabulary. The
 // "BLOCK and LOG" combo is its own entry because that's how the
 // answer key for unauthorized-writes is stated (block-plus-log is
 // a different operational decision than block-without-log).
 const DECISION_DEFAULT_OPTIONS = ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW"];
 
+type FindingsPanelItem = { id: string; label: string };
 type Segment =
   | { type: "prose"; value: string }
   | { type: "cmd"; value: string }
   | { type: "hint"; title: string; value: string }
-  | { type: "decision"; id: string; options: string[]; body: string; defaultFrom: string };
+  | { type: "decision"; id: string; options: string[]; body: string; defaultFrom: string }
+  | { type: "findingsPanel"; sourceScenario: string; title: string; items: FindingsPanelItem[] };
 
 // Parse `id=foo options=A,B,C default-from=lab:dec` style attributes
 // on the decision fence. Quotes around values are tolerated.
@@ -93,6 +108,15 @@ function parseDecisionAttrs(attrs: string): {
     ? optsRaw.split(",").map((o) => o.trim()).filter(Boolean)
     : DECISION_DEFAULT_OPTIONS;
   return { id, options, defaultFrom };
+}
+
+// Parse `from=foo title="..."` attributes on the findings-panel fence.
+function parseFindingsAttrs(attrs: string): { sourceScenario: string; title: string } {
+  const fromMatch = attrs.match(/\bfrom=("([^"]+)"|(\S+))/);
+  const titleMatch = attrs.match(/\btitle=("([^"]+)"|(\S+))/);
+  const sourceScenario = (fromMatch?.[2] ?? fromMatch?.[3] ?? "").trim();
+  const title = (titleMatch?.[2] ?? titleMatch?.[3] ?? "Inherited findings").trim();
+  return { sourceScenario, title };
 }
 
 /** Split description into interleaved prose, command, and hint segments. */
@@ -124,6 +148,26 @@ function splitDescription(text: string): Segment[] {
       // Skip the closing fence
       if (i < lines.length) i++;
       result.push({ type: "hint", title, value: body.join("\n") });
+      continue;
+    }
+    const findingsOpen = FINDINGS_PANEL_OPEN_RE.exec(trimmed);
+    if (findingsOpen) {
+      flushProse();
+      const { sourceScenario, title } = parseFindingsAttrs(findingsOpen[1] ?? "");
+      const items: FindingsPanelItem[] = [];
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        const line = lines[i].trim();
+        if (line) {
+          const m = line.match(/^([A-Za-z0-9._-]+)\s*:\s*(.+)$/);
+          if (m) items.push({ id: m[1], label: m[2] });
+        }
+        i++;
+      }
+      if (i < lines.length) i++;
+      if (sourceScenario && items.length > 0) {
+        result.push({ type: "findingsPanel", sourceScenario, title, items });
+      }
       continue;
     }
     const decisionOpen = DECISION_OPEN_RE.exec(trimmed);
@@ -342,6 +386,71 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom }: D
   );
 }
 
+// FindingsPanel renders read-only cards for a set of upstream
+// decisions (e.g. Lab 1.3 showing the student's Lab 1.2 findings).
+// Reads each id's localStorage value via the same key shape
+// DecisionBlock writes. Quiet on the empty case — if the upstream
+// lab wasn't done, the panel says so and links back.
+type FindingsPanelProps = {
+  sourceScenario: string;
+  title: string;
+  items: FindingsPanelItem[];
+};
+
+function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    try {
+      const out: Record<string, string> = {};
+      for (const it of items) {
+        out[it.id] = window.localStorage.getItem(decisionStorageKey(sourceScenario, it.id)) ?? "";
+      }
+      setValues(out);
+    } catch {
+      /* localStorage blocked */
+    }
+  }, [sourceScenario, items]);
+
+  const anySet = items.some((it) => values[it.id]);
+
+  return (
+    <div className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">
+        {title}
+      </div>
+      {anySet ? (
+        <div className="grid gap-1.5">
+          {items.map((it) => {
+            const v = values[it.id] ?? "";
+            return (
+              <div
+                key={it.id}
+                className="flex items-baseline justify-between gap-3 text-[11px]"
+              >
+                <span className="text-slate-300 truncate">{it.label}</span>
+                <span
+                  className={`font-mono shrink-0 ${
+                    v ? "text-cyan-300" : "text-slate-600 italic"
+                  }`}
+                >
+                  {v || "not recorded"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-[11px] text-slate-500 italic">
+          You haven&apos;t recorded findings in <a
+            href={`/exercises/${sourceScenario}`}
+            className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
+          >Lab {sourceScenario}</a> yet — your design verdicts below will be made without that context.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // HintBlock is a collapsible "reveal answer" panel rendered inside step
 // descriptions where the YAML contains a :::hint Title / ::: fence.
 // Default state is collapsed — the student has to click to see the answer.
@@ -413,6 +522,16 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   options={seg.options}
                   body={seg.body}
                   defaultFrom={seg.defaultFrom}
+                />
+              );
+            }
+            if (seg.type === "findingsPanel") {
+              return (
+                <FindingsPanel
+                  key={si}
+                  sourceScenario={seg.sourceScenario}
+                  title={seg.title}
+                  items={seg.items}
                 />
               );
             }
@@ -1157,6 +1276,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           options={seg.options}
                           body={seg.body}
                           defaultFrom={seg.defaultFrom}
+                        />
+                      );
+                    }
+                    if (seg.type === "findingsPanel") {
+                      return (
+                        <FindingsPanel
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          sourceScenario={seg.sourceScenario}
+                          title={seg.title}
+                          items={seg.items}
                         />
                       );
                     }

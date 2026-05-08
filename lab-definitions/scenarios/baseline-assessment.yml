@@ -261,51 +261,46 @@ steps:
       - When a table lists "504 Modbus packets in 30 seconds," that is a bidirectional packet count - it maps to roughly **60 Modbus transactions at 2/sec**, which is exactly what the RTAC's autonomous poller produces.
       :::
 
-  - title: "Required vs risky - what you'd block"
+  - title: "Findings - what you observed"
     description: |
-      Now look at the same traffic through a security lens. For each category below, decide: would you allow this in production, or is it exposure you'd block?
+      Now look at what you captured through a security lens. This step is **observation**, not decision — for each category below, mark what you saw in your analysis. Was it present and concerning? Present but justified? Or not visible at all?
 
-      Pick a verdict for each prompt. Your selections persist across page refreshes and feed into Lab 1.3 and 1.4.
+      The design decisions ("what should we BLOCK / RESTRICT / ALLOW") are Lab 1.3's job — here you're just inventorying findings.
 
-      :::decision id=enterprise-to-field
-      **Enterprise → Field** on Modbus 502 or DNP3 20000 — legitimate operational flow, or ransomware / lateral-movement risk?
+      :::decision id=enterprise-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      **Enterprise → Field** on Modbus 502 / DNP3 20000 — did you see corporate IT addresses (`10.10.10.0/24`) reaching field devices on control-plane protocols?
       :::
 
-      :::decision id=enterprise-to-ot
-      **Enterprise → OT Ops** on any ICS port — does corporate IT need to speak control-plane?
+      :::decision id=enterprise-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      **Enterprise → OT Ops** on ICS ports — did you see corporate IT speaking ICS to RTAC / HMI / OpenPLC?
       :::
 
-      :::decision id=vendor-to-ot
-      **Vendor DMZ → OT Ops** on Modbus or HMI control — should the vendor be able to write, or only read and monitor?
+      :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      **Vendor DMZ → OT Ops** on Modbus or HMI control ports — was the vendor zone reaching OT on more than just SSH/HTTPS?
       :::
 
-      :::decision id=non-rtac-to-field
-      **Any non-RTAC OT Ops host → Field devices** — should every OT host reach relays, or only the RTAC?
+      :::decision id=non-rtac-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      **Non-RTAC OT hosts → Field devices** — did anything other than the RTAC (10.30.30.20) reach relays / recloser / regulator / capbank?
       :::
 
-      :::decision id=unauth-modbus-writes
-      **Unauthorized Modbus writes / DNP3 Direct Operate** — are these blocked and visible, or silent and allowed?
+      :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
+      **Unauthorized Modbus writes / DNP3 Direct Operate** — did the firewall produce visibility (logs, deny events) for write attempts from non-RTAC sources, or were they silent?
       :::
 
-      No matrix, no diagram — just the list of exposures you want to close. Your selections become the input to Lab 1.3.
+      Your findings become context for Lab 1.3, where you decide what the design should *do* about each one.
 
-      :::hint Reveal expected answer
-      In a hardened substation, the answers are:
+      :::hint What an analyst would conclude from this baseline
+      All five of these are present in the weak-baseline traffic — every one should land at `EXPOSURE_OBSERVED`:
 
-      1. **Enterprise → Field on Modbus/DNP3:** `BLOCK`.
-         Corporate IT should never speak control-plane protocols to field devices. This is the attack path demonstrated in the **DNP3 Command Injection** exercise.
+      1. **Enterprise → Field on Modbus/DNP3** — corporate IT zone speaking control-plane protocols directly to relays. This is the attack surface used in the **DNP3 Command Injection** exercise.
+      2. **Enterprise → OT Ops on ICS ports** — IT can reach RTAC/HMI on Modbus/DNP3, the **Modbus Override** staging path.
+      3. **Vendor → OT Ops on Modbus/HMI control** — vendor remote access reaching OT on more than just management protocols, the **Vendor RDP Compromise** vector.
+      4. **Non-RTAC OT Ops → Field** — broad subnet match means a compromised HMI or OpenPLC can speak Modbus to relays, the **Modbus Override** lateral path.
+      5. **Unauthorized Modbus writes / DNP3 Direct Operate** — the firewall has no protocol-aware filtering, so write attempts pass silently with no event.
 
-      2. **Enterprise → OT Ops on ICS ports:** `BLOCK`.
-         Enterprise may reach OT only through constrained management paths, never on Modbus/DNP3. This closes the **Modbus Override** staging path.
+      `LIKELY_OK` would only be appropriate if the captured traffic actually showed legitimate, justified flows in those categories — which the weak baseline does not. `NOT_OBSERVED` would mean the capture didn't show that flow at all (also unlikely with this baseline).
 
-      3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`.
-         Vendor remote access should be read-only monitoring and encrypted management (HTTPS, SSH). Direct Modbus writes or HMI control from the vendor DMZ are the vector demonstrated in the **Vendor RDP Compromise** exercise.
-
-      4. **Non-RTAC OT Ops → Field:** `BLOCK`.
-         Only the RTAC (pinned to source IP `10.30.30.20`, the OT Ops interface, because host-level hardening routes its field traffic through the firewall) should reach field devices. A compromised OpenPLC or historian must not become an attack path. This is the lateral-movement vector in the **Modbus Override** exercise.
-
-      5. **Unauthorized Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`.
-         This requires **ICS DPI** - port-level filtering is not enough. The firewall needs to understand protocol function codes.
+      What to *do* about each finding — that's Lab 1.3.
       :::
 
   - title: "Transition - decide what to fix first"
