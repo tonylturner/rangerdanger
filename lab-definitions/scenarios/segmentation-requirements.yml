@@ -15,6 +15,45 @@ tags:
   - segmentation
   - defense
 steps:
+  - title: "Confirm requirements from your assessment"
+    expected_config: weak
+    description: |
+      Lab 1.2 step 6 asked you to commit to a verdict for each of the five exposure categories you observed. Those verdicts are your input here — Lab 1.3 turns them into the **design requirements** the firewall must enforce.
+
+      Each block below is pre-filled with the verdict you chose in Lab 1.2 (look for the *inherited from earlier lab* note). You can:
+
+      - **Confirm** by leaving the verdict as-is — it becomes a Lab 1.3 requirement.
+      - **Refine** by changing the verdict if your design has evolved since the assessment.
+      - **Fill in** a verdict if you skipped Lab 1.2 step 6.
+
+      Whichever verdict is selected here at the end of this step is what Lab 1.4 (Remediation Planning) will use to size your remediation plan against your committed design.
+
+      :::decision id=enterprise-to-field default-from=baseline-assessment:enterprise-to-field
+      **Requirement: Enterprise → Field** on Modbus 502 / DNP3 20000.
+      :::
+
+      :::decision id=enterprise-to-ot default-from=baseline-assessment:enterprise-to-ot
+      **Requirement: Enterprise → OT Operations** on any ICS port.
+      :::
+
+      :::decision id=vendor-to-ot default-from=baseline-assessment:vendor-to-ot
+      **Requirement: Vendor DMZ → OT Operations** on Modbus / HMI control.
+      :::
+
+      :::decision id=non-rtac-to-field default-from=baseline-assessment:non-rtac-to-field
+      **Requirement: Non-RTAC OT hosts → Field devices**.
+      :::
+
+      :::decision id=unauth-modbus-writes default-from=baseline-assessment:unauth-modbus-writes
+      **Requirement: Unauthorized Modbus writes / DNP3 Direct Operate** from any source.
+      :::
+
+      :::hint What "BLOCK" actually means downstream
+      A `BLOCK` requirement here will, in Lab 1.4, gravitate you toward firewall-rule remediation actions (e.g. *block-enterprise-to-ot*, *block-enterprise-to-field*). A `RESTRICT` requirement leans toward narrower allow-list rules (e.g. *restrict-vendor-to-ot* allows SSH/HTTPS only). `LOG` requires per-rule logging plus PCAP retention (the *improve-logging* action).
+
+      The point of this step is that **the verdict is your decision** — the labor budget in Lab 1.4 is sized to your stated design, not to a fixed ideal. If your design says "ALLOW vendor → OT on Modbus," Lab 1.4 won't pressure you to remove it; it will just record the residual risk.
+      :::
+
   - title: "Define enterprise zone requirements"
     expected_config: weak
     description: >

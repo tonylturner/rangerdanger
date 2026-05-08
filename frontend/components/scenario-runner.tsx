@@ -63,19 +63,32 @@ type Segment =
   | { type: "prose"; value: string }
   | { type: "cmd"; value: string }
   | { type: "hint"; title: string; value: string }
-  | { type: "decision"; id: string; options: string[]; body: string };
+  | { type: "decision"; id: string; options: string[]; body: string; defaultFrom: string };
 
-// Parse `id=foo options=A,B,C` style attribute strings on the
-// decision fence. Quotes around values are tolerated.
-function parseDecisionAttrs(attrs: string): { id: string; options: string[] } {
+// Parse `id=foo options=A,B,C default-from=lab:dec` style attributes
+// on the decision fence. Quotes around values are tolerated.
+//
+// default-from=<scenario.id>:<decisionId> lets a downstream lab
+// (e.g. 1.3 segmentation-requirements) inherit the student's
+// earlier verdict (from 1.2 baseline-assessment) as the starting
+// value of a new decision. The student can confirm or change it,
+// and the new decision lives under its own storage key. This is
+// the "1.2 findings -> 1.3 requirements" bridge.
+function parseDecisionAttrs(attrs: string): {
+  id: string;
+  options: string[];
+  defaultFrom: string;
+} {
   const idMatch = attrs.match(/\bid=("([^"]+)"|(\S+))/);
   const optMatch = attrs.match(/\boptions=("([^"]+)"|(\S+))/);
+  const fromMatch = attrs.match(/\bdefault-from=("([^"]+)"|(\S+))/);
   const id = (idMatch?.[2] ?? idMatch?.[3] ?? "").trim();
   const optsRaw = (optMatch?.[2] ?? optMatch?.[3] ?? "").trim();
+  const defaultFrom = (fromMatch?.[2] ?? fromMatch?.[3] ?? "").trim();
   const options = optsRaw
     ? optsRaw.split(",").map((o) => o.trim()).filter(Boolean)
     : DECISION_DEFAULT_OPTIONS;
-  return { id, options };
+  return { id, options, defaultFrom };
 }
 
 /** Split description into interleaved prose, command, and hint segments. */
@@ -112,7 +125,7 @@ function splitDescription(text: string): Segment[] {
     const decisionOpen = DECISION_OPEN_RE.exec(trimmed);
     if (decisionOpen) {
       flushProse();
-      const { id, options } = parseDecisionAttrs(decisionOpen[1]);
+      const { id, options, defaultFrom } = parseDecisionAttrs(decisionOpen[1]);
       const body: string[] = [];
       i++;
       while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
@@ -123,7 +136,7 @@ function splitDescription(text: string): Segment[] {
       // Skip silently if id is missing — author error, but better to
       // render the question as prose than to swallow it.
       if (id) {
-        result.push({ type: "decision", id, options, body: body.join("\n") });
+        result.push({ type: "decision", id, options, body: body.join("\n"), defaultFrom });
       } else {
         prose.push(...body);
       }
@@ -201,29 +214,49 @@ type DecisionBlockProps = {
   decisionId: string;
   options: string[];
   body: string;
+  /** "<scenarioId>:<decisionId>" — initial value source if local key empty */
+  defaultFrom?: string;
 };
 
 function decisionStorageKey(scenarioId: string, decisionId: string): string {
   return `decision:${scenarioId}:${decisionId}`;
 }
 
-function DecisionBlock({ scenarioId, decisionId, options, body }: DecisionBlockProps) {
+function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom }: DecisionBlockProps) {
   const storageKey = decisionStorageKey(scenarioId, decisionId);
   const [value, setValue] = useState<string>("");
+  const [inheritedFrom, setInheritedFrom] = useState<string>("");
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(storageKey);
       if (saved && options.includes(saved)) {
         setValue(saved);
+        return;
+      }
+      // No saved value — try to inherit from the upstream decision.
+      if (defaultFrom && defaultFrom.includes(":")) {
+        const [srcScenario, srcId] = defaultFrom.split(":", 2);
+        const srcKey = decisionStorageKey(srcScenario, srcId);
+        const srcVal = window.localStorage.getItem(srcKey);
+        if (srcVal && options.includes(srcVal)) {
+          setValue(srcVal);
+          setInheritedFrom(defaultFrom);
+          // Persist the inherited value so subsequent changes are
+          // tracked against THIS decision's storage key, not the
+          // upstream one. The student is now committing this verdict
+          // for this lab specifically.
+          window.localStorage.setItem(storageKey, srcVal);
+        }
       }
     } catch {
       /* localStorage unavailable — fall back to in-memory state */
     }
-  }, [storageKey, options]);
+  }, [storageKey, options, defaultFrom]);
 
   const onChange = (next: string) => {
     setValue(next);
+    setInheritedFrom("");   // student touched the dropdown — no longer "inherited"
     try {
       if (next) {
         window.localStorage.setItem(storageKey, next);
@@ -253,7 +286,7 @@ function DecisionBlock({ scenarioId, decisionId, options, body }: DecisionBlockP
           <div className="text-sm text-slate-200">
             <MarkdownProse>{body.replace(/^\n+|\n+$/g, "")}</MarkdownProse>
           </div>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
             <label
               htmlFor={`decision-${decisionId}`}
               className="text-[10px] font-bold uppercase tracking-wider text-slate-400"
@@ -277,7 +310,12 @@ function DecisionBlock({ scenarioId, decisionId, options, body }: DecisionBlockP
                 </option>
               ))}
             </select>
-            {answered && (
+            {inheritedFrom && (
+              <span className="text-[10px] text-slate-500 italic">
+                inherited from earlier lab — adjust if your design has changed
+              </span>
+            )}
+            {answered && !inheritedFrom && (
               <button
                 onClick={() => onChange("")}
                 className="text-[10px] text-slate-500 hover:text-slate-300 underline underline-offset-2"
@@ -362,6 +400,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   decisionId={seg.id}
                   options={seg.options}
                   body={seg.body}
+                  defaultFrom={seg.defaultFrom}
                 />
               );
             }
@@ -1105,6 +1144,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           decisionId={seg.id}
                           options={seg.options}
                           body={seg.body}
+                          defaultFrom={seg.defaultFrom}
                         />
                       );
                     }
