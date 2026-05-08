@@ -109,6 +109,15 @@ images are already cached.
 5. If you touch lab content, run through the affected exercise(s) end
    to end before opening the PR.
 
+## Authoring labs
+
+If you're writing a new lab or reshaping an existing one, see
+[`docs/lab-authoring.md`](docs/lab-authoring.md) — covers the YAML
+shape the runner expects, the description-body fences (`:::hint`,
+`:::decision`, `:::findings-panel`), the localStorage model that
+lets a lab read what the student did in earlier labs, and the
+authoring checklist (run the smoke tests before opening a PR).
+
 ## What kinds of changes are most welcome
 
 - New ICS protocol simulators or DPI rules in containd.

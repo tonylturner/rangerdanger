@@ -117,6 +117,7 @@ Browser → Nginx proxy → { Backend (Go), Frontend (Next.js), containd NGFW (W
 - [`docs/quickstart.md`](docs/quickstart.md) — Full install walkthrough including offline/SSD path, common errors, and where to look when something breaks
 - [`docs/architecture.md`](docs/architecture.md) — Zone model, node inventory, service interactions, data flow
 - [`docs/workshop-overview.md`](docs/workshop-overview.md) — Lab-by-lab walkthrough with what's simulated and what isn't
+- [`docs/lab-authoring.md`](docs/lab-authoring.md) — How to write a workshop lab: YAML shape, fences, decisions, findings panels
 - [`docs/api-spec.md`](docs/api-spec.md) — REST + WebSocket reference
 - [`docs/security-known-issues.md`](docs/security-known-issues.md) — Triaged govulncheck/Trivy findings with rationale
 - [`docs/tasks.md`](docs/tasks.md) — Active prioritized backlog
