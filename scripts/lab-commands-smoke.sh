@@ -229,10 +229,13 @@ run_command() {
   local start end dur rc
 
   start=$(python3 -c 'import time; print(int(time.time()*1000))')
-  # /bin/sh because alpine-based sims (rtac-sim) don't ship bash by
-  # default. POSIX sh handles pipes, redirects, and $() — all the
-  # shell features the lab YAML commands actually use.
-  docker exec "$container" timeout "$PROBE_TIMEOUT" sh -c "$cmd" \
+  # bash, not sh — every student-facing container ships bash now
+  # (sim-base apk-installs it, debian/ubuntu containers have it
+  # natively), and we want the smoke test to match what students
+  # actually type in the lab terminal panel. If a container is
+  # missing bash that's a bug to fix at the image, not a smoke-test
+  # workaround.
+  docker exec "$container" timeout "$PROBE_TIMEOUT" bash -c "$cmd" \
       >/dev/null 2>&1
   rc=$?
   end=$(python3 -c 'import time; print(int(time.time()*1000))')

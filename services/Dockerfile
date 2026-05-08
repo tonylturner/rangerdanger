@@ -50,7 +50,12 @@ FROM alpine:3.21 AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
-RUN apk add --no-cache iproute2 iptables
+# bash:     student-facing terminal consistency. Lab YAMLs prompt
+#           "from the RTAC / historian / GPS terminal" and the
+#           in-app terminal panel attaches a TTY — students expect
+#           bash muscle memory (history, completion, $'') everywhere
+#           they shell in. ~2MB per image.
+RUN apk add --no-cache iproute2 iptables bash
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
 COPY scripts/rtac-harden.sh /usr/local/bin/rtac-harden.sh
 COPY scripts/rtac-route-monitor.sh /usr/local/bin/rtac-route-monitor.sh
