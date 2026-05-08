@@ -248,6 +248,34 @@ for c in "${REQUIRED_CONTAINERS[@]}"; do
 done
 [ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
 
+# Wait for cross-zone routing to actually be ready. The kasm-based
+# webtops (eng-ws, vendor-jump) install the firewall as their
+# default gateway via /custom-cont-init.d/set-gateway.sh — that
+# step can finish AFTER backend reports healthy on slow runners,
+# so cross-zone probes from those containers will time out. Poll
+# until the default gateway points at the per-zone firewall IP
+# before declaring preflight done.
+note "wait for cross-zone routing"
+declare -a WEBTOP_GATEWAYS=(
+  "rangerdanger-eng-ws|10.20.20.2"
+  "rangerdanger-vendor-jump|10.20.20.2"
+)
+for entry in "${WEBTOP_GATEWAYS[@]}"; do
+  c="${entry%|*}"
+  gw="${entry#*|}"
+  ready=0
+  for i in $(seq 1 30); do
+    if docker exec "$c" ip route show default 2>/dev/null | grep -q "via $gw"; then
+      ok "$c default route via $gw (after ${i}s)"
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$ready" = "1" ] || err "$c never installed default route via $gw — set-gateway.sh may have failed"
+done
+[ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
+
 # ---------------------------------------------------------------------
 # Run policies.
 # ---------------------------------------------------------------------
