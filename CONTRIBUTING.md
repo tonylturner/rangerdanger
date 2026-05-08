@@ -56,6 +56,39 @@ The same commands CI runs:
 docker compose config -q
 ```
 
+## End-to-end smoke gates
+
+Three layered smoke gates protect the lab against regressions. Run
+them after any change that touches lab content, the firewall
+dataplane, the policy YAMLs, or the simulator images. Each requires
+the compose stack to be up:
+
+```sh
+docker compose up -d --build
+
+# 1. Inventory + boot. Lab YAML count, scenario IDs, sim health.
+./scripts/smoke-test.sh
+
+# 2. Firewall traffic enforcement matrix. Applies weak then improved
+#    via the lab API and probes positive + negative flows from inside
+#    each container. Catches dataplane regressions.
+./scripts/firewall-smoke.sh
+
+# 3. Lab-doc rot. Every CMD_TOOL_RE-matching command in every lab
+#    YAML run via docker exec from the right container under the
+#    right policy. Catches typo'd IPs, missing tools, wrong source
+#    containers.
+./scripts/lab-commands-smoke.sh
+
+# Single scenario instead of all:
+./scripts/lab-commands-smoke.sh baseline-assessment
+./scripts/firewall-smoke.sh weak       # or "improved", or "both"
+```
+
+CI runs all three on every PR and push to main
+(`.github/workflows/smoke.yml`). Locally is faster because the
+images are already cached.
+
 ## Code style
 
 - **Go**: standard `gofmt` / `goimports`. Comment exported identifiers

@@ -1,15 +1,20 @@
 name: Smoke
 
-# Bring the lab up against the locally-built images, hit /api/health
-# and /api/build, then tear it down. Catches startup regressions
-# (broken healthcheck, broken depends_on chain, missing volume,
-# bad mount path) that the unit-test CI doesn't see.
+# Bring the lab up against the locally-built images, run a layered
+# series of correctness gates, then tear it down:
 #
-# Runs on every push to main + PR. Doesn't run release.yml or
-# dep-scan.yml — purely a "the stack still boots" gate.
+#   1. /api/health and /api/build respond              (boot gate)
+#   2. lab inventory matches the workshop deck         (content gate)
+#   3. sim healthchecks pass                           (init gate)
+#   4. firewall enforces the traffic matrix correctly  (dataplane gate)
+#   5. every documented lab command runs cleanly       (lab-doc gate)
 #
-# Budget: ~6–8 min on a GitHub-hosted runner because we have to
-# build all 14 images locally (no cache pull). Trades runtime for
+# Runs on every push to main + PR. Catches startup regressions and
+# lab-doc rot before a workshop student trips over them.
+#
+# Budget: ~8–11 min on a GitHub-hosted runner. ~6 min for the build
+# (no cache pull), ~2 min for boot, ~3 min for the matrix probes
+# (mostly the negative-test 3s timeouts). Tradeoff: longer CI for
 # never depending on GHCR availability for PR feedback.
 
 on:
@@ -26,7 +31,7 @@ jobs:
   smoke:
     name: docker compose up + health check
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +131,29 @@ jobs:
           docker compose ps --format '{{.Service}} {{.Status}}'
           healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
           [ "$healthy" -ge 8 ] || { echo "expected >=8 healthy services, got $healthy"; exit 1; }
+
+      - name: Firewall traffic enforcement smoke
+        # scripts/firewall-smoke.sh applies weak then improved via the
+        # lab API and probes a positive+negative traffic matrix from
+        # inside the lab containers. Catches enforcement regressions
+        # in the dataplane (multi-protocol bug, rule ordering,
+        # autobind, etc.) before a workshop student trips over them.
+        run: |
+          set -euo pipefail
+          ./scripts/firewall-smoke.sh
+
+      - name: Lab commands smoke
+        # scripts/lab-commands-smoke.sh extracts every documented
+        # command from the lab YAMLs and runs them via docker exec
+        # from the right container under the right policy. Catches
+        # lab-doc rot — typo'd IPs, missing tools, wrong source
+        # containers, broken policies — before a student does.
+        # PyYAML is needed by the script's parser; install once
+        # alongside any other ad-hoc deps.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          ./scripts/lab-commands-smoke.sh
 
       - name: Dump compose logs on failure
         if: failure()
