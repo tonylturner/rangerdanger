@@ -1,9 +1,39 @@
+# Build dnp3poll/dnp3cmd from the in-tree dnp3go module so OpenPLC
+# carries them as student-runnable diagnostic tools. Lab 2.4 has
+# students probe field devices from a non-RTAC OT host (OpenPLC) to
+# confirm the segmentation policy is enforcing the RTAC source-pin —
+# that test only works if OpenPLC actually has the tools.
+FROM golang:1.25-alpine AS dnp3-builder
+WORKDIR /src
+COPY dnp3go/ .
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/dnp3poll ./cmd/dnp3poll \
+ && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
+
 # OpenPLC :latest snapshot pinned by digest for reproducibility.
 # To update: docker buildx imagetools inspect tuttas/openplc_v3:<tag>
 FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722
 
-# Install sqlite3 for database manipulation, curl for API calls, net-tools for netstat
-RUN apt-get update && apt-get install -y sqlite3 curl net-tools && rm -rf /var/lib/apt/lists/*
+# Diagnostic tools so OpenPLC can play its lab role:
+# - sqlite3, net-tools: existing — DB introspection + netstat
+# - curl: API calls (existing)
+# - nmap: Lab 2.4 step 3 asks students to test "non-RTAC OT host →
+#   field" — needs a port scanner here for the segmentation lesson
+#   to land. nmap is in bionic main; mbpoll isn't (would require
+#   building libmodbus from source for one redundant probe), so the
+#   lab uses nmap + dnp3poll from this host instead.
+# - python3: pretty-printing JSON in lab commands
+RUN apt-get update && apt-get install -y \
+        sqlite3 \
+        curl \
+        net-tools \
+        nmap \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=dnp3-builder /bin/dnp3poll /usr/local/bin/dnp3poll
+COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
 
 # Copy the entrypoint script
 COPY scripts/openplc-entrypoint.sh /openplc-entrypoint.sh

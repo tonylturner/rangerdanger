@@ -26,7 +26,13 @@ import {
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
-import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight } from "lucide-react";
+import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight, AlertCircle, CircleCheck, CircleDashed } from "lucide-react";
+import {
+  readRequirements,
+  computeCoverage,
+  summariseCoverage,
+} from "../lib/requirement-coverage";
+import { loadRemediationPlan } from "../lib/remediation-plan";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
@@ -314,6 +320,127 @@ function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
   );
 }
 
+// PlanCoveragePanel renders the student's Lab 1.4 plan coverage —
+// the same per-requirement breakdown the DecisionPanel sticky bar
+// shows, but inline at any point in a description. Used in Lab 2.4
+// to surface "what did your plan close vs defer" without making the
+// student manually recall their selections.
+function PlanCoveragePanel({ title }: { title: string }) {
+  const [snapshot, setSnapshot] = useState<{
+    hasPlan: boolean;
+    coverage: ReturnType<typeof computeCoverage>;
+    summary: ReturnType<typeof summariseCoverage>;
+  }>({
+    hasPlan: false,
+    coverage: [],
+    summary: { total: 0, covered: 0, partial: 0, gap: 0, na: 0 },
+  });
+
+  useEffect(() => {
+    const requirements = readRequirements();
+    const plan = loadRemediationPlan();
+    const selected = new Set(plan?.selectedActionIds ?? []);
+    const coverage = computeCoverage(requirements, selected);
+    const summary = summariseCoverage(coverage);
+    setSnapshot({
+      hasPlan: !!plan && plan.selectedActionIds.length > 0,
+      coverage,
+      summary,
+    });
+  }, []);
+
+  if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
+        No remediation plan recorded yet. Visit <a
+          href="/exercises/remediation-planning"
+          className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
+        >Lab 1.4 (Remediation Planning)</a> to select actions and your plan coverage will appear here.
+      </div>
+    );
+  }
+
+  const { coverage, summary } = snapshot;
+  const allClosed = summary.covered === summary.total - summary.na && summary.gap === 0 && summary.partial === 0;
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-950 p-3">
+      <div className="flex items-baseline justify-between mb-2">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          {title}
+        </div>
+        <div className="text-[11px] font-mono">
+          <span className={allClosed ? "text-emerald-400 font-bold" : "text-slate-200 font-bold"}>
+            {summary.covered}
+          </span>
+          <span className="text-slate-500"> / {summary.total - summary.na} covered</span>
+          {summary.partial > 0 && (
+            <span className="text-amber-400"> · {summary.partial} partial</span>
+          )}
+          {summary.gap > 0 && (
+            <span className="text-red-400"> · {summary.gap} gap</span>
+          )}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {coverage.map((c) => {
+          if (c.status === "n/a") {
+            return (
+              <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
+                <span className="text-slate-500">
+                  <span className="font-bold text-slate-400">{c.req.label}</span>
+                  <span className="text-slate-600"> — {c.reason}</span>
+                </span>
+              </div>
+            );
+          }
+          if (c.status === "covered") {
+            return (
+              <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
+                <span className="text-slate-300">
+                  <span className="font-bold">{c.req.label}</span>
+                  <span className="text-slate-500"> — {c.req.verdict}, fully addressed by your plan</span>
+                </span>
+              </div>
+            );
+          }
+          if (c.status === "partial") {
+            return (
+              <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
+                <span className="text-slate-300">
+                  <span className="font-bold">{c.req.label}</span>
+                  <span className="text-slate-500"> — {c.req.verdict}, partial coverage. Missing: </span>
+                  <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
+                </span>
+              </div>
+            );
+          }
+          // gap — deferred or never selected
+          return (
+            <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
+              <span className="text-slate-300">
+                <span className="font-bold">{c.req.label}</span>
+                <span className="text-slate-500"> — {c.req.verdict}, deferred. Implementing actions: </span>
+                <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] text-slate-500 italic">
+        Read-only snapshot of your <a
+          href="/exercises/remediation-planning"
+          className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
+        >Lab 1.4 plan</a>. Edit selections there to update.
+      </div>
+    </div>
+  );
+}
+
 // HintBlock is a collapsible "reveal answer" panel rendered inside step
 // descriptions where the YAML contains a :::hint Title / ::: fence.
 // Default state is collapsed — the student has to click to see the answer.
@@ -398,6 +525,9 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   items={seg.items}
                 />
               );
+            }
+            if (seg.type === "planCoverage") {
+              return <PlanCoveragePanel key={si} title={seg.title} />;
             }
             // Nested hints aren't expected, but render them flat just
             // in case a YAML author does it — same context propagated.
@@ -1171,6 +1301,14 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           sourceScenario={seg.sourceScenario}
                           title={seg.title}
                           items={seg.items}
+                        />
+                      );
+                    }
+                    if (seg.type === "planCoverage") {
+                      return (
+                        <PlanCoveragePanel
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          title={seg.title}
                         />
                       );
                     }

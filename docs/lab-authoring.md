@@ -187,6 +187,33 @@ shows a "you haven't done lab X yet" link.
 Multiple panels in one step are fine — Lab 1.3 step 1 shows both
 "Passive capture findings" and "Active probe result" stacked.
 
+### Plan coverage — `:::plan-coverage`
+
+Renders the same per-requirement coverage view that Lab 1.4's
+DecisionPanel shows in its sticky-bottom bar, but inline at any
+point in a description. Reads the saved remediation plan from
+`localStorage` and computes coverage against the Lab 1.3 design
+verdicts. Each requirement appears as **fully addressed**,
+**partial**, **deferred**, or **n/a**.
+
+```yaml
+:::plan-coverage title="Coverage of your committed Lab 1.3 design"
+:::
+```
+
+Body is ignored — the panel reads from `localStorage`, no
+author input needed. Useful in summary / reflection steps where
+the lab wants to surface "what your plan closed vs deferred"
+without making the student manually recall their selections.
+
+| Attribute | Required | Purpose |
+|---|---|---|
+| `title` | no | Panel header. Defaults to `"Your plan coverage"`. |
+
+If the student hasn't completed Lab 1.4, the panel shows a
+"visit Lab 1.4 to select actions" link instead of an empty
+table.
+
 ## Step-level `action` field
 
 Some steps have a structured action that renders a custom UI

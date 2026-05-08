@@ -353,6 +353,40 @@ describe("parseDecisionAttrs", () => {
   });
 });
 
+describe("splitDescription — :::plan-coverage", () => {
+  it("parses a plan-coverage fence with title", () => {
+    const text = [
+      ':::plan-coverage title="What your plan closed"',
+      ":::",
+    ].join("\n");
+    const segs = splitDescription(text);
+    expect(segs).toHaveLength(1);
+    const pc = segAt(segs, 0, "planCoverage");
+    expect(pc.title).toBe("What your plan closed");
+  });
+
+  it("uses a default title when title= is absent", () => {
+    const segs = splitDescription(":::plan-coverage\n:::");
+    const pc = segAt(segs, 0, "planCoverage");
+    expect(pc.title).toBe("Your plan coverage");
+  });
+
+  it("ignores any body content between fence markers", () => {
+    // The fence body has no semantic meaning; the panel reads from
+    // localStorage at render time. Author-supplied body lines should
+    // be silently dropped, not rendered as prose.
+    const text = [
+      ":::plan-coverage",
+      "this body is ignored",
+      "as is this",
+      ":::",
+      "After.",
+    ].join("\n");
+    const segs = splitDescription(text);
+    expect(segs.map((s) => s.type)).toEqual(["planCoverage", "prose"]);
+  });
+});
+
 describe("parseFindingsAttrs", () => {
   it("uses the default title when title= is absent", () => {
     const a = parseFindingsAttrs("from=lab-x");

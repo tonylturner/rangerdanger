@@ -37,6 +37,16 @@ const DECISION_OPEN_RE = /^:::decision\s+(.+)$/;
 // localStorage value and shows it.
 const FINDINGS_PANEL_OPEN_RE = /^:::findings-panel(?:\s+(.+))?$/;
 
+// :::plan-coverage [title="..."]
+// :::
+// Renders the same per-requirement coverage view that Lab 1.4's
+// DecisionPanel uses, but inline at any point in a description.
+// Reads the saved remediation plan from localStorage and computes
+// coverage against the 1.3 design verdicts. Used in Lab 2.4 to
+// surface "what did your plan close vs defer" without making the
+// student manually recall and re-list it.
+const PLAN_COVERAGE_OPEN_RE = /^:::plan-coverage(?:\s+(.+))?$/;
+
 // Default options match the workshop's risk-verdict vocabulary. The
 // "BLOCK and LOG" combo is its own entry because that's how the
 // answer key for unauthorized-writes is stated (block-plus-log is a
@@ -62,6 +72,10 @@ export type Segment =
       sourceScenario: string;
       title: string;
       items: FindingsPanelItem[];
+    }
+  | {
+      type: "planCoverage";
+      title: string;
     };
 
 // Parse `id=foo options=A,B,C default-from=lab:dec correct=X` style
@@ -108,6 +122,13 @@ export function parseFindingsAttrs(attrs: string): {
   return { sourceScenario, title };
 }
 
+// Parse `title="..."` attributes on the plan-coverage fence.
+export function parsePlanCoverageAttrs(attrs: string): { title: string } {
+  const titleMatch = attrs.match(/\btitle=("([^"]+)"|(\S+))/);
+  const title = (titleMatch?.[2] ?? titleMatch?.[3] ?? "Your plan coverage").trim();
+  return { title };
+}
+
 /**
  * Split a description body into interleaved prose, command, hint,
  * decision, and findingsPanel segments. Order in the output preserves
@@ -145,6 +166,19 @@ export function splitDescription(text: string): Segment[] {
       }
       if (i < lines.length) i++; // skip closing fence
       result.push({ type: "hint", title, value: body.join("\n") });
+      continue;
+    }
+    const planCoverageOpen = PLAN_COVERAGE_OPEN_RE.exec(trimmed);
+    if (planCoverageOpen) {
+      flushProse();
+      const { title } = parsePlanCoverageAttrs(planCoverageOpen[1] ?? "");
+      // Eat through the closing :::, body is ignored.
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        i++;
+      }
+      if (i < lines.length) i++;
+      result.push({ type: "planCoverage", title });
       continue;
     }
     const findingsOpen = FINDINGS_PANEL_OPEN_RE.exec(trimmed);
