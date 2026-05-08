@@ -29,6 +29,7 @@ tags:
 steps:
   - title: "Verify normal operations"
     expected_config: weak
+    node: rtac-1
     description: |
       Confirm the substation is healthy under the weak baseline:
 
@@ -38,8 +39,8 @@ steps:
 
       Quick check from the [Feeder HMI](/substation), or - as a
       lab convenience (real RTACs don't expose a JSON `/api/state`;
-      this is RangerDanger's status helper) - from any OT Ops
-      terminal:
+      this is RangerDanger's status helper) - from the RTAC
+      terminal below:
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -30
 
@@ -153,6 +154,15 @@ steps:
 
       Either layer alone breaks each attack. Together they're
       defense in depth.
+
+      :::plan-coverage title="Your plan vs the two attacks"
+      :::
+
+      If your Lab 1.4 plan didn't pin RTAC-to-field (`pin-rtac-to-field`)
+      AND didn't add Modbus/DNP3 DPI (`modbus-dpi`, `dnp3-dpi`), one
+      or both re-tests in the next steps may still succeed under
+      "Apply Your Plan" — that's the lab telling you the plan has
+      a gap. Re-attempt with **Apply Hardened** to compare.
     action:
       type: firewall
       config: improved
