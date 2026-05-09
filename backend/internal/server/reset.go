@@ -89,6 +89,31 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Success: err == nil,
 			Detail:  boolDetail(err == nil, "capture files removed", errStr(err)),
 		})
+
+		// Defensive credential reset for containd. With containd
+		// v0.1.22+ in lab mode, password change is locked at the API
+		// — students can't drift the canonical `containd/containd`
+		// credential via the UI or via SSH. This step is for the
+		// edge case where someone hit a pre-v0.1.22 containd directly
+		// on :9080 and changed the password before pulling the new
+		// image: wiping users.db lets containd reseed the default on
+		// its next restart. The wipe is a no-op on a clean stack
+		// (file is already containing the default cred) so this is
+		// always safe to run from Reset Lab.
+		credCfg := container.ExecOptions{
+			Cmd: []string{"sh", "-c", "rm -f /data/users.db /data/sessions.db 2>/dev/null; true"},
+		}
+		credExecID, credErr := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, credCfg)
+		if credErr == nil {
+			dockerCli.ContainerExecStart(context.Background(), credExecID.ID, container.ExecStartOptions{})
+		}
+		actions = append(actions, resetAction{
+			Action:  "Reset containd credentials to default",
+			Success: credErr == nil,
+			Detail: boolDetail(credErr == nil,
+				"users.db cleared (firewall restart required for changes to take effect; with containd >= v0.1.22 lab mode this is a no-op)",
+				errStr(credErr)),
+		})
 	}
 
 	// Wait for state propagation

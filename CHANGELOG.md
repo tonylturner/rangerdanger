@@ -6,6 +6,102 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.6] - 2026-05-08
+
+Lab realism + containd auth-flow patch. Two changes that make the
+existing kinetic-chain plumbing visible to students, plus a
+defense-in-depth fix for the containd lab-mode credential drift
+that surfaced after v0.1.5 shipped. Requires `containd >= v0.1.22`
+(the upstream lab-mode credential pin); containd v0.1.23 docs the
+trade-off transparently in its Secure-by-Design pledge.
+
+### Workshop / lab content
+
+- **Lab 2.3 third attack: Direct breaker trip via Modbus FC5.**
+  Single-packet kinetic outcome — Kali sends `mbpoll -t 0 -r 1
+  10.40.40.20 0` to the relay's coil 0, the breaker opens, and
+  OpenDSS de-energizes the entire feeder within ~3s
+  (downstream_voltage_v: 119 → 0, all loads dark, feeder current
+  → 0). The most dramatic cyber → physics chain the lab can
+  demonstrate; previously the relay's FC5 path was wired through
+  to OpenDSS but no lab exercised it. Re-test step under the
+  hardened policy confirms the L4 source-pin closes the
+  enterprise → field write at the perimeter.
+- **Lab 2.3 attacks now tied to observable kinetic outcomes via
+  Modbus.** Each attack step now ends with two `mbpoll` reads
+  against the RTAC (FC3 holding registers for device states, FC4
+  input registers for OpenDSS analog measurements). Students see
+  the actual register values change — `critical_load_voltage_v ×
+  10` drops from ~1240 to ~1075 after Attack 1's regulator tap
+  override; `downstream_voltage_v × 10` and `feeder_current_a ×
+  10` drop to 0 after Attack 2's recloser trip. No `curl` reads
+  in attack labs — the protocols students attack are the
+  protocols they verify with.
+- **Lab 2.3 step 1 (Verify normal ops) replaces curl with mbpoll
+  reads** of the same RTAC tags. Establishes the baseline using
+  the same protocol surface the attacks exploit.
+- **Cyber → state → physics propagation-lag `:::hint`** added to
+  Lab 2.3 step 1 and Lab 2.3-bonus attack step. Documents the
+  ~2-3s window between a Modbus/DNP3 write and the OpenDSS
+  electrical-state update (RTAC polls field devices every 2
+  seconds, then pushes aggregated state to the solver). Without
+  this, students who re-read state immediately after the attack
+  see device flags changed but not the kinetic outcome and
+  conclude the attack failed.
+- **Lab 2.3 Attack 1 mbpoll command bug fixes (audit follow-up).**
+  Was `mbpoll -t 1 -r 1 ... -- -16` — `-t 1` is mbpoll's discrete-
+  input data type (Modbus FC2, read-only), so the command failed
+  with `Unable to write read-only element`. Lab "worked" only
+  because the action stanza drove regulator state via the API
+  path; the student's typed CLI was a no-op. Now `-t 4` (holding
+  register, Modbus FC6) and value `65520` (two's-complement of
+  -16 as the unsigned register accepts). Verification command was
+  `-t 4 -r 3 ...` reading holding register 2 (`reclose_enabled`,
+  not the claimed `critical_load_voltage`); now `-t 3 -r 3` for
+  input register read (FC4).
+- **Lab 2.3-bonus observe-impact step** mirrors the 2.3 changes —
+  after the Modbus FC5 attack on the recloser from the vendor
+  jump, students read RTAC tags via Modbus to see downstream
+  de-energization. Same propagation-lag hint included.
+
+### Backend / proxy / docs
+
+- **Containd auth lab-mode workaround (defense in depth).**
+  containd v0.1.22 added an upstream lab-mode lock that pins the
+  canonical `containd/containd` credential and disables password
+  change. RangerDanger now belt-and-suspenders the same surface
+  in three places so a stack running an older containd image
+  still gets the workshop-correct behavior:
+  - **(A) `proxy/nginx.conf` blocks the password-change endpoints
+    at the proxy.** A regex `location` for
+    `/containd/api/v[0-9]+/(auth/me|users/[^/]+)/password$`
+    returns 403 with a clear lab-mode message before the request
+    reaches containd. Students get a clean explanation instead of
+    the previous CORS / "password field" error.
+  - **(B) `/api/workshop/reset` wipes containd's `users.db`** as a
+    defensive backstop. With containd >= v0.1.22 this is a no-op
+    (password change is locked at the API), but provides a clean
+    recovery path for any pre-v0.1.22 stack where someone hit the
+    direct `:9080` UI and changed the password.
+  - **(C) `proxy/nginx.conf` injects a banner** at the top of the
+    proxied containd UI explaining that credentials are pinned to
+    `containd/containd` and password change is disabled in lab
+    mode. Sets explicit student-facing expectations.
+
+### Tests
+
+- Smoke gauntlet now exercises 75 lab commands (was 65 in v0.1.5)
+  — the new mbpoll observation reads in 2.3 and 2.3-bonus pick up
+  automatically via `lab-commands-smoke.sh`'s YAML scan.
+- All four fixes verified live against a clean rebuild with
+  containd v0.1.22 image: A returns 403 at the proxy, containd
+  direct returns 403 with the upstream lab-mode message,
+  `/auth/me` no longer advertises `mustChangePassword`, the
+  banner renders in the proxied login page, and `/api/workshop/reset`
+  successfully removes `/data/users.db`.
+- firewall-smoke 52/52 + lab-commands-smoke 75/75 + backend
+  `go test -race ./...` clean.
+
 ## [v0.1.5] - 2026-05-08
 
 Audit-pass-3 closeout. Codex surfaced two reproducible workshop
@@ -757,7 +853,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.6...HEAD
+[v0.1.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.6
 [v0.1.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.5
 [v0.1.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.4
 [v0.1.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.3

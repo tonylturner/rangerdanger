@@ -1,19 +1,25 @@
 id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
-summary: "Stress-test your firewall against two protocol-specific attacks (Modbus override + DNP3 injection) that L4 port-only filtering can't stop. DPI is the lesson (15 min)."
+summary: "Stress-test your firewall against three protocol-specific attacks (Modbus override + DNP3 injection + direct breaker trip) that L4 port-only filtering can't stop. DPI is the lesson (20 min)."
 description: >
   In Lab 2.2 you built a least-privilege firewall policy. This
-  exercise stress-tests it against two attacks that ride on ports
-  the firewall must allow for legitimate RTAC operation:
+  exercise stress-tests it against three attacks that ride on ports
+  the firewall must allow for legitimate RTAC operation. Each one
+  drives a measurable kinetic outcome via the OpenDSS power-flow
+  solver:
 
-  1. **Modbus register override** - a direct write from Kali bypasses
-     the RTAC to manipulate the voltage regulator.
-  2. **DNP3 Direct Operate injection** - an unauthorized control
-     command disables auto-reclose on the recloser, then triggers a
-     permanent outage on a transient fault.
+  1. **Modbus register override** - a direct FC6 write from Kali
+     bypasses the RTAC to manipulate the voltage regulator's tap,
+     dropping critical-load voltage below ANSI Range A.
+  2. **DNP3 Direct Operate injection** - an unauthorized FC05
+     control sequence disables auto-reclose on the recloser, then
+     trips it - de-energizing every load downstream of the recloser.
+  3. **Direct breaker trip** - a single Modbus FC5 write to the
+     relay opens the substation breaker and takes the entire
+     feeder dark.
 
-  Both attacks succeed under the weak baseline. Both should fail
+  All three succeed under the weak baseline. All three should fail
   under the hardened policy. The combination of source-pinning at
   L4 and protocol-aware DPI (Modbus function-code restrictions,
   DNP3 Direct Operate restrictions) is what closes them while
@@ -37,12 +43,40 @@ steps:
       - Regulator in auto, tap near 0
       - Critical-load voltage in ANSI C84.1 Range A (114–126V)
 
-      Quick check from the [Feeder HMI](/substation), or - as a
-      lab convenience (real RTACs don't expose a JSON `/api/state`;
-      this is RangerDanger's status helper) - from the RTAC
-      terminal below:
+      Read the RTAC's Modbus telemetry directly. The RTAC aggregates
+      field-device state and electrical measurements (from the
+      OpenDSS solver) and exposes them as standard Modbus registers.
+      This is the same protocol an attacker speaks - so reading
+      these now gives you the baseline you'll compare against after
+      each attack.
 
-          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -30
+      Holding registers (device states, FC3):
+
+          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+
+      Expected: `[0]=1` (breaker closed), `[1]=1` (recloser closed),
+      `[2]=1` (auto-reclose enabled), `[3]≈0` (regulator tap),
+      `[4]=0` (regulator auto mode).
+
+      Input registers (analog measurements, x10 scaling, FC4):
+
+          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+
+      Expected: `[0]≈1200` (substation bus 120V), `[1]≈1200`
+      (downstream 120V), `[2]≈1240` (critical-load 124V),
+      `[3]≈360` (feeder current 36A). Values are scaled x10 -
+      divide by ten for volts/amps.
+
+      :::hint Cyber → state → physics has a ~2-3s lag
+      Every Modbus or DNP3 write you'll send mutates the field-
+      device sim's state immediately, but the *electrical* impact
+      (voltages, energization, feeder currents) only updates after
+      the RTAC polls field devices (every 2 seconds) and pushes the
+      aggregated state to the OpenDSS solver. If you read RTAC tags
+      *immediately* after an attack, you may see the device state
+      change but not the kinetic outcome yet. Wait 3 seconds, then
+      re-read.
+      :::
 
       **Time budget:** 15 minutes.
     action:
@@ -58,17 +92,36 @@ steps:
     node: kali-1
     description: |
       From Kali (10.10.10.50, enterprise zone), under the weak
-      baseline, send a Modbus FC6 write to the regulator
-      (10.40.40.22) forcing the tap to -16:
+      baseline, send a Modbus FC6 (write single register) to the
+      regulator (10.40.40.22) forcing the tap to -16:
 
-          mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
+          mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520
 
-      Verify the impact - critical-load voltage drops below ANSI
-      Range A:
+      `-t 4` is mbpoll's holding-register data type (Modbus FC3
+      read / FC6 write). `-r 1` is register 1 (mbpoll uses 1-indexed
+      references, mapping to Modbus address 0). The value `65520`
+      is `-16` encoded as an unsigned 16-bit integer (Modbus
+      registers are unsigned; two's-complement of `-16` is
+      `0xFFF0` = 65520). The regulator-sim interprets register 0
+      as the signed tap position.
 
-          mbpoll -a 1 -t 4 -r 3 10.30.30.20 -c 1 -1
+      Wait ~3 seconds for the RTAC poll → OpenDSS push to land,
+      then read the RTAC's Modbus tags to confirm the kinetic
+      outcome:
 
-      (Input register 2 on the RTAC = `critical_load_voltage × 10`.)
+          mbpoll -a 1 -t 3 -r 3 10.30.30.20 -c 1 -1
+
+      Input register 2 (FC4) = `critical_load_voltage_v × 10`.
+      Under normal operations the value is in the 1140-1260 range
+      (114-126V, ANSI C84.1 Range A). After the attack it should
+      read well below 1140.
+
+      For full impact context, read all six analog measurements at
+      once:
+
+          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+
+      Compare against the baseline you captured in step 1.
 
       **Why it worked:** the weak baseline allows enterprise → field
       Modbus 502. There's no source pinning, no function-code
@@ -84,18 +137,37 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
-      From Kali, send a DNP3 Direct Operate to disable auto-reclose
-      on the recloser:
+      From Kali, send a DNP3 Direct Operate (FC05) to disable
+      auto-reclose on the recloser. The CROB (Control Relay Output
+      Block) targets binary output index 1, which the recloser
+      maps to `reclose_enabled`. `latch-off` is the CROB op code
+      that drives the point to 0:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 
-      Then inject a transient fault:
+      Then trip the recloser via CROB on binary output index 0
+      (mapped to `closed`) with op code `trip`:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
 
       Without auto-reclose, the recloser locks out - what should be a
-      brief flicker becomes a sustained outage. Hospital and fire
-      station downstream lose power.
+      brief flicker becomes a sustained outage. Wait ~3 seconds for
+      the OpenDSS push, then read the RTAC tags via Modbus to confirm
+      the downstream de-energization:
+
+          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+
+      Holding register 1 should now read `0` (recloser_closed=false)
+      and register 2 should read `0` (reclose_enabled=false).
+
+          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+
+      Input register 1 (`downstream_voltage_v × 10`) and register 3
+      (`feeder_current_a × 10`) should both read `0` - the loads
+      downstream of the recloser are unenergized. Hospital and fire
+      station are dark. The substation bus (input register 0) is
+      still energized at the source side because the substation
+      breaker is still closed - only downstream lost power.
 
       **Why it worked:** the weak baseline allows enterprise → field
       DNP3 20000. There's no DPI to distinguish Direct Operate
@@ -106,17 +178,74 @@ steps:
       command: disable_reclose
       source: "10.10.10.50"
 
+  - title: "Attack 3 - Direct breaker trip via Modbus FC5"
+    expected_config: weak
+    node: kali-1
+    description: |
+      Attacks 1 and 2 affected service quality and the downstream
+      portion of the feeder. The substation bus stayed energized
+      because the source-side breaker stayed closed. This attack
+      goes after the source breaker directly: a single Modbus FC5
+      (write single coil) write to the relay opens the substation
+      breaker and de-energizes the entire feeder.
+
+      From Kali, send the FC5 write to relay coil 0 (`breaker_closed`).
+      `-t 0` is mbpoll's coil data type (FC1 read / FC5 write),
+      `-r 1` is mbpoll's 1-indexed reference for coil 0, and `0`
+      drives the coil low (open):
+
+          mbpoll -a 1 -t 0 -r 1 10.40.40.20 0
+
+      Wait ~3 seconds, then read the RTAC's input registers:
+
+          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+
+      Holding register 0 (`breaker_closed`) is now `0`. The
+      OpenDSS solver de-energizes everything downstream of the
+      breaker:
+
+      - Input register 1 (`downstream_voltage_v × 10`) → 0
+      - Input register 2 (`critical_load_voltage_v × 10`) → 0
+      - Input register 3 (`feeder_current_a × 10`) → 0
+      - Input register 4 (`general_load_kw`) → 0
+      - Input register 5 (`critical_load_kw`) → 0
+
+      One write, total feeder outage. This is the worst-case
+      single-packet kinetic outcome the lab can demonstrate -
+      and the firewall's job is to make sure no enterprise host
+      can ever send it.
+
+      **Why it worked:** same root cause as Attack 1 - the weak
+      baseline lets enterprise reach field on Modbus 502 with no
+      source pin and no function-code filter. The relay-sim
+      accepts FC5 from any source.
+    action:
+      type: command
+      device: relay
+      command: trip
+      source: "10.10.10.50"
+
   - title: "Restore the substation"
     expected_config: weak
     description: |
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
       to reset the lab state, or click **Reset Lab** below:
 
+      - Relay: clear fault, unlock, close substation breaker
       - Regulator: set to Auto, tap to 0
       - Recloser: clear fault, enable auto-reclose, reset lockout, close
     action:
       type: sequence
       commands:
+        - device: relay
+          command: clear_fault
+          source: "operator"
+        - device: relay
+          command: unlock
+          source: "operator"
+        - device: relay
+          command: close
+          source: "operator"
         - device: regulator
           command: set_auto
           source: "operator"
@@ -142,25 +271,28 @@ steps:
       Apply the hardened firewall configuration with **Apply Hardened**,
       or **Apply Your Plan** if you built a custom policy in Lab 2.2.
 
-      The hardened policy combines two layers that together close both
-      attacks:
+      The hardened policy combines two layers that together close all
+      three attacks:
 
       - **L4 source-pinning:** only the RTAC (10.30.30.20) can reach
         field devices on Modbus 502 and DNP3 20000. Enterprise and
-        vendor sources are blocked at the perimeter.
+        vendor sources are blocked at the perimeter - this alone
+        closes Attack 3 (direct breaker trip) and the Modbus tap
+        write in Attack 1.
       - **ICS DPI:** Modbus writes (FC5/6/16) restricted to the RTAC
         even on flows where reads are allowed; DNP3 Direct Operate
-        (FC05) restricted to the RTAC.
+        (FC05) restricted to the RTAC. This catches Attack 2 even
+        if the L4 source pin is loosened for monitoring access.
 
       Either layer alone breaks each attack. Together they're
       defense in depth.
 
-      :::plan-coverage title="Your plan vs the two attacks"
+      :::plan-coverage title="Your plan vs the three attacks"
       :::
 
       If your Lab 1.4 plan didn't pin RTAC-to-field (`pin-rtac-to-field`)
       AND didn't add Modbus/DNP3 DPI (`modbus-dpi`, `dnp3-dpi`), one
-      or both re-tests in the next steps may still succeed under
+      or more re-tests in the next steps may still succeed under
       "Apply Your Plan" — that's the lab telling you the plan has
       a gap. Re-attempt with **Apply Hardened** to compare.
     action:
@@ -173,7 +305,7 @@ steps:
     description: |
       Repeat the Modbus tap change from Kali:
 
-          mbpoll -a 1 -t 1 -r 1 10.40.40.22 -- -16
+          mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520
 
       The connection should time out - containd blocks
       enterprise → field at the L4 boundary before DPI even applies.
@@ -184,6 +316,31 @@ steps:
       command: set_tap
       source: "10.10.10.50"
       value: -16
+
+  - title: "Re-test Attack 3 - Direct breaker trip"
+    expected_config: hardened
+    node: kali-1
+    description: |
+      Repeat the FC5 breaker trip from Kali:
+
+          mbpoll -a 1 -t 0 -r 1 10.40.40.20 0
+
+      Should time out. The substation breaker stays closed - the
+      L4 source pin blocked the write at the perimeter and the
+      relay never saw the FC5.
+
+      Confirm via the RTAC tags that nothing changed:
+
+          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+
+      Holding register 0 (`breaker_closed`) is still `1`. The
+      single-packet feeder outage is no longer reachable from
+      enterprise.
+    action:
+      type: command
+      device: relay
+      command: trip
+      source: "10.10.10.50"
 
   - title: "Re-test Attack 2 - DNP3 injection"
     expected_config: hardened
