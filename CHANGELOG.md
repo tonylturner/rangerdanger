@@ -6,6 +6,55 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.8] - 2026-05-09
+
+Workshop-readiness release: SSD distribution operator runbook, delta-
+patch tooling, and host-resource spec corrected against measured
+reality. No behavior change in the running stack.
+
+### Workshop / ops
+
+- **`docs/workshop-ssd.md`** (new) - operator runbook for shipping
+  RangerDanger to a roomful of laptops over a constrained-Wi-Fi
+  workshop. Covers initial SSD stage, student first-run install,
+  the three change patterns that arise mid-workshop (repo-only,
+  image rebuild, containd update), the delta workflow, recovery
+  scenarios (corrupt SSD, mid-load failure, drifted credentials,
+  stale lab YAML), and an FAQ. Linked from README docs table.
+
+- **`stage-ssd-delta.sh`** (new) - patch-tarball builder for
+  pushing a fix mid-workshop without re-shipping the full ~6 GB
+  bundle. Compares remote manifest digests of every first-party
+  image at `<since-version>` vs `<new-version>`, saves only the
+  ones that differ per architecture, always includes a fresh
+  `rangerdanger.tgz`, and writes a per-stage `DELTA-README.md`
+  with the exact apply commands the student should run.
+  Flags: `--include image1,image2` to force-include images
+  whose digest didn't change, `--all` to skip the digest
+  comparison entirely, `--include-upstream` to delta-check
+  containd/nginx/fuxa/webtop/alpine in addition to the
+  rangerdanger-* set.
+
+- **`docs/_internal/pdf-update-prompt.md`** (new) - canonical
+  prompt for regenerating the workshop-handout PDF in
+  Claude.ai web when the install flow drifts. Single source of
+  truth for what the PDF should say, checked against
+  `docs/quickstart.md` and `setup.sh` at PDF-regen time.
+
+### Documentation - resource spec corrected
+
+- **`docs/quickstart.md` + `README.md` Prerequisites table.** The
+  prior "8 GB host RAM minimum" was wrong - it confused the
+  Docker VM allocation (8 GB) with required host RAM. Live
+  measurement against the running stack: idle ~4 GB across all
+  containers, peak ~6-8 GB during workshop use. Host needs to
+  cover that *plus* macOS/Windows itself plus the student's
+  browser - 8 GB host swaps too aggressively. Corrected to
+  "16 GB host RAM minimum, 32 GB recommended (with 8 GB
+  allocated to the Docker VM)". Setup-script enforcement
+  (`setup.sh` warns at < 7 GB Docker-VM, < 30 GB disk) was
+  already correct and unchanged.
+
 ## [v0.1.7] - 2026-05-08
 
 Polish release: proxy 404 fix for in-app containd navigation, README
@@ -902,7 +951,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.8...HEAD
+[v0.1.8]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.8
 [v0.1.7]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.7
 [v0.1.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.6
 [v0.1.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.5
