@@ -34,7 +34,8 @@ with the WSL2 backend; Hyper-V backend should also work but isn't tested.
 param(
     [string]$Version = "latest",
     [string]$FromTarballs = "",
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [switch]$SkipFirewallGate
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,8 +50,21 @@ function Banner($msg) {
     Write-Host ""
 }
 
-$RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
+$RootDir        = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ComposeFile    = Join-Path $RootDir "docker-compose.release.yml"
+$OfflineOverlay = Join-Path $RootDir "docker-compose.offline.yml"
+
+# Compose argument array used by every `docker compose ...` invocation
+# below. Offline (-FromTarballs) installs add the offline overlay so
+# `pull_policy: never` overrides the release file's `pull_policy: always`,
+# preventing GHCR fetches in network-blocked classroom environments.
+$ComposeArgs = @("-f", $ComposeFile)
+if ($FromTarballs) {
+    if (-not (Test-Path $OfflineOverlay)) {
+        Die "$OfflineOverlay not found — required for -FromTarballs."
+    }
+    $ComposeArgs += @("-f", $OfflineOverlay)
+}
 
 # ─── pre-flight checks ──────────────────────────────────────────────
 Banner "Pre-flight checks"
@@ -171,7 +185,7 @@ if ($FromTarballs) {
     # retry up to 3 times with exponential backoff before giving up.
     $pullOk = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
-        docker compose -f $ComposeFile pull
+        docker compose @ComposeArgs pull
         if ($LASTEXITCODE -eq 0) { $pullOk = $true; break }
         if ($attempt -lt 3) {
             $waitS = $attempt * 15
@@ -192,7 +206,7 @@ Pulling images failed after 3 attempts. Common causes:
 # ─── start the stack ────────────────────────────────────────────────
 Banner "Starting RangerDanger"
 $env:VERSION = $Version
-docker compose -f $ComposeFile up -d
+docker compose @ComposeArgs up -d
 if ($LASTEXITCODE -ne 0) { Die "compose up failed — check logs." }
 Say "Containers started"
 
@@ -211,6 +225,53 @@ if ($ok) {
     Say "Backend reports healthy at $healthUrl"
 } else {
     Warn "Backend didn't report healthy in 60 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
+}
+
+# Workshop-critical surfaces. /api/health alone returned green in past
+# audits while firewall apply/reset were broken — students hit the
+# regression at lab-time, not at setup. Gate explicitly here so a
+# half-working stack never makes it past the installer banner.
+# Use -SkipFirewallGate for developer iteration on a known-broken stack.
+if ($SkipFirewallGate) {
+    Say "Skipping firewall workshop-readiness gate (-SkipFirewallGate)"
+} else {
+    Say "Workshop-readiness gate: firewall health + apply + reset..."
+    $fwFail = $false
+    try {
+        Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+        Warn "  /api/firewall/health failed — containd management interface is down"
+        $fwFail = $true
+    }
+    foreach ($cfg in @("weak", "improved")) {
+        try {
+            $body = @{ config = $cfg } | ConvertTo-Json -Compress
+            Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop | Out-Null
+        } catch {
+            Warn "  /api/firewall/apply ($cfg) failed — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
+            $fwFail = $true
+        }
+    }
+    try {
+        $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+        if ($resetResp.Content -notmatch '"success":true') {
+            Warn "  /api/workshop/reset reported non-success — students hitting Reset Lab will see partial state"
+            $fwFail = $true
+        }
+    } catch {
+        Warn "  /api/workshop/reset failed: $_"
+        $fwFail = $true
+    }
+    if ($fwFail) {
+        Die @"
+Workshop-readiness gate failed. Common causes:
+  - containd image drift (bump containd or pin a known-good tag)
+  - mgmt subnet not in firewall input chain (CONTAIND_AUTO_LAN3_SUBNET)
+  - sims still warming up (re-run setup, or wait 30s and re-probe)
+Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
+"@
+    }
+    Say "Firewall apply/reset workshop gate passed"
 }
 
 # ─── done ────────────────────────────────────────────────────────────

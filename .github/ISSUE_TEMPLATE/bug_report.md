@@ -6,7 +6,7 @@ labels: bug
 ---
 
 <!--
-For SECURITY issues, please don't open a public issue — see SECURITY.md
+For SECURITY issues, please don't open a public issue - see SECURITY.md
 for the responsible-disclosure address.
 -->
 
@@ -40,7 +40,7 @@ for the responsible-disclosure address.
 
 ## Affected exercise (if applicable)
 
-<!-- e.g. "exercise 5 — Modbus Override Attack, step 3 (mbpoll command)" -->
+<!-- e.g. "exercise 5 - Modbus Override Attack, step 3 (mbpoll command)" -->
 
 ## Logs
 

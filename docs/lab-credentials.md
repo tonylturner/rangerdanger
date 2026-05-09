@@ -11,7 +11,7 @@ reuse them outside the lab.
 ## Standard lab account
 
 The same username / password works on every lab service that
-requires one. This keeps the workshop friction low — students don't
+requires one. This keeps the workshop friction low - students don't
 have to track per-service credentials while they're learning the
 network model.
 
@@ -50,7 +50,7 @@ vncviewer 10.20.20.10::5900                     # password: rangerdanger
 ```
 
 Under the **improved** policy, RDP (3389) and VNC (5900) are
-explicitly blocked at the perimeter — those connections will time
+explicitly blocked at the perimeter - those connections will time
 out, while SSH/HTTP/HTTPS stay reachable. The `firewall-smoke.sh`
 matrix encodes this contrast.
 
@@ -58,11 +58,11 @@ matrix encodes this contrast.
 
 `rangerdanger` is created at container startup by:
 - `scripts/vendor-jump-services.sh` on vendor-jump (linuxserver/webtop's
-  `/custom-cont-init.d/` hook) — for SSH/HTTP/HTTPS/RDP/VNC.
+  `/custom-cont-init.d/` hook) - for SSH/HTTP/HTTPS/RDP/VNC.
 - `scripts/rtac-mgmt-init.sh` on rtac-sim (alpine, runs as part of
-  the `rtac-sim` CMD before the Go binary execs) — for SSH/HTTPS
+  the `rtac-sim` CMD before the Go binary execs) - for SSH/HTTPS
   only.
 
 Adding new credentialed services elsewhere should reuse the
-same user/password so the matrix above stays consistent — update
+same user/password so the matrix above stays consistent - update
 the table above when you do.

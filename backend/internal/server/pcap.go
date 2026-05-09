@@ -36,10 +36,20 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		prefix = fmt.Sprintf("rangerdanger-%s", time.Now().UTC().Format("20060102-150405"))
 	}
 
-	// Build containd PCAP config: mode=once, capture all interfaces, auto-stop via rotateSeconds
+	// containd's /api/v1/pcap/start resolves Interfaces[] entries
+	// via netlink as literal kernel interface names — it does NOT
+	// autobind zone names the way policy interfaces do (commit
+	// 5f31128). And docker's ethN ordering is non-deterministic
+	// across hosts (alphabetical network name, not compose order),
+	// so any ethN pin shuffles on the wrong host and the field
+	// zone silently drops out of the capture set. We leave Interfaces
+	// empty here — containd will reject the call with
+	// "config validation failed: pcap.enabled requires at least one
+	// interface", and the backend falls through to its `tcpdump -i any`
+	// path which is fully drift-proof. Once containd's PCAP API
+	// accepts zone names, the right pin is `[wan,dmz,lan1,lan2,lan3]`.
 	cfg := containd.PcapConfig{
 		Enabled:       true,
-		Interfaces:    []string{"eth0", "eth1", "eth2", "eth3"}, // wan, dmz, lan1, lan2
 		Snaplen:       262144,
 		MaxSizeMB:     64,
 		MaxFiles:      10,

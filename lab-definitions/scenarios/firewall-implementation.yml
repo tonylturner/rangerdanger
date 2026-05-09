@@ -26,7 +26,7 @@ steps:
     description: |
       In the Baseline Assessment, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
 
-      Your prior work is summarised below — your design verdicts and findings drive the rule set you'll build in Phase 3.
+      Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Phase 3.
 
       :::findings-panel from=segmentation-requirements title="Your design verdicts (Lab 1.3)"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
@@ -124,7 +124,7 @@ steps:
   - title: "Phase 1 - Verify current access under the weak baseline"
     expected_config: weak
     description: |
-      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 — this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed right now, and should fail after you finish building your policy.
+      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed right now, and should fail after you finish building your policy.
 
       **From the kali terminal** (`kali-1` on the [Network Map](/console)):
 

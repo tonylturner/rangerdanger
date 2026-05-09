@@ -6,7 +6,7 @@ name: rangerdanger
 #
 # Usage:
 #
-#   # default — uses :latest images
+#   # default - uses :latest images
 #   docker compose -f docker-compose.release.yml up -d
 #
 #   # pin to a specific release
@@ -22,7 +22,7 @@ name: rangerdanger
 
 services:
   firewall:
-    # See docker-compose.yml — containd tracks :latest by design.
+    # See docker-compose.yml - containd tracks :latest by design.
     image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
@@ -37,12 +37,19 @@ services:
       - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
       - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
       - CONTAIND_CONFIG_DB=/data/config.db
-      - CONTAIND_CAPTURE_IFACES=eth0,eth1,eth2,eth3
+      # CONTAIND_CAPTURE_IFACES intentionally unset; see
+      # docker-compose.yml for rationale (containd's PCAP path doesn't
+      # autobind zone names, backend uses `tcpdump -i any` fallback).
       - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
       - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
       - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
+      # Required so backend↔firewall API calls survive the input chain
+      # under the policy. Was missing in this file (release-image users
+      # would hit 502 on apply); keeping it in lockstep with the source
+      # compose now.
+      - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
     volumes:
       - ./data/firewall:/data
     ports:
@@ -315,7 +322,7 @@ services:
     hostname: openplc
     cap_add:
       - NET_ADMIN
-    # Single-homed on ot_ops_net — the ladder logic is a Modbus
+    # Single-homed on ot_ops_net - the ladder logic is a Modbus
     # client of the RTAC and never originates field-device traffic.
     # Removing the field_net leg eliminates the firewall-bypass
     # surface that historian-sim probes used to demonstrate. Audit

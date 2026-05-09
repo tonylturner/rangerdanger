@@ -28,17 +28,17 @@ backend API and the frontend through the same origin).
 | Path | Purpose |
 |------|---------|
 | `app/` | Next.js routes (one directory per page) |
-| `components/` | React components — exercise runner, terminals, network map, decision panel, etc. |
+| `components/` | React components - exercise runner, terminals, network map, decision panel, etc. |
 | `lib/` | API client, type definitions, exercise/node mappings, utility helpers |
-| `public/` | Static assets — logos, icons, favicon |
+| `public/` | Static assets - logos, icons, favicon |
 
 Notable routes (`app/`):
 
-- `/exercises` — exercise library + per-exercise runner
-- `/console` — Cobalt Strike-style network console with React Flow
-- `/substation` — substation control panel
-- `/labs` and `/labs/[id]` — lab template and instance management
-- `/topology` — topology builder
+- `/exercises` - exercise library + per-exercise runner
+- `/console` - Cobalt Strike-style network console with React Flow
+- `/substation` - substation control panel
+- `/labs` and `/labs/[id]` - lab template and instance management
+- `/topology` - topology builder
 
 ## API and proxy
 
@@ -78,9 +78,9 @@ backend APIs that don't exist yet, add the handlers in
 
 ## Conventions
 
-- TypeScript strict — avoid `any`. Cast at the boundary, narrow inside.
+- TypeScript strict - avoid `any`. Cast at the boundary, narrow inside.
 - Tailwind for styling. shadcn-style primitives in `components/ui/`.
 - Server Components for most pages; reach for `"use client"` only
   when you need state, effects, or browser APIs.
-- Don't import directly from `lib/api.ts` inside server components —
+- Don't import directly from `lib/api.ts` inside server components -
   build server actions instead so types stay aligned.

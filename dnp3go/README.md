@@ -6,12 +6,12 @@ This is a **standalone Go module** (`github.com/tonylturner/dnp3go`) with its ow
 
 ## What it implements
 
-- **CRC-16/DNP** — checksum verification on every link-layer frame
-- **Data link framing** — fixed/variable user-data frames, sync bytes, length, control octets
-- **Transport function** — fragment reassembly, sequence numbers
-- **Application layer** — function codes, object headers, qualifiers, prefix codes, range fields
-- **Outstation TCP server** — listens for masters, responds to reads and direct-operate commands
-- **Master polling** — used by `services/rtac-sim` to poll field-device outstations
+- **CRC-16/DNP** - checksum verification on every link-layer frame
+- **Data link framing** - fixed/variable user-data frames, sync bytes, length, control octets
+- **Transport function** - fragment reassembly, sequence numbers
+- **Application layer** - function codes, object headers, qualifiers, prefix codes, range fields
+- **Outstation TCP server** - listens for masters, responds to reads and direct-operate commands
+- **Master polling** - used by `services/rtac-sim` to poll field-device outstations
 
 Supported function codes:
 
@@ -26,8 +26,8 @@ Supported function codes:
 
 The `cmd/` directory contains two operator-facing tools:
 
-- `dnp3poll` — polls an outstation, prints decoded objects
-- `dnp3cmd` — issues control commands (trip, close, set-tap, etc.)
+- `dnp3poll` - polls an outstation, prints decoded objects
+- `dnp3cmd` - issues control commands (trip, close, set-tap, etc.)
 
 These are built into the Kali (`Dockerfile.kali`) and engineering-workstation (`Dockerfile.eng-ws`) images and used in the lab exercises.
 
@@ -55,4 +55,4 @@ The Dockerfiles in this repo build the CLI tools fresh from this directory in th
 
 ## License
 
-Apache License 2.0 — same as RangerDanger.
+Apache License 2.0 - same as RangerDanger.

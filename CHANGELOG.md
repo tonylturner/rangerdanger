@@ -6,6 +6,272 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.7] - 2026-05-08
+
+Polish release: proxy 404 fix for in-app containd navigation, README
+visual refresh with screenshots, new Docker-architecture diagram, and
+a global em-dash sweep across all prose. No code-behavior changes.
+
+### Frontend / proxy
+
+- **Containd UI in-app navigation no longer 404s.** The proxied
+  containd UI emitted client-side links to root paths
+  (`/templates`, `/wizard`, `/nat`, `/pcap`, `/sessions`, `/forbidden`,
+  `/docs`) that nginx had no rewrite for. Added the missing 7
+  `sub_filter` entries so JS-bundle root paths get rewritten to
+  `/containd/<route>`. Also added a defensive regex `location` block
+  that 302s direct root-level URL hits to `/containd/<route>` so
+  bookmarks and external links to the bare path resolve too. List
+  now mirrors `containd/ui/app/*` exactly.
+
+### Documentation
+
+- **`docs/architecture-diagram.md`** rewritten as **Docker
+  architecture** - compose stack composition (services / images /
+  build vs pull / `depends_on` chains), network wiring (which
+  service attaches to which of the 6 Docker networks, including
+  RTAC's three-net + firewall's five-net multi-homing), and
+  request flow (host-bound loopback ports, nginx route map, backend
+  fan-out via Docker SDK / containd JWT REST / WebSocket xterm,
+  critical bind mounts). Three mermaid blocks pre-rendered to
+  dark-theme transparent SVGs at `docs/images/docker-*.svg` so
+  the page renders in any markdown viewer; mermaid source is kept
+  in collapsed `<details>` for diff-friendliness.
+- **README.md visual refresh.** Removed the bottom mascot block;
+  tightened the lockup logo + tagline gap; replaced the broken
+  ASCII architecture diagram with an inline mermaid block (lab/zone
+  view, GitHub renders natively); added a "What it looks like"
+  4-row screenshot table with forced 320 px thumbnails alongside
+  inline captions (Network Map, Feeder HMI, Exercises, Lab runner).
+  Screenshots committed at `docs/images/screenshot-*.png`.
+
+### Polish
+
+- **Em-dash sweep.** All 37 prose files (markdown, YAML, compose,
+  workflow) had their em-dashes (`-`) normalized to hyphens (`-`).
+  Verified the sweep didn't accidentally create any new `--`
+  command-flag sequences (every replacement was in prose context
+  with surrounding whitespace; existing `mbpoll --`, `nmap
+  --max-retries`, `curl --connect-timeout` stayed untouched).
+  `lab-commands-smoke` 75/75 still passes.
+
+## [v0.1.6] - 2026-05-08
+
+Lab realism + containd auth-flow patch. Two changes that make the
+existing kinetic-chain plumbing visible to students, plus a
+defense-in-depth fix for the containd lab-mode credential drift
+that surfaced after v0.1.5 shipped. Requires `containd >= v0.1.22`
+(the upstream lab-mode credential pin); containd v0.1.23 docs the
+trade-off transparently in its Secure-by-Design pledge.
+
+### Workshop / lab content
+
+- **Lab 2.3 third attack: Direct breaker trip via Modbus FC5.**
+  Single-packet kinetic outcome - Kali sends `mbpoll -t 0 -r 1
+  10.40.40.20 0` to the relay's coil 0, the breaker opens, and
+  OpenDSS de-energizes the entire feeder within ~3s
+  (downstream_voltage_v: 119 → 0, all loads dark, feeder current
+  → 0). The most dramatic cyber → physics chain the lab can
+  demonstrate; previously the relay's FC5 path was wired through
+  to OpenDSS but no lab exercised it. Re-test step under the
+  hardened policy confirms the L4 source-pin closes the
+  enterprise → field write at the perimeter.
+- **Lab 2.3 attacks now tied to observable kinetic outcomes via
+  Modbus.** Each attack step now ends with two `mbpoll` reads
+  against the RTAC (FC3 holding registers for device states, FC4
+  input registers for OpenDSS analog measurements). Students see
+  the actual register values change - `critical_load_voltage_v ×
+  10` drops from ~1240 to ~1075 after Attack 1's regulator tap
+  override; `downstream_voltage_v × 10` and `feeder_current_a ×
+  10` drop to 0 after Attack 2's recloser trip. No `curl` reads
+  in attack labs - the protocols students attack are the
+  protocols they verify with.
+- **Lab 2.3 step 1 (Verify normal ops) replaces curl with mbpoll
+  reads** of the same RTAC tags. Establishes the baseline using
+  the same protocol surface the attacks exploit.
+- **Cyber → state → physics propagation-lag `:::hint`** added to
+  Lab 2.3 step 1 and Lab 2.3-bonus attack step. Documents the
+  ~2-3s window between a Modbus/DNP3 write and the OpenDSS
+  electrical-state update (RTAC polls field devices every 2
+  seconds, then pushes aggregated state to the solver). Without
+  this, students who re-read state immediately after the attack
+  see device flags changed but not the kinetic outcome and
+  conclude the attack failed.
+- **Lab 2.3 Attack 1 mbpoll command bug fixes (audit follow-up).**
+  Was `mbpoll -t 1 -r 1 ... -- -16` - `-t 1` is mbpoll's discrete-
+  input data type (Modbus FC2, read-only), so the command failed
+  with `Unable to write read-only element`. Lab "worked" only
+  because the action stanza drove regulator state via the API
+  path; the student's typed CLI was a no-op. Now `-t 4` (holding
+  register, Modbus FC6) and value `65520` (two's-complement of
+  -16 as the unsigned register accepts). Verification command was
+  `-t 4 -r 3 ...` reading holding register 2 (`reclose_enabled`,
+  not the claimed `critical_load_voltage`); now `-t 3 -r 3` for
+  input register read (FC4).
+- **Lab 2.3-bonus observe-impact step** mirrors the 2.3 changes -
+  after the Modbus FC5 attack on the recloser from the vendor
+  jump, students read RTAC tags via Modbus to see downstream
+  de-energization. Same propagation-lag hint included.
+
+### Backend / proxy / docs
+
+- **Containd auth lab-mode workaround (defense in depth).**
+  containd v0.1.22 added an upstream lab-mode lock that pins the
+  canonical `containd/containd` credential and disables password
+  change. RangerDanger now belt-and-suspenders the same surface
+  in three places so a stack running an older containd image
+  still gets the workshop-correct behavior:
+  - **(A) `proxy/nginx.conf` blocks the password-change endpoints
+    at the proxy.** A regex `location` for
+    `/containd/api/v[0-9]+/(auth/me|users/[^/]+)/password$`
+    returns 403 with a clear lab-mode message before the request
+    reaches containd. Students get a clean explanation instead of
+    the previous CORS / "password field" error.
+  - **(B) `/api/workshop/reset` wipes containd's `users.db`** as a
+    defensive backstop. With containd >= v0.1.22 this is a no-op
+    (password change is locked at the API), but provides a clean
+    recovery path for any pre-v0.1.22 stack where someone hit the
+    direct `:9080` UI and changed the password.
+  - **(C) `proxy/nginx.conf` injects a banner** at the top of the
+    proxied containd UI explaining that credentials are pinned to
+    `containd/containd` and password change is disabled in lab
+    mode. Sets explicit student-facing expectations.
+
+### Tests
+
+- Smoke gauntlet now exercises 75 lab commands (was 65 in v0.1.5)
+  - the new mbpoll observation reads in 2.3 and 2.3-bonus pick up
+  automatically via `lab-commands-smoke.sh`'s YAML scan.
+- All four fixes verified live against a clean rebuild with
+  containd v0.1.22 image: A returns 403 at the proxy, containd
+  direct returns 403 with the upstream lab-mode message,
+  `/auth/me` no longer advertises `mustChangePassword`, the
+  banner renders in the proxied login page, and `/api/workshop/reset`
+  successfully removes `/data/users.db`.
+- firewall-smoke 52/52 + lab-commands-smoke 75/75 + backend
+  `go test -race ./...` clean.
+
+## [v0.1.5] - 2026-05-08
+
+Audit-pass-3 closeout. Codex surfaced two reproducible workshop
+blockers and twelve smaller findings on top of v0.1.4. Validated
+against three back-to-back clean rebuilds (each producing a different
+docker `ethN` ordering on the firewall - confirming the determinism
+fix holds): all three iterations passed `firewall-smoke 52/52`,
+`lab-commands-smoke 65/65`, every workshop endpoint 200, reset
+`success:true` with zero failed actions, no containd boot errors.
+
+### Workshop / lab content
+
+- **`/api/workshop/reset` no longer reports `success:false`** (audit
+  P0-A). The reset path was sending `clear_alarm` to capbank-sim,
+  which has no such handler - `reset_lockout` already clears the
+  alarm flag. Both `reset.go` and `test_runner.go` had a duplicated
+  reset-command list with the same bug; consolidated into a single
+  `resetDeviceCommands` var. New `reset_test.go` (`TestResetCommandsAreSupported`)
+  scans every sim's `case "X":` handlers and asserts every reset
+  command resolves - catches this bug class going forward.
+- **`lab-definitions/scenarios/validation-evidence.yml` PCAP
+  capture** (audit P0-B) - student tcpdump switched from
+  `tcpdump -i eth3 ...` to `tcpdump -i any -nn 'net 10.40.40.0/24
+  and (tcp port 502 or tcp port 20000)' ...`. The `eth3` pin assumed
+  a 4-network firewall; once F-002 added the mgmt zone (`lan3`),
+  Docker started shuffling field across `eth1`/`eth2`/`eth4`
+  depending on the host. The `-i any` form plus a BPF subnet filter
+  is fully drift-proof.
+
+### Backend / tests
+
+- **`backend/internal/server/pcap.go`** drops the broken
+  `Interfaces: []string{"eth0","eth1","eth2","eth3"}` pin (audit
+  P0-B). containd's PCAP path resolves entries as literal kernel
+  interface names via netlink (unlike the policy autobind in
+  commit 5f31128 which DOES accept zone names), so any `ethN`
+  pin was non-deterministic and zone names fail at boot with
+  "interface wan not found". The backend's `tcpdump -i any`
+  fallback in the same file is fully drift-proof and is what's
+  actually used at runtime; the broken containd-PCAP path is
+  no-op'd cleanly. Tracked as an upstream containd issue
+  in `docs/tasks.md`.
+
+### Setup + ops
+
+- **`docker-compose.offline.yml`** (new, audit P1-B). Override
+  setting `pull_policy: never` on every release-image service so
+  `docker compose up` after `docker load` from the SSD does not
+  reach out to GHCR. `setup.sh --from-tarballs` and `setup.ps1
+  -FromTarballs` now compose `-f release.yml -f offline.yml`
+  automatically; offline classes work without the override flag.
+- **`setup.sh` / `setup.ps1` workshop-readiness gate** (audit
+  P1-D). After the existing `/api/health` probe, both installers
+  now probe `/api/firewall/health`, apply weak + improved, and
+  `/api/workshop/reset`, failing with actionable diagnostics if
+  any returns non-2xx or non-success. New `--skip-firewall-gate`
+  / `-SkipFirewallGate` flag for developer iteration on a
+  known-broken stack. Catches containd drift / mgmt-subnet
+  misconfig / sim-warmup races at setup time rather than
+  at student-time.
+- **`stage-ssd.sh` fail-fast** (audit P1-C). Was warning-and-
+  skipping on pull failure then `docker save` against the
+  unfiltered input list (could include stale local copies or
+  fail mid-save). Now dies on any pull failure and `docker save`
+  operates on an explicit pulled-this-run list - bundle is either
+  complete or absent.
+- **`docker-compose.release.yml`** restored
+  `CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24` (lockstep drift
+  codex caught - release-image users would have hit 502 on
+  apply when the mgmt subnet fell outside containd's input
+  chain). `CONTAIND_CAPTURE_IFACES` removed from both compose
+  files since the static `ethN,...` pin was non-deterministic
+  and zone names break containd at boot (see pcap.go above).
+- **`scripts/lab-commands-smoke.sh` apply-failure detection**
+  (audit P1-A). Was `2>/dev/null` swallowing curl errors on
+  policy apply, so the script could report 65/65 PASS with
+  broken policy state - exactly the false-confidence mode the
+  audit caught. Now checks curl exit code AND verifies
+  `/api/firewall/active` reflects the requested config; fails
+  the run with a clear diagnostic on either error. The probe
+  rc 1-7-as-PASS rule (intentional for "host unreachable" /
+  "connection refused" on negative tests) is unchanged.
+
+### CI
+
+- **Smoke runs on `audit-oss` and `oss-release`** (audit P2-B).
+  Was `[main]` only; release-branch work could ship without the
+  workshop-critical Docker smoke gate.
+
+### Documentation
+
+- **`docs/architecture.md` rewrite** of the RTAC + interface
+  sections (audit P2-A). Removed the stale "RTAC field polling
+  does not transit firewall" claim - `rtac-harden.sh` has
+  forced firewall transit since v0.1.2. Corrected the multi-
+  homed table (2 networks, not 3 - there is no physics_net
+  leg). Corrected the source-pin IP (10.30.30.20, not
+  10.40.40.10). Replaced the fragile `eth0`/`eth1`/`eth2`/`eth3`
+  column with containd zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`)
+  and added an explicit note that Docker's `ethN` ordering is
+  non-deterministic across hosts (alphabetical network name,
+  not compose order) - never rely on it. New "Multi-homed RTAC
+  with kernel-pinned routing" subsection explains the
+  compensating control (FORWARD DROP + replaced field route +
+  `rtac-route-monitor.sh`).
+- **`RELEASING.md` containd image policy section** (audit P2-E).
+  Documents the "fix containd, not the pin" contract,
+  workshop-day determinism trade-off, and three mitigations
+  (pre-pull + digest lock, setup-time firewall gate, stage-to-SSD).
+- **`CONTRIBUTING.md`** frontend command now includes
+  `npm test` (audit P2-C). Was missing while CI ran it;
+  contributors could pass the documented local checks and
+  still trip CI.
+- **`docs/tasks.md`** moved `firewall_apply` integration tests
+  + capbank handler coverage from "Still open" to shipped
+  (landed in v0.1.4 - was stale carry-over). Added the
+  audit-pass-3 P0/P1/P2 items + an "Open questions" section
+  parking codex P0-001 (firewall apply 502/403 - not
+  reproduced) and the upstream containd PCAP zone-name
+  issue.
+
 ## [v0.1.4] - 2026-05-08
 
 Post-v0.1.3 audit follow-through. Closes the remaining P1/P2
@@ -28,13 +294,13 @@ the audit fixes themselves.
   `non-rtac-to-field`) that close the deck case study.
   Updated all RDP/SSH command examples from the deleted
   `vendor-user/vendor` creds to the canonical
-  `rangerdanger/rangerdanger` (audit N-001 — would have
+  `rangerdanger/rangerdanger` (audit N-001 - would have
   workshop-blocked the bonus lab).
 - **Lab 1.4 stray "five baseline findings" prose** removed
   from step 3 question 2 (the post-1.2-refactor finding count
   isn't fixed at five).
 - **OpenPLC single-homed on `ot_ops_net`** (audit F-011).
-  Dropped the unused `field_net` leg — the ladder logic in
+  Dropped the unused `field_net` leg - the ladder logic in
   `data/openplc/substation_automation.st` is a Modbus client
   of the RTAC and never originates field-device traffic, so
   multi-homing was a lab artifact that doubled the firewall-
@@ -55,7 +321,7 @@ the audit fixes themselves.
   `default-from` reference resolves to a real
   `:::decision id=` definition. Catches silent drift if a
   decision id gets renamed in one YAML and forgotten in
-  downstream ones — the silent failure mode the audit warned
+  downstream ones - the silent failure mode the audit warned
   about. Closes the gap without an `@testing-library/react`
   dep tree.
 - **`frontend/lib/decision-storage.ts`** extracted from
@@ -66,7 +332,7 @@ the audit fixes themselves.
 
 ### Backend / tests
 
-- **Firewall compare logic tests** (audit F-010 — the
+- **Firewall compare logic tests** (audit F-010 - the
   scenario-validators portion was already covered by
   `scenario_validate_test.go`). New
   `firewall_compare_test.go` (5 tests) pins
@@ -79,7 +345,7 @@ the audit fixes themselves.
   exercises `handleFirewallApply` and
   `handleFirewallApplyCustom` end-to-end against an httptest
   fake of containd's candidate/commit endpoints. Pattern
-  mirrors the existing `containd/client_test.go` — no
+  mirrors the existing `containd/client_test.go` - no
   interface refactor required; the real client's JWT
   injection + dataplane-enforcement shim run as in
   production.
@@ -118,12 +384,12 @@ the audit fixes themselves.
 - **`docs/tool-inventory.md`** (audit F-016). Cross-
   reference for what CLI tool lives in which Dockerfile by
   lab persona, plus a decision tree for "I need to add a
-  tool — which image?" Should head off the apt-list drift
+  tool - which image?" Should head off the apt-list drift
   the next audit would otherwise flag again.
 - **`CONTRIBUTING.md`** documents `scripts/dev-up.sh` and
   `dev-down.sh` (audit F-017).
 - **`docs/quickstart.md`** version pin bumped to `v0.1.3`
-  (audit N-004 — students copy-pasting from quickstart
+  (audit N-004 - students copy-pasting from quickstart
   would have pulled v0.1.2 images that lacked every fix
   in v0.1.3).
 - **`CHANGELOG.md`** reference-link block now includes
@@ -144,7 +410,7 @@ month of lab-content audit work that landed since v0.1.2.
 ### Workshop / lab content
 
 - **Lab 1.2 audit pass.** Split into separate observe-vs-decide
-  activities — passive-observation findings on step 6, active probe
+  activities - passive-observation findings on step 6, active probe
   step (7) that surfaces latent exposure passive monitoring missed.
   Step 6 now uses dropdown widgets with green/red feedback chips.
   Static findings list deconflicted from the actual 1.2 capture so
@@ -166,7 +432,7 @@ month of lab-content audit work that landed since v0.1.2.
   `show audit`, `export config`). Added missing dnp3 tools to
   vendor-jump for the Phase 6 commands.
 - **Lab 2.4 audit pass.** Dynamic findings list, OpenPLC tooling
-  fixes, and the new `:::plan-coverage` fence — surfaces in real
+  fixes, and the new `:::plan-coverage` fence - surfaces in real
   time which Lab 1.3 requirements the student's Lab 1.4 plan
   addressed vs deferred.
 - **Vendor → OT management listeners (audit F-004).** rtac-sim now
@@ -202,7 +468,7 @@ month of lab-content audit work that landed since v0.1.2.
     the student knows whether Docker Desktop's slider applies.
 - **Docker compose dual-bootstrap fix (audit F-001).**
   `docker-compose.release.yml` no longer mounts
-  `scripts/start-rdp-vnc.sh` — the in-image `vendor-jump-services.sh`
+  `scripts/start-rdp-vnc.sh` - the in-image `vendor-jump-services.sh`
   is the single source of truth, with `rangerdanger:rangerdanger`
   as the only vendor user. Removed the orphan script.
 - **`scripts/lab-commands-smoke.sh` counter fix (audit F-009).**
@@ -215,7 +481,7 @@ month of lab-content audit work that landed since v0.1.2.
   with `-count=1` in CI to defeat Go's test cache for the firewall
   config tests. They `os.ReadFile` from `lab-definitions/firewall/`
   at runtime and Go's cache hashes only the binary plus env/args,
-  not external data — so a JSON-only edit silently kept the cached
+  not external data - so a JSON-only edit silently kept the cached
   PASS. Test names now reflect the lan3 mgmt-net addition (5 zones,
   not 4) with an inline comment explaining the workaround.
 - **`scripts/firewall-smoke.sh` listener wait + matrix expansion.**
@@ -224,7 +490,7 @@ month of lab-content audit work that landed since v0.1.2.
   no-listener race. Matrix now includes vendor-jump → rtac:22 / 443
   / 502 rows.
 - **`scripts/lab-commands-smoke.sh`.** Smoke runs every command
-  block documented in the 7 lab YAMLs — from the right source
+  block documented in the 7 lab YAMLs - from the right source
   container, under the right policy. Wired into CI on every PR.
 - **`scripts/validation-report.sh`.** Generates a change-board-ready
   evidence-package markdown from a clean run.
@@ -268,22 +534,22 @@ directly in the containd CLI. Major doc + setup polish.
   deck.** The 9-exercise inventory (sequentially numbered 1–9) is now
   6 labs + 1 bonus, numbered by the deck's lab IDs:
 
-  - Lab 1.2 `baseline-assessment` — Baseline Traffic Analysis
-  - Lab 1.3 `segmentation-requirements` — Segmentation Requirements
+  - Lab 1.2 `baseline-assessment` - Baseline Traffic Analysis
+  - Lab 1.3 `segmentation-requirements` - Segmentation Requirements
     & Policy Design
-  - Lab 1.4 `remediation-planning` — Remediation Planning Under
+  - Lab 1.4 `remediation-planning` - Remediation Planning Under
     Constraint
-  - Lab 2.2 `firewall-implementation` — Firewall Policy Implementation
-  - Lab 2.3 `hardening-configurations` — Protocol-Hardened
+  - Lab 2.2 `firewall-implementation` - Firewall Policy Implementation
+  - Lab 2.3 `hardening-configurations` - Protocol-Hardened
     Configurations (NEW; combines the prior Modbus-override and
     DNP3-injection exercises into a single DPI-focused stress test)
-  - Lab 2.3-bonus `vendor-rdp-compromise` — Vendor Remote Access
+  - Lab 2.3-bonus `vendor-rdp-compromise` - Vendor Remote Access
     Compromise (rebuilt from the prior Modbus-via-vendor narrative
     to actually use RDP/VNC pivot, matching the deck case study)
-  - Lab 2.4 `validation-evidence` — Testing & Validation
+  - Lab 2.4 `validation-evidence` - Testing & Validation
 
   Removed: `modbus-override.yml`, `dnp3-command-injection.yml`,
-  `capbank-switching-attack.yml` (capbank-sim container stays — the
+  `capbank-switching-attack.yml` (capbank-sim container stays - the
   RTAC keeps polling it; just no dedicated exercise targets it).
 
 - **Lab 1.2 trimmed:** Step 4's `tshark` views narrowed to host-pair
@@ -292,7 +558,7 @@ directly in the containd CLI. Major doc + setup polish.
   the design conversation.
 
 - **Lab 1.3 trimmed:** Cut Steps 5–7 (preview improved / apply /
-  revert) — they spoiled the hands-on build in Lab 2.2.
+  revert) - they spoiled the hands-on build in Lab 2.2.
 
 - **Lab 2.4 trimmed:** Per-attack repetitive validations dropped
   (those now live in Lab 2.3); kept the holistic positive/negative
@@ -319,7 +585,7 @@ directly in the containd CLI. Major doc + setup polish.
 - New `docs/quickstart.md` carries the full install walkthrough
   (online / build-from-source / offline-SSD), common-error guide,
   and what a good bug report includes.
-- `README.md` reorganized — Quick Start moved above the fold (was
+- `README.md` reorganized - Quick Start moved above the fold (was
   at line 179 of 298). Trimmed from 298 → 136 lines by removing
   duplicated Repository-Layout and Current-Status sections.
 
@@ -350,7 +616,7 @@ directly in the containd CLI. Major doc + setup polish.
   etc.). Removed the parallel `frontend/lib/workbook-sections.ts`
   mapping; the UI now renders `Lab {scenario.order}` directly.
   **DB migration note:** delete `data/labs.db` if you have an
-  existing local database from a prior build — the data is rebuilt
+  existing local database from a prior build - the data is rebuilt
   from YAML on startup so no user-entered state is lost.
 
 - `orchestrator.createContainer` now fails fast with a clear error
@@ -367,7 +633,7 @@ directly in the containd CLI. Major doc + setup polish.
 ### Setup scripts
 
 - `setup.sh` / `setup.ps1` port-busy preflight now shows the
-  holding process (name + PID) for each conflicting port — saves
+  holding process (name + PID) for each conflicting port - saves
   the "go run lsof / netstat" round-trip.
 - `setup.sh` / `setup.ps1` `docker compose pull` wrapped in a
   3-attempt retry with 15s / 30s backoff for transient GHCR 5xx
@@ -377,16 +643,16 @@ directly in the containd CLI. Major doc + setup polish.
 
 ### Tests
 
-- **Backend** — 14 new tests in `scenario_validate_test.go` covering
+- **Backend** - 14 new tests in `scenario_validate_test.go` covering
   the surviving validators (hardening-configurations, vendor-RDP,
   validation-evidence, remediation-planning, generic) + helper smoke
   tests (`mapGet`, `boolGet`, `intGet`, `countAuditByZoneAndCommand`).
-- **Frontend** — Vitest framework wired in (`vitest.config.ts`,
+- **Frontend** - Vitest framework wired in (`vitest.config.ts`,
   `npm test` script, CI step between lint and build). 27 new tests
   covering `frontend/lib/remediation-to-rules.ts` (the dynamic-
   remediation pipeline that drives Lab 2.2's adaptive content) and
   `frontend/lib/exercise-nodes.ts` (lab → terminal node mapping).
-- **Smoke** — `scripts/smoke-test.sh` (host-runnable) +
+- **Smoke** - `scripts/smoke-test.sh` (host-runnable) +
   `.github/workflows/smoke.yml` (CI) updated for the 7-lab
   inventory: validates exact `(order, id)` tuples and per-lab step
   counts via `description` occurrence count.
@@ -400,7 +666,7 @@ directly in the containd CLI. Major doc + setup polish.
   re-uploads.
 - `ci.yml`'s `govulncheck` job is now a hard gate (was advisory).
   An allowlist of two `docker/docker` OSV IDs (GO-2026-4887,
-  GO-2026-4883) — the only findings without an upstream fix — keeps
+  GO-2026-4883) - the only findings without an upstream fix - keeps
   known exceptions passing; any new finding fails the build.
 
 ### Security
@@ -442,8 +708,8 @@ ergonomics).
   the published images that `govulncheck` can't see (Kali rolling,
   Linuxserver webtop bases, `python:3.12-slim`). SARIF output to
   the GitHub Security tab.
-- `fuxa_appdata/`, `fuxa_db/`, and seven legacy `data/` files —
-  re-introduced by the v0.1.0 distribution-mvp merge — re-untracked.
+- `fuxa_appdata/`, `fuxa_db/`, and seven legacy `data/` files -
+  re-introduced by the v0.1.0 distribution-mvp merge - re-untracked.
   Same lab-default-credential class as the existing `containd`/
   `openplc` defaults documented in `SECURITY.md`; cleanup is
   hygiene rather than vulnerability response.
@@ -453,23 +719,23 @@ ergonomics).
 
 ### Tests
 
-- `backend/internal/server/exec_test.go` — 33 cases pinning the
+- `backend/internal/server/exec_test.go` - 33 cases pinning the
   command-allowlist behavior on `/api/workshop/exec`, including
   the documented shell-injection bypass and a regression guard
   ensuring every tool the scenarios auto-run stays in the
   allowlist.
-- `dnp3go/roundtrip_test.go` — link-frame round-trip across 7 size
+- `dnp3go/roundtrip_test.go` - link-frame round-trip across 7 size
   classes, garbage-skipping, CRC rejection, APDU round-trip,
   encoder shape checks. Coverage moved from CRC-only to all four
   protocol layers.
 
 ### Tooling
 
-- `setup.sh --check-only` and `setup.ps1 -CheckOnly` — runs
+- `setup.sh --check-only` and `setup.ps1 -CheckOnly` - runs
   pre-flight checks (Docker, Compose, ports, disk, memory) and
   exits without installing. Pre-workshop "is my laptop ready?"
   verification.
-- `.github/workflows/smoke.yml` — bring-up smoke test on every PR
+- `.github/workflows/smoke.yml` - bring-up smoke test on every PR
   and push to main. Builds the stack, hits `/api/health` and
   `/api/build`, confirms 9 exercises load and ≥8 services report
   healthy, dumps logs on failure. Catches startup regressions
@@ -477,14 +743,14 @@ ergonomics).
 
 ### Community / OSS polish
 
-- `ROADMAP.md` — public forward look (v0.1.x, v0.2.0, v0.3.0,
+- `ROADMAP.md` - public forward look (v0.1.x, v0.2.0, v0.3.0,
   backlog). Linked from `README.md`.
-- `SUPPORT.md` — where to ask questions, what to expect from
+- `SUPPORT.md` - where to ask questions, what to expect from
   maintainers, separate channel for security vs commercial
   workshop support.
-- `CITATION.cff` — for academic / training / research use; GitHub
+- `CITATION.cff` - for academic / training / research use; GitHub
   renders this in the sidebar.
-- `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1 with
+- `CODE_OF_CONDUCT.md` - Contributor Covenant 2.1 with
   `conduct@sentinel24.com` reporting address.
 - `.github/PULL_REQUEST_TEMPLATE.md` and three issue templates
   (bug report, feature request, contact-routing config including
@@ -501,7 +767,7 @@ ergonomics).
 - README's Documentation section now lists ROADMAP/SUPPORT/SECURITY/
   CONTRIBUTING/CHANGELOG; outdated `CLAUDE.md` link replaced with
   the workshop-overview and security-known-issues pointers.
-- `dnp3go/README.md` — dropped the dangling "see CLAUDE.md" pointer.
+- `dnp3go/README.md` - dropped the dangling "see CLAUDE.md" pointer.
 
 ### Repo hygiene
 
@@ -532,7 +798,7 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   bank switching attack, and post-change validation with PCAP
   evidence collection.
 - Field-device simulators: relay, recloser, regulator, capacitor
-  bank, RTAC, historian, GPS clock — each speaking HTTP REST,
+  bank, RTAC, historian, GPS clock - each speaking HTTP REST,
   Modbus TCP, and DNP3 TCP simultaneously against shared state.
 - OpenDSS feeder physics engine surfacing real energization /
   voltage outcomes from device commands.
@@ -553,7 +819,7 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
 - containd NGFW (`ghcr.io/tonylturner/containd:v0.1.18`) provides
   zone-based firewalling, ICS DPI (Modbus function-code filtering,
   DNP3 protocol awareness), and IT DPI.
-- DNP3: in-tree `dnp3go/` standalone Go module — zero external
+- DNP3: in-tree `dnp3go/` standalone Go module - zero external
   dependencies, supporting Read (FC1), Direct Operate (FC5), and
   Select/Operate (FC3/FC4).
 
@@ -577,7 +843,7 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
 
 ### Security posture
 
-- All host-exposed ports bound to `127.0.0.1` only — the lab is
+- All host-exposed ports bound to `127.0.0.1` only - the lab is
   unreachable from any interface other than loopback by default.
 - `SECURITY.md` documents the lab-only model and the supported
   patterns for deliberately exposing the stack (SSH local-forward
@@ -600,14 +866,14 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   GHCR on any `v*` tag push. Pre-release tags (containing `-`) do
   not retag `:latest`, so an alpha cannot replace the stable
   pointer.
-- **Dependency scan (`dep-scan.yml`)** — Trivy scans the published
+- **Dependency scan (`dep-scan.yml`)** - Trivy scans the published
   images weekly and on tag push for OS-package CVEs (Kali rolling,
   Linuxserver webtop bases, Python 3.12-slim) that govulncheck
   can't see. Findings upload to the GitHub Security tab via SARIF.
 - `.github/dependabot.yml` covers gomod (×3), npm, docker, and
   github-actions ecosystems on a weekly cadence with major-version
   bumps suppressed pre-1.0 for stability.
-- Go toolchain pinned to **1.25.9** in all three modules — clears
+- Go toolchain pinned to **1.25.9** in all three modules - clears
   every stdlib finding govulncheck reported under earlier patches.
   Only the 2 `docker/docker` (no upstream fix) and 1 `quic-go`
   (transitive in unused HTTP/3 path) findings remain, all
@@ -626,17 +892,20 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
 
 ### Tests
 
-- `dnp3go/roundtrip_test.go` — link-frame round-trip across 7 size
+- `dnp3go/roundtrip_test.go` - link-frame round-trip across 7 size
   classes, garbage-skipping, CRC rejection, APDU round-trip,
   encoder shape checks. Coverage moved from CRC-only to all four
   protocol layers (link, transport, application, encoders).
-- `backend/internal/server/exec_test.go` — 33 cases pinning the
+- `backend/internal/server/exec_test.go` - 33 cases pinning the
   command-allowlist behavior on `/api/workshop/exec`, including
   the documented shell-injection bypass and a regression guard
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.7...HEAD
+[v0.1.7]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.7
+[v0.1.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.6
+[v0.1.5]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.5
 [v0.1.4]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.4
 [v0.1.3]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.3
 [v0.1.2]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.2

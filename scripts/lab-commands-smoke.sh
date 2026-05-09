@@ -218,12 +218,30 @@ PY
 }
 
 # ── Apply firewall policy via the API. No-op if already on it. ─────
+# Fails the smoke run if the apply call errors or if /api/firewall/active
+# doesn't reflect the requested policy after the settle window. The old
+# version swallowed apply failures with `2>/dev/null`, which let lab-
+# commands-smoke report 65/65 PASS while the underlying policy state was
+# wrong — exactly the false-confidence mode the audit caught.
 apply_policy() {
   local name="$1"
   [ -z "$name" ] && return 0
-  curl -fsS -X POST -H 'Content-Type: application/json' \
-    -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" >/dev/null 2>&1
+  local resp
+  resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+    -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" 2>&1) || {
+    err "policy apply ($name) failed: $resp"
+    exit 1
+  }
   sleep "$SETTLE_SECS"
+  local active
+  active=$(curl -fsS "$API/api/firewall/active" 2>&1) || {
+    err "could not read /api/firewall/active after applying $name: $active"
+    exit 1
+  }
+  if ! echo "$active" | grep -q "\"active_config\":\"$name\""; then
+    err "policy apply silently failed: requested $name, /api/firewall/active reports: $active"
+    exit 1
+  fi
 }
 
 # ── Run a single command in a given container ──────────────────────

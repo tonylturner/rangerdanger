@@ -50,7 +50,7 @@ steps:
     description: |
       From Kali, connect to the vendor jump box's remote desktop
       using the stolen credentials (`rangerdanger` / `rangerdanger`
-      — the standard lab account documented in
+      - the standard lab account documented in
       `docs/lab-credentials.md`).
 
       **Option A - RDP** (preferred when 3389 is open):
@@ -87,18 +87,53 @@ steps:
       established** (or use the vendor-jump terminal tab below).
       You're now operating from the vendor zone (10.20.20.10).
 
-      Disable auto-reclose on the recloser via Modbus:
+      Disable auto-reclose on the recloser via Modbus FC5 (write
+      single coil), targeting coil 1 (`reclose_enabled`). `-t 0`
+      is mbpoll's coil data type, `-r 2` is mbpoll's 1-indexed
+      reference for coil 1, and `0` drives the coil low (disable):
 
           mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
 
-      Then trip it (simulating a transient fault):
+      Then inject a transient fault on coil 4 (`inject_fault`)
+      with value `1`:
 
           mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
 
-      The recloser locks out. Downstream loads - the hospital and
-      fire station - lose power. The attack succeeded because the
-      kill chain had two open links: enterprise → vendor RDP, and
-      vendor → field Modbus.
+      The recloser sees the fault, trips (auto-reclose is off, so
+      it stays open), and locks out. Downstream loads - the
+      hospital and fire station - lose power.
+
+      Wait ~3 seconds for the RTAC poll → OpenDSS push to land,
+      then read the RTAC's Modbus tags to confirm the kinetic
+      outcome (the RTAC aggregates field-device state and
+      OpenDSS electrical results into Modbus registers a vendor
+      host can read):
+
+          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+
+      Holding register 1 (`recloser_closed`) is now `0`, register
+      2 (`reclose_enabled`) is `0`, and register 7
+      (`recloser_lockout`) is `1`.
+
+          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+
+      Input register 1 (`downstream_voltage_v × 10`) and register
+      3 (`feeder_current_a × 10`) both read `0` - the loads
+      downstream of the recloser are unenergized. The substation
+      bus (input register 0) stays energized at the source.
+
+      :::hint Cyber → state → physics has a ~2-3s lag
+      The Modbus writes mutate recloser-sim state immediately,
+      but the *electrical* impact (voltages, energization) only
+      updates after the RTAC polls field devices (every 2 seconds)
+      and pushes the aggregated state to the OpenDSS solver. If
+      you re-read RTAC tags *immediately* after the writes, you
+      may see device state changed but not the kinetic outcome
+      yet. Wait 3 seconds, then re-read.
+      :::
+
+      The attack succeeded because the kill chain had two open
+      links: enterprise → vendor RDP, and vendor → field Modbus.
     action:
       type: command
       device: recloser
@@ -151,12 +186,12 @@ steps:
       :::
 
       The two requirements that close this kill chain in your Lab 1.4
-      plan are `vendor-to-ot` (BLOCK or RESTRICT — closes the
+      plan are `vendor-to-ot` (BLOCK or RESTRICT - closes the
       enterprise → vendor → OT pivot) and `non-rtac-to-field`
-      (BLOCK — pins the vendor box out of field even if the perimeter
+      (BLOCK - pins the vendor box out of field even if the perimeter
       rule misses). If either is uncovered above, the matching
       re-test in the next step may still succeed under "Apply Your
-      Plan" — re-attempt with **Apply Hardened** to compare.
+      Plan" - re-attempt with **Apply Hardened** to compare.
     action:
       type: firewall
       config: improved

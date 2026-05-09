@@ -15,6 +15,31 @@ type resetAction struct {
 	Detail  string `json:"detail"`
 }
 
+// resetDeviceCommands is the canonical list of (device, command) pairs the
+// workshop reset and the test-runner replay against the sims to restore
+// default state. Every command here must be a real handler in the
+// corresponding sim's main.go switch — TestResetCommandsAreSupported pins
+// that contract so a typo (or a sim-handler rename) fails CI instead of
+// surfacing as a silent "success: false" at workshop time.
+var resetDeviceCommands = []struct {
+	device, command, desc string
+}{
+	{"relay", "clear_fault", "Clear relay faults"},
+	{"relay", "unlock", "Unlock relay"},
+	{"relay", "close", "Close feeder breaker"},
+	{"recloser", "clear_fault", "Clear recloser faults"},
+	{"recloser", "reset_lockout", "Reset recloser lockout"},
+	{"recloser", "enable_reclose", "Enable auto-reclose"},
+	{"recloser", "close", "Close recloser"},
+	{"regulator", "set_auto", "Set regulator to auto mode"},
+	// capbank: reset_lockout already clears the alarm flag (see
+	// services/capbank-sim/main.go reset_lockout handler), so no
+	// separate clear_alarm command exists.
+	{"capbank", "reset_lockout", "Reset capbank lockout"},
+	{"capbank", "switch_in", "Switch capbank in"},
+	{"capbank", "set_auto", "Set capbank to auto mode"},
+}
+
 // handleWorkshopReset restores the lab to its default state:
 // weak firewall config, all devices in normal operating condition.
 func (s *Server) handleWorkshopReset(c *gin.Context) {
@@ -29,26 +54,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	})
 
 	// 2. Reset all field devices via RTAC commands
-	resetCommands := []struct {
-		device  string
-		command string
-		desc    string
-	}{
-		{"relay", "clear_fault", "Clear relay faults"},
-		{"relay", "unlock", "Unlock relay"},
-		{"relay", "close", "Close feeder breaker"},
-		{"recloser", "clear_fault", "Clear recloser faults"},
-		{"recloser", "reset_lockout", "Reset recloser lockout"},
-		{"recloser", "enable_reclose", "Enable auto-reclose"},
-		{"recloser", "close", "Close recloser"},
-		{"regulator", "set_auto", "Set regulator to auto mode"},
-		{"capbank", "clear_alarm", "Clear capbank alarm"},
-		{"capbank", "reset_lockout", "Reset capbank lockout"},
-		{"capbank", "switch_in", "Switch capbank in"},
-		{"capbank", "set_auto", "Set capbank to auto mode"},
-	}
-
-	for _, cmd := range resetCommands {
+	for _, cmd := range resetDeviceCommands {
 		result := s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
 		actions = append(actions, resetAction{
 			Action:  cmd.desc,
@@ -82,6 +88,31 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Action:  "Clear PCAP captures",
 			Success: err == nil,
 			Detail:  boolDetail(err == nil, "capture files removed", errStr(err)),
+		})
+
+		// Defensive credential reset for containd. With containd
+		// v0.1.22+ in lab mode, password change is locked at the API
+		// — students can't drift the canonical `containd/containd`
+		// credential via the UI or via SSH. This step is for the
+		// edge case where someone hit a pre-v0.1.22 containd directly
+		// on :9080 and changed the password before pulling the new
+		// image: wiping users.db lets containd reseed the default on
+		// its next restart. The wipe is a no-op on a clean stack
+		// (file is already containing the default cred) so this is
+		// always safe to run from Reset Lab.
+		credCfg := container.ExecOptions{
+			Cmd: []string{"sh", "-c", "rm -f /data/users.db /data/sessions.db 2>/dev/null; true"},
+		}
+		credExecID, credErr := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, credCfg)
+		if credErr == nil {
+			dockerCli.ContainerExecStart(context.Background(), credExecID.ID, container.ExecStartOptions{})
+		}
+		actions = append(actions, resetAction{
+			Action:  "Reset containd credentials to default",
+			Success: credErr == nil,
+			Detail: boolDetail(credErr == nil,
+				"users.db cleared (firewall restart required for changes to take effect; with containd >= v0.1.22 lab mode this is a no-op)",
+				errStr(credErr)),
 		})
 	}
 

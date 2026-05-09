@@ -263,28 +263,28 @@ steps:
 
   - title: "Findings - what you observed"
     description: |
-      Now look at what you captured through a security lens. This step is **observation**, not decision — for each category below, mark what you saw in your analysis. Was it present and concerning? Present but justified? Or not visible at all?
+      Now look at what you captured through a security lens. This step is **observation**, not decision - for each category below, mark what you saw in your analysis. Was it present and concerning? Present but justified? Or not visible at all?
 
-      The design decisions ("what should we BLOCK / RESTRICT / ALLOW") are Lab 1.3's job — here you're just inventorying findings.
+      The design decisions ("what should we BLOCK / RESTRICT / ALLOW") are Lab 1.3's job - here you're just inventorying findings.
 
       :::decision id=enterprise-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=NOT_OBSERVED
-      **Enterprise → Field** on Modbus 502 / DNP3 20000 — did you see corporate IT addresses (`10.10.10.0/24`) reaching field devices on control-plane protocols?
+      **Enterprise → Field** on Modbus 502 / DNP3 20000 - did you see corporate IT addresses (`10.10.10.0/24`) reaching field devices on control-plane protocols?
       :::
 
       :::decision id=enterprise-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=NOT_OBSERVED
-      **Enterprise → OT Ops** on ICS ports — did you see corporate IT speaking ICS to RTAC / HMI / OpenPLC?
+      **Enterprise → OT Ops** on ICS ports - did you see corporate IT speaking ICS to RTAC / HMI / OpenPLC?
       :::
 
       :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
-      **Vendor DMZ → OT Ops** on Modbus or HMI control ports — was the vendor zone reaching OT on more than just SSH/HTTPS?
+      **Vendor DMZ → OT Ops** on Modbus or HMI control ports - was the vendor zone reaching OT on more than just SSH/HTTPS?
       :::
 
       :::decision id=non-rtac-to-field options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=NOT_OBSERVED
-      **Non-RTAC OT hosts → Field devices** — did anything other than the RTAC (10.30.30.20) reach relays / recloser / regulator / capbank?
+      **Non-RTAC OT hosts → Field devices** - did anything other than the RTAC (10.30.30.20) reach relays / recloser / regulator / capbank?
       :::
 
       :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
-      **Unauthorized Modbus writes / DNP3 Direct Operate** — did the firewall produce visibility (logs, deny events) for write attempts from non-RTAC sources, or were they silent?
+      **Unauthorized Modbus writes / DNP3 Direct Operate** - did the firewall produce visibility (logs, deny events) for write attempts from non-RTAC sources, or were they silent?
       :::
 
       Your findings become context for Lab 1.3, where you decide what the design should *do* about each one.
@@ -292,19 +292,19 @@ steps:
       :::hint What an analyst would conclude from this baseline
       What you should see in the **passive capture** from steps 2–4:
 
-      1. **Enterprise → Field on Modbus/DNP3** — `NOT_OBSERVED`. The traffic generator and autonomous baseline don't produce flows from `10.10.10.0/24`. You don't see this in the capture *because nobody made it happen during your capture window*. That doesn't mean the path is closed — it just wasn't exercised.
-      2. **Enterprise → OT Ops on ICS ports** — `NOT_OBSERVED`. Same reason as above.
-      3. **Vendor → OT Ops on Modbus/HMI control** — `EXPOSURE_OBSERVED`. Step 4's eng-ws (vendor zone) probes against RTAC and OpenPLC are in the capture.
-      4. **Non-RTAC OT Ops → Field** — `NOT_OBSERVED`. RTAC is the only OT host that polls field devices. The HMI, historian, and OpenPLC don't poll field directly in the autonomous baseline.
-      5. **Unauthorized Modbus writes / DNP3 Direct Operate** — `EXPOSURE_OBSERVED`. Step 4's eng-ws mbpoll write commands against the regulator are in the capture. The firewall did not block them.
+      1. **Enterprise → Field on Modbus/DNP3** - `NOT_OBSERVED`. The traffic generator and autonomous baseline don't produce flows from `10.10.10.0/24`. You don't see this in the capture *because nobody made it happen during your capture window*. That doesn't mean the path is closed - it just wasn't exercised.
+      2. **Enterprise → OT Ops on ICS ports** - `NOT_OBSERVED`. Same reason as above.
+      3. **Vendor → OT Ops on Modbus/HMI control** - `EXPOSURE_OBSERVED`. Step 4's eng-ws (vendor zone) probes against RTAC and OpenPLC are in the capture.
+      4. **Non-RTAC OT Ops → Field** - `NOT_OBSERVED`. RTAC is the only OT host that polls field devices. The HMI, historian, and OpenPLC don't poll field directly in the autonomous baseline.
+      5. **Unauthorized Modbus writes / DNP3 Direct Operate** - `EXPOSURE_OBSERVED`. Step 4's eng-ws mbpoll write commands against the regulator are in the capture. The firewall did not block them.
 
-      Three categories landed at `NOT_OBSERVED` — but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
+      Three categories landed at `NOT_OBSERVED` - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
       :::
 
   - title: "Probe for latent exposure"
     expected_config: weak
     description: |
-      Three of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed — it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* — it's *"what's reachable."*
+      Three of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
 
       Run the probes below from the **kali terminal** (`kali-1` on the [Network Map](/console)) to test the paths your passive analysis didn't cover. Every command that returns data instead of timing out is a path that exists in the policy and was simply not exercised in the capture.
 
@@ -322,16 +322,16 @@ steps:
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -10
 
-      All of these should succeed. The weak baseline permits enterprise traffic to OT and field zones — your capture just happened not to contain any.
+      All of these should succeed. The weak baseline permits enterprise traffic to OT and field zones - your capture just happened not to contain any.
 
       :::decision id=latent-exposure-confirmed options=YES,NO,UNSURE correct=YES
       **After running the active probes, did you confirm exposure that the passive capture missed?**
       :::
 
       :::hint Why this matters for the design
-      The verdict you give in Lab 1.3 must address what's **reachable**, not just what's **observed**. If you only block the flows the capture showed (vendor → OT, unauth writes), the latent enterprise → field path still works — it was just dormant during your capture. A real attacker doesn't care whether the flow was in your last 30s of pcap; they care whether they can use it now.
+      The verdict you give in Lab 1.3 must address what's **reachable**, not just what's **observed**. If you only block the flows the capture showed (vendor → OT, unauth writes), the latent enterprise → field path still works - it was just dormant during your capture. A real attacker doesn't care whether the flow was in your last 30s of pcap; they care whether they can use it now.
 
-      This is also why segmentation needs both perimeter rules (block reachability) AND visibility (logging + DPI) — so when a previously-dormant path gets exercised, you actually see it.
+      This is also why segmentation needs both perimeter rules (block reachability) AND visibility (logging + DPI) - so when a previously-dormant path gets exercised, you actually see it.
       :::
 
   - title: "Transition - decide what to fix first"

@@ -3,11 +3,11 @@
 Each simulator is a single Go binary that exposes the **same
 in-memory state across three protocols simultaneously**:
 
-- **HTTP REST** on `:8080` — `GET /api/state`, `POST /api/command`,
+- **HTTP REST** on `:8080` - `GET /api/state`, `POST /api/command`,
   `GET /api/audit`, `GET /api/health`
-- **Modbus TCP** on `:502` — hand-written outstation (no library),
+- **Modbus TCP** on `:502` - hand-written outstation (no library),
   function codes 1/2/3/4 read and 5/6/15/16 write
-- **DNP3 TCP** on `:20000` — outstation via the in-tree
+- **DNP3 TCP** on `:20000` - outstation via the in-tree
   [`dnp3go/`](../dnp3go/) library; supports Read (FC1), Direct
   Operate (FC5), Select/Operate (FC3/4)
 
@@ -26,9 +26,9 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 | `regulator-sim` | 3  | Load tap changer, ±16 tap range, voltage regulation |
 | `capbank-sim`   | 4  | Switched capacitor bank, lockout-after-N-operations |
 | `rtac-sim`      | 10 | Supervisory controller. Polls field devices via DNP3 master and HTTP; exposes aggregated state. Read-only DNP3 outstation. |
-| `historian-sim` | —  | Time-series collector polling the RTAC. HTTP-only. |
-| `gps-sim`       | —  | NTP/IRIG-B time source. UDP NTP server. |
-| `opendss-sim`   | —  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
+| `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
+| `gps-sim`       | -  | NTP/IRIG-B time source. UDP NTP server. |
+| `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
 
 ## Local development
 
@@ -54,12 +54,12 @@ JSON helpers) live in `services/shared/`.
 1. Create `services/<name>-sim/main.go`. Define a `<Name>State` struct
    protected by a `sync.RWMutex`, with `snapshot()` returning a map
    for HTTP serialisation.
-2. Implement HTTP handlers — `handleState`, `handleCommand`,
+2. Implement HTTP handlers - `handleState`, `handleCommand`,
    `handleAudit`, `handleHealth`. Use `shared.AuditLog` to record
    every write with its source.
-3. Add `services/<name>-sim/modbus.go` — copy the relay/recloser
+3. Add `services/<name>-sim/modbus.go` - copy the relay/recloser
    pattern. Map register addresses to state fields.
-4. Add `services/<name>-sim/dnp3.go` — define
+4. Add `services/<name>-sim/dnp3.go` - define
    `BinaryInputs` / `BinaryOutputs` / `AnalogInputs` and assign a
    DNP3 outstation address (next free integer in the table above).
 5. Add a target in `services/Dockerfile`:

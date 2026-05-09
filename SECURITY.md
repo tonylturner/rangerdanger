@@ -31,7 +31,7 @@ runs on the student's own laptop**. The default deployment posture is:
   let lab users run shell commands inside lab containers. The
   command-allowlist on the exec endpoint is a UI guardrail (it
   prevents accidental destructive commands from auto-run buttons),
-  not a security boundary — the WebSocket terminal next to it
+  not a security boundary - the WebSocket terminal next to it
   provides equivalent shell access. Both are safe under the
   loopback-binding posture.
 - **Default credentials.** `containd/containd` (containd CLI/SSH),
@@ -53,7 +53,7 @@ TLS, and network isolation in front of it.
 
 The default loopback binding is the right answer for a single-student
 laptop. There are legitimate cases where you need another machine to
-reach the lab — most commonly:
+reach the lab - most commonly:
 
 - **Demoing the stack to an instructor** without screen-share.
 - **Connecting from a phone or tablet** on the same network for the
@@ -63,7 +63,7 @@ reach the lab — most commonly:
 
 Pick whichever option fits the situation; safest first.
 
-### Option A — SSH local-forward (recommended)
+### Option A - SSH local-forward (recommended)
 
 Leaves the lab loopback-bound. The remote machine reaches it through
 an authenticated SSH tunnel. From the **other** machine:
@@ -80,7 +80,7 @@ Then open `http://localhost:8088` on the remote machine. SSH handles
 the auth, the lab stays loopback-bound on the host, no compose edit
 required.
 
-### Option B — Tailscale / WireGuard / equivalent overlay
+### Option B - Tailscale / WireGuard / equivalent overlay
 
 Install a mesh-VPN client on both machines, expose the lab on the
 overlay interface only:
@@ -93,9 +93,9 @@ proxy:
 
 Same effect as Option A but persistent and works for multiple clients
 without re-running `ssh`. Don't use a public WireGuard endpoint for
-this — point at the overlay's private address space.
+this - point at the overlay's private address space.
 
-### Option C — Bind to a specific LAN interface (not recommended)
+### Option C - Bind to a specific LAN interface (not recommended)
 
 Edit `docker-compose.yml` to bind to your laptop's LAN IP instead of
 loopback:
@@ -112,7 +112,7 @@ unauthenticated lab in front of every device on the bound network.
 Only do this on a network you fully trust and have no reason to
 distrust later (i.e. not conference wifi, hotel wifi, coffee shop).
 
-### Option D — `0.0.0.0` (don't)
+### Option D - `0.0.0.0` (don't)
 
 Removing the `127.0.0.1:` prefix entirely makes the lab reachable
 from every interface on the host. **Don't.** If you find yourself
