@@ -41,7 +41,7 @@ A simulated electric distribution substation in Docker - multi-zone networks, fi
 
 ## Quick start
 
-**Prereqs:** Docker Desktop or Docker Engine + Compose v2 · 8 GB RAM (16 recommended) · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free.
+**Prereqs:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free.
 
 **macOS / Linux:**
 
@@ -196,6 +196,7 @@ Full breakdown - node IPs, service interactions, RTAC kernel-pinning compensatin
 | | |
 |---|---|
 | 📦 [`docs/quickstart.md`](docs/quickstart.md) | Full install walkthrough including offline/SSD path |
+| 💾 [`docs/workshop-ssd.md`](docs/workshop-ssd.md) | Operator runbook: SSD distribution + mid-workshop delta patches |
 | 🏗 [`docs/architecture.md`](docs/architecture.md) | Zone model, node inventory, service interactions, data flow |
 | 🎓 [`docs/workshop-overview.md`](docs/workshop-overview.md) | Lab-by-lab walkthrough - what's simulated and what isn't |
 | 📝 [`docs/lab-authoring.md`](docs/lab-authoring.md) | How to write a workshop lab (YAML shape, fences, decisions) |

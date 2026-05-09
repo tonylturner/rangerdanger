@@ -9,10 +9,24 @@ path, common errors, and what to do when something breaks.
 | | Minimum | Recommended |
 |---|---|---|
 | Docker | Docker Desktop or Engine + Compose v2 | latest |
-| RAM | 8 GB | 16 GB |
+| Host RAM | 16 GB | 32 GB |
+| Docker VM RAM allocation | 8 GB | 12 GB |
 | Disk | 30 GB free | 50 GB free |
 | Host arch | Apple Silicon or x86_64 | - |
 | Loopback ports free | 8088, 9080, 9443, 2222 | - |
+
+The 8 GB "Docker VM" line is what `setup.sh` checks against
+`docker info --format '{{.MemTotal}}'` (Docker Desktop) or
+`/proc/meminfo` (Linux-native Docker Engine). On Docker Desktop, raise
+it under Settings -> Resources -> Memory. The lab idles around 4 GB
+across all containers and peaks around 6-8 GB during a workshop -
+mostly the three webtop containers (`corp_ws` / `vendor_jump` /
+`eng_ws`) at their 2 GB caps plus OpenPLC ramping under runtime load.
+
+Host RAM has to cover the Docker VM allocation *plus* macOS/Windows
+itself plus the student's browser plus any IDE - 8 GB host is too
+tight in practice and will swap-thrash through the workshop. 16 GB
+is the realistic floor.
 
 A clean Docker Desktop install on macOS or Windows usually has the
 right settings out of the box. Linux hosts running Docker Engine
