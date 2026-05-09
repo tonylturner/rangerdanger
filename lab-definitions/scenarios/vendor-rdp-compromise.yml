@@ -50,7 +50,7 @@ steps:
     description: |
       From Kali, connect to the vendor jump box's remote desktop
       using the stolen credentials (`rangerdanger` / `rangerdanger`
-      — the standard lab account documented in
+      - the standard lab account documented in
       `docs/lab-credentials.md`).
 
       **Option A - RDP** (preferred when 3389 is open):
@@ -186,12 +186,12 @@ steps:
       :::
 
       The two requirements that close this kill chain in your Lab 1.4
-      plan are `vendor-to-ot` (BLOCK or RESTRICT — closes the
+      plan are `vendor-to-ot` (BLOCK or RESTRICT - closes the
       enterprise → vendor → OT pivot) and `non-rtac-to-field`
-      (BLOCK — pins the vendor box out of field even if the perimeter
+      (BLOCK - pins the vendor box out of field even if the perimeter
       rule misses). If either is uncovered above, the matching
       re-test in the next step may still succeed under "Apply Your
-      Plan" — re-attempt with **Apply Hardened** to compare.
+      Plan" - re-attempt with **Apply Hardened** to compare.
     action:
       type: firewall
       config: improved

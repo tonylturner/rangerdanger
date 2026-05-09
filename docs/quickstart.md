@@ -11,16 +11,16 @@ path, common errors, and what to do when something breaks.
 | Docker | Docker Desktop or Engine + Compose v2 | latest |
 | RAM | 8 GB | 16 GB |
 | Disk | 30 GB free | 50 GB free |
-| Host arch | Apple Silicon or x86_64 | — |
-| Loopback ports free | 8088, 9080, 9443, 2222 | — |
+| Host arch | Apple Silicon or x86_64 | - |
+| Loopback ports free | 8088, 9080, 9443, 2222 | - |
 
 A clean Docker Desktop install on macOS or Windows usually has the
 right settings out of the box. Linux hosts running Docker Engine
-need Compose v2 (`docker compose`, with a space — not `docker-compose`).
+need Compose v2 (`docker compose`, with a space - not `docker-compose`).
 
 ## Install paths
 
-### Path A — Online (default)
+### Path A - Online (default)
 
 Pulls pre-built images from GHCR. Best when bandwidth is fine.
 
@@ -51,7 +51,7 @@ To re-run only the preflight checks without installing:
 ./setup.sh --check-only
 ```
 
-### Path B — Build from source
+### Path B - Build from source
 
 For developers / contributors. Builds all 14 first-party images
 locally; the first build takes several minutes (Go simulators, Kali
@@ -63,7 +63,7 @@ docker compose up -d --build
 
 Subsequent runs reuse the layer cache and start in seconds.
 
-### Path C — Offline / SSD (workshops)
+### Path C - Offline / SSD (workshops)
 
 For workshops where pulling 6+ GB per student over conference Wi-Fi
 isn't realistic. The instructor stages an SSD; students load from it.
@@ -95,11 +95,11 @@ if you'd rather download than stage your own SSD.
 
 | | URL | Credentials |
 |---|---|---|
-| RangerDanger UI | http://localhost:8088 | — |
+| RangerDanger UI | http://localhost:8088 | - |
 | containd Web UI | http://localhost:9080 | containd / containd |
 | containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
-| FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | — |
-| OpenPLC | http://localhost:8088/apps/openplc/ | — |
+| FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | - |
+| OpenPLC | http://localhost:8088/apps/openplc/ | - |
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
@@ -110,9 +110,9 @@ and start with **Lab 1.2** (Baseline Traffic Analysis).
 
 Most "doesn't start" issues fall into one of these:
 
-1. **Docker isn't running** — start Docker Desktop, or
+1. **Docker isn't running** - start Docker Desktop, or
    `sudo systemctl start docker` on Linux.
-2. **Compose v2 isn't installed** — Compose v1 (`docker-compose`,
+2. **Compose v2 isn't installed** - Compose v1 (`docker-compose`,
    with a hyphen) is end-of-life. Install Compose v2 via Docker
    Desktop or `apt install docker-compose-plugin`.
 3. **Ports already in use** (`8088`, `9080`, `9443`, `2222`).
@@ -129,7 +129,7 @@ Most "doesn't start" issues fall into one of these:
 The `fw-1` in-app terminal lands directly in the **containd
 appliance CLI** (you'll see the `containd# ` prompt). If you
 typed a Linux command like `ls` or `tcpdump` and got "command
-not found", you're in the appliance shell — type `shell` (or
+not found", you're in the appliance shell - type `shell` (or
 `exit`) to drop to bash. Type `containd cli` from bash to come
 back.
 

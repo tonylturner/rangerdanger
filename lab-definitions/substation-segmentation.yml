@@ -13,7 +13,7 @@ networks:
     name: Enterprise Zone
     subnet: 10.10.10.0/24
     zone: wan
-    description: Corporate IT environment — lowest trust, common attacker foothold
+    description: Corporate IT environment - lowest trust, common attacker foothold
 
   - id: vendor_net
     name: Vendor / Engineering Zone
@@ -25,13 +25,13 @@ networks:
     name: OT Operations Zone
     subnet: 10.30.30.0/24
     zone: lan1
-    description: Substation operational services — HMI, RTAC, supervisory control
+    description: Substation operational services - HMI, RTAC, supervisory control
 
   - id: field_net
     name: Field Device Zone
     subnet: 10.40.40.0/24
     zone: lan2
-    description: Substation and feeder control endpoints — relay, recloser, regulator
+    description: Substation and feeder control endpoints - relay, recloser, regulator
 
 nodes:
   # Zone 7: Security Infrastructure

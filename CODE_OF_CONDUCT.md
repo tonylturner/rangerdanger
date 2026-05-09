@@ -1,7 +1,7 @@
 # Contributor Code of Conduct
 
 RangerDanger adopts the [Contributor Covenant 2.1][covenant]. The
-covenant applies to all project spaces — issues, pull requests,
+covenant applies to all project spaces - issues, pull requests,
 discussions, the lab content itself, and any project-related
 communication on third-party platforms (Slack, conferences, etc.).
 
@@ -13,7 +13,7 @@ communication on third-party platforms (Slack, conferences, etc.).
 - Critique ideas and code, not the people behind them.
 - If you wouldn't say it in front of a colleague's manager, don't
   say it here.
-- Security research and red-team work in the lab is welcome —
+- Security research and red-team work in the lab is welcome -
   hostility toward people based on background, identity, or
   experience level is not.
 
@@ -26,7 +26,7 @@ confidential except where disclosure is required to act on the
 report.
 
 If a report concerns a project maintainer, send it to the same
-address — the recipient handling it will not be the subject of the
+address - the recipient handling it will not be the subject of the
 report.
 
 ## Enforcement

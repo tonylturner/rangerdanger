@@ -6,7 +6,7 @@ name: rangerdanger
 #
 # Usage:
 #
-#   # default — uses :latest images
+#   # default - uses :latest images
 #   docker compose -f docker-compose.release.yml up -d
 #
 #   # pin to a specific release
@@ -22,7 +22,7 @@ name: rangerdanger
 
 services:
   firewall:
-    # See docker-compose.yml — containd tracks :latest by design.
+    # See docker-compose.yml - containd tracks :latest by design.
     image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
     cap_add:
@@ -322,7 +322,7 @@ services:
     hostname: openplc
     cap_add:
       - NET_ADMIN
-    # Single-homed on ot_ops_net — the ladder logic is a Modbus
+    # Single-homed on ot_ops_net - the ladder logic is a Modbus
     # client of the RTAC and never originates field-device traffic.
     # Removing the field_net leg eliminates the firewall-bypass
     # surface that historian-sim probes used to demonstrate. Audit

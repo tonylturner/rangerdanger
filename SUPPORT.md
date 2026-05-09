@@ -39,7 +39,7 @@ work. Realistic expectations:
   instructor-led training are organized through
   [DefendICS](https://defendics.org), the nonprofit under which
   RangerDanger is released. Open a Discussion or use the contact
-  routing in [`SECURITY.md`](SECURITY.md) if you'd like to talk —
+  routing in [`SECURITY.md`](SECURITY.md) if you'd like to talk -
   but the OSS project itself stays free.
 
 ## Before opening an issue

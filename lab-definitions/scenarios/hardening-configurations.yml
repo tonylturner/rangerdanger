@@ -293,7 +293,7 @@ steps:
       If your Lab 1.4 plan didn't pin RTAC-to-field (`pin-rtac-to-field`)
       AND didn't add Modbus/DNP3 DPI (`modbus-dpi`, `dnp3-dpi`), one
       or more re-tests in the next steps may still succeed under
-      "Apply Your Plan" — that's the lab telling you the plan has
+      "Apply Your Plan" - that's the lab telling you the plan has
       a gap. Re-attempt with **Apply Hardened** to compare.
     action:
       type: firewall

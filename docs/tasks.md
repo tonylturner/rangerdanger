@@ -6,16 +6,16 @@ Active prioritized backlog. For longer-horizon direction see
 
 Status: `[ ]` open · `[~]` in progress · `[x]` done
 
-## P1 — next up
+## P1 - next up
 
 ### Workshop (DefendICS) blockers
 
 - [x] **Manual exercise playthrough + agenda alignment.** Done for
-  all seven labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4) —
+  all seven labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4) -
   see `CHANGELOG.md` `[Unreleased]`. The most recent pass landed
   the 2.3 verify-step source-container fix and the 2.3-bonus
   kill-chain framing.
-- [x] **Dynamic remediation pipeline — extend to attack labs.**
+- [x] **Dynamic remediation pipeline - extend to attack labs.**
   All four execute-mode labs now read the student's Lab 1.4 plan
   inline:
   - `firewall-implementation` (Lab 2.2): `injectDynamicContent`
@@ -33,7 +33,7 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
     their 1.3 design verdicts.
 - [ ] **Single-student-laptop lab build polish.** Final round of
   "is this comfortable for a student running the whole stack on
-  their own laptop" smoothing — startup time, error-state UX,
+  their own laptop" smoothing - startup time, error-state UX,
   rollback after a wrong policy. Workshop-feedback driven.
 
 ### v0.1.3 release path
@@ -47,7 +47,7 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
   Manual hardware step.
 
-## P0 — pending audit-pass-3 fixes (in progress 2026-05-08)
+## P0 - pending audit-pass-3 fixes (in progress 2026-05-08)
 
 Codex audit pass 3 surfaced two reproducible workshop blockers and
 twelve smaller findings on top of v0.1.4. Items below were validated
@@ -58,18 +58,18 @@ parked under **Open questions** below.
   returned `success:false` because `clear_alarm` was sent to capbank-sim
   which has no such handler (rejected as unknown command;
   `reset_lockout` already clears alarm). Both `reset.go` and
-  `test_runner.go` had the same hardcoded list — extracted to a single
+  `test_runner.go` had the same hardcoded list - extracted to a single
   `resetDeviceCommands` var, dropped the bogus action, and pinned with
   `TestResetCommandsAreSupported` which scans each sim's `case "X":`
   handlers and asserts every reset command resolves. **Status:**
   changes in working tree, awaiting re-audit.
 - [~] **P0-B Interface-determinism for PCAP.** Three sites hardcoded
-  `eth3 = field`, which broke after F-002 added the 5th network — Docker
+  `eth3 = field`, which broke after F-002 added the 5th network - Docker
   ethN ordering is non-deterministic across hosts (alphabetical network
   name, not compose order). Fixed:
   `backend/internal/server/pcap.go:42` drops the broken `Interfaces`
   pin (containd's PCAP API takes literal kernel iface names, not zone
-  names — see open-question below); the backend's `tcpdump -i any`
+  names - see open-question below); the backend's `tcpdump -i any`
   fallback in the same file is fully drift-proof and is what's actually
   used at runtime.
   `docker-compose.yml` and `docker-compose.release.yml` drop
@@ -80,9 +80,9 @@ parked under **Open questions** below.
   tcpdump to `tcpdump -i any -nn 'net 10.40.40.0/24 ...'` so it works
   regardless of which `ethN` field-net lands on. Bonus: release
   compose was missing `CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24`
-  (lockstep drift codex caught) — added back.
+  (lockstep drift codex caught) - added back.
 
-## P1 — pending audit-pass-3 fixes
+## P1 - pending audit-pass-3 fixes
 
 - [~] **P1-A `lab-commands-smoke.sh` apply-failure detection.**
   Previous `apply_policy()` swallowed curl errors with `2>/dev/null`
@@ -110,21 +110,21 @@ parked under **Open questions** below.
   misconfigurations / sim-warmup races at setup time rather than
   at lab time.
 
-## P2 — soon (audit-pass-3 + carried-over)
+## P2 - soon (audit-pass-3 + carried-over)
 
 Important but not workshop-blocking and not on v0.1.2's critical path.
 
 - [~] **P2-A `docs/architecture.md` rewrite.** Removed the stale
-  "RTAC field polling does not transit firewall" claim — `rtac-harden.sh`
+  "RTAC field polling does not transit firewall" claim - `rtac-harden.sh`
   has forced firewall transit since v0.1.2. Corrected the multi-
-  homed table (2 networks, not 3 — no physics_net leg). Corrected the
+  homed table (2 networks, not 3 - no physics_net leg). Corrected the
   source-pin IP (10.30.30.20, not 10.40.40.10). Replaced the
   fragile eth-index column with a containd zone-name column and
   added an explicit note that ethN ordering is non-deterministic
   across hosts. Added a "Multi-homed RTAC with kernel-pinned
   routing" section explaining the compensating control.
 - [~] **P2-B Smoke runs on `audit-oss` and `oss-release`.** Was
-  `[main]` only — release-branch work shipped without the workshop-
+  `[main]` only - release-branch work shipped without the workshop-
   critical Docker smoke gate. Both branches added to push/PR
   triggers in `.github/workflows/smoke.yml`.
 - [~] **P2-C `CONTRIBUTING.md` adds `npm test`.** Was missing while
@@ -143,11 +143,11 @@ Important but not workshop-blocking and not on v0.1.2's critical path.
   smokes (scenario-list renders, lab-detail start / stop) still
   open.
 - [ ] **`setup.sh` / `setup.ps1`** workshop-feedback polish (separate
-  from the P1-D readiness gate above) — friendlier error messages
+  from the P1-D readiness gate above) - friendlier error messages
   on common failure modes, "checking your machine" output ergonomics,
   port-conflict diagnostics improvements.
 
-## P3 — later
+## P3 - later
 
 Polish + documentation that don't move correctness.
 
@@ -155,14 +155,14 @@ Polish + documentation that don't move correctness.
   runner, network console, FUXA HMI, and containd policy view.
   Hero-image polish landed (RangerDanger lockup +
   documentation-table icons + dropped duplicated zone table).
-  Real screenshots of the running stack still outstanding —
+  Real screenshots of the running stack still outstanding -
   requires running stack to capture.
 
 ## Recently shipped (since the last refresh of this file)
 
-Highlights — see `../CHANGELOG.md` for the full list:
+Highlights - see `../CHANGELOG.md` for the full list:
 
-- **Lab restructure** — 9 sequentially-numbered exercises → 7 labs
+- **Lab restructure** - 9 sequentially-numbered exercises → 7 labs
   aligned to the DefendICS deck (1.2 / 1.3 / 1.4 / 2.2 / 2.3 /
   2.3-bonus / 2.4). Removed: `modbus-override`,
   `dnp3-command-injection`, `capbank-switching-attack`. Added:
@@ -171,7 +171,7 @@ Highlights — see `../CHANGELOG.md` for the full list:
 - **`Scenario.Order` field** changed from `int` to `string` across
   backend + frontend so `order:` in YAML is the workshop lab
   number directly (`"1.2"`, `"2.3-bonus"`, etc).
-- **Lab 2.2 / 2.4 CLI / UI rewrite** — replaced curl-as-CLI hints
+- **Lab 2.2 / 2.4 CLI / UI rewrite** - replaced curl-as-CLI hints
   with real containd Web UI walkthrough + appliance CLI commands
   (`show running-config`, `set firewall rule`, `commit`, `show
   audit`, `export config`).
@@ -179,7 +179,7 @@ Highlights — see `../CHANGELOG.md` for the full list:
   bash fallback on CLI error). Wraps containd v0.1.19's
   `shell` / `bash` / `exit` behavior so all four leave the loop.
 - **Containd dependency** moved from a digest-pinned per-release
-  bump to `containd:latest` — both repos move together by
+  bump to `containd:latest` - both repos move together by
   convention; `docker compose pull` picks up containd security
   fixes automatically.
 - **Smoke test** updated for the new lab inventory (`scripts/smoke-test.sh`
@@ -190,12 +190,12 @@ Highlights — see `../CHANGELOG.md` for the full list:
 - **`govulncheck` advisory → hard gate** with allowlist of
   documented exceptions. Bumped `quic-go` and `golang.org/x/crypto`
   to clear non-allowlisted findings.
-- **GHCR push retry** in `release.yml` — three attempts with
+- **GHCR push retry** in `release.yml` - three attempts with
   backoff to absorb transient 5xx during layer uploads.
 
 ## Open questions (audit-pass-3)
 
-- **Codex P0-001 (firewall apply 502/403 on fresh rebuild)** — did
+- **Codex P0-001 (firewall apply 502/403 on fresh rebuild)** - did
   not reproduce on a clean `docker compose down -v --remove-orphans`
   + `up -d --build` against current source on Docker Engine 29.2.0
   with containd image digest `sha256:c73d163...`. Apply weak/improved
@@ -204,7 +204,7 @@ Highlights — see `../CHANGELOG.md` for the full list:
   containd image cache or raced sim startup. **No code change made**;
   the new P1-D setup-time gate would catch this class of failure
   if it ever recurs. Re-investigate only if reproduced.
-- **containd CAPTURE_IFACES zone-name support** — containd's policy
+- **containd CAPTURE_IFACES zone-name support** - containd's policy
   engine autobinds zone names (wan/dmz/lan1/lan2/lan3) to ethN by
   subnet (commit 5f31128), but the PCAP path resolves
   `CONTAIND_CAPTURE_IFACES` and `pcap.start.interfaces[]` as literal
@@ -217,7 +217,7 @@ Highlights — see `../CHANGELOG.md` for the full list:
   `Interfaces: []string{"wan","dmz","lan1","lan2","lan3"}` in
   `pcap.go` and restore `CONTAIND_CAPTURE_IFACES` to both compose
   files.
-- **`exec.go` allowlist hardening** — pre-existing parked decision
+- **`exec.go` allowlist hardening** - pre-existing parked decision
   (lab-only loopback-bound, allowlist documented as UI guardrail
   not security boundary). Re-evaluate if the deployment model
   changes.
@@ -226,11 +226,11 @@ Highlights — see `../CHANGELOG.md` for the full list:
 
 Bigger features tracked in [`../ROADMAP.md`](../ROADMAP.md):
 
-- **v0.2.0** — FUXA HMI screens, Suricata IDS feed, PCAP replay,
+- **v0.2.0** - FUXA HMI screens, Suricata IDS feed, PCAP replay,
   command-audit ↔ process-consequence UI
-- **v0.3.0** — multi-user RBAC, instructor / student split, workshop
+- **v0.3.0** - multi-user RBAC, instructor / student split, workshop
   console, stage-SSD enhancements
-- **Backlog** — water / wastewater lab, more protocols (OPC UA, GOOSE,
+- **Backlog** - water / wastewater lab, more protocols (OPC UA, GOOSE,
   Profinet), HIL bridge, cloud-hosted labs, curriculum-control mapping
 
 ## Process

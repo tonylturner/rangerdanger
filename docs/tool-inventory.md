@@ -1,12 +1,12 @@
-# Tool inventory — what's installed where, and how to decide
+# Tool inventory - what's installed where, and how to decide
 
 The lab ships student-facing CLI tools (`mbpoll`, `dnp3poll`, `nmap`,
 `tcpdump`, etc.) across multiple Dockerfiles, each tailored to the
 zone-position and persona of the host. Several recent audits have
-shuffled tools between images — this doc is the cross-reference so
+shuffled tools between images - this doc is the cross-reference so
 the next author doesn't have to re-derive it from `apt-get install`
 lines, and the [decision tree](#deciding-where-to-add-a-new-tool)
-gives a stable answer to "this command needs to run somewhere — which
+gives a stable answer to "this command needs to run somewhere - which
 image?"
 
 ## Lab personas at a glance
@@ -52,11 +52,11 @@ image?"
 | `python3` | ✓ | ✓ | ✓ | ✓ | ✓ | |
 | `python3-pip` | | ✓ | ✓ | | | |
 | `bash` | (debian-base) | (built-in) | (built-in) | (debian-base) | (apk) | ✓ (sim-base) |
-| **Remote access — clients** | | | | | | |
+| **Remote access - clients** | | | | | | |
 | `xfreerdp` (RDP) | ✓ (`freerdp-x11`) | | | | | |
 | `xtightvncviewer` (VNC) | ✓ | | | | | |
 | `sshpass` | ✓ | | | | | |
-| **Remote access — servers** | | | | | | |
+| **Remote access - servers** | | | | | | |
 | `xrdp` | | | ✓ | | | |
 | `x11vnc` | | | ✓ | | | |
 | `nginx` | | | ✓ (`nginx-light`) | | ✓ | |
@@ -78,7 +78,7 @@ Notes:
 - **DNP3 tools** are built from the in-tree `dnp3go/` module via a
   `dnp3-builder` stage in each Dockerfile that needs them, then
   `COPY --from=dnp3-builder` into the runtime image. There is **no**
-  apt/apk source for these — they're our own.
+  apt/apk source for these - they're our own.
 - **vendor-jump** installs both client (`openssh-server` provides the
   daemon; the OpenSSH server package on Ubuntu also drops `ssh` /
   `scp` clients via the `openssh-client` recommended dependency).
@@ -102,7 +102,7 @@ the engineering workstation?
     Examples: wireshark (GUI), tshark, mbpoll (read-only), python3
               + pymodbus for ad-hoc scripts.
 
-Is it a vendor-laptop tool — implies the vendor support persona has
+Is it a vendor-laptop tool - implies the vendor support persona has
 it pre-installed?
     → Dockerfile.vendor-jump.
     Examples: dnp3poll for monitoring, RDP server for the foothold,
@@ -120,7 +120,7 @@ specific simulator?
 Does the tool only exist to make the lab UI's auto-run button
 work? (i.e. lab YAML has a fence the smoke would otherwise mark
 as "no source container")
-    → Same answer as above — pick the persona the lab tells the
+    → Same answer as above - pick the persona the lab tells the
       student they're on, not a different container that happens
       to already have the tool. Smoke gates rely on `node:` matching
       the actual image inventory.
@@ -131,12 +131,12 @@ Three guardrails:
 1. **Smoke catches the simple case.** `scripts/lab-commands-smoke.sh`
    walks every command block in every lab YAML and execs it from the
    declared `node:` container. If the tool isn't there, the smoke
-   fails. CI runs this on every PR — adding a command without
+   fails. CI runs this on every PR - adding a command without
    adding the tool will fail the build.
 
 2. **Don't sprawl image size.** Webtop images (eng-ws, vendor-jump)
    already carry a desktop environment; one more apt package is
-   cheap. Alpine sims are minimal — every package added to sim-base
+   cheap. Alpine sims are minimal - every package added to sim-base
    costs across all six images. Scope tightly.
 
 3. **Document when you add anything.** Update this matrix in the
@@ -145,11 +145,11 @@ Three guardrails:
 
 ## See also
 
-- [`docs/lab-credentials.md`](lab-credentials.md) — credentials for
+- [`docs/lab-credentials.md`](lab-credentials.md) - credentials for
   services running on these images (vendor-jump RDP/VNC/SSH,
   rtac-sim SSH/HTTPS).
-- [`docs/lab-authoring.md`](lab-authoring.md) — fence vocabulary +
+- [`docs/lab-authoring.md`](lab-authoring.md) - fence vocabulary +
   the `node:` field that smoke validates against this matrix.
 - [`scripts/lab-commands-smoke.sh`](../scripts/lab-commands-smoke.sh)
-  — the CI gate that catches drift between this matrix and what
+  - the CI gate that catches drift between this matrix and what
   YAMLs actually reference.

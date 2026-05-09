@@ -2,7 +2,7 @@ name: rangerdanger
 
 services:
   # ─────────────────────────────────────────────────────────────
-  # Zone 7: Security Infrastructure — containd NGFW
+  # Zone 7: Security Infrastructure - containd NGFW
   # ─────────────────────────────────────────────────────────────
   firewall:
     # RangerDanger and containd are co-developed by the same author; both repos
@@ -48,7 +48,7 @@ services:
       # mgmt_net). containd's auto-bind matches lan3's subnet against
       # whatever ethN docker assigned to mgmt_net. Without this, the
       # mgmt eth falls outside the policy and the input chain drops
-      # backend's API calls — RangerDanger UI shows 502 on apply.
+      # backend's API calls - RangerDanger UI shows 502 on apply.
       - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
     volumes:
       - ./data/firewall:/data
@@ -73,10 +73,10 @@ services:
     restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────
-  # Platform services — backend, frontend, proxy
+  # Platform services - backend, frontend, proxy
   # ─────────────────────────────────────────────────────────────
   # RangerDanger platform services live on mgmt_net only. They never
-  # attach to zone networks — so their traffic never shows up in any
+  # attach to zone networks - so their traffic never shows up in any
   # capture taken at the firewall's zone interfaces. Lab containers
   # that expose user-facing UIs get a mgmt_net leg so the nginx proxy
   # can reach them out-of-band without crossing the data plane.
@@ -100,7 +100,7 @@ services:
       mgmt_net:
         ipv4_address: 10.99.99.10
     # backend gates on rtac_sim being ready so /api/substation/state
-    # works on first request — avoids a 5xx burst while sims warm up.
+    # works on first request - avoids a 5xx burst while sims warm up.
     depends_on:
       firewall:
         condition: service_started
@@ -143,7 +143,7 @@ services:
   # All inter-zone traffic routes through containd (10.10.10.2)
   # ─────────────────────────────────────────────────────────────
   corp_ws:
-    # webtop ubuntu-mate pinned by digest (A7 — Linuxserver only ships
+    # webtop ubuntu-mate pinned by digest (A7 - Linuxserver only ships
     # rolling tags, this freezes the snapshot for reproducible builds).
     image: linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
     container_name: rangerdanger-corp-ws
@@ -261,7 +261,7 @@ services:
   # Inter-zone traffic routes through containd (10.30.30.2)
   # ─────────────────────────────────────────────────────────────
   fuxa_hmi:
-    # FUXA :latest as of 2026-05-04 — pinned by digest for reproducibility.
+    # FUXA :latest as of 2026-05-04 - pinned by digest for reproducibility.
     # To update: docker buildx imagetools inspect frangoteam/fuxa:<tag>
     image: frangoteam/fuxa:latest@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f
     container_name: rangerdanger-fuxa-hmi
@@ -284,7 +284,7 @@ services:
     depends_on:
       - firewall
 
-  # HMI poller sidecar — shares fuxa_hmi's network namespace so its
+  # HMI poller sidecar - shares fuxa_hmi's network namespace so its
   # traffic has source IP 10.30.30.10 (the HMI). Runs a simple Modbus
   # read against the RTAC every 2 seconds. This is intra-OT-Ops traffic
   # (not cross-zone) and therefore never transits the firewall, but it
@@ -322,7 +322,7 @@ services:
     hostname: rtac-sim
     cap_add:
       - NET_ADMIN
-    # RTAC hardening sysctls — prevent the RTAC from ever acting as a
+    # RTAC hardening sysctls - prevent the RTAC from ever acting as a
     # router or transit node between its multiple zone interfaces.
     # /proc/sys is read-only inside the container, so these must be set
     # via docker-compose sysctls: (namespaced network sysctls that Docker
@@ -388,7 +388,7 @@ services:
     cap_add:
       - NET_ADMIN
     # OpenPLC runs the substation automation overlay in
-    # data/openplc/substation_automation.st — voltage regulation,
+    # data/openplc/substation_automation.st - voltage regulation,
     # auto-reclose protection, alarm aggregation. The ladder logic
     # is a Modbus TCP client of the RTAC (10.30.30.20) and never
     # originates traffic to field devices directly. Single-homed
@@ -576,7 +576,7 @@ services:
       physics_net:
         ipv4_address: 10.50.50.20
     # opendss-sim uses python:3.12-slim, not alpine, so no busybox wget.
-    # python's urllib is always available — use it directly.
+    # python's urllib is always available - use it directly.
     healthcheck:
       test:
         - CMD
@@ -590,7 +590,7 @@ services:
     restart: unless-stopped
 
 networks:
-  # Management network — NOT captured by containd firewall
+  # Management network - NOT captured by containd firewall
   mgmt_net:
     driver: bridge
     ipam:

@@ -74,7 +74,7 @@ jobs:
 
       - name: Validate lab inventory
         # 6 workshop labs + 1 bonus, deck-aligned ordering. The list
-        # of (order, id) pairs is the canonical workshop inventory —
+        # of (order, id) pairs is the canonical workshop inventory -
         # add/remove rows here in lockstep with lab YAML files.
         run: |
           set -euo pipefail
@@ -108,7 +108,7 @@ jobs:
             fi
           done
           # Every lab must have at least 3 steps. Counting via
-          # "description": occurrences in the steps string blob —
+          # "description": occurrences in the steps string blob -
           # each step has exactly one, action items don't have any.
           # (Direct fromjson parsing fails because the stored steps
           # blob has literal newlines inside string descriptions.)
@@ -146,8 +146,8 @@ jobs:
         # scripts/lab-commands-smoke.sh extracts every documented
         # command from the lab YAMLs and runs them via docker exec
         # from the right container under the right policy. Catches
-        # lab-doc rot — typo'd IPs, missing tools, wrong source
-        # containers, broken policies — before a student does.
+        # lab-doc rot - typo'd IPs, missing tools, wrong source
+        # containers, broken policies - before a student does.
         # PyYAML is needed by the script's parser; install once
         # alongside any other ad-hoc deps.
         run: |

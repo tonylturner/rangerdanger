@@ -6,13 +6,13 @@ name: Dependency scan
 # (Kali rolling, Linuxserver webtop bases, Python 3.12-slim) that
 # govulncheck has no visibility into.
 #
-# Advisory-only by design — both scanners run continue-on-error so
+# Advisory-only by design - both scanners run continue-on-error so
 # noisy upstream CVE reports don't gate PRs. Findings should be
 # triaged into docs/security-known-issues.md before flipping either
 # to hard-fail.
 #
 # Triggers:
-#   - weekly (Sunday 03:00 UTC) — keeps signal current as new CVEs land
+#   - weekly (Sunday 03:00 UTC) - keeps signal current as new CVEs land
 #   - on every v* tag push (so each release has a fresh scan attached)
 #   - manual via workflow_dispatch
 #

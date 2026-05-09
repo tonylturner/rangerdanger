@@ -24,7 +24,7 @@ Before opening this PR:
 
 If your change touches lab content (exercises, simulators, firewall
 configs), please walk through the affected exercise(s) end-to-end in
-the running stack — unit tests don't catch playthrough regressions. -->
+the running stack - unit tests don't catch playthrough regressions. -->
 
 - [ ] `(cd backend && go test ./...)` clean
 - [ ] `(cd services && go test ./...)` clean

@@ -7,7 +7,7 @@ that lets a lab read what the student did in earlier labs.
 
 The runner that consumes these YAMLs lives in
 [`frontend/components/scenario-runner.tsx`](../frontend/components/scenario-runner.tsx).
-If something here disagrees with the runner, the runner wins —
+If something here disagrees with the runner, the runner wins -
 file an issue or PR.
 
 ## File location and naming
@@ -16,7 +16,7 @@ Each lab is one YAML file under `lab-definitions/scenarios/`. The
 filename matches the scenario `id` (e.g. `baseline-assessment.yml`
 contains `id: baseline-assessment`).
 
-Backend loads them at startup — restart `backend` after changes.
+Backend loads them at startup - restart `backend` after changes.
 
 ## Top-level shape
 
@@ -75,7 +75,7 @@ Valid values are node IDs from
 `hmi-1`, `rtac-1`, `openplc-1`, `historian-1`, `gps-1`, `relay-1`,
 `recloser-1`, `regulator-1`, `capbank-1`.
 
-## Description body — fences and special blocks
+## Description body - fences and special blocks
 
 The step `description` is markdown with several runner-specific
 extensions. They're parsed in `splitDescription()` and rendered
@@ -107,13 +107,13 @@ description: |
 The Run button targets the step's `node`, or falls back to prose
 inference (look for "from the kali terminal", "on the firewall", etc.).
 For multi-source steps, use **per-section "From X terminal" headers**
-above each command — the runner picks the nearest one walking up.
+above each command - the runner picks the nearest one walking up.
 
 The lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
 extracts these the same way and runs each. If a command in your
 lab YAML doesn't run cleanly, CI fails.
 
-### Hints — `:::hint`
+### Hints - `:::hint`
 
 Collapsible "reveal answer" panel. Default state is collapsed.
 
@@ -130,7 +130,7 @@ Hint bodies support all the same fences (commands, decisions,
 findings panels), so a hint can demonstrate the right answer with
 runnable commands inside it.
 
-### Decisions — `:::decision`
+### Decisions - `:::decision`
 
 Inline question with a dropdown that the student commits to. The
 choice persists to `localStorage` so refreshes don't lose it AND
@@ -138,7 +138,7 @@ so later labs can read it.
 
 ```yaml
 :::decision id=enterprise-to-field options=BLOCK,RESTRICT,ALLOW correct=BLOCK
-**Enterprise → Field** on Modbus 502 / DNP3 20000 — what's your design verdict?
+**Enterprise → Field** on Modbus 502 / DNP3 20000 - what's your design verdict?
 :::
 ```
 
@@ -151,12 +151,12 @@ Attributes:
 | `default-from` | no | `<source-scenario-id>:<source-decision-id>`. On first render with no local value, copies the upstream value so a downstream lab can pre-fill from an earlier one. The student can still adjust. |
 | `correct` | no | The "right" answer. When set, the dropdown renders a green ✓ chip when the student's pick matches, red ✗ otherwise. Use this **only on observation / factual prompts** (e.g. "what did you see in the capture?"), not on judgment-call design decisions. |
 
-Body is markdown — short prose, the dropdown renders below.
+Body is markdown - short prose, the dropdown renders below.
 
 The dropdown is dark-themed and uses `colorScheme: dark` so the OS
 picker matches the lab UI on supporting browsers.
 
-### Findings panels — `:::findings-panel`
+### Findings panels - `:::findings-panel`
 
 Read-only panel that surfaces upstream decisions as context. Used
 when a downstream lab needs to show the student's earlier work
@@ -184,10 +184,10 @@ The component reads each id's localStorage value and shows a
 read-only summary. If the upstream lab wasn't done, the panel
 shows a "you haven't done lab X yet" link.
 
-Multiple panels in one step are fine — Lab 1.3 step 1 shows both
+Multiple panels in one step are fine - Lab 1.3 step 1 shows both
 "Passive capture findings" and "Active probe result" stacked.
 
-### Plan coverage — `:::plan-coverage`
+### Plan coverage - `:::plan-coverage`
 
 Renders the same per-requirement coverage view that Lab 1.4's
 DecisionPanel shows in its sticky-bottom bar, but inline at any
@@ -201,7 +201,7 @@ verdicts. Each requirement appears as **fully addressed**,
 :::
 ```
 
-Body is ignored — the panel reads from `localStorage`, no
+Body is ignored - the panel reads from `localStorage`, no
 author input needed. Useful in summary / reflection steps where
 the lab wants to surface "what your plan closed vs deferred"
 without making the student manually recall their selections.
@@ -241,9 +241,9 @@ component instead of (or in addition to) the description prose.
 
 Supported `type` values:
 
-- `decision` — labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
-- `check` — a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
-- `command`, `firewall`, `sequence`, `manual` — older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks.
+- `decision` - labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
+- `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
+- `command`, `firewall`, `sequence`, `manual` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks.
 
 `DecisionPanel` automatically reads:
 
@@ -263,7 +263,7 @@ decision:<scenario-id>:<decision-id>     decision dropdown selections
 remediationPlan                          current plan (action ids + saved-at)
 ```
 
-The runner doesn't expose these as authoring primitives — you read
+The runner doesn't expose these as authoring primitives - you read
 them indirectly via `:::findings-panel` and the `default-from`
 attribute on `:::decision`. If you need a brand-new way to surface
 saved data, add a parser case to `splitDescription` and a renderer
@@ -274,7 +274,7 @@ component, then document it here.
 Before opening a PR with a new or modified lab:
 
 1. **Bring the stack up** and click through the lab end-to-end. The Run buttons should fire from the right container under the right policy.
-2. **Run the lab-commands smoke** — catches typo'd IPs, missing tools, wrong source containers, broken policies. Same gate CI runs.
+2. **Run the lab-commands smoke** - catches typo'd IPs, missing tools, wrong source containers, broken policies. Same gate CI runs.
    ```sh
    ./scripts/lab-commands-smoke.sh <your-scenario-id>
    ```
@@ -291,7 +291,7 @@ Before opening a PR with a new or modified lab:
 - **Active engagement per step.** Pure reading steps lose students fast. Even a single `:::decision` or a Run button makes the step feel like work.
 - **Inheritance over re-input.** When Lab N+1 needs Lab N's verdicts, use `:::findings-panel` plus `default-from` on the new decisions instead of asking the student to re-fill the same dropdowns.
 - **`correct=` only on observations, not on judgment.** Quiz-style chips on factual prompts ("did you see X in the capture?") teach. Quiz chips on design choices ("what would you BLOCK?") feel like the workshop is policing the student's design.
-- **Pair passive analysis with active probing.** Capture says "I don't see traffic on this path." Active probe says "but the path's open." That gap is the teaching moment — see Lab 1.2 step 7 for the pattern.
+- **Pair passive analysis with active probing.** Capture says "I don't see traffic on this path." Active probe says "but the path's open." That gap is the teaching moment - see Lab 1.2 step 7 for the pattern.
 
 ## Patterns to avoid
 

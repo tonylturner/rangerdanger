@@ -9,7 +9,7 @@ compiled.
 
 | Path | Purpose |
 |------|---------|
-| `substation-segmentation.yml` | Active lab topology — nodes, networks, IPs, container names |
+| `substation-segmentation.yml` | Active lab topology - nodes, networks, IPs, container names |
 | `scenarios/*.yml` | One file per exercise; numbered via the `order` field |
 | `firewall/*.json` | Containd firewall policies (weak baseline + improved hardened state) |
 
@@ -73,11 +73,11 @@ runner UI as ✓ / ✗ on each step.
 ## Firewall configs
 
 `firewall/substation-weak.json` is the **intentionally permissive
-baseline** that students start from — enterprise→field is allowed,
+baseline** that students start from - enterprise→field is allowed,
 which is what makes most attack exercises possible.
 
 `firewall/substation-improved.json` is the **target hardened state**
-— only RTAC→field is allowed for the controlled flows, and Modbus
+- only RTAC→field is allowed for the controlled flows, and Modbus
 write function codes are denied from any source other than the
 RTAC. Exercises validate against this when checking remediation.
 
@@ -86,14 +86,14 @@ schema. Tested by `backend/internal/containd/firewall_config_test.go`.
 
 ## Topology
 
-`substation-segmentation.yml` defines the lab topology — the set of
+`substation-segmentation.yml` defines the lab topology - the set of
 nodes, which networks each one attaches to, and which container name
 they map to in `docker-compose.yml`. The frontend's network console
 (`/console`) is rendered from this file via the
 `GET /api/workshop/graph` endpoint.
 
 If you change network membership here, you must also change
-`docker-compose.yml` to match — the YAML is the source of truth for
+`docker-compose.yml` to match - the YAML is the source of truth for
 the UI but Docker is the source of truth for actual reachability.
 The two should never disagree.
 
@@ -103,6 +103,6 @@ The two should never disagree.
   (`my-new-exercise`, `eng-ws-1`).
 - Step descriptions favor inline code blocks the runner can auto-run,
   not block paragraphs of "type this then this then this."
-- Process consequence is a first-class outcome — describe what
+- Process consequence is a first-class outcome - describe what
   happens to the breaker, the voltage, or the relay setpoints, not
   just what packets are sent.

@@ -14,7 +14,7 @@ You will need:
 - **Go 1.24+** for backend, services, and the `dnp3go` library.
 - **Node.js 20+** and **npm** for the frontend.
 
-Bring up the stack — either invocation works:
+Bring up the stack - either invocation works:
 
 ```sh
 ./scripts/dev-up.sh           # build-from-source path; passes extra args through
@@ -32,7 +32,7 @@ from any cwd) and forwards extra args. To stop:
 Both scripts target `docker-compose.yml` (the source-build file).
 For the release-image path see [`docs/quickstart.md`](docs/quickstart.md).
 
-Open http://localhost:8088 — the UI is the entry point.
+Open http://localhost:8088 - the UI is the entry point.
 
 ## Repository layout
 
@@ -113,7 +113,7 @@ images are already cached.
 ## Pull requests
 
 1. Branch off `main`.
-2. Keep PRs focused — one concern per PR is much easier to review than
+2. Keep PRs focused - one concern per PR is much easier to review than
    a sprawling change.
 3. Update `CHANGELOG.md` under `[Unreleased]` if your change is
    user-visible.
@@ -124,7 +124,7 @@ images are already cached.
 ## Authoring labs
 
 If you're writing a new lab or reshaping an existing one, see
-[`docs/lab-authoring.md`](docs/lab-authoring.md) — covers the YAML
+[`docs/lab-authoring.md`](docs/lab-authoring.md) - covers the YAML
 shape the runner expects, the description-body fences (`:::hint`,
 `:::decision`, `:::findings-panel`), the localStorage model that
 lets a lab read what the student did in earlier labs, and the
@@ -135,7 +135,7 @@ authoring checklist (run the smoke tests before opening a PR).
 - New ICS protocol simulators or DPI rules in containd.
 - Additional exercises in `lab-definitions/scenarios/`.
 - Frontend polish on the network console, exercise runner, or HMI.
-- Documentation improvements — the lab is most useful when the docs
+- Documentation improvements - the lab is most useful when the docs
   match the code.
 - Tests, especially for `backend/internal/server/`,
   `services/rtac-sim`, and `dnp3go/`.

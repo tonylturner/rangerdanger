@@ -55,7 +55,7 @@ The workshop endpoints operate on the always-running substation lab defined in `
 
 ## Scenarios (exercises)
 
-Exercises are stored internally as "scenarios" for historical reasons — the user-facing term is "exercise".
+Exercises are stored internally as "scenarios" for historical reasons - the user-facing term is "exercise".
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -77,7 +77,7 @@ Exercises are stored internally as "scenarios" for historical reasons — the us
     {
       "name": "PCAP captured",
       "status": "pass",
-      "detail": "Baseline capture file found — traffic was recorded"
+      "detail": "Baseline capture file found - traffic was recorded"
     }
   ],
   "timestamp": "2026-04-10T02:41:09Z"
@@ -139,7 +139,7 @@ Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/nodes/:node_id/action` | Send a node action (restart, stop, etc.) — placeholder for orchestration hooks |
+| `POST` | `/nodes/:node_id/action` | Send a node action (restart, stop, etc.) - placeholder for orchestration hooks |
 
 ## Containd proxy
 
@@ -153,8 +153,8 @@ Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and
 
 ### Endpoints
 
-- `GET /workshop/nodes/:nodeId/terminal` — Workshop node terminal
-- `GET /labs/instances/:id/nodes/:nodeId/terminal` — Lab instance node terminal
+- `GET /workshop/nodes/:nodeId/terminal` - Workshop node terminal
+- `GET /labs/instances/:id/nodes/:nodeId/terminal` - Lab instance node terminal
 
 ### Message protocol
 
@@ -196,4 +196,4 @@ The frontend sends a resize on initial connect, whenever the container resizes, 
 
 ## Data contracts
 
-Struct-level documentation lives in `backend/internal/models/models.go`. Topology, scenario steps, and firewall configs are stored as JSON strings in the database and shaped to match what the frontend expects directly — React Flow graphs for topology, ordered step arrays for scenarios, and the containd policy schema for firewall configurations.
+Struct-level documentation lives in `backend/internal/models/models.go`. Topology, scenario steps, and firewall configs are stored as JSON strings in the database and shaped to match what the frontend expects directly - React Flow graphs for topology, ordered step arrays for scenarios, and the containd policy schema for firewall configurations.
