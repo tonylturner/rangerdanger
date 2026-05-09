@@ -170,10 +170,22 @@ if ($CheckOnly) {
 if ($FromTarballs) {
     Banner "Loading images from tarballs"
     if (-not (Test-Path $FromTarballs)) { Die "Tarball directory not found: $FromTarballs" }
+
+    # Auto-detect the staged version from .version file written by
+    # stage-ssd.sh. Without this, $Version stays at "latest" and
+    # compose looks for `:latest` tags that don't exist on the SSD's
+    # `:vX.Y.Z`-tagged images, failing with "No such image: ...:latest".
+    $versionFile = Join-Path $FromTarballs ".version"
+    if ((Test-Path $versionFile) -and ($Version -eq "latest")) {
+        $Version = (Get-Content $versionFile -Raw).Trim()
+        Say "Auto-detected version from SSD: $Version"
+    }
+
     $tarball = Join-Path $FromTarballs "images-$arch.tar"
     if (-not (Test-Path $tarball)) { Die "Expected $tarball (this host is $arch). Have you staged the right architecture?" }
     $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
-    Say "Loading $tarball (${sizeMB} MB) — this can take a few minutes"
+    Say "Loading $tarball (${sizeMB} MB) - decompressing each image, ~5-15 min on a fast SSD."
+    Say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
     docker load -i $tarball
     Say "Images loaded"
 } else {

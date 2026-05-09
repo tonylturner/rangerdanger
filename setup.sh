@@ -193,10 +193,23 @@ fi
 if [ -n "$TARBALL_DIR" ]; then
     banner "Loading images from tarballs"
     [ -d "$TARBALL_DIR" ] || die "Tarball directory not found: $TARBALL_DIR"
+
+    # Auto-detect the staged version from .version file written by
+    # stage-ssd.sh. Without this, VERSION defaults to "latest" and
+    # compose looks for `:latest` tags that don't exist on the SSD's
+    # `:vX.Y.Z`-tagged images, failing with "No such image: ...:latest".
+    # The student passing --version is fragile — the SSD should be
+    # self-describing.
+    if [ -f "$TARBALL_DIR/.version" ] && [ "$VERSION" = "latest" ]; then
+        VERSION=$(tr -d '\n[:space:]' < "$TARBALL_DIR/.version")
+        say "Auto-detected version from SSD: $VERSION"
+    fi
+
     TARBALL="$TARBALL_DIR/images-$ARCH.tar"
     [ -f "$TARBALL" ] || die "Expected $TARBALL (this host is $ARCH). Have you staged the right architecture?"
     SIZE_HUMAN=$(ls -lh "$TARBALL" | awk '{print $5}')
-    say "Loading $TARBALL ($SIZE_HUMAN) — this can take a few minutes"
+    say "Loading $TARBALL ($SIZE_HUMAN) - decompressing each image, ~5-15 min on a fast SSD."
+    say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
     docker load -i "$TARBALL"
     say "Images loaded"
 else
