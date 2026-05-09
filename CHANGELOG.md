@@ -6,6 +6,54 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.9] - 2026-05-09
+
+SSD-staging fixes uncovered during the first real workshop SSD stage
+on Apple Silicon. Three coupled fixes plus self-describing version
+metadata so students don't need to know the release tag.
+
+### Workshop / ops
+
+- **`stage-ssd.sh` and `stage-ssd-delta.sh` digest-pinned platform
+  resolution.** `docker pull --platform=linux/amd64` followed by
+  `docker save` against multi-arch tags fails on arm64 hosts (Apple
+  Silicon) with `Error response from daemon: unable to create
+  manifests file: NotFound: content digest ... not found`. Docker
+  Desktop's content store keeps the manifest LIST locally (which
+  references both platforms' sub-manifests) but only the requested
+  platform's layers; `docker save` then walks the list and errors
+  on the missing cross-platform sub-manifest. Fix: resolve each
+  image to its platform-specific manifest digest via
+  `docker buildx imagetools inspect`, pull by digest (which stores
+  ONLY the single-arch manifest), then re-tag to the user-friendly
+  reference before save. The saved tar carries clean
+  `repo:tag`-keyed images that load and run correctly on any
+  arch-matching host.
+- **OpenPLC cross-arch inclusion.** Upstream `tuttas/openplc_v3` is
+  amd64-only, and `docker-compose.release.yml` pins
+  `platform: linux/amd64` on the openplc service so Apple Silicon
+  hosts run it under Rosetta 2. Both stage scripts now
+  cross-include the amd64 openplc image in the arm64 bundle so
+  Apple Silicon students get a self-sufficient SSD without having
+  to also load `images-amd64.tar`.
+- **Self-describing SSD version.** `stage-ssd.sh` now writes a
+  `.version` file alongside the tarballs containing the staged
+  release tag. `setup.sh --from-tarballs` and `setup.ps1
+  -FromTarballs` auto-read it and override the default
+  `VERSION=latest`, so students don't have to pass `--version
+  vX.Y.Z` to match the SSD. Fixes a workshop-blocker where
+  `setup.sh --from-tarballs /Volumes/WORKSHOP` defaulted to
+  `VERSION=latest`, compose substituted `${VERSION:-latest}`,
+  and lookup failed with "No such image:
+  ghcr.io/tonylturner/rangerdanger-opendss-sim:latest" because
+  the loaded tarballs were tagged `:v0.1.7`.
+- **Clearer load-step progress hint.** `setup.sh` /
+  `setup.ps1`'s "Loading images from tarballs" banner now tells
+  the student `~5-15 min on a fast SSD` and to watch for the
+  `Loaded image:` lines (one per image, 14-19 total). Replaces
+  the prior "this can take a few minutes" which left the student
+  uncertain whether the script had hung.
+
 ## [v0.1.8] - 2026-05-09
 
 Workshop-readiness release: SSD distribution operator runbook, delta-
@@ -951,7 +999,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.9...HEAD
+[v0.1.9]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.9
 [v0.1.8]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.8
 [v0.1.7]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.7
 [v0.1.6]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.6

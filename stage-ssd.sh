@@ -61,8 +61,56 @@ ALL_IMAGES=$(docker compose -f "$COMPOSE_FILE" config --images | sort -u)
 RESOLVED=$(echo "$ALL_IMAGES" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest\$|\\1:$VERSION|")
 
 # openplc is amd64-only because tuttas/openplc_v3 ships only amd64.
-ARM64_IMAGES=$(echo "$RESOLVED" | grep -v rangerdanger-openplc)
+# We don't filter the image list anymore — resolve_platform_ref below
+# returns empty for arch-incompatible images and the loop skips them.
 AMD64_IMAGES="$RESOLVED"
+ARM64_IMAGES="$RESOLVED"
+
+# Resolve a tagged or digest-pinned image reference to a SINGLE-PLATFORM
+# manifest digest reference for the requested arch. This is the
+# load-bearing piece that makes cross-arch staging work on Apple Silicon
+# (and any arm64 host) without `docker save` failing with
+# "unable to create manifests file: NotFound: content digest ... not found".
+#
+# Background: when you `docker pull --platform=linux/amd64 nginx:1.27-alpine`
+# on an arm64 host with the containerd snapshotter, Docker fetches the
+# manifest LIST (which references both amd64 and arm64 sub-manifests)
+# plus only the amd64 layers. A subsequent `docker save nginx:1.27-alpine`
+# walks the manifest list and tries to bundle BOTH platforms' manifests,
+# fails to find the arm64 sub-manifest's content (we never pulled it),
+# and errors out. Pulling by the platform-specific manifest digest
+# instead of by tag stores ONLY the single-arch manifest locally, with
+# no manifest-list to walk during save.
+#
+# Returns the resolved single-platform reference on stdout, or exits
+# nonzero if the image isn't available for the requested arch (e.g.
+# openplc on arm64 — upstream tuttas/openplc_v3 is amd64-only).
+resolve_platform_ref() {
+    local img="$1" arch="$2"
+    local digest
+    digest=$(docker buildx imagetools inspect "$img" \
+        --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
+        2>/dev/null | head -1)
+    if [ -n "$digest" ] && [ "$digest" != "<no value>" ]; then
+        local base="${img%@*}"      # strip @sha256:... if present
+        local repo="${base%:*}"     # strip :tag
+        printf '%s@%s\n' "$repo" "$digest"
+        return 0
+    fi
+    # No manifest list — single-arch image. Verify the platform matches.
+    local single_arch
+    single_arch=$(docker buildx imagetools inspect "$img" \
+        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null)
+    if [ -z "$single_arch" ]; then
+        single_arch=$(docker buildx imagetools inspect "$img" \
+            --format '{{.Image.architecture}}' 2>/dev/null)
+    fi
+    if [ "$single_arch" = "$arch" ]; then
+        printf '%s\n' "$img"
+        return 0
+    fi
+    return 1
+}
 
 stage_arch() {
     local arch="$1" image_list="$2"
@@ -70,32 +118,60 @@ stage_arch() {
 
     banner "Stage linux/$arch → $(basename "$tarball")"
 
-    # docker keeps only one platform per image:tag locally, so pulling
-    # arch B after arch A overwrites the saved version. The tar must
-    # be written between pulls. We fail fast on any pull error rather
-    # than warning-and-skipping — a tarball assembled from a partial
-    # pull would either include a stale local copy of a missing image
-    # or fail mid-`docker save` with a confusing "no such image"
-    # error. Better to refuse to build the bundle so the operator
-    # notices the missing image and re-runs after fixing the
-    # upstream issue (network, GHCR auth, image rename).
+    # Per-image: resolve to single-platform manifest digest, pull by
+    # digest, then re-tag locally to the user-friendly tag so the saved
+    # tar carries it. Students load and `docker compose up` finds the
+    # tag-keyed image they expect. Without the re-tag, compose would
+    # still try to pull from GHCR because it can't see the digest-only
+    # local image.
     local count=0
-    local pulled_csv=""
+    local pulled_tags=""
     while IFS= read -r img; do
         [ -z "$img" ] && continue
         count=$((count + 1))
-        say "[$count] pull $arch  $img"
-        docker pull --platform="linux/$arch" --quiet "$img" >/dev/null \
-            || die "pull failed for $img on $arch — refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
-        pulled_csv="$pulled_csv $img"
+        say "[$count] resolve $arch  $img"
+        local ref
+        if ! ref=$(resolve_platform_ref "$img" "$arch"); then
+            case "$img" in
+                *rangerdanger-openplc*)
+                    # Apple Silicon students need amd64 openplc - upstream
+                    # tuttas/openplc_v3 ships only amd64, and
+                    # docker-compose.release.yml pins
+                    # `platform: linux/amd64` on the openplc service so
+                    # Docker Desktop runs it under Rosetta 2 emulation.
+                    # Cross-include the amd64 image in the arm64 bundle
+                    # so the SSD is self-sufficient on either arch.
+                    ref=$(resolve_platform_ref "$img" "amd64") \
+                        || die "openplc: amd64 fallback resolution also failed"
+                    say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
+                    ;;
+                *)
+                    say "    skip — not available for linux/$arch"
+                    continue
+                    ;;
+            esac
+        elif [ "$ref" != "$img" ]; then
+            say "    -> $ref"
+        fi
+        docker pull --quiet "$ref" >/dev/null \
+            || die "pull failed for $ref on $arch — refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
+        # Apply the user-friendly tag locally. The tag-target form
+        # cannot include @digest (docker rejects it), so strip any
+        # @sha256:... suffix from the original compose reference.
+        # After this, the tag points at the single-arch manifest we
+        # just pulled, so `docker save` walks only one platform's
+        # manifest and can't error on missing cross-platform content.
+        local target_tag="${img%@*}"
+        if [ "$ref" != "$target_tag" ]; then
+            docker tag "$ref" "$target_tag" \
+                || die "docker tag $ref → $target_tag failed"
+        fi
+        pulled_tags="$pulled_tags $target_tag"
     done <<< "$image_list"
 
-    # Save the images we actually pulled this iteration. Using the
-    # explicit pulled list (not the input list) means a stale local
-    # cached image from a prior session can't sneak into the bundle.
     say "save $arch → $tarball"
     # shellcheck disable=SC2086
-    docker save -o "$tarball" $pulled_csv \
+    docker save -o "$tarball" $pulled_tags \
         || die "docker save failed for $arch"
 
     local size
@@ -110,6 +186,13 @@ banner "Stage repo archive → rangerdanger.tgz"
 git -C "$ROOT_DIR" archive --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
 size=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
 say "wrote $OUT/rangerdanger.tgz ($size)"
+
+# Write a .version file so setup.sh --from-tarballs can auto-pick the
+# right tag without the student having to pass --version. Avoids the
+# "No such image: ...:latest" failure mode when the script's default
+# VERSION (latest) doesn't match the staged tarball's actual tag.
+echo "$VERSION" > "$OUT/.version"
+say "wrote $OUT/.version ($VERSION)"
 
 banner "Write README"
 cat > "$OUT/README.md" <<EOF

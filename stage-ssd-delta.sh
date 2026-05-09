@@ -207,37 +207,90 @@ if [ "${#CHANGED[@]}" -eq 0 ]; then
     # Still write the repo archive + readme even if no image deltas.
 fi
 
+# Resolve a tagged or digest-pinned image reference to a SINGLE-PLATFORM
+# manifest digest reference for the requested arch. See stage-ssd.sh
+# for the full rationale; short version: pulling --platform=linux/amd64
+# on an arm64 host stores a manifest LIST locally (with pointers to
+# both platforms' sub-manifests), and `docker save` then walks the
+# list and errors on the missing cross-platform sub-manifest. Pulling
+# by the platform-specific manifest digest stores ONLY the single-arch
+# manifest, so save walks only that platform.
+resolve_platform_ref() {
+    local img="$1" arch="$2"
+    local digest
+    digest=$(docker buildx imagetools inspect "$img" \
+        --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
+        2>/dev/null | head -1)
+    if [ -n "$digest" ] && [ "$digest" != "<no value>" ]; then
+        local base="${img%@*}"
+        local repo="${base%:*}"
+        printf '%s@%s\n' "$repo" "$digest"
+        return 0
+    fi
+    local single_arch
+    single_arch=$(docker buildx imagetools inspect "$img" \
+        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null)
+    if [ -z "$single_arch" ]; then
+        single_arch=$(docker buildx imagetools inspect "$img" \
+            --format '{{.Image.architecture}}' 2>/dev/null)
+    fi
+    if [ "$single_arch" = "$arch" ]; then
+        printf '%s\n' "$img"
+        return 0
+    fi
+    return 1
+}
+
 stage_arch() {
     local arch="$1"
     local tarball="$OUT/delta-$arch.tar"
-    local images=()
 
-    # openplc is amd64-only; drop it from arm64 set.
-    for img in "${CHANGED[@]}"; do
-        if [ "$arch" = "arm64" ] && [[ "$img" == *"rangerdanger-openplc"* ]]; then
-            continue
-        fi
-        images+=("$img")
-    done
-
-    if [ "${#images[@]}" -eq 0 ]; then
-        say "Nothing to save for $arch (CHANGED set empty after openplc filter)"
+    if [ "${#CHANGED[@]}" -eq 0 ]; then
         return 0
     fi
 
     banner "Stage linux/$arch -> $(basename "$tarball")"
 
-    local pulled_csv=""
-    for img in "${images[@]}"; do
-        say "pull $arch  $img"
-        docker pull --platform="linux/$arch" --quiet "$img" >/dev/null \
-            || die "pull failed for $img on $arch - re-run after fixing the upstream issue."
-        pulled_csv="$pulled_csv $img"
+    local pulled_tags=""
+    for img in "${CHANGED[@]}"; do
+        say "resolve $arch  $img"
+        local ref
+        if ! ref=$(resolve_platform_ref "$img" "$arch"); then
+            case "$img" in
+                *rangerdanger-openplc*)
+                    # See stage-ssd.sh for rationale: openplc is amd64-only
+                    # upstream and runs under Rosetta on Apple Silicon.
+                    # Cross-include the amd64 image in arm64 bundle.
+                    ref=$(resolve_platform_ref "$img" "amd64") \
+                        || die "openplc: amd64 fallback resolution also failed"
+                    say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
+                    ;;
+                *)
+                    say "    skip - not available for linux/$arch"
+                    continue
+                    ;;
+            esac
+        elif [ "$ref" != "$img" ]; then
+            say "    -> $ref"
+        fi
+        docker pull --quiet "$ref" >/dev/null \
+            || die "pull failed for $ref on $arch - re-run after fixing the upstream issue."
+        local target_tag="${img%@*}"
+        if [ "$ref" != "$target_tag" ]; then
+            docker tag "$ref" "$target_tag" \
+                || die "docker tag $ref -> $target_tag failed"
+        fi
+        pulled_tags="$pulled_tags $target_tag"
     done
+
+    if [ -z "$pulled_tags" ]; then
+        say "Nothing to save for $arch (no images compatible with this arch)"
+        return 0
+    fi
 
     say "save $arch -> $tarball"
     # shellcheck disable=SC2086
-    docker save -o "$tarball" $pulled_csv \
+    docker save -o "$tarball" $pulled_tags \
         || die "docker save failed for $arch"
 
     local size
