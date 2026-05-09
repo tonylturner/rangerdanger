@@ -62,6 +62,20 @@ fuxa_logs/
 # Stray/empty
 deploy/
 
+# SSD staging output. stage-ssd.sh and stage-ssd-delta.sh write image
+# tarballs (~6 GB each) plus rangerdanger.tgz; if the operator passes
+# a relative output path like ./out instead of /Volumes/SOMETHING,
+# the bundle lands inside the repo and would otherwise appear as
+# untracked. External mounts (/Volumes/*) are already outside the
+# working tree and not git's concern.
+out/
+images-amd64.tar
+images-arm64.tar
+delta-amd64.tar
+delta-arm64.tar
+rangerdanger.tgz
+DELTA-README.md
+
 # Large binary tools (not in git, fetched separately)
 tools/pcap-analyzer/*.deb
 
