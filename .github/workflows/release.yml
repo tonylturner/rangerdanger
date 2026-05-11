@@ -24,7 +24,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -208,3 +208,75 @@ jobs:
             DATE=${{ steps.meta.outputs.date }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  github-release:
+    # Backfill the GitHub Releases page from CHANGELOG after every
+    # successful tag-driven image publish. Before this job existed,
+    # release.yml only built and pushed GHCR images on tag push; the
+    # GitHub Releases tab had to be populated by hand and silently
+    # drifted (v0.1.3-v0.1.9 were backfilled retroactively on
+    # 2026-05-11).
+    name: GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "ref=refs/tags/${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Extract CHANGELOG section for tag
+        id: notes
+        run: |
+          tag="${{ steps.tag.outputs.name }}"
+          # awk scans CHANGELOG.md for `## [vX.Y.Z] - YYYY-MM-DD`,
+          # then prints everything until the next `## [` heading.
+          # Leading/trailing blank lines are trimmed by the sed
+          # range hack that follows.
+          awk -v tag="$tag" '
+            $0 ~ "^## \\[" tag "\\] - " { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md \
+            | sed -e '/./,$!d' \
+                  -e :a -e '/^$/{$d;N;ba' -e '}' \
+            > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "Release ${tag}. See CHANGELOG.md for details." > release-body.md
+          fi
+          echo "--- release body preview ($(wc -l < release-body.md) lines) ---"
+          head -20 release-body.md
+          echo "..."
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.tag.outputs.name }}"
+          # Pre-release tags (containing a hyphen, e.g. v0.0.1-alpha)
+          # get flagged as such in the Releases UI so they don't appear
+          # as the top "Latest release" pointer.
+          prerelease_flag=""
+          if [[ "$tag" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag exists - updating notes"
+            gh release edit "$tag" --notes-file release-body.md $prerelease_flag
+          else
+            echo "creating release $tag"
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes-file release-body.md \
+              $prerelease_flag
+          fi
