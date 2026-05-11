@@ -238,6 +238,27 @@ else
     fi
 fi
 
+# ─── pin VERSION in .env so bare `docker compose` works after install ──
+# Without this, a student who runs `./setup.sh --from-tarballs <SSD>` and
+# later wants to run `docker compose -f docker-compose.release.yml
+# -f docker-compose.offline.yml up -d` directly will hit
+# `No such image: ...:latest` because compose interpolates
+# `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
+# Writing the resolved VERSION to .env (compose auto-loads .env from
+# cwd) makes the bare compose invocation work the same as it did via
+# setup.sh. .env is gitignored, so this is safe to write into the repo.
+# Idempotent: replaces an existing VERSION= line, appends if absent.
+ENV_FILE="$ROOT_DIR/.env"
+if [ -f "$ENV_FILE" ] && grep -q "^VERSION=" "$ENV_FILE"; then
+    # BSD sed (macOS) needs the -i.bak / rm dance; GNU sed accepts -i ''
+    # but the -i.bak form is portable across both.
+    sed -i.bak -e "s|^VERSION=.*|VERSION=$VERSION|" "$ENV_FILE" \
+        && rm -f "${ENV_FILE}.bak"
+else
+    echo "VERSION=$VERSION" >> "$ENV_FILE"
+fi
+say "Pinned VERSION=$VERSION in $ENV_FILE"
+
 # ─── start the stack ────────────────────────────────────────────────
 banner "Starting RangerDanger"
 VERSION="$VERSION" docker compose "${COMPOSE_FLAGS[@]}" up -d

@@ -215,6 +215,30 @@ Pulling images failed after 3 attempts. Common causes:
     }
 }
 
+# ─── pin VERSION in .env so bare `docker compose` works after install ──
+# Without this, a student who runs `.\setup.ps1 -FromTarballs <SSD>` and
+# later wants to run `docker compose -f docker-compose.release.yml
+# -f docker-compose.offline.yml up -d` directly will hit
+# `No such image: ...:latest` because compose interpolates
+# `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
+# Writing the resolved Version to .env (compose auto-loads .env from
+# cwd) makes the bare compose invocation work the same as setup did.
+# .env is gitignored. Idempotent: replaces an existing VERSION= line,
+# appends if absent.
+$envFile = Join-Path $RootDir ".env"
+if (Test-Path $envFile) {
+    $content = Get-Content $envFile -Raw
+    if ($content -match '(?m)^VERSION=') {
+        $content = ($content -replace '(?m)^VERSION=.*', "VERSION=$Version")
+        Set-Content -Path $envFile -Value $content -NoNewline
+    } else {
+        Add-Content -Path $envFile -Value "VERSION=$Version"
+    }
+} else {
+    Set-Content -Path $envFile -Value "VERSION=$Version`n"
+}
+Say "Pinned VERSION=$Version in $envFile"
+
 # ─── start the stack ────────────────────────────────────────────────
 Banner "Starting RangerDanger"
 $env:VERSION = $Version
