@@ -81,3 +81,9 @@ tools/pcap-analyzer/*.deb
 
 # Local-only AI agent context (Claude Code)
 CLAUDE.md
+
+# Working backlog - kept local, not part of the public docs. ROADMAP.md
+# is the public forward-looking doc; CHANGELOG.md is the public history.
+# docs/tasks.md is private operator notes that aren't useful to external
+# readers.
+docs/tasks.md

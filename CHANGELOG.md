@@ -6,6 +6,73 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.10] - 2026-05-11
+
+Positioning / documentation pass plus a small post-install ergonomics
+fix. No runtime behavior change in the lab itself.
+
+### Documentation
+
+- **README rewrite.** Lead now positions RangerDanger as an
+  interactive OT segmentation training environment rather than "an
+  OT/ICS cyber range", emphasizing the topology console + embedded
+  terminals + validation-driven exercises that the UI already
+  surfaces. New "What you get" section itemizes the real product
+  surface (interactive topology map, embedded container terminals,
+  exercise runner, substation process view, containd integration,
+  knowledge wiki at `/knowledge`, simulators, PCAP evidence
+  workflow, validation-driven exercises). New "Student journey"
+  table walks the 7-lab arc step by step. New "Designed for"
+  section calls out the audience: open and auditable, source-
+  controlled lab content, offline workshop-ready, segmentation-
+  focused, physics-backed, native multi-arch, classroom delivery.
+  Tightened "Why RangerDanger is different" table with new rows for
+  validation, knowledge wiki, evidence package, and distribution.
+  Screenshots reordered to student-journey order; HTML-comment
+  TODO block flags four screenshots still to capture (dashboard,
+  embedded terminal, containd policy view, validation chips).
+
+- **`docs/README.md`** (new). Routed landing page for `docs/`
+  organized by audience: Start here, Student experience,
+  Instructor / workshop operator, Architecture and internals, Lab
+  content, Security model, Extending RangerDanger. Links to
+  existing docs; no content is duplicated. README's documentation
+  table now points at this landing page as the entry point.
+
+- **`docs/tasks.md` untracked.** Operator-side working backlog is
+  no longer part of the public repo. `ROADMAP.md` remains the
+  forward-looking doc and `CHANGELOG.md` remains the public
+  history. The file stays on disk locally; `.gitignore` updated to
+  prevent re-tracking.
+
+### Setup ergonomics
+
+- **`setup.sh` and `setup.ps1` write `VERSION=...` to `.env`** at
+  install time. Without this, a student who ran
+  `./setup.sh --from-tarballs <SSD>` and later invoked
+  `docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`
+  directly would hit
+  `No such image: ghcr.io/tonylturner/rangerdanger-opendss-sim:latest`
+  because compose interpolates `${VERSION:-latest}` and the SSD
+  tarball is tagged `:vX.Y.Z`. Writing the resolved VERSION to
+  `.env` (compose auto-loads `.env` from cwd) makes bare compose
+  invocations work the same as setup did. Idempotent: replaces an
+  existing `VERSION=` line if present, appends otherwise. `.env`
+  is gitignored.
+
+### CI
+
+- **`release.yml` auto-creates the GitHub Release** on tag push.
+  Previously the GHA workflow only built and pushed GHCR images;
+  the GitHub Releases tab had to be populated by hand and drifted
+  out of sync (v0.1.3 through v0.1.9 were backfilled
+  retroactively). The new `github-release` job awk-extracts the
+  matching CHANGELOG section between `## [vX.Y.Z] - YYYY-MM-DD`
+  and the next heading, creates the release (or updates the notes
+  if one already exists), and flags `--prerelease` for any tag
+  containing a hyphen. v0.1.10 is the first release this job runs
+  for live.
+
 ## [v0.1.9] - 2026-05-09
 
 SSD-staging fixes uncovered during the first real workshop SSD stage
@@ -999,7 +1066,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.10...HEAD
+[v0.1.10]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.10
 [v0.1.9]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.9
 [v0.1.8]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.8
 [v0.1.7]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.7
