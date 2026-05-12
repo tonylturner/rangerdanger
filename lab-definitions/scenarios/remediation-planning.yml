@@ -235,26 +235,34 @@ steps:
           tags: ["validation"]
 
   - title: "Reflect - what are you accepting?"
-    description: >
-      Use your Exercise Notes to answer three questions
-      briefly. These answers become part of your plan of
-      record and travel with you into the remaining exercises.
+    description: |
+      Below is your plan, mapped against the Lab 1.3 design verdicts
+      and the Lab 1.2 findings they address. Use it to anchor the
+      reflection that follows — every gap or partial in the panel is
+      something you'll see again later in the workshop.
 
-      Question 1 - What did you choose NOT to fix this quarter,
-      and why? (Cost? Dependency on another change? Political
-      risk? Low severity?)
+      :::plan-coverage title="Your plan vs the Lab 1.3 design verdicts"
+      :::
 
-      Question 2 - What residual risk remains in the
-      substation after your plan is executed? Which of your
-      Lab 1.2 findings (passive observations + active probe
-      results) are still at least partially open?
+      Use your Exercise Notes to answer three questions briefly.
+      These answers become part of your plan of record and travel
+      with you into the remaining exercises.
 
-      Question 3 - Which role is your biggest constraint?
-      Which team would you need to grow first to execute a
-      more aggressive plan next quarter?
+      **Question 1** — What did you choose NOT to fix this quarter,
+      and why? (Cost? Dependency on another change? Political risk?
+      Low severity?) Anchor this in the GAP and PARTIAL rows from
+      the panel above.
 
-      The selections you made in the previous step are saved
-      to your exercise state. Later exercises will read them
-      to reflect the consequences of your plan - if you did
-      not block a path, that attack will remain easier to
-      execute.
+      **Question 2** — What residual risk remains in the substation
+      after your plan is executed? Which of your Lab 1.2 findings
+      (passive observations + active probe results) are still at
+      least partially open?
+
+      **Question 3** — Which role is your biggest constraint? Which
+      team would you need to grow first to execute a more aggressive
+      plan next quarter?
+
+      The selections you made in the previous step are saved to your
+      exercise state. Later exercises will read them to reflect the
+      consequences of your plan — if you did not block a path, that
+      attack will remain easier to execute.

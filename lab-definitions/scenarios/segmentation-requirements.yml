@@ -18,6 +18,54 @@ steps:
   - title: "Translate findings into design requirements"
     expected_config: weak
     description: |
+      ### Look at the policy that's running today
+
+      Before you decide what *should* be allowed, look at what the
+      active firewall actually permits right now. Open the
+      [Network Map](/console) and click **Segmentation** in the right
+      drawer.
+
+      You'll see:
+
+      - **Active Policy** banner — the **Weak Baseline** is red and
+        named *"All zones can reach field devices directly."*
+      - **Evaluation** table — one row per zone-pair with an ALLOW /
+        DENY chip. Walk down it and notice how many ALLOW rows exist
+        between Enterprise / Vendor and OT / Field zones. These are
+        the exposure paths you observed in Lab 1.2, now confirmed at
+        the policy level.
+
+      Now use the dropdown to **preview Hardened Segmentation** —
+      don't click Apply, just inspect. The Evaluation table
+      re-evaluates against the hardened policy and flags rows with
+      *"→ would change."* Each of those flagged rows is a verdict
+      you'll commit in the decisions below. The preview shows you
+      the answer key; the decisions below capture *your* design.
+
+      :::decision id=current-policy-allowable options=MOSTLY_ALLOW,MOSTLY_DENY,MIXED correct=MOSTLY_ALLOW
+      **Looking at the Evaluation table for the weak baseline — how
+      would you characterize the current zone-pair allow/deny mix?**
+      :::
+
+      :::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF,MOST_ROWS correct=MOST_ROWS
+      **When you previewed Hardened Segmentation, roughly what
+      fraction of zone-pair rows showed "→ would change"?**
+      :::
+
+      :::hint Optional: see the Security Level the firewall is being graded against
+      With the **IEC 62443 view** toggled on in [/console](/console),
+      hover the **firewall node** — the tooltip shows a `Target SL-3 ·
+      MET` (green) or `Target SL-3 · GAP` (red) badge derived from
+      the active policy. Under the weak baseline you'll see `GAP`
+      with a write-up of *why* (no DPI, no source pin, etc.). Under
+      Hardened it shifts to `MET`. The SL-3 target maps to the
+      sophistication a moderately-skilled attacker would bring —
+      see **IEC 62443 Security Levels Explained** on the
+      [Knowledge](/knowledge) page for what SL-1 through SL-4 mean.
+      :::
+
+      ### From observation to design
+
       In Lab 1.2 you **observed** five exposure categories and recorded what was present in the capture. Lab 1.3 is where you **decide** what the design should *do* about each finding - the firewall's spec, in the form of a verdict per category.
 
       Your Lab 1.2 findings are shown below in two panels - the passive capture findings (step 6) and the active probe result (step 7). For each design decision, commit to a design verdict: BLOCK, BLOCK and LOG, RESTRICT, or ALLOW. Your verdicts need to address **both** the exposures you observed in passive capture *and* the latent paths active probing revealed.

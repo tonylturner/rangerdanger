@@ -19,23 +19,82 @@ tags:
   - baseline
   - defense
 steps:
-  - title: "Review the substation topology"
+  - title: "Walk the topology and inspect the crossings"
     expected_config: weak
     description: |
-      Open the [Network Map](/console) and identify the four network zones:
+      Open the [Network Map](/console). Before reading anything below,
+      spend two minutes panning around the canvas — the goal of this
+      step is to *recognize* the substation, not memorize a table.
 
-      | Zone | Subnet | Hosts |
-      |------|--------|-------|
+      ### Find the four zones
+
+      Four colored zone boundaries are drawn on the canvas. Each
+      groups the hosts that live in that zone. Use the table as a
+      reference if you need to confirm what you're looking at:
+
+      | Zone | Subnet | Hosts you should see |
+      |------|--------|----------------------|
       | **Enterprise** | `10.10.10.0/24` | corp-ws, kali |
       | **Vendor / DMZ** | `10.20.20.0/24` | vendor-jump, eng-ws |
       | **OT Ops** | `10.30.30.0/24` | fuxa-hmi, rtac, openplc, historian, gps |
       | **Field** | `10.40.40.0/24` | relay, recloser, regulator, capbank |
 
-      The **containd firewall** sits between all four zones and acts as the default gateway. Any traffic crossing a zone boundary passes through it - that is where we capture and analyze communication.
+      The **containd firewall** sits between all four zones and acts
+      as the default gateway. Any traffic crossing a zone boundary
+      passes through it — that is where we capture and analyze
+      communication in the next steps.
 
-      > The **RTAC** acts as the central communication node between OT Ops and the Field network. In this lab, its communication with field devices is visible at the firewall, allowing you to observe protocols like **Modbus** and **DNP3** as they traverse zone boundaries.
+      ### Switch to the IEC 62443 view
 
-      **Time budget:** 30 minutes.
+      In the canvas controls toggle **IEC 62443 Zone & Conduit View**.
+      The layout re-bands the same hosts into the standard 62443
+      levels:
+
+      - **Level 4 · Enterprise** — corporate IT (`10.10.10.0/24`)
+      - **Level 3.5 · DMZ** — vendor / engineering (`10.20.20.0/24`)
+      - **Level 3 · Supervisory** — HMI / RTAC / historian (`10.30.30.0/24`)
+      - **Level 1 · Field Devices** — relays / recloser / regulator / capbank (`10.40.40.0/24`)
+
+      This is the framing the requirements step (Lab 1.3) will use,
+      and the mapping you'll reference when you produce evidence in
+      Lab 2.4. Toggle the view off and on a couple of times to lock
+      in which RangerDanger zone corresponds to which 62443 level.
+
+      > **Background:** open the [Knowledge](/knowledge) page and
+      > skim the **IEC 62443 Zones and Conduits** article if the
+      > level numbering is new to you. Two minutes is enough — you'll
+      > use these labels in Lab 1.3 and 2.4.
+
+      ### Inspect three inter-zone crossings
+
+      Click directly on the edges that cross between zones. Each
+      edge shows a tooltip listing which protocols are traversing
+      that boundary right now. Walk these three:
+
+      1. **Enterprise → Field** (`10.10.10.0/24` → `10.40.40.0/24`)
+      2. **Vendor → OT Ops** (`10.20.20.0/24` → `10.30.30.0/24`)
+      3. **OT Ops → Field** (`10.30.30.0/24` → `10.40.40.0/24`)
+
+      > The **RTAC** (`10.30.30.20`) is the central communication
+      > node between OT Ops and the Field network. Its conversations
+      > with relays, recloser, and regulator will be the most active
+      > path you see at the firewall.
+
+      Record what you observed:
+
+      :::decision id=zones-located options=ALL_FOUR,SOME_MISSING,COULDNT_FIND correct=ALL_FOUR
+      **Did you locate all four zones on the canvas?**
+      :::
+
+      :::decision id=ent-to-field-protocols options=NO_ICS,MODBUS_OR_DNP3,UNCLEAR correct=MODBUS_OR_DNP3
+      **Enterprise → Field crossing — what did the tooltip show?** Under the weak baseline you should be seeing ICS protocols where you would not expect them.
+      :::
+
+      :::decision id=ot-to-field-protocols options=MODBUS_OR_DNP3,HTTP_ONLY,NOTHING correct=MODBUS_OR_DNP3
+      **OT Ops → Field crossing — what did the tooltip show?** This is the supervisory-control path the RTAC uses.
+      :::
+
+      **Time budget for this lab:** 30 minutes total.
     action:
       type: check
       expect:
@@ -63,6 +122,37 @@ steps:
           -d '{"duration_sec":50}'
 
       Leave the generator running - we start the capture next.
+
+      ### Sneak preview: the live Traffic Matrix
+
+      While the generator is running, open the [Network Map](/console)
+      and click **Traffic Matrix** in the left drawer. This is a live
+      view of cross-zone flows — the same data you'll PCAP and
+      tshark in the next two steps, but as a real-time grid right
+      now. It's a quick way to sanity-check that traffic is flowing
+      before you commit to a 60-second capture.
+
+      Look for these flows in the matrix:
+
+      - `10.30.30.20` (RTAC) → `10.40.40.x` (field devices) on
+        Modbus 502 / DNP3 20000 — the supervisory polling path,
+        should be very active
+      - `10.30.30.10` (HMI/historian zone) → `10.30.30.20` (RTAC) —
+        intra-zone monitoring, normal
+      - Anything from `10.10.10.x` or `10.20.20.x` reaching
+        `10.30.30.x` or `10.40.40.x` — these are the cross-zone
+        flows the assessment in this lab will catalog
+
+      :::decision id=matrix-rtac-to-field options=ACTIVE,QUIET,NOT_SEEN correct=ACTIVE
+      **RTAC ↔ field-device traffic in the Traffic Matrix:** how
+      active does it look right now?
+      :::
+
+      :::decision id=matrix-enterprise-to-ot-visible options=YES_VISIBLE,NO_NOT_SEEN,UNCLEAR correct=YES_VISIBLE
+      **Did you see any enterprise (10.10.10.x) traffic reaching OT
+      or field subnets?** Under the weak baseline this should be
+      present — you'll formally catalog it in steps 3-7.
+      :::
 
   - title: "Capture traffic at the firewall"
     node: fw-1

@@ -134,6 +134,43 @@ steps:
 
       The attack succeeded because the kill chain had two open
       links: enterprise → vendor RDP, and vendor → field Modbus.
+
+      > **Background:** the two-hop kill chain (compromise hop A,
+      > pivot to hop B, attack from B) is the central lesson of
+      > defense in depth. See **OT Network Segmentation Overview**
+      > on the [Knowledge](/knowledge) page for why segmentation
+      > between the *vendor* and *field* zones is as important as
+      > the perimeter rule, even though the attacker never directly
+      > touches the field network from the internet.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. The kinetic outcome is identical to Lab 2.3 Attack 2 —
+      different protocol path, same lights-out for downstream
+      customers:
+
+      - **Alarm banner:** "RECLOSER OPEN — downstream loads lost"
+        and "AUTO-RECLOSE DISABLED — no fault recovery"
+      - **General Load + Critical Load** both read "NO POWER"
+      - *"Hospital and fire station without power"* under critical load
+      - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
+
+      Notice that the **Last command from:** field on the recloser
+      shows the vendor jump host address (`10.20.20.10`) — not the
+      attacker IP (`10.10.10.50`). From the field device's
+      perspective, the command came from a trusted source. This is
+      why perimeter rules at the *RDP* hop matter: by the time the
+      Modbus packet reaches the recloser, it looks legitimate.
+
+      :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
+      **What alarm did the Feeder One-Line tab show after this attack?**
+      :::
+
+      :::decision id=vendor-source-attribution options=ATTACKER_IP,VENDOR_JUMP_IP,RTAC_IP correct=VENDOR_JUMP_IP
+      **What IP shows as the recloser's last-command source?** The
+      attack laundered through the vendor session.
+      :::
     action:
       type: command
       device: recloser
@@ -218,6 +255,32 @@ steps:
           mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
 
       Should also time out. The kill chain is broken at two points.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. The alarm chain you saw in step 3 is absent:
+
+      - **No alarm banner**
+      - **Recloser (79)** closed, **Auto-reclose ON** green badge
+      - **General + Critical Load** energized (green kW values)
+      - **Customer-service tile:** "N kW serving ~M customers"
+
+      The enterprise → vendor perimeter rule stopped the foothold
+      before it formed. Even if a future misconfiguration re-opens
+      that rule, the vendor → field rule still pins lateral movement
+      out of the field zone. Either layer alone closes this kill
+      chain — having both is defense in depth.
+
+      :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
+      **What did the Feeder One-Line tab show after the re-test?**
+      :::
+
+      :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER correct=EITHER_LAYER
+      **Which firewall layer broke the kill chain?** Both layers
+      are present in the hardened policy — but only one had to be in
+      place to stop this specific attempt.
+      :::
     action:
       type: check
       expect:
