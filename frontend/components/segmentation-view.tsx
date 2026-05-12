@@ -3,21 +3,22 @@
 // Self-contained "containd Segmentation" panel. Originally lived inside
 // the Feeder HMI substation tab; lifted into its own file so the
 // Network Map can render the exact same panel as a collapsible overlay
-// without duplicating the apply/test logic.
+// without duplicating the apply logic.
 //
-// The component manages its own state (active config, comparison, test
-// result) and only depends on React Query for cross-component cache
-// invalidation when the user applies a new config — that lets the
-// network map's edge labels and the header policy badge update
-// immediately when the firewall flips between weak and improved.
+// The component manages its own state (active config, comparison) and
+// only depends on React Query for cross-component cache invalidation
+// when the user applies a new config — that lets the network map's
+// edge labels and the header policy badge update immediately when the
+// firewall flips between weak and improved.
 
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getActiveFirewallConfig,
   getFirewallComparison,
   applyFirewallConfig,
-  executeScenarioStep,
+  getSubstationNetworkEvents,
+  type NetworkEvent,
   type PolicyComparison,
 } from "../lib/api";
 
@@ -69,8 +70,6 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const [comparison, setComparison] = useState<PolicyComparison | null>(null);
   const [applying, setApplying] = useState(false);
   const [lastApply, setLastApply] = useState(0);
-  const [testResult, setTestResult] = useState<{ blocked: boolean; detail: string } | null>(null);
-  const [testing, setTesting] = useState(false);
   // Which policy the evaluation panel is previewing. Defaults to
   // whatever is currently applied so the panel opens "self-consistent".
   // Track whether the user has manually changed the selection so we
@@ -102,7 +101,6 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
       setSelectedPolicyId(config);
       setUserPickedPolicy(false); // re-sync with active after apply
       setLastApply((c) => c + 1);
-      setTestResult(null);
       // Network map edges + header policy badge subscribe to these
       // queries; invalidating triggers an immediate refetch so the
       // canvas reflects the new config without a manual reload.
@@ -112,46 +110,6 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
       // swallow — UI state stays as-is
     } finally {
       setApplying(false);
-    }
-  };
-
-  // Scenario step references for the segmentation Test button.
-  // `dnp3-command-injection` is the workshop scenario that ships a
-  // ready-made enterprise→field probe. The test step fires a DNP3
-  // disable_reclose from kali (10.10.10.50); the restore step runs
-  // the full sequence (clear_fault → enable_reclose → reset_lockout
-  // → close) so we leave the lab in a known-good state if the test
-  // actually went through (weak baseline).
-  //
-  // The backend `executeCommand` checks the source string against
-  // its allowlist when activeConfig === "improved": only RTAC and
-  // "operator" pass, everything else returns Success=false with a
-  // BLOCKED detail. That's how this test reports allow vs deny.
-  const TEST_SCENARIO = "dnp3-command-injection";
-  const TEST_STEP_INDEX = 7;     // "Re-test DNP3 attack"
-  const RESTORE_STEP_INDEX = 5;  // "Restore operations"
-
-  const handleTestConfig = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await executeScenarioStep(TEST_SCENARIO, TEST_STEP_INDEX);
-      const blocked = !res.success;
-      setTestResult({
-        blocked,
-        detail:
-          res.results?.[0]?.detail ||
-          (blocked ? "Command blocked by containd" : "Command reached field device"),
-      });
-      // If the attack succeeded (weak baseline), restore the recloser
-      // so the lab is left in a known state.
-      if (!blocked) {
-        await executeScenarioStep(TEST_SCENARIO, RESTORE_STEP_INDEX);
-      }
-    } catch (e) {
-      setTestResult({ blocked: false, detail: `Test error: ${e}` });
-    } finally {
-      setTesting(false);
     }
   };
 
@@ -240,7 +198,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           </button>
         </div>
 
-        {/* Quick-set pills + test */}
+        {/* Quick-set pills */}
         <div className="flex items-center gap-1">
           {POLICIES.map((p) => (
             <button
@@ -255,51 +213,13 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
               {p.id === "weak" ? "Weak" : "Hardened"}
             </button>
           ))}
-          <button
-            onClick={handleTestConfig}
-            disabled={testing}
-            className="ml-auto rounded border border-sky-700 bg-sky-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-400 transition-colors hover:bg-sky-900/30 disabled:opacity-40"
-          >
-            {testing ? "Testing…" : "Test"}
-          </button>
         </div>
       </div>
 
-      {/* Test result */}
-      {testResult && (
-        <div
-          className={`rounded border p-2.5 text-[11px] ${
-            testResult.blocked
-              ? "border-green-800/60 bg-green-950/20 text-green-400"
-              : "border-red-800/60 bg-red-950/20 text-red-400"
-          }`}
-        >
-          <div className="flex items-start gap-2">
-            {!testResult.blocked && (
-              // Aggressive raccoon for the "attack got through"
-              // moment — visual reinforcement that this is bad.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src="/rook-forward-aggressive-transparent-web.png"
-                alt=""
-                className="h-7 w-7 shrink-0"
-              />
-            )}
-            <div className="min-w-0 flex-1">
-              <span className="font-bold">{testResult.blocked ? "BLOCKED" : "ALLOWED"}</span>
-              <span className="ml-2 text-slate-400">{testResult.detail}</span>
-              {!testResult.blocked && activeConfig === "improved" && (
-                <div className="mt-1 text-yellow-400">
-                  Warning: command should be blocked with hardened policy
-                </div>
-              )}
-              {testResult.blocked && activeConfig === "improved" && (
-                <div className="mt-1">Enterprise→field traffic correctly blocked by containd NGFW</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Live containd DPI events — shows real allow/deny decisions
+          on the wire so students can watch the policy enforce when
+          they fire a probe from a terminal. Empty until traffic flows. */}
+      <LiveEvents compact={compact} />
 
       {/* Dynamic policy evaluation — driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
@@ -362,5 +282,98 @@ function ActionChip({ action }: { action: string; label?: string }) {
     <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>
       {action}
     </span>
+  );
+}
+
+// containd reports verdicts via the (type, severity, details) tuple
+// rather than a single field. "alert" events and "critical" severity
+// indicate a deny; anything containing BLOCKED in the details string
+// is also a deny. Everything else is inspected-and-allowed traffic.
+function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
+  if (e.type === "alert") return "DENY";
+  if (e.severity === "critical") return "DENY";
+  if (e.details && /blocked|denied|deny/i.test(e.details)) return "DENY";
+  return "ALLOW";
+}
+
+function LiveEvents({ compact }: { compact: boolean }) {
+  const [expanded, setExpanded] = useState(true);
+  // 2.5s poll matches the substation Command Audit cadence and keeps
+  // the strip responsive without burning bandwidth when nothing is
+  // happening on the wire.
+  const { data } = useQuery({
+    queryKey: ["segmentation", "live-events"],
+    queryFn: getSubstationNetworkEvents,
+    refetchInterval: 2500,
+    refetchOnWindowFocus: false,
+  });
+
+  const events = data?.events ?? [];
+  const unavailable = data?.source === "unavailable";
+  const denyCount = events.filter((e) => eventVerdict(e) === "DENY").length;
+  const maxRows = compact ? 5 : 10;
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="mb-1.5 flex w-full items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300"
+      >
+        <span className="flex items-center gap-2">
+          Live DPI Events
+          {events.length > 0 && (
+            <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
+              {events.length} total · {denyCount} deny
+            </span>
+          )}
+        </span>
+        <span className="text-slate-600">{expanded ? "▼" : "▶"}</span>
+      </button>
+
+      {expanded && (
+        <div className={`space-y-1 overflow-y-auto rounded border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
+          {unavailable ? (
+            <div className="py-2 text-center text-[10px] text-slate-600">
+              containd unreachable
+            </div>
+          ) : events.length === 0 ? (
+            <div className="py-2 text-center text-[10px] text-slate-600">
+              No recent events — run a probe from a terminal to see enforcement
+            </div>
+          ) : (
+            events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiveEventRow({ e }: { e: NetworkEvent }) {
+  const verdict = eventVerdict(e);
+  const rowTone =
+    verdict === "DENY"
+      ? "border-red-900/40 bg-red-950/15"
+      : "border-slate-800/60 bg-slate-900/40";
+  const ts = e.timestamp
+    ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "--";
+
+  return (
+    <div className={`rounded border p-1.5 text-[10px] ${rowTone}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="w-14 shrink-0 text-[9px] text-slate-600">{ts}</span>
+        <ActionChip action={verdict} />
+        <span className="font-mono text-slate-300">{e.source} → {e.dest}</span>
+        {e.protocol && e.protocol !== "-" && (
+          <span className="ml-auto text-[9px] text-purple-400">[{e.protocol}]</span>
+        )}
+      </div>
+      {e.details && (
+        <div className="ml-14 mt-0.5 text-[10px] leading-tight text-slate-500">
+          {e.details}
+        </div>
+      )}
+    </div>
   );
 }

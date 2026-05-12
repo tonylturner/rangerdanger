@@ -105,6 +105,11 @@ steps:
       `0xFFF0` = 65520). The regulator-sim interprets register 0
       as the signed tap position.
 
+      > **Background:** if Modbus function codes are unfamiliar, see
+      > **Modbus TCP in Substations** on the [Knowledge](/knowledge)
+      > page. It covers FC3/FC4 reads, FC5/FC6 writes, and why "open
+      > port 502" doesn't constrain *which* writes get through.
+
       Wait ~3 seconds for the RTAC poll → OpenDSS push to land,
       then read the RTAC's Modbus tags to confirm the kinetic
       outcome:
@@ -126,6 +131,36 @@ steps:
       **Why it worked:** the weak baseline allows enterprise → field
       Modbus 502. There's no source pinning, no function-code
       filtering, no protocol awareness - just an open port.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. After the ~3-second poll-to-OpenDSS lag the critical-load
+      voltage drops out of ANSI Range A and the HMI surfaces it the
+      way a control-room operator would see it:
+
+      - **Alarm banner:** "LOW VOLTAGE — equipment damage risk"
+      - **Critical load** still energized (breaker + recloser closed)
+        but **voltage chip** turns red and reads below 114V
+      - **Customer-service tile** still shows kW serving — customers
+        have power, but at unsafe voltage. Motors stall, sensitive
+        electronics fail, protective relays may misoperate.
+
+      :::decision id=attack1-hmi-impact options=LOW_VOLTAGE_ALARM,FEEDER_OUTAGE,RECLOSER_OUTAGE,NO_ALARM correct=LOW_VOLTAGE_ALARM
+      **What alarm did the Feeder One-Line tab show after this attack?**
+      :::
+
+      :::hint Optional: see the numbers behind the alarm
+      Switch from **Feeder One-Line** to **Electrical Detail** in
+      the same /substation panel. This tab shows the engineering-
+      precision view of the same state the One-Line tab summarized:
+      per-unit voltages on each bus segment, feeder current vs
+      typical 600A rating, source / load / losses kW. Useful when
+      you want to *quantify* the attack rather than read its
+      alarm-level summary. The same view becomes evidence material
+      in Lab 2.4 if you want to attach numeric deltas to your
+      report rather than HMI screenshots alone.
+      :::
     action:
       type: command
       device: regulator
@@ -150,6 +185,12 @@ steps:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
 
+      > **Background:** CROB (Control Relay Output Block) is DNP3's
+      > primary command verb — see **DNP3 in Substations** on the
+      > [Knowledge](/knowledge) page if op codes like `latch-off` /
+      > `trip` are new. It also explains why Direct Operate (FC05)
+      > is the function code that matters for write restrictions.
+
       Without auto-reclose, the recloser locks out - what should be a
       brief flicker becomes a sustained outage. Wait ~3 seconds for
       the OpenDSS push, then read the RTAC tags via Modbus to confirm
@@ -172,6 +213,27 @@ steps:
       **Why it worked:** the weak baseline allows enterprise → field
       DNP3 20000. There's no DPI to distinguish Direct Operate
       (FC05) from a benign read (FC01) - they ride on the same port.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. The breaker is still closed (substation bus energized)
+      but everything past the recloser is dark:
+
+      - **Alarm banner:** "RECLOSER OPEN — downstream loads lost"
+        and "AUTO-RECLOSE DISABLED — no fault recovery"
+      - **General Load** reads "NO POWER" (red)
+      - **Critical Load** reads "NO POWER" (red) — *"Hospital and
+        fire station without power"* shows in red beneath
+      - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
+
+      The attacker didn't have to trip the substation breaker to
+      cause an outage — disabling auto-reclose and tripping the
+      recloser had the same effect for everyone downstream.
+
+      :::decision id=attack2-hmi-impact options=DOWNSTREAM_OUTAGE,LOW_VOLTAGE_ALARM,FEEDER_OUTAGE,NO_ALARM correct=DOWNSTREAM_OUTAGE
+      **What alarm did the Feeder One-Line tab show after this attack?**
+      :::
     action:
       type: command
       device: recloser
@@ -219,6 +281,28 @@ steps:
       baseline lets enterprise reach field on Modbus 502 with no
       source pin and no function-code filter. The relay-sim
       accepts FC5 from any source.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. This is the worst-case visible state in the lab — one
+      Modbus packet, entire feeder dark:
+
+      - **Alarm banner:** "FEEDER BREAKER OPEN — customers without
+        power"
+      - **Feeder Breaker (52)** symbol shows open
+      - **General Load** + **Critical Load** both read "NO POWER"
+      - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
+
+      Compare against Attack 2 — same final HMI state from a totally
+      different protocol path. That asymmetry is why a port-only
+      firewall can't stop this: TCP/502 has to stay open for the
+      RTAC to do its job, so the question becomes *which* sources
+      can send *which* writes.
+
+      :::decision id=attack3-hmi-impact options=FEEDER_OUTAGE,DOWNSTREAM_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=FEEDER_OUTAGE
+      **What alarm did the Feeder One-Line tab show after this attack?**
+      :::
     action:
       type: command
       device: relay
@@ -310,6 +394,30 @@ steps:
       The connection should time out - containd blocks
       enterprise → field at the L4 boundary before DPI even applies.
       The regulator stays at its normal tap.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. Compare against what you saw in Attack 1:
+
+      - **No alarm banner** at the top
+      - **Critical-load voltage** chip is green, reading in the
+        114-126V band
+      - **Customer-service tile:** "N kW serving ~M customers" (green)
+
+      The L4 source pin (only `10.30.30.20`/RTAC reaches field on
+      Modbus 502) stopped the packet from ever reaching the regulator.
+      The HMI looks the same as the Lab 2.3 step 1 baseline.
+
+      :::decision id=retest1-hmi-state options=NORMAL_OPS,LOW_VOLTAGE_ALARM,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
+      **What did the Feeder One-Line tab show after the re-test?**
+      :::
+
+      :::decision id=retest1-blocked-by options=L4_SOURCE_PIN,MODBUS_DPI,BOTH correct=L4_SOURCE_PIN
+      **Which hardening layer stopped this attack?** The TCP connection
+      itself timed out — the packet never reached a place where DPI
+      would have inspected function codes.
+      :::
     action:
       type: command
       device: regulator
@@ -336,6 +444,23 @@ steps:
       Holding register 0 (`breaker_closed`) is still `1`. The
       single-packet feeder outage is no longer reachable from
       enterprise.
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. The Attack 3 alarm chain you saw earlier is *absent*:
+
+      - **No** "FEEDER BREAKER OPEN" alarm banner
+      - **Feeder Breaker (52)** symbol still closed
+      - **Customer-service tile:** still serving customers (green)
+
+      Same hardening layer as Re-test 1 (L4 source pin) — but this
+      time it prevented a feeder-wide blackout instead of a
+      voltage excursion. One rule, two attack classes neutralized.
+
+      :::decision id=retest3-hmi-state options=NORMAL_OPS,FEEDER_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
+      **What did the Feeder One-Line tab show after the re-test?**
+      :::
     action:
       type: command
       device: relay
@@ -358,6 +483,27 @@ steps:
       path allows the engineering workstation to reach the RTAC
       on DNP3 for monitoring, port-only filtering can't say
       *"reads yes, Direct Operate no."* That's the layer DPI adds.
+      :::
+
+      ### Operational consequence at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. The Attack 2 alarm chain (recloser open + auto-reclose
+      disabled, hospital and fire station dark) does not appear:
+
+      - **No alarm banner**
+      - **Recloser (79)** still closed, **Auto-reclose ON** green badge
+      - **General Load + Critical Load** both energized (green kW)
+      - **Customer-service tile:** "N kW serving ~M customers"
+
+      :::decision id=retest2-hmi-state options=NORMAL_OPS,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
+      **What did the Feeder One-Line tab show after the re-test?**
+      :::
+
+      :::decision id=retest2-defense-in-depth options=L4_SOURCE_PIN,DNP3_DPI,EITHER_LAYER correct=EITHER_LAYER
+      **If the L4 source pin were loosened (e.g., to allow engineering
+      workstation monitoring), would the DNP3 Direct Operate restriction
+      still block this attack?** The hint above explains the logic.
       :::
     action:
       type: command

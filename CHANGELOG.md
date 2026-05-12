@@ -6,6 +6,135 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Lab experience release: every shipped lab now uses platform surfaces
+(topology console, drawers, HMI, Segmentation panel) for observation
+and verification rather than relying on terminal output alone. Plus
+one platform bug fix and one new feature in the Segmentation View
+that unlocks a future containd capability without needing a re-edit
+when that lands.
+
+### Frontend / UI
+
+- **`SegmentationView` — Live DPI Events strip.** New collapsible
+  section between the policy controls and the per-zone-pair
+  Evaluation table. Polls `/api/substation/network-events` every
+  2.5s; renders each event as a row with ALLOW/DENY chip (derived
+  from `type` + `severity` + `details`), `src → dst :port`, protocol
+  badge, and details line. Deny rows tinted red. Header shows
+  `N total · M deny` counters. Empty state: *"No recent events — run
+  a probe from a terminal to see enforcement."* Unavailable state:
+  *"containd unreachable."* Forward-compatible with the future
+  containd event emission fix tracked in rangerdanger#34 — the
+  component will start rendering live denies automatically once
+  containd ships the producer-side hook (see *Known gaps* below).
+
+- **`SegmentationView` — removed broken Test button.** The Test
+  button hardcoded `executeScenarioStep("dnp3-command-injection", 7)`
+  but the `dnp3-command-injection` scenario was deleted in the
+  workshop restructure (commit 870665c); the backend returned
+  `404 scenario not found` for every click since. Removed
+  `handleTestConfig`, the `TEST_SCENARIO` / `TEST_STEP_INDEX` /
+  `RESTORE_STEP_INDEX` constants, the testing state, and the
+  result panel. Net `-94` lines. The Evaluation table (per-zone-
+  pair ALLOW/DENY chips) is unchanged — that's the policy-
+  description surface. Live enforcement evidence now flows through
+  the new Live DPI Events strip + the existing Command Audit tab.
+
+### Lab content
+
+Seven labs touched. The recurring pattern: each existing technical
+step (mbpoll / nmap / dnp3cmd) now ends with a "look at the platform"
+prompt — Network Map drawer, Segmentation View, or substation HMI
+Feeder One-Line — plus a small `:::decision` block capturing the
+student's observation. The goal is to teach segmentation as an
+operational discipline (alarms, customer service, audit trails) not
+just a packet-filter outcome.
+
+- **Lab 1.2 (`baseline-assessment.yml`).** Step 1 rewritten from a
+  static zone table into a `/console` investigation: walk all four
+  zones, toggle the IEC 62443 view, inspect three named inter-zone
+  edges via MapTooltip, capture observations in three new decisions.
+  Step 2 adds a Traffic Matrix drawer "sneak preview" of the same
+  flows step 4 PCAP-and-tsharks formally. Background link to the
+  *IEC 62443 Zones and Conduits* article on `/knowledge`.
+
+- **Lab 1.3 (`segmentation-requirements.yml`).** Step 1 now opens
+  with a Segmentation View prompt at `/console`: walk the
+  Evaluation table on the weak baseline, then use the dropdown to
+  preview Hardened Segmentation without applying. Anchors design
+  verdicts in observable current policy state. Optional P3 hint
+  for the firewall-node IEC 62443 Security Level badge (Target SL-3 ·
+  MET/GAP), cross-referencing the *Security Levels Explained*
+  knowledge article.
+
+- **Lab 1.4 (`remediation-planning.yml`).** Step 4 reflection now
+  surfaces `:::plan-coverage` of the student's Lab 1.4 selections
+  against the Lab 1.3 design verdicts — the same panel three
+  downstream labs already render, but now also rendered inside the
+  planning lab itself. Reflection questions reworded to anchor in
+  the panel's GAP / PARTIAL rows. Description block-scalar switched
+  from `>` to `|` so fence syntax works.
+
+- **Lab 2.2 (`firewall-implementation.yml`).** Phase 4 and Phase 6
+  reworked off broken `Events / Activity page` references. Phase 4
+  now leans on `containd cli` + `show audit` (verified — returns
+  real admin/commit log), `/substation` Command Audit, and a
+  forward-pointer to the Live DPI Events strip. Phase 6 reframed
+  around *TCP timeout + HMI unchanged* as the working evidence
+  pattern, with the same forward-pointer.
+
+- **Lab 2.3 (`hardening-configurations.yml`).** Every attack step
+  (Modbus FC6 tap override, DNP3 CROB injection, Modbus FC5
+  breaker trip) and every post-hardening re-test now ends with an
+  *Operational consequence at the HMI* section calling out the
+  specific Feeder One-Line state expected — alarm banner text,
+  customer-service tile content, *"Hospital and fire station
+  without power"* sub-text. Eight new `:::decision` blocks capture
+  what students observed and which hardening layer (L4 source pin
+  vs DPI) stopped each re-test. Background links to *Modbus TCP
+  in Substations* and *DNP3 in Substations* knowledge articles.
+  P3 hint for the Electrical Detail tab (per-unit voltages,
+  feeder loading %, source/load/losses kW).
+
+- **Lab 2.3-bonus (`vendor-rdp-compromise.yml`).** Same HMI-prompt
+  pattern as Lab 2.3 — kinetic outcome of the vendor-pivoted
+  recloser attack visualized at `/substation` Feeder One-Line.
+  Adds a decision capturing the recloser's last-command-source
+  attribution (`10.20.20.10` vendor-jump IP, not Kali IP) — the
+  central insight of the laundered-through-vendor kill chain.
+  Background link to *OT Network Segmentation Overview*.
+
+- **Lab 2.4 (`validation-evidence.yml`).** Step 2 (positive tests)
+  and step 3 (negative tests) now end with HMI Feeder One-Line
+  confirmation: *"no alarms + customers served"* after positives,
+  *"unchanged from baseline"* after negatives — the absence of
+  change is the evidence. Step 5 evidence-package list rewritten:
+  removed hallucinated *"containd rule hit counts from the
+  Segmentation tab"* (no such feature exists) and *"Per-rule logs
+  for the deny actions"* (depends on rangerdanger#34). Real
+  replacements: PCAP, policy export via `containd cli` →
+  `export config` (path documented in Lab 2.2 step 10),
+  `show audit` snapshot, HMI screenshot of the negative-test
+  endstate. Forward-looking hint describes adding the DPI event
+  stream as a fifth artifact once containd#19 lands.
+
+### Known gaps
+
+- **DPI deny events not yet emitted by containd** for L4-only rules
+  (the most common rule shape in segmentation policies). Tracked
+  upstream as [containd#19](https://github.com/tonylturner/containd/issues/19)
+  and downstream as
+  [rangerdanger#34](https://github.com/tonylturner/rangerdanger/issues/34).
+  Root cause: `EvaluateVerdict` (the only writer to containd's
+  event store) is reached only via `enforceDPIEvents` in DPI
+  enforce mode; plain L4 deny actions go directly through the
+  enforcement primitive (nftables) without notifying the engine.
+  The shipped `LiveEvents` UI strip and the existing Command Audit
+  *Show DPI (N)* button are both consumers of this stream and
+  will start rendering live denies automatically once the
+  producer is wired. No rangerdanger code change required when
+  that lands.
+
 ## [v0.1.10] - 2026-05-11
 
 Positioning / documentation pass plus a small post-install ergonomics

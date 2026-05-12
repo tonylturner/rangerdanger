@@ -284,11 +284,12 @@ steps:
   - title: "Phase 4 - Enable logging and visibility"
     expected_config: weak
     description: |
-      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied.
+      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied — and you need a place to look.
 
-      ### Configure logging
+      ### Configure logging on the right rules
 
-      Enable logging on:
+      In your rule JSON, add `"log": true` to each rule that
+      matters operationally:
 
       1. **All DENY actions.** Every blocked cross-zone connection attempt should produce a log entry. This is your primary detection mechanism for unauthorized access attempts.
 
@@ -296,31 +297,57 @@ steps:
 
       3. **Enterprise/Vendor to Field attempts.** These should already be caught by the default-deny log, but explicitly logging this zone pair makes it easier to search for lateral movement attempts.
 
-      ### Verify logging works
-
-      From the kali terminal, attempt a connection that should be
-      blocked:
-
-          mbpoll -m tcp -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
-
-      Then check the containd event log.
-
-      **Web UI:** open the **Events** or **Activity** page; you
-      should see a deny event for the kali IP (`10.10.10.50`)
-      attempting to reach the field device.
-
-      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
-
-          show audit
-
-      …and look for the most recent deny entries. If you don't see
-      the event, logging isn't enabled on the default-deny rule.
-
       :::hint Enabling logging on a rule
       The `firewall.rules` JSON schema has a `log: true` field. Add
       it to the rule object alongside `action`, then `import config`
       + `commit` as you did in Phase 3, or toggle the **Log matches**
       checkbox in the Web UI's rule editor.
+      :::
+
+      ### Verify your configuration committed
+
+      Open a terminal on `fw-1` (below, or on the [Network Map](/console))
+      and inspect the audit log:
+
+          containd cli
+
+      …then at the `containd#` prompt:
+
+          show audit
+
+      You should see recent `config.save_candidate` and `config.commit`
+      entries corresponding to the policy changes you just pushed.
+      The audit log is containd's record of *administrative* actions
+      against the firewall (config commits, login events, service
+      changes) — confirmation that your rules are loaded and active.
+
+      ### Where to look for traffic-level events
+
+      Per-flow firewall events (a kali probe being denied, an RTAC
+      Modbus write being allowed) are surfaced in two places today:
+
+      - **Feeder HMI → Command Audit tab** at [/substation](/substation):
+        scenario-driven actions (RTAC commands, attack writes) are
+        captured here with their source zone and outcome. This is
+        what you'll watch during Lab 2.3 and 2.4 when you fire
+        attacks under your policy and want to see whether they
+        landed or were blocked.
+      - **Network Map → Segmentation drawer** at [/console](/console):
+        the **Live DPI Events** strip shows containd's per-packet
+        deny/allow stream as it happens.
+
+      :::hint Note on the Live DPI Events strip
+      Under the current containd build, traffic-level deny events
+      from L4 firewall rules (Modbus/DNP3 timeouts at the perimeter)
+      are not yet emitted to the events stream — this is tracked in
+      [rangerdanger #34](https://github.com/tonylturner/rangerdanger/issues/34)
+      and [containd #19](https://github.com/tonylturner/containd/issues/19).
+      The strip is live and forward-compatible: when containd lands
+      the emission fix, deny events will flow into it automatically.
+      Until then, use Command Audit at /substation and `show audit`
+      on `fw-1` as your primary verification surfaces, and rely on
+      the *operational* outcome at the HMI to confirm a probe was
+      blocked (TCP timeout + no kinetic change).
       :::
 
   - title: "Phase 5 - Validate allowed traffic"
@@ -395,17 +422,31 @@ steps:
 
           mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
 
-      After each failed attempt, check the containd event log to
-      confirm the deny was logged.
+      After each failed attempt, the connection should time out and
+      the substation HMI should remain unchanged. The combination is
+      what tells you the policy is enforcing.
 
-      **Web UI:** the **Events** page should show recent deny entries.
+      **HMI confirmation:** open the [Feeder HMI](/substation) →
+      **Feeder One-Line** tab. No alarms, breaker closed, customers
+      served. Compare against the deliberate-failure state from Lab
+      2.3 step 1 baseline.
 
-      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
-
-          show audit
+      **Administrative confirmation:** from the `fw-1` terminal,
+      `containd cli` then `show audit` — your recent `config.commit`
+      entries should appear, proving the rule set you're testing
+      against is the rule set that's loaded.
 
       If any test succeeds when it should fail, you have a rule that
       is too permissive. Review your policy and tighten it.
+
+      :::hint Live per-flow deny visibility — coming soon
+      Live DPI deny events for these blocked probes will appear in the
+      Segmentation drawer's **Live DPI Events** strip on `/console`
+      once containd ships the L4 event emission fix
+      ([containd #19](https://github.com/tonylturner/containd/issues/19)).
+      For this release, "TCP timeout + HMI unchanged" is the working
+      evidence pattern.
+      :::
 
   - title: "Export your policy"
     expected_config: hardened

@@ -100,6 +100,26 @@ steps:
       declared. Modbus / DNP3 from vendor-jump to RTAC must still
       be blocked - `firewall-smoke.sh` covers that contrast row.
 
+      ### Confirm operations are intact at the HMI
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. After your positive tests, the operational state should
+      look identical to the Lab 2.3 step 1 baseline:
+
+      - **No alarm banner** at the top
+      - **Feeder Breaker (52)** and **Recloser (79)** both closed
+      - **General + Critical Load** both energized (green kW)
+      - **Customer-service tile:** "N kW serving ~M customers"
+      - **Critical-load voltage** chip green, in the 114-126V band
+
+      This is the "operations aren't broken" half of the evidence
+      package — the change board needs to see both that unauthorized
+      traffic is blocked *and* that the substation still runs.
+
+      :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT correct=NORMAL_OPS
+      **After the positive tests, does the HMI show normal operations?**
+      :::
+
   - title: "Negative tests - unauthorized flows blocked"
     description: |
       Verify the cross-zone paths your policy closed are actually
@@ -133,6 +153,29 @@ steps:
       to `10.40.40.x` must traverse the firewall. Any of them is
       a clean enforcement test. The example uses historian; you'd
       see the same result from any of the three.
+      :::
+
+      ### Confirm the HMI is unchanged
+
+      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab. After every blocked probe above, the HMI should look
+      exactly like it did before you started — no alarms, breaker
+      closed, customers served. **The absence of change is the
+      evidence.** Compare against what you saw in Lab 2.3 when the
+      same writes from the same sources ran *under the weak policy*
+      and produced visible outages.
+
+      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR correct=UNCHANGED
+      **After all the negative tests, is the HMI unchanged from baseline?**
+      :::
+
+      :::hint Future: live DPI events for blocked attempts
+      The [Network Map](/console) Segmentation drawer has a **Live DPI
+      Events** strip that will show each blocked probe in real time
+      once containd's L4 event-emission lands ([containd #19](https://github.com/tonylturner/containd/issues/19)).
+      For this release the strip will likely show "No recent events"
+      — that's expected. The HMI unchanged-state above is your
+      authoritative evidence today.
       :::
 
   - title: "Capture PCAP evidence"
@@ -175,15 +218,41 @@ steps:
       - Vendor → field Modbus
       - Non-RTAC OT → field Modbus
 
-      **Artifacts**:
-      - `/data/captures/validation.pcap`
-      - Active firewall config (`improved` or `custom`)
-      - containd rule hit counts from the Segmentation tab
-      - Per-rule logs for the deny actions you triggered
+      **Artifacts to attach**:
+
+      - `/data/captures/validation.pcap` — the firewall-side PCAP
+        showing only RTAC sources reaching field on Modbus / DNP3
+      - **Active policy export** — from the `fw-1` terminal:
+
+            containd cli
+            containd# export config > student-policy.json
+            containd# shell
+            $ cat /tmp/student-policy.json
+
+        attach the JSON. This is the change-board-ready record of the
+        rule set that's actually running.
+      - **`show audit` output** — from the same `containd cli`, run
+        `show audit` and snapshot the recent `config.commit` /
+        `config.save_candidate` entries. This proves the policy you
+        attached is the policy that's loaded.
+      - **HMI screenshot** — the [Feeder HMI](/substation) **Feeder
+        One-Line** tab after the negative-test pass, showing no
+        alarms and customers served. This is the operational
+        side of the evidence: blocking attacks didn't break ops.
 
       Capture pass/fail for each test in your Exercise Notes. This
       is the evidence package - a change board needs to see both
       that operations still work and that the new denies are real.
+
+      :::hint Per-rule deny logs / DPI event evidence
+      Once containd's L4 event-emission lands
+      ([containd #19](https://github.com/tonylturner/containd/issues/19)),
+      add a fifth artifact: an export of the deny-event stream from
+      `/api/v1/events` showing each negative-test probe being rejected
+      at the rule level, with timestamps and rule IDs. For this
+      release the HMI screenshot + `show audit` + policy export cover
+      the same evidentiary need.
+      :::
     action:
       type: check
       expect:
