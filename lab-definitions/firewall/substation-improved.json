@@ -78,7 +78,10 @@
     }
   ],
   "routing": {},
-  "dataplane": {},
+  "dataplane": {
+    "dpiMode": "enforce",
+    "nflogGroup": 100
+  },
   "pcap": {
     "filter": {}
   },

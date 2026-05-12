@@ -6,6 +6,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Configuration
+
+- **`substation-improved.json` and `substation-weak.json` set
+  `dpiMode` + `nflogGroup` in their dataplane blocks.** With these
+  fields, the next containd image build that includes
+  [containd#19](https://github.com/tonylturner/containd/issues/19)
+  emits `firewall.rule.hit` events to `/api/v1/events` for every
+  L4 rule with `log:true` (every existing substation deny rule).
+  The LiveEvents strip in `/console` Segmentation drawer and the
+  Command Audit "Show DPI" button at `/substation` will start
+  rendering live deny events automatically. The improved policy
+  sets `dpiMode: "enforce"` (DPI rules actually block); the weak
+  policy leaves dpiMode unset so it stays learn-mode (visible
+  events but no blocking — matches "weak baseline" semantics).
+  No rangerdanger code change is needed; this is purely a policy
+  JSON addition. Both fields are silently ignored by today's
+  shipped containd, so this change is safe to land before
+  containd updates.
+
+### Known gaps still open
+
+- **containd#19 / rangerdanger#34** ship-blocking dependency for
+  the LiveEvents strip to actually render data. Containd PR
+  [tonylturner/containd#20](https://github.com/tonylturner/containd/pull/20)
+  is open and tests pass; when it merges and a new containd
+  image is pulled, the v0.1.11 LiveEvents strip lights up with
+  the policy changes above.
+
+## [v0.1.11] - 2026-05-11
+
 Lab experience release: every shipped lab now uses platform surfaces
 (topology console, drawers, HMI, Segmentation panel) for observation
 and verification rather than relying on terminal output alone. Plus
