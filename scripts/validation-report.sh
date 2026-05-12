@@ -305,7 +305,16 @@ Before approving the change to production, confirm:
 - [ ] Every unauthorized-flow row reads PASS.
 - [ ] The PCAP source analysis shows only expected sources reaching the field zone.
 - [ ] The policy fingerprint above matches the change ticket's planned policy.
-- [ ] Per-rule logs in containd show deny events for the unauthorized-flow attempts (cross-reference \`show audit\` on the firewall).
+- [ ] \`show audit\` on the firewall shows the corresponding \`config.commit\` for the policy fingerprint above (proves the rule set tested is the rule set loaded).
+- [ ] Substation HMI Feeder One-Line view (at \`/substation\`) shows no alarms and customers served throughout the probe window (positive evidence that blocking attacks did not disrupt operations).
+
+> **Note:** Live per-flow deny events from containd's event stream
+> are not yet wired for L4-only rules (tracked in
+> [containd#19](https://github.com/tonylturner/containd/issues/19) /
+> [rangerdanger#34](https://github.com/tonylturner/rangerdanger/issues/34)).
+> When that lands, this checklist should grow a row asking the
+> reviewer to cross-reference each unauthorized-flow row against a
+> matching \`firewall.rule.hit\` event in \`/api/v1/events\`.
 MD
 }
 

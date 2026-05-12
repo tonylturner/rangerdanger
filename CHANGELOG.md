@@ -40,6 +40,29 @@ when that lands.
   description surface. Live enforcement evidence now flows through
   the new Live DPI Events strip + the existing Command Audit tab.
 
+- **Scenario runner — `Apply Hardened` button now appears on
+  `Apply the hardened policy` steps.** The `isSegmentationStep`
+  title-matcher in `scenario-runner.tsx` only checked for
+  `improve` / `segmentation`, which silently hid the Apply
+  Hardened button on Lab 2.3 step 6 and Lab 2.3-bonus step 5 even
+  though both steps' `action: { type: firewall, config: improved }`
+  expected the student to apply hardening there. Extended the
+  matcher to also accept `hardened` / `harden`. Pre-existing bug
+  surfaced during v0.1.11 walk-through; not caused by the lab
+  rewrites in this release but discovered via them.
+
+### Tooling
+
+- **`scripts/validation-report.sh` reviewer checklist** reworked.
+  Removed the misleading row that asked reviewers to cross-
+  reference per-rule deny events via `show audit` — that command
+  shows admin/config audit, not packet-level rule hits, and the
+  L4 deny event stream isn't wired yet (containd#19). Replaced
+  with a `config.commit` cross-reference (`show audit` is the
+  right command for *that*, and it works) plus an HMI Feeder
+  One-Line check, and a forward-pointer for the missing
+  per-rule event row to add once containd#19 lands.
+
 ### Lab content
 
 Seven labs touched. The recurring pattern: each existing technical

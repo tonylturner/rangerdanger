@@ -1871,7 +1871,14 @@ function ExerciseSummary({
 
 function isSegmentationStep(title?: string): boolean {
   if (!title) return false;
-  return title.toLowerCase().includes("improve") || title.toLowerCase().includes("segmentation");
+  const t = title.toLowerCase();
+  // Match the "apply hardened policy" steps in Lab 2.3 and 2.3-bonus
+  // alongside the older "improve segmentation" wording used elsewhere.
+  // Without `hardened`/`harden`, Lab 2.3 step 6 ("Apply the hardened
+  // policy") and Lab 2.3-bonus step 5 ("Apply hardened policy") would
+  // hide the Apply Hardened button even though the step's own action
+  // is { type: firewall, config: improved }.
+  return t.includes("improve") || t.includes("segmentation") || t.includes("hardened") || t.includes("harden");
 }
 
 function isBaselineStep(title?: string): boolean {
