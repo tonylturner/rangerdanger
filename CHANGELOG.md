@@ -6,33 +6,107 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.13] - 2026-05-13
+
+Pairs with [containd v0.1.26](https://github.com/tonylturner/containd/releases/tag/v0.1.26).
+End-to-end ICS DPI enforcement now works on macOS Docker Desktop (and
+Linux / Windows WSL2): students can apply the hardened policy and see
+function-code-level Modbus violations both blocked and surfaced in the
+Live DPI Events strip.
+
+### Added
+
+- **ICS DPI enforcement in `substation-improved.json`.** Added
+  `dataplane.nfqueueGroup: 101` and `dpiEnabled: true` alongside the
+  existing `dpiMode: enforce` + `nflogGroup: 100`. With the matching
+  containd v0.1.26 image, the `rtac-to-field-modbus` rule now actually
+  enforces its function-code allowlist `[1..6]`: an attacker (or
+  misbehaving RTAC) attempting Modbus FC7+ from `lan1` → `lan2`
+  triggers a `BlockFlowTemp` verdict that drops subsequent packets
+  via the `block_flows` nft set.
+
+- **`privileged: true` on the firewall service** in
+  `docker-compose.yml`. `CAP_NET_ADMIN` + `CAP_NET_RAW` +
+  `seccomp=unconfined` are not sufficient on macOS Docker Desktop's
+  LinuxKit kernel for the userspace nflog/nfqueue consumer to bind
+  to a netfilter group — bind returns EPERM via netlink recv.
+  Privileged is the smallest hammer that unblocks the right kernel
+  surfaces. On Linux hosts it's a no-op widening (the container
+  already has the caps it needs); the lab posture as a whole is
+  loopback-only, so the additional capability surface stays inside
+  the container.
+
+- **`scripts/events-smoke.sh` wired into `.github/workflows/smoke.yml`**.
+  Three gates: (1) L4 `firewall.rule.hit` DENY events surface in the
+  engine event store after a kali probe, plus the backend's
+  `/api/substation/network-events` returns events at all (catches
+  schema drift between containd's emitted Event JSON and the
+  backend's Event struct). (2) ICS template apply accepts the
+  canonical hyphenated name from `GET /api/v1/templates`. (3) ICS
+  DPI function-code allowlist actually enforces — FC8 from RTAC
+  produces a `block_flows` nft set entry within seconds. Gate 3
+  skips gracefully if the host kernel can't bind NFQUEUE (so the
+  smoke stays green on older runners).
+
+### Fixed
+
+- **Backend `Event` struct now reads v0.1.25+ camelCase JSON keys**
+  (`srcIp`/`dstIp`/`srcPort`/`dstPort`/`kind`/`attributes`) alongside
+  the legacy snake_case fallbacks, normalized via `Event.Normalize()`
+  called by `GetEvents`. Without this, `isSubstationRelevant("","")`
+  returned false on every event and `/api/substation/network-events`
+  silently filtered everything out. Backward-compatible with older
+  containd builds (legacy `source`/`dest`/`src_port`/`dst_port`/
+  `type` still parse).
+
+- **Backend named `POST /api/firewall/apply` survives bind-mount
+  read flakes.** New `readPolicyJSONWithRetry`: 3 reads × 100ms
+  apart rides out macOS Docker Desktop's mid-write window when host
+  edits to a bind-mounted lab-definition propagate non-atomically
+  to the container. If JSON is still invalid after retries, the
+  error now includes byte count + head/tail snippet so an actual
+  syntax bug is distinguishable from a transient mount race.
+
+- **`X-Containd-Warnings` propagates to apply response + scenario
+  step results.** `ImportConfig` signature changed from
+  `error` → `([]string, error)`; warnings array is included in
+  the `POST /api/firewall/apply` and `/api/firewall/apply-custom`
+  responses when non-empty, appended to the step `Detail` for
+  scenario execution, and logged by the seed loop + orchestrator.
+  Without this, partial commits (e.g. nft apply failed but commit
+  returned 200) silently succeeded with a green UI hiding broken
+  enforcement.
+
+- **Policy file `functionCodes` → `functionCode`** (singular) on
+  `rtac-to-field-modbus` in `substation-improved.json`. containd's
+  ICSPredicate schema uses `functionCode`; the plural form was
+  silently dropped on unmarshal, leaving an empty allowlist that
+  matched ANY function code — making the rule semantically
+  "allow all Modbus" instead of "allow only FC1..6".
+
+### Configuration (already in v0.1.12, kept here for trail)
+
+- `substation-improved.json` and `substation-weak.json` already
+  ship `dpiMode` + `nflogGroup` from the v0.1.12 release. v0.1.13
+  layers the new `nfqueueGroup` + `dpiEnabled` on top of the
+  improved policy only — weak stays in learn mode by design.
+
+## [v0.1.12] - 2026-05-12
+
 ### Configuration
 
 - **`substation-improved.json` and `substation-weak.json` set
   `dpiMode` + `nflogGroup` in their dataplane blocks.** With these
-  fields, the next containd image build that includes
+  fields, the containd v0.1.25 image that includes
   [containd#19](https://github.com/tonylturner/containd/issues/19)
   emits `firewall.rule.hit` events to `/api/v1/events` for every
   L4 rule with `log:true` (every existing substation deny rule).
   The LiveEvents strip in `/console` Segmentation drawer and the
-  Command Audit "Show DPI" button at `/substation` will start
-  rendering live deny events automatically. The improved policy
-  sets `dpiMode: "enforce"` (DPI rules actually block); the weak
-  policy leaves dpiMode unset so it stays learn-mode (visible
-  events but no blocking — matches "weak baseline" semantics).
-  No rangerdanger code change is needed; this is purely a policy
-  JSON addition. Both fields are silently ignored by today's
-  shipped containd, so this change is safe to land before
-  containd updates.
-
-### Known gaps still open
-
-- **containd#19 / rangerdanger#34** ship-blocking dependency for
-  the LiveEvents strip to actually render data. Containd PR
-  [tonylturner/containd#20](https://github.com/tonylturner/containd/pull/20)
-  is open and tests pass; when it merges and a new containd
-  image is pulled, the v0.1.11 LiveEvents strip lights up with
-  the policy changes above.
+  Command Audit "Show DPI" button at `/substation` render live
+  deny events automatically. The improved policy sets
+  `dpiMode: "enforce"` (DPI rules actually block); the weak policy
+  leaves dpiMode unset so it stays learn-mode (visible events but
+  no blocking — matches "weak baseline" semantics).
 
 ## [v0.1.11] - 2026-05-11
 

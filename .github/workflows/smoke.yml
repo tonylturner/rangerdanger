@@ -155,6 +155,20 @@ jobs:
           python3 -m pip install --quiet pyyaml
           ./scripts/lab-commands-smoke.sh
 
+      - name: Events + ICS DPI smoke
+        # scripts/events-smoke.sh covers the v0.1.25 firewall.rule.hit
+        # pipeline (kali probe → DENY event in engine + backend), ICS
+        # template name normalization (hyphen ↔ underscore at the
+        # apply boundary), and ICS DPI function-code allowlist
+        # enforcement (RTAC FC8 → block_flows nft set entry). These
+        # have their own failure modes the traffic-matrix and lab-doc
+        # gates won't catch: backend Event JSON schema drift, NFQUEUE
+        # library compat, chain ordering vs ct established fast-path,
+        # template name normalization at the apply boundary.
+        run: |
+          set -euo pipefail
+          ./scripts/events-smoke.sh
+
       - name: Dump compose logs on failure
         if: failure()
         run: |

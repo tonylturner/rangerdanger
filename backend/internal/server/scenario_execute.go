@@ -225,7 +225,7 @@ func sourceZoneLabel(source string) string {
 
 // executeFirewallAction applies a firewall configuration.
 func (s *Server) executeFirewallAction(configName string) StepActionResult {
-	err := s.applyFirewallConfigInternal(configName)
+	warnings, err := s.applyFirewallConfigInternal(configName)
 	if err != nil {
 		return StepActionResult{
 			Action:  "Apply firewall: " + configName,
@@ -238,10 +238,17 @@ func (s *Server) executeFirewallAction(configName string) StepActionResult {
 	if configName == "improved" {
 		label = "hardened (RTAC-only field access)"
 	}
+	detail := "containd policy set to " + label
+	if len(warnings) > 0 {
+		// Surface containd's commit warnings so a partial-apply (e.g. nft
+		// operation not permitted) is visible in the step result instead
+		// of silently flagged as success.
+		detail += " (warnings: " + strings.Join(warnings, "; ") + ")"
+	}
 	return StepActionResult{
 		Action:  "Apply firewall: " + configName,
 		Success: true,
-		Detail:  "containd policy set to " + label,
+		Detail:  detail,
 	}
 }
 

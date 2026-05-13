@@ -29,9 +29,13 @@ func SeedConfigIfNeeded(client *Client, configPath string) {
 		return
 	}
 
-	if err := client.ImportConfig(data); err != nil {
+	warnings, err := client.ImportConfig(data)
+	if err != nil {
 		log.Printf("containd seed: import failed: %v", err)
 		return
+	}
+	for _, w := range warnings {
+		log.Printf("containd seed: WARNING: %s", w)
 	}
 
 	log.Printf("containd seed: config imported from %s", configPath)

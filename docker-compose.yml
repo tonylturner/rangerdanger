@@ -15,6 +15,17 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_TIME
+    security_opt:
+      - seccomp=unconfined
+    # NET_ADMIN+NET_RAW+seccomp=unconfined are still not enough for
+    # containd's userspace nflog consumer to bind to a netfilter log
+    # group on macOS Docker Desktop — EPERM at register time, surfaces
+    # as service.nflog.unavailable. Privileged is the smallest hammer
+    # that opens the right doors (NETLINK_NETFILTER recv + whatever
+    # else the consumer needs). Without this, firewall.rule.hit events
+    # never reach /api/v1/events even though nft IS emitting `log
+    # prefix ... group 100` clauses for every Log:true rule.
+    privileged: true
     environment:
       - CONTAIND_MODE=all
       - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
