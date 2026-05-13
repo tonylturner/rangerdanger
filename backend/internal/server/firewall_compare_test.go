@@ -1,8 +1,10 @@
 package server
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -165,5 +167,53 @@ func TestCompareRuleSets_OutputOrderIsStable(t *testing.T) {
 			t.Errorf("position %d: zone pair varies between calls (%q vs %q)",
 				i, diffs1[i].ZonePair, diffs2[i].ZonePair)
 		}
+	}
+}
+
+func TestReadPolicyJSONWithRetryValidFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "policy.json")
+	if err := os.WriteFile(path, []byte(`{"firewall":{"rules":[]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := readPolicyJSONWithRetry(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty data")
+	}
+}
+
+func TestReadPolicyJSONWithRetryInvalidIncludesSnippet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	// Deliberately invalid JSON — simulates a permanent syntax error,
+	// not a transient truncation. After 3 reads the helper should
+	// return an error message with a head/tail snippet so callers can
+	// see this is a real authoring bug, not a bind-mount race.
+	if err := os.WriteFile(path, []byte(`{not json at all`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := readPolicyJSONWithRetry(path)
+	if err == nil {
+		t.Fatal("expected error on invalid JSON")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "not valid JSON") {
+		t.Errorf("expected 'not valid JSON' in error, got %q", msg)
+	}
+	if !strings.Contains(msg, "head=") {
+		t.Errorf("expected head= snippet in error to aid diagnosis, got %q", msg)
+	}
+}
+
+func TestReadPolicyJSONWithRetryMissingFile(t *testing.T) {
+	_, err := readPolicyJSONWithRetry(filepath.Join(t.TempDir(), "nonexistent.json"))
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !strings.Contains(err.Error(), "failed to read config") {
+		t.Errorf("expected wrapped read error, got %q", err.Error())
 	}
 }

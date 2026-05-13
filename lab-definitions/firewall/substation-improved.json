@@ -80,7 +80,13 @@
   "routing": {},
   "dataplane": {
     "dpiMode": "enforce",
-    "nflogGroup": 100
+    "nflogGroup": 100,
+    "nfqueueGroup": 101,
+    "dpiEnabled": true,
+    "dpiIcsProtocols": {
+      "modbus": true,
+      "dnp3": true
+    }
   },
   "pcap": {
     "filter": {}
@@ -242,7 +248,7 @@
         ],
         "ics": {
           "protocol": "modbus",
-          "functionCodes": [
+          "functionCode": [
             1,
             2,
             3,

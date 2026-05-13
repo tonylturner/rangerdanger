@@ -9,6 +9,7 @@ import (
 
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -422,7 +423,7 @@ func TestImportConfigSuccess(t *testing.T) {
 
 	configJSON := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
 	client := newTestClient(srv.URL)
-	err := client.ImportConfig(configJSON)
+	_, err := client.ImportConfig(configJSON)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -447,6 +448,63 @@ func TestImportConfigSuccess(t *testing.T) {
 	fw, _ := sent["firewall"].(map[string]any)
 	if fw == nil || fw["defaultAction"] != "DENY" {
 		t.Errorf("firewall section not preserved: %s", candidateBody)
+	}
+}
+
+// TestImportConfigSurfacesCommitWarnings asserts that warnings from
+// containd's X-Containd-Warnings response header propagate back to the
+// caller. Without this, partial commits (e.g. nft apply failed due to
+// missing NET_ADMIN) silently return success and the lab UI hides the
+// degradation. The header carries one warning per line per containd's
+// setWarningHeader convention (api/http/util.go).
+func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertAuthHeader(t, r)
+		switch r.URL.Path {
+		case "/api/v1/config/candidate":
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/config/commit":
+			// containd v0.1.26+ emits one X-Containd-Warnings header
+			// per warning (multi-value header). Older builds joined
+			// with "\n" in a single header value; collectWarnings
+			// handles both. Test the multi-value form here since
+			// that's what current containd produces.
+			w.Header().Add("X-Containd-Warnings", "ruleset: nft apply failed: operation not permitted")
+			w.Header().Add("X-Containd-Warnings", "interfaces: link eth9 not found")
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv.URL)
+	warnings, err := client.ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "nft apply failed") {
+		t.Errorf("warning[0] missing nft hint: %q", warnings[0])
+	}
+	if !strings.Contains(warnings[1], "eth9 not found") {
+		t.Errorf("warning[1] missing iface hint: %q", warnings[1])
+	}
+}
+
+func TestImportConfigNoWarningsHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertAuthHeader(t, r)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	warnings, err := newTestClient(srv.URL).ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if warnings != nil {
+		t.Errorf("expected nil warnings for clean apply, got %v", warnings)
 	}
 }
 
@@ -524,7 +582,7 @@ func TestImportConfigLegacyFallback(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	if err := client.ImportConfig([]byte(`{}`)); err != nil {
+	if _, err := client.ImportConfig([]byte(`{}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !sawImport {
@@ -541,7 +599,7 @@ func TestImportConfigFailure(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	err := client.ImportConfig([]byte(`{}`))
+	_, err := client.ImportConfig([]byte(`{}`))
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -561,7 +619,7 @@ func TestImportConfigAuth403(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	err := client.ImportConfig([]byte(`{}`))
+	_, err := client.ImportConfig([]byte(`{}`))
 	if err == nil {
 		t.Fatal("expected error for 403 response")
 	}

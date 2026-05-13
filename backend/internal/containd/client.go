@@ -44,18 +44,51 @@ func (e *EventID) UnmarshalJSON(data []byte) error {
 }
 
 // Event represents a containd DPI/IDS event.
+//
+// containd v0.1.25+ emits camelCase keys (srcIp/dstIp/srcPort/dstPort) and
+// uses `kind` as the discriminator (e.g. "firewall.rule.hit", "dpi.event").
+// Older containd builds used `type`/`source`/`dest`/`src_port`/`dst_port`;
+// both schemas are accepted on unmarshal so the backend works against
+// either version. New writes should use the v0.1.25+ field names.
 type Event struct {
-	ID        EventID   `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	Type      string    `json:"type"`      // "connection", "modbus", "dns", "alert"
-	Source    string    `json:"source"`    // Source IP
-	Dest      string    `json:"dest"`      // Destination IP
-	Protocol  string    `json:"protocol"`  // "modbus", "tcp", "udp", etc.
-	SrcPort   int       `json:"src_port"`
-	DstPort   int       `json:"dst_port"`
-	Details   string    `json:"details"`   // Human-readable description
-	Severity  string    `json:"severity"`  // "info", "warning", "critical"
-	Zone      string    `json:"zone"`      // Source zone
+	ID         EventID        `json:"id"`
+	Timestamp  time.Time      `json:"timestamp"`
+	Kind       string         `json:"kind"`             // v0.1.25+: "firewall.rule.hit" etc.
+	Type       string         `json:"type"`             // legacy: "connection", "modbus", "dns", "alert"
+	Source     string         `json:"srcIp"`            // v0.1.25+ field
+	Dest       string         `json:"dstIp"`            // v0.1.25+ field
+	SourceLegacy string       `json:"source,omitempty"` // legacy fallback
+	DestLegacy   string       `json:"dest,omitempty"`   // legacy fallback
+	Protocol   string         `json:"protocol"`
+	Transport  string         `json:"transport"`        // v0.1.25+ ("tcp", "udp")
+	SrcPort    int            `json:"srcPort"`          // v0.1.25+ field
+	DstPort    int            `json:"dstPort"`          // v0.1.25+ field
+	SrcPortLegacy int         `json:"src_port,omitempty"`
+	DstPortLegacy int         `json:"dst_port,omitempty"`
+	Attributes map[string]any `json:"attributes"`       // v0.1.25+: ruleId, action, via, etc.
+	Details    string         `json:"details"`          // legacy human-readable
+	Severity   string         `json:"severity"`         // legacy: info/warning/critical
+	Zone       string         `json:"zone"`
+}
+
+// Normalize fills v0.1.25 fields from legacy fallbacks when only the older
+// schema is present. Safe to call repeatedly.
+func (e *Event) Normalize() {
+	if e.Source == "" && e.SourceLegacy != "" {
+		e.Source = e.SourceLegacy
+	}
+	if e.Dest == "" && e.DestLegacy != "" {
+		e.Dest = e.DestLegacy
+	}
+	if e.SrcPort == 0 && e.SrcPortLegacy != 0 {
+		e.SrcPort = e.SrcPortLegacy
+	}
+	if e.DstPort == 0 && e.DstPortLegacy != 0 {
+		e.DstPort = e.DstPortLegacy
+	}
+	if e.Kind == "" && e.Type != "" {
+		e.Kind = e.Type
+	}
 }
 
 // Session represents an active connection through the firewall.
@@ -240,6 +273,9 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 		events = result.Events
 	}
 
+	for i := range events {
+		events[i].Normalize()
+	}
 	return events, nil
 }
 
@@ -420,15 +456,24 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 // touched. The pre-canned substation policies and student-authored custom
 // policies generally don't bother setting `dataplane.enforcement: true` because
 // it's a containd implementation detail. Inject it here as a lab invariant.
-func (c *Client) ImportConfig(configJSON []byte) error {
+// ImportConfig returns any warnings surfaced by containd's commit handler
+// in the X-Containd-Warnings response header (one warning per line). These
+// cover infrastructure failures that don't abort the commit — e.g. an nft
+// apply that hit "operation not permitted" because the container lacks
+// NET_ADMIN, or a routing reconfigure that partially failed. Body is
+// always {"status":"committed"}; without parsing the header these failures
+// are invisible to the lab UI. Callers should propagate warnings up so a
+// student sees "config committed but X didn't apply" instead of a green
+// 200 hiding broken enforcement.
+func (c *Client) ImportConfig(configJSON []byte) ([]string, error) {
 	patched, err := ensureEnforcementOn(configJSON)
 	if err != nil {
-		return fmt.Errorf("ensure enforcement on: %w", err)
+		return nil, fmt.Errorf("ensure enforcement on: %w", err)
 	}
 
 	// Try the preferred candidate/commit flow first
-	if err := c.importViaCandidate(patched); err == nil {
-		return nil
+	if warnings, err := c.importViaCandidate(patched); err == nil {
+		return warnings, nil
 	} else {
 		// Fall back to legacy import endpoint
 		log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
@@ -474,51 +519,85 @@ func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
 // importViaCandidate uses the appliance candidate/commit flow:
 // 1. POST /api/v1/config/candidate — stages the config
 // 2. POST /api/v1/config/commit — applies it (triggers nftables compilation)
-func (c *Client) importViaCandidate(configJSON []byte) error {
+//
+// Returns warnings parsed from the commit response's X-Containd-Warnings
+// header. Empty slice means "fully clean apply"; non-empty means commit
+// returned 200 but at least one step in applyRunningConfig surfaced a
+// warning (typical: nft apply failed, interface reconcile partial). The
+// caller decides whether to treat warnings as soft failures.
+func (c *Client) importViaCandidate(configJSON []byte) ([]string, error) {
 	// Stage the candidate config
 	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
 	if err != nil {
-		return fmt.Errorf("post candidate config: %w", err)
+		return nil, fmt.Errorf("post candidate config: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("candidate endpoint not available (404)")
+		return nil, fmt.Errorf("candidate endpoint not available (404)")
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Commit the staged config
 	resp2, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/commit", nil)
 	if err != nil {
-		return fmt.Errorf("commit config: %w", err)
+		return nil, fmt.Errorf("commit config: %w", err)
 	}
 	defer resp2.Body.Close()
 
 	if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp2.Body)
-		return fmt.Errorf("commit returned %d: %s", resp2.StatusCode, string(body))
+		return nil, fmt.Errorf("commit returned %d: %s", resp2.StatusCode, string(body))
 	}
 
-	return nil
+	return collectWarnings(resp2.Header.Values("X-Containd-Warnings")), nil
 }
 
 // importLegacy uses the older /api/v1/config/import endpoint.
-func (c *Client) importLegacy(configJSON []byte) error {
+// The legacy endpoint doesn't run applyRunningConfig and therefore can't
+// produce warnings — always returns nil for the warnings slice.
+func (c *Client) importLegacy(configJSON []byte) ([]string, error) {
 	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/import", configJSON)
 	if err != nil {
-		return fmt.Errorf("import config request failed: %w", err)
+		return nil, fmt.Errorf("import config request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("import config returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("import config returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	return nil
+	return nil, nil
+}
+
+// collectWarnings flattens repeated X-Containd-Warnings header values
+// into a single list. Modern containd (v0.1.26+) emits one header line
+// per warning via http.Header.Add — Header.Values returns each as a
+// separate slice entry. Older containd builds (pre-fix) joined warnings
+// with "\n" into a single header value, which Go silently mangles in
+// transit; we still split on "\n" defensively to handle that case.
+// Empty/whitespace-only entries are dropped. Returns nil (not []) when
+// there are no warnings so callers can len()-check cleanly.
+func collectWarnings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		for _, part := range strings.Split(v, "\n") {
+			if t := strings.TrimSpace(part); t != "" {
+				out = append(out, t)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ── PCAP Capture API (containd /api/v1/pcap/*) ─────────────────

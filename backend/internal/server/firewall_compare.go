@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -107,21 +108,69 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		return
 	}
 
-	if err := s.applyFirewallConfigInternal(req.Config); err != nil {
+	warnings, err := s.applyFirewallConfigInternal(req.Config)
+	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"status":        "applied",
 		"active_config": req.Config,
-	})
+	}
+	if len(warnings) > 0 {
+		resp["warnings"] = warnings
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
-// applyFirewallConfigInternal applies a named firewall config (reusable by step execution).
-func (s *Server) applyFirewallConfigInternal(configName string) error {
+// readPolicyJSONWithRetry reads a policy JSON file from the lab-definitions
+// bind mount, retrying briefly if json.Valid fails. On macOS Docker Desktop,
+// host writes to a bind-mounted file aren't atomic in the container's view:
+// the FUSE/VirtIOFS layer briefly exposes a truncated mid-write file. Most
+// often this happens when the host process writes the file while the
+// container reads it concurrently (e.g. a config tweak then immediate apply).
+// Three reads at 100ms intervals is enough to ride out the window in
+// practice; if it's still invalid after that, the error message includes
+// the byte count + a head/tail snippet so an actual JSON-syntax mistake
+// is distinguishable from a transient read.
+func readPolicyJSONWithRetry(path string) ([]byte, error) {
+	const attempts = 3
+	const backoff = 100 * time.Millisecond
+	var lastData []byte
+	for i := 0; i < attempts; i++ {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config %s: %w", path, err)
+		}
+		if json.Valid(data) {
+			return data, nil
+		}
+		lastData = data
+		if i < attempts-1 {
+			time.Sleep(backoff)
+		}
+	}
+	head := lastData
+	if len(head) > 120 {
+		head = head[:120]
+	}
+	tail := lastData
+	if len(tail) > 120 {
+		tail = tail[len(tail)-120:]
+	}
+	return nil, fmt.Errorf("config file is not valid JSON after %d reads (size=%d, head=%q, tail=%q)",
+		attempts, len(lastData), string(head), string(tail))
+}
+
+// applyFirewallConfigInternal applies a named firewall config (reusable by step
+// execution). Returns containd's commit warnings (parsed from
+// X-Containd-Warnings) so callers can surface partial failures — typical
+// causes: nft apply hit "operation not permitted", interface reconfigure
+// partial, pcap config invalid. Empty warnings + nil error = clean apply.
+func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error) {
 	if configName != "weak" && configName != "improved" {
-		return fmt.Errorf("config must be 'weak' or 'improved'")
+		return nil, fmt.Errorf("config must be 'weak' or 'improved'")
 	}
 
 	labDefsDir := s.cfg.LabDefinitionsPath
@@ -130,28 +179,25 @@ func (s *Server) applyFirewallConfigInternal(configName string) error {
 	}
 
 	configPath := filepath.Join(labDefsDir, "firewall", "substation-"+configName+".json")
-	data, err := os.ReadFile(configPath)
+	data, err := readPolicyJSONWithRetry(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	if !json.Valid(data) {
-		return fmt.Errorf("config file is not valid JSON")
+		return nil, err
 	}
 
 	if s.containdClient == nil {
-		return fmt.Errorf("containd client not configured")
+		return nil, fmt.Errorf("containd client not configured")
 	}
 
-	if err := s.containdClient.ImportConfig(data); err != nil {
-		return fmt.Errorf("failed to apply config to containd: %w", err)
+	warnings, err := s.containdClient.ImportConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
 
 	s.activeConfigMu.Lock()
 	s.activeConfig = configName
 	s.activeConfigMu.Unlock()
 
-	return nil
+	return warnings, nil
 }
 
 // handleFirewallApplyCustom accepts a raw JSON config and applies it to containd.
@@ -188,7 +234,8 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		return
 	}
 
-	if err := s.containdClient.ImportConfig(data); err != nil {
+	warnings, err := s.containdClient.ImportConfig(data)
+	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
 		return
 	}
@@ -197,10 +244,14 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 	s.activeConfig = "custom"
 	s.activeConfigMu.Unlock()
 
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"status":        "applied",
 		"active_config": "custom",
-	})
+	}
+	if len(warnings) > 0 {
+		resp["warnings"] = warnings
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 type fwConfigFile struct {
