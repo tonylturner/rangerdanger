@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
  && CGO_ENABLED=0 go build -o /bin/dnp3cmd  ./cmd/dnp3cmd
 
 # webtop ubuntu-xfce pinned by digest (A7).
-FROM linuxserver/webtop:ubuntu-xfce@sha256:13aa7d54b8cb013ff7cb2d83e0c9af07a7f9a2b3b846eb1bc8130f9441540f8b
+FROM linuxserver/webtop:ubuntu-xfce@sha256:df79511f4e167519415a9e8dd5907e49f3a3315479c8d06f65ac0cac55b9a824
 
 # OT vendor-tools + remote-access services.
 #
