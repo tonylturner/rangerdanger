@@ -285,15 +285,68 @@ function ActionChip({ action }: { action: string; label?: string }) {
   );
 }
 
-// containd reports verdicts via the (type, severity, details) tuple
-// rather than a single field. "alert" events and "critical" severity
-// indicate a deny; anything containing BLOCKED in the details string
-// is also a deny. Everything else is inspected-and-allowed traffic.
+// containd v0.1.25+ carries the verdict in attributes.action on
+// firewall.rule.hit events. The "anomaly" kind (IDS protocol-violation
+// alerts) is itself a signal of attempted policy bypass and renders as
+// DENY for the strip's purpose of "did the firewall stop something
+// interesting?" — strictly speaking these aren't drop verdicts but
+// they're security events the operator wants to see surfaced.
+//
+// Legacy heuristics (type/severity/details) are kept as fallback so an
+// older containd image in the loop still produces sensible output.
 function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
+  if (e.attributes?.action === "DENY") return "DENY";
+  if (e.kind === "anomaly") return "DENY";
+  // Legacy schema fallbacks
   if (e.type === "alert") return "DENY";
   if (e.severity === "critical") return "DENY";
   if (e.details && /blocked|denied|deny/i.test(e.details)) return "DENY";
   return "ALLOW";
+}
+
+// Classify an event for visual chip + label purposes. Three kinds reach
+// this strip; each gets a distinct look so an operator can tell at a
+// glance whether they're looking at "policy made a verdict" vs "DPI
+// decoded a protocol message" vs "IDS noticed something off."
+type EventCategory = "rule" | "dpi" | "ids" | "other";
+function eventCategory(e: NetworkEvent): EventCategory {
+  if (e.kind === "firewall.rule.hit") return "rule";
+  if (e.kind === "anomaly") return "ids";
+  // Modbus/DNP3 decoder events come through with kind="request" or
+  // "response"; lumping both as "dpi" keeps the chip set tight.
+  if (e.kind === "request" || e.kind === "response") return "dpi";
+  return "other";
+}
+
+// Compose a one-line identity for each event kind. firewall.rule.hit
+// uses ruleId; "request" uses the function code so students can see
+// "FC=3 (read)" vs "FC=6 (write)"; "anomaly" uses the anomaly_type.
+function eventLabel(e: NetworkEvent): string {
+  const a = e.attributes ?? {};
+  switch (eventCategory(e)) {
+    case "rule":
+      return a.ruleId ?? "(unnamed rule)";
+    case "dpi": {
+      const fc = a.function_code;
+      const dir = e.kind === "response" ? "resp" : "req";
+      const proto = a.proto ?? e.transport ?? "";
+      return fc !== undefined ? `${proto} FC=${fc} (${dir})` : `${proto} ${dir}`;
+    }
+    case "ids":
+      return a.anomaly_type ?? a.message ?? "IDS anomaly";
+    default:
+      return e.kind ?? e.type ?? "event";
+  }
+}
+
+// Pull a printable src→dst pair from whichever schema is present.
+// Prefer v0.1.25+ camelCase; fall back to legacy snake_case so the
+// strip degrades gracefully if an older containd is in the loop.
+function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
+  return {
+    src: e.srcIp ?? e.source ?? "?",
+    dst: e.dstIp ?? e.dest ?? "?",
+  };
 }
 
 function LiveEvents({ compact }: { compact: boolean }) {
@@ -311,6 +364,12 @@ function LiveEvents({ compact }: { compact: boolean }) {
   const events = data?.events ?? [];
   const unavailable = data?.source === "unavailable";
   const denyCount = events.filter((e) => eventVerdict(e) === "DENY").length;
+  // Per-kind counts give operators a quick sense of what's flowing:
+  // many rule.hit ALLOW + zero ids = normal RTAC chatter; ids > 0 or
+  // rule.hit DENY > 0 means something is being noticed.
+  const ruleCount = events.filter((e) => eventCategory(e) === "rule").length;
+  const dpiCount = events.filter((e) => eventCategory(e) === "dpi").length;
+  const idsCount = events.filter((e) => eventCategory(e) === "ids").length;
   const maxRows = compact ? 5 : 10;
 
   return (
@@ -323,7 +382,7 @@ function LiveEvents({ compact }: { compact: boolean }) {
           Live DPI Events
           {events.length > 0 && (
             <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
-              {events.length} total · {denyCount} deny
+              {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {denyCount} deny
             </span>
           )}
         </span>
@@ -351,9 +410,20 @@ function LiveEvents({ compact }: { compact: boolean }) {
 
 function LiveEventRow({ e }: { e: NetworkEvent }) {
   const verdict = eventVerdict(e);
+  const category = eventCategory(e);
+  const { src, dst } = eventEndpoints(e);
+  const label = eventLabel(e);
+  const port = e.dstPort ?? e.dst_port ?? null;
+  const proto = e.transport ?? e.protocol ?? "";
+
+  // Row tone is dominated by DENY (red) since that's the highest-value
+  // signal for the operator. ALLOWs use the standard slate background;
+  // anomaly events are toned amber so they stand out without screaming.
   const rowTone =
     verdict === "DENY"
       ? "border-red-900/40 bg-red-950/15"
+      : category === "ids"
+      ? "border-amber-900/40 bg-amber-950/10"
       : "border-slate-800/60 bg-slate-900/40";
   const ts = e.timestamp
     ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -363,10 +433,21 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
     <div className={`rounded border p-1.5 text-[10px] ${rowTone}`}>
       <div className="flex items-center gap-1.5">
         <span className="w-14 shrink-0 text-[9px] text-slate-600">{ts}</span>
-        <ActionChip action={verdict} />
-        <span className="font-mono text-slate-300">{e.source} → {e.dest}</span>
-        {e.protocol && e.protocol !== "-" && (
-          <span className="ml-auto text-[9px] text-purple-400">[{e.protocol}]</span>
+        {/* For firewall.rule.hit rows show the ALLOW/DENY action chip;
+            for dpi/ids rows show a kind chip in its own color so the
+            three event sources are visually distinct in a mixed list. */}
+        {category === "rule" ? (
+          <ActionChip action={verdict} />
+        ) : (
+          <KindChip category={category} />
+        )}
+        <span className="font-mono text-slate-300">
+          {src} → {dst}
+          {port ? `:${port}` : ""}
+        </span>
+        <span className="ml-auto truncate text-[9px] text-slate-400">{label}</span>
+        {proto && proto !== "-" && (
+          <span className="text-[9px] text-purple-400">[{proto}]</span>
         )}
       </div>
       {e.details && (
@@ -375,5 +456,24 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Small colored chip for non-firewall.rule.hit event categories so the
+// strip remains scannable when DPI decode + IDS anomaly rows are
+// interleaved with policy verdicts. Mirrors ActionChip's footprint.
+function KindChip({ category }: { category: EventCategory }) {
+  const meta =
+    category === "dpi"
+      ? { label: "DPI", cls: "text-sky-400 border-sky-800/40" }
+      : category === "ids"
+      ? { label: "IDS", cls: "text-amber-400 border-amber-800/40" }
+      : { label: "EVT", cls: "text-slate-400 border-slate-700/40" };
+  return (
+    <span
+      className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${meta.cls}`}
+    >
+      {meta.label}
+    </span>
   );
 }
