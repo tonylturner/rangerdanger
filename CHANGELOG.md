@@ -6,6 +6,63 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.15] - 2026-05-14
+
+Lab text accuracy pass plus the deferred Codex P2 fix on the v0.1.13
+event-schema migration. No backend changes; safe drop-in for anyone
+already on v0.1.14.
+
+### Changed
+
+- **Re-framed Labs 1.2 and 1.3 around the Purdue Model.** The canvas
+  toggle is now "Purdue Model View"; the band layout is Purdue (L4 /
+  L3.5 IDMZ / L3 / L1) and the IEC 62443 contribution is the SL
+  overlay rendered on top of those bands. Lab 1.2 links to a new
+  Knowledge article "Purdue Model Levels (L0–L5)" that explicitly
+  distinguishes the architectural levels from IEC 62443 Security
+  Levels.
+- **Lab 1.3 "Target SL-3" hint** now reads SL as the IEC 62443
+  capability rating overlaid on the Purdue band layout instead of
+  conflating the two frameworks.
+- **Lab 1.3 zone-pair reference** explains why HTTP/8080 is allowed
+  RTAC → field (lab-only `/api/state` health endpoint on each field
+  device sim; would not exist on a production relay).
+- **Lab 2.3 Attack 3 (Modbus FC5)** gains a callout disambiguating
+  Modbus FC5 (Write Single Coil, TCP/502) from DNP3 FC05 (Direct
+  Operate, TCP/20000). The hardened policy in Lab 2.3 needs DPI
+  rules for both.
+- **Lab 2.3 baseline read step** explains the coils-vs-holding-
+  registers asymmetry: write coils on the device (FC5), read
+  aggregated holding registers on the RTAC (FC3). Auto-reclose is
+  the documented exception (DNP3 CROB to a recloser binary output).
+- **Lab 2.4 negative-test hint** rewritten — the deferred "once
+  containd's L4 event-emission lands" block is replaced with current
+  Live DPI Events guidance now that v0.1.25 shipped.
+- **mbpoll form standardized.** Stripped redundant `-m tcp` from 12
+  mbpoll invocations across `baseline-assessment.yml`,
+  `firewall-implementation.yml`, and `validation-evidence.yml` so
+  every lab matches the form already used elsewhere and in the
+  Knowledge article. Added a one-line note in the mbpoll Knowledge
+  entry that TCP is the default whenever the target is an IP.
+
+### Fixed
+
+- **IDS rows in the Live DPI Events strip now render amber, not
+  red** (Codex P2 review on #47). `eventVerdict` no longer maps
+  `kind: "anomaly"` to `DENY` before the `category === "ids"`
+  rowTone branch can match, so anomaly rows keep their distinct
+  amber tone and pure firewall denies stay red.
+- **Dead source IP removed** from Lab 1.2's RTAC tshark filter
+  (`ip.src==10.40.40.10`). Host routing always pushes the RTAC's
+  field-bound traffic out the OT Ops interface, so the wire-visible
+  source at the firewall is always `10.30.30.20`. The filter is
+  now annotated explaining this.
+- **Lab 1.2 packet-count claim tightened.** "8–10 packets per FC3"
+  was per-transaction connection setup/teardown; persistent
+  sessions are 2 packets per transaction. The 504-packets-in-30s
+  example now maps to the RTAC's ~8/sec aggregate poll rate across
+  the four field devices.
+
 ## [v0.1.14] - 2026-05-13
 
 Closes [#34](https://github.com/tonylturner/rangerdanger/issues/34).
