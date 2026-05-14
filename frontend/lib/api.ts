@@ -304,19 +304,65 @@ export async function getSubstationHealth() {
   }>("/substation/health");
 }
 
-// Network DPI events from containd filtered to substation traffic
+// Network DPI events from containd filtered to substation traffic.
+//
+// containd v0.1.25+ emits camelCase keys (srcIp/dstIp/srcPort/dstPort/kind)
+// with semantic data in a nested `attributes` object. The legacy snake_case
+// fields (source/dest/src_port/dst_port/type/details/severity/zone) are
+// still present as empty strings for backward-compat with older clients
+// that pre-date the schema bump; new code should read the camelCase fields
+// and `attributes.*`. See rangerdanger#46 for why this matters: a stale
+// type definition here caused LiveEventRow to render blank src→dst columns
+// and miss DENY events entirely.
+//
+// Three event `kind` values reach this endpoint:
+//   - "firewall.rule.hit" — nft drop/accept with attributes.action +
+//     attributes.ruleId; this is what students see as the segmentation
+//     enforcement signal in /console.
+//   - "request"           — Modbus/DNP3/etc. DPI decoder events with
+//     attributes.function_code / raw_hex; no action field (the rule.hit
+//     event for the same packet carries the verdict).
+//   - "anomaly"           — IDS protocol-violation alerts with
+//     attributes.anomaly_type / message / severity.
+export type NetworkEventAttributes = {
+  action?: "ALLOW" | "DENY";   // firewall.rule.hit only
+  ruleId?: string;             // firewall.rule.hit only
+  proto?: string;
+  port?: string;
+  srcZone?: string;
+  dstZone?: string;
+  via?: string;
+  function_code?: number;      // Modbus/DNP3 "request" kind
+  raw_hex?: string;            // "request" kind
+  unit_id?: number;
+  is_write?: boolean;
+  anomaly_type?: string;       // "anomaly" kind
+  message?: string;            // "anomaly" kind
+  severity?: string;           // "anomaly" kind
+};
+
 export type NetworkEvent = {
   id: string;
   timestamp: string;
-  type: string;
-  source: string;
-  dest: string;
-  protocol: string;
-  src_port: number;
-  dst_port: number;
-  details: string;
-  severity: string;
-  zone: string;
+  // v0.1.25+ schema (the one current containd actually emits)
+  kind?: string;
+  srcIp?: string;
+  dstIp?: string;
+  srcPort?: number;
+  dstPort?: number;
+  transport?: string;
+  attributes?: NetworkEventAttributes;
+  // Legacy fallback fields — kept for resilience if an older containd
+  // is in the loop. New code should prefer the camelCase fields above.
+  type?: string;
+  source?: string;
+  dest?: string;
+  protocol?: string;
+  src_port?: number;
+  dst_port?: number;
+  details?: string;
+  severity?: string;
+  zone?: string;
 };
 
 export async function getSubstationNetworkEvents() {
