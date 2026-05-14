@@ -6,6 +6,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.14] - 2026-05-13
+
+Closes [#34](https://github.com/tonylturner/rangerdanger/issues/34).
+Lab 2.4 step 5 ("Assemble the evidence package") now requires the
+per-rule deny event export that was previously deferred as a
+`:::hint` block pending containd's L4 event-emission.
+
+### Changed
+
+- **Lab 2.4 evidence package gains a 5th artifact: per-rule deny
+  event export from `/api/substation/network-events`.** Students
+  capture `action: DENY` rows from the firewall's event stream
+  (with `ruleId`, `srcIp`, `dstIp`, `dstPort`, timestamp) as
+  kernel-side proof that the rules they wrote actually fired
+  against the probes they ran. The lab change-board narrative
+  becomes "policy intent (student-policy.json) + policy reality
+  (event rows) side by side", instead of inferring enforcement
+  from the absence of operational alarms. Same data drives the
+  Live DPI Events strip in the `/console` Segmentation panel.
+
+- **The deferred `:::hint Per-rule deny logs / DPI event evidence`
+  block is removed.** Its precondition (containd L4 event-emission,
+  containd #19) shipped in v0.1.25 and is now reinforced by the
+  v0.1.26+ ICS DPI enforcement work.
+
 ## [v0.1.13] - 2026-05-13
 
 Pairs with [containd v0.1.26](https://github.com/tonylturner/containd/releases/tag/v0.1.26).
