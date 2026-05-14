@@ -134,7 +134,7 @@ const INTRA_ZONE_FLOWS: Array<{
 type ViewMode = {
   policyDim: boolean; // color edges by firewall action
   traffic: boolean;   // overlay observed host-to-host flows
-  iec62443: boolean;  // IEC 62443 Zone & Conduit horizontal band layout
+  iec62443: boolean;  // Purdue Model horizontal-band layout (legacy field name kept for state-shape stability)
 };
 
 // Portal-based tooltip rendered in document.body. Tooltips inside SVG
@@ -1532,7 +1532,7 @@ function ViewModeToolbar({
       <IconToggle
         on={viewMode.iec62443}
         onClick={() => onChange({ ...viewMode, iec62443: !viewMode.iec62443 })}
-        label="IEC 62443 Zone & Conduit View"
+        label="Purdue Model View"
         Icon={Layers}
         activeBorder="border-green-700/60"
         activeBg="bg-green-950/30"
@@ -2041,17 +2041,19 @@ function useStyledGraph(
         return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
       });
 
-    // ── IEC 62443 Zone & Conduit layout ──────────────────────────
-    // Horizontal bands stacked top-to-bottom, mapping zones to
-    // Purdue levels. The firewall sits on the IDMZ boundary between
-    // DMZ and Supervisory levels.
+    // ── Purdue Model band layout ──────────────────────────────────
+    // Horizontal architectural bands stacked top-to-bottom, mapping
+    // lab zones to Purdue levels (L4 → L3.5 → L3 → L1). The firewall
+    // sits on the L3.5 IDMZ boundary. This is *Purdue* architecture,
+    // not IEC 62443 — IEC 62443 contributes the Security Level (SL)
+    // overlay rendered alongside each conduit. Both frameworks are in
+    // play here, but the *band layout* is Purdue-driven.
     if (viewMode.iec62443) {
-      // ── IEC 62443 Zone & Conduit Layout ─────────────────────
-      //
       // Horizontal Purdue-level bands stacked top-to-bottom, each
-      // showing a Security Level (SL). The firewall/conduit sits
-      // to the RIGHT of the bands so the student can evaluate
-      // whether the conduit's SL meets the target SL (= max of
+      // showing the IEC 62443 Security Level (SL) it should achieve.
+      // The firewall/conduit sits to the RIGHT of the bands so the
+      // student can evaluate whether the conduit's SL meets the target
+      // SL (= max of the two connected zones).
       // all connected zone SLs). Conduit lines run horizontally
       // from each band's right edge to the firewall.
       //

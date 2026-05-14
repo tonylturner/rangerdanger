@@ -53,15 +53,19 @@ steps:
       :::
 
       :::hint Optional: see the Security Level the firewall is being graded against
-      With the **IEC 62443 view** toggled on in [/console](/console),
+      With the **Purdue Model view** toggled on in [/console](/console),
       hover the **firewall node** — the tooltip shows a `Target SL-3 ·
       MET` (green) or `Target SL-3 · GAP` (red) badge derived from
       the active policy. Under the weak baseline you'll see `GAP`
       with a write-up of *why* (no DPI, no source pin, etc.). Under
-      Hardened it shifts to `MET`. The SL-3 target maps to the
-      sophistication a moderately-skilled attacker would bring —
-      see **IEC 62443 Security Levels Explained** on the
-      [Knowledge](/knowledge) page for what SL-1 through SL-4 mean.
+      Hardened it shifts to `MET`. The SL-3 *target* comes from
+      **IEC 62443** — the capability rating the conduit must meet —
+      and is overlaid on the Purdue band layout the view renders.
+      The SL maps to the sophistication a moderately-skilled attacker
+      would bring — see **IEC 62443 Security Levels Explained** on the
+      [Knowledge](/knowledge) page for what SL-1 through SL-4 mean,
+      and **Purdue Model Levels (L0–L5)** for the architectural levels
+      the bands represent.
       :::
 
       ### From observation to design
@@ -125,7 +129,7 @@ steps:
       | Vendor/DMZ → OT Ops | SSH (22), HTTPS (443) | management only (1.3 verdict 3 RESTRICT) |
       | Vendor/DMZ → Field | - | DENY all |
       | OT Ops intra-zone | Modbus (502), DNP3 (20000), HTTP (8080), FUXA (1881), NTP (123) | HMI ↔ RTAC, etc. |
-      | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4) |
+      | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4). HTTP/8080 is the field devices' lab-only status API the RTAC polls for health (`/api/state` on each device) — kept open because the RTAC reads it for liveness; would not exist on a production relay. |
 
       DPI layer (1.3 verdict 5):
       - **Modbus**: RTAC may read (FC1–4) and write (FC5/6); other sources blocked at FC level.
