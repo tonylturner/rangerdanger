@@ -217,12 +217,37 @@ if __name__ == "__main__":
 PY
 }
 
+# Dataplane canary — see firewall-smoke.sh for design rationale.
+# Probes kali->rtac:502 with a 1s timeout; verdict diverges weak/
+# improved so we can use it to detect dataplane reconciliation.
+canary_tcp() {
+  if docker exec rangerdanger-kali timeout 1 bash -c \
+      'exec 3<>/dev/tcp/10.30.30.20/502' >/dev/null 2>&1; then
+    echo allow
+  else
+    echo deny
+  fi
+}
+
+wait_for_dataplane() {
+  local expected="$1"
+  local budget="${2:-15}"
+  local i
+  for i in $(seq 1 $((budget * 2))); do
+    [ "$(canary_tcp)" = "$expected" ] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
 # ── Apply firewall policy via the API. No-op if already on it. ─────
 # Fails the smoke run if the apply call errors or if /api/firewall/active
-# doesn't reflect the requested policy after the settle window. The old
-# version swallowed apply failures with `2>/dev/null`, which let lab-
-# commands-smoke report 65/65 PASS while the underlying policy state was
-# wrong — exactly the false-confidence mode the audit caught.
+# doesn't reflect the requested policy. The old version swallowed apply
+# failures with `2>/dev/null`, which let lab-commands-smoke report 65/65
+# PASS while the underlying policy state was wrong — exactly the false-
+# confidence mode the audit caught. Now also polls a kali->rtac:502
+# canary to confirm the dataplane (not just the API) has reconciled
+# before the next command runs.
 apply_policy() {
   local name="$1"
   [ -z "$name" ] && return 0
@@ -232,7 +257,6 @@ apply_policy() {
     err "policy apply ($name) failed: $resp"
     exit 1
   }
-  sleep "$SETTLE_SECS"
   local active
   active=$(curl -fsS "$API/api/firewall/active" 2>&1) || {
     err "could not read /api/firewall/active after applying $name: $active"
@@ -240,6 +264,17 @@ apply_policy() {
   }
   if ! echo "$active" | grep -q "\"active_config\":\"$name\""; then
     err "policy apply silently failed: requested $name, /api/firewall/active reports: $active"
+    exit 1
+  fi
+
+  local expected_canary
+  case "$name" in
+    weak|baseline)     expected_canary=allow ;;
+    improved|hardened) expected_canary=deny  ;;
+    *) sleep "$SETTLE_SECS"; return 0 ;;
+  esac
+  if ! wait_for_dataplane "$expected_canary" 15; then
+    err "dataplane never reconciled to $name (canary kali->rtac:502 still wrong after 15s)"
     exit 1
   fi
 }

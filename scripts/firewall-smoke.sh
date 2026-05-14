@@ -192,6 +192,32 @@ rangerdanger-rtac-sim|${FW_LAN1}|tcp|8080|allow|allow|rtac->fw mgmt (always allo
 rangerdanger-relay-sim|${FW_LAN2}|tcp|8080|allow|deny|relay->fw mgmt (improved blocks lan2; openplc moved off lan2 in F-011)
 EOF
 
+# Dataplane canary — probes kali->rtac:502 with a 1s timeout so we
+# can poll cheaply. The verdict diverges between weak (allow) and
+# improved (deny), so it tells us whether the dataplane has caught
+# up with the policy the API just reported as active.
+canary_tcp() {
+  if docker exec rangerdanger-kali timeout 1 bash -c \
+      'exec 3<>/dev/tcp/10.30.30.20/502' >/dev/null 2>&1; then
+    echo allow
+  else
+    echo deny
+  fi
+}
+
+# Poll the canary until verdict matches expected (or budget exhausts).
+# Returns 0 if reconciled, 1 if budget exhausted.
+wait_for_dataplane() {
+  local expected="$1"
+  local budget="${2:-15}"
+  local i
+  for i in $(seq 1 $((budget * 2))); do
+    [ "$(canary_tcp)" = "$expected" ] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
 apply_policy() {
   local name="$1"
   note "applying policy: $name"
@@ -200,7 +226,23 @@ apply_policy() {
               -d "{\"config\":\"$name\"}" "$API/api/firewall/apply" 2>&1) \
       || { err "apply $name failed: $resp"; return 1; }
   ok "applied: $resp"
-  sleep "$SETTLE_SECS"
+
+  # Poll the canary instead of fixed-sleeping. The API can report the
+  # new active_config before nft rules and NFQUEUE consumers have
+  # reconciled — that's the race that caused intermittent first-run
+  # failures when the dataplane was probed during the gap.
+  local expected_canary
+  case "$name" in
+    weak|baseline)     expected_canary=allow ;;
+    improved|hardened) expected_canary=deny  ;;
+    *) sleep "$SETTLE_SECS"; return 0 ;;
+  esac
+  if wait_for_dataplane "$expected_canary" 15; then
+    ok "dataplane reconciled to $name"
+  else
+    err "dataplane never reconciled to $name (canary kali->rtac:502 still wrong after 15s)"
+    return 1
+  fi
 }
 
 run_matrix() {
@@ -352,8 +394,9 @@ for p in $POLICIES; do
 done
 
 matrix_passed=$(( passed - matrix_passed_start ))
-# subtract the apply_policy ✓ entries from the matrix-passed count.
-matrix_passed=$(( matrix_passed - $(echo "$POLICIES" | wc -w) ))
+# subtract the apply_policy ✓ entries from the matrix-passed count —
+# two per policy: one for "applied" and one for "dataplane reconciled".
+matrix_passed=$(( matrix_passed - $(echo "$POLICIES" | wc -w) * 2 ))
 
 # ---------------------------------------------------------------------
 # Summary.
