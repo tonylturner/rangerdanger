@@ -285,19 +285,19 @@ function ActionChip({ action }: { action: string; label?: string }) {
   );
 }
 
-// containd v0.1.25+ carries the verdict in attributes.action on
-// firewall.rule.hit events. The "anomaly" kind (IDS protocol-violation
-// alerts) is itself a signal of attempted policy bypass and renders as
-// DENY for the strip's purpose of "did the firewall stop something
-// interesting?" — strictly speaking these aren't drop verdicts but
-// they're security events the operator wants to see surfaced.
+// eventVerdict returns the kernel-side disposition for firewall.rule.hit
+// events ONLY. IDS anomalies are NOT treated as DENY here even though
+// they're suspicious — anomalies are alerts, not drops, and conflating
+// them inflates the deny counter + paints amber-categorized rows red.
+// Operators read "N deny" as "the firewall actually stopped N packets";
+// anomalies belong in the separate `ids` count alongside the amber
+// row tone. (Codex review on PR #47 caught the original conflation.)
 //
 // Legacy heuristics (type/severity/details) are kept as fallback so an
 // older containd image in the loop still produces sensible output.
 function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
   if (e.attributes?.action === "DENY") return "DENY";
-  if (e.kind === "anomaly") return "DENY";
-  // Legacy schema fallbacks
+  // Legacy schema fallbacks (pre-v0.1.25 containd builds)
   if (e.type === "alert") return "DENY";
   if (e.severity === "critical") return "DENY";
   if (e.details && /blocked|denied|deny/i.test(e.details)) return "DENY";
