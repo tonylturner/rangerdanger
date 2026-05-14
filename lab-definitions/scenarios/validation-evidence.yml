@@ -240,19 +240,27 @@ steps:
         alarms and customers served. This is the operational
         side of the evidence: blocking attacks didn't break ops.
 
+      - **Per-rule deny event export** — the firewall's
+        `/api/substation/network-events` stream shows each negative-test
+        probe being rejected at the rule level, with timestamps,
+        source/dest IPs, and the matched `ruleId`. From the eng-ws
+        terminal:
+
+            curl -s http://backend:8080/api/substation/network-events \
+              | jq '.events[] | select(.attributes.action=="DENY")'
+
+        Snapshot the DENY entries that correspond to your negative
+        tests above. Each row is a kernel-side proof that the rule
+        you wrote actually fired against the probe you ran — the
+        change board sees policy intent (`student-policy.json`)
+        and policy reality (these event rows) side by side. The
+        same data drives the **Live DPI Events strip** in the
+        [`/console` Segmentation panel](/console) — useful for
+        watching enforcement happen in real time as you run probes.
+
       Capture pass/fail for each test in your Exercise Notes. This
       is the evidence package - a change board needs to see both
       that operations still work and that the new denies are real.
-
-      :::hint Per-rule deny logs / DPI event evidence
-      Once containd's L4 event-emission lands
-      ([containd #19](https://github.com/tonylturner/containd/issues/19)),
-      add a fifth artifact: an export of the deny-event stream from
-      `/api/v1/events` showing each negative-test probe being rejected
-      at the rule level, with timestamps and rule IDs. For this
-      release the HMI screenshot + `show audit` + policy export cover
-      the same evidentiary need.
-      :::
     action:
       type: check
       expect:
