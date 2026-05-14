@@ -58,6 +58,19 @@ steps:
       `[2]=1` (auto-reclose enabled), `[3]≈0` (regulator tap),
       `[4]=0` (regulator auto mode).
 
+      > **Note on where each binary state actually lives.** The relay
+      > and recloser each expose their *own* binary state as Modbus
+      > **coils** (FC1 read / FC5 write) on the device — that's the
+      > write path the attacks target. The **RTAC** aggregates every
+      > field device's state and re-exposes the binaries as a single
+      > unified **holding-register** view (FC3) so a single read
+      > captures the whole substation. So: write a coil on the device
+      > to *change* state; read a holding register on the RTAC to
+      > *observe* state. The "auto-reclose enabled" bit is the
+      > exception — the recloser carries it as a holding-register
+      > config flag (DNP3 binary output 1 → coil offset 1 on Modbus),
+      > which is why Attack 2 uses DNP3 CROB to flip it.
+
       Input registers (analog measurements, x10 scaling, FC4):
 
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
@@ -250,6 +263,13 @@ steps:
       goes after the source breaker directly: a single Modbus FC5
       (write single coil) write to the relay opens the substation
       breaker and de-energizes the entire feeder.
+
+      > **Don't confuse the two FC5s.** Modbus **FC5** = *Write Single
+      > Coil* — a binary write on TCP/502, used here against the relay.
+      > DNP3 **FC05** = *Direct Operate* — a CROB-bearing control
+      > request on TCP/20000, used in Attack 2 against the recloser.
+      > Same number, different protocols, different attack paths.
+      > The hardened policy in Lab 2.3 needs DPI rules for **both**.
 
       From Kali, send the FC5 write to relay coil 0 (`breaker_closed`).
       `-t 0` is mbpoll's coil data type (FC1 read / FC5 write),

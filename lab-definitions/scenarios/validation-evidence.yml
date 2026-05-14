@@ -62,7 +62,7 @@ steps:
 
       Modbus poll to a relay:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
 
       DNP3 polls across all three field outstations:
 
@@ -169,13 +169,20 @@ steps:
       **After all the negative tests, is the HMI unchanged from baseline?**
       :::
 
-      :::hint Future: live DPI events for blocked attempts
+      :::hint Live DPI events for blocked attempts
       The [Network Map](/console) Segmentation drawer has a **Live DPI
-      Events** strip that will show each blocked probe in real time
-      once containd's L4 event-emission lands ([containd #19](https://github.com/tonylturner/containd/issues/19)).
-      For this release the strip will likely show "No recent events"
-      — that's expected. The HMI unchanged-state above is your
-      authoritative evidence today.
+      Events** strip that surfaces each blocked probe in real time —
+      containd's L4 event emission shipped in v0.1.25 (closes
+      [containd #19](https://github.com/tonylturner/containd/issues/19)).
+      After running the negative probes above, you should see a row
+      per blocked attempt with `verdict: DENY` and the matching rule
+      ID. If the strip stays empty after a probe, check that the
+      hardened policy is committed and the `nflogGroup` is set on the
+      lab profile — the L4 events ride the NFLOG group containd
+      configures from the lab YAML. The HMI unchanged-state plus the
+      DPI events together are your two-source evidence: the HMI
+      proves operations didn't break, the DPI events prove the
+      firewall is the reason why.
       :::
 
   - title: "Capture PCAP evidence"
