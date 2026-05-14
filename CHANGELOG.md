@@ -6,6 +6,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.16] - 2026-05-14
+
+Two infrastructure fixes uncovered by the v0.1.15 smoke pass. No lab
+content, schema, or API changes — drop-in upgrade from v0.1.15.
+
+### Fixed
+
+- **Containd UI font assets now load through the `/containd/` proxy
+  path.** Next.js inlines absolute `url(/_next/static/media/…woff2)`
+  refs inside its generated CSS, and the existing nginx `sub_filter`
+  block didn't include `text/css` in `sub_filter_types`, so those
+  url() refs were never rewritten to `/containd/_next/…`. The browser
+  fetched them at the rangerdanger origin and 404'd — surfacing as a
+  font-asset 404 storm + a React #418 hydration error in the iframe.
+  `text/css` is now in `sub_filter_types`, with `url(/_next/` → `url(/containd/_next/`
+  rewrites (plus the quoted variants other CSS-in-JS builds emit) so
+  the typography on the containd UI renders correctly under any
+  firewall policy. The hardened policy itself was never the problem
+  here — the `/containd/` proxy path always worked via the
+  management-network bypass (`eth3 → eth3` INPUT accept on tcp/8080).
+- **Smoke suite no longer flakes on the cold-start weak → improved
+  transition.** Both `firewall-smoke.sh` and `lab-commands-smoke.sh`
+  trusted a fixed `SETTLE_SECS=3` between `POST /api/firewall/apply`
+  and the first probe. On a cold stack the API can flip
+  `active_config` before nft rules + NFQUEUE consumers reconcile —
+  intermittently producing 13 false "allow" rows on the first
+  improved-policy run (then 52/52 PASS on every subsequent run).
+  Replaced the fixed sleep with a `kali → rtac:502` canary that
+  polls every 500ms (1s timeout per probe, 15s budget) until the
+  verdict matches the requested policy. Verified by deliberately
+  restarting the firewall container immediately before the smoke
+  run — 52/52 PASS where the old version would have shown 39/52.
+
 ## [v0.1.15] - 2026-05-14
 
 Lab text accuracy pass plus the deferred Codex P2 fix on the v0.1.13
