@@ -80,6 +80,16 @@ cp Microsoft/config-wsl .config
 cat /path/to/rangerdanger/wsl-kernel/config-overlay >> .config
 make olddefconfig
 
+# Normalize timestamps + uname strings to match what CI does, so a
+# successful local build produces a byte-identical bzImage to the
+# one published on the release page. SOURCE_DATE_EPOCH is the
+# upstream tag's commit time; KBUILD_BUILD_* is hardcoded.
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)
+export KBUILD_BUILD_TIMESTAMP=$(date -u -d "@$SOURCE_DATE_EPOCH" \
+    +"%a %b %e %H:%M:%S %Z %Y")
+export KBUILD_BUILD_HOST=rangerdanger-ci
+export KBUILD_BUILD_USER=rangerdanger
+
 # Build.
 make -j"$(nproc)" bzImage
 
@@ -88,11 +98,15 @@ make -j"$(nproc)" bzImage
 sha256sum arch/x86/boot/bzImage
 ```
 
-The build is deterministic given the pinned `KERNEL_TAG`, the overlay
-file, and the toolchain. A reproducible-build mismatch (your local
-sha256 differs from the published one) most often means a different
-gcc / binutils / dwarves version; same kernel + same overlay should
-otherwise produce byte-identical output.
+The build is deterministic given the pinned `KERNEL_TAG`, the
+overlay file, and the toolchain. With the `SOURCE_DATE_EPOCH` +
+`KBUILD_BUILD_*` env vars set as above, the same kernel tag +
+overlay should produce a **byte-identical** bzImage to the one
+published on the release page -- across CI runs and across local
+rebuilds on a different host. The remaining failure mode for sha256
+mismatch is a different gcc / binutils / glibc / dwarves version
+than the ubuntu-latest CI runner had on the day we shipped the
+release; if your tools match, the bytes will match.
 
 ## Verifying the binary you downloaded
 

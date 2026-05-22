@@ -258,7 +258,7 @@ jobs:
           head -20 release-body.md
           echo "..."
 
-      - name: Create or update GitHub Release
+      - name: Create or update + publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -267,16 +267,30 @@ jobs:
           # get flagged as such in the Releases UI so they don't appear
           # as the top "Latest release" pointer.
           prerelease_flag=""
+          latest_flag=""
           if [[ "$tag" == *-* ]]; then
             prerelease_flag="--prerelease"
+          else
+            latest_flag="--latest"
           fi
+
+          # This workflow is the "publish the release" gate.
+          # build-wsl-kernel.yml may have raced ahead and created the
+          # release as DRAFT so its assets attach to *something*; we
+          # always flip --draft=false on this side, so once images +
+          # release notes are in place the release becomes public.
+          # Idempotent: setting --draft=false on an already-published
+          # release is a no-op.
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists - updating notes"
-            gh release edit "$tag" --notes-file release-body.md $prerelease_flag
+            echo "release $tag exists - updating notes + publishing"
+            gh release edit "$tag" \
+              --notes-file release-body.md \
+              --draft=false \
+              $prerelease_flag $latest_flag
           else
             echo "creating release $tag"
             gh release create "$tag" \
               --title "$tag" \
               --notes-file release-body.md \
-              $prerelease_flag
+              $prerelease_flag $latest_flag
           fi

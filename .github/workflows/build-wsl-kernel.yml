@@ -90,8 +90,35 @@ jobs:
               grep -E "^(${key}=|# ${key} is not set)" .config || echo "${key} MISSING"
           done
 
+      - name: Compute SOURCE_DATE_EPOCH (reproducible builds)
+        working-directory: kernel
+        id: sde
+        run: |
+          # Tie all in-binary timestamps to the upstream kernel source's
+          # commit time. Same kernel_tag + same overlay + same toolchain
+          # -> byte-identical bzImage across runs, so anyone can rebuild
+          # locally and compare sha256 to what we shipped without
+          # having to chase down "well, it was built at runtime X".
+          # microsoft/WSL2-Linux-Kernel was cloned with --depth=1 so
+          # HEAD == the tag we're building.
+          epoch=$(git log -1 --format=%ct HEAD)
+          ts=$(date -u -d "@$epoch" +"%a %b %e %H:%M:%S %Z %Y")
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "ts=$ts"       >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$epoch   ($ts)"
+
       - name: Build bzImage
         working-directory: kernel
+        # Reproducible-build env vars: SOURCE_DATE_EPOCH normalizes
+        # timestamps inside the binary; KBUILD_BUILD_* normalize the
+        # `uname -v` version string the kernel reports at runtime so
+        # it's not "built by runner@runnervm5xyz on <date>" each rebuild.
+        # See Documentation/kbuild/reproducible-builds.rst upstream.
+        env:
+          SOURCE_DATE_EPOCH:      ${{ steps.sde.outputs.epoch }}
+          KBUILD_BUILD_TIMESTAMP: ${{ steps.sde.outputs.ts }}
+          KBUILD_BUILD_HOST:      rangerdanger-ci
+          KBUILD_BUILD_USER:      rangerdanger
         run: |
           make -j"$(nproc)" bzImage
           ls -lh arch/x86/boot/bzImage
