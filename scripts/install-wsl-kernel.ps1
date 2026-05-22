@@ -376,15 +376,31 @@ if ($Restore) {
         Copy-Item -Path $Managed.WslConfigBak -Destination $Managed.WslConfig -Force
         Say "Restored $($Managed.WslConfig) from $($Managed.WslConfigBak)"
     } elseif (Test-Path $Managed.WslConfig) {
-        # No .bak (maybe the file was created by us); try to remove
-        # just our kernel= line.
+        # No .bak (file was created by us into an empty parent dir).
+        # Strip just our kernel= line, then check whether anything
+        # meaningful is left -- if all that remains is the [wsl2]
+        # section header (which we also added) and whitespace, delete
+        # the file entirely so we leave $env:USERPROFILE\.wslconfig
+        # exactly as the user would have it on a fresh Windows.
         $current = Get-Content $Managed.WslConfig -Raw
         $stripped = $current -replace "(?m)^kernel\s*=\s*$([regex]::Escape($Managed.WslConfigKernelValue))\s*\r?\n?", ""
         if ($stripped -eq $current) {
             Warn "No managed kernel= entry found in $($Managed.WslConfig); nothing to remove."
         } else {
-            Set-Content -Path $Managed.WslConfig -Value $stripped -NoNewline -Encoding ascii
-            Say "Removed managed kernel= line from $($Managed.WslConfig)"
+            # Test whether the residual contains any non-empty,
+            # non-comment, non-section-header line. If not, the file
+            # had nothing in it except our addition.
+            $meaningful = $stripped -split "`r?`n" | Where-Object {
+                $t = $_.Trim()
+                $t -ne "" -and -not $t.StartsWith("#") -and -not $t.StartsWith(";") -and -not ($t -match '^\[.+\]$')
+            }
+            if (-not $meaningful) {
+                Remove-Item $Managed.WslConfig -Force
+                Say "Removed $($Managed.WslConfig) (no other config in it)"
+            } else {
+                Set-Content -Path $Managed.WslConfig -Value $stripped -NoNewline -Encoding ascii
+                Say "Removed managed kernel= line from $($Managed.WslConfig); preserved your other [wsl2] keys"
+            }
         }
     } else {
         Warn "No .wslconfig present; nothing to restore."

@@ -333,6 +333,9 @@ To check status:
 To view logs:
   docker compose -f docker-compose.release.yml logs -f <service>
 
+When you're done with the workshop (removes the stack and lab state):
+  ./scripts/uninstall-rangerdanger.sh
+
 For the lab security model and how to expose this to other machines
 on purpose, see SECURITY.md.
 EOF

@@ -6,6 +6,101 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.17] - 2026-05-22
+
+First-class Windows support. The same setup script, smoke tests, and
+maintainer SSD-staging tools that have worked on macOS / Linux since
+v0.1.0 now run natively on Windows PowerShell 5.1+ with no WSL or
+Git-Bash dependency, AND the ICS DPI rules in Labs 2.3 / 2.3-bonus
+now actually enforce on Docker Desktop's WSL2 backend (which ships
+without `CONFIG_NFT_QUEUE=y` and silently drops `queue num <N>` nft
+rules without it).
+
+### Added
+
+- **PowerShell siblings for every host-side script.** Workshop
+  students and Windows maintainers no longer need WSL or Git Bash:
+  - `setup.ps1` -- already shipped; PS 5.1 fixes folded in this release
+    (see "Fixed" below).
+  - `scripts/{dev-up,dev-down,seed-labs}.ps1` -- dev wrappers.
+  - `scripts/{smoke-test,firewall-smoke,events-smoke,lab-commands-smoke,validation-report}.ps1`
+    -- full Windows parity for every smoke + health check.
+  - `stage-ssd.ps1`, `stage-ssd-delta.ps1` -- maintainer offline-media
+    helpers, including downloading the prebuilt WSL2 kernel into the
+    SSD bundle so air-gapped Windows workshops also get ICS DPI.
+  - All ASCII-only and BOM-free; PS 5.1 reads non-BOM .ps1 as CP1252
+    so non-ASCII characters caused the v0.1.16 setup.ps1 to fail at
+    parse time. The new `.github/workflows/smoke-windows.yml` parse-
+    checks every .ps1 under both PS 5.1 and PS 7 on every PR.
+- **Custom WSL2 kernel for ICS DPI.** Microsoft's stock WSL2 kernel
+  does not enable `CONFIG_NFT_QUEUE=y`, so the lab's `nft ... queue
+  num <N>` rules silently fail to load and the improved policy's
+  ICS-DPI behavior reduces to L4-only. RangerDanger now ships a
+  prebuilt vanilla `microsoft/WSL2-Linux-Kernel` (pinned to
+  `linux-msft-wsl-5.15.153.1`) with a three-line Kconfig overlay
+  (`CONFIG_NFT_QUEUE=y` + two related netfilter flags), built by
+  `.github/workflows/build-wsl-kernel.yml` on every release tag and
+  attached to the GitHub Release as `rangerdanger-wsl2-kernel` +
+  `.sha256` + the resolved `.config`. `setup.ps1` detects the
+  missing feature, downloads + sha256-verifies the kernel, merges
+  `kernel=` into `%USERPROFILE%\.wslconfig` (preserving every other
+  key, writing a `.wslconfig.bak`), runs `wsl --shutdown`, polls
+  Docker Desktop to reconnect, and re-probes. See `wsl-kernel/README.md`
+  for the full supply-chain story.
+- **Post-workshop cleanup.** `scripts/uninstall-rangerdanger.{ps1,sh}`
+  tears the stack down, removes lab volumes (DB / captures / sim
+  state), optionally removes the ~6 GB of images, and on Windows
+  reverts the custom WSL2 kernel + restores `.wslconfig.bak`. The
+  setup-end banner now points students at this script so the custom
+  kernel does not persist on a student's machine past the workshop.
+- **Windows lint CI workflow.** `smoke-windows.yml` parses every
+  `.ps1` under both `pwsh` and `powershell.exe`, runs an ASCII /
+  no-BOM guard, and walks `setup.ps1 -CheckOnly` end-to-end. Guards
+  against the encoding + native-exe-stderr regressions PS 5.1 catches
+  that macOS dev does not.
+
+### Fixed
+
+- **`setup.ps1` parses under Windows PowerShell 5.1.** The previous
+  release contained em-dashes and box-drawing characters in
+  comments and `Die`/`Warn` strings. PS 5.1 reads .ps1 files as
+  CP1252 when no UTF-8 BOM is present, mangling those characters
+  into mojibake whose embedded quote-bytes prematurely terminated
+  strings -- producing parser errors blaming lines hundreds of
+  lines from the actual source. All non-ASCII chars in .ps1 files
+  are replaced with ASCII equivalents (`--`, `-`, `->`), and the
+  new lint workflow enforces this on every PR.
+- **`setup.ps1` Docker-engine check no longer misfires.** The
+  previous `try { docker info 2>&1 | Out-Null } catch { Die ... }`
+  pattern combined with `$ErrorActionPreference = "Stop"` and the
+  harmless `WARNING: No blkio throttle.read_bps_device support`
+  that Docker emits on WSL2 caused the check to throw a
+  `NativeCommandError` even when Docker was reachable and exited 0.
+  Replaced with a scoped `& { $ErrorActionPreference =
+  'SilentlyContinue'; docker info *>$null }` + `$LASTEXITCODE`
+  check. Same pattern applied to the second `docker info` call
+  (MemTotal lookup).
+- **Backend: 13 new govulncheck findings cleared.** A 2026-05-22
+  vuln-db refresh surfaced 13 CVEs across `golang.org/x/crypto/ssh`,
+  `/ssh/agent`, and `/ssh/knownhosts`, all fixed in v0.52.0.
+  `backend/go.mod` direct bumped `x/crypto v0.50.0 -> v0.52.0`;
+  transitive bumps of `x/net v0.53.0 -> v0.54.0`, `x/sys v0.43.0 ->
+  v0.45.0`, `x/text v0.36.0 -> v0.37.0` came along automatically
+  and introduced no new findings. Practical exposure was zero
+  (rangerdanger does not terminate SSH in the backend Go process);
+  bumped to keep govulncheck green. See
+  `docs/security-known-issues.md` for the per-GO-ID rollup.
+
+### Maintenance
+
+- Frontend dependency bumps shipped via dependabot:
+  - `linuxserver/webtop` image digest (PR #51)
+  - `@tanstack/react-query` 5.90.12 -> 5.100.11 (PR #52)
+  - `vitest` 4.1.6 -> 4.1.7 (PR #53)
+  - `typescript` 5.3.3 -> 5.9.3 (PR #54)
+  - `marked` 18.0.0 -> 18.0.4 (PR #55)
+  - `tailwindcss` 3.4.1 -> 3.4.19 (PR #56)
+
 ## [v0.1.16] - 2026-05-14
 
 Two infrastructure fixes uncovered by the v0.1.15 smoke pass. No lab

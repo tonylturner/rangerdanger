@@ -417,6 +417,10 @@ To check status:
 To view logs:
   docker compose -f docker-compose.release.yml logs -f <service>
 
+When you're done with the workshop (removes the stack AND reverts the
+custom WSL2 kernel installed above, if any):
+  .\scripts\uninstall-rangerdanger.ps1
+
 For the lab security model and how to expose this to other machines
 on purpose, see SECURITY.md.
 "@ | Write-Host
