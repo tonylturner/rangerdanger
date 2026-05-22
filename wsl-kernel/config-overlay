@@ -1,0 +1,52 @@
+# RangerDanger WSL2 kernel config overlay.
+#
+# These lines are appended to Microsoft's stock `Microsoft/config-wsl`
+# defconfig during the rangerdanger kernel build, then resolved with
+# `make olddefconfig`. The build CI (.github/workflows/build-wsl-kernel.yml)
+# emits a vanilla Microsoft WSL2 kernel with ONLY these features
+# additionally enabled.
+#
+# We do not patch, fork, or modify the Linux kernel source -- we only
+# flip Kconfig options that Microsoft happens to leave off in their
+# stock defconfig. The source tree is microsoft/WSL2-Linux-Kernel at
+# the tag pinned in the build workflow, unmodified.
+#
+# ----------------------------------------------------------------------
+#
+# Why each option:
+#
+# CONFIG_NFT_QUEUE -- the nftables `queue` verdict module. This is the
+#   piece Microsoft leaves off. Without it, an nft rule containing
+#   `queue num <N>` fails to load with "Could not process rule: No
+#   such file or directory". The userspace netlink side
+#   (NETFILTER_NETLINK_QUEUE) is already enabled in Microsoft's
+#   defconfig -- that's why containd can bind queue 101 -- but the
+#   kernel-side verdict that lets nftables RouTE packets into that
+#   queue is missing. NFT_QUEUE bridges the two.
+#
+#   Required by: RangerDanger's containd dataplane for ICS DPI rules
+#   (Modbus function-code allowlist, DNP3 etc.). Without it, Lab 2.3
+#   and the events-smoke ICS DPI gates cannot enforce.
+#
+# CONFIG_NETFILTER_NETLINK_QUEUE_CT -- includes conntrack info in
+#   packets handed to userspace queues. Required for containd to make
+#   per-flow DPI decisions (verdict differs for new vs established
+#   connections in the ICS allowlist). Cheap to enable; no runtime
+#   cost when no rule requests it.
+#
+# CONFIG_NETFILTER_XT_TARGET_NFQUEUE -- the iptables-legacy "-j NFQUEUE"
+#   target. We are nft-only today, but iptables xtables is sometimes
+#   used by debugging or by rangerdanger's stage-zero diagnostic
+#   container; enable for parity.
+#
+# ----------------------------------------------------------------------
+#
+# Override `=y` (built-in) vs `=m` (module): WSL2 historically does
+# not auto-load modules on demand (no udev module-autoload, sparse
+# /lib/modules), so we build these features in (=y) rather than as
+# modules to avoid runtime "module not found" errors that would
+# otherwise re-surface the original symptom in a different form.
+
+CONFIG_NFT_QUEUE=y
+CONFIG_NETFILTER_NETLINK_QUEUE_CT=y
+CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y

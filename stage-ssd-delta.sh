@@ -308,6 +308,32 @@ git -C "$ROOT_DIR" archive --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
 TGZ_SIZE=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
 say "wrote $OUT/rangerdanger.tgz ($TGZ_SIZE)"
 
+# Bundle the WSL2 kernel asset for the $NEW release. Deltas almost
+# always include the kernel because (a) it is small (~25 MB) compared
+# to image tarballs and (b) students applying a delta on Windows may
+# have applied an older delta that never had the kernel. Bundling
+# unconditionally avoids that miss. Graceful skip if the asset
+# isn't published yet for $NEW.
+KERNEL_README_ROW=""
+banner "Bundle WSL2 kernel asset for $NEW (Windows offline support)"
+GH_OWNER_REPO="${GH_OWNER_REPO:-tonylturner/rangerdanger}"
+KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${NEW}/rangerdanger-wsl2-kernel"
+KERNEL_SHA_URL="${KERNEL_URL}.sha256"
+if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
+    say "Downloading $KERNEL_URL"
+    curl -fsSL "$KERNEL_URL" -o "$OUT/rangerdanger-wsl2-kernel" \
+        || die "kernel download failed mid-stream - refusing to write a partial bundle. Re-run."
+    curl -fsSL "$KERNEL_SHA_URL" -o "$OUT/rangerdanger-wsl2-kernel.sha256" \
+        || warn "kernel sha256 download failed; on-install verification will be skipped."
+    kernel_size=$(du -h "$OUT/rangerdanger-wsl2-kernel" | awk '{print $1}')
+    say "wrote $OUT/rangerdanger-wsl2-kernel ($kernel_size)"
+    KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` -- custom WSL2 kernel for Windows ICS DPI labs (\`setup.ps1 -FromTarballs\` picks it up automatically)."
+else
+    warn "rangerdanger-wsl2-kernel not yet published for release $NEW."
+    warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
+    warn "   Re-run this delta after the kernel asset publishes, OR drop the file into $OUT manually.)"
+fi
+
 banner "Write DELTA-README.md"
 
 # Build the per-image apply summary for the README.
@@ -334,6 +360,7 @@ Staged $(date -u +%FT%TZ) for upgrade from \`$SINCE\` -> \`$NEW\`.
 | Image | Compose service |
 |---|---|
 $APPLY_TABLE
+$KERNEL_README_ROW
 $([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" && printf -- '- %s\n' "${UNCHANGED[@]}")
 
 ## Apply

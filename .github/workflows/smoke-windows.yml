@@ -1,0 +1,146 @@
+name: Windows lint
+
+# Guards the Windows-host scripts (setup.ps1 + scripts/*.ps1 +
+# stage-ssd*.ps1) against the encoding / syntax regressions that
+# Windows PowerShell 5.1 catches at parse time but macOS / Linux dev
+# loops do not. The trap that bit us in v0.1.16: a .ps1 saved as UTF-8
+# without a BOM on macOS reads fine in PS 7 on macOS, fine in PS 7 on
+# Windows, but is misread as CP1252 by PS 5.1 (the shell Windows
+# students get by default), so any non-ASCII character (em-dash,
+# box-drawing) mangles into mojibake whose embedded quote-bytes
+# prematurely terminate strings and cascade into Missing-} errors.
+#
+# Hosted windows-latest runners cannot run Linux containers (no nested
+# virt), so the full lab-stack smoke stays on ubuntu-latest in
+# smoke.yml. This workflow's job is narrower but specific: catch any
+# .ps1 that wouldn't parse on the student's PS 5.1, before the
+# student tries to run setup.ps1.
+
+on:
+  push:
+    branches: [main, oss-release, audit-oss]
+    paths:
+      - '**.ps1'
+      - '.github/workflows/smoke-windows.yml'
+  pull_request:
+    branches: [main, oss-release]
+    paths:
+      - '**.ps1'
+      - '.github/workflows/smoke-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PS 5.1 + PS 7 parse + ASCII / BOM guard
+    runs-on: windows-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inventory .ps1 files
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Recurse -Filter *.ps1 | Where-Object { $_.FullName -notmatch '\\node_modules\\' }
+          if (-not $files) { Write-Error "No .ps1 files found"; exit 1 }
+          Write-Host "Discovered $($files.Count) PowerShell scripts:"
+          $files | ForEach-Object { Write-Host "  $($_.FullName.Substring($PWD.Path.Length + 1))" }
+          $files | ForEach-Object FullName | Set-Content -Path ps1_list.txt -Encoding ascii
+
+      - name: ASCII + no-BOM guard
+        shell: pwsh
+        run: |
+          # Non-ASCII characters in a .ps1 require a UTF-8 BOM for PS 5.1
+          # to parse correctly (PS 5.1 default is CP1252). Easiest
+          # cross-OS path: keep .ps1 files ASCII-only, BOM-free. This
+          # guard fails the build if either is violated.
+          $fail = 0
+          foreach ($f in (Get-Content ps1_list.txt)) {
+            $bytes = [System.IO.File]::ReadAllBytes($f)
+            if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+              Write-Host "::error file=$f::UTF-8 BOM present -- strip it (PS 7+ on Mac doesn't need one, and PS 5.1 only needs it for non-ASCII content -- keep ASCII-only instead)"
+              $fail = 1
+            }
+            $bad = ($bytes | Where-Object { $_ -gt 127 })
+            if ($bad) {
+              Write-Host "::error file=$f::contains $($bad.Count) non-ASCII byte(s) -- replace em-dash/box-drawing/arrow characters with ASCII equivalents"
+              $fail = 1
+            }
+          }
+          if ($fail) { exit 1 }
+          Write-Host "All .ps1 files are ASCII-only and BOM-free."
+
+      - name: Parse under PowerShell 7 (pwsh)
+        shell: pwsh
+        run: |
+          $fail = 0
+          foreach ($f in (Get-Content ps1_list.txt)) {
+            $errors = $null; $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              foreach ($e in $errors) {
+                Write-Host "::error file=$f,line=$($e.Extent.StartLineNumber)::pwsh parse: $($e.Message)"
+              }
+              $fail = 1
+            } else {
+              Write-Host "  [ok pwsh] $f"
+            }
+          }
+          if ($fail) { exit 1 }
+
+      - name: Parse under Windows PowerShell 5.1 (powershell.exe)
+        # This is the load-bearing check. PS 7 on macOS / Linux will
+        # parse a UTF-8-without-BOM file with em-dashes just fine, but
+        # PS 5.1 on Windows -- the shell students actually have -- will
+        # NOT, and the resulting parse errors are misleading. Run the
+        # parser explicitly under 5.1 to catch this BEFORE merging.
+        shell: powershell
+        run: |
+          $fail = 0
+          foreach ($f in (Get-Content ps1_list.txt)) {
+            $errors = $null; $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              foreach ($e in $errors) {
+                Write-Host "::error file=$f,line=$($e.Extent.StartLineNumber)::PS 5.1 parse: $($e.Message)"
+              }
+              $fail = 1
+            } else {
+              Write-Host "  [ok PS 5.1] $f"
+            }
+          }
+          if ($fail) { exit 1 }
+
+      - name: setup.ps1 -CheckOnly (no Docker required)
+        # -CheckOnly exits before any Docker engine call, so it works
+        # on a hosted Windows runner without a Linux Docker daemon.
+        # This catches runtime regressions in the pre-flight checks
+        # themselves (the WMI/cgroup fallback path, the port-listener
+        # probe, the Get-Item drive math).
+        # Docker IS installed on windows-latest but in Windows-container
+        # mode by default; setup.ps1 will report "Docker is not running"
+        # because the engine cannot serve Linux info. We tolerate that
+        # by inspecting the exit code -- non-zero from the Docker check
+        # is expected on a hosted Windows runner. The earlier preflight
+        # rows (compose syntax not run; port-listener probe) must still
+        # produce sensible output, and the file must parse.
+        shell: powershell
+        run: |
+          # Just confirm setup.ps1 reaches the Docker-engine probe
+          # without a parser-level failure. Exit code is not the gate;
+          # the parse step above is.
+          $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -CheckOnly 2>&1
+          Write-Host ($output | Out-String)
+          # Look for either a successful banner OR an expected
+          # "Docker is not running" message. A parser error here would
+          # have already failed the earlier step, but we re-check that
+          # the script at least produced one of the expected banners.
+          $joined = ($output | Out-String)
+          if ($joined -notmatch 'Pre-flight checks' -and $joined -notmatch 'Docker is not running') {
+            Write-Host "::error::setup.ps1 -CheckOnly produced unexpected output (no banner, no Docker check)"
+            exit 1
+          }
+          Write-Host "setup.ps1 -CheckOnly reached its Docker engine probe (parses + runs end-to-end)."

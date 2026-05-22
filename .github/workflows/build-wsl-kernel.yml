@@ -1,0 +1,134 @@
+name: Build WSL2 kernel
+
+# Builds the custom WSL2 kernel rangerdanger ships for Windows students,
+# attaches the resulting bzImage + sha256 to the GitHub Release that
+# matches the triggering tag. setup.ps1 / install-wsl-kernel.ps1
+# downloads from that release at install time.
+#
+# We build vanilla microsoft/WSL2-Linux-Kernel at a pinned tag, with
+# Microsoft's stock `Microsoft/config-wsl` defconfig, plus the
+# rangerdanger overlay at `wsl-kernel/config-overlay`. There are no
+# source patches.
+#
+# The build log is public and the diff is auditable in wsl-kernel/.
+# See wsl-kernel/README.md for the supply-chain story we tell students.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      kernel_tag:
+        description: 'microsoft/WSL2-Linux-Kernel tag to build'
+        required: false
+        default: 'linux-msft-wsl-5.15.153.1'
+      release_tag:
+        description: 'rangerdanger release tag to attach the artifact to'
+        required: false
+        default: ''
+
+permissions:
+  contents: write    # needed to upload release assets
+
+jobs:
+  build:
+    name: Build kernel + attach to release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # When triggered by tag push, the release is the tag that fired.
+      # When triggered manually, use the release_tag input.
+      RELEASE_TAG: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || github.ref_name }}
+      KERNEL_TAG:  ${{ github.event.inputs.kernel_tag != '' && github.event.inputs.kernel_tag || 'linux-msft-wsl-5.15.153.1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rangerdanger
+
+      - name: Show build inputs
+        run: |
+          echo "rangerdanger release tag: $RELEASE_TAG"
+          echo "WSL2 kernel source tag:    $KERNEL_TAG"
+          echo "Overlay:"
+          cat rangerdanger/wsl-kernel/config-overlay
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              build-essential libssl-dev libelf-dev flex bison bc \
+              dwarves cpio kmod python3 git ca-certificates
+
+      - name: Clone WSL2 kernel source
+        run: |
+          git clone --depth=1 --branch="$KERNEL_TAG" \
+              https://github.com/microsoft/WSL2-Linux-Kernel.git kernel
+
+      - name: Apply rangerdanger config overlay
+        working-directory: kernel
+        run: |
+          # Start from Microsoft's stock WSL2 defconfig.
+          cp Microsoft/config-wsl .config
+          # Comment out any pre-existing assignment for the keys we
+          # set in the overlay, so olddefconfig keeps our value rather
+          # than prompting / picking the previous one.
+          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+              sed -i "/^${key}=/d" .config
+              sed -i "/^# ${key} is not set/d" .config
+          done
+          # Append the overlay.
+          cat ../rangerdanger/wsl-kernel/config-overlay >> .config
+          # Resolve dependencies (auto-answer new options with defaults).
+          make olddefconfig
+          # Surface the resolved values for the keys we care about so
+          # the build log proves they ended up enabled.
+          echo "--- resolved values ---"
+          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+              grep -E "^(${key}=|# ${key} is not set)" .config || echo "${key} MISSING"
+          done
+
+      - name: Build bzImage
+        working-directory: kernel
+        run: |
+          make -j"$(nproc)" bzImage
+          ls -lh arch/x86/boot/bzImage
+
+      - name: Sanity-check resulting kernel
+        working-directory: kernel
+        run: |
+          # Confirm bzImage is non-trivial size and looks like a kernel.
+          test -s arch/x86/boot/bzImage
+          file arch/x86/boot/bzImage | grep -q 'Linux kernel'
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p out
+          cp kernel/arch/x86/boot/bzImage out/rangerdanger-wsl2-kernel
+          cp kernel/.config out/rangerdanger-wsl2-kernel.config
+          ( cd out && sha256sum rangerdanger-wsl2-kernel > rangerdanger-wsl2-kernel.sha256 )
+          echo "--- artifact summary ---"
+          ls -lh out/
+          cat out/rangerdanger-wsl2-kernel.sha256
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd rangerdanger
+          # If the release doesn't exist yet (e.g. workflow_dispatch
+          # before the release is published), create it as draft.
+          if ! gh release view "$RELEASE_TAG" --json id >/dev/null 2>&1; then
+              echo "Release $RELEASE_TAG does not exist; creating draft."
+              gh release create "$RELEASE_TAG" --draft --title "$RELEASE_TAG" \
+                  --notes "Draft release created by build-wsl-kernel workflow."
+          fi
+          # --clobber so re-runs of the workflow overwrite previous
+          # uploads (e.g. if you bump the kernel_tag input).
+          gh release upload "$RELEASE_TAG" --clobber \
+              ../out/rangerdanger-wsl2-kernel \
+              ../out/rangerdanger-wsl2-kernel.sha256 \
+              ../out/rangerdanger-wsl2-kernel.config
+          echo "Uploaded kernel + sha256 + .config to release $RELEASE_TAG"

@@ -27,6 +27,44 @@ either remove resolved entries or add new ones.
   `docker/docker` direct dependency in `backend/go.mod` stays pinned
   at the current version.
 
+## Resolved by direct dependency bumps (2026-05-22)
+
+A vuln-db refresh on 2026-05-22 surfaced 13 new findings, all in
+`golang.org/x/crypto`'s SSH stack (`ssh`, `ssh/agent`,
+`ssh/knownhosts`), all fixed in v0.52.0. Resolved by one
+`go get golang.org/x/crypto@v0.52.0` in `backend/`; transitive
+bumps of x/net (v0.53.0 → v0.54.0), x/sys (v0.43.0 → v0.45.0),
+and x/text (v0.36.0 → v0.37.0) came along automatically and
+introduced no new findings.
+
+GO IDs cleared by this bump:
+
+- `GO-2026-5005` (ssh/agent key constraints not enforced)
+- `GO-2026-5006` (ssh/agent constraints dropped when forwarding)
+- `GO-2026-5013` (ssh byte-arithmetic underflow / panic)
+- `GO-2026-5014` (ssh certificate-restriction bypass)
+- `GO-2026-5015` (ssh server panic during CheckHostKey/Authenticate)
+- `GO-2026-5016` (ssh memory-leak DoS on rejected channels)
+- `GO-2026-5017` (ssh client → server deadlock on unexpected responses)
+- `GO-2026-5018` (ssh pathological RSA/DSA DoS)
+- `GO-2026-5019` (ssh FIDO/U2F physical-interaction bypass)
+- `GO-2026-5020` (ssh infinite loop on large channel writes)
+- `GO-2026-5021` (ssh/knownhosts @revoked status unenforced)
+- `GO-2026-5023` (ssh VerifiedPublicKeyCallback permissions skip)
+- `GO-2026-5033` (ssh/agent client panic on pathological input)
+
+Practical exposure: rangerdanger does NOT terminate SSH on the
+backend; the only SSH path is `ssh -p 2222 containd@localhost`
+which terminates inside the firewall container, not in the backend
+Go process. x/crypto/ssh is reachable via transitive imports only
+(docker/docker → ssh helpers). Still bumped to keep govulncheck
+green.
+
+Note: the existing x/net direct pin (added 2026-05-07 for
+GO-2026-4918) rolls forward to v0.54.0 with this bump. The fix
+is still present (semver patch-rollforward), and the rationale
+remains the same as before.
+
 ## Resolved by direct dependency bumps (2026-05-07)
 
 When the `govulncheck` job flipped to a hard gate, three new

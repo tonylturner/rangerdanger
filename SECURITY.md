@@ -127,6 +127,95 @@ git checkout -- docker-compose.yml
 docker compose up -d   # picks up the loopback binding again
 ```
 
+## Custom WSL2 kernel (Windows hosts only)
+
+On Windows, `setup.ps1` detects whether Docker Desktop's WSL2 backend
+has `CONFIG_NFT_QUEUE=y` in its kernel. Microsoft's stock WSL2 kernel
+does not, which silently breaks the ICS DPI rules used in Lab 2.3 and
+2.3-bonus. When the probe fails, `setup.ps1` offers to install a
+small prebuilt kernel before pulling images.
+
+### What gets installed
+
+A vanilla Microsoft WSL2 kernel
+([`microsoft/WSL2-Linux-Kernel`](https://github.com/microsoft/WSL2-Linux-Kernel))
+at a pinned tag, with **three** Kconfig flags additionally enabled:
+
+```
+CONFIG_NFT_QUEUE=y
+CONFIG_NETFILTER_NETLINK_QUEUE_CT=y
+CONFIG_NETFILTER_XT_TARGET_NFQUEUE=y
+```
+
+That's the entire delta. We do not patch the kernel source. The
+overlay file lives at `wsl-kernel/config-overlay` and is auditable in
+the repo. The build is reproducible from the public GitHub Actions
+workflow log (`.github/workflows/build-wsl-kernel.yml`).
+
+### What setup does on your machine
+
+1. Downloads `rangerdanger-wsl2-kernel` from the release matching
+   the rangerdanger version you are installing.
+2. Downloads `rangerdanger-wsl2-kernel.sha256` and verifies the
+   binary against it. If verification fails, the binary is deleted
+   and setup aborts.
+3. Stages the binary to `%LOCALAPPDATA%\rangerdanger\wsl-kernel\`.
+4. Reads your existing `%USERPROFILE%\.wslconfig`, saves a backup at
+   `.wslconfig.bak`, and writes a copy with the `kernel=` line under
+   `[wsl2]` pointing at the staged binary. **No other keys or
+   sections are touched.**
+5. Prompts you once before running `wsl --shutdown` (which stops the
+   Docker Desktop VM and any other WSL2 distros).
+6. Waits for Docker Desktop to reconnect and re-probes the kernel
+   feature.
+
+If a foreign `kernel=` is already present in your `.wslconfig`
+(meaning you, or some other tool, already pointed WSL2 at a custom
+kernel), setup refuses to overwrite it unless you pass `-Force` to
+`install-wsl-kernel.ps1` directly.
+
+### Verifying the binary yourself
+
+```powershell
+$expected = (Invoke-WebRequest `
+    "https://github.com/tonylturner/rangerdanger/releases/download/<TAG>/rangerdanger-wsl2-kernel.sha256" `
+    -UseBasicParsing).Content -split '\s+' | Select-Object -First 1
+$actual = (Get-FileHash -Algorithm SHA256 `
+    "$env:LOCALAPPDATA\rangerdanger\wsl-kernel\rangerdanger-wsl2-kernel").Hash
+"$($expected.ToLower()) vs $($actual.ToLower())"
+```
+
+The same sha256 is printed in the build workflow's public log.
+
+### Opting out
+
+If you do not want a custom kernel on your machine:
+
+- `setup.ps1 -SkipKernelFix` skips the probe and the install entirely.
+  The L4 portions of every lab still work; only the ICS DPI gates in
+  Labs 2.3 / 2.3-bonus quietly fall back to "no-op" enforcement.
+- `scripts\install-wsl-kernel.ps1 -Restore` restores
+  `.wslconfig.bak`, removes the staged kernel binary, and runs
+  `wsl --shutdown` so the change takes effect.
+
+### Why we do this rather than vendoring a workaround
+
+The alternative was rewriting the lab to use iptables-legacy
+(`xt_NFQUEUE`, which Microsoft does enable) or punting DPI to a
+host-side proxy on Windows. Both diverge from how the lab works on
+Mac / Linux, which adds long-term maintenance cost AND makes the
+workshop content "depend on what OS your students brought." A
+three-line Kconfig overlay was the smallest change that lets
+identical lab content run identically across all three host OSes.
+
+### Not applicable on macOS / Linux
+
+Docker on macOS uses LinuxKit, whose kernel already ships
+`CONFIG_NFT_QUEUE=y`. Docker on Linux uses the host kernel and any
+mainstream distro has it. `setup.sh` does not invoke the kernel
+installer; only `setup.ps1` does, and only after confirming the host
+is Windows + Docker Desktop's WSL2 backend.
+
 ## Supported versions
 
 The latest minor release receives security fixes; older minor

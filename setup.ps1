@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-RangerDanger lab installer — Windows (PowerShell 5+ / 7+).
+RangerDanger lab installer -- Windows (PowerShell 5+ / 7+).
 
 .DESCRIPTION
 Validates prerequisites, brings the lab up via docker-compose.release.yml,
@@ -35,7 +35,8 @@ param(
     [string]$Version = "latest",
     [string]$FromTarballs = "",
     [switch]$CheckOnly,
-    [switch]$SkipFirewallGate
+    [switch]$SkipFirewallGate,
+    [switch]$SkipKernelFix
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,21 +62,28 @@ $OfflineOverlay = Join-Path $RootDir "docker-compose.offline.yml"
 $ComposeArgs = @("-f", $ComposeFile)
 if ($FromTarballs) {
     if (-not (Test-Path $OfflineOverlay)) {
-        Die "$OfflineOverlay not found — required for -FromTarballs."
+        Die "$OfflineOverlay not found -- required for -FromTarballs."
     }
     $ComposeArgs += @("-f", $OfflineOverlay)
 }
 
-# ─── pre-flight checks ──────────────────────────────────────────────
+# --- pre-flight checks ----------------------------------------------
 Banner "Pre-flight checks"
 
 if (-not (Test-Path $ComposeFile)) {
-    Die "$ComposeFile not found — run from repo root or release tarball."
+    Die "$ComposeFile not found -- run from repo root or release tarball."
 }
 
-# Docker engine
-try { docker info 2>&1 | Out-Null } catch { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
-if ($LASTEXITCODE -ne 0) { Die "Docker engine not reachable. Start Docker Desktop, then re-run." }
+# Docker engine.
+# Note: docker info can emit harmless warnings to stderr (e.g.
+# "WARNING: No blkio throttle.read_bps_device support" on WSL2 +
+# cgroups v1). Under Windows PowerShell 5.1 + $ErrorActionPreference =
+# "Stop", any native-exe stderr is wrapped as a NativeCommandError and
+# throws -- even with `2>$null` or `*>$null`, because Stop intercepts
+# before the redirect is fully applied. Lower ErrorAction in a child
+# scope so the warning is genuinely discarded, then trust $LASTEXITCODE.
+& { $ErrorActionPreference = 'SilentlyContinue'; docker info *>$null }
+if ($LASTEXITCODE -ne 0) { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
 Say "Docker reachable"
 
 # Compose v2
@@ -103,23 +111,27 @@ Say "Architecture: linux/$arch"
 $drive = (Get-Item $RootDir).PSDrive
 $freeGB = [math]::Round($drive.Free / 1GB)
 if ($freeGB -lt 30) {
-    Warn "Only $freeGB GB free on $($drive.Name): — recommend >= 30 GB. Pull may fail mid-flight."
+    Warn "Only $freeGB GB free on $($drive.Name): -- recommend >= 30 GB. Pull may fail mid-flight."
 } else {
     Say "Free disk: $freeGB GB"
 }
 
-# Docker memory (Docker Desktop reports its allocation via 'docker info')
-$memBytes = [int64](docker info --format '{{.MemTotal}}' 2>$null)
+# Docker memory (Docker Desktop reports its allocation via 'docker info').
+# Same NativeCommandError trap as above -- run in a child scope with
+# ErrorAction relaxed so any benign stderr warning (blkio etc.) does not
+# blow up parsing of the MemTotal field.
+$memRaw = & { $ErrorActionPreference = 'SilentlyContinue'; docker info --format '{{.MemTotal}}' 2>$null }
+$memBytes = if ($memRaw) { [int64]$memRaw } else { 0 }
 if ($memBytes -gt 0) {
     $memGB = [math]::Round($memBytes / 1GB)
     if ($memGB -lt 7) {
-        Warn "Docker is configured with $memGB GB RAM — recommend >= 8 GB. Settings → Resources in Docker Desktop."
+        Warn "Docker is configured with $memGB GB RAM -- recommend >= 8 GB. Settings -> Resources in Docker Desktop."
     } else {
         Say "Docker memory: $memGB GB"
     }
 }
 
-# Required ports — bind a TcpListener briefly to confirm free, and
+# Required ports -- bind a TcpListener briefly to confirm free, and
 # look up the holding process when one is busy so the user doesn't
 # have to dig with netstat.
 $portsBusy = @()
@@ -152,9 +164,42 @@ if ($portsBusy.Count -gt 0) {
 }
 Say "Loopback ports 8088, 9080, 9443, 2222 are free"
 
-# ─── check-only short-circuit ───────────────────────────────────────
+# --- WSL2 kernel feature probe (Windows + WSL2 backend only) ---------
+# Microsoft's stock WSL2 kernel does not enable CONFIG_NFT_QUEUE, which
+# silently breaks the ICS DPI rules in Lab 2.3 / 2.3-bonus. Probe here
+# (cheap; just runs `nft ... queue num` inside a Linux container) so
+# the user knows BEFORE we pull 6 GB of images. The actual install
+# step runs after the -CheckOnly short-circuit so we don't modify
+# .wslconfig in a probe-only invocation.
+$kernelNeedsFix = $false
+$kernelInstaller = Join-Path $RootDir "scripts\install-wsl-kernel.ps1"
+if ($SkipKernelFix) {
+    Say "Skipping WSL2 kernel feature probe (-SkipKernelFix)"
+} elseif (-not (Test-Path $kernelInstaller)) {
+    Warn "scripts\install-wsl-kernel.ps1 not found -- skipping WSL2 kernel probe (older release?)."
+} else {
+    # The probe is verbose; suppress its banner output by piping through
+    # a temp file so the setup.ps1 log stays clean. Exit codes:
+    #   0  = kernel already good
+    #   1  = kernel needs install
+    #   2  = not on Windows / not WSL2 backend (skip silently)
+    & $kernelInstaller -Test 2>&1 | Out-Null
+    switch ($LASTEXITCODE) {
+        0 { Say "WSL2 kernel: CONFIG_NFT_QUEUE present (ICS DPI labs will work)" }
+        2 { Say "WSL2 kernel: probe skipped (not Windows/WSL2 backend)" }
+        default {
+            Warn "WSL2 kernel: CONFIG_NFT_QUEUE missing -- ICS DPI labs (2.3, 2.3-bonus) will not enforce."
+            Warn "  This is a known limitation of the stock WSL2 kernel. setup.ps1 will install"
+            Warn "  a prebuilt rangerdanger kernel after these pre-flight checks complete."
+            Warn "  Pass -SkipKernelFix to skip and run with stock kernel anyway."
+            $kernelNeedsFix = $true
+        }
+    }
+}
+
+# --- check-only short-circuit ---------------------------------------
 if ($CheckOnly) {
-    Banner "Pre-flight passed — laptop is ready"
+    Banner "Pre-flight passed -- laptop is ready"
     @"
   All checks above passed. To install:
 
@@ -163,10 +208,55 @@ if ($CheckOnly) {
 
   For offline / SSD install, use -FromTarballs <PATH>.
 "@ | Write-Host
+    if ($kernelNeedsFix) {
+        Write-Host ""
+        Warn "Note: the WSL2 kernel is missing CONFIG_NFT_QUEUE. Setup will offer to install"
+        Warn "a prebuilt fix when you run without -CheckOnly. Pass -SkipKernelFix to skip."
+    }
     exit 0
 }
 
-# ─── image acquisition ──────────────────────────────────────────────
+# --- WSL2 kernel install (if probe flagged it) ----------------------
+# Runs BEFORE image acquisition so wsl --shutdown does not kill an
+# in-progress pull. For -FromTarballs offline installs we look for a
+# bundled kernel binary in the tarball directory; for online installs
+# we download from the release matching $Version.
+if ($kernelNeedsFix -and -not $SkipKernelFix) {
+    Banner "Installing WSL2 kernel"
+    $installerArgs = @()
+    if ($FromTarballs) {
+        $bundledKernel = Join-Path $FromTarballs "rangerdanger-wsl2-kernel"
+        if (Test-Path $bundledKernel) {
+            $installerArgs += @("-KernelPath", $bundledKernel)
+            $bundledSha = Join-Path $FromTarballs "rangerdanger-wsl2-kernel.sha256"
+            if (Test-Path $bundledSha) {
+                $shaContent = (Get-Content $bundledSha -Raw)
+                $shaHex = ($shaContent -split '\s+', 2)[0].Trim()
+                $installerArgs += @("-ExpectedSha256", $shaHex)
+            }
+            Say "Using bundled kernel from tarball: $bundledKernel"
+        } else {
+            Warn "No rangerdanger-wsl2-kernel found in $FromTarballs -- will attempt download."
+            Warn "(For fully-offline installs, stage the kernel alongside the image tarballs."
+            Warn " See wsl-kernel/README.md.)"
+        }
+    }
+    if (-not ($installerArgs -contains '-KernelPath')) {
+        $tag = if ($Version -eq 'latest') { 'latest' } else { $Version }
+        $installerArgs += @("-ReleaseTag", $tag)
+    }
+    & $kernelInstaller @installerArgs
+    switch ($LASTEXITCODE) {
+        0  { Say "WSL2 kernel installed; continuing with image acquisition." }
+        2  { Say "Kernel installer skipped (not Windows/WSL2). Continuing." }
+        10 { Die "User declined kernel install. Re-run with -SkipKernelFix to bypass." }
+        11 { Die "Foreign kernel= already in .wslconfig. Re-run with -SkipKernelFix to bypass, or see install-wsl-kernel.ps1 -Force." }
+        12 { Die "Kernel download or verification failed. See errors above." }
+        default { Die "Kernel install failed with exit $LASTEXITCODE. See errors above. Pass -SkipKernelFix to bypass." }
+    }
+}
+
+# --- image acquisition ----------------------------------------------
 if ($FromTarballs) {
     Banner "Loading images from tarballs"
     if (-not (Test-Path $FromTarballs)) { Die "Tarball directory not found: $FromTarballs" }
@@ -193,7 +283,7 @@ if ($FromTarballs) {
     Say "Version: $Version"
     Say "(this can take a while on first run; subsequent pulls are layer-cached)"
     $env:VERSION = $Version
-    # GHCR occasionally returns transient 5xx during layer fetches —
+    # GHCR occasionally returns transient 5xx during layer fetches --
     # retry up to 3 times with exponential backoff before giving up.
     $pullOk = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -215,7 +305,7 @@ Pulling images failed after 3 attempts. Common causes:
     }
 }
 
-# ─── pin VERSION in .env so bare `docker compose` works after install ──
+# --- pin VERSION in .env so bare `docker compose` works after install --
 # Without this, a student who runs `.\setup.ps1 -FromTarballs <SSD>` and
 # later wants to run `docker compose -f docker-compose.release.yml
 # -f docker-compose.offline.yml up -d` directly will hit
@@ -239,14 +329,14 @@ if (Test-Path $envFile) {
 }
 Say "Pinned VERSION=$Version in $envFile"
 
-# ─── start the stack ────────────────────────────────────────────────
+# --- start the stack ------------------------------------------------
 Banner "Starting RangerDanger"
 $env:VERSION = $Version
 docker compose @ComposeArgs up -d
-if ($LASTEXITCODE -ne 0) { Die "compose up failed — check logs." }
+if ($LASTEXITCODE -ne 0) { Die "compose up failed -- check logs." }
 Say "Containers started"
 
-# ─── health smoke check ─────────────────────────────────────────────
+# --- health smoke check ---------------------------------------------
 Banner "Health check"
 Say "Waiting for the backend to come up (up to 60 s)..."
 $healthUrl = "http://localhost:8088/api/health"
@@ -264,7 +354,7 @@ if ($ok) {
 }
 
 # Workshop-critical surfaces. /api/health alone returned green in past
-# audits while firewall apply/reset were broken — students hit the
+# audits while firewall apply/reset were broken -- students hit the
 # regression at lab-time, not at setup. Gate explicitly here so a
 # half-working stack never makes it past the installer banner.
 # Use -SkipFirewallGate for developer iteration on a known-broken stack.
@@ -276,7 +366,7 @@ if ($SkipFirewallGate) {
     try {
         Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
     } catch {
-        Warn "  /api/firewall/health failed — containd management interface is down"
+        Warn "  /api/firewall/health failed -- containd management interface is down"
         $fwFail = $true
     }
     foreach ($cfg in @("weak", "improved")) {
@@ -284,14 +374,14 @@ if ($SkipFirewallGate) {
             $body = @{ config = $cfg } | ConvertTo-Json -Compress
             Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop | Out-Null
         } catch {
-            Warn "  /api/firewall/apply ($cfg) failed — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
+            Warn "  /api/firewall/apply ($cfg) failed -- Lab 2.2/2.3/2.3-bonus/2.4 will not work"
             $fwFail = $true
         }
     }
     try {
         $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
         if ($resetResp.Content -notmatch '"success":true') {
-            Warn "  /api/workshop/reset reported non-success — students hitting Reset Lab will see partial state"
+            Warn "  /api/workshop/reset reported non-success -- students hitting Reset Lab will see partial state"
             $fwFail = $true
         }
     } catch {
@@ -310,7 +400,7 @@ Re-run with -SkipFirewallGate to bring the stack up anyway for diagnosis.
     Say "Firewall apply/reset workshop gate passed"
 }
 
-# ─── done ────────────────────────────────────────────────────────────
+# --- done ------------------------------------------------------------
 Banner "RangerDanger is up"
 @"
   Web UI:        http://localhost:8088
