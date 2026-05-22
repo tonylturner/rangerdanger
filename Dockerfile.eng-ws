@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
  && CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
 # webtop ubuntu-mate pinned by digest (A7).
-FROM linuxserver/webtop:ubuntu-mate@sha256:d0069fc9827d2d8fe6b5bdef5d682ccbacf2c7b9de02051b53f4702bf6f94ac9
+FROM linuxserver/webtop:ubuntu-mate@sha256:18732b86354f182403896dd80472d6750195811797ba1e773c740fc4065e3d9e
 
 # Install OT analysis tools and Modbus testing
 RUN apt-get update && \
