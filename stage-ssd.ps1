@@ -172,6 +172,42 @@ $verPath = Join-Path $OutDir ".version"
 Set-Content -Path $verPath -Value $Version -NoNewline -Encoding ascii
 Say "wrote $verPath ($Version)"
 
+# Bundle the WSL2 kernel asset for Windows students on offline /
+# air-gapped laptops. setup.ps1 -FromTarballs picks up
+# rangerdanger-wsl2-kernel + .sha256 from here automatically; without
+# them, the kernel install step needs internet. Graceful skip if the
+# asset isn't yet built for $Version (CI builds it on tag push).
+Banner "Bundle WSL2 kernel asset (Windows offline support)"
+$ghOwnerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
+$kernelUrl = if ($Version -eq 'latest') {
+    "https://github.com/$ghOwnerRepo/releases/latest/download/rangerdanger-wsl2-kernel"
+} else {
+    "https://github.com/$ghOwnerRepo/releases/download/$Version/rangerdanger-wsl2-kernel"
+}
+$kernelShaUrl = "$kernelUrl.sha256"
+$kernelReadmeRow = ""
+try {
+    $head = Invoke-WebRequest -Uri $kernelUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
+    Say "Downloading $kernelUrl"
+    Invoke-WebRequest -Uri $kernelUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel") -UseBasicParsing -ErrorAction Stop
+    try {
+        Invoke-WebRequest -Uri $kernelShaUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256") -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Warn "kernel sha256 download failed; on-install verification will be skipped."
+    }
+    $ksize = [math]::Round((Get-Item (Join-Path $OutDir "rangerdanger-wsl2-kernel")).Length / 1MB, 1)
+    Say "wrote $OutDir\rangerdanger-wsl2-kernel ($ksize MB)"
+    $kernelReadmeRow = "- ``rangerdanger-wsl2-kernel`` + ``.sha256`` -- custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). ``setup.ps1 -FromTarballs`` picks it up automatically."
+} catch {
+    Warn "rangerdanger-wsl2-kernel not yet published for release $Version."
+    Warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
+    Warn "   If you are staging before that workflow has run, re-run stage-ssd.ps1 after the"
+    Warn "   kernel asset attaches to the release, OR manually drop rangerdanger-wsl2-kernel"
+    Warn "   + .sha256 into $OutDir.)"
+    Warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
+}
+
 Banner "Write README"
 $shortSha = & git -C $RootDir rev-parse --short HEAD
 $lastSubject = & git -C $RootDir log -1 --format=%s
@@ -186,6 +222,7 @@ Staged $now for version ``$Version``.
 - ``images-amd64.tar`` -- Docker images for Intel / AMD64 hosts
 - ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc not included; that one is amd64-only)
 - ``rangerdanger.tgz`` -- Repo archive at $shortSha ($($lastSubject.Substring(0, [Math]::Min(80, $lastSubject.Length))))
+$kernelReadmeRow
 
 ## Use
 

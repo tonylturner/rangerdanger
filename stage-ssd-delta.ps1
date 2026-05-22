@@ -252,6 +252,33 @@ if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
 
+# Bundle the WSL2 kernel asset for $New. Deltas include the kernel
+# unconditionally (it is small, and a student applying a delta may
+# have skipped an older delta that lacked the kernel). Graceful skip
+# if not yet published for $New.
+Banner "Bundle WSL2 kernel asset for $New (Windows offline support)"
+$ghOwnerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
+$kernelUrl = "https://github.com/$ghOwnerRepo/releases/download/$New/rangerdanger-wsl2-kernel"
+$kernelShaUrl = "$kernelUrl.sha256"
+$kernelReadmeRow = ""
+try {
+    $head = Invoke-WebRequest -Uri $kernelUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
+    Say "Downloading $kernelUrl"
+    Invoke-WebRequest -Uri $kernelUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel") -UseBasicParsing -ErrorAction Stop
+    try {
+        Invoke-WebRequest -Uri $kernelShaUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256") -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Warn "kernel sha256 download failed; on-install verification will be skipped."
+    }
+    $ksize = [math]::Round((Get-Item (Join-Path $OutDir "rangerdanger-wsl2-kernel")).Length / 1MB, 1)
+    Say "wrote $OutDir\rangerdanger-wsl2-kernel ($ksize MB)"
+    $kernelReadmeRow = "- ``rangerdanger-wsl2-kernel`` + ``.sha256`` -- custom WSL2 kernel for Windows ICS DPI labs (``setup.ps1 -FromTarballs`` picks it up automatically)."
+} catch {
+    Warn "rangerdanger-wsl2-kernel not yet published for release $New."
+    Warn "  (Re-run this delta after the kernel asset publishes, OR drop the file into $OutDir manually.)"
+}
+
 Banner "Write DELTA-README.md"
 $applyTableRows = foreach ($img in $changed) {
     $short = ($img -replace '.*/','' -replace ':.*','')
@@ -273,6 +300,7 @@ Staged $now for upgrade from ``$Since`` -> ``$New``.
 | Image | Compose service |
 |---|---|
 $applyTable
+$kernelReadmeRow
 
 $unchangedList
 

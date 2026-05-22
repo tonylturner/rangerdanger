@@ -194,6 +194,41 @@ say "wrote $OUT/rangerdanger.tgz ($size)"
 echo "$VERSION" > "$OUT/.version"
 say "wrote $OUT/.version ($VERSION)"
 
+# Bundle the WSL2 kernel asset for Windows students on offline /
+# air-gapped laptops. setup.ps1 -FromTarballs looks here for
+# rangerdanger-wsl2-kernel + .sha256 and skips its kernel download
+# step if found. This step is additive: if the asset isn't built yet
+# for $VERSION (rare; CI builds it on tag push), we skip with a
+# warning and the SSD still works for everything except ICS DPI on
+# Windows.
+KERNEL_README_ROW=""
+banner "Bundle WSL2 kernel asset (Windows offline support)"
+GH_OWNER_REPO="${GH_OWNER_REPO:-tonylturner/rangerdanger}"
+if [ "$VERSION" = "latest" ]; then
+    KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/latest/download/rangerdanger-wsl2-kernel"
+    KERNEL_SHA_URL="https://github.com/${GH_OWNER_REPO}/releases/latest/download/rangerdanger-wsl2-kernel.sha256"
+else
+    KERNEL_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${VERSION}/rangerdanger-wsl2-kernel"
+    KERNEL_SHA_URL="https://github.com/${GH_OWNER_REPO}/releases/download/${VERSION}/rangerdanger-wsl2-kernel.sha256"
+fi
+if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
+    say "Downloading $KERNEL_URL"
+    curl -fsSL "$KERNEL_URL" -o "$OUT/rangerdanger-wsl2-kernel" \
+        || die "kernel download failed mid-stream — refusing to write a partial bundle. Re-run."
+    curl -fsSL "$KERNEL_SHA_URL" -o "$OUT/rangerdanger-wsl2-kernel.sha256" \
+        || warn "kernel sha256 download failed; on-install verification will be skipped."
+    kernel_size=$(du -h "$OUT/rangerdanger-wsl2-kernel" | awk '{print $1}')
+    say "wrote $OUT/rangerdanger-wsl2-kernel ($kernel_size)"
+    KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` — custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
+else
+    warn "rangerdanger-wsl2-kernel not yet published for release $VERSION."
+    warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
+    warn "   If you are staging before that workflow has run, re-run stage-ssd.sh after the kernel"
+    warn "   asset attaches to the release, OR manually drop rangerdanger-wsl2-kernel + .sha256"
+    warn "   into $OUT.)"
+    warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
+fi
+
 banner "Write README"
 cat > "$OUT/README.md" <<EOF
 # RangerDanger — offline / SSD install
@@ -205,6 +240,7 @@ Staged $(date -u +%FT%TZ) for version \`$VERSION\`.
 - \`images-amd64.tar\` — Docker images for Intel / AMD64 hosts
 - \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts (openplc not included; that one is amd64-only)
 - \`rangerdanger.tgz\` — Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s | head -c 80))
+$KERNEL_README_ROW
 
 ## Use
 
