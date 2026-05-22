@@ -80,6 +80,22 @@ rules without it).
   'SilentlyContinue'; docker info *>$null }` + `$LASTEXITCODE`
   check. Same pattern applied to the second `docker info` call
   (MemTotal lookup).
+- **`install-wsl-kernel.ps1` sha256 verify on auto-download.**
+  GitHub serves `.sha256` release assets with `Content-Type:
+  application/octet-stream`, which makes `Invoke-WebRequest`'s
+  `.Content` return `Byte[]` on PS 5.1 instead of a string. Splitting
+  the byte array on whitespace yielded the first byte's ASCII code
+  (`54` for `'6'`) instead of the hex digest, causing every public
+  download to fail with a misleading `sha256 mismatch: expected: 54`.
+  The .sha256 file now downloads to a temp file and reads back as
+  text, matching the pattern already used for the kernel binary.
+- **`install-wsl-kernel.ps1 -Restore` cleans up an effectively-empty
+  `.wslconfig`.** When setup.ps1 created a `.wslconfig` on a machine
+  that did not have one before, `-Restore` stripped our `kernel=`
+  line but left an orphan `[wsl2]` section header. Now detects when
+  no meaningful key/value entries remain and removes the file
+  entirely, leaving `%USERPROFILE%\` exactly as a fresh Windows
+  install would have it.
 - **Backend: 13 new govulncheck findings cleared.** A 2026-05-22
   vuln-db refresh surfaced 13 CVEs across `golang.org/x/crypto/ssh`,
   `/ssh/agent`, and `/ssh/knownhosts`, all fixed in v0.52.0.

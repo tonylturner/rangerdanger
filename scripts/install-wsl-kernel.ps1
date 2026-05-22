@@ -301,10 +301,23 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
 
     if (-not $expectedSha256 -and $sha256Url) {
         Say "Fetching sha256 from $sha256Url"
+        # GitHub serves .sha256 release assets with Content-Type:
+        # application/octet-stream, so Invoke-WebRequest's .Content in
+        # PS 5.1 returns Byte[], NOT a string. Splitting a Byte[] on
+        # '\s+' yields the first byte (the ASCII code, e.g. 54 for '6')
+        # rather than the first whitespace-delimited token, and the
+        # subsequent sha compare fails with a misleading "expected: 54"
+        # error. Download to a temp file and read as text -- avoids
+        # the byte/string dispatch entirely and matches what we already
+        # do for the kernel binary itself.
+        $shaTemp = [System.IO.Path]::GetTempFileName()
         try {
-            $shaRaw = Invoke-WebRequest -Uri $sha256Url -UseBasicParsing -ErrorAction Stop | Select-Object -ExpandProperty Content
+            Invoke-WebRequest -Uri $sha256Url -OutFile $shaTemp -UseBasicParsing -ErrorAction Stop
+            $shaRaw = Get-Content $shaTemp -Raw
         } catch {
             Die 12 "sha256 fetch failed: $_"
+        } finally {
+            Remove-Item $shaTemp -Force -ErrorAction SilentlyContinue
         }
         # File format: <sha256>  <filename>
         $expectedSha256 = (($shaRaw -split '\s+', 2)[0]).Trim().ToLower()
