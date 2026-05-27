@@ -6,7 +6,8 @@ in-memory state across three protocols simultaneously**:
 - **HTTP REST** on `:8080` - `GET /api/state`, `POST /api/command`,
   `GET /api/audit`, `GET /api/health`
 - **Modbus TCP** on `:502` - hand-written outstation (no library),
-  function codes 1/2/3/4 read and 5/6/15/16 write
+  function codes 1/3/4 read (coils / holding registers / input
+  registers) and 5/6 write (single coil / single register)
 - **DNP3 TCP** on `:20000` - outstation via the in-tree
   [`dnp3go/`](../dnp3go/) library; supports Read (FC1), Direct
   Operate (FC5), Select/Operate (FC3/4)
@@ -32,8 +33,10 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 
 ## Local development
 
-The Go simulators share a single module (`services/go.mod`) and a
-single multi-stage Dockerfile (`services/Dockerfile`).
+The Go simulators (relay/recloser/regulator/capbank/historian/gps/
+rtac) share a single module (`services/go.mod`) and a single
+multi-stage Dockerfile (`services/Dockerfile`). `opendss-sim` is
+Python/FastAPI and builds from its own `services/opendss-sim/Dockerfile`.
 
 ```sh
 # Run a single sim outside the lab
@@ -44,10 +47,15 @@ go run ./relay-sim          # binds :8080, :502, :20000
 go test ./...
 ```
 
-Each sim has its own `cmd`-style directory with `main.go`, a
-`modbus.go` for the Modbus outstation, and a `dnp3.go` for the DNP3
-outstation. Shared primitives (audit log, command source detection,
-JSON helpers) live in `services/shared/`.
+Each sim has its own `cmd`-style directory with `main.go`. The four
+field sims (relay/recloser/regulator/capbank) each add a `modbus.go`
+for the Modbus outstation and (for relay/recloser/regulator) a
+`dnp3.go` for the DNP3 outstation; capbank exposes Modbus only.
+`historian-sim` and `gps-sim` have `main.go` + `modbus.go` (no DNP3
+outstation). `rtac-sim` runs both client and outstation roles
+(`dnp3.go`, `dnp3_poll.go`, `modbus.go`, `modbus_poll.go`). Shared
+primitives (audit log, command source detection, JSON helpers) live
+in `services/shared/`.
 
 ## Adding a new sim
 
@@ -88,6 +96,6 @@ engineering-workstation images.
 
 The Modbus implementation is hand-written rather than using a
 library. It supports the read/write function codes the exercises
-exercise (FC 1/2/3/4/5/6/15/16) and is intentionally explicit about
-register addresses so students can correlate writes against state
-changes during attack walkthroughs.
+exercise (FC 1/3/4 read, FC 5/6 write) and is intentionally explicit
+about register addresses so students can correlate writes against
+state changes during attack walkthroughs.

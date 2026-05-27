@@ -220,7 +220,7 @@ Staged $now for version ``$Version``.
 ## Contents
 
 - ``images-amd64.tar`` -- Docker images for Intel / AMD64 hosts
-- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc not included; that one is amd64-only)
+- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2)
 - ``rangerdanger.tgz`` -- Repo archive at $shortSha ($($lastSubject.Substring(0, [Math]::Min(80, $lastSubject.Length))))
 $kernelReadmeRow
 

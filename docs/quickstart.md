@@ -43,7 +43,7 @@ git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 ./setup.sh                   # latest release
 # or pin a specific version:
-./setup.sh --version v0.1.4
+./setup.sh --version v0.1.17
 ```
 
 PowerShell equivalent:
@@ -52,7 +52,7 @@ PowerShell equivalent:
 git clone https://github.com/tonylturner/rangerdanger
 cd rangerdanger
 .\setup.ps1                  # latest release
-.\setup.ps1 -Version v0.1.4
+.\setup.ps1 -Version v0.1.17
 ```
 
 `setup.sh` runs preflight checks (Docker reachable, Compose v2,
@@ -85,11 +85,15 @@ isn't realistic. The instructor stages an SSD; students load from it.
 **On a machine with internet (instructor):**
 
 ```bash
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.4
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
 ```
 
 This produces `images-amd64.tar`, `images-arm64.tar`,
-`rangerdanger.tgz`, and an auto-generated SSD README on the volume.
+`rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD
+README on the volume. Tagged releases additionally bundle
+`rangerdanger-wsl2-kernel` + `rangerdanger-wsl2-kernel.sha256` so
+Windows students get ICS DPI on Labs 2.3 / 2.3-bonus without a
+separate kernel download.
 
 **On the workshop laptop (student):**
 
@@ -168,7 +172,8 @@ rm -f data/firewall/users.db data/firewall/users.db-*
 docker compose up -d
 ```
 
-`EnsureDefaultAdmin` will re-seed the `containd` / `containd`
+containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
+in `docker-compose.yml`) will restore the `containd` / `containd`
 admin on next boot.
 
 ### "the build is slow"

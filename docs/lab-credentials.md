@@ -4,7 +4,7 @@ Credentials for services that the workshop's segmentation labs
 exercise. These are intentionally weak / well-known so students can
 focus on the firewall and DPI lessons rather than fighting auth.
 
-The lab is loopback-bound by default (A3 in `docs/release-plan.md`);
+The lab is loopback-bound by default (see [`SECURITY.md`](../SECURITY.md));
 treat these credentials as public-knowledge defaults and **do not**
 reuse them outside the lab.
 
@@ -34,7 +34,9 @@ network model.
 
 Containd's own management plane has separate credentials (the
 `containd / containd` admin user; password change forced on first
-login via the UI); see `docs/containd-admin.md` if/when added.
+login via the UI). The containd repo
+([tonylturner/containd](https://github.com/tonylturner/containd))
+is the authoritative source for that flow.
 
 ## How to test from the lab
 

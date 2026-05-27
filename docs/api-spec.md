@@ -49,7 +49,7 @@ The workshop endpoints operate on the always-running substation lab defined in `
 | `GET` | `/workshop/graph` | Current topology as a graph (nodes + edges) |
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
-| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"cmd": "...", "timeout_sec": 30}`. Returns `{"stdout", "stderr", "exit_code", "duration_ms"}` |
+| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` — anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
 | `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) |
 | `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
 
@@ -84,7 +84,7 @@ Exercises are stored internally as "scenarios" for historical reasons - the user
 }
 ```
 
-Check status is one of `pass`, `fail`, or `warn`. Outcome is `PASS` if all checks pass, `FAIL` otherwise.
+Check status is one of `pass`, `fail`, or `warn`. Outcome is `PASS` if every check is `pass`, `FAIL` if any check is `fail`, and `PARTIAL` if at least one check is `warn` and none are `fail`.
 
 ## Substation
 
@@ -110,8 +110,8 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/sessions` | Active connection table |
 | `GET` | `/firewall/active` | Which named configuration is currently applied |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
-| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`) |
-| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and returns `{"applied": true, "rules_applied": N}` on success. |
+| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"|"improved"}` and includes `"warnings": [...]` when containd returned any. |
+| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom"}` plus `"warnings": [...]` when containd returned any. |
 
 ## Traffic generation
 
@@ -119,7 +119,7 @@ Used by Lab 1.2 (Baseline Traffic Analysis) to produce representative substation
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/traffic/generate` | Start traffic generation. Body: `{"duration_sec": 50}`. Returns `{"status": "generating", "duration_sec"}` |
+| `POST` | `/traffic/generate` | Start traffic generation. Body: `{"duration_sec": 50}` (defaults to `30` when omitted or `<= 0`). Returns `{"status": "generating", "duration_sec"}` |
 | `GET` | `/traffic/status` | Current traffic generation state. Returns `{"generating", "started_at", "flows_generated"}` |
 
 ## PCAP capture
@@ -149,7 +149,7 @@ Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to
 
 ## Terminals (WebSocket)
 
-Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and either a Docker `exec` session or an SSH session.
+Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and a Docker `exec` session. SSH-based terminals were removed; every node terminal — including the firewall — now goes through Docker exec.
 
 ### Endpoints
 
@@ -168,8 +168,7 @@ The backend detects text-mode messages starting with `{` and parses them as cont
 
 ### Shell selection
 
-All terminal endpoints (including the firewall) now go through Docker
-`exec` rather than SSH. The backend runs:
+Most nodes get a generic bash/sh selector:
 
 ```
 sh -c "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"
@@ -177,22 +176,26 @@ sh -c "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"
 
 This prefers bash as an interactive login shell when available, falling
 back to sh on minimal images. The environment includes
-`TERM=xterm-256color`. For the firewall node, this lands in containd's
-Linux shell mode (`CONTAIND_SSH_SHELL_MODE=linux`), so the experience
-matches `ssh containd@localhost -p 2222` without an SSH dependency.
+`TERM=xterm-256color`.
 
-If you need a real SSH session into containd directly from outside the
-backend, the host port mapping `127.0.0.1:2222:2222` exposes it
-(`ssh -p 2222 containd@localhost`, password `containd`).
+**The firewall node is different.** Its terminal first lands in the
+containd appliance CLI (matching what `ssh containd@localhost -p 2222`
+gives you), and only drops into bash after the CLI exits:
+
+```
+sh -c "containd cli; exec bash -il || exec sh -i"
+```
+
+So when you open the `fw-1` terminal you'll see the `containd# `
+prompt first. Type `shell` (or `exit`) to drop into the underlying
+Linux bash (containd runs `CONTAIND_SSH_SHELL_MODE=linux`, so the
+bash drop-in carries the same tools as the SSH path). The host port
+mapping `127.0.0.1:2222:2222` still exposes the SSH path for users
+who want it (`ssh -p 2222 containd@localhost`, password `containd`).
 
 ### Resize propagation
 
-On resize messages:
-
-- Docker exec sessions call `ContainerExecResize` to resize the PTY
-- SSH sessions call `session.WindowChange(rows, cols)` to send an SSH window-change request
-
-The frontend sends a resize on initial connect, whenever the container resizes, and whenever the terminal becomes visible again (detected via `IntersectionObserver` for tab switching).
+The backend calls `ContainerExecResize` on the Docker exec session for every resize message. The frontend sends a resize on initial connect, whenever the container resizes, and whenever the terminal becomes visible again (detected via `IntersectionObserver` for tab switching).
 
 ## Data contracts
 

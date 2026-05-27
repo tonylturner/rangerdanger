@@ -155,17 +155,9 @@ flowchart LR
         m_corp[corp_ws]
         m_vj[vendor_jump]
         m_ews[eng_workstation]
-        m_kali[kali]
         m_fuxa[fuxa_hmi]
         m_plc[openplc]
         m_rtac[rtac_sim]
-        m_hist[historian_sim]
-        m_gps[gps_sim]
-        m_hp[hmi_poller]
-        m_relay[relay_sim]
-        m_rec[recloser_sim]
-        m_reg[regulator_sim]
-        m_cap[capbank_sim]
     end
 
     subgraph Ent["enterprise_net · 10.10.10.0/24 · wan"]
@@ -228,8 +220,13 @@ visible to containd's policy + capture pipeline. See
 
 **Every browser-accessible UI container also attaches to `mgmt_net`**
 so the nginx proxy can reach it out-of-band without crossing the data
-plane. `corp_ws`, `vendor_jump`, `eng_workstation`, `kali`, `fuxa_hmi`,
-`openplc` all have a mgmt leg in addition to their lab zone.
+plane. `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`, and
+`openplc` all have a mgmt leg in addition to their lab zone (the full
+set of `mgmt_net` members is: `firewall`, `backend`, `frontend`,
+`proxy`, `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`,
+`rtac_sim`, `openplc`). `kali` is intentionally not on `mgmt_net` —
+it lives only on `enterprise_net` so attack traffic has to cross the
+firewall like any other enterprise host.
 
 ---
 
@@ -259,7 +256,7 @@ flowchart LR
         r_root["/ → frontend"]
         r_api["/api/* → backend"]
         r_containd["/containd/* → firewall :8080<br/>(sub_filter rewrites root paths)"]
-        r_apps["/apps/&lt;svc&gt;/ → corp_ws / vendor_jump /<br/>eng_workstation / kali / fuxa_hmi / openplc"]
+        r_apps["/apps/&lt;svc&gt;/ → firewall / hmi / plc / hmi-view /<br/>hmi-control / ews / jumpbox / corp-ws /<br/>vendor-jump / eng-ws / fuxa-hmi / openplc"]
         r_block["/containd/api/v*/.../password → 403<br/>(lab-mode credential pin)"]
     end
 
@@ -293,7 +290,7 @@ flowchart LR
 
 </details>
 
-**Three host-bound ports (loopback only):**
+**Four host-bound ports (loopback only):**
 - `127.0.0.1:8088` - the nginx proxy. The single front door.
 - `127.0.0.1:9080`, `:9443`, `:2222` - direct containd access. Lab
   convention is to use the proxied path at `:8088/containd/`, but

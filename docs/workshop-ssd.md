@@ -24,14 +24,18 @@ Two staging flows:
 
 ## What's on the SSD
 
-A staged SSD always contains exactly four things:
+A staged SSD always contains at least four core files, plus a
+version marker and (on tagged releases) the prebuilt Windows WSL2
+kernel asset:
 
 | File | What it is | Size |
 |---|---|---|
 | `images-amd64.tar` | All Docker images for Intel/AMD64 hosts, saved together | ~6 GB |
-| `images-arm64.tar` | All Docker images for Apple Silicon hosts (no `openplc` — upstream is amd64-only) | ~6 GB |
+| `images-arm64.tar` | All Docker images for Apple Silicon hosts (`openplc` is cross-included as the amd64 image and runs under Rosetta 2) | ~6 GB |
 | `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
+| `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
+| `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs — only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
 
 Both `images-*.tar` carry the same image *content* (different binaries
 inside). `setup.sh --from-tarballs` auto-detects host arch and loads
@@ -42,7 +46,7 @@ the matching one.
 On a machine with internet, from the repo root:
 
 ```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.7
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
 ```
 
 Runtime: 25-45 minutes on a fast connection. Pulls every release
@@ -124,6 +128,7 @@ AirDrop, Slack, anything. Student replaces their repo and restarts:
 ```sh
 cd ~/rangerdanger
 docker compose down
+mkdir -p ~/rangerdanger-new
 tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~/rangerdanger-new
 cd ~/rangerdanger-new
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD     # idempotent; reuses loaded images
@@ -174,13 +179,13 @@ digest has changed since your last stage.
 Example:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.7 v0.1.6 v0.1.7
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17
 ```
 
 Typical output (from the script's run summary):
 
 ```
-Comparing v0.1.6 → v0.1.7 across 14 first-party images
+Comparing v0.1.16 -> v0.1.17 across N candidate image(s)
   changed: backend, frontend
   unchanged: kali, vendor-jump, eng-ws, openplc, rtac-sim,
              relay-sim, recloser-sim, regulator-sim,
@@ -192,6 +197,7 @@ Saving 2 changed image(s) per arch...
   delta-amd64.tar  (~230 MB)
   delta-arm64.tar  (~225 MB)
   rangerdanger.tgz (~1 MB)
+  rangerdanger-wsl2-kernel + .sha256 (~14 MB; tagged releases only)
   DELTA-README.md
 ```
 
@@ -207,11 +213,12 @@ the version numbers are correct), but the pattern is:
 ```sh
 # 1. update repo
 cd ~
-tar xzf /Volumes/WORKSHOP_SSD/delta-v0.1.7/rangerdanger.tgz -C rangerdanger-new
+mkdir -p rangerdanger-new
+tar xzf /Volumes/WORKSHOP_SSD/delta-v0.1.17/rangerdanger.tgz -C rangerdanger-new
 cd rangerdanger-new
 
 # 2. load only the changed images
-docker load -i /Volumes/WORKSHOP_SSD/delta-v0.1.7/delta-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar
+docker load -i /Volumes/WORKSHOP_SSD/delta-v0.1.17/delta-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar
 
 # 3. restart only the affected services
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d backend frontend
