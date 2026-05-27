@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `golang.org/x/net` v0.54.0 → v0.55.0 in `backend/` to
+  clear 6 new findings from the 2026-05-26/27 vuln-db refresh
+  (`GO-2026-5025`..`5030`): five `net/html` XSS/DoS hardenings and
+  one `net/idna` Punycode-decode fix. Backend does not call
+  `net/html` parse/Render on attacker-controlled input (HTML is in
+  the Next.js frontend), so practical exposure was zero; bumped to
+  keep `govulncheck` green. See `docs/security-known-issues.md`.
+
 ## [v0.1.17] - 2026-05-22
 
 First-class Windows support. The same setup script, smoke tests, and

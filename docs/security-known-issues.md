@@ -27,6 +27,30 @@ either remove resolved entries or add new ones.
   `docker/docker` direct dependency in `backend/go.mod` stays pinned
   at the current version.
 
+## Resolved by direct dependency bumps (2026-05-27)
+
+A vuln-db refresh on 2026-05-26/27 surfaced 6 new findings, all in
+`golang.org/x/net` (5 in `net/html`, 1 in `net/idna`), all fixed in
+v0.55.0. Resolved by one `go get golang.org/x/net@v0.55.0` in
+`backend/`; no transitive bumps required.
+
+GO IDs cleared by this bump:
+
+- `GO-2026-5025` (net/html XSS via namespaced foreign content)
+- `GO-2026-5026` (net/idna ASCII-only Punycode label decode)
+- `GO-2026-5027` (net/html XSS via foreign-content element handling)
+- `GO-2026-5028` (net/html DoS on pathological HTML parse)
+- `GO-2026-5029` (net/html XSS via DOCTYPE character references)
+- `GO-2026-5030` (net/html XSS via duplicate attributes)
+
+Practical exposure: rangerdanger does NOT call `golang.org/x/net/html`
+parse/Render on attacker-controlled input — html templating is in
+the Next.js frontend, not the Go backend; backend HTML is limited to
+a couple of static error pages. x/net/idna is reachable transitively
+via HTTP routing but the affected ToASCII/ToUnicode paths aren't on
+any code path that handles untrusted hostnames. Still bumped to keep
+govulncheck green.
+
 ## Resolved by direct dependency bumps (2026-05-22)
 
 A vuln-db refresh on 2026-05-22 surfaced 13 new findings, all in
