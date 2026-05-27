@@ -21,45 +21,53 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Every Python reference in the exercises is `python3 -m json.tool`
 # (stdlib pretty-printer), so python3-pip and the pymodbus/scapy/
 # impacket installs are also dropped.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        # systemd-standalone-sysusers satisfies the systemd dependency
-        # alternation in tcpdump and openssh-client without pulling in
-        # the full systemd init system. The full systemd package's
-        # postinst fails under qemu-emulated linux/arm64 builds (uses
-        # syscalls qemu doesn't fully implement), so we install this
-        # tiny standalone variant instead. See:
-        #   tcpdump depends on systemd | systemd-standalone-sysusers | systemd-sysusers
-        #   openssh-client depends on systemd | systemd-standalone-sysusers | systemd-sysusers
-        systemd-standalone-sysusers \
-        # Network basics
-        nmap \
-        netcat-openbsd \
-        iputils-ping \
-        traceroute \
-        iproute2 \
-        net-tools \
-        curl \
-        wget \
-        openssh-client \
-        # Packet analysis
-        tcpdump \
-        tshark \
-        # ICS/OT — Modbus client (DNP3 tools are copied in below)
-        mbpoll \
-        # Stdlib python for json.tool and ad-hoc scripting
-        python3 \
-        # RDP/VNC/SSH clients for the vendor-rdp-compromise lab.
-        # freerdp-x11 provides xfreerdp; xtightvncviewer provides
-        # the eponymous VNC client. Both demonstrate the protocol
-        # connection attempt (succeeds under the weak baseline,
-        # fails under hardened). sshpass scripts the SSH-based
-        # pivot used for the actual interactive session in the
-        # in-app terminal, since X11 isn't available there.
-        freerdp-x11 \
-        xtightvncviewer \
-        sshpass \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+#
+# Kali is a rolling distribution, so the version of a .deb pinned in
+# the apt-get update metadata can rotate out of the mirror between
+# the `update` call and the `install` call. The CI smoke job hits
+# this race intermittently (404 on libexpat1 / libatomic1 / etc.
+# during the install fetch). To absorb that, refresh the apt-get
+# metadata between attempts and retry the whole update+install
+# sequence up to 3 times with a backoff. Acquire::Retries alone
+# isn't enough -- it retries the same URL, which stays 404 -- so we
+# need a fresh `apt-get update` between rounds to repoint at the
+# current package versions.
+RUN set -eu; \
+    installed=0; \
+    for attempt in 1 2 3; do \
+        echo "apt-get attempt $attempt"; \
+        if apt-get update && apt-get install -y --no-install-recommends \
+                systemd-standalone-sysusers \
+                nmap \
+                netcat-openbsd \
+                iputils-ping \
+                traceroute \
+                iproute2 \
+                net-tools \
+                curl \
+                wget \
+                openssh-client \
+                tcpdump \
+                tshark \
+                mbpoll \
+                python3 \
+                freerdp-x11 \
+                xtightvncviewer \
+                sshpass; then \
+            installed=1; \
+            break; \
+        fi; \
+        echo "apt-get attempt $attempt failed; sleeping $((attempt * 10))s before retry"; \
+        sleep $((attempt * 10)); \
+    done; \
+    if [ "$installed" -ne 1 ]; then \
+        echo "all 3 apt-get attempts failed; aborting build"; \
+        exit 1; \
+    fi; \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+# Package list rationale (systemd-standalone-sysusers, freerdp-x11,
+# xtightvncviewer, sshpass, mbpoll, etc.) -- see lab-definitions/
+# scenarios/*.yml for the exercise references that pull each in.
 
 # Install DNP3 CLI tools (dnp3poll, dnp3cmd) from the in-tree dnp3go
 # library. The DNP3 attack scripts in ~/workspace/dnp3/ use raw
