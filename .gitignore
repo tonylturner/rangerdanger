@@ -87,3 +87,9 @@ CLAUDE.md
 # docs/tasks.md is private operator notes that aren't useful to external
 # readers.
 docs/tasks.md
+
+# Internal maintainer tooling docs. The leading-underscore convention
+# assumes a Jekyll/Hugo-style docs site; a plain GitHub repo publishes
+# the directory regardless, so untrack and ignore it. Keep files
+# locally for maintainer use (e.g. docs/_internal/pdf-update-prompt.md).
+docs/_internal/
