@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.18] - 2026-05-28
+
+Pre-workshop polish + CI reliability + security patch. Bundles four
+co-landing PRs: x/net@v0.55.0 vuln-bump (#59) with the Kali mirror
+fix it depended on for CI, the chmod fix for `scripts/uninstall-
+rangerdanger.sh` (#58), the `docs/_internal/` untrack (#60), and a
+repo-wide markdown accuracy pass (#61). Also captures the
+auto-publish + reproducible-WSL2-kernel CI improvements that landed
+between v0.1.17 and the rest of this set.
+
 ### Changed
 
 - **`.github/workflows/release.yml` auto-publishes the GitHub Release.**
