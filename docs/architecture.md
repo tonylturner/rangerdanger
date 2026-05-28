@@ -17,7 +17,7 @@ The substation is modeled as four firewalled zones plus one non-firewalled physi
 
 Zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) are containd's logical interface names. They auto-bind to whatever `ethN` Docker assigns at boot via the `CONTAIND_AUTO_*_SUBNET` env in `docker-compose.yml`. **`ethN` ordering is not stable across hosts** - Docker assigns `ethN` by alphabetical network name, not by compose declaration order - so policy and tooling reference zone names rather than `eth` indices. The `eth0`/`eth1`/`...` mapping is a runtime artifact of the host you're on; never rely on it.
 
-The RTAC is intentionally multi-homed on OT Operations and Field networks (two interfaces, not three - there is no physics_net leg). However, `scripts/rtac-harden.sh` actively prevents the RTAC from acting as a firewall bypass by replacing the directly-connected route to `field_net` with an indirect route via the OT-Ops firewall, disabling IP forwarding, dropping the FORWARD chain, and disabling proxy ARP. The result: **all RTAC → field traffic transits the containd firewall and is visible to its capture/policy pipeline**, with the wire-visible source IP being `10.30.30.20` (the RTAC's OT-Ops leg). The field leg exists for realism - many production RTACs have one - but is intentionally inert as a routed source.
+The RTAC is intentionally multi-homed on **four** networks: OT Operations (`10.30.30.20`), Field (`10.40.40.10`), Physics (`10.50.50.10`, so it can poll the OpenDSS model), and Management (`10.99.99.20`, so the backend can reach `http://rtac-sim:8080`). However, `scripts/rtac-harden.sh` actively prevents the RTAC from acting as a firewall bypass by replacing the directly-connected route to `field_net` with an indirect route via the OT-Ops firewall, disabling IP forwarding, dropping the FORWARD chain, and disabling proxy ARP. The result: **all RTAC → field traffic transits the containd firewall and is visible to its capture/policy pipeline**, with the wire-visible source IP being `10.30.30.20` (the RTAC's OT-Ops leg). The field leg exists for realism - many production RTACs have one - but is intentionally inert as a routed source.
 
 This compensating control is why the hardened `substation-improved.json` source-pins RTAC as `10.30.30.20` (the OT-Ops IP), not `10.40.40.10` - the OT-Ops side is what the firewall sees. Students reasoning about segmentation should treat the RTAC like any other multi-homed control system: the firewall protects against lateral access *and* against an RTAC originating field traffic from the wrong leg, because the kernel-level routing pin forces every flow through the policy plane.
 
@@ -30,7 +30,7 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Vendor jump box | `vendor_jump` | vendor | 10.20.20.10 | Vendor remote access |
 | Engineering workstation | `eng_workstation` | vendor | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
 | FUXA HMI | `fuxa_hmi` | ot_ops | 10.30.30.10 | Operator HMI (SCADA) |
-| RTAC | `rtac_sim` | ot_ops + field | 10.30.30.20 (+ Docker-assigned IP on field_net, kernel-pinned to the firewall route) | Supervisory controller / protocol broker |
+| RTAC | `rtac_sim` | ot_ops + field + physics + mgmt | 10.30.30.20 (also 10.40.40.10 on field_net pinned via the OT-Ops firewall, 10.50.50.10 on physics_net for OpenDSS polling, 10.99.99.20 on mgmt_net so the backend can reach it) | Supervisory controller / protocol broker |
 | OpenPLC | `openplc` | ot_ops | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
 | Historian | `historian_sim` | ot_ops | 10.30.30.40 | Data historian polling the RTAC |
 | GPS clock | `gps_sim` | ot_ops | 10.30.30.50 | Time source for SOE timestamping |
@@ -44,7 +44,7 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
 | Proxy | `proxy` | mgmt | 10.99.99.3 | Nginx reverse proxy to all node UIs |
 
-The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; the firewall (containd) sits on every zone.
+The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; `rtac_sim` likewise gets a mgmt leg (10.99.99.20) so the backend can reach `http://rtac-sim:8080`. The firewall (containd) sits on every zone.
 
 ## Services
 
@@ -90,21 +90,27 @@ Key components:
 
 ### Field device simulators (Go)
 
-Custom services under `services/` sharing a common pattern: single in-memory state exposed over three protocols simultaneously.
+Most simulators under `services/` are Go binaries built from a shared multi-stage `services/Dockerfile` and share a common pattern: single in-memory state exposed over three protocols simultaneously.
 
 - **HTTP REST** on port 8080 - `GET /api/state`, `POST /api/command`, `GET /api/audit`, `GET /api/health`
-- **Modbus TCP** on port 502 - hand-written outstation supporting FC1/2/3/4 read and FC5/6 write
+- **Modbus TCP** on port 502 - hand-written outstation supporting FC1/3/4 read and FC5/6 write
 - **DNP3 TCP** on port 20000 - outstation via the [dnp3go](https://github.com/tonylturner/dnp3go) library (standalone Go module at the repo root), supporting Read (FC01), Direct Operate (FC05), Select/Operate (FC03/04)
 
-Simulators:
+Field-device simulators:
 
-- `relay-sim` - Feeder breaker with trip/close, lockout, fault injection
-- `recloser-sim` - Auto-reclose with shot counting, lockout, disable-reclose
-- `regulator-sim` - Load tap changer with ±16 tap range
-- `rtac-sim` - Supervisory controller aggregating all field devices; runs autonomous DNP3 master polling every 5s and HTTP REST polling every 1s
-- `opendss-sim` - Simplified feeder model calculating load energization and voltage
+- `relay-sim` - Feeder breaker with trip/close, lockout, fault injection (DNP3 + Modbus + HTTP)
+- `recloser-sim` - Auto-reclose with shot counting, lockout, disable-reclose (DNP3 + Modbus + HTTP)
+- `regulator-sim` - Load tap changer with ±16 tap range (DNP3 + Modbus + HTTP)
+- `capbank-sim` - Switched capacitor bank with switch-count contact wear (Modbus + HTTP; no DNP3 outstation)
+- `historian-sim` - Data historian polling the RTAC (Modbus + HTTP)
+- `gps-sim` - GPS / NTP time source (NTP + HTTP)
+- `rtac-sim` - Supervisory controller aggregating all field devices; runs autonomous DNP3 master polling every 5s and HTTP REST polling every 1s (read-only DNP3 outstation, Modbus, HTTP)
 
-DNP3 outstation addresses: relay=1, recloser=2, regulator=3, rtac=10 (read-only).
+Plus one Python sim:
+
+- `opendss-sim` - Simplified feeder physics engine. **Python / FastAPI**, served HTTP-only on port 8080 from its own `services/opendss-sim/Dockerfile` (python:3.12-slim). Not part of the Go multi-stage build.
+
+DNP3 outstation addresses (the four that expose DNP3): relay=1, recloser=2, regulator=3, rtac=10 (read-only).
 
 ### Containd NGFW
 
@@ -170,24 +176,30 @@ Two paths: containd's native PCAP API (`POST /api/pcap/start` in the backend pro
 
 ### Shared terminal state
 
-The frontend uses a React context (`TerminalProvider`) plus a hidden-mount pattern in `SharedTerminalPanel` - all exercise node terminals are mounted simultaneously and toggled with `display:none/block`. When switching tabs, xterm's size can get confused, so `terminal-inner.tsx` uses an `IntersectionObserver` to detect visibility changes and re-fit, propagating the new size to the server via a JSON resize message (`{"type":"resize","cols":N,"rows":N}`). The backend maps this to `ContainerExecResize` (Docker exec) or `session.WindowChange` (SSH), keeping the remote bash's `stty size` in sync.
+The frontend uses a React context (`TerminalProvider`) plus a hidden-mount pattern in `SharedTerminalPanel` - all exercise node terminals are mounted simultaneously and toggled with `display:none/block`. When switching tabs, xterm's size can get confused, so `terminal-inner.tsx` uses an `IntersectionObserver` to detect visibility changes and re-fit, propagating the new size to the server via a JSON resize message (`{"type":"resize","cols":N,"rows":N}`). The backend maps this to `ContainerExecResize` on the Docker exec session, keeping the remote bash's `stty size` in sync. (SSH-based terminals were removed; every terminal — including the firewall — goes through Docker exec.)
 
 ## Environment variables
+
+Backend-read variables (`backend/internal/config`):
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RANGERDANGER_HTTP_PORT` | 8080 | Backend listen port |
-| `RANGERDANGER_DB_PATH` | /data/rangerdanger.db | SQLite path |
-| `RANGERDANGER_LAB_DEFINITIONS_PATH` | lab-definitions | YAML source directory |
-| `RANGERDANGER_CONTAIND_API_URL` | http://firewall:8080 | containd HTTP base URL |
-| `RANGERDANGER_CONTAIND_CONFIG_PATH` | lab-definitions/firewall/substation-weak.json | Initial firewall config |
+| `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via `docker-compose.yml`) | SQLite path |
+| `RANGERDANGER_LAB_DEFINITIONS_PATH` | `lab-definitions` | YAML source directory |
+| `RANGERDANGER_CONTAIND_API_URL` | `http://firewall:8080` | containd HTTP base URL |
+| `RANGERDANGER_CONTAIND_CONFIG_PATH` | `lab-definitions/firewall/substation-weak.json` | Initial firewall config |
+| `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API |
 
-The legacy `OTLAB_*` prefix is honored as a deprecated alias -
-existing deployments continue to work but emit a warning at startup.
-| `CONTAIND_API_URL` | http://firewall:8080 | containd REST endpoint |
-| `CONTAIND_JWT_SECRET` | rangerdanger-dev | containd auth shared secret |
-| `CONTAIND_SSH_SHELL_MODE` | linux | Sets containd SSH to drop into bash |
-| `CONTAIND_ALLOWED_ORIGINS` | http://localhost:8088 | CORS + iframe-embedding origins |
+The legacy `OTLAB_*` prefix is honored as a deprecated alias — existing deployments continue to work but emit a warning at startup.
+
+Variables read by the **containd container itself** (not the backend) and set in `docker-compose.yml`:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `CONTAIND_SSH_SHELL_MODE` | `linux` | Drops the containd SSH user into bash instead of the appliance CLI |
+| `CONTAIND_ALLOWED_ORIGINS` | `http://localhost:8088` | CORS + iframe-embedding origins for the containd web UI |
+| `CONTAIND_LAB_MODE` | `1` | Lab-mode lock: auto-restores the default `containd` / `containd` admin on boot |
 
 ## Security notes
 

@@ -11,7 +11,9 @@ You will need:
 - **Docker Desktop** ≥ 4.30 (or equivalent) with **≥ 8 GB RAM** and
   **≥ 30 GB free disk** allocated. The compose stack pulls roughly
   6–8 GB on a first run.
-- **Go 1.24+** for backend, services, and the `dnp3go` library.
+- **Go 1.25+** for the backend (`backend/go.mod` pins
+  `toolchain go1.25.10`); the `services/` and `dnp3go/` modules still
+  build on Go 1.24+.
 - **Node.js 20+** and **npm** for the frontend.
 
 Bring up the stack - either invocation works:
@@ -43,7 +45,7 @@ Open http://localhost:8088 - the UI is the entry point.
 | `services/` | Field device simulators (relay, recloser, regulator, rtac, opendss, capbank, historian, gps) |
 | `dnp3go/` | Standalone Go DNP3 library, vendored as its own module |
 | `lab-definitions/` | YAML lab topologies, exercises, firewall configs |
-| `docs/` | Architecture, API spec, release plan |
+| `docs/` | Architecture, API spec, workshop guides, lab-authoring guide |
 | `scripts/` | Dev helpers (`dev-up.sh`, `dev-down.sh`, `seed-labs.sh`) |
 | `.github/workflows/` | CI |
 

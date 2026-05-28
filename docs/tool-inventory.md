@@ -16,7 +16,7 @@ image?"
 | `kali` | External attacker | Kali Linux | Enterprise (10.10.10.50) | `Dockerfile.kali` |
 | `eng-ws` | Engineering workstation | linuxserver/webtop ubuntu-mate | Vendor / DMZ (10.20.20.20) | `Dockerfile.eng-ws` |
 | `vendor-jump` | Vendor support laptop | linuxserver/webtop ubuntu-xfce | Vendor / DMZ (10.20.20.10) | `Dockerfile.vendor-jump` |
-| `corp-ws` | Office laptop | (lightweight) | Enterprise | `Dockerfile.corp-ws` |
+| `corp-ws` | Office laptop | linuxserver/webtop ubuntu-mate | Enterprise (10.10.10.10) | (compose-only, no Dockerfile) |
 | `openplc` | Substation automation PLC | tuttas/openplc_v3 | OT Operations (10.30.30.30) | `Dockerfile.openplc` |
 | `rtac-sim` | Supervisory controller | alpine 3.21 (sim-base) | OT Operations + Field | `services/Dockerfile` (`rtac-sim` target) |
 | `relay-sim`, `recloser-sim`, `regulator-sim`, `capbank-sim`, `historian-sim`, `gps-sim` | Field / OT sims | alpine 3.21 (sim-base) | Field or OT Ops | `services/Dockerfile` |
@@ -24,7 +24,15 @@ image?"
 
 ## Tool matrix
 
-| Tool | kali | eng-ws | vendor-jump | openplc | rtac-sim | sim-base (other sims) |
+**Inheritance note:** every sim stage in `services/Dockerfile` is
+`FROM sim-base AS <sim>` (relay, recloser, regulator, capbank,
+historian, gps, **and rtac**), so anything in the `sim-base` column is
+also present in every per-sim image including `rtac-sim` — the matrix
+only adds an explicit ✓ in the `rtac-sim` column when rtac-sim layers
+on something *additional* (sshd, nginx, mbpoll built from source).
+Treat `sim-base` ✓ as "every sim has this, rtac-sim included."
+
+| Tool | kali | eng-ws | vendor-jump | openplc | rtac-sim (additions) | sim-base (all sims, incl. rtac) |
 |------|:----:|:------:|:-----------:|:-------:|:--------:|:---------------------:|
 | **Network basics** | | | | | | |
 | `iproute2` | ✓ | | ✓ | | ✓ | ✓ |
@@ -79,9 +87,12 @@ Notes:
   `dnp3-builder` stage in each Dockerfile that needs them, then
   `COPY --from=dnp3-builder` into the runtime image. There is **no**
   apt/apk source for these - they're our own.
-- **vendor-jump** installs both client (`openssh-server` provides the
-  daemon; the OpenSSH server package on Ubuntu also drops `ssh` /
-  `scp` clients via the `openssh-client` recommended dependency).
+- **vendor-jump** runs the OpenSSH server (`openssh-server` package).
+  The client-side `ssh` binary depends on whether
+  `openssh-server`'s recommended dependency `openssh-client` resolves
+  under `--no-install-recommends` (Ubuntu lists it as `Recommends`,
+  not `Depends`); if you need the client guaranteed, add it explicitly
+  to the apt install list in `Dockerfile.vendor-jump`.
 
 ## Deciding where to add a new tool
 

@@ -6,8 +6,9 @@ Items in **Backlog** are wanted but not yet scheduled - open to
 discussion in [Discussions](https://github.com/tonylturner/rangerdanger/discussions)
 or pull requests.
 
-For day-to-day open work, see [`docs/tasks.md`](docs/tasks.md).
-For shipped work, see [`CHANGELOG.md`](CHANGELOG.md).
+For shipped work, see [`CHANGELOG.md`](CHANGELOG.md); the
+`[Unreleased]` block at the top reflects what is currently on `main`
+but not yet tagged.
 
 ## Committed
 
@@ -38,10 +39,6 @@ content or topology.
   (better error messages, retry on transient pull failures).
 - README screenshots / GIFs walking through the exercise runner,
   network console, FUXA HMI, and containd policy view.
-- Flip govulncheck CI from advisory (`continue-on-error: true`) to a
-  hard gate, once the documented exceptions in
-  [`docs/security-known-issues.md`](docs/security-known-issues.md)
-  are stable.
 
 ### v0.2.0 - lab realism
 

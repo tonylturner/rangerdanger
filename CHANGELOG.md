@@ -6,6 +6,35 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`.github/workflows/release.yml` auto-publishes the GitHub Release.**
+  Previously the workflow created the release in `draft=true` state so
+  `build-wsl-kernel.yml` could attach the kernel asset before the
+  release went public. The release job now always passes
+  `--draft=false` to `gh release edit` (and `--latest` for non-
+  prerelease tags), so once the matrix-built images + release notes
+  finish the release becomes public automatically without a manual
+  "publish" click in the GitHub UI. Idempotent: setting
+  `--draft=false` on an already-published release is a no-op.
+- **`.github/workflows/build-wsl-kernel.yml` produces byte-reproducible
+  kernels.** The build now pins `SOURCE_DATE_EPOCH`,
+  `KBUILD_BUILD_HOST`, and `KBUILD_BUILD_USER`, so the same source
+  tag + overlay yields a bit-identical `rangerdanger-wsl2-kernel`
+  binary across runs. Documented in `wsl-kernel/README.md` under
+  "Reproducing the build locally."
+
+### Fixed
+
+- **`Dockerfile.kali` no longer flakes on Kali rolling-distro apt
+  cache misses.** The previous build used `http.kali.org`, a round-
+  robin including CDN backends whose `apt-get update` metadata lags
+  the actual pool/ directory; the resulting 404s on individual `.deb`
+  fetches were intermittently breaking CI smoke and could break
+  workshop-day builds. Switched to the Cloudflare-backed
+  `kali.download` mirror (same packages, fresher metadata) and
+  layered a 3-attempt retry loop on top as defense in depth.
+
 ### Security
 
 - Bumped `golang.org/x/net` v0.54.0 → v0.55.0 in `backend/` to
@@ -15,6 +44,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `net/html` parse/Render on attacker-controlled input (HTML is in
   the Next.js frontend), so practical exposure was zero; bumped to
   keep `govulncheck` green. See `docs/security-known-issues.md`.
+
+### Docs
+
+- Repo-wide accuracy pass on every project markdown file. Notable
+  corrections: lab time budgets in `docs/workshop-overview.md` (5 of
+  7 were wrong, total off by 30 min), `tar -C` calls in
+  `docs/workshop-ssd.md` now `mkdir -p` first, `docs/architecture.md`
+  RTAC interface inventory corrected to 4 networks (was claimed 2),
+  Modbus FC matrix in `services/README.md` corrected to actual
+  1/3/4 read + 5/6 write (was claimed 1/2/3/4 + 5/6/15/16),
+  `docs/api-spec.md` exec body field corrected to `command` (was
+  `cmd`), and the SSH-based terminal path documented in
+  `docs/api-spec.md` removed (the path no longer exists in the
+  backend). Several broken `docs/tasks.md` / `docs/release-plan.md`
+  cross-references retired (those files have been gone since v0.1.10).
+- `docs/_internal/` is now `.gitignore`'d. The
+  `pdf-update-prompt.md` was intended as a maintainer-only doc but
+  was being published on github.com regardless of the leading-
+  underscore Jekyll convention.
 
 ## [v0.1.17] - 2026-05-22
 
@@ -322,10 +370,13 @@ Live DPI Events strip.
 
 ### Configuration (already in v0.1.12, kept here for trail)
 
-- `substation-improved.json` and `substation-weak.json` already
-  ship `dpiMode` + `nflogGroup` from the v0.1.12 release. v0.1.13
-  layers the new `nfqueueGroup` + `dpiEnabled` on top of the
-  improved policy only — weak stays in learn mode by design.
+- `substation-improved.json` already shipped `dpiMode: enforce` +
+  `nflogGroup` from the v0.1.12 release. v0.1.13 layers the new
+  `nfqueueGroup` + `dpiEnabled` on top of the improved policy only.
+  `substation-weak.json` carries only `nflogGroup` (no `dpiMode`
+  field) by design — without an explicit `dpiMode` it stays in
+  containd's implicit learn mode, which is what makes the weak
+  baseline weak.
 
 ## [v0.1.12] - 2026-05-12
 

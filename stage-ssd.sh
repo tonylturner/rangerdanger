@@ -238,7 +238,7 @@ Staged $(date -u +%FT%TZ) for version \`$VERSION\`.
 ## Contents
 
 - \`images-amd64.tar\` — Docker images for Intel / AMD64 hosts
-- \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts (openplc not included; that one is amd64-only)
+- \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2)
 - \`rangerdanger.tgz\` — Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s | head -c 80))
 $KERNEL_README_ROW
 

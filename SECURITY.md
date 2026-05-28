@@ -224,6 +224,6 @@ releases do not.
 ## Known issues + ongoing hardening
 
 Documented exceptions live in
-[`docs/security-known-issues.md`](docs/security-known-issues.md).
-Open security-relevant work is tracked in
-[`docs/tasks.md`](docs/tasks.md).
+[`docs/security-known-issues.md`](docs/security-known-issues.md). New
+security work in flight appears under the `[Unreleased]` block of
+[`CHANGELOG.md`](CHANGELOG.md).
