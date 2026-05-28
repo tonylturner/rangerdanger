@@ -11,6 +11,18 @@ FROM kalilinux/kali-rolling
 # Avoid prompts during package installation.
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Force the official Cloudflare-backed Kali mirror (kali.download)
+# instead of the http.kali.org round-robin. The round-robin includes
+# backends whose metadata cache lags the actual pool/ directory, so
+# `apt-get update` reports package versions that have already
+# rotated out and `apt-get install` 404s on the deb fetch. The
+# kali.download mirror is the CDN-fronted "official" mirror and
+# serves consistent metadata. The retry loop below stays as defense
+# in depth (in case the CDN edge node itself ever lags).
+RUN sed -i 's|http://http\.kali\.org|http://kali.download|g' \
+        /etc/apt/sources.list \
+    && grep -E '^deb ' /etc/apt/sources.list
+
 # Minimal package set — only what the exercises actually use.
 # An audit of lab-definitions/scenarios/*.yml showed the heavy
 # pentest tooling (metasploit-framework, hydra, john, hashcat, nikto,
