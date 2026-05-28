@@ -19,9 +19,28 @@ ENV DEBIAN_FRONTEND=noninteractive
 # kali.download mirror is the CDN-fronted "official" mirror and
 # serves consistent metadata. The retry loop below stays as defense
 # in depth (in case the CDN edge node itself ever lags).
-RUN sed -i 's|http://http\.kali\.org|http://kali.download|g' \
-        /etc/apt/sources.list \
-    && grep -E '^deb ' /etc/apt/sources.list
+#
+# Modern kalilinux/kali-rolling ships the repo definition under
+# /etc/apt/sources.list.d/ rather than /etc/apt/sources.list, so
+# loop over any .list / .sources file in either location and patch
+# whichever ones reference http.kali.org. Print the rewritten lines
+# so the next debugger doesn't have to guess which file took.
+RUN set -eu; \
+    patched=0; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
+        [ -f "$f" ] || continue; \
+        if grep -q 'http\.kali\.org' "$f"; then \
+            sed -i 's|http://http\.kali\.org|http://kali.download|g; s|https://http\.kali\.org|https://kali.download|g' "$f"; \
+            echo "patched $f:"; \
+            grep -E 'kali\.download|http\.kali\.org' "$f" || true; \
+            patched=1; \
+        fi; \
+    done; \
+    if [ "$patched" -eq 0 ]; then \
+        echo "WARNING: no /etc/apt source file referencing http.kali.org found; mirror swap is a no-op"; \
+        echo "Contents of /etc/apt:"; \
+        ls -la /etc/apt/ /etc/apt/sources.list.d/ 2>&1 || true; \
+    fi
 
 # Minimal package set — only what the exercises actually use.
 # An audit of lab-definitions/scenarios/*.yml showed the heavy
