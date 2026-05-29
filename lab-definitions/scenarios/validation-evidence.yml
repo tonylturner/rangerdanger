@@ -123,29 +123,54 @@ steps:
   - title: "Negative tests - unauthorized flows blocked"
     description: |
       Verify the cross-zone paths your policy closed are actually
-      unreachable.
+      unreachable. Each subsection probes a different L4 rule —
+      lead with DNP3 (the primary distribution-substation attack
+      vector you exercised in Lab 2.3); the optional sidebar at the
+      bottom shows the same rules close Modbus too.
 
-      **Enterprise → Field** (from Kali, 10.10.10.50):
+      **Enterprise → Field DNP3** (from Kali, 10.10.10.50):
 
-          nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
-          mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
+          nmap -p 20000 10.40.40.20 --max-retries 1 -T4
           dnp3poll 10.40.40.20:20000 -a 1
 
-      All ports should be filtered; mbpoll/dnp3poll should time out.
+      Port should be filtered; `dnp3poll` should time out.
 
-      **Vendor → Field** (from vendor-jump, 10.20.20.10):
+      **Vendor → Field DNP3** (from vendor-jump, 10.20.20.10):
 
-          nmap -p 502,20000 10.40.40.21 --max-retries 1 -T4
+          nmap -p 20000 10.40.40.21 --max-retries 1 -T4
+          dnp3poll 10.40.40.21:20000 -a 2
+
+      Should be filtered / timeout. Confirms the vendor-pivot attack
+      path (Lab 2.3-bonus) is closed against the field zone.
+
+      **From historian** (`historian-1` on the [Network Map](/console)) — represents a typical lan1-only non-RTAC OT host. The historian sits on OT Ops only; it has no direct field interface:
+
+          nmap -p 20000 10.40.40.22 --max-retries 1 -T4
+
+      Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action — even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
+
+      :::hint Optional: also confirm Modbus is blocked
+      The hardened policy applies the same L4 source-pin and DPI
+      rules on Modbus (TCP/502) as on DNP3. If you want a two-protocol
+      evidence package — or if you ran the Modbus sidebar attacks in
+      Lab 2.3 — repeat the three probes above with port 502 and
+      `mbpoll` instead of port 20000 and `dnp3poll`:
+
+          # Enterprise → Field Modbus
+          nmap -p 502 10.40.40.20 --max-retries 1 -T4
+          mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
+
+          # Vendor → Field Modbus
+          nmap -p 502 10.40.40.21 --max-retries 1 -T4
           mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
 
-      Should be filtered / timeout. This confirms the vendor-pivot
-      attack path (Lab 2.3-bonus) is closed.
+          # Non-RTAC OT → Field Modbus
+          nmap -p 502 10.40.40.22 --max-retries 1 -T4
 
-      **From historian** (`historian-1` on the [Network Map](/console)) - represents a typical lan1-only non-RTAC OT host (the historian sits on OT Ops only; it has no direct field interface):
-
-          nmap -p 502,20000 10.40.40.22 --max-retries 1 -T4
-
-      Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action - even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
+      All filtered / timeout. The same source-pin rule closes both
+      protocols; documenting both gives the change board a complete
+      cross-protocol picture rather than a single-protocol snapshot.
+      :::
 
       :::hint Pick any single-homed OT host as the probe source
       historian-sim, fuxa-hmi, and openplc all live on `ot_ops_net`
