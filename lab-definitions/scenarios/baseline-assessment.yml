@@ -229,13 +229,13 @@ steps:
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.0/24 and ip.dst==10.40.40.0/24' 2>/dev/null | head -15
 
-      **Modbus TCP activity on port 502** - the primary SCADA control protocol:
-
-        tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==502' 2>/dev/null | head -10
-
-      **DNP3 TCP activity on port 20000** - the secondary SCADA polling protocol:
+      **DNP3 TCP activity on port 20000** — the dominant SCADA protocol for distribution substations (every relay, recloser, regulator, and capbank controller on the wire exposes a DNP3 outstation):
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==20000' 2>/dev/null | head -10
+
+      **Modbus TCP activity on port 502** — widely supported on field devices and often present alongside DNP3, primarily for HMI integration on installed gear:
+
+        tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==502' 2>/dev/null | head -10
 
       **All RTAC-originated traffic** (Modbus + DNP3 + HTTP):
 
@@ -267,15 +267,11 @@ steps:
       - The firewall shows cross-zone communication.
       - It does not show all system communication.
 
-      To confirm that these internal control relationships exist even when not visible in the PCAP, poll a field device from the RTAC terminal via Modbus:
-
-        mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-
-      Or check the lab's RTAC status API (supplementary - not available on real RTACs):
+      To confirm these internal control relationships exist even when not visible in the PCAP, check the lab's RTAC status API:
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
-      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with - proof that the underlying control flows are alive even when they are intra-subnet.
+      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with — proof that the underlying control flows are alive even when they are intra-subnet. (Real RTACs don't expose a JSON state API; this is a lab convenience. The equivalent SCADA-protocol probe from the RTAC terminal is a DNP3 read against an outstation — `dnp3poll 10.40.40.20:20000 -a 1` — or a Modbus read — `mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20`.)
 
       ### Reflection
 

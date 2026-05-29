@@ -6,6 +6,49 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Lab 2.3 (Protocol-Hardened Configurations) streamlined to a
+  single primary attack.** The previous 10-step structure walked
+  students through three full attacks (Modbus FC6 regulator
+  override → DNP3 Direct Operate → Modbus FC5 breaker trip) plus
+  three full re-tests under the hardened policy. The new 6-step
+  structure leads with a single primary attack — DNP3 Direct
+  Operate against the recloser (the canonical distribution-
+  substation attack vector against actual installed gear from SEL,
+  G&W, S&C, Cooper, etc.) — and consolidates the re-test into one
+  step. The Modbus FC5 / FC6 variants live as optional `:::hint`
+  sidebars in the same attack step, with a matching optional
+  re-test sidebar, so instructors who want the cross-protocol DPI-
+  generality lesson still have it without making it mandatory
+  cognitive load.
+- **Lab 2.4 (Testing & Validation) negative tests now lead with
+  DNP3.** Same motivation as Lab 2.3: DNP3 is the authentic
+  distribution-substation SCADA protocol, so the primary negative-
+  test flow uses DNP3 + nmap port 20000 against field. Modbus
+  port-502 / `mbpoll` probes move into an "also confirm Modbus is
+  blocked" sidebar for instructors building a two-protocol evidence
+  package. The PCAP capture, evidence-package assembly, and
+  reflection steps are unchanged — they already covered both
+  protocols at the L4-rule level.
+- **Lab 1.2 (Baseline Traffic Analysis) protocol framing
+  corrected.** The PCAP analysis section previously labeled Modbus
+  as "the primary SCADA control protocol" and DNP3 as "the
+  secondary SCADA polling protocol" — backwards for distribution
+  substations. Relabeled DNP3 as the dominant protocol (and listed
+  first), with Modbus as widely-supported alongside it. The lab's
+  "confirm internal control relationships exist" sub-step now
+  leads with the lab-convenience `curl /api/state` and mentions
+  DNP3 + Modbus protocol probes as parenthetical alternatives,
+  rather than presenting Modbus as the only protocol-level option.
+
+### Docs
+
+- README.md and docs/workshop-overview.md Lab 2.3 descriptions
+  rewritten to reflect the single-primary-attack framing. The
+  optional-Modbus-sidebar framing is called out so reviewers
+  reading the README understand the change in scope vs v0.1.18.
+
 ## [v0.1.18] - 2026-05-28
 
 Pre-workshop polish + CI reliability + security patch. Bundles four
