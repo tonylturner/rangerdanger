@@ -99,9 +99,9 @@ steps:
 
           mbpoll -a 1 -t 0 -r 5 10.40.40.21 1
 
-      The recloser sees the fault, trips (auto-reclose is off, so
-      it stays open), and locks out. Downstream loads - the
-      hospital and fire station - lose power.
+      The recloser sees the fault and trips. Auto-reclose is off,
+      so the recloser stays open instead of attempting to recover.
+      Downstream loads — the hospital and fire station — lose power.
 
       Wait ~3 seconds for the RTAC poll → OpenDSS push to land,
       then read the RTAC's Modbus tags to confirm the kinetic
@@ -111,9 +111,12 @@ steps:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
-      Holding register 1 (`recloser_closed`) is now `0`, register
-      2 (`reclose_enabled`) is `0`, and register 7
-      (`recloser_lockout`) is `1`.
+      Holding register 1 (`recloser_closed`) is now `0` (the fault
+      tripped the recloser), register 2 (`reclose_enabled`) is `0`
+      (your earlier Modbus FC5 write disabled auto-reclose), and
+      register 5 (`recloser_shot_count`) is `1` (the fault was
+      counted as the first shot — but with reclose disabled there
+      will be no shots 2 or 3 to recover from).
 
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
 
