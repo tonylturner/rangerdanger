@@ -36,7 +36,10 @@ set -uo pipefail
 API="${RANGERDANGER_API:-http://localhost:8088}"
 FIREWALL_API="${CONTAINTD_API:-http://localhost:9080}"
 JWT_SECRET="${CONTAIND_JWT_SECRET:-rangerdanger-dev}"
-PROBE_WAIT="${PROBE_WAIT:-4}"  # seconds to wait for nflog consumer to drain
+PROBE_WAIT="${PROBE_WAIT:-4}"          # initial wait before first event check
+EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-20}"  # max additional seconds to wait
+                                              # for an event to materialise
+                                              # in containd's store
 
 fail=0
 passed=0
@@ -88,12 +91,25 @@ sleep 2
 docker exec rangerdanger-kali sh -c "nc -nv -w 3 10.40.40.20 502 < /dev/null" >/dev/null 2>&1 || true
 sleep "$PROBE_WAIT"
 
-# Query the engine's full event store directly (not the substation endpoint,
-# which limits to 50 most recent and gets drowned out by RTAC's continuous
-# allow-traffic). limit=500 gives plenty of room for kali drops to appear.
-deny_count=$(docker exec rangerdanger-firewall sh -c \
-  "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null \
-  | python3 -c '
+# Poll for the DENY event. The nflog consumer + engine event store + REST
+# endpoint occasionally take longer than PROBE_WAIT (4s) to surface the
+# event under CI runner load — previously this gate failed with
+# "nflog consumer regressed" on what is actually just a polling-window
+# race. Polling within an EVENT_POLL_BUDGET budget (default 20s) makes
+# the gate deterministic against the same propagation race without
+# papering over a real regression: if the consumer is genuinely broken
+# the event will never appear and we still fail at the budget edge.
+#
+# Query the engine's full event store directly (not the substation
+# endpoint, which limits to 50 most recent and gets drowned out by RTAC's
+# continuous allow-traffic). limit=500 gives plenty of room for kali
+# drops to appear.
+deny_count=0
+elapsed=0
+while [ "$elapsed" -lt "$EVENT_POLL_BUDGET" ]; do
+  deny_count=$(docker exec rangerdanger-firewall sh -c \
+    "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null \
+    | python3 -c '
 import json, sys
 events = json.load(sys.stdin) or []
 denies = [e for e in events
@@ -104,11 +120,17 @@ denies = [e for e in events
           and e.get("dstPort") == 502]
 print(len(denies))
 ' 2>/dev/null || echo 0)
+  if [ "$deny_count" -ge 1 ]; then
+    break
+  fi
+  sleep 1
+  elapsed=$((elapsed + 1))
+done
 
 if [ "$deny_count" -lt 1 ]; then
-  err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 in engine events — nflog consumer regressed"
+  err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 in engine events after ${EVENT_POLL_BUDGET}s — nflog consumer regressed"
 else
-  ok "$deny_count kali->field:502 DENY event(s) in engine event store"
+  ok "$deny_count kali->field:502 DENY event(s) in engine event store (after ${elapsed}s of polling)"
 fi
 
 # Also verify the backend's substation surface returns SOME events at all
