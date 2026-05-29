@@ -2260,13 +2260,20 @@ export default function KnowledgePage() {
   const goCategory = (s: Section) => setView({ kind: "category", section: s });
 
   // Deep-link support: read `#article-id` on mount and whenever the browser
-  // hash changes (e.g., back/forward navigation). Lab YAMLs can now use
+  // history advances (back / forward, or hashchange). Lab YAMLs can use
   // [link](/knowledge#article-id) and clicking jumps straight into the article.
+  //
+  // Empty hash means "landing view." This is what lets Back from article B
+  // restore article A (which the article-effect pushed earlier), and Back
+  // again restore landing (popstate fires with empty hash).
   useEffect(() => {
     const apply = () => {
       if (typeof window === "undefined") return;
       const hash = window.location.hash.replace(/^#/, "");
-      if (!hash) return;
+      if (!hash) {
+        setView({ kind: "landing" });
+        return;
+      }
       const target = articlesById.get(hash);
       if (target) {
         setView({
@@ -2278,19 +2285,28 @@ export default function KnowledgePage() {
     };
     apply();
     window.addEventListener("hashchange", apply);
-    return () => window.removeEventListener("hashchange", apply);
+    window.addEventListener("popstate", apply);
+    return () => {
+      window.removeEventListener("hashchange", apply);
+      window.removeEventListener("popstate", apply);
+    };
   }, [articlesById]);
 
-  // Whenever view changes to article-mode, mirror the article id into the URL
-  // hash so the address bar is shareable and the back button works. Hash
-  // stripping on landing/category is handled by goLanding() / goCategory()
-  // explicitly so this effect stays single-purpose.
+  // Whenever view changes to article-mode, mirror the article id into the URL.
+  // Use pushState (not replaceState) so each article navigation gets its own
+  // history entry and the browser Back button actually walks back through the
+  // article-A -> article-B chain rather than skipping A. The guard prevents
+  // an infinite loop when popstate / hashchange set the view from an existing
+  // matching URL — we only push when the hash needs to change.
+  //
+  // Hash stripping on landing is handled by goLanding() explicitly so this
+  // effect stays single-purpose.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (view.kind === "article") {
       const wanted = "#" + view.article.id;
       if (window.location.hash !== wanted) {
-        history.replaceState(null, "", wanted);
+        history.pushState(null, "", wanted);
       }
     }
   }, [view]);
