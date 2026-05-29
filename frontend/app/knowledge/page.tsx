@@ -1,7 +1,20 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, Search, BookOpen } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronRight,
+  Clock,
+  Home,
+  Layers,
+  Radio,
+  Search,
+  Shield,
+  Target,
+  Wrench,
+  Zap,
+} from "lucide-react";
 import Markdown from "marked-react";
 
 /* ------------------------------------------------------------------ */
@@ -14,8 +27,20 @@ interface Article {
   body: string; // markdown content
 }
 
+type IconName =
+  | "zap"
+  | "shield"
+  | "radio"
+  | "wrench"
+  | "layers"
+  | "target"
+  | "book";
+
 interface Section {
   heading: string;
+  description?: string;
+  icon?: IconName;
+  accent?: string; // tailwind-ish accent color shortcut (sky, emerald, violet, amber, slate, rose)
   articles: Article[];
 }
 
@@ -23,6 +48,10 @@ const sections: Section[] = [
   /* ====== Substation Equipment & Operations ====== */
   {
     heading: "Substation Equipment & Operations",
+    description:
+      "What the devices are, what they do electrically, and how the lab simulates them. Start here if you have not seen a distribution substation up close before.",
+    icon: "zap",
+    accent: "sky",
     articles: [
       {
         id: "distribution-substation",
@@ -318,12 +347,126 @@ Simplified for the lab:
 
 When you explain this lab to a power-engineering colleague, lead with what is real: the physics layer is genuinely a distribution-feeder power flow on industry-standard software. The simplifications are about scope (one feeder, snapshot solve, no transients), not about cutting corners on the math.`,
       },
+      {
+        id: "hmi-scada-fuxa",
+        title: "HMI, SCADA, and How FUXA Fits In",
+        body: `**HMI** (Human-Machine Interface) is the operator's view of an industrial process. In a substation control room, the HMI is the screen that shows breakers as open/closed circles, voltages as numeric tiles, and alarms as colored banners. It is what the operator looks at all day.
+
+**SCADA** (Supervisory Control and Data Acquisition) is the larger system: the data-acquisition infrastructure that polls field devices, normalizes their values, stores them in a historian, and forwards selected operator commands back down to the equipment. SCADA is the *plumbing*; the HMI is the *screen*.
+
+**DCS** (Distributed Control System) is closely related but typically refers to plant-wide automation (refineries, chemical plants) where the control logic itself is distributed among many controllers. In substations the architecture is usually called SCADA rather than DCS, but the device-and-protocol surface looks similar.
+
+### What a Real Substation HMI Looks Like
+
+A typical utility HMI shows:
+
+- A **one-line diagram** of the substation with breakers, transformers, and feeders drawn schematically
+- **Status indicators** colored by state (closed = green, open = red, tripped = flashing)
+- **Analog measurements** for bus voltage, feeder current, MW/MVAR flow
+- **Alarm summary** banner showing active alarms and acknowledged-but-unresolved alarms
+- **Trend graphs** for recent history
+- **Switching menus** the operator uses to dispatch commands (open this breaker, raise this regulator)
+
+Commercial HMIs include Survalent, Wonderware, GE iFIX, ABB PCM600, and many vendor-specific systems. They are licensed software running on Windows or RHEL servers, polling field devices over DNP3, IEC 61850, or Modbus and storing data in a historian.
+
+### What FUXA Is
+
+[FUXA](https://www.frangoteam.com) is an **open-source HMI/SCADA platform** — a free alternative to the commercial systems above for projects that need an HMI without paying license fees. It runs in a browser, supports the standard OT protocols (Modbus, OPC UA, MQTT), and is configurable via a visual editor. RangerDanger uses FUXA to mirror what a small-utility or vendor-demo HMI environment looks like.
+
+### What the Lab's \`/substation\` Panel Is
+
+The \`/substation\` panel in RangerDanger is **a custom HMI** built into the lab's web app. It talks to the RTAC's REST API (\`GET /api/state\`) rather than to FUXA, and it renders the feeder one-line, the customer-service tile, and the alarm chain directly. We built it because we needed tight control over the alarm logic (so the lab's \`LOW VOLTAGE\` and \`RECLOSER OPEN — downstream loads lost\` banners would fire on the exact lab conditions we wanted to teach) and because we wanted a clean kinetic-feedback view that updates within seconds of an attack.
+
+FUXA is also up at \`http://localhost:8088/apps/fuxa-hmi/\` for students who want to see what the open-source HMI ecosystem looks like. It is wired to the RTAC's Modbus interface (TCP/502) and demonstrates the same data flow over a more traditional HMI stack. The two views are complementary: the custom panel is the lab's "teaching HMI" optimized for the exercises, and FUXA is the "real-world HMI" you would encounter in a small utility.`,
+      },
+      {
+        id: "plc-ladder-openplc",
+        title: "PLCs, Ladder Logic, and What OpenPLC Does",
+        body: `A **Programmable Logic Controller (PLC)** is a ruggedized industrial computer that reads inputs, runs a fixed control program on a repeating scan cycle, and writes outputs. It is the workhorse of industrial automation. PLCs run conveyor belts in warehouses, pumping stations at water utilities, batch reactors in chemical plants, and protection-and-control logic in substations.
+
+PLCs differ from servers and from RTACs in a few important ways:
+
+- **Hard real-time scan cycle.** A typical PLC scan is 10 to 100 milliseconds — read all inputs, execute the program, write all outputs, repeat. Missing a scan is a fault.
+- **Field-rugged.** Industrial temperature range, vibration tolerance, redundant power, fanless designs.
+- **Ladder logic primary.** Programmable in graphical languages designed for electricians (see below) rather than text-based languages.
+- **Vendor-specific.** Allen-Bradley (Rockwell), Siemens, Schneider, Mitsubishi, and many others each have proprietary toolchains.
+
+### Ladder Logic and IEC 61131-3
+
+**Ladder logic** is a graphical programming language whose visual style descends directly from electrical-relay schematics. Each "rung" of the ladder represents a logical condition: contacts on the left, coils on the right. If the contacts are satisfied (closed switch states), the coil energizes (output bit goes true). It looks like an electrical schematic because that is exactly what it is replacing: hard-wired relay logic that used to fill cabinets is now a few rungs of ladder code in a PLC.
+
+The international standard for PLC programming languages is **IEC 61131-3**, which defines five languages: Ladder Diagram (LD), Function Block Diagram (FBD), Structured Text (ST, similar to Pascal), Instruction List (IL, similar to assembly), and Sequential Function Chart (SFC). Most utility PLC programmers work in LD with occasional FBD.
+
+### How PLCs Differ From RTACs
+
+This often confuses tech-side workshop attendees: a PLC and an RTAC are *both* industrial computers, but they have different jobs.
+
+- A **PLC runs control logic.** It reads field-device inputs, executes IEC 61131-3 code, and drives outputs that turn things on and off. The control program is the point.
+- An **RTAC aggregates and forwards.** It does not generally run control logic; it polls field devices via DNP3/Modbus, normalizes their data, talks to the SCADA system, and translates operator commands into device-level protocols. It is the substation's communications hub.
+
+Modern substations may have multiple PLCs (or PLC-like devices such as SEL RTACs running embedded protection-logic apps) alongside protective relays and a central RTAC. The lines blur — some SEL RTACs run IEC 61131-3 logic apps and are PLCs in everything but the marketing name.
+
+### What OpenPLC Is
+
+[OpenPLC](https://openplcproject.com) is an **open-source PLC runtime** implementing IEC 61131-3. It runs on Linux, supports ladder, structured text, and function block diagram via the OpenPLC Editor, and is widely used for ICS security research and education because it provides a free, inspectable PLC environment.
+
+In the RangerDanger lab, the \`openplc\` node at \`10.30.30.30\` runs OpenPLC with a simple substation-automation program (\`data/openplc/substation_automation.st\`). It demonstrates a PLC's role in the OT operations zone — accessible via Modbus and the OpenPLC web UI at \`http://localhost:8088/apps/openplc/\` — and gives students a third device class to think about beyond the RTAC and the field-device IEDs. The hardened firewall policy treats it like any other OT-Ops host: cross-zone traffic flows through containd, intra-zone is allowed.`,
+      },
+      {
+        id: "power-factor-reactive-power",
+        title: "Power Factor and Reactive Power",
+        body: `The feeder physics article introduces power factor in one bullet. This article unpacks it — useful background for the voltage regulator, capacitor bank, and "why does low voltage at heavy load actually happen" questions.
+
+### Real, Reactive, and Apparent Power
+
+Alternating-current circuits have three power quantities, not one:
+
+- **Real power (P)**, measured in **kilowatts (kW)**. This is the power that actually does useful work — heats elements, turns motor shafts, lights bulbs. It is what shows up on the customer bill.
+- **Reactive power (Q)**, measured in **kilovolt-amperes-reactive (kVAR)**. This is power that flows back and forth between the source and inductive or capacitive elements. It does no net useful work, but it has to be transported on the same wires as real power.
+- **Apparent power (S)**, measured in **kilovolt-amperes (kVA)**. The vector sum of P and Q. Conductors and transformers are sized to handle this — not just the real-power demand.
+
+These three relate by a right triangle: **S² = P² + Q²**. The ratio **P/S** is the **power factor (pf)**, a value between 0 and 1.
+
+### Why Reactive Power Exists
+
+Motors and transformers store energy in magnetic fields. Each AC cycle, energy flows *into* the magnetic field on one half-cycle and back *out* on the other. That sloshing energy is reactive power. The motor only converts a portion of the electrical energy into mechanical work (the real-power portion); the rest is the magnetic field doing its dance.
+
+Capacitors do the same thing with electric fields — but in the *opposite* phase direction. This is why capacitor banks are used to compensate for inductive loads: they push reactive power one way at the moment the motors are pulling it the other way, and the two cancel locally.
+
+### Why Power Factor Matters
+
+A 200 kW load at **pf = 1.0** draws 200 kVA. The same 200 kW at **pf = 0.7** (a heavily inductive motor load) draws 286 kVA — 43% more current on the feeder for the same useful work. The utility has to size conductors and transformers for the kVA, not the kW.
+
+Low power factor also depresses voltage at the load end of the feeder. Reactive current flowing through line reactance drops voltage; the further down a feeder with low pf you go, the lower the voltage at the customer.
+
+### How the Lab Models This
+
+The lab's OpenDSS model uses:
+
+- \`Load.GeneralLoad\` at **0.9 pf** — typical for a mixed commercial/industrial feeder load
+- \`Load.CriticalLoad\` at **0.95 pf** — typical for sensitive critical-services loads where utilities specify cleaner power
+
+When OpenDSS solves the feeder, it computes voltage drop using both the real and reactive current. This is why opening the recloser causes a *downstream voltage of zero* (no current flowing, including reactive) and why a regulator tap change at \`-16\` produces a voltage drop large enough to alarm — the LTC is offsetting against reactive demand that the line cannot freely absorb.
+
+### Capacitor Banks and Voltage Regulators
+
+Both work by adjusting the local reactive-power balance:
+
+- A **capacitor bank** injects reactive power locally (it has a *leading* power factor). Switching one in on a feeder with low-pf load raises the local voltage and reduces the kVA the substation has to transport.
+- A **voltage regulator** is an LTC transformer that simply adjusts the voltage ratio. It does not change Q; it changes V directly, which is why the lab's tap-attack drops voltage even at constant pf.
+
+Real utility distribution engineering spends a lot of time on Q. The lab abstracts it away under sensible default values, but a power-engineering colleague will immediately ask "what is the power factor on those loads?" if you mention the OpenDSS model — and now you have the answer.`,
+      },
     ],
   },
 
   /* ====== Network Segmentation Concepts ====== */
   {
     heading: "Network Segmentation Concepts",
+    description:
+      "Zones, conduits, defense in depth, ICS DPI, NERC CIP, IEC 62443. The conceptual framework the labs are built around.",
+    icon: "shield",
+    accent: "emerald",
     articles: [
       {
         id: "ot-segmentation-overview",
@@ -547,12 +690,88 @@ The \`vendor_jumpbox\` at 10.20.20.10 serves exactly this function. Vendor perso
 
 Under the weak config, the ESP boundary is effectively unenforced. The Kali box at 10.10.10.50 can send Modbus commands directly to the relay at 10.40.40.20. Under the hardened config, the EAP policies on containd block this, forcing all field device communication through the RTAC. That is the difference between an ESP that exists on paper and one that actually works.`,
       },
+      {
+        id: "ics-dpi",
+        title: "What is ICS DPI? (and how containd does it)",
+        body: `**Deep Packet Inspection (DPI)** is the firewall reading *inside* the TCP payload — past the source IP, port, and TCP flags that L4 firewalls inspect — to make decisions based on the application-layer protocol. **ICS DPI** is DPI specifically for industrial protocols: Modbus, DNP3, IEC 61850, CIP, S7Comm, OPC UA, BACnet, and the dozen-or-so others that show up on OT networks.
+
+### Why L4 Filtering Is Not Enough
+
+A traditional L4 firewall sees a Modbus connection as "TCP from 10.30.30.20 to 10.40.40.20, port 502, established." It cannot tell whether that connection is reading a holding register or writing a setpoint that opens a breaker. The Modbus protocol uses **function codes (FC)** to distinguish these operations — FC1/FC3/FC4 are reads, FC5/FC6/FC15/FC16 are writes — but the function code lives in the payload, not in the TCP header.
+
+So an L4 "allow port 502" rule is a yes/no on the whole conversation. It cannot separate the legitimate poll traffic (FC3 reads from the RTAC every 3 seconds) from a malicious FC5 write that opens a breaker. To distinguish them you have to look inside the packet.
+
+### What ICS DPI Actually Filters
+
+Modern ICS DPI engines inspect:
+
+- **Modbus**: function code (read vs write, single-coil vs multiple-register), unit ID, register addresses, written values
+- **DNP3**: function code (read, direct operate, write, freeze), object groups, CROB op codes, internal indications
+- **IEC 61850**: GOOSE multicast source MAC, dataset, app ID, sequence numbers
+- **CIP/Ethernet/IP**: service codes, class IDs, instance/attribute paths (used in Allen-Bradley, Rockwell environments)
+
+For each, the engine maintains a per-flow state machine that tracks the protocol conversation and can apply policy on individual transactions, not just the TCP connection.
+
+### How containd Implements ICS DPI
+
+containd uses a two-layer architecture for DPI:
+
+1. **Kernel-side L4 filtering** via nftables — fast, decides allow/deny on the TCP 5-tuple based on the active policy. Most packets are accepted or denied here without ever leaving the kernel.
+2. **Userspace DPI** via NFQUEUE — for packets matching a rule that has \`dpiMode: enforce\` set, the kernel hands the packet up to containd's userspace process via the Linux netfilter queue. containd parses the payload, evaluates the ICS predicate (e.g., "is this Modbus function code in the allowed list \`[1, 3, 4]\`?"), and verdicts the packet back to the kernel: ACCEPT or DROP.
+
+The DPI verdict path is slower than pure-L4 verdicts (microseconds vs nanoseconds), so the policy is structured to use DPI only where it adds value — the **rtac-to-field-modbus** rule in \`substation-improved.json\` is the canonical example: allow only the RTAC's source IP at L4, *and* allow only function codes 1–6 at the DPI layer. Two layers of defense in depth on the same flow.
+
+### How to See It Working in the Lab
+
+When a student in Lab 2.3 fires an unauthorized Modbus FC5 write from kali, the packet hits containd. At L4, the hardened policy already denies enterprise → field on TCP/502 — so the packet is dropped at the kernel layer and the student sees a TCP timeout, not a Modbus error. Watch the [Live DPI Events strip](/console) on the Segmentation drawer; you should see a row with \`category: l4\`, \`verdict: DENY\`, and the matching rule ID.
+
+When that same write is sent from inside an *allowed* flow (the eng-ws → RTAC monitoring path, for example), the L4 rule lets it through but the DPI verdict drops the write because FC5 is not in the allow list. The event row shows \`category: ics\`, \`verdict: DENY\`, and the specific function code that was rejected. That contrast — L4-only DENY vs ICS-DPI DENY — is the lesson the lab is built around.
+
+### The Limit of ICS DPI
+
+DPI cannot save you from a *compromised RTAC* sending legitimate-looking Modbus writes from its authorized source IP. If the attacker is the RTAC, the firewall sees authorized traffic. This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin (\`scripts/rtac-harden.sh\`) — the RTAC cannot bridge zones, and the firewall enforces what it is. DPI plus L4 plus host-level hardening together is the defense-in-depth story. DPI alone is not.`,
+      },
+      {
+        id: "vendor-remote-access",
+        title: "Vendor Remote Access Patterns",
+        body: `Vendor remote access is the persistent thorn in OT security: utility staff cannot keep up with every vendor-specific protective relay, SCADA system, and PLC controller, so vendors need *some* path into the OT network to support their gear. How you let them in defines a large chunk of your attack surface.
+
+### The Common Patterns
+
+**1. Direct VPN.** Each vendor gets a site-to-site or remote-access VPN into the OT network, typically landing in a vendor zone. Easy to set up, hard to scope. The vendor's whole engineering team can usually reach more than they need to. Lab 2.3-bonus simulates this pattern.
+
+**2. Vendor jump host.** A dedicated server in a DMZ that the vendor logs into (typically via RDP, SSH, or Citrix), runs the vendor-specific tools on, and uses to reach the OT devices. Better than direct VPN because the surface from the vendor's network to your DMZ is narrow (one host, a few protocols), and you can monitor the jump host's outbound to OT. This is what the lab's \`vendor-jump\` node models.
+
+**3. Privileged Access Management (PAM) broker.** A specialized appliance — BeyondTrust Privileged Remote Access, CyberArk PSM, Cyolo, Claroty Secure Remote Access, Dispel, Xage, or similar — that the vendor authenticates against. The broker enforces just-in-time access (the path opens for a scheduled window and closes after), MFA, session recording, and click-stream auditing. This is the modern utility standard for high-criticality access.
+
+**4. Zero-Trust Network Access (ZTNA).** An access broker (Zscaler ZPA, Cloudflare Access, Tailscale, Twingate) that builds a per-application tunnel from the vendor's identity to the specific service they need — without exposing the network. The vendor's laptop talks to the broker, the broker talks to the target device, and the network between them stays invisible. Newer, IT-centric, increasingly adopted on the OT/IT boundary.
+
+### Where Vendor Access Usually Fails
+
+The audit findings on real utility engagements tend to cluster in a few areas:
+
+- **Scope creep.** A vendor needs access to "their" devices, so they get access to the OT-Ops VLAN — and from there can reach things that are not theirs.
+- **Shared credentials.** "\`vendor\` / \`vendor\`" on the jump host, used by ten people across two organizations. No way to attribute an action to a specific human.
+- **No session recording.** The vendor connects, does something to a relay, disconnects. The audit trail is "vendor logged in at 14:03, logged out at 14:42." That is not enough to investigate an incident.
+- **Persistent access.** The vendor's path is always open instead of opened on demand for a maintenance window.
+- **East-west blindness.** The firewall watches enterprise-to-DMZ but not DMZ-to-OT. A compromised vendor jump host can pivot freely into OT.
+
+### How the Lab Demonstrates This
+
+Lab 2.3-bonus models the persistent-access plus east-west-blindness failure modes together. The vendor's RDP path is always open from the enterprise zone (the attacker exploits this with stolen credentials), and from the vendor jump host the Modbus path to the field zone is also open. The attacker laundered through the vendor session never appears to be the attacker — the field device sees the command coming from the vendor's trusted IP. The hardened policy closes both links of the kill chain: enterprise → vendor RDP is denied at the perimeter, and vendor → field Modbus is denied at the DMZ-to-Field conduit. Either one alone breaks the attack; together is defense in depth.
+
+The PAM-broker and ZTNA patterns are *not* simulated in the lab — they would require more infrastructure than fits in a docker compose — but the same defensive lesson generalizes: scope each access path narrowly, log who did what, and assume any path you do not actively constrain will be exploited.`,
+      },
     ],
   },
 
   /* ====== Protocols & Communication ====== */
   {
     heading: "Protocols & Communication",
+    description:
+      "Modbus, DNP3, IEC 61850, OPC UA, NTP. What they do, what they look like on the wire, and how the lab exercises them.",
+    icon: "radio",
+    accent: "violet",
     articles: [
       {
         id: "modbus-tcp",
@@ -667,12 +886,90 @@ From a segmentation perspective, NTP traffic should be treated as a controlled c
 - Field devices should **not** synchronize from external sources on the enterprise network
 - The firewall should permit NTP (UDP 123) only from the designated time source, blocking NTP from unauthorized sources that could inject false time`,
       },
+      {
+        id: "iec-61850-goose",
+        title: "IEC 61850 and GOOSE (Why the Lab Doesn't Simulate Them)",
+        body: `**IEC 61850** is the international standard for substation automation. Where DNP3 evolved as the SCADA reporting protocol, IEC 61850 was designed as a complete substation communication architecture: device modeling, configuration files, and three different protocols for different speed requirements.
+
+For greenfield substation builds today — especially in Europe, parts of Asia, and increasingly North American transmission — IEC 61850 is the new-build standard. The DNP3 dominance in this lab is real for *installed* distribution gear, especially in North America; for *new* projects you should expect IEC 61850 to be on the wire alongside or instead of DNP3.
+
+### The Three Protocols in the 61850 Family
+
+**MMS (Manufacturing Message Specification)** is the TCP-based client/server protocol that handles slower SCADA-style operations: configuration reads, status polling, control commands, file transfers, report uploads. It is roughly the IEC 61850 equivalent of DNP3 — the SCADA-master-talks-to-IED protocol — and rides on **TCP 102**.
+
+**GOOSE (Generic Object Oriented Substation Event)** is the headline protocol. It is a **multicast Ethernet** message (not TCP, not IP — raw layer-2 multicast) used for **protection-class messaging** between IEDs. A protective relay detects a fault, sends a GOOSE message announcing "trip" to the network, and other relays receive it in **microseconds**. The whole point of GOOSE is sub-cycle protection: faster than the protection scheme can be implemented in hardwired trip circuits between relays. GOOSE rides directly on Ethernet, typically on a tagged VLAN reserved for protection traffic.
+
+**Sampled Values (SV / IEC 61850-9-2)** is the third leg: digital streaming of analog instrument-transformer measurements (current and voltage) at high frequency (4 kHz or 4.8 kHz). It replaces the copper wires that traditionally carry CT/PT signals to protective relays with a digital multicast stream. SV is the "process bus" use case — typically deployed inside a single substation cabinet, not the wide-area network.
+
+### Why IEC 61850 Is Hard to Attack the Same Way
+
+GOOSE and SV are **layer-2 multicast**, not TCP. A network firewall sitting between zones at L3 (which is what containd does) does not see GOOSE messages flowing on a different VLAN's broadcast domain at all. To inspect or filter GOOSE traffic you need a layer-2 switch with VLAN-aware filtering, port mirroring, or an inline appliance — fundamentally a different architecture than the IT-style L3 firewall this lab models. The threat model for GOOSE is more about local-cabinet access, VLAN hopping, and rogue device insertion than about cross-zone routing.
+
+The MMS protocol is L3-routable and *could* be DPI'd by a containd-class firewall the same way Modbus and DNP3 are. The IEC 61850 community has done less work standardizing DPI predicates for MMS than the DNP3 / Modbus community has done for theirs, so commercial ICS DPI engines vary in how much MMS-aware filtering they support. This is improving as IEC 61850 deployments mature.
+
+### Why the Lab Sticks With DNP3 (For Now)
+
+A few practical reasons:
+
+- **Installed-base reality.** The lab is a *distribution* substation, where DNP3 is the dominant protocol on installed gear in North America. The scenarios the workshop is designed to teach (cross-zone segmentation, ICS DPI, vendor remote-access compromise) match the threat model of the installed base.
+- **Docker-bridge constraints.** Simulating GOOSE realistically requires layer-2 multicast on a tagged VLAN. Docker bridge networks do not do that well — bridges are layer-2 but not VLAN-aware in the way GOOSE testing needs. A separate L2 testbed (or a Mininet/CORE-style L2 simulator) would be the right vehicle.
+- **DPI lesson generalizes.** The L4 source-pin + function-code-DPI defense pattern the lab teaches against DNP3 maps cleanly to MMS once an IEC 61850-aware engine is available. Students who internalize the lab's segmentation model will not have to relearn it for an MMS environment.
+
+If your environment is IEC 61850-heavy, the gap between this lab and your reality is roughly: substitute MMS for DNP3 in the firewall rules, add a layer-2 strategy for GOOSE that this lab does not exercise, and read about process-bus architectures (SV deployment) separately. The segmentation, DPI, and zone-conduit lessons all carry over.`,
+      },
+      {
+        id: "opc-ua",
+        title: "OPC UA Basics",
+        body: `**OPC UA** (OPC Unified Architecture) is a modern, vendor-neutral, platform-independent protocol for industrial communication, increasingly the go-to choice for **IT/OT integration**: getting OT data into MES, ERP, historians, analytics platforms, and cloud services. Where DNP3 and IEC 61850 are substation-and-utility specific, OPC UA is broader — it shows up in manufacturing, oil and gas, building automation, and water/wastewater.
+
+### What OPC UA Replaces
+
+**Classic OPC (sometimes called OPC DA, HDA, A&E)** was the previous generation: Windows-only, built on DCOM, painful to firewall, painful to debug, painful to secure. Anyone who has tried to traverse a firewall with DCOM has a story. OPC UA replaces all of that with a single specification that works across Windows, Linux, and embedded devices, runs over TCP (port 4840) or HTTPS, and includes security as a first-class concern rather than a bolt-on.
+
+### The Information Model
+
+OPC UA's distinctive feature is its **address space** — a graph of nodes with types, attributes, and references that describes the data semantically, not just by tag name. A node can be marked as a "Temperature" with units, scaling, and engineering range; another node can be a "PumpController" with predefined methods like \`Start()\` and \`Stop()\`. Clients query the address space, discover what is there, and bind to it without prior schema knowledge.
+
+This is a sharp contrast with DNP3 and Modbus, where the meaning of "holding register 17" lives in a vendor's datasheet rather than in the protocol itself. OPC UA is self-describing.
+
+### Where You Encounter OPC UA on an OT Network
+
+- **Historians.** PI System, Wonderware Historian, Cogent DataHub, and most modern historians use OPC UA to collect data from controllers.
+- **Modern PLCs.** Siemens S7-1500, Beckhoff TwinCAT, Rockwell ControlLogix, Schneider M580 — all expose OPC UA servers natively.
+- **MES / ERP integration.** Data from the plant floor flowing up to manufacturing-execution and enterprise-resource-planning systems usually rides on OPC UA.
+- **IT/OT brokers.** Cloud-bound OT data (AWS IoT SiteWise, Azure IoT Hub, GE Predix) often passes through an OPC UA aggregator.
+- **Wind / solar SCADA.** Renewable-generation control rooms increasingly use OPC UA for aggregation across fleets.
+
+### Security Built In
+
+OPC UA has security baked into the spec rather than retrofitted:
+
+- **TLS / certificate-based authentication.** Each client and server presents an X.509 certificate; the connection is mutually authenticated. No clear-text protocol mode is encouraged.
+- **User-level access control** on individual nodes. The protocol distinguishes anonymous, username/password, and certificate-bound identities.
+- **Message-level signing and encryption.** Per-message integrity protection on top of TLS.
+
+In practice OPC UA deployments still vary widely — many devices ship with self-signed certs, expired certs, or anonymous-allowed configs, so the "security built in" is only as good as the deployment hygiene. But the protocol itself is a substantial improvement over the legacy ICS protocols.
+
+### Why the Lab Doesn't Simulate It
+
+A few reasons:
+
+- The lab focuses on distribution-substation segmentation, where the predominant SCADA protocols are DNP3 and (increasingly) IEC 61850. OPC UA is more common at the IT/OT *boundary* and inside *industrial-automation* environments than inside utility distribution substations.
+- Simulating a faithful OPC UA server with a meaningful address space is substantially more work than simulating a Modbus or DNP3 outstation — the protocol stack is heavier, the address-space modeling matters, and the security model needs to be authentic to teach the protocol's strengths.
+- The cross-protocol firewall lessons the lab teaches (L4 + DPI defense in depth, source-pinning, segmentation by zone) all carry over to OPC UA cleanly once you map "Modbus function code" to "OPC UA service code" and "DNP3 Direct Operate" to "OPC UA Write/CallMethod."
+
+For IT/OT integration architectures, the OPC UA server is usually positioned in a DMZ between the OT network and the IT/cloud side. Treat that DMZ with the same defense-in-depth posture the lab teaches for the field-zone conduit, layered with OPC UA's own certificate-and-user-level controls. The segmentation logic generalizes; the protocol surface is different.`,
+      },
     ],
   },
 
   /* ====== Command References & Lab Tools ====== */
   {
     heading: "Command References & Lab Tools",
+    description:
+      "Quick references for the CLI tools the exercises use: mbpoll, dnp3poll, dnp3cmd, tshark, tcpdump, curl, nmap.",
+    icon: "wrench",
+    accent: "amber",
     articles: [
       {
         id: "tool-mbpoll",
@@ -1072,7 +1369,11 @@ This is a concrete, visible demonstration of what segmentation does. The nmap ou
 
   /* ====== Lab-Specific Context ====== */
   {
-    heading: "Lab-Specific Context",
+    heading: "Lab Internals",
+    description:
+      "How the lab is wired together: architecture, weak vs hardened policy, the plan-coverage pipeline, the Live DPI Events strip, and how containd enforces policy at the kernel.",
+    icon: "layers",
+    accent: "slate",
     articles: [
       {
         id: "lab-architecture",
@@ -1184,6 +1485,356 @@ You can use the traffic matrix as a reference when reviewing the hardened firewa
 
 In a real substation, building the traffic matrix is often the most time-consuming step. It requires interviewing operations engineers, reviewing relay settings, understanding SCADA polling configurations, and capturing baseline traffic for analysis. The lab provides the matrix as a given, but in practice, developing it is a significant portion of the segmentation assessment work.`,
       },
+      {
+        id: "plan-coverage-pipeline",
+        title: "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
+        body: `The seven labs are not a flat sequence of independent exercises. The choices you make in Labs 1.3 and 1.4 actually rewrite the content you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. This article explains the data pipeline behind that, because it is not obvious from the surface and a lot of the lab's pedagogical payoff comes from noticing it.
+
+### The Three Inline Markdown Fences
+
+Lab YAML descriptions support three custom fence blocks that the exercise runner parses out:
+
+**\`:::decision\`** captures a multiple-choice answer from the student into browser localStorage. Lab 1.3 uses these to record design verdicts (BLOCK / RESTRICT / ALLOW per requirement). Lab 1.4 uses them to record selected remediation actions and per-role labor budgets. Each fence has an \`id\` so later labs can read the recorded answer.
+
+\`\`\`
+:::decision id=enterprise-to-field options=BLOCK,RESTRICT,ALLOW correct=BLOCK
+What is your design verdict for Enterprise → Field traffic?
+:::
+\`\`\`
+
+**\`:::findings-panel\`** displays what the student recorded in an earlier lab as a structured panel. Lab 2.4 uses these to surface the design verdicts from Lab 1.3 and the observations from Lab 1.2 inside the validation step, so the student can compare current evidence against original intent without flipping back through tabs.
+
+**\`:::plan-coverage\`** is the runtime engine. It reads the student's Lab 1.4 selections from localStorage and renders a live "this requirement is fully addressed / partial / deferred / not applicable" matrix. Lab 2.3 uses it to show which of the three attack defenses the student's plan actually closes. Lab 2.4 uses it for the final reflection.
+
+### The Closed Loop
+
+Concretely, here is what happens when a student makes a choice in Lab 1.4:
+
+1. The student clicks a remediation action in Lab 1.4 — say \`pin-rtac-to-field\`.
+2. \`scenario-runner.tsx\` writes the selection to localStorage under \`decision:remediation-planning:pin-rtac-to-field\` with the value \`SELECTED\`.
+3. Subsequent labs read the same key when their description is rendered. The \`injectDynamicContent()\` helper in \`scenario-runner.tsx\` looks for \`:::plan-coverage\` fences and computes coverage live based on what is in localStorage.
+4. Lab 2.2's Phase 3 text adapts based on whether the student selected DPI actions or not. Lab 2.3's "Apply the hardened policy" plan-coverage panel shows which attacks the student's plan actually closes. Lab 2.4's final reflection shows the full coverage matrix.
+
+### Why This Matters Pedagogically
+
+A lab that says "build a hardened firewall policy" without forcing the student to commit to specific design verdicts and remediation choices first lets the student skip the thinking. The plan-coverage pipeline makes the thinking visible: by Lab 2.4 the student can see, "I committed to BLOCK on enterprise-to-field in Lab 1.3, I deferred adding Modbus DPI in Lab 1.4, and now Lab 2.4's panel tells me my plan does close the enterprise-to-field attack but leaves the eng-ws-to-RTAC-on-DNP3 surface open."
+
+The same workshop can be run two different ways — straight through, treating the labs as independent exercises, or with explicit attention to the pipeline. Both work. The pipeline is the deeper read.
+
+### Resetting the State
+
+Student progress lives in localStorage on each student's browser, scoped by exercise ID. To reset a single lab's recorded decisions during a workshop, open the browser console on the lab page and run \`localStorage.clear()\` (clears everything) or \`Object.keys(localStorage).filter(k => k.startsWith("decision:remediation-planning")).forEach(k => localStorage.removeItem(k))\` to reset just one lab. The instructor-facing \`/api/workshop/reset\` endpoint resets simulator state (substation devices, firewall config) but does not touch student-side localStorage.`,
+      },
+      {
+        id: "live-dpi-events-strip",
+        title: "Reading the Live DPI Events Strip",
+        body: `The Segmentation drawer on the [Network Map](/console) has a **Live DPI Events** strip that surfaces firewall events in real time — every accept, every deny, every DPI verdict. This article is the operator's manual for reading it.
+
+### Where the Events Come From
+
+containd emits two kinds of events that feed the strip:
+
+1. **L4 events** — every packet that matches a rule with logging enabled. These come from the kernel's **nflog** facility on the \`nflogGroup\` configured in the active policy (group 100 in the lab's hardened config). A userspace consumer inside containd reads them and forwards them via Server-Sent Events to the backend, which republishes them on \`/api/substation/network-events\`.
+2. **DPI events** — when a rule has \`dpiMode: enforce\` set, the packet is also queued to userspace via **NFQUEUE** (group 101 in the lab). The DPI engine parses the payload, applies the predicate, and emits a structured event with the verdict and the protocol-specific reason.
+
+### Reading a Row
+
+Each row in the strip looks roughly like:
+
+\`\`\`
+12:34:56.789  category: l4    verdict: DENY   src: 10.10.10.50  dst: 10.40.40.20  port: 502   rule: enterprise-deny
+\`\`\`
+
+The fields you actually care about for lab evidence:
+
+- **timestamp** — when the packet arrived. Useful for correlating with your probe commands.
+- **category** — either \`l4\` (decided by the kernel-side rule) or \`ics\` (decided by the userspace DPI verdict). The distinction is the lab's whole "L4 + DPI defense in depth" lesson.
+- **verdict** — \`ACCEPT\` or \`DENY\`. (Plus \`BlockFlowTemp\` for the case where DPI temporarily blocks a flow to throttle abuse.)
+- **src / dst / port** — the L4 5-tuple.
+- **rule** — the rule ID that matched. Cross-reference against the active policy's JSON to see what the rule actually allows.
+- **attributes** — for DPI events, the protocol-specific reason: \`functionCode: 5\` for a Modbus FC5 reject, \`crobOpCode: trip\` for a DNP3 trip reject, etc.
+
+### Common Patterns in the Lab
+
+**An L4 deny on a hardened policy.** You ran an enterprise → field probe. The kernel dropped the packet before DPI was reached. You see:
+
+\`\`\`
+category: l4   verdict: DENY   src: 10.10.10.50   dst: 10.40.40.20   port: 502   rule: enterprise-deny
+\`\`\`
+
+That is the L4 source-pin in action.
+
+**An ICS DPI deny on a partially-allowed flow.** You ran a probe from a source the L4 rule allows but the DPI rule does not (e.g., an eng-ws-to-RTAC Modbus write). You see:
+
+\`\`\`
+category: l4   verdict: ACCEPT   src: 10.20.20.20   dst: 10.30.30.20   port: 502   rule: eng-ws-to-rtac
+category: ics  verdict: DENY    src: 10.20.20.20   dst: 10.30.30.20   port: 502   rule: rtac-dpi  attributes: { functionCode: 5 }
+\`\`\`
+
+Both rows appear because the packet passed L4 and then got rejected by DPI. This is the *exact* condition the lab's "DPI matters even when L4 is loose" hint block in Lab 2.3 is trying to make visible.
+
+**Lab 2.4 evidence assembly.** When you assemble the evidence package, run your negative-test probes one at a time and screenshot or copy out the matching event rows. The change board sees both the policy intent (your \`student-policy.json\` export) and the policy reality (these event rows). Two-source attestation.
+
+### When the Strip Stays Empty
+
+If you fire a probe and no row appears, the usual causes are:
+
+- The probe never actually hit containd (kernel did not see it — check your source). If you probed from the wrong container, the packet may have stayed intra-zone.
+- The matching rule has logging disabled. Lab policies enable logging on the deny-class rules; if you have applied your own custom policy without logging, your rules may match without emitting events.
+- The \`nflogGroup\` is not set on the active profile. The lab's improved policy sets \`dataplane.nflogGroup: 100\`; if you exported and re-imported a policy that lost that key, the L4 events never reach containd's consumer.
+- The frontend strip is filtered. The drawer has a category-and-verdict filter at the top; make sure it is not filtering out the rows you want to see.
+
+The strip is the closest thing the lab has to a real-time firewall watch. Use it.`,
+      },
+      {
+        id: "how-containd-enforces-policy",
+        title: "How containd Enforces Policy (Kernel-Level View)",
+        body: `For students curious about how the firewall actually works under the hood — what happens between "click Apply Hardened" in the lab UI and a TCP packet getting dropped — this article is the tour. It is not strictly necessary for working through the labs, but it pays off when you are reading containd events, debugging policy edge cases, or evaluating other ICS firewalls against containd.
+
+### The Layered Stack
+
+containd is built on **nftables** (the Linux kernel's modern packet-filtering framework, the successor to iptables). On top of nftables, containd adds:
+
+- A **policy compiler** that translates the JSON policy file (zones, rules, ICS predicates) into a set of nftables rules
+- A **DPI userspace engine** that handles per-protocol packet inspection
+- An **events pipeline** that emits decisions back up to user space
+
+The interesting layers are the kernel-userspace boundary and how packets actually move between them.
+
+### Compilation: From JSON to nftables
+
+When you POST a policy to \`/api/v1/policy/import\` (or use the web UI), containd parses the JSON and generates the corresponding nftables ruleset. A \`Allow enterprise → vendor SSH\` rule becomes something like \`tcp dport 22 ip saddr 10.10.10.0/24 ip daddr 10.20.20.0/24 accept\` in nftables syntax. Rules are organized into chains by zone (input from wan, forward wan → dmz, etc.) and applied with \`nft replace ruleset\` so the swap is atomic.
+
+You can see the compiled ruleset by running \`nft list ruleset\` inside the \`fw-1\` container (Lab 2.4 evidence-package guidance has examples). It looks like a normal nftables output, with extra named sets for the things containd needs to look up dynamically (\`block_flows\` for DPI-blocked source/dest pairs, \`learn_flows\` for learn-mode observations).
+
+### The L4 Path (Fast)
+
+A packet arrives at containd's network interface. The kernel runs it through the compiled nftables rules:
+
+1. Match the source/destination IP and port against the chain for that direction.
+2. If a rule matches:
+   - \`accept\` → packet is forwarded out the egress interface
+   - \`drop\` → packet is silently discarded
+   - \`reject\` → packet is dropped and a TCP RST or ICMP unreachable is sent back
+3. If the rule has logging enabled, copy the packet header to **nflog group N** (the kernel's userspace-logging facility). containd's userspace consumer reads from nflog and emits an event.
+
+This whole path runs in kernel space at line rate. Latency is sub-microsecond per packet. Almost all packets in the lab take this fast path.
+
+### The DPI Path (Slower, More Powerful)
+
+For rules with \`dpiMode: enforce\`, the rule's action is instead **\`queue num N\`** — the kernel hands the packet to userspace via the **NFQUEUE** netfilter facility on queue number N.
+
+1. The kernel queues the packet and stalls the flow waiting for a verdict.
+2. containd's DPI engine reads the packet from the queue (\`AF_NETLINK\` socket, \`NFQUEUE\` protocol).
+3. The engine identifies the protocol (Modbus on 502, DNP3 on 20000), parses the payload, and applies the rule's ICS predicate (\`functionCode in [1,3,4,5,6]\`, \`crobOpCode != trip\`, etc.).
+4. The engine writes a verdict back to the kernel: \`NF_ACCEPT\` lets the packet through, \`NF_DROP\` drops it, \`NF_QUEUE\` re-queues it for further inspection.
+5. The DPI engine also emits an event for the operator-visible record.
+
+DPI latency is microseconds-to-milliseconds per packet — fine for SCADA polling cycles (which are seconds-class), nowhere near fast enough for IEC 61850 GOOSE (which is microsecond-class).
+
+### Events: nflog and DPI Both Feed One Stream
+
+Both the kernel-side nflog and the userspace DPI engine emit events to containd's internal event store. The store deduplicates and timestamps them, then publishes them via Server-Sent Events on the containd REST API. RangerDanger's backend subscribes to that stream and re-publishes via \`/api/substation/network-events\`. The frontend reads from there and renders the Live DPI Events strip. This is the chain from \`packet hit on the kernel\` to \`row appears in the strip\` — roughly 100–500 ms end to end depending on event backlog.
+
+### Why This Layered Approach
+
+The fast L4 path lets containd handle line-rate traffic for the 99% of cases where the source/destination/port pair already decides the verdict. The DPI path handles the remaining 1% where the protocol payload matters. Pure-userspace firewalls (Snort, Suricata in inline mode) have lower throughput because every packet pays the user-kernel crossing cost. Pure-kernel firewalls (basic iptables) cannot inspect protocol payloads at all. The hybrid model is why containd can do ICS DPI on production traffic without becoming the bottleneck.`,
+      },
+    ],
+  },
+
+  /* ====== ICS Threats & Operational Practice ====== */
+  {
+    heading: "ICS Threats & Operational Practice",
+    description:
+      "Real ICS incidents, the OT kill chain, living off the land, change management, and what outages actually cost. Why this matters beyond the lab.",
+    icon: "target",
+    accent: "rose",
+    articles: [
+      {
+        id: "ot-kill-chain",
+        title: "The OT Kill Chain (Mitre ATT&CK for ICS + Real Incidents)",
+        body: `The exercises in this lab are not hypothetical attack patterns. They mirror real ICS incidents that have happened to real utilities. This article walks through the framework that organizes those incidents (Mitre ATT&CK for ICS) and the specific historical events that map most directly to the lab.
+
+### Mitre ATT&CK for ICS
+
+[Mitre ATT&CK for ICS](https://attack.mitre.org/matrices/ics/) is a knowledge base of adversary techniques observed in industrial control system intrusions. It is the OT counterpart to the more widely-known Enterprise ATT&CK and is structured as a matrix of **tactics** (the attacker's goals) and **techniques** (how they achieve those goals).
+
+The tactics in the ICS matrix include: Initial Access, Execution, Persistence, Privilege Escalation, Evasion, Discovery, Lateral Movement, Collection, Command and Control, **Inhibit Response Function**, **Impair Process Control**, and **Impact** (loss of view, loss of control, loss of availability, denial of safety, damage to property). The Inhibit Response, Impair Process Control, and Impact tactics are the ICS-specific column the matrix adds beyond Enterprise ATT&CK — these are the things an attacker can do *only* if they have reached the OT environment.
+
+### The Real Incidents the Lab Mirrors
+
+**Industroyer (CRASHOVERRIDE) — Ukrainian Substation, December 2016.** Sandworm operators used stolen credentials to pivot from IT into a Kyiv-area transmission substation's OT network, then ran custom malware (Industroyer) that spoke IEC 60870-5-101 / -104, IEC 61850, and OPC DA natively. The malware opened breakers, causing a brief regional outage. The attack pattern — IT-to-OT lateral movement, then a protocol-aware command against field devices — is the same shape as the lab's Lab 2.3 (DNP3 Direct Operate against the recloser).
+
+**Industroyer2 — Ukrainian Substation, April 2022.** A follow-on Sandworm campaign targeted Ukrainian high-voltage substations with a refined version of Industroyer focused on IEC 60870-5-104. Intercepted and disrupted before causing significant impact. Same shape, same lesson, with the addition that ICS-aware perimeter monitoring (which the targeted utility had deployed by then) was a meaningful part of the defense.
+
+**Triton / TRISIS — Petrochemical SIS, Saudi Arabia, 2017.** The TEMP.Veles operators (sometimes attributed to Russia's TsNIIKhM) used a long IT compromise to reach a petrochemical plant's safety instrumented system (SIS), then deployed Triton, the first publicly-known malware designed to manipulate a safety controller (Triconex). The attack was discovered when the Triconex tripped the plant — possibly due to a Triton bug. This is an "Impact: Denial of Safety" event in the ATT&CK matrix. The lab does not simulate SIS specifically, but the IT-to-OT lateral path leading to a protocol-aware controller attack is the same pattern.
+
+**Stuxnet — Iranian Centrifuge Cascades, ~2009–2010.** The original public ICS attack. US/Israeli operators (according to the public attribution) used USB-borne malware to reach Siemens S7-315 PLCs controlling uranium centrifuges, then issued protocol-level write commands that subtly damaged the centrifuges over months. The Inhibit Response Function tactic — Stuxnet manipulated the HMI to show normal operations while damage was occurring — is one of the most influential moves in the ATT&CK matrix. The lab does not simulate HMI manipulation directly, but the "by the time the field device sees the command, it looks legitimate" lesson from Lab 2.3-bonus is the same observation.
+
+**Volt Typhoon — Critical Infrastructure Pre-positioning, 2023–2024.** PRC-linked operators pre-positioned access to US critical-infrastructure OT networks (water, electric, transportation) without immediately causing impact. CISA and partner agencies published advisories detailing living-off-the-land tradecraft (LOL TTPs) — the threat surface is not "attackers run novel malware" but "attackers use legitimate Windows admin tools to live inside OT networks for months." This is the lab's [Living off the Land](#) lesson made historical.
+
+### How the Lab Exercises Map to ATT&CK
+
+| Lab step | ATT&CK technique |
+|---|---|
+| Lab 2.3 unauthorized DNP3 Direct Operate against recloser | T0859 Valid Accounts (RTAC source spoofing) + T0855 Unauthorized Command Message |
+| Lab 2.3 Modbus FC5 breaker trip | T0855 Unauthorized Command Message + T0879 Damage to Property (if it persisted) |
+| Lab 2.3 Modbus FC6 regulator tap override | T0836 Modify Parameter |
+| Lab 2.3-bonus RDP pivot through vendor-jump | T0817 Drive-by Compromise → T0822 External Remote Services → T0859 Valid Accounts |
+| Lab 1.2 baseline traffic capture (defender side) | The defender-side counterpart to T0801 Monitoring (which an attacker also does for reconnaissance) |
+
+When you walk a workshop attendee through Lab 2.3 and they ask "is this a real thing?" — yes. The Industroyer pattern. Show them the ATT&CK matrix entry for [Impair Process Control / Unauthorized Command Message](https://attack.mitre.org/techniques/T0855/) and the [Industroyer threat group page](https://attack.mitre.org/software/S0604/). That contextualization changes how seriously students take the exercise.`,
+      },
+      {
+        id: "living-off-the-land-ot",
+        title: "Living off the Land in OT",
+        body: `**Living off the Land (LOTL)** is the attacker tradecraft of using tools and credentials that already exist in the target environment rather than introducing custom malware. In OT specifically, this means using the legitimate OT tools that engineering workstations and vendor jump hosts already have installed — \`mbpoll\`, \`dnp3poll\`, vendor configuration utilities, RDP, native SCADA functions — to accomplish the attacker's goals without ever dropping a file that an antivirus might catch.
+
+### Why OT Attackers Love LOTL
+
+Several reasons converge:
+
+- **Detection.** Antivirus and endpoint detection are vastly weaker in OT than in IT. But the things that DO exist (network monitoring, anomalous-traffic detection) are even more allergic to *new* binaries than to anomalous network use of existing binaries. Using \`mbpoll\` does not flag any AV alert anywhere.
+- **Persistence.** Custom malware needs persistence mechanisms. Legitimate tools are already persistent — they are part of the engineering workstation's image.
+- **Plausible deniability.** A protocol-level attack that uses \`mbpoll\` and a real RTU's source IP looks indistinguishable from legitimate operator activity. Attribution is harder.
+- **Lateral movement.** A compromised engineering workstation has the credentials, network paths, and tools to reach everything an engineer reaches. The attacker inherits the engineer's authorization scope without needing to escalate.
+
+### What the Tools Look Like
+
+Some of the legitimate tools commonly abused in OT environments:
+
+- **\`mbpoll\`, \`mbtget\`, \`MBASE\`** — Modbus clients shipped with most engineering Linux distros and many Windows ICS toolkits.
+- **\`dnp3poll\`, \`dnp3cmd\`, OpenDNP3, SEL AcSELerator\`** — DNP3 clients, some commercial, some open-source.
+- **\`xfreerdp\`, \`mstsc\`, VNC clients** — used for vendor jump-host pivots (Lab 2.3-bonus).
+- **\`psexec\`, \`wmiexec\`, \`PowerShell Remoting\`** — Windows admin tools that attackers use to lateralize after reaching an engineering workstation.
+- **Vendor configuration utilities** — SEL AcSELerator Architect, ABB MicroSCADA, Siemens TIA Portal, Rockwell Studio 5000, Wonderware InTouch. Each is a legitimate engineering tool that, in attacker hands, becomes a control-system command-line interface.
+
+### Why Behavioral Detection Beats Signature Detection in OT
+
+Signature-based detection (this hash is bad, this string is bad, this binary is malware) does not work on LOTL because the binary is legitimate. What works is **behavioral detection** — flagging traffic patterns and command sequences that legitimate activity should not exhibit.
+
+In OT specifically, behavioral detection is plausible *because* legitimate behavior is so constrained. The RTAC polls the recloser every 5 seconds via DNP3 reads. Nothing else should be sending DNP3 to the recloser. A single DNP3 packet from the engineering workstation to the recloser at 02:47 on a Tuesday is anomalous on its face. You do not need to know whether the engineering workstation's binary is malicious to know that this packet is.
+
+This is why the lab's defense-in-depth lesson stresses both segmentation (source-pin: only the RTAC can reach the field) AND monitoring (every cross-zone packet shows up in the Live DPI Events strip). Segmentation removes the easy paths; monitoring catches what slips through. Antivirus does not enter the conversation.
+
+### How the Lab's Attacks Use LOTL
+
+Every attack in Lab 2.3 and 2.3-bonus uses LOTL by design. \`mbpoll\` and \`dnp3cmd\` are real OT tools that any engineering workstation has. \`xfreerdp\` is a legitimate desktop client. \`sshpass\` is a legitimate scripting tool. None of these are malware. They are exactly what a vendor's engineer would use to do legitimate work — and exactly what an attacker who has compromised that engineer's workstation would use to do illegitimate work.
+
+The pedagogical point: when you tell students "the firewall has to deny enterprise → field on Modbus," it is not because there is a particular piece of malware to block. It is because the *legitimate* tool, used from the *wrong* place, is the attack. Network policy is the right place to draw the line; endpoint malware detection is not where this fight is fought.
+
+### Mitigation Posture
+
+For OT environments specifically, the LOTL-mitigation posture looks like:
+
+- **Strict network segmentation** with per-conduit allow rules (no broad zone allows)
+- **Source-pinning** so a tool used from the wrong place is denied at L4
+- **DPI for protocol surfaces** so the right tool used the wrong way is denied at L7
+- **Behavioral monitoring** for traffic that does not match the baseline operational pattern
+- **Just-in-time vendor access** (open the path for a maintenance window, close it after)
+- **Per-session audit** so an investigation can pin actions to a specific human and timeframe
+
+The lab exercises the first three. The remaining items are organizational practice that no docker compose can simulate, but they are where the real defense lives.`,
+      },
+      {
+        id: "change-management-firewall-rules",
+        title: "Change Management for Substation Firewall Rules",
+        body: `Lab 2.4's evidence package is not a lab artifact for its own sake. It is a deliberately compressed version of what a real utility *change board* expects to see before approving a segmentation change. This article explains what a change board actually is, what they want, and how the lab's outputs map to that.
+
+### What a Utility Change Board Is
+
+A change board (sometimes called CAB — Change Advisory Board) is the operational governance body that reviews and approves changes to production systems. In OT environments these reviews are more stringent than in IT because:
+
+- **Outages cost money and reputation** (the customer-service tile in the lab's HMI is the operational version of this — minutes of outage, customers affected, regulatory implications).
+- **Some changes can damage equipment** (a misconfigured firewall rule that prevents the RTAC from reaching the recloser will fail to recover from a fault, which can damage the recloser or the upstream feeder).
+- **Some are regulated.** NERC CIP-005 R1 requires utilities to document and review electronic-security-perimeter changes; CIP-010 requires baseline configurations and change-management evidence. A change board's records are part of the audit trail the regulator will eventually inspect.
+
+A typical change board for a substation firewall change includes: a control-room operator (verifies operations impact), a protection engineer (verifies the change does not break protection coordination), a cybersecurity engineer (verifies the security posture is improved or unchanged), and an IT/network engineer (verifies the firewall configuration itself). The board reviews the proposed change package, asks questions, and votes to approve, defer, or reject.
+
+### What the Change Package Has to Contain
+
+A complete substation-firewall change package usually includes:
+
+1. **Statement of intent.** What problem is this change solving? What is the operational or security gap? Why now?
+2. **Configuration diff.** The current policy, the proposed policy, and the line-by-line difference. For a containd policy, this is the JSON diff plus the human-readable summary of "rule X added, rule Y removed, rule Z modified."
+3. **Test evidence.** Proof that the proposed policy was tested before being proposed for production. For each new or modified rule: a positive test (the legitimate traffic still works) and a negative test (the previously-allowed bad traffic is now blocked). The evidence is typically a combination of PCAP captures, firewall logs, and screenshots of the test result.
+4. **Rollback plan.** If the change goes badly in production, how do you revert? For a containd change, this is "restore the prior policy file, run \`containd cli> import config\`, verify the active policy hash matches the previous version."
+5. **Maintenance window.** When will the change be applied? What other activities are scheduled in the same window? What is the impact on operations during the change itself (does the firewall need to be restarted)?
+6. **Post-change monitoring plan.** What will you watch for in the hours after the change to confirm operations are healthy? Which dashboards, which alarms, which log queries?
+
+### How the Lab Maps to This
+
+Lab 2.4's evidence-assembly step produces almost exactly this package:
+
+- **Statement of intent** — Lab 1.3's design verdicts and Lab 1.4's plan together are the *intent* document. The student wrote them.
+- **Configuration diff** — \`containd cli> export config > student-policy.json\` is the proposed policy. The weak baseline is the current. The diff is \`diff substation-weak.json student-policy.json\`.
+- **Test evidence** — Lab 2.4's positive-tests step is the legitimate-traffic-works half. The negative-tests step is the bad-traffic-blocked half. Both produce log entries on the Live DPI Events strip that constitute the firewall-log evidence.
+- **PCAP** — Lab 2.4's PCAP-capture step writes \`/data/captures/validation.pcap\` showing only RTAC sources reaching field on Modbus/DNP3 after the policy is applied. This is direct network-level evidence.
+- **Audit log** — \`containd cli> show audit\` snapshots the \`config.commit\` entries that prove the policy was actually applied.
+
+A real change board would expect more (rollback plan, maintenance window, monitoring plan), but the lab covers the *technical* portion of the evidence package end to end. The operational portions (when, who, what else) are organizational practice no lab can simulate.
+
+### Why This Matters Beyond the Lab
+
+Most cyber-trained workshop attendees never see a change-board package and have never had to defend a firewall change against operators who would rather not change anything. The lab compresses this experience into a 15-minute exercise on purpose. Walking out of the workshop with one assembled evidence package in your Exercise Notes gives you a tangible template to point at when your real organization asks "what would a good change package look like?"
+
+The \`scripts/validation-report.sh\` helper produces a markdown deliverable equivalent to the manually-assembled package — operator-facing rather than student-facing, suitable for attaching directly to a change request.`,
+      },
+      {
+        id: "outage-costs-saidi-saifi",
+        title: "What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)",
+        body: `The customer-service tile on the lab's Feeder HMI shows "ALL CUSTOMERS WITHOUT POWER" or "N kW serving M customers" depending on the feeder state. This is not just flavor. It is the lab's representation of the metrics utilities actually report to their regulators — and the metrics a cyber attack against a substation would actually move.
+
+### The Standard Reliability Metrics
+
+Utilities report distribution-system reliability using two widely-used indices:
+
+- **SAIDI** (System Average Interruption Duration Index) — the *average* total outage time per customer per year. If a utility serves a million customers and the total outage-customer-minutes across the year was 100 million, SAIDI = 100 minutes per customer.
+- **SAIFI** (System Average Interruption Frequency Index) — the *average* number of outage events per customer per year. SAIFI = 1.5 means the average customer experiences 1.5 outage events per year.
+
+A third commonly-tracked metric is **CAIDI** (Customer Average Interruption Duration Index) — the average outage duration per outage event = SAIDI / SAIFI. It is what your average outage feels like to a customer, in minutes.
+
+These are reported to **state-level public utility commissions** in the US (each state has its own) and equivalent regulators in other countries. They are public information. They are tracked over time. They feed rate-case decisions, performance-based ratemaking, and utility executive bonuses. They are not abstract.
+
+### Typical Values
+
+For a North American distribution utility:
+
+- SAIDI around **90 to 150 minutes per year** is normal in good weather years.
+- Major-event days (hurricanes, ice storms) push SAIDI higher; sometimes the regulator excludes them from the official reporting figure to avoid penalizing for weather.
+- The best-performing utilities in fair-weather climates run SAIDI under 60 minutes. Long-rural utilities in harsh climates can be 200+.
+- SAIFI typically runs **0.7 to 1.5 events per year per customer**.
+
+A single substation event that takes 1,000 customers offline for 60 minutes contributes 60,000 customer-minutes — visible in the SAIDI calculation. A whole feeder event taking 10,000 customers offline for 4 hours is 2.4 million customer-minutes — the kind of event that triggers an executive after-action review.
+
+### How Outage Costs Get Quantified
+
+Beyond the regulatory reporting, utilities calculate the economic cost of outages for cost-benefit analysis of grid investments. The standard reference is the **DOE Interruption Cost Estimator (ICE) Calculator** (Berkeley Lab). It uses customer-survey-derived willingness-to-pay-to-avoid-outage data to produce per-event cost estimates:
+
+- A 1-hour outage for a typical small commercial customer: roughly **\\$200 to \\$500**
+- A 1-hour outage for a medium industrial customer: **\\$5,000 to \\$30,000** depending on production sensitivity
+- A 1-hour outage for a hospital or fire station: **incalculable in the direct dollar sense**, which is why the lab calls these out separately on the customer-service tile
+
+For a 1,000-customer-hour outage event across a typical mix, the all-in economic cost is in the **\\$200,000 to \\$1,000,000** range. This is before regulatory penalties.
+
+### Cyber Attacks vs. Weather as Outage Causes
+
+For context: about **70% of customer-minutes of outage** at a typical distribution utility comes from weather (storms, ice, lightning, vegetation contact). The next-largest categories are equipment failure, animal contact, and human error. Cyber attack is, today, a tiny fraction of the actual outage tally.
+
+But the cyber-attack risk profile is different from the weather risk profile in two important ways:
+
+1. **Concurrency.** A targeted cyber attack can take down many substations *simultaneously*, in a way that weather events at this scale (regional ice storm, hurricane) usually require luck or a multi-day weather pattern. A coordinated Industroyer-class attack could in principle affect tens of substations in a window of minutes.
+2. **Cascading.** A weather event is bounded by the geography of the weather. A cyber event is bounded by the attacker's reach — which, if the IT-OT boundary is porous, can be region-wide or larger.
+
+These two characteristics are why utility executives and regulators care about cyber attacks against distribution far in excess of the historical-outage-share argument. The risk is not what cyber attacks *have* done; it is what cyber attacks *could* do under a coordinated campaign.
+
+### How the Customer-Service Tile Maps to All This
+
+The customer-service tile is the lab's representation of the operator's awareness of outage impact. When the tile flips from "120 kW serving ~200 customers" to "ALL CUSTOMERS WITHOUT POWER," that is the operational visibility a real control-room operator has. The lab's "hospital and fire station without power" annotation is the *critical-load* category — the loads whose outage triggers an immediate emergency response.
+
+When you tell a workshop attendee "this single packet caused a complete feeder outage," you can put a dollar figure on it: 200 customers × 1 hour at typical mix ≈ **\\$50,000 to \\$200,000** of economic impact, plus the regulatory reporting visibility, plus the (incalculable) critical-services consequences. The cyber-attack-against-substation threat is not theoretical. The lab does not simulate the economics directly, but the customer-service tile is the bridge to that framing.`,
+      },
     ],
   },
 ];
@@ -1192,33 +1843,123 @@ In a real substation, building the traffic matrix is often the most time-consumi
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+const ACCENT_CLASSES: Record<
+  string,
+  { ring: string; chip: string; iconBg: string; iconText: string; chipText: string }
+> = {
+  sky:     { ring: "hover:border-sky-700/60",     chip: "bg-sky-900/40",     iconBg: "bg-sky-500/15",     iconText: "text-sky-300",     chipText: "text-sky-200" },
+  emerald: { ring: "hover:border-emerald-700/60", chip: "bg-emerald-900/40", iconBg: "bg-emerald-500/15", iconText: "text-emerald-300", chipText: "text-emerald-200" },
+  violet:  { ring: "hover:border-violet-700/60",  chip: "bg-violet-900/40",  iconBg: "bg-violet-500/15",  iconText: "text-violet-300",  chipText: "text-violet-200" },
+  amber:   { ring: "hover:border-amber-700/60",   chip: "bg-amber-900/40",   iconBg: "bg-amber-500/15",   iconText: "text-amber-300",   chipText: "text-amber-200" },
+  slate:   { ring: "hover:border-slate-600",      chip: "bg-slate-800/60",   iconBg: "bg-slate-500/15",   iconText: "text-slate-300",   chipText: "text-slate-300" },
+  rose:    { ring: "hover:border-rose-700/60",    chip: "bg-rose-900/40",    iconBg: "bg-rose-500/15",    iconText: "text-rose-300",    chipText: "text-rose-200" },
+};
+
+const accentOf = (s: Section) => ACCENT_CLASSES[s.accent || "slate"] || ACCENT_CLASSES.slate;
+
+function SectionIcon({ name, className }: { name?: IconName; className?: string }) {
+  const cls = className || "h-5 w-5";
+  switch (name) {
+    case "zap":     return <Zap     className={cls} />;
+    case "shield":  return <Shield  className={cls} />;
+    case "radio":   return <Radio   className={cls} />;
+    case "wrench":  return <Wrench  className={cls} />;
+    case "layers":  return <Layers  className={cls} />;
+    case "target":  return <Target  className={cls} />;
+    default:        return <BookOpen className={cls} />;
+  }
+}
+
+function stripMarkdownForExcerpt(md: string): string {
+  // Strip code fences, headings, link syntax, emphasis markers, bullet markers,
+  // and HTML for a clean snippet — first paragraph only.
+  const noFences = md.replace(/```[\s\S]*?```/g, "");
+  const firstPara = noFences.split(/\n\n+/).find((p) => p.trim().length > 0) || "";
+  return firstPara
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_`>~]/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function readingMinutes(md: string): number {
+  const words = md.replace(/```[\s\S]*?```/g, "").split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 220));
+}
+
+interface SearchHit {
+  article: Article;
+  section: Section;
+  snippet: string;
+}
+
+function buildSnippet(body: string, q: string): string {
+  const lower = body.toLowerCase();
+  const i = lower.indexOf(q);
+  if (i < 0) return stripMarkdownForExcerpt(body).slice(0, 180);
+  const start = Math.max(0, i - 60);
+  const end = Math.min(body.length, i + q.length + 120);
+  const slice = body.slice(start, end).replace(/\s+/g, " ").trim();
+  return (start > 0 ? "… " : "") + slice + (end < body.length ? " …" : "");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
+
+type View =
+  | { kind: "landing" }
+  | { kind: "category"; section: Section }
+  | { kind: "article"; section: Section; article: Article };
+
 export default function KnowledgePage() {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<View>({ kind: "landing" });
 
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const totalArticles = useMemo(
+    () => sections.reduce((n, s) => n + s.articles.length, 0),
+    [],
+  );
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return sections;
-    const q = search.toLowerCase();
-    return sections
-      .map((s) => ({
-        ...s,
-        articles: s.articles.filter((a) =>
-          a.title.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((s) => s.articles.length > 0);
+  const hits: SearchHit[] = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    const out: SearchHit[] = [];
+    for (const section of sections) {
+      for (const article of section.articles) {
+        const inTitle = article.title.toLowerCase().includes(q);
+        const inBody = article.body.toLowerCase().includes(q);
+        if (inTitle || inBody) {
+          out.push({
+            article,
+            section,
+            snippet: inBody
+              ? buildSnippet(article.body, q)
+              : stripMarkdownForExcerpt(article.body).slice(0, 180),
+          });
+        }
+      }
+    }
+    return out;
   }, [search]);
 
+  const goLanding = () => {
+    setView({ kind: "landing" });
+    setSearch("");
+  };
+  const goCategory = (s: Section) => setView({ kind: "category", section: s });
+  const goArticle = (s: Section, a: Article) =>
+    setView({ kind: "article", section: s, article: a });
+
+  const isSearching = search.trim().length > 0;
+
   return (
-    <main className="flex h-[calc(100vh-0px)] flex-col overflow-hidden">
+    <main className="flex h-[calc(100vh-0px)] flex-col overflow-hidden bg-slate-950">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-950/80 px-6 py-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1227,77 +1968,327 @@ export default function KnowledgePage() {
           alt="Rook"
           className="h-9 w-9 shrink-0"
         />
-        <div className="flex items-center gap-2">
+        <button
+          onClick={goLanding}
+          className="flex items-center gap-2 text-left transition-opacity hover:opacity-80"
+          aria-label="Back to knowledge home"
+        >
           <BookOpen className="h-5 w-5 text-sky-400" />
           <h1 className="text-lg font-semibold text-slate-100">
             Knowledge Base
           </h1>
+        </button>
+        <span className="text-xs text-slate-500">{totalArticles} articles</span>
+
+        <div className="ml-auto flex items-center gap-2">
+          {(view.kind !== "landing" || isSearching) && (
+            <button
+              onClick={goLanding}
+              className="flex items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100"
+            >
+              <Home className="h-3.5 w-3.5" />
+              Home
+            </button>
+          )}
         </div>
-        <span className="text-xs text-slate-500">
-          {sections.reduce((n, s) => n + s.articles.length, 0)} articles
-        </span>
       </header>
 
       {/* Search bar */}
       <div className="shrink-0 border-b border-slate-800 bg-slate-950/60 px-6 py-3">
-        <div className="relative max-w-xl">
+        <div className="relative mx-auto max-w-2xl">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter articles by title..."
+            placeholder="Search across all articles (titles and bodies)…"
             className="w-full rounded-lg border border-slate-700 bg-slate-900 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600"
           />
+          {isSearching && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-slate-500 hover:text-slate-300"
+              aria-label="Clear search"
+            >
+              clear
+            </button>
+          )}
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="mx-auto max-w-4xl space-y-8">
-          {filtered.length === 0 && (
-            <p className="py-12 text-center text-sm text-slate-500">
-              No articles match your search.
-            </p>
-          )}
-
-          {filtered.map((section) => (
-            <div key={section.heading}>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-400/80">
-                {section.heading}
+      <div className="flex-1 overflow-y-auto px-6 py-8">
+        <div className="mx-auto max-w-5xl">
+          {/* SEARCH RESULTS — take precedence over any nav view */}
+          {isSearching ? (
+            <div>
+              <h2 className="mb-1 text-sm font-semibold text-slate-200">
+                {hits.length === 0
+                  ? "No results"
+                  : hits.length === 1
+                    ? "1 result"
+                    : `${hits.length} results`}{" "}
+                <span className="text-slate-500">
+                  for &ldquo;{search.trim()}&rdquo;
+                </span>
               </h2>
+              <p className="mb-6 text-xs text-slate-500">
+                Searches every article title and body. Click a result to jump
+                into the article.
+              </p>
 
-              <div className="space-y-2">
-                {section.articles.map((article) => {
-                  const isOpen = expanded.has(article.id);
+              {hits.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-500">
+                  Try a different query, or{" "}
+                  <button
+                    onClick={() => setSearch("")}
+                    className="text-sky-400 hover:underline"
+                  >
+                    clear the search
+                  </button>{" "}
+                  to browse topics.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {hits.map((hit) => {
+                    const acc = accentOf(hit.section);
+                    return (
+                      <li key={hit.article.id}>
+                        <button
+                          onClick={() => {
+                            setSearch("");
+                            goArticle(hit.section, hit.article);
+                          }}
+                          className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full ${acc.chip} px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${acc.chipText}`}
+                            >
+                              <SectionIcon
+                                name={hit.section.icon}
+                                className="h-3 w-3"
+                              />
+                              {hit.section.heading}
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-600">
+                              <Clock className="h-3 w-3" />
+                              {readingMinutes(hit.article.body)} min
+                            </span>
+                          </div>
+                          <h3 className="text-sm font-semibold text-slate-100">
+                            {hit.article.title}
+                          </h3>
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-400">
+                            {hit.snippet}
+                          </p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : view.kind === "landing" ? (
+            /* LANDING: hero + topic tiles */
+            <div>
+              <div className="mb-8">
+                <h2 className="text-2xl font-semibold text-slate-100">
+                  Explore the knowledge base
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+                  Background reading for the workshop labs. Pick a topic to
+                  browse, or use the search bar above to jump straight to a
+                  specific article. Each article is short enough to read in a
+                  few minutes during an exercise.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {sections.map((section) => {
+                  const acc = accentOf(section);
                   return (
-                    <div
-                      key={article.id}
-                      className="rounded-lg border border-slate-800 bg-slate-900/60"
+                    <button
+                      key={section.heading}
+                      onClick={() => goCategory(section)}
+                      className={`group relative flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-left transition-colors ${acc.ring}`}
                     >
-                      <button
-                        onClick={() => toggle(article.id)}
-                        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-slate-200 transition-colors hover:bg-slate-800/50"
+                      <div
+                        className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${acc.iconBg} ${acc.iconText}`}
                       >
-                        {isOpen ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-sky-400" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
-                        )}
-                        {article.title}
-                      </button>
-
-                      {isOpen && (
-                        <div className="knowledge-article border-t border-slate-800 px-5 py-4 text-sm leading-relaxed text-slate-300">
-                          <Markdown>{article.body}</Markdown>
-                        </div>
-                      )}
-                    </div>
+                        <SectionIcon name={section.icon} className="h-5 w-5" />
+                      </div>
+                      <h3 className="text-base font-semibold text-slate-100">
+                        {section.heading}
+                      </h3>
+                      <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-400">
+                        {section.description || ""}
+                      </p>
+                      <div className="mt-4 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-500">
+                          {section.articles.length} article
+                          {section.articles.length === 1 ? "" : "s"}
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-500 group-hover:text-slate-300">
+                          Browse <ChevronRight className="h-3 w-3" />
+                        </span>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
+
+              <div className="mt-10">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-400/80">
+                  All articles, A–Z
+                </h3>
+                <ul className="columns-1 gap-x-8 sm:columns-2 lg:columns-3">
+                  {[...sections]
+                    .flatMap((section) =>
+                      section.articles.map((article) => ({ article, section })),
+                    )
+                    .sort((a, b) => a.article.title.localeCompare(b.article.title))
+                    .map(({ article, section }) => (
+                      <li
+                        key={article.id}
+                        className="mb-2 break-inside-avoid text-xs leading-snug"
+                      >
+                        <button
+                          onClick={() => goArticle(section, article)}
+                          className="text-left text-slate-400 transition-colors hover:text-sky-300"
+                        >
+                          {article.title}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
             </div>
-          ))}
+          ) : view.kind === "category" ? (
+            /* CATEGORY: one section's articles, card-style */
+            <div>
+              <button
+                onClick={goLanding}
+                className="mb-4 flex items-center gap-1 text-xs text-slate-500 transition-colors hover:text-slate-300"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                All topics
+              </button>
+              <div className="mb-6 flex items-start gap-4">
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg ${accentOf(view.section).iconBg} ${accentOf(view.section).iconText}`}
+                >
+                  <SectionIcon name={view.section.icon} className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-semibold text-slate-100">
+                    {view.section.heading}
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+                    {view.section.description}
+                  </p>
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    {view.section.articles.length} article
+                    {view.section.articles.length === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </div>
+
+              <ul className="space-y-3">
+                {view.section.articles.map((article) => {
+                  const acc = accentOf(view.section);
+                  return (
+                    <li key={article.id}>
+                      <button
+                        onClick={() => goArticle(view.section, article)}
+                        className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-slate-100">
+                            {article.title}
+                          </h3>
+                          <span className="flex shrink-0 items-center gap-1 text-[10px] text-slate-500">
+                            <Clock className="h-3 w-3" />
+                            {readingMinutes(article.body)} min
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-400">
+                          {stripMarkdownForExcerpt(article.body).slice(0, 200)}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : (
+            /* ARTICLE: clean reading view */
+            <div>
+              <nav className="mb-4 flex items-center gap-1.5 text-xs text-slate-500">
+                <button
+                  onClick={goLanding}
+                  className="hover:text-slate-300"
+                >
+                  Knowledge
+                </button>
+                <ChevronRight className="h-3 w-3" />
+                <button
+                  onClick={() => goCategory(view.section)}
+                  className="hover:text-slate-300"
+                >
+                  {view.section.heading}
+                </button>
+              </nav>
+
+              <article className="mx-auto max-w-3xl">
+                <div className="mb-4 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full ${accentOf(view.section).chip} px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${accentOf(view.section).chipText}`}
+                  >
+                    <SectionIcon
+                      name={view.section.icon}
+                      className="h-3 w-3"
+                    />
+                    {view.section.heading}
+                  </span>
+                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                    <Clock className="h-3 w-3" />
+                    {readingMinutes(view.article.body)} min read
+                  </span>
+                </div>
+                <h2 className="mb-6 text-3xl font-semibold leading-tight text-slate-100">
+                  {view.article.title}
+                </h2>
+                <div className="knowledge-article text-[15px] leading-relaxed text-slate-300">
+                  <Markdown>{view.article.body}</Markdown>
+                </div>
+
+                {view.section.articles.length > 1 && (
+                  <div className="mt-12 border-t border-slate-800 pt-6">
+                    <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-400/80">
+                      More in {view.section.heading}
+                    </h3>
+                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {view.section.articles
+                        .filter((a) => a.id !== view.article.id)
+                        .slice(0, 6)
+                        .map((other) => (
+                          <li key={other.id}>
+                            <button
+                              onClick={() => goArticle(view.section, other)}
+                              className="flex w-full items-center gap-2 rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:border-slate-700 hover:text-slate-100"
+                            >
+                              <ChevronRight className="h-3 w-3 shrink-0 text-slate-600" />
+                              <span className="truncate">{other.title}</span>
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+              </article>
+            </div>
+          )}
         </div>
       </div>
     </main>
