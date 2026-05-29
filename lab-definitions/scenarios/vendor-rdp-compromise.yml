@@ -172,10 +172,14 @@ steps:
       attack laundered through the vendor session.
       :::
     action:
-      type: command
-      device: recloser
-      command: disable_reclose
-      source: "10.20.20.10"
+      type: sequence
+      commands:
+        - device: recloser
+          command: disable_reclose
+          source: "10.20.20.10"
+        - device: recloser
+          command: inject_fault
+          source: "10.20.20.10"
 
   - title: "Restore service"
     expected_config: weak
