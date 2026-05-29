@@ -1932,16 +1932,103 @@ When you tell a workshop attendee "this single packet caused a complete feeder o
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Per-section accent palette. Each color name maps to a bundle of
+ * Tailwind class strings used by the landing tiles, article cards,
+ * search results, and the article reading view's section header.
+ *
+ * Design intent: each section reads as visually distinct from the
+ * landing page (you can see at a glance which tile is which), and
+ * that same color identity follows the article through category and
+ * reading views.
+ */
 const ACCENT_CLASSES: Record<
   string,
-  { ring: string; chip: string; iconBg: string; iconText: string; chipText: string }
+  {
+    ring: string;        // hover-state border
+    chip: string;        // small section pill background
+    chipText: string;
+    iconBg: string;      // 40x40 icon container background
+    iconText: string;
+    cardBg: string;      // landing-tile background (subtle accent tint)
+    cardBorder: string;  // landing-tile resting border
+    leftBar: string;     // 4px left bar color for article cards
+    topBar: string;      // wide top bar inside article reading view
+    headerWash: string;  // soft wash behind the article header
+  }
 > = {
-  sky:     { ring: "hover:border-sky-700/60",     chip: "bg-sky-900/40",     iconBg: "bg-sky-500/15",     iconText: "text-sky-300",     chipText: "text-sky-200" },
-  emerald: { ring: "hover:border-emerald-700/60", chip: "bg-emerald-900/40", iconBg: "bg-emerald-500/15", iconText: "text-emerald-300", chipText: "text-emerald-200" },
-  violet:  { ring: "hover:border-violet-700/60",  chip: "bg-violet-900/40",  iconBg: "bg-violet-500/15",  iconText: "text-violet-300",  chipText: "text-violet-200" },
-  amber:   { ring: "hover:border-amber-700/60",   chip: "bg-amber-900/40",   iconBg: "bg-amber-500/15",   iconText: "text-amber-300",   chipText: "text-amber-200" },
-  slate:   { ring: "hover:border-slate-600",      chip: "bg-slate-800/60",   iconBg: "bg-slate-500/15",   iconText: "text-slate-300",   chipText: "text-slate-300" },
-  rose:    { ring: "hover:border-rose-700/60",    chip: "bg-rose-900/40",    iconBg: "bg-rose-500/15",    iconText: "text-rose-300",    chipText: "text-rose-200" },
+  sky: {
+    ring: "hover:border-sky-500",
+    chip: "bg-sky-900/60",
+    chipText: "text-sky-100",
+    iconBg: "bg-sky-500/25",
+    iconText: "text-sky-200",
+    cardBg: "bg-gradient-to-br from-sky-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-sky-800/60",
+    leftBar: "border-l-sky-500",
+    topBar: "bg-sky-500",
+    headerWash: "bg-gradient-to-b from-sky-950/40 to-transparent",
+  },
+  emerald: {
+    ring: "hover:border-emerald-500",
+    chip: "bg-emerald-900/60",
+    chipText: "text-emerald-100",
+    iconBg: "bg-emerald-500/25",
+    iconText: "text-emerald-200",
+    cardBg: "bg-gradient-to-br from-emerald-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-emerald-800/60",
+    leftBar: "border-l-emerald-500",
+    topBar: "bg-emerald-500",
+    headerWash: "bg-gradient-to-b from-emerald-950/40 to-transparent",
+  },
+  violet: {
+    ring: "hover:border-violet-500",
+    chip: "bg-violet-900/60",
+    chipText: "text-violet-100",
+    iconBg: "bg-violet-500/25",
+    iconText: "text-violet-200",
+    cardBg: "bg-gradient-to-br from-violet-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-violet-800/60",
+    leftBar: "border-l-violet-500",
+    topBar: "bg-violet-500",
+    headerWash: "bg-gradient-to-b from-violet-950/40 to-transparent",
+  },
+  amber: {
+    ring: "hover:border-amber-500",
+    chip: "bg-amber-900/60",
+    chipText: "text-amber-100",
+    iconBg: "bg-amber-500/25",
+    iconText: "text-amber-200",
+    cardBg: "bg-gradient-to-br from-amber-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-amber-800/60",
+    leftBar: "border-l-amber-500",
+    topBar: "bg-amber-500",
+    headerWash: "bg-gradient-to-b from-amber-950/40 to-transparent",
+  },
+  slate: {
+    ring: "hover:border-slate-500",
+    chip: "bg-slate-700/60",
+    chipText: "text-slate-100",
+    iconBg: "bg-slate-500/25",
+    iconText: "text-slate-200",
+    cardBg: "bg-gradient-to-br from-slate-800/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-slate-700/60",
+    leftBar: "border-l-slate-400",
+    topBar: "bg-slate-400",
+    headerWash: "bg-gradient-to-b from-slate-800/40 to-transparent",
+  },
+  rose: {
+    ring: "hover:border-rose-500",
+    chip: "bg-rose-900/60",
+    chipText: "text-rose-100",
+    iconBg: "bg-rose-500/25",
+    iconText: "text-rose-200",
+    cardBg: "bg-gradient-to-br from-rose-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-rose-800/60",
+    leftBar: "border-l-rose-500",
+    topBar: "bg-rose-500",
+    headerWash: "bg-gradient-to-b from-rose-950/40 to-transparent",
+  },
 };
 
 const accentOf = (s: Section) => ACCENT_CLASSES[s.accent || "slate"] || ACCENT_CLASSES.slate;
@@ -2311,7 +2398,7 @@ export default function KnowledgePage() {
                             setSearch("");
                             goArticle(hit.section, hit.article);
                           }}
-                          className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                          className={`block w-full rounded-lg border border-l-4 ${acc.cardBorder} ${acc.leftBar} bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
                         >
                           <div className="mb-1 flex items-center gap-2">
                             <span
@@ -2363,7 +2450,7 @@ export default function KnowledgePage() {
                     <button
                       key={section.heading}
                       onClick={() => goCategory(section)}
-                      className={`group relative flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-left transition-colors ${acc.ring}`}
+                      className={`group relative flex flex-col rounded-xl border ${acc.cardBorder} ${acc.cardBg} p-5 text-left transition-all ${acc.ring} hover:shadow-lg hover:shadow-slate-950/50`}
                     >
                       <div
                         className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${acc.iconBg} ${acc.iconText}`}
@@ -2453,7 +2540,7 @@ export default function KnowledgePage() {
                     <li key={article.id}>
                       <button
                         onClick={() => goArticle(view.section, article)}
-                        className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                        className={`block w-full rounded-lg border border-l-4 ${acc.cardBorder} ${acc.leftBar} bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <h3 className="text-sm font-semibold text-slate-100">
@@ -2493,24 +2580,33 @@ export default function KnowledgePage() {
               </nav>
 
               <article className="mx-auto max-w-3xl">
-                <div className="mb-4 flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full ${accentOf(view.section).chip} px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${accentOf(view.section).chipText}`}
+                {/* Color identifier for the section: 3-px top accent bar
+                    plus a soft wash behind the header zone. */}
+                <div className="-mx-2 mb-6 overflow-hidden rounded-lg">
+                  <div className={`h-1 w-full ${accentOf(view.section).topBar}`} />
+                  <div
+                    className={`${accentOf(view.section).headerWash} px-4 pb-5 pt-4`}
                   >
-                    <SectionIcon
-                      name={view.section.icon}
-                      className="h-3 w-3"
-                    />
-                    {view.section.heading}
-                  </span>
-                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    {readingMinutes(view.article.body)} min read
-                  </span>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full ${accentOf(view.section).chip} px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${accentOf(view.section).chipText}`}
+                      >
+                        <SectionIcon
+                          name={view.section.icon}
+                          className="h-3 w-3"
+                        />
+                        {view.section.heading}
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                        <Clock className="h-3 w-3" />
+                        {readingMinutes(view.article.body)} min read
+                      </span>
+                    </div>
+                    <h2 className="text-3xl font-semibold leading-tight text-slate-100">
+                      {view.article.title}
+                    </h2>
+                  </div>
                 </div>
-                <h2 className="mb-6 text-3xl font-semibold leading-tight text-slate-100">
-                  {view.article.title}
-                </h2>
                 <div className="knowledge-article text-[15px] leading-relaxed text-slate-300">
                   {renderArticleBody(view.article.body, linkRenderer)}
                 </div>
