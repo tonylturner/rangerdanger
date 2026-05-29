@@ -761,10 +761,11 @@ reality. No behavior change in the running stack.
   rangerdanger-* set.
 
 - **`docs/_internal/pdf-update-prompt.md`** (new) - canonical
-  prompt for regenerating the workshop-handout PDF in
-  Claude.ai web when the install flow drifts. Single source of
-  truth for what the PDF should say, checked against
-  `docs/quickstart.md` and `setup.sh` at PDF-regen time.
+  prompt for regenerating the workshop-handout PDF via the
+  maintainer's preferred long-context drafting tool when the
+  install flow drifts. Single source of truth for what the PDF
+  should say, checked against `docs/quickstart.md` and `setup.sh`
+  at PDF-regen time.
 
 ### Documentation - resource spec corrected
 
