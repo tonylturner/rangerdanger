@@ -62,10 +62,10 @@ steps:
       **IEC 62443** — the capability rating the conduit must meet —
       and is overlaid on the Purdue band layout the view renders.
       The SL maps to the sophistication a moderately-skilled attacker
-      would bring — see **IEC 62443 Security Levels Explained** on the
-      [Knowledge](/knowledge) page for what SL-1 through SL-4 mean,
-      and **Purdue Model Levels (L0–L5)** for the architectural levels
-      the bands represent.
+      would bring — see [IEC 62443 Security Levels Explained](/knowledge#iec-62443-security-levels)
+      for what SL-1 through SL-4 mean, and
+      [Purdue Model Levels (L0–L5)](/knowledge#purdue-model)
+      for the architectural levels the bands represent.
       :::
 
       ### From observation to design
