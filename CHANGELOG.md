@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.19] - 2026-05-29
+
+Pre-workshop lab simplification pass. Lab 2.3 (Protocol-Hardened
+Configurations) cut from 10 steps to 6 by collapsing three full
+attack flows into a single primary attack (DNP3 Direct Operate
+against the recloser — the canonical distribution-substation attack
+vector). Modbus FC5/FC6 variants move into optional `:::hint`
+sidebars inside the same step so instructors can extend depth
+without lengthening the floor. Lab 2.4 and Lab 1.2 receive matching
+adjustments so the workshop reads as DNP3-primary throughout, with
+Modbus available as a parallel demonstration of the same defense
+generalizing across protocols. No simulator, Dockerfile, compose,
+or backend code changes — purely YAML and docs.
+
 ### Changed
 
 - **Lab 2.3 (Protocol-Hardened Configurations) streamlined to a
