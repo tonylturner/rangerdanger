@@ -34,7 +34,7 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 ## Student journey
 
-Each lab builds on the previous. Selections in early labs flow into later ones; your Lab 1.4 remediation plan rewrites the steps you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. ≈105 minutes total for the seven labs.
+Each lab builds on the previous. Selections in early labs flow into later ones; your Lab 1.4 remediation plan rewrites the steps you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. ≈135 minutes for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus 15 minutes for the optional 2.3-bonus.
 
 | Step | Lab | What you do |
 |---|---|---|
@@ -45,10 +45,6 @@ Each lab builds on the previous. Selections in early labs flow into later ones; 
 | 5 | **2.3 Harden** | Stress-test against three protocol-specific attacks (Modbus FC6 regulator override, DNP3 Direct Operate, Modbus FC5 direct breaker trip). Watch the process view as voltages drop, breakers open, downstream loads de-energize. Re-test under the hardened policy. |
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
-
-## What it looks like
-
-Screenshots in student-journey order. Click any image to view full size.
 
 <table>
 <tr>
