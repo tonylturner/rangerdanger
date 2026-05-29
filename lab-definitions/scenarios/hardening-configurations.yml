@@ -195,10 +195,14 @@ steps:
       the re-test step covers that one.
       :::
     action:
-      type: command
-      device: recloser
-      command: disable_reclose
-      source: "10.10.10.50"
+      type: sequence
+      commands:
+        - device: recloser
+          command: disable_reclose
+          source: "10.10.10.50"
+        - device: recloser
+          command: open
+          source: "10.10.10.50"
 
   - title: "Restore the substation"
     expected_config: weak
