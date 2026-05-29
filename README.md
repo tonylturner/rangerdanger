@@ -46,32 +46,6 @@ Each lab builds on the previous. Selections in early labs flow into later ones; 
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
 
-<table>
-<tr>
-<td width="340" valign="middle"><a href="docs/images/screenshot-network-map.png"><img src="docs/images/screenshot-network-map.png" alt="Substation Network Map" width="320"></a></td>
-<td valign="middle"><b>Interactive topology console</b> at <code>/console</code>. IEC 62443 zone bands with a live policy overlay. The containd NGFW sits at the conduit; hardened-policy mode marks blocked enterprise-to-field paths with red ✗. Click any node to inspect or open a terminal.</td>
-</tr>
-<tr>
-<td width="340" valign="middle"><a href="docs/images/screenshot-exercises.png"><img src="docs/images/screenshot-exercises.png" alt="Exercises dashboard" width="320"></a></td>
-<td valign="middle"><b>Exercise dashboard</b> at <code>/exercises</code>. 7 labs aligned to the DefendICS deck (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4). Per-lab progress, time budgets, tag-based filtering, bonus-lab styling.</td>
-</tr>
-<tr>
-<td width="340" valign="middle"><a href="docs/images/screenshot-lab-runner.png"><img src="docs/images/screenshot-lab-runner.png" alt="Lab runner" width="320"></a></td>
-<td valign="middle"><b>Lab runner</b> at <code>/exercises/[id]</code>. Step-by-step instructions, inline command blocks (one-click run), persistent notes, live config-state checks. The yellow banner fires when the firewall is on a config the step doesn't expect, with a one-click reset.</td>
-</tr>
-<tr>
-<td width="340" valign="middle"><a href="docs/images/screenshot-substation-hmi.png"><img src="docs/images/screenshot-substation-hmi.png" alt="Substation process view" width="320"></a></td>
-<td valign="middle"><b>Substation process view</b> at <code>/substation</code>. Live feeder state from the RTAC via OpenDSS. When a student attacks a Modbus or DNP3 endpoint, voltage, breaker position, and load energization update here within ~3 seconds. Customer-service tile makes the kinetic consequence visible.</td>
-</tr>
-<!--
-TODO screenshots still needed - capture after a workshop run and drop into docs/images/:
-  - screenshot-dashboard.png         : portal home at / (metric tiles, workshop status, quick links)
-  - screenshot-terminal.png          : close-up of an embedded xterm session attached to kali-1 mid-attack
-  - screenshot-containd-policy.png   : the proxied /containd/ view showing applied rules
-  - screenshot-validation.png        : a lab runner step with the green/red validation chips visible
-Insert into the table above when ready, with similar inline captions.
--->
-
 ## Quick start
 
 **Prereqs:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free.
@@ -117,6 +91,38 @@ Once the stack is up:
 | OpenPLC | http://localhost:8088/apps/openplc/ | - |
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises) and start with **Lab 1.2**.
+
+## What it looks like
+
+Screenshots in student-journey order. Click any image to view full size.
+
+<table>
+<tr>
+<td width="340" valign="middle"><a href="docs/images/screenshot-network-map.png"><img src="docs/images/screenshot-network-map.png" alt="Substation Network Map" width="320"></a></td>
+<td valign="middle"><b>Interactive topology console</b> at <code>/console</code>. IEC 62443 zone bands with a live policy overlay. The containd NGFW sits at the conduit; hardened-policy mode marks blocked enterprise-to-field paths with red ✗. Click any node to inspect or open a terminal.</td>
+</tr>
+<tr>
+<td width="340" valign="middle"><a href="docs/images/screenshot-exercises.png"><img src="docs/images/screenshot-exercises.png" alt="Exercises dashboard" width="320"></a></td>
+<td valign="middle"><b>Exercise dashboard</b> at <code>/exercises</code>. 7 labs aligned to the DefendICS deck (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4). Per-lab progress, time budgets, tag-based filtering, bonus-lab styling.</td>
+</tr>
+<tr>
+<td width="340" valign="middle"><a href="docs/images/screenshot-lab-runner.png"><img src="docs/images/screenshot-lab-runner.png" alt="Lab runner" width="320"></a></td>
+<td valign="middle"><b>Lab runner</b> at <code>/exercises/[id]</code>. Step-by-step instructions, inline command blocks (one-click run), persistent notes, live config-state checks. The yellow banner fires when the firewall is on a config the step doesn't expect, with a one-click reset.</td>
+</tr>
+<tr>
+<td width="340" valign="middle"><a href="docs/images/screenshot-substation-hmi.png"><img src="docs/images/screenshot-substation-hmi.png" alt="Substation process view" width="320"></a></td>
+<td valign="middle"><b>Substation process view</b> at <code>/substation</code>. Live feeder state from the RTAC via OpenDSS. When a student attacks a Modbus or DNP3 endpoint, voltage, breaker position, and load energization update here within ~3 seconds. Customer-service tile makes the kinetic consequence visible.</td>
+</tr>
+</table>
+
+<!--
+TODO screenshots still needed - capture after a workshop run and drop into docs/images/:
+  - screenshot-dashboard.png         : portal home at / (metric tiles, workshop status, quick links)
+  - screenshot-terminal.png          : close-up of an embedded xterm session attached to kali-1 mid-attack
+  - screenshot-containd-policy.png   : the proxied /containd/ view showing applied rules
+  - screenshot-validation.png        : a lab runner step with the green/red validation chips visible
+Insert into the table above when ready, with similar inline captions.
+-->
 
 ## Designed for
 
