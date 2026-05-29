@@ -348,8 +348,13 @@ foreach ($row in $rows) {
         continue
     }
     if ($cfg -and $cfg -ne $current_policy) {
-        if ($cfg -eq 'weak' -or $cfg -eq 'improved') {
-            Invoke-PolicyApply $cfg
+        # YAML "hardened" is the student-facing alias for backend policy
+        # "improved" (matches scenario-runner.tsx). Map it here so a
+        # "Re-test under hardened policy" step actually flips the policy
+        # instead of silently inheriting weak.
+        $applyName = if ($cfg -eq 'hardened') { 'improved' } else { $cfg }
+        if ($applyName -eq 'weak' -or $applyName -eq 'improved') {
+            Invoke-PolicyApply $applyName
             $current_policy = $cfg
         }
     }
