@@ -18,7 +18,7 @@ name: Windows lint
 
 on:
   push:
-    branches: [main, oss-release, audit-oss]
+    branches: [main, oss-release]
     paths:
       - '**.ps1'
       - '.github/workflows/smoke-windows.yml'
