@@ -6,6 +6,44 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.22] - 2026-05-30
+
+Multi-arch reliability hardening on top of v0.1.21: catches a silent
+OpenPLC failure at setup time, makes arm64-Linux emulation survive
+reboots, pins the emulation helper for reproducibility, and stops a
+failed release from silently leaving an incomplete draft.
+
+### Added
+
+- **OpenPLC readiness probe in `setup.sh`.** The workshop-readiness gate
+  now verifies the OpenPLC container actually reaches `running` rather
+  than crash-looping with `exec format error` (the silent failure mode
+  when amd64 emulation is missing on arm64 Linux). Non-fatal — OpenPLC is
+  isolated — but warns loudly with the exact fix instead of passing the
+  install green.
+- **`scripts/persist-emulation.sh`** — opt-in (`sudo`) helper that
+  installs a systemd oneshot unit re-registering amd64 emulation on every
+  boot, so OpenPLC survives reboots on arm64 Linux. `--uninstall` removes
+  it. `tonistiigi/binfmt`'s own registration is runtime-only; this makes
+  it persistent for multi-day workshops.
+- **Release-failure alert.** `release.yml` gains a `release-failed` job
+  that files (or comments on) a tracking issue whenever a release build
+  doesn't complete — the silent-draft failure mode that left v0.1.19 and
+  v0.1.20 as empty drafts.
+
+### Changed
+
+- **Pinned `tonistiigi/binfmt` to `qemu-v10.2.1`** (was `:latest`) across
+  `setup.sh`, the uninstaller, and the SSD stage scripts. A version tag
+  (not a raw digest) so the SSD-staged image still resolves offline;
+  reproducible online and offline.
+- **CI: bumped `actions/checkout` and `actions/setup-node` to v5**
+  (Node 24) ahead of GitHub's Node 20 removal. Docker/third-party actions
+  still pending a verified bump.
+- README and `docs/workshop-ssd.md` now document arm64-Linux OpenPLC
+  emulation (qemu-x86_64 via `tonistiigi/binfmt`, bundled in
+  `images-arm64.tar`), not just Apple-Silicon Rosetta.
+
 ## [v0.1.21] - 2026-05-30
 
 ARM64-Linux workshop support plus post-workshop tooling. Adds automatic
