@@ -22,25 +22,34 @@ steps:
 
       Before you decide what *should* be allowed, look at what the
       active firewall actually permits right now. Open the
-      [Network Map](/console) and click **Segmentation** in the right
-      drawer.
+      [Network Map](/console). On the **left edge** of the map
+      you'll see a narrow vertical strip of icons. Click this one:
+
+      :::icon name="shield" color="amber" label="Segmentation Policy"
+      :::
+
+      The Segmentation Policy drawer slides open from the left.
 
       You'll see:
 
       - **Active Policy** banner - the **Weak Baseline** is red and
         named *"All zones can reach field devices directly."*
-      - **Evaluation** table - one row per zone-pair with an ALLOW /
-        DENY chip. Walk down it and notice how many ALLOW rows exist
-        between Enterprise / Vendor and OT / Field zones. These are
-        the exposure paths you observed in Lab 1.2, now confirmed at
-        the policy level.
+      - **Evaluation** table - one row per zone-pair with an ALLOW
+        or DENY chip. Walk down it and notice how many explicit ALLOW
+        rows exist between Enterprise / Vendor and OT / Field zones.
+        These are the exposure paths you observed in Lab 1.2, now
+        confirmed at the policy level. Rows tagged
+        *"(implicit default-deny - no explicit rule)"* are zone pairs
+        that fall through to the firewall's `defaultAction` -
+        denied at the policy edge even though no rule says so
+        directly.
 
       Now use the dropdown to **preview Hardened Segmentation** -
       don't click Apply, just inspect. The Evaluation table
-      re-evaluates against the hardened policy and flags rows with
-      *"→ would change."* Each of those flagged rows is a verdict
-      you'll commit in the decisions below. The preview shows you
-      the answer key; the decisions below capture *your* design.
+      re-evaluates against the hardened policy: explicit ALLOWs
+      tighten down to source-pinned rules, and the implicit-deny
+      rows become explicit DENY rules with logging. Rows tagged
+      *"-> would change"* are the verdicts you'll commit below.
 
       :::decision id=current-policy-allowable options=MOSTLY_ALLOW,MOSTLY_DENY,MIXED correct=MOSTLY_ALLOW
       **Looking at the Evaluation table for the weak baseline - how
@@ -49,7 +58,7 @@ steps:
 
       :::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF,MOST_ROWS correct=MOST_ROWS
       **When you previewed Hardened Segmentation, roughly what
-      fraction of zone-pair rows showed "→ would change"?**
+      fraction of zone-pair rows showed "-> would change"?**
       :::
 
       :::hint Optional: see the Security Level the firewall is being graded against

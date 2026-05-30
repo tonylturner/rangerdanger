@@ -28,7 +28,7 @@ import { PolicyStatusBanner } from "./policy-status-banner";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
-import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight, AlertCircle, CircleCheck, CircleDashed } from "lucide-react";
+import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X, Lightbulb, ChevronDown, ChevronRight, AlertCircle, CircleCheck, CircleDashed, Shield, Activity, Network, BookOpen } from "lucide-react";
 import {
   readRequirements,
   computeCoverage,
@@ -459,6 +459,37 @@ type HintBlockProps = {
   scenarioId: string;
 };
 
+// IconStamp - renders a lucide-react icon styled like the actual UI
+// button the lab text is referring the student to. Used by the
+// :::icon directive as a visual cue (e.g. "click this in the left
+// strip" alongside a mini-Shield in the same color the real
+// strip uses).
+const ICON_MAP: Record<string, typeof Shield> = {
+  shield: Shield,
+  activity: Activity,
+  network: Network,
+  book: BookOpen,
+  terminal: TerminalIcon,
+};
+const ICON_COLORS: Record<string, { text: string; border: string; bg: string }> = {
+  amber:   { text: "text-amber-400",   border: "border-amber-700/60",   bg: "bg-amber-950/30" },
+  cyan:    { text: "text-cyan-400",    border: "border-cyan-700/60",    bg: "bg-cyan-950/30" },
+  emerald: { text: "text-emerald-400", border: "border-emerald-700/60", bg: "bg-emerald-950/30" },
+  sky:     { text: "text-sky-400",     border: "border-sky-700/60",     bg: "bg-sky-950/30" },
+  rose:    { text: "text-rose-400",    border: "border-rose-700/60",    bg: "bg-rose-950/30" },
+  slate:   { text: "text-slate-400",   border: "border-slate-700",      bg: "bg-slate-900/60" },
+};
+function IconStamp({ name, color, label }: { name: string; color: string; label: string }) {
+  const Icon = ICON_MAP[name] ?? Shield;
+  const c = ICON_COLORS[color] ?? ICON_COLORS.amber;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 align-middle ${c.border} ${c.bg}`}>
+      <Icon className={`h-3.5 w-3.5 ${c.text}`} />
+      {label && <span className={`text-[11px] font-medium ${c.text}`}>{label}</span>}
+    </span>
+  );
+}
+
 function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: HintBlockProps) {
   const [open, setOpen] = useState(false);
   const segments = splitDescription(body.replace(/^\n+|\n+$/g, ""));
@@ -533,7 +564,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             // trackPicker / trackOnly inside a :::hint isn't a
             // pattern any lab uses today; skip silently rather than
             // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton") {
+            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "icon") {
               return null;
             }
             if (seg.type === "hint") {
@@ -1400,6 +1431,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           >
                             {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
                           </button>
+                        </div>
+                      );
+                    }
+                    if (seg.type === "icon") {
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className="my-2"
+                        >
+                          <IconStamp name={seg.name} color={seg.color} label={seg.label} />
                         </div>
                       );
                     }

@@ -371,11 +371,26 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 		allPairs[p] = true
 	}
 
-	// Ordered zone pairs for consistent output
+	// Ordered zone pairs for consistent output. Every entry here is
+	// rendered as a row in the Segmentation drawer even if neither
+	// policy has an explicit rule — the implicit default-deny is the
+	// pedagogical point of the panel (per the Lab 1.3 review:
+	// students need to see that "no explicit rule" still means
+	// "denied at the policy edge"). Both shipping configs have
+	// defaultAction: DENY, so an absent rule resolves to DENY here.
 	orderedPairs := []zonePair{
 		{"wan", "dmz"}, {"wan", "lan1"}, {"wan", "lan2"},
 		{"dmz", "lan1"}, {"dmz", "lan2"},
 		{"lan1", "lan2"}, {"lan1", "lan1"}, {"lan2", "lan2"},
+	}
+
+	weakDefault := strings.ToUpper(weak.Firewall.DefaultAction)
+	if weakDefault == "" {
+		weakDefault = "DENY" // containd's runtime default if the field is absent
+	}
+	improvedDefault := strings.ToUpper(improved.Firewall.DefaultAction)
+	if improvedDefault == "" {
+		improvedDefault = "DENY"
 	}
 
 	var diffs []PolicyRuleDiff
@@ -383,10 +398,6 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 	for _, pair := range orderedPairs {
 		wRules := weakByPair[pair]
 		iRules := improvedByPair[pair]
-
-		if len(wRules) == 0 && len(iRules) == 0 {
-			continue
-		}
 
 		// Combine descriptions
 		wDesc := []string{}
@@ -409,6 +420,19 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 			} else if iAction != r.action {
 				iAction = "MIXED"
 			}
+		}
+
+		// Fall back to the policy's defaultAction when no explicit
+		// rule exists for this zone pair. Label the description
+		// distinctively so the renderer can tell a real rule apart
+		// from an implicit fallthrough at a glance.
+		if len(wRules) == 0 {
+			wAction = weakDefault
+			wDesc = []string{"(implicit default-" + strings.ToLower(weakDefault) + " - no explicit rule)"}
+		}
+		if len(iRules) == 0 {
+			iAction = improvedDefault
+			iDesc = []string{"(implicit default-" + strings.ToLower(improvedDefault) + " - no explicit rule)"}
 		}
 
 		change := "unchanged"

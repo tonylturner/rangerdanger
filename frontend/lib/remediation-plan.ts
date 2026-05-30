@@ -77,6 +77,18 @@ export const ACTION_IMPACT: Record<string, { defends: string[]; note: string }> 
   },
   "positive-validation": {
     defends: ["validation-evidence"],
-    note: "Pre-planned validation testing — produces the evidence package for Lab 2.4",
+    note: "Pre-planned validation testing - produces the evidence package for Lab 2.4",
+  },
+  "ids-deployment": {
+    defends: ["validation-evidence"],
+    note: "IDS sensors with ICS rule packs - adds detection alongside the firewall's prevent layer; the alert chain becomes part of the Lab 2.4 evidence package",
+  },
+  "ot-asset-inventory": {
+    defends: ["validation-evidence"],
+    note: "OT asset inventory + baseline - anchors the Lab 2.4 change-board package on a known-good device list; without it, post-change drift goes undetected",
+  },
+  "vendor-zta-broker": {
+    defends: ["vendor-rdp-compromise"],
+    note: "ZTNA/PAM broker for vendor access - closes more of the Lab 2.3-bonus kill chain than restrict-vendor-to-ot alone (no always-on path, identity-bound sessions, full audit)",
   },
 };

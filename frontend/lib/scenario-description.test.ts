@@ -405,6 +405,32 @@ describe("parseFindingsAttrs", () => {
   });
 });
 
+describe("splitDescription — icon directive", () => {
+  it("emits an icon segment with default attrs", () => {
+    const input = [":::icon", ":::"].join("\n");
+    const segs = splitDescription(input);
+    expect(segs).toHaveLength(1);
+    const seg = segs[0] as { type: "icon"; name: string; color: string; label: string };
+    expect(seg.type).toBe("icon");
+    expect(seg.name).toBe("shield");
+    expect(seg.color).toBe("amber");
+    expect(seg.label).toBe("");
+  });
+
+  it("parses name + color + quoted label", () => {
+    const input = [
+      ':::icon name="activity" color="cyan" label="Traffic Matrix"',
+      ":::",
+    ].join("\n");
+    const segs = splitDescription(input);
+    const seg = segs[0] as { type: "icon"; name: string; color: string; label: string };
+    expect(seg.type).toBe("icon");
+    expect(seg.name).toBe("activity");
+    expect(seg.color).toBe("cyan");
+    expect(seg.label).toBe("Traffic Matrix");
+  });
+});
+
 describe("splitDescription — generate-traffic-button directive", () => {
   it("emits a generateTrafficButton segment for :::generate-traffic-button fence", () => {
     const input = ["Intro line.", "", ":::generate-traffic-button", ":::", "", "After."].join("\n");

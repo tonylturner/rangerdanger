@@ -233,6 +233,50 @@ steps:
           effort_hours: 60
           roles: ["Security Analyst", "OT Engineer"]
           tags: ["validation"]
+        - id: ids-deployment
+          title: "Deploy IDS sensors with ICS rule packs on OT zones"
+          why: >
+            Add Snort/Suricata or Zeek sensors on the OT Ops and
+            Field interfaces with industrial protocol rule packs.
+            The firewall blocks; the IDS detects anomalies the
+            firewall doesn't deny - unusual scan patterns, malformed
+            Modbus frames, DNP3 sequence anomalies. Pairs with the
+            Validation Evidence exercise: an IDS alert chain is a
+            stronger evidence package than firewall logs alone.
+            Different team and timeline than the firewall work itself.
+          effort_hours: 80
+          roles: ["Security Analyst", "Network Engineer"]
+          tags: ["detection", "ids"]
+        - id: ot-asset-inventory
+          title: "Build OT asset inventory + change baseline"
+          why: >
+            Enumerate every device on OT Ops and Field - MAC, software
+            version, exposed services, ownership, last-patched date.
+            Without an inventory, change management is by hope: you
+            cannot detect when an unknown device appears, when
+            firmware drifts, or when a vendor swaps a relay during
+            a maintenance window. Foundation work that pays off
+            across every later defense, but its cost-to-attribute
+            is hard to defend in a tight quarter.
+          effort_hours: 100
+          roles: ["Security Analyst", "OT Engineer", "Network Engineer"]
+          tags: ["foundation", "inventory"]
+        - id: vendor-zta-broker
+          title: "Replace vendor VPN with ZTNA / PAM broker"
+          why: >
+            Stand up a Privileged Access Management broker
+            (BeyondTrust, CyberArk, Cyolo) or a Zero-Trust Network
+            Access path (Zscaler, Tailscale) for vendor support
+            sessions. Just-in-time access, MFA, full session
+            recording, per-action audit trail. Closes more of the
+            Vendor RDP Compromise kill chain than
+            restrict-vendor-to-ot alone, because the vendor's path
+            is closed by default and opens only for scheduled
+            windows under identity. Heaviest organizational change
+            in this list - requires vendor contract amendments.
+          effort_hours: 150
+          roles: ["Network Engineer", "Firewall Admin", "Security Analyst"]
+          tags: ["vendor", "modernization", "identity"]
 
   - title: "Reflect - what are you accepting?"
     description: |

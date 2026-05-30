@@ -73,9 +73,19 @@ const TECHNICAL_OPEN_RE = /^:::technical$/;
 // where the directive sits. Without this, the legacy text-trigger
 // fallback in scenario-runner.tsx renders the button at the bottom
 // of the step body; the directive lets a lab author drop the button
-// at the natural reading point — i.e. exactly where the lab text
+// at the natural reading point - i.e. exactly where the lab text
 // says to start traffic generation. Body ignored.
 const GENERATE_TRAFFIC_BTN_RE = /^:::generate-traffic-button(?:\s+(.+))?$/;
+
+// :::icon name="shield" color="amber" label="Segmentation Policy"
+// :::
+// Renders a small inline icon "stamp" matching a real UI element the
+// student should look for in the app. Used in lab text as a visual
+// cue (e.g. "click this in the left strip" -> show the actual
+// shield icon). The icon name maps into a small allowlist on the
+// renderer side; color picks a Tailwind accent; label (optional)
+// shows after the icon. Body ignored.
+const ICON_RE = /^:::icon(?:\s+(.+))?$/;
 
 // Default options match the workshop's risk-verdict vocabulary. The
 // "BLOCK and LOG" combo is its own entry because that's how the
@@ -112,6 +122,12 @@ export type Segment =
     }
   | {
       type: "generateTrafficButton";
+    }
+  | {
+      type: "icon";
+      name: string;
+      color: string;
+      label: string;
     }
   | {
       type: "trackOnly";
@@ -164,6 +180,19 @@ export function parseFindingsAttrs(attrs: string): {
   const sourceScenario = (fromMatch?.[2] ?? fromMatch?.[3] ?? "").trim();
   const title = (titleMatch?.[2] ?? titleMatch?.[3] ?? "Inherited findings").trim();
   return { sourceScenario, title };
+}
+
+// Parse `name=... color=... label="..."` attributes on the icon fence.
+// Defaults: name=shield (the most common cue today), color=amber
+// (the actual lucide-Shield rendered color on the strip), no label.
+export function parseIconAttrs(attrs: string): { name: string; color: string; label: string } {
+  const nameMatch = attrs.match(/\bname=("([^"]+)"|(\S+))/);
+  const colorMatch = attrs.match(/\bcolor=("([^"]+)"|(\S+))/);
+  const labelMatch = attrs.match(/\blabel=("([^"]+)"|(\S+))/);
+  const name = (nameMatch?.[2] ?? nameMatch?.[3] ?? "shield").trim();
+  const color = (colorMatch?.[2] ?? colorMatch?.[3] ?? "amber").trim();
+  const label = (labelMatch?.[2] ?? labelMatch?.[3] ?? "").trim();
+  return { name, color, label };
 }
 
 // Parse `title="..."` attributes on the plan-coverage fence.
@@ -245,6 +274,19 @@ export function splitDescription(text: string): Segment[] {
       }
       if (i < lines.length) i++;
       result.push({ type: "generateTrafficButton" });
+      continue;
+    }
+    const iconOpen = ICON_RE.exec(trimmed);
+    if (iconOpen) {
+      flushProse();
+      const { name, color, label } = parseIconAttrs(iconOpen[1] ?? "");
+      // Eat through closing :::, body ignored.
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        i++;
+      }
+      if (i < lines.length) i++;
+      result.push({ type: "icon", name, color, label });
       continue;
     }
     if (GUIDED_OPEN_RE.test(trimmed) || TECHNICAL_OPEN_RE.test(trimmed)) {
