@@ -107,13 +107,14 @@ steps:
           dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
 
       > **Background:** CROB (Control Relay Output Block) is DNP3's
-      > primary command verb — see **DNP3 in Substations** on the
-      > [Knowledge](/knowledge) page if op codes like `latch-off`
-      > and `trip` are new. It also covers why Direct Operate
-      > (FC05) is the function code that matters for write
-      > restrictions, and why every modern recloser controller
-      > (G&W, S&C, NOJA, Cooper, ABB) exposes a DNP3 outstation
-      > like this one.
+      > primary command verb — see [DNP3 in Substations](/knowledge#dnp3)
+      > if op codes like `latch-off` and `trip` are new. It also
+      > covers why Direct Operate (FC05) is the function code that
+      > matters for write restrictions, and why every modern
+      > recloser controller (G&W, S&C, NOJA, Cooper, ABB) exposes a
+      > DNP3 outstation like this one. The defense-in-depth pattern
+      > the next steps demonstrate is covered in
+      > [What is ICS DPI?](/knowledge#ics-dpi).
 
       Wait ~3 seconds for the RTAC's 2-second poll → OpenDSS push to
       land, then confirm the downstream de-energization from the

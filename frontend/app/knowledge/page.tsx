@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -345,16 +345,31 @@ Simplified for the lab:
 - **Random-walk load variation (±3%)** rather than a real load profile from historical metering data.
 - **RTAC-to-OpenDSS over HTTP.** Real RTACs do not talk to a power-flow solver this way; the bridge is a lab convenience to make the physics layer reachable. The cyber-side attack path does not depend on this bridge.
 
-When you explain this lab to a power-engineering colleague, lead with what is real: the physics layer is genuinely a distribution-feeder power flow on industry-standard software. The simplifications are about scope (one feeder, snapshot solve, no transients), not about cutting corners on the math.`,
+When you explain this lab to a power-engineering colleague, lead with what is real: the physics layer is genuinely a distribution-feeder power flow on industry-standard software. The simplifications are about scope (one feeder, snapshot solve, no transients), not about cutting corners on the math.
+
+:::tip Two views into the same physics
+The lab gives you two ways to look at the OpenDSS-computed feeder state. The [\`/substation\` panel](#hmi-scada-fuxa)'s **Feeder One-Line** tab shows the operator-facing alarm summary; the **Electrical Detail** tab shows per-bus voltages, feeder current, and load kW in numeric form. The two tabs read the same data, just at different abstraction levels.
+:::
+
+### See Also
+
+- [HMI, SCADA, and the Lab's Substation Panel](#hmi-scada-fuxa) — where the numbers from this article get rendered
+- [Power Factor and Reactive Power](#power-factor-reactive-power) — the inductive / capacitive side of the math
+- [Reclosers](#reclosers), [Protective Relays](#protective-relays), [Voltage Regulators](#voltage-regulators) — the devices whose state OpenDSS reads
+- [The OpenDSS project at EPRI](https://www.epri.com/pages/sa/opendss) — the engine itself`,
       },
       {
         id: "hmi-scada-fuxa",
-        title: "HMI, SCADA, and How FUXA Fits In",
-        body: `**HMI** (Human-Machine Interface) is the operator's view of an industrial process. In a substation control room, the HMI is the screen that shows breakers as open/closed circles, voltages as numeric tiles, and alarms as colored banners. It is what the operator looks at all day.
+        title: "HMI, SCADA, and the Lab's Substation Panel",
+        body: `**HMI** (Human-Machine Interface) is the operator's view of an industrial process. In a substation control room the HMI is the screen that shows breakers as open / closed circles, voltages as numeric tiles, and alarms as colored banners. It is what the operator looks at all day.
 
 **SCADA** (Supervisory Control and Data Acquisition) is the larger system: the data-acquisition infrastructure that polls field devices, normalizes their values, stores them in a historian, and forwards selected operator commands back down to the equipment. SCADA is the *plumbing*; the HMI is the *screen*.
 
-**DCS** (Distributed Control System) is closely related but typically refers to plant-wide automation (refineries, chemical plants) where the control logic itself is distributed among many controllers. In substations the architecture is usually called SCADA rather than DCS, but the device-and-protocol surface looks similar.
+**DCS** (Distributed Control System) is the related architecture for plant-wide automation (refineries, chemical plants) where the control logic itself is distributed among many controllers. In substations the architecture is usually called SCADA rather than DCS, but the device-and-protocol surface looks similar.
+
+:::tip The lab's primary HMI is at /substation
+Throughout the workshop, every reference to "the Feeder HMI" or "the operational consequence at the HMI" means the **\`/substation\` panel** built into the RangerDanger web app — not FUXA. Open it at <http://localhost:8088/substation>. The Lab 2.3 alarm chain ("RECLOSER OPEN — downstream loads lost") and the customer-service tile both live there.
+:::
 
 ### What a Real Substation HMI Looks Like
 
@@ -369,15 +384,40 @@ A typical utility HMI shows:
 
 Commercial HMIs include Survalent, Wonderware, GE iFIX, ABB PCM600, and many vendor-specific systems. They are licensed software running on Windows or RHEL servers, polling field devices over DNP3, IEC 61850, or Modbus and storing data in a historian.
 
-### What FUXA Is
+### The Lab's Primary HMI: \`/substation\`
 
-[FUXA](https://www.frangoteam.com) is an **open-source HMI/SCADA platform** — a free alternative to the commercial systems above for projects that need an HMI without paying license fees. It runs in a browser, supports the standard OT protocols (Modbus, OPC UA, MQTT), and is configurable via a visual editor. RangerDanger uses FUXA to mirror what a small-utility or vendor-demo HMI environment looks like.
+The \`/substation\` panel is **a custom HMI built into the lab's web app**. It talks to the [RTAC](#rtac)'s REST API (\`GET /api/state\`) and renders the feeder one-line, the customer-service tile, and the alarm chain directly.
 
-### What the Lab's \`/substation\` Panel Is
+We built it custom because we needed tight control over the alarm logic — the \`LOW VOLTAGE\` and \`RECLOSER OPEN — downstream loads lost\` banners fire on the exact lab conditions we wanted to teach — and we wanted a clean kinetic-feedback view that updates within seconds of an attack. The lab's [Distribution Feeder Physics](#substation-physics) closed loop ends here: an attack mutates a [recloser](#reclosers) state, the RTAC polls it, OpenDSS recomputes the feeder, the panel re-renders the alarm chain. That is the operational consequence the labs keep referring to.
 
-The \`/substation\` panel in RangerDanger is **a custom HMI** built into the lab's web app. It talks to the RTAC's REST API (\`GET /api/state\`) rather than to FUXA, and it renders the feeder one-line, the customer-service tile, and the alarm chain directly. We built it because we needed tight control over the alarm logic (so the lab's \`LOW VOLTAGE\` and \`RECLOSER OPEN — downstream loads lost\` banners would fire on the exact lab conditions we wanted to teach) and because we wanted a clean kinetic-feedback view that updates within seconds of an attack.
+Two tabs to know:
 
-FUXA is also up at \`http://localhost:8088/apps/fuxa-hmi/\` for students who want to see what the open-source HMI ecosystem looks like. It is wired to the RTAC's Modbus interface (TCP/502) and demonstrates the same data flow over a more traditional HMI stack. The two views are complementary: the custom panel is the lab's "teaching HMI" optimized for the exercises, and FUXA is the "real-world HMI" you would encounter in a small utility.`,
+- **Feeder One-Line** — the operator-facing summary view with alarm banners, breaker / recloser symbols, customer-service tile. This is what every Lab 2.3 / 2.3-bonus / 2.4 "Operational consequence at the HMI" callout references.
+- **Electrical Detail** — the engineering-precision view with per-bus voltage, feeder current, kW / kVAR. Useful when you want to *quantify* an attack rather than read its alarm-level summary; the same view becomes evidence material in Lab 2.4.
+
+### The FUXA Sidecar (Context, Not Load-Bearing)
+
+The lab also runs [FUXA](https://www.frangoteam.com) — an open-source HMI/SCADA platform — at <http://localhost:8088/apps/fuxa-hmi/>. FUXA is wired up: it has a "Substation One-Line Diagram" view configured, polls the RTAC over Modbus, and has the \`hmi_poller\` sidecar generating its baseline traffic. It is the closest thing in the lab to "the HMI you'd encounter at a small utility or in a vendor demo."
+
+:::note FUXA is contextual, not part of the exercises
+None of the exercises depend on FUXA being open or correctly configured. The lab's alarm chain, decision questions, and validation chips all read from the \`/substation\` panel. FUXA is included so students who want to see what the open-source HMI ecosystem looks like — and how a traditional Modbus-polled HMI compares to the lab's purpose-built React panel — can spend a few minutes poking around. If FUXA looks empty or misbehaves, ignore it and use \`/substation\`.
+:::
+
+### Why a Custom Panel vs. Configuring FUXA
+
+We picked the React-based panel over building the labs around a FUXA project for three reasons:
+
+1. **Alarm-rule control.** The \`/substation\` panel computes alarms ("voltage out of ANSI Range A → red banner") with a few lines of TypeScript. FUXA would require building an equivalent alarm spec inside FUXA's configuration model, which is opaque to students reading the lab source.
+2. **Source-controlled reproducibility.** Every byte of the \`/substation\` UI lives in \`frontend/components/substation-panel*.tsx\` and can be diff-reviewed in PRs. FUXA's project state lives in a SQLite database; changes are awkward to review.
+3. **Reaction time.** The \`/substation\` panel polls the RTAC every couple of seconds and re-renders within ~100 ms. It is responsive to attacks in a way that feels live. FUXA's Modbus polling cycle adds a second or two of additional latency; the labs are tighter without it.
+
+The trade-off is that the \`/substation\` panel is *not* a representative example of what a real OT HMI looks like architecturally — it is a single-page React app, not a config-driven HMI runtime. FUXA is closer to that reality, which is why it stays around as context.
+
+### See Also
+
+- [Distribution Feeder Physics for Tech Workers](#substation-physics) — what the numbers on the HMI actually mean and where they come from
+- [RTAC (Real-Time Automation Controller)](#rtac) — the data source the HMI polls
+- [What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)](#outage-costs-saidi-saifi) — what the customer-service tile maps to in real-utility metrics`,
       },
       {
         id: "plc-ladder-openplc",
@@ -499,7 +539,15 @@ Each of these flows is a conduit that must be explicitly defined. Everything els
 
 The lab uses identical network topologies with two different firewall policies. Under the **weak baseline**, the firewall allows broad cross-zone communication, mimicking the flat networks commonly found in real substations. Under the **hardened policy**, only the RTAC can reach field devices, and enterprise-to-OT traffic is heavily restricted.
 
-The containd NGFW provides Deep Packet Inspection (DPI) for ICS protocols. It does not just filter by IP and port. It inspects Modbus function codes and DNP3 application layer content. This allows policies like "allow Modbus reads (FC03) from the HMI to the RTAC but block Modbus writes (FC05/FC06)" or "allow DNP3 reads but block Direct Operate commands from non-RTAC sources." That level of protocol-aware filtering is the gold standard for OT firewalls.`,
+The containd NGFW provides Deep Packet Inspection (DPI) for ICS protocols. It does not just filter by IP and port. It inspects Modbus function codes and DNP3 application layer content. This allows policies like "allow Modbus reads (FC03) from the HMI to the RTAC but block Modbus writes (FC05/FC06)" or "allow DNP3 reads but block Direct Operate commands from non-RTAC sources." That level of protocol-aware filtering is the gold standard for OT firewalls.
+
+### See Also
+
+- [What is ICS DPI? (and how containd does it)](#ics-dpi) — the DPI technique this article gestures at
+- [Purdue Model Levels (L0–L5)](#purdue-model) — the architectural reference for where each zone sits
+- [IEC 62443 Zones and Conduits](#iec-62443-zones-conduits) and [Security Levels](#iec-62443-security-levels) — the standards behind the zone vocabulary
+- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) — the two concrete configurations the lab compares
+- [The OT Kill Chain](#ot-kill-chain) — the threat model these defenses address`,
       },
       {
         id: "purdue-model",
@@ -729,7 +777,18 @@ When that same write is sent from inside an *allowed* flow (the eng-ws → RTAC 
 
 ### The Limit of ICS DPI
 
-DPI cannot save you from a *compromised RTAC* sending legitimate-looking Modbus writes from its authorized source IP. If the attacker is the RTAC, the firewall sees authorized traffic. This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin (\`scripts/rtac-harden.sh\`) — the RTAC cannot bridge zones, and the firewall enforces what it is. DPI plus L4 plus host-level hardening together is the defense-in-depth story. DPI alone is not.`,
+DPI cannot save you from a *compromised RTAC* sending legitimate-looking Modbus writes from its authorized source IP. If the attacker is the RTAC, the firewall sees authorized traffic.
+
+:::warning DPI is not a substitute for host hardening
+This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin (\`scripts/rtac-harden.sh\`) — the RTAC cannot bridge zones, and the firewall enforces what it is. DPI plus L4 plus host-level hardening together is the defense-in-depth story. **DPI alone is not.**
+:::
+
+### See Also
+
+- [How containd Enforces Policy (Kernel-Level View)](#how-containd-enforces-policy) — the nftables + NFQUEUE plumbing the DPI path uses
+- [Reading the Live DPI Events Strip](#live-dpi-events-strip) — how to interpret L4 vs ICS verdict rows during an exercise
+- [Modbus TCP in Substations](#modbus-tcp) and [DNP3 in Substations](#dnp3) — the protocols this DPI inspects
+- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) — the configurations the lab uses to demonstrate L4 + DPI together`,
       },
       {
         id: "default-deny",
@@ -844,7 +903,9 @@ Read operations retrieve data. Write operations change device state. In a substa
 
 ### Zero Security by Design
 
-Modbus TCP has **no authentication, no encryption, and no authorization**. Any device that can establish a TCP connection to port 502 can read or write any register. The server has no way to distinguish a legitimate RTAC command from a malicious one sent by an attacker. This is not a bug. Modbus was designed in 1979 for isolated serial networks where physical access was the security boundary. Deploying it on routable IP networks without compensating controls is inherently dangerous.
+:::caution Modbus TCP has no native security
+**No authentication, no encryption, no authorization.** Any device that can establish a TCP connection to port 502 can read or write any register. The server has no way to distinguish a legitimate RTAC command from a malicious one sent by an attacker. Modbus was designed in 1979 for isolated serial networks where physical access was the security boundary; deploying it on routable IP networks without compensating controls is inherently dangerous.
+:::
 
 ### The Compensating Control: Segmentation + DPI
 
@@ -858,7 +919,13 @@ Every field device simulator exposes Modbus TCP on port 502:
 - **Recloser** (10.40.40.21): auto-reclose state as a Modbus coil
 - **Regulator** (10.40.40.22): tap position as a Modbus holding register
 
-You use \`mbpoll\` on the Kali box to read and write these registers. The difference between weak and hardened policies is the difference between full read/write access and being blocked at the firewall.`,
+You use \`mbpoll\` on the Kali box to read and write these registers. The difference between weak and hardened policies is the difference between full read/write access and being blocked at the firewall.
+
+### See Also
+
+- [What is ICS DPI?](#ics-dpi) — function-code filtering is the DPI lesson the lab teaches against Modbus
+- [\`mbpoll\` — Modbus TCP Command-Line Tool](#tool-mbpoll) — the CLI used in the labs
+- [DNP3 in Substations](#dnp3) — the protocol DNP3 plays to Modbus's role in distribution`,
       },
       {
         id: "dnp3",
@@ -898,7 +965,14 @@ Each field device runs a DNP3 TCP outstation on port 20000 via the \`dnp3go\` li
 | Regulator | 10.40.40.22 | **3** |
 | RTAC | 10.30.30.20 | **10** (read-only) |
 
-You can use DNP3 tools on the Kali box to send Direct Operate commands, tripping breakers and changing tap positions. The hardened firewall policy restricts DNP3 command traffic to the RTAC only.`,
+You can use DNP3 tools on the Kali box to send Direct Operate commands, tripping breakers and changing tap positions. The hardened firewall policy restricts DNP3 command traffic to the RTAC only.
+
+### See Also
+
+- [What is ICS DPI?](#ics-dpi) — DNP3 Direct Operate (FC05) restriction is what containd's DPI rule for DNP3 enforces
+- [\`dnp3poll\` & \`dnp3cmd\` — DNP3 Tools](#tool-dnp3) — the CLI tools used in the labs
+- [IEC 61850 and GOOSE](#iec-61850-goose) — the modern standard sometimes deployed alongside or instead of DNP3
+- [The OT Kill Chain](#ot-kill-chain) — the Industroyer historical example mirrors the Lab 2.3 DNP3 attack`,
       },
       {
         id: "ntp-ot",
@@ -1719,7 +1793,11 @@ The tactics in the ICS matrix include: Initial Access, Execution, Persistence, P
 
 **Stuxnet — Iranian Centrifuge Cascades, ~2009–2010.** The original public ICS attack. US/Israeli operators (according to the public attribution) used USB-borne malware to reach Siemens S7-315 PLCs controlling uranium centrifuges, then issued protocol-level write commands that subtly damaged the centrifuges over months. The Inhibit Response Function tactic — Stuxnet manipulated the HMI to show normal operations while damage was occurring — is one of the most influential moves in the ATT&CK matrix. The lab does not simulate HMI manipulation directly, but the "by the time the field device sees the command, it looks legitimate" lesson from Lab 2.3-bonus is the same observation.
 
-**Volt Typhoon — Critical Infrastructure Pre-positioning, 2023–2024.** PRC-linked operators pre-positioned access to US critical-infrastructure OT networks (water, electric, transportation) without immediately causing impact. CISA and partner agencies published advisories detailing living-off-the-land tradecraft (LOL TTPs) — the threat surface is not "attackers run novel malware" but "attackers use legitimate Windows admin tools to live inside OT networks for months." This is the lab's [Living off the Land](#) lesson made historical.
+**Volt Typhoon — Critical Infrastructure Pre-positioning, 2023–2024.** PRC-linked operators pre-positioned access to US critical-infrastructure OT networks (water, electric, transportation) without immediately causing impact. CISA and partner agencies published advisories detailing living-off-the-land tradecraft (LOTL TTPs) — the threat surface is not "attackers run novel malware" but "attackers use legitimate Windows admin tools to live inside OT networks for months." This is the lab's [Living off the Land in OT](#living-off-the-land-ot) lesson made historical.
+
+:::warning Industroyer and Lab 2.3 are the same attack shape
+The 2016 Kyiv substation outage was Sandworm sending IEC 60870-5-104 / DNP3 command sequences from a compromised IT host into the OT zone. The Lab 2.3 primary attack — kali firing \`dnp3cmd ... crob 0 trip\` against the recloser from the enterprise zone — is the same shape with the same root cause: cross-zone control surface that was not denied at the perimeter. When a student asks "is this a real thing?" the answer is yes, with a CISA advisory and an attributed threat actor.
+:::
 
 ### How the Lab Exercises Map to ATT&CK
 
@@ -1731,7 +1809,14 @@ The tactics in the ICS matrix include: Initial Access, Execution, Persistence, P
 | Lab 2.3-bonus RDP pivot through vendor-jump | T0817 Drive-by Compromise → T0822 External Remote Services → T0859 Valid Accounts |
 | Lab 1.2 baseline traffic capture (defender side) | The defender-side counterpart to T0801 Monitoring (which an attacker also does for reconnaissance) |
 
-When you walk a workshop attendee through Lab 2.3 and they ask "is this a real thing?" — yes. The Industroyer pattern. Show them the ATT&CK matrix entry for [Impair Process Control / Unauthorized Command Message](https://attack.mitre.org/techniques/T0855/) and the [Industroyer threat group page](https://attack.mitre.org/software/S0604/). That contextualization changes how seriously students take the exercise.`,
+When you walk a workshop attendee through Lab 2.3 and they ask "is this a real thing?" — yes. The Industroyer pattern. Show them the ATT&CK matrix entry for [Impair Process Control / Unauthorized Command Message](https://attack.mitre.org/techniques/T0855/) and the [Industroyer threat group page](https://attack.mitre.org/software/S0604/). That contextualization changes how seriously students take the exercise.
+
+### See Also
+
+- [Living off the Land in OT](#living-off-the-land-ot) — Volt Typhoon's signature pattern explained
+- [Vendor Remote Access Patterns](#vendor-remote-access) — the entry vector for several real incidents
+- [What is ICS DPI?](#ics-dpi) — the defensive control that closes the unauthorized-command-message attack
+- [Change Management for Substation Firewall Rules](#change-management-firewall-rules) — how the defensive change actually gets approved at a utility`,
       },
       {
         id: "living-off-the-land-ot",
@@ -1894,16 +1979,103 @@ When you tell a workshop attendee "this single packet caused a complete feeder o
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Per-section accent palette. Each color name maps to a bundle of
+ * Tailwind class strings used by the landing tiles, article cards,
+ * search results, and the article reading view's section header.
+ *
+ * Design intent: each section reads as visually distinct from the
+ * landing page (you can see at a glance which tile is which), and
+ * that same color identity follows the article through category and
+ * reading views.
+ */
 const ACCENT_CLASSES: Record<
   string,
-  { ring: string; chip: string; iconBg: string; iconText: string; chipText: string }
+  {
+    ring: string;        // hover-state border
+    chip: string;        // small section pill background
+    chipText: string;
+    iconBg: string;      // 40x40 icon container background
+    iconText: string;
+    cardBg: string;      // landing-tile background (subtle accent tint)
+    cardBorder: string;  // landing-tile resting border
+    leftBar: string;     // 4px left bar color for article cards
+    topBar: string;      // wide top bar inside article reading view
+    headerWash: string;  // soft wash behind the article header
+  }
 > = {
-  sky:     { ring: "hover:border-sky-700/60",     chip: "bg-sky-900/40",     iconBg: "bg-sky-500/15",     iconText: "text-sky-300",     chipText: "text-sky-200" },
-  emerald: { ring: "hover:border-emerald-700/60", chip: "bg-emerald-900/40", iconBg: "bg-emerald-500/15", iconText: "text-emerald-300", chipText: "text-emerald-200" },
-  violet:  { ring: "hover:border-violet-700/60",  chip: "bg-violet-900/40",  iconBg: "bg-violet-500/15",  iconText: "text-violet-300",  chipText: "text-violet-200" },
-  amber:   { ring: "hover:border-amber-700/60",   chip: "bg-amber-900/40",   iconBg: "bg-amber-500/15",   iconText: "text-amber-300",   chipText: "text-amber-200" },
-  slate:   { ring: "hover:border-slate-600",      chip: "bg-slate-800/60",   iconBg: "bg-slate-500/15",   iconText: "text-slate-300",   chipText: "text-slate-300" },
-  rose:    { ring: "hover:border-rose-700/60",    chip: "bg-rose-900/40",    iconBg: "bg-rose-500/15",    iconText: "text-rose-300",    chipText: "text-rose-200" },
+  sky: {
+    ring: "hover:border-sky-500",
+    chip: "bg-sky-900/60",
+    chipText: "text-sky-100",
+    iconBg: "bg-sky-500/25",
+    iconText: "text-sky-200",
+    cardBg: "bg-gradient-to-br from-sky-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-sky-800/60",
+    leftBar: "border-l-sky-500",
+    topBar: "bg-sky-500",
+    headerWash: "bg-gradient-to-b from-sky-950/40 to-transparent",
+  },
+  emerald: {
+    ring: "hover:border-emerald-500",
+    chip: "bg-emerald-900/60",
+    chipText: "text-emerald-100",
+    iconBg: "bg-emerald-500/25",
+    iconText: "text-emerald-200",
+    cardBg: "bg-gradient-to-br from-emerald-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-emerald-800/60",
+    leftBar: "border-l-emerald-500",
+    topBar: "bg-emerald-500",
+    headerWash: "bg-gradient-to-b from-emerald-950/40 to-transparent",
+  },
+  violet: {
+    ring: "hover:border-violet-500",
+    chip: "bg-violet-900/60",
+    chipText: "text-violet-100",
+    iconBg: "bg-violet-500/25",
+    iconText: "text-violet-200",
+    cardBg: "bg-gradient-to-br from-violet-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-violet-800/60",
+    leftBar: "border-l-violet-500",
+    topBar: "bg-violet-500",
+    headerWash: "bg-gradient-to-b from-violet-950/40 to-transparent",
+  },
+  amber: {
+    ring: "hover:border-amber-500",
+    chip: "bg-amber-900/60",
+    chipText: "text-amber-100",
+    iconBg: "bg-amber-500/25",
+    iconText: "text-amber-200",
+    cardBg: "bg-gradient-to-br from-amber-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-amber-800/60",
+    leftBar: "border-l-amber-500",
+    topBar: "bg-amber-500",
+    headerWash: "bg-gradient-to-b from-amber-950/40 to-transparent",
+  },
+  slate: {
+    ring: "hover:border-slate-500",
+    chip: "bg-slate-700/60",
+    chipText: "text-slate-100",
+    iconBg: "bg-slate-500/25",
+    iconText: "text-slate-200",
+    cardBg: "bg-gradient-to-br from-slate-800/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-slate-700/60",
+    leftBar: "border-l-slate-400",
+    topBar: "bg-slate-400",
+    headerWash: "bg-gradient-to-b from-slate-800/40 to-transparent",
+  },
+  rose: {
+    ring: "hover:border-rose-500",
+    chip: "bg-rose-900/60",
+    chipText: "text-rose-100",
+    iconBg: "bg-rose-500/25",
+    iconText: "text-rose-200",
+    cardBg: "bg-gradient-to-br from-rose-950/60 via-slate-900/80 to-slate-900/60",
+    cardBorder: "border-rose-800/60",
+    leftBar: "border-l-rose-500",
+    topBar: "bg-rose-500",
+    headerWash: "bg-gradient-to-b from-rose-950/40 to-transparent",
+  },
 };
 
 const accentOf = (s: Section) => ACCENT_CLASSES[s.accent || "slate"] || ACCENT_CLASSES.slate;
@@ -1956,6 +2128,90 @@ function buildSnippet(body: string, q: string): string {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Admonitions + cross-link routing                                   */
+/* ------------------------------------------------------------------ */
+
+const ADMONITION_STYLES: Record<
+  string,
+  { border: string; bg: string; label: string; labelColor: string }
+> = {
+  tip:     { border: "border-l-emerald-500", bg: "bg-emerald-950/30", label: "TIP",     labelColor: "text-emerald-300" },
+  note:    { border: "border-l-sky-500",     bg: "bg-sky-950/30",     label: "NOTE",    labelColor: "text-sky-300" },
+  warning: { border: "border-l-amber-500",   bg: "bg-amber-950/30",   label: "WARNING", labelColor: "text-amber-300" },
+  caution: { border: "border-l-rose-500",    bg: "bg-rose-950/30",    label: "CAUTION", labelColor: "text-rose-300" },
+};
+
+function Admonition({
+  kind,
+  title,
+  children,
+}: {
+  kind: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  const s = ADMONITION_STYLES[kind] || ADMONITION_STYLES.note;
+  return (
+    <div
+      className={`my-5 overflow-hidden rounded-r-md border border-l-4 border-slate-800 ${s.border} ${s.bg} px-4 py-3`}
+    >
+      <div
+        className={`mb-1.5 text-[10px] font-bold uppercase tracking-wider ${s.labelColor}`}
+      >
+        {s.label}
+        {title ? ` · ${title}` : ""}
+      </div>
+      <div className="text-sm leading-relaxed text-slate-300">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Split the article body on `:::tip|note|warning|caution [Title]\n…\n:::`
+ * fences and render each segment via marked-react with internal-link routing
+ * for `#article-id` href patterns.
+ */
+function renderArticleBody(
+  body: string,
+  linkRenderer: (href: string, text: React.ReactNode) => React.ReactElement,
+): React.ReactNode[] {
+  const segments: React.ReactNode[] = [];
+  const re = /^:::(tip|note|warning|caution)(?:[ \t]+(.+))?\n([\s\S]+?)\n:::[ \t]*$/gm;
+  let lastIdx = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > lastIdx) {
+      const md = body.slice(lastIdx, m.index);
+      if (md.trim()) {
+        segments.push(
+          <Markdown key={key++} renderer={{ link: linkRenderer }}>
+            {md}
+          </Markdown>,
+        );
+      }
+    }
+    segments.push(
+      <Admonition key={key++} kind={m[1]} title={m[2]}>
+        <Markdown renderer={{ link: linkRenderer }}>{m[3]}</Markdown>
+      </Admonition>,
+    );
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < body.length) {
+    const md = body.slice(lastIdx);
+    if (md.trim()) {
+      segments.push(
+        <Markdown key={key++} renderer={{ link: linkRenderer }}>
+          {md}
+        </Markdown>,
+      );
+    }
+  }
+  return segments;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -1971,6 +2227,52 @@ export default function KnowledgePage() {
   const totalArticles = useMemo(
     () => sections.reduce((n, s) => n + s.articles.length, 0),
     [],
+  );
+
+  const articlesById = useMemo(() => {
+    const m = new Map<string, { article: Article; section: Section }>();
+    sections.forEach((s) =>
+      s.articles.forEach((a) => m.set(a.id, { article: a, section: s })),
+    );
+    return m;
+  }, []);
+
+  const goArticle = (s: Section, a: Article) =>
+    setView({ kind: "article", section: s, article: a });
+
+  const linkRenderer = useCallback(
+    (href: string, text: React.ReactNode): React.ReactElement => {
+      // Internal cross-link: href like #article-id
+      if (href.startsWith("#")) {
+        const target = articlesById.get(href.slice(1));
+        if (target) {
+          return (
+            <a
+              href={href}
+              onClick={(e) => {
+                e.preventDefault();
+                goArticle(target.section, target.article);
+              }}
+              className="text-sky-400 underline-offset-2 hover:underline"
+            >
+              {text}
+            </a>
+          );
+        }
+      }
+      // External link: open in new tab
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-400 underline-offset-2 hover:underline"
+        >
+          {text}
+        </a>
+      );
+    },
+    [articlesById],
   );
 
   const hits: SearchHit[] = useMemo(() => {
@@ -1998,10 +2300,63 @@ export default function KnowledgePage() {
   const goLanding = () => {
     setView({ kind: "landing" });
     setSearch("");
+    if (typeof window !== "undefined" && window.location.hash) {
+      history.replaceState(null, "", window.location.pathname);
+    }
   };
   const goCategory = (s: Section) => setView({ kind: "category", section: s });
-  const goArticle = (s: Section, a: Article) =>
-    setView({ kind: "article", section: s, article: a });
+
+  // Deep-link support: read `#article-id` on mount and whenever the browser
+  // history advances (back / forward, or hashchange). Lab YAMLs can use
+  // [link](/knowledge#article-id) and clicking jumps straight into the article.
+  //
+  // Empty hash means "landing view." This is what lets Back from article B
+  // restore article A (which the article-effect pushed earlier), and Back
+  // again restore landing (popstate fires with empty hash).
+  useEffect(() => {
+    const apply = () => {
+      if (typeof window === "undefined") return;
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) {
+        setView({ kind: "landing" });
+        return;
+      }
+      const target = articlesById.get(hash);
+      if (target) {
+        setView({
+          kind: "article",
+          section: target.section,
+          article: target.article,
+        });
+      }
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    window.addEventListener("popstate", apply);
+    return () => {
+      window.removeEventListener("hashchange", apply);
+      window.removeEventListener("popstate", apply);
+    };
+  }, [articlesById]);
+
+  // Whenever view changes to article-mode, mirror the article id into the URL.
+  // Use pushState (not replaceState) so each article navigation gets its own
+  // history entry and the browser Back button actually walks back through the
+  // article-A -> article-B chain rather than skipping A. The guard prevents
+  // an infinite loop when popstate / hashchange set the view from an existing
+  // matching URL — we only push when the hash needs to change.
+  //
+  // Hash stripping on landing is handled by goLanding() explicitly so this
+  // effect stays single-purpose.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (view.kind === "article") {
+      const wanted = "#" + view.article.id;
+      if (window.location.hash !== wanted) {
+        history.pushState(null, "", wanted);
+      }
+    }
+  }, [view]);
 
   const isSearching = search.trim().length > 0;
 
@@ -2106,7 +2461,7 @@ export default function KnowledgePage() {
                             setSearch("");
                             goArticle(hit.section, hit.article);
                           }}
-                          className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                          className={`block w-full rounded-lg border border-l-4 ${acc.cardBorder} ${acc.leftBar} bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
                         >
                           <div className="mb-1 flex items-center gap-2">
                             <span
@@ -2158,7 +2513,7 @@ export default function KnowledgePage() {
                     <button
                       key={section.heading}
                       onClick={() => goCategory(section)}
-                      className={`group relative flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-left transition-colors ${acc.ring}`}
+                      className={`group relative flex flex-col rounded-xl border ${acc.cardBorder} ${acc.cardBg} p-5 text-left transition-all ${acc.ring} hover:shadow-lg hover:shadow-slate-950/50`}
                     >
                       <div
                         className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg ${acc.iconBg} ${acc.iconText}`}
@@ -2248,7 +2603,7 @@ export default function KnowledgePage() {
                     <li key={article.id}>
                       <button
                         onClick={() => goArticle(view.section, article)}
-                        className={`block w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
+                        className={`block w-full rounded-lg border border-l-4 ${acc.cardBorder} ${acc.leftBar} bg-slate-900/60 p-4 text-left transition-colors ${acc.ring}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <h3 className="text-sm font-semibold text-slate-100">
@@ -2288,26 +2643,35 @@ export default function KnowledgePage() {
               </nav>
 
               <article className="mx-auto max-w-3xl">
-                <div className="mb-4 flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full ${accentOf(view.section).chip} px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${accentOf(view.section).chipText}`}
+                {/* Color identifier for the section: 3-px top accent bar
+                    plus a soft wash behind the header zone. */}
+                <div className="-mx-2 mb-6 overflow-hidden rounded-lg">
+                  <div className={`h-1 w-full ${accentOf(view.section).topBar}`} />
+                  <div
+                    className={`${accentOf(view.section).headerWash} px-4 pb-5 pt-4`}
                   >
-                    <SectionIcon
-                      name={view.section.icon}
-                      className="h-3 w-3"
-                    />
-                    {view.section.heading}
-                  </span>
-                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    {readingMinutes(view.article.body)} min read
-                  </span>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full ${accentOf(view.section).chip} px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${accentOf(view.section).chipText}`}
+                      >
+                        <SectionIcon
+                          name={view.section.icon}
+                          className="h-3 w-3"
+                        />
+                        {view.section.heading}
+                      </span>
+                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                        <Clock className="h-3 w-3" />
+                        {readingMinutes(view.article.body)} min read
+                      </span>
+                    </div>
+                    <h2 className="text-3xl font-semibold leading-tight text-slate-100">
+                      {view.article.title}
+                    </h2>
+                  </div>
                 </div>
-                <h2 className="mb-6 text-3xl font-semibold leading-tight text-slate-100">
-                  {view.article.title}
-                </h2>
                 <div className="knowledge-article text-[15px] leading-relaxed text-slate-300">
-                  <Markdown>{view.article.body}</Markdown>
+                  {renderArticleBody(view.article.body, linkRenderer)}
                 </div>
 
                 {view.section.articles.length > 1 && (

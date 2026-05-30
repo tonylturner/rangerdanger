@@ -140,11 +140,15 @@ steps:
 
       > **Background:** the two-hop kill chain (compromise hop A,
       > pivot to hop B, attack from B) is the central lesson of
-      > defense in depth. See **OT Network Segmentation Overview**
-      > on the [Knowledge](/knowledge) page for why segmentation
-      > between the *vendor* and *field* zones is as important as
-      > the perimeter rule, even though the attacker never directly
-      > touches the field network from the internet.
+      > defense in depth. See [OT Network Segmentation Overview](/knowledge#ot-segmentation-overview)
+      > for why segmentation between the *vendor* and *field* zones
+      > is as important as the perimeter rule, even though the
+      > attacker never directly touches the field network from the
+      > internet. The full pattern catalog —
+      > [Vendor Remote Access Patterns](/knowledge#vendor-remote-access)
+      > and [The OT Kill Chain](/knowledge#ot-kill-chain) — covers how
+      > real utilities defend this surface and what historical
+      > incidents (Industroyer, Volt Typhoon) it mirrors.
 
       ### Operational consequence at the HMI
 
