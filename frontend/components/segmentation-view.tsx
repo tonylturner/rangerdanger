@@ -218,8 +218,9 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
 
       {/* Live containd DPI events — shows real allow/deny decisions
           on the wire so students can watch the policy enforce when
-          they fire a probe from a terminal. Empty until traffic flows. */}
-      <LiveEvents compact={compact} />
+          they fire a probe from a terminal. Empty under the weak
+          baseline by design (no rules have log:true). */}
+      <LiveEvents compact={compact} activeConfig={activeConfig} />
 
       {/* Dynamic policy evaluation — driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
@@ -349,7 +350,13 @@ function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
   };
 }
 
-function LiveEvents({ compact }: { compact: boolean }) {
+function LiveEvents({
+  compact,
+  activeConfig,
+}: {
+  compact: boolean;
+  activeConfig: string | null;
+}) {
   const [expanded, setExpanded] = useState(true);
   // 2.5s poll matches the substation Command Audit cadence and keeps
   // the strip responsive without burning bandwidth when nothing is
@@ -396,14 +403,60 @@ function LiveEvents({ compact }: { compact: boolean }) {
               containd unreachable
             </div>
           ) : events.length === 0 ? (
-            <div className="py-2 text-center text-[10px] text-slate-600">
-              No recent events — run a probe from a terminal to see enforcement
-            </div>
+            <EmptyEventsHint compact={compact} activeConfig={activeConfig} />
           ) : (
             events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// EmptyEventsHint - policy-aware empty-state message for the Live DPI
+// Events panel. Under the weak baseline the panel is silent by design
+// (no shipped rule has log:true - mirrors a real misconfigured
+// firewall and is part of the segmentation lesson); under hardened
+// the panel is "empty because no probe has been fired yet"; outside
+// those two there's not enough context to be more specific.
+function EmptyEventsHint({
+  compact,
+  activeConfig,
+}: {
+  compact: boolean;
+  activeConfig: string | null;
+}) {
+  if (activeConfig === "weak") {
+    return (
+      <div className="space-y-1 py-2 px-1 text-[10px] leading-snug text-slate-500">
+        <div className="font-medium text-slate-400">
+          Weak baseline has no logged rules.
+        </div>
+        <div>
+          No rule in the weak config has <span className="font-mono text-amber-400">log: true</span>,
+          so containd emits zero firewall.rule.hit events while it&apos;s active.
+          {!compact && " That silence IS part of the weak-baseline lesson - real misconfigured firewalls also lack observability."}
+        </div>
+        <div>
+          To see this panel light up, <span className="text-slate-300">Apply Hardened</span> in the
+          controls above - the hardened config has logging on every cross-zone rule.
+        </div>
+      </div>
+    );
+  }
+  if (activeConfig === "improved") {
+    return (
+      <div className="py-2 px-1 text-[10px] leading-snug text-slate-500">
+        Hardened policy is active and rules have <span className="font-mono text-amber-400">log: true</span>,
+        but no traffic has matched yet. Run a probe from a terminal (e.g.{" "}
+        <span className="font-mono text-slate-300">mbpoll</span> or{" "}
+        <span className="font-mono text-slate-300">dnp3poll</span> from kali) to see enforcement.
+      </div>
+    );
+  }
+  return (
+    <div className="py-2 text-center text-[10px] text-slate-600">
+      No recent events - run a probe from a terminal to see enforcement
     </div>
   );
 }
