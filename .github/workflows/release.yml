@@ -42,9 +42,12 @@ jobs:
           - image: rangerdanger-backend
             dockerfile: Dockerfile.backend
             platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-frontend
-            dockerfile: Dockerfile.frontend
-            platforms: linux/amd64,linux/arm64
+          # NOTE: rangerdanger-frontend is built by the dedicated
+          # `frontend` + `frontend-merge` jobs below, NOT this matrix.
+          # Next.js SWC's native binary can't build under QEMU arm64
+          # emulation (@next/swc-linux-arm64-gnu: __res_init symbol not
+          # found), which silently broke the v0.1.19 + v0.1.20 releases.
+          # Those jobs build each arch on its own native runner instead.
           - image: rangerdanger-kali
             dockerfile: Dockerfile.kali
             platforms: linux/amd64,linux/arm64
@@ -209,6 +212,147 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+  # ── frontend: native-runner multi-arch build ────────────────────────
+  # Build each arch on its OWN native GitHub runner (free for public
+  # repos) so there is no QEMU emulation, then push by digest and stitch
+  # the manifest list in frontend-merge. This is the canonical Docker
+  # "distribute build across multiple runners" pattern and is the fix for
+  # the Next.js SWC __res_init failure that broke v0.1.19 / v0.1.20.
+  frontend:
+    name: rangerdanger-frontend (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "ref=refs/tags/${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Compute build metadata
+        id: meta
+        run: |
+          echo "version=${{ steps.tag.outputs.name }}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          platform=${{ matrix.platform }}
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image labels
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
+          labels: |
+            org.opencontainers.image.title=rangerdanger-frontend
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.name }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.commit }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ steps.meta.outputs.commit }}
+            DATE=${{ steps.meta.outputs.date }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=rangerdanger-frontend-${{ steps.meta.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=rangerdanger-frontend-${{ steps.meta.outputs.pair }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-frontend-${{ steps.meta.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  frontend-merge:
+    name: rangerdanger-frontend (merge)
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-frontend-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag plan
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
+          tags: |
+            type=raw,value=${{ steps.tag.outputs.name }}
+            type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.name, '-') }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend@sha256:%s ' *)
+
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend:${{ steps.tag.outputs.name }}
+
   github-release:
     # Backfill the GitHub Releases page from CHANGELOG after every
     # successful tag-driven image publish. Before this job existed,
@@ -217,7 +361,7 @@ jobs:
     # drifted (v0.1.3-v0.1.9 were backfilled retroactively on
     # 2026-05-11).
     name: GitHub Release
-    needs: publish
+    needs: [publish, frontend-merge]
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target tag
