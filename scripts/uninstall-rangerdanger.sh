@@ -256,6 +256,7 @@ if [ "$BINFMT_FOUND" = "1" ]; then
             rm -f "$BINFMT_MARKER"
             docker image rm "$BINFMT_REF" >/dev/null 2>&1 || true
             say "amd64 emulation reverted (qemu-x86_64 handler removed)"
+            say "  (if you installed boot persistence: sudo ./scripts/persist-emulation.sh --uninstall)"
         else
             warn "Could not revert amd64 emulation automatically. To finish by hand:"
             warn "    docker run --privileged --rm $BINFMT_REF --uninstall qemu-x86_64"

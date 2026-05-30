@@ -314,6 +314,7 @@ if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; th
         && amd64_emulation_present; then
         : > "$BINFMT_MARKER"
         say "amd64 emulation registered (./scripts/uninstall-rangerdanger.sh will revert it)"
+        say "  (runtime only — for reboot persistence: sudo ./scripts/persist-emulation.sh)"
     else
         warn "Could not auto-register amd64 emulation."
         warn "Everything except the OpenPLC lab still works. To enable OpenPLC, run:"

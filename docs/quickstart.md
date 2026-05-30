@@ -49,8 +49,13 @@ hand if you're offline *without* a staged SSD, or you skip `setup.sh`:
 docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64
 ```
 
-Note: binfmt registration does not survive a host reboot — re-run
-`setup.sh` (or the command above) if OpenPLC won't start after a restart.
+Note: this binfmt registration is runtime-only and does not survive a
+reboot. Either re-run `setup.sh` after a restart, or install a boot-time
+systemd unit once for permanent persistence:
+
+```bash
+sudo ./scripts/persist-emulation.sh        # --uninstall to remove
+```
 
 Everything else — the containd DPI engine and the other 13 first-party
 images — runs natively on arm64; only OpenPLC needs this, and nothing
