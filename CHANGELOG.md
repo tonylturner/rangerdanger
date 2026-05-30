@@ -6,6 +6,177 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.20] - 2026-05-30
+
+Workshop-launch release. Bundles the dual-track firewall lab structure
+(non-technical guided path + technical author-in-containd path), a
+containd manual-commit observer that lets the lab UI detect direct
+CLI/UI commits, a knowledge wiki redesign with admonition syntax and
+cross-link routing, and a batch of smoke / CI reliability fixes. No
+breaking schema changes; existing lab progress in localStorage is
+preserved.
+
+### Added
+
+- **Dual-track firewall lab path (Labs 2.2 / 2.3 / 2.3-bonus / 2.4).**
+  New explicit fork between a **Guided** track (apply policies via
+  side-panel buttons, walk the containd interfaces for understanding
+  but don't author rules) and a **Technical** track (author and
+  commit rules in containd's web UI or CLI directly, no rangerdanger
+  buttons). Mechanism:
+  - New `useFirewallTrack` hook with `localStorage` persistence
+    (`rangerdanger.firewall-track`).
+  - New `:::track-picker` description directive renders a two-card
+    picker on Lab 2.2 step 1. Mark Complete is force-gated until a
+    track is selected.
+  - New `:::guided` / `:::technical` description directives let lab
+    authors fork only the lines that vary, not whole descriptions.
+    When no track is picked, both blocks render so students see both
+    perspectives before deciding.
+  - Side-panel chip on every firewall lab shows the current track
+    with a one-click switch.
+  - On the Technical track, the apply buttons render dim + small,
+    labelled "guided fallback" — visible as an escape hatch without
+    dominating the panel.
+- **`PolicyStatusBanner` — sticky per-step indicator of what firewall
+  policy is currently running.** Reads `active_config` + the new
+  `policy_source` field. Matched variant shows the policy in a
+  color-coded card; mismatched (step's `expected_config` differs)
+  shows an amber warning with the action prompt inline. Custom
+  policies are labelled `(Lab 1.4 plan)` vs `(your containd commit)`.
+- **`policyObserver` backend goroutine — detects manual containd
+  commits.** Polls containd's running-config hash every 5s, compares
+  against the last applied hash (recorded by the apply handlers). On
+  divergence past a 5s grace window: sets `activeConfig=custom` +
+  `policy_source=manual-custom` so the banner correctly labels a
+  student-authored policy committed directly through containd's
+  CLI/UI. Five unit tests with `-race` cover no-change / divergence /
+  grace-window / baseline-seed / concurrent-apply scenarios.
+- **`policy_source` field on firewall API responses.** New field on
+  `GET /api/firewall/active`, `POST /api/firewall/apply`, and
+  `POST /api/firewall/apply-custom`. Values: `"weak"`,
+  `"hardened-reference"`, `"plan-custom"`, `"manual-custom"`, `""`.
+  Lets the frontend banner accurately distinguish the canned weak
+  baseline, the canned hardened reference, the student's Lab 1.4
+  plan, and a directly-committed-in-containd policy.
+- **Knowledge wiki: admonition syntax + cross-link routing.**
+  Articles can now use `:::tip`, `:::note`, `:::warning`,
+  `:::caution` blocks for visual breakup. Markdown links of the
+  form `[text](#article-id)` route in-page to the target article;
+  the URL bar mirrors the current article (`/knowledge#article-id`)
+  with `pushState` so the browser Back button walks article history
+  correctly. Lab YAMLs can now deep-link readers in one hop instead
+  of three.
+- **Knowledge wiki: per-section color identity across cards +
+  article views.** Six-section accent palette (sky / emerald /
+  violet / amber / slate / rose) carries through landing tiles,
+  category cards, search results, and the article reading view via
+  new `cardBg`, `cardBorder`, `leftBar`, and `topBar` fields. Each
+  topic tile registers visually distinct at a glance without being
+  loud.
+- **Knowledge article: "Default-Deny: Implicit vs Explicit Across
+  Firewalls."** Covers the two mechanism models, a per-vendor table
+  (containd, Cisco ASA/FTD, Palo Alto, FortiGate, Juniper SRX, Check
+  Point, pfSense/OPNsense, iptables/nftables, Linux bridge/OVS), why
+  this matters in OT, and three audit questions for spotting
+  default-deny misconfigurations.
+
+### Changed
+
+- **Lab 2.2 (Firewall Policy Implementation) Phase 2 reframed to
+  teach the principle, not just containd's mechanism.** Old wording
+  said "Set default action to DROP" as if it were a separate switch,
+  which led students to look for a UI control that doesn't exist
+  (containd's policy already has `defaultAction: DENY` as a
+  top-level field, set out of the box). New framing explains
+  implicit vs explicit default-deny, names which vendors fall on
+  each side, links to the new `/knowledge#default-deny` article, and
+  preserves the containd-specific guidance as a `:::hint` calling
+  out that raw iptables / OVS deployments would need additional
+  chain-policy or explicit cleanup-rule work.
+- **Knowledge wiki: FUXA reframed — `/substation` is THE lab HMI.**
+  Audit established the FUXA service exists and `hmi_poller` is
+  polling, but every lab exercise points students at `/substation`
+  for the alarm chain, customer-service tile, and "Operational
+  consequence at the HMI" callouts. Rewrote the HMI/SCADA article
+  to lead with `/substation` as the primary HMI, with FUXA framed
+  as a contextual reference. Renamed to "HMI, SCADA, and the Lab's
+  Substation Panel" to set expectations up front.
+- **Side-panel policy actions restructured to buttons-only across
+  the firewall labs.** The status indicator now lives in the
+  `PolicyStatusBanner` at the top of each step. Apply Hardened
+  shows whenever the active policy isn't already improved; Reset to
+  Weak shows whenever it isn't already weak; Apply Your Plan is
+  disabled-with-tooltip until Lab 1.4 has a saved remediation plan.
+  The buttons now appear on every firewall lab (Labs 2.2 / 2.3 /
+  2.3-bonus / 2.4) instead of just the implementation lab.
+
+### Fixed
+
+- **`events-smoke.sh` polling-window race resolved + `.ps1` sibling
+  ported to the same pattern.** The original single-shot read after
+  `PROBE_WAIT` (default 4s) was racing the nflog consumer + engine
+  event store + REST endpoint on CI runner load — the gate sometimes
+  declared "nflog consumer regressed" on what was actually just
+  propagation latency. Now polls within an `EVENT_POLL_BUDGET`
+  budget (default 20s, inclusive of the upper bound after Codex
+  review on PR #72 caught the off-by-one), once per second, with
+  a fail-loud at the budget edge. PowerShell sibling rewritten to
+  use the same polling loop so the two scripts stay in lockstep
+  (`PROBE_WAIT + EVENT_POLL_BUDGET` total budget on both).
+- **`lab-commands-smoke.{sh,ps1}` no longer silently inherits weak
+  policy on `hardened` steps.** Both scripts only handled literal
+  `weak` or `improved`; when a step's `expected_config` was
+  `hardened` (the user-facing alias used extensively in
+  `hardening-configurations.yml` and `validation-evidence.yml`), the
+  policy apply was skipped, so re-test commands ran under whatever
+  the previous step's policy was — typically weak — and the smoke
+  reported a clean PASS for attacks that were supposed to be
+  blocked. Now maps `hardened` → `improved` before the apply call.
+- **Kali apt-cache update cycles 5 mirrors instead of retrying one.**
+  The previous three-attempt retry against a single mirror couldn't
+  ride out cases where Cloudflare's edge served stale package
+  metadata. Now cycles through `kali.download`, `http.kali.org`,
+  `mirror.csclub.uwaterloo.ca`, `mirrors.ocf.berkeley.edu`, and
+  `archive-4.kali.org` — different upstreams, different cache
+  paths.
+
+### CI
+
+- **`audit-oss` removed from smoke triggers (`smoke.yml` +
+  `smoke-windows.yml`).** The branch was a v0.1.4 audit-cycle
+  release-tracking branch — long since merged into main and not
+  pushed in weeks. Trigger now only fires on `main` and
+  `oss-release`. No coverage regression (no remaining caller). The
+  branch itself was deleted in the same change.
+- **`smoke-windows.yml` `$LASTEXITCODE` reset.** The
+  `setup.ps1 -CheckOnly` step's leaking exit code was failing
+  otherwise-passing PRs whenever the hosted Windows runner happened
+  to lack a working Docker engine. The step's existing comment
+  said "Exit code is not the gate; the parse step above is" but
+  the intent wasn't enforced; now is.
+
+### Dependencies
+
+- `@react-pdf/renderer` 4.4.0 → 4.5.1 (PR #66, rebased after lockfile cascade)
+- `@tanstack/react-query` 5.100.11 → 5.100.14 (PR #65)
+- `postcss` 8.5.14 → 8.5.15 (PR #64)
+- `linuxserver/webtop` digest bump (PR #63)
+
+### Operator notes
+
+- **containd image:** workshop-launch builds depend on containd
+  v0.1.26+ for the `mdlayher/netlink` v1.11.1 fix that resolves a
+  commit-pipeline hang on macOS Docker Desktop's LinuxKit kernel
+  (visible as `POST /api/v1/config/commit` hanging for 30+ seconds
+  on direct CLI/UI commits — i.e. the technical-track workflow).
+  The current `ghcr.io/tonylturner/containd:latest` tag points at
+  v0.1.28; `docker compose pull firewall` confirms.
+- **Workshop scope:** this is the 2026-06-03 workshop launch
+  release. The dual-track firewall lab structure is the headline
+  feature; the observer + banner work supports it; the knowledge
+  redesign supports student self-service during the lab.
+
 ## [v0.1.19] - 2026-05-29
 
 Pre-workshop lab simplification pass. Lab 2.3 (Protocol-Hardened
