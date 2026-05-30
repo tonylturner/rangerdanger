@@ -66,10 +66,8 @@ function policyMeta(id: string | null | undefined): PolicyMeta {
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
-  const [activeConfig, setActiveConfig] = useState<string | null>(null);
   const [comparison, setComparison] = useState<PolicyComparison | null>(null);
   const [applying, setApplying] = useState(false);
-  const [lastApply, setLastApply] = useState(0);
   // Which policy the evaluation panel is previewing. Defaults to
   // whatever is currently applied so the panel opens "self-consistent".
   // Track whether the user has manually changed the selection so we
@@ -78,34 +76,47 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyId>("improved");
   const [userPickedPolicy, setUserPickedPolicy] = useState(false);
 
+  // Active firewall config — shared via React Query so this drawer
+  // and the top-right PolicyBadge stay in sync whichever entry point
+  // the student uses to flip policy. Polling every 5s also picks up
+  // manual containd commits the policy-observer flips to
+  // "manual-custom" within its grace window.
+  const { data: activeData } = useQuery({
+    queryKey: ["firewall-active"],
+    queryFn: getActiveFirewallConfig,
+    refetchInterval: 5000,
+    staleTime: 2000,
+  });
+  const activeConfig = activeData?.active_config ?? null;
+
   useEffect(() => {
-    getActiveFirewallConfig()
-      .then((r) => {
-        setActiveConfig(r.active_config);
-        if (!userPickedPolicy && (r.active_config === "weak" || r.active_config === "improved")) {
-          setSelectedPolicyId(r.active_config);
-        }
-      })
-      .catch(() => {});
     getFirewallComparison().then(setComparison).catch(() => {});
-    // userPickedPolicy intentionally excluded so the initial load
-    // sets it but a manual pick is sticky.
+  }, []);
+
+  useEffect(() => {
+    if (!userPickedPolicy && (activeConfig === "weak" || activeConfig === "improved")) {
+      setSelectedPolicyId(activeConfig);
+    }
+    // userPickedPolicy intentionally excluded so the initial sync
+    // happens but a manual pick stays sticky.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastApply]);
+  }, [activeConfig]);
 
   const handleApply = async (config: "weak" | "improved") => {
     setApplying(true);
     try {
-      const res = await applyFirewallConfig(config);
-      setActiveConfig(res.active_config);
+      await applyFirewallConfig(config);
       setSelectedPolicyId(config);
       setUserPickedPolicy(false); // re-sync with active after apply
-      setLastApply((c) => c + 1);
-      // Network map edges + header policy badge subscribe to these
-      // queries; invalidating triggers an immediate refetch so the
-      // canvas reflects the new config without a manual reload.
+      // All three of these queries care about firewall state; the
+      // PolicyBadge subscribes to workshop status, the canvas
+      // subscribes to firewall-rules, and this drawer subscribes
+      // to firewall-active. Invalidate all of them so any entry
+      // point that flips policy (drawer apply, badge apply,
+      // observer-detected manual commit) propagates everywhere.
       queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
       queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
     } catch {
       // swallow — UI state stays as-is
     } finally {

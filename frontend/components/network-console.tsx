@@ -1262,6 +1262,11 @@ function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
       await applyFirewallConfig(config as "weak" | "improved");
       queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
       queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
+      // SegmentationView (the left drawer) subscribes to this; without
+      // invalidating it here, flipping policy from the badge left
+      // the drawer's Active Policy banner stuck on the prior value
+      // until its own 5s refetch caught up.
+      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
     } catch {
       // swallow
     } finally {
