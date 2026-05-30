@@ -40,7 +40,8 @@ steps:
       latent-exposure-confirmed: Active probing revealed latent exposure beyond passive observation
       :::
 
-      :::note title="Choose your path"
+      ### Choose your path
+
       Three ways to get the policy active for this exercise — pick
       whichever matches how you want to work today. The policy
       banner at the top of every step will tell you what is
@@ -63,7 +64,6 @@ steps:
         them in containd directly. The banner will show
         "Your custom policy" once your commit lands. The phases
         below are the build guide.
-      :::
 
       You will:
 
