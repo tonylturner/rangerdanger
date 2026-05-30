@@ -46,7 +46,7 @@ registers emulation with no network. You only need to register it by
 hand if you're offline *without* a staged SSD, or you skip `setup.sh`:
 
 ```bash
-docker run --privileged --rm tonistiigi/binfmt --install amd64
+docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64
 ```
 
 Note: binfmt registration does not survive a host reboot — re-run

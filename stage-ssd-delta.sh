@@ -62,7 +62,7 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 
 # Cross-included into the arm64 delta (see stage_arch): the qemu-x86_64
 # binfmt helper that runs amd64-only OpenPLC on arm64 Linux.
-BINFMT_IMAGE="tonistiigi/binfmt:latest"
+BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
 
 if [ -t 1 ]; then
     GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
@@ -400,7 +400,7 @@ recreates containers whose image digest changed.
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. \`delta-arm64.tar\`
 ships \`tonistiigi/binfmt\` for this; if OpenPLC isn't running after the
 restart (\`docker ps | grep openplc\`), register it once with
-\`docker run --privileged --rm tonistiigi/binfmt --install amd64\`.
+\`docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64\`.
 (setup.sh does this automatically on a fresh install; the registration
 does not persist across a host reboot.)
 

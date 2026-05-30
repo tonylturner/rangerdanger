@@ -70,7 +70,7 @@ RESOLVED=$(echo "$ALL_IMAGES" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a
 # the SSD, setup.sh's auto-register step has nothing to pull on an
 # air-gapped arm64 Linux laptop and openplc won't start. amd64 hosts run
 # openplc natively and never need it, so it stays out of images-amd64.tar.
-BINFMT_IMAGE="tonistiigi/binfmt:latest"
+BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
 AMD64_IMAGES="$RESOLVED"
 ARM64_IMAGES=$(printf '%s\n%s\n' "$RESOLVED" "$BINFMT_IMAGE")
 

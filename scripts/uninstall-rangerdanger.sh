@@ -93,6 +93,9 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 OFFLINE_FILE="$ROOT_DIR/docker-compose.offline.yml"
 ENV_FILE="$ROOT_DIR/.env"
 BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
+# Pinned to match setup.sh + the SSD-staged image so offline revert finds it
+# locally with no pull. Keep in sync with setup.sh / stage-ssd*.sh.
+BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
 OS=$(uname -s)
 
 COMPOSE_ARGS=("-f" "$COMPOSE_FILE")
@@ -248,14 +251,14 @@ if [ "$BINFMT_FOUND" = "1" ]; then
         warn "Marker present but host is not Linux ($OS) — leaving binfmt alone; removing stale marker."
         rm -f "$BINFMT_MARKER"
     else
-        docker run --privileged --rm tonistiigi/binfmt --uninstall qemu-x86_64 >/dev/null 2>&1 || true
+        docker run --privileged --rm "$BINFMT_REF" --uninstall qemu-x86_64 >/dev/null 2>&1 || true
         if [ ! -e /proc/sys/fs/binfmt_misc/qemu-x86_64 ]; then
             rm -f "$BINFMT_MARKER"
-            docker image rm tonistiigi/binfmt >/dev/null 2>&1 || true
+            docker image rm "$BINFMT_REF" >/dev/null 2>&1 || true
             say "amd64 emulation reverted (qemu-x86_64 handler removed)"
         else
             warn "Could not revert amd64 emulation automatically. To finish by hand:"
-            warn "    docker run --privileged --rm tonistiigi/binfmt --uninstall qemu-x86_64"
+            warn "    docker run --privileged --rm $BINFMT_REF --uninstall qemu-x86_64"
             warn "Keeping $BINFMT_MARKER so a re-run can retry."
         fi
     fi

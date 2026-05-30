@@ -302,18 +302,23 @@ say "Pinned VERSION=$VERSION in $ENV_FILE"
 # uninstall revert ONLY a handler we installed (never a pre-existing or
 # Docker-Desktop one).
 BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
+# Pinned (not :latest) for reproducible installs. stage-ssd.sh stages this
+# exact tag, so the offline path loads it and `docker run` finds it with no
+# pull. Bump deliberately to pick up newer qemu. Keep in sync with
+# stage-ssd.sh, stage-ssd-delta.sh, and uninstall-rangerdanger.sh.
+BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
 if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
     banner "Registering amd64 emulation (OpenPLC)"
     say "OpenPLC is amd64-only; registering a qemu-x86_64 handler via tonistiigi/binfmt..."
-    if docker run --privileged --rm tonistiigi/binfmt --install amd64 >/dev/null 2>&1 \
+    if docker run --privileged --rm "$BINFMT_REF" --install amd64 >/dev/null 2>&1 \
         && amd64_emulation_present; then
         : > "$BINFMT_MARKER"
         say "amd64 emulation registered (./scripts/uninstall-rangerdanger.sh will revert it)"
     else
         warn "Could not auto-register amd64 emulation."
         warn "Everything except the OpenPLC lab still works. To enable OpenPLC, run:"
-        warn "    docker run --privileged --rm tonistiigi/binfmt --install amd64"
-        warn "(needs network to pull tonistiigi/binfmt if not already cached)."
+        warn "    docker run --privileged --rm $BINFMT_REF --install amd64"
+        warn "(needs network to pull $BINFMT_REF if not already cached)."
     fi
 fi
 
@@ -401,7 +406,7 @@ else
     warn "OpenPLC is not running (state=$op_state, restarts=$op_rc) — the protection-logic lab won't work."
     if docker logs rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
         warn "  Cause: 'exec format error' — amd64 emulation is missing on this arm64 host."
-        warn "  Fix:   docker run --privileged --rm tonistiigi/binfmt --install amd64"
+        warn "  Fix:   docker run --privileged --rm $BINFMT_REF --install amd64"
         warn "         then re-run ./setup.sh (or: docker compose -f docker-compose.release.yml up -d openplc)"
     else
         warn "  Check: docker compose -f docker-compose.release.yml logs openplc"

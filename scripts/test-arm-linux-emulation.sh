@@ -43,6 +43,7 @@ SETUP="$REPO/setup.sh"
 UNINSTALL="$REPO/scripts/uninstall-rangerdanger.sh"
 MARKER="$REPO/.setup-binfmt-amd64"
 HANDLER=/proc/sys/fs/binfmt_misc/qemu-x86_64
+BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; matches setup.sh
 
 sec "RangerDanger -- arm64 Linux amd64-emulation test"
 
@@ -107,7 +108,7 @@ else
 
     # 2. install (exactly what setup.sh runs)
     info "installing amd64 emulation via tonistiigi/binfmt ..."
-    if docker run --privileged --rm tonistiigi/binfmt --install amd64 >/dev/null 2>&1; then
+    if docker run --privileged --rm "$BINFMT_REF" --install amd64 >/dev/null 2>&1; then
         ok "tonistiigi/binfmt --install amd64 succeeded"
     else
         no "tonistiigi/binfmt --install amd64 failed (network? offline VM?)"
@@ -136,7 +137,7 @@ else
 
     # 6. revert (exactly what uninstall runs)
     info "reverting via tonistiigi/binfmt --uninstall qemu-x86_64 ..."
-    docker run --privileged --rm tonistiigi/binfmt --uninstall qemu-x86_64 >/dev/null 2>&1 || true
+    docker run --privileged --rm "$BINFMT_REF" --uninstall qemu-x86_64 >/dev/null 2>&1 || true
     if [ ! -e "$HANDLER" ]; then
         ok "qemu-x86_64 handler removed (host back to pre-setup state)"
     else
