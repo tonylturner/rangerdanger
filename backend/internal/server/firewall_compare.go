@@ -378,10 +378,31 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 	// students need to see that "no explicit rule" still means
 	// "denied at the policy edge"). Both shipping configs have
 	// defaultAction: DENY, so an absent rule resolves to DENY here.
+	//
+	// We list BOTH directions for each cross-zone relationship so the
+	// drawer surfaces implicit-deny rows even under the weak baseline
+	// (which has explicit ALLOWs for the 8 "lower-to-higher" pairs but
+	// no rules for the reverse). The first half is the forward
+	// direction (lower-trust → higher-trust, the segmentation lesson);
+	// the second half is the reverse (higher-trust → lower-trust,
+	// which falls through to default-deny for new connections —
+	// conntrack still permits established return traffic).
 	orderedPairs := []zonePair{
+		// Forward (lower trust → higher trust)
 		{"wan", "dmz"}, {"wan", "lan1"}, {"wan", "lan2"},
 		{"dmz", "lan1"}, {"dmz", "lan2"},
-		{"lan1", "lan2"}, {"lan1", "lan1"}, {"lan2", "lan2"},
+		{"lan1", "lan2"},
+		// Intra-zone
+		{"lan1", "lan1"}, {"lan2", "lan2"},
+		// Reverse (higher trust → lower trust). These are
+		// implicit-deny under both shipping configs; their value is
+		// pedagogical: showing the student that the policy has zero
+		// explicit rules permitting OT-to-corporate or field-to-OT
+		// new connections, even though conntrack happily allows
+		// established return traffic.
+		{"lan2", "lan1"}, {"lan2", "dmz"}, {"lan2", "wan"},
+		{"lan1", "dmz"}, {"lan1", "wan"},
+		{"dmz", "wan"},
 	}
 
 	weakDefault := strings.ToUpper(weak.Firewall.DefaultAction)
