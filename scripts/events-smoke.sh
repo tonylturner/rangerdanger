@@ -106,7 +106,12 @@ sleep "$PROBE_WAIT"
 # drops to appear.
 deny_count=0
 elapsed=0
-while [ "$elapsed" -lt "$EVENT_POLL_BUDGET" ]; do
+# `-le` so the loop checks at elapsed values 0..EVENT_POLL_BUDGET
+# inclusive — with default budget 20 that's 21 checks. The previous
+# `-lt` exited after the sleep-to-20 without rechecking, so a DENY
+# event that surfaced during the final second of the advertised
+# budget was still missed (Codex review on #72).
+while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
   deny_count=$(docker exec rangerdanger-firewall sh -c \
     "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null \
     | python3 -c '
@@ -121,6 +126,9 @@ denies = [e for e in events
 print(len(denies))
 ' 2>/dev/null || echo 0)
   if [ "$deny_count" -ge 1 ]; then
+    break
+  fi
+  if [ "$elapsed" -eq "$EVENT_POLL_BUDGET" ]; then
     break
   fi
   sleep 1

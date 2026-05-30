@@ -30,7 +30,8 @@ encoding rationale.
 
 [CmdletBinding()]
 param(
-    [int]$ProbeWaitSec = $(if ($env:PROBE_WAIT) { [int]$env:PROBE_WAIT } else { 4 })
+    [int]$ProbeWaitSec     = $(if ($env:PROBE_WAIT)         { [int]$env:PROBE_WAIT }         else { 4 }),
+    [int]$EventPollBudget  = $(if ($env:EVENT_POLL_BUDGET)  { [int]$env:EVENT_POLL_BUDGET }  else { 20 })
 )
 
 $ErrorActionPreference = "Continue"
@@ -104,33 +105,45 @@ Start-Sleep -Seconds 2
     $ErrorActionPreference = 'SilentlyContinue'
     docker exec rangerdanger-kali sh -c "nc -nv -w 3 10.40.40.20 502 < /dev/null" *>$null
 }
-Start-Sleep -Seconds $ProbeWaitSec
 
-# Query engine's full event store directly. limit=500 leaves room for
-# the kali drop to appear past RTAC's continuous allow chatter.
-$rawEvents = & {
-    $ErrorActionPreference = 'SilentlyContinue'
-    docker exec rangerdanger-firewall sh -c "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>$null
-}
+# Poll the engine's event store for the DENY event with a budget,
+# rather than a single read after a fixed sleep. Same propagation
+# race as the .sh sibling -- nflog consumer + engine event store can
+# take longer than ProbeWaitSec to surface the event under CI load.
+# Budget is inclusive (0..EventPollBudget) so we don't miss events
+# that surface during the final second.
 $denyCount = 0
-if ($rawEvents) {
-    try {
-        $events = $rawEvents | ConvertFrom-Json -ErrorAction Stop
-        if ($events) {
-            $denyCount = (@($events) | Where-Object {
-                $_.kind -eq 'firewall.rule.hit' -and
-                $_.attributes.action -eq 'DENY' -and
-                $_.srcIp -like '10.10.10.*' -and
-                $_.dstIp -like '10.40.40.*' -and
-                $_.dstPort -eq 502
-            }).Count
-        }
-    } catch { }
+$elapsed   = 0
+$startTime = Get-Date
+while ($elapsed -le $EventPollBudget) {
+    $rawEvents = & {
+        $ErrorActionPreference = 'SilentlyContinue'
+        docker exec rangerdanger-firewall sh -c "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>$null
+    }
+    if ($rawEvents) {
+        try {
+            $events = $rawEvents | ConvertFrom-Json -ErrorAction Stop
+            if ($events) {
+                $denyCount = (@($events) | Where-Object {
+                    $_.kind -eq 'firewall.rule.hit' -and
+                    $_.attributes.action -eq 'DENY' -and
+                    $_.srcIp -like '10.10.10.*' -and
+                    $_.dstIp -like '10.40.40.*' -and
+                    $_.dstPort -eq 502
+                }).Count
+            }
+        } catch { }
+    }
+    if ($denyCount -ge 1) { break }
+    if ($elapsed -eq $EventPollBudget) { break }
+    Start-Sleep -Seconds 1
+    $elapsed++
 }
+$elapsedDisplay = [int]((Get-Date) - $startTime).TotalSeconds
 if ($denyCount -lt 1) {
-    Err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 in engine events -- nflog consumer regressed"
+    Err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 within ${EventPollBudget}s -- nflog consumer regressed"
 } else {
-    OK "$denyCount kali->field:502 DENY event(s) in engine event store"
+    OK "$denyCount kali->field:502 DENY event(s) in engine event store (${elapsedDisplay}s)"
 }
 
 # Backend's substation surface should return SOME events (catches a
