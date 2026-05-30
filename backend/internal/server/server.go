@@ -54,7 +54,24 @@ type Server struct {
 	orchestrator   *orchestrator.Orchestrator
 	containdClient *containd.Client
 	activeConfigMu sync.RWMutex
-	activeConfig   string // "weak" or "improved"
+	activeConfig   string // "weak", "improved", or "custom"
+	// policySource records how the active policy was applied. Possible
+	// values:
+	//   "weak"              — canned weak baseline (/api/firewall/apply)
+	//   "hardened-reference" — canned hardened policy (/api/firewall/apply)
+	//   "plan-custom"       — student's Lab 1.4 plan, pushed by the
+	//                         frontend "Apply Your Plan" button
+	//                         (/api/firewall/apply-custom)
+	//   "manual-custom"     — placeholder for a future Phase B where
+	//                         a background poller observes a policy
+	//                         the student committed directly in
+	//                         containd's CLI/UI and labels it as such
+	//   ""                  — never applied / initial state
+	// The frontend uses this to label the status banner accurately
+	// ("Your custom policy (Lab 1.4 plan)" vs "(your containd commit)")
+	// and survives page reloads, which a frontend-only session-state
+	// approach would not.
+	policySource string
 	pcapMu         sync.Mutex
 	pcap           pcapState
 	trafficMu      sync.Mutex

@@ -139,11 +139,14 @@ func TestHandleFirewallApply_Weak(t *testing.T) {
 	if atomic.LoadInt32(&counters.commitCount) != 1 {
 		t.Errorf("expected 1 commit POST, got %d", counters.commitCount)
 	}
-	// activeConfig state should follow.
+	// activeConfig state + policySource should follow.
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
 	if s.activeConfig != "weak" {
 		t.Errorf("activeConfig = %q, want weak", s.activeConfig)
+	}
+	if s.policySource != "weak" {
+		t.Errorf("policySource = %q, want \"weak\"", s.policySource)
 	}
 }
 
@@ -164,6 +167,9 @@ func TestHandleFirewallApply_Improved(t *testing.T) {
 	defer s.activeConfigMu.RUnlock()
 	if s.activeConfig != "improved" {
 		t.Errorf("activeConfig = %q, want improved", s.activeConfig)
+	}
+	if s.policySource != "hardened-reference" {
+		t.Errorf("policySource = %q, want \"hardened-reference\" (the user-facing label for the canned improved policy)", s.policySource)
 	}
 }
 
@@ -251,6 +257,9 @@ func TestHandleFirewallApplyCustom_Success(t *testing.T) {
 	defer s.activeConfigMu.RUnlock()
 	if s.activeConfig != "custom" {
 		t.Errorf("activeConfig = %q, want \"custom\"", s.activeConfig)
+	}
+	if s.policySource != "plan-custom" {
+		t.Errorf("policySource = %q, want \"plan-custom\" (the Apply Your Plan button path)", s.policySource)
 	}
 }
 
