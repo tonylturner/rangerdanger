@@ -67,6 +67,16 @@ const TRACK_PICKER_OPEN_RE = /^:::track-picker(?:\s+(.+))?$/;
 const GUIDED_OPEN_RE = /^:::guided$/;
 const TECHNICAL_OPEN_RE = /^:::technical$/;
 
+// :::generate-traffic-button
+// :::
+// Renders the "Generate Traffic" button inline at the YAML position
+// where the directive sits. Without this, the legacy text-trigger
+// fallback in scenario-runner.tsx renders the button at the bottom
+// of the step body; the directive lets a lab author drop the button
+// at the natural reading point — i.e. exactly where the lab text
+// says to start traffic generation. Body ignored.
+const GENERATE_TRAFFIC_BTN_RE = /^:::generate-traffic-button(?:\s+(.+))?$/;
+
 // Default options match the workshop's risk-verdict vocabulary. The
 // "BLOCK and LOG" combo is its own entry because that's how the
 // answer key for unauthorized-writes is stated (block-plus-log is a
@@ -99,6 +109,9 @@ export type Segment =
     }
   | {
       type: "trackPicker";
+    }
+  | {
+      type: "generateTrafficButton";
     }
   | {
       type: "trackOnly";
@@ -221,6 +234,17 @@ export function splitDescription(text: string): Segment[] {
       }
       if (i < lines.length) i++;
       result.push({ type: "trackPicker" });
+      continue;
+    }
+    if (GENERATE_TRAFFIC_BTN_RE.test(trimmed)) {
+      flushProse();
+      // Eat through closing :::, body ignored.
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        i++;
+      }
+      if (i < lines.length) i++;
+      result.push({ type: "generateTrafficButton" });
       continue;
     }
     if (GUIDED_OPEN_RE.test(trimmed) || TECHNICAL_OPEN_RE.test(trimmed)) {

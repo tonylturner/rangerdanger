@@ -405,6 +405,21 @@ describe("parseFindingsAttrs", () => {
   });
 });
 
+describe("splitDescription — generate-traffic-button directive", () => {
+  it("emits a generateTrafficButton segment for :::generate-traffic-button fence", () => {
+    const input = ["Intro line.", "", ":::generate-traffic-button", ":::", "", "After."].join("\n");
+    const segs = splitDescription(input);
+    expect(segs.map((s) => s.type)).toEqual(["prose", "generateTrafficButton", "prose"]);
+  });
+
+  it("ignores body inside the generate-traffic-button fence", () => {
+    const input = [":::generate-traffic-button", "this body is discarded", ":::"].join("\n");
+    const segs = splitDescription(input);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].type).toBe("generateTrafficButton");
+  });
+});
+
 describe("splitDescription — track-picker directive", () => {
   it("emits a trackPicker segment for :::track-picker fence", () => {
     const input = ["Intro line.", "", ":::track-picker", ":::", "", "After."].join("\n");

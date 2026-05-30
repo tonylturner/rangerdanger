@@ -178,19 +178,19 @@ steps:
       segmentation. The *principle* is universal; the *mechanism*
       varies by vendor:
 
-      - **Implicit default-deny** — the policy engine appends a
+      - **Implicit default-deny** - the policy engine appends a
         "deny everything not matched" verdict for you. You write
         only ALLOW rules. Used by **containd** (this lab), Cisco
         ASA/FTD, Palo Alto, FortiGate, Juniper SRX.
-      - **Explicit default-deny** — nothing is appended. You must
+      - **Explicit default-deny** - nothing is appended. You must
         configure the chain default to DENY or write a final deny
         rule yourself. Used by **iptables/nftables** in raw form,
         Linux bridges/OVS, and (best-practice) Check Point cleanup
         rules. Forget either and the firewall is silently allow-all.
 
       The thing to internalize: if you cannot point to *where* the
-      default-deny is — either as documented implicit behavior or as
-      an explicit rule you wrote — assume there is no default-deny.
+      default-deny is - either as documented implicit behavior or as
+      an explicit rule you wrote - assume there is no default-deny.
       See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
       on the Knowledge page for the per-vendor breakdown.
 
@@ -199,13 +199,13 @@ steps:
       is already set to **DENY**, even under the weak baseline.
       The weak posture is permissive only because broad ALLOW
       rules sit on top of it. There is no separate "set default
-      to drop" switch to flip in this lab — deleting the broad
+      to drop" switch to flip in this lab - deleting the broad
       allow rules is what exposes the existing default DENY. You
       can confirm with `show running-config | grep defaultAction`
       from `containd cli`. On a firewall with explicit
       default-deny (raw iptables, OVS, etc.) this same step would
       *also* require setting the chain policy or adding a final
-      deny rule — that's the vendor-mechanism difference.
+      deny rule - that's the vendor-mechanism difference.
       :::
 
       ### What to do
@@ -222,7 +222,7 @@ steps:
          traffic the rules were permitting.
 
       3. **Do NOT remove intra-zone rules.** Traffic within OT Ops
-         (`10.30.30.0/24`) needs to keep flowing — HMI to RTAC,
+         (`10.30.30.0/24`) needs to keep flowing - HMI to RTAC,
          historian to RTAC, and internal NTP. These are intra-zone
          and should not be affected by cross-zone deny rules.
 
@@ -233,7 +233,7 @@ steps:
       disable) the broad `enterprise-to-field-weak`,
       `vendor-to-field-weak`, and `vendor-to-ot-weak` rules, then
       **Commit**. You do *not* need to change a separate "default
-      action" control — the policy default is already DENY and
+      action" control - the policy default is already DENY and
       simply takes over once the broad allows are removed.
 
       ### CLI path
@@ -277,7 +277,7 @@ steps:
       :::
 
       :::technical
-      Author these rules in containd directly — your choice of the
+      Author these rules in containd directly - your choice of the
       web UI or the appliance CLI. The banner above will switch to
       "Your custom policy" once your commit lands. The exact JSON
       schema and CLI commands are in the hints below.
@@ -350,7 +350,7 @@ steps:
   - title: "Phase 4 - Enable logging and visibility"
     expected_config: weak
     description: |
-      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied — and you need a place to look.
+      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
 
       ### Configure logging on the right rules
 
@@ -385,7 +385,7 @@ steps:
       entries corresponding to the policy changes you just pushed.
       The audit log is containd's record of *administrative* actions
       against the firewall (config commits, login events, service
-      changes) — confirmation that your rules are loaded and active.
+      changes) - confirmation that your rules are loaded and active.
 
       ### Where to look for traffic-level events
 
@@ -405,7 +405,7 @@ steps:
       :::hint Note on the Live DPI Events strip
       Under the current containd build, traffic-level deny events
       from L4 firewall rules (Modbus/DNP3 timeouts at the perimeter)
-      are not yet emitted to the events stream — this is tracked in
+      are not yet emitted to the events stream - this is tracked in
       [rangerdanger #34](https://github.com/tonylturner/rangerdanger/issues/34)
       and [containd #19](https://github.com/tonylturner/containd/issues/19).
       The strip is live and forward-compatible: when containd lands
@@ -498,14 +498,14 @@ steps:
       2.3 step 1 baseline.
 
       **Administrative confirmation:** from the `fw-1` terminal,
-      `containd cli` then `show audit` — your recent `config.commit`
+      `containd cli` then `show audit` - your recent `config.commit`
       entries should appear, proving the rule set you're testing
       against is the rule set that's loaded.
 
       If any test succeeds when it should fail, you have a rule that
       is too permissive. Review your policy and tighten it.
 
-      :::hint Live per-flow deny visibility — coming soon
+      :::hint Live per-flow deny visibility - coming soon
       Live DPI deny events for these blocked probes will appear in the
       Segmentation drawer's **Live DPI Events** strip on `/console`
       once containd ships the L4 event emission fix
@@ -518,7 +518,7 @@ steps:
     expected_config: hardened
     description: |
       You have a working least-privilege firewall policy active.
-      Export it so you have a record of what is running — most
+      Export it so you have a record of what is running - most
       change boards want the policy as a versioned artifact, not
       just "rules live in the firewall."
 

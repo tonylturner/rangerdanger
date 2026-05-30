@@ -101,7 +101,7 @@ steps:
 
       The recloser sees the fault and trips. Auto-reclose is off,
       so the recloser stays open instead of attempting to recover.
-      Downstream loads — the hospital and fire station — lose power.
+      Downstream loads - the hospital and fire station - lose power.
 
       Wait ~3 seconds for the RTAC poll → OpenDSS push to land,
       then read the RTAC's Modbus tags to confirm the kinetic
@@ -115,7 +115,7 @@ steps:
       tripped the recloser), register 2 (`reclose_enabled`) is `0`
       (your earlier Modbus FC5 write disabled auto-reclose), and
       register 5 (`recloser_shot_count`) is `1` (the fault was
-      counted as the first shot — but with reclose disabled there
+      counted as the first shot - but with reclose disabled there
       will be no shots 2 or 3 to recover from).
 
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
@@ -144,27 +144,27 @@ steps:
       > for why segmentation between the *vendor* and *field* zones
       > is as important as the perimeter rule, even though the
       > attacker never directly touches the field network from the
-      > internet. The full pattern catalog —
+      > internet. The full pattern catalog -
       > [Vendor Remote Access Patterns](/knowledge#vendor-remote-access)
-      > and [The OT Kill Chain](/knowledge#ot-kill-chain) — covers how
+      > and [The OT Kill Chain](/knowledge#ot-kill-chain) - covers how
       > real utilities defend this surface and what historical
       > incidents (Industroyer, Volt Typhoon) it mirrors.
 
       ### Operational consequence at the HMI
 
       Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
-      tab. The kinetic outcome is identical to Lab 2.3 Attack 2 —
+      tab. The kinetic outcome is identical to Lab 2.3 Attack 2 -
       different protocol path, same lights-out for downstream
       customers:
 
-      - **Alarm banner:** "RECLOSER OPEN — downstream loads lost"
-        and "AUTO-RECLOSE DISABLED — no fault recovery"
+      - **Alarm banner:** "RECLOSER OPEN - downstream loads lost"
+        and "AUTO-RECLOSE DISABLED - no fault recovery"
       - **General Load + Critical Load** both read "NO POWER"
       - *"Hospital and fire station without power"* under critical load
       - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
 
       Notice that the **Last command from:** field on the recloser
-      shows the vendor jump host address (`10.20.20.10`) — not the
+      shows the vendor jump host address (`10.20.20.10`) - not the
       attacker IP (`10.10.10.50`). From the field device's
       perspective, the command came from a trusted source. This is
       why perimeter rules at the *RDP* hop matter: by the time the
@@ -281,7 +281,7 @@ steps:
       before it formed. Even if a future misconfiguration re-opens
       that rule, the vendor → field rule still pins lateral movement
       out of the field zone. Either layer alone closes this kill
-      chain — having both is defense in depth.
+      chain - having both is defense in depth.
 
       :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
       **What did the Feeder One-Line tab show after the re-test?**
@@ -289,7 +289,7 @@ steps:
 
       :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER correct=EITHER_LAYER
       **Which firewall layer broke the kill chain?** Both layers
-      are present in the hardened policy — but only one had to be in
+      are present in the hardened policy - but only one had to be in
       place to stop this specific attempt.
       :::
     action:

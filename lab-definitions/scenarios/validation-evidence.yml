@@ -36,7 +36,7 @@ steps:
       green ("Hardened reference" or "Your custom policy"), the
       hardened policy is loaded and you're ready to validate. If it
       shows amber ("Policy mismatch"), apply a hardened policy via
-      the side-panel buttons — or commit one in containd directly —
+      the side-panel buttons - or commit one in containd directly -
       before continuing.
 
       **Optional cross-check from containd itself.** Once the banner
@@ -119,7 +119,7 @@ steps:
       - **Critical-load voltage** chip green, in the 114-126V band
 
       This is the "operations aren't broken" half of the evidence
-      package — the change board needs to see both that unauthorized
+      package - the change board needs to see both that unauthorized
       traffic is blocked *and* that the substation still runs.
 
       :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT correct=NORMAL_OPS
@@ -129,7 +129,7 @@ steps:
   - title: "Negative tests - unauthorized flows blocked"
     description: |
       Verify the cross-zone paths your policy closed are actually
-      unreachable. Each subsection probes a different L4 rule —
+      unreachable. Each subsection probes a different L4 rule -
       lead with DNP3 (the primary distribution-substation attack
       vector you exercised in Lab 2.3); the optional sidebar at the
       bottom shows the same rules close Modbus too.
@@ -149,17 +149,17 @@ steps:
       Should be filtered / timeout. Confirms the vendor-pivot attack
       path (Lab 2.3-bonus) is closed against the field zone.
 
-      **From historian** (`historian-1` on the [Network Map](/console)) — represents a typical lan1-only non-RTAC OT host. The historian sits on OT Ops only; it has no direct field interface:
+      **From historian** (`historian-1` on the [Network Map](/console)) - represents a typical lan1-only non-RTAC OT host. The historian sits on OT Ops only; it has no direct field interface:
 
           nmap -p 20000 10.40.40.22 --max-retries 1 -T4
 
-      Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action — even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
+      Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action - even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
 
       :::hint Optional: also confirm Modbus is blocked
       The hardened policy applies the same L4 source-pin and DPI
       rules on Modbus (TCP/502) as on DNP3. If you want a two-protocol
-      evidence package — or if you ran the Modbus sidebar attacks in
-      Lab 2.3 — repeat the three probes above with port 502 and
+      evidence package - or if you ran the Modbus sidebar attacks in
+      Lab 2.3 - repeat the three probes above with port 502 and
       `mbpoll` instead of port 20000 and `dnp3poll`:
 
           # Enterprise → Field Modbus
@@ -190,7 +190,7 @@ steps:
 
       Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
       tab. After every blocked probe above, the HMI should look
-      exactly like it did before you started — no alarms, breaker
+      exactly like it did before you started - no alarms, breaker
       closed, customers served. **The absence of change is the
       evidence.** Compare against what you saw in Lab 2.3 when the
       same writes from the same sources ran *under the weak policy*
@@ -202,14 +202,14 @@ steps:
 
       :::hint Live DPI events for blocked attempts
       The [Network Map](/console) Segmentation drawer has a **Live DPI
-      Events** strip that surfaces each blocked probe in real time —
+      Events** strip that surfaces each blocked probe in real time -
       containd's L4 event emission shipped in v0.1.25 (closes
       [containd #19](https://github.com/tonylturner/containd/issues/19)).
       After running the negative probes above, you should see a row
       per blocked attempt with `verdict: DENY` and the matching rule
       ID. If the strip stays empty after a probe, check that the
       hardened policy is committed and the `nflogGroup` is set on the
-      lab profile — the L4 events ride the NFLOG group containd
+      lab profile - the L4 events ride the NFLOG group containd
       configures from the lab YAML. The HMI unchanged-state plus the
       DPI events together are your two-source evidence: the HMI
       proves operations didn't break, the DPI events prove the
@@ -258,9 +258,9 @@ steps:
 
       **Artifacts to attach**:
 
-      - `/data/captures/validation.pcap` — the firewall-side PCAP
+      - `/data/captures/validation.pcap` - the firewall-side PCAP
         showing only RTAC sources reaching field on Modbus / DNP3
-      - **Active policy export** — from the `fw-1` terminal:
+      - **Active policy export** - from the `fw-1` terminal:
 
             containd cli
             containd# export config > student-policy.json
@@ -269,16 +269,16 @@ steps:
 
         attach the JSON. This is the change-board-ready record of the
         rule set that's actually running.
-      - **`show audit` output** — from the same `containd cli`, run
+      - **`show audit` output** - from the same `containd cli`, run
         `show audit` and snapshot the recent `config.commit` /
         `config.save_candidate` entries. This proves the policy you
         attached is the policy that's loaded.
-      - **HMI screenshot** — the [Feeder HMI](/substation) **Feeder
+      - **HMI screenshot** - the [Feeder HMI](/substation) **Feeder
         One-Line** tab after the negative-test pass, showing no
         alarms and customers served. This is the operational
         side of the evidence: blocking attacks didn't break ops.
 
-      - **Per-rule deny event export** — the firewall's
+      - **Per-rule deny event export** - the firewall's
         `/api/substation/network-events` stream shows each negative-test
         probe being rejected at the rule level, with timestamps,
         source/dest IPs, and the matched `ruleId`. From the eng-ws
@@ -289,11 +289,11 @@ steps:
 
         Snapshot the DENY entries that correspond to your negative
         tests above. Each row is a kernel-side proof that the rule
-        you wrote actually fired against the probe you ran — the
+        you wrote actually fired against the probe you ran - the
         change board sees policy intent (`student-policy.json`)
         and policy reality (these event rows) side by side. The
         same data drives the **Live DPI Events strip** in the
-        [`/console` Segmentation panel](/console) — useful for
+        [`/console` Segmentation panel](/console) - useful for
         watching enforcement happen in real time as you run probes.
 
       Capture pass/fail for each test in your Exercise Notes. This

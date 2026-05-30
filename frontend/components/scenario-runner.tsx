@@ -533,7 +533,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             // trackPicker / trackOnly inside a :::hint isn't a
             // pattern any lab uses today; skip silently rather than
             // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly") {
+            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton") {
               return null;
             }
             if (seg.type === "hint") {
@@ -1385,6 +1385,22 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         <TrackPicker
                           key={`${scenario.id}-${currentStep}-${si}`}
                         />
+                      );
+                    }
+                    if (seg.type === "generateTrafficButton") {
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className="my-3"
+                        >
+                          <button
+                            onClick={() => handleGenerateTraffic(45)}
+                            disabled={generatingTraffic}
+                            className="rounded border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
+                          >
+                            {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
+                          </button>
+                        </div>
                       );
                     }
                     if (seg.type === "trackOnly") {

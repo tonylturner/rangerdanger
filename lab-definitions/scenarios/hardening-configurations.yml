@@ -5,7 +5,7 @@ summary: "Stress-test your firewall against the canonical distribution-substatio
 description: >
   In Lab 2.2 you built a least-privilege firewall policy. This
   exercise stress-tests it against a DNP3 Direct Operate (FC05)
-  injection against the recloser — the canonical attack vector in a
+  injection against the recloser - the canonical attack vector in a
   real distribution substation, where DNP3 is the dominant SCADA
   protocol on every protective relay, recloser, regulator, and
   capbank controller (SEL, GE Multilin, S&C, Cooper, Beckwith, et al.).
@@ -13,7 +13,7 @@ description: >
   The attacker, sitting on Kali in the enterprise zone, sends a
   Direct Operate CROB to flip the recloser's `reclose_enabled` bit
   off, then trips the recloser. Without auto-reclose, what should
-  be a brief flicker becomes a sustained outage — every load
+  be a brief flicker becomes a sustained outage - every load
   downstream of the recloser (hospital, fire station, customers)
   goes dark, with kinetic impact measured by the OpenDSS power-flow
   solver and surfaced on the Feeder HMI.
@@ -22,7 +22,7 @@ description: >
   it should fail, blocked by either L4 source-pinning at the
   perimeter (only the RTAC at `10.30.30.20` can reach field on
   DNP3 20000) or ICS DPI (Direct Operate restricted to the RTAC
-  even on flows where reads are allowed) — the two layers are
+  even on flows where reads are allowed) - the two layers are
   defense in depth, and re-test shows either one is sufficient.
 
   Modbus FC6 (regulator tap override) and Modbus FC5 (direct
@@ -88,7 +88,7 @@ steps:
         reclose_enabled: true
         voltage_normal: true
 
-  - title: "Attack — DNP3 Direct Operate injection against the recloser"
+  - title: "Attack - DNP3 Direct Operate injection against the recloser"
     expected_config: weak
     node: kali-1
     description: |
@@ -107,7 +107,7 @@ steps:
           dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip
 
       > **Background:** CROB (Control Relay Output Block) is DNP3's
-      > primary command verb — see [DNP3 in Substations](/knowledge#dnp3)
+      > primary command verb - see [DNP3 in Substations](/knowledge#dnp3)
       > if op codes like `latch-off` and `trip` are new. It also
       > covers why Direct Operate (FC05) is the function code that
       > matters for write restrictions, and why every modern
@@ -128,17 +128,17 @@ steps:
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
 
       Input register 1 (`downstream_voltage_v × 10`) and register 3
-      (`feeder_current_a × 10`) both read `0` — the loads
+      (`feeder_current_a × 10`) both read `0` - the loads
       downstream of the recloser are unenergized. Hospital and fire
       station are dark. The substation bus (input register 0) is
       still energized at the source side because the substation
-      breaker is still closed — only the downstream feeder lost
+      breaker is still closed - only the downstream feeder lost
       power.
 
       **Why it worked:** the weak baseline allows enterprise → field
       DNP3 20000 with no source pinning and no DPI. There's
       nothing to distinguish a Direct Operate (FC05) from a benign
-      read (FC01) — they ride on the same TCP port.
+      read (FC01) - they ride on the same TCP port.
 
       ### Operational consequence at the HMI
 
@@ -146,15 +146,15 @@ steps:
       tab. The breaker is still closed (substation bus energized)
       but everything past the recloser is dark:
 
-      - **Alarm banner:** "RECLOSER OPEN — downstream loads lost"
-        and "AUTO-RECLOSE DISABLED — no fault recovery"
+      - **Alarm banner:** "RECLOSER OPEN - downstream loads lost"
+        and "AUTO-RECLOSE DISABLED - no fault recovery"
       - **General Load** reads "NO POWER" (red)
-      - **Critical Load** reads "NO POWER" (red) — *"Hospital and
+      - **Critical Load** reads "NO POWER" (red) - *"Hospital and
         fire station without power"* shows in red beneath
       - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
 
       The attacker didn't have to trip the substation breaker to
-      cause an outage — disabling auto-reclose and tripping the
+      cause an outage - disabling auto-reclose and tripping the
       recloser had the same effect for everyone downstream.
 
       :::decision id=attack-hmi-impact options=DOWNSTREAM_OUTAGE,LOW_VOLTAGE_ALARM,FEEDER_OUTAGE,NO_ALARM correct=DOWNSTREAM_OUTAGE
@@ -169,18 +169,18 @@ steps:
       to show that "function-code filtering" generalizes across
       protocols. Two optional Modbus attacks:
 
-      **Modbus FC6 — regulator tap override.** From Kali:
+      **Modbus FC6 - regulator tap override.** From Kali:
 
           mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520
 
       `65520` is `-16` as an unsigned 16-bit (two's complement).
       Forces the regulator tap to the minimum position, dropping
       critical-load voltage below ANSI Range A. Wait 3 s, read the
-      RTAC analog tags — input register 2 (`critical_load_voltage_v
+      RTAC analog tags - input register 2 (`critical_load_voltage_v
       × 10`) drops below 1140. HMI shows the **LOW VOLTAGE**
       alarm banner; customers still have power but at unsafe voltage.
 
-      **Modbus FC5 — direct breaker trip.** From Kali:
+      **Modbus FC5 - direct breaker trip.** From Kali:
 
           mbpoll -a 1 -t 0 -r 1 10.40.40.20 0
 
@@ -189,7 +189,7 @@ steps:
       alarm; entire feeder dark. This is the worst-case
       single-packet kinetic outcome in the lab.
 
-      Both ride on TCP 502 — same DPI defense (function-code
+      Both ride on TCP 502 - same DPI defense (function-code
       filtering, source-pinning at L4) closes both. The re-test
       step later covers the hardened-policy behavior for whichever
       of these you tried; if you only ran the primary DNP3 attack,
@@ -251,7 +251,7 @@ steps:
   - title: "Apply the hardened policy"
     description: |
       Get a hardened policy active in containd before the re-test.
-      The policy banner at the top of this step is your signal —
+      The policy banner at the top of this step is your signal -
       it must be **green** (hardened reference or your custom
       policy) before the re-test will work.
 
@@ -272,18 +272,18 @@ steps:
 
       - **L4 source-pinning:** only the RTAC (`10.30.30.20`) can reach
         field devices on Modbus 502 and DNP3 20000. Enterprise and
-        vendor sources are blocked at the perimeter — this alone
+        vendor sources are blocked at the perimeter - this alone
         closes the primary DNP3 attack and both Modbus sidebars.
       - **ICS DPI:** DNP3 Direct Operate (FC05) restricted to the
         RTAC; Modbus writes (FC5/6/16) restricted to the RTAC even
         on flows where reads are allowed. This catches the same
         attacks if the L4 source pin is ever loosened for
-        monitoring access — e.g., letting the engineering
+        monitoring access - e.g., letting the engineering
         workstation read RTAC tags would punch through L4, but
         DPI keeps "reads yes, writes no."
 
       Either layer alone breaks each attack. Together they're
-      defense in depth — the re-test step demonstrates this with a
+      defense in depth - the re-test step demonstrates this with a
       decision question.
 
       :::plan-coverage title="Your plan vs the primary attack"
@@ -291,7 +291,7 @@ steps:
 
       If your Lab 1.4 plan didn't pin RTAC-to-field
       (`pin-rtac-to-field`) AND didn't add DNP3 DPI (`dnp3-dpi`),
-      the re-test may still succeed under "Apply Your Plan" — that's
+      the re-test may still succeed under "Apply Your Plan" - that's
       the lab telling you the plan has a gap. Re-attempt with
       **Apply Hardened** to compare.
     action:
@@ -306,7 +306,7 @@ steps:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 
-      The connection should time out — containd's L4 source-pin
+      The connection should time out - containd's L4 source-pin
       blocks the packet at the perimeter before DPI even applies.
       Auto-reclose stays enabled, the recloser stays closed, the
       downstream feeder stays energized.
@@ -341,7 +341,7 @@ steps:
 
       :::hint Optional: confirm Modbus is blocked too
       If you ran either of the Modbus sidebar attacks in Step 2,
-      repeat them now under the hardened policy — both also time
+      repeat them now under the hardened policy - both also time
       out at the L4 perimeter. The same source-pin rule that
       blocked DNP3 above (only `10.30.30.20`/RTAC can reach field
       on TCP/502) closes both Modbus attacks:
@@ -357,7 +357,7 @@ steps:
       unchanged). One rule, three attack paths neutralized.
 
       DPI gives you the same defense if the L4 pin ever has to
-      loosen — for example to allow eng-ws read-only access. DPI
+      loosen - for example to allow eng-ws read-only access. DPI
       can say *"reads yes, writes no"*; port-only filtering can't.
       :::
     action:

@@ -23,7 +23,7 @@ steps:
     expected_config: weak
     description: |
       Open the [Network Map](/console). Before reading anything below,
-      spend two minutes panning around the canvas — the goal of this
+      spend two minutes panning around the canvas - the goal of this
       step is to *recognize* the substation, not memorize a table.
 
       ### Find the four zones
@@ -41,7 +41,7 @@ steps:
 
       The **containd firewall** sits between all four zones and acts
       as the default gateway. Any traffic crossing a zone boundary
-      passes through it — that is where we capture and analyze
+      passes through it - that is where we capture and analyze
       communication in the next steps.
 
       ### Switch to the Purdue Model view
@@ -50,10 +50,10 @@ steps:
       The layout re-bands the same hosts into the standard Purdue
       architectural levels:
 
-      - **Level 4 · Enterprise** — corporate IT (`10.10.10.0/24`)
-      - **Level 3.5 · IDMZ** — vendor / engineering (`10.20.20.0/24`)
-      - **Level 3 · Supervisory** — HMI / RTAC / historian (`10.30.30.0/24`)
-      - **Level 1 · Field Devices** — relays / recloser / regulator / capbank (`10.40.40.0/24`)
+      - **Level 4 · Enterprise** - corporate IT (`10.10.10.0/24`)
+      - **Level 3.5 · IDMZ** - vendor / engineering (`10.20.20.0/24`)
+      - **Level 3 · Supervisory** - HMI / RTAC / historian (`10.30.30.0/24`)
+      - **Level 1 · Field Devices** - relays / recloser / regulator / capbank (`10.40.40.0/24`)
 
       This is the architectural framing the requirements step (Lab 1.3)
       will use, and the mapping you'll reference when you produce
@@ -63,10 +63,10 @@ steps:
 
       > **Background:** open the [Purdue Model Levels (L0–L5)](/knowledge#purdue-model)
       > article in the Knowledge base if the
-      > level numbering is new to you. Two minutes is enough — you'll
+      > level numbering is new to you. Two minutes is enough - you'll
       > use these labels in Lab 1.3 and 2.4. The Purdue model defines
       > the *architecture*; IEC 62443 builds on it with zones, conduits,
-      > and Security Levels (SL) — that's Lab 1.3's framing.
+      > and Security Levels (SL) - that's Lab 1.3's framing.
 
       ### Inspect three inter-zone crossings
 
@@ -90,11 +90,11 @@ steps:
       :::
 
       :::decision id=ent-to-field-protocols options=NO_ICS,MODBUS_OR_DNP3,UNCLEAR correct=MODBUS_OR_DNP3
-      **Enterprise → Field crossing — what did the tooltip show?** Under the weak baseline you should be seeing ICS protocols where you would not expect them.
+      **Enterprise → Field crossing - what did the tooltip show?** Under the weak baseline you should be seeing ICS protocols where you would not expect them.
       :::
 
       :::decision id=ot-to-field-protocols options=MODBUS_OR_DNP3,HTTP_ONLY,NOTHING correct=MODBUS_OR_DNP3
-      **OT Ops → Field crossing — what did the tooltip show?** This is the supervisory-control path the RTAC uses.
+      **OT Ops → Field crossing - what did the tooltip show?** This is the supervisory-control path the RTAC uses.
       :::
 
       **Time budget for this lab:** 30 minutes total.
@@ -113,48 +113,46 @@ steps:
 
       You will see that traffic in your capture without doing anything.
 
-      What the traffic generator adds is **scenario-driven** activity - engineering workstation maintenance access and vendor remote monitoring. These represent things students would see during an exercise that models engineering or vendor activity. **They are not part of the 24×7 baseline.**
+      What the traffic generator adds is **scenario-driven** activity - engineering workstation maintenance access and vendor remote monitoring. These represent things students would see during an exercise that models engineering or vendor activity. **They are not part of the 24x7 baseline.**
 
-      The lab ships a helper that synthesizes scenario flows so
-      you can see them on the wire - this is **lab plumbing**, not
-      a production command. Click the **Generate Traffic** button
-      below (or hit the helper API directly):
+      Start the generator now:
 
-        curl -X POST http://localhost:8088/api/traffic/generate \
-          -H 'Content-Type: application/json' \
-          -d '{"duration_sec":50}'
+      :::generate-traffic-button
+      :::
 
-      Leave the generator running - we start the capture next.
+      Leave it running - we start the capture next.
 
       ### Sneak preview: the live Traffic Matrix
 
       While the generator is running, open the [Network Map](/console)
       and click **Traffic Matrix** in the left drawer. This is a live
-      view of cross-zone flows — the same data you'll PCAP and
+      view of cross-zone flows - the same data you'll PCAP and
       tshark in the next two steps, but as a real-time grid right
       now. It's a quick way to sanity-check that traffic is flowing
       before you commit to a 60-second capture.
 
       Look for these flows in the matrix:
 
-      - `10.30.30.20` (RTAC) → `10.40.40.x` (field devices) on
-        Modbus 502 / DNP3 20000 — the supervisory polling path,
+      - `10.30.30.20` (RTAC) -> `10.40.40.x` (field devices) on
+        Modbus 502 / DNP3 20000 - the supervisory polling path,
         should be very active
-      - `10.30.30.10` (HMI/historian zone) → `10.30.30.20` (RTAC) —
+      - `10.30.30.10` (HMI/historian zone) -> `10.30.30.20` (RTAC) -
         intra-zone monitoring, normal
-      - Anything from `10.10.10.x` or `10.20.20.x` reaching
-        `10.30.30.x` or `10.40.40.x` — these are the cross-zone
-        flows the assessment in this lab will catalog
+      - `10.20.20.x` (vendor zone) reaching `10.30.30.x` (OT Ops) -
+        the engineering workstation and vendor-jump flows the
+        generator just kicked off
 
       :::decision id=matrix-rtac-to-field options=ACTIVE,QUIET,NOT_SEEN correct=ACTIVE
-      **RTAC ↔ field-device traffic in the Traffic Matrix:** how
+      **RTAC <-> field-device traffic in the Traffic Matrix:** how
       active does it look right now?
       :::
 
-      :::decision id=matrix-enterprise-to-ot-visible options=YES_VISIBLE,NO_NOT_SEEN,UNCLEAR correct=YES_VISIBLE
+      :::decision id=matrix-enterprise-to-ot-visible options=YES_VISIBLE,NO_NOT_SEEN,UNCLEAR correct=NO_NOT_SEEN
       **Did you see any enterprise (10.10.10.x) traffic reaching OT
-      or field subnets?** Under the weak baseline this should be
-      present — you'll formally catalog it in steps 3-7.
+      or field subnets?** The traffic generator only originates
+      flows from the vendor zone (eng-ws and vendor-jump). Enterprise
+      flows only appear when a later lab step actively probes from
+      the kali host - you'll get to that in step 7.
       :::
 
   - title: "Capture traffic at the firewall"
@@ -164,7 +162,17 @@ steps:
 
         tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'
 
-      Wait for tcpdump to print its packet count and exit. The promiscuous-mode warning on the `"any"` device is normal and can be ignored.
+      Wait for tcpdump to print its packet count and exit. You'll see two
+      messages that look like warnings but are expected:
+
+      - `WARNING: any: That device doesn't support promiscuous mode` -
+        the Linux `any` pseudo-device can't enter promiscuous mode and
+        doesn't need to inside a container with full visibility. Ignore.
+      - `Maximum file limit reached: 1` - this is tcpdump telling you the
+        `-W 1` (write one file then stop) limit was hit. It's the
+        expected end-of-capture indicator. The trailing
+        `N packets captured / M packets received by filter / 0 packets
+        dropped by kernel` line confirms the capture was clean.
 
       > **About the filter:** the only thing we exclude is `127.0.0.1` (loopback), which carries containd's own internal dataplane-to-engine RPC and is unrelated to the substation scenario. Every other packet in the capture is real scenario traffic - no management UI traffic, no platform telemetry, no external browser flows, because the RangerDanger platform runs on its own out-of-band management network and does not appear on any zone interface the firewall sees.
 
@@ -229,11 +237,11 @@ steps:
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.0/24 and ip.dst==10.40.40.0/24' 2>/dev/null | head -15
 
-      **DNP3 TCP activity on port 20000** — the dominant SCADA protocol for distribution substations (every relay, recloser, regulator, and capbank controller on the wire exposes a DNP3 outstation):
+      **DNP3 TCP activity on port 20000** - the dominant SCADA protocol for distribution substations (every relay, recloser, regulator, and capbank controller on the wire exposes a DNP3 outstation):
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==20000' 2>/dev/null | head -10
 
-      **Modbus TCP activity on port 502** — widely supported on field devices and often present alongside DNP3, primarily for HMI integration on installed gear:
+      **Modbus TCP activity on port 502** - widely supported on field devices and often present alongside DNP3, primarily for HMI integration on installed gear:
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==502' 2>/dev/null | head -10
 
@@ -271,7 +279,7 @@ steps:
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
-      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with — proof that the underlying control flows are alive even when they are intra-subnet. (Real RTACs don't expose a JSON state API; this is a lab convenience. The equivalent SCADA-protocol probe from the RTAC terminal is a DNP3 read against an outstation — `dnp3poll 10.40.40.20:20000 -a 1` — or a Modbus read — `mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20`.)
+      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with - proof that the underlying control flows are alive even when they are intra-subnet. (Real RTACs don't expose a JSON state API; this is a lab convenience. The equivalent SCADA-protocol probe from the RTAC terminal is a DNP3 read against an outstation - `dnp3poll 10.40.40.20:20000 -a 1` - or a Modbus read - `mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20`.)
 
       ### Reflection
 
@@ -351,7 +359,7 @@ steps:
 
       - A single Modbus FC3 read transaction over a **persistent** TCP session is **2 packets** (request + response). If the session opens or closes inside the window, add the handshake (3) and/or teardown (~4) frames.
       - A simple HTTP `GET` over a fresh connection produces **roughly 10–14 packets** end-to-end (handshake + request + response + teardown); reuse over keep-alive drops it to **2–4** per request.
-      - When a table lists "504 Modbus packets in 30 seconds" for the RTAC poller, that is a bidirectional packet count over a persistent session — it maps to roughly **250 request/response transactions**, which lines up with the RTAC's ~8/sec aggregate poll rate across the four field devices.
+      - When a table lists "504 Modbus packets in 30 seconds" for the RTAC poller, that is a bidirectional packet count over a persistent session - it maps to roughly **250 request/response transactions**, which lines up with the RTAC's ~8/sec aggregate poll rate across the four field devices.
       :::
 
   - title: "Findings - what you observed"
@@ -409,11 +417,9 @@ steps:
 
           dnp3poll 10.40.40.21:20000 -a 2
 
-      **Test enterprise → OT Operations on ICS ports:**
+      **Test enterprise -> OT Operations on ICS ports:**
 
           nmap -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4
-
-          curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -10
 
       All of these should succeed. The weak baseline permits enterprise traffic to OT and field zones - your capture just happened not to contain any.
 
