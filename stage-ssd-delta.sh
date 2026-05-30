@@ -60,6 +60,10 @@ done
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 
+# Cross-included into the arm64 delta (see stage_arch): the qemu-x86_64
+# binfmt helper that runs amd64-only OpenPLC on arm64 Linux.
+BINFMT_IMAGE="tonistiigi/binfmt:latest"
+
 if [ -t 1 ]; then
     GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
 else
@@ -245,14 +249,23 @@ stage_arch() {
     local arch="$1"
     local tarball="$OUT/delta-$arch.tar"
 
-    if [ "${#CHANGED[@]}" -eq 0 ]; then
+    # Images to stage = the changed set, plus tonistiigi/binfmt on arm64.
+    # binfmt isn't a rangerdanger image and never shows up in the digest
+    # comparison, so — like the WSL2 kernel — we bundle it unconditionally
+    # into the arm64 delta. That way a student who only ever applies deltas
+    # (e.g. from an SSD staged before binfmt was added) still ends up with
+    # the qemu-x86_64 helper OpenPLC needs on arm64 Linux.
+    local to_stage=("${CHANGED[@]}")
+    [ "$arch" = "arm64" ] && to_stage+=("$BINFMT_IMAGE")
+
+    if [ "${#to_stage[@]}" -eq 0 ]; then
         return 0
     fi
 
     banner "Stage linux/$arch -> $(basename "$tarball")"
 
     local pulled_tags=""
-    for img in "${CHANGED[@]}"; do
+    for img in "${to_stage[@]}"; do
         say "resolve $arch  $img"
         local ref
         if ! ref=$(resolve_platform_ref "$img" "$arch"); then
@@ -383,6 +396,13 @@ docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 
 \`docker compose up -d\` (no service list) is safe - compose only
 recreates containers whose image digest changed.
+
+**ARM64 Linux only:** OpenPLC needs amd64 emulation. \`delta-arm64.tar\`
+ships \`tonistiigi/binfmt\` for this; if OpenPLC isn't running after the
+restart (\`docker ps | grep openplc\`), register it once with
+\`docker run --privileged --rm tonistiigi/binfmt --install amd64\`.
+(setup.sh does this automatically on a fresh install; the registration
+does not persist across a host reboot.)
 
 If \`docker load\` fails with "no space left on device", run
 \`docker system prune -a\` to clear images not in the current

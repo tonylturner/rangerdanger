@@ -30,6 +30,24 @@ warn()   { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
 die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
 
+# True (0) if this host can execute linux/amd64 binaries: native on
+# x86_64; via Docker Desktop/Rosetta on non-Linux arm64 (macOS); or via a
+# registered qemu-x86_64 binfmt_misc handler on arm64 Linux. Used to
+# decide whether OpenPLC (amd64-only upstream) needs an emulation shim.
+amd64_emulation_present() {
+    [ "$ARCH" = "amd64" ] && return 0
+    [ "$OS" != "Linux" ] && return 0
+    # qemu-x86_64 is the handler name registered by both tonistiigi/binfmt
+    # and Debian's qemu-user-static; -static is a variant some setups use.
+    # Explicit paths (no glob) so this is safe under any shell options.
+    local d=/proc/sys/fs/binfmt_misc f
+    [ -d "$d" ] || return 1
+    for f in "$d"/qemu-x86_64 "$d"/qemu-x86_64-static; do
+        [ -r "$f" ] && grep -q '^enabled' "$f" 2>/dev/null && return 0
+    done
+    return 1
+}
+
 # ─── arg parsing ────────────────────────────────────────────────────
 VERSION="${VERSION:-latest}"
 TARBALL_DIR=""
@@ -94,6 +112,21 @@ case "$ARCH_RAW" in
     *)             die "Unsupported architecture: $ARCH_RAW (need arm64 or amd64)" ;;
 esac
 say "Architecture: linux/$ARCH"
+
+OS=$(uname -s)
+
+# OpenPLC is amd64-only upstream; on arm64 Linux it needs a qemu-x86_64
+# binfmt handler to run (macOS arm64 gets this free via Docker Desktop /
+# Rosetta). Surface the state here so --check-only reports it; the
+# installer auto-registers it during the install phase below.
+if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ]; then
+    if amd64_emulation_present; then
+        say "amd64 emulation: present (OpenPLC will run on this arm64 host)"
+    else
+        warn "amd64 emulation: not registered. OpenPLC (amd64-only) needs it on arm64 Linux."
+        warn "  The installer auto-registers it below; --check-only does not change host state."
+    fi
+fi
 
 # Free disk — recommend 30 GB.
 #
@@ -258,6 +291,31 @@ else
     echo "VERSION=$VERSION" >> "$ENV_FILE"
 fi
 say "Pinned VERSION=$VERSION in $ENV_FILE"
+
+# ─── amd64 emulation for OpenPLC on arm64 Linux ─────────────────────
+# OpenPLC is amd64-only (upstream tuttas/openplc_v3). macOS arm64 runs it
+# under Rosetta automatically; arm64 Linux with Docker Engine has no
+# Rosetta, so register a qemu-x86_64 binfmt_misc handler via
+# tonistiigi/binfmt. Best-effort + idempotent: if it can't run (e.g.
+# offline with the helper image uncached) we warn and continue — only
+# OpenPLC is affected and nothing depends on it. The marker lets
+# uninstall revert ONLY a handler we installed (never a pre-existing or
+# Docker-Desktop one).
+BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
+if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ] && ! amd64_emulation_present; then
+    banner "Registering amd64 emulation (OpenPLC)"
+    say "OpenPLC is amd64-only; registering a qemu-x86_64 handler via tonistiigi/binfmt..."
+    if docker run --privileged --rm tonistiigi/binfmt --install amd64 >/dev/null 2>&1 \
+        && amd64_emulation_present; then
+        : > "$BINFMT_MARKER"
+        say "amd64 emulation registered (./scripts/uninstall-rangerdanger.sh will revert it)"
+    else
+        warn "Could not auto-register amd64 emulation."
+        warn "Everything except the OpenPLC lab still works. To enable OpenPLC, run:"
+        warn "    docker run --privileged --rm tonistiigi/binfmt --install amd64"
+        warn "(needs network to pull tonistiigi/binfmt if not already cached)."
+    fi
+fi
 
 # ─── start the stack ────────────────────────────────────────────────
 banner "Starting RangerDanger"

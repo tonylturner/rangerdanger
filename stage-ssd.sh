@@ -63,8 +63,16 @@ RESOLVED=$(echo "$ALL_IMAGES" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a
 # openplc is amd64-only because tuttas/openplc_v3 ships only amd64.
 # We don't filter the image list anymore — resolve_platform_ref below
 # returns empty for arch-incompatible images and the loop skips them.
+#
+# tonistiigi/binfmt is added to the arm64 bundle ONLY: it provides the
+# qemu-x86_64 handler that lets the amd64-only openplc image run on arm64
+# LINUX (macOS arm64 uses Docker Desktop/Rosetta instead). Without it on
+# the SSD, setup.sh's auto-register step has nothing to pull on an
+# air-gapped arm64 Linux laptop and openplc won't start. amd64 hosts run
+# openplc natively and never need it, so it stays out of images-amd64.tar.
+BINFMT_IMAGE="tonistiigi/binfmt:latest"
 AMD64_IMAGES="$RESOLVED"
-ARM64_IMAGES="$RESOLVED"
+ARM64_IMAGES=$(printf '%s\n%s\n' "$RESOLVED" "$BINFMT_IMAGE")
 
 # Resolve a tagged or digest-pinned image reference to a SINGLE-PLATFORM
 # manifest digest reference for the requested arch. This is the
@@ -238,7 +246,7 @@ Staged $(date -u +%FT%TZ) for version \`$VERSION\`.
 ## Contents
 
 - \`images-amd64.tar\` — Docker images for Intel / AMD64 hosts
-- \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2)
+- \`images-arm64.tar\` — Docker images for Apple Silicon / ARM64 hosts. Includes the amd64 openplc image (cross-arch; macOS runs it under Rosetta 2) plus \`tonistiigi/binfmt\`, which \`setup.sh\` uses to register amd64 emulation on arm64 *Linux* so openplc runs fully offline.
 - \`rangerdanger.tgz\` — Repo archive at $(git -C "$ROOT_DIR" rev-parse --short HEAD) ($(git -C "$ROOT_DIR" log -1 --format=%s | head -c 80))
 $KERNEL_README_ROW
 
