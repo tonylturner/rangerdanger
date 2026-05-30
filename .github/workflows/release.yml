@@ -438,3 +438,48 @@ jobs:
               --notes-file release-body.md \
               $prerelease_flag $latest_flag
           fi
+
+  release-failed:
+    # Make a failed release impossible to miss — it's how v0.1.19 / v0.1.20
+    # silently shipped as empty drafts (github-release needs every image, so
+    # one failed build skips publishing and leaves a stuck draft). Runs only
+    # on failure; files (or comments on) a tracking issue so the stuck draft
+    # + missing images get noticed instead of lingering.
+    name: Alert on release failure
+    needs: [publish, frontend, frontend-merge, github-release]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Resolve target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File or update a failure alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release ${TAG} failed — images / GitHub Release may be incomplete"
+          body=$(printf '%s\n' \
+            "The Release workflow for \`${TAG}\` did not complete: ${RUN_URL}" \
+            "" \
+            "Likely effects: one or more GHCR images missing or partial, and the GitHub Release left as a **draft with no notes** (github-release only runs after every image publishes)." \
+            "" \
+            "Recover: fix the failing job above, then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. That republishes the images and flips the release out of draft with CHANGELOG notes." \
+            "" \
+            "_Filed automatically by release.yml on failure._")
+          existing=$(gh issue list --state open --search "in:title Release ${TAG} failed" --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "$existing" --body "Failed again: ${RUN_URL}"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
