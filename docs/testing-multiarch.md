@@ -52,11 +52,19 @@ cd ~/rangerdanger
 ./scripts/test-lifecycle.sh --yes             # full lifecycle (~20-40 min)
 ```
 
-## Windows — manual procedure (PowerShell)
+## Windows — `test-lifecycle.ps1` (or manual)
 
-No bash harness on Windows (it uses `setup.ps1`). Run these in an elevated
-PowerShell from the repo root. x86_64 Windows runs OpenPLC natively (no
-emulation); the binfmt/qemu path does not apply here.
+One command, the Windows counterpart of `test-lifecycle.sh` (elevated
+PowerShell, repo root):
+
+```powershell
+.\scripts\test-lifecycle.ps1                       # online, full lifecycle
+.\scripts\test-lifecycle.ps1 -FromTarballs D:\WORKSHOP_SSD
+.\scripts\test-lifecycle.ps1 -Reinstall
+```
+
+Or run the phases by hand (also useful for spot-checks). x86_64 Windows
+runs OpenPLC natively (no emulation; the binfmt/qemu path does not apply):
 
 ```powershell
 # 1. SETUP  (online; or: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD)
