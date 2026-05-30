@@ -212,6 +212,7 @@ func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error
 	s.activeConfigMu.Lock()
 	s.activeConfig = configName
 	s.policySource = source
+	s.recordApplyLocked(data)
 	s.activeConfigMu.Unlock()
 
 	return warnings, nil
@@ -266,6 +267,7 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 	s.activeConfigMu.Lock()
 	s.activeConfig = "custom"
 	s.policySource = "plan-custom"
+	s.recordApplyLocked(data)
 	s.activeConfigMu.Unlock()
 
 	resp := gin.H{

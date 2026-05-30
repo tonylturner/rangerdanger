@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -62,16 +63,27 @@ type Server struct {
 	//   "plan-custom"       — student's Lab 1.4 plan, pushed by the
 	//                         frontend "Apply Your Plan" button
 	//                         (/api/firewall/apply-custom)
-	//   "manual-custom"     — placeholder for a future Phase B where
-	//                         a background poller observes a policy
-	//                         the student committed directly in
-	//                         containd's CLI/UI and labels it as such
+	//   "manual-custom"     — observed: a policy the student committed
+	//                         directly in containd's CLI/UI. Set by
+	//                         the background policyObserver goroutine
+	//                         when the running-config hash diverges
+	//                         from the last applied hash for >5s.
 	//   ""                  — never applied / initial state
 	// The frontend uses this to label the status banner accurately
 	// ("Your custom policy (Lab 1.4 plan)" vs "(your containd commit)")
 	// and survives page reloads, which a frontend-only session-state
 	// approach would not.
 	policySource string
+	// lastAppliedHash is the canonical SHA-256 of the firewall sub-
+	// document at the moment of the last successful backend apply
+	// (weak / improved / plan-custom). The observer compares it to
+	// containd's live running-config hash to spot manual commits.
+	lastAppliedHash string
+	// lastAppliedAt records when lastAppliedHash was set. The
+	// observer skips its check for >graceWindow (5s) after an
+	// apply so a hash-in-flight race doesn't briefly flip to
+	// manual-custom on a normal button-driven apply.
+	lastAppliedAt time.Time
 	pcapMu         sync.Mutex
 	pcap           pcapState
 	trafficMu      sync.Mutex
@@ -140,6 +152,12 @@ func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orc
 	s.applyMigrations()
 	s.registerMiddleware()
 	s.registerRoutes()
+	// Kick off the background poller that watches containd's running
+	// config for manual commits the backend didn't initiate. context.
+	// Background() is fine here — the goroutine lives for the
+	// lifetime of the process. (Tests construct Server directly
+	// without going through New, so they get a no-op observer.)
+	s.startPolicyObserver(context.Background())
 	return s
 }
 

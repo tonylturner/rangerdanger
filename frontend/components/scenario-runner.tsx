@@ -817,11 +817,19 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  // Load the saved Lab 1.4 remediation plan on every firewall lab,
+  // not just firewall-implementation. The plan drives the side-
+  // panel Apply Your Plan button on Lab 2.3 / 2.3-bonus / 2.4 too,
+  // so leaving it null on those labs left the button stuck in the
+  // disabled-with-tooltip state even when a plan existed (Codex
+  // review on #74). The injectDynamicContent path stays scoped to
+  // firewall-implementation — only that lab actually uses the
+  // plan to rewrite step descriptions.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    scenario.id === "firewall-implementation" ? loadDynamicPlan() : null
+    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan() : null
   );
   useEffect(() => {
-    if (scenario.id !== "firewall-implementation") return;
+    if (!POLICY_ACTION_SCENARIOS.includes(scenario.id)) return;
     setDynamicPlan(loadDynamicPlan());
     const onFocus = () => setDynamicPlan(loadDynamicPlan());
     document.addEventListener("visibilitychange", onFocus);
