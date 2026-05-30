@@ -40,6 +40,15 @@ steps:
       latent-exposure-confirmed: Active probing revealed latent exposure beyond passive observation
       :::
 
+      ### Choose your path
+
+      Pick a track to continue. The policy banner at the top of every
+      step will tell you what is currently running. You can switch
+      tracks anytime from the side panel.
+
+      :::track-picker
+      :::
+
       You will:
 
       1. Verify your access to the containd NGFW
@@ -163,6 +172,42 @@ steps:
       cross-zone traffic. Don't create allow rules yet - get to a
       clean deny-all baseline first.
 
+      ### Default-deny: the principle vs the mechanism
+
+      "Anything not explicitly allowed is denied" is the bedrock of
+      segmentation. The *principle* is universal; the *mechanism*
+      varies by vendor:
+
+      - **Implicit default-deny** — the policy engine appends a
+        "deny everything not matched" verdict for you. You write
+        only ALLOW rules. Used by **containd** (this lab), Cisco
+        ASA/FTD, Palo Alto, FortiGate, Juniper SRX.
+      - **Explicit default-deny** — nothing is appended. You must
+        configure the chain default to DENY or write a final deny
+        rule yourself. Used by **iptables/nftables** in raw form,
+        Linux bridges/OVS, and (best-practice) Check Point cleanup
+        rules. Forget either and the firewall is silently allow-all.
+
+      The thing to internalize: if you cannot point to *where* the
+      default-deny is — either as documented implicit behavior or as
+      an explicit rule you wrote — assume there is no default-deny.
+      See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
+      on the Knowledge page for the per-vendor breakdown.
+
+      :::hint About containd specifically
+      containd's policy has a top-level `defaultAction` field that
+      is already set to **DENY**, even under the weak baseline.
+      The weak posture is permissive only because broad ALLOW
+      rules sit on top of it. There is no separate "set default
+      to drop" switch to flip in this lab — deleting the broad
+      allow rules is what exposes the existing default DENY. You
+      can confirm with `show running-config | grep defaultAction`
+      from `containd cli`. On a firewall with explicit
+      default-deny (raw iptables, OVS, etc.) this same step would
+      *also* require setting the chain policy or adding a final
+      deny rule — that's the vendor-mechanism difference.
+      :::
+
       ### What to do
 
       1. **Review existing rules.** Identify the rules that allow
@@ -172,22 +217,24 @@ steps:
          - Vendor (`dmz`) to Field (`lan2`) on any port
          - "Any-any" rules that permit all traffic between zones
 
-      2. **Set default action to DROP** for cross-zone forwarding.
-         In containd, this is the firewall's `defaultAction` field.
+      2. **Delete those broad-allow rules.** Once they are gone,
+         the policy's `defaultAction: DENY` catches all cross-zone
+         traffic the rules were permitting.
 
       3. **Do NOT remove intra-zone rules.** Traffic within OT Ops
-         (`10.30.30.0/24`) needs to keep flowing - HMI to RTAC,
+         (`10.30.30.0/24`) needs to keep flowing — HMI to RTAC,
          historian to RTAC, and internal NTP. These are intra-zone
          and should not be affected by cross-zone deny rules.
 
       ### Web UI path
 
-      In the policy editor at [http://localhost:9080](http://localhost:9080):
-      delete or disable the broad `enterprise-to-field-weak`,
-      `vendor-to-field-weak`, `vendor-to-ot-weak` rules. Set the
-      policy default action to **drop**. Click **Apply** (or
-      **Commit** if your build uses candidate/running config) to
-      activate.
+      In the policy editor at
+      [http://localhost:9080](http://localhost:9080), delete (or
+      disable) the broad `enterprise-to-field-weak`,
+      `vendor-to-field-weak`, and `vendor-to-ot-weak` rules, then
+      **Commit**. You do *not* need to change a separate "default
+      action" control — the policy default is already DENY and
+      simply takes over once the broad allows are removed.
 
       ### CLI path
 
@@ -215,7 +262,26 @@ steps:
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
-      Now create specific allow rules for the flows you identified in the Segmentation Requirements exercise. These are the only cross-zone flows the substation requires. Everything else stays denied.
+      The six rules below are the contract for what cross-zone
+      traffic the substation must allow. Everything else stays
+      denied.
+
+      :::guided
+      Click **Apply Hardened** in the side panel to push the canned
+      reference policy, or **Apply Your Plan** to push the policy
+      built from your Lab 1.4 picks. Then walk the rule table below
+      and confirm each row is present in containd's web UI
+      ([http://localhost:9080](http://localhost:9080)) or via
+      `show running-config` in the CLI. Understanding *what* is in
+      the policy matters as much as *how* it gets there.
+      :::
+
+      :::technical
+      Author these rules in containd directly — your choice of the
+      web UI or the appliance CLI. The banner above will switch to
+      "Your custom policy" once your commit lands. The exact JSON
+      schema and CLI commands are in the hints below.
+      :::
 
       ### Required Rules
 
@@ -451,10 +517,18 @@ steps:
   - title: "Export your policy"
     expected_config: hardened
     description: |
-      You have built a working least-privilege firewall policy.
-      Export it so you have a record of what you built - most change
-      boards want the policy as a versioned artifact, not just "rules
-      live in the firewall."
+      You have a working least-privilege firewall policy active.
+      Export it so you have a record of what is running — most
+      change boards want the policy as a versioned artifact, not
+      just "rules live in the firewall."
+
+      This step matters regardless of which path you chose at the
+      top of the lab. If you applied the canned hardened reference,
+      exporting gives you the starting point for your own future
+      edits. If you applied your Lab 1.4 plan, the export captures
+      what the planner produced from your picks. If you authored
+      the policy in containd, the export is the artifact you hand
+      to change management.
 
       **Web UI:** Settings → Export config (or similar button) to
       download the running config as JSON.

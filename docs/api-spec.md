@@ -108,10 +108,10 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/health` | containd health status |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/sessions` | Active connection table |
-| `GET` | `/firewall/active` | Which named configuration is currently applied |
+| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` reserved for a future Phase B observer of direct containd commits). |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
-| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"|"improved"}` and includes `"warnings": [...]` when containd returned any. |
-| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom"}` plus `"warnings": [...]` when containd returned any. |
+| `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
+| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom","policy_source":"plan-custom"}` plus `"warnings": [...]` when containd returned any. The `policy_source` tag lets the UI label the active policy as derived from the student's Lab 1.4 plan rather than a manual containd commit. |
 
 ## Traffic generation
 

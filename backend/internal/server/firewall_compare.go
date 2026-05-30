@@ -89,13 +89,20 @@ func (s *Server) handleFirewallCompare(c *gin.Context) {
 	c.JSON(http.StatusOK, comparison)
 }
 
-// handleFirewallActive returns the currently active firewall config name.
+// handleFirewallActive returns the currently active firewall config name
+// and how it was applied. policy_source lets the frontend label the
+// status banner accurately (e.g. "Your custom policy (Lab 1.4 plan)" vs
+// "(your containd commit)").
 func (s *Server) handleFirewallActive(c *gin.Context) {
 	s.activeConfigMu.RLock()
 	active := s.activeConfig
+	source := s.policySource
 	s.activeConfigMu.RUnlock()
 
-	c.JSON(http.StatusOK, gin.H{"active_config": active})
+	c.JSON(http.StatusOK, gin.H{
+		"active_config": active,
+		"policy_source": source,
+	})
 }
 
 // handleFirewallApply applies a named firewall config to the live containd instance.
@@ -193,8 +200,19 @@ func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
 
+	// Tag the source so the frontend banner can label state correctly.
+	// "weak" stays "weak"; "improved" becomes "hardened-reference" since
+	// the user-facing term is "hardened" (this matches the canned-policy
+	// JSON file name and the lab UI's "Apply Hardened" button label).
+	source := configName
+	if configName == "improved" {
+		source = "hardened-reference"
+	}
+
 	s.activeConfigMu.Lock()
 	s.activeConfig = configName
+	s.policySource = source
+	s.recordApplyLocked(data)
 	s.activeConfigMu.Unlock()
 
 	return warnings, nil
@@ -240,13 +258,22 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		return
 	}
 
+	// The /apply-custom path is wired to the frontend "Apply Your Plan"
+	// button, which translates the student's Lab 1.4 plan picks into a
+	// containd config and pushes it here. Label the source so the
+	// status banner can distinguish "(Lab 1.4 plan)" from a future
+	// "(your containd commit)" state that Phase B will detect via a
+	// background poller.
 	s.activeConfigMu.Lock()
 	s.activeConfig = "custom"
+	s.policySource = "plan-custom"
+	s.recordApplyLocked(data)
 	s.activeConfigMu.Unlock()
 
 	resp := gin.H{
 		"status":        "applied",
 		"active_config": "custom",
+		"policy_source": "plan-custom",
 	}
 	if len(warnings) > 0 {
 		resp["warnings"] = warnings

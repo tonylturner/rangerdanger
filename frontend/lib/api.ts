@@ -390,8 +390,22 @@ export async function getFirewallComparison() {
   return request<PolicyComparison>("/firewall/compare");
 }
 
+// PolicySource matches the backend's policySource field on the Server
+// struct. "weak" / "hardened-reference" / "plan-custom" cover Phase A
+// of the dual-track firewall config exploration. "manual-custom" is
+// reserved for Phase B (when a poller observes direct containd commits)
+// and "" is the never-applied initial state.
+export type PolicySource =
+  | "weak"
+  | "hardened-reference"
+  | "plan-custom"
+  | "manual-custom"
+  | "";
+
 export async function getActiveFirewallConfig() {
-  return request<{ active_config: string }>("/firewall/active");
+  return request<{ active_config: string; policy_source: PolicySource }>(
+    "/firewall/active",
+  );
 }
 
 export type ValidationCheck = {

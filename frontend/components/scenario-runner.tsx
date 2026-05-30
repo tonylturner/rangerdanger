@@ -22,7 +22,9 @@ import {
   type SubstationState,
   type StepExecutionResult,
   type AuditEntry,
+  type PolicySource,
 } from "../lib/api";
+import { PolicyStatusBanner } from "./policy-status-banner";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
@@ -37,6 +39,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { MarkdownProse } from "./markdown-prose";
+import { TrackPicker } from "./track-picker";
+import { useFirewallTrack } from "../lib/use-firewall-track";
 import {
   loadDynamicPlan,
   renderRuleTable,
@@ -526,19 +530,28 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             if (seg.type === "planCoverage") {
               return <PlanCoveragePanel key={si} title={seg.title} />;
             }
-            // Nested hints aren't expected, but render them flat just
-            // in case a YAML author does it — same context propagated.
-            return (
-              <HintBlock
-                key={si}
-                title={seg.title}
-                body={seg.value}
-                runIdPrefix={`${runIdPrefix}-h${si}`}
-                runningId={runningId}
-                onRun={onRun}
-                scenarioId={scenarioId}
-              />
-            );
+            // trackPicker / trackOnly inside a :::hint isn't a
+            // pattern any lab uses today; skip silently rather than
+            // render a broken sub-tree.
+            if (seg.type === "trackPicker" || seg.type === "trackOnly") {
+              return null;
+            }
+            if (seg.type === "hint") {
+              // Nested hints aren't expected, but render them flat
+              // just in case a YAML author does it.
+              return (
+                <HintBlock
+                  key={si}
+                  title={seg.title}
+                  body={seg.value}
+                  runIdPrefix={`${runIdPrefix}-h${si}`}
+                  runningId={runningId}
+                  onRun={onRun}
+                  scenarioId={scenarioId}
+                />
+              );
+            }
+            return null;
           })}
         </div>
       )}
@@ -638,6 +651,18 @@ const PHASE3_TITLES = ["create minimal", "phase 3"];
 const PHASE5_TITLES = ["validate allowed", "phase 5"];
 const PHASE6_TITLES = ["validate blocked", "phase 6"];
 
+// Scenarios whose steps actually exercise the firewall — the policy
+// action buttons (Apply Hardened / Apply Your Plan / Reset to Weak)
+// render here. The planning labs (1.2 baseline, 1.3 requirements,
+// 1.4 plan) are intentionally excluded because policy state changes
+// during their steps would not match their student-facing narrative.
+const POLICY_ACTION_SCENARIOS = [
+  "firewall-implementation",     // Lab 2.2
+  "hardening-configurations",    // Lab 2.3
+  "vendor-rdp-compromise",       // Lab 2.3-bonus
+  "validation-evidence",         // Lab 2.4
+];
+
 function titleMatches(title: string, fragments: string[]): boolean {
   const lower = title.toLowerCase();
   return fragments.some((f) => lower.includes(f));
@@ -660,15 +685,38 @@ function injectDynamicContent(
       ? `You have not completed a remediation plan yet. The rules below are the minimum baseline — RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/remediation-planning) exercise to build a plan that drives additional rules.\n\n`
       : "";
 
-    return `Now create the firewall rules your remediation plan requires. Everything not explicitly allowed stays denied.
+    // Phase 3's generated description has to re-emit the :::guided
+    // / :::technical fork itself because injectDynamicContent
+    // entirely replaces the YAML for this step (the YAML edits
+    // wouldn't survive otherwise). Same intent as the static
+    // forks in 2.3 step 4 / 2.2 step 7 — guided students walk
+    // the table to see what landed; technical students treat the
+    // table as the spec they're authoring against.
+    return `The six rules below are the contract for what cross-zone
+traffic the substation must allow. Everything else stays denied.
 
-${noPlan}### Firewall Rules to Implement
+${noPlan}:::guided
+Click **Apply Hardened** in the side panel to push the canned
+reference, or **Apply Your Plan** to push the policy built from
+your Lab 1.4 picks. Then walk the rule table below and confirm
+each row is present in containd's web UI
+([http://localhost:9080](http://localhost:9080)) or via
+\`show running-config\` in the CLI. Understanding *what* is in
+the policy matters as much as *how* it gets there.
+:::
+
+:::technical
+Author these rules in containd directly — your choice of the web
+UI or the appliance CLI. The banner above will switch to
+"Your custom policy" once your commit lands. The JSON schema and
+CLI walkthrough are in the hints below.
+:::
+
+### Firewall Rules to Implement
 
 ${ruleTable}
 
 > **Critical:** RTAC rules are source-pinned to \`10.30.30.20\`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
-
-Create these rules in the containd firewall. Use either the web UI or the CLI.
 
 :::hint Creating rules via the containd CLI
 The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal (or SSH), type \`containd cli\` to enter the appliance shell, then:
@@ -774,6 +822,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [validating, setValidating] = useState(false);
   const [state, setState] = useState<SubstationState | null>(null);
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  // Firewall-track choice (guided | technical | null). Read here so
+  // both the description renderer (for trackOnly segments) and the
+  // side panel (for chip + button de-emphasis) share one source.
+  const { track: firewallTrack, setTrack: setFirewallTrack } = useFirewallTrack();
+  // policySource tracks how the active policy got applied — needed by
+  // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
+  // plan)" from "(your containd commit)". Survives page reloads
+  // because it's a backend field.
+  const [policySource, setPolicySource] = useState<PolicySource>("");
   const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
   const [executing, setExecuting] = useState(false);
   // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
@@ -783,11 +840,19 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
   const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  // Load the saved Lab 1.4 remediation plan on every firewall lab,
+  // not just firewall-implementation. The plan drives the side-
+  // panel Apply Your Plan button on Lab 2.3 / 2.3-bonus / 2.4 too,
+  // so leaving it null on those labs left the button stuck in the
+  // disabled-with-tooltip state even when a plan existed (Codex
+  // review on #74). The injectDynamicContent path stays scoped to
+  // firewall-implementation — only that lab actually uses the
+  // plan to rewrite step descriptions.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    scenario.id === "firewall-implementation" ? loadDynamicPlan() : null
+    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan() : null
   );
   useEffect(() => {
-    if (scenario.id !== "firewall-implementation") return;
+    if (!POLICY_ACTION_SCENARIOS.includes(scenario.id)) return;
     setDynamicPlan(loadDynamicPlan());
     const onFocus = () => setDynamicPlan(loadDynamicPlan());
     document.addEventListener("visibilitychange", onFocus);
@@ -951,6 +1016,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       ]);
       setState(s);
       setActiveConfig(fw.active_config);
+      setPolicySource(fw.policy_source ?? "");
       setRecentAudit((a.entries ?? []).slice(-5));
     } catch {
       // offline
@@ -1200,40 +1266,45 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
                 )}
-                {!completedSteps.has(currentStep) && (
-                  <button
-                    onClick={() => markStepDone(currentStep)}
-                    className="rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
-                  >
-                    Mark Complete
-                  </button>
-                )}
+                {!completedSteps.has(currentStep) && (() => {
+                  // Force-pick gate: Lab 2.2 step 1 can't advance
+                  // until the student has picked a firewall track.
+                  // The choice is persisted to localStorage so later
+                  // labs inherit it without re-prompting.
+                  const trackGate =
+                    scenario.id === "firewall-implementation" &&
+                    currentStep === 0 &&
+                    firewallTrack === null;
+                  return (
+                    <button
+                      onClick={() => markStepDone(currentStep)}
+                      disabled={trackGate}
+                      title={trackGate ? "Pick a track above to continue." : undefined}
+                      className={
+                        trackGate
+                          ? "cursor-not-allowed rounded border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                          : "rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
+                      }
+                    >
+                      Mark Complete
+                    </button>
+                  );
+                })()}
               </div>
             </div>
-            {/* Config mismatch warning */}
-            {step?.expected_config && activeConfig && (() => {
-              const expected = step.expected_config;
-              const actual = activeConfig;
-              const match = expected === "weak"
-                ? actual === "weak"
-                : expected === "hardened"
-                ? actual === "improved" || actual === "custom"
-                : true;
-              if (match) return null;
-              const needLabel = expected === "weak" ? "weak baseline" : "hardened (improved or custom)";
-              const hasLabel = actual === "weak" ? "weak baseline" : actual;
-              const action = expected === "weak"
-                ? "Use the Reset to Weak button to restore the weak baseline."
-                : "Use the Apply Hardened or Apply Your Plan button to apply a hardened policy.";
-              return (
-                <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 px-4 py-3 mb-3">
-                  <div className="text-[11px] text-amber-400">
-                    <span className="font-bold">Config mismatch:</span> This step expects the <span className="font-bold">{needLabel}</span> config,
-                    but the firewall is currently on <span className="font-bold">{hasLabel}</span>. {action}
-                  </div>
-                </div>
-              );
-            })()}
+            {/* PolicyStatusBanner: sticky-at-top per-step indicator of
+                what firewall policy is actually running. Renders an
+                informational variant when the active policy satisfies
+                the step's expected_config; switches to an amber warning
+                with the action prompt when it doesn't. Replaces the
+                older inline "Config mismatch" notice that only fired
+                on mismatched state — the banner always renders so
+                students can always tell what's loaded. */}
+            <PolicyStatusBanner
+              activeConfig={activeConfig}
+              policySource={policySource}
+              expectedConfig={step?.expected_config}
+            />
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
               step && titleMatches(step.title, PHASE3_TITLES) && (
@@ -1307,6 +1378,85 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           key={`${scenario.id}-${currentStep}-${si}`}
                           title={seg.title}
                         />
+                      );
+                    }
+                    if (seg.type === "trackPicker") {
+                      return (
+                        <TrackPicker
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                        />
+                      );
+                    }
+                    if (seg.type === "trackOnly") {
+                      // Show track-only blocks when no track is yet
+                      // picked (so the student sees both perspectives
+                      // before deciding) OR when the current track
+                      // matches the block's track.
+                      if (firewallTrack !== null && firewallTrack !== seg.track) {
+                        return null;
+                      }
+                      // Recursively split + render the body so nested
+                      // commands / hints / decisions inside a track
+                      // block still work.
+                      const inner = splitDescription(seg.body);
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className={`rounded-md border-l-2 pl-3 ${
+                            seg.track === "guided"
+                              ? "border-emerald-700/60"
+                              : "border-sky-700/60"
+                          } space-y-2`}
+                        >
+                          <div
+                            className={`text-[10px] font-bold uppercase tracking-wider ${
+                              seg.track === "guided"
+                                ? "text-emerald-400"
+                                : "text-sky-400"
+                            }`}
+                          >
+                            {seg.track === "guided" ? "Guided track" : "Technical track"}
+                          </div>
+                          {inner.map((sub, sj) => {
+                            if (sub.type === "prose") {
+                              const t = sub.value.replace(/^\n+|\n+$/g, "");
+                              if (!t) return null;
+                              return <MarkdownProse key={sj}>{t}</MarkdownProse>;
+                            }
+                            if (sub.type === "cmd") {
+                              const ci = bodyCmdIdx++;
+                              return (
+                                <CommandBlock
+                                  key={sj}
+                                  cmd={sub.value}
+                                  runId={`body-${ci}`}
+                                  runningId={autoRunning}
+                                  onRun={runHandler}
+                                />
+                              );
+                            }
+                            if (sub.type === "hint") {
+                              const hi = hintIdx++;
+                              return (
+                                <HintBlock
+                                  key={sj}
+                                  title={sub.title}
+                                  body={sub.value}
+                                  runIdPrefix={`hint-t-${hi}`}
+                                  runningId={autoRunning}
+                                  onRun={runHandler}
+                                  scenarioId={scenario.id}
+                                />
+                              );
+                            }
+                            // Fallback for nested decision / findings /
+                            // plan-coverage / nested trackOnly: render
+                            // body as prose so authors don't lose
+                            // content; richer nesting can be added if
+                            // a YAML actually needs it.
+                            return null;
+                          })}
+                        </div>
                       );
                     }
                     const ci = bodyCmdIdx++;
@@ -1402,52 +1552,122 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           )}
 
           <div className="grid gap-4 lg:grid-cols-2">
-            {/* containd segmentation + operational status */}
+            {/* containd policy actions + operational status. The
+                state indicator (what is currently running) lives in
+                PolicyStatusBanner at the top of the step content;
+                this side-panel section is just the actions. */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
-              {/* containd indicator — prominent */}
-              <div className={`rounded-lg border px-3 py-2 ${
-                activeConfig === "improved"
-                  ? "border-green-800/60 bg-green-950/20"
-                  : "border-red-800/60 bg-red-950/20"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">containd NGFW Policy</div>
-                    <div className={`text-sm font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
-                      {activeConfig === "improved" ? "Hardened — RTAC-only field access" : "Weak Baseline — enterprise can reach field"}
+              {/* Policy action buttons — shown on the four firewall-
+                  exercising scenarios (2.2 / 2.3 / 2.3-bonus / 2.4),
+                  hidden in the planning labs (1.2 / 1.3 / 1.4) since
+                  their steps don't actually drive policy state. */}
+              {POLICY_ACTION_SCENARIOS.includes(scenario.id) && (
+                <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
+                      containd NGFW — policy actions
                     </div>
+                    {firewallTrack && (
+                      <div className="flex items-center gap-1.5 text-[9px]">
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${
+                            firewallTrack === "guided"
+                              ? "bg-emerald-950/60 text-emerald-300"
+                              : "bg-sky-950/60 text-sky-300"
+                          }`}
+                        >
+                          {firewallTrack}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setFirewallTrack(
+                              firewallTrack === "guided" ? "technical" : "guided",
+                            )
+                          }
+                          className="text-slate-500 underline hover:text-slate-300"
+                        >
+                          switch
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {activeConfig === "weak" && isSegmentationStep(step?.title) && (
-                    <button
-                      onClick={async () => { await applyFirewallConfig("improved"); pollState(); }}
-                      className="rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] text-green-400 hover:bg-green-900/50"
-                    >
-                      Apply Hardened
-                    </button>
+                  {firewallTrack === "technical" && (
+                    <div className="mb-2 text-[10px] italic text-slate-500">
+                      Technical track — commit your policy in containd directly.
+                      Buttons below are a guided fallback.
+                    </div>
                   )}
-                  {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan && (
-                    <button
-                      onClick={async () => {
-                        const config = buildContaindConfig(dynamicPlan);
-                        await applyCustomFirewallConfig(config);
-                        pollState();
-                        setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
-                      }}
-                      className="rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] text-sky-400 hover:bg-sky-900/50"
-                    >
-                      Apply Your Plan
-                    </button>
-                  )}
-                  {activeConfig === "improved" && isBaselineStep(step?.title) && (
-                    <button
-                      onClick={async () => { await applyFirewallConfig("weak"); pollState(); }}
-                      className="rounded border border-red-800 bg-red-950/40 px-2 py-1 text-[10px] text-red-400 hover:bg-red-900/50"
-                    >
-                      Reset to Weak
-                    </button>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {/* Apply Hardened: load the canned reference. */}
+                    {activeConfig !== "improved" && (
+                      <button
+                        onClick={async () => { await applyFirewallConfig("improved"); pollState(); }}
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
+                            : "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                        }
+                      >
+                        Apply Hardened
+                      </button>
+                    )}
+                    {/* Apply Your Plan: push the policy built from the
+                        student's Lab 1.4 picks. Disabled-with-tooltip
+                        when no plan exists, rather than silently
+                        hidden — students should see it as an option
+                        and learn what unlocks it. */}
+                    {dynamicPlan?.hasRemediationPlan ? (
+                      <button
+                        onClick={async () => {
+                          const config = buildContaindConfig(dynamicPlan);
+                          await applyCustomFirewallConfig(config);
+                          pollState();
+                          setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
+                        }}
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
+                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
+                        }
+                      >
+                        Apply Your Plan
+                      </button>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            disabled
+                            className="cursor-not-allowed rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                          >
+                            Apply Your Plan
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Complete Lab 1.4 (Remediation Planning) first.
+                          The system builds this policy from your plan
+                          picks.
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {/* Reset to Weak: available from any non-weak
+                        state so students can re-attempt an exercise
+                        from the baseline regardless of how they
+                        landed on the current policy. */}
+                    {activeConfig !== "weak" && activeConfig && (
+                      <button
+                        onClick={async () => { await applyFirewallConfig("weak"); pollState(); }}
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
+                            : "rounded border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
+                        }
+                      >
+                        Reset to Weak
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Operational status */}
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>

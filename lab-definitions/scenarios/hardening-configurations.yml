@@ -249,8 +249,23 @@ steps:
 
   - title: "Apply the hardened policy"
     description: |
-      Apply the hardened firewall configuration with **Apply Hardened**,
-      or **Apply Your Plan** if you built a custom policy in Lab 2.2.
+      Get a hardened policy active in containd before the re-test.
+      The policy banner at the top of this step is your signal —
+      it must be **green** (hardened reference or your custom
+      policy) before the re-test will work.
+
+      :::guided
+      Click **Apply Hardened** in the side panel to push the canned
+      reference policy, or **Apply Your Plan** if you built a
+      custom policy in Lab 2.2.
+      :::
+
+      :::technical
+      Author your hardened policy in containd's web UI or CLI and
+      commit it. The banner will switch to "Your custom policy"
+      when your commit is live. (If you get stuck, the side-panel
+      buttons are still available as a guided fallback.)
+      :::
 
       The hardened policy combines two defense-in-depth layers:
 
