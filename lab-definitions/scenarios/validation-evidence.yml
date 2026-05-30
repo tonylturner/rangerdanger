@@ -32,22 +32,28 @@ steps:
       unauth-modbus-writes: Unauthorized Modbus writes / DNP3 Direct Operate
       :::
 
-      Confirm the hardened firewall policy is loaded.
+      **Start with the policy banner above this step.** If it shows
+      green ("Hardened reference" or "Your custom policy"), the
+      hardened policy is loaded and you're ready to validate. If it
+      shows amber ("Policy mismatch"), apply a hardened policy via
+      the side-panel buttons — or commit one in containd directly —
+      before continuing.
 
-      **Web UI:** open [http://localhost:9080](http://localhost:9080)
-      and check the policy summary on the dashboard - it should
-      reflect the rule set you built in Lab 2.2 (or the reference
-      hardened policy if you used **Apply Hardened**).
+      **Optional cross-check from containd itself.** Once the banner
+      is green, you can confirm the running policy from either
+      interface:
 
-      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
+      - **Web UI:** [http://localhost:9080](http://localhost:9080),
+        Policy → Running config.
+      - **CLI:** from the `fw-1` terminal, `containd cli` then
+        `show running-config`.
 
-          show running-config
-
-      You should see the hardened rule set: RTAC source-pinned to
-      field, vendor restricted to SSH/HTTPS, enterprise-to-field
-      removed, default deny on cross-zone. If the weak baseline is
-      still active, apply the hardened config with **Apply Hardened**
-      or **Apply Your Plan** and re-check.
+      Either should show the hardened rule set: RTAC source-pinned
+      to field, vendor restricted to SSH/HTTPS, enterprise-to-field
+      removed, default deny on cross-zone. This step's evidence
+      bullet for the change board is the export from later in the
+      lab; this check just confirms you're testing against the
+      right policy.
 
       **Time budget:** 15 minutes.
     action:

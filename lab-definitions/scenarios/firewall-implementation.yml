@@ -40,6 +40,31 @@ steps:
       latent-exposure-confirmed: Active probing revealed latent exposure beyond passive observation
       :::
 
+      :::note title="Choose your path"
+      Three ways to get the policy active for this exercise — pick
+      whichever matches how you want to work today. The policy
+      banner at the top of every step will tell you what is
+      currently running.
+
+      - **Walk through the reference.** Click **Apply Hardened**
+        in the side panel to load the canned hardened policy, then
+        walk the phases below as a tour. You will see what the
+        reference policy contains, how it satisfies each phase's
+        requirements, and what its logging surface looks like —
+        without writing rules from scratch.
+      - **Push your Lab 1.4 plan.** Click **Apply Your Plan**
+        (enabled once you have completed Remediation Planning) to
+        push the policy built from your remediation picks. Walk
+        the phases to verify it satisfies them and to see where
+        your plan differs from the reference.
+      - **Build it in containd.** Use containd's web UI at
+        [http://localhost:9080](http://localhost:9080) or the
+        appliance CLI to author the rules yourself and commit
+        them in containd directly. The banner will show
+        "Your custom policy" once your commit lands. The phases
+        below are the build guide.
+      :::
+
       You will:
 
       1. Verify your access to the containd NGFW
@@ -215,7 +240,15 @@ steps:
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
-      Now create specific allow rules for the flows you identified in the Segmentation Requirements exercise. These are the only cross-zone flows the substation requires. Everything else stays denied.
+      Walk through (or build out) the specific allow rules for the
+      flows you identified in the Segmentation Requirements exercise.
+      These are the only cross-zone flows the substation requires;
+      everything else stays denied.
+
+      Whether you pushed the hardened reference, your own Lab 1.4
+      plan, or are authoring in containd directly, the six rules
+      below are the contract for what cross-zone traffic the
+      substation must allow.
 
       ### Required Rules
 
@@ -451,10 +484,18 @@ steps:
   - title: "Export your policy"
     expected_config: hardened
     description: |
-      You have built a working least-privilege firewall policy.
-      Export it so you have a record of what you built - most change
-      boards want the policy as a versioned artifact, not just "rules
-      live in the firewall."
+      You have a working least-privilege firewall policy active.
+      Export it so you have a record of what is running — most
+      change boards want the policy as a versioned artifact, not
+      just "rules live in the firewall."
+
+      This step matters regardless of which path you chose at the
+      top of the lab. If you applied the canned hardened reference,
+      exporting gives you the starting point for your own future
+      edits. If you applied your Lab 1.4 plan, the export captures
+      what the planner produced from your picks. If you authored
+      the policy in containd, the export is the artifact you hand
+      to change management.
 
       **Web UI:** Settings → Export config (or similar button) to
       download the running config as JSON.
