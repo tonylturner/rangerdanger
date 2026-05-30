@@ -42,28 +42,12 @@ steps:
 
       ### Choose your path
 
-      Three ways to get the policy active for this exercise — pick
-      whichever matches how you want to work today. The policy
-      banner at the top of every step will tell you what is
-      currently running.
+      Pick a track to continue. The policy banner at the top of every
+      step will tell you what is currently running. You can switch
+      tracks anytime from the side panel.
 
-      - **Walk through the reference.** Click **Apply Hardened**
-        in the side panel to load the canned hardened policy, then
-        walk the phases below as a tour. You will see what the
-        reference policy contains, how it satisfies each phase's
-        requirements, and what its logging surface looks like —
-        without writing rules from scratch.
-      - **Push your Lab 1.4 plan.** Click **Apply Your Plan**
-        (enabled once you have completed Remediation Planning) to
-        push the policy built from your remediation picks. Walk
-        the phases to verify it satisfies them and to see where
-        your plan differs from the reference.
-      - **Build it in containd.** Use containd's web UI at
-        [http://localhost:9080](http://localhost:9080) or the
-        appliance CLI to author the rules yourself and commit
-        them in containd directly. The banner will show
-        "Your custom policy" once your commit lands. The phases
-        below are the build guide.
+      :::track-picker
+      :::
 
       You will:
 
@@ -240,15 +224,26 @@ steps:
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
-      Walk through (or build out) the specific allow rules for the
-      flows you identified in the Segmentation Requirements exercise.
-      These are the only cross-zone flows the substation requires;
-      everything else stays denied.
+      The six rules below are the contract for what cross-zone
+      traffic the substation must allow. Everything else stays
+      denied.
 
-      Whether you pushed the hardened reference, your own Lab 1.4
-      plan, or are authoring in containd directly, the six rules
-      below are the contract for what cross-zone traffic the
-      substation must allow.
+      :::guided
+      Click **Apply Hardened** in the side panel to push the canned
+      reference policy, or **Apply Your Plan** to push the policy
+      built from your Lab 1.4 picks. Then walk the rule table below
+      and confirm each row is present in containd's web UI
+      ([http://localhost:9080](http://localhost:9080)) or via
+      `show running-config` in the CLI. Understanding *what* is in
+      the policy matters as much as *how* it gets there.
+      :::
+
+      :::technical
+      Author these rules in containd directly — your choice of the
+      web UI or the appliance CLI. The banner above will switch to
+      "Your custom policy" once your commit lands. The exact JSON
+      schema and CLI commands are in the hints below.
+      :::
 
       ### Required Rules
 

@@ -39,6 +39,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { MarkdownProse } from "./markdown-prose";
+import { TrackPicker } from "./track-picker";
+import { useFirewallTrack } from "../lib/use-firewall-track";
 import {
   loadDynamicPlan,
   renderRuleTable,
@@ -528,19 +530,28 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             if (seg.type === "planCoverage") {
               return <PlanCoveragePanel key={si} title={seg.title} />;
             }
-            // Nested hints aren't expected, but render them flat just
-            // in case a YAML author does it — same context propagated.
-            return (
-              <HintBlock
-                key={si}
-                title={seg.title}
-                body={seg.value}
-                runIdPrefix={`${runIdPrefix}-h${si}`}
-                runningId={runningId}
-                onRun={onRun}
-                scenarioId={scenarioId}
-              />
-            );
+            // trackPicker / trackOnly inside a :::hint isn't a
+            // pattern any lab uses today; skip silently rather than
+            // render a broken sub-tree.
+            if (seg.type === "trackPicker" || seg.type === "trackOnly") {
+              return null;
+            }
+            if (seg.type === "hint") {
+              // Nested hints aren't expected, but render them flat
+              // just in case a YAML author does it.
+              return (
+                <HintBlock
+                  key={si}
+                  title={seg.title}
+                  body={seg.value}
+                  runIdPrefix={`${runIdPrefix}-h${si}`}
+                  runningId={runningId}
+                  onRun={onRun}
+                  scenarioId={scenarioId}
+                />
+              );
+            }
+            return null;
           })}
         </div>
       )}
@@ -788,6 +799,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [validating, setValidating] = useState(false);
   const [state, setState] = useState<SubstationState | null>(null);
   const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  // Firewall-track choice (guided | technical | null). Read here so
+  // both the description renderer (for trackOnly segments) and the
+  // side panel (for chip + button de-emphasis) share one source.
+  const { track: firewallTrack, setTrack: setFirewallTrack } = useFirewallTrack();
   // policySource tracks how the active policy got applied — needed by
   // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
   // plan)" from "(your containd commit)". Survives page reloads
@@ -1220,14 +1235,30 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
                 )}
-                {!completedSteps.has(currentStep) && (
-                  <button
-                    onClick={() => markStepDone(currentStep)}
-                    className="rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
-                  >
-                    Mark Complete
-                  </button>
-                )}
+                {!completedSteps.has(currentStep) && (() => {
+                  // Force-pick gate: Lab 2.2 step 1 can't advance
+                  // until the student has picked a firewall track.
+                  // The choice is persisted to localStorage so later
+                  // labs inherit it without re-prompting.
+                  const trackGate =
+                    scenario.id === "firewall-implementation" &&
+                    currentStep === 0 &&
+                    firewallTrack === null;
+                  return (
+                    <button
+                      onClick={() => markStepDone(currentStep)}
+                      disabled={trackGate}
+                      title={trackGate ? "Pick a track above to continue." : undefined}
+                      className={
+                        trackGate
+                          ? "cursor-not-allowed rounded border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                          : "rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
+                      }
+                    >
+                      Mark Complete
+                    </button>
+                  );
+                })()}
               </div>
             </div>
             {/* PolicyStatusBanner: sticky-at-top per-step indicator of
@@ -1316,6 +1347,85 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           key={`${scenario.id}-${currentStep}-${si}`}
                           title={seg.title}
                         />
+                      );
+                    }
+                    if (seg.type === "trackPicker") {
+                      return (
+                        <TrackPicker
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                        />
+                      );
+                    }
+                    if (seg.type === "trackOnly") {
+                      // Show track-only blocks when no track is yet
+                      // picked (so the student sees both perspectives
+                      // before deciding) OR when the current track
+                      // matches the block's track.
+                      if (firewallTrack !== null && firewallTrack !== seg.track) {
+                        return null;
+                      }
+                      // Recursively split + render the body so nested
+                      // commands / hints / decisions inside a track
+                      // block still work.
+                      const inner = splitDescription(seg.body);
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className={`rounded-md border-l-2 pl-3 ${
+                            seg.track === "guided"
+                              ? "border-emerald-700/60"
+                              : "border-sky-700/60"
+                          } space-y-2`}
+                        >
+                          <div
+                            className={`text-[10px] font-bold uppercase tracking-wider ${
+                              seg.track === "guided"
+                                ? "text-emerald-400"
+                                : "text-sky-400"
+                            }`}
+                          >
+                            {seg.track === "guided" ? "Guided track" : "Technical track"}
+                          </div>
+                          {inner.map((sub, sj) => {
+                            if (sub.type === "prose") {
+                              const t = sub.value.replace(/^\n+|\n+$/g, "");
+                              if (!t) return null;
+                              return <MarkdownProse key={sj}>{t}</MarkdownProse>;
+                            }
+                            if (sub.type === "cmd") {
+                              const ci = bodyCmdIdx++;
+                              return (
+                                <CommandBlock
+                                  key={sj}
+                                  cmd={sub.value}
+                                  runId={`body-${ci}`}
+                                  runningId={autoRunning}
+                                  onRun={runHandler}
+                                />
+                              );
+                            }
+                            if (sub.type === "hint") {
+                              const hi = hintIdx++;
+                              return (
+                                <HintBlock
+                                  key={sj}
+                                  title={sub.title}
+                                  body={sub.value}
+                                  runIdPrefix={`hint-t-${hi}`}
+                                  runningId={autoRunning}
+                                  onRun={runHandler}
+                                  scenarioId={scenario.id}
+                                />
+                              );
+                            }
+                            // Fallback for nested decision / findings /
+                            // plan-coverage / nested trackOnly: render
+                            // body as prose so authors don't lose
+                            // content; richer nesting can be added if
+                            // a YAML actually needs it.
+                            return null;
+                          })}
+                        </div>
                       );
                     }
                     const ci = bodyCmdIdx++;
@@ -1422,15 +1532,50 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   their steps don't actually drive policy state. */}
               {POLICY_ACTION_SCENARIOS.includes(scenario.id) && (
                 <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                  <div className="mb-2 text-[9px] font-medium uppercase tracking-wider text-slate-500">
-                    containd NGFW — policy actions
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
+                      containd NGFW — policy actions
+                    </div>
+                    {firewallTrack && (
+                      <div className="flex items-center gap-1.5 text-[9px]">
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${
+                            firewallTrack === "guided"
+                              ? "bg-emerald-950/60 text-emerald-300"
+                              : "bg-sky-950/60 text-sky-300"
+                          }`}
+                        >
+                          {firewallTrack}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setFirewallTrack(
+                              firewallTrack === "guided" ? "technical" : "guided",
+                            )
+                          }
+                          className="text-slate-500 underline hover:text-slate-300"
+                        >
+                          switch
+                        </button>
+                      </div>
+                    )}
                   </div>
+                  {firewallTrack === "technical" && (
+                    <div className="mb-2 text-[10px] italic text-slate-500">
+                      Technical track — commit your policy in containd directly.
+                      Buttons below are a guided fallback.
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {/* Apply Hardened: load the canned reference. */}
                     {activeConfig !== "improved" && (
                       <button
                         onClick={async () => { await applyFirewallConfig("improved"); pollState(); }}
-                        className="rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
+                            : "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                        }
                       >
                         Apply Hardened
                       </button>
@@ -1448,7 +1593,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                           pollState();
                           setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
                         }}
-                        className="rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
+                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
+                        }
                       >
                         Apply Your Plan
                       </button>
@@ -1476,7 +1625,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {activeConfig !== "weak" && activeConfig && (
                       <button
                         onClick={async () => { await applyFirewallConfig("weak"); pollState(); }}
-                        className="rounded border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
+                        className={
+                          firewallTrack === "technical"
+                            ? "rounded border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
+                            : "rounded border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
+                        }
                       >
                         Reset to Weak
                       </button>

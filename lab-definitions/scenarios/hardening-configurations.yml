@@ -250,22 +250,22 @@ steps:
   - title: "Apply the hardened policy"
     description: |
       Get a hardened policy active in containd before the re-test.
-      Three ways to do it — pick whichever you used in Lab 2.2:
+      The policy banner at the top of this step is your signal —
+      it must be **green** (hardened reference or your custom
+      policy) before the re-test will work.
 
-      - **Click Apply Hardened** in the side panel to push the
-        canned reference policy. Fastest path.
-      - **Click Apply Your Plan** to push the policy built from
-        your Lab 1.4 remediation picks.
-      - **Skip both buttons** if you authored and committed the
-        policy in containd's web UI or CLI yourself. The banner
-        at the top of this step will show "Your custom policy"
-        once your commit is live, and that is your signal to
-        proceed.
+      :::guided
+      Click **Apply Hardened** in the side panel to push the canned
+      reference policy, or **Apply Your Plan** if you built a
+      custom policy in Lab 2.2.
+      :::
 
-      Whichever path you took, the policy banner above this step
-      will show **green** (hardened reference or your custom
-      policy) before the re-test will work. If it shows the amber
-      "Policy mismatch" warning, click one of the buttons.
+      :::technical
+      Author your hardened policy in containd's web UI or CLI and
+      commit it. The banner will switch to "Your custom policy"
+      when your commit is live. (If you get stuck, the side-panel
+      buttons are still available as a guided fallback.)
+      :::
 
       The hardened policy combines two defense-in-depth layers:
 

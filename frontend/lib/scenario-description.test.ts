@@ -404,3 +404,58 @@ describe("parseFindingsAttrs", () => {
     expect(a.sourceScenario).toBe("");
   });
 });
+
+describe("splitDescription — track-picker directive", () => {
+  it("emits a trackPicker segment for :::track-picker fence", () => {
+    const input = ["Intro line.", "", ":::track-picker", ":::", "", "After."].join("\n");
+    const segs = splitDescription(input);
+    expect(segs.map((s) => s.type)).toEqual(["prose", "trackPicker", "prose"]);
+  });
+
+  it("ignores body inside the track-picker fence", () => {
+    const input = [":::track-picker", "this body is discarded", ":::"].join("\n");
+    const segs = splitDescription(input);
+    expect(segs).toHaveLength(1);
+    expect(segs[0].type).toBe("trackPicker");
+  });
+});
+
+describe("splitDescription — guided / technical fences", () => {
+  it("captures a :::guided body as a trackOnly segment", () => {
+    const input = [":::guided", "click Apply Hardened in the side panel.", ":::"].join("\n");
+    const segs = splitDescription(input);
+    expect(segs).toHaveLength(1);
+    const t = segAt(segs, 0, "trackOnly");
+    expect(t.track).toBe("guided");
+    expect(t.body).toBe("click Apply Hardened in the side panel.");
+  });
+
+  it("captures a :::technical body as a trackOnly segment", () => {
+    const input = [":::technical", "Commit your policy in containd.", ":::"].join("\n");
+    const segs = splitDescription(input);
+    const t = segAt(segs, 0, "trackOnly");
+    expect(t.track).toBe("technical");
+    expect(t.body).toBe("Commit your policy in containd.");
+  });
+
+  it("supports a multi-line body with prose and commands", () => {
+    const input = [
+      ":::technical",
+      "From the firewall terminal, run:",
+      "",
+      "    nmap -p 502 10.40.40.20",
+      "",
+      "Confirm the connection times out.",
+      ":::",
+    ].join("\n");
+    const segs = splitDescription(input);
+    const t = segAt(segs, 0, "trackOnly");
+    expect(t.track).toBe("technical");
+    // Recursive splitDescription on the body would produce
+    // prose+cmd+prose. The renderer is what does that; here we
+    // assert the body string is preserved intact.
+    expect(t.body).toContain("nmap -p 502 10.40.40.20");
+    expect(t.body).toContain("From the firewall terminal");
+  });
+});
+
