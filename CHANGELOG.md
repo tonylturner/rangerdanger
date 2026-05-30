@@ -6,6 +6,60 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.21] - 2026-05-30
+
+ARM64-Linux workshop support plus post-workshop tooling. Adds automatic
+amd64 emulation for OpenPLC on arm64 Linux laptops (where Docker Engine
+has no Rosetta), a granular uninstaller, and the multi-arch
+release-pipeline fix that unblocks publishing. Rolls up the seg-drawer
+and lab-content fixes that landed after v0.1.20.
+
+### Added
+
+- **Automatic amd64 emulation for OpenPLC on arm64 Linux.** OpenPLC is
+  amd64-only upstream (`tuttas/openplc_v3`); macOS Apple Silicon runs it
+  under Rosetta via Docker Desktop, but Docker Engine on arm64 Linux has
+  no such shim. `setup.sh` now detects arm64 Linux, checks for an
+  existing `qemu-x86_64` binfmt handler, and registers one via
+  `tonistiigi/binfmt` if absent — best-effort and non-fatal (nothing but
+  OpenPLC depends on it). `scripts/uninstall-rangerdanger.sh` reverts the
+  handler, but only when setup installed it (tracked by a
+  `.setup-binfmt-amd64` marker). Note: binfmt registration is runtime
+  only and does not survive a reboot.
+- **`tonistiigi/binfmt` staged onto the offline SSD.** `stage-ssd.sh`
+  bundles the helper into `images-arm64.tar` (arm64 only — amd64 hosts
+  run OpenPLC natively), and `stage-ssd-delta.sh` cross-includes it in
+  `delta-arm64.tar`, so a `--from-tarballs` install registers emulation
+  with no network access.
+- **Granular uninstaller image controls.** `--remove-dev-images`
+  (locally-built `rangerdanger-*` images), `--remove-base-images`
+  (shared alpine/nginx/fuxa/webtop — never force-removed, images in use
+  by another container are kept), and `--purge` (release + dev images, a
+  clean slate for redeploy testing). Mirrored in the Windows
+  `uninstall-rangerdanger.ps1`.
+- **`scripts/test-arm-linux-emulation.sh`** — validates the arm64
+  detect → install → run → revert path end to end in a throwaway VM.
+
+### Fixed
+
+- **Multi-arch release pipeline: frontend arm64 build.** The Next.js SWC
+  native binary fails to build under QEMU arm64 emulation
+  (`@next/swc-linux-arm64-gnu: __res_init: symbol not found`), which left
+  the v0.1.19 and v0.1.20 releases as incomplete drafts (no frontend
+  image, empty notes). `release.yml` now builds the frontend per-arch on
+  native runners (`ubuntu-24.04-arm` for arm64) and stitches the manifest
+  list via push-by-digest, removing emulation from that build.
+- **Seg-drawer policy banner** syncs the Active Policy banner with the
+  top-right PolicyBadge, shows a policy-aware empty state for Live DPI
+  Events, and renders implicit-deny rows under the weak baseline.
+- **Lab content** — Lab 1.3 / 1.4 review-pass corrections, plus Lab 1.2
+  curl-scaffolding trim and the enterprise-traffic answer fix.
+
+### Changed
+
+- `frontend/next-env.d.ts` is now gitignored and untracked (Next.js
+  regenerates it; its boilerplate comment churned across versions).
+
 ## [v0.1.20] - 2026-05-30
 
 Workshop-launch release. Bundles the dual-track firewall lab structure
