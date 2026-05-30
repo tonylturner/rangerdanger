@@ -144,3 +144,12 @@ jobs:
             exit 1
           }
           Write-Host "setup.ps1 -CheckOnly reached its Docker engine probe (parses + runs end-to-end)."
+          # Hosted runner state is flaky: sometimes Docker Desktop is
+          # ready and setup.ps1 -CheckOnly exits 0, sometimes it isn't
+          # and setup.ps1 exits 1 from the "Docker is not running" row.
+          # The comment above already says "Exit code is not the gate;
+          # the parse step above is" but $LASTEXITCODE leaked through
+          # to the step's exit, so a runner-state flake failed this PR
+          # check. Resetting + explicit exit 0 makes that promise real.
+          $global:LASTEXITCODE = 0
+          exit 0
