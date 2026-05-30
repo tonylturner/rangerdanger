@@ -374,13 +374,24 @@ while IFS='|' read -r scenario step_idx step_title cfg container action cmd; do
     continue
   fi
 
-  # Apply the step's expected policy if it changed. weak/improved
-  # only — anything else is a no-op (some steps don't pin a config).
+  # Apply the step's expected policy if it changed. The YAML uses
+  # "hardened" as the student-facing alias for the "improved" backend
+  # policy (matching frontend/components/scenario-runner.tsx). Map it
+  # here too, otherwise a step like "Re-test the attack under the
+  # hardened policy" silently inherits the previous step's weak
+  # policy and the re-test commands succeed (running an attack that
+  # was supposed to be blocked) without anyone noticing.
   if [ -n "$cfg" ] && [ "$cfg" != "$current_policy" ]; then
-    if [ "$cfg" = "weak" ] || [ "$cfg" = "improved" ]; then
-      apply_policy "$cfg"
-      current_policy="$cfg"
-    fi
+    case "$cfg" in
+      weak)
+        apply_policy "weak"
+        current_policy="$cfg"
+        ;;
+      improved|hardened)
+        apply_policy "improved"
+        current_policy="$cfg"
+        ;;
+    esac
   fi
 
   # Container missing entirely
