@@ -172,15 +172,40 @@ steps:
       cross-zone traffic. Don't create allow rules yet - get to a
       clean deny-all baseline first.
 
-      :::hint About containd's default action
-      containd's policy has a `defaultAction` field that is
-      already set to **DENY** under the weak baseline — the weak
-      posture is permissive only because broad ALLOW rules sit
-      on top of it. There is no separate "set default to drop"
-      switch to flip; deleting the broad allow rules is what
-      exposes the existing default DENY. You can confirm with
-      `show running-config | grep defaultAction` from
-      `containd cli`.
+      ### Default-deny: the principle vs the mechanism
+
+      "Anything not explicitly allowed is denied" is the bedrock of
+      segmentation. The *principle* is universal; the *mechanism*
+      varies by vendor:
+
+      - **Implicit default-deny** — the policy engine appends a
+        "deny everything not matched" verdict for you. You write
+        only ALLOW rules. Used by **containd** (this lab), Cisco
+        ASA/FTD, Palo Alto, FortiGate, Juniper SRX.
+      - **Explicit default-deny** — nothing is appended. You must
+        configure the chain default to DENY or write a final deny
+        rule yourself. Used by **iptables/nftables** in raw form,
+        Linux bridges/OVS, and (best-practice) Check Point cleanup
+        rules. Forget either and the firewall is silently allow-all.
+
+      The thing to internalize: if you cannot point to *where* the
+      default-deny is — either as documented implicit behavior or as
+      an explicit rule you wrote — assume there is no default-deny.
+      See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
+      on the Knowledge page for the per-vendor breakdown.
+
+      :::hint About containd specifically
+      containd's policy has a top-level `defaultAction` field that
+      is already set to **DENY**, even under the weak baseline.
+      The weak posture is permissive only because broad ALLOW
+      rules sit on top of it. There is no separate "set default
+      to drop" switch to flip in this lab — deleting the broad
+      allow rules is what exposes the existing default DENY. You
+      can confirm with `show running-config | grep defaultAction`
+      from `containd cli`. On a firewall with explicit
+      default-deny (raw iptables, OVS, etc.) this same step would
+      *also* require setting the chain policy or adding a final
+      deny rule — that's the vendor-mechanism difference.
       :::
 
       ### What to do
