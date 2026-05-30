@@ -374,6 +374,40 @@ else
     say "Firewall apply/reset workshop gate passed"
 fi
 
+# ─── OpenPLC readiness (protection-logic lab) ───────────────────────
+# OpenPLC has no healthcheck and no host port (it's an internal Modbus
+# client), and it's the amd64-only image — so on arm64 it only runs once
+# amd64 emulation is registered. Verify the container is actually running
+# rather than crash-looping with "exec format error" (the silent failure
+# mode when emulation is missing). Non-fatal: OpenPLC is isolated (nothing
+# depends on it), so warn loudly with the fix instead of blocking install.
+say "Workshop-readiness: OpenPLC (protection-logic lab)..."
+openplc_ok=0
+for i in $(seq 1 8); do
+    if [ "$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null)" = "running" ]; then
+        openplc_ok=1; break
+    fi
+    sleep 2
+done
+if [ "$openplc_ok" = "1" ]; then
+    say "OpenPLC container is running"
+else
+    # `|| true`: under `set -euo pipefail`, docker inspect failing on a
+    # missing container would otherwise abort setup at this assignment.
+    op_state=$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    [ -n "$op_state" ] || op_state=missing
+    op_rc=$(docker inspect -f '{{.RestartCount}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    [ -n "$op_rc" ] || op_rc="?"
+    warn "OpenPLC is not running (state=$op_state, restarts=$op_rc) — the protection-logic lab won't work."
+    if docker logs rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
+        warn "  Cause: 'exec format error' — amd64 emulation is missing on this arm64 host."
+        warn "  Fix:   docker run --privileged --rm tonistiigi/binfmt --install amd64"
+        warn "         then re-run ./setup.sh (or: docker compose -f docker-compose.release.yml up -d openplc)"
+    else
+        warn "  Check: docker compose -f docker-compose.release.yml logs openplc"
+    fi
+fi
+
 # ─── done ────────────────────────────────────────────────────────────
 banner "RangerDanger is up"
 cat <<EOF
