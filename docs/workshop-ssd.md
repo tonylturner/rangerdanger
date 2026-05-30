@@ -31,7 +31,7 @@ kernel asset:
 | File | What it is | Size |
 |---|---|---|
 | `images-amd64.tar` | All Docker images for Intel/AMD64 hosts, saved together | ~6 GB |
-| `images-arm64.tar` | All Docker images for Apple Silicon hosts (`openplc` is cross-included as the amd64 image and runs under Rosetta 2) | ~6 GB |
+| `images-arm64.tar` | All Docker images for Apple Silicon / arm64 hosts. `openplc` is cross-included as the amd64 image (Rosetta 2 on macOS); also bundles `tonistiigi/binfmt` so arm64 **Linux** hosts can register amd64 emulation offline. | ~6 GB |
 | `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
@@ -293,11 +293,16 @@ tag (e.g. `v0.1.7`) and an unreleased local tag. The script doesn't
 require the new version to be tagged in GHCR — it can save from
 local images.
 
-**Q: Apple Silicon students get OpenPLC errors. Why?**
-`openplc` is built from `tuttas/openplc_v3` which has no arm64
-variant. Apple Silicon hosts run it under Rosetta 2 emulation —
-slower but functional. This is documented in `ROADMAP.md` "Known
-gaps" and not specific to the SSD path.
+**Q: Students get OpenPLC errors on an ARM host. Why?**
+`openplc` is built from `tuttas/openplc_v3`, which has no arm64
+variant, so it needs amd64 emulation. macOS Apple Silicon runs it
+under Rosetta 2 automatically. On **arm64 Linux** (Docker Engine, no
+Rosetta), `setup.sh` registers a `qemu-x86_64` handler via
+`tonistiigi/binfmt` (bundled in `images-arm64.tar`); if OpenPLC still
+errors there, run `docker run --privileged --rm
+tonistiigi/binfmt:qemu-v10.2.1 --install amd64` and re-run `setup.sh`.
+Emulated either way — slower but functional. See `ROADMAP.md` "Known
+gaps".
 
 **Q: Can students share a single SSD?**
 Yes for the load — `docker load` is read-only on the tarball. Eject
