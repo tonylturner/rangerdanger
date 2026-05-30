@@ -172,6 +172,17 @@ steps:
       cross-zone traffic. Don't create allow rules yet - get to a
       clean deny-all baseline first.
 
+      :::hint About containd's default action
+      containd's policy has a `defaultAction` field that is
+      already set to **DENY** under the weak baseline — the weak
+      posture is permissive only because broad ALLOW rules sit
+      on top of it. There is no separate "set default to drop"
+      switch to flip; deleting the broad allow rules is what
+      exposes the existing default DENY. You can confirm with
+      `show running-config | grep defaultAction` from
+      `containd cli`.
+      :::
+
       ### What to do
 
       1. **Review existing rules.** Identify the rules that allow
@@ -181,22 +192,24 @@ steps:
          - Vendor (`dmz`) to Field (`lan2`) on any port
          - "Any-any" rules that permit all traffic between zones
 
-      2. **Set default action to DROP** for cross-zone forwarding.
-         In containd, this is the firewall's `defaultAction` field.
+      2. **Delete those broad-allow rules.** Once they are gone,
+         the policy's `defaultAction: DENY` catches all cross-zone
+         traffic the rules were permitting.
 
       3. **Do NOT remove intra-zone rules.** Traffic within OT Ops
-         (`10.30.30.0/24`) needs to keep flowing - HMI to RTAC,
+         (`10.30.30.0/24`) needs to keep flowing — HMI to RTAC,
          historian to RTAC, and internal NTP. These are intra-zone
          and should not be affected by cross-zone deny rules.
 
       ### Web UI path
 
-      In the policy editor at [http://localhost:9080](http://localhost:9080):
-      delete or disable the broad `enterprise-to-field-weak`,
-      `vendor-to-field-weak`, `vendor-to-ot-weak` rules. Set the
-      policy default action to **drop**. Click **Apply** (or
-      **Commit** if your build uses candidate/running config) to
-      activate.
+      In the policy editor at
+      [http://localhost:9080](http://localhost:9080), delete (or
+      disable) the broad `enterprise-to-field-weak`,
+      `vendor-to-field-weak`, and `vendor-to-ot-weak` rules, then
+      **Commit**. You do *not* need to change a separate "default
+      action" control — the policy default is already DENY and
+      simply takes over once the broad allows are removed.
 
       ### CLI path
 
