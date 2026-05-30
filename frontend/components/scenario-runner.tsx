@@ -685,15 +685,38 @@ function injectDynamicContent(
       ? `You have not completed a remediation plan yet. The rules below are the minimum baseline — RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/remediation-planning) exercise to build a plan that drives additional rules.\n\n`
       : "";
 
-    return `Now create the firewall rules your remediation plan requires. Everything not explicitly allowed stays denied.
+    // Phase 3's generated description has to re-emit the :::guided
+    // / :::technical fork itself because injectDynamicContent
+    // entirely replaces the YAML for this step (the YAML edits
+    // wouldn't survive otherwise). Same intent as the static
+    // forks in 2.3 step 4 / 2.2 step 7 — guided students walk
+    // the table to see what landed; technical students treat the
+    // table as the spec they're authoring against.
+    return `The six rules below are the contract for what cross-zone
+traffic the substation must allow. Everything else stays denied.
 
-${noPlan}### Firewall Rules to Implement
+${noPlan}:::guided
+Click **Apply Hardened** in the side panel to push the canned
+reference, or **Apply Your Plan** to push the policy built from
+your Lab 1.4 picks. Then walk the rule table below and confirm
+each row is present in containd's web UI
+([http://localhost:9080](http://localhost:9080)) or via
+\`show running-config\` in the CLI. Understanding *what* is in
+the policy matters as much as *how* it gets there.
+:::
+
+:::technical
+Author these rules in containd directly — your choice of the web
+UI or the appliance CLI. The banner above will switch to
+"Your custom policy" once your commit lands. The JSON schema and
+CLI walkthrough are in the hints below.
+:::
+
+### Firewall Rules to Implement
 
 ${ruleTable}
 
 > **Critical:** RTAC rules are source-pinned to \`10.30.30.20\`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
-
-Create these rules in the containd firewall. Use either the web UI or the CLI.
 
 :::hint Creating rules via the containd CLI
 The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal (or SSH), type \`containd cli\` to enter the appliance shell, then:
