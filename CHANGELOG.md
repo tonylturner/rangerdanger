@@ -6,6 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-arch lifecycle test harnesses.** `scripts/test-lifecycle.sh`
+  (Linux/macOS) and `scripts/test-lifecycle.ps1` (Windows) run the real
+  `setup` + uninstaller and assert the full setup → execute → teardown
+  lifecycle (stack healthy, OpenPLC running, workshop APIs respond, clean
+  teardown). `scripts/test-arm-linux-emulation.sh` covers the arm64
+  emulation register → run → revert round-trip. `docs/testing-multiarch.md`
+  documents the platform × install-path matrix, the Multipass arm64 recipe,
+  and the Windows procedure. **NOTE:** `test-lifecycle.ps1` has not yet been
+  run on real Windows — validate it there before relying on it.
+
+### Changed
+
+- **CI: all workflow actions moved to Node 24.** Bumped the docker /
+  artifact / codeql actions to their Node-24 majors (build-push v7,
+  login/buildx/qemu v4, metadata v6, upload-artifact v7, download-artifact
+  v8, setup-go v6, codeql v4; trivy left as a composite action), completing
+  the Node-20-removal prep started in v0.1.22. Verified by a green release
+  test-build with zero deprecation warnings — the Sept-2026 Node-20 removal
+  won't break the release pipeline.
+
 ## [v0.1.22] - 2026-05-30
 
 Multi-arch reliability hardening on top of v0.1.21: catches a silent
