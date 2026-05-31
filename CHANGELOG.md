@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.23] - 2026-05-31
+
+Cross-platform lifecycle hardening from a full Windows + Linux/macOS
+testing pass: fixes the WSL2 DPI-kernel install on Windows, surfaces a
+silently-rolled-back hardened policy, makes the workshop reset
+idempotent, pins shell scripts to LF, completes the Node-24 action
+migration, and adds one-command lifecycle test harnesses for every
+platform.
+
 ### Added
 
 - **Multi-arch lifecycle test harnesses.** `scripts/test-lifecycle.sh`
@@ -15,8 +24,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   teardown). `scripts/test-arm-linux-emulation.sh` covers the arm64
   emulation register → run → revert round-trip. `docs/testing-multiarch.md`
   documents the platform × install-path matrix, the Multipass arm64 recipe,
-  and the Windows procedure. **NOTE:** `test-lifecycle.ps1` has not yet been
-  run on real Windows — validate it there before relying on it.
+  and the Windows procedure. Both harnesses were exercised end-to-end on
+  Windows and Linux/macOS during this release's testing pass — which is
+  where the fixes below came from.
 
 ### Changed
 
@@ -43,8 +53,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Backend health-check budget bumped 60 s → 120 s in `setup.ps1`.** A cold
   start after a fresh image pull on Windows / WSL2 routinely takes 60–90 s,
   which tripped the old 60 s budget into a "Backend didn't report healthy"
-  warning even though the readiness gate seconds later passed. (`setup.sh`
-  still carries the same 60 s budget — mirror there if desired.)
+  warning even though the readiness gate seconds later passed. Mirrored to
+  `setup.sh` (same 120 s budget).
 
 ### Fixed
 
@@ -81,6 +91,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it matched the substring `"success":true` against the whole body (which
   embeds per-action `"success":true` entries) and now parses the
   top-level field, the way `test-lifecycle.ps1` already did.
+- **Bash side at parity.** `setup.sh` and `scripts/test-lifecycle.sh` get
+  the same two gate fixes: inspect the `firewall/apply` body for the silent
+  hardened-policy rollback, and parse the top-level `workshop/reset`
+  `success` via `python3` instead of a substring match. (Linux native
+  usually has `nfnetlink_queue`, so the warning is mostly a safety net there.)
 - **Shell scripts pinned to LF for Windows builds.** `.gitattributes` was
   only `* text=auto`, so a Windows checkout (`core.autocrlf=true`) gave
   every `*.sh` CRLF endings. Baked into the Linux sim images, a CRLF
