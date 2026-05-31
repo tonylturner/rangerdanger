@@ -33,6 +33,14 @@ New Line.Recloser  bus1=recloser_bus  bus2=load_bus  phases=3
 New Load.GeneralLoad  bus1=load_bus  phases=3
 ~ kv=12.47  kw=500  pf=0.9  model=1  conn=wye
 
+! ── Switched Capacitor Bank (capbank-sim) ──────────────────────────
+! 300 kVAR shunt cap at the main load bus for reactive (VAR) support.
+! When switched IN it injects VARs: local voltage rises a little, feeder
+! current and source reactive demand drop, power factor improves. Created
+! enabled=no (out) to match capbank-sim's default switched_in=false; the
+! solver Enables/Disables it from capbank.switched_in on every solve.
+New Capacitor.CapBank  bus1=load_bus  phases=3  kv=12.47  kvar=300  enabled=no
+
 ! ── Lateral to Regulator (500 ft, config 602 — 4/0 ACSR) ───────────
 New Line.Lateral_B  bus1=load_bus  bus2=vreg_hi  phases=3
 ~ linecode=602  length=500  units=ft

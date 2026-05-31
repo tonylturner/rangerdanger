@@ -24,11 +24,17 @@ class RegulatorState(BaseModel):
     tap_position: int = 0
 
 
+class CapbankState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    switched_in: bool = False
+
+
 class DeviceStates(BaseModel):
     model_config = ConfigDict(extra="ignore")
     relay: RelayState = RelayState()
     recloser: RecloserState = RecloserState()
     regulator: RegulatorState = RegulatorState()
+    capbank: CapbankState = CapbankState()
 
 
 class ElectricalResponse(BaseModel):
@@ -44,6 +50,7 @@ class ElectricalResponse(BaseModel):
     breaker_closed: bool
     recloser_closed: bool
     regulator_tap: int
+    capbank_switched_in: bool = False
     # Bonus fields from real power flow
     total_losses_kw: float = 0.0
     power_factor: float = 0.0

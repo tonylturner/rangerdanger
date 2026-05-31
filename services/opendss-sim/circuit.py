@@ -42,6 +42,11 @@ LOAD_VARIATION_PCT = 0.03
 GENERAL_LOAD_KW = 500.0
 CRITICAL_LOAD_KW = 200.0
 
+# Switched capacitor bank rating (must match Capacitor.CapBank in the .dss and
+# capbank-sim's kvar_rating). Used to credit the cap's VAR injection in the
+# reported power factor when it's switched in.
+CAPBANK_KVAR = 300.0
+
 
 class FeederSolver:
     """Thread-safe wrapper around the OpenDSS engine for the substation feeder."""
@@ -109,6 +114,7 @@ class FeederSolver:
         recloser_closed: bool,
         tap_position: int,
         fault_seen: bool,
+        capbank_switched_in: bool,
     ) -> dict:
         """Run power flow with given device states and return electrical results."""
         with self._lock:
@@ -139,6 +145,12 @@ class FeederSolver:
             if not recloser_closed:
                 dss.Text.Command("Open Line.Recloser 1")
 
+            # -- Set capacitor bank state --
+            if capbank_switched_in:
+                dss.Text.Command("Enable Capacitor.CapBank")
+            else:
+                dss.Text.Command("Disable Capacitor.CapBank")
+
             # -- Set regulator tap --
             tap_pu = 1.0 + (tap_position * TAP_STEP_PU)
             dss.Text.Command(f"Transformer.VReg.wdg=2 tap={tap_pu:.6f}")
@@ -157,7 +169,8 @@ class FeederSolver:
             dss.Solution.Solve()
 
             return self._extract_results(
-                breaker_closed, recloser_closed, tap_position, fault_seen
+                breaker_closed, recloser_closed, tap_position, fault_seen,
+                capbank_switched_in,
             )
 
     def _extract_results(
@@ -166,12 +179,15 @@ class FeederSolver:
         recloser_closed: bool,
         tap_position: int,
         fault_seen: bool,
+        capbank_switched_in: bool,
     ) -> dict:
         """Extract electrical results from the solved circuit."""
 
         # If breaker is open, everything downstream is dead
         if not breaker_closed:
-            return self._dead_feeder(breaker_closed, recloser_closed, tap_position)
+            return self._dead_feeder(
+                breaker_closed, recloser_closed, tap_position, capbank_switched_in
+            )
 
         # Substation bus voltage (always energized from source)
         sub_v = self._get_bus_voltage_pu("sourcebus") * NOMINAL_V_SECONDARY
@@ -202,13 +218,18 @@ class FeederSolver:
         # Source power
         source_kw = self._get_source_power()
 
-        # Power factor from total load
+        # Power factor from total load, crediting the capacitor bank's VAR
+        # injection when switched in (the cap supplies reactive power locally,
+        # so the source sees less Q and the PF improves). Cap output scales with
+        # voltage^2, so it tapers a little if the bus voltage sags.
         total_kw = gen_kw + crit_kw
         total_kvar = 0.0
         if gen_energized:
             total_kvar += gen_kw * math.tan(math.acos(0.9))
         if crit_energized:
             total_kvar += crit_kw * math.tan(math.acos(0.95))
+        if capbank_switched_in and gen_energized:
+            total_kvar -= CAPBANK_KVAR * (down_v / NOMINAL_V_SECONDARY) ** 2
         if total_kw > 0:
             pf = math.cos(math.atan2(total_kvar, total_kw))
         else:
@@ -232,6 +253,7 @@ class FeederSolver:
             "breaker_closed": breaker_closed,
             "recloser_closed": recloser_closed,
             "regulator_tap": tap_position,
+            "capbank_switched_in": capbank_switched_in,
             "total_losses_kw": round(abs(losses_kw), 1),
             "power_factor": round(pf, 3),
             "source_power_kw": round(source_kw, 1),
@@ -239,7 +261,8 @@ class FeederSolver:
         }
 
     def _dead_feeder(
-        self, breaker_closed: bool, recloser_closed: bool, tap_position: int
+        self, breaker_closed: bool, recloser_closed: bool, tap_position: int,
+        capbank_switched_in: bool = False,
     ) -> dict:
         """Return all-zero state for a de-energized feeder."""
         return {
@@ -255,6 +278,7 @@ class FeederSolver:
             "breaker_closed": breaker_closed,
             "recloser_closed": recloser_closed,
             "regulator_tap": tap_position,
+            "capbank_switched_in": capbank_switched_in,
             "total_losses_kw": 0.0,
             "power_factor": 0.0,
             "source_power_kw": 0.0,

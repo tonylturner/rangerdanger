@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
         recloser_closed=True,
         tap_position=0,
         fault_seen=False,
+        capbank_switched_in=False,
     )
     logger.info("OpenDSS physics engine ready")
     yield
@@ -59,6 +60,7 @@ def update_state(devices: DeviceStates) -> JSONResponse:
         recloser_closed=devices.recloser.closed,
         tap_position=devices.regulator.tap_position,
         fault_seen=devices.recloser.fault_seen,
+        capbank_switched_in=devices.capbank.switched_in,
     )
 
     _latest_state = result
