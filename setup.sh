@@ -330,16 +330,20 @@ say "Containers started"
 
 # ─── health smoke check ─────────────────────────────────────────────
 banner "Health check"
-say "Waiting for the backend to come up (up to 60 s)..."
+say "Waiting for the backend to come up (up to 120 s)..."
 HEALTH_URL="http://localhost:8088/api/health"
-ATTEMPTS=30
+# ~2 s per iteration; 60 iterations = ~120 s. A cold start after a fresh
+# image pull can take 60-90 s, which tripped the old 30-iteration (60 s)
+# budget into a scary "didn't report healthy" warning even though the
+# readiness gate right below then passed. Mirrors setup.ps1.
+ATTEMPTS=60
 for i in $(seq 1 $ATTEMPTS); do
     if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
         say "Backend reports healthy at $HEALTH_URL"
         break
     fi
     sleep 2
-    [ $i -eq $ATTEMPTS ] && warn "Backend didn't report healthy in 60 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
+    [ $i -eq $ATTEMPTS ] && warn "Backend didn't report healthy in 120 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
 done
 
 # Workshop-critical surfaces. /api/health alone returned green in past
