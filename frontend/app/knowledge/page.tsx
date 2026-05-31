@@ -244,7 +244,7 @@ The switch-count lockout is a protective feature, but an attacker who understand
 
 ### Relevance to This Lab
 
-The RangerDanger lab does not include a dedicated capacitor bank simulator, but the concepts apply directly to the voltage regulator and recloser. The same Modbus and DNP3 protocols control capacitor bank switches. The same segmentation principle applies: restrict direct field device access to the RTAC only. Understanding capacitor bank operations rounds out your knowledge of feeder voltage and power quality management devices.`,
+RangerDanger includes a dedicated capacitor bank simulator (**capbank-sim**, a 300 kVAR switched bank on the field network at 10.40.40.23). It appears in the substation HMI: the One-Line shows its switched-in/out state, **Supervisory Control** lets you Switch In / Switch Out and toggle Auto/Manual — the same Modbus and DNP3 paths an attacker would use, restricted by the containd firewall to the RTAC — and **Electrical Detail** shows its full status. Because the bank is wired into the OpenDSS power flow, switching it in raises the local voltage, drops feeder current, and corrects the power factor; switching it out reverses that. The switch-count lockout is a real protective feature an attacker can deliberately trip to disable the bank, exactly as described above. The same segmentation principle as the other field devices applies: restrict direct field-device access to the RTAC only.`,
       },
       {
         id: "substation-physics",
