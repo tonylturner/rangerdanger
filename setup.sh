@@ -357,18 +357,48 @@ else
         warn "  /api/firewall/health failed — containd management interface is down"
         fw_fail=1
     fi
+    dpi_degraded=0
     for cfg in weak improved; do
-        if ! curl -fsS -X POST -H 'Content-Type: application/json' \
+        # Capture the body, don't discard it. A 200 with warnings means containd
+        # committed the policy but the kernel rejected part of the ruleset; nft
+        # is atomic, so the WHOLE hardened ruleset rolls back while apply still
+        # returns 200 — so a gate that pipes to /dev/null passes green while
+        # segmentation silently does NOT enforce (the DPI "queue num" rules need
+        # nfnetlink_queue / CONFIG_NFT_QUEUE in the host kernel). Mirrors setup.ps1.
+        apply_resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \
                 -d "{\"config\":\"$cfg\"}" \
-                http://localhost:8088/api/firewall/apply >/dev/null 2>&1; then
+                http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
+        if [ -z "$apply_resp" ]; then
             warn "  /api/firewall/apply ($cfg) failed — Lab 2.2/2.3/2.3-bonus/2.4 will not work"
             fw_fail=1
+        elif [ "$cfg" = "improved" ] && echo "$apply_resp" | grep -qE 'nft apply failed|queue num|NFT_QUEUE'; then
+            dpi_degraded=1
         fi
     done
     reset_resp=$(curl -fsS -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
-    if ! echo "$reset_resp" | grep -q '"success":true'; then
+    # Read the TOP-LEVEL "success", not a substring: the response embeds a
+    # per-action array whose entries each carry their own "success":true, so a
+    # naive grep false-passes even when the overall reset failed. Parse with
+    # python3 (present on the workshop hosts); fall back to the grep otherwise.
+    if command -v python3 >/dev/null 2>&1; then
+        reset_ok=$(echo "$reset_resp" | python3 -c 'import json,sys
+try: sys.stdout.write("1" if json.load(sys.stdin).get("success") is True else "0")
+except Exception: sys.stdout.write("0")' 2>/dev/null)
+    elif echo "$reset_resp" | grep -q '"success":true'; then reset_ok=1; else reset_ok=0; fi
+    if [ "$reset_ok" != "1" ]; then
         warn "  /api/workshop/reset reported non-success — students hitting Reset Lab will see partial state"
         fw_fail=1
+    fi
+    if [ "$dpi_degraded" = "1" ]; then
+        warn "------------------------------------------------------------"
+        warn "Hardened policy applied WITH WARNINGS — ICS DPI / segmentation"
+        warn "is NOT enforcing. Labs 2.3 / 2.3-bonus and the hardened L4 rules"
+        warn "will silently fail to block the attacks they teach."
+        warn "Cause: the host kernel rejected the DPI 'queue num' ruleset"
+        warn "(nfnetlink_queue / CONFIG_NFT_QUEUE missing). On Linux native:"
+        warn "    sudo modprobe nfnetlink_queue   # then re-run ./setup.sh"
+        warn "Most distro kernels ship it; Docker Desktop VMs have it built in."
+        warn "------------------------------------------------------------"
     fi
     if [ "$fw_fail" -eq 1 ]; then
         die "Workshop-readiness gate failed. Common causes:

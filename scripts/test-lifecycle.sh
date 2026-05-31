@@ -102,17 +102,29 @@ assert_up() {
 assert_execute() {
     phase "Assert workshop-critical execution"
     local cfg ok_all=1
+    local apply_resp
     for cfg in weak improved; do
-        if curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
-            -d "{\"config\":\"$cfg\"}" http://localhost:8088/api/firewall/apply >/dev/null 2>&1; then
-            ok "firewall apply ($cfg)"
-        else
+        # Capture the body: a 200 with warnings on 'improved' means the kernel
+        # rejected the DPI ruleset and the hardened policy silently rolled back.
+        apply_resp=$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
+            -d "{\"config\":\"$cfg\"}" http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
+        if [ -z "$apply_resp" ]; then
             no "firewall apply ($cfg) — Lab 2.2/2.3/2.4 would not work"; ok_all=0
+        elif [ "$cfg" = "improved" ] && echo "$apply_resp" | grep -qE 'nft apply failed|queue num|NFT_QUEUE'; then
+            no "firewall apply (improved) returned warnings — hardened policy NOT enforcing (host kernel missing nfnetlink_queue/CONFIG_NFT_QUEUE)"; ok_all=0
+        else
+            ok "firewall apply ($cfg)"
         fi
     done
-    local resp
+    # Top-level success, not a substring (per-action entries each carry their own).
+    local resp reset_ok=0
     resp=$(curl -fsS --max-time 15 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null || true)
-    if echo "$resp" | grep -q '"success":true'; then ok "workshop reset"; else no "workshop reset (got: ${resp:-<none>})"; fi
+    if command -v python3 >/dev/null 2>&1; then
+        reset_ok=$(echo "$resp" | python3 -c 'import json,sys
+try: sys.stdout.write("1" if json.load(sys.stdin).get("success") is True else "0")
+except Exception: sys.stdout.write("0")' 2>/dev/null)
+    elif echo "$resp" | grep -q '"success":true'; then reset_ok=1; fi
+    if [ "$reset_ok" = "1" ]; then ok "workshop reset"; else no "workshop reset top-level success != true (got: ${resp:-<none>})"; fi
 }
 
 assert_teardown() {
