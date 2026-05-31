@@ -165,19 +165,29 @@ func TestHandleCommand_SetThresholds(t *testing.T) {
 
 // ── /api/command — guard rails ──────────────────────────────────────
 
-func TestHandleCommand_RejectsDoubleSwitchIn(t *testing.T) {
+func TestHandleCommand_DoubleSwitchInIsIdempotent(t *testing.T) {
 	resetState(t)
 	state.mu.Lock()
 	state.SwitchedIn = true // pre-switched
+	preCount := state.SwitchCount
 	state.mu.Unlock()
 
 	rec, body := invoke(t, handleCommand, "POST", "/api/command",
 		shared.CommandRequest{Command: "switch_in"})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (semantic reject still 200)", rec.Code)
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if body["result"] != "rejected" {
-		t.Errorf("result = %v, want rejected", body["result"])
+	// Already in the commanded position: an idempotent no-op success, not a
+	// rejection — so the workshop reset (which energizes the bank) doesn't fail
+	// the whole Reset Lab when the bank is already in.
+	if body["result"] != "executed" {
+		t.Errorf("result = %v, want executed (idempotent no-op)", body["result"])
+	}
+	state.mu.Lock()
+	postCount := state.SwitchCount
+	state.mu.Unlock()
+	if postCount != preCount {
+		t.Errorf("switch_count = %d, want %d (no physical switch on a no-op)", postCount, preCount)
 	}
 }
 
