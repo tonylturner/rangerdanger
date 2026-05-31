@@ -110,6 +110,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.10
+    restart: unless-stopped
     # backend gates on rtac_sim being ready so /api/substation/state
     # works on first request - avoids a 5xx burst while sims warm up.
     depends_on:
@@ -130,6 +131,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.11
+    restart: unless-stopped
 
   proxy:
     image: nginx:1.27-alpine
@@ -148,6 +150,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.3
+    restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────
   # Zone 1: Enterprise Zone

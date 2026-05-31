@@ -87,6 +87,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.10
+    restart: unless-stopped
     depends_on:
       firewall:
         condition: service_started
@@ -104,6 +105,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.11
+    restart: unless-stopped
 
   proxy:
     image: nginx:1.27-alpine
@@ -119,6 +121,7 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.3
+    restart: unless-stopped
 
   corp_ws:
     image: linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
