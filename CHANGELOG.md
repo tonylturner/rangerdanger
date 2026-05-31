@@ -28,6 +28,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   test-build with zero deprecation warnings — the Sept-2026 Node-20 removal
   won't break the release pipeline.
 
+### Fixed
+
+- **Web/management tier now survives a WSL2 / Docker restart.**
+  `backend`, `frontend`, and `proxy` were the only 3 of 19 compose
+  services without a restart policy, so any Docker/WSL2 VM bounce (a
+  Windows reboot, a Docker Desktop update, or `setup.ps1`'s own
+  `wsl --shutdown` for the DPI kernel) left the `restart: unless-stopped`
+  sims + firewall self-healing while the entire web tier stayed
+  `Exited(255)` — a running-but-headless stack with no portal or API at
+  `:8088`, and nothing flagging it. Added `restart: unless-stopped` to all
+  three in `docker-compose.release.yml` and `docker-compose.yml`.
+  Cross-platform safe; verified on Windows by a real `wsl --shutdown`
+  after which all 19 services (web tier included) auto-recovered.
+- **Silent hardened-policy failure now surfaces loudly.** When the WSL2
+  kernel lacks `CONFIG_NFT_QUEUE`, the hardened policy's `queue num` DPI
+  rules fail to load and — nft being atomic — the whole hardened ruleset
+  rolls back, yet `POST /api/firewall/apply` still returns HTTP 200 with a
+  `warnings` array. `setup.ps1`'s workshop-readiness gate piped that
+  response to `Out-Null`, so the install passed green while segmentation
+  silently did not enforce (`kali → rtac:502` still reachable under the
+  "applied" hardened policy). The gate now inspects the improved-apply
+  body and prints an unmissable warning with the exact fix
+  (`install-wsl-kernel.ps1`); `scripts/test-lifecycle.ps1` likewise fails
+  its execute assertion instead of green-lighting it.
+
 ## [v0.1.22] - 2026-05-30
 
 Multi-arch reliability hardening on top of v0.1.21: catches a silent

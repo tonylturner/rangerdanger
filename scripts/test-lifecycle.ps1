@@ -100,9 +100,20 @@ function AssertExecute {
     Phase "Assert workshop-critical execution"
     foreach ($cfg in 'weak','improved') {
         try {
-            Invoke-RestMethod -Method Post -Uri "http://localhost:8088/api/firewall/apply" `
-                -ContentType 'application/json' -Body "{`"config`":`"$cfg`"}" -TimeoutSec 15 -ErrorAction Stop | Out-Null
-            Ok "firewall apply ($cfg)"
+            $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8088/api/firewall/apply" `
+                -ContentType 'application/json' -Body "{`"config`":`"$cfg`"}" -TimeoutSec 15 -ErrorAction Stop
+            # A 200 carrying warnings = containd committed the policy but the
+            # kernel rejected the ruleset. On Windows this is the missing
+            # CONFIG_NFT_QUEUE case: the "queue num" DPI rules fail and, nft
+            # being atomic, the whole hardened ruleset rolls back. The apply
+            # still returns 200, so without inspecting the body the harness
+            # would green-light a stack where the hardened policy silently does
+            # not enforce. Fail loudly with the fix instead.
+            if ($cfg -eq 'improved' -and $r.warnings) {
+                Bad "firewall apply (improved) returned warnings - hardened policy NOT enforcing (missing CONFIG_NFT_QUEUE; run .\scripts\install-wsl-kernel.ps1)"
+            } else {
+                Ok "firewall apply ($cfg)"
+            }
         } catch { Bad "firewall apply ($cfg) - Lab 2.2/2.3/2.4 would not work" }
     }
     try {
