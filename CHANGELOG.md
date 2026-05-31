@@ -52,6 +52,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   body and prints an unmissable warning with the exact fix
   (`install-wsl-kernel.ps1`); `scripts/test-lifecycle.ps1` likewise fails
   its execute assertion instead of green-lighting it.
+- **Workshop reset is idempotent again.** `POST /api/workshop/reset`
+  reported overall `success:false` on an already-clean stack: the
+  capbank `switch_in` was the only non-idempotent reset command, returning
+  `rejected` / "already switched in" when the bank was already energized
+  (the default reset state), which the reset ANDed into an overall
+  failure. The capbank sim now reports an idempotent no-op success when
+  already in (switch count unchanged), matching every other reset command.
+  `setup.ps1`'s readiness gate also stopped masking real reset failures —
+  it matched the substring `"success":true` against the whole body (which
+  embeds per-action `"success":true` entries) and now parses the
+  top-level field, the way `test-lifecycle.ps1` already did.
+- **Shell scripts pinned to LF for Windows builds.** `.gitattributes` was
+  only `* text=auto`, so a Windows checkout (`core.autocrlf=true`) gave
+  every `*.sh` CRLF endings. Baked into the Linux sim images, a CRLF
+  shebang makes the kernel look for `/bin/sh\r` and the container dies
+  with `set-gateway.sh: not found`, crash-looping — breaking
+  `docker compose build` and `scripts/smoke-test.ps1` on Windows (the GHCR
+  images are unaffected; CI builds them on Linux). Added `*.sh text eol=lf`.
+  Existing Windows working copies need a one-time `git rm --cached -r . &&
+  git reset --hard` (or re-clone) to pick up LF endings.
 
 ## [v0.1.22] - 2026-05-30
 
