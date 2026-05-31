@@ -241,6 +241,7 @@ export type SubstationState = {
     relay?: Record<string, number | boolean | string>;
     recloser?: Record<string, number | boolean | string>;
     regulator?: Record<string, number | boolean | string>;
+    capbank?: Record<string, number | boolean | string>;
   };
   electrical: {
     substation_bus_voltage_kv?: number;
@@ -255,6 +256,7 @@ export type SubstationState = {
     breaker_closed?: boolean;
     recloser_closed?: boolean;
     regulator_tap?: number;
+    capbank_switched_in?: boolean;
     // OpenDSS power flow fields
     total_losses_kw?: number;
     power_factor?: number;

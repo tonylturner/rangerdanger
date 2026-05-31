@@ -43,6 +43,7 @@ export function SubstationPanel() {
   const relay = state?.devices?.relay;
   const recloser = state?.devices?.recloser;
   const regulator = state?.devices?.regulator;
+  const capbank = state?.devices?.capbank;
 
   const execCmd = async (device: string, command: string, value?: number) => {
     try {
@@ -81,7 +82,7 @@ export function SubstationPanel() {
 
       <div className="p-4">
         {tab === "diagram" && (
-          <OneLine elec={elec} relay={relay} recloser={recloser} regulator={regulator} />
+          <OneLine elec={elec} relay={relay} recloser={recloser} regulator={regulator} capbank={capbank} />
         )}
         {tab === "commands" && (
           <CommandPanel
@@ -99,6 +100,7 @@ export function SubstationPanel() {
             relay={relay}
             recloser={recloser}
             regulator={regulator}
+            capbank={capbank}
             audit={audit}
           />
         )}
@@ -114,17 +116,20 @@ function OneLine({
   relay,
   recloser,
   regulator,
+  capbank,
 }: {
   elec?: SubstationState["electrical"];
   relay?: Record<string, number | boolean | string>;
   recloser?: Record<string, number | boolean | string>;
   regulator?: Record<string, number | boolean | string>;
+  capbank?: Record<string, number | boolean | string>;
 }) {
   const bkrClosed = elec?.breaker_closed ?? false;
   const rclClosed = elec?.recloser_closed ?? false;
   const tap = elec?.regulator_tap ?? 0;
   const genEnergized = elec?.general_load_energized ?? false;
   const critEnergized = elec?.critical_load_energized ?? false;
+  const capIn = Boolean(capbank?.switched_in ?? elec?.capbank_switched_in);
 
   const lowVoltage = (elec?.critical_load_voltage_v ?? 120) < 114;
   const highVoltage = (elec?.critical_load_voltage_v ?? 120) > 126;
@@ -206,6 +211,20 @@ function OneLine({
                 <span className={`font-bold text-xs ${genEnergized ? "text-green-400" : "text-red-400"}`}>
                   {genEnergized ? `${elec?.general_load_kw ?? 0} kW` : "NO POWER"}
                 </span>
+              </div>
+
+              {/* Capacitor Bank — shunt at the load bus (reactive support) */}
+              <div className="flex items-center gap-2 py-1 text-[11px]">
+                <span className="rounded border border-purple-800/60 bg-purple-950/20 px-1.5 py-0.5 font-bold text-[10px] text-purple-400">
+                  CAP
+                </span>
+                <span className="text-slate-400">Capacitor Bank</span>
+                <span className={`font-bold ${capIn ? "text-green-400" : "text-slate-500"}`}>
+                  {capIn ? "SWITCHED IN" : "OUT"}
+                </span>
+                {capIn && <span className="text-purple-400/80">+{Number(capbank?.kvar_rating ?? 300)} kVAR</span>}
+                <span className="text-slate-600">{capbank?.auto_mode ? "AUTO" : "MANUAL"}</span>
+                {capbank?.lockout ? <StatusBadge color="red">LOCKED OUT</StatusBadge> : null}
               </div>
 
               {/* Critical load with regulator */}
@@ -367,6 +386,15 @@ function CommandPanel({
           <CmdButton label="Manual Mode" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
           <CmdButton label="Auto Mode" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
         </DeviceGroup>
+
+        <DeviceGroup title="Capacitor Bank" subtitle="10.40.40.23">
+          <CmdButton label="Switch In" onClick={() => execCmd("capbank", "switch_in")} variant="success" />
+          <CmdButton label="Switch Out" onClick={() => execCmd("capbank", "switch_out")} variant="danger" />
+          <div className="w-full border-t border-slate-800/50 my-0.5" />
+          <CmdButton label="Manual Mode" onClick={() => execCmd("capbank", "set_manual")} variant="warning" />
+          <CmdButton label="Auto Mode" onClick={() => execCmd("capbank", "set_auto")} variant="success" />
+          <CmdButton label="Reset Lockout" onClick={() => execCmd("capbank", "reset_lockout")} />
+        </DeviceGroup>
       </div>
 
       <div className="text-[10px] text-slate-600">
@@ -520,12 +548,14 @@ function ElectricalDetailView({
   relay,
   recloser,
   regulator,
+  capbank,
   audit,
 }: {
   elec?: SubstationState["electrical"];
   relay?: Record<string, number | boolean | string>;
   recloser?: Record<string, number | boolean | string>;
   regulator?: Record<string, number | boolean | string>;
+  capbank?: Record<string, number | boolean | string>;
   audit: AuditEntry[];
 }) {
   const nomKV = 12.47;
@@ -560,6 +590,11 @@ function ElectricalDetailView({
   const rclFault = recloser?.fault_seen ?? false;
   const regManual = regulator?.manual_mode ?? false;
   const regSetpoint = Number(regulator?.voltage_setpoint_v ?? 120);
+  const capIn = Boolean(capbank?.switched_in ?? elec?.capbank_switched_in);
+  const capAuto = Boolean(capbank?.auto_mode);
+  const capLockout = Boolean(capbank?.lockout);
+  const capKvar = Number(capbank?.kvar_rating ?? 300);
+  const capSwitchCount = Number(capbank?.switch_count ?? 0);
   const faultCurrentA = elec?.fault_current_a ?? 0;
   const faultActive = faultCurrentA > 0 || !!relayFault || !!rclFault;
 
@@ -746,6 +781,21 @@ function ElectricalDetailView({
                   { label: "Target", value: `${(regSetpoint / nomV).toFixed(3)} pu (${regSetpoint}V)` },
                   { label: "Controlled Bus", value: "Critical Load Branch" },
                   { label: "Last Command", value: String(regulator?.last_command_source || "—"), mono: true },
+                ]}
+              />
+
+              {/* Capacitor Bank */}
+              <DeviceDetail
+                ansi="CAP"
+                name="Capacitor Bank"
+                ip="10.40.40.23"
+                fields={[
+                  { label: "State", value: capIn ? "Switched In" : "Switched Out", ok: capIn },
+                  { label: "Mode", value: capAuto ? "Auto" : "Manual", warn: !capAuto },
+                  { label: "Rating", value: `${capKvar} kVAR` },
+                  { label: "Switch Ops", value: `${capSwitchCount} / 6`, ok: capSwitchCount < 5, warn: capSwitchCount >= 5 && !capLockout },
+                  { label: "Lockout", value: capLockout ? "Active" : "No", ok: !capLockout, warn: capLockout },
+                  { label: "Last Command", value: String(capbank?.last_command_source || "—"), mono: true },
                 ]}
               />
             </div>
