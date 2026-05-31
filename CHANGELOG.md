@@ -40,6 +40,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   passes `-Yes`: a single `.\setup.ps1` installs the kernel and brings the
   stack up with nothing to babysit. The installer still prints its
   `About to: … wsl --shutdown` banner; `-SkipKernelFix` skips the kernel.
+- **Backend health-check budget bumped 60 s → 120 s in `setup.ps1`.** A cold
+  start after a fresh image pull on Windows / WSL2 routinely takes 60–90 s,
+  which tripped the old 60 s budget into a "Backend didn't report healthy"
+  warning even though the readiness gate seconds later passed. (`setup.sh`
+  still carries the same 60 s budget — mirror there if desired.)
 
 ### Fixed
 

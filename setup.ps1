@@ -351,10 +351,15 @@ Say "Containers started"
 
 # --- health smoke check ---------------------------------------------
 Banner "Health check"
-Say "Waiting for the backend to come up (up to 60 s)..."
+Say "Waiting for the backend to come up (up to 120 s)..."
 $healthUrl = "http://localhost:8088/api/health"
 $ok = $false
-for ($i = 0; $i -lt 30; $i++) {
+# ~2 s per iteration (Start-Sleep 2 on a refused connection); 60 iterations
+# gives a 120 s budget. Cold-start after a fresh image pull on Windows /
+# WSL2 routinely takes 60-90 s, which tripped the old 30-iteration (60 s)
+# budget into a scary "didn't report healthy" warning even though the
+# readiness gate right below then passed.
+for ($i = 0; $i -lt 60; $i++) {
     try {
         $r = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         if ($r.StatusCode -eq 200) { $ok = $true; break }
@@ -363,7 +368,7 @@ for ($i = 0; $i -lt 30; $i++) {
 if ($ok) {
     Say "Backend reports healthy at $healthUrl"
 } else {
-    Warn "Backend didn't report healthy in 60 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
+    Warn "Backend didn't report healthy in 120 s. Check 'docker compose -f docker-compose.release.yml logs backend'."
 }
 
 # Workshop-critical surfaces. /api/health alone returned green in past
