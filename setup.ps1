@@ -363,6 +363,7 @@ if ($SkipFirewallGate) {
 } else {
     Say "Workshop-readiness gate: firewall health + apply + reset..."
     $fwFail = $false
+    $dpiDegraded = $false
     try {
         Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop | Out-Null
     } catch {
@@ -372,7 +373,17 @@ if ($SkipFirewallGate) {
     foreach ($cfg in @("weak", "improved")) {
         try {
             $body = @{ config = $cfg } | ConvertTo-Json -Compress
-            Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop | Out-Null
+            $applyResp = Invoke-WebRequest -Uri "http://localhost:8088/api/firewall/apply" -Method POST -ContentType "application/json" -Body $body -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            # A 200 with warnings means containd committed the policy but the
+            # kernel rejected part of the ruleset. On Windows/WSL2 this is the
+            # CONFIG_NFT_QUEUE-missing case: the "queue num" DPI rules fail and,
+            # nft being atomic, the WHOLE hardened ruleset rolls back -- yet the
+            # apply still returns 200, so a gate that pipes the body to Out-Null
+            # passes green while segmentation silently does not enforce. Inspect
+            # the body instead of swallowing it.
+            if ($cfg -eq "improved" -and $applyResp.Content -match 'nft apply failed|queue num|NFT_QUEUE') {
+                $dpiDegraded = $true
+            }
         } catch {
             Warn "  /api/firewall/apply ($cfg) failed -- Lab 2.2/2.3/2.3-bonus/2.4 will not work"
             $fwFail = $true
@@ -387,6 +398,23 @@ if ($SkipFirewallGate) {
     } catch {
         Warn "  /api/workshop/reset failed: $_"
         $fwFail = $true
+    }
+    # Loud guard for the silent hardened-policy failure. Every call above can
+    # return HTTP 200 while the hardened policy does not actually engage,
+    # because a kernel missing CONFIG_NFT_QUEUE makes nft reject the ruleset.
+    # Surface it unmissably with the exact fix rather than leaving the student
+    # on a stack where applying the hardened policy is a silent no-op. Non-fatal
+    # (a -SkipKernelFix user opted into L4-only), but impossible to miss.
+    if ($dpiDegraded) {
+        Warn "------------------------------------------------------------"
+        Warn "Hardened policy applied WITH WARNINGS -- ICS DPI / segmentation"
+        Warn "is NOT enforcing. Labs 2.3 / 2.3-bonus and the hardened L4 rules"
+        Warn "will silently fail to block the attacks they teach."
+        Warn "Cause (on Windows): the WSL2 kernel is missing CONFIG_NFT_QUEUE."
+        Warn "Fix (downloads + sha256-verifies the prebuilt kernel, ~3 min):"
+        Warn "    .\scripts\install-wsl-kernel.ps1"
+        Warn "Verify:  .\scripts\firewall-smoke.ps1   (expect 52/52)"
+        Warn "------------------------------------------------------------"
     }
     if ($fwFail) {
         Die @"
