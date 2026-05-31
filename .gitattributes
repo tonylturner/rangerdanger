@@ -1,2 +1,11 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts are executed INSIDE Linux containers -- the field-device
+# sims run `sh -c "set-gateway.sh && <sim>"`, setup.sh drives the stack, etc.
+# On a Windows checkout with core.autocrlf=true these would come out CRLF,
+# and a CRLF in a shebang makes the Linux kernel look for `/bin/sh\r`: the
+# container then dies with `set-gateway.sh: not found` and crash-loops, which
+# breaks `docker compose build` and scripts/smoke-test.ps1 on Windows.
+# Pin them to LF so a Windows build produces working images.
+*.sh text eol=lf
