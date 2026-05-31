@@ -27,6 +27,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the Node-20-removal prep started in v0.1.22. Verified by a green release
   test-build with zero deprecation warnings — the Sept-2026 Node-20 removal
   won't break the release pipeline.
+- **`setup.ps1` can now actually install the WSL2 DPI kernel.** Two problems,
+  both Windows-only: (1) setup splatted the installer args as a PowerShell
+  **array** (`@("-ReleaseTag","latest")`), which mis-binds — `-ReleaseTag`
+  landed positionally in the installer's `$KernelPath`, so it died with
+  `-KernelPath does not exist: -ReleaseTag` and the kernel never installed
+  (the online *and* `-FromTarballs` paths both hit this; it surfaced only when
+  the kernel was actually missing). Switched to a **hashtable** splat, which
+  binds by name. (2) setup didn't forward consent, so even once binding
+  worked it blocked on the installer's `[y/N]` prompt (`-CheckOnly` only
+  warns, never installs). Running setup is already the go-ahead, so it now
+  passes `-Yes`: a single `.\setup.ps1` installs the kernel and brings the
+  stack up with nothing to babysit. The installer still prints its
+  `About to: … wsl --shutdown` banner; `-SkipKernelFix` skips the kernel.
 
 ### Fixed
 

@@ -223,16 +223,22 @@ if ($CheckOnly) {
 # we download from the release matching $Version.
 if ($kernelNeedsFix -and -not $SkipKernelFix) {
     Banner "Installing WSL2 kernel"
-    $installerArgs = @()
+    # Splat as a HASHTABLE, not an array. PowerShell array-splatting does not
+    # reliably bind "-Name value" pairs to a called script's parameters: e.g.
+    # @("-ReleaseTag","latest") binds the literal "-ReleaseTag" positionally
+    # into the first string param ($KernelPath), so install-wsl-kernel.ps1 died
+    # with `-KernelPath does not exist: -ReleaseTag` and the kernel never
+    # installed -- the online AND -FromTarballs paths both hit this. A
+    # hashtable binds by name every time.
+    $installerArgs = @{}
     if ($FromTarballs) {
         $bundledKernel = Join-Path $FromTarballs "rangerdanger-wsl2-kernel"
         if (Test-Path $bundledKernel) {
-            $installerArgs += @("-KernelPath", $bundledKernel)
+            $installerArgs['KernelPath'] = $bundledKernel
             $bundledSha = Join-Path $FromTarballs "rangerdanger-wsl2-kernel.sha256"
             if (Test-Path $bundledSha) {
                 $shaContent = (Get-Content $bundledSha -Raw)
-                $shaHex = ($shaContent -split '\s+', 2)[0].Trim()
-                $installerArgs += @("-ExpectedSha256", $shaHex)
+                $installerArgs['ExpectedSha256'] = ($shaContent -split '\s+', 2)[0].Trim()
             }
             Say "Using bundled kernel from tarball: $bundledKernel"
         } else {
@@ -241,10 +247,17 @@ if ($kernelNeedsFix -and -not $SkipKernelFix) {
             Warn " See wsl-kernel/README.md.)"
         }
     }
-    if (-not ($installerArgs -contains '-KernelPath')) {
-        $tag = if ($Version -eq 'latest') { 'latest' } else { $Version }
-        $installerArgs += @("-ReleaseTag", $tag)
+    if (-not $installerArgs.ContainsKey('KernelPath')) {
+        $installerArgs['ReleaseTag'] = if ($Version -eq 'latest') { 'latest' } else { $Version }
     }
+    # Install unattended. Running setup.ps1 is already the user's go-ahead to
+    # bring the lab up, and the kernel step is required for the DPI labs, so
+    # forward -Yes rather than blocking on the installer's [y/N] prompt -- a
+    # single `.\setup.ps1` shouldn't need a second command or a babysat prompt
+    # to finish. The installer still prints its "About to: ... wsl --shutdown"
+    # banner first, so the brief Docker restart isn't a surprise. Pass
+    # -SkipKernelFix to skip the kernel entirely.
+    $installerArgs['Yes'] = $true
     & $kernelInstaller @installerArgs
     switch ($LASTEXITCODE) {
         0  { Say "WSL2 kernel installed; continuing with image acquisition." }
