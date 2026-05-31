@@ -84,8 +84,16 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 			entry.Result = "rejected"
 			entry.Detail = "capbank in lockout — reset required"
 		} else if state.SwitchedIn {
-			entry.Result = "rejected"
-			entry.Detail = "already switched in"
+			// Already in the commanded position. Report an idempotent
+			// success (no physical switch, so switch count is unchanged)
+			// rather than a rejection: a redundant "switch in" has already
+			// reached its goal state. This keeps the workshop reset (which
+			// energizes the bank to restore default state) from reporting
+			// overall failure whenever the bank is already in -- the common
+			// case on a freshly reset stack, where every other reset command
+			// is idempotent but this one used to fail the whole Reset Lab.
+			entry.Result = "executed"
+			entry.Detail = "already switched in (no-op)"
 		} else {
 			state.SwitchedIn = true
 			state.SwitchCount++

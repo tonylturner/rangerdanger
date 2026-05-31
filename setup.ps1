@@ -391,7 +391,14 @@ if ($SkipFirewallGate) {
     }
     try {
         $resetResp = Invoke-WebRequest -Uri "http://localhost:8088/api/workshop/reset" -Method POST -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
-        if ($resetResp.Content -notmatch '"success":true') {
+        # Check the TOP-LEVEL success, not a substring. The response embeds a
+        # per-action array whose entries each carry their own "success":true,
+        # so a naive -match '"success":true' false-passes even when the overall
+        # reset failed (a sim sub-command returned success:false). Parse and
+        # read the top-level field, matching test-lifecycle.ps1.
+        $resetOk = $false
+        try { $resetOk = ((($resetResp.Content | ConvertFrom-Json).success) -eq $true) } catch { $resetOk = $false }
+        if (-not $resetOk) {
             Warn "  /api/workshop/reset reported non-success -- students hitting Reset Lab will see partial state"
             $fwFail = $true
         }
