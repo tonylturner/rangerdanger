@@ -460,6 +460,29 @@ export async function applyCustomFirewallConfig(configJson: object) {
   });
 }
 
+export type ValidationReport = {
+  markdown: string;
+  summary: {
+    authorized_pass: number;
+    authorized_total: number;
+    unauthorized_pass: number;
+    unauthorized_total: number;
+    result: string;
+  };
+  active_config: string;
+  policy_source: string;
+  pcap_path: string;
+};
+
+// runValidationReport runs the positive/negative segmentation test matrix
+// against the CURRENTLY ACTIVE policy and returns a markdown report +
+// summary. Backs Lab 2.4's "Generate Validation Report" button.
+export async function runValidationReport(): Promise<ValidationReport> {
+  return request<ValidationReport>("/firewall/validation-report", {
+    method: "POST",
+  });
+}
+
 export type StepActionResult = {
   action: string;
   success: boolean;

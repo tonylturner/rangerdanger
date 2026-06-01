@@ -84,6 +84,13 @@ const TECHNICAL_OPEN_RE = /^:::technical$/;
 // says to start traffic generation. Body ignored.
 const GENERATE_TRAFFIC_BTN_RE = /^:::generate-traffic-button(?:\s+(.+))?$/;
 
+// :::validation-report
+// :::
+// Renders the "Generate Validation Report" button (Lab 2.4). On click it
+// runs the positive/negative test matrix against the active policy and
+// renders the markdown evidence report inline. Body ignored.
+const VALIDATION_REPORT_RE = /^:::validation-report(?:\s+(.+))?$/;
+
 // :::icon name="shield" color="amber" label="Segmentation Policy"
 // :::
 // Renders a small inline icon "stamp" matching a real UI element the
@@ -129,6 +136,9 @@ export type Segment =
     }
   | {
       type: "generateTrafficButton";
+    }
+  | {
+      type: "validationReport";
     }
   | {
       type: "icon";
@@ -281,6 +291,17 @@ export function splitDescription(text: string): Segment[] {
       }
       if (i < lines.length) i++;
       result.push({ type: "generateTrafficButton" });
+      continue;
+    }
+    if (VALIDATION_REPORT_RE.test(trimmed)) {
+      flushProse();
+      // Eat through closing :::, body ignored.
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        i++;
+      }
+      if (i < lines.length) i++;
+      result.push({ type: "validationReport" });
       continue;
     }
     const iconOpen = ICON_RE.exec(trimmed);

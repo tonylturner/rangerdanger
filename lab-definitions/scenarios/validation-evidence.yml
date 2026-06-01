@@ -1,14 +1,16 @@
 id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
-summary: "Run a holistic positive/negative test pass against your hardened policy, capture PCAP evidence, and assemble a change-board ready package (15 min)."
+summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk (~8 min)."
 description: >
   After applying the hardened firewall configuration in Lab 2.2 and
   stress-testing it in Lab 2.3, this exercise builds the formal
   evidence package: positive tests confirming authorized flows still
-  work, negative tests confirming unauthorized flows are blocked,
-  and PCAP evidence from the firewall. This is the validation step
-  required before any segmentation change goes to production.
+  work, negative tests confirming unauthorized flows are blocked, and
+  PCAP evidence from the firewall. You generate it in one click against
+  the policy you have active - then read it like a reviewer would. This
+  is the validation step required before any segmentation change goes to
+  production.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -36,269 +38,163 @@ steps:
       green ("Hardened reference" or "Your custom policy"), the
       hardened policy is loaded and you're ready to validate. If it
       shows amber ("Policy mismatch"), apply a hardened policy via
-      the side-panel buttons - or commit one in containd directly -
-      before continuing.
+      the policy-action buttons below the step - or commit one in containd directly -
+      before continuing. The validation in the next step runs against
+      whatever policy is active here, so make sure it's the one you
+      intend to certify.
 
-      **Optional cross-check from containd itself.** Once the banner
-      is green, you can confirm the running policy from either
-      interface:
+      :::hint Optional: cross-check the running policy in containd
+      Once the banner is green, you can confirm the running policy from
+      either interface:
 
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
-        Policy → Running config.
-      - **CLI:** from the `fw-1` terminal, `containd cli` then
-        `show running-config`.
+        Policy & Rules → Firewall Rules (or Configuration → Running).
+      - **CLI:** from the `fw-1` terminal, `containd cli` then:
 
-      Either should show the hardened rule set: RTAC source-pinned
-      to field, vendor restricted to SSH/HTTPS, enterprise-to-field
-      removed, default deny on cross-zone. This step's evidence
-      bullet for the change board is the export from later in the
-      lab; this check just confirms you're testing against the
-      right policy.
+            show running-config
 
-      **Time budget:** 15 minutes.
+      Either should show the hardened rule set: RTAC source-pinned to
+      field, vendor restricted to SSH/HTTPS, enterprise-to-field
+      removed, default deny on cross-zone.
+      :::
+
+      **Time budget:** ~8 minutes.
     action:
       type: check
       expect:
         firewall_config: improved
 
-  - title: "Positive tests - authorized flows still work"
+  - title: "Generate the validation report"
+    expected_config: hardened
     description: |
-      Verify the flows the substation depends on are unaffected by
-      the hardened policy. From the **RTAC** terminal:
+      A segmentation change ships with *evidence*: proof that authorized
+      flows still work, proof that unauthorized flows are blocked, and a
+      capture showing only the RTAC reaching field devices. Rather than run
+      nineteen probes by hand, generate the evidence package against the
+      policy you have active:
 
-      Modbus poll to a relay:
+      :::validation-report
+      :::
+
+      The report runs the full authorized + unauthorized test matrix,
+      captures PCAP at the firewall, and analyzes which sources reached the
+      field zone - the same work an operator does after a change, assembled
+      into a change-board-ready document. A green **PASS** means every
+      authorized flow works and every unauthorized flow is blocked.
+
+      **Read the report, not just the verdict:**
+
+      - Each **✗ authorized** row means a rule is too tight - it's blocking a
+        flow operations depend on. Each **✗ unauthorized** row means a rule
+        is missing or too loose - an attack path is still open.
+      - The **PCAP source analysis** should show only `10.30.30.20` (the
+        RTAC) and `10.30.30.50` (GPS/NTP) reaching the field zone. Any other
+        source IP is a leak.
+      - This grades the policy you *actually* have active - if you applied
+        your own plan in Lab 2.2, it certifies *your* policy, not the
+        reference. A FAIL here is the lab telling you your plan left a gap;
+        go back, tighten the rule, and re-run.
+
+      ### Confirm operations at the HMI
+
+      The report proves *enforcement*; the HMI proves *operations didn't
+      break*. Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
+      tab: no alarm banner, breaker + recloser closed, both loads energized,
+      customers served - identical to the Lab 2.3 baseline. The combination
+      (report PASS + HMI normal) is the two-sided evidence a change board
+      needs: attacks are blocked *and* the substation still runs.
+
+      :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT correct=NORMAL_OPS
+      **After validation, does the HMI show normal operations (authorized
+      flows worked AND the substation still runs)?**
+      :::
+
+      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR correct=UNCHANGED
+      **Did every unauthorized flow in the report come back blocked, with the
+      HMI unchanged from baseline?**
+      :::
+
+      :::hint Advanced: run the positive tests by hand
+      The report automates this, but the manual method is what you'd do on a
+      real appliance. From the **RTAC** terminal, confirm authorized flows:
 
           mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-
-      DNP3 polls across all three field outstations:
-
           dnp3poll 10.40.40.20:20000 -a 1
           dnp3poll 10.40.40.21:20000 -a 2
           dnp3poll 10.40.40.22:20000 -a 3
 
-      All should return data. Then confirm intra-zone HMI → RTAC
-      traffic is still flowing - in real life you'd open the HMI
-      and check live data updates. As a lab smoke test from any
-      OT Ops node:
+      All should return data. Then intra-zone HMI → RTAC, and the RTAC's
+      aggregated field-comms view:
 
           curl -s http://10.30.30.20:8080/api/health
-
-      Should return `{"status":"ok"}` (the lab's RTAC health helper -
-      same convenience class as `/api/state`).
-
-      For a single-pane view of all field-device comms, hit the lab's
-      RTAC state API (lab convenience - real RTACs don't expose a
-      JSON `/api/state`; their status surfaces in the SCADA system):
-
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
-      `device_comms` should be `true` for every field device.
-
-      **Vendor management to OT** (from vendor-jump, 10.20.20.10) - the
-      improved policy keeps SSH and HTTPS open from DMZ → OT for vendor
-      monitoring. Verify the listener responds:
+      `device_comms` should be `true` for every field device. From
+      **vendor-jump** (`10.20.20.10`), the hardened policy keeps SSH/HTTPS
+      open for vendor monitoring (but blocks Modbus/DNP3):
 
           ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname'
           curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\n'
 
-      Both should succeed (SSH banner + `200`). This proves the
-      "encrypted-management-only" allowance is enforced, not just
-      declared. Modbus / DNP3 from vendor-jump to RTAC must still
-      be blocked - `firewall-smoke.sh` covers that contrast row.
-
-      ### Confirm operations are intact at the HMI
-
-      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
-      tab. After your positive tests, the operational state should
-      look identical to the Lab 2.3 step 1 baseline:
-
-      - **No alarm banner** at the top
-      - **Feeder Breaker (52)** and **Recloser (79)** both closed
-      - **General + Critical Load** both energized (green kW)
-      - **Customer-service tile:** "N kW serving ~M customers"
-      - **Critical-load voltage** chip green, in the 114-126V band
-
-      This is the "operations aren't broken" half of the evidence
-      package - the change board needs to see both that unauthorized
-      traffic is blocked *and* that the substation still runs.
-
-      :::decision id=pos-test-ops-intact options=NORMAL_OPS,DEGRADED,ALARMS_PRESENT correct=NORMAL_OPS
-      **After the positive tests, does the HMI show normal operations?**
+      Both should succeed (banner + `200`) - proof the "encrypted-management
+      only" allowance is enforced, not just declared.
       :::
 
-  - title: "Negative tests - unauthorized flows blocked"
-    description: |
-      Verify the cross-zone paths your policy closed are actually
-      unreachable. Each subsection probes a different L4 rule -
-      lead with DNP3 (the primary distribution-substation attack
-      vector you exercised in Lab 2.3); the optional sidebar at the
-      bottom shows the same rules close Modbus too.
-
-      **Enterprise → Field DNP3** (from Kali, 10.10.10.50):
+      :::hint Advanced: run the negative tests by hand
+      From **Kali** (`10.10.10.50`, enterprise) - lead with DNP3, the primary
+      attack vector from Lab 2.3:
 
           nmap -p 20000 10.40.40.20 --max-retries 1 -T4
           dnp3poll 10.40.40.20:20000 -a 1
 
-      Port should be filtered; `dnp3poll` should time out.
-
-      **Vendor → Field DNP3** (from vendor-jump, 10.20.20.10):
+      From **vendor-jump** (`10.20.20.10`) - the vendor-pivot path (Lab
+      2.3-bonus):
 
           nmap -p 20000 10.40.40.21 --max-retries 1 -T4
           dnp3poll 10.40.40.21:20000 -a 2
 
-      Should be filtered / timeout. Confirms the vendor-pivot attack
-      path (Lab 2.3-bonus) is closed against the field zone.
-
-      **From historian** (`historian-1` on the [Network Map](/console)) - represents a typical lan1-only non-RTAC OT host. The historian sits on OT Ops only; it has no direct field interface:
+      From **historian** (a single-homed non-RTAC OT host) - the source-pin
+      test: only the RTAC may reach field, even from inside OT Ops:
 
           nmap -p 20000 10.40.40.22 --max-retries 1 -T4
 
-      Should be filtered / time out. Only the RTAC (source IP `10.30.30.20`, its OT Ops interface) is allowed through. This is the source-pin lesson from Labs 1.3 / 1.4 / 2.2 in action - even an attacker who lands on an OT host can't reach field devices unless they ARE the RTAC. Document each blocked attempt for the evidence package.
-
-      :::hint Optional: also confirm Modbus is blocked
-      The hardened policy applies the same L4 source-pin and DPI
-      rules on Modbus (TCP/502) as on DNP3. If you want a two-protocol
-      evidence package - or if you ran the Modbus sidebar attacks in
-      Lab 2.3 - repeat the three probes above with port 502 and
-      `mbpoll` instead of port 20000 and `dnp3poll`:
-
-          # Enterprise → Field Modbus
-          nmap -p 502 10.40.40.20 --max-retries 1 -T4
-          mbpoll -a 1 -t 0 -r 1 10.40.40.20 -c 1 -1
-
-          # Vendor → Field Modbus
-          nmap -p 502 10.40.40.21 --max-retries 1 -T4
-          mbpoll -a 1 -t 0 -r 1 10.40.40.21 -c 1 -1
-
-          # Non-RTAC OT → Field Modbus
-          nmap -p 502 10.40.40.22 --max-retries 1 -T4
-
-      All filtered / timeout. The same source-pin rule closes both
-      protocols; documenting both gives the change board a complete
-      cross-protocol picture rather than a single-protocol snapshot.
+      All should be filtered / time out. The same L4 source-pin closes Modbus
+      too - repeat with port 502 and `mbpoll` for a two-protocol package.
+      Any single-homed OT host (historian-sim, fuxa-hmi, openplc) works as
+      the probe source.
       :::
 
-      :::hint Pick any single-homed OT host as the probe source
-      historian-sim, fuxa-hmi, and openplc all live on `ot_ops_net`
-      only - single-homed, no direct field interface, every probe
-      to `10.40.40.x` must traverse the firewall. Any of them is
-      a clean enforcement test. The example uses historian; you'd
-      see the same result from any of the three.
+      :::hint Advanced: capture PCAP by hand
+      The report captures this automatically; the manual form, from the
+      `fw-1` terminal, uses `-i any` + a BPF subnet filter (Docker's `ethN`
+      ordering drifts between hosts):
+
+          tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap
+
+      Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
+      wire:
+
+          tcpdump -r /data/captures/validation.pcap -nn | awk '{print $3, $5}' | sort | uniq -c | sort -rn
+
+      The only Modbus/DNP3 sources reaching field should be `10.30.30.20`
+      (the RTAC).
       :::
 
-      ### Confirm the HMI is unchanged
+      :::hint Advanced: assemble the evidence package by hand
+      Beyond the test results + PCAP, a change board wants the policy itself
+      and proof it's the one running. From the `fw-1` terminal:
 
-      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
-      tab. After every blocked probe above, the HMI should look
-      exactly like it did before you started - no alarms, breaker
-      closed, customers served. **The absence of change is the
-      evidence.** Compare against what you saw in Lab 2.3 when the
-      same writes from the same sources ran *under the weak policy*
-      and produced visible outages.
+          export config > /data/student-policy.json
+          show audit
 
-      :::decision id=neg-test-no-impact options=UNCHANGED,DEGRADED,UNCLEAR correct=UNCHANGED
-      **After all the negative tests, is the HMI unchanged from baseline?**
+      `export config` is the change-board-ready record of the running rule
+      set; the recent `config.commit` entries in `show audit` prove the
+      policy you attached is the policy that's loaded. Add an **HMI
+      screenshot** (Feeder One-Line, no alarms, customers served) for the
+      operational side. Per-rule deny events for each blocked probe are in
+      the [/console](/console) Segmentation drawer's **Live DPI Events**
+      strip - each row is kernel-side proof the rule fired.
       :::
-
-      :::hint Live DPI events for blocked attempts
-      The [Network Map](/console) Segmentation drawer has a **Live DPI
-      Events** strip that surfaces each blocked probe in real time -
-      containd's L4 event emission shipped in v0.1.25 (closes
-      [containd #19](https://github.com/tonylturner/containd/issues/19)).
-      After running the negative probes above, you should see a row
-      per blocked attempt with `verdict: DENY` and the matching rule
-      ID. If the strip stays empty after a probe, check that the
-      hardened policy is committed and the `nflogGroup` is set on the
-      lab profile - the L4 events ride the NFLOG group containd
-      configures from the lab YAML. The HMI unchanged-state plus the
-      DPI events together are your two-source evidence: the HMI
-      proves operations didn't break, the DPI events prove the
-      firewall is the reason why.
-      :::
-
-  - title: "Capture PCAP evidence"
-    node: fw-1
-    description: |
-      From the firewall terminal (`fw-1`), capture all traffic going
-      to the field zone (`10.40.40.0/24`) regardless of which kernel
-      interface that subnet currently lives on. Docker's `ethN`
-      ordering varies across hosts, so a `tcpdump -i eth3` can drift
-      under you between machines and even between rebuilds; the
-      portable form is `-i any` plus a BPF subnet filter:
-
-          tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' \
-            -w /data/captures/validation.pcap
-
-      Let it run for 30 seconds while the RTAC polls, then stop with
-      Ctrl-C. Check what's on the wire:
-
-          tcpdump -r /data/captures/validation.pcap -nn \
-            | awk '{print $3, $5}' | sort | uniq -c | sort -rn
-
-      The only Modbus / DNP3 sources reaching field devices should
-      be `10.30.30.20` (the RTAC). No enterprise, vendor, or other
-      OT source IPs should appear talking to `10.40.40.x`.
-
-  - title: "Assemble the evidence package"
-    description: |
-      Summarize the package you'd take to a change board.
-
-      **Positive tests** (PASS = authorized traffic works):
-      - RTAC → relay Modbus
-      - RTAC → recloser DNP3
-      - RTAC → regulator DNP3
-      - HMI → RTAC HTTP (intra-zone)
-      - All `device_comms` true
-
-      **Negative tests** (PASS = unauthorized traffic blocked):
-      - Enterprise → field Modbus
-      - Enterprise → field DNP3
-      - Vendor → field Modbus
-      - Non-RTAC OT → field Modbus
-
-      **Artifacts to attach**:
-
-      - `/data/captures/validation.pcap` - the firewall-side PCAP
-        showing only RTAC sources reaching field on Modbus / DNP3
-      - **Active policy export** - from the `fw-1` terminal:
-
-            containd cli
-            containd# export config > student-policy.json
-            containd# shell
-            $ cat /tmp/student-policy.json
-
-        attach the JSON. This is the change-board-ready record of the
-        rule set that's actually running.
-      - **`show audit` output** - from the same `containd cli`, run
-        `show audit` and snapshot the recent `config.commit` /
-        `config.save_candidate` entries. This proves the policy you
-        attached is the policy that's loaded.
-      - **HMI screenshot** - the [Feeder HMI](/substation) **Feeder
-        One-Line** tab after the negative-test pass, showing no
-        alarms and customers served. This is the operational
-        side of the evidence: blocking attacks didn't break ops.
-
-      - **Per-rule deny event export** - the firewall's
-        `/api/substation/network-events` stream shows each negative-test
-        probe being rejected at the rule level, with timestamps,
-        source/dest IPs, and the matched `ruleId`. From the eng-ws
-        terminal:
-
-            curl -s http://backend:8080/api/substation/network-events \
-              | jq '.events[] | select(.attributes.action=="DENY")'
-
-        Snapshot the DENY entries that correspond to your negative
-        tests above. Each row is a kernel-side proof that the rule
-        you wrote actually fired against the probe you ran - the
-        change board sees policy intent (`student-policy.json`)
-        and policy reality (these event rows) side by side. The
-        same data drives the **Live DPI Events strip** in the
-        [`/console` Segmentation panel](/console) - useful for
-        watching enforcement happen in real time as you run probes.
-
-      Capture pass/fail for each test in your Exercise Notes. This
-      is the evidence package - a change board needs to see both
-      that operations still work and that the new denies are real.
     action:
       type: check
       expect:

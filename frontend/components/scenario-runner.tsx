@@ -25,6 +25,7 @@ import {
   type PolicySource,
 } from "../lib/api";
 import { PolicyStatusBanner } from "./policy-status-banner";
+import { ValidationReportPanel } from "./validation-report-panel";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
@@ -578,7 +579,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             // trackPicker / trackOnly inside a :::hint isn't a
             // pattern any lab uses today; skip silently rather than
             // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "icon") {
+            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "validationReport" || seg.type === "icon") {
               return null;
             }
             if (seg.type === "hint") {
@@ -741,7 +742,7 @@ function injectDynamicContent(
 traffic the substation must allow. Everything else stays denied.
 
 ${noPlan}:::guided
-Click **Apply Hardened** in the side panel to push the canned
+Click **Apply Hardened** in the **containd NGFW — policy actions** panel below this step to push the canned
 reference, or **Apply Your Plan** to push the policy built from
 your Lab 1.4 picks. Then walk the rule table below and confirm
 each row is present in containd's web UI
@@ -1477,6 +1478,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         </div>
                       );
                     }
+                    if (seg.type === "validationReport") {
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className="my-3"
+                        >
+                          <ValidationReportPanel />
+                        </div>
+                      );
+                    }
                     if (seg.type === "icon") {
                       return (
                         <div
@@ -1657,7 +1668,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             {/* containd policy actions + operational status. The
                 state indicator (what is currently running) lives in
                 PolicyStatusBanner at the top of the step content;
-                this side-panel section is just the actions. */}
+                this lower controls section is just the actions. */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
               {/* Policy action buttons — shown on the four firewall-
                   exercising scenarios (2.2 / 2.3 / 2.3-bonus / 2.4),
