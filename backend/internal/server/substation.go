@@ -40,6 +40,12 @@ func (s *Server) handleSubstationCommand(c *gin.Context) {
 	s.proxyRTACPost(c, "/api/command/"+device)
 }
 
+// handleSubstationLabControl forwards a Load Simulator load override (and
+// optional audit entry) to the RTAC. Training-only; off by default.
+func (s *Server) handleSubstationLabControl(c *gin.Context) {
+	s.proxyRTACPost(c, "/api/lab-control")
+}
+
 // handleSubstationAudit returns the RTAC command audit log.
 func (s *Server) handleSubstationAudit(c *gin.Context) {
 	s.proxyRTAC(c, "/api/audit")

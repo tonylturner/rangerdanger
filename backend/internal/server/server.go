@@ -235,6 +235,7 @@ func (s *Server) registerRoutes() {
 			sub.GET("/tags", s.handleSubstationTags)
 			sub.GET("/state", s.handleSubstationState)
 			sub.POST("/command/:device", s.handleSubstationCommand)
+			sub.POST("/lab-control", s.handleSubstationLabControl)
 			sub.GET("/audit", s.handleSubstationAudit)
 			sub.GET("/health", s.handleSubstationHealth)
 			sub.GET("/network-events", s.handleSubstationNetworkEvents)

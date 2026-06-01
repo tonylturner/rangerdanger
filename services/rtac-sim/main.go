@@ -20,6 +20,16 @@ type DeviceEndpoint struct {
 	URL  string `json:"url"`
 }
 
+// LabOverride is the HMI Load Simulator's training-only load override. When
+// Active, the OpenDSS loads are driven by these slider values instead of the
+// default fixed loads. Off by default — it never changes baseline behavior.
+type LabOverride struct {
+	Active      bool    `json:"active"`
+	GeneralPct  float64 `json:"general_load_pct"`
+	CriticalPct float64 `json:"critical_load_pct"`
+	PowerFactor float64 `json:"power_factor"`
+}
+
 // AggregatedState holds all polled device states plus electrical calculations.
 type AggregatedState struct {
 	mu          sync.RWMutex
@@ -27,6 +37,7 @@ type AggregatedState struct {
 	Electrical  map[string]any            `json:"electrical"`
 	LastPoll    time.Time                 `json:"last_poll"`
 	DeviceComms map[string]bool           `json:"device_comms"`
+	Lab         LabOverride               `json:"lab"`
 }
 
 var (
@@ -34,6 +45,7 @@ var (
 		Devices:     make(map[string]map[string]any),
 		Electrical:  make(map[string]any),
 		DeviceComms: make(map[string]bool),
+		Lab:         LabOverride{PowerFactor: 1.0},
 	}
 	audit = shared.NewAuditLog(500)
 
@@ -106,8 +118,15 @@ func pollDevices() {
 			}
 		}
 
-		// Send state to physics engine and get electrical calculations
-		statePayload, _ := json.Marshal(agg.Devices)
+		// Send state to physics engine and get electrical calculations.
+		// Payload = polled device states + the Load Simulator override
+		// (training-only; inactive by default).
+		payload := make(map[string]any, len(agg.Devices)+1)
+		for k, v := range agg.Devices {
+			payload[k] = v
+		}
+		payload["lab"] = agg.Lab
+		statePayload, _ := json.Marshal(payload)
 		resp, err := client.Post(physicsURL+"/api/update-state", "application/json", bytes.NewReader(statePayload))
 		if err == nil {
 			body, _ := io.ReadAll(resp.Body)
@@ -307,8 +326,6 @@ func deriveProcessImpact(device, command, result, sourceZone string) string {
 		return "capacitor bank AUTO — switches automatically to correct power factor / support voltage"
 	case "capbank/set_manual":
 		return fmt.Sprintf("capacitor bank MANUAL — automatic correction disabled, operator controls switching%s", zoneLabel)
-	case "capbank/inject_fault":
-		return "fault injected on capacitor bank — protection will operate"
 	}
 
 	return "command executed"
@@ -371,7 +388,17 @@ const (
 	regTapMax           = 16
 	capPFTarget         = 0.95
 	capVHighDefaultV    = 126.0
+	// Minimum seconds between AUTOMATIC cap switches. A real bank's auto
+	// controller is time-delayed; this stops the loop from racking up the
+	// 6-operation contact-wear lockout by hunting (the over-voltage cutout and
+	// the PF trigger sense different buses and can otherwise fight). Manual /
+	// attacker rapid-cycling still reaches the lockout — that lesson is intact.
+	capAutoDwellSec = 30
 )
+
+// lastCapAutoSwitch rate-limits the cap auto-loop (see capAutoDwellSec).
+// Touched only from the single poll goroutine, so no lock is needed.
+var lastCapAutoSwitch time.Time
 
 type autoCmd struct {
 	device  string
@@ -408,7 +435,8 @@ func autoControlDecisions() []autoCmd {
 	// lockout. Switch in to correct a lagging PF; switch out on over-voltage.
 	if cb, ok := agg.Devices["capbank"]; ok &&
 		boolFromMap(cb, "auto_mode") && !boolFromMap(cb, "lockout") &&
-		boolFromMap(elec, "general_load_energized") {
+		boolFromMap(elec, "general_load_energized") &&
+		time.Since(lastCapAutoSwitch) > capAutoDwellSec*time.Second {
 		pf := floatFromMap(elec, "power_factor")
 		vload := floatFromMap(elec, "downstream_voltage_v")
 		vhigh := floatFromMap(cb, "voltage_thresh_high_v")
@@ -428,8 +456,10 @@ func autoControlDecisions() []autoCmd {
 }
 
 // runAutoControls issues this cycle's auto-control commands straight to the
-// field device sims, bypassing the RTAC command audit (reserved for external
-// commands). Best-effort — the next cycle retries on any failure.
+// field device sims, then records each as an audit entry tagged "auto" so the
+// HMI can surface automatic regulator / cap-bank responses (e.g. during a load
+// change) as distinct from operator or attacker commands. Best-effort — the
+// next cycle retries on any failure.
 func runAutoControls(client *http.Client) {
 	for _, c := range autoControlDecisions() {
 		url := deviceURL(c.device)
@@ -443,7 +473,34 @@ func runAutoControls(client *http.Client) {
 		}
 		resp.Body.Close()
 		log.Printf("AUTO %s/%s", c.device, c.command)
+		audit.Add(shared.AuditEntry{
+			Source:        "rtac-auto",
+			SourceZone:    "auto",
+			Target:        c.device,
+			Command:       c.command,
+			Result:        "executed",
+			Detail:        "automatic control response",
+			ProcessImpact: autoImpact(c.device, c.command),
+		})
+		if c.device == "capbank" {
+			lastCapAutoSwitch = time.Now()
+		}
 	}
+}
+
+// autoImpact describes an automatic control action for the audit trail.
+func autoImpact(device, command string) string {
+	switch device + "/" + command {
+	case "regulator/raise_tap":
+		return "AVR raised tap to hold voltage setpoint"
+	case "regulator/lower_tap":
+		return "AVR lowered tap to hold voltage setpoint"
+	case "capbank/switch_in":
+		return "auto-switched cap bank in to correct power factor"
+	case "capbank/switch_out":
+		return "auto-switched cap bank out (over-voltage)"
+	}
+	return "automatic control response"
 }
 
 func deviceURL(name string) string {
@@ -457,6 +514,62 @@ func deviceURL(name string) string {
 
 func handleAudit(w http.ResponseWriter, r *http.Request) {
 	shared.WriteJSON(w, map[string]any{"entries": audit.Entries()})
+}
+
+// handleLabControl updates the Load Simulator override (training-only load
+// override that drives the OpenDSS loads) and optionally records an audit
+// entry under the "lab-control" source. Fields are pointers so a caller can
+// patch just the override without emitting audit noise on every ramp frame;
+// discrete user actions pass audit_command to log a single entry.
+func handleLabControl(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Active       *bool    `json:"active"`
+		GeneralPct   *float64 `json:"general_load_pct"`
+		CriticalPct  *float64 `json:"critical_load_pct"`
+		PowerFactor  *float64 `json:"power_factor"`
+		Source       string   `json:"source"`
+		AuditCommand string   `json:"audit_command"`
+		AuditTarget  string   `json:"audit_target"`
+		AuditDetail  string   `json:"audit_detail"`
+	}
+	if err := shared.ReadJSON(r, &req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	agg.mu.Lock()
+	if req.Active != nil {
+		agg.Lab.Active = *req.Active
+	}
+	if req.GeneralPct != nil {
+		agg.Lab.GeneralPct = *req.GeneralPct
+	}
+	if req.CriticalPct != nil {
+		agg.Lab.CriticalPct = *req.CriticalPct
+	}
+	if req.PowerFactor != nil {
+		agg.Lab.PowerFactor = *req.PowerFactor
+	}
+	lab := agg.Lab
+	agg.mu.Unlock()
+
+	if req.AuditCommand != "" {
+		source := req.Source
+		if source == "" {
+			source = "lab-control"
+		}
+		audit.Add(shared.AuditEntry{
+			Source:        source,
+			SourceZone:    "lab-control",
+			Target:        req.AuditTarget,
+			Command:       req.AuditCommand,
+			Result:        "executed",
+			Detail:        req.AuditDetail,
+			ProcessImpact: req.AuditDetail,
+		})
+	}
+
+	shared.WriteJSON(w, map[string]any{"result": "ok", "lab": lab})
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -531,6 +644,7 @@ func main() {
 	mux.HandleFunc("GET /api/tags", handleTags)
 	mux.HandleFunc("GET /api/state", handleRawState)
 	mux.HandleFunc("POST /api/command/{device}", handleCommand)
+	mux.HandleFunc("POST /api/lab-control", handleLabControl)
 	mux.HandleFunc("GET /api/audit", handleAudit)
 	mux.HandleFunc("GET /api/health", handleHealth)
 	shared.StartServer("rtac-sim", mux)

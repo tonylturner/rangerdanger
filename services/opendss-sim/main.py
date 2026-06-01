@@ -61,6 +61,7 @@ def update_state(devices: DeviceStates) -> JSONResponse:
         tap_position=devices.regulator.tap_position,
         fault_seen=devices.recloser.fault_seen,
         capbank_switched_in=devices.capbank.switched_in,
+        lab=devices.lab.model_dump(),
     )
 
     _latest_state = result

@@ -42,6 +42,12 @@ LOAD_VARIATION_PCT = 0.03
 GENERAL_LOAD_KW = 500.0
 CRITICAL_LOAD_KW = 200.0
 
+# Load Simulator (training) slider maxima — when the HMI override is active,
+# the loads are driven by slider_pct/100 * max. Off by default, so the feeder
+# runs the nominal loads above unless a learner engages the simulator.
+GENERAL_LOAD_MAX_KW = 707.0
+CRITICAL_LOAD_MAX_KW = 300.0
+
 # Switched capacitor bank rating (must match Capacitor.CapBank in the .dss and
 # capbank-sim's kvar_rating). Used to credit the cap's VAR injection in the
 # reported power factor when it's switched in.
@@ -115,6 +121,7 @@ class FeederSolver:
         tap_position: int,
         fault_seen: bool,
         capbank_switched_in: bool,
+        lab: dict | None = None,
     ) -> dict:
         """Run power flow with given device states and return electrical results."""
         with self._lock:
@@ -130,10 +137,30 @@ class FeederSolver:
                 dss.Text.Command("Disable Fault.F1")
                 self._has_fault = False
 
-            # -- Apply demand variation --
+            # -- Apply load: Load Simulator override (training) or default demand --
+            # The +/-3% demand random-walk runs in BOTH modes so the feeder
+            # always has realistic live variation. Under an active override it
+            # jitters around the slider setpoint instead of sitting frozen, so
+            # load/current (and the trends) keep moving while a learner holds a
+            # grid state.
+            lab = lab or {}
             self._update_load_multipliers()
-            gen_kw = GENERAL_LOAD_KW * self._gen_load_mult
-            crit_kw = CRITICAL_LOAD_KW * self._crit_load_mult
+            load_pf_override = None
+            if lab.get("active"):
+                gen_base = GENERAL_LOAD_MAX_KW * float(lab.get("general_load_pct", 0.0)) / 100.0
+                crit_base = CRITICAL_LOAD_MAX_KW * float(lab.get("critical_load_pct", 0.0)) / 100.0
+                gen_kw = gen_base * self._gen_load_mult
+                crit_kw = crit_base * self._crit_load_mult
+                load_pf_override = max(0.80, min(1.0, float(lab.get("power_factor", 1.0))))
+                dss.Text.Command(f"Load.GeneralLoad.pf={load_pf_override:.3f}")
+                dss.Text.Command(f"Load.CriticalLoad.pf={load_pf_override:.3f}")
+            else:
+                gen_kw = GENERAL_LOAD_KW * self._gen_load_mult
+                crit_kw = CRITICAL_LOAD_KW * self._crit_load_mult
+                # Restore the .dss default load power factors — a prior override
+                # may have changed them on this persistent circuit handle.
+                dss.Text.Command("Load.GeneralLoad.pf=0.9")
+                dss.Text.Command("Load.CriticalLoad.pf=0.95")
             dss.Text.Command(f"Load.GeneralLoad.kw={gen_kw:.2f}")
             dss.Text.Command(f"Load.CriticalLoad.kw={crit_kw:.2f}")
 
@@ -215,25 +242,14 @@ class FeederSolver:
         loss_vals = dss.Circuit.Losses()
         losses_kw = loss_vals[0] / 1000.0 if loss_vals else 0.0
 
-        # Source power
-        source_kw = self._get_source_power()
-
-        # Power factor from total load, crediting the capacitor bank's VAR
-        # injection when switched in (the cap supplies reactive power locally,
-        # so the source sees less Q and the PF improves). Cap output scales with
-        # voltage^2, so it tapers a little if the bus voltage sags.
-        total_kw = gen_kw + crit_kw
-        total_kvar = 0.0
-        if gen_energized:
-            total_kvar += gen_kw * math.tan(math.acos(0.9))
-        if crit_energized:
-            total_kvar += crit_kw * math.tan(math.acos(0.95))
-        if capbank_switched_in and gen_energized:
-            total_kvar -= CAPBANK_KVAR * (down_v / NOMINAL_V_SECONDARY) ** 2
-        if total_kw > 0:
-            pf = math.cos(math.atan2(total_kvar, total_kw))
-        else:
-            pf = 0.0
+        # Source power + power factor straight from the Vsource solve — the true
+        # real/reactive flow the solver computes (load Q, capacitor injection,
+        # line-charging VARs and reactive losses all included), not a modeled
+        # estimate. PF = |P| / |S|.
+        source_p, source_q = self._get_source_pq()
+        source_kw = abs(source_p)
+        apparent_kva = math.hypot(source_p, source_q)
+        pf = abs(source_p) / apparent_kva if apparent_kva > 1e-6 else 0.0
 
         # Fault current
         fault_current = 0.0
@@ -314,12 +330,13 @@ class FeederSolver:
         kw = sum(powers[i * 2] for i in range(n_phases))
         return abs(kw)
 
-    def _get_source_power(self) -> float:
-        """Get total real power from the voltage source."""
+    def _get_source_pq(self) -> tuple[float, float]:
+        """Get total real (kW) and reactive (kVAR) power from the voltage source."""
         dss.Circuit.SetActiveElement("Vsource.source")
         powers = dss.CktElement.Powers()
         if not powers:
-            return 0.0
+            return (0.0, 0.0)
         n_phases = dss.CktElement.NumPhases()
-        kw = sum(powers[i * 2] for i in range(n_phases))
-        return abs(kw)
+        p = sum(powers[i * 2] for i in range(n_phases))
+        q = sum(powers[i * 2 + 1] for i in range(n_phases))
+        return (p, q)

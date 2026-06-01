@@ -81,12 +81,14 @@ else
 fi
 
 # 3. Capacitor bank AUTO loop: out + enable auto -> RTAC switches it back in.
+# Wait window exceeds the cap auto-switch dwell (capAutoDwellSec in rtac-sim,
+# the anti-hunt rate limit) so this isn't a race with the last auto switch.
 cmd capbank switch_out; sleep 2
 cmd capbank set_auto
-if wait_until '.devices.capbank.switched_in' 15; then
+if wait_until '.devices.capbank.switched_in' 35; then
   ok "cap AUTO re-engages to correct power factor"
 else
-  err "cap AUTO did not switch in within 15s"
+  err "cap AUTO did not switch in within 35s"
 fi
 
 # 4. Regulator AVR loop: manual sag, then auto steps the tap back up.
