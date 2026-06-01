@@ -89,6 +89,7 @@ export function SubstationPanel() {
             relay={relay}
             recloser={recloser}
             regulator={regulator}
+            capbank={capbank}
             execCmd={execCmd}
             cmdResult={cmdResult}
           />
@@ -130,6 +131,7 @@ function OneLine({
   const genEnergized = elec?.general_load_energized ?? false;
   const critEnergized = elec?.critical_load_energized ?? false;
   const capIn = Boolean(capbank?.switched_in ?? elec?.capbank_switched_in);
+  const capSwitchCount = Number(capbank?.switch_count ?? 0);
 
   const lowVoltage = (elec?.critical_load_voltage_v ?? 120) < 114;
   const highVoltage = (elec?.critical_load_voltage_v ?? 120) > 126;
@@ -209,7 +211,7 @@ function OneLine({
                 <LoadSymbol energized={genEnergized} />
                 <span className="text-slate-400">General Load</span>
                 <span className={`font-bold text-xs ${genEnergized ? "text-green-400" : "text-red-400"}`}>
-                  {genEnergized ? `${elec?.general_load_kw ?? 0} kW` : "NO POWER"}
+                  {genEnergized ? `${Math.round(elec?.general_load_kw ?? 0)} kW` : "NO POWER"}
                 </span>
               </div>
 
@@ -224,30 +226,32 @@ function OneLine({
                 </span>
                 {capIn && <span className="text-purple-400/80">+{Number(capbank?.kvar_rating ?? 300)} kVAR</span>}
                 <span className="text-slate-600">{capbank?.auto_mode ? "AUTO" : "MANUAL"}</span>
+                <span className={`text-[10px] ${capSwitchCount >= 5 ? "text-yellow-400" : "text-slate-600"}`}>ops {capSwitchCount}/6</span>
                 {capbank?.lockout ? <StatusBadge color="red">LOCKED OUT</StatusBadge> : null}
               </div>
 
-              {/* Critical load with regulator */}
-              <div className="py-1">
-                <div className="flex items-center gap-2">
+              {/* Voltage Regulator 90 — series element feeding the critical load
+                  (Transformer.VReg: load_bus -> reg_bus in substation_feeder.dss) */}
+              <div className="flex items-center gap-2 py-1 text-[11px]">
+                <span className="rounded border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
+                  90
+                </span>
+                <span className="text-slate-500">Voltage Regulator</span>
+                <span className="text-cyan-400 font-bold">
+                  Tap {tap > 0 ? "+" : ""}{tap}
+                </span>
+                <span className="text-slate-600">
+                  {regulator?.manual_mode ? "MANUAL" : "AUTO"}
+                </span>
+              </div>
+
+              {/* Critical load — downstream of (post-) the regulator at reg_bus */}
+              <div className={`border-l-2 pl-4 ${critEnergized ? "border-green-800/50" : "border-red-900/50"}`}>
+                <div className="flex items-center gap-2 py-1">
                   <LoadSymbol energized={critEnergized} critical />
                   <span className="text-slate-300 font-medium">Critical Load</span>
                   <span className={`font-bold text-xs ${critEnergized ? "text-green-400" : "text-red-400"}`}>
-                    {critEnergized ? `${elec?.critical_load_kw ?? 0} kW` : "NO POWER"}
-                  </span>
-                </div>
-
-                {/* Regulator 90 */}
-                <div className="ml-6 mt-1 flex items-center gap-2 text-[11px]">
-                  <span className="rounded border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
-                    90
-                  </span>
-                  <span className="text-slate-500">Voltage Regulator</span>
-                  <span className="text-cyan-400 font-bold">
-                    Tap {tap > 0 ? "+" : ""}{tap}
-                  </span>
-                  <span className="text-slate-600">
-                    {regulator?.manual_mode ? "MANUAL" : "AUTO"}
+                    {critEnergized ? `${Math.round(elec?.critical_load_kw ?? 0)} kW` : "NO POWER"}
                   </span>
                   <VoltageChip voltage={elec?.critical_load_voltage_v} critical />
                 </div>
@@ -264,7 +268,7 @@ function OneLine({
         {/* Service summary */}
         <div className="mt-3 flex items-center gap-4 border-t border-slate-800/60 pt-2 text-[10px]">
           <span className={`font-bold ${totalKw > 0 ? "text-green-400" : "text-red-400"}`}>
-            {totalKw > 0 ? `${totalKw} kW serving ~${Math.round(totalKw * 3)} customers` : "ALL CUSTOMERS WITHOUT POWER"}
+            {totalKw > 0 ? `${Math.round(totalKw)} kW serving ~${Math.round(totalKw * 3)} customers` : "ALL CUSTOMERS WITHOUT POWER"}
           </span>
           <span className="ml-auto text-slate-600">
             RTAC polls field devices on 10.40.40.x via containd
@@ -334,17 +338,36 @@ function CommandPanel({
   relay,
   recloser,
   regulator,
+  capbank,
   execCmd,
   cmdResult,
 }: {
   relay?: Record<string, number | boolean | string>;
   recloser?: Record<string, number | boolean | string>;
   regulator?: Record<string, number | boolean | string>;
+  capbank?: Record<string, number | boolean | string>;
   execCmd: (device: string, command: string, value?: number) => void;
   cmdResult: string | null;
 }) {
+  // In AUTO, the RTAC closes the loop, so manual tap/switch commands get
+  // reverted within a poll cycle. Disable them and point the operator at the
+  // mode toggle instead of letting a "dead" button confuse them.
+  const regManual = Boolean(regulator?.manual_mode);
+  const capAuto = Boolean(capbank?.auto_mode);
   return (
     <div className="space-y-4">
+      {/* SCADA → RTAC → field-device hierarchy — the RTAC is the controller;
+          the four cards below are its peer feeder devices. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-[10px]">
+        <span className="font-bold text-sky-400">SCADA / HMI</span>
+        <span className="text-slate-600">→</span>
+        <span className="font-bold text-orange-400">RTAC</span>
+        <span className="text-slate-600">→</span>
+        <span className="font-bold text-green-400">Field Devices</span>
+        <span className="text-slate-600">· 10.40.40.0/24</span>
+        <span className="ml-auto text-slate-600">RTAC relays operator commands to the peer feeder devices below</span>
+      </div>
+
       {cmdResult && (
         <div className={`rounded border px-3 py-2 text-xs ${
           cmdResult.includes("executed") || cmdResult.includes("CLOSED") || cmdResult.includes("ENABLED")
@@ -357,8 +380,8 @@ function CommandPanel({
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <DeviceGroup title="Feeder Breaker (52)" subtitle="10.40.40.20">
+      <div className="grid gap-3 md:grid-cols-2">
+        <DeviceGroup title="Feeder Breaker (52)" subtitle="10.40.40.20" role="Service interruption — energize / de-energize feeder">
           <CmdButton label="TRIP" onClick={() => execCmd("relay", "trip")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("relay", "close")} variant="success" />
           <CmdButton label="Lockout" onClick={() => execCmd("relay", "lockout")} variant="warning" />
@@ -368,7 +391,7 @@ function CommandPanel({
           <CmdButton label="Clear Fault" onClick={() => execCmd("relay", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Recloser (79)" subtitle="10.40.40.21">
+        <DeviceGroup title="Recloser (79)" subtitle="10.40.40.21" role="Reliability — automatic fault recovery">
           <CmdButton label="OPEN" onClick={() => execCmd("recloser", "open")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("recloser", "close")} variant="success" />
           <CmdButton label="Enable Reclose" onClick={() => execCmd("recloser", "enable_reclose")} variant="success" />
@@ -379,51 +402,54 @@ function CommandPanel({
           <CmdButton label="Clear Fault" onClick={() => execCmd("recloser", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Voltage Regulator (90)" subtitle="10.40.40.22">
-          <CmdButton label="Raise Tap" onClick={() => execCmd("regulator", "raise_tap")} />
-          <CmdButton label="Lower Tap" onClick={() => execCmd("regulator", "lower_tap")} />
-          <div className="w-full border-t border-slate-800/50 my-0.5" />
-          <CmdButton label="Manual Mode" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
-          <CmdButton label="Auto Mode" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
-        </DeviceGroup>
-
-        <DeviceGroup title="Capacitor Bank" subtitle="10.40.40.23">
-          <CmdButton label="Switch In" onClick={() => execCmd("capbank", "switch_in")} variant="success" />
-          <CmdButton label="Switch Out" onClick={() => execCmd("capbank", "switch_out")} variant="danger" />
+        <DeviceGroup title="Capacitor Bank (CAP)" subtitle="10.40.40.23" role="Power factor — reactive support">
+          <CmdButton label="Switch In" onClick={() => execCmd("capbank", "switch_in")} variant="success" disabled={capAuto} title={capAuto ? "Cap bank in AUTO — switch to Manual to control" : undefined} />
+          <CmdButton label="Switch Out" onClick={() => execCmd("capbank", "switch_out")} variant="danger" disabled={capAuto} title={capAuto ? "Cap bank in AUTO — switch to Manual to control" : undefined} />
           <div className="w-full border-t border-slate-800/50 my-0.5" />
           <CmdButton label="Manual Mode" onClick={() => execCmd("capbank", "set_manual")} variant="warning" />
           <CmdButton label="Auto Mode" onClick={() => execCmd("capbank", "set_auto")} variant="success" />
           <CmdButton label="Reset Lockout" onClick={() => execCmd("capbank", "reset_lockout")} />
         </DeviceGroup>
+
+        <DeviceGroup title="Voltage Regulator (90)" subtitle="10.40.40.22" role="Voltage control — tap regulation">
+          <CmdButton label="Raise Tap" onClick={() => execCmd("regulator", "raise_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO — switch to Manual to adjust taps" : undefined} />
+          <CmdButton label="Lower Tap" onClick={() => execCmd("regulator", "lower_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO — switch to Manual to adjust taps" : undefined} />
+          <div className="w-full border-t border-slate-800/50 my-0.5" />
+          <CmdButton label="Manual Mode" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
+          <CmdButton label="Auto Mode" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
+        </DeviceGroup>
       </div>
 
       <div className="text-[10px] text-slate-600">
-        Commands are sent through the RTAC to field devices on the 10.40.40.0/24 network.
-        The containd firewall controls which zones can reach these devices.
+        The containd firewall controls which zones can reach these devices on 10.40.40.0/24 —
+        an attacker who reaches that segment can drive any of them.
       </div>
     </div>
   );
 }
 
-function DeviceGroup({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function DeviceGroup({ title, subtitle, role, children }: { title: string; subtitle: string; role: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
       <h4 className="text-xs font-bold text-slate-300">{title}</h4>
-      <div className="text-[9px] text-slate-600 mb-2">{subtitle}</div>
+      <div className="text-[9px] text-slate-600">{subtitle}</div>
+      <div className="mb-2 text-[9px] italic text-slate-500">{role}</div>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }
 
-function CmdButton({ label, onClick, variant }: { label: string; onClick: () => void; variant?: "danger" | "success" | "warning" }) {
+function CmdButton({ label, onClick, variant, disabled, title }: { label: string; onClick: () => void; variant?: "danger" | "success" | "warning"; disabled?: boolean; title?: string }) {
   const colors = {
     danger: "border-red-800/60 bg-red-950/40 text-red-400 hover:bg-red-900/40",
     success: "border-green-800/60 bg-green-950/40 text-green-400 hover:bg-green-900/40",
     warning: "border-yellow-800/60 bg-yellow-950/40 text-yellow-400 hover:bg-yellow-900/40",
   };
-  const cls = variant ? colors[variant] : "border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40";
+  const cls = disabled
+    ? "border-slate-800 bg-slate-900/30 text-slate-600 cursor-not-allowed"
+    : variant ? colors[variant] : "border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40";
   return (
-    <button onClick={onClick} className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
+    <button onClick={onClick} disabled={disabled} title={title} className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
       {label}
     </button>
   );
@@ -769,22 +795,7 @@ function ElectricalDetailView({
                 ]}
               />
 
-              {/* Voltage Regulator */}
-              <DeviceDetail
-                ansi="90"
-                name="Voltage Regulator"
-                ip="10.40.40.22"
-                fields={[
-                  { label: "Mode", value: regManual ? "Manual" : "Auto", ok: !regManual, warn: !!regManual },
-                  { label: "Tap Position", value: `${tap > 0 ? "+" : ""}${tap}`, ok: Math.abs(tap) <= 8, warn: Math.abs(tap) > 8 },
-                  { label: "Tap Effect", value: `${tap > 0 ? "+" : ""}${(tap * 0.625).toFixed(1)}%` },
-                  { label: "Target", value: `${(regSetpoint / nomV).toFixed(3)} pu (${regSetpoint}V)` },
-                  { label: "Controlled Bus", value: "Critical Load Branch" },
-                  { label: "Last Command", value: String(regulator?.last_command_source || "—"), mono: true },
-                ]}
-              />
-
-              {/* Capacitor Bank */}
+              {/* Capacitor Bank — shunt at load_bus, upstream of the regulator */}
               <DeviceDetail
                 ansi="CAP"
                 name="Capacitor Bank"
@@ -796,6 +807,21 @@ function ElectricalDetailView({
                   { label: "Switch Ops", value: `${capSwitchCount} / 6`, ok: capSwitchCount < 5, warn: capSwitchCount >= 5 && !capLockout },
                   { label: "Lockout", value: capLockout ? "Active" : "No", ok: !capLockout, warn: capLockout },
                   { label: "Last Command", value: String(capbank?.last_command_source || "—"), mono: true },
+                ]}
+              />
+
+              {/* Voltage Regulator — series element feeding the critical load */}
+              <DeviceDetail
+                ansi="90"
+                name="Voltage Regulator"
+                ip="10.40.40.22"
+                fields={[
+                  { label: "Mode", value: regManual ? "Manual" : "Auto", ok: !regManual, warn: !!regManual },
+                  { label: "Tap Position", value: `${tap > 0 ? "+" : ""}${tap}`, ok: Math.abs(tap) <= 8, warn: Math.abs(tap) > 8 },
+                  { label: "Tap Effect", value: `${tap > 0 ? "+" : ""}${(tap * 0.625).toFixed(1)}%` },
+                  { label: "Target", value: `${(regSetpoint / nomV).toFixed(3)} pu (${regSetpoint}V)` },
+                  { label: "Controlled Bus", value: "Critical Load Branch" },
+                  { label: "Last Command", value: String(regulator?.last_command_source || "—"), mono: true },
                 ]}
               />
             </div>
