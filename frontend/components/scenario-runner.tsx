@@ -764,7 +764,7 @@ ${ruleTable}
 > **Critical:** RTAC rules are source-pinned to \`10.30.30.20\`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
 
 :::hint Creating rules via the containd CLI
-The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal (or SSH), type \`containd cli\` to enter the appliance shell, then:
+The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal, type \`containd cli\` to enter the appliance shell, then:
 
     export config > /tmp/policy.json
     shell                   # drop to bash
@@ -783,7 +783,7 @@ Each rule object in \`firewall.rules\` looks like:
       "destZones": ["lan2"],
       "sources": ["10.30.30.20/32"],
       "protocols": [{"name": "tcp", "port": "502"}],
-      "ics": {},
+      "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
       "action": "ALLOW",
       "log": true
     }

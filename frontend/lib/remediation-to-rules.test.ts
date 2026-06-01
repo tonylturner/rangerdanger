@@ -7,6 +7,7 @@ import {
   buildContaindConfig,
 } from "./remediation-to-rules";
 import type { RemediationPlan } from "./remediation-plan";
+import { splitDescription } from "./scenario-description";
 
 const ALL_HARDENED: RemediationPlan = {
   exerciseId: "remediation-planning",
@@ -131,6 +132,20 @@ describe("positiveValidationTests + negativeValidationTests", () => {
           lower.includes("should fail") ||
           lower.includes("should time out") ||
           lower.includes("should be filtered")
+      ).toBe(true);
+    }
+  });
+
+  it("validation commands render as command blocks (indented, not prose)", () => {
+    // Regression: the dynamic Phase 5/6 generators once emitted commands
+    // at column 0, so splitDescription saw them as prose (no run/copy).
+    const plan = buildDynamicPlan(ALL_HARDENED);
+    const strings = [...positiveValidationTests(plan), ...negativeValidationTests(plan)];
+    for (const t of strings) {
+      const segs = splitDescription(t);
+      expect(
+        segs.some((s) => s.type === "cmd"),
+        `expected a command block in: ${t.slice(0, 50)}`,
       ).toBe(true);
     }
   });
