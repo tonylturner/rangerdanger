@@ -18,12 +18,12 @@ name: Windows lint
 
 on:
   push:
-    branches: [main, oss-release]
+    branches: [main]
     paths:
       - '**.ps1'
       - '.github/workflows/smoke-windows.yml'
   pull_request:
-    branches: [main, oss-release]
+    branches: [main]
     paths:
       - '**.ps1'
       - '.github/workflows/smoke-windows.yml'
