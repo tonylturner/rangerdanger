@@ -6,6 +6,51 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.25] - 2026-06-01
+
+Adds the **Load Simulator** — a training-infrastructure panel for exploring the
+OpenDSS physics engine by driving feeder load — plus a feeder-realism and
+power-flow accuracy pass.
+
+### Added
+
+- **Load Simulator panel** on the Substation Process View (below the Voltage
+  Trend chart). A bonus free-play control — OFF by default, so it never changes
+  baseline lab behavior — that drives the feeder's general/critical load and
+  power factor through a new `lab-control` override into OpenDSS. Five grid-state
+  presets (overnight → hot day) ramp the load smoothly; a single-shot
+  **"Large load drop"** models a NERC Level 3 large-load reliability event;
+  manual sliders fine-tune. Every action logs to the Command Audit tab as
+  `lab-control`, and automatic regulator / cap-bank responses now appear there
+  tagged `auto`.
+
+### Changed
+
+- **Power factor is read from the OpenDSS source solve** (real P/Q) instead of a
+  modeled estimate — it now reflects the true reactive flow (load Q, cap
+  injection, line charging, reactive losses).
+- **Feeder lengthened to a realistic ~12 mi** so the unregulated load-bus
+  voltage responds to demand. At this <10%-of-ampacity loading the feeder is
+  electrically stiff, so the response is modest *by design* — the large-load
+  drop produces a real but undramatic voltage step rather than a manufactured
+  one, and the demand ±3% walk now runs under the override too.
+- **Voltage Trend chart**: shaded 114–126 V safe-zone band with dashed edges, a
+  zoomed Y-axis, and an amber trace + "OUT OF BAND" badge whenever a trace
+  leaves the band (any cause). One-Line / Supervisory / Electrical Detail device
+  order is source→load.
+
+### Fixed
+
+- **Cap bank could auto-brick itself** — the auto-control loop is now rate-
+  limited (30 s dwell) so it can't rack up the 6-operation contact-wear lockout
+  by hunting. Manual / attacker rapid-cycling still reaches the lockout.
+- **`substation-smoke` re-energizes the feeder first**, so it no longer fails
+  when run after smokes that trip the breaker / open the recloser / drive the
+  tap (the cause of the v0.1.24 release-Smoke failure).
+- Load Simulator timer/animation cleanup on unmount; unified customer-impact
+  count and lime accent across views; honest fault-current display when
+  protection has already cleared; reset-modal and slider accessibility.
+
 ## [v0.1.24] - 2026-05-31
 
 Capacitor-bank HMI integration plus a supervisory-control "make every
