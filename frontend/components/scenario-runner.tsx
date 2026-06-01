@@ -1348,6 +1348,37 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               policySource={policySource}
               expectedConfig={step?.expected_config}
             />
+            {/* Per-step track chip: on the firewall labs (after the
+                picker on 2.2 step 1), show which path the student is on
+                and let them switch inline without hunting for the side
+                panel. */}
+            {POLICY_ACTION_SCENARIOS.includes(scenario.id) &&
+              !(scenario.id === "firewall-implementation" && currentStep === 0) && (
+              <div className="mb-3 flex items-center gap-2 text-[10px]">
+                <span className="font-medium uppercase tracking-wider text-slate-500">
+                  Track
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 font-bold uppercase tracking-wider ${
+                    firewallTrack === "technical"
+                      ? "bg-sky-950/60 text-sky-300"
+                      : "bg-emerald-950/60 text-emerald-300"
+                  }`}
+                >
+                  {firewallTrack === "technical" ? "Advanced" : "Guided"}
+                </span>
+                <button
+                  onClick={() =>
+                    setFirewallTrack(
+                      firewallTrack === "technical" ? "guided" : "technical",
+                    )
+                  }
+                  className="text-slate-500 underline transition-colors hover:text-slate-300"
+                >
+                  switch to {firewallTrack === "technical" ? "Guided" : "Advanced"}
+                </button>
+              </div>
+            )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
               step && titleMatches(step.title, PHASE3_TITLES) && (
@@ -1647,7 +1678,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                               : "bg-sky-950/60 text-sky-300"
                           }`}
                         >
-                          {firewallTrack}
+                          {firewallTrack === "technical" ? "Advanced" : "Guided"}
                         </span>
                         <button
                           onClick={() =>
@@ -1664,7 +1695,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   </div>
                   {firewallTrack === "technical" && (
                     <div className="mb-2 text-[10px] italic text-slate-500">
-                      Technical track — commit your policy in containd directly.
+                      Advanced track — commit your policy in containd directly.
                       Buttons below are a guided fallback.
                     </div>
                   )}
