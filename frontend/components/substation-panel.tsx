@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getSubstationState,
   getSubstationAudit,
@@ -349,9 +349,11 @@ function CommandPanel({
   execCmd: (device: string, command: string, value?: number) => void;
   cmdResult: string | null;
 }) {
-  // In AUTO, the RTAC closes the loop, so manual tap/switch commands get
-  // reverted within a poll cycle. Disable them and point the operator at the
-  // mode toggle instead of letting a "dead" button confuse them.
+  // In AUTO the regulator holds its setpoint and the cap bank self-corrects, so
+  // a direct manual command is ambiguous: the cap reverts a switch within a
+  // cycle, and a small regulator tap inside the deadband can actually persist.
+  // Rather than expose a button whose effect is inconsistent, disable the
+  // manual actuators and point the operator at the mode toggle.
   const regManual = Boolean(regulator?.manual_mode);
   const capAuto = Boolean(capbank?.auto_mode);
   return (
@@ -457,6 +459,13 @@ function CmdButton({ label, onClick, variant, disabled, title }: { label: string
 
 function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; networkEvents: NetworkEvent[] }) {
   const [showDPI, setShowDPI] = useState(networkEvents.length > 0);
+  const dpiSeenRef = useRef(false);
+  useEffect(() => {
+    if (networkEvents.length > 0 && !dpiSeenRef.current) {
+      dpiSeenRef.current = true;
+      setShowDPI(true);
+    }
+  }, [networkEvents.length]);
 
   if (entries.length === 0 && networkEvents.length === 0) {
     return <div className="py-8 text-center text-sm text-slate-500">No commands recorded yet. Run an exercise to see the audit trail.</div>;
@@ -469,6 +478,8 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
     ot_ops: "OT Ops",
     field: "Field",
     operator: "Operator",
+    "lab-control": "Lab Control",
+    auto: "Auto",
   };
 
   const zoneBorder: Record<string, string> = {
@@ -477,6 +488,8 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
     ot_ops: "border-l-orange-500",
     field: "border-l-green-500",
     operator: "border-l-sky-500",
+    "lab-control": "border-l-[#c6f24e]",
+    auto: "border-l-amber-500",
   };
 
   return (
@@ -506,7 +519,7 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
               const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
 
               return (
-                <div key={`a-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
+                <div key={`a-${e.timestamp}-${e.command}-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                       {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
@@ -548,7 +561,7 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
             })}
 
         {showDPI && networkEvents.map((e, i) => (
-          <div key={`n-${i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
+          <div key={`n-${e.id ?? i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                 {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
@@ -678,7 +691,9 @@ function ElectricalDetailView({
               : !rclClosed
               ? `PARTIAL OUTAGE — downstream loads de-energized, ~${Math.round(((genKW + critKW) || 700) * 3)} customers affected`
               : faultActive
-              ? `FAULT ACTIVE — fault current ${faultCurrentA.toFixed(0)} A at recloser bus`
+              ? (faultCurrentA > 0
+                  ? `FAULT ACTIVE — ${faultCurrentA.toFixed(0)} A at the ${relayFault ? "feeder breaker" : "recloser bus"}`
+                  : `FAULT INTERRUPTED — protection opened the ${relayFault ? "feeder breaker" : "recloser"}, downstream service lost`)
               : protectionDegraded
               ? "PROTECTION DEGRADED — auto-reclose disabled, restoration risk increased"
               : critPU < 0.95
@@ -842,7 +857,7 @@ function ElectricalDetailView({
                   </div>
                   <div>
                     <span className="text-slate-500">Location</span>
-                    <div className="text-slate-300">Recloser Bus (mid-feeder)</div>
+                    <div className="text-slate-300">{relayFault ? "Feeder breaker (substation)" : "Recloser bus (mid-feeder)"}</div>
                   </div>
                   <div>
                     <span className="text-slate-500">Type</span>
@@ -850,7 +865,7 @@ function ElectricalDetailView({
                   </div>
                   <div>
                     <span className="text-slate-500">Fault Current</span>
-                    <div className="text-red-400 font-bold">{faultCurrentA.toFixed(0)} A</div>
+                    <div className="text-red-400 font-bold">{faultCurrentA > 0 ? `${faultCurrentA.toFixed(0)} A` : "Cleared (device open)"}</div>
                   </div>
                 </div>
                 <div className="border-t border-slate-800/60 pt-2 space-y-1 text-[11px]">
@@ -885,7 +900,7 @@ function ElectricalDetailView({
                   <div>2. <span className="text-sky-400">Feeder Breaker (52)</span> is upstream backup if recloser fails to clear</div>
                   <div>3. <span className="text-cyan-400">Regulator (90)</span> maintains voltage at critical load through tap adjustment</div>
                   <div className="mt-1.5 border-t border-slate-800/40 pt-1.5 text-slate-500">
-                    If auto-reclose is disabled by an attacker, the recloser cannot automatically restore service after a transient fault — this is the core cyber-to-physical impact in Scenario 2.
+                    If auto-reclose is disabled by an attacker, the recloser cannot automatically restore service after a transient fault — this is the core cyber-to-physical impact in Exercise 2.
                   </div>
                 </div>
               </div>

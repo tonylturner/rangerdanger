@@ -56,11 +56,21 @@ export function MetricsOverview() {
 
   const protectionOk = bkrClosed && rclClosed;
   const voltageOk = critV >= 114 && critV <= 126;
+
+  // Out-of-band detection (ANSI C84.1 114–126V). Applies to any cause —
+  // load, fault, regulator, cyber action — and drives the amber trace +
+  // badge below. Only flag energized buses (v > 0).
+  const feederV = elec?.downstream_voltage_v ?? 0;
+  const feederOOB = feederV > 0 && (feederV < 114 || feederV > 126);
+  const critOOB = critV > 0 && (critV < 114 || critV > 126);
+  const anyOOB = feederOOB || critOOB;
   const customersServed = totalKw > 0;
 
   // Customer impact estimate (simplified: 1 kW ~ 3 residential customers)
   const estCustomers = Math.round(totalKw * 3);
-  const estLost = customersServed ? 0 : Math.round(350 * 3); // baseline ~350 kW
+  // ~700 kW feeder baseline (500 general + 200 critical) — same basis the
+  // Electrical Detail and One-Line use, so the outage count agrees across views.
+  const estLost = customersServed ? 0 : Math.round(700 * 3);
 
   return (
     <div className="space-y-3">
@@ -70,7 +80,7 @@ export function MetricsOverview() {
           label="Customer Service"
           value={customersServed ? `~${estCustomers} served` : `~${estLost} without power`}
           ok={customersServed}
-          detail={customersServed ? `${totalKw} kW load` : "ALL LOADS DE-ENERGIZED"}
+          detail={customersServed ? `${Math.round(totalKw)} kW load` : "ALL LOADS DE-ENERGIZED"}
         />
         <OpCard
           label="Feeder Protection"
@@ -93,12 +103,12 @@ export function MetricsOverview() {
           label="Critical Load"
           value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
           ok={elec?.critical_load_energized}
-          detail={elec?.critical_load_energized ? `${critKw} kW hospital / fire station` : "Hospital and fire station offline"}
+          detail={elec?.critical_load_energized ? `${Math.round(critKw)} kW hospital / fire station` : "Hospital and fire station offline"}
         />
       </div>
 
       {/* Voltage trend — single chart, focused */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+      <div className="relative rounded-lg border border-slate-800 bg-slate-900/70 p-3">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Voltage Trend
@@ -113,16 +123,25 @@ export function MetricsOverview() {
             <span>Normal: 114–126V</span>
           </div>
         </div>
+        {anyOOB && (
+          <span
+            className="absolute right-3 top-3 z-10 rounded-full px-2 py-0.5 font-mono text-[10px]"
+            style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.5)" }}
+          >
+            {critOOB ? "CRITICAL OUT OF BAND" : "FEEDER OUT OF BAND"}
+          </span>
+        )}
         <ResponsiveContainer width="100%" height={140}>
           <LineChart data={history}>
-            <YAxis stroke="#334155" domain={[100, 135]} tick={{ fontSize: 9, fill: "#64748b" }} width={30} />
+            <YAxis stroke="#334155" domain={[108, 130]} tick={{ fontSize: 9, fill: "#64748b" }} width={30} />
             <Tooltip contentStyle={{ background: "#020617", border: "1px solid #1e293b", fontSize: 11 }} />
-            <ReferenceArea y1={114} y2={126} fill="#22c55e" fillOpacity={0.04} />
-            <ReferenceArea y1={108} y2={114} fill="#f59e0b" fillOpacity={0.04} />
-            <ReferenceArea y1={126} y2={132} fill="#f59e0b" fillOpacity={0.04} />
+            {/* ANSI C84.1 safe zone (114–126V) with faint fill + dashed edges */}
+            <ReferenceArea y1={114} y2={126} fill="#4ade80" fillOpacity={0.04} />
+            <ReferenceLine y={114} stroke="rgba(74,222,128,0.3)" strokeDasharray="2 3" strokeWidth={0.4} />
+            <ReferenceLine y={126} stroke="rgba(74,222,128,0.3)" strokeDasharray="2 3" strokeWidth={0.4} />
             <ReferenceLine y={120} stroke="#334155" strokeDasharray="3 3" />
-            <Line dataKey="voltage" stroke="#0ea5e9" strokeWidth={1.5} dot={false} name="Feeder (V)" />
-            <Line dataKey="critVoltage" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Critical Load (V)" />
+            <Line dataKey="voltage" stroke={feederOOB ? "#f59e0b" : "#0ea5e9"} strokeWidth={1.5} dot={false} name="Feeder (V)" isAnimationActive={false} />
+            <Line dataKey="critVoltage" stroke={critOOB ? "#f59e0b" : "#22c55e"} strokeWidth={1.5} dot={false} name="Critical Load (V)" isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

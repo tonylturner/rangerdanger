@@ -1,4 +1,5 @@
 import { MetricsOverview } from "../../components/metrics-overview";
+import { LoadSimulator } from "../../components/load-simulator";
 import { SubstationPanel } from "../../components/substation-panel";
 
 export default function SubstationPage() {
@@ -15,6 +16,7 @@ export default function SubstationPage() {
       </header>
 
       <MetricsOverview />
+      <LoadSimulator />
       <SubstationPanel />
     </main>
   );

@@ -297,6 +297,25 @@ export async function getSubstationAudit() {
   return request<{ entries: AuditEntry[] }>("/substation/audit");
 }
 
+// Load Simulator (training-only) load override. Fields are optional so a caller
+// can patch just the override (during a ramp) without emitting audit noise, or
+// pass audit_* on discrete user actions to log a single Command Audit entry.
+export async function sendLabControl(body: {
+  active?: boolean;
+  general_load_pct?: number;
+  critical_load_pct?: number;
+  power_factor?: number;
+  source?: string;
+  audit_command?: string;
+  audit_target?: string;
+  audit_detail?: string;
+}) {
+  return request<{ result: string; lab?: Record<string, number | boolean> }>("/substation/lab-control", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function getSubstationHealth() {
   return request<{
     status: string;
