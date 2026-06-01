@@ -169,6 +169,16 @@ jobs:
           set -euo pipefail
           ./scripts/events-smoke.sh
 
+      - name: Substation physics smoke
+        # scripts/substation-smoke.sh confirms field-device state flows
+        # through RTAC -> OpenDSS and back: the capacitor bank (wired into
+        # the power flow) raises the power factor on switch-in and its
+        # in/out state echoes through both the device map and the electrical
+        # results. The health/inventory gates don't exercise the physics.
+        run: |
+          set -euo pipefail
+          ./scripts/substation-smoke.sh
+
       - name: Dump compose logs on failure
         if: failure()
         run: |

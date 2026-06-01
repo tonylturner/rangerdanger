@@ -129,6 +129,13 @@ for entry in "${EXPECTED[@]}"; do
   fi
 done
 
+# --- substation physics -----------------------------------------------------
+# Field-device state -> RTAC -> OpenDSS power flow -> API, focused on the
+# capacitor bank (see scripts/substation-smoke.sh). Health/inventory above
+# don't exercise the physics.
+note "substation: capacitor bank physics"
+if ./scripts/substation-smoke.sh; then ok "substation physics (capbank -> OpenDSS)"; else err "substation physics"; fi
+
 # --- service health ---------------------------------------------------------
 note "compose services health"
 docker compose ps --format '{{.Service}}\t{{.Status}}' | while read -r line; do
