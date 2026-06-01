@@ -48,11 +48,18 @@ for d in relay recloser regulator capbank; do
   echo "$state" | jq -e ".devices.$d" >/dev/null 2>&1 && ok "devices.$d present" || err "devices.$d missing"
 done
 
-# Clear the cap's 6-operation switch-lockout up front: this script performs
-# several switch ops, so without a reset a repeated local run (or a run after
-# manual testing) would hit lockout and the switch/auto checks would be
-# (correctly) refused. A fresh CI stack starts at zero, so this is a no-op there.
+# Reset the feeder to a clean energized baseline first. Earlier smoke steps
+# (lab-commands, events) and any prior manual testing run documented commands
+# that trip the breaker, open the recloser, drive the regulator to an extreme
+# tap, or inject faults — which would leave the feeder de-energized (PF and
+# voltage read 0) with the tap pinned, and every assertion below would run
+# against a dead feeder. Also clears the cap's 6-op switch lockout.
+cmd relay clear_fault; cmd relay unlock; cmd relay close
+cmd recloser clear_fault; cmd recloser reset_lockout; cmd recloser enable_reclose; cmd recloser close
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{"command":"set_tap","value":0}' "$sub/command/regulator" >/dev/null
+cmd regulator set_auto
 cmd capbank reset_lockout
+sleep 5  # let the RTAC poll + OpenDSS re-solve the energized state
 
 # 2. Capacitor bank physics A/B in MANUAL (so AUTO can't override the switch-out).
 cmd capbank set_manual
