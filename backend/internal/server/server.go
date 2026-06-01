@@ -218,6 +218,7 @@ func (s *Server) registerRoutes() {
 		api.GET("/firewall/active", s.handleFirewallActive)
 		api.POST("/firewall/apply", s.handleFirewallApply)
 		api.POST("/firewall/apply-custom", s.handleFirewallApplyCustom)
+		api.POST("/firewall/validation-report", s.handleValidationReport)
 
 		// Workshop endpoints
 		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
