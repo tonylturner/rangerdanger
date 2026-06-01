@@ -27,7 +27,7 @@ image?"
 **Inheritance note:** every sim stage in `services/Dockerfile` is
 `FROM sim-base AS <sim>` (relay, recloser, regulator, capbank,
 historian, gps, **and rtac**), so anything in the `sim-base` column is
-also present in every per-sim image including `rtac-sim` — the matrix
+also present in every per-sim image including `rtac-sim` - the matrix
 only adds an explicit ✓ in the `rtac-sim` column when rtac-sim layers
 on something *additional* (sshd, nginx, mbpoll built from source).
 Treat `sim-base` ✓ as "every sim has this, rtac-sim included."

@@ -136,7 +136,7 @@ function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
 }
 
 /**
- * matchesExpected — mirror of the alias logic in scenario_execute.go:332
+ * matchesExpected - mirror of the alias logic in scenario_execute.go:332
  * and frontend/components/scenario-runner.tsx:1219-1223. The YAML uses
  * "hardened" as the alias for the backend's "improved" or "custom"
  * states, so any of those three count as a match for an expected
@@ -169,7 +169,7 @@ export function PolicyStatusBanner({
   // policy satisfies it, show the informational banner.
   const matched = matchesExpected(activeConfig ?? "", expectedConfig);
 
-  // Mismatch variant — amber warning, action prompt inline.
+  // Mismatch variant - amber warning, action prompt inline.
   if (!matched && expectedConfig && activeConfig) {
     const needLabel =
       expectedConfig === "weak"

@@ -44,7 +44,7 @@ GO IDs cleared by this bump:
 - `GO-2026-5030` (net/html XSS via duplicate attributes)
 
 Practical exposure: rangerdanger does NOT call `golang.org/x/net/html`
-parse/Render on attacker-controlled input — html templating is in
+parse/Render on attacker-controlled input - html templating is in
 the Next.js frontend, not the Go backend; backend HTML is limited to
 a couple of static error pages. x/net/idna is reachable transitively
 via HTTP routing but the affected ToASCII/ToUnicode paths aren't on

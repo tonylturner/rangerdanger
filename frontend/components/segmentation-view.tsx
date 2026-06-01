@@ -7,7 +7,7 @@
 //
 // The component manages its own state (active config, comparison) and
 // only depends on React Query for cross-component cache invalidation
-// when the user applies a new config — that lets the network map's
+// when the user applies a new config - that lets the network map's
 // edge labels and the header policy badge update immediately when the
 // firewall flips between weak and improved.
 
@@ -76,7 +76,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyId>("improved");
   const [userPickedPolicy, setUserPickedPolicy] = useState(false);
 
-  // Active firewall config — shared via React Query so this drawer
+  // Active firewall config - shared via React Query so this drawer
   // and the top-right PolicyBadge stay in sync whichever entry point
   // the student uses to flip policy. Polling every 5s also picks up
   // manual containd commits the policy-observer flips to
@@ -118,7 +118,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
       queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
       queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
     } catch {
-      // swallow — UI state stays as-is
+      // swallow - UI state stays as-is
     } finally {
       setApplying(false);
     }
@@ -126,7 +126,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
 
   // Build the evaluation rows for the currently-selected policy. Each
   // row reads the chosen policy's action/rule columns from the diff
-  // and tags whether it differs from what's currently active — that
+  // and tags whether it differs from what's currently active - that
   // tag drives the "would change if applied" highlight.
   const selectedMeta = policyMeta(selectedPolicyId);
   const activeMeta = policyMeta(activeConfig);
@@ -227,13 +227,13 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
 
-      {/* Live containd DPI events — shows real allow/deny decisions
+      {/* Live containd DPI events - shows real allow/deny decisions
           on the wire so students can watch the policy enforce when
           they fire a probe from a terminal. Empty under the weak
           baseline by design (no rules have log:true). */}
       <LiveEvents compact={compact} activeConfig={activeConfig} />
 
-      {/* Dynamic policy evaluation — driven by the dropdown selection.
+      {/* Dynamic policy evaluation - driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
           "would change" tag so the user can see what applying the
           selected policy would actually do. */}
@@ -299,7 +299,7 @@ function ActionChip({ action }: { action: string; label?: string }) {
 
 // eventVerdict returns the kernel-side disposition for firewall.rule.hit
 // events ONLY. IDS anomalies are NOT treated as DENY here even though
-// they're suspicious — anomalies are alerts, not drops, and conflating
+// they're suspicious - anomalies are alerts, not drops, and conflating
 // them inflates the deny counter + paints amber-categorized rows red.
 // Operators read "N deny" as "the firewall actually stopped N packets";
 // anomalies belong in the separate `ids` count alongside the amber

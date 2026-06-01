@@ -17,9 +17,9 @@ stage once, students load from USB.
 
 Two staging flows:
 
-- `stage-ssd.sh` — full bundle. First-time SSD, or when a student is
+- `stage-ssd.sh` - full bundle. First-time SSD, or when a student is
   joining late and needs everything from scratch.
-- `stage-ssd-delta.sh` — patch bundle. After a fix lands and you
+- `stage-ssd-delta.sh` - patch bundle. After a fix lands and you
   need to push it without re-shipping the unchanged 6 GB.
 
 ## What's on the SSD
@@ -35,7 +35,7 @@ kernel asset:
 | `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
-| `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs — only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
+| `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs - only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
 
 Both `images-*.tar` carry the same image *content* (different binaries
 inside). `setup.sh --from-tarballs` auto-detects host arch and loads
@@ -53,7 +53,7 @@ Runtime: 25-45 minutes on a fast connection. Pulls every release
 image once per architecture, then `docker save`s each set into the
 arch-specific tarball.
 
-The script fails fast on any pull error (no partial bundles —
+The script fails fast on any pull error (no partial bundles -
 v0.1.6 fix). If the network blips, it dies and tells you which image
 failed; re-run after fixing.
 
@@ -79,7 +79,7 @@ Or on Windows:
 
 What `setup.sh --from-tarballs` does, in order:
 
-1. **Pre-flight checks** — Docker reachable, Compose v2, arch
+1. **Pre-flight checks** - Docker reachable, Compose v2, arch
    recognized, disk ≥ 30 GB, RAM ≥ 8 GB, ports `8088 / 9080 / 9443
    / 2222` free. `--check-only` runs just this stage and exits, useful
    for a "is my laptop ready" pass the night before.
@@ -88,7 +88,7 @@ What `setup.sh --from-tarballs` does, in order:
 3. **`docker compose -f release.yml -f offline.yml up -d`**. The
    offline overlay sets `pull_policy: never` on every release-image
    service so a slow/blocked GHCR can't ruin the day.
-4. **Health gate** — waits for `/api/health`, then runs the workshop
+4. **Health gate** - waits for `/api/health`, then runs the workshop
    readiness gate (firewall apply weak/improved + workshop reset).
    Fails loudly with diagnostics if any of those are broken.
 
@@ -108,7 +108,7 @@ start Lab 1.2.
 
 After you stage the SSD and hand it out, every change you commit
 falls into one of three categories. Figure out which before you
-distribute anything — they have very different student experiences.
+distribute anything - they have very different student experiences.
 
 ### Pattern 1: repo-only change (no image rebuild)
 
@@ -149,7 +149,7 @@ Anything that lands in one of the 14 first-party images:
 
 Distribution: build and save just the changed images, then ship them
 plus the new `rangerdanger.tgz`. The full SSD is **not** invalidated
-— students keep the unchanged images on disk and only load the deltas.
+- students keep the unchanged images on disk and only load the deltas.
 
 Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
@@ -157,7 +157,7 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 containd is pulled, not built locally. New containd version means a
 fresh pull. Same as Pattern 2 distribution-wise, but you don't
-`docker compose build` — you `docker pull ghcr.io/tonylturner/containd:latest`
+`docker compose build` - you `docker pull ghcr.io/tonylturner/containd:latest`
 on the instructor machine, then `docker save` it into the delta
 bundle.
 
@@ -224,11 +224,11 @@ docker load -i /Volumes/WORKSHOP_SSD/delta-v0.1.17/delta-$(uname -m | sed 's/x86
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d backend frontend
 ```
 
-The `docker load` for an unchanged-layer image is fast — Docker
+The `docker load` for an unchanged-layer image is fast - Docker
 checks layer hashes and only writes the new top layer.
 
 If a student is uncertain which services need restart, `docker
-compose up -d` (no service list) is safe — Docker compose only
+compose up -d` (no service list) is safe - Docker compose only
 restarts containers whose image digest changed.
 
 ## Recovery scenarios
@@ -242,7 +242,7 @@ layer-cached so it's fast on the second run.
 ### "A student's import failed mid-load"
 
 `docker load` is mostly atomic per-layer. Partial loads shouldn't
-break anything — the student can re-run `setup.sh --from-tarballs`
+break anything - the student can re-run `setup.sh --from-tarballs`
 and it'll pick up where it left off. If state's still weird:
 
 ```sh
@@ -275,14 +275,14 @@ docker compose restart backend
 ```
 
 If a YAML edit landed in `rangerdanger.tgz` and the student already
-extracted an old version, they need the new tgz too — extract,
+extracted an old version, they need the new tgz too - extract,
 restart backend.
 
 ## FAQ
 
 **Q: Can I host the delta on a web server / Slack / Drive instead of
 USB?**
-Yes — the bundles are static files. `delta-*.tar` and
+Yes - the bundles are static files. `delta-*.tar` and
 `rangerdanger.tgz` can go anywhere students can fetch them. The
 `--from-tarballs` flag wants a directory containing the right
 file names, so just download to a local dir and point at it.
@@ -290,7 +290,7 @@ file names, so just download to a local dir and point at it.
 **Q: What if I need to ship a fix five minutes before the workshop?**
 Build locally, run `stage-ssd-delta.sh` against your last shipped
 tag (e.g. `v0.1.7`) and an unreleased local tag. The script doesn't
-require the new version to be tagged in GHCR — it can save from
+require the new version to be tagged in GHCR - it can save from
 local images.
 
 **Q: Students get OpenPLC errors on an ARM host. Why?**
@@ -301,11 +301,11 @@ Rosetta), `setup.sh` registers a `qemu-x86_64` handler via
 `tonistiigi/binfmt` (bundled in `images-arm64.tar`); if OpenPLC still
 errors there, run `docker run --privileged --rm
 tonistiigi/binfmt:qemu-v10.2.1 --install amd64` and re-run `setup.sh`.
-Emulated either way — slower but functional. See `ROADMAP.md` "Known
+Emulated either way - slower but functional. See `ROADMAP.md` "Known
 gaps".
 
 **Q: Can students share a single SSD?**
-Yes for the load — `docker load` is read-only on the tarball. Eject
+Yes for the load - `docker load` is read-only on the tarball. Eject
 politely between users. For a workshop, having ~3 SSDs with the same
 content lets people pass them around without crowding.
 

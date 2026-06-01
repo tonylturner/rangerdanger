@@ -3,7 +3,7 @@
 import { useFirewallTrack, type FirewallTrack } from "../lib/use-firewall-track";
 import { Wrench, Hand, Check } from "lucide-react";
 
-// TrackPicker — renders inline in Lab 2.2 step 1 (via the
+// TrackPicker - renders inline in Lab 2.2 step 1 (via the
 // :::track-picker directive). The student's choice persists to
 // localStorage and is read by later steps and labs to vary the
 // "apply policy" / "interact with containd" sections, plus the
@@ -31,7 +31,7 @@ const CARDS: Card[] = [
     title: "Guided (default)",
     oneLiner: "Click to apply, explore the interfaces",
     detail:
-      "You apply policies with the buttons below the step (Apply Hardened, Apply Your Plan) and walk containd's web UI / CLI to understand what landed. No rule authoring and no commit step. This is the default workshop path — recommended for everyone focusing on the segmentation lesson rather than firewall policy syntax.",
+      "You apply policies with the buttons below the step (Apply Hardened, Apply Your Plan) and walk containd's web UI / CLI to understand what landed. No rule authoring and no commit step. This is the default workshop path - recommended for everyone focusing on the segmentation lesson rather than firewall policy syntax.",
     accent: "text-emerald-300",
     borderActive: "border-emerald-500",
     borderIdle: "border-slate-700",
@@ -62,7 +62,7 @@ export function TrackPicker() {
       </div>
       <div className="mb-3 text-xs text-slate-400">
         <span className="text-emerald-300">Guided</span> is selected by
-        default — just continue. Switch to Advanced if you&apos;d rather
+        default - just continue. Switch to Advanced if you&apos;d rather
         author the rules yourself; you can switch using the track chip at
         the top of any firewall step.
       </div>

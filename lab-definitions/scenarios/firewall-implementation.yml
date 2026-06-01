@@ -280,7 +280,7 @@ steps:
       denied.
 
       :::guided
-      Click **Apply Hardened** in the **containd NGFW — policy actions** panel below this step to push the canned
+      Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
       reference policy, or **Apply Your Plan** to push the policy
       built from your Lab 1.4 picks. Then walk the rule table below
       and confirm each row is present in containd's web UI

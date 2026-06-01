@@ -5,7 +5,7 @@ import { useState } from "react";
 import { runValidationReport, type ValidationReport } from "../lib/api";
 import { MarkdownProse } from "./markdown-prose";
 
-// ValidationReportPanel — rendered inline in Lab 2.4 via the
+// ValidationReportPanel - rendered inline in Lab 2.4 via the
 // :::validation-report directive. The button runs the positive/negative
 // segmentation test matrix against the CURRENTLY ACTIVE policy (the
 // backend never re-applies, so it validates what the student built),
@@ -39,7 +39,7 @@ export function ValidationReportPanel() {
           <div className="text-xs text-slate-400">
             Runs the full authorized + unauthorized test matrix against the
             policy you have active, captures PCAP at the firewall, and
-            assembles the change-board evidence — the work an operator would
+            assembles the change-board evidence - the work an operator would
             do by hand after a segmentation change.
           </div>
         </div>
@@ -58,7 +58,7 @@ export function ValidationReportPanel() {
 
       {loading && (
         <div className="mt-3 text-xs italic text-slate-500">
-          Probing ~19 flows and capturing PCAP — this takes a few seconds.
+          Probing ~19 flows and capturing PCAP - this takes a few seconds.
         </div>
       )}
       {error && <div className="mt-3 text-xs text-red-400">{error}</div>}

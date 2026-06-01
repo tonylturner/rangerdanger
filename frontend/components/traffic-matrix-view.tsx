@@ -11,7 +11,7 @@
 // (scenario generator state).
 //
 // The Generate Traffic button calls the same /api/traffic/generate
-// backend endpoint that students invoke from the lab terminals — the
+// backend endpoint that students invoke from the lab terminals - the
 // backend handler `docker exec`s real curl commands inside eng-ws and
 // vendor-jump, so flows produced here are identical to flows produced
 // by hand. Nothing in this drawer reaches around containd or invents
@@ -269,7 +269,7 @@ export function TrafficMatrixView({
     }
   };
 
-  // Combined "Generate + Capture" — fires the scenario traffic
+  // Combined "Generate + Capture" - fires the scenario traffic
   // generator and starts a containd PCAP capture for the selected
   // duration. Both run from the same backend handlers students hit
   // from terminals.
@@ -297,7 +297,7 @@ export function TrafficMatrixView({
 
   return (
     <div className="space-y-3">
-      {/* Header strip — title + canvas-edges toggle + Generate button */}
+      {/* Header strip - title + canvas-edges toggle + Generate button */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">

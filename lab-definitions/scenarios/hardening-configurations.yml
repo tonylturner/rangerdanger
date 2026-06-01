@@ -256,7 +256,7 @@ steps:
       policy) before the re-test will work.
 
       :::guided
-      Click **Apply Hardened** in the **containd NGFW — policy actions** panel below this step to push the canned
+      Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
       reference policy, or **Apply Your Plan** if you built a
       custom policy in Lab 2.2.
       :::

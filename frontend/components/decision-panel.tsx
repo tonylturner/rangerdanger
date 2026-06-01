@@ -43,7 +43,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   });
 
   // Lab 1.3 verdicts (the design requirements) + resourcing
-  // readiness answers. Both read once on mount — students aren't
+  // readiness answers. Both read once on mount - students aren't
   // expected to flip back to 1.3 mid-1.4-session.
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [readiness, setReadiness] = useState<ReadinessAnswer[]>([]);
@@ -108,7 +108,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
 
   return (
     <div className="mt-3 space-y-4">
-      {/* Lab 1.3 design requirements — context for the action picker */}
+      {/* Lab 1.3 design requirements - context for the action picker */}
       {hasAnyVerdict && (
         <div className="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3">
           <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">
@@ -132,7 +132,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
             ))}
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
-            These are read-only — change them in the <a
+            These are read-only - change them in the <a
               href="/exercises/segmentation-requirements"
               className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
             >Segmentation Requirements</a> exercise.
@@ -140,7 +140,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         </div>
       )}
 
-      {/* Resourcing readiness — observational overlays */}
+      {/* Resourcing readiness - observational overlays */}
       {hasAnyReadiness && (
         <div className="rounded-lg border border-purple-900/40 bg-purple-950/10 p-3">
           <div className="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-2">
@@ -166,7 +166,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
             ))}
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
-            Affected actions below show the dependencies these answers create. Selections aren&apos;t blocked — this is reality-check context.
+            Affected actions below show the dependencies these answers create. Selections aren&apos;t blocked - this is reality-check context.
           </div>
         </div>
       )}
@@ -295,7 +295,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                     {implements_.length === 0 && hasAnyVerdict && (
                       <span
                         className="rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
-                        title="Operational hygiene / process — not tied to a specific 1.3 design verdict"
+                        title="Operational hygiene / process - not tied to a specific 1.3 design verdict"
                       >
                         operational hygiene
                       </span>
@@ -331,7 +331,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         as your remediation plan of record.
       </div>
 
-      {/* Sticky-bottom coverage summary — visible while the student
+      {/* Sticky-bottom coverage summary - visible while the student
           scrolls the action catalog. Compact bar by default; click
           to expand per-requirement details. The pb-12 above gives
           the bar room so it doesn't overlap the footer text. */}
@@ -383,7 +383,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                         <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
                         <span className="text-slate-500">
                           <span className="font-bold text-slate-400">{c.req.label}</span>
-                          <span className="text-slate-600"> — {c.reason}</span>
+                          <span className="text-slate-600"> - {c.reason}</span>
                         </span>
                       </div>
                     );
@@ -394,7 +394,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                         <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                         <span className="text-slate-300">
                           <span className="font-bold">{c.req.label}</span>
-                          <span className="text-slate-500"> — {c.req.verdict}, fully addressed</span>
+                          <span className="text-slate-500"> - {c.req.verdict}, fully addressed</span>
                         </span>
                       </div>
                     );
@@ -405,7 +405,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                         <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
                         <span className="text-slate-300">
                           <span className="font-bold">{c.req.label}</span>
-                          <span className="text-slate-500"> — {c.req.verdict}, partial: missing </span>
+                          <span className="text-slate-500"> - {c.req.verdict}, partial: missing </span>
                           <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
                         </span>
                       </div>
@@ -417,7 +417,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                       <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
                       <span className="text-slate-300">
                         <span className="font-bold">{c.req.label}</span>
-                        <span className="text-slate-500"> — {c.req.verdict}, no implementing action selected. Pick </span>
+                        <span className="text-slate-500"> - {c.req.verdict}, no implementing action selected. Pick </span>
                         <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
                         <span className="text-slate-500"> to close.</span>
                       </span>

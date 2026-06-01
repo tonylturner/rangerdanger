@@ -39,7 +39,7 @@ runs it under Rosetta via Docker Desktop; Docker Engine on arm64 Linux
 has no such shim. `setup.sh` detects arm64 Linux and auto-registers a
 `qemu-x86_64` emulation handler via `tonistiigi/binfmt`, and
 `scripts/uninstall-rangerdanger.sh` reverts it (only if setup
-installed it). The offline SSD carries the helper image too —
+installed it). The offline SSD carries the helper image too -
 `stage-ssd.sh` and `stage-ssd-delta.sh` include `tonistiigi/binfmt` in
 `images-arm64.tar` / `delta-arm64.tar`, so an `--from-tarballs` install
 registers emulation with no network. You only need to register it by
@@ -57,8 +57,8 @@ systemd unit once for permanent persistence:
 sudo ./scripts/persist-emulation.sh        # --uninstall to remove
 ```
 
-Everything else — the containd DPI engine and the other 13 first-party
-images — runs natively on arm64; only OpenPLC needs this, and nothing
+Everything else - the containd DPI engine and the other 13 first-party
+images - runs natively on arm64; only OpenPLC needs this, and nothing
 else depends on it, so the rest of the workshop works either way. x86_64
 Linux needs none of this (OpenPLC is native there).
 

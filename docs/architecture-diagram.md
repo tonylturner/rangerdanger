@@ -224,7 +224,7 @@ plane. `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`, and
 `openplc` all have a mgmt leg in addition to their lab zone (the full
 set of `mgmt_net` members is: `firewall`, `backend`, `frontend`,
 `proxy`, `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`,
-`rtac_sim`, `openplc`). `kali` is intentionally not on `mgmt_net` —
+`rtac_sim`, `openplc`). `kali` is intentionally not on `mgmt_net` -
 it lives only on `enterprise_net` so attack traffic has to cross the
 firewall like any other enterprise host.
 

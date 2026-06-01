@@ -17,9 +17,9 @@ import (
 
 // validation_report.go powers Lab 2.4's "Generate Validation Report"
 // button. It runs the positive/negative segmentation probe matrix against
-// the CURRENTLY ACTIVE containd policy — it never applies a policy, so it
+// the CURRENTLY ACTIVE containd policy - it never applies a policy, so it
 // validates whatever the student built (Apply Hardened or Apply Your
-// Plan) rather than clobbering it — captures a short PCAP at the firewall,
+// Plan) rather than clobbering it - captures a short PCAP at the firewall,
 // and returns a change-board-ready markdown report. This is the in-app
 // equivalent of scripts/validation-report.sh.
 
@@ -118,7 +118,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 			verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
 			// Authorized flows can momentarily lose a race to container /
 			// routing warmup; retry once so a transient hiccup doesn't read
-			// as a policy failure. Never retry unauthorized — a real leak
+			// as a policy failure. Never retry unauthorized - a real leak
 			// must surface, not be masked by a lucky second attempt.
 			if p.Category == "authorized" && verdict != p.Expected {
 				verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
@@ -178,7 +178,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 }
 
 // probeTCP opens a TCP connection from src to dst:port and classifies the
-// result as allow (reached) / deny (dropped) by exit code + duration —
+// result as allow (reached) / deny (dropped) by exit code + duration -
 // same heuristic as scripts/firewall-smoke.sh and validation-report.sh.
 func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int) (string, int) {
 	cmd := []string{"sh", "-c", fmt.Sprintf(
@@ -268,7 +268,7 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	var b strings.Builder
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	fmt.Fprintf(&b, "# Substation Segmentation — Validation Report\n\n")
+	fmt.Fprintf(&b, "# Substation Segmentation - Validation Report\n\n")
 	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| **Generated** | %s |\n", now)
 	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel, source, hash)
@@ -281,9 +281,9 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 	fmt.Fprintf(&b, "| **Authorized flows working** | %d | %d |\n", authPass, authTotal)
 	fmt.Fprintf(&b, "| **Unauthorized flows blocked** | %d | %d |\n\n", unauthPass, unauthTotal)
 	if result {
-		fmt.Fprintf(&b, "**Result: PASS** — every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.\n\n")
+		fmt.Fprintf(&b, "**Result: PASS** - every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.\n\n")
 	} else {
-		fmt.Fprintf(&b, "**Result: FAIL** — one or more rows did not match the expected verdict. Inspect the ✗ rows below: an authorized flow that's blocked means a rule is too tight; an unauthorized flow that succeeds means a rule is too loose or missing.\n\n")
+		fmt.Fprintf(&b, "**Result: FAIL** - one or more rows did not match the expected verdict. Inspect the ✗ rows below: an authorized flow that's blocked means a rule is too tight; an unauthorized flow that succeeds means a rule is too loose or missing.\n\n")
 	}
 
 	writeTable := func(title, intro, category string) {
@@ -317,7 +317,7 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	fmt.Fprintf(&b, "## Methodology\n\n")
 	fmt.Fprintf(&b, "- **allow** = the source container's TCP SYN reached the destination (connect succeeded, or a fast RST came back). **deny** = the SYN was dropped (timeout at the probe budget).\n")
-	fmt.Fprintf(&b, "- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) — the same primitive as `scripts/firewall-smoke.sh`.\n")
+	fmt.Fprintf(&b, "- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) - the same primitive as `scripts/firewall-smoke.sh`.\n")
 	fmt.Fprintf(&b, "- This report validates the **currently active** policy; it does not apply or change any policy.\n")
 	return b.String()
 }

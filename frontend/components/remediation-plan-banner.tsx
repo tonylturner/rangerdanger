@@ -10,7 +10,7 @@ type RemediationPlanBannerProps = {
 };
 
 // RemediationPlanBanner renders at the top of later exercises to show which
-// remediation actions the student chose in Exercise 1 — and specifically
+// remediation actions the student chose in Exercise 1 - and specifically
 // which of those actions affect the current exercise.
 //
 // Hidden entirely if:
@@ -41,14 +41,14 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
             <Link href="/exercises" className="underline hover:text-amber-200">
               Remediation Planning
             </Link>{" "}
-            exercise first — later exercises reference your plan.
+            exercise first - later exercises reference your plan.
           </div>
         </div>
       </div>
     );
   }
 
-  // Build the relevance list — actions in the plan that defend against
+  // Build the relevance list - actions in the plan that defend against
   // the current exercise (per ACTION_IMPACT mapping).
   const relevantSelected: { id: string; note: string }[] = [];
   const relevantMissed: { id: string; note: string }[] = [];
@@ -113,7 +113,7 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
           {relevantMissed.length > 0 && (
             <div>
               <div className="text-[9px] font-bold uppercase tracking-wider text-red-600 mb-1">
-                Missed — attack paths remain open
+                Missed - attack paths remain open
               </div>
               <ul className="space-y-1">
                 {relevantMissed.map((r) => (
