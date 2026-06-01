@@ -108,9 +108,22 @@ func handleCommand(w http.ResponseWriter, r *http.Request) {
 		entry.Result = "executed"
 		entry.Detail = "lockout cleared"
 	case "inject_fault":
+		// A feeder fault is seen by the 50/51 overcurrent element, which trips
+		// the 52 breaker instantaneously (protection is local — it operates
+		// regardless of remote-control state). The breaker has no auto-reclose,
+		// so the feeder stays dark until the fault is cleared and the breaker is
+		// manually closed: a sustained, total outage, distinct from the
+		// recloser's mid-feeder trip-and-reclose sequence.
 		state.FaultSeen = true
+		state.LastCommandSource = source
 		entry.Result = "executed"
-		entry.Detail = "fault injected"
+		if state.BreakerClosed {
+			state.BreakerClosed = false
+			entry.Detail = "fault injected — overcurrent trip, breaker opened"
+			log.Printf("INJECT FAULT from %s — overcurrent trip, breaker OPEN", source)
+		} else {
+			entry.Detail = "fault injected (breaker already open)"
+		}
 	case "clear_fault":
 		state.FaultSeen = false
 		entry.Result = "executed"

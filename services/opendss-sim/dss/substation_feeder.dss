@@ -53,7 +53,12 @@ New Transformer.VReg  phases=3  windings=2
 New RegControl.VRegCtrl  transformer=VReg  winding=2
 ~ vreg=120  band=2  ptratio=60  ctprim=300
 ~ maxtapchange=0
-! maxtapchange=0 => manual mode; we set tap externally from Python
+! Intentionally INERT (maxtapchange=0): OpenDSS does NOT auto-regulate here.
+! The tap is driven externally from circuit.py (from the regulator-sim's
+! tap_position), and the AUTO voltage-regulation loop lives in the RTAC
+! (services/rtac-sim auto control), NOT in the physics engine — this keeps
+! device sims authoritative and the regulator's manual/auto mode meaningful.
+! This block only records the regulator's setpoint/band for reference.
 
 ! ── Critical Load (200 kW, 0.95 PF) ────────────────────────────────
 New Load.CriticalLoad  bus1=reg_bus  phases=3

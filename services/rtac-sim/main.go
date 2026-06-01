@@ -120,6 +120,9 @@ func pollDevices() {
 
 		agg.LastPoll = time.Now()
 		agg.mu.Unlock()
+
+		// Close the AUTO-mode control loops using the freshly solved state.
+		runAutoControls(client)
 	}
 }
 
@@ -275,7 +278,7 @@ func deriveProcessImpact(device, command, result, sourceZone string) string {
 	case "relay/lockout":
 		return fmt.Sprintf("breaker LOCKED OUT — %.0f kW offline, manual intervention required to restore%s", totalKW, zoneLabel)
 	case "relay/inject_fault":
-		return "fault condition injected on feeder — protection will operate"
+		return fmt.Sprintf("feeder fault — overcurrent relay TRIPPED the breaker, %.0f kW de-energized, manual close required to restore%s", totalKW, zoneLabel)
 	case "recloser/disable_reclose":
 		return fmt.Sprintf("auto-reclose DISABLED — next fault will cause sustained outage (%.0f kW at risk)%s", totalKW, zoneLabel)
 	case "recloser/enable_reclose":
@@ -300,6 +303,10 @@ func deriveProcessImpact(device, command, result, sourceZone string) string {
 		return fmt.Sprintf("capacitor bank SWITCHED IN — reactive power injected, voltage rises%s", zoneLabel)
 	case "capbank/switch_out":
 		return fmt.Sprintf("capacitor bank SWITCHED OUT — reactive power removed, voltage drops%s", zoneLabel)
+	case "capbank/set_auto":
+		return "capacitor bank AUTO — switches automatically to correct power factor / support voltage"
+	case "capbank/set_manual":
+		return fmt.Sprintf("capacitor bank MANUAL — automatic correction disabled, operator controls switching%s", zoneLabel)
 	case "capbank/inject_fault":
 		return "fault injected on capacitor bank — protection will operate"
 	}
@@ -314,6 +321,138 @@ func floatFromMap(m map[string]any, key string) float64 {
 		}
 	}
 	return 0
+}
+
+func boolFromMap(m map[string]any, key string) bool {
+	if v, ok := m[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
+}
+
+func intFromMap(m map[string]any, key string) int {
+	if v, ok := m[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		}
+	}
+	return 0
+}
+
+// ── Closed-loop auto control ────────────────────────────────────────
+//
+// The voltage regulator and capacitor bank each have an operator-selectable
+// AUTO / MANUAL mode. In AUTO, the RTAC closes the control loop the field
+// devices were built for but never had wired: each poll cycle it reads the
+// OpenDSS power-flow result and nudges the device toward its target.
+//
+//   - Regulator (AVR): holds the regulated (critical-load) bus at its voltage
+//     setpoint, stepping the tap one position per cycle. The deadband is wider
+//     than a single tap step so it settles instead of hunting.
+//   - Capacitor bank: switches in to correct a lagging power factor (local VAR
+//     support) and switches out if its bus runs high (over-voltage cutout).
+//
+// In MANUAL the loop leaves the device alone — so an operator or attacker who
+// flips a device to MANUAL defeats the automatic correction. That is the
+// intended cyber-to-physical lesson. Auto actions go straight to the device
+// sim tagged with an "rtac-auto" source, so they are traceable in the device
+// audit without cluttering the RTAC command audit (reserved for external
+// operator/attacker commands). The loop is a no-op whenever the controlled bus
+// is de-energized, so it never chases a dead feeder or runs the tap away.
+const (
+	regSetpointDefaultV = 120.0
+	regDeadbandV        = 1.5 // wider than one 0.75V tap step, so the AVR settles
+	regTapMin           = -16
+	regTapMax           = 16
+	capPFTarget         = 0.95
+	capVHighDefaultV    = 126.0
+)
+
+type autoCmd struct {
+	device  string
+	command string
+}
+
+// autoControlDecisions reads the latest aggregated state and returns the
+// auto-control commands to issue this cycle (at most one per device).
+func autoControlDecisions() []autoCmd {
+	agg.mu.RLock()
+	defer agg.mu.RUnlock()
+
+	var cmds []autoCmd
+	elec := agg.Electrical
+
+	// Regulator AVR — only when the regulated (critical) bus is energized.
+	if reg, ok := agg.Devices["regulator"]; ok &&
+		!boolFromMap(reg, "manual_mode") && boolFromMap(elec, "critical_load_energized") {
+		v := floatFromMap(elec, "critical_load_voltage_v")
+		setpoint := floatFromMap(reg, "voltage_setpoint_v")
+		if setpoint == 0 {
+			setpoint = regSetpointDefaultV
+		}
+		tap := intFromMap(reg, "tap_position")
+		switch {
+		case v > 0 && v < setpoint-regDeadbandV && tap < regTapMax:
+			cmds = append(cmds, autoCmd{"regulator", "raise_tap"})
+		case v > 0 && v > setpoint+regDeadbandV && tap > regTapMin:
+			cmds = append(cmds, autoCmd{"regulator", "lower_tap"})
+		}
+	}
+
+	// Capacitor bank — only when its bus (load bus) is energized and not in
+	// lockout. Switch in to correct a lagging PF; switch out on over-voltage.
+	if cb, ok := agg.Devices["capbank"]; ok &&
+		boolFromMap(cb, "auto_mode") && !boolFromMap(cb, "lockout") &&
+		boolFromMap(elec, "general_load_energized") {
+		pf := floatFromMap(elec, "power_factor")
+		vload := floatFromMap(elec, "downstream_voltage_v")
+		vhigh := floatFromMap(cb, "voltage_thresh_high_v")
+		if vhigh == 0 {
+			vhigh = capVHighDefaultV
+		}
+		in := boolFromMap(cb, "switched_in")
+		switch {
+		case !in && pf > 0 && pf < capPFTarget && vload < vhigh:
+			cmds = append(cmds, autoCmd{"capbank", "switch_in"})
+		case in && vload > vhigh:
+			cmds = append(cmds, autoCmd{"capbank", "switch_out"})
+		}
+	}
+
+	return cmds
+}
+
+// runAutoControls issues this cycle's auto-control commands straight to the
+// field device sims, bypassing the RTAC command audit (reserved for external
+// commands). Best-effort — the next cycle retries on any failure.
+func runAutoControls(client *http.Client) {
+	for _, c := range autoControlDecisions() {
+		url := deviceURL(c.device)
+		if url == "" {
+			continue
+		}
+		body, _ := json.Marshal(shared.CommandRequest{Command: c.command, Source: "rtac-auto"})
+		resp, err := client.Post(url+"/api/command", "application/json", bytes.NewReader(body))
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		log.Printf("AUTO %s/%s", c.device, c.command)
+	}
+}
+
+func deviceURL(name string) string {
+	for _, dev := range fieldDevices {
+		if dev.Name == name {
+			return dev.URL
+		}
+	}
+	return ""
 }
 
 func handleAudit(w http.ResponseWriter, r *http.Request) {
