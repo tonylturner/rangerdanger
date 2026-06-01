@@ -503,8 +503,12 @@ export function buildContaindConfig(plan: DynamicExercisePlan): object {
   };
   if (sel.has("modbus-dpi")) {
     rtacModbus.ics = {
+      // containd's ICS schema uses singular `functionCode` (see
+      // substation-improved.json + containd ui/lib/api.ts); emitting
+      // `functionCodes` here would be silently ignored, leaving the
+      // Modbus DPI rule unfiltered.
       protocol: "modbus",
-      functionCodes: [1, 2, 3, 4, 5, 6],
+      functionCode: [1, 2, 3, 4, 5, 6],
     };
   } else {
     rtacModbus.ics = {};
