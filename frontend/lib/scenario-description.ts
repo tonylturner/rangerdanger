@@ -12,6 +12,13 @@
 
 const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
+// containd appliance-CLI commands. These are NOT run via the lab's
+// per-node exec (they live in the containd CLI, reached from the fw-1
+// terminal), so they render as copy-only blocks — clearly badged as
+// containd CLI — rather than getting a Run button. Matched precisely so
+// generic words ("show", "set") only count as the actual containd verbs.
+const CONTAIND_CLI_RE = /^(containd cli\b|show\s+[a-z]|set\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\b|commit(\s+confirmed\b|\s*$)|confirm\s*$|rollback\s*$|delete\s+firewall\b|export\s+config\b|import\s+config\b)/;
+
 // :::hint Title  ...content...  :::
 // Opens a collapsible hint panel in the rendered description. Anything
 // between the opening and closing fence is captured as the hint body.
@@ -97,7 +104,7 @@ export type FindingsPanelItem = { id: string; label: string };
 
 export type Segment =
   | { type: "prose"; value: string }
-  | { type: "cmd"; value: string }
+  | { type: "cmd"; value: string; cli?: boolean }
   | { type: "hint"; title: string; value: string }
   | {
       type: "decision";
@@ -363,6 +370,11 @@ export function splitDescription(text: string): Segment[] {
         cmd += "\n  " + lines[i].trim();
       }
       result.push({ type: "cmd", value: cmd });
+    } else if (isIndented && CONTAIND_CLI_RE.test(trimmed)) {
+      // containd CLI command — copy-only (the student runs it in the
+      // fw-1 containd terminal, not via the lab's per-node Run).
+      flushProse();
+      result.push({ type: "cmd", value: trimmed, cli: true });
     } else {
       prose.push(lines[i]);
     }

@@ -68,16 +68,29 @@ type CommandBlockProps = {
   runId: string;
   runningId: string | null;
   onRun: ((cmd: string, runId: string) => void) | null;
+  // cli = a containd appliance-CLI command: copy-only (no Run), prefixed
+  // with the containd# prompt and badged so it's clear the student runs
+  // it in the fw-1 containd terminal, not via the lab's per-node exec.
+  cli?: boolean;
 };
 
-function CommandBlock({ cmd, runId, runningId, onRun }: CommandBlockProps) {
+function CommandBlock({ cmd, runId, runningId, onRun, cli }: CommandBlockProps) {
+  const runnable = cli ? null : onRun;
   return (
     <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-      <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
+      <span className="pr-28 whitespace-pre-wrap">
+        {cli && <span className="select-none text-sky-700">containd# </span>}
+        {cmd}
+      </span>
       <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
-        {onRun && (
+        {cli && (
+          <span className="select-none rounded border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
+            containd cli
+          </span>
+        )}
+        {runnable && (
           <button
-            onClick={() => onRun(cmd, runId)}
+            onClick={() => runnable(cmd, runId)}
             disabled={runningId !== null}
             className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
           >
@@ -532,6 +545,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   runId={id}
                   runningId={runningId}
                   onRun={onRun}
+                  cli={seg.cli}
                 />
               );
             }
@@ -1487,6 +1501,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                                   runId={`body-${ci}`}
                                   runningId={autoRunning}
                                   onRun={runHandler}
+                                  cli={sub.cli}
                                 />
                               );
                             }
@@ -1522,6 +1537,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         runId={`body-${ci}`}
                         runningId={autoRunning}
                         onRun={runHandler}
+                        cli={seg.cli}
                       />
                     );
                   })}
