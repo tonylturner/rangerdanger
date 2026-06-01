@@ -73,10 +73,13 @@ type CommandBlockProps = {
   // with the containd# prompt and badged so it's clear the student runs
   // it in the fw-1 containd terminal, not via the lab's per-node exec.
   cli?: boolean;
+  // copyOnly = an interactive/GUI command (remote-desktop client, sshpass
+  // shell): copy button only, no Run, no badge — run it in a terminal.
+  copyOnly?: boolean;
 };
 
-function CommandBlock({ cmd, runId, runningId, onRun, cli }: CommandBlockProps) {
-  const runnable = cli ? null : onRun;
+function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: CommandBlockProps) {
+  const runnable = cli || copyOnly ? null : onRun;
   return (
     <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
       <span className="pr-28 whitespace-pre-wrap">
@@ -547,6 +550,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   runningId={runningId}
                   onRun={onRun}
                   cli={seg.cli}
+                  copyOnly={seg.copyOnly}
                 />
               );
             }
@@ -1544,6 +1548,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                                   runningId={autoRunning}
                                   onRun={runHandler}
                                   cli={sub.cli}
+                                  copyOnly={sub.copyOnly}
                                 />
                               );
                             }
@@ -1580,6 +1585,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         runningId={autoRunning}
                         onRun={runHandler}
                         cli={seg.cli}
+                        copyOnly={seg.copyOnly}
                       />
                     );
                   })}

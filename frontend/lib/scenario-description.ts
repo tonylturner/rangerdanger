@@ -19,6 +19,12 @@ const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telne
 // generic words ("show", "set") only count as the actual containd verbs.
 const CONTAIND_CLI_RE = /^(containd cli\b|show\s+[a-z]|set\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\b|commit(\s+confirmed\b|\s*$)|confirm\s*$|rollback\s*$|delete\s+firewall\b|export\s+config\b|import\s+config\b)/;
 
+// Interactive / GUI commands the student runs in a real terminal but the
+// lab can't usefully "Run" (remote-desktop clients, sshpass-wrapped
+// interactive shells). Rendered as copy-only command blocks — a copy
+// button, no Run.
+const COPY_ONLY_TOOL_RE = /^(xfreerdp|xtightvncviewer|vncviewer|rdesktop|sshpass)\s/;
+
 // :::hint Title  ...content...  :::
 // Opens a collapsible hint panel in the rendered description. Anything
 // between the opening and closing fence is captured as the hint body.
@@ -111,7 +117,7 @@ export type FindingsPanelItem = { id: string; label: string };
 
 export type Segment =
   | { type: "prose"; value: string }
-  | { type: "cmd"; value: string; cli?: boolean }
+  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean }
   | { type: "hint"; title: string; value: string }
   | {
       type: "decision";
@@ -396,6 +402,10 @@ export function splitDescription(text: string): Segment[] {
       // fw-1 containd terminal, not via the lab's per-node Run).
       flushProse();
       result.push({ type: "cmd", value: trimmed, cli: true });
+    } else if (isIndented && COPY_ONLY_TOOL_RE.test(trimmed)) {
+      // Interactive/GUI command — copy-only (run it in a real terminal).
+      flushProse();
+      result.push({ type: "cmd", value: trimmed, copyOnly: true });
     } else {
       prose.push(lines[i]);
     }

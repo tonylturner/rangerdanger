@@ -95,6 +95,20 @@ describe("splitDescription — command blocks", () => {
     expect(cmd.cli).toBeUndefined();
   });
 
+  it("flags interactive GUI tools as copy-only (no cli badge)", () => {
+    const segs = splitDescription(
+      "Pivot:\n\n    xfreerdp /v:10.20.20.10:3389 /u:x /p:y\n    sshpass -p z ssh user@host",
+    );
+    const cmds = segs.filter((s) => s.type === "cmd") as Array<{
+      type: "cmd";
+      value: string;
+      cli?: boolean;
+      copyOnly?: boolean;
+    }>;
+    expect(cmds).toHaveLength(2);
+    expect(cmds.every((c) => c.copyOnly === true && !c.cli)).toBe(true);
+  });
+
   it("recognizes every CMD_TOOL_RE prefix", () => {
     const tools = [
       "nmap", "mbpoll", "dnp3poll", "dnp3cmd", "curl", "tshark",

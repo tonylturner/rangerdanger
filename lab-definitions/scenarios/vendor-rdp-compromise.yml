@@ -212,8 +212,9 @@ steps:
 
   - title: "Apply hardened policy"
     description: |
-      Apply the hardened firewall configuration with **Apply Hardened**,
-      or **Apply Your Plan** if you built a custom policy in Lab 2.2.
+      Apply the hardened firewall configuration with **Apply Hardened**
+      in the **containd NGFW — policy actions** panel below this step, or
+      **Apply Your Plan** if you built a custom policy in Lab 2.2.
 
       The hardened policy closes both links of the kill chain:
 
