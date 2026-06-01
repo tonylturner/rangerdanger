@@ -6,6 +6,51 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.24] - 2026-05-31
+
+Capacitor-bank HMI integration plus a supervisory-control "make every
+button real" pass. The switched cap bank is now modeled in the OpenDSS
+power flow and driveable from the React HMI; the voltage regulator and
+cap bank gain real RTAC closed-loop auto control; the feeder breaker's
+fault injection actually trips the breaker; and the One-Line / Supervisory
+/ Electrical Detail views are reordered to match the feeder topology. Adds
+an end-to-end command validator that exercises every supervisory command.
+
+### Added
+
+- **Capacitor bank in the HMI + OpenDSS physics.** The 300 kVAR switched
+  shunt cap bank (10.40.40.23) is modeled in the feeder power flow and
+  controllable from the React HMI (switch in/out, manual/auto, reset
+  lockout). Switching it in injects VARs — power factor rises toward unity,
+  feeder current drops, voltage lifts slightly. Rendered on the Feeder
+  One-Line, Supervisory Control, and Electrical Detail tabs alongside the
+  breaker, recloser, and regulator.
+- **Real RTAC closed-loop auto control.** In AUTO the regulator now holds
+  its voltage setpoint (AVR) and the cap bank corrects power factor, via the
+  RTAC's 2 s control loop — previously the AUTO/MANUAL toggles were inert
+  labels. MANUAL defeats the loop (the intended cyber-to-physical lesson),
+  and the loop no-ops on a de-energized bus so it never chases a dead feeder.
+- **End-to-end supervisory command validator** (`scripts/substation-validate.sh`):
+  drives every command through the real HMI API path and asserts device
+  state, OpenDSS-backed telemetry, audit entries, and safe rejection of
+  invalid/unsafe commands (30 checks, all green). Substation physics +
+  auto-loop smoke (`scripts/substation-smoke.sh`) is wired into CI.
+
+### Changed
+
+- **Feeder breaker "Inject Fault" now trips the breaker.** It previously set
+  a status flag with no physical effect; the 50/51 overcurrent element now
+  trips the 52 breaker for a total feeder outage — distinct from the
+  recloser's mid-feeder trip-and-reclose sequence.
+- **HMI topology consistency.** The Feeder One-Line renders the voltage
+  regulator as the series node feeding the (post-regulator) critical load,
+  and the Supervisory Control / Electrical Detail device lists are ordered
+  source→load (Breaker → Recloser → Cap Bank → Regulator) to match the
+  OpenDSS circuit. Manual actuation buttons are greyed when a device is in
+  AUTO, and One-Line kW values are rounded for display.
+- **Knowledge wiki** corrected the false "no dedicated capacitor bank
+  simulator" claim now that the cap bank is real.
+
 ## [v0.1.23] - 2026-05-31
 
 Cross-platform lifecycle hardening from a full Windows + Linux/macOS
