@@ -266,6 +266,13 @@ steps:
       commit it. The banner will switch to "Your custom policy"
       when your commit is live. (If you get stuck, the side-panel
       buttons are still available as a guided fallback.)
+
+      The containd authoring details are in Lab 2.2's "Creating rules
+      via the Web UI" hint. One gotcha that bites here specifically:
+      an **ICS Protocol Filter** rule defaults to **Rule Mode: Learning
+      (passive)**, which only observes. Set it to **Enforcement
+      (active)** or the DNP3 Direct Operate restriction won't actually
+      block this attack.
       :::
 
       The hardened policy combines two defense-in-depth layers:
