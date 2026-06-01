@@ -1,7 +1,7 @@
 id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
-summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional sidebars (15 min)."
+summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks (15 min)."
 description: >
   In Lab 2.2 you built a least-privilege firewall policy. This
   exercise stress-tests it against a DNP3 Direct Operate (FC05)
@@ -26,10 +26,10 @@ description: >
   defense in depth, and re-test shows either one is sufficient.
 
   Modbus FC6 (regulator tap override) and Modbus FC5 (direct
-  breaker trip) are available as optional sidebar attacks within
+  breaker trip) are available as optional bonus attacks within
   the same step. Modbus is real on these device classes (mostly
   for HMI integration) and the DPI lesson generalizes; the
-  sidebars exist for instructors who want to demonstrate "the
+  optional attacks exist for instructors who want to demonstrate "the
   same defense closes both protocols" or for cyber-fluent students
   who finish the primary attack early.
 nodes:
@@ -211,7 +211,7 @@ steps:
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
       to reset the lab state, or click **Reset Lab** below. This
       restores every device touched by the primary attack and any
-      optional sidebar attacks you ran:
+      optional bonus attacks you ran:
 
       - Relay: clear fault, unlock, close substation breaker
       - Regulator: set to Auto, tap to 0
@@ -256,7 +256,7 @@ steps:
       policy) before the re-test will work.
 
       :::guided
-      Click **Apply Hardened** in the side panel to push the canned
+      Click **Apply Hardened** in the **containd NGFW — policy actions** panel below this step to push the canned
       reference policy, or **Apply Your Plan** if you built a
       custom policy in Lab 2.2.
       :::
@@ -264,8 +264,8 @@ steps:
       :::technical
       Author your hardened policy in containd's web UI or CLI and
       commit it. The banner will switch to "Your custom policy"
-      when your commit is live. (If you get stuck, the side-panel
-      buttons are still available as a guided fallback.)
+      when your commit is live. (If you get stuck, the **Apply Hardened**
+      button below the step is still available as a guided fallback.)
 
       The containd authoring details are in Lab 2.2's "Creating rules
       via the Web UI" hint. One gotcha that bites here specifically:
@@ -280,7 +280,7 @@ steps:
       - **L4 source-pinning:** only the RTAC (`10.30.30.20`) can reach
         field devices on Modbus 502 and DNP3 20000. Enterprise and
         vendor sources are blocked at the perimeter - this alone
-        closes the primary DNP3 attack and both Modbus sidebars.
+        closes the primary DNP3 attack and both optional Modbus attacks.
       - **ICS DPI:** DNP3 Direct Operate (FC05) restricted to the
         RTAC; Modbus writes (FC5/6/16) restricted to the RTAC even
         on flows where reads are allowed. This catches the same
@@ -347,7 +347,7 @@ steps:
       :::
 
       :::hint Optional: confirm Modbus is blocked too
-      If you ran either of the Modbus sidebar attacks in Step 2,
+      If you ran either of the optional Modbus attacks in Step 2,
       repeat them now under the hardened policy - both also time
       out at the L4 perimeter. The same source-pin rule that
       blocked DNP3 above (only `10.30.30.20`/RTAC can reach field

@@ -25,8 +25,9 @@ import type { PolicySource } from "../lib/api";
  * Mismatched (amber): the step's expected_config differs from active.
  *
  * Buttons (Apply Hardened / Apply Your Plan / Reset to Weak) live in
- * the side panel of scenario-runner.tsx, not here. This component is
- * the announcement; the side panel is where the actions are. The
+ * the policy-actions panel below the step in scenario-runner.tsx, not
+ * here. This component is the announcement; that panel is where the
+ * actions are. The
  * mismatch variant just tells the student which button to click and
  * lets them aim.
  */
@@ -176,8 +177,8 @@ export function PolicyStatusBanner({
         : "hardened policy (reference or your custom)";
     const promptedAction =
       expectedConfig === "weak"
-        ? "Click Reset to Weak in the side panel to restore the baseline."
-        : "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the side panel.";
+        ? "Click Reset to Weak in the policy-actions panel below to restore the baseline."
+        : "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.";
 
     return (
       <div className="sticky top-0 z-10 -mx-4 mb-3 border-b border-amber-700/60 bg-amber-950/60 px-4 py-2.5 backdrop-blur-sm">

@@ -44,15 +44,15 @@ steps:
       ### How you'll work
 
       This lab runs **Guided by default**: you apply the policy with the
-      side-panel buttons (**Apply Hardened** / **Apply Your Plan**) and
+      buttons below the step (**Apply Hardened** / **Apply Your Plan**) and
       walk containd's UI and CLI to understand exactly what landed - no
       rule syntax and no commit step. The policy banner at the top of
       every step tells you what is currently running.
 
       Prefer to author and commit the rules yourself? Switch to the
       **Advanced** track below - recommended only if you're comfortable
-      with firewall policy syntax. You can switch anytime from the side
-      panel.
+      with firewall policy syntax. You can switch anytime from the track
+      chip at the top of each step.
 
       :::track-picker
       :::
@@ -240,7 +240,7 @@ steps:
 
       :::technical
       Delete the five broad allows yourself, via the Web UI or the CLI.
-      (The side-panel **Apply Hardened** button stays available as a
+      (The **Apply Hardened** button below the step stays available as a
       fallback.)
 
       **Web UI path.** Go to **Policy & Rules → Firewall Rules** at
@@ -280,7 +280,7 @@ steps:
       denied.
 
       :::guided
-      Click **Apply Hardened** in the side panel to push the canned
+      Click **Apply Hardened** in the **containd NGFW — policy actions** panel below this step to push the canned
       reference policy, or **Apply Your Plan** to push the policy
       built from your Lab 1.4 picks. Then walk the rule table below
       and confirm each row is present in containd's web UI
