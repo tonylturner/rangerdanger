@@ -52,6 +52,21 @@ backend/server
 dnp3go/dnp3cmd
 dnp3go/dnp3poll
 
+# Python — bytecode and tooling caches. The Python services (opendss-sim)
+# run in containers; these only show up when Python tooling runs on the
+# host (a local venv, a stray import, an editor). Never belong in the repo.
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+
 # Runtime data — all generated at startup / by containers
 # Nothing in data/ needs to be in the repo
 data/
@@ -100,3 +115,8 @@ docs/tasks.md
 # the directory regardless, so untrack and ignore it. Keep files
 # locally for maintainer use (e.g. docs/_internal/pdf-update-prompt.md).
 docs/_internal/
+
+# Playwright MCP local QA artifacts — screenshots and page snapshots from
+# local UI verification. Useful locally, not part of the repo.
+.playwright-mcp/
+supervisory-control-2x2.png
