@@ -127,17 +127,6 @@ steps:
       run the containd daemon binary. Only `containd cli` enters the
       appliance shell.)
 
-      :::hint Alternative - SSH from your laptop
-      You can also reach the firewall from a fresh terminal on your
-      laptop:
-
-          ssh -p 2222 containd@localhost
-          # password: containd
-
-      Same two-prompt model as the in-app terminal - you'll land
-      in bash; type `containd cli` to enter the appliance shell.
-      :::
-
   - title: "Phase 1 - Verify current access under the weak baseline"
     expected_config: weak
     description: |
@@ -239,44 +228,50 @@ steps:
          historian to RTAC, and internal NTP. These are intra-zone
          and should not be affected by cross-zone deny rules.
 
-      ### Web UI path
+      :::guided
+      **On the Guided track you don't delete these by hand.** In the next
+      phase, **Apply Hardened** (or **Apply Your Plan**) replaces the weak
+      baseline wholesale - it removes the five broad allows above *and*
+      adds the minimal rules in a single commit. Read the list above so
+      you understand what's being removed and why, then move on - you'll
+      confirm default-deny holds in Phase 5/6. The manual Web UI / CLI
+      steps below are the Advanced-track way to do the same removal.
+      :::
 
-      In the policy editor at
-      [http://localhost:9080](http://localhost:9080), delete (or
-      disable) all five broad cross-zone allows -
-      `enterprise-to-ot-weak`, `enterprise-to-field-weak`,
-      `vendor-to-ot-weak`, `vendor-to-field-weak`, and
-      `ot-to-field-broad`. You do *not* need to change a separate
-      "default action" control - the policy default is already DENY
-      and takes over once the broad allows are removed.
+      :::technical
+      Delete the five broad allows yourself, via the Web UI or the CLI.
+      (The side-panel **Apply Hardened** button stays available as a
+      fallback.)
 
-      Per-rule deletes on the Firewall page apply immediately (there
-      is no separate Commit for individual edits). Keep the intra-zone
-      rules `ot-intrazone` and `field-intrazone`.
+      **Web UI path.** Go to **Policy & Rules → Firewall Rules** at
+      [http://localhost:9080](http://localhost:9080) and delete the five
+      broad cross-zone allows - `enterprise-to-ot-weak`,
+      `enterprise-to-field-weak`, `vendor-to-ot-weak`,
+      `vendor-to-field-weak`, and `ot-to-field-broad`. You do *not* need a
+      separate "default action" switch - the policy default is already
+      DENY and takes over once the broad allows are gone. Per-rule deletes
+      apply immediately. Keep the intra-zone rules `ot-intrazone` and
+      `field-intrazone`.
 
-      ### CLI path
+      **CLI path.** From the `fw-1` terminal, type `containd cli`, then:
 
-      From the `fw-1` terminal, type `containd cli` to enter the
-      appliance CLI, then:
-
-          show running-config
-          # find the rule IDs for the broad-allow rules
-          delete firewall rule <id>
-          # repeat for each broad rule
+          delete firewall rule enterprise-to-ot-weak
+          delete firewall rule enterprise-to-field-weak
+          delete firewall rule vendor-to-ot-weak
+          delete firewall rule vendor-to-field-weak
+          delete firewall rule ot-to-field-broad
+          show diff
           commit
 
-      Confirm with `show diff` before `commit` to see exactly what's
-      being removed.
+      `show diff` before `commit` shows exactly what's being removed.
 
-      ### Verify default-deny is in effect
-
-      From kali:
+      **Verify default-deny.** From kali, this should now time out:
 
           mbpoll -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
 
-      Should time out. If it still returns register data, the
-      default-deny isn't active yet - re-check your rule list and
-      whether you committed.
+      If it still returns register data, the default-deny isn't active -
+      re-check your rule list and whether you committed.
+      :::
 
   - title: "Phase 3 - Create minimal required rules"
     description: |
@@ -318,21 +313,30 @@ steps:
       path you prefer.
 
       :::hint Creating rules via the Web UI
-      Open [http://localhost:9080](http://localhost:9080) → the
-      **Firewall** page. For each row in the table above, click
-      **Add rule** and fill in source (use the **sources** field for the
-      RTAC host-pin `10.30.30.20/32`, not just the `lan1` zone),
-      destination, protocol, port(s), action, and the **ICS DPI** fields
-      (Modbus function codes / DNP3) where the table calls for them -
-      those are the lessons from Lab 1.3 and the DPI remediations.
+      Open [http://localhost:9080](http://localhost:9080) and go to
+      **Policy & Rules → Firewall Rules** in the left nav. Scroll to the
+      **Create rule** form at the bottom. For each row in the table
+      above, fill in:
 
-      **Where's the commit?** Per-rule edits on the Firewall page apply
-      *immediately* - there is no separate commit for individual rules,
-      so just watch the rule count climb. The **Commit** button lives on
-      the **Config** page and only applies *bulk* candidate-JSON edits;
-      if you edit the raw config there, an amber "candidate differs from
-      running" banner appears at the top of every page → click **Review
-      Candidate Diff → Commit**.
+      - **id** (e.g. `rtac-to-field-modbus`) and a description
+      - **Source zone** = `lan1` (OT Ops), **Dest zone** = `lan2` (Field)
+      - **sources CIDR (csv)** = `10.30.30.20/32` - this is the RTAC
+        host-pin; a zone-only `lan1 -> lan2` rule would allow *all* of
+        OT Ops to field, the broad mistake the table warns against
+      - **proto** = `tcp`, **port/range** = `502` (or `20000` / `8080`)
+      - **action** = `ALLOW`, and tick **Log hits**
+      - For the DPI rules: tick **ICS Protocol Filter**, set **ICS
+        Protocol** to Modbus (or DNP3) and the **Function Code(s)**, then
+        set **Rule Mode** to **Enforcement (active)**. It defaults to
+        *Learning (passive)*, which only observes - in Learning mode the
+        function-code filter will **not** block.
+
+      Click **Create rule**. Each rule takes effect *immediately* - there
+      is no separate commit for individual rules, so just watch the rule
+      list grow. (Only *bulk* edits to the candidate JSON on the
+      **Configuration** page need a commit: an amber "candidate differs
+      from running" banner then appears at the top of every page - click
+      **Commit** on it, or **Review Candidate Diff** to inspect first.)
       :::
 
       :::hint Creating rules via the containd CLI
@@ -564,8 +568,9 @@ steps:
       the policy in containd, the export is the artifact you hand
       to change management.
 
-      **Web UI:** Settings → Export config (or similar button) to
-      download the running config as JSON.
+      **Web UI:** go to **Configuration** in the left nav and click
+      **Download full** to save the running config as JSON (**Download
+      redacted** strips secrets if you're sharing it).
 
       **CLI:** from the `fw-1` terminal, run `containd cli`, then:
 
