@@ -1298,14 +1298,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   </button>
                 )}
                 {!completedSteps.has(currentStep) && (() => {
-                  // Force-pick gate: Lab 2.2 step 1 can't advance
-                  // until the student has picked a firewall track.
-                  // The choice is persisted to localStorage so later
-                  // labs inherit it without re-prompting.
-                  const trackGate =
-                    scenario.id === "firewall-implementation" &&
-                    currentStep === 0 &&
-                    firewallTrack === null;
+                  // No force-pick: Lab 2.2 defaults to the Guided track
+                  // (see useFirewallTrack), so step 1 advances freely.
+                  // Students switch to Advanced from the picker / side
+                  // panel anytime; the choice persists to localStorage
+                  // so later firewall labs inherit it.
+                  const trackGate = false;
                   return (
                     <button
                       onClick={() => markStepDone(currentStep)}
@@ -1472,7 +1470,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                                 : "text-sky-400"
                             }`}
                           >
-                            {seg.track === "guided" ? "Guided track" : "Technical track"}
+                            {seg.track === "guided" ? "Guided track" : "Advanced track"}
                           </div>
                           {inner.map((sub, sj) => {
                             if (sub.type === "prose") {

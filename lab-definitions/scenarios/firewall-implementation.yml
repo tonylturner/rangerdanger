@@ -1,16 +1,17 @@
 id: firewall-implementation
 order: "2.2"
 name: "Firewall Policy Implementation"
-summary: "Build a least-privilege segmentation policy on the containd NGFW from scratch, replacing the weak baseline with enforceable rules (30 min)."
+summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds (~15 min, Guided track)."
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
-  Now you implement. In this 30-minute exercise you will
-  take the existing permissive firewall configuration on the
-  containd NGFW and replace it with a least-privilege policy
-  you build yourself. By the end, unauthorized cross-zone
-  traffic will be blocked and logged, while critical
-  substation operations continue without interruption.
+  Now you implement. You will replace the permissive weak
+  baseline on the containd NGFW with a least-privilege policy -
+  applying it with one click on the Guided track, or authoring
+  the rules yourself on the Advanced track. By the end,
+  unauthorized cross-zone traffic will be blocked and logged,
+  while critical substation operations continue without
+  interruption.
 nodes:
   - fw-1
   - kali-1
@@ -40,11 +41,18 @@ steps:
       latent-exposure-confirmed: Active probing revealed latent exposure beyond passive observation
       :::
 
-      ### Choose your path
+      ### How you'll work
 
-      Pick a track to continue. The policy banner at the top of every
-      step will tell you what is currently running. You can switch
-      tracks anytime from the side panel.
+      This lab runs **Guided by default**: you apply the policy with the
+      side-panel buttons (**Apply Hardened** / **Apply Your Plan**) and
+      walk containd's UI and CLI to understand exactly what landed - no
+      rule syntax and no commit step. The policy banner at the top of
+      every step tells you what is currently running.
+
+      Prefer to author and commit the rules yourself? Switch to the
+      **Advanced** track below - recommended only if you're comfortable
+      with firewall policy syntax. You can switch anytime from the side
+      panel.
 
       :::track-picker
       :::
@@ -60,7 +68,7 @@ steps:
       7. Validate that unauthorized traffic is blocked
       8. Export your finished policy
 
-      **Time budget:** 30 minutes. The containd firewall supports both a web UI and a CLI. Use whichever you prefer.
+      **Time budget:** ~15 minutes on the Guided track (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
 
   - title: "Why this matters"
     expected_config: weak
@@ -74,7 +82,7 @@ steps:
       1. **Authorized traffic works.** The RTAC polls field devices. GPS delivers NTP. The HMI reads state. Operations continue.
       2. **Unauthorized traffic fails.** A Modbus write from the enterprise zone is denied. A DNP3 command from the vendor zone is blocked. The firewall logs the attempt.
 
-      That is what you will build in the next 30 minutes.
+      That is what you will put in place over the next ~15 minutes.
 
   - title: "Verify access to containd"
     expected_config: weak
@@ -206,6 +214,11 @@ steps:
       default-deny (raw iptables, OVS, etc.) this same step would
       *also* require setting the chain policy or adding a final
       deny rule - that's the vendor-mechanism difference.
+
+      One nuance for later: default-deny *blocks* silently - it emits
+      no per-flow log. Phase 4 adds explicit logged DENY rules for the
+      cross-zone pairs you most want visibility on, with the silent
+      default-deny as the backstop for everything else.
       :::
 
       ### What to do
@@ -230,11 +243,16 @@ steps:
 
       In the policy editor at
       [http://localhost:9080](http://localhost:9080), delete (or
-      disable) the broad `enterprise-to-field-weak`,
-      `vendor-to-field-weak`, and `vendor-to-ot-weak` rules, then
-      **Commit**. You do *not* need to change a separate "default
-      action" control - the policy default is already DENY and
-      simply takes over once the broad allows are removed.
+      disable) all five broad cross-zone allows -
+      `enterprise-to-ot-weak`, `enterprise-to-field-weak`,
+      `vendor-to-ot-weak`, `vendor-to-field-weak`, and
+      `ot-to-field-broad`. You do *not* need to change a separate
+      "default action" control - the policy default is already DENY
+      and takes over once the broad allows are removed.
+
+      Per-rule deletes on the Firewall page apply immediately (there
+      is no separate Commit for individual edits). Keep the intra-zone
+      rules `ot-intrazone` and `field-intrazone`.
 
       ### CLI path
 
@@ -300,14 +318,21 @@ steps:
       path you prefer.
 
       :::hint Creating rules via the Web UI
-      Open [http://localhost:9080](http://localhost:9080) and go to
-      the policy editor. For each row in the table above, click
-      **Add rule** and fill in source, destination, protocol, port(s),
-      and action. The UI lets you specify ICS DPI parameters
-      (Modbus function codes, DNP3 object types) on protocol-specific
-      rules - those are the lessons from Lab 1.3 and the Modbus DPI
-      remediation. Click **Commit** (or **Apply**) when you've added
-      all six.
+      Open [http://localhost:9080](http://localhost:9080) → the
+      **Firewall** page. For each row in the table above, click
+      **Add rule** and fill in source (use the **sources** field for the
+      RTAC host-pin `10.30.30.20/32`, not just the `lan1` zone),
+      destination, protocol, port(s), action, and the **ICS DPI** fields
+      (Modbus function codes / DNP3) where the table calls for them -
+      those are the lessons from Lab 1.3 and the DPI remediations.
+
+      **Where's the commit?** Per-rule edits on the Firewall page apply
+      *immediately* - there is no separate commit for individual rules,
+      so just watch the rule count climb. The **Commit** button lives on
+      the **Config** page and only applies *bulk* candidate-JSON edits;
+      if you edit the raw config there, an amber "candidate differs from
+      running" banner appears at the top of every page → click **Review
+      Candidate Diff → Commit**.
       :::
 
       :::hint Creating rules via the containd CLI
@@ -330,11 +355,20 @@ steps:
             "id": "rtac-to-field-modbus",
             "description": "RTAC Modbus polling to field devices",
             "sourceZones": ["lan1"],
+            "sources": ["10.30.30.20/32"],
             "destZones": ["lan2"],
             "protocols": [{"name": "tcp", "port": "502"}],
-            "ics": {},
-            "action": "ALLOW"
+            "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
+            "action": "ALLOW",
+            "log": true
           }
+
+      The `sources` field is the source-pin that makes Rules 1-3 "RTAC
+      only" - a zone-only rule (`lan1` -> `lan2`) would allow *all* of
+      OT Ops to field, exactly the broad-subnet mistake the table warns
+      against. The `ics` block is the protocol-aware DPI layer (here,
+      Modbus function codes); use `{"protocol": "dnp3"}` for the DNP3
+      rule and `{}` for the plain HTTP rule.
 
       The simpler `set firewall rule <id> <action> <src> <dst>` CLI
       command works for plain zone-pair rules but doesn't carry
@@ -361,7 +395,7 @@ steps:
 
       2. **ALLOW actions on critical rules.** Log the RTAC-to-field rules (Rules 1-3) so you have an audit trail of legitimate control traffic. This is useful for forensics and for validating that operations are running normally.
 
-      3. **Enterprise/Vendor to Field attempts.** These should already be caught by the default-deny log, but explicitly logging this zone pair makes it easier to search for lateral movement attempts.
+      3. **Enterprise/Vendor to Field attempts.** The silent default-deny *blocks* these but produces no per-flow log. To get an audit trail, the hardened reference policy adds **explicit DENY rules with `log: true`** for these high-value cross-zone pairs (`deny-enterprise-to-ot`, `deny-enterprise-to-field`, `deny-vendor-to-field`, `deny-ot-to-field-direct`). The default-deny stays as the silent backstop for everything else.
 
       :::hint Enabling logging on a rule
       The `firewall.rules` JSON schema has a `log: true` field. Add

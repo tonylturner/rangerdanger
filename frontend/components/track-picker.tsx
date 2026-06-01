@@ -28,10 +28,10 @@ type Card = {
 const CARDS: Card[] = [
   {
     value: "guided",
-    title: "Guided",
+    title: "Guided (default)",
     oneLiner: "Click to apply, explore the interfaces",
     detail:
-      "You apply policies with the side-panel buttons (Apply Hardened, Apply Your Plan) and walk containd's web UI / CLI to understand what landed. No rule authoring required. Recommended for non-technical roles or anyone who wants to focus on the segmentation lesson without the policy syntax.",
+      "You apply policies with the side-panel buttons (Apply Hardened, Apply Your Plan) and walk containd's web UI / CLI to understand what landed. No rule authoring and no commit step. This is the default workshop path — recommended for everyone focusing on the segmentation lesson rather than firewall policy syntax.",
     accent: "text-emerald-300",
     borderActive: "border-emerald-500",
     borderIdle: "border-slate-700",
@@ -40,10 +40,10 @@ const CARDS: Card[] = [
   },
   {
     value: "technical",
-    title: "Technical",
-    oneLiner: "Author and commit policy in containd directly",
+    title: "Advanced",
+    oneLiner: "Author and commit the policy yourself",
     detail:
-      "You write the rules in containd's web UI or CLI (your choice) and commit them yourself. The banner detects your commit and labels it 'Your custom policy'. The side-panel buttons stay visible as a guided fallback if you get stuck. Recommended for engineers comfortable with policy syntax.",
+      "Opt in to write the rules in containd's web UI or CLI (your choice) and commit them yourself. The banner detects your commit and labels it 'Your custom policy'. The side-panel buttons stay visible as a fallback. For engineers comfortable with firewall policy syntax who want the hands-on rep.",
     accent: "text-sky-300",
     borderActive: "border-sky-500",
     borderIdle: "border-slate-700",
@@ -61,8 +61,10 @@ export function TrackPicker() {
         How do you want to work?
       </div>
       <div className="mb-3 text-xs text-slate-400">
-        Pick a track to continue. You can switch from the side panel
-        on any firewall lab if you change your mind.
+        <span className="text-emerald-300">Guided</span> is selected by
+        default — just continue. Switch to Advanced if you&apos;d rather
+        author the rules yourself; you can change this from the side
+        panel on any firewall lab anytime.
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {CARDS.map((card) => {
@@ -98,11 +100,6 @@ export function TrackPicker() {
           );
         })}
       </div>
-      {track === null && (
-        <div className="mt-3 text-[11px] italic text-amber-400">
-          Pick a track to enable the Next button.
-        </div>
-      )}
     </div>
   );
 }
