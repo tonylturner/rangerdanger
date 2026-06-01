@@ -24,7 +24,7 @@ steps:
   - title: "Exercise overview"
     expected_config: weak
     description: |
-      In the Baseline Assessment, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
+      In the Baseline Traffic Analysis, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
 
       Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Phase 3.
 

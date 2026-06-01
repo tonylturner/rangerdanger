@@ -12,7 +12,7 @@ description: >
   before it ever reaches OT.
 
   This bonus exercise is the optional companion to Lab 2.3
-  (Hardening Configurations). The deck case study (Slide 55) and
+  (Protocol-Hardened Configurations). The deck case study (Slide 55) and
   potential-scenario list (Slide 88) both call this kill chain out
   explicitly: stolen vendor credentials → RDP into jump host →
   east-west to controllers.
