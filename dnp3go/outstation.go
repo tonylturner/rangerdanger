@@ -72,9 +72,10 @@ type sboEntry struct {
 
 // connState holds per-connection state.
 type connState struct {
-	mu       sync.Mutex
-	pending  *sboEntry
-	txSeq    uint8 // transport sequence counter
+	mu          sync.Mutex
+	pending     *sboEntry
+	txSeq       uint8 // transport sequence counter
+	sentRestart bool  // whether IIN1.7 (Device Restart) has been cleared
 }
 
 // ListenAndServe starts a DNP3 TCP outstation on the given address (e.g., ":20000").
@@ -91,8 +92,16 @@ func ListenAndServe(addr string, cfg *OutstationConfig) error {
 			cfg.logf("accept error: %v", err)
 			continue
 		}
-		go handleConn(conn, cfg)
+		go ServeConn(conn, cfg)
 	}
+}
+
+// ServeConn serves a single already-accepted connection until it closes or a
+// protocol error occurs, then closes it. Use this to embed a DNP3 outstation
+// behind your own listener (e.g. an ephemeral test port) instead of the fixed
+// address ListenAndServe binds.
+func ServeConn(conn net.Conn, cfg *OutstationConfig) {
+	handleConn(conn, cfg)
 }
 
 func handleConn(conn net.Conn, cfg *OutstationConfig) {
@@ -139,6 +148,11 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 			respObjects, iin = handleRead(cfg, apdu)
 		case FCDirectOperate:
 			respObjects, iin = handleDirectOperate(cfg, apdu)
+		case FCDirectOperateNoAck:
+			// Direct Operate, No Acknowledge: perform the control but send
+			// no response. Used by attackers/operators that don't want a reply.
+			handleDirectOperate(cfg, apdu)
+			continue
 		case FCSelect:
 			respObjects, iin = handleSelect(cfg, cs, apdu)
 		case FCOperate:
@@ -149,6 +163,16 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 		default:
 			iin = uint16(IIN1NoFuncCode) << 8
 		}
+
+		// IIN1.7 Device Restart: set on the first response after (re)start,
+		// cleared once the master has seen it. A real outstation reports this
+		// so the master knows to re-integrity-poll.
+		cs.mu.Lock()
+		if !cs.sentRestart {
+			iin |= uint16(IIN1DeviceRestart) << 8
+			cs.sentRestart = true
+		}
+		cs.mu.Unlock()
 
 		// Build and send response
 		reqSeq := apdu.Control & acSEQ
@@ -176,6 +200,7 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 
 func handleRead(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 	var out []byte
+	var iin uint16
 
 	for _, oh := range apdu.Objects {
 		switch {
@@ -195,15 +220,18 @@ func handleRead(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 		case oh.Group == GroupAnalogOutput:
 			out = append(out, readAnalogOutputs(cfg, oh)...)
 		default:
-			return nil, uint16(IIN2ObjectUnknown)
+			// Unknown object: flag it but keep any data already gathered for
+			// the other (valid) objects in this request.
+			iin |= IIN2ObjectUnknown
 		}
 	}
 
-	return out, 0
+	return out, iin
 }
 
 func handleDirectOperate(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 	var out []byte
+	var iin uint16
 
 	for _, oh := range apdu.Objects {
 		switch {
@@ -228,11 +256,13 @@ func handleDirectOperate(cfg *OutstationConfig, apdu *APDU) ([]byte, uint16) {
 			}
 
 		default:
-			return nil, uint16(IIN2ObjectUnknown)
+			// Unknown control object: flag it but keep responses for any
+			// valid control objects already processed in this request.
+			iin |= IIN2ObjectUnknown
 		}
 	}
 
-	return out, 0
+	return out, iin
 }
 
 func handleSelect(cfg *OutstationConfig, cs *connState, apdu *APDU) ([]byte, uint16) {
