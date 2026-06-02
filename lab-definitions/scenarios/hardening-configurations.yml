@@ -4,35 +4,14 @@ name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks."
 estimated_minutes: 10
 description: >
-  In Lab 2.2 you built a least-privilege firewall policy. This
-  exercise stress-tests it against a DNP3 Direct Operate (FC05)
-  injection against the recloser - the canonical attack vector in a
-  real distribution substation, where DNP3 is the dominant SCADA
-  protocol on every protective relay, recloser, regulator, and
-  capbank controller (SEL, GE Multilin, S&C, Cooper, Beckwith, et al.).
-
-  The attacker, sitting on Kali in the enterprise zone, sends a
-  Direct Operate CROB to flip the recloser's `reclose_enabled` bit
-  off, then trips the recloser. Without auto-reclose, what should
-  be a brief flicker becomes a sustained outage - every load
-  downstream of the recloser (hospital, fire station, customers)
-  goes dark, with kinetic impact measured by the OpenDSS power-flow
-  solver and surfaced on the Feeder HMI.
-
-  Under the weak baseline this succeeds. Under the hardened policy
-  it should fail, blocked by either L4 source-pinning at the
-  perimeter (only the RTAC at `10.30.30.20` can reach field on
-  DNP3 20000) or ICS DPI (Direct Operate restricted to the RTAC
-  even on flows where reads are allowed) - the two layers are
-  defense in depth, and re-test shows either one is sufficient.
-
-  Modbus FC6 (regulator tap override) and Modbus FC5 (direct
-  breaker trip) are available as optional bonus attacks within
-  the same step. Modbus is real on these device classes (mostly
-  for HMI integration) and the DPI lesson generalizes; the
-  optional attacks exist for instructors who want to demonstrate "the
-  same defense closes both protocols" or for cyber-fluent students
-  who finish the primary attack early.
+  Stress-test the policy you built in Lab 2.2 against the canonical
+  distribution-substation attack: a DNP3 Direct Operate (FC05) injection
+  from Kali that disables the recloser's auto-reclose and trips it,
+  turning a brief flicker into a sustained downstream outage. You'll run
+  the attack under the weak baseline (it succeeds), then under the
+  hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
+  both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
+  bonus attacks in the same step show the same defense generalizes.
 nodes:
   - kali-1
 tags:

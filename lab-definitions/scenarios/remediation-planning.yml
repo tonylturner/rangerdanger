@@ -4,17 +4,13 @@ name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
 estimated_minutes: 18
 description: >
-  You have a list of findings from the baseline assessment.
-  You do not have unlimited time, people, or political capital.
-  Your job in this exercise is to pick which remediations to
-  execute this quarter - knowing that some attack paths will
-  remain open because you cannot fix everything at once.
-
-  The choices you make here will be referenced by later
-  exercises. If you do not restrict vendor access, the vendor
-  attack path in the Vendor Remote Access Compromise exercise remains easier. If you do not
-  apply protocol-aware filtering, the Modbus and DNP3 abuse
-  exercises remain easier. Your plan has consequences.
+  You have findings from the baseline assessment but not unlimited time,
+  people, or political capital. Pick which remediations to execute this
+  quarter - knowing some attack paths stay open because you can't fix
+  everything at once. Your choices carry forward: skip vendor-access
+  restriction and the later vendor-compromise attack stays easier; skip
+  protocol-aware filtering and the Modbus/DNP3 abuse labs stay easier.
+  Your plan has consequences.
 nodes: []
 tags:
   - planning
