@@ -176,7 +176,7 @@ Two paths: containd's native PCAP API (`POST /api/pcap/start` in the backend pro
 
 ### Shared terminal state
 
-The frontend uses a React context (`TerminalProvider`) plus a hidden-mount pattern in `SharedTerminalPanel` - all exercise node terminals are mounted simultaneously and toggled with `display:none/block`. When switching tabs, xterm's size can get confused, so `terminal-inner.tsx` uses an `IntersectionObserver` to detect visibility changes and re-fit, propagating the new size to the server via a JSON resize message (`{"type":"resize","cols":N,"rows":N}`). The backend maps this to `ContainerExecResize` on the Docker exec session, keeping the remote bash's `stty size` in sync. (SSH-based terminals were removed; every terminal — including the firewall — goes through Docker exec.)
+The frontend uses a React context (`TerminalProvider`) plus a hidden-mount pattern in `SharedTerminalPanel` - all exercise node terminals are mounted simultaneously and toggled with `display:none/block`. When switching tabs, xterm's size can get confused, so `terminal-inner.tsx` uses an `IntersectionObserver` to detect visibility changes and re-fit, propagating the new size to the server via a JSON resize message (`{"type":"resize","cols":N,"rows":N}`). The backend maps this to `ContainerExecResize` on the Docker exec session, keeping the remote bash's `stty size` in sync. (SSH-based terminals were removed; every terminal - including the firewall - goes through Docker exec.)
 
 ## Environment variables
 
@@ -191,7 +191,7 @@ Backend-read variables (`backend/internal/config`):
 | `RANGERDANGER_CONTAIND_CONFIG_PATH` | `lab-definitions/firewall/substation-weak.json` | Initial firewall config |
 | `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API |
 
-The legacy `OTLAB_*` prefix is honored as a deprecated alias — existing deployments continue to work but emit a warning at startup.
+The legacy `OTLAB_*` prefix is honored as a deprecated alias - existing deployments continue to work but emit a warning at startup.
 
 Variables read by the **containd container itself** (not the backend) and set in `docker-compose.yml`:
 

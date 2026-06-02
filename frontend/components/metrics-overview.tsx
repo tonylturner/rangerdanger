@@ -57,8 +57,8 @@ export function MetricsOverview() {
   const protectionOk = bkrClosed && rclClosed;
   const voltageOk = critV >= 114 && critV <= 126;
 
-  // Out-of-band detection (ANSI C84.1 114–126V). Applies to any cause —
-  // load, fault, regulator, cyber action — and drives the amber trace +
+  // Out-of-band detection (ANSI C84.1 114–126V). Applies to any cause -
+  // load, fault, regulator, cyber action - and drives the amber trace +
   // badge below. Only flag energized buses (v > 0).
   const feederV = elec?.downstream_voltage_v ?? 0;
   const feederOOB = feederV > 0 && (feederV < 114 || feederV > 126);
@@ -68,7 +68,7 @@ export function MetricsOverview() {
 
   // Customer impact estimate (simplified: 1 kW ~ 3 residential customers)
   const estCustomers = Math.round(totalKw * 3);
-  // ~700 kW feeder baseline (500 general + 200 critical) — same basis the
+  // ~700 kW feeder baseline (500 general + 200 critical) - same basis the
   // Electrical Detail and One-Line use, so the outage count agrees across views.
   const estLost = customersServed ? 0 : Math.round(700 * 3);
 
@@ -95,7 +95,7 @@ export function MetricsOverview() {
         />
         <OpCard
           label="Voltage Quality"
-          value={critV === 0 ? "Dead" : voltageOk ? `${(critV / 120).toFixed(3)} pu` : `${(critV / 120).toFixed(3)} pu — Out of Band`}
+          value={critV === 0 ? "Dead" : voltageOk ? `${(critV / 120).toFixed(3)} pu` : `${(critV / 120).toFixed(3)} pu - Out of Band`}
           ok={critV > 0 && voltageOk}
           detail={critV === 0 ? "12.47 kV feeder de-energized" : `${critV.toFixed(1)}V · Tap ${tap > 0 ? "+" : ""}${tap}`}
         />
@@ -107,7 +107,7 @@ export function MetricsOverview() {
         />
       </div>
 
-      {/* Voltage trend — single chart, focused */}
+      {/* Voltage trend - single chart, focused */}
       <div className="relative rounded-lg border border-slate-800 bg-slate-900/70 p-3">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">

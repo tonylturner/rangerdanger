@@ -140,7 +140,13 @@ func WriteLinkFrame(w io.Writer, f *LinkFrame) error {
 	var buf []byte
 	buf = append(buf, headerWithCRC...)
 
-	// Add data blocks with CRCs
+	// Add data blocks, each followed by its own 2-byte CRC.
+	//
+	// NOTE: we must NOT use appendCRC on a sub-slice of f.Payload here.
+	// f.Payload[offset:end] shares the payload's backing array, so
+	// appendCRC's append() would write the CRC bytes *into* the following
+	// block's data, corrupting every block after the first. Append the
+	// data and CRC to buf directly instead.
 	offset := 0
 	for offset < userDataLen {
 		end := offset + blockSize
@@ -148,7 +154,9 @@ func WriteLinkFrame(w io.Writer, f *LinkFrame) error {
 			end = userDataLen
 		}
 		block := f.Payload[offset:end]
-		buf = append(buf, appendCRC(block)...)
+		buf = append(buf, block...)
+		c := crcDNP(block)
+		buf = append(buf, byte(c), byte(c>>8))
 		offset = end
 	}
 

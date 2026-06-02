@@ -338,14 +338,17 @@ export function renderRuleTable(plan: DynamicExercisePlan): string {
 
 // Build positive validation test commands based on what the plan allows.
 export function positiveValidationTests(plan: DynamicExercisePlan): string[] {
-  // RTAC → field is always allowed
+  // Each entry is markdown: a bold label line, then the command indented
+  // 4 spaces so the scenario runner renders it as a run/copy command
+  // block. (Un-indented command lines would render as plain prose, and a
+  // leading "#" would render as a markdown heading.)
   const tests = [
-    "# RTAC → field Modbus (should succeed):\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20\n# Run from: rtac-1 or verify via RTAC API:\ncurl -s http://10.30.30.20:8080/api/state | python3 -m json.tool",
-    "# HMI → RTAC intra-zone (should still work):\ncurl -sf http://10.30.30.10:1881 --connect-timeout 3",
+    "**RTAC → field Modbus** (should succeed) — from rtac-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20\n\nOr verify via the RTAC API:\n\n    curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool",
+    "**HMI → RTAC** intra-zone (should still work):\n\n    curl -sf http://10.30.30.10:1881 --connect-timeout 3",
   ];
   if (plan.selectedActions.includes("restrict-vendor-to-ot")) {
     tests.push(
-      "# Vendor → OT SSH (should succeed):\nssh -o ConnectTimeout=3 eng@10.30.30.20 echo ok\n# Or test HTTPS if available"
+      "**Vendor → OT SSH** (should succeed):\n\n    ssh -o ConnectTimeout=3 eng@10.30.30.20 echo ok",
     );
   }
   return tests;
@@ -357,37 +360,37 @@ export function negativeValidationTests(plan: DynamicExercisePlan): string[] {
 
   if (plan.selectedActions.includes("block-enterprise-to-field")) {
     tests.push(
-      "# Enterprise → field Modbus (should be BLOCKED):\n# From kali-1:\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20"
+      "**Enterprise → field Modbus** (should be BLOCKED) — from kali-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20",
     );
     tests.push(
-      "# Enterprise → field DNP3 (should be BLOCKED):\n# From kali-1:\ndnp3poll 10.40.40.20:20000 -a 1 -t 3"
+      "**Enterprise → field DNP3** (should be BLOCKED) — from kali-1:\n\n    dnp3poll 10.40.40.20:20000 -a 1 -t 3",
     );
   }
 
   if (plan.selectedActions.includes("block-enterprise-to-ot")) {
     tests.push(
-      "# Enterprise → OT Modbus (should be BLOCKED):\n# From kali-1:\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.30.30.20"
+      "**Enterprise → OT Modbus** (should be BLOCKED) — from kali-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.30.30.20",
     );
   }
 
   if (plan.selectedActions.includes("block-vendor-to-field")) {
     tests.push(
-      "# Vendor → field Modbus (should be BLOCKED):\n# From eng-ws-1:\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23"
+      "**Vendor → field Modbus** (should be BLOCKED) — from eng-ws-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23",
     );
     tests.push(
-      "# Vendor → field HTTP (should be BLOCKED):\n# From eng-ws-1:\ncurl -sf --connect-timeout 3 http://10.40.40.22:8080/api/state"
+      "**Vendor → field HTTP** (should be BLOCKED) — from eng-ws-1:\n\n    curl -sf --connect-timeout 3 http://10.40.40.22:8080/api/state",
     );
   }
 
   if (plan.selectedActions.includes("pin-rtac-to-field")) {
     tests.push(
-      "# Non-RTAC OT host → field (should be BLOCKED):\n# From historian-1 or openplc-1 (any single-homed OT host):\nmbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20"
+      "**Non-RTAC OT host → field** (should be BLOCKED) — from historian-1 or openplc-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20",
     );
   }
 
   if (tests.length === 0) {
     tests.push(
-      "# Your plan did not include cross-zone deny rules.\n# No negative tests to run — all cross-zone traffic is still permitted under the weak baseline.\n# Consider whether this is acceptable risk."
+      "Your plan did not include cross-zone deny rules, so there are no negative tests to run — all cross-zone traffic is still permitted under the weak baseline. Consider whether that residual risk is acceptable.",
     );
   }
 
@@ -503,8 +506,12 @@ export function buildContaindConfig(plan: DynamicExercisePlan): object {
   };
   if (sel.has("modbus-dpi")) {
     rtacModbus.ics = {
+      // containd's ICS schema uses singular `functionCode` (see
+      // substation-improved.json + containd ui/lib/api.ts); emitting
+      // `functionCodes` here would be silently ignored, leaving the
+      // Modbus DPI rule unfiltered.
       protocol: "modbus",
-      functionCodes: [1, 2, 3, 4, 5, 6],
+      functionCode: [1, 2, 3, 4, 5, 6],
     };
   } else {
     rtacModbus.ics = {};

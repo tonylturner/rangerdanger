@@ -71,6 +71,19 @@ func TestLinkFrame_RoundTrip(t *testing.T) {
 			source:  0xFFFE,
 			payload: []byte{0x42},
 		},
+		{
+			// Regression guard for the data-block CRC aliasing bug: a payload
+			// with distinct, position-dependent bytes spanning three 16-byte
+			// blocks. If WriteLinkFrame ever appends a block CRC into the
+			// payload's backing array again, the bytes straddling a block
+			// boundary (indices 16-17, 32-33) will be corrupted and this
+			// fails. bytes.Repeat hid the original bug; distinct bytes don't.
+			name:    "distinct bytes across three blocks (37 bytes)",
+			control: MakeResponseControl(),
+			dest:    1,
+			source:  10,
+			payload: distinctBytes(37),
+		},
 	}
 
 	for _, tc := range cases {
@@ -218,5 +231,42 @@ func TestWrapTransport_NonEmpty(t *testing.T) {
 	wrapped := WrapTransport(app, 0)
 	if len(wrapped) <= len(app) {
 		t.Errorf("transport wrap should add ≥1 header byte; got %d for app of %d", len(wrapped), len(app))
+	}
+}
+
+// distinctBytes returns n bytes where each value depends on its position, so
+// that any byte landing in the wrong place (e.g. a block CRC overwriting
+// payload data) is detectable on read-back.
+func distinctBytes(n int) []byte {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte(i*7 + 1)
+	}
+	return b
+}
+
+// TestWriteLinkFrame_DoesNotMutatePayload is the decisive guard against the
+// data-block CRC aliasing bug. A write→read round-trip can't catch it (the
+// corruption is self-consistent within one cycle), but the bug *mutates the
+// caller's payload in place*. WriteLinkFrame must treat f.Payload as read-only.
+func TestWriteLinkFrame_DoesNotMutatePayload(t *testing.T) {
+	// Multi-block payload so there's a following block for an in-place CRC
+	// append to clobber.
+	payload := distinctBytes(40)
+	want := make([]byte, len(payload))
+	copy(want, payload)
+
+	var buf bytes.Buffer
+	if err := WriteLinkFrame(&buf, &LinkFrame{
+		Control: MakeResponseControl(),
+		Dest:    1,
+		Source:  10,
+		Payload: payload,
+	}); err != nil {
+		t.Fatalf("WriteLinkFrame: %v", err)
+	}
+
+	if !bytes.Equal(payload, want) {
+		t.Errorf("WriteLinkFrame mutated the caller's payload:\n  got:  %x\n  want: %x", payload, want)
 	}
 }

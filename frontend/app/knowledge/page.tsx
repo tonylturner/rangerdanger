@@ -244,7 +244,7 @@ The switch-count lockout is a protective feature, but an attacker who understand
 
 ### Relevance to This Lab
 
-RangerDanger includes a dedicated capacitor bank simulator (**capbank-sim**, a 300 kVAR switched bank on the field network at 10.40.40.23). It appears in the substation HMI: the One-Line shows its switched-in/out state, **Supervisory Control** lets you Switch In / Switch Out and toggle Auto/Manual — the same Modbus and DNP3 paths an attacker would use, restricted by the containd firewall to the RTAC — and **Electrical Detail** shows its full status. Because the bank is wired into the OpenDSS power flow, switching it in raises the local voltage, drops feeder current, and corrects the power factor; switching it out reverses that. The switch-count lockout is a real protective feature an attacker can deliberately trip to disable the bank, exactly as described above. The same segmentation principle as the other field devices applies: restrict direct field-device access to the RTAC only.`,
+RangerDanger includes a dedicated capacitor bank simulator (**capbank-sim**, a 300 kVAR switched bank on the field network at 10.40.40.23). It appears in the substation HMI: the One-Line shows its switched-in/out state, **Supervisory Control** lets you Switch In / Switch Out and toggle Auto/Manual - the same Modbus and DNP3 paths an attacker would use, restricted by the containd firewall to the RTAC - and **Electrical Detail** shows its full status. Because the bank is wired into the OpenDSS power flow, switching it in raises the local voltage, drops feeder current, and corrects the power factor; switching it out reverses that. The switch-count lockout is a real protective feature an attacker can deliberately trip to disable the bank, exactly as described above. The same segmentation principle as the other field devices applies: restrict direct field-device access to the RTAC only.`,
       },
       {
         id: "substation-physics",
@@ -257,7 +257,7 @@ A distribution feeder is a wire. Like any wire, three things are going on at onc
 
 - **Voltage (V)** is the "pressure" pushing electricity along, measured in volts. The lab's feeder runs at **12.47 kV** (12,470 V line-to-line, 3-phase, 60 Hz, the standard North American distribution-primary voltage). Customer outlets see **120 V** after a final step-down transformer at the service drop.
 - **Current (A)** is the *flow rate* through the wire, measured in amperes. More load, more current.
-- **Power (kW)** is the product of voltage and current. In a balanced 3-phase system at line-to-line voltage V_LL, the math is **P = √3 × V_LL × I × pf** — the √3 factor comes from how the three phases add. For the lab's critical load (200 kW, 0.95 pf, 12.47 kV LL), that works out to about **9.7 A** on the feeder. Served the same way at residential voltage instead, the current would be vastly higher and the conductor correspondingly thicker. This is why utilities transmit at high voltage and step it down at the customer's transformer: for the same power, higher voltage means lower current means smaller conductor and less line loss.
+- **Power (kW)** is the product of voltage and current. In a balanced 3-phase system at line-to-line voltage V_LL, the math is **P = √3 × V_LL × I × pf** - the √3 factor comes from how the three phases add. For the lab's critical load (200 kW, 0.95 pf, 12.47 kV LL), that works out to about **9.7 A** on the feeder. Served the same way at residential voltage instead, the current would be vastly higher and the conductor correspondingly thicker. This is why utilities transmit at high voltage and step it down at the customer's transformer: for the same power, higher voltage means lower current means smaller conductor and less line loss.
 
 There is a small twist called **power factor**. Motors and transformers do not draw current perfectly in phase with voltage, so the "real" power (kW) is less than the "apparent" power (kVA). The ratio is power factor. The lab's loads use 0.9 and 0.95 power factor, typical real-world values.
 
@@ -308,7 +308,7 @@ The DSS circuit file at \`services/opendss-sim/dss/substation_feeder.dss\` model
 - A **general load** of 500 kW at 0.9 power factor
 - A **500-foot lateral** using IEEE 13-bus line code 602 (4/0 ACSR)
 - A **load-tap-changer transformer** modeling the voltage regulator (5,000 kVA, ±10% tap range, 32 steps)
-- A **critical load** of 200 kW at 0.95 power factor — the "hospital and fire station" load on the customer-service tile
+- A **critical load** of 200 kW at 0.95 power factor - the "hospital and fire station" load on the customer-service tile
 
 The IEEE 13-bus line codes (\`Linecode.601\` and \`Linecode.602\` in the lab's \`linecodes.dss\` file) are reference impedance data the power-engineering world has used for decades. They are exactly what you would find in any distribution-planning textbook.
 
@@ -353,10 +353,10 @@ The lab gives you two ways to look at the OpenDSS-computed feeder state. The [\`
 
 ### See Also
 
-- [HMI, SCADA, and the Lab's Substation Panel](#hmi-scada-fuxa) — where the numbers from this article get rendered
-- [Power Factor and Reactive Power](#power-factor-reactive-power) — the inductive / capacitive side of the math
-- [Reclosers](#reclosers), [Protective Relays](#protective-relays), [Voltage Regulators](#voltage-regulators) — the devices whose state OpenDSS reads
-- [The OpenDSS project at EPRI](https://www.epri.com/pages/sa/opendss) — the engine itself`,
+- [HMI, SCADA, and the Lab's Substation Panel](#hmi-scada-fuxa) - where the numbers from this article get rendered
+- [Power Factor and Reactive Power](#power-factor-reactive-power) - the inductive / capacitive side of the math
+- [Reclosers](#reclosers), [Protective Relays](#protective-relays), [Voltage Regulators](#voltage-regulators) - the devices whose state OpenDSS reads
+- [The OpenDSS project at EPRI](https://www.epri.com/pages/sa/opendss) - the engine itself`,
       },
       {
         id: "hmi-scada-fuxa",
@@ -368,7 +368,7 @@ The lab gives you two ways to look at the OpenDSS-computed feeder state. The [\`
 **DCS** (Distributed Control System) is the related architecture for plant-wide automation (refineries, chemical plants) where the control logic itself is distributed among many controllers. In substations the architecture is usually called SCADA rather than DCS, but the device-and-protocol surface looks similar.
 
 :::tip The lab's primary HMI is at /substation
-Throughout the workshop, every reference to "the Feeder HMI" or "the operational consequence at the HMI" means the **\`/substation\` panel** built into the RangerDanger web app — not FUXA. Open it at <http://localhost:8088/substation>. The Lab 2.3 alarm chain ("RECLOSER OPEN — downstream loads lost") and the customer-service tile both live there.
+Throughout the workshop, every reference to "the Feeder HMI" or "the operational consequence at the HMI" means the **\`/substation\` panel** built into the RangerDanger web app - not FUXA. Open it at <http://localhost:8088/substation>. The Lab 2.3 alarm chain ("RECLOSER OPEN - downstream loads lost") and the customer-service tile both live there.
 :::
 
 ### What a Real Substation HMI Looks Like
@@ -388,19 +388,19 @@ Commercial HMIs include Survalent, Wonderware, GE iFIX, ABB PCM600, and many ven
 
 The \`/substation\` panel is **a custom HMI built into the lab's web app**. It talks to the [RTAC](#rtac)'s REST API (\`GET /api/state\`) and renders the feeder one-line, the customer-service tile, and the alarm chain directly.
 
-We built it custom because we needed tight control over the alarm logic — the \`LOW VOLTAGE\` and \`RECLOSER OPEN — downstream loads lost\` banners fire on the exact lab conditions we wanted to teach — and we wanted a clean kinetic-feedback view that updates within seconds of an attack. The lab's [Distribution Feeder Physics](#substation-physics) closed loop ends here: an attack mutates a [recloser](#reclosers) state, the RTAC polls it, OpenDSS recomputes the feeder, the panel re-renders the alarm chain. That is the operational consequence the labs keep referring to.
+We built it custom because we needed tight control over the alarm logic - the \`LOW VOLTAGE\` and \`RECLOSER OPEN - downstream loads lost\` banners fire on the exact lab conditions we wanted to teach - and we wanted a clean kinetic-feedback view that updates within seconds of an attack. The lab's [Distribution Feeder Physics](#substation-physics) closed loop ends here: an attack mutates a [recloser](#reclosers) state, the RTAC polls it, OpenDSS recomputes the feeder, the panel re-renders the alarm chain. That is the operational consequence the labs keep referring to.
 
 Two tabs to know:
 
-- **Feeder One-Line** — the operator-facing summary view with alarm banners, breaker / recloser symbols, customer-service tile. This is what every Lab 2.3 / 2.3-bonus / 2.4 "Operational consequence at the HMI" callout references.
-- **Electrical Detail** — the engineering-precision view with per-bus voltage, feeder current, kW / kVAR. Useful when you want to *quantify* an attack rather than read its alarm-level summary; the same view becomes evidence material in Lab 2.4.
+- **Feeder One-Line** - the operator-facing summary view with alarm banners, breaker / recloser symbols, customer-service tile. This is what every Lab 2.3 / 2.3-bonus / 2.4 "Operational consequence at the HMI" callout references.
+- **Electrical Detail** - the engineering-precision view with per-bus voltage, feeder current, kW / kVAR. Useful when you want to *quantify* an attack rather than read its alarm-level summary; the same view becomes evidence material in Lab 2.4.
 
 ### The FUXA Sidecar (Context, Not Load-Bearing)
 
-The lab also runs [FUXA](https://www.frangoteam.com) — an open-source HMI/SCADA platform — at <http://localhost:8088/apps/fuxa-hmi/>. FUXA is wired up: it has a "Substation One-Line Diagram" view configured, polls the RTAC over Modbus, and has the \`hmi_poller\` sidecar generating its baseline traffic. It is the closest thing in the lab to "the HMI you'd encounter at a small utility or in a vendor demo."
+The lab also runs [FUXA](https://www.frangoteam.com) - an open-source HMI/SCADA platform - at <http://localhost:8088/apps/fuxa-hmi/>. FUXA is wired up: it has a "Substation One-Line Diagram" view configured, polls the RTAC over Modbus, and has the \`hmi_poller\` sidecar generating its baseline traffic. It is the closest thing in the lab to "the HMI you'd encounter at a small utility or in a vendor demo."
 
 :::note FUXA is contextual, not part of the exercises
-None of the exercises depend on FUXA being open or correctly configured. The lab's alarm chain, decision questions, and validation chips all read from the \`/substation\` panel. FUXA is included so students who want to see what the open-source HMI ecosystem looks like — and how a traditional Modbus-polled HMI compares to the lab's purpose-built React panel — can spend a few minutes poking around. If FUXA looks empty or misbehaves, ignore it and use \`/substation\`.
+None of the exercises depend on FUXA being open or correctly configured. The lab's alarm chain, decision questions, and validation chips all read from the \`/substation\` panel. FUXA is included so students who want to see what the open-source HMI ecosystem looks like - and how a traditional Modbus-polled HMI compares to the lab's purpose-built React panel - can spend a few minutes poking around. If FUXA looks empty or misbehaves, ignore it and use \`/substation\`.
 :::
 
 ### Why a Custom Panel vs. Configuring FUXA
@@ -411,13 +411,13 @@ We picked the React-based panel over building the labs around a FUXA project for
 2. **Source-controlled reproducibility.** Every byte of the \`/substation\` UI lives in \`frontend/components/substation-panel*.tsx\` and can be diff-reviewed in PRs. FUXA's project state lives in a SQLite database; changes are awkward to review.
 3. **Reaction time.** The \`/substation\` panel polls the RTAC every couple of seconds and re-renders within ~100 ms. It is responsive to attacks in a way that feels live. FUXA's Modbus polling cycle adds a second or two of additional latency; the labs are tighter without it.
 
-The trade-off is that the \`/substation\` panel is *not* a representative example of what a real OT HMI looks like architecturally — it is a single-page React app, not a config-driven HMI runtime. FUXA is closer to that reality, which is why it stays around as context.
+The trade-off is that the \`/substation\` panel is *not* a representative example of what a real OT HMI looks like architecturally - it is a single-page React app, not a config-driven HMI runtime. FUXA is closer to that reality, which is why it stays around as context.
 
 ### See Also
 
-- [Distribution Feeder Physics for Tech Workers](#substation-physics) — what the numbers on the HMI actually mean and where they come from
-- [RTAC (Real-Time Automation Controller)](#rtac) — the data source the HMI polls
-- [What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)](#outage-costs-saidi-saifi) — what the customer-service tile maps to in real-utility metrics`,
+- [Distribution Feeder Physics for Tech Workers](#substation-physics) - what the numbers on the HMI actually mean and where they come from
+- [RTAC (Real-Time Automation Controller)](#rtac) - the data source the HMI polls
+- [What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)](#outage-costs-saidi-saifi) - what the customer-service tile maps to in real-utility metrics`,
       },
       {
         id: "plc-ladder-openplc",
@@ -426,7 +426,7 @@ The trade-off is that the \`/substation\` panel is *not* a representative exampl
 
 PLCs differ from servers and from RTACs in a few important ways:
 
-- **Hard real-time scan cycle.** A typical PLC scan is 10 to 100 milliseconds — read all inputs, execute the program, write all outputs, repeat. Missing a scan is a fault.
+- **Hard real-time scan cycle.** A typical PLC scan is 10 to 100 milliseconds - read all inputs, execute the program, write all outputs, repeat. Missing a scan is a fault.
 - **Field-rugged.** Industrial temperature range, vibration tolerance, redundant power, fanless designs.
 - **Ladder logic primary.** Programmable in graphical languages designed for electricians (see below) rather than text-based languages.
 - **Vendor-specific.** Allen-Bradley (Rockwell), Siemens, Schneider, Mitsubishi, and many others each have proprietary toolchains.
@@ -444,26 +444,26 @@ This often confuses tech-side workshop attendees: a PLC and an RTAC are *both* i
 - A **PLC runs control logic.** It reads field-device inputs, executes IEC 61131-3 code, and drives outputs that turn things on and off. The control program is the point.
 - An **RTAC aggregates and forwards.** It does not generally run control logic; it polls field devices via DNP3/Modbus, normalizes their data, talks to the SCADA system, and translates operator commands into device-level protocols. It is the substation's communications hub.
 
-Modern substations may have multiple PLCs (or PLC-like devices such as SEL RTACs running embedded protection-logic apps) alongside protective relays and a central RTAC. The lines blur — some SEL RTACs run IEC 61131-3 logic apps and are PLCs in everything but the marketing name.
+Modern substations may have multiple PLCs (or PLC-like devices such as SEL RTACs running embedded protection-logic apps) alongside protective relays and a central RTAC. The lines blur - some SEL RTACs run IEC 61131-3 logic apps and are PLCs in everything but the marketing name.
 
 ### What OpenPLC Is
 
 [OpenPLC](https://openplcproject.com) is an **open-source PLC runtime** implementing IEC 61131-3. It runs on Linux, supports ladder, structured text, and function block diagram via the OpenPLC Editor, and is widely used for ICS security research and education because it provides a free, inspectable PLC environment.
 
-In the RangerDanger lab, the \`openplc\` node at \`10.30.30.30\` runs OpenPLC with a simple substation-automation program (\`data/openplc/substation_automation.st\`). It demonstrates a PLC's role in the OT operations zone — accessible via Modbus and the OpenPLC web UI at \`http://localhost:8088/apps/openplc/\` — and gives students a third device class to think about beyond the RTAC and the field-device IEDs. The hardened firewall policy treats it like any other OT-Ops host: cross-zone traffic flows through containd, intra-zone is allowed.`,
+In the RangerDanger lab, the \`openplc\` node at \`10.30.30.30\` runs OpenPLC with a simple substation-automation program (\`data/openplc/substation_automation.st\`). It demonstrates a PLC's role in the OT operations zone - accessible via Modbus and the OpenPLC web UI at \`http://localhost:8088/apps/openplc/\` - and gives students a third device class to think about beyond the RTAC and the field-device IEDs. The hardened firewall policy treats it like any other OT-Ops host: cross-zone traffic flows through containd, intra-zone is allowed.`,
       },
       {
         id: "power-factor-reactive-power",
         title: "Power Factor and Reactive Power",
-        body: `The feeder physics article introduces power factor in one bullet. This article unpacks it — useful background for the voltage regulator, capacitor bank, and "why does low voltage at heavy load actually happen" questions.
+        body: `The feeder physics article introduces power factor in one bullet. This article unpacks it - useful background for the voltage regulator, capacitor bank, and "why does low voltage at heavy load actually happen" questions.
 
 ### Real, Reactive, and Apparent Power
 
 Alternating-current circuits have three power quantities, not one:
 
-- **Real power (P)**, measured in **kilowatts (kW)**. This is the power that actually does useful work — heats elements, turns motor shafts, lights bulbs. It is what shows up on the customer bill.
+- **Real power (P)**, measured in **kilowatts (kW)**. This is the power that actually does useful work - heats elements, turns motor shafts, lights bulbs. It is what shows up on the customer bill.
 - **Reactive power (Q)**, measured in **kilovolt-amperes-reactive (kVAR)**. This is power that flows back and forth between the source and inductive or capacitive elements. It does no net useful work, but it has to be transported on the same wires as real power.
-- **Apparent power (S)**, measured in **kilovolt-amperes (kVA)**. The vector sum of P and Q. Conductors and transformers are sized to handle this — not just the real-power demand.
+- **Apparent power (S)**, measured in **kilovolt-amperes (kVA)**. The vector sum of P and Q. Conductors and transformers are sized to handle this - not just the real-power demand.
 
 These three relate by a right triangle: **S² = P² + Q²**. The ratio **P/S** is the **power factor (pf)**, a value between 0 and 1.
 
@@ -471,11 +471,11 @@ These three relate by a right triangle: **S² = P² + Q²**. The ratio **P/S** i
 
 Motors and transformers store energy in magnetic fields. Each AC cycle, energy flows *into* the magnetic field on one half-cycle and back *out* on the other. That sloshing energy is reactive power. The motor only converts a portion of the electrical energy into mechanical work (the real-power portion); the rest is the magnetic field doing its dance.
 
-Capacitors do the same thing with electric fields — but in the *opposite* phase direction. This is why capacitor banks are used to compensate for inductive loads: they push reactive power one way at the moment the motors are pulling it the other way, and the two cancel locally.
+Capacitors do the same thing with electric fields - but in the *opposite* phase direction. This is why capacitor banks are used to compensate for inductive loads: they push reactive power one way at the moment the motors are pulling it the other way, and the two cancel locally.
 
 ### Why Power Factor Matters
 
-A 200 kW load at **pf = 1.0** draws 200 kVA. The same 200 kW at **pf = 0.7** (a heavily inductive motor load) draws 286 kVA — 43% more current on the feeder for the same useful work. The utility has to size conductors and transformers for the kVA, not the kW.
+A 200 kW load at **pf = 1.0** draws 200 kVA. The same 200 kW at **pf = 0.7** (a heavily inductive motor load) draws 286 kVA - 43% more current on the feeder for the same useful work. The utility has to size conductors and transformers for the kVA, not the kW.
 
 Low power factor also depresses voltage at the load end of the feeder. Reactive current flowing through line reactance drops voltage; the further down a feeder with low pf you go, the lower the voltage at the customer.
 
@@ -483,10 +483,10 @@ Low power factor also depresses voltage at the load end of the feeder. Reactive 
 
 The lab's OpenDSS model uses:
 
-- \`Load.GeneralLoad\` at **0.9 pf** — typical for a mixed commercial/industrial feeder load
-- \`Load.CriticalLoad\` at **0.95 pf** — typical for sensitive critical-services loads where utilities specify cleaner power
+- \`Load.GeneralLoad\` at **0.9 pf** - typical for a mixed commercial/industrial feeder load
+- \`Load.CriticalLoad\` at **0.95 pf** - typical for sensitive critical-services loads where utilities specify cleaner power
 
-When OpenDSS solves the feeder, it computes voltage drop using both the real and reactive current. This is why opening the recloser causes a *downstream voltage of zero* (no current flowing, including reactive) and why a regulator tap change at \`-16\` produces a voltage drop large enough to alarm — the LTC is offsetting against reactive demand that the line cannot freely absorb.
+When OpenDSS solves the feeder, it computes voltage drop using both the real and reactive current. This is why opening the recloser causes a *downstream voltage of zero* (no current flowing, including reactive) and why a regulator tap change at \`-16\` produces a voltage drop large enough to alarm - the LTC is offsetting against reactive demand that the line cannot freely absorb.
 
 ### Capacitor Banks and Voltage Regulators
 
@@ -495,7 +495,7 @@ Both work by adjusting the local reactive-power balance:
 - A **capacitor bank** injects reactive power locally (it has a *leading* power factor). Switching one in on a feeder with low-pf load raises the local voltage and reduces the kVA the substation has to transport.
 - A **voltage regulator** is an LTC transformer that simply adjusts the voltage ratio. It does not change Q; it changes V directly, which is why the lab's tap-attack drops voltage even at constant pf.
 
-Real utility distribution engineering spends a lot of time on Q. The lab abstracts it away under sensible default values, but a power-engineering colleague will immediately ask "what is the power factor on those loads?" if you mention the OpenDSS model — and now you have the answer.`,
+Real utility distribution engineering spends a lot of time on Q. The lab abstracts it away under sensible default values, but a power-engineering colleague will immediately ask "what is the power factor on those loads?" if you mention the OpenDSS model - and now you have the answer.`,
       },
     ],
   },
@@ -543,21 +543,21 @@ The containd NGFW provides Deep Packet Inspection (DPI) for ICS protocols. It do
 
 ### See Also
 
-- [What is ICS DPI? (and how containd does it)](#ics-dpi) — the DPI technique this article gestures at
-- [Purdue Model Levels (L0–L5)](#purdue-model) — the architectural reference for where each zone sits
-- [IEC 62443 Zones and Conduits](#iec-62443-zones-conduits) and [Security Levels](#iec-62443-security-levels) — the standards behind the zone vocabulary
-- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) — the two concrete configurations the lab compares
-- [The OT Kill Chain](#ot-kill-chain) — the threat model these defenses address`,
+- [What is ICS DPI? (and how containd does it)](#ics-dpi) - the DPI technique this article gestures at
+- [Purdue Model Levels (L0–L5)](#purdue-model) - the architectural reference for where each zone sits
+- [IEC 62443 Zones and Conduits](#iec-62443-zones-conduits) and [Security Levels](#iec-62443-security-levels) - the standards behind the zone vocabulary
+- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) - the two concrete configurations the lab compares
+- [The OT Kill Chain](#ot-kill-chain) - the threat model these defenses address`,
       },
       {
         id: "purdue-model",
         title: "Purdue Model Levels (L0–L5)",
-        body: `The **Purdue Enterprise Reference Architecture (PERA)** — usually shortened to "the Purdue Model" — is the canonical *architectural* reference for how industrial control systems are layered. It originated in the early 1990s at Purdue University and was adopted by ISA-95 as the basis for modeling enterprise-control integration. When practitioners talk about "Level 3" or "L3.5 DMZ" in an OT context, they're talking about Purdue levels.
+        body: `The **Purdue Enterprise Reference Architecture (PERA)** - usually shortened to "the Purdue Model" - is the canonical *architectural* reference for how industrial control systems are layered. It originated in the early 1990s at Purdue University and was adopted by ISA-95 as the basis for modeling enterprise-control integration. When practitioners talk about "Level 3" or "L3.5 DMZ" in an OT context, they're talking about Purdue levels.
 
 This is **not** the same thing as IEC 62443's "Security Levels." Both frameworks use the word "levels" but they answer different questions:
 
-- **Purdue levels** answer *"where in the architecture does this asset live?"* — a hierarchy from physical process up to enterprise IT.
-- **IEC 62443 Security Levels (SL 0–4)** answer *"how strong must the security controls be for this zone?"* — a threat-capability scale.
+- **Purdue levels** answer *"where in the architecture does this asset live?"* - a hierarchy from physical process up to enterprise IT.
+- **IEC 62443 Security Levels (SL 0–4)** answer *"how strong must the security controls be for this zone?"* - a threat-capability scale.
 
 You use both together: Purdue to decide *what's in which zone*, IEC 62443 to decide *how hard to harden each zone*.
 
@@ -565,8 +565,8 @@ You use both together: Purdue to decide *what's in which zone*, IEC 62443 to dec
 
 | Level | Name | What lives here |
 |-------|------|-----------------|
-| **L0** | Process | Physical process — sensors, actuators, motors, valves, the actual breaker mechanism |
-| **L1** | Basic Control | Direct controllers — PLCs, RTUs, protective relays, IEDs |
+| **L0** | Process | Physical process - sensors, actuators, motors, valves, the actual breaker mechanism |
+| **L1** | Basic Control | Direct controllers - PLCs, RTUs, protective relays, IEDs |
 | **L2** | Area Supervisory Control | Local HMIs, SCADA front-ends, alarm systems, area-level historians |
 | **L3** | Site Operations | Site-wide SCADA, historian, engineering workstations, MES; the "OT operations" zone |
 | **L3.5** | Industrial DMZ (IDMZ) | Proxies, jump hosts, patch staging, anti-virus distribution; the gatekeeper between OT and IT |
@@ -575,7 +575,7 @@ You use both together: Purdue to decide *what's in which zone*, IEC 62443 to dec
 
 ### The L3.5 DMZ Matters
 
-The Industrial DMZ at L3.5 is the single most important architectural element in modern ICS security. It's what enforces "no direct path from corporate to control." Every protocol crossing between L3 (OT operations) and L4 (business) must terminate in the IDMZ — broker patterns, reverse proxies, replicated historians — never a direct tunnel. The IDMZ is where you put the controls that catch lateral movement before it reaches the plant floor.
+The Industrial DMZ at L3.5 is the single most important architectural element in modern ICS security. It's what enforces "no direct path from corporate to control." Every protocol crossing between L3 (OT operations) and L4 (business) must terminate in the IDMZ - broker patterns, reverse proxies, replicated historians - never a direct tunnel. The IDMZ is where you put the controls that catch lateral movement before it reaches the plant floor.
 
 A flat network where corporate workstations can ping the PLC is "L4 talking directly to L1" with no L3.5 in between. That's the architectural anti-pattern this lab demonstrates with the **weak baseline** policy.
 
@@ -583,25 +583,25 @@ A flat network where corporate workstations can ping the PLC is "L4 talking dire
 
 | Lab zone | Subnet | Purdue level |
 |----------|--------|---|
-| Field Devices | \`10.40.40.0/24\` | **L1** — relays, recloser, regulator, capacitor bank |
-| OT Operations | \`10.30.30.0/24\` | **L3** — HMI, RTAC, OpenPLC, historian, GPS time server |
-| Vendor / Engineering | \`10.20.20.0/24\` | **L3.5** (IDMZ) — vendor jump box, engineering workstation |
-| Enterprise | \`10.10.10.0/24\` | **L4** — corporate workstation, attacker simulation |
+| Field Devices | \`10.40.40.0/24\` | **L1** - relays, recloser, regulator, capacitor bank |
+| OT Operations | \`10.30.30.0/24\` | **L3** - HMI, RTAC, OpenPLC, historian, GPS time server |
+| Vendor / Engineering | \`10.20.20.0/24\` | **L3.5** (IDMZ) - vendor jump box, engineering workstation |
+| Enterprise | \`10.10.10.0/24\` | **L4** - corporate workstation, attacker simulation |
 
-L0 (the physical process — the actual breaker mechanism, the feeder conductor, the connected load) is the OpenDSS simulation engine that consumes commands from the relays/recloser/regulator and computes the resulting voltages and currents. L2 (area supervisory) is collapsed into L3 for the lab — small distribution substations often don't have a distinct local HMI tier. L5 (enterprise) sits outside the lab — represented only by the idea that the corporate workstation could be reaching out to the internet.
+L0 (the physical process - the actual breaker mechanism, the feeder conductor, the connected load) is the OpenDSS simulation engine that consumes commands from the relays/recloser/regulator and computes the resulting voltages and currents. L2 (area supervisory) is collapsed into L3 for the lab - small distribution substations often don't have a distinct local HMI tier. L5 (enterprise) sits outside the lab - represented only by the idea that the corporate workstation could be reaching out to the internet.
 
 ### Why Both Frameworks at Once
 
 When you produce evidence for a change board:
 
-1. **Purdue** answers *"is your design layered correctly?"* — does every cross-tier flow terminate in the L3.5 DMZ? Are there any L4-to-L1 direct paths that bypass L3?
-2. **IEC 62443** answers *"is the security strength per zone proportional to the risk?"* — is your L1 conduit enforcing SL-3 controls (protocol-aware filtering, source restriction, logging) or just port filtering?
+1. **Purdue** answers *"is your design layered correctly?"* - does every cross-tier flow terminate in the L3.5 DMZ? Are there any L4-to-L1 direct paths that bypass L3?
+2. **IEC 62443** answers *"is the security strength per zone proportional to the risk?"* - is your L1 conduit enforcing SL-3 controls (protocol-aware filtering, source restriction, logging) or just port filtering?
 
 A correct design needs both. A flat network can be technically "secured" with strong controls on every host (high SL-A everywhere) but still violate Purdue layering because there's no architectural firebreak. Conversely, a beautifully Purdue-layered network with no controls at any layer fails IEC 62443 SL assessment.
 
 ### A Common Mistake
 
-Treating L3 and L3.5 as the same thing. Many real deployments put the vendor jump box directly in the OT operations subnet — that collapses the IDMZ and turns vendor remote access into a direct path into L3. The hardened policy in this lab fixes that by restricting which protocols and source IPs can traverse the L3.5→L3 boundary, even though the network architecture still has them as adjacent subnets.`,
+Treating L3 and L3.5 as the same thing. Many real deployments put the vendor jump box directly in the OT operations subnet - that collapses the IDMZ and turns vendor remote access into a direct path into L3. The hardened policy in this lab fixes that by restricting which protocols and source IPs can traverse the L3.5→L3 boundary, even though the network architecture still has them as adjacent subnets.`,
       },
       {
         id: "iec-62443-zones-conduits",
@@ -741,11 +741,11 @@ Under the weak config, the ESP boundary is effectively unenforced. The Kali box 
       {
         id: "ics-dpi",
         title: "What is ICS DPI? (and how containd does it)",
-        body: `**Deep Packet Inspection (DPI)** is the firewall reading *inside* the TCP payload — past the source IP, port, and TCP flags that L4 firewalls inspect — to make decisions based on the application-layer protocol. **ICS DPI** is DPI specifically for industrial protocols: Modbus, DNP3, IEC 61850, CIP, S7Comm, OPC UA, BACnet, and the dozen-or-so others that show up on OT networks.
+        body: `**Deep Packet Inspection (DPI)** is the firewall reading *inside* the TCP payload - past the source IP, port, and TCP flags that L4 firewalls inspect - to make decisions based on the application-layer protocol. **ICS DPI** is DPI specifically for industrial protocols: Modbus, DNP3, IEC 61850, CIP, S7Comm, OPC UA, BACnet, and the dozen-or-so others that show up on OT networks.
 
 ### Why L4 Filtering Is Not Enough
 
-A traditional L4 firewall sees a Modbus connection as "TCP from 10.30.30.20 to 10.40.40.20, port 502, established." It cannot tell whether that connection is reading a holding register or writing a setpoint that opens a breaker. The Modbus protocol uses **function codes (FC)** to distinguish these operations — FC1/FC3/FC4 are reads, FC5/FC6/FC15/FC16 are writes — but the function code lives in the payload, not in the TCP header.
+A traditional L4 firewall sees a Modbus connection as "TCP from 10.30.30.20 to 10.40.40.20, port 502, established." It cannot tell whether that connection is reading a holding register or writing a setpoint that opens a breaker. The Modbus protocol uses **function codes (FC)** to distinguish these operations - FC1/FC3/FC4 are reads, FC5/FC6/FC15/FC16 are writes - but the function code lives in the payload, not in the TCP header.
 
 So an L4 "allow port 502" rule is a yes/no on the whole conversation. It cannot separate the legitimate poll traffic (FC3 reads from the RTAC every 3 seconds) from a malicious FC5 write that opens a breaker. To distinguish them you have to look inside the packet.
 
@@ -764,36 +764,36 @@ For each, the engine maintains a per-flow state machine that tracks the protocol
 
 containd uses a two-layer architecture for DPI:
 
-1. **Kernel-side L4 filtering** via nftables — fast, decides allow/deny on the TCP 5-tuple based on the active policy. Most packets are accepted or denied here without ever leaving the kernel.
-2. **Userspace DPI** via NFQUEUE — for packets matching a rule that has \`dpiMode: enforce\` set, the kernel hands the packet up to containd's userspace process via the Linux netfilter queue. containd parses the payload, evaluates the ICS predicate (e.g., "is this Modbus function code in the allowed list \`[1, 3, 4]\`?"), and verdicts the packet back to the kernel: ACCEPT or DROP.
+1. **Kernel-side L4 filtering** via nftables - fast, decides allow/deny on the TCP 5-tuple based on the active policy. Most packets are accepted or denied here without ever leaving the kernel.
+2. **Userspace DPI** via NFQUEUE - for packets matching a rule that has \`dpiMode: enforce\` set, the kernel hands the packet up to containd's userspace process via the Linux netfilter queue. containd parses the payload, evaluates the ICS predicate (e.g., "is this Modbus function code in the allowed list \`[1, 3, 4]\`?"), and verdicts the packet back to the kernel: ACCEPT or DROP.
 
-The DPI verdict path is slower than pure-L4 verdicts (microseconds vs nanoseconds), so the policy is structured to use DPI only where it adds value — the **rtac-to-field-modbus** rule in \`substation-improved.json\` is the canonical example: allow only the RTAC's source IP at L4, *and* allow only function codes 1–6 at the DPI layer. Two layers of defense in depth on the same flow.
+The DPI verdict path is slower than pure-L4 verdicts (microseconds vs nanoseconds), so the policy is structured to use DPI only where it adds value - the **rtac-to-field-modbus** rule in \`substation-improved.json\` is the canonical example: allow only the RTAC's source IP at L4, *and* allow only function codes 1–6 at the DPI layer. Two layers of defense in depth on the same flow.
 
 ### How to See It Working in the Lab
 
-When a student in Lab 2.3 fires an unauthorized Modbus FC5 write from kali, the packet hits containd. At L4, the hardened policy already denies enterprise → field on TCP/502 — so the packet is dropped at the kernel layer and the student sees a TCP timeout, not a Modbus error. Watch the [Live DPI Events strip](/console) on the Segmentation drawer; you should see a row with \`category: l4\`, \`verdict: DENY\`, and the matching rule ID.
+When a student in Lab 2.3 fires an unauthorized Modbus FC5 write from kali, the packet hits containd. At L4, the hardened policy already denies enterprise → field on TCP/502 - so the packet is dropped at the kernel layer and the student sees a TCP timeout, not a Modbus error. Watch the [Live DPI Events strip](/console) on the Segmentation drawer; you should see a row with \`category: l4\`, \`verdict: DENY\`, and the matching rule ID.
 
-When that same write is sent from inside an *allowed* flow (the eng-ws → RTAC monitoring path, for example), the L4 rule lets it through but the DPI verdict drops the write because FC5 is not in the allow list. The event row shows \`category: ics\`, \`verdict: DENY\`, and the specific function code that was rejected. That contrast — L4-only DENY vs ICS-DPI DENY — is the lesson the lab is built around.
+When that same write is sent from inside an *allowed* flow (the eng-ws → RTAC monitoring path, for example), the L4 rule lets it through but the DPI verdict drops the write because FC5 is not in the allow list. The event row shows \`category: ics\`, \`verdict: DENY\`, and the specific function code that was rejected. That contrast - L4-only DENY vs ICS-DPI DENY - is the lesson the lab is built around.
 
 ### The Limit of ICS DPI
 
 DPI cannot save you from a *compromised RTAC* sending legitimate-looking Modbus writes from its authorized source IP. If the attacker is the RTAC, the firewall sees authorized traffic.
 
 :::warning DPI is not a substitute for host hardening
-This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin (\`scripts/rtac-harden.sh\`) — the RTAC cannot bridge zones, and the firewall enforces what it is. DPI plus L4 plus host-level hardening together is the defense-in-depth story. **DPI alone is not.**
+This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin (\`scripts/rtac-harden.sh\`) - the RTAC cannot bridge zones, and the firewall enforces what it is. DPI plus L4 plus host-level hardening together is the defense-in-depth story. **DPI alone is not.**
 :::
 
 ### See Also
 
-- [How containd Enforces Policy (Kernel-Level View)](#how-containd-enforces-policy) — the nftables + NFQUEUE plumbing the DPI path uses
-- [Reading the Live DPI Events Strip](#live-dpi-events-strip) — how to interpret L4 vs ICS verdict rows during an exercise
-- [Modbus TCP in Substations](#modbus-tcp) and [DNP3 in Substations](#dnp3) — the protocols this DPI inspects
-- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) — the configurations the lab uses to demonstrate L4 + DPI together`,
+- [How containd Enforces Policy (Kernel-Level View)](#how-containd-enforces-policy) - the nftables + NFQUEUE plumbing the DPI path uses
+- [Reading the Live DPI Events Strip](#live-dpi-events-strip) - how to interpret L4 vs ICS verdict rows during an exercise
+- [Modbus TCP in Substations](#modbus-tcp) and [DNP3 in Substations](#dnp3) - the protocols this DPI inspects
+- [Weak vs Hardened Firewall Policy](#weak-vs-hardened) - the configurations the lab uses to demonstrate L4 + DPI together`,
       },
       {
         id: "default-deny",
         title: "Default-Deny: Implicit vs Explicit Across Firewalls",
-        body: `**Default-deny** is the bedrock rule of network segmentation: anything not explicitly allowed is dropped. It's how you make "least privilege" enforceable instead of aspirational. But the *mechanism* for default-deny varies a lot across firewalls — and getting it wrong on an OT network can either (a) leave you wide open, or (b) take down a substation. Worth understanding which model your firewall uses.
+        body: `**Default-deny** is the bedrock rule of network segmentation: anything not explicitly allowed is dropped. It's how you make "least privilege" enforceable instead of aspirational. But the *mechanism* for default-deny varies a lot across firewalls - and getting it wrong on an OT network can either (a) leave you wide open, or (b) take down a substation. Worth understanding which model your firewall uses.
 
 ### Two Models
 
@@ -801,7 +801,7 @@ This is why the lab pairs containd's DPI with the kernel-level RTAC routing pin 
 
 **Explicit default-deny.** Nothing is appended for you. You must either (a) configure the chain/policy default to DENY/DROP, or (b) write a final deny rule yourself. If you forget, the default is to *allow* and your policy is the inverse of what you intended. This is how iptables/nftables, raw Linux kernel netfilter, some Linux bridge setups, and a couple of older perimeter firewalls work.
 
-The failure mode for explicit default-deny is silent: you build out your allow rules, you do not write a final deny, traffic appears to be working — but it is working because *all* traffic is allowed, not because your rules are correct.
+The failure mode for explicit default-deny is silent: you build out your allow rules, you do not write a final deny, traffic appears to be working - but it is working because *all* traffic is allowed, not because your rules are correct.
 
 ### How the Vendors Handle It
 
@@ -817,7 +817,7 @@ The failure mode for explicit default-deny is silent: you build out your allow r
 | **iptables / nftables (raw)** | Explicit | Chains default to ACCEPT. You must run \`iptables -P FORWARD DROP\` (set the chain policy) or end every chain with an explicit drop rule. Forget either, and the firewall is allow-all. |
 | **Linux bridge / OVS** | Explicit | Same problem class as raw iptables. Bridges pass traffic unless explicitly filtered. |
 
-The thing students consistently get wrong on engagements is conflating the *models*: assuming a Cisco-style implicit deny is also there on their iptables jump host, or assuming a Palo Alto-style "interzone-default" rule exists on a fresh Linux bridge. The rule of thumb: if you cannot point to *where* the default-deny is — either as an implicit policy engine behavior with vendor documentation, or as an explicit rule you wrote yourself — assume there is no default-deny.
+The thing students consistently get wrong on engagements is conflating the *models*: assuming a Cisco-style implicit deny is also there on their iptables jump host, or assuming a Palo Alto-style "interzone-default" rule exists on a fresh Linux bridge. The rule of thumb: if you cannot point to *where* the default-deny is - either as an implicit policy engine behavior with vendor documentation, or as an explicit rule you wrote yourself - assume there is no default-deny.
 
 ### Why This Matters in OT
 
@@ -830,12 +830,12 @@ The flip side is also painful: a misconfigured default-deny that drops the RTAC'
 Three checks that catch most default-deny misconfigurations:
 
 1. **Where is the implicit deny documented?** If it is vendor-implicit, link to the vendor's docs in your change record. If it is explicit, point at the rule by ID or line number.
-2. **What does a packet for an undocumented flow do?** Generate one and check the firewall log. If the log is silent, the firewall is probably allowing — implicit-deny vendors typically don't log implicit denies unless you turn it on (Palo Alto's interzone-default rule, for example, does not log by default).
+2. **What does a packet for an undocumented flow do?** Generate one and check the firewall log. If the log is silent, the firewall is probably allowing - implicit-deny vendors typically don't log implicit denies unless you turn it on (Palo Alto's interzone-default rule, for example, does not log by default).
 3. **What happens when you remove the last allow rule?** On a properly configured default-deny firewall, removing an allow rule should break the corresponding flow. If everything still works, the firewall is either bypassing the policy entirely (NAT/bridge misconfig) or has a hidden allow-all rule somewhere.
 
 ### What containd Does
 
-containd's policy schema has a top-level \`defaultAction\` field on the firewall object. In every shipped configuration — including the deliberately-weak \`substation-weak.json\` — this is set to \`"DENY"\`. The weak baseline is "permissive" only because it adds broad cross-zone ALLOW rules above the default. The hardened policy keeps the same \`defaultAction: DENY\` and trims the allow list to the six flows the substation requires. The actual transition from weak to hardened is *removing rules*, not *changing the default*. That is the model the labs are built on.`,
+containd's policy schema has a top-level \`defaultAction\` field on the firewall object. In every shipped configuration - including the deliberately-weak \`substation-weak.json\` - this is set to \`"DENY"\`. The weak baseline is "permissive" only because it adds broad cross-zone ALLOW rules above the default. The hardened policy keeps the same \`defaultAction: DENY\` and trims the allow list to the six flows the substation requires. The actual transition from weak to hardened is *removing rules*, not *changing the default*. That is the model the labs are built on.`,
       },
       {
         id: "vendor-remote-access",
@@ -848,15 +848,15 @@ containd's policy schema has a top-level \`defaultAction\` field on the firewall
 
 **2. Vendor jump host.** A dedicated server in a DMZ that the vendor logs into (typically via RDP, SSH, or Citrix), runs the vendor-specific tools on, and uses to reach the OT devices. Better than direct VPN because the surface from the vendor's network to your DMZ is narrow (one host, a few protocols), and you can monitor the jump host's outbound to OT. This is what the lab's \`vendor-jump\` node models.
 
-**3. Privileged Access Management (PAM) broker.** A specialized appliance — BeyondTrust Privileged Remote Access, CyberArk PSM, Cyolo, Claroty Secure Remote Access, Dispel, Xage, or similar — that the vendor authenticates against. The broker enforces just-in-time access (the path opens for a scheduled window and closes after), MFA, session recording, and click-stream auditing. This is the modern utility standard for high-criticality access.
+**3. Privileged Access Management (PAM) broker.** A specialized appliance - BeyondTrust Privileged Remote Access, CyberArk PSM, Cyolo, Claroty Secure Remote Access, Dispel, Xage, or similar - that the vendor authenticates against. The broker enforces just-in-time access (the path opens for a scheduled window and closes after), MFA, session recording, and click-stream auditing. This is the modern utility standard for high-criticality access.
 
-**4. Zero-Trust Network Access (ZTNA).** An access broker (Zscaler ZPA, Cloudflare Access, Tailscale, Twingate) that builds a per-application tunnel from the vendor's identity to the specific service they need — without exposing the network. The vendor's laptop talks to the broker, the broker talks to the target device, and the network between them stays invisible. Newer, IT-centric, increasingly adopted on the OT/IT boundary.
+**4. Zero-Trust Network Access (ZTNA).** An access broker (Zscaler ZPA, Cloudflare Access, Tailscale, Twingate) that builds a per-application tunnel from the vendor's identity to the specific service they need - without exposing the network. The vendor's laptop talks to the broker, the broker talks to the target device, and the network between them stays invisible. Newer, IT-centric, increasingly adopted on the OT/IT boundary.
 
 ### Where Vendor Access Usually Fails
 
 The audit findings on real utility engagements tend to cluster in a few areas:
 
-- **Scope creep.** A vendor needs access to "their" devices, so they get access to the OT-Ops VLAN — and from there can reach things that are not theirs.
+- **Scope creep.** A vendor needs access to "their" devices, so they get access to the OT-Ops VLAN - and from there can reach things that are not theirs.
 - **Shared credentials.** "\`vendor\` / \`vendor\`" on the jump host, used by ten people across two organizations. No way to attribute an action to a specific human.
 - **No session recording.** The vendor connects, does something to a relay, disconnects. The audit trail is "vendor logged in at 14:03, logged out at 14:42." That is not enough to investigate an incident.
 - **Persistent access.** The vendor's path is always open instead of opened on demand for a maintenance window.
@@ -864,9 +864,9 @@ The audit findings on real utility engagements tend to cluster in a few areas:
 
 ### How the Lab Demonstrates This
 
-Lab 2.3-bonus models the persistent-access plus east-west-blindness failure modes together. The vendor's RDP path is always open from the enterprise zone (the attacker exploits this with stolen credentials), and from the vendor jump host the Modbus path to the field zone is also open. The attacker laundered through the vendor session never appears to be the attacker — the field device sees the command coming from the vendor's trusted IP. The hardened policy closes both links of the kill chain: enterprise → vendor RDP is denied at the perimeter, and vendor → field Modbus is denied at the DMZ-to-Field conduit. Either one alone breaks the attack; together is defense in depth.
+Lab 2.3-bonus models the persistent-access plus east-west-blindness failure modes together. The vendor's RDP path is always open from the enterprise zone (the attacker exploits this with stolen credentials), and from the vendor jump host the Modbus path to the field zone is also open. The attacker laundered through the vendor session never appears to be the attacker - the field device sees the command coming from the vendor's trusted IP. The hardened policy closes both links of the kill chain: enterprise → vendor RDP is denied at the perimeter, and vendor → field Modbus is denied at the DMZ-to-Field conduit. Either one alone breaks the attack; together is defense in depth.
 
-The PAM-broker and ZTNA patterns are *not* simulated in the lab — they would require more infrastructure than fits in a docker compose — but the same defensive lesson generalizes: scope each access path narrowly, log who did what, and assume any path you do not actively constrain will be exploited.`,
+The PAM-broker and ZTNA patterns are *not* simulated in the lab - they would require more infrastructure than fits in a docker compose - but the same defensive lesson generalizes: scope each access path narrowly, log who did what, and assume any path you do not actively constrain will be exploited.`,
       },
     ],
   },
@@ -923,9 +923,9 @@ You use \`mbpoll\` on the Kali box to read and write these registers. The differ
 
 ### See Also
 
-- [What is ICS DPI?](#ics-dpi) — function-code filtering is the DPI lesson the lab teaches against Modbus
-- [\`mbpoll\` — Modbus TCP Command-Line Tool](#tool-mbpoll) — the CLI used in the labs
-- [DNP3 in Substations](#dnp3) — the protocol DNP3 plays to Modbus's role in distribution`,
+- [What is ICS DPI?](#ics-dpi) - function-code filtering is the DPI lesson the lab teaches against Modbus
+- [\`mbpoll\` - Modbus TCP Command-Line Tool](#tool-mbpoll) - the CLI used in the labs
+- [DNP3 in Substations](#dnp3) - the protocol DNP3 plays to Modbus's role in distribution`,
       },
       {
         id: "dnp3",
@@ -937,8 +937,9 @@ You use \`mbpoll\` on the Kali box to read and write these registers. The differ
 DNP3 uses a master-outstation model. The master (RTAC or SCADA system) initiates requests to outstations (field devices). Key operations:
 
 - **Read** (FC01): retrieve data objects from the outstation
-- **Direct Operate** (FC05): command an action (open breaker, change setpoint)
-- **Select-Before-Operate** (FC03/FC04): two-step confirmation for safety-critical operations. The master selects the control point, the outstation confirms readiness, then the master issues the operate. SBO is recommended for critical controls but not universally deployed.
+- **Direct Operate** (FC05): command an action (open breaker, change setpoint) in a single message, with the outstation returning a status response
+- **Direct Operate No Ack** (FC06): the same single-message control write, but the outstation sends **no response**. Attackers favor it because it is quieter (no reply packet to notice) and because a naive function-code filter that only lists FC05 will miss it - which is exactly why a correct DPI rule must cover both FC05 and FC06
+- **Select-Before-Operate** (FC03/FC04): two-step confirmation for safety-critical operations. The master selects the control point, the outstation confirms readiness, then the master issues the operate. SBO is recommended for critical controls but not universally deployed. The lab's \`dnp3cmd\` supports all three control modes (\`-sbo\` for Select-Before-Operate, \`-no-ack\` for FC06, and Direct Operate by default).
 
 ### Security (or Lack Thereof)
 
@@ -969,10 +970,10 @@ You can use DNP3 tools on the Kali box to send Direct Operate commands, tripping
 
 ### See Also
 
-- [What is ICS DPI?](#ics-dpi) — DNP3 Direct Operate (FC05) restriction is what containd's DPI rule for DNP3 enforces
-- [\`dnp3poll\` & \`dnp3cmd\` — DNP3 Tools](#tool-dnp3) — the CLI tools used in the labs
-- [IEC 61850 and GOOSE](#iec-61850-goose) — the modern standard sometimes deployed alongside or instead of DNP3
-- [The OT Kill Chain](#ot-kill-chain) — the Industroyer historical example mirrors the Lab 2.3 DNP3 attack`,
+- [What is ICS DPI?](#ics-dpi) - the DNP3 Direct Operate restriction (FC05 and FC06 No Ack) is what containd's DPI rule for DNP3 enforces
+- [\`dnp3poll\` & \`dnp3cmd\` - DNP3 Tools](#tool-dnp3) - the CLI tools used in the labs
+- [IEC 61850 and GOOSE](#iec-61850-goose) - the modern standard sometimes deployed alongside or instead of DNP3
+- [The OT Kill Chain](#ot-kill-chain) - the Industroyer historical example mirrors the Lab 2.3 DNP3 attack`,
       },
       {
         id: "ntp-ot",
@@ -1012,19 +1013,19 @@ From a segmentation perspective, NTP traffic should be treated as a controlled c
         title: "IEC 61850 and GOOSE (Why the Lab Doesn't Simulate Them)",
         body: `**IEC 61850** is the international standard for substation automation. Where DNP3 evolved as the SCADA reporting protocol, IEC 61850 was designed as a complete substation communication architecture: device modeling, configuration files, and three different protocols for different speed requirements.
 
-For greenfield substation builds today — especially in Europe, parts of Asia, and increasingly North American transmission — IEC 61850 is the new-build standard. The DNP3 dominance in this lab is real for *installed* distribution gear, especially in North America; for *new* projects you should expect IEC 61850 to be on the wire alongside or instead of DNP3.
+For greenfield substation builds today - especially in Europe, parts of Asia, and increasingly North American transmission - IEC 61850 is the new-build standard. The DNP3 dominance in this lab is real for *installed* distribution gear, especially in North America; for *new* projects you should expect IEC 61850 to be on the wire alongside or instead of DNP3.
 
 ### The Three Protocols in the 61850 Family
 
-**MMS (Manufacturing Message Specification)** is the TCP-based client/server protocol that handles slower SCADA-style operations: configuration reads, status polling, control commands, file transfers, report uploads. It is roughly the IEC 61850 equivalent of DNP3 — the SCADA-master-talks-to-IED protocol — and rides on **TCP 102**.
+**MMS (Manufacturing Message Specification)** is the TCP-based client/server protocol that handles slower SCADA-style operations: configuration reads, status polling, control commands, file transfers, report uploads. It is roughly the IEC 61850 equivalent of DNP3 - the SCADA-master-talks-to-IED protocol - and rides on **TCP 102**.
 
-**GOOSE (Generic Object Oriented Substation Event)** is the headline protocol. It is a **multicast Ethernet** message (not TCP, not IP — raw layer-2 multicast) used for **protection-class messaging** between IEDs. A protective relay detects a fault, sends a GOOSE message announcing "trip" to the network, and other relays receive it in **microseconds**. The whole point of GOOSE is sub-cycle protection: faster than the protection scheme can be implemented in hardwired trip circuits between relays. GOOSE rides directly on Ethernet, typically on a tagged VLAN reserved for protection traffic.
+**GOOSE (Generic Object Oriented Substation Event)** is the headline protocol. It is a **multicast Ethernet** message (not TCP, not IP - raw layer-2 multicast) used for **protection-class messaging** between IEDs. A protective relay detects a fault, sends a GOOSE message announcing "trip" to the network, and other relays receive it in **microseconds**. The whole point of GOOSE is sub-cycle protection: faster than the protection scheme can be implemented in hardwired trip circuits between relays. GOOSE rides directly on Ethernet, typically on a tagged VLAN reserved for protection traffic.
 
-**Sampled Values (SV / IEC 61850-9-2)** is the third leg: digital streaming of analog instrument-transformer measurements (current and voltage) at high frequency (4 kHz or 4.8 kHz). It replaces the copper wires that traditionally carry CT/PT signals to protective relays with a digital multicast stream. SV is the "process bus" use case — typically deployed inside a single substation cabinet, not the wide-area network.
+**Sampled Values (SV / IEC 61850-9-2)** is the third leg: digital streaming of analog instrument-transformer measurements (current and voltage) at high frequency (4 kHz or 4.8 kHz). It replaces the copper wires that traditionally carry CT/PT signals to protective relays with a digital multicast stream. SV is the "process bus" use case - typically deployed inside a single substation cabinet, not the wide-area network.
 
 ### Why IEC 61850 Is Hard to Attack the Same Way
 
-GOOSE and SV are **layer-2 multicast**, not TCP. A network firewall sitting between zones at L3 (which is what containd does) does not see GOOSE messages flowing on a different VLAN's broadcast domain at all. To inspect or filter GOOSE traffic you need a layer-2 switch with VLAN-aware filtering, port mirroring, or an inline appliance — fundamentally a different architecture than the IT-style L3 firewall this lab models. The threat model for GOOSE is more about local-cabinet access, VLAN hopping, and rogue device insertion than about cross-zone routing.
+GOOSE and SV are **layer-2 multicast**, not TCP. A network firewall sitting between zones at L3 (which is what containd does) does not see GOOSE messages flowing on a different VLAN's broadcast domain at all. To inspect or filter GOOSE traffic you need a layer-2 switch with VLAN-aware filtering, port mirroring, or an inline appliance - fundamentally a different architecture than the IT-style L3 firewall this lab models. The threat model for GOOSE is more about local-cabinet access, VLAN hopping, and rogue device insertion than about cross-zone routing.
 
 The MMS protocol is L3-routable and *could* be DPI'd by a containd-class firewall the same way Modbus and DNP3 are. The IEC 61850 community has done less work standardizing DPI predicates for MMS than the DNP3 / Modbus community has done for theirs, so commercial ICS DPI engines vary in how much MMS-aware filtering they support. This is improving as IEC 61850 deployments mature.
 
@@ -1033,7 +1034,7 @@ The MMS protocol is L3-routable and *could* be DPI'd by a containd-class firewal
 A few practical reasons:
 
 - **Installed-base reality.** The lab is a *distribution* substation, where DNP3 is the dominant protocol on installed gear in North America. The scenarios the workshop is designed to teach (cross-zone segmentation, ICS DPI, vendor remote-access compromise) match the threat model of the installed base.
-- **Docker-bridge constraints.** Simulating GOOSE realistically requires layer-2 multicast on a tagged VLAN. Docker bridge networks do not do that well — bridges are layer-2 but not VLAN-aware in the way GOOSE testing needs. A separate L2 testbed (or a Mininet/CORE-style L2 simulator) would be the right vehicle.
+- **Docker-bridge constraints.** Simulating GOOSE realistically requires layer-2 multicast on a tagged VLAN. Docker bridge networks do not do that well - bridges are layer-2 but not VLAN-aware in the way GOOSE testing needs. A separate L2 testbed (or a Mininet/CORE-style L2 simulator) would be the right vehicle.
 - **DPI lesson generalizes.** The L4 source-pin + function-code-DPI defense pattern the lab teaches against DNP3 maps cleanly to MMS once an IEC 61850-aware engine is available. Students who internalize the lab's segmentation model will not have to relearn it for an MMS environment.
 
 If your environment is IEC 61850-heavy, the gap between this lab and your reality is roughly: substitute MMS for DNP3 in the firewall rules, add a layer-2 strategy for GOOSE that this lab does not exercise, and read about process-bus architectures (SV deployment) separately. The segmentation, DPI, and zone-conduit lessons all carry over.`,
@@ -1041,7 +1042,7 @@ If your environment is IEC 61850-heavy, the gap between this lab and your realit
       {
         id: "opc-ua",
         title: "OPC UA Basics",
-        body: `**OPC UA** (OPC Unified Architecture) is a modern, vendor-neutral, platform-independent protocol for industrial communication, increasingly the go-to choice for **IT/OT integration**: getting OT data into MES, ERP, historians, analytics platforms, and cloud services. Where DNP3 and IEC 61850 are substation-and-utility specific, OPC UA is broader — it shows up in manufacturing, oil and gas, building automation, and water/wastewater.
+        body: `**OPC UA** (OPC Unified Architecture) is a modern, vendor-neutral, platform-independent protocol for industrial communication, increasingly the go-to choice for **IT/OT integration**: getting OT data into MES, ERP, historians, analytics platforms, and cloud services. Where DNP3 and IEC 61850 are substation-and-utility specific, OPC UA is broader - it shows up in manufacturing, oil and gas, building automation, and water/wastewater.
 
 ### What OPC UA Replaces
 
@@ -1049,14 +1050,14 @@ If your environment is IEC 61850-heavy, the gap between this lab and your realit
 
 ### The Information Model
 
-OPC UA's distinctive feature is its **address space** — a graph of nodes with types, attributes, and references that describes the data semantically, not just by tag name. A node can be marked as a "Temperature" with units, scaling, and engineering range; another node can be a "PumpController" with predefined methods like \`Start()\` and \`Stop()\`. Clients query the address space, discover what is there, and bind to it without prior schema knowledge.
+OPC UA's distinctive feature is its **address space** - a graph of nodes with types, attributes, and references that describes the data semantically, not just by tag name. A node can be marked as a "Temperature" with units, scaling, and engineering range; another node can be a "PumpController" with predefined methods like \`Start()\` and \`Stop()\`. Clients query the address space, discover what is there, and bind to it without prior schema knowledge.
 
 This is a sharp contrast with DNP3 and Modbus, where the meaning of "holding register 17" lives in a vendor's datasheet rather than in the protocol itself. OPC UA is self-describing.
 
 ### Where You Encounter OPC UA on an OT Network
 
 - **Historians.** PI System, Wonderware Historian, Cogent DataHub, and most modern historians use OPC UA to collect data from controllers.
-- **Modern PLCs.** Siemens S7-1500, Beckhoff TwinCAT, Rockwell ControlLogix, Schneider M580 — all expose OPC UA servers natively.
+- **Modern PLCs.** Siemens S7-1500, Beckhoff TwinCAT, Rockwell ControlLogix, Schneider M580 - all expose OPC UA servers natively.
 - **MES / ERP integration.** Data from the plant floor flowing up to manufacturing-execution and enterprise-resource-planning systems usually rides on OPC UA.
 - **IT/OT brokers.** Cloud-bound OT data (AWS IoT SiteWise, Azure IoT Hub, GE Predix) often passes through an OPC UA aggregator.
 - **Wind / solar SCADA.** Renewable-generation control rooms increasingly use OPC UA for aggregation across fleets.
@@ -1069,14 +1070,14 @@ OPC UA has security baked into the spec rather than retrofitted:
 - **User-level access control** on individual nodes. The protocol distinguishes anonymous, username/password, and certificate-bound identities.
 - **Message-level signing and encryption.** Per-message integrity protection on top of TLS.
 
-In practice OPC UA deployments still vary widely — many devices ship with self-signed certs, expired certs, or anonymous-allowed configs, so the "security built in" is only as good as the deployment hygiene. But the protocol itself is a substantial improvement over the legacy ICS protocols.
+In practice OPC UA deployments still vary widely - many devices ship with self-signed certs, expired certs, or anonymous-allowed configs, so the "security built in" is only as good as the deployment hygiene. But the protocol itself is a substantial improvement over the legacy ICS protocols.
 
 ### Why the Lab Doesn't Simulate It
 
 A few reasons:
 
 - The lab focuses on distribution-substation segmentation, where the predominant SCADA protocols are DNP3 and (increasingly) IEC 61850. OPC UA is more common at the IT/OT *boundary* and inside *industrial-automation* environments than inside utility distribution substations.
-- Simulating a faithful OPC UA server with a meaningful address space is substantially more work than simulating a Modbus or DNP3 outstation — the protocol stack is heavier, the address-space modeling matters, and the security model needs to be authentic to teach the protocol's strengths.
+- Simulating a faithful OPC UA server with a meaningful address space is substantially more work than simulating a Modbus or DNP3 outstation - the protocol stack is heavier, the address-space modeling matters, and the security model needs to be authentic to teach the protocol's strengths.
 - The cross-protocol firewall lessons the lab teaches (L4 + DPI defense in depth, source-pinning, segmentation by zone) all carry over to OPC UA cleanly once you map "Modbus function code" to "OPC UA service code" and "DNP3 Direct Operate" to "OPC UA Write/CallMethod."
 
 For IT/OT integration architectures, the OPC UA server is usually positioned in a DMZ between the OT network and the IT/cloud side. Treat that DMZ with the same defense-in-depth posture the lab teaches for the field-zone conduit, layered with OPC UA's own certificate-and-user-level controls. The segmentation logic generalizes; the protocol surface is different.`,
@@ -1097,7 +1098,7 @@ For IT/OT integration architectures, the OPC UA server is usually positioned in 
         title: "mbpoll - Modbus TCP Command-Line Tool",
         body: `\`mbpoll\` is a command-line Modbus master (client) that lets you read from and write to Modbus TCP devices. In the lab, it is pre-installed on the Kali box at 10.10.10.50 and is your primary tool for interacting with field device simulators over Modbus.
 
-> **Mode flag is optional.** \`mbpoll\` defaults to TCP whenever the target is an IP address, so \`-m tcp\` is redundant in this lab. Older write-ups elsewhere may include it — it's harmless, just noise. The lab YAMLs standardize on the no-mode form to match this article.
+> **Mode flag is optional.** \`mbpoll\` defaults to TCP whenever the target is an IP address, so \`-m tcp\` is redundant in this lab. Older write-ups elsewhere may include it - it's harmless, just noise. The lab YAMLs standardize on the no-mode form to match this article.
 
 ### Reading Holding Registers (FC03)
 
@@ -1161,17 +1162,18 @@ The value at the end is written to the register.
 
 ### Reading Outstation Data with dnp3poll
 
-To poll the relay outstation for its current data:
+To poll the relay outstation for its current data (a Class 0 integrity poll, FC01):
 
 \`\`\`bash
-dnp3poll -m 100 -s 1 10.40.40.20:20000
+dnp3poll 10.40.40.20:20000 -a 1
 \`\`\`
 
 Flag breakdown:
 
-- \`-m 100\` : master address (use 100 for the Kali box)
-- \`-s 1\` : outstation (slave) address
-- Last argument: target IP and port
+- First argument: target \`IP:port\`
+- \`-a 1\` : outstation address (the device's DNP3 address)
+- \`-m 100\` : master address, optional (defaults to 100, the Kali box)
+- \`-t 3s\` : connection timeout, optional
 
 ### Outstation Addresses in the Lab
 
@@ -1184,30 +1186,42 @@ Flag breakdown:
 
 ### Sending Commands with dnp3cmd
 
-To send a Direct Operate (CROB) command to trip the relay breaker:
+\`dnp3cmd\` takes the target, the outstation address (\`-a\`), and a command verb. The \`crob\` verb sends a Control Relay Output Block to a binary output point; \`analog\` sends an analog output.
+
+Trip the relay breaker (binary output index 0):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 1 -o trip 10.40.40.20:20000
+dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip
 \`\`\`
 
-To disable auto-reclose on the recloser:
+Disable auto-reclose on the recloser (binary output index 1):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 2 -o disable-reclose 10.40.40.21:20000
+dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 \`\`\`
 
-To change the regulator tap position:
+Change the regulator tap position (analog output index 0):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 3 -o set-tap -v 10 10.40.40.22:20000
+dnp3cmd 10.40.40.22:20000 -a 3 analog 0 -16
 \`\`\`
 
-### Direct Operate vs. Select-Before-Operate
+CROB actions: \`trip\`, \`close\`, \`latch-on\`, \`latch-off\`, \`pulse-on\`, \`pulse-off\`.
 
-- **Direct Operate** (FC05): single-step command execution. The outstation acts immediately.
-- **Select-Before-Operate** (FC03/FC04): two-step. The master first selects the control point, the outstation confirms, then the master issues operate. Safer for critical operations.
+### Control Modes: Direct Operate, No Ack, and SBO
 
-The lab simulators accept Direct Operate commands, which is the more dangerous (and more commonly exploited) mode. A real substation should use SBO for safety-critical controls, but many do not.
+By default \`dnp3cmd\` sends **Direct Operate** (FC05). Two flags select the other modes:
+
+\`\`\`bash
+dnp3cmd 10.40.40.20:20000 -a 1 -sbo crob 0 trip       # Select-Before-Operate (FC03 then FC04)
+dnp3cmd 10.40.40.20:20000 -a 1 -no-ack crob 0 trip    # Direct Operate No Ack (FC06)
+\`\`\`
+
+- **Direct Operate** (FC05): single message, the outstation acts immediately and returns a status response.
+- **Direct Operate No Ack** (FC06): same single-message control write, but the outstation sends no response. Quieter for an attacker, and an evasion path against a filter that only lists FC05 - a correct DPI rule covers both.
+- **Select-Before-Operate** (FC03/FC04): two steps. The master selects the control point, the outstation confirms, then the master issues operate. Safer for critical operations.
+
+The lab simulators accept all three modes. Direct Operate is the more dangerous (and more commonly exploited) one. A real substation should use SBO for safety-critical controls, but many do not.
 
 > Under the hardened policy, DNP3 commands from any source other than the RTAC (10.30.30.20) are blocked by containd at the firewall.`,
       },
@@ -1631,7 +1645,7 @@ What is your design verdict for Enterprise → Field traffic?
 
 Concretely, here is what happens when a student makes a choice in Lab 1.4:
 
-1. The student clicks a remediation action in Lab 1.4 — say \`pin-rtac-to-field\`.
+1. The student clicks a remediation action in Lab 1.4 - say \`pin-rtac-to-field\`.
 2. \`scenario-runner.tsx\` writes the selection to localStorage under \`decision:remediation-planning:pin-rtac-to-field\` with the value \`SELECTED\`.
 3. Subsequent labs read the same key when their description is rendered. The \`injectDynamicContent()\` helper in \`scenario-runner.tsx\` looks for \`:::plan-coverage\` fences and computes coverage live based on what is in localStorage.
 4. Lab 2.2's Phase 3 text adapts based on whether the student selected DPI actions or not. Lab 2.3's "Apply the hardened policy" plan-coverage panel shows which attacks the student's plan actually closes. Lab 2.4's final reflection shows the full coverage matrix.
@@ -1640,7 +1654,7 @@ Concretely, here is what happens when a student makes a choice in Lab 1.4:
 
 A lab that says "build a hardened firewall policy" without forcing the student to commit to specific design verdicts and remediation choices first lets the student skip the thinking. The plan-coverage pipeline makes the thinking visible: by Lab 2.4 the student can see, "I committed to BLOCK on enterprise-to-field in Lab 1.3, I deferred adding Modbus DPI in Lab 1.4, and now Lab 2.4's panel tells me my plan does close the enterprise-to-field attack but leaves the eng-ws-to-RTAC-on-DNP3 surface open."
 
-The same workshop can be run two different ways — straight through, treating the labs as independent exercises, or with explicit attention to the pipeline. Both work. The pipeline is the deeper read.
+The same workshop can be run two different ways - straight through, treating the labs as independent exercises, or with explicit attention to the pipeline. Both work. The pipeline is the deeper read.
 
 ### Resetting the State
 
@@ -1649,14 +1663,14 @@ Student progress lives in localStorage on each student's browser, scoped by exer
       {
         id: "live-dpi-events-strip",
         title: "Reading the Live DPI Events Strip",
-        body: `The Segmentation drawer on the [Network Map](/console) has a **Live DPI Events** strip that surfaces firewall events in real time — every accept, every deny, every DPI verdict. This article is the operator's manual for reading it.
+        body: `The Segmentation drawer on the [Network Map](/console) has a **Live DPI Events** strip that surfaces firewall events in real time - every accept, every deny, every DPI verdict. This article is the operator's manual for reading it.
 
 ### Where the Events Come From
 
 containd emits two kinds of events that feed the strip:
 
-1. **L4 events** — every packet that matches a rule with logging enabled. These come from the kernel's **nflog** facility on the \`nflogGroup\` configured in the active policy (group 100 in the lab's hardened config). A userspace consumer inside containd reads them and forwards them via Server-Sent Events to the backend, which republishes them on \`/api/substation/network-events\`.
-2. **DPI events** — when a rule has \`dpiMode: enforce\` set, the packet is also queued to userspace via **NFQUEUE** (group 101 in the lab). The DPI engine parses the payload, applies the predicate, and emits a structured event with the verdict and the protocol-specific reason.
+1. **L4 events** - every packet that matches a rule with logging enabled. These come from the kernel's **nflog** facility on the \`nflogGroup\` configured in the active policy (group 100 in the lab's hardened config). A userspace consumer inside containd reads them and forwards them via Server-Sent Events to the backend, which republishes them on \`/api/substation/network-events\`.
+2. **DPI events** - when a rule has \`dpiMode: enforce\` set, the packet is also queued to userspace via **NFQUEUE** (group 101 in the lab). The DPI engine parses the payload, applies the predicate, and emits a structured event with the verdict and the protocol-specific reason.
 
 ### Reading a Row
 
@@ -1668,12 +1682,12 @@ Each row in the strip looks roughly like:
 
 The fields you actually care about for lab evidence:
 
-- **timestamp** — when the packet arrived. Useful for correlating with your probe commands.
-- **category** — either \`l4\` (decided by the kernel-side rule) or \`ics\` (decided by the userspace DPI verdict). The distinction is the lab's whole "L4 + DPI defense in depth" lesson.
-- **verdict** — \`ACCEPT\` or \`DENY\`. (Plus \`BlockFlowTemp\` for the case where DPI temporarily blocks a flow to throttle abuse.)
-- **src / dst / port** — the L4 5-tuple.
-- **rule** — the rule ID that matched. Cross-reference against the active policy's JSON to see what the rule actually allows.
-- **attributes** — for DPI events, the protocol-specific reason: \`functionCode: 5\` for a Modbus FC5 reject, \`crobOpCode: trip\` for a DNP3 trip reject, etc.
+- **timestamp** - when the packet arrived. Useful for correlating with your probe commands.
+- **category** - either \`l4\` (decided by the kernel-side rule) or \`ics\` (decided by the userspace DPI verdict). The distinction is the lab's whole "L4 + DPI defense in depth" lesson.
+- **verdict** - \`ACCEPT\` or \`DENY\`. (Plus \`BlockFlowTemp\` for the case where DPI temporarily blocks a flow to throttle abuse.)
+- **src / dst / port** - the L4 5-tuple.
+- **rule** - the rule ID that matched. Cross-reference against the active policy's JSON to see what the rule actually allows.
+- **attributes** - for DPI events, the protocol-specific reason: \`functionCode: 5\` for a Modbus FC5 reject, \`crobOpCode: trip\` for a DNP3 trip reject, etc.
 
 ### Common Patterns in the Lab
 
@@ -1700,7 +1714,7 @@ Both rows appear because the packet passed L4 and then got rejected by DPI. This
 
 If you fire a probe and no row appears, the usual causes are:
 
-- The probe never actually hit containd (kernel did not see it — check your source). If you probed from the wrong container, the packet may have stayed intra-zone.
+- The probe never actually hit containd (kernel did not see it - check your source). If you probed from the wrong container, the packet may have stayed intra-zone.
 - The matching rule has logging disabled. Lab policies enable logging on the deny-class rules; if you have applied your own custom policy without logging, your rules may match without emitting events.
 - The \`nflogGroup\` is not set on the active profile. The lab's improved policy sets \`dataplane.nflogGroup: 100\`; if you exported and re-imported a policy that lost that key, the L4 events never reach containd's consumer.
 - The frontend strip is filtered. The drawer has a category-and-verdict filter at the top; make sure it is not filtering out the rows you want to see.
@@ -1710,7 +1724,7 @@ The strip is the closest thing the lab has to a real-time firewall watch. Use it
       {
         id: "how-containd-enforces-policy",
         title: "How containd Enforces Policy (Kernel-Level View)",
-        body: `For students curious about how the firewall actually works under the hood — what happens between "click Apply Hardened" in the lab UI and a TCP packet getting dropped — this article is the tour. It is not strictly necessary for working through the labs, but it pays off when you are reading containd events, debugging policy edge cases, or evaluating other ICS firewalls against containd.
+        body: `For students curious about how the firewall actually works under the hood - what happens between "click Apply Hardened" in the lab UI and a TCP packet getting dropped - this article is the tour. It is not strictly necessary for working through the labs, but it pays off when you are reading containd events, debugging policy edge cases, or evaluating other ICS firewalls against containd.
 
 ### The Layered Stack
 
@@ -1743,7 +1757,7 @@ This whole path runs in kernel space at line rate. Latency is sub-microsecond pe
 
 ### The DPI Path (Slower, More Powerful)
 
-For rules with \`dpiMode: enforce\`, the rule's action is instead **\`queue num N\`** — the kernel hands the packet to userspace via the **NFQUEUE** netfilter facility on queue number N.
+For rules with \`dpiMode: enforce\`, the rule's action is instead **\`queue num N\`** - the kernel hands the packet to userspace via the **NFQUEUE** netfilter facility on queue number N.
 
 1. The kernel queues the packet and stalls the flow waiting for a verdict.
 2. containd's DPI engine reads the packet from the queue (\`AF_NETLINK\` socket, \`NFQUEUE\` protocol).
@@ -1751,11 +1765,11 @@ For rules with \`dpiMode: enforce\`, the rule's action is instead **\`queue num 
 4. The engine writes a verdict back to the kernel: \`NF_ACCEPT\` lets the packet through, \`NF_DROP\` drops it, \`NF_QUEUE\` re-queues it for further inspection.
 5. The DPI engine also emits an event for the operator-visible record.
 
-DPI latency is microseconds-to-milliseconds per packet — fine for SCADA polling cycles (which are seconds-class), nowhere near fast enough for IEC 61850 GOOSE (which is microsecond-class).
+DPI latency is microseconds-to-milliseconds per packet - fine for SCADA polling cycles (which are seconds-class), nowhere near fast enough for IEC 61850 GOOSE (which is microsecond-class).
 
 ### Events: nflog and DPI Both Feed One Stream
 
-Both the kernel-side nflog and the userspace DPI engine emit events to containd's internal event store. The store deduplicates and timestamps them, then publishes them via Server-Sent Events on the containd REST API. RangerDanger's backend subscribes to that stream and re-publishes via \`/api/substation/network-events\`. The frontend reads from there and renders the Live DPI Events strip. This is the chain from \`packet hit on the kernel\` to \`row appears in the strip\` — roughly 100–500 ms end to end depending on event backlog.
+Both the kernel-side nflog and the userspace DPI engine emit events to containd's internal event store. The store deduplicates and timestamps them, then publishes them via Server-Sent Events on the containd REST API. RangerDanger's backend subscribes to that stream and re-publishes via \`/api/substation/network-events\`. The frontend reads from there and renders the Live DPI Events strip. This is the chain from \`packet hit on the kernel\` to \`row appears in the strip\` - roughly 100–500 ms end to end depending on event backlog.
 
 ### Why This Layered Approach
 
@@ -1781,22 +1795,22 @@ The fast L4 path lets containd handle line-rate traffic for the 99% of cases whe
 
 [Mitre ATT&CK for ICS](https://attack.mitre.org/matrices/ics/) is a knowledge base of adversary techniques observed in industrial control system intrusions. It is the OT counterpart to the more widely-known Enterprise ATT&CK and is structured as a matrix of **tactics** (the attacker's goals) and **techniques** (how they achieve those goals).
 
-The tactics in the ICS matrix include: Initial Access, Execution, Persistence, Privilege Escalation, Evasion, Discovery, Lateral Movement, Collection, Command and Control, **Inhibit Response Function**, **Impair Process Control**, and **Impact** (loss of view, loss of control, loss of availability, denial of safety, damage to property). The Inhibit Response, Impair Process Control, and Impact tactics are the ICS-specific column the matrix adds beyond Enterprise ATT&CK — these are the things an attacker can do *only* if they have reached the OT environment.
+The tactics in the ICS matrix include: Initial Access, Execution, Persistence, Privilege Escalation, Evasion, Discovery, Lateral Movement, Collection, Command and Control, **Inhibit Response Function**, **Impair Process Control**, and **Impact** (loss of view, loss of control, loss of availability, denial of safety, damage to property). The Inhibit Response, Impair Process Control, and Impact tactics are the ICS-specific column the matrix adds beyond Enterprise ATT&CK - these are the things an attacker can do *only* if they have reached the OT environment.
 
 ### The Real Incidents the Lab Mirrors
 
-**Industroyer (CRASHOVERRIDE) — Ukrainian Substation, December 2016.** Sandworm operators used stolen credentials to pivot from IT into a Kyiv-area transmission substation's OT network, then ran custom malware (Industroyer) that spoke IEC 60870-5-101 / -104, IEC 61850, and OPC DA natively. The malware opened breakers, causing a brief regional outage. The attack pattern — IT-to-OT lateral movement, then a protocol-aware command against field devices — is the same shape as the lab's Lab 2.3 (DNP3 Direct Operate against the recloser).
+**Industroyer (CRASHOVERRIDE) - Ukrainian Substation, December 2016.** Sandworm operators used stolen credentials to pivot from IT into a Kyiv-area transmission substation's OT network, then ran custom malware (Industroyer) that spoke IEC 60870-5-101 / -104, IEC 61850, and OPC DA natively. The malware opened breakers, causing a brief regional outage. The attack pattern - IT-to-OT lateral movement, then a protocol-aware command against field devices - is the same shape as the lab's Lab 2.3 (DNP3 Direct Operate against the recloser).
 
-**Industroyer2 — Ukrainian Substation, April 2022.** A follow-on Sandworm campaign targeted Ukrainian high-voltage substations with a refined version of Industroyer focused on IEC 60870-5-104. Intercepted and disrupted before causing significant impact. Same shape, same lesson, with the addition that ICS-aware perimeter monitoring (which the targeted utility had deployed by then) was a meaningful part of the defense.
+**Industroyer2 - Ukrainian Substation, April 2022.** A follow-on Sandworm campaign targeted Ukrainian high-voltage substations with a refined version of Industroyer focused on IEC 60870-5-104. Intercepted and disrupted before causing significant impact. Same shape, same lesson, with the addition that ICS-aware perimeter monitoring (which the targeted utility had deployed by then) was a meaningful part of the defense.
 
-**Triton / TRISIS — Petrochemical SIS, Saudi Arabia, 2017.** The TEMP.Veles operators (sometimes attributed to Russia's TsNIIKhM) used a long IT compromise to reach a petrochemical plant's safety instrumented system (SIS), then deployed Triton, the first publicly-known malware designed to manipulate a safety controller (Triconex). The attack was discovered when the Triconex tripped the plant — possibly due to a Triton bug. This is an "Impact: Denial of Safety" event in the ATT&CK matrix. The lab does not simulate SIS specifically, but the IT-to-OT lateral path leading to a protocol-aware controller attack is the same pattern.
+**Triton / TRISIS - Petrochemical SIS, Saudi Arabia, 2017.** The TEMP.Veles operators (sometimes attributed to Russia's TsNIIKhM) used a long IT compromise to reach a petrochemical plant's safety instrumented system (SIS), then deployed Triton, the first publicly-known malware designed to manipulate a safety controller (Triconex). The attack was discovered when the Triconex tripped the plant - possibly due to a Triton bug. This is an "Impact: Denial of Safety" event in the ATT&CK matrix. The lab does not simulate SIS specifically, but the IT-to-OT lateral path leading to a protocol-aware controller attack is the same pattern.
 
-**Stuxnet — Iranian Centrifuge Cascades, ~2009–2010.** The original public ICS attack. US/Israeli operators (according to the public attribution) used USB-borne malware to reach Siemens S7-315 PLCs controlling uranium centrifuges, then issued protocol-level write commands that subtly damaged the centrifuges over months. The Inhibit Response Function tactic — Stuxnet manipulated the HMI to show normal operations while damage was occurring — is one of the most influential moves in the ATT&CK matrix. The lab does not simulate HMI manipulation directly, but the "by the time the field device sees the command, it looks legitimate" lesson from Lab 2.3-bonus is the same observation.
+**Stuxnet - Iranian Centrifuge Cascades, ~2009–2010.** The original public ICS attack. US/Israeli operators (according to the public attribution) used USB-borne malware to reach Siemens S7-315 PLCs controlling uranium centrifuges, then issued protocol-level write commands that subtly damaged the centrifuges over months. The Inhibit Response Function tactic - Stuxnet manipulated the HMI to show normal operations while damage was occurring - is one of the most influential moves in the ATT&CK matrix. The lab does not simulate HMI manipulation directly, but the "by the time the field device sees the command, it looks legitimate" lesson from Lab 2.3-bonus is the same observation.
 
-**Volt Typhoon — Critical Infrastructure Pre-positioning, 2023–2024.** PRC-linked operators pre-positioned access to US critical-infrastructure OT networks (water, electric, transportation) without immediately causing impact. CISA and partner agencies published advisories detailing living-off-the-land tradecraft (LOTL TTPs) — the threat surface is not "attackers run novel malware" but "attackers use legitimate Windows admin tools to live inside OT networks for months." This is the lab's [Living off the Land in OT](#living-off-the-land-ot) lesson made historical.
+**Volt Typhoon - Critical Infrastructure Pre-positioning, 2023–2024.** PRC-linked operators pre-positioned access to US critical-infrastructure OT networks (water, electric, transportation) without immediately causing impact. CISA and partner agencies published advisories detailing living-off-the-land tradecraft (LOTL TTPs) - the threat surface is not "attackers run novel malware" but "attackers use legitimate Windows admin tools to live inside OT networks for months." This is the lab's [Living off the Land in OT](#living-off-the-land-ot) lesson made historical.
 
 :::warning Industroyer and Lab 2.3 are the same attack shape
-The 2016 Kyiv substation outage was Sandworm sending IEC 60870-5-104 / DNP3 command sequences from a compromised IT host into the OT zone. The Lab 2.3 primary attack — kali firing \`dnp3cmd ... crob 0 trip\` against the recloser from the enterprise zone — is the same shape with the same root cause: cross-zone control surface that was not denied at the perimeter. When a student asks "is this a real thing?" the answer is yes, with a CISA advisory and an attributed threat actor.
+The 2016 Kyiv substation outage was Sandworm sending IEC 60870-5-104 / DNP3 command sequences from a compromised IT host into the OT zone. The Lab 2.3 primary attack - kali firing \`dnp3cmd ... crob 0 trip\` against the recloser from the enterprise zone - is the same shape with the same root cause: cross-zone control surface that was not denied at the perimeter. When a student asks "is this a real thing?" the answer is yes, with a CISA advisory and an attributed threat actor.
 :::
 
 ### How the Lab Exercises Map to ATT&CK
@@ -1809,26 +1823,26 @@ The 2016 Kyiv substation outage was Sandworm sending IEC 60870-5-104 / DNP3 comm
 | Lab 2.3-bonus RDP pivot through vendor-jump | T0817 Drive-by Compromise → T0822 External Remote Services → T0859 Valid Accounts |
 | Lab 1.2 baseline traffic capture (defender side) | The defender-side counterpart to T0801 Monitoring (which an attacker also does for reconnaissance) |
 
-When you walk a workshop attendee through Lab 2.3 and they ask "is this a real thing?" — yes. The Industroyer pattern. Show them the ATT&CK matrix entry for [Impair Process Control / Unauthorized Command Message](https://attack.mitre.org/techniques/T0855/) and the [Industroyer threat group page](https://attack.mitre.org/software/S0604/). That contextualization changes how seriously students take the exercise.
+When you walk a workshop attendee through Lab 2.3 and they ask "is this a real thing?" - yes. The Industroyer pattern. Show them the ATT&CK matrix entry for [Impair Process Control / Unauthorized Command Message](https://attack.mitre.org/techniques/T0855/) and the [Industroyer threat group page](https://attack.mitre.org/software/S0604/). That contextualization changes how seriously students take the exercise.
 
 ### See Also
 
-- [Living off the Land in OT](#living-off-the-land-ot) — Volt Typhoon's signature pattern explained
-- [Vendor Remote Access Patterns](#vendor-remote-access) — the entry vector for several real incidents
-- [What is ICS DPI?](#ics-dpi) — the defensive control that closes the unauthorized-command-message attack
-- [Change Management for Substation Firewall Rules](#change-management-firewall-rules) — how the defensive change actually gets approved at a utility`,
+- [Living off the Land in OT](#living-off-the-land-ot) - Volt Typhoon's signature pattern explained
+- [Vendor Remote Access Patterns](#vendor-remote-access) - the entry vector for several real incidents
+- [What is ICS DPI?](#ics-dpi) - the defensive control that closes the unauthorized-command-message attack
+- [Change Management for Substation Firewall Rules](#change-management-firewall-rules) - how the defensive change actually gets approved at a utility`,
       },
       {
         id: "living-off-the-land-ot",
         title: "Living off the Land in OT",
-        body: `**Living off the Land (LOTL)** is the attacker tradecraft of using tools and credentials that already exist in the target environment rather than introducing custom malware. In OT specifically, this means using the legitimate OT tools that engineering workstations and vendor jump hosts already have installed — \`mbpoll\`, \`dnp3poll\`, vendor configuration utilities, RDP, native SCADA functions — to accomplish the attacker's goals without ever dropping a file that an antivirus might catch.
+        body: `**Living off the Land (LOTL)** is the attacker tradecraft of using tools and credentials that already exist in the target environment rather than introducing custom malware. In OT specifically, this means using the legitimate OT tools that engineering workstations and vendor jump hosts already have installed - \`mbpoll\`, \`dnp3poll\`, vendor configuration utilities, RDP, native SCADA functions - to accomplish the attacker's goals without ever dropping a file that an antivirus might catch.
 
 ### Why OT Attackers Love LOTL
 
 Several reasons converge:
 
 - **Detection.** Antivirus and endpoint detection are vastly weaker in OT than in IT. But the things that DO exist (network monitoring, anomalous-traffic detection) are even more allergic to *new* binaries than to anomalous network use of existing binaries. Using \`mbpoll\` does not flag any AV alert anywhere.
-- **Persistence.** Custom malware needs persistence mechanisms. Legitimate tools are already persistent — they are part of the engineering workstation's image.
+- **Persistence.** Custom malware needs persistence mechanisms. Legitimate tools are already persistent - they are part of the engineering workstation's image.
 - **Plausible deniability.** A protocol-level attack that uses \`mbpoll\` and a real RTU's source IP looks indistinguishable from legitimate operator activity. Attribution is harder.
 - **Lateral movement.** A compromised engineering workstation has the credentials, network paths, and tools to reach everything an engineer reaches. The attacker inherits the engineer's authorization scope without needing to escalate.
 
@@ -1836,15 +1850,15 @@ Several reasons converge:
 
 Some of the legitimate tools commonly abused in OT environments:
 
-- **\`mbpoll\`, \`mbtget\`, \`MBASE\`** — Modbus clients shipped with most engineering Linux distros and many Windows ICS toolkits.
-- **\`dnp3poll\`, \`dnp3cmd\`, OpenDNP3, SEL AcSELerator\`** — DNP3 clients, some commercial, some open-source.
-- **\`xfreerdp\`, \`mstsc\`, VNC clients** — used for vendor jump-host pivots (Lab 2.3-bonus).
-- **\`psexec\`, \`wmiexec\`, \`PowerShell Remoting\`** — Windows admin tools that attackers use to lateralize after reaching an engineering workstation.
-- **Vendor configuration utilities** — SEL AcSELerator Architect, ABB MicroSCADA, Siemens TIA Portal, Rockwell Studio 5000, Wonderware InTouch. Each is a legitimate engineering tool that, in attacker hands, becomes a control-system command-line interface.
+- **\`mbpoll\`, \`mbtget\`, \`MBASE\`** - Modbus clients shipped with most engineering Linux distros and many Windows ICS toolkits.
+- **\`dnp3poll\`, \`dnp3cmd\`, OpenDNP3, SEL AcSELerator\`** - DNP3 clients, some commercial, some open-source.
+- **\`xfreerdp\`, \`mstsc\`, VNC clients** - used for vendor jump-host pivots (Lab 2.3-bonus).
+- **\`psexec\`, \`wmiexec\`, \`PowerShell Remoting\`** - Windows admin tools that attackers use to lateralize after reaching an engineering workstation.
+- **Vendor configuration utilities** - SEL AcSELerator Architect, ABB MicroSCADA, Siemens TIA Portal, Rockwell Studio 5000, Wonderware InTouch. Each is a legitimate engineering tool that, in attacker hands, becomes a control-system command-line interface.
 
 ### Why Behavioral Detection Beats Signature Detection in OT
 
-Signature-based detection (this hash is bad, this string is bad, this binary is malware) does not work on LOTL because the binary is legitimate. What works is **behavioral detection** — flagging traffic patterns and command sequences that legitimate activity should not exhibit.
+Signature-based detection (this hash is bad, this string is bad, this binary is malware) does not work on LOTL because the binary is legitimate. What works is **behavioral detection** - flagging traffic patterns and command sequences that legitimate activity should not exhibit.
 
 In OT specifically, behavioral detection is plausible *because* legitimate behavior is so constrained. The RTAC polls the recloser every 5 seconds via DNP3 reads. Nothing else should be sending DNP3 to the recloser. A single DNP3 packet from the engineering workstation to the recloser at 02:47 on a Tuesday is anomalous on its face. You do not need to know whether the engineering workstation's binary is malicious to know that this packet is.
 
@@ -1852,7 +1866,7 @@ This is why the lab's defense-in-depth lesson stresses both segmentation (source
 
 ### How the Lab's Attacks Use LOTL
 
-Every attack in Lab 2.3 and 2.3-bonus uses LOTL by design. \`mbpoll\` and \`dnp3cmd\` are real OT tools that any engineering workstation has. \`xfreerdp\` is a legitimate desktop client. \`sshpass\` is a legitimate scripting tool. None of these are malware. They are exactly what a vendor's engineer would use to do legitimate work — and exactly what an attacker who has compromised that engineer's workstation would use to do illegitimate work.
+Every attack in Lab 2.3 and 2.3-bonus uses LOTL by design. \`mbpoll\` and \`dnp3cmd\` are real OT tools that any engineering workstation has. \`xfreerdp\` is a legitimate desktop client. \`sshpass\` is a legitimate scripting tool. None of these are malware. They are exactly what a vendor's engineer would use to do legitimate work - and exactly what an attacker who has compromised that engineer's workstation would use to do illegitimate work.
 
 The pedagogical point: when you tell students "the firewall has to deny enterprise → field on Modbus," it is not because there is a particular piece of malware to block. It is because the *legitimate* tool, used from the *wrong* place, is the attack. Network policy is the right place to draw the line; endpoint malware detection is not where this fight is fought.
 
@@ -1876,9 +1890,9 @@ The lab exercises the first three. The remaining items are organizational practi
 
 ### What a Utility Change Board Is
 
-A change board (sometimes called CAB — Change Advisory Board) is the operational governance body that reviews and approves changes to production systems. In OT environments these reviews are more stringent than in IT because:
+A change board (sometimes called CAB - Change Advisory Board) is the operational governance body that reviews and approves changes to production systems. In OT environments these reviews are more stringent than in IT because:
 
-- **Outages cost money and reputation** (the customer-service tile in the lab's HMI is the operational version of this — minutes of outage, customers affected, regulatory implications).
+- **Outages cost money and reputation** (the customer-service tile in the lab's HMI is the operational version of this - minutes of outage, customers affected, regulatory implications).
 - **Some changes can damage equipment** (a misconfigured firewall rule that prevents the RTAC from reaching the recloser will fail to recover from a fault, which can damage the recloser or the upstream feeder).
 - **Some are regulated.** NERC CIP-005 R1 requires utilities to document and review electronic-security-perimeter changes; CIP-010 requires baseline configurations and change-management evidence. A change board's records are part of the audit trail the regulator will eventually inspect.
 
@@ -1899,11 +1913,11 @@ A complete substation-firewall change package usually includes:
 
 Lab 2.4's evidence-assembly step produces almost exactly this package:
 
-- **Statement of intent** — Lab 1.3's design verdicts and Lab 1.4's plan together are the *intent* document. The student wrote them.
-- **Configuration diff** — \`containd cli> export config > student-policy.json\` is the proposed policy. The weak baseline is the current. The diff is \`diff substation-weak.json student-policy.json\`.
-- **Test evidence** — Lab 2.4's positive-tests step is the legitimate-traffic-works half. The negative-tests step is the bad-traffic-blocked half. Both produce log entries on the Live DPI Events strip that constitute the firewall-log evidence.
-- **PCAP** — Lab 2.4's PCAP-capture step writes \`/data/captures/validation.pcap\` showing only RTAC sources reaching field on Modbus/DNP3 after the policy is applied. This is direct network-level evidence.
-- **Audit log** — \`containd cli> show audit\` snapshots the \`config.commit\` entries that prove the policy was actually applied.
+- **Statement of intent** - Lab 1.3's design verdicts and Lab 1.4's plan together are the *intent* document. The student wrote them.
+- **Configuration diff** - \`containd cli> export config > student-policy.json\` is the proposed policy. The weak baseline is the current. The diff is \`diff substation-weak.json student-policy.json\`.
+- **Test evidence** - Lab 2.4's positive-tests step is the legitimate-traffic-works half. The negative-tests step is the bad-traffic-blocked half. Both produce log entries on the Live DPI Events strip that constitute the firewall-log evidence.
+- **PCAP** - Lab 2.4's PCAP-capture step writes \`/data/captures/validation.pcap\` showing only RTAC sources reaching field on Modbus/DNP3 after the policy is applied. This is direct network-level evidence.
+- **Audit log** - \`containd cli> show audit\` snapshots the \`config.commit\` entries that prove the policy was actually applied.
 
 A real change board would expect more (rollback plan, maintenance window, monitoring plan), but the lab covers the *technical* portion of the evidence package end to end. The operational portions (when, who, what else) are organizational practice no lab can simulate.
 
@@ -1911,21 +1925,21 @@ A real change board would expect more (rollback plan, maintenance window, monito
 
 Most cyber-trained workshop attendees never see a change-board package and have never had to defend a firewall change against operators who would rather not change anything. The lab compresses this experience into a 15-minute exercise on purpose. Walking out of the workshop with one assembled evidence package in your Exercise Notes gives you a tangible template to point at when your real organization asks "what would a good change package look like?"
 
-The \`scripts/validation-report.sh\` helper produces a markdown deliverable equivalent to the manually-assembled package — operator-facing rather than student-facing, suitable for attaching directly to a change request.`,
+The \`scripts/validation-report.sh\` helper produces a markdown deliverable equivalent to the manually-assembled package - operator-facing rather than student-facing, suitable for attaching directly to a change request.`,
       },
       {
         id: "outage-costs-saidi-saifi",
         title: "What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)",
-        body: `The customer-service tile on the lab's Feeder HMI shows "ALL CUSTOMERS WITHOUT POWER" or "N kW serving M customers" depending on the feeder state. This is not just flavor. It is the lab's representation of the metrics utilities actually report to their regulators — and the metrics a cyber attack against a substation would actually move.
+        body: `The customer-service tile on the lab's Feeder HMI shows "ALL CUSTOMERS WITHOUT POWER" or "N kW serving M customers" depending on the feeder state. This is not just flavor. It is the lab's representation of the metrics utilities actually report to their regulators - and the metrics a cyber attack against a substation would actually move.
 
 ### The Standard Reliability Metrics
 
 Utilities report distribution-system reliability using two widely-used indices:
 
-- **SAIDI** (System Average Interruption Duration Index) — the *average* total outage time per customer per year. If a utility serves a million customers and the total outage-customer-minutes across the year was 100 million, SAIDI = 100 minutes per customer.
-- **SAIFI** (System Average Interruption Frequency Index) — the *average* number of outage events per customer per year. SAIFI = 1.5 means the average customer experiences 1.5 outage events per year.
+- **SAIDI** (System Average Interruption Duration Index) - the *average* total outage time per customer per year. If a utility serves a million customers and the total outage-customer-minutes across the year was 100 million, SAIDI = 100 minutes per customer.
+- **SAIFI** (System Average Interruption Frequency Index) - the *average* number of outage events per customer per year. SAIFI = 1.5 means the average customer experiences 1.5 outage events per year.
 
-A third commonly-tracked metric is **CAIDI** (Customer Average Interruption Duration Index) — the average outage duration per outage event = SAIDI / SAIFI. It is what your average outage feels like to a customer, in minutes.
+A third commonly-tracked metric is **CAIDI** (Customer Average Interruption Duration Index) - the average outage duration per outage event = SAIDI / SAIFI. It is what your average outage feels like to a customer, in minutes.
 
 These are reported to **state-level public utility commissions** in the US (each state has its own) and equivalent regulators in other countries. They are public information. They are tracked over time. They feed rate-case decisions, performance-based ratemaking, and utility executive bonuses. They are not abstract.
 
@@ -1938,7 +1952,7 @@ For a North American distribution utility:
 - The best-performing utilities in fair-weather climates run SAIDI under 60 minutes. Long-rural utilities in harsh climates can be 200+.
 - SAIFI typically runs **0.7 to 1.5 events per year per customer**.
 
-A single substation event that takes 1,000 customers offline for 60 minutes contributes 60,000 customer-minutes — visible in the SAIDI calculation. A whole feeder event taking 10,000 customers offline for 4 hours is 2.4 million customer-minutes — the kind of event that triggers an executive after-action review.
+A single substation event that takes 1,000 customers offline for 60 minutes contributes 60,000 customer-minutes - visible in the SAIDI calculation. A whole feeder event taking 10,000 customers offline for 4 hours is 2.4 million customer-minutes - the kind of event that triggers an executive after-action review.
 
 ### How Outage Costs Get Quantified
 
@@ -1957,13 +1971,13 @@ For context: about **70% of customer-minutes of outage** at a typical distributi
 But the cyber-attack risk profile is different from the weather risk profile in two important ways:
 
 1. **Concurrency.** A targeted cyber attack can take down many substations *simultaneously*, in a way that weather events at this scale (regional ice storm, hurricane) usually require luck or a multi-day weather pattern. A coordinated Industroyer-class attack could in principle affect tens of substations in a window of minutes.
-2. **Cascading.** A weather event is bounded by the geography of the weather. A cyber event is bounded by the attacker's reach — which, if the IT-OT boundary is porous, can be region-wide or larger.
+2. **Cascading.** A weather event is bounded by the geography of the weather. A cyber event is bounded by the attacker's reach - which, if the IT-OT boundary is porous, can be region-wide or larger.
 
 These two characteristics are why utility executives and regulators care about cyber attacks against distribution far in excess of the historical-outage-share argument. The risk is not what cyber attacks *have* done; it is what cyber attacks *could* do under a coordinated campaign.
 
 ### How the Customer-Service Tile Maps to All This
 
-The customer-service tile is the lab's representation of the operator's awareness of outage impact. When the tile flips from "120 kW serving ~200 customers" to "ALL CUSTOMERS WITHOUT POWER," that is the operational visibility a real control-room operator has. The lab's "hospital and fire station without power" annotation is the *critical-load* category — the loads whose outage triggers an immediate emergency response.
+The customer-service tile is the lab's representation of the operator's awareness of outage impact. When the tile flips from "120 kW serving ~200 customers" to "ALL CUSTOMERS WITHOUT POWER," that is the operational visibility a real control-room operator has. The lab's "hospital and fire station without power" annotation is the *critical-load* category - the loads whose outage triggers an immediate emergency response.
 
 When you tell a workshop attendee "this single packet caused a complete feeder outage," you can put a dollar figure on it: 200 customers × 1 hour at typical mix ≈ **\\$50,000 to \\$200,000** of economic impact, plus the regulatory reporting visibility, plus the (incalculable) critical-services consequences. The cyber-attack-against-substation threat is not theoretical. The lab does not simulate the economics directly, but the customer-service tile is the bridge to that framing.`,
       },
@@ -2095,7 +2109,7 @@ function SectionIcon({ name, className }: { name?: IconName; className?: string 
 
 function stripMarkdownForExcerpt(md: string): string {
   // Strip code fences, headings, link syntax, emphasis markers, bullet markers,
-  // and HTML for a clean snippet — first paragraph only.
+  // and HTML for a clean snippet - first paragraph only.
   const noFences = md.replace(/```[\s\S]*?```/g, "");
   const firstPara = noFences.split(/\n\n+/).find((p) => p.trim().length > 0) || "";
   return firstPara
@@ -2344,7 +2358,7 @@ export default function KnowledgePage() {
   // history entry and the browser Back button actually walks back through the
   // article-A -> article-B chain rather than skipping A. The guard prevents
   // an infinite loop when popstate / hashchange set the view from an existing
-  // matching URL — we only push when the hash needs to change.
+  // matching URL - we only push when the hash needs to change.
   //
   // Hash stripping on landing is handled by goLanding() explicitly so this
   // effect stays single-purpose.
@@ -2421,7 +2435,7 @@ export default function KnowledgePage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-5xl">
-          {/* SEARCH RESULTS — take precedence over any nav view */}
+          {/* SEARCH RESULTS - take precedence over any nav view */}
           {isSearching ? (
             <div>
               <h2 className="mb-1 text-sm font-semibold text-slate-200">

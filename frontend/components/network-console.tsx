@@ -97,7 +97,7 @@ function humanizeSummary(summary: string): string[] {
 // protections within the zone instead of firewall policy.
 //
 // Source/target are node IDs as emitted by the workshop graph (e.g.
-// `hmi-1`, `rtac-1`). Direction is meaningful — source initiates.
+// `hmi-1`, `rtac-1`). Direction is meaningful - source initiates.
 const INTRA_ZONE_FLOWS: Array<{
   source: string;
   target: string;
@@ -110,21 +110,21 @@ const INTRA_ZONE_FLOWS: Array<{
     target: "rtac-1",
     zone: "ot_ops_net",
     protocol: "Modbus 502",
-    description: "HMI polls RTAC tag DB ~2s — invisible to firewall",
+    description: "HMI polls RTAC tag DB ~2s - invisible to firewall",
   },
   {
     source: "historian-1",
     target: "rtac-1",
     zone: "ot_ops_net",
     protocol: "HTTP 8080",
-    description: "Historian reads RTAC state ~5s — invisible to firewall",
+    description: "Historian reads RTAC state ~5s - invisible to firewall",
   },
   {
     source: "openplc-1",
     target: "rtac-1",
     zone: "ot_ops_net",
     protocol: "Modbus 502",
-    description: "OpenPLC tags exposed to RTAC — intra-zone",
+    description: "OpenPLC tags exposed to RTAC - intra-zone",
   },
 ];
 
@@ -202,7 +202,7 @@ function PolicyEdge({
   // Position the label ~60% along the path. With the firewall at
   // y≈50 and the zone-anchor target sitting on the boundary's top
   // edge, this puts the policy pill just above where the conduit
-  // meets the zone — close enough to associate, far enough to clear
+  // meets the zone - close enough to associate, far enough to clear
   // the boundary header label.
   const labelX = sourceX + (targetX - sourceX) * 0.6;
   const labelY = sourceY + (targetY - sourceY) * 0.6;
@@ -235,7 +235,7 @@ function PolicyEdge({
 
   // Hover handler used by both the edge label and the wide invisible
   // hit-path so a student can hover anywhere on the line and get the
-  // tooltip — not just the label pill.
+  // tooltip - not just the label pill.
   const showTip = (e: React.MouseEvent) => {
     if (hasTooltip) setTip({ visible: true, x: e.clientX, y: e.clientY });
   };
@@ -356,7 +356,7 @@ function PolicyEdge({
   );
 }
 
-// Traffic edge — observed peer-to-peer flow between two host nodes.
+// Traffic edge - observed peer-to-peer flow between two host nodes.
 // Bezier curve from the source handle to the target handle. The
 // handles sit on the visible edge of the node so the path connects
 // directly to the icon outline. A triangle at the target gives
@@ -406,7 +406,7 @@ function TrafficEdge({
   const scenarioActive = "#f59e0b";  // amber-500
   const activeColor = isScenario ? scenarioActive : baselineActive;
 
-  // Line color stays normal regardless of blocked state — red lines
+  // Line color stays normal regardless of blocked state - red lines
   // are reserved for future attack traffic. Blocked flows are
   // indicated only by a red ✕ at the target device.
   const stroke = highlighted
@@ -438,7 +438,7 @@ function TrafficEdge({
   const xMarkX = targetX - ux * 22;
   const xMarkY = targetY - uy * 22;
 
-  // Labels sit at the bezier midpoint — no perpendicular offset.
+  // Labels sit at the bezier midpoint - no perpendicular offset.
   // The natural curve of the bezier + the vertical stagger of
   // nodes within each zone column creates a clean vertical column
   // of labels between zones.
@@ -476,7 +476,7 @@ function TrafficEdge({
             ...style,
           }}
         />
-        {/* Direction triangle — SVG, stays in edge layer */}
+        {/* Direction triangle - SVG, stays in edge layer */}
         {!blockedByFw && (
           <polygon
             points={`${triX},${triY} ${a1x},${a1y} ${a2x},${a2y}`}
@@ -598,22 +598,22 @@ export function NetworkConsole() {
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [viewMode, setViewMode] = useState<ViewMode>({
     policyDim: true,
-    // Traffic edges default on — they're governed by the toggle
+    // Traffic edges default on - they're governed by the toggle
     // inside the Traffic Matrix drawer now, not a separate toolbar
     // button. The canvas still only renders them when policyDim is
     // on (same condition that mounts the drawer).
     traffic: true,
     iec62443: false,
   });
-  // Rook glow flag — flips true for ~1.4s whenever the active
+  // Rook glow flag - flips true for ~1.4s whenever the active
   // firewall config changes, then auto-clears. Skips the initial
   // load so we don't pulse on first paint.
   const [rookGlow, setRookGlow] = useState(false);
-  // Minimap visibility — toggled from a custom button inside the
+  // Minimap visibility - toggled from a custom button inside the
   // React Flow Controls panel. Default on.
   const [showMinimap, setShowMinimap] = useState(true);
 
-  // Traffic matrix filter + highlight — lifted from the drawer so
+  // Traffic matrix filter + highlight - lifted from the drawer so
   // the canvas edges can mirror whatever the student selects.
   const [trafficFilter, setTrafficFilter] = useState({
     zone: "all",
@@ -629,7 +629,7 @@ export function NetworkConsole() {
   type DrawerId = "segmentation" | "traffic";
   const [activeDrawer, setActiveDrawer] = useState<DrawerId | null>(null);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
-  // Shared terminal state — persists across page navigations
+  // Shared terminal state - persists across page navigations
   const { openTerminals: activeTerminals, open: openSharedTerminal } = useTerminals();
 
   const {
@@ -662,7 +662,7 @@ export function NetworkConsole() {
     lastFirewallConfigRef.current = cfg;
   }, [workshopStatus?.firewall_config]);
 
-  // Fetch firewall rules for dynamic edge labels — poll every 5s so
+  // Fetch firewall rules for dynamic edge labels - poll every 5s so
   // topology updates promptly after a config change in the segmentation tab.
   const { data: firewallRulesData } = useQuery({
     queryKey: ["firewall-rules"],
@@ -671,7 +671,7 @@ export function NetworkConsole() {
     staleTime: 2000,
   });
 
-  // Traffic generator state — only polled when the Traffic view is on
+  // Traffic generator state - only polled when the Traffic view is on
   // so we don't waste cycles in the default policy view.
   const { data: trafficStatus } = useQuery({
     queryKey: ["traffic-status"],
@@ -771,7 +771,7 @@ export function NetworkConsole() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rfInstance, drawerVisible, drawerExpanded, nodes.length, viewMode.iec62443]);
 
-  // Handle node changes (dragging) — positions persist during session only
+  // Handle node changes (dragging) - positions persist during session only
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     changes.forEach((change) => {
       if (change.type === "position" && change.position) {
@@ -802,7 +802,7 @@ export function NetworkConsole() {
     <div className="flex h-[calc(100vh-3rem)] flex-col space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {/* Rook — operator/control symbol. Sits next to the title
+          {/* Rook - operator/control symbol. Sits next to the title
               as a small clean logo and pulses briefly when the active
               firewall config flips (rule change beat). */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -835,7 +835,7 @@ export function NetworkConsole() {
               ok={workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).every(Boolean) : false}
               label={`Devices ${workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).filter(Boolean).length : 0}/${workshopStatus.device_comms ? Object.keys(workshopStatus.device_comms).length : 0}`}
               tooltipTitle="Field protection layer"
-              tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken — device down, network issue, or firewall rule change."
+              tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken - device down, network issue, or firewall rule change."
             />
             <PolicyBadge activeConfig={workshopStatus.firewall_config} />
           </div>
@@ -867,7 +867,7 @@ export function NetworkConsole() {
           defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
           proOptions={{ hideAttribution: true }}
         >
-          {/* Subtle Tron grid — two layers: a fine cyan dot mesh for
+          {/* Subtle Tron grid - two layers: a fine cyan dot mesh for
               texture, then a wider line grid for the segmentation
               feel. Both are very low opacity so they read as
               "structured background" not "decoration". */}
@@ -1071,7 +1071,7 @@ export function NetworkConsole() {
           </div>
 
           <div className="mt-6 h-[320px] overflow-hidden rounded-xl border border-slate-800 bg-black relative">
-            {/* Shared terminals — state tracked across pages */}
+            {/* Shared terminals - state tracked across pages */}
             {showTerminal && (
               <SharedTerminalPanel
                 nodes={[inspectorNode.id]}
@@ -1250,7 +1250,7 @@ function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
   const hardened = activeConfig === "improved";
 
   const policies = [
-    { id: "weak", label: "Weak Baseline", desc: "All zones allowed — over-permissive" },
+    { id: "weak", label: "Weak Baseline", desc: "All zones allowed - over-permissive" },
     { id: "improved", label: "Hardened", desc: "Deny-default, RTAC-only field access" },
   ];
 
@@ -1354,7 +1354,7 @@ function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
 
 // Left drawer menu attached to the left edge of the React Flow
 // canvas. The strip is always 36px wide and shows a stack of icon
-// buttons — one per registered drawer. Clicking any icon opens that
+// buttons - one per registered drawer. Clicking any icon opens that
 // drawer's content in a 420px panel that sits next to the strip.
 // Clicking the header chevron collapses back to strip-only.
 //
@@ -1857,7 +1857,7 @@ const ZONE_INTERFACE_META: Record<
 };
 
 // Build policy info for a zone from the live containd rules. The label
-// favors protocol names over raw port numbers — students don't need to
+// favors protocol names over raw port numbers - students don't need to
 // know that 502 is Modbus, they need to know "Modbus is allowed."
 type Permissiveness = "allowed" | "over" | "blocked" | "unknown";
 
@@ -1903,7 +1903,7 @@ function getZonePolicyInfo(
   const action = hasAllow && hasDeny ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
 
   // Detect over-permissive: any allow rule whose detail starts with
-  // "WEAK:" — that's the lab definition's convention for "this rule
+  // "WEAK:" - that's the lab definition's convention for "this rule
   // should be tightened in the improved policy". When the active
   // config is the weak baseline, those rules are still in effect and
   // should read visually as warnings.
@@ -1931,7 +1931,7 @@ function getZonePolicyInfo(
   const protos = Array.from(protoSet);
 
   // Build a label tuned to teach the student what kind of conduit this
-  // is. Compact and unambiguous — never "+1" / "+3".
+  // is. Compact and unambiguous - never "+1" / "+3".
   let label: string;
   if (action === "DENY") {
     label = "BLOCKED";
@@ -1944,7 +1944,7 @@ function getZonePolicyInfo(
   } else if (protos.length <= 3) {
     label = protos.join(" / ");
   } else {
-    // 4+ protocols — say so explicitly instead of dumping a +N tail.
+    // 4+ protocols - say so explicitly instead of dumping a +N tail.
     label = `Multiple flows (${protos.length})`;
   }
 
@@ -1952,7 +1952,7 @@ function getZonePolicyInfo(
 }
 
 // Map a workshop graph node id to the runtime telemetry source that
-// drives its status dot. Nodes not in the map don't get a dot — we
+// drives its status dot. Nodes not in the map don't get a dot - we
 // only render dots for nodes whose health we actually probe.
 function deriveNodeHealth(
   nodeId: string,
@@ -2050,7 +2050,7 @@ function useStyledGraph(
     // Horizontal architectural bands stacked top-to-bottom, mapping
     // lab zones to Purdue levels (L4 → L3.5 → L3 → L1). The firewall
     // sits on the L3.5 IDMZ boundary. This is *Purdue* architecture,
-    // not IEC 62443 — IEC 62443 contributes the Security Level (SL)
+    // not IEC 62443 - IEC 62443 contributes the Security Level (SL)
     // overlay rendered alongside each conduit. Both frameworks are in
     // play here, but the *band layout* is Purdue-driven.
     if (viewMode.iec62443) {
@@ -2084,7 +2084,7 @@ function useStyledGraph(
         field_net: 2,      // limited compute, physical hardening
       };
 
-      // Purdue level mapping — ALL levels top to bottom (firewall is NOT between them)
+      // Purdue level mapping - ALL levels top to bottom (firewall is NOT between them)
       const purdueOrder: Array<{ zone: string; label: string }> = [
         { zone: "enterprise_net", label: "Level 4 \u00B7 Enterprise" },
         { zone: "vendor_net", label: "Level 3.5 \u00B7 DMZ" },
@@ -2125,7 +2125,7 @@ function useStyledGraph(
         });
 
         // Zone anchor at the RIGHT EDGE of the band, vertically
-        // centered — conduit lines go from here to the firewall.
+        // centered - conduit lines go from here to the firewall.
         styledNodes.push({
           id: `zone-${level.zone}`,
           type: "zone",
@@ -2222,7 +2222,7 @@ function useStyledGraph(
         });
       }
 
-      // Conduit edges — in the 62443 view these are ALWAYS solid
+      // Conduit edges - in the 62443 view these are ALWAYS solid
       // zone-colored lines with a glow. The policy state (allowed /
       // over-permissive / blocked) is NOT encoded on individual
       // conduit lines because the 62443 view expresses policy
@@ -2263,7 +2263,7 @@ function useStyledGraph(
         });
       }
 
-      // Traffic edges — same logic as default layout
+      // Traffic edges - same logic as default layout
       if (viewMode.traffic) {
         const presentNodeIds = new Set(styledNodes.map((n) => n.id));
         const nodeIndex = new Map(styledNodes.map((n) => [n.id, n]));
@@ -2307,7 +2307,7 @@ function useStyledGraph(
               ? protocols.join(" + ")
               : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
 
-          // No sourceHandle/targetHandle — HostNodes have exactly one
+          // No sourceHandle/targetHandle - HostNodes have exactly one
           // source (right) and one target (left) so React Flow picks
           // them automatically.
 
@@ -2319,7 +2319,7 @@ function useStyledGraph(
 
           const isHighlighted = highlightedTrafficPair === key;
           const isDimmedByHighlight = anyHighlight && !isHighlighted;
-          // Only check firewall blocking when Policy view is active —
+          // Only check firewall blocking when Policy view is active -
           // the red ✕ is a policy concept and shouldn't show in pure
           // topology mode.
           const blockReason = viewMode.policyDim
@@ -2432,7 +2432,7 @@ function useStyledGraph(
 
     // Add zone BOUNDARY nodes first so they render BEHIND the hosts.
     // Each boundary is a translucent rounded panel that visually
-    // groups the hosts inside the zone — the segmentation grouping
+    // groups the hosts inside the zone - the segmentation grouping
     // becomes immediately legible without any heavy borders.
     activeZones.forEach((zone, zoneIdx) => {
       const zoneX = startX + zoneIdx * ZONE_SPACING_X;
@@ -2528,14 +2528,14 @@ function useStyledGraph(
     // Create edges
     const styledEdges: Edge[] = [];
 
-    // Edges from firewall to zones — segmentation boundaries.
+    // Edges from firewall to zones - segmentation boundaries.
     //
     // Policy view ON: edges are colored by action (zone color for
     // ALLOW, red for DENY, amber for MIXED), allowed paths are
     // animated, denied paths are dashed and dimmed. The student can
     // scan policy state at a glance.
     //
-    // Policy view OFF: every edge looks the same — neutral grey, no
+    // Policy view OFF: every edge looks the same - neutral grey, no
     // animation, no action color, no protocol label. The map becomes
     // a pure topology view ("what exists"), independent of policy
     // ("what's allowed"). This makes the toggle visibly do something
@@ -2604,7 +2604,7 @@ function useStyledGraph(
 
     // Traffic view: render observed host-to-host flows when the toggle
     // is on. We aggregate by source-target pair so a single line
-    // represents one logical conversation between two nodes — even if
+    // represents one logical conversation between two nodes - even if
     // the flow uses multiple protocols (RTAC↔relay carries both
     // Modbus and DNP3, for example). Aggregation is the difference
     // between 14 sprawling lines and ~9 readable ones.
@@ -2662,7 +2662,7 @@ function useStyledGraph(
         // React Flow routes the bezier vertically from the source
         // node's bottom to the target node's top. Each node's unique
         // horizontal position within its band naturally spreads the
-        // bezier midpoints horizontally — avoiding the overlap that
+        // bezier midpoints horizontally - avoiding the overlap that
         // occurs when all edges share side handles.
         const sourceHandle = undefined;
         const targetHandle = undefined;

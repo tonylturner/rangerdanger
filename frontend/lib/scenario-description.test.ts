@@ -69,6 +69,46 @@ describe("splitDescription — command blocks", () => {
     expect(cmd.value).toMatch(/head -10/);
   });
 
+  it("flags an indented containd-CLI command as copy-only (cli)", () => {
+    const segs = splitDescription(
+      "Then:\n\n    show running-config\n    delete firewall rule foo\n    commit",
+    );
+    const cmds = segs.filter((s) => s.type === "cmd") as Array<{
+      type: "cmd";
+      value: string;
+      cli?: boolean;
+    }>;
+    expect(cmds).toHaveLength(3);
+    expect(cmds.every((c) => c.cli === true)).toBe(true);
+    expect(cmds[0].value).toBe("show running-config");
+  });
+
+  it("keeps CLI-ish prose ('set **Rule Mode**', 'commit it.') as prose", () => {
+    const segs = splitDescription(
+      "Steps:\n\n    set **Rule Mode** to Enforcement, then\n    commit it. The banner updates.",
+    );
+    expect(segs.every((s) => s.type === "prose")).toBe(true);
+  });
+
+  it("runnable tools are not flagged cli", () => {
+    const cmd = segAt(splitDescription("    mbpoll -a 1 10.40.40.20"), 0, "cmd");
+    expect(cmd.cli).toBeUndefined();
+  });
+
+  it("flags interactive GUI tools as copy-only (no cli badge)", () => {
+    const segs = splitDescription(
+      "Pivot:\n\n    xfreerdp /v:10.20.20.10:3389 /u:x /p:y\n    sshpass -p z ssh user@host",
+    );
+    const cmds = segs.filter((s) => s.type === "cmd") as Array<{
+      type: "cmd";
+      value: string;
+      cli?: boolean;
+      copyOnly?: boolean;
+    }>;
+    expect(cmds).toHaveLength(2);
+    expect(cmds.every((c) => c.copyOnly === true && !c.cli)).toBe(true);
+  });
+
   it("recognizes every CMD_TOOL_RE prefix", () => {
     const tools = [
       "nmap", "mbpoll", "dnp3poll", "dnp3cmd", "curl", "tshark",

@@ -3,7 +3,7 @@
 How to exhaustively verify that **setup → execution → teardown** works
 flawlessly across architectures and install paths. The goal: a student on
 any supported host can install, run every lab, and cleanly remove the
-stack — and re-run it months later (lasting training value).
+stack - and re-run it months later (lasting training value).
 
 ## The matrix
 
@@ -21,10 +21,10 @@ OpenPLC running → web/containd UIs up → firewall apply (weak+improved) +
 workshop reset succeed → uninstall leaves the host clean (no containers /
 volumes / `.env`, emulation/kernel reverted) → re-install works.
 
-## Linux / macOS — automated (`test-lifecycle.sh`)
+## Linux / macOS - automated (`test-lifecycle.sh`)
 
 One command runs the whole lifecycle and prints PASS/FAIL. Use a **test
-host or throwaway VM** — it installs the full stack, then removes it.
+host or throwaway VM** - it installs the full stack, then removes it.
 
 ```sh
 ./scripts/test-lifecycle.sh                       # online, full lifecycle
@@ -34,7 +34,7 @@ host or throwaway VM** — it installs the full stack, then removes it.
 ```
 
 It catches what a bare `./setup.sh` does not: OpenPLC's readiness probe is
-non-fatal, so setup can exit 0 with OpenPLC crash-looping — the harness
+non-fatal, so setup can exit 0 with OpenPLC crash-looping - the harness
 asserts it explicitly, and verifies teardown is clean.
 
 ### arm64 Linux via Multipass (on an Apple Silicon Mac)
@@ -52,7 +52,7 @@ cd ~/rangerdanger
 ./scripts/test-lifecycle.sh --yes             # full lifecycle (~20-40 min)
 ```
 
-## Windows — `test-lifecycle.ps1` (or manual)
+## Windows - `test-lifecycle.ps1` (or manual)
 
 One command, the Windows counterpart of `test-lifecycle.sh` (elevated
 PowerShell, repo root):
@@ -88,7 +88,7 @@ docker ps -a --filter "name=rangerdanger-"     # expect: none
 Test-Path .env                                 # expect: False
 #   The uninstaller also reverts the custom WSL2 kernel and runs `wsl --shutdown`.
 
-# 5. RE-INSTALL (idempotency) — repeat step 1, then step 2.
+# 5. RE-INSTALL (idempotency) - repeat step 1, then step 2.
 ```
 
 **Windows-specific things to confirm:**

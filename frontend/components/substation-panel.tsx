@@ -142,16 +142,16 @@ function OneLine({
 
   return (
     <div className="space-y-3">
-      {/* Alarm banner — operational language */}
+      {/* Alarm banner - operational language */}
       {anyAlarm && (
         <div className="rounded border border-red-800 bg-red-950/50 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-red-400">
             <span className="animate-pulse">ALARM</span>
-            {!bkrClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">FEEDER BREAKER OPEN — customers without power</span>}
-            {bkrClosed && !rclClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">RECLOSER OPEN — downstream loads lost</span>}
-            {recloseOff && <span className="rounded bg-yellow-900/60 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED — no fault recovery</span>}
-            {lowVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">LOW VOLTAGE — equipment damage risk</span>}
-            {highVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">HIGH VOLTAGE — equipment damage risk</span>}
+            {!bkrClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">FEEDER BREAKER OPEN - customers without power</span>}
+            {bkrClosed && !rclClosed && <span className="rounded bg-red-900/60 px-2 py-0.5">RECLOSER OPEN - downstream loads lost</span>}
+            {recloseOff && <span className="rounded bg-yellow-900/60 px-2 py-0.5 text-yellow-400">AUTO-RECLOSE DISABLED - no fault recovery</span>}
+            {lowVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">LOW VOLTAGE - equipment damage risk</span>}
+            {highVoltage && <span className="rounded bg-red-900/60 px-2 py-0.5">HIGH VOLTAGE - equipment damage risk</span>}
           </div>
         </div>
       )}
@@ -176,7 +176,7 @@ function OneLine({
               {relay?.lockout && <StatusBadge color="red">LOCKED OUT</StatusBadge>}
               {relay?.fault_seen && <StatusBadge color="yellow">FAULT DETECTED</StatusBadge>}
             </div>
-            {relay?.last_command_source && relay.last_command_source !== "—" && (
+            {relay?.last_command_source && relay.last_command_source !== "-" && (
               <div className="ml-10 text-[10px] text-slate-600">
                 Last command from: <span className="text-slate-400">{String(relay.last_command_source)}</span>
               </div>
@@ -215,7 +215,7 @@ function OneLine({
                 </span>
               </div>
 
-              {/* Capacitor Bank — shunt at the load bus (reactive support) */}
+              {/* Capacitor Bank - shunt at the load bus (reactive support) */}
               <div className="flex items-center gap-2 py-1 text-[11px]">
                 <span className="rounded border border-purple-800/60 bg-purple-950/20 px-1.5 py-0.5 font-bold text-[10px] text-purple-400">
                   CAP
@@ -230,7 +230,7 @@ function OneLine({
                 {capbank?.lockout ? <StatusBadge color="red">LOCKED OUT</StatusBadge> : null}
               </div>
 
-              {/* Voltage Regulator 90 — series element feeding the critical load
+              {/* Voltage Regulator 90 - series element feeding the critical load
                   (Transformer.VReg: load_bus -> reg_bus in substation_feeder.dss) */}
               <div className="flex items-center gap-2 py-1 text-[11px]">
                 <span className="rounded border border-cyan-800/60 bg-cyan-950/20 px-1.5 py-0.5 text-cyan-400 font-bold text-[10px]">
@@ -245,7 +245,7 @@ function OneLine({
                 </span>
               </div>
 
-              {/* Critical load — downstream of (post-) the regulator at reg_bus */}
+              {/* Critical load - downstream of (post-) the regulator at reg_bus */}
               <div className={`border-l-2 pl-4 ${critEnergized ? "border-green-800/50" : "border-red-900/50"}`}>
                 <div className="flex items-center gap-2 py-1">
                   <LoadSymbol energized={critEnergized} critical />
@@ -358,7 +358,7 @@ function CommandPanel({
   const capAuto = Boolean(capbank?.auto_mode);
   return (
     <div className="space-y-4">
-      {/* SCADA → RTAC → field-device hierarchy — the RTAC is the controller;
+      {/* SCADA → RTAC → field-device hierarchy - the RTAC is the controller;
           the four cards below are its peer feeder devices. */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-[10px]">
         <span className="font-bold text-sky-400">SCADA / HMI</span>
@@ -383,7 +383,7 @@ function CommandPanel({
       )}
 
       <div className="grid gap-3 md:grid-cols-2">
-        <DeviceGroup title="Feeder Breaker (52)" subtitle="10.40.40.20" role="Service interruption — energize / de-energize feeder">
+        <DeviceGroup title="Feeder Breaker (52)" subtitle="10.40.40.20" role="Service interruption - energize / de-energize feeder">
           <CmdButton label="TRIP" onClick={() => execCmd("relay", "trip")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("relay", "close")} variant="success" />
           <CmdButton label="Lockout" onClick={() => execCmd("relay", "lockout")} variant="warning" />
@@ -393,7 +393,7 @@ function CommandPanel({
           <CmdButton label="Clear Fault" onClick={() => execCmd("relay", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Recloser (79)" subtitle="10.40.40.21" role="Reliability — automatic fault recovery">
+        <DeviceGroup title="Recloser (79)" subtitle="10.40.40.21" role="Reliability - automatic fault recovery">
           <CmdButton label="OPEN" onClick={() => execCmd("recloser", "open")} variant="danger" />
           <CmdButton label="CLOSE" onClick={() => execCmd("recloser", "close")} variant="success" />
           <CmdButton label="Enable Reclose" onClick={() => execCmd("recloser", "enable_reclose")} variant="success" />
@@ -404,18 +404,18 @@ function CommandPanel({
           <CmdButton label="Clear Fault" onClick={() => execCmd("recloser", "clear_fault")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Capacitor Bank (CAP)" subtitle="10.40.40.23" role="Power factor — reactive support">
-          <CmdButton label="Switch In" onClick={() => execCmd("capbank", "switch_in")} variant="success" disabled={capAuto} title={capAuto ? "Cap bank in AUTO — switch to Manual to control" : undefined} />
-          <CmdButton label="Switch Out" onClick={() => execCmd("capbank", "switch_out")} variant="danger" disabled={capAuto} title={capAuto ? "Cap bank in AUTO — switch to Manual to control" : undefined} />
+        <DeviceGroup title="Capacitor Bank (CAP)" subtitle="10.40.40.23" role="Power factor - reactive support">
+          <CmdButton label="Switch In" onClick={() => execCmd("capbank", "switch_in")} variant="success" disabled={capAuto} title={capAuto ? "Cap bank in AUTO - switch to Manual to control" : undefined} />
+          <CmdButton label="Switch Out" onClick={() => execCmd("capbank", "switch_out")} variant="danger" disabled={capAuto} title={capAuto ? "Cap bank in AUTO - switch to Manual to control" : undefined} />
           <div className="w-full border-t border-slate-800/50 my-0.5" />
           <CmdButton label="Manual Mode" onClick={() => execCmd("capbank", "set_manual")} variant="warning" />
           <CmdButton label="Auto Mode" onClick={() => execCmd("capbank", "set_auto")} variant="success" />
           <CmdButton label="Reset Lockout" onClick={() => execCmd("capbank", "reset_lockout")} />
         </DeviceGroup>
 
-        <DeviceGroup title="Voltage Regulator (90)" subtitle="10.40.40.22" role="Voltage control — tap regulation">
-          <CmdButton label="Raise Tap" onClick={() => execCmd("regulator", "raise_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO — switch to Manual to adjust taps" : undefined} />
-          <CmdButton label="Lower Tap" onClick={() => execCmd("regulator", "lower_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO — switch to Manual to adjust taps" : undefined} />
+        <DeviceGroup title="Voltage Regulator (90)" subtitle="10.40.40.22" role="Voltage control - tap regulation">
+          <CmdButton label="Raise Tap" onClick={() => execCmd("regulator", "raise_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO - switch to Manual to adjust taps" : undefined} />
+          <CmdButton label="Lower Tap" onClick={() => execCmd("regulator", "lower_tap")} disabled={!regManual} title={!regManual ? "Regulator in AUTO - switch to Manual to adjust taps" : undefined} />
           <div className="w-full border-t border-slate-800/50 my-0.5" />
           <CmdButton label="Manual Mode" onClick={() => execCmd("regulator", "set_manual")} variant="warning" />
           <CmdButton label="Auto Mode" onClick={() => execCmd("regulator", "set_auto")} variant="success" />
@@ -423,7 +423,7 @@ function CommandPanel({
       </div>
 
       <div className="text-[10px] text-slate-600">
-        The containd firewall controls which zones can reach these devices on 10.40.40.0/24 —
+        The containd firewall controls which zones can reach these devices on 10.40.40.0/24 -
         an attacker who reaches that segment can drive any of them.
       </div>
     </div>
@@ -543,7 +543,7 @@ function CommandAuditView({ entries, networkEvents }: { entries: AuditEntry[]; n
                       )}
                     </span>
                   </div>
-                  {/* Operational consequence — always prominent */}
+                  {/* Operational consequence - always prominent */}
                   {e.process_impact && e.process_impact !== "command executed" && (
                     <div className={`mt-1 ml-14 rounded px-2 py-1 text-[11px] font-medium ${
                       succeeded && harmful
@@ -654,7 +654,7 @@ function ElectricalDetailView({
   ).slice(-1)[0];
 
   const lastTripCause = lastTrip
-    ? `${lastTrip.command} from ${lastTrip.source_zone || "unknown"} (${lastTrip.source || "—"})`
+    ? `${lastTrip.command} from ${lastTrip.source_zone || "unknown"} (${lastTrip.source || "-"})`
     : "None";
 
   // Expected protection response
@@ -662,18 +662,18 @@ function ElectricalDetailView({
     ? recloseEnabled && !rclLockout
       ? "Recloser trips and auto-recloses (up to 3 shots)"
       : rclLockout
-      ? "Recloser locked out — manual intervention required"
-      : "Recloser trips, reclose disabled — sustained outage"
-    : "No fault — normal coordination";
+      ? "Recloser locked out - manual intervention required"
+      : "Recloser trips, reclose disabled - sustained outage"
+    : "No fault - normal coordination";
 
   const actualResponse = faultActive
     ? rclLockout
-      ? "Lockout after " + shotCount + " shots — sustained outage"
+      ? "Lockout after " + shotCount + " shots - sustained outage"
       : !recloseEnabled
-      ? "Reclose disabled — no automatic recovery"
+      ? "Reclose disabled - no automatic recovery"
       : !rclClosed
-      ? "Recloser open — fault clearing in progress"
-      : "Fault present — monitoring"
+      ? "Recloser open - fault clearing in progress"
+      : "Fault present - monitoring"
     : "Idle";
 
   return (
@@ -687,19 +687,19 @@ function ElectricalDetailView({
         }`}>
           <div className={`text-xs font-bold ${impactLevel === "outage" ? "text-red-400" : "text-yellow-400"}`}>
             {!bkrClosed
-              ? `FEEDER OUTAGE — ${Math.round((genKW + critKW) || 700)} kW load lost, ~${Math.round(((genKW + critKW) || 700) * 3)} customers affected`
+              ? `FEEDER OUTAGE - ${Math.round((genKW + critKW) || 700)} kW load lost, ~${Math.round(((genKW + critKW) || 700) * 3)} customers affected`
               : !rclClosed
-              ? `PARTIAL OUTAGE — downstream loads de-energized, ~${Math.round(((genKW + critKW) || 700) * 3)} customers affected`
+              ? `PARTIAL OUTAGE - downstream loads de-energized, ~${Math.round(((genKW + critKW) || 700) * 3)} customers affected`
               : faultActive
               ? (faultCurrentA > 0
-                  ? `FAULT ACTIVE — ${faultCurrentA.toFixed(0)} A at the ${relayFault ? "feeder breaker" : "recloser bus"}`
-                  : `FAULT INTERRUPTED — protection opened the ${relayFault ? "feeder breaker" : "recloser"}, downstream service lost`)
+                  ? `FAULT ACTIVE - ${faultCurrentA.toFixed(0)} A at the ${relayFault ? "feeder breaker" : "recloser bus"}`
+                  : `FAULT INTERRUPTED - protection opened the ${relayFault ? "feeder breaker" : "recloser"}, downstream service lost`)
               : protectionDegraded
-              ? "PROTECTION DEGRADED — auto-reclose disabled, restoration risk increased"
+              ? "PROTECTION DEGRADED - auto-reclose disabled, restoration risk increased"
               : critPU < 0.95
-              ? `DEGRADED VOLTAGE — critical load at ${critPU.toFixed(2)} pu (${elec?.critical_load_voltage_v?.toFixed(1)}V)`
+              ? `DEGRADED VOLTAGE - critical load at ${critPU.toFixed(2)} pu (${elec?.critical_load_voltage_v?.toFixed(1)}V)`
               : critPU > 1.05
-              ? `HIGH VOLTAGE — critical load at ${critPU.toFixed(2)} pu (${elec?.critical_load_voltage_v?.toFixed(1)}V)`
+              ? `HIGH VOLTAGE - critical load at ${critPU.toFixed(2)} pu (${elec?.critical_load_voltage_v?.toFixed(1)}V)`
               : "ABNORMAL CONDITION"
             }
           </div>
@@ -718,11 +718,11 @@ function ElectricalDetailView({
           {/* Electrical Snapshot */}
           <DetailPanel title="Electrical Snapshot" subtitle={`${nomKV} kV Distribution Feeder`}>
             <div className="grid grid-cols-3 gap-3">
-              <MetricCell label="Feeder Voltage" value={allEnergized ? `${subPU.toFixed(3)} pu` : "—"} sub={allEnergized ? `${nomKV} kV nominal` : "De-energized"} ok={allEnergized && subPU >= 0.95 && subPU <= 1.05} />
+              <MetricCell label="Feeder Voltage" value={allEnergized ? `${subPU.toFixed(3)} pu` : "-"} sub={allEnergized ? `${nomKV} kV nominal` : "De-energized"} ok={allEnergized && subPU >= 0.95 && subPU <= 1.05} />
               <MetricCell label="Feeder Current" value={`${currentA.toFixed(1)} A`} sub={`${loadingPct.toFixed(0)}% of ${feederRatingA}A rating`} ok={loadingPct < 80} warn={loadingPct >= 80 && loadingPct < 100} />
-              <MetricCell label="Power Factor" value={pf > 0 ? pf.toFixed(3) : "—"} sub={pf >= 0.95 ? "Within target" : pf > 0 ? "Below 0.95 target" : ""} ok={pf >= 0.95} warn={pf > 0 && pf < 0.95} />
-              <MetricCell label="Source Power" value={sourceKW > 0 ? `${sourceKW.toFixed(0)} kW` : "—"} sub={`${(genKW + critKW).toFixed(0)} kW served`} ok={sourceKW > 0} />
-              <MetricCell label="Feeder Losses" value={lossesKW > 0 ? `${lossesKW.toFixed(1)} kW` : "—"} sub={sourceKW > 0 ? `${((lossesKW / sourceKW) * 100).toFixed(1)}% of source` : ""} ok={true} />
+              <MetricCell label="Power Factor" value={pf > 0 ? pf.toFixed(3) : "-"} sub={pf >= 0.95 ? "Within target" : pf > 0 ? "Below 0.95 target" : ""} ok={pf >= 0.95} warn={pf > 0 && pf < 0.95} />
+              <MetricCell label="Source Power" value={sourceKW > 0 ? `${sourceKW.toFixed(0)} kW` : "-"} sub={`${(genKW + critKW).toFixed(0)} kW served`} ok={sourceKW > 0} />
+              <MetricCell label="Feeder Losses" value={lossesKW > 0 ? `${lossesKW.toFixed(1)} kW` : "-"} sub={sourceKW > 0 ? `${((lossesKW / sourceKW) * 100).toFixed(1)}% of source` : ""} ok={true} />
               <MetricCell label="Total Load" value={`${(genKW + critKW).toFixed(0)} kW`} sub={`General ${genKW.toFixed(0)} + Critical ${critKW.toFixed(0)}`} ok={genKW + critKW > 0} />
             </div>
           </DetailPanel>
@@ -792,7 +792,7 @@ function ElectricalDetailView({
                   { label: "Lockout", value: relayLockout ? "Active" : "No", ok: !relayLockout, warn: !!relayLockout },
                   { label: "Fault Flag", value: relayFault ? "Set" : "Clear", ok: !relayFault, warn: !!relayFault },
                   { label: "Mode", value: relay?.remote_control_enabled ? "Remote" : "Local" },
-                  { label: "Last Command", value: String(relay?.last_command_source || "—"), mono: true },
+                  { label: "Last Command", value: String(relay?.last_command_source || "-"), mono: true },
                 ]}
               />
 
@@ -806,11 +806,11 @@ function ElectricalDetailView({
                   { label: "Auto-Reclose", value: recloseEnabled ? "Enabled" : "Disabled", ok: !!recloseEnabled, warn: !recloseEnabled },
                   { label: "Shots", value: `${shotCount} / 3`, ok: shotCount === 0, warn: shotCount > 0 && !rclLockout },
                   { label: "Lockout", value: rclLockout ? "Active" : "No", ok: !rclLockout, warn: !!rclLockout },
-                  { label: "Last Command", value: String(recloser?.last_command_source || "—"), mono: true },
+                  { label: "Last Command", value: String(recloser?.last_command_source || "-"), mono: true },
                 ]}
               />
 
-              {/* Capacitor Bank — shunt at load_bus, upstream of the regulator */}
+              {/* Capacitor Bank - shunt at load_bus, upstream of the regulator */}
               <DeviceDetail
                 ansi="CAP"
                 name="Capacitor Bank"
@@ -821,11 +821,11 @@ function ElectricalDetailView({
                   { label: "Rating", value: `${capKvar} kVAR` },
                   { label: "Switch Ops", value: `${capSwitchCount} / 6`, ok: capSwitchCount < 5, warn: capSwitchCount >= 5 && !capLockout },
                   { label: "Lockout", value: capLockout ? "Active" : "No", ok: !capLockout, warn: capLockout },
-                  { label: "Last Command", value: String(capbank?.last_command_source || "—"), mono: true },
+                  { label: "Last Command", value: String(capbank?.last_command_source || "-"), mono: true },
                 ]}
               />
 
-              {/* Voltage Regulator — series element feeding the critical load */}
+              {/* Voltage Regulator - series element feeding the critical load */}
               <DeviceDetail
                 ansi="90"
                 name="Voltage Regulator"
@@ -836,7 +836,7 @@ function ElectricalDetailView({
                   { label: "Tap Effect", value: `${tap > 0 ? "+" : ""}${(tap * 0.625).toFixed(1)}%` },
                   { label: "Target", value: `${(regSetpoint / nomV).toFixed(3)} pu (${regSetpoint}V)` },
                   { label: "Controlled Bus", value: "Critical Load Branch" },
-                  { label: "Last Command", value: String(regulator?.last_command_source || "—"), mono: true },
+                  { label: "Last Command", value: String(regulator?.last_command_source || "-"), mono: true },
                 ]}
               />
             </div>
@@ -884,7 +884,7 @@ function ElectricalDetailView({
                   {(!recloseEnabled || rclLockout) && (
                     <div className="mt-1 rounded border border-red-900/40 bg-red-950/20 px-2 py-1.5 text-[10px] text-red-300">
                       {!recloseEnabled
-                        ? "Reclose was disabled — this removes automatic fault recovery capability. If a fault clears, the recloser cannot restore service without manual close command."
+                        ? "Reclose was disabled - this removes automatic fault recovery capability. If a fault clears, the recloser cannot restore service without manual close command."
                         : "Recloser has locked out after exhausting all reclose attempts. Manual intervention required to restore service."
                       }
                     </div>
@@ -900,7 +900,7 @@ function ElectricalDetailView({
                   <div>2. <span className="text-sky-400">Feeder Breaker (52)</span> is upstream backup if recloser fails to clear</div>
                   <div>3. <span className="text-cyan-400">Regulator (90)</span> maintains voltage at critical load through tap adjustment</div>
                   <div className="mt-1.5 border-t border-slate-800/40 pt-1.5 text-slate-500">
-                    If auto-reclose is disabled by an attacker, the recloser cannot automatically restore service after a transient fault — this is the core cyber-to-physical impact in Exercise 2.
+                    If auto-reclose is disabled by an attacker, the recloser cannot automatically restore service after a transient fault - this is the core cyber-to-physical impact in Exercise 2.
                   </div>
                 </div>
               </div>
@@ -929,7 +929,7 @@ function ElectricalDetailView({
         >
           DSS-Extensions
         </a>
-        {" "}— 3-phase unbalanced solver with IEEE 13-bus line impedances.
+        {" "}- 3-phase unbalanced solver with IEEE 13-bus line impedances.
         Load values include simulated demand fluctuation (±3%).
       </div>
     </div>
@@ -1012,7 +1012,7 @@ function VoltageProfileBar({ label, pu, active, highlight }: { label: string; pu
       <span className={`w-16 text-right font-mono font-bold ${
         !active || pu === 0 ? "text-slate-600" : inBand ? "text-green-400" : "text-red-400"
       }`}>
-        {active && pu > 0 ? `${pu.toFixed(3)}` : "— "}
+        {active && pu > 0 ? `${pu.toFixed(3)}` : "- "}
       </span>
     </div>
   );

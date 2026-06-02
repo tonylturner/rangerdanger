@@ -11,7 +11,7 @@ import Link from "next/link";
 //   - Links: internal paths (starting with /) route through Next.js Link
 //     so the exercise runner stays a SPA. External links open in a new tab.
 //   - Code spans (single backticks) get amber mono styling to match our
-//     command block aesthetic. They do NOT get Run/Copy buttons — that's
+//     command block aesthetic. They do NOT get Run/Copy buttons - that's
 //     reserved for block-level tool commands detected by splitDescription
 //     upstream.
 //   - Tables get overflow-x auto so wide tables don't break layout.
@@ -87,7 +87,7 @@ const renderer = {
 
   code(code: React.ReactNode) {
     // Fenced code blocks from the YAML (triple backticks). These are NOT
-    // the same as our Run/Copy command blocks — those are detected in
+    // the same as our Run/Copy command blocks - those are detected in
     // splitDescription upstream and rendered before this renderer sees
     // anything. Fenced code here is for multi-line snippets authors want
     // to display without a Run button (e.g., sample output).

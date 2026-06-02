@@ -12,6 +12,19 @@
 
 const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
+// containd appliance-CLI commands. These are NOT run via the lab's
+// per-node exec (they live in the containd CLI, reached from the fw-1
+// terminal), so they render as copy-only blocks — clearly badged as
+// containd CLI — rather than getting a Run button. Matched precisely so
+// generic words ("show", "set") only count as the actual containd verbs.
+const CONTAIND_CLI_RE = /^(containd cli\b|show\s+[a-z]|set\s+(firewall|interface|zone|nat|route|ip|system|syslog|port-forward|dataplane|proxy|outbound)\b|commit(\s+confirmed\b|\s*$)|confirm\s*$|rollback\s*$|delete\s+firewall\b|export\s+config\b|import\s+config\b)/;
+
+// Interactive / GUI commands the student runs in a real terminal but the
+// lab can't usefully "Run" (remote-desktop clients, sshpass-wrapped
+// interactive shells). Rendered as copy-only command blocks — a copy
+// button, no Run.
+const COPY_ONLY_TOOL_RE = /^(xfreerdp|xtightvncviewer|vncviewer|rdesktop|sshpass)\s/;
+
 // :::hint Title  ...content...  :::
 // Opens a collapsible hint panel in the rendered description. Anything
 // between the opening and closing fence is captured as the hint body.
@@ -77,6 +90,13 @@ const TECHNICAL_OPEN_RE = /^:::technical$/;
 // says to start traffic generation. Body ignored.
 const GENERATE_TRAFFIC_BTN_RE = /^:::generate-traffic-button(?:\s+(.+))?$/;
 
+// :::validation-report
+// :::
+// Renders the "Generate Validation Report" button (Lab 2.4). On click it
+// runs the positive/negative test matrix against the active policy and
+// renders the markdown evidence report inline. Body ignored.
+const VALIDATION_REPORT_RE = /^:::validation-report(?:\s+(.+))?$/;
+
 // :::icon name="shield" color="amber" label="Segmentation Policy"
 // :::
 // Renders a small inline icon "stamp" matching a real UI element the
@@ -97,7 +117,7 @@ export type FindingsPanelItem = { id: string; label: string };
 
 export type Segment =
   | { type: "prose"; value: string }
-  | { type: "cmd"; value: string }
+  | { type: "cmd"; value: string; cli?: boolean; copyOnly?: boolean }
   | { type: "hint"; title: string; value: string }
   | {
       type: "decision";
@@ -122,6 +142,9 @@ export type Segment =
     }
   | {
       type: "generateTrafficButton";
+    }
+  | {
+      type: "validationReport";
     }
   | {
       type: "icon";
@@ -276,6 +299,17 @@ export function splitDescription(text: string): Segment[] {
       result.push({ type: "generateTrafficButton" });
       continue;
     }
+    if (VALIDATION_REPORT_RE.test(trimmed)) {
+      flushProse();
+      // Eat through closing :::, body ignored.
+      i++;
+      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
+        i++;
+      }
+      if (i < lines.length) i++;
+      result.push({ type: "validationReport" });
+      continue;
+    }
     const iconOpen = ICON_RE.exec(trimmed);
     if (iconOpen) {
       flushProse();
@@ -363,6 +397,15 @@ export function splitDescription(text: string): Segment[] {
         cmd += "\n  " + lines[i].trim();
       }
       result.push({ type: "cmd", value: cmd });
+    } else if (isIndented && CONTAIND_CLI_RE.test(trimmed)) {
+      // containd CLI command — copy-only (the student runs it in the
+      // fw-1 containd terminal, not via the lab's per-node Run).
+      flushProse();
+      result.push({ type: "cmd", value: trimmed, cli: true });
+    } else if (isIndented && COPY_ONLY_TOOL_RE.test(trimmed)) {
+      // Interactive/GUI command — copy-only (run it in a real terminal).
+      flushProse();
+      result.push({ type: "cmd", value: trimmed, copyOnly: true });
     } else {
       prose.push(lines[i]);
     }

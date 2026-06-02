@@ -118,9 +118,9 @@ steps:
       :::hint Reveal expected requirements
       A hardened substation lands at:
 
-      1. **Enterprise → Field on Modbus/DNP3:** `BLOCK`. Corporate IT should never speak control-plane protocols to field devices. This closes the path used in the **DNP3 Command Injection** exercise.
-      2. **Enterprise → OT Ops on ICS ports:** `BLOCK`. Enterprise reaches OT only via constrained management paths, never on Modbus/DNP3. Closes the **Modbus Override** staging path.
-      3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`. Vendor remote access stays on encrypted management protocols (HTTPS, SSH); direct Modbus/HMI control is the **Vendor RDP Compromise** vector.
+      1. **Enterprise → Field on Modbus/DNP3:** `BLOCK`. Corporate IT should never speak control-plane protocols to field devices. This is the attack hardened in the **Protocol-Hardened Configurations** exercise.
+      2. **Enterprise → OT Ops on ICS ports:** `BLOCK`. Enterprise reaches OT only via constrained management paths, never on Modbus/DNP3. Closes the Modbus-override staging path.
+      3. **Vendor → OT Ops on Modbus/HMI control:** `RESTRICT`. Vendor remote access stays on encrypted management protocols (HTTPS, SSH); direct Modbus/HMI control is the **Vendor Remote Access Compromise** vector.
       4. **Non-RTAC OT Ops → Field:** `BLOCK`. Only the RTAC (pinned to source `10.30.30.20`) should reach field devices. A compromised HMI or OpenPLC must not become an attack path.
       5. **Unauthorized Modbus writes / DNP3 Direct Operate:** `BLOCK and LOG`. Port-level filtering isn't enough - this requires **ICS DPI** to filter by function code, plus per-rule logging so blocked attempts are visible.
 

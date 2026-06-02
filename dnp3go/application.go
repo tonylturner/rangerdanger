@@ -7,12 +7,13 @@ import (
 
 // DNP3 application layer function codes.
 const (
-	FCRead          = 0x01
-	FCWrite         = 0x02
-	FCSelect        = 0x03
-	FCOperate       = 0x04
-	FCDirectOperate = 0x05
-	FCResponse      = 0x81
+	FCRead               = 0x01
+	FCWrite              = 0x02
+	FCSelect             = 0x03
+	FCOperate            = 0x04
+	FCDirectOperate      = 0x05
+	FCDirectOperateNoAck = 0x06
+	FCResponse           = 0x81
 )
 
 // Application control byte bits.

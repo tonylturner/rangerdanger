@@ -49,7 +49,7 @@ The workshop endpoints operate on the always-running substation lab defined in `
 | `GET` | `/workshop/graph` | Current topology as a graph (nodes + edges) |
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
-| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` — anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
+| `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
 | `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) |
 | `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
 
@@ -149,7 +149,7 @@ Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to
 
 ## Terminals (WebSocket)
 
-Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and a Docker `exec` session. SSH-based terminals were removed; every node terminal — including the firewall — now goes through Docker exec.
+Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and a Docker `exec` session. SSH-based terminals were removed; every node terminal - including the firewall - now goes through Docker exec.
 
 ### Endpoints
 

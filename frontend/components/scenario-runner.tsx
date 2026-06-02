@@ -25,6 +25,7 @@ import {
   type PolicySource,
 } from "../lib/api";
 import { PolicyStatusBanner } from "./policy-status-banner";
+import { ValidationReportPanel } from "./validation-report-panel";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
 import { SharedTerminalPanel } from "./terminal-context";
 import { NODE_UI_URLS } from "../lib/exercise-nodes";
@@ -68,16 +69,32 @@ type CommandBlockProps = {
   runId: string;
   runningId: string | null;
   onRun: ((cmd: string, runId: string) => void) | null;
+  // cli = a containd appliance-CLI command: copy-only (no Run), prefixed
+  // with the containd# prompt and badged so it's clear the student runs
+  // it in the fw-1 containd terminal, not via the lab's per-node exec.
+  cli?: boolean;
+  // copyOnly = an interactive/GUI command (remote-desktop client, sshpass
+  // shell): copy button only, no Run, no badge - run it in a terminal.
+  copyOnly?: boolean;
 };
 
-function CommandBlock({ cmd, runId, runningId, onRun }: CommandBlockProps) {
+function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: CommandBlockProps) {
+  const runnable = cli || copyOnly ? null : onRun;
   return (
     <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-      <span className="pr-24 whitespace-pre-wrap">{cmd}</span>
+      <span className="pr-28 whitespace-pre-wrap">
+        {cli && <span className="select-none text-sky-700">containd# </span>}
+        {cmd}
+      </span>
       <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
-        {onRun && (
+        {cli && (
+          <span className="select-none rounded border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
+            containd cli
+          </span>
+        )}
+        {runnable && (
           <button
-            onClick={() => onRun(cmd, runId)}
+            onClick={() => runnable(cmd, runId)}
             disabled={runningId !== null}
             className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
           >
@@ -110,12 +127,12 @@ type DecisionBlockProps = {
   decisionId: string;
   options: string[];
   body: string;
-  /** "<scenarioId>:<decisionId>" — initial value source if local key empty */
+  /** "<scenarioId>:<decisionId>" - initial value source if local key empty */
   defaultFrom?: string;
   /**
    * Known-correct answer for this decision. When set, the block
    * renders a green/red feedback chip after the student picks. Only
-   * use on observation/factual prompts (e.g. lab 1.2 step 6 — the
+   * use on observation/factual prompts (e.g. lab 1.2 step 6 - the
    * weak baseline really did show every exposure). Leave unset on
    * judgment-call decisions (lab 1.3 verdicts) where no single
    * answer is "right."
@@ -135,7 +152,7 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, cor
         setValue(saved);
         return;
       }
-      // No saved value — try to inherit from the upstream decision.
+      // No saved value - try to inherit from the upstream decision.
       if (defaultFrom && defaultFrom.includes(":")) {
         const [srcScenario, srcId] = defaultFrom.split(":", 2);
         const srcKey = decisionStorageKey(srcScenario, srcId);
@@ -151,13 +168,13 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, cor
         }
       }
     } catch {
-      /* localStorage unavailable — fall back to in-memory state */
+      /* localStorage unavailable - fall back to in-memory state */
     }
   }, [storageKey, options, defaultFrom]);
 
   const onChange = (next: string) => {
     setValue(next);
-    setInheritedFrom("");   // student touched the dropdown — no longer "inherited"
+    setInheritedFrom("");   // student touched the dropdown - no longer "inherited"
     try {
       if (next) {
         window.localStorage.setItem(storageKey, next);
@@ -165,7 +182,7 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, cor
         window.localStorage.removeItem(storageKey);
       }
     } catch {
-      /* swallow — UI still works without persistence */
+      /* swallow - UI still works without persistence */
     }
   };
 
@@ -238,7 +255,7 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, cor
             )}
             {inheritedFrom && (
               <span className="text-[10px] text-slate-500 italic">
-                inherited from earlier lab — adjust if your design has changed
+                inherited from earlier lab - adjust if your design has changed
               </span>
             )}
             {answered && !inheritedFrom && (
@@ -259,7 +276,7 @@ function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, cor
 // FindingsPanel renders read-only cards for a set of upstream
 // decisions (e.g. Lab 1.3 showing the student's Lab 1.2 findings).
 // Reads each id's localStorage value via the same key shape
-// DecisionBlock writes. Quiet on the empty case — if the upstream
+// DecisionBlock writes. Quiet on the empty case - if the upstream
 // lab wasn't done, the panel says so and links back.
 type FindingsPanelProps = {
   sourceScenario: string;
@@ -314,14 +331,14 @@ function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
           You haven&apos;t recorded findings in <a
             href={`/exercises/${sourceScenario}`}
             className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-          >Lab {sourceScenario}</a> yet — your design verdicts below will be made without that context.
+          >Lab {sourceScenario}</a> yet - your design verdicts below will be made without that context.
         </div>
       )}
     </div>
   );
 }
 
-// PlanCoveragePanel renders the student's Lab 1.4 plan coverage —
+// PlanCoveragePanel renders the student's Lab 1.4 plan coverage -
 // the same per-requirement breakdown the DecisionPanel sticky bar
 // shows, but inline at any point in a description. Used in Lab 2.4
 // to surface "what did your plan close vs defer" without making the
@@ -391,7 +408,7 @@ function PlanCoveragePanel({ title }: { title: string }) {
                 <CircleDashed className="h-3.5 w-3.5 mt-0.5 text-slate-600 shrink-0" />
                 <span className="text-slate-500">
                   <span className="font-bold text-slate-400">{c.req.label}</span>
-                  <span className="text-slate-600"> — {c.reason}</span>
+                  <span className="text-slate-600"> - {c.reason}</span>
                 </span>
               </div>
             );
@@ -402,7 +419,7 @@ function PlanCoveragePanel({ title }: { title: string }) {
                 <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                 <span className="text-slate-300">
                   <span className="font-bold">{c.req.label}</span>
-                  <span className="text-slate-500"> — {c.req.verdict}, fully addressed by your plan</span>
+                  <span className="text-slate-500"> - {c.req.verdict}, fully addressed by your plan</span>
                 </span>
               </div>
             );
@@ -413,19 +430,19 @@ function PlanCoveragePanel({ title }: { title: string }) {
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-amber-400 shrink-0" />
                 <span className="text-slate-300">
                   <span className="font-bold">{c.req.label}</span>
-                  <span className="text-slate-500"> — {c.req.verdict}, partial coverage. Missing: </span>
+                  <span className="text-slate-500"> - {c.req.verdict}, partial coverage. Missing: </span>
                   <span className="font-mono text-amber-400">{c.missingActions.join(", ")}</span>
                 </span>
               </div>
             );
           }
-          // gap — deferred or never selected
+          // gap - deferred or never selected
           return (
             <div key={c.req.id} className="flex items-start gap-2 text-[11px]">
               <AlertCircle className="h-3.5 w-3.5 mt-0.5 text-red-400 shrink-0" />
               <span className="text-slate-300">
                 <span className="font-bold">{c.req.label}</span>
-                <span className="text-slate-500"> — {c.req.verdict}, deferred. Implementing actions: </span>
+                <span className="text-slate-500"> - {c.req.verdict}, deferred. Implementing actions: </span>
                 <span className="font-mono text-red-400">{c.expectedActions.join(" or ")}</span>
               </span>
             </div>
@@ -444,7 +461,7 @@ function PlanCoveragePanel({ title }: { title: string }) {
 
 // HintBlock is a collapsible "reveal answer" panel rendered inside step
 // descriptions where the YAML contains a :::hint Title / ::: fence.
-// Default state is collapsed — the student has to click to see the answer.
+// Default state is collapsed - the student has to click to see the answer.
 //
 // Hint bodies are split the same way as step descriptions, so commands
 // inside hints get the same copy + Run buttons (long tshark / nmap /
@@ -532,6 +549,8 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
                   runId={id}
                   runningId={runningId}
                   onRun={onRun}
+                  cli={seg.cli}
+                  copyOnly={seg.copyOnly}
                 />
               );
             }
@@ -564,7 +583,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
             // trackPicker / trackOnly inside a :::hint isn't a
             // pattern any lab uses today; skip silently rather than
             // render a broken sub-tree.
-            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "icon") {
+            if (seg.type === "trackPicker" || seg.type === "trackOnly" || seg.type === "generateTrafficButton" || seg.type === "validationReport" || seg.type === "icon") {
               return null;
             }
             if (seg.type === "hint") {
@@ -590,7 +609,7 @@ function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenarioId }: H
   );
 }
 
-// Plan summary panel rendered in Exercise 3 Phase 3 — shows selected and
+// Plan summary panel rendered in Exercise 3 Phase 3 - shows selected and
 // unselected remediation actions as styled cards rather than markdown text.
 function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
   const [showUnselected, setShowUnselected] = useState(false);
@@ -601,7 +620,7 @@ function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
     <div className="space-y-3">
       <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 p-4">
         <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-3">
-          Your Remediation Plan — {plan.selectedActions.length} actions selected
+          Your Remediation Plan - {plan.selectedActions.length} actions selected
         </div>
         <div className="space-y-2">
           {plan.selectedSummary.map((a) => (
@@ -610,12 +629,12 @@ function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
         </div>
         {plan.includeDpi && (
           <div className="mt-3 rounded border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
-            <span className="font-bold">ICS DPI enabled</span> — containd will filter by Modbus/DNP3 function code, not just port number
+            <span className="font-bold">ICS DPI enabled</span> - containd will filter by Modbus/DNP3 function code, not just port number
           </div>
         )}
         {plan.enableLogging && (
           <div className="mt-2 rounded border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
-            <span className="font-bold">Logging enabled</span> — set <code className="bg-slate-800 px-1 rounded text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
+            <span className="font-bold">Logging enabled</span> - set <code className="bg-slate-800 px-1 rounded text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
           </div>
         )}
       </div>
@@ -628,7 +647,7 @@ function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
           >
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Not selected — {plan.unselectedSummary.length} actions deferred
+                Not selected - {plan.unselectedSummary.length} actions deferred
               </span>
             </div>
             <span className="text-[10px] text-slate-600">{showUnselected ? "hide" : "show"}</span>
@@ -659,7 +678,7 @@ function PlanActionCard({ action, selected }: { action: ActionSummary; selected:
       <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
         selected ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-500"
       }`}>
-        {selected ? "✓" : "—"}
+        {selected ? "✓" : "-"}
       </div>
       <div className="min-w-0">
         <div className={`text-[11px] font-bold ${selected ? "text-sky-300" : "text-slate-500"}`}>
@@ -682,7 +701,7 @@ const PHASE3_TITLES = ["create minimal", "phase 3"];
 const PHASE5_TITLES = ["validate allowed", "phase 5"];
 const PHASE6_TITLES = ["validate blocked", "phase 6"];
 
-// Scenarios whose steps actually exercise the firewall — the policy
+// Scenarios whose steps actually exercise the firewall - the policy
 // action buttons (Apply Hardened / Apply Your Plan / Reset to Weak)
 // render here. The planning labs (1.2 baseline, 1.3 requirements,
 // 1.4 plan) are intentionally excluded because policy state changes
@@ -713,21 +732,21 @@ function injectDynamicContent(
     const ruleTable = renderRuleTable(plan);
 
     const noPlan = !plan.hasRemediationPlan
-      ? `You have not completed a remediation plan yet. The rules below are the minimum baseline — RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/remediation-planning) exercise to build a plan that drives additional rules.\n\n`
+      ? `You have not completed a remediation plan yet. The rules below are the minimum baseline - RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/remediation-planning) exercise to build a plan that drives additional rules.\n\n`
       : "";
 
     // Phase 3's generated description has to re-emit the :::guided
     // / :::technical fork itself because injectDynamicContent
     // entirely replaces the YAML for this step (the YAML edits
     // wouldn't survive otherwise). Same intent as the static
-    // forks in 2.3 step 4 / 2.2 step 7 — guided students walk
+    // forks in 2.3 step 4 / 2.2 step 7 - guided students walk
     // the table to see what landed; technical students treat the
     // table as the spec they're authoring against.
     return `The six rules below are the contract for what cross-zone
 traffic the substation must allow. Everything else stays denied.
 
 ${noPlan}:::guided
-Click **Apply Hardened** in the side panel to push the canned
+Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
 reference, or **Apply Your Plan** to push the policy built from
 your Lab 1.4 picks. Then walk the rule table below and confirm
 each row is present in containd's web UI
@@ -737,7 +756,7 @@ the policy matters as much as *how* it gets there.
 :::
 
 :::technical
-Author these rules in containd directly — your choice of the web
+Author these rules in containd directly - your choice of the web
 UI or the appliance CLI. The banner above will switch to
 "Your custom policy" once your commit lands. The JSON schema and
 CLI walkthrough are in the hints below.
@@ -750,7 +769,7 @@ ${ruleTable}
 > **Critical:** RTAC rules are source-pinned to \`10.30.30.20\`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
 
 :::hint Creating rules via the containd CLI
-The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal (or SSH), type \`containd cli\` to enter the appliance shell, then:
+The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the \`fw-1\` terminal, type \`containd cli\` to enter the appliance shell, then:
 
     export config > /tmp/policy.json
     shell                   # drop to bash
@@ -769,12 +788,12 @@ Each rule object in \`firewall.rules\` looks like:
       "destZones": ["lan2"],
       "sources": ["10.30.30.20/32"],
       "protocols": [{"name": "tcp", "port": "502"}],
-      "ics": {},
+      "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
       "action": "ALLOW",
       "log": true
     }
 
-Tip: \`commit confirmed 60\` commits with auto-rollback after 60 seconds unless you type \`confirm\` — useful when pushing rules and you don't want to lock yourself out.
+Tip: \`commit confirmed 60\` commits with auto-rollback after 60 seconds unless you type \`confirm\` - useful when pushing rules and you don't want to lock yourself out.
 :::`;
   }
 
@@ -857,7 +876,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // both the description renderer (for trackOnly segments) and the
   // side panel (for chip + button de-emphasis) share one source.
   const { track: firewallTrack, setTrack: setFirewallTrack } = useFirewallTrack();
-  // policySource tracks how the active policy got applied — needed by
+  // policySource tracks how the active policy got applied - needed by
   // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
   // plan)" from "(your containd commit)". Survives page reloads
   // because it's a backend field.
@@ -877,7 +896,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // so leaving it null on those labs left the button stuck in the
   // disabled-with-tooltip state even when a plan existed (Codex
   // review on #74). The injectDynamicContent path stays scoped to
-  // firewall-implementation — only that lab actually uses the
+  // firewall-implementation - only that lab actually uses the
   // plan to rewrite step descriptions.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
     POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan() : null
@@ -942,7 +961,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       || exerciseNodes[0];
 
     if (!nodeId) {
-      setCmdLog((prev) => [`[ERROR] No target node for command — open terminal and run manually`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [`[ERROR] No target node for command - open terminal and run manually`, ...prev].slice(0, 100));
       return;
     }
 
@@ -997,7 +1016,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setCmdLog((prev) => [`[TRAFFIC] Generating ${durationSec}s of representative OT traffic...`, ...prev].slice(0, 100));
     try {
       await startTrafficGeneration(durationSec);
-      setCmdLog((prev) => [`[TRAFFIC] Generation started — ${durationSec}s of Modbus, DNP3, HTTP, NTP flows`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [`[TRAFFIC] Generation started - ${durationSec}s of Modbus, DNP3, HTTP, NTP flows`, ...prev].slice(0, 100));
       // Poll for completion
       const pollId = setInterval(async () => {
         try {
@@ -1005,7 +1024,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           if (!status.generating) {
             clearInterval(pollId);
             setGeneratingTraffic(false);
-            setCmdLog((prev) => [`[TRAFFIC] Complete — ${status.flows_generated || 0} flows generated`, ...prev].slice(0, 100));
+            setCmdLog((prev) => [`[TRAFFIC] Complete - ${status.flows_generated || 0} flows generated`, ...prev].slice(0, 100));
           }
         } catch { clearInterval(pollId); setGeneratingTraffic(false); }
       }, 3000);
@@ -1028,7 +1047,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             clearInterval(pollId);
             setCapturing(false);
             const url = getPcapDownloadUrl();
-            setCmdLog((prev) => [`[CAPTURE] Complete — download at ${url}`, ...prev].slice(0, 100));
+            setCmdLog((prev) => [`[CAPTURE] Complete - download at ${url}`, ...prev].slice(0, 100));
           }
         } catch { clearInterval(pollId); setCapturing(false); }
       }, 3000);
@@ -1107,7 +1126,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const impact = res.process_impact || res.detail || "";
       const succeeded = res.result === "executed" || res.result === "success";
       const label = succeeded ? "SUCCEEDED" : "BLOCKED";
-      const msg = `[${label}] ${deviceLabel(device)} — ${command}: ${impact}`;
+      const msg = `[${label}] ${deviceLabel(device)} - ${command}: ${impact}`;
       setCmdLog((prev) => [msg, ...prev].slice(0, 20));
       setTimeout(pollState, 500);
     } catch (e) {
@@ -1298,14 +1317,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   </button>
                 )}
                 {!completedSteps.has(currentStep) && (() => {
-                  // Force-pick gate: Lab 2.2 step 1 can't advance
-                  // until the student has picked a firewall track.
-                  // The choice is persisted to localStorage so later
-                  // labs inherit it without re-prompting.
-                  const trackGate =
-                    scenario.id === "firewall-implementation" &&
-                    currentStep === 0 &&
-                    firewallTrack === null;
+                  // No force-pick: Lab 2.2 defaults to the Guided track
+                  // (see useFirewallTrack), so step 1 advances freely.
+                  // Students switch to Advanced from the picker / side
+                  // panel anytime; the choice persists to localStorage
+                  // so later firewall labs inherit it.
+                  const trackGate = false;
                   return (
                     <button
                       onClick={() => markStepDone(currentStep)}
@@ -1329,13 +1346,44 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 the step's expected_config; switches to an amber warning
                 with the action prompt when it doesn't. Replaces the
                 older inline "Config mismatch" notice that only fired
-                on mismatched state — the banner always renders so
+                on mismatched state - the banner always renders so
                 students can always tell what's loaded. */}
             <PolicyStatusBanner
               activeConfig={activeConfig}
               policySource={policySource}
               expectedConfig={step?.expected_config}
             />
+            {/* Per-step track chip: on the firewall labs (after the
+                picker on 2.2 step 1), show which path the student is on
+                and let them switch inline without hunting for the side
+                panel. */}
+            {POLICY_ACTION_SCENARIOS.includes(scenario.id) &&
+              !(scenario.id === "firewall-implementation" && currentStep === 0) && (
+              <div className="mb-3 flex items-center gap-2 text-[10px]">
+                <span className="font-medium uppercase tracking-wider text-slate-500">
+                  Track
+                </span>
+                <span
+                  className={`rounded px-2 py-0.5 font-bold uppercase tracking-wider ${
+                    firewallTrack === "technical"
+                      ? "bg-sky-950/60 text-sky-300"
+                      : "bg-emerald-950/60 text-emerald-300"
+                  }`}
+                >
+                  {firewallTrack === "technical" ? "Advanced" : "Guided"}
+                </span>
+                <button
+                  onClick={() =>
+                    setFirewallTrack(
+                      firewallTrack === "technical" ? "guided" : "technical",
+                    )
+                  }
+                  className="text-slate-500 underline transition-colors hover:text-slate-300"
+                >
+                  switch to {firewallTrack === "technical" ? "Guided" : "Advanced"}
+                </button>
+              </div>
+            )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
             {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
               step && titleMatches(step.title, PHASE3_TITLES) && (
@@ -1434,6 +1482,16 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         </div>
                       );
                     }
+                    if (seg.type === "validationReport") {
+                      return (
+                        <div
+                          key={`${scenario.id}-${currentStep}-${si}`}
+                          className="my-3"
+                        >
+                          <ValidationReportPanel />
+                        </div>
+                      );
+                    }
                     if (seg.type === "icon") {
                       return (
                         <div
@@ -1472,7 +1530,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                                 : "text-sky-400"
                             }`}
                           >
-                            {seg.track === "guided" ? "Guided track" : "Technical track"}
+                            {seg.track === "guided" ? "Guided track" : "Advanced track"}
                           </div>
                           {inner.map((sub, sj) => {
                             if (sub.type === "prose") {
@@ -1489,6 +1547,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                                   runId={`body-${ci}`}
                                   runningId={autoRunning}
                                   onRun={runHandler}
+                                  cli={sub.cli}
+                                  copyOnly={sub.copyOnly}
                                 />
                               );
                             }
@@ -1524,6 +1584,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         runId={`body-${ci}`}
                         runningId={autoRunning}
                         onRun={runHandler}
+                        cli={seg.cli}
+                        copyOnly={seg.copyOnly}
                       />
                     );
                   })}
@@ -1564,12 +1626,12 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </div>
             )}
 
-            {/* Decision panel — only for steps with action.type === "decision" */}
+            {/* Decision panel - only for steps with action.type === "decision" */}
             {step?.action?.type === "decision" && (
               <DecisionPanel exerciseId={scenario.id} action={step.action} />
             )}
 
-            {/* Shared notes — persists across all steps */}
+            {/* Shared notes - persists across all steps */}
             <div className="mt-3">
               <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Exercise Notes
@@ -1592,7 +1654,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 : "border-red-700 bg-red-950/40"
             }`}>
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Execution Result — {stepResult.action_type}
+                Execution Result - {stepResult.action_type}
               </div>
               <div className="space-y-1">
                 {stepResult.results.map((r, i) => (
@@ -1612,9 +1674,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             {/* containd policy actions + operational status. The
                 state indicator (what is currently running) lives in
                 PolicyStatusBanner at the top of the step content;
-                this side-panel section is just the actions. */}
+                this lower controls section is just the actions. */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
-              {/* Policy action buttons — shown on the four firewall-
+              {/* Policy action buttons - shown on the four firewall-
                   exercising scenarios (2.2 / 2.3 / 2.3-bonus / 2.4),
                   hidden in the planning labs (1.2 / 1.3 / 1.4) since
                   their steps don't actually drive policy state. */}
@@ -1622,7 +1684,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">
-                      containd NGFW — policy actions
+                      containd NGFW - policy actions
                     </div>
                     {firewallTrack && (
                       <div className="flex items-center gap-1.5 text-[9px]">
@@ -1633,7 +1695,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                               : "bg-sky-950/60 text-sky-300"
                           }`}
                         >
-                          {firewallTrack}
+                          {firewallTrack === "technical" ? "Advanced" : "Guided"}
                         </span>
                         <button
                           onClick={() =>
@@ -1650,7 +1712,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   </div>
                   {firewallTrack === "technical" && (
                     <div className="mb-2 text-[10px] italic text-slate-500">
-                      Technical track — commit your policy in containd directly.
+                      Advanced track - commit your policy in containd directly.
                       Buttons below are a guided fallback.
                     </div>
                   )}
@@ -1671,7 +1733,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {/* Apply Your Plan: push the policy built from the
                         student's Lab 1.4 picks. Disabled-with-tooltip
                         when no plan exists, rather than silently
-                        hidden — students should see it as an option
+                        hidden - students should see it as an option
                         and learn what unlocks it. */}
                     {dynamicPlan?.hasRemediationPlan ? (
                       <button
@@ -1761,7 +1823,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           </div>
 
-          {/* Command log — persistent, scrollable */}
+          {/* Command log - persistent, scrollable */}
           {cmdLog.length > 0 && (
             <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 max-h-64 overflow-y-auto">
               <div className="flex items-center justify-between mb-1">
@@ -2107,13 +2169,13 @@ function ExerciseSummary({
           <div className="rounded border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Firewall Config</div>
             <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
-              {activeConfig || "—"}
+              {activeConfig || "-"}
             </div>
           </div>
           <div className="rounded border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes</div>
             <div className="text-lg font-bold text-slate-300">
-              {notes ? `${notes.split("\n").length} lines` : "—"}
+              {notes ? `${notes.split("\n").length} lines` : "-"}
             </div>
           </div>
         </div>

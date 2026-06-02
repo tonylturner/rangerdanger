@@ -1,7 +1,7 @@
 id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
-summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional sidebars (15 min)."
+summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks (15 min)."
 description: >
   In Lab 2.2 you built a least-privilege firewall policy. This
   exercise stress-tests it against a DNP3 Direct Operate (FC05)
@@ -26,10 +26,10 @@ description: >
   defense in depth, and re-test shows either one is sufficient.
 
   Modbus FC6 (regulator tap override) and Modbus FC5 (direct
-  breaker trip) are available as optional sidebar attacks within
+  breaker trip) are available as optional bonus attacks within
   the same step. Modbus is real on these device classes (mostly
   for HMI integration) and the DPI lesson generalizes; the
-  sidebars exist for instructors who want to demonstrate "the
+  optional attacks exist for instructors who want to demonstrate "the
   same defense closes both protocols" or for cyber-fluent students
   who finish the primary attack early.
 nodes:
@@ -211,7 +211,7 @@ steps:
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
       to reset the lab state, or click **Reset Lab** below. This
       restores every device touched by the primary attack and any
-      optional sidebar attacks you ran:
+      optional bonus attacks you ran:
 
       - Relay: clear fault, unlock, close substation breaker
       - Regulator: set to Auto, tap to 0
@@ -256,7 +256,7 @@ steps:
       policy) before the re-test will work.
 
       :::guided
-      Click **Apply Hardened** in the side panel to push the canned
+      Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
       reference policy, or **Apply Your Plan** if you built a
       custom policy in Lab 2.2.
       :::
@@ -264,8 +264,15 @@ steps:
       :::technical
       Author your hardened policy in containd's web UI or CLI and
       commit it. The banner will switch to "Your custom policy"
-      when your commit is live. (If you get stuck, the side-panel
-      buttons are still available as a guided fallback.)
+      when your commit is live. (If you get stuck, the **Apply Hardened**
+      button below the step is still available as a guided fallback.)
+
+      The containd authoring details are in Lab 2.2's "Creating rules
+      via the Web UI" hint. One gotcha that bites here specifically:
+      an **ICS Protocol Filter** rule defaults to **Rule Mode: Learning
+      (passive)**, which only observes. Set it to **Enforcement
+      (active)** or the DNP3 Direct Operate restriction won't actually
+      block this attack.
       :::
 
       The hardened policy combines two defense-in-depth layers:
@@ -273,14 +280,15 @@ steps:
       - **L4 source-pinning:** only the RTAC (`10.30.30.20`) can reach
         field devices on Modbus 502 and DNP3 20000. Enterprise and
         vendor sources are blocked at the perimeter - this alone
-        closes the primary DNP3 attack and both Modbus sidebars.
-      - **ICS DPI:** DNP3 Direct Operate (FC05) restricted to the
-        RTAC; Modbus writes (FC5/6/16) restricted to the RTAC even
-        on flows where reads are allowed. This catches the same
-        attacks if the L4 source pin is ever loosened for
-        monitoring access - e.g., letting the engineering
+        closes the primary DNP3 attack and both optional Modbus attacks.
+      - **ICS DPI:** DNP3 Direct Operate - both FC05 and FC06 (No
+        Ack) - restricted to the RTAC; Modbus writes (FC5/6/16)
+        restricted to the RTAC even on flows where reads are allowed.
+        This catches the same attacks if the L4 source pin is ever
+        loosened for monitoring access - e.g., letting the engineering
         workstation read RTAC tags would punch through L4, but
-        DPI keeps "reads yes, writes no."
+        DPI keeps "reads yes, writes no." (The No-Ack evasion variant
+        is covered in the re-test step's optional hint.)
 
       Either layer alone breaks each attack. Together they're
       defense in depth - the re-test step demonstrates this with a
@@ -340,7 +348,7 @@ steps:
       :::
 
       :::hint Optional: confirm Modbus is blocked too
-      If you ran either of the Modbus sidebar attacks in Step 2,
+      If you ran either of the optional Modbus attacks in Step 2,
       repeat them now under the hardened policy - both also time
       out at the L4 perimeter. The same source-pin rule that
       blocked DNP3 above (only `10.30.30.20`/RTAC can reach field
@@ -359,6 +367,40 @@ steps:
       DPI gives you the same defense if the L4 pin ever has to
       loosen - for example to allow eng-ws read-only access. DPI
       can say *"reads yes, writes no"*; port-only filtering can't.
+      :::
+
+      :::hint Optional: try to evade DPI with Direct Operate No Ack
+      A real attacker who suspects function-code filtering will try a
+      variant. DNP3 has two Direct Operate verbs: **FC05 Direct
+      Operate** (the one you used, which expects a response) and
+      **FC06 Direct Operate No Ack**, which performs the same control
+      write but tells the outstation *not* to reply. An attacker reaches
+      for FC06 to (a) slip past a signature that only matched FC05, and
+      (b) stay quieter - no response packet to notice.
+
+      `dnp3cmd` exposes it with `-no-ack`. From Kali, against the
+      recloser:
+
+          dnp3cmd 10.40.40.21:20000 -a 2 -no-ack crob 1 latch-off
+
+      Under the **hardened** policy this still fails - and it's worth
+      understanding *why* at each layer:
+
+      - **L4 source-pin** doesn't care about function codes at all. FC05
+        and FC06 ride the same TCP/20000 from the same blocked source,
+        so the packet never reaches the outstation regardless.
+      - **ICS DPI** would catch it even if L4 were loosened: containd's
+        DNP3 Direct Operate restriction matches **both** FC05 and FC06,
+        precisely because No Ack is the obvious evasion move. Function-
+        code filtering that only listed FC05 would be a paper defense.
+
+      The lesson: enumerate the *whole* family of dangerous verbs, not
+      just the textbook one. A control-write restriction that misses the
+      No-Ack variant is the kind of gap an attacker probes for first.
+
+      For comparison, send the same command under the **weak** baseline
+      (Reset Lab, then re-apply weak) and it executes silently with no
+      reply - the No-Ack outage with no acknowledgement to betray it.
       :::
     action:
       type: command

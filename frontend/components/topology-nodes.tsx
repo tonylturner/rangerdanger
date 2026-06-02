@@ -42,7 +42,7 @@ function UbuntuIcon({ size = 28, color = "currentColor" }: { size?: number; colo
   );
 }
 
-// Kali Linux dragon silhouette — inline SVG so `color` prop flows
+// Kali Linux dragon silhouette - inline SVG so `color` prop flows
 // through as `fill` via currentColor. Paths extracted from the
 // official Kali dragon icon (commons.wikimedia.org).
 function KaliIcon({ size = 28, color = "currentColor" }: { size?: number; color?: string }) {
@@ -88,22 +88,22 @@ const LucideClock: IconComponent = ({ size, color }) => <Clock size={size} color
 
 // Icon mapping for node types
 const nodeTypeIcons: Record<string, IconComponent> = {
-  // Firewall — keep as shield
+  // Firewall - keep as shield
   containd_ngfw: LucideShield,
   opnsense_external: LucideShield,
 
-  // Stub/fake Go services — Docker whale
+  // Stub/fake Go services - Docker whale
   relay_sim: DockerIcon,
   recloser_sim: DockerIcon,
   regulator_sim: DockerIcon,
   capbank_sim: DockerIcon,
   rtac_sim: DockerIcon,
 
-  // OT infrastructure sims — distinctive icons
+  // OT infrastructure sims - distinctive icons
   historian_sim: LucideDatabase,
   gps_sim: LucideSatellite,
 
-  // Full Linux containers — Tux penguin
+  // Full Linux containers - Tux penguin
   corp_workstation: UbuntuIcon,
   vendor_jumpbox: UbuntuIcon,
   eng_workstation: UbuntuIcon,
@@ -111,7 +111,7 @@ const nodeTypeIcons: Record<string, IconComponent> = {
   jump_host: UbuntuIcon,
   ubuntu_jumpbox: UbuntuIcon,
 
-  // FUXA HMI — monitor (real SCADA application)
+  // FUXA HMI - monitor (real SCADA application)
   fuxa_hmi: LucideMonitor,
   hmi_view: LucideMonitor,
   hmi_control: LucideMonitor,
@@ -230,7 +230,7 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
       >
         <Icon size={28} color={colors.text} />
 
-        {/* Live status dot — only rendered for nodes whose health
+        {/* Live status dot - only rendered for nodes whose health
             comes from a real probe (set in useStyledGraph from
             workshopStatus). Hover the dot to see which API endpoint
             backs it. */}
@@ -254,12 +254,12 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
           </Tooltip>
         )}
 
-        {/* Multi-homed badge — shown only when this node has
+        {/* Multi-homed badge - shown only when this node has
             interfaces in more than one zone. */}
         {multiHomed && (
           <div
             className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow"
-            title={`Multi-homed: also has an interface in ${data.multiHomedZones!.join(", ")}. Cross-zone traffic still traverses the firewall — see inspector.`}
+            title={`Multi-homed: also has an interface in ${data.multiHomedZones!.join(", ")}. Cross-zone traffic still traverses the firewall - see inspector.`}
           >
             MULTI
           </div>
@@ -294,7 +294,7 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
       }`}
       style={{ minWidth: 160 }}
     >
-      {/* Firewall icon container — Master Control disc.
+      {/* Firewall icon container - Master Control disc.
           Circular Tron-style node, ~28% larger than host discs so
           it visually anchors the entire grid. Red warning ring on
           the outside (control plane = critical), warm amber core
@@ -313,7 +313,7 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
             : "0 0 30px rgba(239, 68, 68, 0.75), 0 0 68px rgba(239, 68, 68, 0.32), inset 0 0 18px rgba(245, 158, 11, 0.45)",
         }}
       >
-        {/* Connection handles — invisible, pinned to the icon box edges.
+        {/* Connection handles - invisible, pinned to the icon box edges.
             The left handle is type="target" so 62443-view conduit edges
             (zone→firewall) can attach there. Default-view edges use
             "bottom" (source) for firewall→zone. */}
@@ -344,7 +344,7 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
           </Tooltip>
         )}
 
-        {/* Substation vector icon — represents the lab system the
+        {/* Substation vector icon - represents the lab system the
             firewall guards. Transparent variant so the radial amber
             fill behind it shows through. drop-shadow gives the icon
             its own glow on top of the container's halo. */}
@@ -366,7 +366,7 @@ export const FirewallNode = memo(({ data, selected }: NodeProps<HostNodeData>) =
         <div className="text-[10px] text-slate-500">NGFW</div>
       </div>
 
-      {/* IEC 62443 conduit SL assessment — only rendered when the
+      {/* IEC 62443 conduit SL assessment - only rendered when the
           62443 layout passes conduitSL/targetSL in the data. Shows
           whether the conduit meets the required SL of the zones it
           connects. Green = met, red = gap. Tooltip explains why. */}
@@ -427,7 +427,7 @@ type ZoneNodeData = {
   subnet?: string;
 };
 
-// Zone Group Node — a 1×1 invisible anchor used only as an edge
+// Zone Group Node - a 1×1 invisible anchor used only as an edge
 // target/source so conduits have a fixed connection point. Handles
 // on all four sides so the same anchor works for vertical conduits
 // (default view) and horizontal conduits (IEC 62443 view).

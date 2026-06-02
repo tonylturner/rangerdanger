@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSubstationState, sendLabControl } from "../lib/api";
 
-// Load Simulator — a training-infrastructure control for exploring the OpenDSS
+// Load Simulator - a training-infrastructure control for exploring the OpenDSS
 // physics engine. It drives the feeder loads (general/critical kW + PF) via the
 // lab-control override; it is OFF until a learner engages it, so it never
 // changes baseline RangerDanger behavior. Distinct from the SCADA controls
-// below: it manipulates LOAD and grid state only — devices live on the
+// below: it manipulates LOAD and grid state only - devices live on the
 // Supervisory Control tab.
 //
 // Styling matches the app's slate/Inter/font-mono theme; the lime (#c6f24e)
@@ -68,7 +68,7 @@ export function LoadSimulator() {
       return !e;
     });
 
-  // live telemetry for the status string — every 500ms, even collapsed
+  // live telemetry for the status string - every 500ms, even collapsed
   useEffect(() => {
     let live = true;
     const poll = async () => {
@@ -178,7 +178,7 @@ export function LoadSimulator() {
     setLastChange({ label: `Preset: ${preset.label}`, ts: Date.now() });
   };
 
-  // Large load drop — single-shot event, not a steady state.
+  // Large load drop - single-shot event, not a steady state.
   const runLoadDrop = () => {
     cancelAnim();
     setActivePreset("loaddrop");
@@ -254,7 +254,7 @@ export function LoadSimulator() {
       className="rounded-lg border border-slate-800 bg-slate-900/70"
       style={{ borderTop: "2px dashed #334155" }}
     >
-      {/* Collapsed row — always visible */}
+      {/* Collapsed row - always visible */}
       <div className="flex items-center gap-3 px-4" style={{ minHeight: 50 }}>
         <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-[#c6f24e]">
           Load Simulator
@@ -294,7 +294,7 @@ export function LoadSimulator() {
                 <button
                   key={p.id}
                   onClick={() => clickPreset(p)}
-                  title={p.event ? "Simulates NERC Level 3 Alert scenario — sudden customer-initiated load reduction (May 2026)." : undefined}
+                  title={p.event ? "Simulates NERC Level 3 Alert scenario - sudden customer-initiated load reduction (May 2026)." : undefined}
                   className={`rounded-md border px-3 py-2 text-[12px] transition-colors ${presetClass(p, active)}`}
                 >
                   {p.label}
@@ -319,7 +319,7 @@ export function LoadSimulator() {
 
           {/* audit line */}
           <div className="mt-3 font-mono text-[11px] text-slate-500">
-            Last change: <span className={lastChange ? "text-slate-400" : "text-slate-600"}>{lastChange ? lastChange.label : "— none —"}</span>
+            Last change: <span className={lastChange ? "text-slate-400" : "text-slate-600"}>{lastChange ? lastChange.label : "- none -"}</span>
             {lastChange ? <> &middot; {agoSec}s ago</> : null} &middot; <span className="text-[#c6f24e]">lab-control</span>
           </div>
           <div className="mt-1 text-[10px] text-slate-600">
@@ -328,7 +328,7 @@ export function LoadSimulator() {
         </div>
       )}
 
-      {/* Reset modal — scoped to the Load Simulator only */}
+      {/* Reset modal - scoped to the Load Simulator only */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setModal(false)}>
           <div
@@ -339,7 +339,7 @@ export function LoadSimulator() {
             <div className="mb-2 text-sm font-bold text-slate-200">Reset the Load Simulator?</div>
             <div className="text-[12px] leading-relaxed text-slate-400">
               Returns the feeder load to its default (General 500 kW / Critical 200 kW) and clears any active preset. This resets{" "}
-              <span className="text-[#c6f24e]">only the Load Simulator</span> — breakers, recloser, regulator, cap bank, faults, and
+              <span className="text-[#c6f24e]">only the Load Simulator</span> - breakers, recloser, regulator, cap bank, faults, and
               lockouts are untouched (use Supervisory Control for those).
             </div>
             <div className="mt-2 text-[11px] text-slate-500">Current exercise progress is preserved.</div>
