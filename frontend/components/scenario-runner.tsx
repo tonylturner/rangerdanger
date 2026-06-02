@@ -713,6 +713,20 @@ const POLICY_ACTION_SCENARIOS = [
   "validation-evidence",         // Lab 2.4
 ];
 
+// Scenarios where the "Validate Exercise" button is meaningful - i.e. the
+// per-scenario validator checks live state that genuinely reflects what the
+// student did (policy applied, attack blocked, operations preserved). The
+// planning/analysis labs (1.2 baseline, 1.3 requirements, 1.4 plan) are
+// excluded: their "work" is the decision blocks and findings, not a grid-state
+// check, so a validator there can only report "is the lab healthy" - a near-
+// always-PASS that misleads. The button is hidden on those.
+const VALIDATE_BUTTON_SCENARIOS = [
+  "firewall-implementation",     // Lab 2.2
+  "hardening-configurations",    // Lab 2.3
+  "vendor-rdp-compromise",       // Lab 2.3-bonus
+  "validation-evidence",         // Lab 2.4
+];
+
 function titleMatches(title: string, fragments: string[]): boolean {
   const lower = title.toLowerCase();
   return fragments.some((f) => lower.includes(f));
@@ -1893,7 +1907,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             </div>
           )}
 
-          {/* Validation */}
+          {/* Validation - only on labs whose validator checks meaningful live
+              state (see VALIDATE_BUTTON_SCENARIOS). Hidden on planning/analysis
+              labs where the validator can only report "lab is healthy". */}
+          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && (
           <div className="flex items-center gap-3">
             <button
               onClick={handleValidate}
@@ -1910,8 +1927,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </span>
             )}
           </div>
+          )}
 
-          {validation && (
+          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && validation && (
             <div className={`rounded-lg border p-3 ${
               validation.outcome === "PASS"
                 ? "border-green-700 bg-green-950/40"

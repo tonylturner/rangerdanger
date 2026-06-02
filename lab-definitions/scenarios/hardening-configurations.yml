@@ -72,6 +72,10 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
+      > **Tip:** click **Show terminal** (top right) to run these from an
+      > embedded shell on the **Kali** box, or use the **copy** button on each
+      > command block and paste into your own terminal.
+
       From Kali (`10.10.10.50`, enterprise zone), under the weak
       baseline, send a DNP3 Direct Operate (FC05) to the recloser
       (`10.40.40.21`, DNP3 outstation address 2). Two CROB writes:
