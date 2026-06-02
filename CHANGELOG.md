@@ -6,6 +6,43 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **DNP3 link-frame CRC corruption.** `dnp3go`'s `WriteLinkFrame` appended
+  each 16-byte data block's CRC into the payload's own backing array,
+  overwriting the first two bytes of every following block. Any DNP3
+  response longer than one link block was corrupted on the wire — so
+  `dnp3poll` against the RTAC (15 binary + 8 analog inputs) returned
+  garbage analog values and dropped binary inputs past the first block.
+  Field-device polls now return correct multi-block data. Added a
+  payload-mutation regression guard and wire-level integration tests
+  (`services/dnp3wire`) using the real sim point maps.
+
+### Added
+
+- **DNP3 control modes in `dnp3cmd`.** Beyond the default Direct Operate
+  (FC05), the tool now supports `-sbo` (Select-Before-Operate, FC03 then
+  FC04) and `-no-ack` (Direct Operate No Ack, FC06). The outstation
+  already implemented SBO but no client could reach it; FC06 is a new
+  fire-and-forget control path.
+- **DNP3 outstation realism.** Outstations now set IIN1.7 (Device Restart)
+  on the first response per connection and accumulate `IIN2 ObjectUnknown`
+  on multi-object requests instead of discarding earlier valid output.
+- **Lab 2.3 FC06 evasion hint.** The hardened re-test step now teaches
+  Direct Operate No Ack as a DPI-evasion technique — students run
+  `dnp3cmd ... -no-ack` and see it blocked at both L4 and DPI (containd's
+  Direct Operate rule covers FC05 and FC06). Pairs with the containd IDS
+  fix that makes this claim true.
+
+### Changed
+
+- **Knowledge base DNP3 docs corrected.** The `dnp3poll`/`dnp3cmd` command
+  syntax in the tool reference never matched the real CLIs (nonexistent
+  `-o trip` / `-s` flags); replaced with the actual
+  `-a <addr> crob <index> <action>` syntax the lab scenarios use, and
+  documented the new `-sbo`/`-no-ack` modes and FC06 in the DNP3 protocol
+  section.
+
 ## [v0.1.25] - 2026-06-01
 
 Adds the **Load Simulator** — a training-infrastructure panel for exploring the
