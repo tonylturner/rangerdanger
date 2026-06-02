@@ -34,7 +34,7 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 ## Student journey
 
-Each lab builds on the previous. Selections in early labs flow into later ones; your Lab 1.4 remediation plan rewrites the steps you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. ≈135 minutes for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus 15 minutes for the optional 2.3-bonus.
+Each lab builds on the previous. Selections in early labs flow into later ones; your Lab 1.4 remediation plan rewrites the steps you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. ≈73 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
 
 | Step | Lab | What you do |
 |---|---|---|
