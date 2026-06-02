@@ -937,8 +937,9 @@ You use \`mbpoll\` on the Kali box to read and write these registers. The differ
 DNP3 uses a master-outstation model. The master (RTAC or SCADA system) initiates requests to outstations (field devices). Key operations:
 
 - **Read** (FC01): retrieve data objects from the outstation
-- **Direct Operate** (FC05): command an action (open breaker, change setpoint)
-- **Select-Before-Operate** (FC03/FC04): two-step confirmation for safety-critical operations. The master selects the control point, the outstation confirms readiness, then the master issues the operate. SBO is recommended for critical controls but not universally deployed.
+- **Direct Operate** (FC05): command an action (open breaker, change setpoint) in a single message, with the outstation returning a status response
+- **Direct Operate No Ack** (FC06): the same single-message control write, but the outstation sends **no response**. Attackers favor it because it is quieter (no reply packet to notice) and because a naive function-code filter that only lists FC05 will miss it - which is exactly why a correct DPI rule must cover both FC05 and FC06
+- **Select-Before-Operate** (FC03/FC04): two-step confirmation for safety-critical operations. The master selects the control point, the outstation confirms readiness, then the master issues the operate. SBO is recommended for critical controls but not universally deployed. The lab's \`dnp3cmd\` supports all three control modes (\`-sbo\` for Select-Before-Operate, \`-no-ack\` for FC06, and Direct Operate by default).
 
 ### Security (or Lack Thereof)
 
@@ -969,7 +970,7 @@ You can use DNP3 tools on the Kali box to send Direct Operate commands, tripping
 
 ### See Also
 
-- [What is ICS DPI?](#ics-dpi) - DNP3 Direct Operate (FC05) restriction is what containd's DPI rule for DNP3 enforces
+- [What is ICS DPI?](#ics-dpi) - the DNP3 Direct Operate restriction (FC05 and FC06 No Ack) is what containd's DPI rule for DNP3 enforces
 - [\`dnp3poll\` & \`dnp3cmd\` - DNP3 Tools](#tool-dnp3) - the CLI tools used in the labs
 - [IEC 61850 and GOOSE](#iec-61850-goose) - the modern standard sometimes deployed alongside or instead of DNP3
 - [The OT Kill Chain](#ot-kill-chain) - the Industroyer historical example mirrors the Lab 2.3 DNP3 attack`,
@@ -1161,17 +1162,18 @@ The value at the end is written to the register.
 
 ### Reading Outstation Data with dnp3poll
 
-To poll the relay outstation for its current data:
+To poll the relay outstation for its current data (a Class 0 integrity poll, FC01):
 
 \`\`\`bash
-dnp3poll -m 100 -s 1 10.40.40.20:20000
+dnp3poll 10.40.40.20:20000 -a 1
 \`\`\`
 
 Flag breakdown:
 
-- \`-m 100\` : master address (use 100 for the Kali box)
-- \`-s 1\` : outstation (slave) address
-- Last argument: target IP and port
+- First argument: target \`IP:port\`
+- \`-a 1\` : outstation address (the device's DNP3 address)
+- \`-m 100\` : master address, optional (defaults to 100, the Kali box)
+- \`-t 3s\` : connection timeout, optional
 
 ### Outstation Addresses in the Lab
 
@@ -1184,30 +1186,42 @@ Flag breakdown:
 
 ### Sending Commands with dnp3cmd
 
-To send a Direct Operate (CROB) command to trip the relay breaker:
+\`dnp3cmd\` takes the target, the outstation address (\`-a\`), and a command verb. The \`crob\` verb sends a Control Relay Output Block to a binary output point; \`analog\` sends an analog output.
+
+Trip the relay breaker (binary output index 0):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 1 -o trip 10.40.40.20:20000
+dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip
 \`\`\`
 
-To disable auto-reclose on the recloser:
+Disable auto-reclose on the recloser (binary output index 1):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 2 -o disable-reclose 10.40.40.21:20000
+dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 \`\`\`
 
-To change the regulator tap position:
+Change the regulator tap position (analog output index 0):
 
 \`\`\`bash
-dnp3cmd -m 100 -s 3 -o set-tap -v 10 10.40.40.22:20000
+dnp3cmd 10.40.40.22:20000 -a 3 analog 0 -16
 \`\`\`
 
-### Direct Operate vs. Select-Before-Operate
+CROB actions: \`trip\`, \`close\`, \`latch-on\`, \`latch-off\`, \`pulse-on\`, \`pulse-off\`.
 
-- **Direct Operate** (FC05): single-step command execution. The outstation acts immediately.
-- **Select-Before-Operate** (FC03/FC04): two-step. The master first selects the control point, the outstation confirms, then the master issues operate. Safer for critical operations.
+### Control Modes: Direct Operate, No Ack, and SBO
 
-The lab simulators accept Direct Operate commands, which is the more dangerous (and more commonly exploited) mode. A real substation should use SBO for safety-critical controls, but many do not.
+By default \`dnp3cmd\` sends **Direct Operate** (FC05). Two flags select the other modes:
+
+\`\`\`bash
+dnp3cmd 10.40.40.20:20000 -a 1 -sbo crob 0 trip       # Select-Before-Operate (FC03 then FC04)
+dnp3cmd 10.40.40.20:20000 -a 1 -no-ack crob 0 trip    # Direct Operate No Ack (FC06)
+\`\`\`
+
+- **Direct Operate** (FC05): single message, the outstation acts immediately and returns a status response.
+- **Direct Operate No Ack** (FC06): same single-message control write, but the outstation sends no response. Quieter for an attacker, and an evasion path against a filter that only lists FC05 - a correct DPI rule covers both.
+- **Select-Before-Operate** (FC03/FC04): two steps. The master selects the control point, the outstation confirms, then the master issues operate. Safer for critical operations.
+
+The lab simulators accept all three modes. Direct Operate is the more dangerous (and more commonly exploited) one. A real substation should use SBO for safety-critical controls, but many do not.
 
 > Under the hardened policy, DNP3 commands from any source other than the RTAC (10.30.30.20) are blocked by containd at the firewall.`,
       },
