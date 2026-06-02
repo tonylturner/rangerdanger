@@ -179,11 +179,12 @@ steps:
         - id: dnp3-dpi
           title: "Apply DNP3 ICS DPI - restrict Direct Operate"
           why: >
-            Configure containd to recognize DNP3 and block
-            Direct Operate (FC05 and the No-Ack variant FC06)
-            from sources other than the RTAC. Reads and integrity
-            polls stay available for monitoring. Closes the DNP3
-            command injection attack path at the protocol layer.
+            Configure containd to recognize DNP3 and block Direct
+            Operate (FC05 and the No-Ack variant FC06) at the protocol
+            layer - the RTAC's master only ever sends read/integrity
+            polls (FC01), so a DNP3 control write is illegitimate from
+            any source. Reads stay available for monitoring. Closes the
+            DNP3 command injection attack path.
           effort_hours: 80
           roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
           tags: ["dpi", "dnp3"]

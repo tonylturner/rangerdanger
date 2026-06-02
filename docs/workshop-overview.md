@@ -47,15 +47,19 @@ Each step's student input persists in browser localStorage and downstream labs r
 
 | Lab | ID | Name | Time | What it teaches |
 |---|---|---|---|---|
-| 1.2 | `baseline-assessment` | Baseline Traffic Analysis | 20 min | Capture cross-zone traffic + identify the critical conduits operations depend on. Step 6 commits five passive-observation findings; step 7 runs active probes that reveal latent exposure passive monitoring missed. |
-| 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | 20 min | Translate Lab 1.2 findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) per risk category, then commit a resourcing-readiness reality check (OT engineering capacity, firewall admin skills, vendor change windows, risk-acceptance authority). Closes with concrete success criteria for the hardened state. |
-| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | 25 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts and readiness flags from 1.3 drive per-action requirement badges and a sticky coverage summary. Selections drive Lab 2.2's content via the dynamic-content pipeline. |
-| 2.2 | `firewall-implementation` | Firewall Policy Implementation | 15 min | Apply a least-privilege containd policy from your plan - Guided track (one click) by default, or author the rules yourself on the Advanced track. Phase 3/5/6 step text adapts to the remediation choices made in Lab 1.4. |
-| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | 15 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). The defense-in-depth lesson combines L4 source-pinning with ICS DPI. Optional Modbus FC5/FC6 sidebar attacks demonstrate the same defense generalizes across protocols. |
-| 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | 15 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
-| 2.4 | `validation-evidence` | Testing & Validation | 15 min | Holistic positive/negative tests, manual evidence assembly into a change-board package (the operator-facing `scripts/validation-report.sh` produces an equivalent markdown deliverable), and a closing reflection on residual risk. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. |
+Times below are the **Guided-path golden-path** estimates (the in-app card chip and step-1 "Time budget" callout) - Advanced-track hints and optional bonus activities run longer. They match the `estimated_minutes` field in each scenario YAML.
 
-Total ≈ 110 min for the 6 core labs, +15 min for the bonus.
+| Lab | ID | Name | Time | What it teaches |
+|---|---|---|---|---|
+| 1.2 | `baseline-assessment` | Baseline Traffic Analysis | ~15 min | Capture cross-zone traffic + identify the critical conduits operations depend on. Step 6 commits five passive-observation findings; step 7 runs active probes that reveal latent exposure passive monitoring missed. |
+| 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | ~12 min | Translate Lab 1.2 findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) per risk category, then commit a resourcing-readiness reality check (OT engineering capacity, firewall admin skills, vendor change windows, risk-acceptance authority). Closes with concrete success criteria for the hardened state. |
+| 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~18 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts and readiness flags from 1.3 drive per-action requirement badges and a sticky coverage summary. Selections drive Lab 2.2's content via the dynamic-content pipeline. |
+| 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~12 min | Apply a least-privilege containd policy from your plan - Guided track (one click) by default, or author the rules yourself on the Advanced track. Phase 3/5/6 step text adapts to the remediation choices made in Lab 1.4. |
+| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~10 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). The defense-in-depth lesson combines L4 source-pinning with ICS DPI - including DNP3 function-code DPI that blocks Direct Operate even from the RTAC source. Optional Modbus FC5/FC6 sidebar attacks demonstrate the same defense generalizes across protocols. |
+| 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | ~12 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
+| 2.4 | `validation-evidence` | Testing & Validation | ~6 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the in-app equivalent of `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
+
+Total ≈ 73 min for the 6 core labs (Guided path), +12 min for the bonus.
 
 ## What's simulated
 
@@ -122,10 +126,12 @@ Two reference configurations ship with the lab:
   Enterprise→field is allowed, which is what makes the attack
   exercises possible. Students start here.
 - **`substation-improved.json`** - the target hardened state. Only
-  RTAC→field is allowed for controlled flows; Modbus write
-  function codes are denied from any source other than the RTAC.
-  Students compare their own designs against this and validate
-  remediation work against it in Lab 2.4.
+  the RTAC reaches field devices, and ICS DPI filters by function
+  code: Modbus writes (FC5/6) are allowed only from the RTAC, and
+  DNP3 Direct Operate (FC5/FC6) is blocked from *every* source -
+  the RTAC's master only ever polls (FC1), so a DNP3 control write
+  is illegitimate from anyone. Students compare their own designs
+  against this and validate remediation work against it in Lab 2.4.
 
 ## Single-student deployment
 

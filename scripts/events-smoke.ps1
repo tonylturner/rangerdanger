@@ -331,16 +331,25 @@ if (-not $nfqAlive) {
             OK "DNP3 FC5 (not in allowlist [1]) triggered block_flows entry for 10.30.30.20.10.40.40.20.20000"
         }
 
-        # Flush the DPI block so the RTAC's DNP3 reads resume, then restore
-        # the relay breaker the FC5 may have tripped on the first packet.
-        & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
-        }
-        Start-Sleep -Seconds 1
+        # Cleanup. The restore is itself a DNP3 FC5 (crob close), so it would
+        # be re-blocked under the hardened FC1-only policy - and could re-add
+        # a block_flows entry or be dropped outright, leaving the lab dirty.
+        # So drop back to the weak baseline FIRST (no DNP3 FC allowlist -> the
+        # close is allowed), restore the relay, THEN flush block_flows last.
+        # Ending on weak also matches the lab default gate 1 moved away from.
+        try {
+            Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
+                -ContentType 'application/json' -Body '{"config":"weak"}' `
+                -TimeoutSec 30 -ErrorAction Stop | Out-Null
+        } catch { }
+        Start-Sleep -Seconds 2
         & {
             $ErrorActionPreference = 'SilentlyContinue'
             docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close *>$null
+        }
+        & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
         }
     }
 }

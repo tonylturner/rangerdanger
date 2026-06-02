@@ -145,8 +145,8 @@ steps:
       | OT Ops → Field | Modbus (502), DNP3 (20000), HTTP (8080) - **RTAC only** | source-pin to `10.30.30.20` (1.3 verdict 4). HTTP/8080 is the field devices' lab-only status API the RTAC polls for health (`/api/state` on each device) - kept open because the RTAC reads it for liveness; would not exist on a production relay. |
 
       DPI layer (1.3 verdict 5):
-      - **Modbus**: RTAC may read (FC1–4) and write (FC5/6); other sources blocked at FC level.
-      - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate, FC06 No-Ack); other sources blocked.
+      - **Modbus**: RTAC may read (FC1–4) and write (FC5/6) - the RTAC issues legitimate Modbus setpoints; other sources blocked at FC level.
+      - **DNP3**: RTAC may poll (FC01 Read) only - its DNP3 master only sends integrity polls. Direct Operate (FC05) and No-Ack (FC06) are blocked for **every** source, including the RTAC, since no legitimate flow uses them. This is what the Lab 2.3 DPI lesson demonstrates.
       :::
 
   - title: "Resourcing reality check"
