@@ -17,6 +17,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Field-device polls now return correct multi-block data. Added a
   payload-mutation regression guard and wire-level integration tests
   (`services/dnp3wire`) using the real sim point maps.
+- **Validation report no longer claims PASS when probes were skipped.**
+  A probe whose source container couldn't be exec'd into (renamed,
+  stopped, or missing) was excluded from both the pass counts and the
+  totals, so a partially-running lab could report PASS while part of the
+  validation matrix never ran. Skipped probes are now counted and force
+  the result to FAIL, surfaced in the summary with a "bring the full
+  stack up and re-run" message.
 
 ### Added
 
@@ -25,9 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   FC04) and `-no-ack` (Direct Operate No Ack, FC06). The outstation
   already implemented SBO but no client could reach it; FC06 is a new
   fire-and-forget control path.
-- **DNP3 outstation realism.** Outstations now set IIN1.7 (Device Restart)
-  on the first response per connection and accumulate `IIN2 ObjectUnknown`
-  on multi-object requests instead of discarding earlier valid output.
+- **DNP3 outstation realism.** Outstations now report IIN1.7 (Device
+  Restart) once per device on the first response after start (device-wide
+  state, so a master that reconnects per poll sees it exactly once) and
+  accumulate `IIN2 ObjectUnknown` on multi-object requests instead of
+  discarding earlier valid output.
 - **Lab 2.3 FC06 evasion hint.** The hardened re-test step now teaches
   Direct Operate No Ack as a DPI-evasion technique — students run
   `dnp3cmd ... -no-ack` and see it blocked at both L4 and DPI (containd's
