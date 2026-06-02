@@ -65,6 +65,48 @@ type validationRow struct {
 	Pass       bool
 }
 
+// validationTally is the aggregated result of a probe matrix run.
+type validationTally struct {
+	authPass, authTotal     int
+	unauthPass, unauthTotal int
+	skipped                 int
+	pass                    bool
+}
+
+// tallyValidation aggregates probe rows into pass/total counts and the overall
+// pass/fail verdict.
+//
+// A "skipped" probe (its source container couldn't be exec'd into - renamed,
+// stopped, or missing) did not actually test anything, so it is counted
+// separately and excluded from the authorized/unauthorized pass ratios. It is
+// NOT treated as a pass: any skipped probe forces the overall result to FAIL,
+// because a report cannot honestly claim PASS when part of the validation
+// matrix never ran. (Earlier behavior silently dropped skipped rows, letting a
+// partially-running lab report PASS as long as the probes that did run matched.)
+func tallyValidation(rows []validationRow) validationTally {
+	var t validationTally
+	for _, r := range rows {
+		if r.Actual == "skipped" {
+			t.skipped++
+			continue
+		}
+		if r.Category == "authorized" {
+			t.authTotal++
+			if r.Pass {
+				t.authPass++
+			}
+		} else {
+			t.unauthTotal++
+			if r.Pass {
+				t.unauthPass++
+			}
+		}
+	}
+	t.pass = t.authPass == t.authTotal && t.unauthPass == t.unauthTotal &&
+		(t.authTotal+t.unauthTotal) > 0 && t.skipped == 0
+	return t
+}
+
 const validationProbeTimeoutSec = 3
 const validationPcapDurationSec = 8
 
@@ -131,23 +173,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	}
 	wg.Wait()
 
-	var authPass, authTotal, unauthPass, unauthTotal int
-	for _, r := range rows {
-		if r.Actual == "skipped" {
-			continue
-		}
-		if r.Category == "authorized" {
-			authTotal++
-			if r.Pass {
-				authPass++
-			}
-		} else {
-			unauthTotal++
-			if r.Pass {
-				unauthPass++
-			}
-		}
-	}
+	tally := tallyValidation(rows)
 
 	// Wait for the PCAP window to close, then analyze source IPs.
 	pcapSummary := "(PCAP capture unavailable)"
@@ -158,9 +184,11 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		pcapSummary = s.analyzePcapSources(ctx, cli, pcapPath)
 	}
 
-	result := authPass == authTotal && unauthPass == unauthTotal && (authTotal+unauthTotal) > 0
+	authPass, authTotal := tally.authPass, tally.authTotal
+	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
+	skipped, result := tally.skipped, tally.pass
 	md := renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
-		rows, authPass, authTotal, unauthPass, unauthTotal, result)
+		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
 
 	c.JSON(http.StatusOK, gin.H{
 		"markdown": md,
@@ -169,6 +197,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 			"authorized_total":  authTotal,
 			"unauthorized_pass": unauthPass,
 			"unauthorized_total": unauthTotal,
+			"skipped":           skipped,
 			"result":            map[bool]string{true: "PASS", false: "FAIL"}[result],
 		},
 		"active_config": active,
@@ -255,7 +284,7 @@ func (s *Server) execDetached(ctx context.Context, cli *client.Client, container
 }
 
 func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
-	rows []validationRow, authPass, authTotal, unauthPass, unauthTotal int, result bool) string {
+	rows []validationRow, authPass, authTotal, unauthPass, unauthTotal, skipped int, result bool) string {
 
 	policyLabel := map[string]string{
 		"weak":     "weak baseline",
@@ -279,9 +308,15 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	fmt.Fprintf(&b, "## Summary\n\n| Category | Confirmed | Total |\n|---|---|---|\n")
 	fmt.Fprintf(&b, "| **Authorized flows working** | %d | %d |\n", authPass, authTotal)
-	fmt.Fprintf(&b, "| **Unauthorized flows blocked** | %d | %d |\n\n", unauthPass, unauthTotal)
+	fmt.Fprintf(&b, "| **Unauthorized flows blocked** | %d | %d |\n", unauthPass, unauthTotal)
+	if skipped > 0 {
+		fmt.Fprintf(&b, "| **Probes skipped (did not run)** | %d | %d |\n", skipped, len(rows))
+	}
+	b.WriteString("\n")
 	if result {
 		fmt.Fprintf(&b, "**Result: PASS** - every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.\n\n")
+	} else if skipped > 0 {
+		fmt.Fprintf(&b, "**Result: FAIL** - %d probe(s) could not run (source container missing, renamed, or stopped - shown as ⊘ below), so the validation matrix did not fully execute. A report cannot claim PASS unless every probe ran. Bring the full lab stack up and re-run. Inspect any ✗ rows for genuine policy mismatches as well.\n\n", skipped)
 	} else {
 		fmt.Fprintf(&b, "**Result: FAIL** - one or more rows did not match the expected verdict. Inspect the ✗ rows below: an authorized flow that's blocked means a rule is too tight; an unauthorized flow that succeeds means a rule is too loose or missing.\n\n")
 	}

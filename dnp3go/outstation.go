@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -51,6 +52,14 @@ type OutstationConfig struct {
 
 	// Logger for protocol events. If nil, uses log.Printf.
 	Logger func(format string, args ...any)
+
+	// restartReported is device-wide (not per-connection) runtime state:
+	// IIN1.7 (Device Restart) is reported on the first response after the
+	// outstation starts, then cleared once any master has seen it. Keeping
+	// it here rather than in connState means a master that opens a fresh
+	// connection per poll (as Poll does) sees Device Restart exactly once,
+	// not on every connection.
+	restartReported atomic.Bool
 }
 
 func (c *OutstationConfig) logf(format string, args ...any) {
@@ -72,10 +81,9 @@ type sboEntry struct {
 
 // connState holds per-connection state.
 type connState struct {
-	mu          sync.Mutex
-	pending     *sboEntry
-	txSeq       uint8 // transport sequence counter
-	sentRestart bool  // whether IIN1.7 (Device Restart) has been cleared
+	mu      sync.Mutex
+	pending *sboEntry
+	txSeq   uint8 // transport sequence counter
 }
 
 // ListenAndServe starts a DNP3 TCP outstation on the given address (e.g., ":20000").
@@ -164,15 +172,14 @@ func handleConn(conn net.Conn, cfg *OutstationConfig) {
 			iin = uint16(IIN1NoFuncCode) << 8
 		}
 
-		// IIN1.7 Device Restart: set on the first response after (re)start,
-		// cleared once the master has seen it. A real outstation reports this
-		// so the master knows to re-integrity-poll.
-		cs.mu.Lock()
-		if !cs.sentRestart {
+		// IIN1.7 Device Restart: reported on the first response after the
+		// outstation (re)starts, then cleared once any master has seen it. The
+		// flag is device-wide, so a master that opens a fresh connection per
+		// request sees it exactly once, not on every connection. CompareAndSwap
+		// reports the bit to whichever connection responds first.
+		if cfg.restartReported.CompareAndSwap(false, true) {
 			iin |= uint16(IIN1DeviceRestart) << 8
-			cs.sentRestart = true
 		}
-		cs.mu.Unlock()
 
 		// Build and send response
 		reqSeq := apdu.Control & acSEQ

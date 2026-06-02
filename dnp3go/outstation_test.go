@@ -175,6 +175,33 @@ func TestIntegrityPollReadsPoints(t *testing.T) {
 	}
 }
 
+// TestDeviceRestartReportedOncePerDevice pins that IIN1.7 Device Restart is
+// device-wide state, not per-connection: it appears on the first response
+// after start and is cleared thereafter, even though each Poll opens a fresh
+// TCP connection. A per-connection flag would re-report restart on every poll,
+// making any per-connection master think the outstation rebooted constantly.
+func TestDeviceRestartReportedOncePerDevice(t *testing.T) {
+	ts := newTestOutstation(t)
+	cfg := &MasterConfig{MasterAddr: 100, OutstationAddr: 1, Endpoint: ts.addr, Timeout: 2 * time.Second}
+
+	first := Poll(cfg)
+	if first.Error != nil {
+		t.Fatalf("first poll: %v", first.Error)
+	}
+	if first.IIN&(uint16(IIN1DeviceRestart)<<8) == 0 {
+		t.Errorf("first poll: expected Device Restart bit, got 0x%04X", first.IIN)
+	}
+
+	// Second poll opens a new connection; Device Restart must NOT recur.
+	second := Poll(cfg)
+	if second.Error != nil {
+		t.Fatalf("second poll: %v", second.Error)
+	}
+	if second.IIN&(uint16(IIN1DeviceRestart)<<8) != 0 {
+		t.Errorf("second poll (new connection): Device Restart must not recur, got 0x%04X", second.IIN)
+	}
+}
+
 func TestDirectOperateCROB(t *testing.T) {
 	ts := newTestOutstation(t)
 	resp := sendAPDU(t, ts.addr, 0, crobAPDU(FCDirectOperate, 0, 0, CROBTripPulse), true)
