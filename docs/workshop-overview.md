@@ -126,10 +126,12 @@ Two reference configurations ship with the lab:
   Enterprise→field is allowed, which is what makes the attack
   exercises possible. Students start here.
 - **`substation-improved.json`** - the target hardened state. Only
-  RTAC→field is allowed for controlled flows; Modbus write
-  function codes are denied from any source other than the RTAC.
-  Students compare their own designs against this and validate
-  remediation work against it in Lab 2.4.
+  the RTAC reaches field devices, and ICS DPI filters by function
+  code: Modbus writes (FC5/6) are allowed only from the RTAC, and
+  DNP3 Direct Operate (FC5/FC6) is blocked from *every* source -
+  the RTAC's master only ever polls (FC1), so a DNP3 control write
+  is illegitimate from anyone. Students compare their own designs
+  against this and validate remediation work against it in Lab 2.4.
 
 ## Single-student deployment
 
