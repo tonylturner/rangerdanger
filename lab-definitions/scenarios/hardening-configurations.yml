@@ -1,37 +1,17 @@
 id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
-summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks (15 min)."
+summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks."
+estimated_minutes: 10
 description: >
-  In Lab 2.2 you built a least-privilege firewall policy. This
-  exercise stress-tests it against a DNP3 Direct Operate (FC05)
-  injection against the recloser - the canonical attack vector in a
-  real distribution substation, where DNP3 is the dominant SCADA
-  protocol on every protective relay, recloser, regulator, and
-  capbank controller (SEL, GE Multilin, S&C, Cooper, Beckwith, et al.).
-
-  The attacker, sitting on Kali in the enterprise zone, sends a
-  Direct Operate CROB to flip the recloser's `reclose_enabled` bit
-  off, then trips the recloser. Without auto-reclose, what should
-  be a brief flicker becomes a sustained outage - every load
-  downstream of the recloser (hospital, fire station, customers)
-  goes dark, with kinetic impact measured by the OpenDSS power-flow
-  solver and surfaced on the Feeder HMI.
-
-  Under the weak baseline this succeeds. Under the hardened policy
-  it should fail, blocked by either L4 source-pinning at the
-  perimeter (only the RTAC at `10.30.30.20` can reach field on
-  DNP3 20000) or ICS DPI (Direct Operate restricted to the RTAC
-  even on flows where reads are allowed) - the two layers are
-  defense in depth, and re-test shows either one is sufficient.
-
-  Modbus FC6 (regulator tap override) and Modbus FC5 (direct
-  breaker trip) are available as optional bonus attacks within
-  the same step. Modbus is real on these device classes (mostly
-  for HMI integration) and the DPI lesson generalizes; the
-  optional attacks exist for instructors who want to demonstrate "the
-  same defense closes both protocols" or for cyber-fluent students
-  who finish the primary attack early.
+  Stress-test the policy you built in Lab 2.2 against the canonical
+  distribution-substation attack: a DNP3 Direct Operate (FC05) injection
+  from Kali that disables the recloser's auto-reclose and trips it,
+  turning a brief flicker into a sustained downstream outage. You'll run
+  the attack under the weak baseline (it succeeds), then under the
+  hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
+  both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
+  bonus attacks in the same step show the same defense generalizes.
 nodes:
   - kali-1
 tags:
@@ -79,7 +59,7 @@ steps:
       re-read.
       :::
 
-      **Time budget:** 15 minutes.
+      **Time budget:** ~10 minutes (Guided path - the primary DNP3 attack and re-test. The optional Modbus bonus attacks and the No-Ack evasion hint are extra).
     action:
       type: check
       expect:
@@ -92,6 +72,10 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
+      > **Tip:** click **Show terminal** (top right) to run these from an
+      > embedded shell on the **Kali** box, or use the **copy** button on each
+      > command block and paste into your own terminal.
+
       From Kali (`10.10.10.50`, enterprise zone), under the weak
       baseline, send a DNP3 Direct Operate (FC05) to the recloser
       (`10.40.40.21`, DNP3 outstation address 2). Two CROB writes:
@@ -262,17 +246,17 @@ steps:
       :::
 
       :::technical
-      Author your hardened policy in containd's web UI or CLI and
-      commit it. The banner will switch to "Your custom policy"
-      when your commit is live. (If you get stuck, the **Apply Hardened**
-      button below the step is still available as a guided fallback.)
+      You already authored this policy in Lab 2.2 - here you just need
+      it running again. If your custom policy is still committed, the
+      banner already shows "Your custom policy" and you're set. If not,
+      re-commit it in containd's web UI or CLI (the authoring walkthrough
+      is in Lab 2.2's "Creating rules" hints) or use the **Apply Hardened**
+      button below as a fallback.
 
-      The containd authoring details are in Lab 2.2's "Creating rules
-      via the Web UI" hint. One gotcha that bites here specifically:
-      an **ICS Protocol Filter** rule defaults to **Rule Mode: Learning
-      (passive)**, which only observes. Set it to **Enforcement
-      (active)** or the DNP3 Direct Operate restriction won't actually
-      block this attack.
+      One DPI gotcha that bites *this* attack specifically: an **ICS
+      Protocol Filter** rule defaults to **Rule Mode: Learning (passive)**,
+      which only observes. Set it to **Enforcement (active)** or the DNP3
+      Direct Operate restriction won't actually block the recloser attack.
       :::
 
       The hardened policy combines two defense-in-depth layers:

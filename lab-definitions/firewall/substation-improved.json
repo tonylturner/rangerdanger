@@ -262,7 +262,7 @@
       },
       {
         "id": "rtac-to-field-dnp3",
-        "description": "RTAC to Field Devices: DNP3 TCP (supervisory SCADA polling and control)",
+        "description": "RTAC to Field Devices: DNP3 TCP - Read/integrity poll only (FC1). Direct Operate (FC5) and No-Ack (FC6) are blocked at the DPI layer even from the RTAC source.",
         "sourceZones": [
           "lan1"
         ],
@@ -279,7 +279,10 @@
           }
         ],
         "ics": {
-          "protocol": "dnp3"
+          "protocol": "dnp3",
+          "functionCode": [
+            1
+          ]
         },
         "action": "ALLOW",
         "log": true

@@ -95,15 +95,16 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 		stepsJSON, _ := json.Marshal(sc.Steps)
 		nodesJSON, _ := json.Marshal(sc.Nodes)
 		scenario := models.Scenario{
-			ID:            sc.ID,
-			Name:          sc.Name,
-			Summary:       sc.Summary,
-			Description:   sc.Description,
-			Order:         sc.Order,
-			LabTemplateID: def.ID,
-			Tags:          string(tagsJSON),
-			Steps:         string(stepsJSON),
-			Nodes:         string(nodesJSON),
+			ID:               sc.ID,
+			Name:             sc.Name,
+			Summary:          sc.Summary,
+			Description:      sc.Description,
+			Order:            sc.Order,
+			LabTemplateID:    def.ID,
+			Tags:             string(tagsJSON),
+			Steps:            string(stepsJSON),
+			Nodes:            string(nodesJSON),
+			EstimatedMinutes: sc.EstimatedMinutes,
 		}
 		if err := db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error; err != nil {
 			return err
@@ -154,15 +155,16 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 	stepsJSON, _ := json.Marshal(sc.Steps)
 	nodesJSON, _ := json.Marshal(sc.Nodes)
 	scenario := models.Scenario{
-		ID:            sc.ID,
-		Name:          sc.Name,
-		Summary:       sc.Summary,
-		Description:   sc.Description,
-		Order:         sc.Order,
-		LabTemplateID: templateID,
-		Tags:          string(tagsJSON),
-		Steps:         string(stepsJSON),
-		Nodes:         string(nodesJSON),
+		ID:               sc.ID,
+		Name:             sc.Name,
+		Summary:          sc.Summary,
+		Description:      sc.Description,
+		Order:            sc.Order,
+		LabTemplateID:    templateID,
+		Tags:             string(tagsJSON),
+		Steps:            string(stepsJSON),
+		Nodes:            string(nodesJSON),
+		EstimatedMinutes: sc.EstimatedMinutes,
 	}
 	return db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error
 }
@@ -208,6 +210,10 @@ type ScenarioYAML struct {
 	Nodes       []string       `yaml:"nodes,omitempty"`
 	Tags        []string       `yaml:"tags"`
 	Steps       []ScenarioStep `yaml:"steps"`
+	// EstimatedMinutes is the golden-path time budget for the lab (Guided
+	// track, skipping Advanced hints and optional drill-downs). Surfaced as a
+	// chip on the exercise card. Optional; 0/absent renders no chip.
+	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
 	// BaselineGridState names the Load Simulator grid state a scenario starts
 	// in (e.g. "peak", "overnight"). Optional; absent/empty is treated as
 	// "steady_state" (the default feeder load). The Load Simulator is a bonus

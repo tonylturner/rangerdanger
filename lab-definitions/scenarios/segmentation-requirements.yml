@@ -1,7 +1,8 @@
 id: segmentation-requirements
 order: "1.3"
 name: "Segmentation Requirements & Policy Design"
-summary: "Define zone-pair communication requirements and compare your design to the hardened configuration (20 min)."
+summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
+estimated_minutes: 12
 description: >
   Using the baseline assessment findings, define what
   communications should be allowed between each zone pair.
@@ -18,6 +19,9 @@ steps:
   - title: "Translate findings into design requirements"
     expected_config: weak
     description: |
+      **Time budget:** ~12 minutes (Guided path). This is a design and
+      decision lab - no commands to run.
+
       ### Look at the policy that's running today
 
       Before you decide what *should* be allowed, look at what the
@@ -142,7 +146,7 @@ steps:
 
       DPI layer (1.3 verdict 5):
       - **Modbus**: RTAC may read (FC1–4) and write (FC5/6); other sources blocked at FC level.
-      - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate); other sources blocked.
+      - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate, FC06 No-Ack); other sources blocked.
       :::
 
   - title: "Resourcing reality check"

@@ -125,6 +125,7 @@ export type Scenario = {
   tags: string[];
   steps: ScenarioStep[];
   nodes?: string[];
+  estimated_minutes?: number;
 };
 
 type RawScenario = Omit<Scenario, "tags" | "steps" | "nodes"> & { tags: string; steps: string; nodes?: string };

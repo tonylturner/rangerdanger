@@ -1,19 +1,16 @@
 id: remediation-planning
 order: "1.4"
 name: "Remediation Planning Under Constraint"
-summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work (25 min)."
+summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
+estimated_minutes: 18
 description: >
-  You have a list of findings from the baseline assessment.
-  You do not have unlimited time, people, or political capital.
-  Your job in this exercise is to pick which remediations to
-  execute this quarter - knowing that some attack paths will
-  remain open because you cannot fix everything at once.
-
-  The choices you make here will be referenced by later
-  exercises. If you do not restrict vendor access, the vendor
-  attack path in the Vendor Remote Access Compromise exercise remains easier. If you do not
-  apply protocol-aware filtering, the Modbus and DNP3 abuse
-  exercises remain easier. Your plan has consequences.
+  You have findings from the baseline assessment but not unlimited time,
+  people, or political capital. Pick which remediations to execute this
+  quarter - knowing some attack paths stay open because you can't fix
+  everything at once. Your choices carry forward: skip vendor-access
+  restriction and the later vendor-compromise attack stays easier; skip
+  protocol-aware filtering and the Modbus/DNP3 abuse labs stay easier.
+  Your plan has consequences.
 nodes: []
 tags:
   - planning
@@ -47,7 +44,7 @@ steps:
 
       Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
 
-      **Time budget:** 25 minutes.
+      **Time budget:** ~18 minutes (Guided path).
 
   - title: "Understand the team budget"
     description: >
@@ -183,10 +180,10 @@ steps:
           title: "Apply DNP3 ICS DPI - restrict Direct Operate"
           why: >
             Configure containd to recognize DNP3 and block
-            Direct Operate (FC05) from sources other than the
-            RTAC. Reads and integrity polls stay available for
-            monitoring. Closes the DNP3 command injection
-            attack path at the protocol layer.
+            Direct Operate (FC05 and the No-Ack variant FC06)
+            from sources other than the RTAC. Reads and integrity
+            polls stay available for monitoring. Closes the DNP3
+            command injection attack path at the protocol layer.
           effort_hours: 80
           roles: ["Firewall Admin", "OT Engineer", "Security Analyst"]
           tags: ["dpi", "dnp3"]

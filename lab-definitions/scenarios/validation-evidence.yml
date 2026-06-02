@@ -1,7 +1,8 @@
 id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
-summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk (~8 min)."
+summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
+estimated_minutes: 6
 description: >
   After applying the hardened firewall configuration in Lab 2.2 and
   stress-testing it in Lab 2.3, this exercise builds the formal
@@ -36,12 +37,15 @@ steps:
 
       **Start with the policy banner above this step.** If it shows
       green ("Hardened reference" or "Your custom policy"), the
-      hardened policy is loaded and you're ready to validate. If it
-      shows amber ("Policy mismatch"), apply a hardened policy via
-      the policy-action buttons below the step - or commit one in containd directly -
-      before continuing. The validation in the next step runs against
-      whatever policy is active here, so make sure it's the one you
-      intend to certify.
+      hardened policy you built earlier is still loaded and you're
+      ready to validate. If it shows amber ("Policy mismatch"),
+      re-apply it via the policy-action buttons below the step -
+      **Apply Hardened** for the reference policy, or **Apply Your
+      Plan** to reload the one you built in Lab 2.2 - before
+      continuing. (You're validating an existing policy here, not
+      authoring a new one.) The validation in the next step runs
+      against whatever policy is active, so make sure it's the one
+      you intend to certify.
 
       :::hint Optional: cross-check the running policy in containd
       Once the banner is green, you can confirm the running policy from
@@ -49,6 +53,7 @@ steps:
 
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
         Policy & Rules → Firewall Rules (or Configuration → Running).
+        Log in with `containd` / `containd` if the session has expired.
       - **CLI:** from the `fw-1` terminal, `containd cli` then:
 
             show running-config
@@ -58,7 +63,7 @@ steps:
       removed, default deny on cross-zone.
       :::
 
-      **Time budget:** ~8 minutes.
+      **Time budget:** ~6 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
     action:
       type: check
       expect:

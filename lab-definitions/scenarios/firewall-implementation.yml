@@ -1,7 +1,8 @@
 id: firewall-implementation
 order: "2.2"
 name: "Firewall Policy Implementation"
-summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds (~15 min, Guided track)."
+summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds."
+estimated_minutes: 12
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
@@ -41,48 +42,28 @@ steps:
       latent-exposure-confirmed: Active probing revealed latent exposure beyond passive observation
       :::
 
+      A diagram or a requirements doc isn't segmentation. It becomes real
+      only when the firewall enforces it and you can prove two things:
+      **authorized traffic still works** (RTAC polls field devices, GPS
+      delivers NTP, the HMI reads state) and **unauthorized traffic fails**
+      (an enterprise Modbus write or a vendor DNP3 command is denied and
+      logged). That's what you'll put in place here, then validate in
+      Phases 5-6.
+
       ### How you'll work
 
       This lab runs **Guided by default**: you apply the policy with the
       buttons below the step (**Apply Hardened** / **Apply Your Plan**) and
-      walk containd's UI and CLI to understand exactly what landed - no
-      rule syntax and no commit step. The policy banner at the top of
-      every step tells you what is currently running.
-
-      Prefer to author and commit the rules yourself? Switch to the
-      **Advanced** track below - recommended only if you're comfortable
-      with firewall policy syntax. You can switch anytime from the track
-      chip at the top of each step.
+      walk containd's UI and CLI to see exactly what landed - no rule syntax
+      and no commit step. Prefer to author and commit the rules yourself?
+      Switch to the **Advanced** track - recommended only if you're
+      comfortable with firewall policy syntax. The policy banner at the top
+      of every step shows what's currently running.
 
       :::track-picker
       :::
 
-      You will:
-
-      1. Verify your access to the containd NGFW
-      2. Confirm the weak baseline is active and document what it allows
-      3. Remove the broad permissive rules and establish default-deny
-      4. Create minimal allow rules for each required flow
-      5. Enable logging for visibility
-      6. Validate that operations still work
-      7. Validate that unauthorized traffic is blocked
-      8. Export your finished policy
-
-      **Time budget:** ~15 minutes on the Guided track (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
-
-  - title: "Why this matters"
-    expected_config: weak
-    description: |
-      Segmentation is only real when it is enforced in policy and validated through observed traffic.
-
-      A network diagram that shows zone boundaries is not segmentation. A requirements document that lists allowed flows is not segmentation. A firewall with permissive rules and no logging is not segmentation.
-
-      Segmentation becomes real the moment you can prove two things:
-
-      1. **Authorized traffic works.** The RTAC polls field devices. GPS delivers NTP. The HMI reads state. Operations continue.
-      2. **Unauthorized traffic fails.** A Modbus write from the enterprise zone is denied. A DNP3 command from the vendor zone is blocked. The firewall logs the attempt.
-
-      That is what you will put in place over the next ~15 minutes.
+      **Time budget:** ~12 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
 
   - title: "Verify access to containd"
     expected_config: weak
@@ -93,9 +74,12 @@ steps:
 
       **Option 1: Web UI**
 
-      Open [http://localhost:9080](http://localhost:9080). The dashboard
-      shows zone interface status for all four networks (`wan`, `dmz`,
-      `lan1`, `lan2`) and the current rule count.
+      Open [http://localhost:9080](http://localhost:9080). If you're
+      prompted to log in, use the default workshop credentials -
+      **username `containd`, password `containd`** (the login page lists
+      them too). The dashboard then shows zone interface status for all
+      four networks (`wan`, `dmz`, `lan1`, `lan2`) and the current rule
+      count.
 
       **Option 2: containd CLI**
 
@@ -169,27 +153,12 @@ steps:
       cross-zone traffic. Don't create allow rules yet - get to a
       clean deny-all baseline first.
 
-      ### Default-deny: the principle vs the mechanism
-
-      "Anything not explicitly allowed is denied" is the bedrock of
-      segmentation. The *principle* is universal; the *mechanism*
-      varies by vendor:
-
-      - **Implicit default-deny** - the policy engine appends a
-        "deny everything not matched" verdict for you. You write
-        only ALLOW rules. Used by **containd** (this lab), Cisco
-        ASA/FTD, Palo Alto, FortiGate, Juniper SRX.
-      - **Explicit default-deny** - nothing is appended. You must
-        configure the chain default to DENY or write a final deny
-        rule yourself. Used by **iptables/nftables** in raw form,
-        Linux bridges/OVS, and (best-practice) Check Point cleanup
-        rules. Forget either and the firewall is silently allow-all.
-
-      The thing to internalize: if you cannot point to *where* the
-      default-deny is - either as documented implicit behavior or as
-      an explicit rule you wrote - assume there is no default-deny.
-      See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
-      on the Knowledge page for the per-vendor breakdown.
+      Default-deny ("anything not explicitly allowed is dropped") is the
+      bedrock of segmentation, but *how* a firewall provides it differs by
+      vendor - some append the deny for you (implicit), others make you
+      write it (explicit). Getting that wrong silently leaves a substation
+      wide open. See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
+      for the per-vendor breakdown; the lab-specific part is below.
 
       :::hint About containd specifically
       containd's policy has a top-level `defaultAction` field that

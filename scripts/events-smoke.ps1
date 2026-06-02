@@ -266,9 +266,81 @@ finally: s.close()
         }
         $blockMatches = ([regex]::Matches($blockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*502')).Count
         if ($blockMatches -lt 1) {
-            Err "FC8 from RTAC did not produce a block_flows entry -- DPI parser may not be wired to BlockFlowTemp"
+            Err "Modbus FC8 from RTAC did not produce a block_flows entry -- Modbus DPI parser may not be wired to BlockFlowTemp"
         } else {
-            OK "FC8 (not in allowlist [1..6]) triggered block_flows entry for 10.30.30.20.10.40.40.20.502"
+            OK "Modbus FC8 (not in allowlist [1..6]) triggered block_flows entry for 10.30.30.20.10.40.40.20.502"
+        }
+
+        # BlockFlowTemp blocks the whole 3-tuple, so the FC8 block above also
+        # suspends the RTAC's legit FC3 reads to that relay until the 10m TTL
+        # expires. Flush it so the next gate (and the lab) start clean.
+        & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
+        }
+        Start-Sleep -Seconds 1
+    }
+}
+
+# --- Gate 4: DNP3 ICS DPI function-code enforcement (NFQUEUE) ----------
+# Parallel to gate 3 but for DNP3: the hardened policy lets the RTAC poll
+# field devices on DNP3/20000, but the rule's ICS function-code allowlist
+# is [1] (Read/integrity poll) only. A Direct Operate (FC5) -- even from the
+# RTAC, which L4 source-pinning permits -- is NOT in the allowlist, so DPI
+# must parse the DNP3 function code and BlockFlowTemp it. This is the DNP3
+# half of "Modbus AND DNP3 DPI both enforce".
+Note "gate 4: DNP3 ICS DPI function-code allowlist enforcement"
+
+if (-not $nfqAlive) {
+    Skip "DNP3 ICS DPI enforcement" "NFQUEUE 101 not bound (kernel/library env does not support it)"
+} else {
+    $hasDnp3Cmd = & {
+        $ErrorActionPreference = 'SilentlyContinue'
+        docker exec rangerdanger-rtac-sim which dnp3cmd *>$null
+        $LASTEXITCODE
+    }
+    if ($hasDnp3Cmd -ne 0) {
+        Skip "DNP3 ICS DPI enforcement" "rtac-sim lacks dnp3cmd"
+    } else {
+        # Re-assert the hardened policy (a later gate could have changed it).
+        try {
+            Invoke-RestMethod -Uri "$Api/api/firewall/apply" -Method POST `
+                -ContentType 'application/json' -Body '{"config":"improved"}' `
+                -TimeoutSec 30 -ErrorAction Stop | Out-Null
+        } catch { }
+        Start-Sleep -Seconds 2
+
+        # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay. DPI
+        # should parse it, see fc=5 NOT in [1], and BlockFlowTemp the flow.
+        # As in gate 3 the first packet may pass (async verdict) and actuate
+        # the point, so we restore the relay after and check the SET.
+        & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 trip *>$null
+        }
+        Start-Sleep -Seconds $ProbeWaitSec
+
+        $dnp3BlockRaw = & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            (docker exec rangerdanger-firewall sh -c "nft list set inet containd block_flows 2>/dev/null" 2>$null) -join "`n"
+        }
+        $dnp3Matches = ([regex]::Matches($dnp3BlockRaw, '10\.30\.30\.20.*10\.40\.40\.20.*20000')).Count
+        if ($dnp3Matches -lt 1) {
+            Err "DNP3 FC5 (Direct Operate) from RTAC did not produce a block_flows entry -- DNP3 DPI parser may not be wired to BlockFlowTemp, or the DNP3 rule is missing its functionCode allowlist"
+        } else {
+            OK "DNP3 FC5 (not in allowlist [1]) triggered block_flows entry for 10.30.30.20.10.40.40.20.20000"
+        }
+
+        # Flush the DPI block so the RTAC's DNP3 reads resume, then restore
+        # the relay breaker the FC5 may have tripped on the first packet.
+        & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" *>$null
+        }
+        Start-Sleep -Seconds 1
+        & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close *>$null
         }
     }
 }

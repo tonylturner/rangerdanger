@@ -6,6 +6,63 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.27] - 2026-06-01
+
+A workshop-finalization pass: proves and hardens the ICS DPI differentiator
+(Modbus **and** DNP3 function-code enforcement, with exhaustive smoke
+coverage), plus a round of content, readability, and UX polish across the
+labs and knowledge base.
+
+### Added
+
+- **DNP3 ICS DPI function-code enforcement.** The hardened policy enforced
+  Modbus function codes but the DNP3 rule had no function-code allowlist, so
+  DNP3 was only protected at L4 (source-pin). `rtac-to-field-dnp3` now carries
+  `functionCode: [1]` (Read/integrity poll - the only verb the RTAC master
+  sends), so the DPI engine blocks Direct Operate (FC5) and No-Ack (FC6) at
+  L7 even from the RTAC source. This makes Lab 2.3's "DPI keeps reads-yes/
+  writes-no for DNP3" claim literally true and demonstrable - proven live:
+  FC5 from the RTAC produces a `block_flows` entry while FC1 reads still work.
+- **DNP3 DPI smoke coverage.** New `events-smoke` gate 4 fires a DNP3 Direct
+  Operate from the RTAC under the hardened policy and asserts the DPI block,
+  the DNP3 parallel to the existing Modbus FC8 gate (bash + the PowerShell
+  mirror). Both DPI gates now flush `block_flows` afterward so they don't
+  leave the lab degraded.
+- **Golden-path time estimates.** Each exercise now carries a structured
+  `estimated_minutes` field, rendered as a clock chip on the exercise card
+  (right of the step count) and as a consistent in-lab "Time budget" callout
+  in step 1 of every lab. Estimates recomputed for the Guided path only
+  (excluding Advanced hints and bonus activities) and trimmed toward speed.
+- **"Segmentation Approaches and Technologies" knowledge article** near the
+  top of the Network Segmentation Concepts section - walks the enforcement
+  technologies (air gap, VLANs, routers/ACLs, stateful firewalls, NGFW+ICS
+  DPI, data diodes, host-based/microseg) with a defense-in-depth summary.
+- **Show-terminal discoverability tips** at the first command in the workshop
+  (Lab 1.2) and the first attack command (Lab 2.3), and a **containd web UI
+  login note** (`containd` / `containd`) in Lab 2.2's "Verify access" step.
+
+### Changed
+
+- **Lab readability.** Removed Lab 2.2's action-less "Why this matters" step
+  (10 -> 9 steps) and trimmed its duplicated default-deny theory to a pointer
+  at the `#default-deny` article. Trimmed verbose exercise headers (Lab 2.3's
+  248-word intro -> 83; 2.3-bonus and 1.4 also tightened). Dropped the
+  "author policy" framing inherited from Lab 2.2 in Labs 2.3/2.4 (you reuse
+  the policy there, you don't author a new one).
+- **"Validate Exercise" button hidden on the planning labs** (1.2/1.3/1.4),
+  where the validator can only report "lab is healthy" rather than reflect the
+  student's design/findings work. Kept on the firewall-exercising labs.
+- **Knowledge consistency.** Aligned the ESP-scope description between the
+  NERC-CIP and ESP/EAP/ERC articles; aligned Lab 1.3/1.4 DNP3 DPI references
+  to FC05+FC06.
+
+### Fixed
+
+- **Validation report no longer claims PASS when probes were skipped** - a
+  probe whose source container couldn't be reached was excluded from the
+  totals, so a partially-running lab could report PASS. Skipped probes now
+  force FAIL with the count surfaced. (Backed by the earlier DNP3 work.)
+
 ## [v0.1.26] - 2026-06-01
 
 A DNP3 protocol sweep — fixing a wire-format bug that corrupted field-device
@@ -2190,7 +2247,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.27...HEAD
+[v0.1.27]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.27
 [v0.1.26]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.26
 [v0.1.10]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.10
 [v0.1.9]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.9
