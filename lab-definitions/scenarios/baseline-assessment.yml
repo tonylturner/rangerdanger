@@ -1,7 +1,8 @@
 id: baseline-assessment
 order: "1.2"
 name: "Baseline Traffic Analysis"
-summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like (20 min)."
+summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like."
+estimated_minutes: 15
 description: >
   Before you can segment a substation network, you need to
   understand two things: what traffic actually exists between
@@ -97,7 +98,7 @@ steps:
       **OT Ops → Field crossing - what did the tooltip show?** This is the supervisory-control path the RTAC uses.
       :::
 
-      **Time budget for this lab:** 20 minutes total.
+      **Time budget:** ~15 minutes (Guided path; the Advanced analyst hints are optional extras on top).
     action:
       type: check
       expect:

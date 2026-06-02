@@ -2,9 +2,17 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Star } from "lucide-react";
+import { FileText, Star, Clock } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { listScenarios, type Scenario } from "../lib/api";
+
+// stripTimeEstimate removes a trailing "(NN min)" / "(~NN min, ...)" parenthetical
+// from a card summary. The time now lives in a dedicated chip (from the
+// scenario's estimated_minutes), so the inline duplicate in prose is dropped at
+// render time. Leaves the underlying summary text intact for PDF export etc.
+function stripTimeEstimate(text: string): string {
+  return text.replace(/\s*\((?:~?\s*\d+\s*min(?:utes)?[^)]*)\)\s*\.?\s*$/i, ".").trim();
+}
 
 function getCompletionPct(exerciseId: string, totalSteps: number): number {
   if (totalSteps === 0) return 0;
@@ -135,7 +143,7 @@ function ExerciseCard({
             <h2 className="text-sm font-bold text-white">
               Exercise {exercise.order ?? ""}: {exercise.name}
             </h2>
-            <p className="mt-0.5 text-xs text-slate-500">{cardText}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{stripTimeEstimate(cardText)}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {section && (
                 <span className="rounded-full border border-amber-700/50 bg-amber-950/30 px-2 py-0.5 text-[10px] font-bold text-amber-400">
@@ -156,6 +164,12 @@ function ExerciseCard({
               <span className="rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-500">
                 {exercise.steps.length} steps
               </span>
+              {exercise.estimated_minutes ? (
+                <span className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/50 px-2 py-0.5 text-[10px] text-slate-400">
+                  <Clock className="h-2.5 w-2.5" />
+                  ~{exercise.estimated_minutes} min
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

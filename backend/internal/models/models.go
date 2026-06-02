@@ -49,17 +49,18 @@ type NodeDefinition struct {
 
 // Scenario defines a training scenario.
 type Scenario struct {
-	ID            string    `gorm:"primaryKey" json:"id"`
-	Name          string    `json:"name"`
-	Summary       string    `json:"summary"`
-	Description   string    `json:"description"`
-	Order         string    `json:"order"`
-	LabTemplateID string    `json:"lab_template_id"`
-	Tags          string    `json:"tags"`
-	Steps         string    `json:"steps"`
-	Nodes         string    `json:"nodes"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID               string    `gorm:"primaryKey" json:"id"`
+	Name             string    `json:"name"`
+	Summary          string    `json:"summary"`
+	Description      string    `json:"description"`
+	Order            string    `json:"order"`
+	LabTemplateID    string    `json:"lab_template_id"`
+	Tags             string    `json:"tags"`
+	Steps            string    `json:"steps"`
+	Nodes            string    `json:"nodes"`
+	EstimatedMinutes int       `json:"estimated_minutes"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ScenarioRun tracks execution state for a scenario against a lab instance.

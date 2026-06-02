@@ -1,7 +1,8 @@
 id: remediation-planning
 order: "1.4"
 name: "Remediation Planning Under Constraint"
-summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work (25 min)."
+summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
+estimated_minutes: 18
 description: >
   You have a list of findings from the baseline assessment.
   You do not have unlimited time, people, or political capital.
@@ -47,7 +48,7 @@ steps:
 
       Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
 
-      **Time budget:** 25 minutes.
+      **Time budget:** ~18 minutes (Guided path).
 
   - title: "Understand the team budget"
     description: >

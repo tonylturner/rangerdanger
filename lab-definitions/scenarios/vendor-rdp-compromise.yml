@@ -1,7 +1,8 @@
 id: vendor-rdp-compromise
 order: "2.3-bonus"
 name: "Vendor Remote Access Compromise (Bonus)"
-summary: "Optional - Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices (15 min)."
+summary: "Optional - Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices."
+estimated_minutes: 12
 description: >
   A vendor's remote-access credentials are compromised via phishing.
   The attacker uses them to RDP/VNC into the vendor jump box from
@@ -29,6 +30,9 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
+      **Time budget:** ~12 minutes (Guided path). This is an optional
+      bonus lab.
+
       Under the weak baseline, the enterprise zone can reach the
       vendor DMZ on remote-access protocols. This is the lateral
       path the attacker will exploit.
