@@ -281,13 +281,14 @@ steps:
         field devices on Modbus 502 and DNP3 20000. Enterprise and
         vendor sources are blocked at the perimeter - this alone
         closes the primary DNP3 attack and both optional Modbus attacks.
-      - **ICS DPI:** DNP3 Direct Operate (FC05) restricted to the
-        RTAC; Modbus writes (FC5/6/16) restricted to the RTAC even
-        on flows where reads are allowed. This catches the same
-        attacks if the L4 source pin is ever loosened for
-        monitoring access - e.g., letting the engineering
+      - **ICS DPI:** DNP3 Direct Operate - both FC05 and FC06 (No
+        Ack) - restricted to the RTAC; Modbus writes (FC5/6/16)
+        restricted to the RTAC even on flows where reads are allowed.
+        This catches the same attacks if the L4 source pin is ever
+        loosened for monitoring access - e.g., letting the engineering
         workstation read RTAC tags would punch through L4, but
-        DPI keeps "reads yes, writes no."
+        DPI keeps "reads yes, writes no." (The No-Ack evasion variant
+        is covered in the re-test step's optional hint.)
 
       Either layer alone breaks each attack. Together they're
       defense in depth - the re-test step demonstrates this with a
@@ -366,6 +367,40 @@ steps:
       DPI gives you the same defense if the L4 pin ever has to
       loosen - for example to allow eng-ws read-only access. DPI
       can say *"reads yes, writes no"*; port-only filtering can't.
+      :::
+
+      :::hint Optional: try to evade DPI with Direct Operate No Ack
+      A real attacker who suspects function-code filtering will try a
+      variant. DNP3 has two Direct Operate verbs: **FC05 Direct
+      Operate** (the one you used, which expects a response) and
+      **FC06 Direct Operate No Ack**, which performs the same control
+      write but tells the outstation *not* to reply. An attacker reaches
+      for FC06 to (a) slip past a signature that only matched FC05, and
+      (b) stay quieter - no response packet to notice.
+
+      `dnp3cmd` exposes it with `-no-ack`. From Kali, against the
+      recloser:
+
+          dnp3cmd 10.40.40.21:20000 -a 2 -no-ack crob 1 latch-off
+
+      Under the **hardened** policy this still fails - and it's worth
+      understanding *why* at each layer:
+
+      - **L4 source-pin** doesn't care about function codes at all. FC05
+        and FC06 ride the same TCP/20000 from the same blocked source,
+        so the packet never reaches the outstation regardless.
+      - **ICS DPI** would catch it even if L4 were loosened: containd's
+        DNP3 Direct Operate restriction matches **both** FC05 and FC06,
+        precisely because No Ack is the obvious evasion move. Function-
+        code filtering that only listed FC05 would be a paper defense.
+
+      The lesson: enumerate the *whole* family of dangerous verbs, not
+      just the textbook one. A control-write restriction that misses the
+      No-Ack variant is the kind of gap an attacker probes for first.
+
+      For comparison, send the same command under the **weak** baseline
+      (Reset Lab, then re-apply weak) and it executes silently with no
+      reply - the No-Ack outage with no acknowledgement to betray it.
       :::
     action:
       type: command
