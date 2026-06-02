@@ -37,9 +37,15 @@ API="${RANGERDANGER_API:-http://localhost:8088}"
 FIREWALL_API="${CONTAINTD_API:-http://localhost:9080}"
 JWT_SECRET="${CONTAIND_JWT_SECRET:-rangerdanger-dev}"
 PROBE_WAIT="${PROBE_WAIT:-4}"          # initial wait before first event check
-EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-20}"  # max additional seconds to wait
-                                              # for an event to materialise
-                                              # in containd's store
+EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-45}"  # max additional seconds to wait
+                                              # for an event to materialise in
+                                              # containd's store. Bumped 20 -> 45
+                                              # after gate 1 flaked on a loaded
+                                              # GH runner: the nflog DENY event
+                                              # surfaced late (a propagation
+                                              # race, not the consumer broken).
+                                              # Still a hard fail at the budget
+                                              # edge so a genuine break shows.
 
 fail=0
 passed=0

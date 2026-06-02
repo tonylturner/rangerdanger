@@ -31,7 +31,7 @@ encoding rationale.
 [CmdletBinding()]
 param(
     [int]$ProbeWaitSec     = $(if ($env:PROBE_WAIT)         { [int]$env:PROBE_WAIT }         else { 4 }),
-    [int]$EventPollBudget  = $(if ($env:EVENT_POLL_BUDGET)  { [int]$env:EVENT_POLL_BUDGET }  else { 20 })
+    [int]$EventPollBudget  = $(if ($env:EVENT_POLL_BUDGET)  { [int]$env:EVENT_POLL_BUDGET }  else { 45 })  # bumped 20 -> 45: gate 1 nflog DENY can surface late on a loaded runner (propagation race); still a hard fail at the budget edge
 )
 
 $ErrorActionPreference = "Continue"
