@@ -161,12 +161,12 @@ flowchart LR
 
     subgraph Mgmt["mgmt_net · 10.99.99.0/24 · lan3"]
         Proxy[nginx proxy]
-        Backend[Backend<br/>Go + Gin]
-        Frontend[Frontend<br/>Next.js 14]
+        Backend["Backend<br/>Go + Gin"]
+        Frontend["Frontend<br/>Next.js 14"]
     end
 
     subgraph FW["containd NGFW · multi-homed across all 4 zones"]
-        Containd[Web UI · SSH · ICS DPI<br/>nft engine]
+        Containd["Web UI · SSH · ICS DPI<br/>nft engine"]
     end
 
     subgraph Ent["enterprise_net · 10.10.10.0/24 · wan"]
@@ -180,7 +180,7 @@ flowchart LR
     end
 
     subgraph OT["ot_ops_net · 10.30.30.0/24 · lan1"]
-        RTAC[RTAC<br/>10.30.30.20]
+        RTAC["RTAC<br/>10.30.30.20"]
         FUXA[FUXA HMI]
         OpenPLC[OpenPLC]
         Hist[historian]
@@ -194,7 +194,7 @@ flowchart LR
         CapB[capbank]
     end
 
-    OpenDSS[OpenDSS solver<br/>physics_net · not firewalled]
+    OpenDSS["OpenDSS solver<br/>physics_net · not firewalled"]
 
     Browser --> Proxy
     Proxy --> Backend
