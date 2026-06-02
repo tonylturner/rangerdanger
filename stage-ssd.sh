@@ -25,6 +25,14 @@
 
 set -euo pipefail
 
+# Suppress macOS AppleDouble sidecar files (._README.md, ._images-amd64.tar,
+# etc.) that macOS otherwise writes next to every file on a non-Apple
+# filesystem (exFAT/FAT/NTFS — the usual Mac↔Windows SSD format). Those
+# `._*` files are binary, hidden on macOS but VISIBLE on Windows, and make
+# every staged file look like it has a "_" twin that opens as garbage. A
+# final dot_clean sweep below catches any the OS wrote before this point.
+export COPYFILE_DISABLE=1
+
 if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
     exit 0
@@ -161,7 +169,19 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        docker pull --quiet "$ref" >/dev/null \
+        # Heads-up on the large images so a multi-minute pull doesn't look
+        # like a hang (issue #81). The webtop desktop images (eng-ws, and
+        # vendor-jump which corp-ws also reuses) and openplc are multi-GB;
+        # everything else is quick.
+        case "$img" in
+            *rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
+                say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
+            *rangerdanger-openplc*)
+                say "    large image (~1 GB) — give it a minute" ;;
+        esac
+        # Show Docker's native layer progress (no --quiet) so the operator can
+        # see bytes moving on the big pulls instead of staring at a silent line.
+        docker pull "$ref" \
             || die "pull failed for $ref on $arch — refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
         # Apply the user-friendly tag locally. The tag-target form
         # cannot include @digest (docker rejects it), so strip any
@@ -266,6 +286,16 @@ cd ~/rangerdanger
 \`images-<arch>.tar\` before bringing the stack up.
 EOF
 say "wrote $OUT/README.md"
+
+# Belt-and-suspenders: sweep any macOS AppleDouble (._*) sidecar files the OS
+# may have written to the volume before COPYFILE_DISABLE took effect (or via
+# Finder/other tooling). dot_clean is macOS-only; harmless to skip elsewhere.
+# Without this, Windows shows a binary "._<file>" twin next to every staged
+# file, which reads as garbage in editors.
+if command -v dot_clean >/dev/null 2>&1; then
+    dot_clean -m "$OUT" 2>/dev/null || true
+    say "swept macOS AppleDouble (._*) sidecar files from $OUT"
+fi
 
 banner "Done"
 echo

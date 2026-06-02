@@ -34,6 +34,13 @@
 
 set -euo pipefail
 
+# Suppress macOS AppleDouble sidecar files (._*) that macOS writes next to
+# every file on a non-Apple filesystem (exFAT/FAT/NTFS — the usual Mac↔Windows
+# SSD format). Those `._*` files are binary, hidden on macOS but VISIBLE on
+# Windows, and make every staged file look like it has a "_" twin that opens
+# as garbage. A dot_clean sweep at the end catches any written earlier.
+export COPYFILE_DISABLE=1
+
 if [ $# -lt 3 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
     exit 0
@@ -286,7 +293,15 @@ stage_arch() {
         elif [ "$ref" != "$img" ]; then
             say "    -> $ref"
         fi
-        docker pull --quiet "$ref" >/dev/null \
+        # Heads-up on the large images so a multi-minute pull doesn't look
+        # like a hang (issue #81); show native layer progress (no --quiet).
+        case "$img" in
+            *rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
+                say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
+            *rangerdanger-openplc*)
+                say "    large image (~1 GB) — give it a minute" ;;
+        esac
+        docker pull "$ref" \
             || die "pull failed for $ref on $arch - re-run after fixing the upstream issue."
         local target_tag="${img%@*}"
         if [ "$ref" != "$target_tag" ]; then
@@ -419,6 +434,15 @@ docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 EOF
 say "wrote $OUT/DELTA-README.md"
+
+# Sweep any macOS AppleDouble (._*) sidecar files written before
+# COPYFILE_DISABLE took effect (or via Finder). dot_clean is macOS-only;
+# harmless to skip elsewhere. Prevents the binary "._<file>" twins that
+# show up next to every staged file on Windows.
+if command -v dot_clean >/dev/null 2>&1; then
+    dot_clean -m "$OUT" 2>/dev/null || true
+    say "swept macOS AppleDouble (._*) sidecar files from $OUT"
+fi
 
 banner "Done"
 echo

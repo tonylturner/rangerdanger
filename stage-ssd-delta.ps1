@@ -220,7 +220,14 @@ function Invoke-StageArch($arch) {
         } elseif ($ref -ne $img) {
             Say "    -> $ref"
         }
-        & docker pull --quiet $ref | Out-Null
+        # Heads-up on the large images so a multi-minute pull doesn't look
+        # like a hang (issue #81); show native layer progress (no --quiet).
+        if ($img -match 'rangerdanger-(eng-ws|vendor-jump)') {
+            Say "    large image (~2-3 GB desktop) -- a few minutes is normal"
+        } elseif ($img -match 'rangerdanger-openplc') {
+            Say "    large image (~1 GB) -- give it a minute"
+        }
+        & docker pull $ref
         if ($LASTEXITCODE -ne 0) { Die "pull failed for $ref on $arch - re-run after fixing the upstream issue." }
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
