@@ -785,7 +785,7 @@ CIP-005 is the standard most directly relevant to segmentation. It requires:
 
 ### Mapping to the Lab
 
-In the RangerDanger lab, the containd NGFW functions as the EAP for all zone boundaries. The \`field_net\` is the ESP boundary for the most critical assets (relays, reclosers, regulators). The \`vendor_net\` simulates the vendor remote access path, which in a CIP-compliant environment requires IRA controls.
+In the RangerDanger lab, the containd NGFW functions as the EAP for all zone boundaries. The \`ot_ops_net\` and \`field_net\` together sit inside the ESP - with the field devices (relays, reclosers, regulators) as its most critical core - while \`enterprise_net\` and \`vendor_net\` sit outside it. The \`vendor_net\` simulates the vendor remote access path, which in a CIP-compliant environment requires IRA controls. (See [ESP, EAP, and ERC Explained](#esp-eap-erc) for the same boundary broken down per acronym.)
 
 The exercises demonstrate why CIP-005 R2 (deny by default) is essential. The weak baseline violates this principle by allowing broad access. The hardened policy enforces it.
 
