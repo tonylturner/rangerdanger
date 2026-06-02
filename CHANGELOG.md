@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.26] - 2026-06-01
+
+A DNP3 protocol sweep — fixing a wire-format bug that corrupted field-device
+polls, adding `dnp3cmd` control modes, and aligning the lab content and DPI —
+plus a round of lab-exercise refinements (Labs 1.2 / 2.2 / 2.3 / 2.4) and a
+validation-report correctness fix.
+
 ### Fixed
 
 - **DNP3 link-frame CRC corruption.** `dnp3go`'s `WriteLinkFrame` appended
@@ -42,6 +49,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dnp3cmd ... -no-ack` and see it blocked at both L4 and DPI (containd's
   Direct Operate rule covers FC05 and FC06). Pairs with the containd IDS
   fix that makes this claim true.
+- **Lab-exercise refinements (Labs 1.2 / 2.2 / 2.3 / 2.4).** Guided/Advanced
+  track chips with inline switching on Lab 2.2, copy-only command blocks for
+  interactive/containd-CLI tools, an in-app "Generate Validation Report"
+  flow on Lab 2.4 backed by a new `/api/firewall/validation-report`
+  endpoint that validates the *active* policy, a Lab 1.2 golden-path
+  compression, and assorted content-accuracy fixes. See commit history for
+  the full list.
 
 ### Changed
 
@@ -2176,7 +2190,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.26...HEAD
+[v0.1.26]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.26
 [v0.1.10]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.10
 [v0.1.9]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.9
 [v0.1.8]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.8
