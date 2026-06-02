@@ -74,9 +74,12 @@ steps:
 
       **Option 1: Web UI**
 
-      Open [http://localhost:9080](http://localhost:9080). The dashboard
-      shows zone interface status for all four networks (`wan`, `dmz`,
-      `lan1`, `lan2`) and the current rule count.
+      Open [http://localhost:9080](http://localhost:9080). If you're
+      prompted to log in, use the default workshop credentials -
+      **username `containd`, password `containd`** (the login page lists
+      them too). The dashboard then shows zone interface status for all
+      four networks (`wan`, `dmz`, `lan1`, `lan2`) and the current rule
+      count.
 
       **Option 2: containd CLI**
 

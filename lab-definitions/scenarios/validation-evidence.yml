@@ -53,6 +53,7 @@ steps:
 
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
         Policy & Rules → Firewall Rules (or Configuration → Running).
+        Log in with `containd` / `containd` if the session has expired.
       - **CLI:** from the `fw-1` terminal, `containd cli` then:
 
             show running-config
