@@ -142,7 +142,7 @@ steps:
 
       DPI layer (1.3 verdict 5):
       - **Modbus**: RTAC may read (FC1–4) and write (FC5/6); other sources blocked at FC level.
-      - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate); other sources blocked.
+      - **DNP3**: RTAC may poll (FC01 Read) and operate (FC05 Direct Operate, FC06 No-Ack); other sources blocked.
       :::
 
   - title: "Resourcing reality check"
