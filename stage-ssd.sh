@@ -211,7 +211,12 @@ stage_arch amd64 "$AMD64_IMAGES"
 stage_arch arm64 "$ARM64_IMAGES"
 
 banner "Stage repo archive → rangerdanger.tgz"
-git -C "$ROOT_DIR" archive --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
+# --prefix=rangerdanger/ so `tar xzf rangerdanger.tgz -C ~` creates
+# ~/rangerdanger/ instead of scattering ~80 repo files into the target
+# dir. Without it, the generated README's `cd ~/rangerdanger` lands the
+# student in a dir that was never created — a real "wrong directory"
+# trap. Every extract instruction in the READMEs/docs assumes this prefix.
+git -C "$ROOT_DIR" archive --prefix=rangerdanger/ --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
 size=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
 say "wrote $OUT/rangerdanger.tgz ($size)"
 

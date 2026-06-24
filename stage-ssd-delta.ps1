@@ -254,7 +254,10 @@ if ($changed.Count -gt 0) {
 
 Banner "Stage repo archive -> rangerdanger.tgz"
 $tgzPath = Join-Path $OutDir "rangerdanger.tgz"
-& git -C $RootDir archive --format=tar.gz -o $tgzPath HEAD
+# --prefix=rangerdanger/ so extraction creates a self-contained
+# rangerdanger/ folder (see stage-ssd.ps1). The delta apply extracts
+# over the student's existing ~/rangerdanger in place.
+& git -C $RootDir archive --prefix=rangerdanger/ --format=tar.gz -o $tgzPath HEAD
 if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
@@ -316,10 +319,10 @@ $unchangedList
 Run from the student's existing ``~/rangerdanger`` directory:
 
 ``````sh
-# 1. update the repo (always)
+# 1. update the repo (extracts over your existing ~/rangerdanger in place)
+cd ~/rangerdanger
 docker compose down
-tar xzf <delta-dir>/rangerdanger.tgz -C ~/rangerdanger-new
-cd ~/rangerdanger-new
+tar xzf <delta-dir>/rangerdanger.tgz -C ~
 
 # 2. load only the changed images for this host's arch
 ARCH=`$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
