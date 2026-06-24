@@ -32,7 +32,8 @@ kernel asset:
 |---|---|---|
 | `images-amd64.tar` | All Docker images for Intel/AMD64 hosts, saved together | ~6 GB |
 | `images-arm64.tar` | All Docker images for Apple Silicon / arm64 hosts. `openplc` is cross-included as the amd64 image (Rosetta 2 on macOS); also bundles `tonistiigi/binfmt` so arm64 **Linux** hosts can register amd64 emulation offline. | ~6 GB |
-| `rangerdanger.tgz` | The repo at the staged commit | ~1-2 MB |
+| `rangerdanger.tgz` | The repo at the staged commit (extracts to a self-contained `rangerdanger/` folder) | ~1-2 MB |
+| `START-HERE.cmd` / `start-here.command` | One-click launchers (Windows / macOS): unpack the repo to `~/rangerdanger` and run setup. Students just double-click — no path to type, nothing to extract by hand. | <1 KB |
 | `README.md` | Auto-generated per-stage instructions for the student | ~1 KB |
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
 | `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs - only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
@@ -63,7 +64,11 @@ in the working tree at stage time is what students get.
 ## Student first-run install
 
 Documented short form in [`quickstart.md`](quickstart.md#path-c---offline--ssd-workshops).
-Long form for the operator:
+
+Students normally just **double-click `START-HERE.cmd` (Windows) or
+`start-here.command` (macOS)** on the SSD — it runs the extract + setup
+below for them, with no path to type and no archive to unpack by hand.
+Long form for the operator (or to run by hand):
 
 ```sh
 # from the SSD (offline):

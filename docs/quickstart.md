@@ -119,7 +119,8 @@ isn't realistic. The instructor stages an SSD; students load from it.
 ```
 
 This produces `images-amd64.tar`, `images-arm64.tar`,
-`rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD
+`rangerdanger.tgz`, a `.version` marker, the one-click launchers
+(`START-HERE.cmd` / `start-here.command`), and an auto-generated SSD
 README on the volume. Tagged releases additionally bundle
 `rangerdanger-wsl2-kernel` + `rangerdanger-wsl2-kernel.sha256` so
 Windows students get ICS DPI on Labs 2.3 / 2.3-bonus without a
@@ -127,13 +128,23 @@ separate kernel download.
 
 **On the workshop laptop (student):**
 
+Easiest — double-click the launcher on the SSD: **START-HERE.cmd**
+(Windows) or **start-here.command** (macOS). It unpacks the lab files to
+`~/rangerdanger` and runs setup for you — no path to type, nothing to
+extract by hand.
+
+Manual equivalent:
+
 ```bash
+tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # creates ~/rangerdanger
+cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 # Windows: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
 ```
 
-`setup.sh` detects the host architecture, loads the matching
-tarball with `docker load`, then runs `docker compose up -d`.
+Do **not** extract `images-*.tar` — `setup` loads it with `docker load`.
+`setup` detects the host architecture, loads the matching tarball, then
+runs `docker compose up -d`.
 
 The release artifacts (image tarballs) are also attached to each
 [GitHub release](https://github.com/tonylturner/rangerdanger/releases)

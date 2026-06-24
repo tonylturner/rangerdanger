@@ -285,7 +285,23 @@ if ($FromTarballs) {
     }
 
     $tarball = Join-Path $FromTarballs "images-$arch.tar"
-    if (-not (Test-Path $tarball)) { Die "Expected $tarball (this host is $arch). Have you staged the right architecture?" }
+    if (-not (Test-Path $tarball)) {
+        # Turn the two common -FromTarballs mistakes into a helpful message
+        # instead of a bare "not found": pointing at the repo instead of the
+        # SSD, or pointing at a hand-extracted image archive.
+        $hint = ""
+        if ((Test-Path (Join-Path $FromTarballs "setup.ps1")) -or (Test-Path (Join-Path $FromTarballs "docker-compose.release.yml"))) {
+            $hint = " That path looks like the rangerdanger repo, not the SSD. Point -FromTarballs at the drive that holds images-$arch.tar (e.g. D:\)."
+        } elseif ((Test-Path (Join-Path $FromTarballs "manifest.json")) -or (Test-Path (Join-Path $FromTarballs "blobs"))) {
+            $hint = " That path looks like an EXTRACTED image archive -- you don't need to extract images-$arch.tar. Point -FromTarballs at the folder that CONTAINS it; setup runs 'docker load' for you."
+        } else {
+            $otherArch = if ($arch -eq 'amd64') { 'arm64' } else { 'amd64' }
+            if (Test-Path (Join-Path $FromTarballs "images-$otherArch.tar")) {
+                $hint = " Found images-$otherArch.tar but this host is $arch -- did you stage the right architecture?"
+            }
+        }
+        Die "Expected $tarball (this host is $arch).$hint"
+    }
     $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
     Say "Loading $tarball (${sizeMB} MB) - decompressing each image, ~5-15 min on a fast SSD."
     Say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."

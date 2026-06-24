@@ -239,7 +239,23 @@ if [ -n "$TARBALL_DIR" ]; then
     fi
 
     TARBALL="$TARBALL_DIR/images-$ARCH.tar"
-    [ -f "$TARBALL" ] || die "Expected $TARBALL (this host is $ARCH). Have you staged the right architecture?"
+    if [ ! -f "$TARBALL" ]; then
+        # Turn the two common --from-tarballs mistakes into a helpful message
+        # instead of a bare "not found": pointing at the repo instead of the
+        # SSD, or pointing at a hand-extracted image archive.
+        hint=""
+        if [ -f "$TARBALL_DIR/setup.sh" ] || [ -f "$TARBALL_DIR/docker-compose.release.yml" ]; then
+            hint=" That path looks like the rangerdanger repo, not the SSD. Point --from-tarballs at the dir that holds images-$ARCH.tar (e.g. /Volumes/WORKSHOP_SSD)."
+        elif [ -f "$TARBALL_DIR/manifest.json" ] || [ -d "$TARBALL_DIR/blobs" ]; then
+            hint=" That path looks like an EXTRACTED image archive — you don't need to extract images-$ARCH.tar. Point --from-tarballs at the folder that CONTAINS it; setup runs 'docker load' for you."
+        else
+            other=amd64; [ "$ARCH" = "amd64" ] && other=arm64
+            if [ -f "$TARBALL_DIR/images-$other.tar" ]; then
+                hint=" Found images-$other.tar but this host is $ARCH — did you stage the right architecture?"
+            fi
+        fi
+        die "Expected $TARBALL (this host is $ARCH).$hint"
+    fi
     SIZE_HUMAN=$(ls -lh "$TARBALL" | awk '{print $5}')
     say "Loading $TARBALL ($SIZE_HUMAN) - decompressing each image, ~5-15 min on a fast SSD."
     say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."

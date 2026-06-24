@@ -219,6 +219,72 @@ try {
     Warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
 }
 
+Banner "Write launchers (one-click student entry points)"
+# Self-locating launchers students double-click -- the file lives on the
+# SSD so its own dir is the tarball dir (no path to type, no drive letter
+# to guess, no docker-load-vs-tar choice). The .cmd also bypasses
+# PowerShell's execution policy. Write .cmd CRLF + .command LF explicitly
+# (normalized here, not left to the host) so a Windows- or mac-staged SSD
+# produces the same files; UTF-8 no-BOM (a BOM breaks cmd.exe's first line).
+$noBom = New-Object System.Text.UTF8Encoding($false)
+$startCmd = @'
+@echo off
+setlocal
+rem RangerDanger workshop launcher. This file lives on the SSD, so %~dp0
+rem is the SSD path -- you never type a path and the drive letter does not
+rem matter. Just double-click it.
+set "REPO=%USERPROFILE%\rangerdanger"
+
+echo ============================================================
+echo   RangerDanger workshop launcher
+echo   Lab files (this SSD): %~dp0
+echo   Installs to:          %REPO%
+echo ============================================================
+echo.
+
+if not exist "%REPO%\setup.ps1" (
+  echo [+] Unpacking lab files ^(one-time, ~1 MB^)...
+  tar -xzf "%~dp0rangerdanger.tgz" -C "%USERPROFILE%"
+  if errorlevel 1 (
+    echo [x] Could not unpack rangerdanger.tgz from this SSD.
+    echo     Run this file from the SSD itself, not a copy on the Desktop.
+    pause
+    exit /b 1
+  )
+) else (
+  echo [+] Reusing existing install at %REPO%.
+)
+
+echo [+] Starting setup ^(loads images from the SSD, brings the stack up^)...
+echo.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\setup.ps1" -FromTarballs "%~dp0."
+echo.
+echo [i] When you see "RangerDanger is up", open http://localhost:8088/exercises
+pause
+'@
+$cmdCrlf = (($startCmd -replace "`r`n","`n") -replace "`n","`r`n")
+[System.IO.File]::WriteAllText((Join-Path $OutDir "START-HERE.cmd"), $cmdCrlf, $noBom)
+Say "wrote $OutDir\START-HERE.cmd"
+
+$startCommand = @'
+#!/bin/bash
+# RangerDanger workshop launcher (macOS / Linux). Double-click in Finder,
+# or run:  bash start-here.command
+set -e
+SSD="$(cd "$(dirname "$0")" && pwd)"
+REPO="$HOME/rangerdanger"
+echo "Lab files (this SSD): $SSD"
+echo "Installs to:          $REPO"
+if [ ! -f "$REPO/setup.sh" ]; then
+  echo "[+] Unpacking lab files (one-time)..."
+  tar xzf "$SSD/rangerdanger.tgz" -C "$HOME"
+fi
+exec "$REPO/setup.sh" --from-tarballs "$SSD"
+'@
+$cmdLf = ($startCommand -replace "`r`n","`n")
+[System.IO.File]::WriteAllText((Join-Path $OutDir "start-here.command"), $cmdLf, $noBom)
+Say "wrote $OutDir\start-here.command"
+
 Banner "Write README"
 $shortSha = & git -C $RootDir rev-parse --short HEAD
 $lastSubject = & git -C $RootDir log -1 --format=%s
@@ -235,17 +301,29 @@ Staged $now for version ``$Version``.
 - ``rangerdanger.tgz`` -- Repo archive at $shortSha ($($lastSubject.Substring(0, [Math]::Min(80, $lastSubject.Length))))
 $kernelReadmeRow
 
-## Use
+## Quick start (recommended)
 
-Copy the four files to the student's laptop, then:
+- **Windows:** double-click **START-HERE.cmd** on this SSD.
+- **macOS:** double-click **start-here.command** (or run ``bash start-here.command``).
+
+The launcher unpacks the lab files to ``~/rangerdanger`` and runs setup
+for you -- no path to type, no drive letter to guess.
+
+You do **not** need to extract ``images-*.tar`` -- setup loads it for you
+with ``docker load``.
+
+## Manual (if you prefer)
+
+Replace <SSD> with this drive (e.g. /Volumes/WORKSHOP_SSD on macOS, or the
+SSD's drive letter such as D: on Windows):
 
 ``````sh
-tar xzf rangerdanger.tgz -C ~
+tar xzf <SSD>/rangerdanger.tgz -C ~      # creates ~/rangerdanger
 cd ~/rangerdanger
-./setup.sh --from-tarballs <dir-containing-the-tarballs>
+./setup.sh --from-tarballs <SSD>
 ``````
 
-(or ``./setup.ps1 -FromTarballs <dir>`` on Windows.)
+(or ``.\setup.ps1 -FromTarballs <SSD>`` on Windows.)
 
 ``setup.sh`` / ``setup.ps1`` auto-detects the host architecture and
 loads the right ``images-<arch>.tar`` before bringing the stack up.
