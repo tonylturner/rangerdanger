@@ -66,8 +66,10 @@ Documented short form in [`quickstart.md`](quickstart.md#path-c---offline--ssd-w
 Long form for the operator:
 
 ```sh
-git clone https://github.com/tonylturner/rangerdanger     # OR copy from SSD
-cd rangerdanger
+# from the SSD (offline):
+tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~
+# or with internet: git clone https://github.com/tonylturner/rangerdanger ~/rangerdanger
+cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
@@ -128,10 +130,8 @@ AirDrop, Slack, anything. Student replaces their repo and restarts:
 ```sh
 cd ~/rangerdanger
 docker compose down
-mkdir -p ~/rangerdanger-new
-tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~/rangerdanger-new
-cd ~/rangerdanger-new
-./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD     # idempotent; reuses loaded images
+tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # overwrites ~/rangerdanger in place
+./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # idempotent; reuses loaded images
 ```
 
 The existing Docker images stay put. No `docker load` re-run is
@@ -211,11 +211,9 @@ Whatever the delta-README.md says (it's auto-generated per-stage so
 the version numbers are correct), but the pattern is:
 
 ```sh
-# 1. update repo
-cd ~
-mkdir -p rangerdanger-new
-tar xzf /Volumes/WORKSHOP_SSD/delta-v0.1.17/rangerdanger.tgz -C rangerdanger-new
-cd rangerdanger-new
+# 1. update repo (extract over your existing ~/rangerdanger in place)
+cd ~/rangerdanger
+tar xzf /Volumes/WORKSHOP_SSD/delta-v0.1.17/rangerdanger.tgz -C ~
 
 # 2. load only the changed images
 docker load -i /Volumes/WORKSHOP_SSD/delta-v0.1.17/delta-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar

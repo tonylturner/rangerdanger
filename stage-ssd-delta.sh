@@ -332,7 +332,11 @@ if [ "${#CHANGED[@]}" -gt 0 ]; then
 fi
 
 banner "Stage repo archive -> rangerdanger.tgz"
-git -C "$ROOT_DIR" archive --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
+# --prefix=rangerdanger/ so extraction creates a self-contained
+# rangerdanger/ folder (see stage-ssd.sh for the full rationale). The
+# delta apply instructions below extract over the student's existing
+# ~/rangerdanger in place, which relies on this prefix.
+git -C "$ROOT_DIR" archive --prefix=rangerdanger/ --format=tar HEAD | gzip > "$OUT/rangerdanger.tgz"
 TGZ_SIZE=$(du -h "$OUT/rangerdanger.tgz" | awk '{print $1}')
 say "wrote $OUT/rangerdanger.tgz ($TGZ_SIZE)"
 
@@ -396,10 +400,10 @@ $([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" 
 Run from the student's existing \`~/rangerdanger\` directory:
 
 \`\`\`sh
-# 1. update the repo (always)
+# 1. update the repo (extracts over your existing ~/rangerdanger in place)
+cd ~/rangerdanger
 docker compose down
-tar xzf <delta-dir>/rangerdanger.tgz -C ~/rangerdanger-new
-cd ~/rangerdanger-new
+tar xzf <delta-dir>/rangerdanger.tgz -C ~
 
 # 2. load only the changed images for this host's arch
 ARCH=\$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
