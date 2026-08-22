@@ -6,6 +6,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Go toolchain `1.25.10` -> `1.26.7`.** Clears three stdlib findings
+  (`GO-2026-5037` crypto/x509, `GO-2026-5038` mime, `GO-2026-5039`
+  net/textproto) that had been failing the `govulncheck` hard gate on
+  every open PR since ~2026-06-10. Moved to the 1.26 line rather than
+  the minimal 1.25.11 patch because Go 1.27 has shipped, which puts
+  1.25 out of support. `go` directives unchanged; Dockerfile bases
+  bumped to `golang:1.26` to match so builds stay hermetic.
+- **Dependency bumps clearing five findings:** `x/text` v0.37.0 ->
+  v0.39.0, `x/net` v0.55.0 -> v0.56.0, `quic-go` v0.57.0 -> v0.59.1,
+  `otel` v1.39.0 -> v1.42.0 (v1.41.0 surfaced a further finding).
+- **Four new allowlist entries**, all verified unreachable rather than
+  merely mitigated: `GO-2026-5617` / `GO-2026-5668` / `GO-2026-5746`
+  (`docker/docker` - vulnerable symbols are in the `daemon` package,
+  which is not in our build graph; we import only `api/types/*` and
+  `client`) and `GO-2026-5932` (`x/crypto/openpgp` - never imported;
+  `x/crypto` is present only for `sha3` via gin's validator).
+  Triage rationale in `docs/security-known-issues.md`.
+
+### Fixed
+
+- Suppressed macOS AppleDouble (`._*`) files in `stage-ssd` and added
+  pull progress output (#82).
+- Bumped the `events-smoke` gate-1 event-poll budget 20s -> 45s so it
+  stops flaking on loaded CI runners (#80).
+- Codex PR #78 follow-ups: DNP3 DPI consistency + smoke cleanup, plus
+  a docs audit pass (#79).
+
+### Documentation
+
+- Quoted mermaid node labels containing `<br/>` and `·` in the README
+  so GitHub renders the diagram.
+
 ## [v0.1.27] - 2026-06-01
 
 A workshop-finalization pass: proves and hardens the ICS DPI differentiator

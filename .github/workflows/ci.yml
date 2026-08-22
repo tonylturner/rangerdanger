@@ -121,7 +121,7 @@ jobs:
         env:
           # Documented exceptions in docs/security-known-issues.md.
           # Add GOIDs here only after a triage entry lands there.
-          ALLOWED: "GO-2026-4887 GO-2026-4883"
+          ALLOWED: "GO-2026-4887 GO-2026-4883 GO-2026-5617 GO-2026-5668 GO-2026-5746 GO-2026-5932"
         run: |
           fail=0
           for dir in backend services dnp3go; do
