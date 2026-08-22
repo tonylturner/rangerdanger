@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.28] - 2026-08-22
+
+A maintenance release. The `govulncheck` hard gate had been failing on
+every open PR since roughly 2026-06-10, which blocked the whole
+Dependabot backlog and left the repo effectively frozen through the
+summer. This clears the gate, drains the backlog, and closes a gap
+between what the security exceptions claim and what CI actually
+enforces. No lab, exercise, or runtime behaviour changes.
+
 ### Security
 
 - **Go toolchain `1.25.10` -> `1.26.7`.** Clears three stdlib findings
@@ -2297,7 +2306,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.27...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.28...HEAD
+[v0.1.28]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.28
 [v0.1.27]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.27
 [v0.1.26]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.26
 [v0.1.10]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.10
