@@ -12,20 +12,73 @@ either remove resolved entries or add new ones.
 
 ## Open
 
-### docker/docker - `GO-2026-4887` and `GO-2026-4883`
+### docker/docker - `GO-2026-4887`, `GO-2026-4883`, `GO-2026-5617`, `GO-2026-5668`, `GO-2026-5746`
 
 - **Module**: `github.com/docker/docker@v27.5.1+incompatible`
 - **Affects**: backend Docker SDK calls (container exec, lifecycle,
   image inspection)
-- **Upstream fix**: `Fixed in: N/A` - no patched docker SDK release at
-  time of writing
+- **Upstream fix**: `Fixed in: N/A` for all five. The `docker/docker`
+  module path has **no** patched release. Upstream's fix for the
+  2026-08 advisories landed on the renamed `github.com/moby/moby/v2`
+  module (`v2.0.0-beta.14+`), which is a different module path and a
+  beta line - not a bump we can take from `docker/docker`.
+- **Not reachable**: the vulnerable symbols live in
+  `github.com/docker/docker/daemon` (e.g. `GO-2026-5746` is
+  `Daemon.containerExtractToDir`). That package is **not in this
+  project's build graph** - verified with
+  `go list -deps ./... | grep docker/docker/daemon` (no match). The
+  backend imports only `api/types/*` and `client`. govulncheck still
+  reports these because the traces resolve to package `init`
+  functions of `api/types/*`, not to any called vulnerable code.
 - **Mitigation**: lab-only deployment is loopback-bound (A3); the
   Docker socket mount is in the always-trusted backend container; no
   untrusted input reaches the affected SDK paths
-- **Action**: monitor https://github.com/moby/moby for a release
-  containing the fix; bump when available. Until then, the
-  `docker/docker` direct dependency in `backend/go.mod` stays pinned
-  at the current version.
+- **Action**: monitor https://github.com/moby/moby for a `docker/docker`
+  release containing the fix, or for the `moby/moby/v2` module to reach
+  a stable release worth migrating to. Until then, the `docker/docker`
+  direct dependency in `backend/go.mod` stays pinned at the current
+  version.
+
+### x/crypto openpgp - `GO-2026-5932`
+
+- **Module**: `golang.org/x/crypto@v0.53.0`
+- **Upstream fix**: `Fixed in: N/A`, and there will never be one. This
+  advisory says `golang.org/x/crypto/openpgp` is unmaintained and
+  unsafe by design; upstream's guidance is to migrate to
+  `github.com/ProtonMail/go-crypto/openpgp`, not to await a patch.
+- **Not reachable**: rangerdanger does not import `openpgp` at all -
+  verified with `go list -deps ./... | grep openpgp` (no match). The
+  only reason `x/crypto` is in the graph is `gin` ->
+  `go-playground/validator/v10` -> `x/crypto/sha3`. There is nothing
+  to migrate; the vulnerable packages are never compiled in.
+- **Mitigation**: n/a - no OpenPGP code path exists in the project.
+- **Action**: none. This entry exists only to satisfy the hard-gate
+  contract. Re-check if a dependency ever starts pulling in
+  `x/crypto/openpgp`.
+
+## Resolved by direct dependency bumps (2026-08-22)
+
+The repo sat idle from early June to late August, so the first
+govulncheck run after the gap surfaced a backlog. Five findings were
+upstream-fixed and cleared by `go get` in `backend/`:
+
+- `GO-2026-5970` (x/text) - `golang.org/x/text` v0.37.0 -> v0.39.0
+- `GO-2026-5676` (quic-go) - `github.com/quic-go/quic-go` v0.57.0 -> v0.59.1
+- `GO-2026-5942` (x/net) - `golang.org/x/net` v0.55.0 -> v0.56.0
+- `GO-2026-5506` (otel) - `go.opentelemetry.io/otel` v1.39.0 -> v1.41.0
+- `GO-2026-5158` (otel) - surfaced *by* the v1.41.0 bump above;
+  cleared by going to v1.42.0. Worth noting: bumping to the minimum
+  listed `Fixed in` version was not enough here, the scan had to be
+  re-run after the bump to see the next one.
+
+`golang.org/x/crypto` rolled v0.52.0 -> v0.53.0 and `x/sys` v0.45.0 ->
+v0.46.0 transitively; neither introduced new findings.
+
+Practical exposure was low across the board - quic-go is unused (we
+serve HTTP/1.1 + HTTP/2 only, same rationale as the 2026-05-07 entry),
+otel is not wired to an exporter, and x/text/x/net sit behind
+loopback-bound routing. Bumped anyway to keep the gate green and the
+allowlist small.
 
 ## Resolved by direct dependency bumps (2026-05-27)
 
@@ -103,6 +156,37 @@ and resolved by `go get`:
   deployment was zero (we serve HTTP/1.1 + HTTP/2 only).
 - **`GO-2025-4134`, `GO-2025-4135`** - `golang.org/x/crypto`
   v0.44.0 → v0.50.0.
+
+## Resolved by Go toolchain bump (2026-08-22)
+
+**`1.25.10 -> 1.26.7`** cleared 3 stdlib findings that were failing the
+gate on every open PR since roughly 2026-06-10, in all three modules:
+
+- `GO-2026-5037` (crypto/x509 quadratic `VerifyHostname`,
+  CVE-2026-27145) - Fixed in 1.25.11 / 1.26.4
+- `GO-2026-5038` (mime `WordDecoder.DecodeHeader` CPU exhaustion) -
+  Fixed in 1.25.11 / 1.26.4
+- `GO-2026-5039` (net/textproto user input in error strings,
+  CVE-2026-42507) - Fixed in 1.25.11 / 1.26.4
+
+All three had fixes on both the 1.25.x and 1.26.x lines. **We moved to
+the 1.26 line rather than taking the minimal 1.25.11 patch**, because
+Go 1.27.0 has since shipped and Go only supports the two most recent
+major releases - pinning 1.25.11 would have put the project on an
+already-unsupported line that accrues unpatched stdlib CVEs and
+re-breaks this same gate. `services/` and `dnp3go/` are fully clean
+after this bump (zero findings).
+
+The `go` directives are deliberately left alone (`backend` at
+`go 1.25.0`, `services` and `dnp3go` at `go 1.24.0`) so the modules
+stay buildable by a consumer on an older Go; only the `toolchain`
+directive, which is what CI's `actions/setup-go` installs, moved.
+
+Dockerfile bases bumped to match, so image builds stay hermetic
+instead of downloading a toolchain mid-build (which would break the
+offline SSD workflow): `Dockerfile.backend` -> `golang:1.26`;
+`Dockerfile.eng-ws`, `Dockerfile.kali`, `Dockerfile.openplc`,
+`Dockerfile.vendor-jump`, `services/Dockerfile` -> `golang:1.26-alpine`.
 
 ## Resolved by Go toolchain bump (2026-05-07)
 
