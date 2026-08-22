@@ -117,6 +117,13 @@ jobs:
           go-version-file: backend/go.mod
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      # Some ALLOWED entries below are accepted only because the
+      # vulnerable package is absent from the build graph. The filter
+      # in the next step matches on GOID alone, so it cannot notice
+      # that rationale going stale. This asserts the precondition
+      # those exceptions actually rest on.
+      - name: assert unreachable exceptions still hold
+        run: ./scripts/assert-unreachable-vulns.sh
       - name: scan + allowlist filter
         env:
           # Documented exceptions in docs/security-known-issues.md.
