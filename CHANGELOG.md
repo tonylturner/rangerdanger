@@ -25,6 +25,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `client`) and `GO-2026-5932` (`x/crypto/openpgp` - never imported;
   `x/crypto` is present only for `sha3` via gin's validator).
   Triage rationale in `docs/security-known-issues.md`.
+- **The unreachability claim is now enforced, not just documented.**
+  New `scripts/assert-unreachable-vulns.sh`, wired into the
+  `govulncheck` job, fails the gate if `x/crypto/openpgp` or
+  `docker/docker/daemon` ever enters the build graph. The allowlist
+  filter matches on GOID alone, so without this the four exceptions
+  above would have kept passing even after the "not in the build
+  graph" rationale stopped being true. Raised by Codex review on #91.
+
+### Changed
+
+- **Dependency backlog cleared** (#92, superseding #83-#88 and #90):
+  `gorm` v1.31.2, `@tanstack/react-query` 5.101.0,
+  `@radix-ui/react-tooltip` 1.2.9, `@radix-ui/react-slot` 1.2.5,
+  `marked` 18.0.5, `vitest` 4.1.8, and `linuxserver/webtop` digest
+  bumps. Each pinned to the exact version its Dependabot PR proposed
+  rather than range-resolved, so nothing unreviewed came along.
 
 ### Fixed
 

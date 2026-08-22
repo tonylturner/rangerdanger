@@ -33,6 +33,11 @@ either remove resolved entries or add new ones.
 - **Mitigation**: lab-only deployment is loopback-bound (A3); the
   Docker socket mount is in the always-trusted backend container; no
   untrusted input reaches the affected SDK paths
+- **Enforced by**: `scripts/assert-unreachable-vulns.sh`, run as a step
+  of the `govulncheck` job. The allowlist filter matches on GOID alone,
+  so it cannot tell that "not in the build graph" has stopped being
+  true. The script fails the gate if `docker/docker/daemon` ever enters
+  the graph, which is the precondition this exception rests on.
 - **Action**: monitor https://github.com/moby/moby for a `docker/docker`
   release containing the fix, or for the `moby/moby/v2` module to reach
   a stable release worth migrating to. Until then, the `docker/docker`
@@ -52,9 +57,15 @@ either remove resolved entries or add new ones.
   `go-playground/validator/v10` -> `x/crypto/sha3`. There is nothing
   to migrate; the vulnerable packages are never compiled in.
 - **Mitigation**: n/a - no OpenPGP code path exists in the project.
-- **Action**: none. This entry exists only to satisfy the hard-gate
-  contract. Re-check if a dependency ever starts pulling in
-  `x/crypto/openpgp`.
+- **Enforced by**: `scripts/assert-unreachable-vulns.sh`, run as a step
+  of the `govulncheck` job. "Re-check if a dependency ever starts
+  pulling in `x/crypto/openpgp`" is not something a human will reliably
+  remember, so the gate now checks it: the script fails the build if
+  `x/crypto/openpgp` (or any subpackage) enters the build graph.
+- **Action**: none while the guard passes. If it ever fires, drop
+  `GO-2026-5932` from `ALLOWED` and re-triage on the real merits -
+  most likely by migrating the offending import to
+  `github.com/ProtonMail/go-crypto/openpgp`.
 
 ## Resolved by direct dependency bumps (2026-08-22)
 
@@ -248,3 +259,12 @@ finding:
 
 Same PR for all three - the entry, the workflow change, and the
 changelog note travel together so the acceptance is reviewable.
+
+**If the exception rests on the vulnerable package being unreachable**
+(rather than on a mitigation or an accepted risk), there is a fourth
+step: add the package prefix to `GUARDED` in
+`scripts/assert-unreachable-vulns.sh`. The allowlist filter matches on
+GOID alone and will keep passing the finding even if the package later
+enters the build graph, so an unreachability claim that isn't wired
+into that script is a claim nothing is checking. Raised by Codex review
+on PR #91.
