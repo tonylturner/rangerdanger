@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExerciseRunner } from "../../../components/exercise-runner";
 import { listScenarios, type Scenario } from "../../../lib/api";
 
 type Params = { id: string };
 
-export default function ExerciseDetailPage({ params }: { params: Params }) {
-  const { id } = params;
+export default function ExerciseDetailPage({ params }: { params: Promise<Params> }) {
+  // Next 15 made route params a Promise. This is a client component, so it
+  // unwraps with React.use() rather than await.
+  const { id } = use(params);
   const router = useRouter();
   const [scenario, setScenario] = useState<Scenario | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "not_found">("loading");
