@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.29] - 2026-08-23
+
+A frontend security-maintenance release, and the counterpart to
+v0.1.28's Go-side work: that one fixed the `govulncheck` gate, this one
+clears the frontend dependency debt that had no gate watching it at
+all. Takes Next.js from 14 to 15 and brings `npm audit` to zero. No lab
+or exercise content changes.
+
 ### Security
 
 - **Frontend `npm audit` 13 -> 0.** These were never gated by CI (only
@@ -38,6 +46,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `package-lock.json` above the repo (e.g. in `$HOME`) silently
   changed the file-tracing root. Pinning it keeps builds identical
   across machines and CI.
+
+### Fixed
+
+- **Three in-app links no longer discard your work.** The "change them
+  in the Segmentation Requirements exercise" pointer in the decision
+  panel, and both "Lab 1.4 (Remediation Planning)" pointers in the
+  scenario runner, were plain `<a href>` tags. Those force a full
+  document reload rather than client-side navigation, so a student
+  following one mid-exercise lost in-progress React state. Now
+  `next/link`, matching the rest of the app. Surfaced by the Next 15
+  ESLint plugin, which flags App Router internal links that the Next 14
+  plugin did not - the bug predated the upgrade.
 
 ## [v0.1.28] - 2026-08-22
 
@@ -2339,7 +2359,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.28...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.29...HEAD
+[v0.1.29]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.29
 [v0.1.28]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.28
 [v0.1.27]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.27
 [v0.1.26]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.26
