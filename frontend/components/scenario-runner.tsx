@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import {
   validateScenario,
   getSubstationState,
@@ -370,10 +371,10 @@ function PlanCoveragePanel({ title }: { title: string }) {
   if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
-        No remediation plan recorded yet. Visit <a
+        No remediation plan recorded yet. Visit <Link
           href="/exercises/remediation-planning"
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 (Remediation Planning)</a> to select actions and your plan coverage will appear here.
+        >Lab 1.4 (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
       </div>
     );
   }
@@ -450,10 +451,10 @@ function PlanCoveragePanel({ title }: { title: string }) {
         })}
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
-        Read-only snapshot of your <a
+        Read-only snapshot of your <Link
           href="/exercises/remediation-planning"
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-        >Lab 1.4 plan</a>. Edit selections there to update.
+        >Lab 1.4 plan</Link>. Edit selections there to update.
       </div>
     </div>
   );

@@ -6,6 +6,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Frontend `npm audit` 13 -> 0.** These were never gated by CI (only
+  `govulncheck` is), so they had accumulated unseen.
+  - Eight cleared without any major bump: `postcss` (direct devDep)
+    8.5.15 -> 8.5.26, plus `brace-expansion`, `flatted`, `js-yaml`,
+    `lodash`, `minimatch`, `picomatch`, `ajv`, `yaml`.
+  - **Next.js 14.2.35 -> 15.5.23**, clearing 21 Next advisories
+    (SSRF in rewrites and Server Actions, DoS in Server Components and
+    the Image Optimizer, cache poisoning/confusion, CSP-nonce XSS,
+    request smuggling, and more). npm suggested `next@16.3.2`, but
+    every advisory's fixed range tops out at 15.5.21, so the 15 line
+    is sufficient and avoids a second major jump.
+  - `overrides` pinning `postcss` 8.5.26 and `sharp` 0.35.3, to reach
+    copies vendored under `next` that a top-level bump cannot.
+    `sharp` is an optional `next` dependency this project never uses -
+    `next/image` is deliberately avoided in favour of native `<img>`.
+
+### Changed
+
+- **Next 15 migration.** React stays on 18.3.1 - Next 15 still accepts
+  `react ^18.2.0`, so no React 19 upgrade was needed. The only breaking
+  surface was route `params` becoming a `Promise`: `app/labs/[id]`
+  (server component) now awaits it, `app/exercises/[id]` (client
+  component) unwraps it with `React.use()`. No route handlers, server
+  actions, middleware, or `cookies()`/`headers()` calls existed to
+  migrate.
+- **`outputFileTracingRoot` pinned** in `next.config.mjs`. Next 15
+  infers the workspace root by walking up for lockfiles, so a stray
+  `package-lock.json` above the repo (e.g. in `$HOME`) silently
+  changed the file-tracing root. Pinning it keeps builds identical
+  across machines and CI.
+
 ## [v0.1.28] - 2026-08-22
 
 A maintenance release. The `govulncheck` hard gate had been failing on
