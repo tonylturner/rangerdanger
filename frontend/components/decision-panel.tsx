@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
 import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
@@ -132,10 +133,10 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
             ))}
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
-            These are read-only - change them in the <a
+            These are read-only - change them in the <Link
               href="/exercises/segmentation-requirements"
               className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
-            >Segmentation Requirements</a> exercise.
+            >Segmentation Requirements</Link> exercise.
           </div>
         </div>
       )}
