@@ -60,6 +60,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   satisfy it locally, so builds remain hermetic and CI's `setup-go`
   is unchanged.
 
+### Fixed
+
+- **SSD install: `rangerdanger.tgz` now extracts to a `rangerdanger/`
+  folder.** `stage-ssd` and `stage-ssd-delta` (both `.sh` and `.ps1`)
+  ran `git archive` without `--prefix`, producing a flat tarball. The
+  generated SSD README then told students `tar xzf rangerdanger.tgz -C ~`
+  followed by `cd ~/rangerdanger` - which scattered ~30 top-level repo
+  entries into `$HOME` and failed on the `cd`, on every fresh install.
+  The delta README was broken twice over on top of that (`tar -C
+  ~/rangerdanger-new` into a dir that never existed; `docker compose
+  down` before the `cd`). All four archive calls now pass
+  `--prefix=rangerdanger/`, and the delta flow `cd`s into the existing
+  install and extracts over it in place. Reproduced on `main` and
+  round-trip verified before merging. Cherry-picked from #89; the
+  one-click launcher from that PR stays parked pending a Windows
+  hardware test.
+
 ## [v0.1.29] - 2026-08-23
 
 A frontend security-maintenance release, and the counterpart to

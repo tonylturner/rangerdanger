@@ -169,7 +169,11 @@ Banner "Stage repo archive -> rangerdanger.tgz"
 $tgzPath = Join-Path $OutDir "rangerdanger.tgz"
 # git can produce gzipped tar directly via --format=tar.gz. Avoids
 # needing an external gzip on Windows.
-& git -C $RootDir archive --format=tar.gz -o $tgzPath HEAD
+# --prefix=rangerdanger/ so extraction creates a rangerdanger/ folder
+# instead of scattering repo files into the extract target (which made
+# the generated README's `cd ~/rangerdanger` fail). All extract docs
+# assume this prefix.
+& git -C $RootDir archive --prefix=rangerdanger/ --format=tar.gz -o $tgzPath HEAD
 if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
