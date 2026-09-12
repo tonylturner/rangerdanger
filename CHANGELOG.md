@@ -6,6 +6,60 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **`golang.org/x/crypto` v0.53.0 -> v0.56.0.** Clears three new
+  `x/crypto/ssh` findings that surfaced on 2026-09-02 and had the
+  `govulncheck` hard gate failing on every open PR since:
+  `GO-2026-6303` (source-address restriction skipped for non-public-key
+  auth callbacks, CVE-2026-56854), `GO-2026-6354` and `GO-2026-6355`
+  (channel-deadlock DoS, CVE-2026-56855 / CVE-2026-78662). Same
+  exposure story as the 2026-05-22 batch - the backend never
+  terminates SSH; `x/crypto/ssh` is transitive via `docker/docker`.
+  v0.56.0 requires `go 1.26`, so `backend/go.mod`'s `go` directive
+  moves 1.25.0 -> 1.26.0. The backend is an application, not a
+  library, and nothing has built it on 1.25 since v0.1.28 pinned the
+  toolchain at 1.26.7, so this is a no-op in practice.
+- **`otel` v1.42.0 -> v1.44.0.** Trivy flagged CVE-2026-39882 (memory
+  exhaustion in `otlptracehttp`, fixed in v1.43.0). v1.43.0 turned out
+  to regress `GO-2026-5158` (baggage header length cap - the same
+  finding v0.1.28 cleared by going 1.41 -> 1.42), which is fixed again
+  in v1.44.0, so that is where this lands. otel is still not wired to
+  an exporter; bumped to keep both scanners quiet.
+- **Next.js 15.5.23 -> 15.5.24** (#100). Fixes two CRITICAL advisories:
+  CVE-2026-75604 (unauthenticated RCE on Windows-hosted servers) and
+  GHSA-2xp9-vwfh-vxw4 (unauthenticated RCE in the Image Optimization
+  API when AVIF is enabled). Neither is reachable here - the Next
+  server runs inside a Linux container even on the Windows-laptop
+  setup (so it is never a "Windows-hosted server"), and the project
+  never uses `next/image` - but a CRITICAL fix at patch-level cost is
+  not worth arguing with. `eslint-config-next` moved in lockstep.
+- **`sharp` override 0.35.3 -> 0.35.4.** GHSA-rgj7-g3m4-5g8c (libheif
+  vulnerabilities vendored into sharp). `sharp` is an optional `next`
+  dependency this project never invokes, hence the override rather
+  than a direct dependency.
+- **`js-yaml` 4.3.1 -> 4.3.2** (transitive via `eslint`).
+  GHSA-2883-xcg3-v3hh, CPU exhaustion on empty YAML merge keys. Dev
+  tooling only.
+- **`npm audit` stays at 0**, and the `govulncheck` gate is green again
+  with no allowlist changes - every finding this round had an upstream
+  fix.
+
+### Changed
+
+- **Dependabot backlog cleared** (superseding #95-#97, #99-#101), each
+  pinned to the exact version its PR proposed: `golang` base image
+  `1.26` -> `1.27` in the four root Dockerfiles Dependabot watches, and
+  - for consistency - in `Dockerfile.backend` and `services/Dockerfile`
+  which it does not; `autoprefixer` 10.5.4, `@types/node` 20.19.43,
+  `marked` 18.0.11, `@react-pdf/renderer` 4.6.1 -> 4.9.0 (this one
+  carries major bumps of its internal `layout` and `textkit` packages;
+  the full 79-page workbook and every per-exercise PDF were rendered
+  through the new version and spot-checked before merging).
+  The Go `toolchain` directive stays at 1.26.7 - `golang:1.27` images
+  satisfy it locally, so builds remain hermetic and CI's `setup-go`
+  is unchanged.
+
 ## [v0.1.29] - 2026-08-23
 
 A frontend security-maintenance release, and the counterpart to

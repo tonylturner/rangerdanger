@@ -46,7 +46,7 @@ either remove resolved entries or add new ones.
 
 ### x/crypto openpgp - `GO-2026-5932`
 
-- **Module**: `golang.org/x/crypto@v0.53.0`
+- **Module**: `golang.org/x/crypto@v0.56.0`
 - **Upstream fix**: `Fixed in: N/A`, and there will never be one. This
   advisory says `golang.org/x/crypto/openpgp` is unmaintained and
   unsafe by design; upstream's guidance is to migrate to
@@ -66,6 +66,64 @@ either remove resolved entries or add new ones.
   `GO-2026-5932` from `ALLOWED` and re-triage on the real merits -
   most likely by migrating the offending import to
   `github.com/ProtonMail/go-crypto/openpgp`.
+
+## Resolved by direct dependency bumps (2026-09-12)
+
+A vuln-db refresh on 2026-09-02 surfaced one new `x/crypto/ssh` finding
+that failed the gate on every Dependabot PR opened after that date, and
+by 2026-09-12 two more had joined it. All three are fixed in
+`golang.org/x/crypto` v0.56.0; resolved by one
+`go get golang.org/x/crypto@v0.56.0` in `backend/`.
+
+- `GO-2026-6303` (ssh source-address restriction not enforced for
+  password / keyboard-interactive / no-client-auth / GSSAPI callbacks,
+  CVE-2026-56854) - Fixed in v0.55.0
+- `GO-2026-6354` (ssh DoS on deadlocked undecided channel,
+  CVE-2026-56855) - Fixed in v0.56.0
+- `GO-2026-6355` (ssh DoS on deadlocked established channel,
+  CVE-2026-78662) - Fixed in v0.56.0
+
+Practical exposure: same as the 2026-05-22 batch - the backend does
+not terminate SSH. All three are module-level findings (govulncheck
+reports no called symbol), which the gate's filter counts anyway.
+
+**`go` directive moved.** `x/crypto` v0.56.0 declares `go 1.26.0`, so
+`backend/go.mod` had to follow (1.25.0 -> 1.26.0). This is the first
+time a `go` directive has moved since the "leave them alone" note in
+the 2026-08-22 toolchain entry. The reasoning there was keeping the
+modules buildable by a consumer on older Go, which matters for
+`dnp3go` (a library) and `services/` (still at `go 1.24.0`, both
+untouched) but not for `backend/` - it is an application, CI has built
+it with 1.26.7 since v0.1.28, and the Docker image is `golang:1.27`.
+Expect this to keep happening: the `golang.org/x/*` modules track the
+two most recent Go releases, so once 1.27 shipped, 1.26 became their
+floor.
+
+Also this round, from `trivy fs` rather than govulncheck:
+
+- **CVE-2026-39882** (`otlptracehttp` memory exhaustion) - `otel`
+  v1.42.0 -> v1.44.0. Not in govulncheck's DB and not reachable (otel
+  has no exporter wired), but the fix is a minor bump. v1.43.0 was the
+  minimum fix and **regressed `GO-2026-5158`** (baggage header length
+  cap, the finding v0.1.28 cleared with the 1.41 -> 1.42 bump); govulncheck
+  reports it as introduced 1.43.0 / fixed 1.44.0. Second time this
+  release cycle that landing on the minimum `Fixed in` version and
+  re-scanning turned up a further hop - keep doing the re-scan.
+- Frontend: `next` 15.5.24 (CVE-2026-75604 + GHSA-2xp9-vwfh-vxw4, both
+  CRITICAL RCE, neither reachable - Linux container, no `next/image`),
+  `sharp` override 0.35.4 (GHSA-rgj7-g3m4-5g8c libheif),
+  `js-yaml` 4.3.2 (GHSA-2883-xcg3-v3hh, via eslint). `npm audit` 0.
+
+Trivy also lists five `docker/docker` CVEs (CVE-2025-54410,
+CVE-2026-33997, CVE-2026-41567, CVE-2026-41568, CVE-2026-42306) against
+v27.5.1. Those are the same daemon-side family as the govulncheck
+entries in **Open** above - the fixes that exist are on v28/v29
+(major bumps Dependabot is configured to suppress) or `moby/moby/v2`,
+and the affected code is not in our build graph. No action; the
+existing triage entry and `assert-unreachable-vulns.sh` guard cover
+them.
+
+No allowlist changes this round.
 
 ## Resolved by direct dependency bumps (2026-08-22)
 
