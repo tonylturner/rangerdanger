@@ -3,7 +3,7 @@
 # students probe field devices from a non-RTAC OT host (OpenPLC) to
 # confirm the segmentation policy is enforcing the RTAC source-pin —
 # that test only works if OpenPLC actually has the tools.
-FROM golang:1.26-alpine AS dnp3-builder
+FROM golang:1.27-alpine AS dnp3-builder
 WORKDIR /src
 COPY dnp3go/ .
 RUN --mount=type=cache,target=/root/.cache/go-build \
