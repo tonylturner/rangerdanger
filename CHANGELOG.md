@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.30] - 2026-09-12
+
+A maintenance release cut to tag `main` clean before the next epic.
+Re-greens the `govulncheck` gate (red on every PR since 2026-09-02),
+drains the Dependabot backlog, takes the base images to Go 1.27, and
+fixes an SSD-install bug that broke `cd ~/rangerdanger` on every fresh
+install. No lab or exercise content changes.
+
 ### Security
 
 - **`golang.org/x/crypto` v0.53.0 -> v0.56.0.** Clears three new
@@ -2430,7 +2438,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.29...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.30...HEAD
+[v0.1.30]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.30
 [v0.1.29]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.29
 [v0.1.28]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.28
 [v0.1.27]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.27
