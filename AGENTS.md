@@ -21,7 +21,7 @@ OpenDSS power-flow solve. See `README.md` and `docs/architecture.md`.
 |---|---|
 | `backend/` | Go 1.26 API (Gin, GORM/SQLite, Docker SDK, containd REST client). Routes in `internal/server/server.go`. |
 | `frontend/` | Next.js 15 app router, React 18, TypeScript, Tailwind, vitest. |
-| `services/` | One Go module: relay/recloser/regulator/capbank/rtac/historian/gps sims (HTTP + Modbus TCP + DNP3 TCP over shared state). `opendss-sim/` is Python/FastAPI. |
+| `services/` | One Go module: relay/recloser/regulator/capbank/rtac sims speak HTTP + Modbus TCP + DNP3 TCP over shared state; historian and gps are HTTP + Modbus only. `opendss-sim/` is Python/FastAPI. |
 | `dnp3go/` | Standalone zero-dependency DNP3 library, consumed via `replace`. |
 | `lab-definitions/` | Topology template, the 7 lab YAMLs, and the two canned containd policies. |
 | `docker-compose.yml` | Build-from-source stack. `docker-compose.release.yml` uses GHCR images; `docker-compose.offline.yml` is the SSD overlay. |
@@ -41,8 +41,12 @@ names the change.
   listed in `docs/architecture.md` and referenced by absolute IP inside
   lab YAML commands.
 - The `firewall` container (containd) is multi-homed as `.2` on every
-  zone and is the only path between zones. Every lab node runs
-  `set-gateway.sh` at start to default-route through it.
+  zone and is the only path between zones. The Go sims (via their
+  `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump` and
+  `eng_workstation` run `set-gateway.sh` at start to default-route
+  through it. `fuxa_hmi` and `openplc` receive `GATEWAY` as an env var
+  but do not run the script; treat them as known exceptions, not a
+  pattern to copy.
 - `rtac_sim` is intentionally four-homed. `scripts/rtac-harden.sh` plus
   the compose `sysctls` disable forwarding, drop FORWARD, and replace
   the connected field route with one via the firewall. The hardened
@@ -50,7 +54,9 @@ names the change.
 - `physics_net` is deliberately not firewalled. `mgmt_net` is the
   out-of-band control plane for backend, frontend, proxy, and containd.
 - All host ports bind to loopback only: 8088 (portal), 9080 / 9443 /
-  2222 (containd). No auth anywhere; `SECURITY.md` explains why.
+  2222 (containd). The backend API and the WebSocket terminals have no
+  authentication; containd, OpenPLC and the vendor-jump / eng-ws desktops use
+  baked-in lab credentials (`docs/lab-credentials.md`). `SECURITY.md` explains why.
 - containd zone names `wan` / `dmz` / `lan1` / `lan2` / `lan3` and the
   canned policies in `lab-definitions/firewall/` are what the
   validators and firewall smoke gate assert against.
@@ -67,9 +73,20 @@ Run what CI runs (`.github/workflows/ci.yml`) before claiming done:
 (cd backend  && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)
 (cd services && go vet ./... && go test -race ./... && go build ./...)
 (cd dnp3go   && go vet ./... && go test -race ./... && go build ./...)
-(cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm test && npm run build)
-docker compose config -q && docker compose -f docker-compose.release.yml config -q
+(cd frontend && npm ci && npm run lint && npm test && npm run build)
+docker compose config -q
+# Hard gate: vulnerability scan (go install golang.org/x/vuln/cmd/govulncheck@latest first)
+./scripts/assert-unreachable-vulns.sh
+for d in backend services dnp3go; do (cd "$d" && govulncheck ./...); done
 ```
+
+`govulncheck` findings outside the `ALLOWED` list in the workflow fail
+CI; a new finding needs a triage entry in `docs/security-known-issues.md`
+plus the `ALLOWED` list in the workflow. Two extra checks are worth running locally even though `ci.yml`
+does not: `npx tsc --noEmit` in `frontend/` (faster than waiting for
+`next build` to type-check) and
+`docker compose -f docker-compose.release.yml config -q` (which
+`smoke.yml` validates).
 
 `-count=1` on the backend matters: `firewall_config_test` reads the
 policy JSONs at runtime and Go's test cache does not see them.
@@ -77,9 +94,6 @@ policy JSONs at runtime and Go's test cache does not see them.
 With the stack up (`./scripts/dev-up.sh`), the three smoke gates in
 `CONTRIBUTING.md` (`smoke-test.sh`, `firewall-smoke.sh`,
 `lab-commands-smoke.sh`) cover boot, dataplane, and lab-command rot.
-CI also runs `govulncheck` as a hard gate; new findings need a triage
-entry in `docs/security-known-issues.md` plus the `ALLOWED` list in
-the workflow.
 
 ## Conventions
 
