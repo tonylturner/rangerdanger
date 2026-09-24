@@ -9,7 +9,7 @@
   <a href="https://github.com/tonylturner/rangerdanger/releases"><img src="https://img.shields.io/github/v/release/tonylturner/rangerdanger?include_prereleases&sort=semver" alt="Release"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
   <a href="https://go.dev"><img src="https://img.shields.io/github/go-mod/go-version/tonylturner/rangerdanger?filename=backend%2Fgo.mod&logo=go&logoColor=white" alt="Go"></a>
-  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white" alt="Next.js"></a>
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white" alt="Next.js"></a>
   <a href="https://docs.docker.com/compose"><img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker"></a>
   <a href="https://github.com/tonylturner/containd"><img src="https://img.shields.io/badge/containd-NGFW-f97316" alt="containd"></a>
 </p>
@@ -162,7 +162,7 @@ flowchart LR
     subgraph Mgmt["mgmt_net · 10.99.99.0/24 · lan3"]
         Proxy[nginx proxy]
         Backend["Backend<br/>Go + Gin"]
-        Frontend["Frontend<br/>Next.js 14"]
+        Frontend["Frontend<br/>Next.js 15"]
     end
 
     subgraph FW["containd NGFW · multi-homed across all 4 zones"]

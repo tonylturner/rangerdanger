@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- Corrected stale version claims: README badge, architecture doc and
+  frontend README said Next.js 14 (frontend is on 15.5.x since #94);
+  CONTRIBUTING and the known-issues history said the modules pin
+  `toolchain go1.25.10` (raised to `go1.26.7` in #91, Go image bases
+  to 1.27 in #102). `services/README.md` claimed capbank exposes
+  Modbus only; it has had a DNP3 outstation (address 4) all along.
+- Added `AGENTS.md`: repository conventions, validation commands, and
+  the networking invariants that must not change without an explicit
+  request.
+
 ## [v0.1.30] - 2026-09-12
 
 A maintenance release cut to tag `main` clean before the next epic.

@@ -49,8 +49,9 @@ go test ./...
 
 Each sim has its own `cmd`-style directory with `main.go`. The four
 field sims (relay/recloser/regulator/capbank) each add a `modbus.go`
-for the Modbus outstation and (for relay/recloser/regulator) a
-`dnp3.go` for the DNP3 outstation; capbank exposes Modbus only.
+for the Modbus outstation and a `dnp3.go` for the DNP3 outstation
+(capbank is DNP3 address 4, controllable via Binary Outputs; see the
+point map at the top of `capbank-sim/dnp3.go`).
 `historian-sim` and `gps-sim` have `main.go` + `modbus.go` (no DNP3
 outstation). `rtac-sim` runs both client and outstation roles
 (`dnp3.go`, `dnp3_poll.go`, `modbus.go`, `modbus_poll.go`). Shared

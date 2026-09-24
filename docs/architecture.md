@@ -64,7 +64,7 @@ Internal packages:
 
 ### Frontend (Next.js + TypeScript)
 
-Next.js 14 app at `frontend/app/` with dark-themed shadcn-style UI.
+Next.js 15 app at `frontend/app/` with dark-themed shadcn-style UI.
 
 Top-level pages:
 
