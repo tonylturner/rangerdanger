@@ -70,6 +70,7 @@ ask for them by name, and must pass `scripts/firewall-smoke.sh`.
 Run what CI runs (`.github/workflows/ci.yml`) before claiming done:
 
 ```sh
+test -z "$(git ls-files '*.go' | xargs gofmt -l)"   # the CI gofmt gate; tracked files only, so local Go caches do not trip it
 (cd backend  && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)
 (cd services && go vet ./... && go test -race ./... && go build ./...)
 (cd dnp3go   && go vet ./... && go test -race ./... && go build ./...)
