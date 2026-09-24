@@ -63,13 +63,13 @@ suspenders.
 ## Lint and build
 
 ```sh
-npm run lint    # next lint, ESLint config in .eslintrc.json
+npm run lint    # ESLint CLI, ESLint config in eslint.config.mjs
 npm run build   # next build (also runs in CI on every PR)
 ```
 
 CI fails on any ESLint error. The repo convention favors no-`any`
 and no unused-variable suppressions (not currently enforced as a
-lint rule — `frontend/.eslintrc.json` only extends
+lint rule — `eslint.config.mjs` only extends
 `next/core-web-vitals` — but new code should follow it); if you find
 yourself reaching for one, push back on the design first.
 
