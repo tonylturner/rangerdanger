@@ -61,10 +61,10 @@ const (
 
 // Qualifier codes.
 const (
-	QualStartStop8  = 0x00 // 1-byte start, 1-byte stop
-	QualStartStop16 = 0x01 // 2-byte start, 2-byte stop
-	QualAllPoints   = 0x06 // no range — all points
-	QualCount8Pfx8  = 0x17 // 1-byte count, 1-byte prefix index
+	QualStartStop8   = 0x00 // 1-byte start, 1-byte stop
+	QualStartStop16  = 0x01 // 2-byte start, 2-byte stop
+	QualAllPoints    = 0x06 // no range — all points
+	QualCount8Pfx8   = 0x17 // 1-byte count, 1-byte prefix index
 	QualCount16Pfx16 = 0x28 // 2-byte count, 2-byte prefix index
 )
 
@@ -80,13 +80,13 @@ const (
 
 // CROB status codes.
 const (
-	CROBStatusSuccess           = 0x00
-	CROBStatusTimeout           = 0x01
-	CROBStatusNoSelect          = 0x02
-	CROBStatusNotSupported      = 0x04
-	CROBStatusAlreadyActive     = 0x05
-	CROBStatusHardwareError     = 0x06
-	CROBStatusBlocked           = 0x07 // used when remote control disabled / lockout
+	CROBStatusSuccess       = 0x00
+	CROBStatusTimeout       = 0x01
+	CROBStatusNoSelect      = 0x02
+	CROBStatusNotSupported  = 0x04
+	CROBStatusAlreadyActive = 0x05
+	CROBStatusHardwareError = 0x06
+	CROBStatusBlocked       = 0x07 // used when remote control disabled / lockout
 )
 
 // IIN (Internal Indications) bit masks.
@@ -99,14 +99,14 @@ const (
 
 // ObjectHeader represents a parsed DNP3 object header with its data.
 type ObjectHeader struct {
-	Group     uint8
-	Variation uint8
-	Qualifier uint8
-	Start     uint16
-	Stop      uint16
-	Count     uint16
+	Group        uint8
+	Variation    uint8
+	Qualifier    uint8
+	Start        uint16
+	Stop         uint16
+	Count        uint16
 	PrefixedData []PrefixedObject // for qualifier 0x17/0x28
-	Data      []byte
+	Data         []byte
 }
 
 // PrefixedObject is a single object with its point index prefix.
@@ -370,8 +370,8 @@ func EncodeCROBResponse(index uint16, controlCode uint8, status uint8) []byte {
 		GroupCROB,
 		VarCROB,
 		QualCount8Pfx8,
-		1,            // count
-		byte(index),  // prefix index
+		1,           // count
+		byte(index), // prefix index
 	}
 	// CROB data: control(1) + count(1) + onTime(4) + offTime(4) + status(1) = 11
 	obj := make([]byte, 11)
@@ -389,8 +389,8 @@ func EncodeAnalogOutputResponse(index uint16, value float32, status uint8) []byt
 		GroupAnalogOutputCmd,
 		VarAOCmdFloat,
 		QualCount8Pfx8,
-		1,            // count
-		byte(index),  // prefix index
+		1,           // count
+		byte(index), // prefix index
 	}
 	obj := make([]byte, 5)
 	obj[0] = status

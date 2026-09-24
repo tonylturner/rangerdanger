@@ -104,15 +104,15 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		"eng_workstation":  3000,
 		"kali_pentest":     3000,
 		// Legacy types
-		"ews":           3000,
+		"ews":            3000,
 		"ubuntu_jumpbox": 3000,
-		"plc_trainer":   8080,
-		"sis_plc":       8080,
-		"hmi_view":      1881,
-		"hmi_control":   1881,
-		"hmi_scada":     1881,
-		"historian":     8086,
-		"ot_ids":        9999,
+		"plc_trainer":    8080,
+		"sis_plc":        8080,
+		"hmi_view":       1881,
+		"hmi_control":    1881,
+		"hmi_scada":      1881,
+		"historian":      8086,
+		"ot_ids":         9999,
 	}
 
 	var nodes []models.NodeDefinition

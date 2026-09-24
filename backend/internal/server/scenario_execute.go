@@ -18,12 +18,12 @@ import (
 
 // StepExecutionResult is the response from executing a scenario step action.
 type StepExecutionResult struct {
-	StepIndex int               `json:"step_index"`
-	StepTitle string            `json:"step_title"`
-	ActionType string           `json:"action_type"`
-	Success   bool              `json:"success"`
-	Results   []StepActionResult `json:"results"`
-	Timestamp string            `json:"timestamp"`
+	StepIndex  int                `json:"step_index"`
+	StepTitle  string             `json:"step_title"`
+	ActionType string             `json:"action_type"`
+	Success    bool               `json:"success"`
+	Results    []StepActionResult `json:"results"`
+	Timestamp  string             `json:"timestamp"`
 }
 
 // StepActionResult is the result of a single action within a step.

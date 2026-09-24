@@ -35,10 +35,10 @@ func TestObserver_NoChange_NoReclassify(t *testing.T) {
 	defer ts.Close()
 
 	s := &Server{
-		containdClient:  containd.NewClient(ts.URL),
-		activeConfig:    "improved",
-		policySource:    "hardened-reference",
-		lastAppliedAt:   time.Now().Add(-1 * time.Hour), // outside grace
+		containdClient: containd.NewClient(ts.URL),
+		activeConfig:   "improved",
+		policySource:   "hardened-reference",
+		lastAppliedAt:  time.Now().Add(-1 * time.Hour), // outside grace
 	}
 	// Seed lastAppliedHash with the same hash containd will return.
 	configBytes, _ := json.Marshal(map[string]any{"firewall": fw})

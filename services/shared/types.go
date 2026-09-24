@@ -13,10 +13,10 @@ import (
 type AuditEntry struct {
 	Timestamp     time.Time `json:"timestamp"`
 	Source        string    `json:"source"`
-	SourceZone    string    `json:"source_zone,omitempty"`    // enterprise, vendor, ot_ops, field, unknown
+	SourceZone    string    `json:"source_zone,omitempty"` // enterprise, vendor, ot_ops, field, unknown
 	Target        string    `json:"target"`
 	Command       string    `json:"command"`
-	Result        string    `json:"result"`                   // "executed", "rejected", "blocked"
+	Result        string    `json:"result"` // "executed", "rejected", "blocked"
 	Detail        string    `json:"detail,omitempty"`
 	ProcessImpact string    `json:"process_impact,omitempty"` // human-readable consequence
 }

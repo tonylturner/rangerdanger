@@ -33,9 +33,9 @@ type pcapState struct {
 	DurationSec int      `json:"duration_sec"`
 	StartedAt   string   `json:"started_at,omitempty"`
 	FileReady   bool     `json:"file_ready"`
-	FilePrefix  string   `json:"file_prefix,omitempty"`  // prefix used in containd config
-	Files       []string `json:"files,omitempty"`         // resulting PCAP filenames from containd
-	Fallback    bool     `json:"fallback"`                // true when using tcpdump fallback
+	FilePrefix  string   `json:"file_prefix,omitempty"` // prefix used in containd config
+	Files       []string `json:"files,omitempty"`       // resulting PCAP filenames from containd
+	Fallback    bool     `json:"fallback"`              // true when using tcpdump fallback
 }
 
 // trafficState tracks an active traffic generation session.
@@ -84,10 +84,10 @@ type Server struct {
 	// apply so a hash-in-flight race doesn't briefly flip to
 	// manual-custom on a normal button-driven apply.
 	lastAppliedAt time.Time
-	pcapMu         sync.Mutex
-	pcap           pcapState
-	trafficMu      sync.Mutex
-	traffic        trafficState
+	pcapMu        sync.Mutex
+	pcap          pcapState
+	trafficMu     sync.Mutex
+	traffic       trafficState
 }
 
 type graphNodeData struct {
@@ -96,7 +96,7 @@ type graphNodeData struct {
 	Networks      []string          `json:"networks"`
 	Status        string            `json:"status,omitempty"`
 	IP            string            `json:"ip,omitempty"`
-	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`  // network -> IP for multi-homed nodes
+	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"` // network -> IP for multi-homed nodes
 	UIPath        string            `json:"ui_path,omitempty"`
 	ExternalUIURL string            `json:"external_ui_url,omitempty"` // direct URL for external UI access
 }
@@ -118,7 +118,7 @@ type graphEdge struct {
 type nodeMetadata struct {
 	Networks      []string          `json:"networks,omitempty"`
 	UI            *nodeUIProxy      `json:"ui,omitempty"`
-	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`  // network -> IP for multi-homed nodes
+	InterfaceIPs  map[string]string `json:"interface_ips,omitempty"`   // network -> IP for multi-homed nodes
 	UIPath        string            `json:"ui_path,omitempty"`         // override UI path (e.g., for proxied access)
 	ExternalUIURL string            `json:"external_ui_url,omitempty"` // direct URL for external UI access
 }
@@ -145,8 +145,8 @@ func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orc
 		db:             db,
 		containdClient: containdClient,
 		activeConfig:   activeConfig,
-		loader:       loader,
-		orchestrator: orchestrator,
+		loader:         loader,
+		orchestrator:   orchestrator,
 	}
 
 	s.applyMigrations()

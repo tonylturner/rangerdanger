@@ -43,16 +43,16 @@ type HistorianState struct {
 }
 
 type Point struct {
-	Timestamp           string  `json:"timestamp"`
-	SubstationVoltageV  float64 `json:"substation_voltage_v"`
-	DownstreamVoltageV  float64 `json:"downstream_voltage_v"`
-	FeederCurrentA      float64 `json:"feeder_current_a"`
-	GeneralLoadKw       float64 `json:"general_load_kw"`
-	CriticalLoadKw      float64 `json:"critical_load_kw"`
-	BreakerClosed       bool    `json:"breaker_closed"`
-	RecloserClosed      bool    `json:"recloser_closed"`
-	TotalLossesKw       float64 `json:"total_losses_kw"`
-	PowerFactor         float64 `json:"power_factor"`
+	Timestamp          string  `json:"timestamp"`
+	SubstationVoltageV float64 `json:"substation_voltage_v"`
+	DownstreamVoltageV float64 `json:"downstream_voltage_v"`
+	FeederCurrentA     float64 `json:"feeder_current_a"`
+	GeneralLoadKw      float64 `json:"general_load_kw"`
+	CriticalLoadKw     float64 `json:"critical_load_kw"`
+	BreakerClosed      bool    `json:"breaker_closed"`
+	RecloserClosed     bool    `json:"recloser_closed"`
+	TotalLossesKw      float64 `json:"total_losses_kw"`
+	PowerFactor        float64 `json:"power_factor"`
 }
 
 const maxHistory = 500 // ring buffer size

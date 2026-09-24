@@ -288,9 +288,15 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 		checks = append(checks, ValidationCheck{"RTAC → field device comms", "pass", "RTAC polling relay, recloser, regulator — primary required flow confirmed"})
 	} else {
 		detail := "RTAC not reaching:"
-		if !relayComms { detail += " relay" }
-		if !recloserComms { detail += " recloser" }
-		if !regulatorComms { detail += " regulator" }
+		if !relayComms {
+			detail += " relay"
+		}
+		if !recloserComms {
+			detail += " recloser"
+		}
+		if !regulatorComms {
+			detail += " regulator"
+		}
 		checks = append(checks, ValidationCheck{"RTAC → field device comms", "fail", detail + " — these flows must be preserved"})
 	}
 

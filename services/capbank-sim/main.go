@@ -32,16 +32,16 @@ func (s *CapbankState) snapshot() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return map[string]any{
-		"switched_in":          s.SwitchedIn,
-		"auto_mode":            s.AutoMode,
-		"kvar_rating":          s.KvarRating,
-		"voltage_thresh_low_v": s.VoltageThreshLow,
+		"switched_in":           s.SwitchedIn,
+		"auto_mode":             s.AutoMode,
+		"kvar_rating":           s.KvarRating,
+		"voltage_thresh_low_v":  s.VoltageThreshLow,
 		"voltage_thresh_high_v": s.VoltageThreshHigh,
-		"comms_ok":             s.CommsOK,
-		"alarm":                s.Alarm,
-		"switch_count":         s.SwitchCount,
-		"lockout":              s.Lockout,
-		"last_command_source":  s.LastCommandSource,
+		"comms_ok":              s.CommsOK,
+		"alarm":                 s.Alarm,
+		"switch_count":          s.SwitchCount,
+		"lockout":               s.Lockout,
+		"last_command_source":   s.LastCommandSource,
 	}
 }
 
