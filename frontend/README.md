@@ -1,6 +1,6 @@
 # RangerDanger frontend
 
-Next.js 14 + TypeScript UI for the RangerDanger lab. Provides the
+Next.js 15 + TypeScript UI for the RangerDanger lab. Provides the
 exercise runner, network console, FUXA proxy, and substation views.
 
 ## Local development

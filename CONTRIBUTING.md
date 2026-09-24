@@ -11,9 +11,10 @@ You will need:
 - **Docker Desktop** ≥ 4.30 (or equivalent) with **≥ 8 GB RAM** and
   **≥ 30 GB free disk** allocated. The compose stack pulls roughly
   6–8 GB on a first run.
-- **Go 1.25+** for the backend (`backend/go.mod` pins
-  `toolchain go1.25.10`); the `services/` and `dnp3go/` modules still
-  build on Go 1.24+.
+- **Go 1.26+** for the backend (`backend/go.mod` declares `go 1.26.0`
+  and pins `toolchain go1.26.7`, which `go` downloads automatically);
+  the `services/` and `dnp3go/` modules declare `go 1.24.0` as their
+  minimum but pin the same `go1.26.7` toolchain.
 - **Node.js 20+** and **npm** for the frontend.
 
 Bring up the stack - either invocation works:
