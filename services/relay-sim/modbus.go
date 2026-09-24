@@ -128,8 +128,8 @@ func getHoldingRegisters() []uint16 {
 	defer state.mu.RUnlock()
 	return []uint16{
 		boolToUint16(state.BreakerClosed),        // reg 0
-		boolToUint16(state.RemoteControlEnabled),  // reg 1
-		boolToUint16(state.Lockout),               // reg 2
+		boolToUint16(state.RemoteControlEnabled), // reg 1
+		boolToUint16(state.Lockout),              // reg 2
 	}
 }
 

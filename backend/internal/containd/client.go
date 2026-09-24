@@ -52,24 +52,24 @@ func (e *EventID) UnmarshalJSON(data []byte) error {
 // both schemas are accepted on unmarshal so the backend works against
 // either version. New writes should use the v0.1.25+ field names.
 type Event struct {
-	ID         EventID        `json:"id"`
-	Timestamp  time.Time      `json:"timestamp"`
-	Kind       string         `json:"kind"`             // v0.1.25+: "firewall.rule.hit" etc.
-	Type       string         `json:"type"`             // legacy: "connection", "modbus", "dns", "alert"
-	Source     string         `json:"srcIp"`            // v0.1.25+ field
-	Dest       string         `json:"dstIp"`            // v0.1.25+ field
-	SourceLegacy string       `json:"source,omitempty"` // legacy fallback
-	DestLegacy   string       `json:"dest,omitempty"`   // legacy fallback
-	Protocol   string         `json:"protocol"`
-	Transport  string         `json:"transport"`        // v0.1.25+ ("tcp", "udp")
-	SrcPort    int            `json:"srcPort"`          // v0.1.25+ field
-	DstPort    int            `json:"dstPort"`          // v0.1.25+ field
-	SrcPortLegacy int         `json:"src_port,omitempty"`
-	DstPortLegacy int         `json:"dst_port,omitempty"`
-	Attributes map[string]any `json:"attributes"`       // v0.1.25+: ruleId, action, via, etc.
-	Details    string         `json:"details"`          // legacy human-readable
-	Severity   string         `json:"severity"`         // legacy: info/warning/critical
-	Zone       string         `json:"zone"`
+	ID            EventID        `json:"id"`
+	Timestamp     time.Time      `json:"timestamp"`
+	Kind          string         `json:"kind"`             // v0.1.25+: "firewall.rule.hit" etc.
+	Type          string         `json:"type"`             // legacy: "connection", "modbus", "dns", "alert"
+	Source        string         `json:"srcIp"`            // v0.1.25+ field
+	Dest          string         `json:"dstIp"`            // v0.1.25+ field
+	SourceLegacy  string         `json:"source,omitempty"` // legacy fallback
+	DestLegacy    string         `json:"dest,omitempty"`   // legacy fallback
+	Protocol      string         `json:"protocol"`
+	Transport     string         `json:"transport"` // v0.1.25+ ("tcp", "udp")
+	SrcPort       int            `json:"srcPort"`   // v0.1.25+ field
+	DstPort       int            `json:"dstPort"`   // v0.1.25+ field
+	SrcPortLegacy int            `json:"src_port,omitempty"`
+	DstPortLegacy int            `json:"dst_port,omitempty"`
+	Attributes    map[string]any `json:"attributes"` // v0.1.25+: ruleId, action, via, etc.
+	Details       string         `json:"details"`    // legacy human-readable
+	Severity      string         `json:"severity"`   // legacy: info/warning/critical
+	Zone          string         `json:"zone"`
 }
 
 // Normalize fills v0.1.25 fields from legacy fallbacks when only the older
@@ -691,10 +691,10 @@ type PcapFilter struct {
 type PcapConfig struct {
 	Enabled       bool       `json:"enabled,omitempty"`
 	Interfaces    []string   `json:"interfaces,omitempty"`
-	Snaplen       int        `json:"snaplen,omitempty"`       // default 262144
-	MaxSizeMB     int        `json:"maxSizeMB,omitempty"`     // default 64
-	MaxFiles      int        `json:"maxFiles,omitempty"`      // default 8
-	Mode          string     `json:"mode,omitempty"`          // "rolling" or "once"
+	Snaplen       int        `json:"snaplen,omitempty"`   // default 262144
+	MaxSizeMB     int        `json:"maxSizeMB,omitempty"` // default 64
+	MaxFiles      int        `json:"maxFiles,omitempty"`  // default 8
+	Mode          string     `json:"mode,omitempty"`      // "rolling" or "once"
 	Promisc       bool       `json:"promisc,omitempty"`
 	BufferMB      int        `json:"bufferMB,omitempty"`      // default 4
 	RotateSeconds int        `json:"rotateSeconds,omitempty"` // default 300

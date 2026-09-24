@@ -777,4 +777,3 @@ func assertAuthHeader(t *testing.T, r *http.Request) {
 		t.Errorf("expected 'Bearer <token>' format, got: %s", auth)
 	}
 }
-

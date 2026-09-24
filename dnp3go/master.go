@@ -60,8 +60,8 @@ func Poll(cfg *MasterConfig) *PollResult {
 
 	// Build integrity poll: Read FC01, Group 60 Var 1 (Class 0), Qualifier 0x06 (all)
 	apdu := []byte{
-		acFIR | acFIN, // AC: FIR=1, FIN=1, SEQ=0
-		FCRead,        // FC 0x01: Read
+		acFIR | acFIN,                            // AC: FIR=1, FIN=1, SEQ=0
+		FCRead,                                   // FC 0x01: Read
 		GroupClassData, VarClass0, QualAllPoints, // Group 60 Var 1 Qual 0x06
 	}
 

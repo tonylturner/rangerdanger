@@ -15,12 +15,12 @@ import (
 
 // PolicyRuleDiff shows a single rule change between two configs.
 type PolicyRuleDiff struct {
-	ZonePair    string `json:"zone_pair"`    // e.g. "enterprise → field"
-	WeakRule    string `json:"weak_rule"`    // description from weak config (empty if not present)
-	ImprovedRule string `json:"improved_rule"` // description from improved config (empty if not present)
-	WeakAction  string `json:"weak_action"`
+	ZonePair       string `json:"zone_pair"`     // e.g. "enterprise → field"
+	WeakRule       string `json:"weak_rule"`     // description from weak config (empty if not present)
+	ImprovedRule   string `json:"improved_rule"` // description from improved config (empty if not present)
+	WeakAction     string `json:"weak_action"`
 	ImprovedAction string `json:"improved_action"`
-	Change      string `json:"change"` // "tightened", "added", "removed", "unchanged"
+	Change         string `json:"change"` // "tightened", "added", "removed", "unchanged"
 }
 
 // PolicyComparison is the full comparison response.

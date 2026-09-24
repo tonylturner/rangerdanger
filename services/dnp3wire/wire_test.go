@@ -9,7 +9,7 @@
 //
 //   - the data-block CRC framing bug, which silently corrupted any integrity-
 //     poll response longer than one 16-byte link block (the RTAC's 15 binary
-//     + 8 analog inputs were the worst case — analog values came back garbage);
+//   - 8 analog inputs were the worst case — analog values came back garbage);
 //   - Direct Operate (FC 0x05), Direct Operate No-Ack (FC 0x06), and
 //     Select-Before-Operate (FC 0x03 + 0x04) all driving a sim's Operate
 //     callback.

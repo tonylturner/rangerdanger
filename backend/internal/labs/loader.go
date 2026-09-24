@@ -264,10 +264,10 @@ type DecisionRole struct {
 
 // DecisionAction is a single remediation choice in the decision catalog.
 type DecisionAction struct {
-	ID           string   `yaml:"id" json:"id"`
-	Title        string   `yaml:"title" json:"title"`
-	Why          string   `yaml:"why" json:"why"`
-	EffortHours  int      `yaml:"effort_hours" json:"effort_hours"`
-	Roles        []string `yaml:"roles" json:"roles"`
-	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	ID          string   `yaml:"id" json:"id"`
+	Title       string   `yaml:"title" json:"title"`
+	Why         string   `yaml:"why" json:"why"`
+	EffortHours int      `yaml:"effort_hours" json:"effort_hours"`
+	Roles       []string `yaml:"roles" json:"roles"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }

@@ -174,4 +174,3 @@ func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 	// Wait for connection to close
 	<-done
 }
-

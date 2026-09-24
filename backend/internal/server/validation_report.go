@@ -193,12 +193,12 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"markdown": md,
 		"summary": gin.H{
-			"authorized_pass":   authPass,
-			"authorized_total":  authTotal,
-			"unauthorized_pass": unauthPass,
+			"authorized_pass":    authPass,
+			"authorized_total":   authTotal,
+			"unauthorized_pass":  unauthPass,
 			"unauthorized_total": unauthTotal,
-			"skipped":           skipped,
-			"result":            map[bool]string{true: "PASS", false: "FAIL"}[result],
+			"skipped":            skipped,
+			"result":             map[bool]string{true: "PASS", false: "FAIL"}[result],
 		},
 		"active_config": active,
 		"policy_source": source,

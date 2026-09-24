@@ -19,6 +19,11 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: gofmt
+        working-directory: backend
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
         working-directory: backend
         run: go vet ./...
@@ -43,6 +48,11 @@ jobs:
         with:
           go-version-file: services/go.mod
           cache-dependency-path: services/go.sum
+      - name: gofmt
+        working-directory: services
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
         working-directory: services
         run: go vet ./...
@@ -62,6 +72,11 @@ jobs:
         with:
           go-version-file: dnp3go/go.mod
           cache-dependency-path: dnp3go/go.sum
+      - name: gofmt
+        working-directory: dnp3go
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
         working-directory: dnp3go
         run: go vet ./...

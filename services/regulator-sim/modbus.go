@@ -133,9 +133,9 @@ func getHoldingRegisters() []uint16 {
 	defer state.mu.RUnlock()
 
 	regs := make([]uint16, 3)
-	regs[0] = uint16(int16(state.TapPosition))              // signed
-	regs[1] = boolToUint16(state.ManualMode)                 // 0 or 1
-	regs[2] = uint16(state.VoltageSetpoint * 10)             // scaled x10
+	regs[0] = uint16(int16(state.TapPosition))   // signed
+	regs[1] = boolToUint16(state.ManualMode)     // 0 or 1
+	regs[2] = uint16(state.VoltageSetpoint * 10) // scaled x10
 	return regs
 }
 
@@ -144,8 +144,8 @@ func getInputRegisters() []uint16 {
 	defer state.mu.RUnlock()
 
 	regs := make([]uint16, 2)
-	regs[0] = uint16(int16(state.TapPosition))                          // signed
-	regs[1] = uint16(float64(state.TapPosition) * voltsPerTap * 10)     // voltage_offset x10
+	regs[0] = uint16(int16(state.TapPosition))                      // signed
+	regs[1] = uint16(float64(state.TapPosition) * voltsPerTap * 10) // voltage_offset x10
 	return regs
 }
 

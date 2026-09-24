@@ -30,7 +30,7 @@ import (
 
 type GPSState struct {
 	mu                sync.RWMutex
-	SyncStatus        string  `json:"sync_status"`        // "locked", "holdover", "freerun"
+	SyncStatus        string  `json:"sync_status"` // "locked", "holdover", "freerun"
 	SatelliteCount    int     `json:"satellite_count"`
 	TimeOffsetSec     float64 `json:"time_offset_sec"`    // applied offset (spoofing)
 	HoldoverStarted   string  `json:"holdover_started"`   // when GPS signal was lost
@@ -50,18 +50,18 @@ func (s *GPSState) snapshot() map[string]any {
 	now := time.Now().Add(time.Duration(s.TimeOffsetSec * float64(time.Second)))
 
 	return map[string]any{
-		"sync_status":       s.SyncStatus,
-		"satellite_count":   s.SatelliteCount,
-		"time_offset_sec":   s.TimeOffsetSec,
-		"reported_time":     now.Format(time.RFC3339Nano),
-		"actual_time":       time.Now().Format(time.RFC3339Nano),
-		"holdover_started":  s.HoldoverStarted,
-		"holdover_drift_ppm": s.HoldoverDriftPPM,
-		"irig_b_output":     s.IRIGB,
-		"ntp_enabled":       s.NTPEnabled,
-		"ptp_enabled":       s.PTPEnabled,
-		"comms_ok":          s.CommsOK,
-		"alarm":             s.Alarm,
+		"sync_status":         s.SyncStatus,
+		"satellite_count":     s.SatelliteCount,
+		"time_offset_sec":     s.TimeOffsetSec,
+		"reported_time":       now.Format(time.RFC3339Nano),
+		"actual_time":         time.Now().Format(time.RFC3339Nano),
+		"holdover_started":    s.HoldoverStarted,
+		"holdover_drift_ppm":  s.HoldoverDriftPPM,
+		"irig_b_output":       s.IRIGB,
+		"ntp_enabled":         s.NTPEnabled,
+		"ptp_enabled":         s.PTPEnabled,
+		"comms_ok":            s.CommsOK,
+		"alarm":               s.Alarm,
 		"last_command_source": s.LastCommandSource,
 	}
 }

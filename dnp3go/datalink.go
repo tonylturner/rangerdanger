@@ -76,7 +76,7 @@ func ReadLinkFrame(r io.Reader) (*LinkFrame, error) {
 		return nil, ErrBadHeaderCRC
 	}
 
-	length := fullHeader[2]  // number of bytes in frame after length field (excl CRCs)
+	length := fullHeader[2] // number of bytes in frame after length field (excl CRCs)
 	control := fullHeader[3]
 	dest := binary.LittleEndian.Uint16(fullHeader[4:6])
 	source := binary.LittleEndian.Uint16(fullHeader[6:8])

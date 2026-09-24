@@ -17,11 +17,11 @@ import (
 )
 
 type stepTestResult struct {
-	StepIndex int    `json:"step_index"`
-	StepTitle string `json:"step_title"`
-	Passed    bool   `json:"passed"`
-	Detail    string `json:"detail"`
-	DurationMs int64 `json:"duration_ms"`
+	StepIndex  int    `json:"step_index"`
+	StepTitle  string `json:"step_title"`
+	Passed     bool   `json:"passed"`
+	Detail     string `json:"detail"`
+	DurationMs int64  `json:"duration_ms"`
 }
 
 type scenarioTestResult struct {
@@ -79,16 +79,16 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 
 		// Parse steps
 		var steps []struct {
-			Title       string  `json:"title"`
-			Description string  `json:"description"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
 			Action      *struct {
-				Type    string         `json:"type"`
-				Device  string         `json:"device,omitempty"`
-				Command string         `json:"command,omitempty"`
-				Source  string         `json:"source,omitempty"`
-				Value   *float64       `json:"value,omitempty"`
-				Config  string         `json:"config,omitempty"`
-				Expect  map[string]any `json:"expect,omitempty"`
+				Type     string         `json:"type"`
+				Device   string         `json:"device,omitempty"`
+				Command  string         `json:"command,omitempty"`
+				Source   string         `json:"source,omitempty"`
+				Value    *float64       `json:"value,omitempty"`
+				Config   string         `json:"config,omitempty"`
+				Expect   map[string]any `json:"expect,omitempty"`
 				Commands []struct {
 					Device  string   `json:"device"`
 					Command string   `json:"command"`

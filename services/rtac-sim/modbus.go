@@ -126,13 +126,13 @@ func handleModbusConn(conn net.Conn) {
 
 		switch fc {
 		case fcReadCoils:
-			resp = handleReadCoils(buf[8:7+pduLen])
+			resp = handleReadCoils(buf[8 : 7+pduLen])
 		case fcReadDiscreteInputs:
-			resp = handleReadDiscreteInputs(buf[8:7+pduLen])
+			resp = handleReadDiscreteInputs(buf[8 : 7+pduLen])
 		case fcReadHoldingRegisters:
-			resp = handleReadHoldingRegisters(buf[8:7+pduLen])
+			resp = handleReadHoldingRegisters(buf[8 : 7+pduLen])
 		case fcReadInputRegisters:
-			resp = handleReadInputRegisters(buf[8:7+pduLen])
+			resp = handleReadInputRegisters(buf[8 : 7+pduLen])
 		default:
 			// Exception: illegal function
 			resp = []byte{fc | 0x80, 0x01}
