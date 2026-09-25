@@ -6,6 +6,59 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.31] - 2026-09-25
+
+A maintenance release. No lab, exercise, or network content changes.
+Splits the largest frontend and backend source files into single-purpose
+modules, adds backend and services unit coverage, moves the frontend off
+the deprecated `xterm` packages and onto recharts 3, and stops the Smoke
+workflow flaking on firewall config commits. The flake was root-caused
+to a containd bug (the nflog log consumer lost a re-bind race with its
+predecessor on every config commit), fixed upstream in containd v0.1.30;
+the compose files' `:latest` pin now resolves to that build, verified in
+the lab with 25 rapid weak/improved applies and zero consumer failures.
+
+### Changed
+
+- **Frontend module splits, no behavior change** (#114, #116, #117,
+  #119, #121). `substation-panel.tsx`, `exercise-pdf.tsx`,
+  `scenario-runner.tsx`, `network-console.tsx` and the knowledge page
+  each became a thin entry component over single-purpose modules under
+  `frontend/components/` and `frontend/lib/`; pure helpers moved with
+  tests. The commit bodies list every original line range.
+- **Backend `server.go` split** into `labs`, `topology`, `scenarios`,
+  and `ui_proxy` files (#115). Routes and handlers are unchanged.
+- **`xterm` / `xterm-addon-fit` -> `@xterm/xterm` 6.0 /
+  `@xterm/addon-fit` 0.11**; **recharts 2.15 -> 3.10** with
+  `react-is` 18.3 as the declared peer (#113). Only the terminal
+  component's imports changed; the platform-specific lockfile set is
+  unchanged.
+- **Frontend lint runs the ESLint CLI** (`--max-warnings=0`) instead of
+  `next lint`, which Next 16 removes; `vitest.config.ts` is now
+  `.mts` so Vite 8 reads it without a loader flag (#112).
+- **Dependabot backlog cleared** (#104-#108 in #110): marked 18.0.13,
+  next 15.5.25, postcss 8.5.28, @tanstack/react-query 5.102.8,
+  eslint-config-next 15.5.25.
+- **gofmt gate** added before `go vet` in every Go CI job after a
+  one-time gofmt sweep; the stray `backend/data/otlab.db` is untracked
+  (compose uses `RANGERDANGER_DB_PATH=/data/rangerdanger.db`) (#111).
+
+### Fixed
+
+- **Smoke workflow flake in `events-smoke.sh`** (#127). The `apply`
+  endpoint returns before the firewall dataplane reconciles, so the
+  script now waits for a kali -> rtac:502 canary to flip after every
+  policy apply (as `firewall-smoke.sh` and `lab-commands-smoke.sh`
+  already did) and, when the DENY event never lands, reports whether
+  containd logged `service.nflog.unavailable` instead of blaming the
+  probe. The underlying consumer loss is fixed in containd v0.1.30.
+
+### Tests
+
+- Backend unit coverage for config, db, the labs loader, and models
+  (#120); services coverage for `shared`, `rtac-sim`, `gps-sim`, and
+  `historian-sim` (#118).
+
 ### Documentation
 
 - Extracted the govulncheck allowlist gate into a script shared by CI and
@@ -27,6 +80,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   casing), remediation-plan storage key and parser locations,
   hardened-alias location, workshop YAML reload note, and the PR
   template checklist.
+- Dropped the stale ROADMAP item for orchestrator fail-fast on unmapped
+  zones; the orchestrator has rejected unknown zones since v0.1.2
+  (#122). The local `build/` orchestration workspace is ignored
+  alongside `docs/_internal/` (#124).
 
 ## [v0.1.30] - 2026-09-12
 
@@ -2460,7 +2517,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.30...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.31...HEAD
+[v0.1.31]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.31
 [v0.1.30]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.30
 [v0.1.29]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.29
 [v0.1.28]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.28
