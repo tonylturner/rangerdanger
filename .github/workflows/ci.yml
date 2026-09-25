@@ -121,8 +121,8 @@ jobs:
   govulncheck:
     # Hard gate. Findings other than the documented exceptions in
     # docs/security-known-issues.md fail the build. To allowlist a
-    # new finding: add a triage entry to security-known-issues.md
-    # and append the GOID to ALLOWED below in the same PR.
+    # new finding: add a triage entry to security-known-issues.md and
+    # add its GOID to ALLOWED in scripts/govulncheck-gate.sh.
     name: Go vulnerability scan
     runs-on: ubuntu-latest
     steps:
@@ -132,9 +132,9 @@ jobs:
           go-version-file: backend/go.mod
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      # Some ALLOWED entries below are accepted only because the
-      # vulnerable package is absent from the build graph. The filter
-      # in the next step matches on GOID alone, so it cannot notice
+      # Some ALLOWED entries in scripts/govulncheck-gate.sh are accepted
+      # only because the vulnerable package is absent from the build graph.
+      # The filter in the next step matches on GOID alone, so it cannot notice
       # that rationale going stale. This asserts the precondition
       # those exceptions actually rest on.
       - name: assert unreachable exceptions still hold

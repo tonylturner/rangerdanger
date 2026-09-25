@@ -69,7 +69,7 @@ for dir in "${modules[@]}"; do
       echo ""
       echo "  Fix by removing the import, or - if the import is"
       echo "  intended - drop those GOIDs from ALLOWED in"
-      echo "  .github/workflows/ci.yml and re-triage them in"
+      echo "  scripts/govulncheck-gate.sh and re-triage them in"
       echo "  docs/security-known-issues.md on their real merits."
       fail=1
     fi

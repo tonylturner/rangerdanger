@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+#
+# Shared govulncheck hard gate for CI and contributors.
+#
+# GOIDs in ALLOWED are accepted only with a triage entry in
+# docs/security-known-issues.md. Exceptions based on unreachable packages
+# are additionally guarded by scripts/assert-unreachable-vulns.sh.
+#
+# Like govulncheck's default text mode, the gate counts called findings
+# only: JSON findings with a non-empty trace (length > 0).
+#
+# Usage: scripts/govulncheck-gate.sh [module-dir ...]
+#        defaults to: backend services dnp3go
+#        ALLOWED may be overridden via the environment for negative testing.
 
 set -uo pipefail
 
