@@ -52,24 +52,39 @@ Open http://localhost:8088 - the UI is the entry point.
 
 ## Running tests
 
-The same commands CI runs:
+The same commands CI runs (`.github/workflows/ci.yml`):
 
 ```sh
-# Backend
-(cd backend && go vet ./... && go test -race ./... && go build ./cmd/server)
+# gofmt gate (tracked files only, so local Go caches do not trip it)
+test -z "$(git ls-files '*.go' | xargs gofmt -l)"
+
+# Backend. -count=1 matters: firewall_config_test reads the policy JSONs
+# at runtime and Go's test cache does not see them.
+(cd backend && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)
 
 # Services (simulators)
-(cd services && go vet ./... && go test -race ./...)
+(cd services && go vet ./... && go test -race ./... && go build ./...)
 
 # DNP3 library
-(cd dnp3go && go vet ./... && go test -race ./...)
+(cd dnp3go && go vet ./... && go test -race ./... && go build ./...)
 
 # Frontend
 (cd frontend && npm ci && npm run lint && npm test && npm run build)
 
-# Compose validation
+# Compose validation (dev and release)
 docker compose config -q
+docker compose -f docker-compose.release.yml config -q
+
+# Vulnerability scan (go install golang.org/x/vuln/cmd/govulncheck@latest first)
+./scripts/assert-unreachable-vulns.sh
+for d in backend services dnp3go; do (cd "$d" && govulncheck ./...); done
 ```
+
+`govulncheck` findings outside the `ALLOWED` list in the workflow fail
+CI. A new finding needs a triage entry in
+[`docs/security-known-issues.md`](docs/security-known-issues.md) plus
+the `ALLOWED` list in the workflow. `npx tsc --noEmit` in `frontend/`
+is a faster type-check than waiting for `next build`.
 
 ## End-to-end smoke gates
 
@@ -103,6 +118,44 @@ docker compose up -d --build
 CI runs all three on every PR and push to main
 (`.github/workflows/smoke.yml`). Locally is faster because the
 images are already cached.
+
+## Networking invariants
+
+The lab's teaching value depends on the topology being exactly as
+documented. Treat the following as frozen; a PR that changes any of
+them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
+
+- Six Docker networks with fixed subnets and static IPs:
+  `mgmt_net` 10.99.99.0/24, `enterprise_net` 10.10.10.0/24,
+  `vendor_net` 10.20.20.0/24, `ot_ops_net` 10.30.30.0/24,
+  `field_net` 10.40.40.0/24, `physics_net` 10.50.50.0/24. Node IPs are
+  listed in [`docs/architecture.md`](docs/architecture.md) and
+  referenced by absolute IP inside lab YAML commands.
+- The `firewall` container (containd) is multi-homed as `.2` on every
+  zone and is the only path between zones. The Go sims (via their
+  `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump` and
+  `eng_workstation` run `set-gateway.sh` at start to default-route
+  through it. `fuxa_hmi` and `openplc` receive `GATEWAY` as an env var
+  but do not run the script; treat them as known exceptions, not a
+  pattern to copy.
+- `rtac_sim` is intentionally four-homed. `scripts/rtac-harden.sh` plus
+  the compose `sysctls` disable forwarding, drop FORWARD, and replace
+  the connected field route with one via the firewall. The hardened
+  policy source-pins the RTAC as 10.30.30.20 because of this.
+- `physics_net` is deliberately not firewalled. `mgmt_net` is the
+  out-of-band control plane for backend, frontend, proxy, and containd.
+- All host ports bind to loopback only: 8088 (portal), 9080 / 9443 /
+  2222 (containd). The backend API and the WebSocket terminals have no
+  authentication; containd, OpenPLC and the vendor-jump / eng-ws desktops
+  use baked-in lab credentials
+  ([`docs/lab-credentials.md`](docs/lab-credentials.md)).
+  [`SECURITY.md`](SECURITY.md) explains why.
+- containd zone names `wan` / `dmz` / `lan1` / `lan2` / `lan3` and the
+  canned policies in `lab-definitions/firewall/` are what the
+  validators and firewall smoke gate assert against.
+
+This covers the compose files, network settings, port bindings,
+sysctls, gateway and hardening scripts, and the policy JSONs.
 
 ## Code style
 
