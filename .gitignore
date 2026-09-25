@@ -120,3 +120,8 @@ docs/_internal/
 # local UI verification. Useful locally, not part of the repo.
 .playwright-mcp/
 supervisory-control-2x2.png
+
+# Local orchestration workspace: audit findings, lane specs, and job
+# reports written during maintenance sessions. Same status as
+# docs/_internal/ - useful locally, never part of the public repo.
+/build/
