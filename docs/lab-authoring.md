@@ -260,14 +260,14 @@ Decisions and the remediation plan persist client-side. Keys:
 
 ```
 decision:<scenario-id>:<decision-id>     decision dropdown selections
-remediationPlan                          current plan (action ids + saved-at)
+rd-remediation-plan                      JSON {exerciseId, selectedActionIds, savedAt}
 ```
 
-The runner doesn't expose these as authoring primitives - you read
-them indirectly via `:::findings-panel` and the `default-from`
-attribute on `:::decision`. If you need a brand-new way to surface
-saved data, add a parser case to `splitDescription` and a renderer
-component, then document it here.
+The runner exposes saved data via `:::findings-panel`, `default-from`
+on `:::decision`, and `:::plan-coverage`. If you need a brand-new way
+to surface saved data, add a parser case to `splitDescription` and a
+renderer in `frontend/components/scenario-description-blocks.tsx`,
+then document it here.
 
 ## Authoring checklist
 

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - five virtual networks representing zones of an electric distribution substation, a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
+RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - six virtual networks (four firewalled zones plus management and physics), a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
 
 ## Network topology
 
@@ -101,7 +101,7 @@ Field-device simulators:
 - `relay-sim` - Feeder breaker with trip/close, lockout, fault injection (DNP3 + Modbus + HTTP)
 - `recloser-sim` - Auto-reclose with shot counting, lockout, disable-reclose (DNP3 + Modbus + HTTP)
 - `regulator-sim` - Load tap changer with ±16 tap range (DNP3 + Modbus + HTTP)
-- `capbank-sim` - Switched capacitor bank with switch-count contact wear (Modbus + HTTP; no DNP3 outstation)
+- `capbank-sim` - Switched capacitor bank with switch-count contact wear (DNP3 + Modbus + HTTP)
 - `historian-sim` - Data historian polling the RTAC (Modbus + HTTP)
 - `gps-sim` - GPS / NTP time source (NTP + HTTP)
 - `rtac-sim` - Supervisory controller aggregating all field devices; runs autonomous DNP3 master polling every 5s and HTTP REST polling every 1s (read-only DNP3 outstation, Modbus, HTTP)
@@ -110,7 +110,7 @@ Plus one Python sim:
 
 - `opendss-sim` - Simplified feeder physics engine. **Python / FastAPI**, served HTTP-only on port 8080 from its own `services/opendss-sim/Dockerfile` (python:3.12-slim). Not part of the Go multi-stage build.
 
-DNP3 outstation addresses (the four that expose DNP3): relay=1, recloser=2, regulator=3, rtac=10 (read-only).
+DNP3 outstation addresses (the five that expose DNP3): relay=1, recloser=2, regulator=3, capbank=4, rtac=10 (read-only).
 
 ### Containd NGFW
 
@@ -141,7 +141,7 @@ Browser ──HTTP──> Nginx proxy ──┬──> /apps/*      → webtop/H
 
 Backend ──Docker SDK──> container lifecycle + exec sessions
         ──REST──────> containd /api/v1/* (firewall policy, PCAP, events)
-        ──WebSocket─> xterm.js clients (Docker exec or SSH, with resize forwarding)
+        ──WebSocket─> xterm.js clients (Docker exec, with resize forwarding)
         ──GORM──────> SQLite at /data/rangerdanger.db
 
 Exercise runner (frontend) ──/api/scenarios/:id/validate──> backend validator
@@ -154,7 +154,7 @@ Exercise runner (frontend) ──/api/scenarios/:id/validate──> backend vali
 
 ### Multi-homed RTAC with kernel-pinned routing
 
-The RTAC sits on two Docker networks (`ot_ops_net` + `field_net`) directly. This models a real substation RTAC that has a control-center-facing leg and a process-network leg. Without compensation, the kernel would forward field-bound traffic out the directly-connected `field_net` interface and bypass the firewall - exactly the "compromised RTAC bridges zones" failure mode. **`scripts/rtac-harden.sh` (run before the rtac-sim binary starts) prevents that bypass:**
+The RTAC sits on four Docker networks directly (`ot_ops_net`, `field_net`, `physics_net`, `mgmt_net`; see the topology section above). This models a real substation RTAC that has a control-center-facing leg and a process-network leg. Without compensation, the kernel would forward field-bound traffic out the directly-connected `field_net` interface and bypass the firewall - exactly the "compromised RTAC bridges zones" failure mode. **`scripts/rtac-harden.sh` (run before the rtac-sim binary starts) prevents that bypass:**
 
 1. `net.ipv4.ip_forward = 0` and per-interface forwarding disabled.
 2. Proxy ARP and ICMP redirects disabled, strict reverse-path filter on.

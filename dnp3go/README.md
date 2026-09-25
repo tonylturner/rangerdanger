@@ -38,6 +38,7 @@ These are built into the Kali (`Dockerfile.kali`) and engineering-workstation (`
 | `services/relay-sim` | DNP3 outstation, address 1 | `services/relay-sim/dnp3.go` |
 | `services/recloser-sim` | DNP3 outstation, address 2 | `services/recloser-sim/dnp3.go` |
 | `services/regulator-sim` | DNP3 outstation, address 3 | `services/regulator-sim/dnp3.go` |
+| `services/capbank-sim` | DNP3 outstation, address 4 | `services/capbank-sim/dnp3.go` |
 | `services/rtac-sim` | DNP3 master polling field devices + read-only outstation address 10 | `services/rtac-sim/dnp3.go`, `services/rtac-sim/dnp3_poll.go` |
 
 All field outstations listen on TCP port 20000.

@@ -265,8 +265,8 @@ docker compose up -d
 ### "The lab YAML I edited mid-workshop isn't showing up"
 
 Lab YAML is bind-mounted into the backend container at
-`/lab-definitions:ro`, hot-reloadable. Backend re-loads scenarios on
-restart:
+`/lab-definitions:ro`, and the backend loads scenarios at startup.
+Restart the backend to pick up edits:
 
 ```sh
 docker compose restart backend

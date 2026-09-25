@@ -212,7 +212,7 @@ logical interface names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) to whatever
 non-deterministic ethN ordering across hosts doesn't shift the policy.
 
 **`rtac_sim` is multi-homed across `ot_ops_net` + `field_net` +
-`physics_net`** but `scripts/rtac-harden.sh` replaces the directly-
+`physics_net` + `mgmt_net`** but `scripts/rtac-harden.sh` replaces the directly-
 connected route to `field_net` with a route via the firewall. This is
 the kernel-level compensating control that keeps RTAC → field traffic
 visible to containd's policy + capture pipeline. See
@@ -302,7 +302,7 @@ posture relies on this.
 
 **Critical bind mounts:**
 - `./lab-definitions:/lab-definitions:ro` on `backend` - YAML lab
-  source, hot-reloadable by editing the file.
+  source, loaded at backend startup (restart the backend after edits).
 - `/var/run/docker.sock:/var/run/docker.sock` on `backend` - Docker
   SDK access for orchestration. The trust boundary: anything that
   reaches the backend container can spawn / kill any container on

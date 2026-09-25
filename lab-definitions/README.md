@@ -73,7 +73,7 @@ runtime semantics are:
   validator treats `hardened` as a UI alias matching either
   `improved` or `custom`. (Heads-up: the backend's same-named
   check in `scenario_execute.go` does **not** carry this alias —
-  the alias logic lives in `frontend/components/scenario-runner.tsx`.
+  the alias logic lives in `frontend/components/policy-status-banner.tsx`.
   Authors who add a new step with `expected_config: hardened` should
   rely on the frontend check, not on the backend's reply.)
 
