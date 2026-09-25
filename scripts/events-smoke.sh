@@ -79,48 +79,77 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+# Dataplane canary — same design as firewall-smoke.sh and
+# lab-commands-smoke.sh. /api/firewall/apply returns once containd has
+# committed the config, but nft rules and the nflog/NFQUEUE consumers
+# reconcile asynchronously after that, so a fixed sleep after apply is
+# a race. Poll the canary until the verdict matches the policy we just
+# applied instead. The canary proves the drop rules are live; whether
+# the nflog consumer came back after the commit is gate 1's job.
+canary_tcp() {
+  if docker exec rangerdanger-kali timeout 1 bash -c \
+      'exec 3<>/dev/tcp/10.30.30.20/502' >/dev/null 2>&1; then
+    echo allow
+  else
+    echo deny
+  fi
+}
+
+wait_for_dataplane() {
+  local expected="$1"
+  local budget="${2:-15}"
+  for _ in $(seq 1 $((budget * 2))); do
+    [ "$(canary_tcp)" = "$expected" ] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+# apply_policy weak|improved — apply via the lab API, then wait for the
+# dataplane to reconcile. Records ok/err; returns non-zero on failure.
+apply_policy() {
+  local name="$1" resp expected_canary
+  resp=$(curl -fsS -m 30 -X POST "$API/api/firewall/apply" \
+    -H 'Content-Type: application/json' \
+    -d "{\"config\":\"$name\"}" 2>&1) \
+    || { err "apply $name failed: $resp"; return 1; }
+  case "$name" in
+    weak)     expected_canary=allow ;;
+    improved) expected_canary=deny ;;
+    *) err "apply_policy: unknown policy $name"; return 1 ;;
+  esac
+  if wait_for_dataplane "$expected_canary" 15; then
+    ok "apply $name: $resp (dataplane reconciled)"
+  else
+    err "dataplane never reconciled to $name (canary kali->rtac:502 still wrong after 15s)"
+    return 1
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────────
 # Gate 1: L4 firewall.rule.hit events flow under improved policy
 # ─────────────────────────────────────────────────────────────────────
 note "gate 1: L4 firewall.rule.hit event flow"
 
-resp=$(curl -fsS -m 30 -X POST "$API/api/firewall/apply" \
-  -H 'Content-Type: application/json' \
-  -d '{"config":"improved"}' 2>&1) \
-  || { err "apply improved failed: $resp"; exit 1; }
-ok "apply improved: $resp"
-sleep 2
+apply_policy improved || exit 1
 
 # Kali probe — port 502 to a field device should hit deny-enterprise-to-field
-# (an L4 log+drop rule, not an ICS-eligible one). Use bash with timeout
-# because the SYN drops, so nc would otherwise wait forever.
+# (an L4 log+drop rule, not an ICS-eligible one). nc -w 3 bounds it,
+# because the SYN drops and nc would otherwise wait forever.
 docker exec rangerdanger-kali sh -c "nc -nv -w 3 10.40.40.20 502 < /dev/null" >/dev/null 2>&1 || true
 sleep "$PROBE_WAIT"
 
-# Poll for the DENY event. The nflog consumer + engine event store + REST
-# endpoint occasionally take longer than PROBE_WAIT (4s) to surface the
-# event under CI runner load — previously this gate failed with
-# "nflog consumer regressed" on what is actually just a polling-window
-# race. Polling within an EVENT_POLL_BUDGET budget (default 20s) makes
-# the gate deterministic against the same propagation race without
-# papering over a real regression: if the consumer is genuinely broken
-# the event will never appear and we still fail at the budget edge.
-#
 # Query the engine's full event store directly (not the substation
 # endpoint, which limits to 50 most recent and gets drowned out by RTAC's
 # continuous allow-traffic). limit=500 gives plenty of room for kali
-# drops to appear.
-deny_count=0
-elapsed=0
-# `-le` so the loop checks at elapsed values 0..EVENT_POLL_BUDGET
-# inclusive — with default budget 20 that's 21 checks. The previous
-# `-lt` exited after the sleep-to-20 without rechecking, so a DENY
-# event that surfaced during the final second of the advertised
-# budget was still missed (Codex review on #72).
-while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
-  deny_count=$(docker exec rangerdanger-firewall sh -c \
-    "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null \
-    | python3 -c '
+# drops to appear (~6 events/s under improved).
+engine_events() {
+  docker exec rangerdanger-firewall sh -c \
+    "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null
+}
+
+count_kali_denies() {
+  engine_events | python3 -c '
 import json, sys
 events = json.load(sys.stdin) or []
 denies = [e for e in events
@@ -130,7 +159,23 @@ denies = [e for e in events
           and e.get("dstIp","").startswith("10.40.40.")
           and e.get("dstPort") == 502]
 print(len(denies))
-' 2>/dev/null || echo 0)
+' 2>/dev/null || echo 0
+}
+
+# Poll for the DENY event. The nflog consumer + engine event store + REST
+# endpoint occasionally take longer than PROBE_WAIT (4s) to surface the
+# event under CI runner load. Polling within EVENT_POLL_BUDGET keeps the
+# gate deterministic against that propagation delay without papering
+# over a real regression: if the consumer is broken the event never
+# appears and we still fail at the budget edge.
+deny_count=0
+elapsed=0
+# `-le` so the loop checks at elapsed values 0..EVENT_POLL_BUDGET
+# inclusive. The previous `-lt` exited after the final sleep without
+# rechecking, so an event that surfaced during the last second of the
+# advertised budget was still missed (Codex review on #72).
+while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
+  deny_count=$(count_kali_denies)
   if [ "$deny_count" -ge 1 ]; then
     break
   fi
@@ -142,7 +187,29 @@ print(len(denies))
 done
 
 if [ "$deny_count" -lt 1 ]; then
-  err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 in engine events after ${EVENT_POLL_BUDGET}s — nflog consumer regressed"
+  # Distinguish the known containd failure mode from anything else.
+  # containd re-registers nflog group 100 on every config commit; the
+  # old consumer's unbind/close is asynchronous, so a commit that lands
+  # while the previous consumer still holds the group gets EPERM from
+  # the kernel, containd emits service.nflog.unavailable and never
+  # retries. Drops still happen (the canary says deny) but no
+  # firewall.rule.hit events are produced until the next commit wins
+  # the race. Seen on loaded CI runners (Smoke run 36103111036) and
+  # reproduced locally 2026-09-25 (build/specs/events-flake/). This is
+  # a containd bug (pkg/dp/engine/engine.go Reconfigure/Start), not a
+  # lab regression, but the gate stays red because the lab's Live
+  # Events strip is genuinely blind in this state.
+  nflog_err=$(engine_events | python3 -c '
+import json, sys
+for e in json.load(sys.stdin) or []:
+    if e.get("kind") == "service.nflog.unavailable":
+        print(e.get("attributes", {}).get("error", "")); break
+' 2>/dev/null)
+  if [ -n "$nflog_err" ]; then
+    err "no kali->field:502 DENY event after ${EVENT_POLL_BUDGET}s: containd reported service.nflog.unavailable (${nflog_err}) — nflog re-bind lost the race with the previous consumer on config commit"
+  else
+    err "no firewall.rule.hit DENY for kali(10.10.10.50)->field(10.40.40.x):502 in engine events after ${EVENT_POLL_BUDGET}s — nflog consumer regressed"
+  fi
 else
   ok "$deny_count kali->field:502 DENY event(s) in engine event store (after ${elapsed}s of polling)"
 fi
@@ -274,9 +341,7 @@ elif ! docker exec rangerdanger-rtac-sim which dnp3cmd >/dev/null 2>&1; then
 else
   # Make sure the hardened policy (with the DNP3 FC allowlist) is active -
   # gate 1 applied improved, but re-assert in case a later gate changed it.
-  curl -fsS -m 30 -X POST "$API/api/firewall/apply" \
-    -H 'Content-Type: application/json' -d '{"config":"improved"}' >/dev/null 2>&1 || true
-  sleep 2
+  apply_policy improved || true
 
   # Fire a DNP3 Direct Operate (FC5) from the RTAC to the relay. DPI should
   # parse it, see fc=5 NOT in [1], and BlockFlowTemp the flow. As in gate 3
@@ -300,9 +365,7 @@ else
   # allowed), restore the relay, THEN flush block_flows last so nothing the
   # restore touched is left blocked. Ending on weak also matches the lab
   # default that gate 1 moved away from.
-  curl -fsS -m 30 -X POST "$API/api/firewall/apply" \
-    -H 'Content-Type: application/json' -d '{"config":"weak"}' >/dev/null 2>&1 || true
-  sleep 2
+  apply_policy weak || true
   docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
   docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
 fi
