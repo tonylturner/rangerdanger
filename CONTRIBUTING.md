@@ -77,13 +77,13 @@ docker compose -f docker-compose.release.yml config -q
 
 # Vulnerability scan (go install golang.org/x/vuln/cmd/govulncheck@latest first)
 ./scripts/assert-unreachable-vulns.sh
-for d in backend services dnp3go; do (cd "$d" && govulncheck ./...); done
+./scripts/govulncheck-gate.sh
 ```
 
-`govulncheck` findings outside the `ALLOWED` list in the workflow fail
-CI. A new finding needs a triage entry in
-[`docs/security-known-issues.md`](docs/security-known-issues.md) plus
-the `ALLOWED` list in the workflow. `npx tsc --noEmit` in `frontend/`
+`govulncheck` findings outside the script's `ALLOWED` list fail. A new
+finding needs a triage entry in
+[`docs/security-known-issues.md`](docs/security-known-issues.md) plus the
+`ALLOWED` list in `scripts/govulncheck-gate.sh`. `npx tsc --noEmit` in `frontend/`
 is a faster type-check than waiting for `next build`.
 
 ## End-to-end smoke gates

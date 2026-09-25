@@ -140,43 +140,6 @@ jobs:
       - name: assert unreachable exceptions still hold
         run: ./scripts/assert-unreachable-vulns.sh
       - name: scan + allowlist filter
-        env:
-          # Documented exceptions in docs/security-known-issues.md.
-          # Add GOIDs here only after a triage entry lands there.
-          ALLOWED: "GO-2026-4887 GO-2026-4883 GO-2026-5617 GO-2026-5668 GO-2026-5746 GO-2026-5932"
-        run: |
-          fail=0
-          for dir in backend services dnp3go; do
-            echo ""
-            echo "=== govulncheck: $dir ==="
-            (cd "$dir" && govulncheck -format json ./...) > "/tmp/vuln-$dir.json" 2>&1 || true
-            if [ ! -s "/tmp/vuln-$dir.json" ]; then
-              echo "::error::govulncheck produced no output for $dir"
-              fail=1
-              continue
-            fi
-            # Called findings only (trace length > 0). Imported-but-uncalled
-            # findings appear in JSON output but aren't reported in default
-            # text mode; we mirror that policy.
-            found=$(jq -r '.finding | select(has("osv") and (.trace // [] | length) > 0) | .osv' "/tmp/vuln-$dir.json" 2>/dev/null | sort -u)
-            if [ -z "$found" ]; then
-              echo "  no findings"
-              continue
-            fi
-            unexpected=$(comm -23 <(echo "$found") <(printf "%s\n" $ALLOWED | sort -u))
-            count=$(echo "$found" | wc -l | tr -d ' ')
-            if [ -n "$unexpected" ]; then
-              echo "::error::Unexpected vulnerabilities in $dir:"
-              echo "$unexpected" | sed 's/^/  - /'
-              echo ""
-              echo "Allowlist (docs/security-known-issues.md): $ALLOWED"
-              echo ""
-              echo "Either (1) add a triage entry to docs/security-known-issues.md"
-              echo "and the ALLOWED env var in this workflow, or (2) update the"
-              echo "affected dependency."
-              fail=1
-            else
-              echo "  $count finding(s), all allowlisted"
-            fi
-          done
-          exit $fail
+        # Documented exceptions are listed in docs/security-known-issues.md;
+        # the ALLOWED list lives in scripts/govulncheck-gate.sh.
+        run: ./scripts/govulncheck-gate.sh
