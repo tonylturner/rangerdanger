@@ -1,10 +1,10 @@
 # Security: known issues
 
 Findings from `govulncheck` that the project is aware of but has not
-acted on, with rationale. Source of truth for the `Go vulnerability
-scan` hard-gate job in `.github/workflows/ci.yml`: a triage entry
-here plus appending the GOID to the workflow's `ALLOWED` env var is
-the contract for accepting a new finding.
+acted on, with rationale. These entries document exceptions for the
+`govulncheck` hard-gate job in `.github/workflows/ci.yml`. Accepting a
+new finding requires a triage entry here and adding its GOID to the
+`ALLOWED` list in `scripts/govulncheck-gate.sh`.
 
 The triage cadence is per-release. If you tag a new version, sweep
 this file against `gh run view <latest-ci-run> --log-failed` and
@@ -63,7 +63,8 @@ either remove resolved entries or add new ones.
   remember, so the gate now checks it: the script fails the build if
   `x/crypto/openpgp` (or any subpackage) enters the build graph.
 - **Action**: none while the guard passes. If it ever fires, drop
-  `GO-2026-5932` from `ALLOWED` and re-triage on the real merits -
+  `GO-2026-5932` from `ALLOWED` in `scripts/govulncheck-gate.sh` and
+  re-triage on the real merits -
   most likely by migrating the offending import to
   `github.com/ProtonMail/go-crypto/openpgp`.
 
@@ -308,15 +309,15 @@ moved to `golang:1.27` / `golang:1.27-alpine` (v0.1.30).
 ## Adding a new exception
 
 The hard-gate `govulncheck` job allowlists OSV IDs via the
-`ALLOWED` env var in `.github/workflows/ci.yml`. To accept a new
+`ALLOWED` list in `scripts/govulncheck-gate.sh`. To accept a new
 finding:
 
 1. Add a triage entry to the **Open** section above with module,
    affected paths, upstream fix status, mitigation, and action.
-2. Append the GOID to `ALLOWED` in `.github/workflows/ci.yml`.
+2. Append the GOID to `ALLOWED` in `scripts/govulncheck-gate.sh`.
 3. Add a `### Security` note to `CHANGELOG.md` under `[Unreleased]`.
 
-Same PR for all three - the entry, the workflow change, and the
+Same PR for all three - the entry, the gate change, and the
 changelog note travel together so the acceptance is reviewable.
 
 **If the exception rests on the vulnerable package being unreachable**

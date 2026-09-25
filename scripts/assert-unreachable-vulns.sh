@@ -2,7 +2,7 @@
 #
 # Guards the "unreachable" govulncheck exceptions.
 #
-# Some GOIDs in the ALLOWED list of .github/workflows/ci.yml are
+# Some GOIDs in the ALLOWED list of scripts/govulncheck-gate.sh are
 # accepted specifically because the vulnerable package is NOT in this
 # project's build graph - not because of any mitigation, and not
 # because upstream shipped a fix. That rationale is written down in
@@ -69,7 +69,7 @@ for dir in "${modules[@]}"; do
       echo ""
       echo "  Fix by removing the import, or - if the import is"
       echo "  intended - drop those GOIDs from ALLOWED in"
-      echo "  .github/workflows/ci.yml and re-triage them in"
+      echo "  scripts/govulncheck-gate.sh and re-triage them in"
       echo "  docs/security-known-issues.md on their real merits."
       fail=1
     fi

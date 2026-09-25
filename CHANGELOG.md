@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- Extracted the govulncheck allowlist gate into a script shared by CI and
+  contributors.
 - Corrected stale version claims: README badge, architecture doc and
   frontend README said Next.js 14 (frontend is on 15.5.x since #94);
   CONTRIBUTING and the known-issues history said the modules pin
