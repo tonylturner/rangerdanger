@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- Dropped the stale ROADMAP item for orchestrator fail-fast on unmapped
+  network zones: it shipped in v0.1.2 (e3b0b77) and both the primary and
+  secondary network attachments already go through `resolveNetworkName`,
+  with tests pinning the error on unknown zones.
 - Corrected stale version claims: README badge, architecture doc and
   frontend README said Next.js 14 (frontend is on 15.5.x since #94);
   CONTRIBUTING and the known-issues history said the modules pin
