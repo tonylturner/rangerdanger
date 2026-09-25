@@ -5,8 +5,7 @@ audience that best fits what you are trying to do.
 
 For a one-paragraph project description and quick install, see the
 top-level [`README.md`](../README.md). For the day-by-day changelog
-see [`CHANGELOG.md`](../CHANGELOG.md), and for forward-looking direction
-see [`ROADMAP.md`](../ROADMAP.md).
+see [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Start here
 
@@ -103,8 +102,6 @@ the platform.
 
 ## What is not in this directory
 
-- [`../ROADMAP.md`](../ROADMAP.md) - Forward-looking direction
-  (v0.2.0 FUXA HMI screens, v0.3.0 multi-user, backlog ideas).
 - [`../CHANGELOG.md`](../CHANGELOG.md) - Per-release history.
 - [`../SUPPORT.md`](../SUPPORT.md) - Where to ask questions, what to
   expect from maintainers, separate channels for security versus

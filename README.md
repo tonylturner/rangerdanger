@@ -245,7 +245,6 @@ Start at [`docs/`](docs/) for the routed landing page. Key entries:
 | 🔐 [`SECURITY.md`](SECURITY.md) | Lab security model, external-access patterns, vuln reporting |
 | 🐛 [`docs/security-known-issues.md`](docs/security-known-issues.md) | Triaged govulncheck/Trivy findings with rationale |
 | 🛠 [`CONTRIBUTING.md`](CONTRIBUTING.md) | Local dev setup, tests, PR conventions |
-| 🗺 [`ROADMAP.md`](ROADMAP.md) | Planned v0.2.0 + v0.3.0 + backlog |
 | 💬 [`SUPPORT.md`](SUPPORT.md) | Where to ask questions and what to expect |
 | 📜 [`CHANGELOG.md`](CHANGELOG.md) | Per-release notes |
 

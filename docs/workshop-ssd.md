@@ -299,8 +299,8 @@ Rosetta), `setup.sh` registers a `qemu-x86_64` handler via
 `tonistiigi/binfmt` (bundled in `images-arm64.tar`); if OpenPLC still
 errors there, run `docker run --privileged --rm
 tonistiigi/binfmt:qemu-v10.2.1 --install amd64` and re-run `setup.sh`.
-Emulated either way - slower but functional. See `ROADMAP.md` "Known
-gaps".
+Emulated either way - slower but functional. A native arm64 OpenPLC
+image is a known gap, not a supported configuration.
 
 **Q: Can students share a single SSD?**
 Yes for the load - `docker load` is read-only on the tarball. Eject

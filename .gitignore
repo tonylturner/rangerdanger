@@ -101,14 +101,17 @@ DELTA-README.md
 # Large binary tools (not in git, fetched separately)
 tools/pcap-analyzer/*.deb
 
-# Local-only AI agent context (Claude Code)
+# Local-only AI agent context and repository conventions for agents.
+# CONTRIBUTING.md carries the public subset (layout, validation,
+# networking invariants).
 CLAUDE.md
+AGENTS.md
 
-# Working backlog - kept local, not part of the public docs. ROADMAP.md
-# is the public forward-looking doc; CHANGELOG.md is the public history.
-# docs/tasks.md is private operator notes that aren't useful to external
-# readers.
+# Working backlog and forward-looking notes - kept local, not part of
+# the public docs. CHANGELOG.md is the public history. docs/tasks.md is
+# private operator notes that aren't useful to external readers.
 docs/tasks.md
+ROADMAP.md
 
 # Internal maintainer tooling docs. The leading-underscore convention
 # assumes a Jekyll/Hugo-style docs site; a plain GitHub repo publishes

@@ -8,19 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
-- Dropped the stale ROADMAP item for orchestrator fail-fast on unmapped
-  network zones: it shipped in v0.1.2 (e3b0b77) and both the primary and
-  secondary network attachments already go through `resolveNetworkName`,
-  with tests pinning the error on unknown zones.
 - Corrected stale version claims: README badge, architecture doc and
   frontend README said Next.js 14 (frontend is on 15.5.x since #94);
   CONTRIBUTING and the known-issues history said the modules pin
   `toolchain go1.25.10` (raised to `go1.26.7` in #91, Go image bases
   to 1.27 in #102). `services/README.md` claimed capbank exposes
   Modbus only; it has had a DNP3 outstation (address 4) all along.
-- Added `AGENTS.md`: repository conventions, validation commands, and
-  the networking invariants that must not change without an explicit
-  request.
+- `CONTRIBUTING.md` now carries the full CI validation sequence (gofmt
+  gate, `-count=1` on the backend, govulncheck with the triage rule) and
+  a "Networking invariants" section listing the topology facts that
+  must not change without an explicit request. `ROADMAP.md` is no
+  longer tracked; direction is discussed in issues.
 - Docs audit against the current tree: corrected network count, capbank
   DNP3 outstation (address 4), RTAC four-homing, terminal transport, API
   spec (lab-control, validation-report, policy observer, pcap field
