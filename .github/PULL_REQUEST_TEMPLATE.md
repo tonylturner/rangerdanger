@@ -3,7 +3,7 @@ Thanks for contributing to RangerDanger.
 
 Before opening this PR:
   - Read CONTRIBUTING.md for the local-test commands.
-  - Confirm CI passes locally (go test ./..., npm run lint, npm run build).
+  - Confirm the Validation commands below pass locally.
   - If your change is user-visible, add a CHANGELOG.md entry under
     [Unreleased].
 -->
@@ -26,10 +26,11 @@ If your change touches lab content (exercises, simulators, firewall
 configs), please walk through the affected exercise(s) end-to-end in
 the running stack - unit tests don't catch playthrough regressions. -->
 
-- [ ] `(cd backend && go test ./...)` clean
-- [ ] `(cd services && go test ./...)` clean
-- [ ] `(cd dnp3go && go test ./...)` clean
-- [ ] `(cd frontend && npm run lint && npm run build)` clean
+- [ ] `test -z "$(git ls-files '*.go' | xargs gofmt -l)"` (gofmt gate) clean
+- [ ] `(cd backend && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)` clean
+- [ ] `(cd services && go vet ./... && go test -race ./... && go build ./...)` clean
+- [ ] `(cd dnp3go && go vet ./... && go test -race ./... && go build ./...)` clean
+- [ ] `(cd frontend && npm ci && npm run lint && npm test && npm run build)` clean
 - [ ] `docker compose config -q` clean
 - [ ] Spun up the affected exercise end-to-end in `docker compose up -d --build`
 - [ ] Other (describe):

@@ -2,7 +2,7 @@
 
 Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:8088/api`)
 
-All endpoints return JSON unless otherwise noted. Request and response bodies use `snake_case` field names.
+All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
 ## Health and build info
 
@@ -98,6 +98,7 @@ Proxied reads from the RTAC and control commands to individual field devices.
 | `GET` | `/substation/audit` | Audit log of supervisory commands |
 | `GET` | `/substation/network-events` | Network event log |
 | `POST` | `/substation/command/:device` | Send a command to a field device. Body: `{"command": "set_tap", "value": -16, "source": "operator"}` |
+| `POST` | `/substation/lab-control` | Proxy a Load Simulator override (`active`, `general_load_pct`, `critical_load_pct`, `power_factor`) and optional audit entry (`audit_command`, `audit_target`, `audit_detail`, `source`) to RTAC `/api/lab-control`. |
 
 ## Firewall
 
@@ -108,10 +109,11 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/health` | containd health status |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/sessions` | Active connection table |
-| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` reserved for a future Phase B observer of direct containd commits). |
+| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` is set by the backend's policy observer, started in `New`, when it detects a policy committed directly in containd). |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
 | `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
 | `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom","policy_source":"plan-custom"}` plus `"warnings": [...]` when containd returned any. The `policy_source` tag lets the UI label the active policy as derived from the student's Lab 1.4 plan rather than a manual containd commit. |
+| `POST` | `/firewall/validation-report` | No request body. Runs the segmentation validation matrix against the currently active policy and captures a short PCAP without applying a policy. Returns the Markdown report and summary (`authorized_pass`, `authorized_total`, `unauthorized_pass`, `unauthorized_total`, `skipped`, `result`), plus `active_config`, `policy_source`, and `pcap_path`. |
 
 ## Traffic generation
 

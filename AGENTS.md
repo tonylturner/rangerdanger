@@ -19,7 +19,7 @@ OpenDSS power-flow solve. See `README.md` and `docs/architecture.md`.
 
 | Path | What lives there |
 |---|---|
-| `backend/` | Go 1.26 API (Gin, GORM/SQLite, Docker SDK, containd REST client). Routes in `internal/server/server.go`. |
+| `backend/` | Go 1.26 API (Gin, GORM/SQLite, Docker SDK, containd REST client). Route registration in `internal/server/server.go`; handlers are split across `labs.go`, `topology.go`, `scenarios.go`, `ui_proxy.go` and the other `internal/server/*.go` files. |
 | `frontend/` | Next.js 15 app router, React 18, TypeScript, Tailwind, vitest. |
 | `services/` | One Go module: relay/recloser/regulator/capbank/rtac sims speak HTTP + Modbus TCP + DNP3 TCP over shared state; historian and gps are HTTP + Modbus only. `opendss-sim/` is Python/FastAPI. |
 | `dnp3go/` | Standalone zero-dependency DNP3 library, consumed via `replace`. |

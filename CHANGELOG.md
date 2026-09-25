@@ -21,6 +21,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added `AGENTS.md`: repository conventions, validation commands, and
   the networking invariants that must not change without an explicit
   request.
+- Docs audit against the current tree: corrected network count, capbank
+  DNP3 outstation (address 4), RTAC four-homing, terminal transport, API
+  spec (lab-control, validation-report, policy observer, pcap field
+  casing), remediation-plan storage key and parser locations,
+  hardened-alias location, workshop YAML reload note, and the PR
+  template checklist.
 
 ## [v0.1.30] - 2026-09-12
 
