@@ -7,12 +7,12 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
@@ -20,6 +20,7 @@ type stepTestResult struct {
 	StepIndex  int    `json:"step_index"`
 	StepTitle  string `json:"step_title"`
 	Passed     bool   `json:"passed"`
+	AutoPass   bool   `json:"auto_pass"`
 	Detail     string `json:"detail"`
 	DurationMs int64  `json:"duration_ms"`
 }
@@ -31,15 +32,18 @@ type scenarioTestResult struct {
 	Steps        []stepTestResult `json:"steps"`
 	Passed       bool             `json:"passed"`
 	ResetOK      bool             `json:"reset_ok"`
+	ResetDetail  string           `json:"reset_detail,omitempty"`
 	DurationMs   int64            `json:"duration_ms"`
 }
 
 type testSuiteResult struct {
-	Scenarios  []scenarioTestResult `json:"scenarios"`
-	TotalTests int                  `json:"total_tests"`
-	Passed     int                  `json:"passed"`
-	Failed     int                  `json:"failed"`
-	DurationMs int64                `json:"duration_ms"`
+	Scenarios     []scenarioTestResult `json:"scenarios"`
+	TotalTests    int                  `json:"total_tests"`
+	Passed        int                  `json:"passed"`
+	Failed        int                  `json:"failed"`
+	AutoPassed    int                  `json:"auto_passed"`
+	ResetFailures int                  `json:"reset_failures"`
+	DurationMs    int64                `json:"duration_ms"`
 }
 
 // handleWorkshopTestSuite runs all exercises in order and reports results.
@@ -62,13 +66,14 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	totalTests := 0
 	totalPassed := 0
 	totalFailed := 0
+	autoPassed := 0
 
 	for _, sc := range scenarios {
 		log.Printf("TEST SUITE: Running scenario %s: %s", sc.Order, sc.Name)
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
-		s.resetLabState()
+		preResetProblems := s.resetLabState()
 		time.Sleep(1 * time.Second)
 
 		// Exercises that assume the hardened config is already applied
@@ -78,25 +83,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		// Parse steps
-		var steps []struct {
-			Title       string `json:"title"`
-			Description string `json:"description"`
-			Action      *struct {
-				Type     string         `json:"type"`
-				Device   string         `json:"device,omitempty"`
-				Command  string         `json:"command,omitempty"`
-				Source   string         `json:"source,omitempty"`
-				Value    *float64       `json:"value,omitempty"`
-				Config   string         `json:"config,omitempty"`
-				Expect   map[string]any `json:"expect,omitempty"`
-				Commands []struct {
-					Device  string   `json:"device"`
-					Command string   `json:"command"`
-					Source  string   `json:"source,omitempty"`
-					Value   *float64 `json:"value,omitempty"`
-				} `json:"commands,omitempty"`
-			} `json:"action,omitempty"`
-		}
+		var steps []labs.ScenarioStep
 		json.Unmarshal([]byte(sc.Steps), &steps)
 
 		var stepResults []stepTestResult
@@ -105,75 +92,23 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			stepStart := time.Now()
 			totalTests++
 
-			result := stepTestResult{
-				StepIndex: i,
-				StepTitle: step.Title,
-			}
-
-			if step.Action == nil {
-				// Manual/observational step — auto-pass
-				result.Passed = true
-				result.Detail = "manual step (no action)"
-			} else {
-				switch step.Action.Type {
-				case "command":
-					r := s.executeCommand(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
-					if r.Success {
-						result.Passed = true
-					} else if strings.Contains(r.Detail, "BLOCKED by containd") {
-						// A blocked command after hardening is the desired outcome
-						result.Passed = true
-						r.Detail += " (expected — hardened policy is working)"
-					} else {
-						result.Passed = false
-					}
-					result.Detail = r.Detail
-					// After state-changing commands, wait for effects to propagate
+			result := evaluateTestStep(i, step, stepExecutors{
+				command:  s.executeCommand,
+				firewall: s.executeFirewallAction,
+				check:    s.executeCheck,
+				sequencePause: func() {
+					time.Sleep(300 * time.Millisecond)
+				},
+			})
+			if step.Action != nil {
+				// After state-changing commands, wait for effects to propagate.
+				if step.Action.Type == "command" {
 					if step.Action.Command == "inject_fault" || step.Action.Command == "disable_reclose" {
 						time.Sleep(2 * time.Second)
 					}
 					if step.Action.Command == "set_tap" {
 						time.Sleep(1 * time.Second)
 					}
-
-				case "sequence":
-					allOK := true
-					var details []string
-					for _, cmd := range step.Action.Commands {
-						r := s.executeCommand(cmd.Device, cmd.Command, cmd.Source, cmd.Value)
-						if !r.Success {
-							allOK = false
-						}
-						details = append(details, fmt.Sprintf("%s/%s: %s", cmd.Device, cmd.Command, r.Detail))
-						time.Sleep(300 * time.Millisecond)
-					}
-					result.Passed = allOK
-					result.Detail = fmt.Sprintf("%d commands", len(step.Action.Commands))
-
-				case "firewall":
-					r := s.executeFirewallAction(step.Action.Config)
-					result.Passed = r.Success
-					result.Detail = r.Detail
-
-				case "check":
-					checks := s.executeCheck(step.Action.Expect)
-					allPass := true
-					for _, ch := range checks {
-						if !ch.Success {
-							allPass = false
-							break
-						}
-					}
-					result.Passed = allPass
-					result.Detail = fmt.Sprintf("%d checks, all pass: %v", len(checks), allPass)
-
-				case "decision":
-					result.Passed = true
-					result.Detail = "decision step (student planning — auto-pass)"
-
-				default:
-					result.Passed = true
-					result.Detail = fmt.Sprintf("unhandled type: %s", step.Action.Type)
 				}
 			}
 
@@ -185,6 +120,9 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			} else {
 				totalFailed++
 			}
+			if result.AutoPass {
+				autoPassed++
+			}
 
 			// Pause between steps — longer after commands to let state propagate
 			if step.Action != nil && (step.Action.Type == "command" || step.Action.Type == "sequence") {
@@ -195,8 +133,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		// Reset after scenario
-		s.resetLabState()
-		resetOK := true // assume success for now
+		postResetProblems := s.resetLabState()
+		resetOK, resetDetail := aggregateResetProblems(preResetProblems, postResetProblems)
 
 		scenarioResult := scenarioTestResult{
 			ScenarioID:   sc.ID,
@@ -204,11 +142,12 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			Order:        sc.Order,
 			Steps:        stepResults,
 			ResetOK:      resetOK,
+			ResetDetail:  resetDetail,
 			DurationMs:   time.Since(scenarioStart).Milliseconds(),
 		}
 
-		// Scenario passes if all steps pass
-		scenarioResult.Passed = true
+		// Scenario passes if all steps pass and both resets were clean
+		scenarioResult.Passed = resetOK
 		for _, sr := range stepResults {
 			if !sr.Passed {
 				scenarioResult.Passed = false
@@ -221,24 +160,40 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, testSuiteResult{
-		Scenarios:  results,
-		TotalTests: totalTests,
-		Passed:     totalPassed,
-		Failed:     totalFailed,
-		DurationMs: time.Since(suiteStart).Milliseconds(),
+		Scenarios:     results,
+		TotalTests:    totalTests,
+		Passed:        totalPassed,
+		Failed:        totalFailed,
+		AutoPassed:    autoPassed,
+		ResetFailures: countResetFailures(results),
+		DurationMs:    time.Since(suiteStart).Milliseconds(),
 	})
 }
 
 // resetLabState restores all devices to defaults.
-func (s *Server) resetLabState() {
-	s.applyFirewallConfigInternal("weak")
+func (s *Server) resetLabState() []string {
+	var problems []string
+	warnings, err := s.applyFirewallConfigInternal("weak")
+	if err != nil {
+		problems = append(problems, "firewall apply: "+err.Error())
+	} else {
+		for _, warning := range warnings {
+			problems = append(problems, "firewall apply warning: "+warning)
+		}
+	}
 
 	for _, cmd := range resetDeviceCommands {
-		s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
+		result := s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
+		if !result.Success {
+			problems = append(problems, fmt.Sprintf("%s/%s: %s", cmd.device, cmd.command, result.Detail))
+		}
 	}
 
 	tapZero := float64(0)
-	s.executeCommand("regulator", "set_tap", "reset-script", &tapZero)
+	tapResult := s.executeCommand("regulator", "set_tap", "reset-script", &tapZero)
+	if !tapResult.Success {
+		problems = append(problems, "regulator/set_tap: "+tapResult.Detail)
+	}
 
 	// Clear PCAP captures so validators don't see stale files
 	s.pcapMu.Lock()
@@ -249,10 +204,15 @@ func (s *Server) resetLabState() {
 			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
 		}
 		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
-		if err == nil {
-			dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{})
+		if err != nil {
+			problems = append(problems, "clear PCAP captures: "+err.Error())
+		} else if err := dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{}); err != nil {
+			problems = append(problems, "clear PCAP captures (start): "+err.Error())
 		}
+	} else {
+		problems = append(problems, "clear PCAP captures: Docker client not configured")
 	}
 
 	time.Sleep(500 * time.Millisecond)
+	return problems
 }

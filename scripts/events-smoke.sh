@@ -34,7 +34,6 @@
 set -uo pipefail
 
 API="${RANGERDANGER_API:-http://localhost:8088}"
-FIREWALL_API="${CONTAINTD_API:-http://localhost:9080}"
 JWT_SECRET="${CONTAIND_JWT_SECRET:-rangerdanger-dev}"
 PROBE_WAIT="${PROBE_WAIT:-4}"          # initial wait before first event check
 EVENT_POLL_BUDGET="${EVENT_POLL_BUDGET:-45}"  # max additional seconds to wait
@@ -301,8 +300,6 @@ PY
     # apply BlockFlowTemp → entry appears in block_flows nft set.
     # The first FC8 packet itself may pass through (verdict is added
     # async); we check the SET, not whether the packet was blocked.
-    block_before=$(docker exec rangerdanger-firewall sh -c \
-      "nft list set inet containd block_flows 2>/dev/null | grep -c 'elements ='" 2>/dev/null || echo 0)
     docker exec rangerdanger-rtac-sim python3 /tmp/_smoke_modbus.py 10.40.40.20 fc8 >/dev/null 2>&1 || true
     sleep "$PROBE_WAIT"
     block_lines=$(docker exec rangerdanger-firewall sh -c \
