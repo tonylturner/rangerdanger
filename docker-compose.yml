@@ -11,21 +11,16 @@ services:
     # If a containd release breaks RangerDanger, fix containd, not the pin.
     image: ghcr.io/tonylturner/containd:latest
     container_name: rangerdanger-firewall
+    # Same capability set as docker-compose.release.yml. Until v0.1.32
+    # this file also ran the firewall privileged with seccomp=unconfined,
+    # a v0.1.13 workaround for containd's nflog consumer failing to bind
+    # its netfilter log group on macOS Docker Desktop. containd v0.1.30
+    # fixed the nflog bind race; with it the caps-only release model
+    # delivers firewall.rule.hit events on macOS, so dev matches release.
     cap_add:
       - NET_ADMIN
       - NET_RAW
       - SYS_TIME
-    security_opt:
-      - seccomp=unconfined
-    # NET_ADMIN+NET_RAW+seccomp=unconfined are still not enough for
-    # containd's userspace nflog consumer to bind to a netfilter log
-    # group on macOS Docker Desktop — EPERM at register time, surfaces
-    # as service.nflog.unavailable. Privileged is the smallest hammer
-    # that opens the right doors (NETLINK_NETFILTER recv + whatever
-    # else the consumer needs). Without this, firewall.rule.hit events
-    # never reach /api/v1/events even though nft IS emitting `log
-    # prefix ... group 100` clauses for every Log:true rule.
-    privileged: true
     environment:
       - CONTAIND_MODE=all
       - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
