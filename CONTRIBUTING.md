@@ -88,7 +88,7 @@ is a faster type-check than waiting for `next build`.
 
 ## End-to-end smoke gates
 
-Three layered smoke gates protect the lab against regressions. Run
+Four layered smoke gates protect the lab against regressions. Run
 them after any change that touches lab content, the firewall
 dataplane, the policy YAMLs, or the simulator images. Each requires
 the compose stack to be up:
@@ -110,14 +110,20 @@ docker compose up -d --build
 #    containers.
 ./scripts/lab-commands-smoke.sh
 
+# 4. Workshop test-suite (CI gate 6). Runs every scenario and checks step
+#    outcomes plus state resets; this resets the lab state.
+./scripts/test-suite-smoke.sh
+
 # Single scenario instead of all:
 ./scripts/lab-commands-smoke.sh baseline-assessment
 ./scripts/firewall-smoke.sh weak       # or "improved", or "both"
 ```
 
-CI runs all three on every PR and push to main
-(`.github/workflows/smoke.yml`). Locally is faster because the
-images are already cached.
+CI runs the firewall, lab-command, and workshop test-suite gates on every
+PR and push to main, alongside boot/inventory/simulator-health checks,
+events + ICS DPI, and substation physics
+(`.github/workflows/smoke.yml`). Locally is faster because the images are
+already cached.
 
 ## Networking invariants
 

@@ -15,6 +15,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   NET_ADMIN/NET_RAW/SYS_TIME set as `docker-compose.release.yml`, so the
   stack developers test is the one students run.
 
+### Fixed
+
+- Fixed the online lifecycle test's empty-array expansion under macOS Bash
+  3.2 and removed its unused result flag.
+- Replaced deprecated naive UTC timestamps in `validation-report.sh` with
+  timezone-aware UTC timestamps.
+- Removed unused shell variables across the smoke and host scripts so the
+  repository's warning-level ShellCheck run is clean.
+
+### Tests
+
+- Added the Workshop test-suite smoke gate to CI, reporting failed steps and
+  reset failures across every scenario.
+
 ## [v0.1.31] - 2026-09-25
 
 A maintenance release. No lab, exercise, or network content changes.

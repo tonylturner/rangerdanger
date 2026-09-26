@@ -55,7 +55,7 @@ if [ "$OS" != "Linux" ]; then
     printf "\n%s  ✗ wrong environment%s\n" "$R" "$X"; exit 2
 fi
 case "$MACH" in
-    arm64|aarch64) ARCH=arm64 ;;
+    arm64|aarch64) ;;
     *) no "must run on arm64/aarch64 (this is $MACH). The emulation path is arm64-only."
        printf "\n%s  ✗ wrong environment%s\n" "$R" "$X"; exit 2 ;;
 esac

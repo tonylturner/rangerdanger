@@ -383,7 +383,6 @@ esac
 
 # Reset matrix counters (preflight ok calls inflate `passed`; only
 # matrix rows count toward the policy verdict).
-matrix_total=0
 matrix_passed=0
 matrix_passed_start=$passed
 

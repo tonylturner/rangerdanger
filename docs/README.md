@@ -95,7 +95,7 @@ the platform.
 
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) - Local dev setup, the
   test gauntlet (backend Go tests + frontend vitest + firewall traffic
-  smoke + lab-commands smoke), PR conventions.
+  smoke + lab-commands smoke + workshop test-suite smoke), PR conventions.
 - [`../RELEASING.md`](../RELEASING.md) - Release tagging procedure,
   GHA workflow, containd image policy ("fix containd, not the pin"),
   the workshop-day determinism trade-off.

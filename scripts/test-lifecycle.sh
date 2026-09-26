@@ -70,7 +70,7 @@ http_ok() { curl -fsS -o /dev/null --max-time 10 "$1" 2>/dev/null; }
 run_setup() {
     local args=()
     [ -n "$TARBALL_DIR" ] && args+=(--from-tarballs "$TARBALL_DIR")
-    ./setup.sh "${args[@]}"
+    ./setup.sh ${args[@]+"${args[@]}"}
 }
 
 assert_up() {
@@ -101,7 +101,7 @@ assert_up() {
 
 assert_execute() {
     phase "Assert workshop-critical execution"
-    local cfg ok_all=1
+    local cfg
     local apply_resp
     for cfg in weak improved; do
         # Capture the body: a 200 with warnings on 'improved' means the kernel
@@ -109,9 +109,9 @@ assert_execute() {
         apply_resp=$(curl -fsS --max-time 15 -X POST -H 'Content-Type: application/json' \
             -d "{\"config\":\"$cfg\"}" http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
         if [ -z "$apply_resp" ]; then
-            no "firewall apply ($cfg) — Lab 2.2/2.3/2.4 would not work"; ok_all=0
+            no "firewall apply ($cfg) — Lab 2.2/2.3/2.4 would not work"
         elif [ "$cfg" = "improved" ] && echo "$apply_resp" | grep -qE 'nft apply failed|queue num|NFT_QUEUE'; then
-            no "firewall apply (improved) returned warnings — hardened policy NOT enforcing (host kernel missing nfnetlink_queue/CONFIG_NFT_QUEUE)"; ok_all=0
+            no "firewall apply (improved) returned warnings — hardened policy NOT enforcing (host kernel missing nfnetlink_queue/CONFIG_NFT_QUEUE)"
         else
             ok "firewall apply ($cfg)"
         fi
