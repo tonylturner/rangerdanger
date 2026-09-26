@@ -37,8 +37,6 @@ set -uo pipefail
 API="${RANGERDANGER_API:-http://localhost:8088}"
 PROBE_TIMEOUT="${LAB_CMD_TIMEOUT:-5}"
 SETTLE_SECS="${SETTLE_SECS:-2}"
-SCENARIOS_DIR="lab-definitions/scenarios"
-TOPOLOGY="lab-definitions/substation-segmentation.yml"
 
 fail=0
 total=0
@@ -232,8 +230,7 @@ canary_tcp() {
 wait_for_dataplane() {
   local expected="$1"
   local budget="${2:-15}"
-  local i
-  for i in $(seq 1 $((budget * 2))); do
+  for _ in $(seq 1 $((budget * 2))); do
     [ "$(canary_tcp)" = "$expected" ] && return 0
     sleep 0.5
   done
@@ -405,7 +402,7 @@ while IFS='|' read -r scenario step_idx step_title cfg container action cmd; do
   dur=$(echo "$result" | awk '{print $2}')
 
   short_cmd=$(echo "$cmd" | cut -c1-80)
-  label="[$scenario s$step_idx ${cfg:-any}] ${container#rangerdanger-}: $short_cmd"
+  label="[$scenario s$step_idx $step_title ${cfg:-any}] ${container#rangerdanger-}: $short_cmd"
 
   case "$verdict" in
     PASS|PASS-TIMEOUT|PASS-RC*)

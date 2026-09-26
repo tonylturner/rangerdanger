@@ -15,13 +15,13 @@ VNC_PASSWD=/etc/x11vnc.pass
 # If our cont-init script hasn't created the password yet, wait for
 # it. (Cont-init runs before services, so this should be a no-op
 # almost always — defensive only.)
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
     [ -s "$VNC_PASSWD" ] && break
     sleep 1
 done
 
 # Wait for the kasm Xvfb display to come up.
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
     [ -S /tmp/.X11-unix/X1 ] && break
     sleep 1
 done

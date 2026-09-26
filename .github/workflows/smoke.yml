@@ -8,14 +8,16 @@ name: Smoke
 #   3. sim healthchecks pass                           (init gate)
 #   4. firewall enforces the traffic matrix correctly  (dataplane gate)
 #   5. every documented lab command runs cleanly       (lab-doc gate)
+#   6. the workshop test-suite reports no step/reset failures
 #
 # Runs on every push to main + PR. Catches startup regressions and
 # lab-doc rot before a workshop student trips over them.
 #
-# Budget: ~8–11 min on a GitHub-hosted runner. ~6 min for the build
+# Budget: ~9–12 min on a GitHub-hosted runner. ~6 min for the build
 # (no cache pull), ~2 min for boot, ~3 min for the matrix probes
-# (mostly the negative-test 3s timeouts). Tradeoff: longer CI for
-# never depending on GHCR availability for PR feedback.
+# (mostly the negative-test 3s timeouts), and ~1 min for the workshop
+# test-suite. Tradeoff: longer CI for never depending on GHCR availability
+# for PR feedback.
 
 on:
   push:
@@ -178,6 +180,14 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/substation-smoke.sh
+
+      - name: Workshop test-suite
+        # Exercises every workshop scenario through the backend's test
+        # runner, including auto-pass and reset reporting. This resets lab
+        # state, so run it only against the disposable CI stack.
+        run: |
+          set -euo pipefail
+          ./scripts/test-suite-smoke.sh
 
       - name: Dump compose logs on failure
         if: failure()

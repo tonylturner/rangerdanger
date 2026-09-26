@@ -43,7 +43,7 @@ esac
 
 # Run the report generation in a subshell whose stdout we capture,
 # so the actual terminal stderr keeps showing live progress.
-TS=$(python3 -c 'import time, datetime; print(datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"))')
+TS=$(python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))')
 PCAP_PATH="/data/captures/validation-${TS}.pcap"
 PCAP_HOST_PATH="data/firewall/captures/validation-${TS}.pcap"
 
@@ -205,7 +205,7 @@ PCAP_SUMMARY=$(docker exec rangerdanger-firewall sh -c "
 # ── Render the markdown report ───────────────────────────────────────
 render_report() {
   local now_iso
-  now_iso=$(python3 -c 'import datetime; print(datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))')
+  now_iso=$(python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')
 
   cat <<MD
 # Substation Segmentation — Validation Report

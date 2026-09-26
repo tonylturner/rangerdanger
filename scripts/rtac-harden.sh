@@ -70,7 +70,6 @@ fi
 
 FIELD_IFACE=$(ip -o addr show 2>/dev/null | awk '/inet 10\.40\.40\./ {print $2; exit}')
 OTOPS_IFACE=$(ip -o addr show 2>/dev/null | awk '/inet 10\.30\.30\./ {print $2; exit}')
-FIELD_FW="10.40.40.2"
 OTOPS_FW="10.30.30.2"
 FIELD_CIDR="10.40.40.0/24"
 

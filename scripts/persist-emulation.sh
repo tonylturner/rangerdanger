@@ -24,9 +24,9 @@ UNIT_NAME="rangerdanger-binfmt.service"
 UNIT="/etc/systemd/system/${UNIT_NAME}"
 
 if [ -t 1 ]; then
-    GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+    GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; RESET=$'\e[0m'
 else
-    GREEN=""; YELLOW=""; RED=""; BOLD=""; RESET=""
+    GREEN=""; YELLOW=""; RED=""; RESET=""
 fi
 say()  { printf "%s[+]%s %s\n" "$GREEN" "$RESET" "$*"; }
 warn() { printf "%s[!]%s %s\n" "$YELLOW" "$RESET" "$*" >&2; }
