@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dev compose firewall no longer runs privileged.** `docker-compose.yml`
+  dropped `privileged: true` and `seccomp=unconfined` from the containd
+  service, a v0.1.13 workaround for the nflog bind failure on macOS
+  Docker Desktop that containd v0.1.30 fixed. Dev now grants the same
+  NET_ADMIN/NET_RAW/SYS_TIME set as `docker-compose.release.yml`, so the
+  stack developers test is the one students run.
+
 ## [v0.1.31] - 2026-09-25
 
 A maintenance release. No lab, exercise, or network content changes.
