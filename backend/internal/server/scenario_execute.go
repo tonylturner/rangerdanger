@@ -28,10 +28,11 @@ type StepExecutionResult struct {
 
 // StepActionResult is the result of a single action within a step.
 type StepActionResult struct {
-	Action  string `json:"action"`
-	Success bool   `json:"success"`
-	Detail  string `json:"detail"`
-	Impact  string `json:"impact,omitempty"`
+	Action   string   `json:"action"`
+	Success  bool     `json:"success"`
+	Detail   string   `json:"detail"`
+	Impact   string   `json:"impact,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // handleExecuteStep executes the action defined in a scenario step.
@@ -246,9 +247,10 @@ func (s *Server) executeFirewallAction(configName string) StepActionResult {
 		detail += " (warnings: " + strings.Join(warnings, "; ") + ")"
 	}
 	return StepActionResult{
-		Action:  "Apply firewall: " + configName,
-		Success: true,
-		Detail:  detail,
+		Action:   "Apply firewall: " + configName,
+		Success:  true,
+		Detail:   detail,
+		Warnings: warnings,
 	}
 }
 
