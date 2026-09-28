@@ -227,6 +227,46 @@ steps:
 	}
 }
 
+func TestSeedFromDiskValidatesBeforeWritingTemplate(t *testing.T) {
+	definitions := t.TempDir()
+	writeDefinition(t, filepath.Join(definitions, "substation.yml"), validLabYAML)
+	writeDefinition(t, filepath.Join(definitions, "scenarios", "invalid.yml"), `id: invalid-check
+name: Invalid Check
+order: "2.1"
+steps:
+  - title: Empty check
+    action:
+      type: check
+      expect: {}
+`)
+	database := testDatabase(t)
+
+	err := NewLoader(definitions).SeedFromDisk(context.Background(), database)
+	if err == nil {
+		t.Fatal("SeedFromDisk() error = nil, want validation failure")
+	}
+	for _, want := range []string{
+		"scenario invalid-check",
+		"step 0",
+		`"Empty check"`,
+		"check expect must not be empty",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("SeedFromDisk() error = %q, want it to contain %q", err, want)
+		}
+	}
+	var templateCount, scenarioCount int64
+	if err := database.Model(&models.LabTemplate{}).Count(&templateCount).Error; err != nil {
+		t.Fatalf("count templates: %v", err)
+	}
+	if err := database.Model(&models.Scenario{}).Count(&scenarioCount).Error; err != nil {
+		t.Fatalf("count scenarios: %v", err)
+	}
+	if templateCount != 0 || scenarioCount != 0 {
+		t.Fatalf("invalid scenario left DB writes: templates=%d scenarios=%d", templateCount, scenarioCount)
+	}
+}
+
 func TestSeedFromDiskRequiresDefinitionsDirectory(t *testing.T) {
 	err := NewLoader("").SeedFromDisk(context.Background(), testDatabase(t))
 	if err == nil || !strings.Contains(err.Error(), "definitions dir not configured") {
