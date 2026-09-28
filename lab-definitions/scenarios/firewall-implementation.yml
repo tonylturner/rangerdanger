@@ -484,7 +484,7 @@ steps:
       targets:
         - { host: 10.40.40.20, port: 502, note: "RTAC Modbus to relay" }
         - { host: 10.40.40.20, port: 20000, note: "RTAC DNP3 to relay" }
-        - { from: hmi-1, host: 10.30.30.20, port: 8080, note: "HMI to RTAC API" }
+        - { host: 10.30.30.10, port: 1881, note: "OT ops to FUXA HMI" }
 
   - title: "Phase 6 - Validate blocked traffic"
     expected_config: hardened

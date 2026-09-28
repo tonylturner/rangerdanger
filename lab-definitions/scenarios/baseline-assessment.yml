@@ -452,7 +452,8 @@ steps:
       outcome: reachable
       targets:
         - { host: 10.40.40.20, port: 502, note: "Kali Modbus to relay" }
-        - { from: vendor-jump-1, host: 10.30.30.20, port: 502, note: "Vendor Modbus to RTAC" }
+        - { host: 10.40.40.21, port: 20000, note: "Kali DNP3 to recloser" }
+        - { host: 10.30.30.20, port: 502, note: "Kali Modbus to RTAC" }
 
   - title: "Transition - decide what to fix first"
     description: |
