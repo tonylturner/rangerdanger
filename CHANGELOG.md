@@ -17,6 +17,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Lab YAML is validated at seed time.** Invalid scenario actions and node
+  references now fail before a template is written.
+- **PCAP download names are validated before forwarding to containd.**
 - Fixed the online lifecycle test's empty-array expansion under macOS Bash
   3.2 and removed its unused result flag.
 - Replaced deprecated naive UTC timestamps in `validation-report.sh` with
