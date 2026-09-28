@@ -243,7 +243,7 @@ Supported `type` values:
 
 - `decision` - labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
-- `command`, `firewall`, `sequence`, `manual` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks.
+- `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
 
 `DecisionPanel` automatically reads:
 
