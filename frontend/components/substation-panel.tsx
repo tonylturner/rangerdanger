@@ -106,6 +106,7 @@ export function SubstationPanel() {
             recloser={recloser}
             regulator={regulator}
             capbank={capbank}
+            physics={state?.physics}
             audit={audit}
           />
         )}

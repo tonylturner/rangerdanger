@@ -237,6 +237,14 @@ export type SubstationTags = {
   last_poll: string;
 };
 
+export type PhysicsStatus = {
+  stale: boolean;
+  consecutive_failures: number;
+  last_good_at: string;
+  solved_at: string;
+  last_error: string;
+};
+
 export type SubstationState = {
   devices: {
     relay?: Record<string, number | boolean | string>;
@@ -259,11 +267,14 @@ export type SubstationState = {
     regulator_tap?: number;
     capbank_switched_in?: boolean;
     // OpenDSS power flow fields
+    converged?: boolean;
+    solved_at?: string;
     total_losses_kw?: number;
     power_factor?: number;
     source_power_kw?: number;
     fault_current_a?: number;
   };
+  physics: PhysicsStatus;
   device_comms: Record<string, boolean>;
   last_poll: string;
 };
@@ -323,6 +334,7 @@ export async function getSubstationHealth() {
     service: string;
     device_comms: Record<string, boolean>;
     last_poll: string;
+    physics: PhysicsStatus;
   }>("/substation/health");
 }
 

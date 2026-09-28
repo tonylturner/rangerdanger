@@ -12,6 +12,7 @@
 #      switches it back in to correct the lagging power factor
 #   4. regulator AVR loop: after a manual tap sag, enabling auto steps the tap
 #      back up toward the voltage setpoint
+#   5. pausing OpenDSS makes RTAC physics stale; unpausing restores freshness
 #
 # MANUAL mode is used for the deterministic A/B in step 2 precisely because
 # AUTO would otherwise override the switch-out (which is itself the point of
@@ -25,6 +26,16 @@ sub="$API/api/substation"
 fail=0
 ok()  { printf '  \xe2\x9c\x93 %s\n' "$1"; }
 err() { printf '  \xe2\x9c\x97 %s\n' "$1"; fail=1; }
+
+physics_container=rangerdanger-opendss-sim
+physics_paused=0
+unpause_physics() {
+  if docker unpause "$physics_container" >/dev/null 2>&1; then
+    physics_paused=0
+  elif [ "$physics_paused" = "1" ]; then
+    err "could not unpause $physics_container"
+  fi
+}
 
 cmd() { curl -fsS -X POST -H 'Content-Type: application/json' -d "{\"command\":\"$2\"}" "$sub/command/$1" >/dev/null; }
 get() { curl -fsS "$sub/state"; }
@@ -41,6 +52,25 @@ wait_until() {
   done
   return 1
 }
+
+wait_for_physics_healthy() {
+  local health_state i
+  for ((i = 0; i < 30; i++)); do
+    health_state=$(docker inspect -f '{{.State.Health.Status}}' "$physics_container" 2>/dev/null) || health_state=""
+    [ "$health_state" = "healthy" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+cleanup_physics() {
+  local was_paused="$physics_paused"
+  unpause_physics
+  if [ "$was_paused" = "1" ] && ! wait_for_physics_healthy; then
+    err "OpenDSS container did not become healthy within 30s during cleanup"
+  fi
+}
+trap cleanup_physics EXIT
 
 # 1. State endpoint exposes the full field-device set.
 state=$(get) || { echo "  cannot reach $sub/state"; exit 1; }
@@ -60,6 +90,20 @@ curl -fsS -X POST -H 'Content-Type: application/json' -d '{"command":"set_tap","
 cmd regulator set_auto
 cmd capbank reset_lockout
 sleep 5  # let the RTAC poll + OpenDSS re-solve the energized state
+state=$(get) || { err "cannot refresh $sub/state after baseline reset"; state='{}'; }
+echo "$state" | jq -e '.physics.stale == false' >/dev/null 2>&1 \
+  && ok "physics is fresh" || err "physics is stale after baseline reset"
+echo "$state" | jq -e '.electrical.converged == true' >/dev/null 2>&1 \
+  && ok "electrical solve converged" || err "electrical solve is not converged"
+if echo "$state" | jq -e '
+  (.electrical.solved_at | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $solved_at
+  | (now - $solved_at) as $age
+  | ($age >= -10 and $age <= 10)
+' >/dev/null 2>&1; then
+  ok "electrical solve timestamp is within 10s"
+else
+  err "electrical solve timestamp is missing, invalid, or older than 10s"
+fi
 
 # 2. Capacitor bank physics A/B in MANUAL (so AUTO can't override the switch-out).
 cmd capbank set_manual
@@ -103,6 +147,32 @@ if wait_until "(.electrical.regulator_tap > $tap_lo)" 20; then
   ok "regulator AVR raises tap from $tap_lo back toward setpoint"
 else
   err "regulator AVR did not correct the sag (tap stuck at $tap_lo)"
+fi
+
+# 5. Stopping the physics engine must transition the RTAC to stale and recover
+# after the engine is resumed. The EXIT trap is a final safety net if any
+# assertion or command exits early while the container is paused.
+if docker pause "$physics_container" >/dev/null; then
+  physics_paused=1
+  if wait_until '.physics.stale' 15; then
+    ok "physics becomes stale while OpenDSS is paused"
+  else
+    err "physics did not become stale within 15s while OpenDSS was paused"
+  fi
+else
+  err "could not pause $physics_container"
+fi
+unpause_physics
+# Docker reports a paused container unhealthy until its next successful health probe after unpause.
+if wait_for_physics_healthy; then
+  ok "OpenDSS container healthy again after unpause"
+else
+  err "OpenDSS container did not become healthy within 30s after unpause"
+fi
+if wait_until '.physics.stale | not' 15; then
+  ok "physics freshness recovers after OpenDSS resumes"
+else
+  err "physics did not recover within 15s after OpenDSS resumed"
 fi
 
 # Leave both devices in AUTO — their normal operating mode.

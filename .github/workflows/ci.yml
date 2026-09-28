@@ -63,6 +63,21 @@ jobs:
         working-directory: services
         run: go build ./...
 
+  opendss-sim:
+    name: opendss-sim (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: install requirements
+        working-directory: services/opendss-sim
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: pytest
+        working-directory: services/opendss-sim
+        run: python -m pytest -q
+
   dnp3go:
     name: dnp3go library (Go)
     runs-on: ubuntu-latest

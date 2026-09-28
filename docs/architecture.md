@@ -106,6 +106,14 @@ Field-device simulators:
 - `gps-sim` - GPS / NTP time source (NTP + HTTP)
 - `rtac-sim` - Supervisory controller aggregating all field devices; runs autonomous DNP3 master polling every 5s and HTTP REST polling every 1s (read-only DNP3 outstation, Modbus, HTTP)
 
+The RTAC's `/api/state` includes `physics` freshness (`stale`,
+`consecutive_failures`, `last_good_at`, `solved_at`, `last_error`), while
+`electrical.converged` and `electrical.solved_at` identify the retained last
+good power-flow result. `/api/tags` exposes `physics.stale`,
+`physics.consecutive_failures`, `physics.solved_at`, `physics.last_error`,
+and `alarm.physics_stale`; `/api/health` includes the same `physics` object
+and reports `status: degraded` while stale, otherwise `ok`.
+
 Plus one Python sim:
 
 - `opendss-sim` - Simplified feeder physics engine. **Python / FastAPI**, served HTTP-only on port 8080 from its own `services/opendss-sim/Dockerfile` (python:3.12-slim). Not part of the Go multi-stage build.

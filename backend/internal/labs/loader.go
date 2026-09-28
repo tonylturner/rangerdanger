@@ -23,6 +23,27 @@ func NewLoader(definitionsDir string) *Loader {
 	return &Loader{DefinitionsDir: definitionsDir}
 }
 
+func loadScenarioFiles(dir string) ([]ScenarioYAML, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.yml"))
+	if err != nil {
+		return nil, fmt.Errorf("find scenario YAML files: %w", err)
+	}
+
+	scenarios := make([]ScenarioYAML, 0, len(files))
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("read scenario %s: %w", filepath.Base(file), err)
+		}
+		var scenario ScenarioYAML
+		if err := yaml.Unmarshal(data, &scenario); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", filepath.Base(file), err)
+		}
+		scenarios = append(scenarios, scenario)
+	}
+	return scenarios, nil
+}
+
 // SeedFromDisk ingests all YAML lab definition files at startup.
 func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 	if l.DefinitionsDir == "" {
@@ -35,8 +56,13 @@ func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("no lab definition YAML files found in %s", l.DefinitionsDir)
 	}
 
+	scenarios, err := loadScenarioFiles(filepath.Join(l.DefinitionsDir, "scenarios"))
+	if err != nil {
+		return err
+	}
+
 	for _, file := range ymlFiles {
-		if err := l.importLabFile(ctx, db, file); err != nil {
+		if err := l.importLabFile(ctx, db, file, scenarios); err != nil {
 			return fmt.Errorf("import %s: %w", filepath.Base(file), err)
 		}
 	}
@@ -45,7 +71,7 @@ func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
 }
 
 // importLabFile imports a single lab definition YAML file.
-func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) error {
+func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string, scenarios []ScenarioYAML) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read lab: %w", err)
@@ -58,6 +84,10 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 
 	if def.ID == "" {
 		return fmt.Errorf("lab definition missing id in %s", filepath.Base(path))
+	}
+
+	if err := ValidateLab(&def, scenarios); err != nil {
+		return err
 	}
 
 	topology := map[string]any{
@@ -91,29 +121,12 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 	}
 
 	for _, sc := range def.Scenarios {
-		tagsJSON, _ := json.Marshal(sc.Tags)
-		stepsJSON, _ := json.Marshal(sc.Steps)
-		nodesJSON, _ := json.Marshal(sc.Nodes)
-		scenario := models.Scenario{
-			ID:               sc.ID,
-			Name:             sc.Name,
-			Summary:          sc.Summary,
-			Description:      sc.Description,
-			Order:            sc.Order,
-			LabTemplateID:    def.ID,
-			Tags:             string(tagsJSON),
-			Steps:            string(stepsJSON),
-			Nodes:            string(nodesJSON),
-			EstimatedMinutes: sc.EstimatedMinutes,
-		}
-		if err := db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error; err != nil {
+		if err := l.importScenario(ctx, db, sc, def.ID); err != nil {
 			return err
 		}
 	}
-
-	scenarioFiles, _ := filepath.Glob(filepath.Join(l.DefinitionsDir, "scenarios", "*.yml"))
-	for _, file := range scenarioFiles {
-		if err := l.importScenarioFile(ctx, db, file, def.ID); err != nil {
+	for _, sc := range scenarios {
+		if err := l.importScenario(ctx, db, sc, def.ID); err != nil {
 			return err
 		}
 	}
@@ -123,34 +136,23 @@ func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string) er
 	for _, sc := range def.Scenarios {
 		validIDs[sc.ID] = true
 	}
-	for _, file := range scenarioFiles {
-		data, _ := os.ReadFile(file)
-		var sc ScenarioYAML
-		if yaml.Unmarshal(data, &sc) == nil && sc.ID != "" {
-			validIDs[sc.ID] = true
-		}
+	for _, sc := range scenarios {
+		validIDs[sc.ID] = true
 	}
 	if len(validIDs) > 0 {
 		var ids []string
 		for id := range validIDs {
 			ids = append(ids, id)
 		}
-		db.WithContext(ctx).Where("lab_template_id = ? AND id NOT IN ?", def.ID, ids).Delete(&models.Scenario{})
+		if err := db.WithContext(ctx).Where("lab_template_id = ? AND id NOT IN ?", def.ID, ids).Delete(&models.Scenario{}).Error; err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path string, templateID string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var sc ScenarioYAML
-	if err := yaml.Unmarshal(data, &sc); err != nil {
-		return fmt.Errorf("parse %s: %w", filepath.Base(path), err)
-	}
-
+func (l *Loader) importScenario(ctx context.Context, db *gorm.DB, sc ScenarioYAML, templateID string) error {
 	tagsJSON, _ := json.Marshal(sc.Tags)
 	stepsJSON, _ := json.Marshal(sc.Steps)
 	nodesJSON, _ := json.Marshal(sc.Nodes)
@@ -167,107 +169,4 @@ func (l *Loader) importScenarioFile(ctx context.Context, db *gorm.DB, path strin
 		EstimatedMinutes: sc.EstimatedMinutes,
 	}
 	return db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error
-}
-
-// LabYAML mirrors the YAML schema for lab templates.
-type LabYAML struct {
-	ID             string         `yaml:"id"`
-	Name           string         `yaml:"name"`
-	Description    string         `yaml:"description"`
-	FirewallConfig string         `yaml:"firewall_config"` // path relative to lab-definitions dir
-	Networks       []NetworkYAML  `yaml:"networks"`
-	Nodes          []NodeYAML     `yaml:"nodes"`
-	Scenarios      []ScenarioYAML `yaml:"scenarios"`
-}
-
-// NetworkYAML defines a virtual network.
-type NetworkYAML struct {
-	ID          string `yaml:"id" json:"id,omitempty"`
-	Name        string `yaml:"name" json:"name"`
-	CIDR        string `yaml:"cidr" json:"cidr,omitempty"`
-	Subnet      string `yaml:"subnet" json:"subnet,omitempty"`
-	Zone        string `yaml:"zone" json:"zone,omitempty"`
-	Description string `yaml:"description" json:"description,omitempty"`
-}
-
-// NodeYAML describes a node template in YAML.
-type NodeYAML struct {
-	ID        string   `yaml:"id" json:"id"`
-	Type      string   `yaml:"type" json:"type"`
-	Name      string   `yaml:"name" json:"name"`
-	Networks  []string `yaml:"networks" json:"networks"`
-	IP        string   `yaml:"ip" json:"ip,omitempty"`
-	Container string   `yaml:"container" json:"container,omitempty"`
-}
-
-// ScenarioYAML defines scenario metadata loaded from YAML.
-type ScenarioYAML struct {
-	ID          string         `yaml:"id"`
-	Name        string         `yaml:"name"`
-	Summary     string         `yaml:"summary"`
-	Description string         `yaml:"description"`
-	Order       string         `yaml:"order"`
-	Nodes       []string       `yaml:"nodes,omitempty"`
-	Tags        []string       `yaml:"tags"`
-	Steps       []ScenarioStep `yaml:"steps"`
-	// EstimatedMinutes is the golden-path time budget for the lab (Guided
-	// track, skipping Advanced hints and optional drill-downs). Surfaced as a
-	// chip on the exercise card. Optional; 0/absent renders no chip.
-	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
-	// BaselineGridState names the Load Simulator grid state a scenario starts
-	// in (e.g. "peak", "overnight"). Optional; absent/empty is treated as
-	// "steady_state" (the default feeder load). The Load Simulator is a bonus
-	// free-play tool, so this only matters when a scenario pre-loads a state.
-	BaselineGridState string `yaml:"baseline_grid_state" json:"baseline_grid_state,omitempty"`
-}
-
-// ScenarioStep describes a single scenario instruction.
-type ScenarioStep struct {
-	Title          string      `yaml:"title" json:"title"`
-	Description    string      `yaml:"description" json:"description"`
-	ExpectedConfig string      `yaml:"expected_config,omitempty" json:"expected_config,omitempty"`
-	Action         *StepAction `yaml:"action,omitempty" json:"action,omitempty"`
-	Node           string      `yaml:"node,omitempty" json:"node,omitempty"`
-}
-
-// StepAction defines an executable action for a scenario step.
-type StepAction struct {
-	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision"
-	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
-	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
-	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
-	Value    *float64        `yaml:"value,omitempty" json:"value,omitempty"`       // for type=command (e.g. set_tap)
-	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
-	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
-	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
-
-	// Decision-action fields (for type=decision). Describes a constrained
-	// remediation selection exercise with a labor budget and per-role capacity.
-	BudgetHours int              `yaml:"budget_hours,omitempty" json:"budget_hours,omitempty"`
-	Roles       []DecisionRole   `yaml:"roles,omitempty" json:"roles,omitempty"`
-	Actions     []DecisionAction `yaml:"actions,omitempty" json:"actions,omitempty"`
-}
-
-// StepActionCmd is a single command in a sequence action.
-type StepActionCmd struct {
-	Device  string   `yaml:"device" json:"device"`
-	Command string   `yaml:"command" json:"command"`
-	Source  string   `yaml:"source,omitempty" json:"source,omitempty"`
-	Value   *float64 `yaml:"value,omitempty" json:"value,omitempty"`
-}
-
-// DecisionRole defines a team with a finite capacity for the decision exercise.
-type DecisionRole struct {
-	Name          string `yaml:"name" json:"name"`
-	CapacityHours int    `yaml:"capacity_hours" json:"capacity_hours"`
-}
-
-// DecisionAction is a single remediation choice in the decision catalog.
-type DecisionAction struct {
-	ID          string   `yaml:"id" json:"id"`
-	Title       string   `yaml:"title" json:"title"`
-	Why         string   `yaml:"why" json:"why"`
-	EffortHours int      `yaml:"effort_hours" json:"effort_hours"`
-	Roles       []string `yaml:"roles" json:"roles"`
-	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }

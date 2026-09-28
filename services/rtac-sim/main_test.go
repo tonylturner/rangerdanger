@@ -15,6 +15,7 @@ func resetRTACState() {
 	agg = &AggregatedState{
 		Devices:     make(map[string]map[string]any),
 		Electrical:  make(map[string]any),
+		Physics:     PhysicsStatus{Stale: true},
 		DeviceComms: make(map[string]bool),
 		Lab:         LabOverride{PowerFactor: 1.0},
 	}
@@ -123,6 +124,7 @@ func TestAutoControlDecisionsRegulator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetRTACState()
+			agg.Physics = PhysicsStatus{LastGoodAt: time.Now()}
 			agg.Devices["regulator"] = map[string]any{
 				"manual_mode":        tt.manual,
 				"voltage_setpoint_v": float64(120),
@@ -151,6 +153,7 @@ func TestAutoControlDecisionsCapbank(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetRTACState()
+			agg.Physics = PhysicsStatus{LastGoodAt: time.Now()}
 			lastCapAutoSwitch = tt.lastChange
 			agg.Devices["capbank"] = map[string]any{
 				"auto_mode":             true,
