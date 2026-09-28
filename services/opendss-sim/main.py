@@ -11,7 +11,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from circuit import FeederSolver
-from models import DeviceStates, ElectricalResponse
+from models import DeviceStates
+from runtime_state import RuntimeState
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,9 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger("opendss-sim")
 
 solver = FeederSolver()
-
-# Cache latest electrical state for GET /api/electrical
-_latest_state: dict = {}
+runtime_state = RuntimeState()
 
 
 @asynccontextmanager
@@ -30,15 +29,18 @@ async def lifespan(app: FastAPI):
     """Compile the OpenDSS circuit at startup."""
     logger.info("Compiling OpenDSS circuit...")
     solver.compile_circuit()
-    # Store initial state
-    global _latest_state
-    _latest_state = solver.solve(
-        breaker_closed=True,
-        recloser_closed=True,
-        tap_position=0,
-        fault_seen=False,
-        capbank_switched_in=False,
+    # Store an initial solved state before serving requests.
+    result, status_code = runtime_state.run_attempt(
+        lambda: solver.solve(
+            breaker_closed=True,
+            recloser_closed=True,
+            tap_position=0,
+            fault_seen=False,
+            capbank_switched_in=False,
+        )
     )
+    if status_code != 200:
+        raise RuntimeError(result["error"])
     logger.info("OpenDSS physics engine ready")
     yield
 
@@ -53,33 +55,29 @@ app = FastAPI(
 @app.post("/api/update-state")
 def update_state(devices: DeviceStates) -> JSONResponse:
     """Receive device states from RTAC, run power flow, return electrical state."""
-    global _latest_state
-
-    result = solver.solve(
-        breaker_closed=devices.relay.breaker_closed,
-        recloser_closed=devices.recloser.closed,
-        tap_position=devices.regulator.tap_position,
-        fault_seen=devices.recloser.fault_seen,
-        capbank_switched_in=devices.capbank.switched_in,
-        lab=devices.lab.model_dump(),
+    result, status_code = runtime_state.run_attempt(
+        lambda: solver.solve(
+            breaker_closed=devices.relay.breaker_closed,
+            recloser_closed=devices.recloser.closed,
+            tap_position=devices.regulator.tap_position,
+            fault_seen=devices.recloser.fault_seen,
+            capbank_switched_in=devices.capbank.switched_in,
+            lab=devices.lab.model_dump(),
+        )
     )
-
-    _latest_state = result
-    return JSONResponse(content=result)
+    return JSONResponse(content=result, status_code=status_code)
 
 
 @app.get("/api/electrical")
 def get_electrical() -> JSONResponse:
     """Return current electrical state (last solved)."""
-    return JSONResponse(content=_latest_state)
+    return JSONResponse(content=runtime_state.latest_state())
 
 
 @app.get("/api/health")
 def health() -> JSONResponse:
-    """Health check."""
-    return JSONResponse(
-        content={"status": "ok", "service": "opendss-sim", "engine": "opendssdirect.py"}
-    )
+    """Report last solve status and failure streak."""
+    return JSONResponse(content=runtime_state.health())
 
 
 if __name__ == "__main__":

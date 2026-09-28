@@ -33,6 +33,9 @@ New Line.Feeder_Main  bus1=breaker_bus  bus2=recloser_bus  phases=3
 New Line.Recloser  bus1=recloser_bus  bus2=load_bus  phases=3
 ~ switch=yes  r1=0.001  x1=0.001  r0=0.001  x0=0.001  c1=0  c0=0  length=1  units=ft
 
+! Predefine the simulated fault so runtime solves only toggle its enabled state.
+New Fault.F1 bus1=recloser_bus phases=3 r=0.01 enabled=no
+
 ! ── General Load (500 kW, 0.9 PF) ──────────────────────────────────
 New Load.GeneralLoad  bus1=load_bus  phases=3
 ~ kv=12.47  kw=500  pf=0.9  model=1  conn=wye

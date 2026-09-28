@@ -11,7 +11,9 @@ COPY services/opendss-sim/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY services/opendss-sim/main.py services/opendss-sim/circuit.py services/opendss-sim/models.py ./
+COPY services/opendss-sim/main.py services/opendss-sim/circuit.py \
+    services/opendss-sim/models.py services/opendss-sim/runtime_state.py \
+    services/opendss-sim/time_utils.py ./
 COPY services/opendss-sim/dss/ ./dss/
 
 # Copy gateway script
