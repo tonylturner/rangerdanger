@@ -340,7 +340,14 @@ func (o *Orchestrator) RemoveContainer(ctx context.Context, containerID string) 
 	if o.dockerClient == nil {
 		return nil
 	}
-	return o.dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
+	err := o.dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
+	if client.IsErrNotFound(err) {
+		// Already gone (an earlier removal succeeded but the DB update did
+		// not, or someone removed it by hand). Removal is the desired end
+		// state, so let the caller clear its reference.
+		return nil
+	}
+	return err
 }
 
 // ExecShell executes an interactive shell in a container and returns

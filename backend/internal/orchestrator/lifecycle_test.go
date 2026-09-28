@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/errdefs"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/db"
 	"github.com/tturner/rangerdanger/backend/internal/models"
@@ -173,6 +174,22 @@ func TestLabLifecycle(t *testing.T) {
 		}
 	}
 }
+func TestRemoveMissingContainer(t *testing.T) {
+	database := labDB(t)
+	inst := seedLab(t, database)
+	if err := database.Create(&models.NodeDefinition{ID: "alpha", LabInstanceID: inst.ID, ContainerID: "alpha", ContainerName: "alpha", IP: "old", Status: "stopped"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	fake := &scriptedDocker{fails: map[string]error{"remove:alpha": errdefs.NotFound(errors.New("No such container: alpha"))}}
+	o := &Orchestrator{logger: log.New(io.Discard, "", 0), dockerClient: fake}
+	if err := o.RemoveLabContainers(context.Background(), database, inst.ID); err != nil {
+		t.Fatalf("missing container must count as removed: %v", err)
+	}
+	if a := node(t, database, "alpha"); a.Status != "removed" || a.ContainerID != "" || a.ContainerName != "" || a.IP != "" {
+		t.Fatal(a)
+	}
+}
+
 func TestExecCommand(t *testing.T) {
 	for _, code := range []int{0, 7} {
 		t.Run(string(rune('0'+code)), func(t *testing.T) {
