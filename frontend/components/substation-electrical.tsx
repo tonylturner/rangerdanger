@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuditEntry, SubstationState } from "../lib/api";
+import type { AuditEntry, PhysicsStatus, SubstationState } from "../lib/api";
 
 // ── Electrical Detail View ─────────────────────────────────────────
 
@@ -10,6 +10,7 @@ export function ElectricalDetailView({
   recloser,
   regulator,
   capbank,
+  physics,
   audit,
 }: {
   elec?: SubstationState["electrical"];
@@ -17,6 +18,7 @@ export function ElectricalDetailView({
   recloser?: Record<string, number | boolean | string>;
   regulator?: Record<string, number | boolean | string>;
   capbank?: Record<string, number | boolean | string>;
+  physics?: PhysicsStatus;
   audit: AuditEntry[];
 }) {
   const nomKV = 12.47;
@@ -138,7 +140,19 @@ export function ElectricalDetailView({
         <div className="space-y-4">
 
           {/* Electrical Snapshot */}
-          <DetailPanel title="Electrical Snapshot" subtitle={`${nomKV} kV Distribution Feeder`}>
+          <DetailPanel
+            title={(
+              <>
+                Electrical Snapshot
+                {physics?.stale && (
+                  <span className="rounded border border-amber-800/60 bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-amber-400">
+                    Physics stale
+                  </span>
+                )}
+              </>
+            )}
+            subtitle={`${nomKV} kV Distribution Feeder`}
+          >
             <div className="grid grid-cols-3 gap-3">
               <MetricCell label="Feeder Voltage" value={allEnergized ? `${subPU.toFixed(3)} pu` : "-"} sub={allEnergized ? `${nomKV} kV nominal` : "De-energized"} ok={allEnergized && subPU >= 0.95 && subPU <= 1.05} />
               <MetricCell label="Feeder Current" value={`${currentA.toFixed(1)} A`} sub={`${loadingPct.toFixed(0)}% of ${feederRatingA}A rating`} ok={loadingPct < 80} warn={loadingPct >= 80 && loadingPct < 100} />
@@ -366,7 +380,7 @@ function DetailPanel({
   alert,
   children,
 }: {
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   alert?: boolean;
   children: React.ReactNode;
@@ -376,7 +390,7 @@ function DetailPanel({
       alert ? "border-red-900/60 bg-red-950/10" : "border-slate-800 bg-slate-900/40"
     }`}>
       <div className="mb-2">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{title}</div>
+        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{title}</div>
         {subtitle && <div className="text-[9px] text-slate-600">{subtitle}</div>}
       </div>
       {children}

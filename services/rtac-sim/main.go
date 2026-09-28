@@ -35,6 +35,7 @@ type AggregatedState struct {
 	mu          sync.RWMutex
 	Devices     map[string]map[string]any `json:"devices"`
 	Electrical  map[string]any            `json:"electrical"`
+	Physics     PhysicsStatus             `json:"physics"`
 	LastPoll    time.Time                 `json:"last_poll"`
 	DeviceComms map[string]bool           `json:"device_comms"`
 	Lab         LabOverride               `json:"lab"`
@@ -44,6 +45,7 @@ var (
 	agg = &AggregatedState{
 		Devices:     make(map[string]map[string]any),
 		Electrical:  make(map[string]any),
+		Physics:     PhysicsStatus{Stale: true},
 		DeviceComms: make(map[string]bool),
 		Lab:         LabOverride{PowerFactor: 1.0},
 	}
@@ -127,14 +129,16 @@ func pollDevices() {
 		}
 		payload["lab"] = agg.Lab
 		statePayload, _ := json.Marshal(payload)
-		resp, err := client.Post(physicsURL+"/api/update-state", "application/json", bytes.NewReader(statePayload))
-		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
+		resp, pushErr := client.Post(physicsURL+"/api/update-state", "application/json", bytes.NewReader(statePayload))
+		status := 0
+		var body []byte
+		if pushErr == nil {
+			status = resp.StatusCode
+			body, pushErr = io.ReadAll(resp.Body)
 			resp.Body.Close()
-			var elec map[string]any
-			if json.Unmarshal(body, &elec) == nil {
-				agg.Electrical = elec
-			}
+		}
+		if pushErr = applyPhysicsReply(agg, status, body, pushErr, time.Now()); pushErr != nil {
+			log.Printf("WARN physics push failed: %v", pushErr)
 		}
 
 		agg.LastPoll = time.Now()
@@ -176,6 +180,12 @@ func handleTags(w http.ResponseWriter, r *http.Request) {
 	for k, v := range agg.Electrical {
 		tags["electrical."+k] = v
 	}
+	physics := agg.Physics
+	physics.Stale = physicsIsStale(physics)
+	tags["physics.stale"] = physics.Stale
+	tags["physics.consecutive_failures"] = physics.ConsecutiveFailures
+	tags["physics.solved_at"] = physics.SolvedAt
+	tags["physics.last_error"] = physics.LastError
 	for dev, ok := range agg.DeviceComms {
 		tags["comms."+dev+".ok"] = ok
 	}
@@ -186,6 +196,7 @@ func handleTags(w http.ResponseWriter, r *http.Request) {
 	tags["alarm.reclose_disabled"] = isRecloseDisabled()
 	tags["alarm.low_voltage_critical"] = isLowVoltageCritical()
 	tags["alarm.high_voltage_critical"] = isHighVoltageCritical()
+	tags["alarm.physics_stale"] = physics.Stale
 
 	shared.WriteJSON(w, map[string]any{
 		"tags":      tags,
@@ -197,9 +208,12 @@ func handleTags(w http.ResponseWriter, r *http.Request) {
 func handleRawState(w http.ResponseWriter, r *http.Request) {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
+	physics := agg.Physics
+	physics.Stale = physicsIsStale(physics)
 	shared.WriteJSON(w, map[string]any{
 		"devices":      agg.Devices,
 		"electrical":   agg.Electrical,
+		"physics":      physics,
 		"device_comms": agg.DeviceComms,
 		"last_poll":    agg.LastPoll,
 	})
@@ -410,6 +424,9 @@ type autoCmd struct {
 func autoControlDecisions() []autoCmd {
 	agg.mu.RLock()
 	defer agg.mu.RUnlock()
+	if physicsIsStale(agg.Physics) {
+		return nil
+	}
 
 	var cmds []autoCmd
 	elec := agg.Electrical
@@ -579,13 +596,20 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		comms[k] = v
 	}
 	lastPoll := agg.LastPoll
+	physics := agg.Physics
+	physics.Stale = physicsIsStale(physics)
 	agg.mu.RUnlock()
+	healthStatus := "ok"
+	if physics.Stale {
+		healthStatus = "degraded"
+	}
 
 	shared.WriteJSON(w, map[string]any{
-		"status":       "ok",
+		"status":       healthStatus,
 		"service":      "rtac-sim",
 		"device_comms": comms,
 		"last_poll":    lastPoll,
+		"physics":      physics,
 	})
 }
 
