@@ -69,3 +69,5 @@ class ElectricalResponse(BaseModel):
     power_factor: float = 0.0
     source_power_kw: float = 0.0
     fault_current_a: float = 0.0
+    converged: bool
+    solved_at: str
