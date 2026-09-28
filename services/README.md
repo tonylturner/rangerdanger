@@ -4,7 +4,8 @@ Each simulator is a single Go binary that exposes the **same
 in-memory state across three protocols simultaneously**:
 
 - **HTTP REST** on `:8080` - `GET /api/state`, `POST /api/command`,
-  `GET /api/audit`, `GET /api/health`
+  `GET /api/audit`, `GET /api/health`; `rtac-sim` also exposes
+  `GET /api/tags`
 - **Modbus TCP** on `:502` - hand-written outstation (no library),
   function codes 1/3/4 read (coils / holding registers / input
   registers) and 5/6 write (single coil / single register)
@@ -30,6 +31,13 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 | `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
 | `gps-sim`       | -  | NTP/IRIG-B time source. UDP NTP server. |
 | `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
+
+The RTAC includes OpenDSS freshness in `/api/state` as `physics` (`stale`,
+`consecutive_failures`, `last_good_at`, `solved_at`, `last_error`), flattens
+the freshness and solve details under `physics.*` in `/api/tags`, and includes
+the same object in `/api/health`. The retained `electrical` result includes
+`converged` and `solved_at`. Health `status` is `degraded` while physics is
+stale and `ok` after a good solve.
 
 ## Local development
 
