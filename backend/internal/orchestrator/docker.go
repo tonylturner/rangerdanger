@@ -11,9 +11,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// dockerAPI is the Docker surface used by the orchestrator. DockerClient
+// DockerAPI is the Docker surface used by the orchestrator. DockerClient
 // separately exposes the concrete client to legacy server callers.
-type dockerAPI interface {
+type DockerAPI interface {
 	ContainerCreate(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error)
 	NetworkConnect(context.Context, string, string, *network.EndpointSettings) error
 	ContainerStart(context.Context, string, container.StartOptions) error
@@ -29,4 +29,4 @@ type dockerAPI interface {
 	ContainerLogs(context.Context, string, container.LogsOptions) (io.ReadCloser, error)
 }
 
-var _ dockerAPI = (*client.Client)(nil)
+var _ DockerAPI = (*client.Client)(nil)

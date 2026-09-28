@@ -54,7 +54,7 @@ func resolveNetworkName(zone string) (string, error) {
 // Orchestrator manages Docker containers for lab instances.
 type Orchestrator struct {
 	logger         *log.Logger
-	dockerClient   dockerAPI
+	dockerClient   DockerAPI
 	concreteClient *client.Client
 	containdClient *containd.Client
 	labDefsDir     string
@@ -78,7 +78,7 @@ func (o *Orchestrator) DockerClient() *client.Client {
 
 // NewWithDocker constructs an orchestrator around a Docker implementation.
 // DockerClient remains nil unless New created the real SDK client.
-func NewWithDocker(cli dockerAPI, containdClient *containd.Client, labDefsDir string) *Orchestrator {
+func NewWithDocker(cli DockerAPI, containdClient *containd.Client, labDefsDir string) *Orchestrator {
 	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
 }
 

@@ -84,4 +84,4 @@ func (f *scriptedDocker) ContainerExecResize(_ context.Context, id string, _ con
 	return f.record("resize", id)
 }
 
-var _ dockerAPI = (*scriptedDocker)(nil)
+var _ DockerAPI = (*scriptedDocker)(nil)
