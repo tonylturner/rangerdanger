@@ -21,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Workshop scenario tests now wait for the firewall dataplane canary to match
+  the applied weak or improved policy before running probes.
 - Made feeder-physics freshness explicit end to end: OpenDSS reports solve
   convergence and timestamps and rejects non-converged solves with HTTP 503;
   RTAC exposes `physics` status and `alarm.physics_stale` while retaining the
