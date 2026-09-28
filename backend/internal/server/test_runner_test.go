@@ -14,6 +14,7 @@ func TestEvaluateTestStep(t *testing.T) {
 		commandResults []StepActionResult
 		firewallResult StepActionResult
 		checkResults   []StepActionResult
+		probeResults   []StepActionResult
 		wantPassed     bool
 		wantAutoPass   bool
 		wantDetail     string
@@ -84,6 +85,19 @@ func TestEvaluateTestStep(t *testing.T) {
 			checkResults: []StepActionResult{{Success: true}, {Success: false}},
 			wantDetail:   "2 checks, all pass: false",
 		},
+		{
+			name:         "probe all targets pass",
+			action:       &labs.StepAction{Type: "probe", Outcome: "blocked"},
+			probeResults: []StepActionResult{{Success: true}, {Success: true}},
+			wantPassed:   true,
+			wantDetail:   "2 probes, all pass: true",
+		},
+		{
+			name:         "probe one target fails",
+			action:       &labs.StepAction{Type: "probe", Outcome: "blocked"},
+			probeResults: []StepActionResult{{Success: true}, {Success: false}},
+			wantDetail:   "2 probes, all pass: false",
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,6 +115,7 @@ func TestEvaluateTestStep(t *testing.T) {
 				command:  command,
 				firewall: func(string) StepActionResult { return tt.firewallResult },
 				check:    func(map[string]any) []StepActionResult { return tt.checkResults },
+				probe:    func(labs.ScenarioStep) []StepActionResult { return tt.probeResults },
 			})
 
 			if result.StepIndex != 4 || result.StepTitle != "test step" {
@@ -119,6 +134,37 @@ func TestEvaluateTestStep(t *testing.T) {
 				t.Errorf("command calls = %d, want %d", commandIndex, len(tt.commandResults))
 			}
 		})
+	}
+}
+
+func TestHardenedPreconditionAppliesOnce(t *testing.T) {
+	active := "weak"
+	count := 0
+	apply := func(config string) ([]string, error) {
+		if config != "improved" {
+			t.Fatalf("config = %q", config)
+		}
+		count++
+		active = config
+		return nil, nil
+	}
+	for _, step := range []labs.ScenarioStep{
+		{ExpectedConfig: "weak", Action: &labs.StepAction{Type: "probe"}},
+		{Action: &labs.StepAction{Type: "check", Expect: map[string]any{"firewall_config": "improved"}}},
+		{ExpectedConfig: "hardened"},
+		{ExpectedConfig: "hardened"},
+	} {
+		_, err := ensureHardenedPrecondition(step, active, apply)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("apply count = %d, want 1", count)
+	}
+	_, err := ensureHardenedPrecondition(labs.ScenarioStep{ExpectedConfig: "hardened"}, "custom", apply)
+	if err != nil || count != 1 {
+		t.Fatalf("custom policy re-applied: count=%d err=%v", count, err)
 	}
 }
 

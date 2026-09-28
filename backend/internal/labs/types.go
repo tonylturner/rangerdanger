@@ -63,13 +63,15 @@ type ScenarioStep struct {
 
 // StepAction defines an executable action for a scenario step.
 type StepAction struct {
-	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision"
+	Type     string          `yaml:"type" json:"type"`                             // "command", "check", "firewall", "sequence", "decision", "probe"
 	Device   string          `yaml:"device,omitempty" json:"device,omitempty"`     // for type=command
 	Command  string          `yaml:"command,omitempty" json:"command,omitempty"`   // for type=command
 	Source   string          `yaml:"source,omitempty" json:"source,omitempty"`     // for type=command
 	Value    *float64        `yaml:"value,omitempty" json:"value,omitempty"`       // for type=command (e.g. set_tap)
 	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
+	Outcome  string          `yaml:"outcome,omitempty" json:"outcome,omitempty"`   // for type=probe
+	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
 
 	// Decision-action fields (for type=decision). Describes a constrained
@@ -77,6 +79,14 @@ type StepAction struct {
 	BudgetHours int              `yaml:"budget_hours,omitempty" json:"budget_hours,omitempty"`
 	Roles       []DecisionRole   `yaml:"roles,omitempty" json:"roles,omitempty"`
 	Actions     []DecisionAction `yaml:"actions,omitempty" json:"actions,omitempty"`
+}
+
+// ProbeTarget identifies a TCP destination and optional source override.
+type ProbeTarget struct {
+	From string `yaml:"from,omitempty" json:"from,omitempty"`
+	Host string `yaml:"host" json:"host"`
+	Port int    `yaml:"port" json:"port"`
+	Note string `yaml:"note,omitempty" json:"note,omitempty"`
 }
 
 // StepActionCmd is a single command in a sequence action.

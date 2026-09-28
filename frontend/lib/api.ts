@@ -100,13 +100,15 @@ export type DecisionAction = {
 };
 
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision";
+  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe";
   device?: string;
   command?: string;
   source?: string;
   value?: number;
   config?: string;
   expect?: Record<string, unknown>;
+  outcome?: "reachable" | "blocked";
+  targets?: { from?: string; host: string; port: number; note?: string }[];
   commands?: { device: string; command: string; source?: string; value?: number }[];
   // Decision action fields (type === "decision")
   budget_hours?: number;

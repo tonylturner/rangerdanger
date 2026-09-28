@@ -113,6 +113,7 @@ steps:
 
   - title: "Phase 1 - Verify current access under the weak baseline"
     expected_config: weak
+    node: kali-1
     description: |
       Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed right now, and should fail after you finish building your policy.
 
@@ -145,6 +146,16 @@ steps:
           mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23
 
       All of these should return data. That is the problem. Kali (an attacker box in the enterprise zone) can speak Modbus and DNP3 directly to field protection relays. The engineering workstation can bypass the RTAC entirely. This is what you are about to fix.
+    action:
+      type: probe
+      outcome: reachable
+      targets:
+        - { host: 10.40.40.20, port: 502, note: "Modbus to relay" }
+        - { host: 10.40.40.20, port: 20000, note: "DNP3 to relay" }
+        - { host: 10.40.40.21, port: 502, note: "Modbus to recloser" }
+        - { host: 10.40.40.21, port: 20000, note: "DNP3 to recloser" }
+        - { from: eng-ws-1, host: 10.40.40.22, port: 502, note: "Modbus to regulator" }
+        - { from: eng-ws-1, host: 10.40.40.23, port: 502, note: "Modbus to capbank" }
 
   - title: "Phase 2 - Remove broad trust and establish default-deny"
     expected_config: weak
@@ -353,9 +364,12 @@ steps:
       pushing rules to a remote firewall and don't want to lock
       yourself out.
       :::
+    action:
+      type: firewall
+      config: improved
 
   - title: "Phase 4 - Enable logging and visibility"
-    expected_config: weak
+    expected_config: hardened
     description: |
       A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
 
@@ -425,6 +439,7 @@ steps:
 
   - title: "Phase 5 - Validate allowed traffic"
     expected_config: hardened
+    node: rtac-1
     description: |
       Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
 
@@ -463,9 +478,17 @@ steps:
       From the GPS terminal or by checking a field device's NTP status. The NTP flow is UDP/123 from `10.30.30.50` to field devices.
 
       If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
+    action:
+      type: probe
+      outcome: reachable
+      targets:
+        - { host: 10.40.40.20, port: 502, note: "RTAC Modbus to relay" }
+        - { host: 10.40.40.20, port: 20000, note: "RTAC DNP3 to relay" }
+        - { from: hmi-1, host: 10.30.30.20, port: 8080, note: "HMI to RTAC API" }
 
   - title: "Phase 6 - Validate blocked traffic"
     expected_config: hardened
+    node: kali-1
     description: |
       Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
 
@@ -520,6 +543,15 @@ steps:
       For this release, "TCP timeout + HMI unchanged" is the working
       evidence pattern.
       :::
+    action:
+      type: probe
+      outcome: blocked
+      targets:
+        - { host: 10.40.40.20, port: 502, note: "Kali Modbus to relay" }
+        - { host: 10.40.40.20, port: 20000, note: "Kali DNP3 to relay" }
+        - { from: eng-ws-1, host: 10.40.40.23, port: 502, note: "Engineering Modbus to capbank" }
+        - { from: vendor-jump-1, host: 10.40.40.20, port: 502, note: "Vendor Modbus to relay" }
+        - { from: vendor-jump-1, host: 10.40.40.20, port: 20000, note: "Vendor DNP3 to relay" }
 
   - title: "Export your policy"
     expected_config: hardened
@@ -575,3 +607,7 @@ steps:
 
       Everything else. Enterprise to OT Ops, enterprise to field, vendor to field, non-RTAC OT Ops to field, and any protocol not explicitly listed above.
       :::
+    action:
+      type: check
+      expect:
+        firewall_config: improved

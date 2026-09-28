@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -23,6 +24,50 @@ type stepTestResult struct {
 	AutoPass   bool   `json:"auto_pass"`
 	Detail     string `json:"detail"`
 	DurationMs int64  `json:"duration_ms"`
+}
+
+// ensureHardenedPrecondition applies the reference policy only when a step
+// declares that it must begin under hardened policy.
+func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply func(string) ([]string, error)) (bool, error) {
+	if step.ExpectedConfig != "hardened" || active == "improved" || active == "custom" {
+		return false, nil
+	}
+	warnings, err := apply("improved")
+	if err != nil {
+		return false, err
+	}
+	if len(warnings) > 0 {
+		return true, fmt.Errorf("firewall apply warnings: %s", strings.Join(warnings, "; "))
+	}
+	return true, nil
+}
+
+// waitForFirewallPolicy waits for containd's running firewall document to
+// match the just-committed policy. The backend's activeConfig flips at commit
+// time, so polling it would not establish that the running policy is visible.
+func (s *Server) waitForFirewallPolicy() error {
+	s.activeConfigMu.RLock()
+	want := s.lastAppliedHash
+	s.activeConfigMu.RUnlock()
+	if want == "" {
+		return fmt.Errorf("no recorded firewall hash")
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	for {
+		got, err := s.containdClient.GetFirewallHash()
+		if err == nil && got == want {
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("running firewall policy not active: %w", lastErr)
+			}
+			return fmt.Errorf("running firewall policy not active after 15 s")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 type scenarioTestResult struct {
@@ -76,12 +121,6 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		preResetProblems := s.resetLabState()
 		time.Sleep(1 * time.Second)
 
-		// Exercises that assume the hardened config is already applied
-		if sc.ID == "validation-evidence" {
-			s.applyFirewallConfigInternal("improved")
-			time.Sleep(500 * time.Millisecond)
-		}
-
 		// Parse steps
 		var steps []labs.ScenarioStep
 		json.Unmarshal([]byte(sc.Steps), &steps)
@@ -91,15 +130,34 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		for i, step := range steps {
 			stepStart := time.Now()
 			totalTests++
+			s.activeConfigMu.RLock()
+			active := s.activeConfig
+			s.activeConfigMu.RUnlock()
+			applied, prepErr := ensureHardenedPrecondition(step, active, s.applyFirewallConfigInternal)
+			if prepErr == nil && applied {
+				prepErr = s.waitForFirewallPolicy()
+			}
 
-			result := evaluateTestStep(i, step, stepExecutors{
-				command:  s.executeCommand,
-				firewall: s.executeFirewallAction,
-				check:    s.executeCheck,
-				sequencePause: func() {
-					time.Sleep(300 * time.Millisecond)
-				},
-			})
+			result := stepTestResult{StepIndex: i, StepTitle: step.Title}
+			if prepErr != nil {
+				result.Detail = "hardened precondition: " + prepErr.Error()
+			} else {
+				result = evaluateTestStep(i, step, stepExecutors{
+					command:  s.executeCommand,
+					firewall: s.executeFirewallAction,
+					check:    s.executeCheck,
+					probe:    s.executeProbe,
+					sequencePause: func() {
+						time.Sleep(300 * time.Millisecond)
+					},
+				})
+				if step.Action != nil && step.Action.Type == "firewall" && result.Passed {
+					if err := s.waitForFirewallPolicy(); err != nil {
+						result.Passed = false
+						result.Detail += "; dataplane: " + err.Error()
+					}
+				}
+			}
 			if step.Action != nil {
 				// After state-changing commands, wait for effects to propagate.
 				if step.Action.Type == "command" {
