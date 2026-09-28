@@ -30,6 +30,10 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 	if req.DurationSec <= 0 {
 		req.DurationSec = 30
 	}
+	if req.Name != "" && !validPcapComponent(req.Name, 64) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid capture name"})
+		return
+	}
 
 	prefix := req.Name
 	if prefix == "" {
@@ -250,10 +254,15 @@ func (s *Server) handlePcapDownloadFile(c *gin.Context) {
 // validPcapName accepts only containd PCAP basenames that are safe to pass
 // as a single download path segment.
 func validPcapName(name string) bool {
-	if len(name) == 0 || len(name) > 255 || name == "." || strings.Contains(name, "..") {
+	if !validPcapComponent(name, 255) {
 		return false
 	}
-	if !strings.HasSuffix(name, ".pcap") && !strings.HasSuffix(name, ".pcapng") {
+	return strings.HasSuffix(name, ".pcap") || strings.HasSuffix(name, ".pcapng")
+}
+
+// validPcapComponent checks the shared filename character class and bound.
+func validPcapComponent(name string, maxLen int) bool {
+	if len(name) == 0 || len(name) > maxLen || name == "." || strings.Contains(name, "..") {
 		return false
 	}
 	for i := 0; i < len(name); i++ {
