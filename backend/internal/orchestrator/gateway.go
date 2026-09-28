@@ -65,6 +65,9 @@ func (o *Orchestrator) ProvisionGateways(ctx context.Context) {
 	// For each container, determine the correct gateway based on its network membership
 	var targets []containerGateway
 	for _, c := range containers {
+		if len(c.Names) == 0 {
+			continue
+		}
 		name := strings.TrimPrefix(c.Names[0], "/")
 
 		// Skip infrastructure containers that shouldn't route through containd

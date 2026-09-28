@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Lab lifecycle operations now report partial container and firewall failures
+  instead of marking incomplete work successful, and successful removals clear
+  stale container references.
+
 - Fixed the online lifecycle test's empty-array expansion under macOS Bash
   3.2 and removed its unused result flag.
 - Replaced deprecated naive UTC timestamps in `validation-report.sh` with
