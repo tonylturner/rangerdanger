@@ -11,6 +11,7 @@ type stepExecutors struct {
 	command       func(device, command, source string, value *float64) StepActionResult
 	firewall      func(configName string) StepActionResult
 	check         func(expect map[string]any) []StepActionResult
+	probe         func(step labs.ScenarioStep) []StepActionResult
 	sequencePause func()
 }
 
@@ -63,6 +64,16 @@ func evaluateTestStep(index int, step labs.ScenarioStep, executors stepExecutors
 		}
 		result.Passed = allPass
 		result.Detail = fmt.Sprintf("%d checks, all pass: %v", len(checks), allPass)
+
+	case "probe":
+		probes := executors.probe(step)
+		result.Passed = len(probes) > 0
+		for _, probe := range probes {
+			if !probe.Success {
+				result.Passed = false
+			}
+		}
+		result.Detail = fmt.Sprintf("%d probes, all pass: %v", len(probes), result.Passed)
 
 	case "decision":
 		result.Passed = true

@@ -253,6 +253,46 @@ func TestValidateLabRejectsDecisionWithoutActions(t *testing.T) {
 	}
 }
 
+func TestValidateProbe(t *testing.T) {
+	valid := func() (*LabYAML, ScenarioYAML) {
+		def, scenario := validatorFixture()
+		scenario.Steps[0].Node = "rtac-1"
+		scenario.Steps[0].Action = &StepAction{Type: "probe", Outcome: "reachable", Targets: []ProbeTarget{{Host: "10.40.40.20", Port: 502}}}
+		return def, scenario
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*ScenarioStep)
+		problem string
+	}{
+		{"invalid outcome", func(s *ScenarioStep) { s.Action.Outcome = "allow" }, "probe outcome must be reachable or blocked"},
+		{"check expect on probe", func(s *ScenarioStep) { s.Action.Expect = map[string]any{"breaker_closed": true} }, "probe expect must be empty"},
+		{"no targets", func(s *ScenarioStep) { s.Action.Targets = nil }, "probe must contain at least one target"},
+		{"bad host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "example.com" }, "host must be a valid IPv4"},
+		{"IPv6 host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "::1" }, "host must be a valid IPv4"},
+		{"zero port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 0 }, "port must be 1-65535"},
+		{"large port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 65536 }, "port must be 1-65535"},
+		{"missing source", func(s *ScenarioStep) { s.Node = "" }, "must have a source"},
+		{"unknown override", func(s *ScenarioStep) { s.Action.Targets[0].From = "unknown" }, `unknown source node "unknown"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			def, scenario := valid()
+			tt.mutate(&scenario.Steps[0])
+			err := ValidateLab(def, []ScenarioYAML{scenario})
+			if err == nil || !strings.Contains(err.Error(), tt.problem) {
+				t.Fatalf("ValidateLab error = %v, want %q", err, tt.problem)
+			}
+		})
+	}
+	def, scenario := valid()
+	scenario.Steps[0].Node = ""
+	scenario.Steps[0].Action.Targets[0].From = "fw-1"
+	if err := ValidateLab(def, []ScenarioYAML{scenario}); err != nil {
+		t.Fatalf("override-only probe rejected: %v", err)
+	}
+}
+
 func validDecision() *StepAction {
 	return &StepAction{
 		Type: "decision", BudgetHours: 40,

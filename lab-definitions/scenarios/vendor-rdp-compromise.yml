@@ -40,6 +40,12 @@ steps:
       a Linux container with `xrdp` and a VNC server running - the
       same defensive lesson applies to a real Windows vendor jump
       host on RDP.
+    action:
+      type: probe
+      outcome: reachable
+      targets:
+        - { host: 10.20.20.10, port: 3389, note: "RDP to vendor jump" }
+        - { host: 10.20.20.10, port: 5900, note: "VNC to vendor jump" }
 
   - title: "Pivot via RDP (or VNC)"
     expected_config: weak

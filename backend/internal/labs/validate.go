@@ -2,12 +2,13 @@ package labs
 
 import (
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 )
 
 var validActionTypes = map[string]struct{}{
-	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {},
+	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {},
 }
 
 var validCheckKeys = map[string]bool{
@@ -113,7 +114,7 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 				stepAdd(fmt.Sprintf("unknown node %q", step.Node))
 			}
 			if step.Action != nil {
-				validateAction(*step.Action, stepAdd)
+				validateAction(*step.Action, step.Node, nodeIDs, stepAdd)
 			}
 		}
 	}
@@ -128,7 +129,7 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 	return fmt.Errorf("lab validation failed:\n%s", strings.Join(lines, "\n"))
 }
 
-func validateAction(action StepAction, add func(string)) {
+func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool, add func(string)) {
 	if _, ok := validActionTypes[action.Type]; !ok {
 		add(fmt.Sprintf("unsupported action type %q", action.Type))
 		return
@@ -174,6 +175,34 @@ func validateAction(action StepAction, add func(string)) {
 			}
 			if _, ok := value.(bool); !ok {
 				add(fmt.Sprintf("check %s value must be a boolean", key))
+			}
+		}
+	case "probe":
+		if action.Outcome != "reachable" && action.Outcome != "blocked" {
+			add("probe outcome must be reachable or blocked")
+		}
+		if len(action.Expect) != 0 {
+			add("probe expect must be empty")
+		}
+		if len(action.Targets) == 0 {
+			add("probe must contain at least one target")
+		}
+		for index, target := range action.Targets {
+			prefix := fmt.Sprintf("targets[%d] ", index)
+			if ip := net.ParseIP(target.Host); ip == nil || ip.To4() == nil || strings.Contains(target.Host, ":") {
+				add(prefix + "host must be a valid IPv4 address")
+			}
+			if target.Port < 1 || target.Port > 65535 {
+				add(prefix + "port must be 1-65535")
+			}
+			source := target.From
+			if source == "" {
+				source = stepNode
+			}
+			if source == "" {
+				add(prefix + "must have a source (step node or from)")
+			} else if !nodeIDs[source] {
+				add(prefix + fmt.Sprintf("unknown source node %q", source))
 			}
 		}
 	case "decision":

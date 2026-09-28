@@ -103,6 +103,9 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		checkResults := s.executeCheck(step.Action.Expect)
 		results = append(results, checkResults...)
 
+	case "probe":
+		results = s.executeProbe(step)
+
 	default:
 		results = append(results, StepActionResult{
 			Action:  step.Action.Type,

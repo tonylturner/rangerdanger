@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **TCP probe steps execute workshop firewall validation.** Lab 2.2 and related exposure exercises now check reachability from the named topology nodes, with per-target results in the scenario runner.
+
 ### Changed
 
 - **Dev compose firewall no longer runs privileged.** `docker-compose.yml`

@@ -243,6 +243,7 @@ Supported `type` values:
 
 - `decision` - labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
+- `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
 - `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.
 
 `DecisionPanel` automatically reads:
