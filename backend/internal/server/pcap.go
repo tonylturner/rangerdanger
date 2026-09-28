@@ -204,7 +204,7 @@ func (s *Server) handlePcapDownload(c *gin.Context) {
 	s.pcapMu.Unlock()
 
 	// Try containd: download first matched file
-	if !state.Fallback && len(state.Files) > 0 {
+	if !state.Fallback && len(state.Files) > 0 && validPcapName(state.Files[0]) {
 		name := state.Files[0]
 		body, filename, err := s.containdClient.DownloadPcapFile(name)
 		if err == nil {
@@ -227,8 +227,8 @@ func (s *Server) handlePcapDownload(c *gin.Context) {
 // handlePcapDownloadFile downloads a specific PCAP file by name from containd.
 func (s *Server) handlePcapDownloadFile(c *gin.Context) {
 	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file name required"})
+	if !validPcapName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pcap file name"})
 		return
 	}
 
@@ -245,6 +245,25 @@ func (s *Server) handlePcapDownloadFile(c *gin.Context) {
 	if _, err := io.Copy(c.Writer, body); err != nil {
 		log.Printf("[pcap] download stream error: %v", err)
 	}
+}
+
+// validPcapName accepts only containd PCAP basenames that are safe to pass
+// as a single download path segment.
+func validPcapName(name string) bool {
+	if len(name) == 0 || len(name) > 255 || name == "." || strings.Contains(name, "..") {
+		return false
+	}
+	if !strings.HasSuffix(name, ".pcap") && !strings.HasSuffix(name, ".pcapng") {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handlePcapList(c *gin.Context) {
