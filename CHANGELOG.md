@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **TCP probe steps execute workshop firewall validation.** Lab 2.2 and related exposure exercises now check reachability from the named topology nodes, with per-target results in the scenario runner.
+
 ### Changed
 
 - **Dev compose firewall no longer runs privileged.** `docker-compose.yml`
@@ -17,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Workshop scenario tests now wait for the firewall dataplane canary to match
+  the applied weak or improved policy before running probes.
 - Made feeder-physics freshness explicit end to end: OpenDSS reports solve
   convergence and timestamps and rejects non-converged solves with HTTP 503;
   RTAC exposes `physics` status and `alarm.physics_stale` while retaining the
@@ -25,6 +31,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Lab YAML is validated at seed time.** Invalid scenario actions and node
   references now fail before a template is written.
 - **PCAP download names are validated before forwarding to containd.**
+- Lab lifecycle operations now report partial container and firewall failures
+  instead of marking incomplete work successful, and successful removals clear
+  stale container references; workshop exec now returns stderr separately.
 - Fixed the online lifecycle test's empty-array expansion under macOS Bash
   3.2 and removed its unused result flag.
 - Replaced deprecated naive UTC timestamps in `validation-report.sh` with

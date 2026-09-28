@@ -42,14 +42,15 @@ type trafficState struct {
 
 // Server wraps the Gin router and dependencies.
 type Server struct {
-	engine         *gin.Engine
-	cfg            *config.Config
-	db             *gorm.DB
-	loader         *labs.Loader
-	orchestrator   *orchestrator.Orchestrator
-	containdClient *containd.Client
-	activeConfigMu sync.RWMutex
-	activeConfig   string // "weak", "improved", or "custom"
+	engine          *gin.Engine
+	cfg             *config.Config
+	db              *gorm.DB
+	loader          *labs.Loader
+	orchestrator    *orchestrator.Orchestrator
+	execInContainer func(context.Context, string, []string, int) (string, string, int, error)
+	containdClient  *containd.Client
+	activeConfigMu  sync.RWMutex
+	activeConfig    string // "weak", "improved", or "custom"
 	// policySource records how the active policy was applied. Possible
 	// values:
 	//   "weak"              — canned weak baseline (/api/firewall/apply)
@@ -103,6 +104,7 @@ func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orc
 		loader:         loader,
 		orchestrator:   orchestrator,
 	}
+	s.execInContainer = s.orchestrator.ExecCommand
 
 	s.applyMigrations()
 	s.registerMiddleware()

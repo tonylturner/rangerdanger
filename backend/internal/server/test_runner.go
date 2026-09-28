@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -23,6 +24,129 @@ type stepTestResult struct {
 	AutoPass   bool   `json:"auto_pass"`
 	Detail     string `json:"detail"`
 	DurationMs int64  `json:"duration_ms"`
+}
+
+var firewallWaitBudget = 15 * time.Second
+
+const (
+	firewallHashPollInterval   = 200 * time.Millisecond
+	firewallCanaryPollInterval = 500 * time.Millisecond
+)
+
+// ensureHardenedPrecondition applies the reference policy only when a step
+// declares that it must begin under hardened policy.
+func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply func(string) ([]string, error)) (bool, error) {
+	if step.ExpectedConfig != "hardened" || active == "improved" || active == "custom" {
+		return false, nil
+	}
+	warnings, err := apply("improved")
+	if err != nil {
+		return false, err
+	}
+	if len(warnings) > 0 {
+		return true, fmt.Errorf("firewall apply warnings: %s", strings.Join(warnings, "; "))
+	}
+	return true, nil
+}
+
+// waitForFirewallPolicy waits for containd's running firewall document to
+// match the just-committed policy, then checks the dataplane canary for canned
+// policies. The backend's activeConfig flips at commit time, so neither it nor
+// the config hash alone establishes that the running dataplane is reconciled.
+func (s *Server) waitForFirewallPolicy() error {
+	s.activeConfigMu.RLock()
+	want := s.lastAppliedHash
+	active := s.activeConfig
+	s.activeConfigMu.RUnlock()
+	if want == "" {
+		return fmt.Errorf("no recorded firewall hash")
+	}
+	budget := firewallWaitBudget
+	deadline := time.Now().Add(budget)
+	var lastErr error
+	for {
+		if !time.Now().Before(deadline) {
+			return firewallHashTimeout(budget, lastErr)
+		}
+		got, err := s.containdClient.GetFirewallHash()
+		if err == nil && got == want {
+			if time.Now().Before(deadline) {
+				break
+			}
+			return firewallHashTimeout(budget, nil)
+		}
+		lastErr = err
+		if !sleepWithinFirewallBudget(deadline, firewallHashPollInterval) {
+			return firewallHashTimeout(budget, lastErr)
+		}
+	}
+
+	if active != "weak" && active != "improved" {
+		return nil
+	}
+	node, err := s.resolveWorkshopNode("kali-1")
+	if err != nil {
+		return fmt.Errorf("dataplane never reconciled to %s: resolve canary kali→10.30.30.20:502: %w", active, err)
+	}
+	if node.Container == "" {
+		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 has no container", active)
+	}
+	if s.execInContainer == nil {
+		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 cannot run without container exec", active)
+	}
+
+	wantAllow := active == "weak"
+	var lastProbeErr error
+	lastVerdict := "unknown"
+	for {
+		if !time.Now().Before(deadline) {
+			return firewallCanaryTimeout(active, lastVerdict, lastProbeErr, budget)
+		}
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		_, _, rc, probeErr := s.execInContainer(ctx, node.Container, []string{
+			"timeout", "1", "bash", "-c", "exec 3<>/dev/tcp/10.30.30.20/502",
+		}, 2)
+		cancel()
+		lastProbeErr = probeErr
+		if probeErr == nil {
+			lastVerdict = "deny"
+			if rc == 0 {
+				lastVerdict = "allow"
+			}
+			if (wantAllow && rc == 0) || (!wantAllow && rc != 0) {
+				return nil
+			}
+		}
+		if !sleepWithinFirewallBudget(deadline, firewallCanaryPollInterval) {
+			return firewallCanaryTimeout(active, lastVerdict, lastProbeErr, budget)
+		}
+	}
+}
+
+func firewallHashTimeout(budget time.Duration, lastErr error) error {
+	if lastErr != nil {
+		return fmt.Errorf("firewall config hash did not reconcile after %s: %w", budget, lastErr)
+	}
+	return fmt.Errorf("firewall config hash did not reconcile after %s", budget)
+}
+
+func sleepWithinFirewallBudget(deadline time.Time, interval time.Duration) bool {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return false
+	}
+	if interval > remaining {
+		interval = remaining
+	}
+	time.Sleep(interval)
+	return time.Now().Before(deadline)
+}
+
+func firewallCanaryTimeout(active, verdict string, probeErr error, budget time.Duration) error {
+	if probeErr != nil {
+		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 unavailable after %s: %w", active, budget, probeErr)
+	}
+	return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 still %s after %s", active, verdict, budget)
 }
 
 type scenarioTestResult struct {
@@ -74,12 +198,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 
 		// Reset lab before each scenario
 		preResetProblems := s.resetLabState()
-		time.Sleep(1 * time.Second)
-
-		// Exercises that assume the hardened config is already applied
-		if sc.ID == "validation-evidence" {
-			s.applyFirewallConfigInternal("improved")
-			time.Sleep(500 * time.Millisecond)
+		if err := s.waitForFirewallPolicy(); err != nil {
+			preResetProblems = append(preResetProblems, "firewall dataplane: "+err.Error())
 		}
 
 		// Parse steps
@@ -91,15 +211,34 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		for i, step := range steps {
 			stepStart := time.Now()
 			totalTests++
+			s.activeConfigMu.RLock()
+			active := s.activeConfig
+			s.activeConfigMu.RUnlock()
+			applied, prepErr := ensureHardenedPrecondition(step, active, s.applyFirewallConfigInternal)
+			if prepErr == nil && applied {
+				prepErr = s.waitForFirewallPolicy()
+			}
 
-			result := evaluateTestStep(i, step, stepExecutors{
-				command:  s.executeCommand,
-				firewall: s.executeFirewallAction,
-				check:    s.executeCheck,
-				sequencePause: func() {
-					time.Sleep(300 * time.Millisecond)
-				},
-			})
+			result := stepTestResult{StepIndex: i, StepTitle: step.Title}
+			if prepErr != nil {
+				result.Detail = "hardened precondition: " + prepErr.Error()
+			} else {
+				result = evaluateTestStep(i, step, stepExecutors{
+					command:  s.executeCommand,
+					firewall: s.executeFirewallAction,
+					check:    s.executeCheck,
+					probe:    s.executeProbe,
+					sequencePause: func() {
+						time.Sleep(300 * time.Millisecond)
+					},
+				})
+				if step.Action != nil && step.Action.Type == "firewall" && result.Passed {
+					if err := s.waitForFirewallPolicy(); err != nil {
+						result.Passed = false
+						result.Detail += "; dataplane: " + err.Error()
+					}
+				}
+			}
 			if step.Action != nil {
 				// After state-changing commands, wait for effects to propagate.
 				if step.Action.Type == "command" {

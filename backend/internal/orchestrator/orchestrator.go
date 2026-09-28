@@ -1,8 +1,10 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +18,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"gorm.io/gorm"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
@@ -51,7 +54,8 @@ func resolveNetworkName(zone string) (string, error) {
 // Orchestrator manages Docker containers for lab instances.
 type Orchestrator struct {
 	logger         *log.Logger
-	dockerClient   *client.Client
+	dockerClient   DockerAPI
+	concreteClient *client.Client
 	containdClient *containd.Client
 	labDefsDir     string
 }
@@ -63,13 +67,19 @@ func New(containdClient *containd.Client, labDefsDir string) *Orchestrator {
 		log.Printf("WARNING: Docker client init failed: %v (orchestrator will use stub mode)", err)
 		return &Orchestrator{logger: log.Default(), dockerClient: nil, containdClient: containdClient, labDefsDir: labDefsDir}
 	}
-	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
+	return &Orchestrator{logger: log.Default(), dockerClient: cli, concreteClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
 }
 
 // DockerClient returns the underlying Docker client for direct API access.
 // Returns nil if Docker is not available (stub mode).
 func (o *Orchestrator) DockerClient() *client.Client {
-	return o.dockerClient
+	return o.concreteClient
+}
+
+// NewWithDocker constructs an orchestrator around a Docker implementation.
+// DockerClient remains nil unless New created the real SDK client.
+func NewWithDocker(cli DockerAPI, containdClient *containd.Client, labDefsDir string) *Orchestrator {
+	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
 }
 
 // ProvisionLabInstance creates containers for lab nodes.
@@ -84,7 +94,10 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	var topo struct {
 		Nodes []labs.NodeYAML `json:"nodes"`
 	}
-	_ = json.Unmarshal([]byte(template.Topology), &topo)
+	if err := json.Unmarshal([]byte(template.Topology), &topo); err != nil {
+		instance.Status = "error"
+		return errors.Join(fmt.Errorf("unmarshal topology: %w", err), db.WithContext(ctx).Save(instance).Error)
+	}
 
 	// UI port configuration for known node types (host will be set from container IP)
 	uiPortMap := map[string]int{
@@ -116,6 +129,7 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	}
 
 	var nodes []models.NodeDefinition
+	var failures []error
 	for _, n := range topo.Nodes {
 		node := models.NodeDefinition{
 			ID:            n.ID,
@@ -156,7 +170,10 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 			containerID, containerName, err := o.createContainer(ctx, n, instance.ID)
 			if err != nil {
 				o.logger.Printf("[lab %s] container creation failed for %s: %v", instance.ID, n.ID, err)
+				node.ContainerID = containerID
+				node.ContainerName = containerName
 				node.Status = "error"
+				failures = append(failures, fmt.Errorf("node %s create: %w", n.ID, err))
 				// Set metadata without UI since container failed
 				meta := map[string]any{"networks": n.Networks}
 				metaJSON, _ := json.Marshal(meta)
@@ -168,6 +185,7 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 				if err := o.StartContainer(ctx, containerID); err != nil {
 					o.logger.Printf("[lab %s] container start failed for %s: %v", instance.ID, n.ID, err)
 					node.Status = "error"
+					failures = append(failures, fmt.Errorf("node %s start: %w", n.ID, err))
 				} else {
 					node.Status = "running"
 					node.IP = o.getContainerIP(ctx, containerID)
@@ -196,6 +214,7 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	for _, node := range nodes {
 		if err := db.WithContext(ctx).Save(&node).Error; err != nil {
 			o.logger.Printf("[lab %s] failed to save node %s: %v", instance.ID, node.ID, err)
+			failures = append(failures, fmt.Errorf("node %s save: %w", node.ID, err))
 		}
 	}
 
@@ -205,8 +224,10 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		data, err := os.ReadFile(cfgPath)
 		if err != nil {
 			o.logger.Printf("[lab %s] failed to read firewall config %s: %v", instance.ID, cfgPath, err)
+			failures = append(failures, fmt.Errorf("read firewall config %s: %w", cfgPath, err))
 		} else if warnings, err := o.containdClient.ImportConfig(data); err != nil {
 			o.logger.Printf("[lab %s] failed to import firewall config: %v", instance.ID, err)
+			failures = append(failures, fmt.Errorf("import firewall config: %w", err))
 		} else {
 			for _, w := range warnings {
 				o.logger.Printf("[lab %s] containd commit warning: %s", instance.ID, w)
@@ -216,7 +237,11 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	}
 
 	instance.Status = "running"
-	return db.WithContext(ctx).Save(instance).Error
+	if len(failures) > 0 {
+		instance.Status = "error"
+	}
+	failures = append(failures, db.WithContext(ctx).Save(instance).Error)
+	return errors.Join(failures...)
 }
 
 // createContainer creates a Docker container for a node and connects it to proper networks.
@@ -233,7 +258,7 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 		return "", "", fmt.Errorf("unknown node type: %s", node.Type)
 	}
 
-	containerName := fmt.Sprintf("rangerdanger-%s-%s", labID[:8], node.ID)
+	containerName := fmt.Sprintf("rangerdanger-%s-%s", labID[:min(len(labID), 8)], node.ID)
 
 	// Create container config
 	config := &container.Config{
@@ -278,17 +303,19 @@ func (o *Orchestrator) createContainer(ctx context.Context, node labs.NodeYAML, 
 	}
 
 	// Connect to additional networks.
+	var failures []error
 	for i := 1; i < len(node.Networks); i++ {
 		dockerNet, err := resolveNetworkName(node.Networks[i])
 		if err != nil {
-			return "", "", fmt.Errorf("node %q: %w", node.ID, err)
+			return resp.ID, containerName, errors.Join(append(failures, fmt.Errorf("node %q: %w", node.ID, err))...)
 		}
 		if err := o.dockerClient.NetworkConnect(ctx, dockerNet, resp.ID, nil); err != nil {
 			o.logger.Printf("[container %s] failed to connect to network %s: %v", containerName, dockerNet, err)
+			failures = append(failures, fmt.Errorf("connect %s: %w", dockerNet, err))
 		}
 	}
 
-	return resp.ID, containerName, nil
+	return resp.ID, containerName, errors.Join(failures...)
 }
 
 // StartContainer starts a container by ID.
@@ -313,7 +340,14 @@ func (o *Orchestrator) RemoveContainer(ctx context.Context, containerID string) 
 	if o.dockerClient == nil {
 		return nil
 	}
-	return o.dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
+	err := o.dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true})
+	if client.IsErrNotFound(err) {
+		// Already gone (an earlier removal succeeded but the DB update did
+		// not, or someone removed it by hand). Removal is the desired end
+		// state, so let the caller clear its reference.
+		return nil
+	}
+	return err
 }
 
 // ExecShell executes an interactive shell in a container and returns
@@ -405,9 +439,9 @@ func (o *Orchestrator) ExecCommand(ctx context.Context, containerName string, cm
 	}
 	defer resp.Close()
 
-	// Read multiplexed stdout/stderr (non-TTY mode uses Docker stream multiplexing)
-	output, err := io.ReadAll(resp.Reader)
-	if err != nil && execCtx.Err() == nil {
+	// Non-TTY output is multiplexed into stdout and stderr frames.
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, resp.Reader); err != nil && execCtx.Err() == nil {
 		return "", "", -1, fmt.Errorf("read output: %w", err)
 	}
 
@@ -418,10 +452,7 @@ func (o *Orchestrator) ExecCommand(ctx context.Context, containerName string, cm
 		exitCode = inspect.ExitCode
 	}
 
-	// For non-TTY, Docker multiplexes stdout/stderr with 8-byte headers.
-	// The stdcopy package handles this, but for simplicity we return raw output.
-	// Most tools write to stdout anyway.
-	return string(output), "", exitCode, nil
+	return stdout.String(), stderr.String(), exitCode, nil
 }
 
 // GetContainerLogs returns logs from a container.
@@ -457,23 +488,26 @@ func (o *Orchestrator) StartLabContainers(ctx context.Context, db *gorm.DB, inst
 		return err
 	}
 
+	var failures []error
 	for _, node := range nodes {
 		if node.ContainerID == "" || node.Type == "containd_ngfw" {
 			continue
 		}
 		if err := o.StartContainer(ctx, node.ContainerID); err != nil {
-			o.logger.Printf("[lab %s] failed to start container %s: %v", instanceID, node.ID, err)
+			failures = append(failures, fmt.Errorf("node %s start: %w", node.ID, err))
 		} else {
 			// Get container IP address
 			ip := o.getContainerIP(ctx, node.ContainerID)
-			db.Model(&node).Updates(map[string]interface{}{
+			if err := db.WithContext(ctx).Model(&node).Updates(map[string]interface{}{
 				"status": "running",
 				"ip":     ip,
-			})
+			}).Error; err != nil {
+				failures = append(failures, fmt.Errorf("node %s update: %w", node.ID, err))
+			}
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // getContainerIP retrieves the IP address of a container from its first network.
@@ -511,18 +545,21 @@ func (o *Orchestrator) StopLabContainers(ctx context.Context, db *gorm.DB, insta
 		return err
 	}
 
+	var failures []error
 	for _, node := range nodes {
 		if node.ContainerID == "" || node.Type == "containd_ngfw" {
 			continue
 		}
 		if err := o.StopContainer(ctx, node.ContainerID); err != nil {
-			o.logger.Printf("[lab %s] failed to stop container %s: %v", instanceID, node.ID, err)
+			failures = append(failures, fmt.Errorf("node %s stop: %w", node.ID, err))
 		} else {
-			db.Model(&node).Update("status", "stopped")
+			if err := db.WithContext(ctx).Model(&node).Update("status", "stopped").Error; err != nil {
+				failures = append(failures, fmt.Errorf("node %s update: %w", node.ID, err))
+			}
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // RemoveLabContainers removes all containers for a lab instance.
@@ -532,14 +569,19 @@ func (o *Orchestrator) RemoveLabContainers(ctx context.Context, db *gorm.DB, ins
 		return err
 	}
 
+	var failures []error
 	for _, node := range nodes {
 		if node.ContainerID == "" || node.Type == "containd_ngfw" {
 			continue
 		}
 		if err := o.RemoveContainer(ctx, node.ContainerID); err != nil {
-			o.logger.Printf("[lab %s] failed to remove container %s: %v", instanceID, node.ID, err)
+			failures = append(failures, fmt.Errorf("node %s remove: %w", node.ID, err))
+		} else if err := db.WithContext(ctx).Model(&node).Updates(map[string]interface{}{
+			"container_id": "", "container_name": "", "ip": "", "status": "removed",
+		}).Error; err != nil {
+			failures = append(failures, fmt.Errorf("node %s update: %w", node.ID, err))
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
