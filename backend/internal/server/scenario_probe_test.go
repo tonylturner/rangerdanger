@@ -49,7 +49,9 @@ func TestProbeVerdicts(t *testing.T) {
 		{"BusyBox timeout", 143, 0, nil, "blocked", true, "blocked (timeout 3 s)"},
 		{"fast RST", 1, 0, nil, "reachable", true, "connection refused"},
 		{"slow refusal", 1, 510 * time.Millisecond, nil, "blocked", true, "blocked"},
-		{"other rc", 127, 0, nil, "blocked", true, "rc=127"},
+		{"missing tool", 127, 0, nil, "blocked", false, "probe error: unexpected exit status 127"},
+		{"killed", 137, 0, nil, "reachable", false, "probe error: unexpected exit status 137"},
+		{"inspect failure", -1, 0, nil, "blocked", false, "probe error: unexpected exit status -1"},
 		{"expect mismatch", 0, 0, nil, "blocked", false, "reachable"},
 		{"docker failure", -1, 0, errors.New("container stopped"), "blocked", false, "probe failed"},
 	}

@@ -58,21 +58,27 @@ func (s *Server) probeTarget(step labs.ScenarioStep, target labs.ProbeTarget) St
 		row.Detail = prefix + "probe failed: " + err.Error()
 		return row
 	}
-	verdict := "blocked"
-	suffix := fmt.Sprintf(" (rc=%d, %d ms)", rc, ms)
+	var verdict, suffix string
 	switch rc {
 	case 0:
 		verdict = "reachable"
 		suffix = fmt.Sprintf(" in %d ms", ms)
 	case 124, 143:
+		verdict = "blocked"
 		suffix = " (timeout 3 s)"
 	case 1:
 		if ms < 500 {
 			verdict = "reachable"
 			suffix = fmt.Sprintf(" in %d ms (connection refused)", ms)
 		} else {
+			verdict = "blocked"
 			suffix = fmt.Sprintf(" (%d ms, connection refused or timeout)", ms)
 		}
+	default:
+		// Anything else (127 missing tool, 137 killed, -1 inspect failure)
+		// says nothing about the firewall; never let it certify "blocked".
+		row.Detail = fmt.Sprintf("%sprobe error: unexpected exit status %d after %d ms", prefix, rc, ms)
+		return row
 	}
 	row.Detail = prefix + verdict + suffix
 	row.Success = verdict == step.Action.Outcome
