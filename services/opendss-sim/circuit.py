@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 
 import opendssdirect as dss
+from time_utils import utc_timestamp
 
 logger = logging.getLogger("opendss-sim")
 
@@ -54,6 +55,14 @@ CRITICAL_LOAD_MAX_KW = 300.0
 CAPBANK_KVAR = 300.0
 
 
+class PowerFlowDidNotConverge(Exception):
+    """Raised when OpenDSS cannot produce a valid power-flow solution."""
+
+    def __init__(self, solved_at: str) -> None:
+        super().__init__("power flow did not converge")
+        self.solved_at = solved_at
+
+
 class FeederSolver:
     """Thread-safe wrapper around the OpenDSS engine for the substation feeder."""
 
@@ -61,7 +70,6 @@ class FeederSolver:
         self._lock = threading.Lock()
         self._compiled = False
         self._dss_file = str(DSS_DIR / "substation_feeder.dss")
-        self._has_fault = False
         # Load multipliers — random-walk state that persists between solves
         self._gen_load_mult = 1.0
         self._crit_load_mult = 1.0
@@ -132,10 +140,9 @@ class FeederSolver:
             dss.Text.Command("Close Line.Breaker 1")
             dss.Text.Command("Close Line.Recloser 1")
 
-            # Remove any previous fault
-            if self._has_fault:
-                dss.Text.Command("Disable Fault.F1")
-                self._has_fault = False
+            # The fault is defined once in the circuit; reset its enabled state
+            # on every solve before applying the requested device state.
+            dss.Text.Command("Disable Fault.F1")
 
             # -- Apply load: Load Simulator override (training) or default demand --
             # The +/-3% demand random-walk runs in BOTH modes so the feeder
@@ -184,20 +191,28 @@ class FeederSolver:
 
             # -- Add fault if requested --
             if fault_seen and breaker_closed and recloser_closed:
-                if not self._has_fault:
-                    dss.Text.Command(
-                        "New Fault.F1 bus1=recloser_bus phases=3 r=0.01"
-                    )
-                else:
-                    dss.Text.Command("Enable Fault.F1")
-                self._has_fault = True
+                dss.Text.Command("Enable Fault.F1")
 
             # -- Solve power flow --
             dss.Solution.Solve()
+            solved_at = utc_timestamp()
+
+            # A breaker-open feeder is an analytic all-zero state; it does not
+            # use any solver values and is valid even if OpenDSS did not converge.
+            if not breaker_closed:
+                result = self._dead_feeder(
+                    breaker_closed, recloser_closed, tap_position, capbank_switched_in
+                )
+                result.update(converged=True, solved_at=solved_at)
+                return result
+
+            if not dss.Solution.Converged():
+                logger.warning("Power flow did not converge at %s", solved_at)
+                raise PowerFlowDidNotConverge(solved_at)
 
             return self._extract_results(
                 breaker_closed, recloser_closed, tap_position, fault_seen,
-                capbank_switched_in,
+                capbank_switched_in, solved_at,
             )
 
     def _extract_results(
@@ -207,14 +222,9 @@ class FeederSolver:
         tap_position: int,
         fault_seen: bool,
         capbank_switched_in: bool,
+        solved_at: str,
     ) -> dict:
         """Extract electrical results from the solved circuit."""
-
-        # If breaker is open, everything downstream is dead
-        if not breaker_closed:
-            return self._dead_feeder(
-                breaker_closed, recloser_closed, tap_position, capbank_switched_in
-            )
 
         # Substation bus voltage (always energized from source)
         sub_v = self._get_bus_voltage_pu("sourcebus") * NOMINAL_V_SECONDARY
@@ -274,6 +284,8 @@ class FeederSolver:
             "power_factor": round(pf, 3),
             "source_power_kw": round(source_kw, 1),
             "fault_current_a": round(fault_current, 1),
+            "converged": True,
+            "solved_at": solved_at,
         }
 
     def _dead_feeder(

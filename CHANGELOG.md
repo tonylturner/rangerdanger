@@ -21,6 +21,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Made feeder-physics freshness explicit end to end: OpenDSS reports solve
+  convergence and timestamps and rejects non-converged solves with HTTP 503;
+  RTAC exposes `physics` status and `alarm.physics_stale` while retaining the
+  last good result and suspending auto-controls; substation smoke verifies
+  freshness and recovery.
 - **Lab YAML is validated at seed time.** Invalid scenario actions and node
   references now fail before a template is written.
 - **PCAP download names are validated before forwarding to containd.**
