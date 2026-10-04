@@ -24,7 +24,7 @@ reports no memory, it falls back to `/proc/meminfo` host RAM. It does
 not check macOS host RAM. On Docker Desktop, raise VM memory under
 Settings -> Resources -> Memory. The lab idles around 4 GB across all
 containers and peaks around 6-8 GB during a workshop - mostly the
-three webtop containers (`corp_ws` / `vendor_jump` / `eng_ws`) at
+three webtop containers (`corp_ws` / `vendor_jump` / `eng_workstation`) at
 their 2 GB caps plus OpenPLC ramping under runtime load.
 
 Host RAM has to cover the Docker VM allocation *plus* macOS/Windows
