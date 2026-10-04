@@ -85,16 +85,16 @@ func (o *Orchestrator) ProvisionGateways(ctx context.Context) {
 	}
 
 	// Apply gateway to each container
-	provisioned := 0
+	started := 0
 	for _, t := range targets {
 		if err := o.setContainerGateway(ctx, t.ContainerName, t.GatewayIP); err != nil {
 			log.Printf("gateway provisioner: %s: %v", t.ContainerName, err)
 		} else {
-			provisioned++
+			started++
 		}
 	}
 
-	log.Printf("gateway provisioner: configured %d/%d containers to route through containd", provisioned, len(targets))
+	log.Printf("gateway provisioner: launched route-update commands for %d/%d containers; route state not verified", started, len(targets))
 }
 
 // isInfraContainer returns true for containers that should NOT have their gateway changed.

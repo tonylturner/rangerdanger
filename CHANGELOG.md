@@ -21,6 +21,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Firewall gateway setup now retries briefly while container zone interfaces attach, instead of failing on a cold-boot race.
 - Fixed OpenPLC proxy login and images under `/apps/openplc/`; documented its credentials.
 - Workshop scenario tests now wait for the firewall dataplane canary to match
   the applied weak or improved policy before running probes.
