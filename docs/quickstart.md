@@ -147,7 +147,7 @@ if you'd rather download than stage your own SSD.
 | containd Web UI | http://localhost:9080 | containd / containd |
 | containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
 | FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | - |
-| OpenPLC | http://localhost:8088/apps/openplc/ | - |
+| OpenPLC | http://localhost:8088/apps/openplc/ | openplc / openplc |
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).

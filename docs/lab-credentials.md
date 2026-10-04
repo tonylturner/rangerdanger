@@ -38,6 +38,16 @@ login via the UI). The containd repo
 ([tonylturner/containd](https://github.com/tonylturner/containd))
 is the authoritative source for that flow.
 
+## OpenPLC web account
+
+The OpenPLC web UI at `http://localhost:8088/apps/openplc/` uses a
+separate account:
+
+| Field    | Value     |
+| -------- | --------- |
+| Username | `openplc` |
+| Password | `openplc` |
+
 ## How to test from the lab
 
 These all work from the kali container under the **weak** baseline
