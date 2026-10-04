@@ -33,10 +33,10 @@ network model.
 | rtac-sim (OT Ops)  | `10.30.30.20`  | HTTPS            | 443       | RTAC mgmt portal (self-signed cert). Improved policy keeps vendor → OT:443 open for monitoring. |
 
 Containd's own management plane has separate credentials (the
-`containd / containd` admin user; password change forced on first
-login via the UI). The containd repo
+`containd / containd` admin user). In lab mode this credential stays
+pinned: password changes through the UI are disabled. The containd repo
 ([tonylturner/containd](https://github.com/tonylturner/containd))
-is the authoritative source for that flow.
+is the authoritative source for that behavior.
 
 ## OpenPLC web account
 

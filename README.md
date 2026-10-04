@@ -48,7 +48,7 @@ Each lab builds on the previous. Selections in early labs flow into later ones; 
 
 ## Quick start
 
-**Prereqs:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free.
+**Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk. `setup.sh` warns below 30 GB free on the checkout filesystem and below 7 whole GiB of reported memory; Linux-native Docker may fall back to host RAM. It does not check macOS host RAM or Docker Desktop's storage volume. Also requires Apple Silicon or x86_64 and free loopback ports `8088 / 9080 / 9443 / 2222`.
 
 **macOS / Linux:**
 
@@ -133,8 +133,8 @@ RangerDanger is designed for instructors and security teams who need reviewable 
 - **Offline / SSD workshop-ready.** [`stage-ssd.sh`](stage-ssd.sh) produces a complete tarball bundle for an offline classroom; [`setup.sh --from-tarballs`](setup.sh) brings the stack up with no network. Patch tooling ([`stage-ssd-delta.sh`](stage-ssd-delta.sh)) lets you ship a fix mid-workshop as a tens-of-MB delta instead of re-shipping the full 6 GB.
 - **Segmentation and DPI-policy focused.** The firewall is the protagonist. Every lab walks toward a least-privilege containd policy with ICS DPI; the topology console shows policy state in real time; validators read active policy and audit log alongside simulator state.
 - **Physics-backed.** Attacks have measurable kinetic consequences via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB commands change breaker positions, regulator taps, voltages, and load energization within ~3 seconds, surfaced in the substation process view.
-- **Native multi-architecture where the upstream supports it.** 13 of 14 first-party images ship `linux/amd64` and `linux/arm64` native builds. Apple Silicon students do not pay an emulation tax on the lab work itself. OpenPLC is amd64-only upstream: on Apple Silicon it runs under Rosetta, and on arm64 Linux (Docker Engine, no Rosetta) `setup.sh` auto-registers a `qemu-x86_64` emulation handler via `tonistiigi/binfmt` — bundled in the arm64 SSD so offline installs work too. Either way it's transparent for the protection-logic lab, and nothing else depends on it.
-- **Designed for classroom delivery.** Single-laptop-per-student with loopback-only host binding, no auth, lab-only credentials, and an explicit security model. Instructor SSD distribution handles bandwidth-constrained venues. The setup-time workshop-readiness gate fails loudly if the stack is half-broken rather than letting students discover it at lab time.
+- **Native multi-architecture where the upstream supports it.** 13 of 14 first-party images ship `linux/amd64` and `linux/arm64` native builds. OpenPLC is amd64-only upstream. On Apple Silicon, use a Docker Desktop backend with working amd64 emulation enabled (Rosetta is a Docker Desktop setting); `setup.sh` does not enable it. On arm64 Linux, `setup.sh` can register a `qemu-x86_64` emulation handler via `tonistiigi/binfmt`.
+- **Designed for classroom delivery.** Single-laptop-per-student with loopback-only host binding, no auth, lab-only credentials, and an explicit security model. Instructor SSD distribution handles bandwidth-constrained venues. Unless skipped, the readiness gate exits on failed firewall API-health, policy-apply, or workshop-reset checks. A backend health timeout, DPI degradation, or non-running OpenPLC only warns; the final banner can still print.
 
 ## Why RangerDanger is different
 
