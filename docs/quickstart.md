@@ -162,6 +162,13 @@ and start with **Lab 1.2** (Baseline Traffic Analysis).
 
 ## Common errors
 
+Compose commands below assume Path A: every one needs
+`-f docker-compose.release.yml`, because a bare `docker compose`
+selects the source stack and rebuilds from Dockerfiles. For a Path C
+offline install add `-f docker-compose.offline.yml` as well, so Compose
+uses the images loaded from the SSD instead of reaching GHCR. If you
+installed with Path B, drop both flags.
+
 ### "the lab doesn't come up"
 
 Most "doesn't start" issues fall into one of these:
@@ -197,9 +204,9 @@ back.
 Stale local DB after a major schema change. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker compose -f docker-compose.release.yml down
 rm -f backend/data/rangerdanger.db
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+docker compose -f docker-compose.release.yml up -d
 ```
 
 ### "containd won't authenticate"
@@ -208,13 +215,13 @@ Stale local users.db after the default password got changed in
 a prior session. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker compose -f docker-compose.release.yml down
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+docker compose -f docker-compose.release.yml up -d
 ```
 
 containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
-in `docker-compose.yml`) will restore the `containd` / `containd`
+in the compose file) will restore the `containd` / `containd`
 admin on next boot.
 
 ### "the build is slow"
