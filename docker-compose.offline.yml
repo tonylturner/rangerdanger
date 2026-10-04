@@ -25,6 +25,8 @@ services:
     pull_policy: never
   vendor_jump:
     pull_policy: never
+  corp_ws:
+    pull_policy: never
   eng_workstation:
     pull_policy: never
   rtac_sim:

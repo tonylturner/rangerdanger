@@ -125,6 +125,7 @@ services:
 
   corp_ws:
     image: ghcr.io/tonylturner/rangerdanger-corp-ws:${VERSION:-latest}
+    pull_policy: always
     container_name: rangerdanger-corp-ws
     hostname: corp-ws
     cap_add:
