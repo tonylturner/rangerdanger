@@ -16,7 +16,7 @@ image?"
 | `kali` | External attacker | Kali Linux | Enterprise (10.10.10.50) | `Dockerfile.kali` |
 | `eng-ws` | Engineering workstation | linuxserver/webtop ubuntu-mate | Vendor / DMZ (10.20.20.20) | `Dockerfile.eng-ws` |
 | `vendor-jump` | Vendor support laptop | linuxserver/webtop ubuntu-xfce | Vendor / DMZ (10.20.20.10) | `Dockerfile.vendor-jump` |
-| `corp-ws` | Office laptop | linuxserver/webtop ubuntu-mate | Enterprise (10.10.10.10) | (compose-only, no Dockerfile) |
+| `corp-ws` | Office laptop | linuxserver/webtop ubuntu-mate | Enterprise (10.10.10.10) | `Dockerfile.corp-ws` |
 | `openplc` | Substation automation PLC | tuttas/openplc_v3 | OT Operations (10.30.30.30) | `Dockerfile.openplc` |
 | `rtac-sim` | Supervisory controller | alpine 3.21 (sim-base) | OT Operations + Field | `services/Dockerfile` (`rtac-sim` target) |
 | `relay-sim`, `recloser-sim`, `regulator-sim`, `capbank-sim`, `historian-sim`, `gps-sim` | Field / OT sims | alpine 3.21 (sim-base) | Field or OT Ops | `services/Dockerfile` |

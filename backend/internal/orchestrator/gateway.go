@@ -135,29 +135,21 @@ func pickGateway(c dtypes.Container, gwByNetwork map[string]string) string {
 }
 
 // setContainerGateway sets the default gateway on a container via docker exec.
-// It tries ip, then route, then installs iproute2 if needed (Debian/Ubuntu containers).
+// It tries ip, then route; lab images must include their routing tool.
 func (o *Orchestrator) setContainerGateway(ctx context.Context, containerName, gatewayIP string) error {
-	// Script that tries available tools, installs iproute2 if needed
+	// Script that tries the routing tools available in the container.
 	script := `
 if command -v ip >/dev/null 2>&1; then
     ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
+    ip route add default via "$1" 2>/dev/null
 elif command -v route >/dev/null 2>&1; then
     route del default 2>/dev/null
-    route add default gw ` + gatewayIP + ` 2>/dev/null
-elif command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iproute2 >/dev/null 2>&1
-    ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
-elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache iproute2 >/dev/null 2>&1
-    ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
+    route add default gw "$1" 2>/dev/null
 else
-    echo "WARNING: no routing command available" >&2
+    echo "WARNING: no routing tool exists in container $2" >&2
 fi
 `
-	cmd := []string{"sh", "-c", script}
+	cmd := []string{"sh", "-c", script, "set-container-gateway", gatewayIP, containerName}
 
 	execConfig := container.ExecOptions{
 		Cmd:          cmd,

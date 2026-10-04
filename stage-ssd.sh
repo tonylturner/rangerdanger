@@ -170,11 +170,11 @@ stage_arch() {
             say "    -> $ref"
         fi
         # Heads-up on the large images so a multi-minute pull doesn't look
-        # like a hang (issue #81). The webtop desktop images (eng-ws, and
-        # vendor-jump which corp-ws also reuses) and openplc are multi-GB;
-        # everything else is quick.
+        # like a hang (issue #81). The webtop desktop images (corp-ws,
+        # eng-ws, vendor-jump) are multi-GB; openplc is also a large pull.
+        # Everything else is quick.
         case "$img" in
-            *rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
+            *rangerdanger-corp-ws*|*rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
                 say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
             *rangerdanger-openplc*)
                 say "    large image (~1 GB) — give it a minute" ;;

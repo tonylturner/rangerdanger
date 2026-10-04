@@ -1,0 +1,9 @@
+# webtop ubuntu-mate pinned by digest (A7 - Linuxserver only ships
+# rolling tags, this freezes the snapshot for reproducible builds).
+FROM linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        iproute2 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

@@ -296,7 +296,7 @@ stage_arch() {
         # Heads-up on the large images so a multi-minute pull doesn't look
         # like a hang (issue #81); show native layer progress (no --quiet).
         case "$img" in
-            *rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
+            *rangerdanger-corp-ws*|*rangerdanger-eng-ws*|*rangerdanger-vendor-jump*)
                 say "    large image (~2-3 GB desktop) — a few minutes is normal" ;;
             *rangerdanger-openplc*)
                 say "    large image (~1 GB) — give it a minute" ;;

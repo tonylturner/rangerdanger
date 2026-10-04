@@ -20,27 +20,12 @@ if [ -z "$GATEWAY" ]; then
     exit 0
 fi
 
-# A zone interface can arrive after custom-cont-init starts. Retry the
-# route operation itself up to 30 times, one second apart, so a genuinely
-# unavailable gateway cannot hold container startup indefinitely.
-attempt=1
-max_attempts=30
-while [ "$attempt" -le "$max_attempts" ]; do
-    # Docker may add a default route while the zone interface is attaching.
-    # BusyBox ip lacks 'route flush', so loop until no default remains.
-    while ip route del default 2>/dev/null; do :; done
+# BusyBox ip lacks 'route flush', so loop until no default remains.
+while ip route del default 2>/dev/null; do :; done
 
-    if ip route add default via "$GATEWAY" 2>/dev/null; then
-        echo "set-gateway: default gateway set to $GATEWAY"
-        exit 0
-    fi
-
-    if [ "$attempt" -eq "$max_attempts" ]; then
-        break
-    fi
-    sleep 1
-    attempt=$((attempt + 1))
-done
-
-echo "set-gateway: failed to add default via $GATEWAY after $max_attempts attempts"
-exit 1
+if route_error=$(ip route add default via "$GATEWAY" 2>&1 >/dev/null); then
+    echo "set-gateway: default gateway set to $GATEWAY"
+else
+    printf 'set-gateway: failed to add default via %s: %s\n' "$GATEWAY" "$route_error" >&2
+    exit 1
+fi
