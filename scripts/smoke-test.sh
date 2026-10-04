@@ -48,23 +48,41 @@ trap cleanup EXIT
 
 # --- preflight --------------------------------------------------------------
 note "validate compose syntax"
-docker compose config -q && ok "docker-compose.yml" || err "docker-compose.yml"
-docker compose -f docker-compose.release.yml config -q \
-    && ok "docker-compose.release.yml" \
-    || err "docker-compose.release.yml"
+if docker compose config -q; then
+  ok "docker-compose.yml"
+else
+  err "docker-compose.yml"
+fi
+if docker compose -f docker-compose.release.yml config -q; then
+  ok "docker-compose.release.yml"
+else
+  err "docker-compose.release.yml"
+fi
 
-# Stale DB from before the order int→string change would break boot.
+# The backend bind-mounts this database. Stop it before unlinking the file so
+# it cannot keep using a stale SQLite handle; compose up below starts it on the
+# clean database and runs migrations.
+if ! docker compose stop backend >/dev/null; then
+  err "backend could not be stopped; stale database not cleared"
+  exit 1
+fi
 rm -f backend/data/rangerdanger.db
-ok "stale labs.db cleared"
+ok "stale database cleared"
 
 # --- bring up ---------------------------------------------------------------
 note "build + up"
-docker compose build --parallel >/tmp/smoke-build.log 2>&1 \
-    && ok "build complete" \
-    || { err "build failed; see /tmp/smoke-build.log"; exit 1; }
-docker compose up -d >/tmp/smoke-up.log 2>&1 \
-    && ok "compose up" \
-    || { err "compose up failed; see /tmp/smoke-up.log"; exit 1; }
+if docker compose build --parallel >/tmp/smoke-build.log 2>&1; then
+  ok "build complete"
+else
+  err "build failed; see /tmp/smoke-build.log"
+  exit 1
+fi
+if docker compose up -d >/tmp/smoke-up.log 2>&1; then
+  ok "compose up"
+else
+  err "compose up failed; see /tmp/smoke-up.log"
+  exit 1
+fi
 
 # --- wait for backend healthy ----------------------------------------------
 note "wait for backend health (5min budget)"
@@ -83,8 +101,16 @@ done
 
 # --- probe endpoints --------------------------------------------------------
 note "probe /api/health and /api/build"
-curl -fsS http://localhost:8088/api/health  | jq -e . >/dev/null && ok "/api/health JSON" || err "/api/health"
-curl -fsS http://localhost:8088/api/build   | jq -e . >/dev/null && ok "/api/build JSON"  || err "/api/build"
+if curl -fsS http://localhost:8088/api/health | jq -e . >/dev/null; then
+  ok "/api/health JSON"
+else
+  err "/api/health"
+fi
+if curl -fsS http://localhost:8088/api/build | jq -e . >/dev/null; then
+  ok "/api/build JSON"
+else
+  err "/api/build"
+fi
 
 # --- lab inventory ----------------------------------------------------------
 note "validate lab inventory"

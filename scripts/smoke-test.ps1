@@ -70,13 +70,20 @@ try {
     & { $ErrorActionPreference = 'SilentlyContinue'; docker compose -f docker-compose.release.yml config -q *>$null }
     if ($LASTEXITCODE -eq 0) { OK "docker-compose.release.yml" } else { Err "docker-compose.release.yml" }
 
-    # Stale DB from before the order int->string change would break boot.
+    # The backend bind-mounts this database. Stop it before removing the file
+    # so it cannot keep using a stale SQLite handle; compose up below starts it
+    # on the clean database and runs migrations.
+    & { $ErrorActionPreference = 'SilentlyContinue'; docker compose stop backend *>$null }
+    if ($LASTEXITCODE -ne 0) {
+        Err "backend could not be stopped; stale database not cleared"
+        exit 1
+    }
     $StaleDb = Join-Path $RootDir "backend\data\rangerdanger.db"
     if (Test-Path $StaleDb) {
         Remove-Item $StaleDb -Force
-        OK "stale labs.db cleared"
+        OK "stale database cleared"
     } else {
-        OK "stale labs.db cleared (none present)"
+        OK "stale database cleared (none present)"
     }
 
     # --- bring up -----------------------------------------------------------
