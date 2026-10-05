@@ -3,6 +3,8 @@
 
 set -e
 
+/usr/local/bin/set-gateway.sh
+
 WORKDIR="/workdir"
 OPENPLC_DIR="/root/OpenPLC_v3/webserver"
 ST_FILES_DIR="$OPENPLC_DIR/st_files"

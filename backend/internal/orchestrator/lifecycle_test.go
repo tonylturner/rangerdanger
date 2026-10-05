@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/errdefs"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/db"
@@ -202,19 +200,6 @@ func TestExecCommand(t *testing.T) {
 		})
 	}
 }
-func TestProvisionGateways(t *testing.T) {
-	fake := &scriptedDocker{fails: map[string]error{}, listed: []types.Container{
-		{Names: nil, NetworkSettings: &types.SummaryNetworkSettings{Networks: map[string]*network.EndpointSettings{"rangerdanger_field_net": {}}}},
-		{Names: []string{"/alpha"}, NetworkSettings: &types.SummaryNetworkSettings{Networks: map[string]*network.EndpointSettings{"rangerdanger_field_net": {}}}},
-		{Names: []string{"/rangerdanger-firewall"}, NetworkSettings: &types.SummaryNetworkSettings{Networks: map[string]*network.EndpointSettings{"rangerdanger_field_net": {}}}},
-	}}
-	o := &Orchestrator{logger: log.New(io.Discard, "", 0), dockerClient: fake}
-	o.ProvisionGateways(context.Background())
-	if got := strings.Join(fake.calls, ","); !strings.Contains(got, "exec-create:alpha") || strings.Contains(got, "exec-create:rangerdanger-firewall") || !strings.Contains(got, "exec-start:exec-alpha") {
-		t.Fatalf("calls=%v", fake.calls)
-	}
-}
-
 func TestProvisionFirewallImportFailure(t *testing.T) {
 	database := labDB(t)
 	inst := seedLab(t, database)

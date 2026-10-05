@@ -20,7 +20,6 @@ type DockerAPI interface {
 	ContainerStop(context.Context, string, container.StopOptions) error
 	ContainerRemove(context.Context, string, container.RemoveOptions) error
 	ContainerInspect(context.Context, string) (types.ContainerJSON, error)
-	ContainerList(context.Context, container.ListOptions) ([]types.Container, error)
 	ContainerExecCreate(context.Context, string, container.ExecOptions) (types.IDResponse, error)
 	ContainerExecAttach(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error)
 	ContainerExecStart(context.Context, string, container.ExecStartOptions) error

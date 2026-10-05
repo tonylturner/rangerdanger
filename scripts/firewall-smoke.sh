@@ -274,9 +274,12 @@ run_matrix() {
 # Preflight: backend healthy + key containers running.
 # ---------------------------------------------------------------------
 note "preflight"
-curl -fsS "$API/api/health" >/dev/null 2>&1 \
-    && ok "backend $API healthy" \
-    || { err "backend not reachable at $API — bring stack up first"; exit 1; }
+if curl -fsS "$API/api/health" >/dev/null 2>&1; then
+  ok "backend $API healthy"
+else
+  err "backend not reachable at $API — bring stack up first"
+  exit 1
+fi
 
 REQUIRED_CONTAINERS=(
   rangerdanger-firewall
@@ -296,24 +299,50 @@ for c in "${REQUIRED_CONTAINERS[@]}"; do
 done
 [ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
 
-# Wait for cross-zone routing to actually be ready. The kasm-based
-# webtops (eng-ws, vendor-jump) install the firewall as their
-# default gateway via /custom-cont-init.d/set-gateway.sh — that
-# step can finish AFTER backend reports healthy on slow runners,
-# so cross-zone probes from those containers will time out. Poll
-# until the default gateway points at the per-zone firewall IP
-# before declaring preflight done.
+# Wait for cross-zone routing to actually be ready at both ends.
+# FUXA and historian appear only in intra-OT rows, which need no
+# default route; the third-party FUXA image ships no routing tool.
 note "wait for cross-zone routing"
-declare -a WEBTOP_GATEWAYS=(
+declare -a CROSS_ZONE_GATEWAYS=(
+  "rangerdanger-kali|10.10.10.2"
   "rangerdanger-eng-ws|10.20.20.2"
   "rangerdanger-vendor-jump|10.20.20.2"
+  "rangerdanger-rtac-sim|10.30.30.2"
+  "rangerdanger-openplc|10.30.30.2"
+  "rangerdanger-relay-sim|10.40.40.2"
 )
-for entry in "${WEBTOP_GATEWAYS[@]}"; do
+
+default_gateway() {
+  local c="$1"
+  local routes gateway
+  routes=$(docker exec "$c" cat /proc/net/route 2>/dev/null) || return 1
+  gateway=$(printf '%s\n' "$routes" | awk '
+    $2 == "00000000" && $8 == "00000000" {
+      count++
+      value = $3
+    }
+    END {
+      if (count != 1) exit 1
+      print value
+    }
+  ') || return 1
+  case "$gateway" in
+    *[!0123456789abcdefABCDEF]*|'') return 1 ;;
+  esac
+  [ "${#gateway}" -eq 8 ] || return 1
+  # /proc/net/route stores the IPv4 address bytes in reverse order.
+  printf '%d.%d.%d.%d' \
+    "$((16#${gateway:6:2}))" "$((16#${gateway:4:2}))" \
+    "$((16#${gateway:2:2}))" "$((16#${gateway:0:2}))"
+}
+
+for entry in "${CROSS_ZONE_GATEWAYS[@]}"; do
   c="${entry%|*}"
   gw="${entry#*|}"
   ready=0
   for i in $(seq 1 30); do
-    if docker exec "$c" ip route show default 2>/dev/null | grep -q "via $gw"; then
+    actual_gw=$(default_gateway "$c" 2>/dev/null || true)
+    if [ "$actual_gw" = "$gw" ]; then
       ok "$c default route via $gw (after ${i}s)"
       ready=1
       break
@@ -360,7 +389,11 @@ for entry in "${LISTENERS[@]}"; do
   for i in $(seq 1 30); do
     if docker exec rangerdanger-firewall sh -c \
         "timeout 1 bash -c 'exec 3<>/dev/tcp/$host/$port'" >/dev/null 2>&1; then
-      [ "$i" -gt 1 ] && ok "$label ($hp) listening (after ${i}s)" || ok "$label ($hp) listening"
+      if [ "$i" -gt 1 ]; then
+        ok "$label ($hp) listening (after ${i}s)"
+      else
+        ok "$label ($hp) listening"
+      fi
       ready=1
       break
     fi

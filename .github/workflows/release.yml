@@ -34,7 +34,7 @@ env:
 jobs:
   publish:
     name: ${{ matrix.image }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -229,7 +229,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -310,7 +310,7 @@ jobs:
   frontend-merge:
     name: rangerdanger-frontend (merge)
     needs: frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Resolve target tag
         id: tag
@@ -365,7 +365,7 @@ jobs:
     # 2026-05-11).
     name: GitHub Release
     needs: [publish, frontend-merge]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Resolve target tag
         id: tag
@@ -451,7 +451,7 @@ jobs:
     name: Alert on release failure
     needs: [publish, frontend, frontend-merge, github-release]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       issues: write
       contents: read

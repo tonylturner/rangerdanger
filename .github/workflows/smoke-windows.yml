@@ -11,7 +11,7 @@ name: Windows lint
 # prematurely terminate strings and cascade into Missing-} errors.
 #
 # Hosted windows-latest runners cannot run Linux containers (no nested
-# virt), so the full lab-stack smoke stays on ubuntu-latest in
+# virt), so the full lab-stack smoke stays on the Ubuntu runner in
 # smoke.yml. This workflow's job is narrower but specific: catch any
 # .ps1 that wouldn't parse on the student's PS 5.1, before the
 # student tries to run setup.ps1.

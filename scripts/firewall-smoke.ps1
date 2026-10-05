@@ -277,22 +277,54 @@ foreach ($c in $Required) {
 }
 if ($script:fail -ne 0) { Note "summary"; Write-Host "  preflight failed; aborting"; exit 1 }
 
-# Wait for cross-zone routing -- kasm webtops install firewall as default
-# gateway via /custom-cont-init.d/set-gateway.sh, which can finish AFTER
-# backend reports healthy on slow runners.
+# Wait for cross-zone routing at both ends. FUXA and historian appear
+# only in intra-OT rows, which need no default route; the third-party
+# FUXA image ships no routing tool.
 Note "wait for cross-zone routing"
-$Webtops = @(
+$CrossZoneGateways = @(
+    @{ container='rangerdanger-kali';        gw='10.10.10.2' },
     @{ container='rangerdanger-eng-ws';      gw='10.20.20.2' },
-    @{ container='rangerdanger-vendor-jump'; gw='10.20.20.2' }
+    @{ container='rangerdanger-vendor-jump'; gw='10.20.20.2' },
+    @{ container='rangerdanger-rtac-sim';    gw='10.30.30.2' },
+    @{ container='rangerdanger-openplc';     gw='10.30.30.2' },
+    @{ container='rangerdanger-relay-sim';   gw='10.40.40.2' }
 )
-foreach ($w in $Webtops) {
+
+function Get-DefaultGateway($container) {
+    $route = & {
+        $ErrorActionPreference = 'SilentlyContinue'
+        docker exec $container cat /proc/net/route 2>$null
+    }
+    if ($LASTEXITCODE -ne 0) { return $null }
+
+    $gateways = @(
+        foreach ($line in $route) {
+            $fields = @($line -split '\s+' | Where-Object { $_ })
+            if ($fields.Count -ge 8 -and
+                $fields[1] -ceq '00000000' -and
+                $fields[7] -ceq '00000000') {
+                $fields[2]
+            }
+        }
+    )
+    if ($gateways.Count -ne 1 -or $gateways[0] -notmatch '^[0-9A-Fa-f]{8}$') {
+        return $null
+    }
+
+    $hex = $gateways[0]
+    # /proc/net/route stores the IPv4 address bytes in reverse order.
+    return ('{0}.{1}.{2}.{3}' -f
+        [Convert]::ToInt32($hex.Substring(6, 2), 16),
+        [Convert]::ToInt32($hex.Substring(4, 2), 16),
+        [Convert]::ToInt32($hex.Substring(2, 2), 16),
+        [Convert]::ToInt32($hex.Substring(0, 2), 16))
+}
+
+foreach ($w in $CrossZoneGateways) {
     $ready = $false
     for ($i = 1; $i -le 30; $i++) {
-        $r = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            (docker exec $w.container ip route show default 2>$null) -join ' '
-        }
-        if ($r -match "via $($w.gw)") { OK "$($w.container) default route via $($w.gw) (after ${i}s)"; $ready = $true; break }
+        $actualGateway = Get-DefaultGateway $w.container
+        if ($actualGateway -ceq $w.gw) { OK "$($w.container) default route via $($w.gw) (after ${i}s)"; $ready = $true; break }
         Start-Sleep -Seconds 1
     }
     if (-not $ready) { Err "$($w.container) never installed default route via $($w.gw) -- set-gateway.sh may have failed" }

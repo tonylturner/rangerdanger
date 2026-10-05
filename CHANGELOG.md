@@ -6,9 +6,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.32] - 2026-10-05
+
+A workshop-readiness release, cut after a full macOS deployment test
+against the README and the printed lab handout. It repairs the lab's
+cross-zone routing, which three separate defects had left to chance:
+OpenPLC was unreachable through the proxy, the two webtop workstations
+never installed their firewall default route, and the backend's
+asynchronous route updater deleted the RTAC's correct one. Routing is now
+owned by the containers themselves, from the declared `GATEWAY`, at
+start. The install documentation also now describes what `setup.sh`
+actually checks. `corp_ws` becomes a first-party image, so this release
+publishes a new `rangerdanger-corp-ws` package and offline SSD bundles
+must be re-staged.
+
 ### Added
 
-- **TCP probe steps execute workshop firewall validation.** Lab 2.2 and related exposure exercises now check reachability from the named topology nodes, with per-target results in the scenario runner.
+- **TCP probe steps execute workshop firewall validation.** Lab 2.2 and
+  related exposure exercises now check reachability from the named
+  topology nodes, with per-target results in the scenario runner.
+- **`rangerdanger-corp-ws` is a first-party image.** `corp_ws` builds
+  from `Dockerfile.corp-ws` (the same pinned webtop digest plus
+  `iproute2`) instead of pulling the stock Linuxserver image, and it is
+  published, scanned and staged with the other first-party images.
 
 ### Changed
 
@@ -18,35 +38,88 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Docker Desktop that containd v0.1.30 fixed. Dev now grants the same
   NET_ADMIN/NET_RAW/SYS_TIME set as `docker-compose.release.yml`, so the
   stack developers test is the one students run.
+- **Install docs describe the real preflight.** The README, quickstart
+  and SSD runbook now separate recommended capacity from what
+  `setup.sh` enforces: disk and Docker VM memory only warn, host RAM is
+  never read, and the disk reading measures the checkout filesystem
+  rather than Docker's storage volume. Recovery and restart commands
+  name their compose files, so they act on the installed stack instead
+  of rebuilding the source one, and the offline path documents its
+  extract and `cd` steps.
+- **CI runners are pinned to `ubuntu-24.04`.** GitHub migrates the
+  `ubuntu-latest` label to Ubuntu 26 from 2026-10-19; the frontend
+  multi-arch build already pinned its arm64 leg, so the floating amd64
+  leg would have built the other half of the same manifest on a
+  different Ubuntu major. Adopting Ubuntu 26 is a separate, verified
+  upgrade.
+- Frontend dependency bumps: Next.js 15.5.26, `@tanstack/react-query`
+  5.104.0, `eslint-config-next` 15.5.26, autoprefixer 10.6.1.
 
 ### Fixed
 
-- Firewall gateway setup now retries briefly while container zone interfaces attach, instead of failing on a cold-boot race.
-- Fixed OpenPLC proxy login and images under `/apps/openplc/`; documented its credentials.
-- Workshop scenario tests now wait for the firewall dataplane canary to match
-  the applied weak or improved policy before running probes.
-- Made feeder-physics freshness explicit end to end: OpenDSS reports solve
-  convergence and timestamps and rejects non-converged solves with HTTP 503;
-  RTAC exposes `physics` status and `alarm.physics_stale` while retaining the
-  last good result and suspending auto-controls; substation smoke verifies
-  freshness and recovery.
-- **Lab YAML is validated at seed time.** Invalid scenario actions and node
-  references now fail before a template is written.
+- **Lab containers own their routing, so cross-zone traffic works from
+  the first second.** The backend ran a second, asynchronous route
+  updater ten seconds after start: it chose a container's gateway by
+  network priority rather than the `GATEWAY` the compose file declares,
+  which for the four-homed RTAC meant deleting its correct
+  `default via 10.30.30.2` and trying to install an unreachable field
+  address, with every error suppressed. OpenPLC, meanwhile, had no
+  startup route at all and depended on that updater, so cross-zone
+  traffic to it had no return path until the updater arrived. The
+  provisioner is deleted, OpenPLC installs its declared gateway at its
+  entrypoint like every other lab image, and the firewall smoke gate now
+  waits for an exact default-route match on **both** ends of every
+  cross-zone row instead of only the two webtop sources. Every routed
+  container is now on its firewall gateway at `t+14s` and stays there.
+
+- **Zone workstations never installed their firewall default route.**
+  The webtop images carry no `iproute2`, so `set-gateway.sh` failed at
+  every start of `eng-ws` and `corp-ws` with `ip: command not found`.
+  The backend masked it by installing the package inside the container
+  at runtime — which needs internet and completed minutes after boot, so
+  an offline classroom laptop routed around the firewall entirely. Both
+  images now ship `iproute2`, and the script reports the underlying `ip`
+  error instead of a bare failure count.
+- **OpenPLC is reachable through the proxy again.** `/apps/openplc/`
+  redirected to the containd login page because the proxy dropped the
+  port from `Host` and never re-prefixed OpenPLC's absolute redirects;
+  its static assets 404'd at the proxy root. Its credentials
+  (`openplc / openplc`) are now documented in the README, quickstart and
+  credential reference, along with containd's lab-mode behaviour, where
+  the pinned `containd / containd` login cannot be changed through the
+  UI.
+- **`scripts/smoke-test.sh` no longer destroys a live database.** It
+  unlinked `backend/data/rangerdanger.db` under the running backend,
+  which left the process on a dead inode and failed 31 of 40 workshop
+  test-suite checks; it now stops the backend first.
+- `CONTRIBUTING.md`'s gate sequence can be run as written: the first
+  gate needs `--keep` or it tears down the stack the later gates need.
+- Workshop scenario tests now wait for the firewall dataplane canary to
+  match the applied weak or improved policy before running probes.
+- Made feeder-physics freshness explicit end to end: OpenDSS reports
+  solve convergence and timestamps and rejects non-converged solves with
+  HTTP 503; RTAC exposes `physics` status and `alarm.physics_stale`
+  while retaining the last good result and suspending auto-controls;
+  substation smoke verifies freshness and recovery.
+- **Lab YAML is validated at seed time.** Invalid scenario actions and
+  node references now fail before a template is written.
 - **PCAP download names are validated before forwarding to containd.**
-- Lab lifecycle operations now report partial container and firewall failures
-  instead of marking incomplete work successful, and successful removals clear
-  stale container references; workshop exec now returns stderr separately.
-- Fixed the online lifecycle test's empty-array expansion under macOS Bash
-  3.2 and removed its unused result flag.
-- Replaced deprecated naive UTC timestamps in `validation-report.sh` with
-  timezone-aware UTC timestamps.
-- Removed unused shell variables across the smoke and host scripts so the
-  repository's warning-level ShellCheck run is clean.
+- Lab lifecycle operations now report partial container and firewall
+  failures instead of marking incomplete work successful, and successful
+  removals clear stale container references; workshop exec now returns
+  stderr separately.
+- Fixed the online lifecycle test's empty-array expansion under macOS
+  Bash 3.2 and removed its unused result flag.
+- Replaced deprecated naive UTC timestamps in `validation-report.sh`
+  with timezone-aware UTC timestamps.
+- Removed unused shell variables across the smoke and host scripts so
+  the repository's warning-level ShellCheck run is clean.
+- Removed an orphaned duplicate of `set-gateway.sh` under `services/`.
 
 ### Tests
 
-- Added the Workshop test-suite smoke gate to CI, reporting failed steps and
-  reset failures across every scenario.
+- Added the Workshop test-suite smoke gate to CI, reporting failed steps
+  and reset failures across every scenario.
 
 ## [v0.1.31] - 2026-09-25
 
@@ -2559,7 +2632,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.31...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.32...HEAD
+[v0.1.32]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.32
 [v0.1.31]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.31
 [v0.1.30]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.30
 [v0.1.29]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.29
