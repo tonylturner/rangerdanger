@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The HMI's cross-zone traffic now goes through the firewall.**
+  `fuxa_hmi` declared `GATEWAY=10.30.30.2` like every other lab
+  container, but the upstream FUXA image ships no routing tool, so the
+  route was never installed: the HMI's default route was the management
+  bridge, and anything it sent outside OT Operations left the lab
+  without passing containd. `rangerdanger-fuxa-hmi` is now a first-party
+  image — the same pinned upstream digest plus `iproute2` and an
+  entrypoint that installs the declared gateway before FUXA starts — so
+  the HMI obeys the same one routing mechanism as the rest of the lab.
+  `firewall-smoke` now proves it with a cross-zone row (HMI to a field
+  relay over Modbus: allowed under the weak policy, denied under the
+  improved one). This publishes a new `rangerdanger-fuxa-hmi` package,
+  so offline SSD bundles must be re-staged.
+
 ## [v0.1.32] - 2026-10-05
 
 A workshop-readiness release, cut after a full macOS deployment test
