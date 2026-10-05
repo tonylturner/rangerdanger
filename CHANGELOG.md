@@ -9,10 +9,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [v0.1.32] - 2026-10-05
 
 A workshop-readiness release, cut after a full macOS deployment test
-against the README and the printed lab handout. It fixes two defects a
-student would hit — OpenPLC was unreachable through the proxy, and the
-two webtop workstations never installed their firewall default route —
-and corrects the install documentation to describe what `setup.sh`
+against the README and the printed lab handout. It repairs the lab's
+cross-zone routing, which three separate defects had left to chance:
+OpenPLC was unreachable through the proxy, the two webtop workstations
+never installed their firewall default route, and the backend's
+asynchronous route updater deleted the RTAC's correct one. Routing is now
+owned by the containers themselves, from the declared `GATEWAY`, at
+start. The install documentation also now describes what `setup.sh`
 actually checks. `corp_ws` becomes a first-party image, so this release
 publishes a new `rangerdanger-corp-ws` package and offline SSD bundles
 must be re-staged.
@@ -43,10 +46,31 @@ must be re-staged.
   name their compose files, so they act on the installed stack instead
   of rebuilding the source one, and the offline path documents its
   extract and `cd` steps.
+- **CI runners are pinned to `ubuntu-24.04`.** GitHub migrates the
+  `ubuntu-latest` label to Ubuntu 26 from 2026-10-19; the frontend
+  multi-arch build already pinned its arm64 leg, so the floating amd64
+  leg would have built the other half of the same manifest on a
+  different Ubuntu major. Adopting Ubuntu 26 is a separate, verified
+  upgrade.
 - Frontend dependency bumps: Next.js 15.5.26, `@tanstack/react-query`
   5.104.0, `eslint-config-next` 15.5.26, autoprefixer 10.6.1.
 
 ### Fixed
+
+- **Lab containers own their routing, so cross-zone traffic works from
+  the first second.** The backend ran a second, asynchronous route
+  updater ten seconds after start: it chose a container's gateway by
+  network priority rather than the `GATEWAY` the compose file declares,
+  which for the four-homed RTAC meant deleting its correct
+  `default via 10.30.30.2` and trying to install an unreachable field
+  address, with every error suppressed. OpenPLC, meanwhile, had no
+  startup route at all and depended on that updater, so cross-zone
+  traffic to it had no return path until the updater arrived. The
+  provisioner is deleted, OpenPLC installs its declared gateway at its
+  entrypoint like every other lab image, and the firewall smoke gate now
+  waits for an exact default-route match on **both** ends of every
+  cross-zone row instead of only the two webtop sources. Every routed
+  container is now on its firewall gateway at `t+14s` and stays there.
 
 - **Zone workstations never installed their firewall default route.**
   The webtop images carry no `iproute2`, so `set-gateway.sh` failed at
@@ -54,9 +78,8 @@ must be re-staged.
   The backend masked it by installing the package inside the container
   at runtime — which needs internet and completed minutes after boot, so
   an offline classroom laptop routed around the firewall entirely. Both
-  images now ship `iproute2`, the gateway provisioner no longer installs
-  packages, and the script reports the underlying `ip` error instead of
-  a bare failure count.
+  images now ship `iproute2`, and the script reports the underlying `ip`
+  error instead of a bare failure count.
 - **OpenPLC is reachable through the proxy again.** `/apps/openplc/`
   redirected to the containd login page because the proxy dropped the
   port from `Host` and never re-prefixed OpenPLC's absolute redirects;
