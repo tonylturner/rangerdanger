@@ -24,9 +24,11 @@ Two staging flows:
 
 ## What's on the SSD
 
-A staged SSD always contains at least four core files, plus a
-version marker and (on tagged releases) the prebuilt Windows WSL2
-kernel asset:
+A successful stage contains the four core files and a version marker,
+plus (when published) the Windows WSL2 kernel asset. The amd64 and arm64
+image archives are written one after the other, not as an atomic pair:
+if the second stage or final verification fails, earlier files may remain
+in the output directory. Distribute only after the helper reports success.
 
 | File | What it is | Size |
 |---|---|---|
@@ -37,9 +39,12 @@ kernel asset:
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
 | `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs - only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
 
-Both `images-*.tar` carry the same image *content* (different binaries
-inside). `setup.sh --from-tarballs` auto-detects host arch and loads
-the matching one.
+Both `images-*.tar` cover the release stack's image references, with
+different architecture-specific binaries. The arm64 archive additionally
+contains `tonistiigi/binfmt` and cross-includes the amd64-only `openplc`
+image because no arm64 manifest exists for it.
+`setup.sh --from-tarballs` auto-detects host arch and loads the matching
+archive.
 
 ## Initial stage
 
@@ -49,13 +54,26 @@ On a machine with internet, from the repo root:
 ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
 ```
 
+The positional version selects the first-party image tags through Compose
+interpolation even if the repo's `.env` contains another `VERSION`; `.version`
+records that same value. The helper aborts if Compose still resolves a
+different first-party tag. It also aborts when a manifest cannot be read;
+the sole architecture exception is a readable OpenPLC manifest with no
+arm64 entry, which is cross-included from amd64. Before reporting success,
+it checks each Docker archive's saved tags against every enumerated image
+and checks that first-party tags match `.version`. Containd remains on
+its independent mutable `latest` tag. The staging helper requires `python3`
+for this archive-manifest verification.
+
 Runtime: 25-45 minutes on a fast connection. Pulls every release
 image once per architecture, then `docker save`s each set into the
 arch-specific tarball.
 
-The script fails fast on any pull error (no partial bundles -
-v0.1.6 fix). If the network blips, it dies and tells you which image
-failed; re-run after fixing.
+The architecture archives are written in sequence (amd64, then arm64),
+so a failure may leave the first archive behind; output is not atomic.
+Do not distribute files unless the script reaches its successful final
+summary. A manifest-resolution, pull, save, or final archive-verification
+error aborts the run with the image or archive named.
 
 The `rangerdanger.tgz` is `git archive HEAD`, so whatever's committed
 in the working tree at stage time is what students get.
@@ -144,7 +162,7 @@ layers that are already present.
 
 ### Pattern 2: image rebuild change (Dockerfile / Go / TS / sim code)
 
-Anything that lands in one of the 14 first-party images:
+Anything that lands in a first-party image:
 
 - Backend Go change
 - Frontend Next.js change
@@ -160,14 +178,23 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
-containd is pulled, not built locally. New containd version means a
-fresh pull. Same as Pattern 2 distribution-wise, but you don't
-`docker compose build` - you `docker pull ghcr.io/tonylturner/containd:latest`
-on the instructor machine, then `docker save` it into the delta
-bundle.
+containd intentionally floats on its own mutable `latest` tag; its release
+version is independent of RangerDanger's. The delta helper does not record
+the digest included by a previous full stage, so it cannot detect whether
+containd has drifted since that stage. To include the current `latest` image
+in a delta, force it with:
 
-`stage-ssd-delta.sh` includes containd by default if its remote
-digest has changed since your last stage.
+```sh
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17 \
+  --include-upstream --include containd
+```
+
+Before distributing, record the digest you intend to ship with
+`docker buildx imagetools inspect --format '{{.Manifest.Digest}}' ghcr.io/tonylturner/containd:latest`.
+After staging, compare it with
+`docker image inspect ghcr.io/tonylturner/containd:latest --format '{{json .RepoDigests}}'`.
+If the approved digest is not present locally, do not distribute the delta;
+the helper does not pin containd's mutable tag to a prior-stage digest.
 
 ## Delta staging
 
@@ -175,11 +202,19 @@ digest has changed since your last stage.
 
 - Compares remote digests of every first-party image at `<since>`
   vs `<new>` and saves only the ones that differ.
+- Requires each `<new>` first-party image to resolve in the registry;
+  local-only images are not a fallback.
 - Always includes a fresh `rangerdanger.tgz` (since the repo
   archive is tiny anyway).
-- Writes a `DELTA-README.md` listing which images changed and the
-  `docker load` and offline Compose commands to apply the delta,
-  including `docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`.
+- Runs with stock macOS Bash 3.2 and Compose support for
+  `config --format json`; it requires `python3` for registry fallback
+  and exact service mapping.
+- Writes a `DELTA-README.md` whose image/service table comes from the
+  release Compose model (including the actual `eng_workstation` service).
+  Its apply recipe loads changed tags, retags unchanged images from
+  `<since>` to `<new>`, saves the prior `.env`, selects `<new>`, then
+  starts the full offline release stack. Rollback restores that `.env`
+  and reuses the retained old image tags.
 
 Example:
 
@@ -196,7 +231,6 @@ Comparing v0.1.16 -> v0.1.17 across N candidate image(s)
              relay-sim, recloser-sim, regulator-sim,
              capbank-sim, historian-sim, gps-sim,
              opendss-sim
-  containd: digest unchanged
 
 Saving 2 changed image(s) per arch...
   delta-amd64.tar  (~230 MB)
@@ -212,39 +246,37 @@ That's typically tens of MB to a few hundred MB instead of the full
 
 ### Student-side delta apply
 
-Whatever the delta-README.md says (it's auto-generated per-stage so
-the version numbers are correct), but the pattern is:
+Follow the generated `DELTA-README.md`: it contains the exact changed
+image-to-service table and the apply commands for the staged versions.
+It saves the existing `.env` as `.env.before-<new-version>`, stops the
+release stack, extracts the repo, and loads the changed-image archive for
+the host architecture. For every unchanged first-party image it emits a
+`docker image tag <old-ref> <new-ref>` command, so Compose can find every
+image at the selected new version while offline. It then updates `VERSION`
+in `.env` and finishes with the explicit release + offline Compose restart.
 
-```sh
-# 1. update repo (extract over your existing ~/rangerdanger in place)
-cd ~/rangerdanger
-tar xzf /Volumes/WORKSHOP_SSD/delta-v0.1.17/rangerdanger.tgz -C ~
-
-# 2. load only the changed images
-docker load -i /Volumes/WORKSHOP_SSD/delta-v0.1.17/delta-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar
-
-# 3. restart only the affected services
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d backend frontend
-```
-
-The `docker load` for an unchanged-layer image is fast - Docker
-checks layer hashes and only writes the new top layer.
-
-If a student is uncertain which services need restart, apply the whole
-offline stack. Compose only restarts containers whose image digest
-changed:
+Do not restart only the changed services: first select the new image tags,
+then apply the complete stack so every service resolves against the same
+release and updated repo files. The generated recipe's final command is:
 
 ```sh
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
+For offline rollback, the generated `Rollback` section restores the saved
+`.env` and starts the complete stack with the old tags. Keep those old
+images until the rollback window closes.
+
 ## Recovery scenarios
 
 ### "I think the SSD is corrupt / partial"
 
-Re-stage. `stage-ssd.sh` is idempotent and fails fast on errors;
-re-running with the same args reproduces the bundle. Image pulls are
-layer-cached so it's fast on the second run.
+Re-stage. `stage-ssd.sh` fails on unresolved manifests, pull/save errors,
+or an archive that does not contain every enumerated image tag. The two
+architecture archives are written in sequence, so a failed run can leave
+one behind; distribute only after the final success message. A rerun may
+be layer-cache-warm, but mutable upstream tags such as containd `latest`
+can resolve to different content.
 
 ### "A student's import failed mid-load"
 
@@ -295,10 +327,11 @@ Yes - the bundles are static files. `delta-*.tar` and
 file names, so just download to a local dir and point at it.
 
 **Q: What if I need to ship a fix five minutes before the workshop?**
-Build locally, run `stage-ssd-delta.sh` against your last shipped
-tag (e.g. `v0.1.7`) and an unreleased local tag. The script doesn't
-require the new version to be tagged in GHCR - it can save from
-local images.
+The new RangerDanger image refs must already exist in the registry.
+Build and publish them under the new release tag first, then run
+`stage-ssd-delta.sh` against your last shipped tag (e.g. `v0.1.7`) and
+that registry tag. The helper has no local-image fallback; it names any
+new image it cannot resolve.
 
 **Q: Students get OpenPLC errors on an ARM host. Why?**
 `openplc` is amd64-only and needs amd64 emulation. On Apple Silicon,
@@ -315,10 +348,12 @@ content lets people pass them around without crowding.
 
 **Q: How do I check what's actually in the SSD bundle?**
 ```sh
-tar -tf /Volumes/WORKSHOP_SSD/images-amd64.tar | grep -E '^[^/]+/manifest.json$' | head
+tar -xOf /Volumes/WORKSHOP_SSD/images-amd64.tar manifest.json |
+  python3 -c 'import json,sys; [print(tag) for image in json.load(sys.stdin) for tag in (image.get("RepoTags") or [])]'
 ```
-Each top-level dir in the tar is one image. The `manifest.json`
-inside lists tags. Or:
+The staging helper runs this kind of tag check for both architecture
+archives before it reports success. Or load the archive on a scratch host
+and inspect the local tags:
 ```sh
 docker load -i /Volumes/WORKSHOP_SSD/images-amd64.tar
 docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep rangerdanger
