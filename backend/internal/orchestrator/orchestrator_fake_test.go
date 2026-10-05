@@ -20,7 +20,6 @@ type scriptedDocker struct {
 	mu             sync.Mutex
 	calls          []string
 	fails          map[string]error
-	listed         []types.Container
 	exitCode       int
 }
 
@@ -49,9 +48,6 @@ func (f *scriptedDocker) ContainerRemove(_ context.Context, id string, _ contain
 func (f *scriptedDocker) ContainerInspect(_ context.Context, id string) (types.ContainerJSON, error) {
 	err := f.record("inspect", id)
 	return types.ContainerJSON{NetworkSettings: &types.NetworkSettings{Networks: map[string]*network.EndpointSettings{"rangerdanger_field_net": {IPAddress: "10.40.40.20"}}}}, err
-}
-func (f *scriptedDocker) ContainerList(_ context.Context, _ container.ListOptions) ([]types.Container, error) {
-	return f.listed, f.record("list", "")
 }
 func (f *scriptedDocker) ContainerExecCreate(_ context.Context, id string, _ container.ExecOptions) (types.IDResponse, error) {
 	err := f.record("exec-create", id)
