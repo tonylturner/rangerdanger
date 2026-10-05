@@ -221,6 +221,26 @@ inspect_platform_manifest() {
     parse_manifest "$img" "$manifest_json"
 }
 
+rate_limit_abort() {
+    local img="$1" first_component="${1%%/*}" registry="docker.io"
+    if [[ "$img" == */* ]] && {
+        [[ "$first_component" == *.* ]] ||
+        [[ "$first_component" == *:* ]] ||
+        [[ "$first_component" == localhost ]]
+    }; then
+        registry="$first_component"
+    fi
+
+    case "$registry" in
+        docker.io|index.docker.io)
+            die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            ;;
+        *)
+            die "$registry rate-limited the request while inspecting $img. Wait for its limit to reset or authenticate to $registry with 'docker login $registry', then retry."
+            ;;
+    esac
+}
+
 manifest_value() {
     local key="$1" data="$2"
     printf '%s\n' "$data" | awk -F '\t' -v key="$key" '$1 == key { print $2; exit }'
@@ -261,7 +281,7 @@ for i in "${!NEW_ARR[@]}"; do
     else
         inspect_status=$?
         if [ "$inspect_status" -eq 3 ]; then
-            die "Docker Hub anonymous pull limit reached while inspecting $new. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            rate_limit_abort "$new"
         fi
         die "new-version registry manifest could not be inspected for $new; this is not a platform-availability result."
     fi
@@ -291,7 +311,7 @@ for i in "${!NEW_ARR[@]}"; do
     else
         inspect_status=$?
         if [ "$inspect_status" -eq 3 ]; then
-            die "Docker Hub anonymous pull limit reached while inspecting $since. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            rate_limit_abort "$since"
         fi
         since_digest=""
     fi
@@ -387,7 +407,7 @@ if [ "${#CHANGED[@]}" -gt 0 ]; then
     else
         inspect_status=$?
         if [ "$inspect_status" -eq 3 ]; then
-            die "Docker Hub anonymous pull limit reached while inspecting $BINFMT_IMAGE. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            rate_limit_abort "$BINFMT_IMAGE"
         fi
         die "could not inspect the registry manifest for $BINFMT_IMAGE; this is an inspection error, not evidence that a platform is absent."
     fi
@@ -449,7 +469,7 @@ stage_arch() {
                 say "    large image (~1 GB) — give it a minute" ;;
         esac
         docker pull "$ref" \
-            || die "pull failed for new-version image $ref on $arch (registry entry may be missing or changed)."
+            || die "docker pull failed for new-version image $ref on $arch; see Docker's error above for the cause."
         local target_tag="${img%@*}"
         if [ "$ref" != "$target_tag" ]; then
             docker tag "$ref" "$target_tag" \

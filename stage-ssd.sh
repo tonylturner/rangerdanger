@@ -188,6 +188,26 @@ inspect_platform_manifest() {
     parse_manifest "$img" "$manifest_json"
 }
 
+rate_limit_abort() {
+    local img="$1" first_component="${1%%/*}" registry="docker.io"
+    if [[ "$img" == */* ]] && {
+        [[ "$first_component" == *.* ]] ||
+        [[ "$first_component" == *:* ]] ||
+        [[ "$first_component" == localhost ]]
+    }; then
+        registry="$first_component"
+    fi
+
+    case "$registry" in
+        docker.io|index.docker.io)
+            die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            ;;
+        *)
+            die "$registry rate-limited the request while inspecting $img. Wait for its limit to reset or authenticate to $registry with 'docker login $registry', then retry."
+            ;;
+    esac
+}
+
 PREFLIGHT_IMAGES=()
 PREFLIGHT_AMD64_REFS=()
 PREFLIGHT_ARM64_REFS=()
@@ -202,7 +222,7 @@ preflight_image() {
     else
         status=$?
         if [ "$status" -eq 3 ]; then
-            die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+            rate_limit_abort "$img"
         fi
         die "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
     fi
@@ -292,7 +312,7 @@ stage_arch() {
         # Show Docker's native layer progress (no --quiet) so the operator can
         # see bytes moving on the big pulls instead of staring at a silent line.
         docker pull "$ref" \
-            || die "pull failed for $ref on $arch — refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
+            || die "docker pull failed for $ref on $arch — see Docker's error above for the cause; refusing to write a partial bundle."
         # Apply the user-friendly tag locally. The tag-target form
         # cannot include @digest (docker rejects it), so strip any
         # @sha256:... suffix from the original compose reference.
