@@ -79,11 +79,6 @@ while IFS= read -r img; do
     esac
 done <<< "$ALL_IMAGES"
 
-mkdir -p "$OUT" || die "Couldn't create $OUT"
-OUT=$(cd "$OUT" && pwd)
-say "Output:  $OUT"
-say "Version: $VERSION"
-
 # tonistiigi/binfmt is added to the arm64 bundle ONLY: it provides the
 # qemu-x86_64 handler that lets the amd64-only openplc image run on arm64
 # LINUX (macOS arm64 uses Docker Desktop/Rosetta instead). Without it on
@@ -92,69 +87,161 @@ say "Version: $VERSION"
 # openplc natively and never need it, so it stays out of images-amd64.tar.
 BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
 
-# Resolve a tagged or digest-pinned image reference to a SINGLE-PLATFORM
-# manifest digest reference for the requested arch. This is the
-# load-bearing piece that makes cross-arch staging work on Apple Silicon
-# (and any arm64 host) without `docker save` failing with
-# "unable to create manifests file: NotFound: content digest ... not found".
-#
-# Background: when you `docker pull --platform=linux/amd64 nginx:1.27-alpine`
-# on an arm64 host with the containerd snapshotter, Docker fetches the
-# manifest LIST (which references both amd64 and arm64 sub-manifests)
-# plus only the amd64 layers. A subsequent `docker save nginx:1.27-alpine`
-# walks the manifest list and tries to bundle BOTH platforms' manifests,
-# fails to find the arm64 sub-manifest's content (we never pulled it),
-# and errors out. Pulling by the platform-specific manifest digest
-# instead of by tag stores ONLY the single-arch manifest locally, with
-# no manifest-list to walk during save.
-#
-# Returns the resolved single-platform reference on stdout. Exit 1 means
-# the readable manifest genuinely has no linux/$arch image; exit 2 means
-# the manifest/platform could not be resolved and staging must abort.
-resolve_platform_ref() {
-    local img="$1" arch="$2"
-    local manifest_arches digest
-    if ! manifest_arches=$(docker buildx imagetools inspect "$img" \
-        --format '{{range .Manifest.Manifests}}{{if eq .Platform.OS "linux"}}{{.Platform.Architecture}} {{end}}{{end}}' \
-        2>/dev/null); then
-        return 2
-    fi
-    if [ -n "$manifest_arches" ]; then
-        case " $manifest_arches " in
-            *" $arch "*) ;;
-            *) return 1 ;;
-        esac
-        if ! digest=$(docker buildx imagetools inspect "$img" \
-            --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
-            2>/dev/null); then
-            return 2
-        fi
-        [ -n "$digest" ] && [ "$digest" != "<no value>" ] || return 2
-        local base="${img%@*}"      # strip @sha256:... if present
-        local repo="${base%:*}"     # strip :tag
-        printf '%s@%s\n' "$repo" "$digest"
-        return 0
-    fi
+# Inspect once and parse both Linux architectures from the same JSON
+# response. For indexes .Manifest contains the platform descriptors; for
+# single images .Manifest is only a descriptor, so .Image supplies the
+# platform. Unknown-platform entries are attestations, not runnable images.
+parse_manifest() {
+    local img="$1"
+    python3 -c '
+import json
+import sys
 
-    # No manifest list — single-arch image. Verify the platform matches.
-    local single_arch
-    if ! single_arch=$(docker buildx imagetools inspect "$img" \
-        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null); then
+image = sys.argv[1]
+
+def field(value, name):
+    if not isinstance(value, dict):
+        return None
+    return value.get(name, value.get(name[0].upper() + name[1:]))
+
+def fail(message):
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+def image_repository(reference):
+    base = reference.split("@", 1)[0]
+    final = base.rsplit("/", 1)[-1]
+    if ":" in final:
+        base = base.rsplit(":", 1)[0]
+    return base
+
+try:
+    inspection = json.load(sys.stdin)
+except (ValueError, TypeError) as error:
+    fail("invalid manifest JSON: " + str(error))
+if not isinstance(inspection, dict):
+    fail("inspection JSON is not an object")
+manifest = field(inspection, "manifest")
+image_config = field(inspection, "image")
+if not isinstance(manifest, dict):
+    fail("inspection has no readable manifest")
+
+root_digest = field(manifest, "digest")
+if isinstance(root_digest, str) and root_digest and root_digest != "<no value>":
+    print("digest\t" + root_digest)
+
+entries = field(manifest, "manifests")
+if entries is not None:
+    if not isinstance(entries, list):
+        fail("manifest index has no readable manifests list")
+    print("kind\tindex")
+    refs = {}
+    for entry in entries:
+        platform = field(entry, "platform")
+        operating_system = field(platform, "os")
+        architecture = field(platform, "architecture")
+        if operating_system != "linux" or architecture not in ("amd64", "arm64"):
+            continue
+        digest = field(entry, "digest")
+        if not isinstance(digest, str) or not digest or digest == "<no value>":
+            fail("Linux image manifest entry has no digest")
+        if architecture not in refs:
+            refs[architecture] = image_repository(image) + "@" + digest
+    for architecture, reference in refs.items():
+        print(architecture + "\t" + reference)
+else:
+    config = field(manifest, "config")
+    if isinstance(config, dict):
+        platform = field(config, "platform") or field(manifest, "platform")
+        architecture = field(platform, "architecture")
+        operating_system = field(platform, "os")
+        if architecture is None:
+            architecture = field(config, "architecture")
+            operating_system = field(config, "os")
+    else:
+        architecture = field(image_config, "architecture")
+        operating_system = field(image_config, "os")
+    if not isinstance(architecture, str) or not architecture:
+        fail("single-image manifest has no readable platform architecture")
+    if not isinstance(operating_system, str) or not operating_system:
+        fail("single-image manifest has no readable platform operating system")
+    print("kind\tsingle")
+    if operating_system == "linux" and architecture in ("amd64", "arm64"):
+        print(architecture + "\t" + image)
+' "$img" <<< "$2"
+}
+
+inspect_platform_manifest() {
+    local img="$1" error_file manifest_json
+    error_file=$(mktemp "${TMPDIR:-/tmp}/ssd-manifest.XXXXXX") || return 2
+    if manifest_json=$(docker buildx imagetools inspect "$img" \
+        --format '{{json .}}' 2>"$error_file"); then
+        rm -f "$error_file"
+    else
+        if grep -Eiq '(^|[^0-9])429([^0-9]|$)|toomanyrequests|too[[:space:]]+many[[:space:]]+requests' "$error_file"; then
+            rm -f "$error_file"
+            return 3
+        fi
+        rm -f "$error_file"
         return 2
     fi
-    if [ -z "$single_arch" ] || [ "$single_arch" = "<no value>" ]; then
-        if ! single_arch=$(docker buildx imagetools inspect "$img" \
-            --format '{{.Image.architecture}}' 2>/dev/null); then
-            return 2
-        fi
-    fi
-    [ -n "$single_arch" ] && [ "$single_arch" != "<no value>" ] || return 2
-    if [ "$single_arch" = "$arch" ]; then
-        printf '%s\n' "$img"
-        return 0
-    fi
-    return 1
+    parse_manifest "$img" "$manifest_json"
 }
+
+PREFLIGHT_IMAGES=()
+PREFLIGHT_AMD64_REFS=()
+PREFLIGHT_ARM64_REFS=()
+PREFLIGHT_ARM64_CROSS=()
+
+preflight_image() {
+    local img="$1" required_arches="$2" parsed status
+    local amd64_ref="" arm64_ref="" arch ref
+    say "preflight $img"
+    if parsed=$(inspect_platform_manifest "$img"); then
+        :
+    else
+        status=$?
+        if [ "$status" -eq 3 ]; then
+            die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+        fi
+        die "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
+    fi
+    while IFS=$'\t' read -r arch ref; do
+        case "$arch" in
+            amd64) amd64_ref="$ref" ;;
+            arm64) arm64_ref="$ref" ;;
+        esac
+    done <<< "$parsed"
+
+    if [[ "$required_arches" == *amd64* ]] && [ -z "$amd64_ref" ]; then
+        die "readable manifest for $img has no linux/amd64 image."
+    fi
+    if [[ "$required_arches" == *arm64* ]] && [ -z "$arm64_ref" ]; then
+        if [[ "$img" == *rangerdanger-openplc* ]] && [ -n "$amd64_ref" ]; then
+            arm64_ref="$amd64_ref"
+            PREFLIGHT_ARM64_CROSS+=(yes)
+            say "    openplc amd64 image will be cross-included for arm64"
+        else
+            die "readable manifest for $img has no linux/arm64 image; openplc is the only image allowed to cross-include another architecture."
+        fi
+    else
+        PREFLIGHT_ARM64_CROSS+=(no)
+    fi
+    PREFLIGHT_IMAGES+=("$img")
+    PREFLIGHT_AMD64_REFS+=("$amd64_ref")
+    PREFLIGHT_ARM64_REFS+=("$arm64_ref")
+}
+
+while IFS= read -r img; do
+    [ -z "$img" ] && continue
+    preflight_image "$img" "amd64 arm64"
+done <<< "$ALL_IMAGES"
+preflight_image "$BINFMT_IMAGE" "arm64"
+
+mkdir -p "$OUT" || die "Couldn't create $OUT"
+OUT=$(cd "$OUT" && pwd)
+say "Output:  $OUT"
+say "Version: $VERSION"
 
 AMD64_TAGS=()
 ARM64_TAGS=()
@@ -165,46 +252,32 @@ stage_arch() {
 
     banner "Stage linux/$arch → $(basename "$tarball")"
 
-    # Per-image: resolve to single-platform manifest digest, pull by
-    # digest, then re-tag locally to the user-friendly tag so the saved
-    # tar carries it. Students load and `docker compose up` finds the
-    # tag-keyed image they expect. Without the re-tag, compose would
-    # still try to pull from GHCR because it can't see the digest-only
-    # local image.
     local count=0
+    local i preflight_index ref cross_arch
     local -a pulled_tags=()
     while IFS= read -r img; do
         [ -z "$img" ] && continue
         count=$((count + 1))
-        say "[$count] resolve $arch  $img"
-        local ref
-        local resolve_status
-        if ref=$(resolve_platform_ref "$img" "$arch"); then
-            if [ "$ref" != "$img" ]; then
-                say "    -> $ref"
+        say "[$count] stage $arch  $img"
+        preflight_index=""
+        for i in "${!PREFLIGHT_IMAGES[@]}"; do
+            if [ "${PREFLIGHT_IMAGES[$i]}" = "$img" ]; then
+                preflight_index="$i"
+                break
             fi
+        done
+        [ -n "$preflight_index" ] || die "no preflight result for $img on linux/$arch"
+        if [ "$arch" = "amd64" ]; then
+            ref="${PREFLIGHT_AMD64_REFS[$preflight_index]}"
         else
-            resolve_status=$?
-            if [ "$resolve_status" -eq 1 ] \
-                && [ "$arch" = "arm64" ] \
-                && [[ "$img" == *rangerdanger-openplc* ]]; then
-                # Apple Silicon students need amd64 openplc - upstream
-                # tuttas/openplc_v3 ships only amd64. Cross-include it in
-                # the arm64 bundle so it can run under Rosetta on macOS or
-                # registered qemu emulation on arm64 Linux.
-                if ref=$(resolve_platform_ref "$img" "amd64"); then
-                    say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
-                else
-                    resolve_status=$?
-                    [ "$resolve_status" -eq 1 ] \
-                        && die "openplc manifest has no linux/amd64 image: $img"
-                    die "could not resolve the openplc linux/amd64 manifest: $img"
-                fi
-            elif [ "$resolve_status" -eq 1 ]; then
-                die "manifest for $img has no linux/$arch image; openplc is the only image allowed to cross-include another architecture."
-            else
-                die "could not resolve the manifest for $img on linux/$arch (registry, authentication, or manifest error)."
-            fi
+            ref="${PREFLIGHT_ARM64_REFS[$preflight_index]}"
+        fi
+        [ -n "$ref" ] || die "no resolved manifest for $img on linux/$arch"
+        cross_arch="${PREFLIGHT_ARM64_CROSS[$preflight_index]}"
+        if [ "$arch" = "arm64" ] && [ "$cross_arch" = "yes" ]; then
+            say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
+        elif [ "$ref" != "$img" ]; then
+            say "    -> $ref"
         fi
         # Heads-up on the large images so a multi-minute pull doesn't look
         # like a hang (issue #81). The webtop desktop images (corp-ws,
