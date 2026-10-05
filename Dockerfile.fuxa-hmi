@@ -1,0 +1,15 @@
+# FUXA :latest is pinned by digest for reproducibility.
+# To update: docker buildx imagetools inspect frangoteam/fuxa:<tag>
+FROM frangoteam/fuxa:latest@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f
+
+# set-gateway.sh needs `ip`; the upstream FUXA image ships no routing tool.
+RUN apt-get update && apt-get install -y iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+COPY scripts/fuxa-entrypoint.sh /usr/local/bin/fuxa-entrypoint.sh
+RUN chmod +x /usr/local/bin/set-gateway.sh /usr/local/bin/fuxa-entrypoint.sh
+
+WORKDIR /usr/src/app/FUXA/server
+ENTRYPOINT ["/usr/local/bin/fuxa-entrypoint.sh"]
+CMD ["node", "main.js"]

@@ -107,7 +107,11 @@ banner "RangerDanger uninstall"
 CONTAINERS=$(docker ps -a --format '{{.Names}}' --filter "name=rangerdanger-" 2>/dev/null || true)
 N_CONTAINERS=$(echo "$CONTAINERS" | grep -c . || true)
 say "Containers found: $N_CONTAINERS"
-[ -n "$CONTAINERS" ] && echo "$CONTAINERS" | sed 's/^/  /'
+if [ -n "$CONTAINERS" ]; then
+    while IFS= read -r _container; do
+        printf '  %s\n' "$_container"
+    done <<< "$CONTAINERS"
+fi
 
 PRESENT_IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
 
@@ -145,7 +149,7 @@ BASE_REFS=$(echo "$COMPOSE_IMAGES" | grep ':' \
     | grep -vE '^ghcr\.io/tonylturner/' | grep -vE '^rangerdanger-' \
     | sed -E 's/@sha256:[0-9a-f]+//' | sort -u | grep . || true)
 [ -z "$BASE_REFS" ] && BASE_REFS=$(printf '%s\n' \
-    'alpine:3.21' 'nginx:1.27-alpine' 'frangoteam/fuxa:latest' 'linuxserver/webtop:ubuntu-mate')
+    'alpine:3.21' 'nginx:1.27-alpine' 'linuxserver/webtop:ubuntu-mate')
 BASE_IMAGES=""
 while IFS= read -r _img; do
     [ -z "$_img" ] && continue
@@ -237,7 +241,11 @@ fi
 if [ "$ENV_FOUND" = "1" ]; then
     banner "Removing setup-written .env"
     rm -f "$ENV_FILE"
-    [ ! -f "$ENV_FILE" ] && say "Removed $ENV_FILE" || warn "Could not remove $ENV_FILE"
+    if [ ! -f "$ENV_FILE" ]; then
+        say "Removed $ENV_FILE"
+    else
+        warn "Could not remove $ENV_FILE"
+    fi
 fi
 
 # --- 4. amd64 emulation (revert only what setup installed) ----------

@@ -20,7 +20,7 @@ image?"
 | `openplc` | Substation automation PLC | tuttas/openplc_v3 | OT Operations (10.30.30.30) | `Dockerfile.openplc` |
 | `rtac-sim` | Supervisory controller | alpine 3.21 (sim-base) | OT Operations + Field | `services/Dockerfile` (`rtac-sim` target) |
 | `relay-sim`, `recloser-sim`, `regulator-sim`, `capbank-sim`, `historian-sim`, `gps-sim` | Field / OT sims | alpine 3.21 (sim-base) | Field or OT Ops | `services/Dockerfile` |
-| `fuxa-hmi` | Operator HMI | frangoteam/fuxa | OT Operations (10.30.30.10) | (compose-only, no Dockerfile) |
+| `fuxa-hmi` | Operator HMI | frangoteam/fuxa | OT Operations (10.30.30.10) | `Dockerfile.fuxa-hmi` |
 
 ## Tool matrix
 

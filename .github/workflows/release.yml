@@ -63,6 +63,9 @@ jobs:
           - image: rangerdanger-openplc
             dockerfile: Dockerfile.openplc
             platforms: linux/amd64
+          - image: rangerdanger-fuxa-hmi
+            dockerfile: Dockerfile.fuxa-hmi
+            platforms: linux/amd64,linux/arm64
           - image: rangerdanger-rtac-sim
             dockerfile: services/Dockerfile
             target: rtac-sim

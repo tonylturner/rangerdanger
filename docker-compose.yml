@@ -270,9 +270,10 @@ services:
   # Inter-zone traffic routes through containd (10.30.30.2)
   # ─────────────────────────────────────────────────────────────
   fuxa_hmi:
-    # FUXA :latest as of 2026-05-04 - pinned by digest for reproducibility.
-    # To update: docker buildx imagetools inspect frangoteam/fuxa:<tag>
-    image: frangoteam/fuxa:latest@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f
+    image: rangerdanger-fuxa-hmi
+    build:
+      context: .
+      dockerfile: Dockerfile.fuxa-hmi
     container_name: rangerdanger-fuxa-hmi
     hostname: fuxa-hmi
     cap_add:

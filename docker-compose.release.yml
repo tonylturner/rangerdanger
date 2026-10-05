@@ -224,7 +224,8 @@ services:
       - firewall
 
   fuxa_hmi:
-    image: frangoteam/fuxa:latest@sha256:025e693971f72de9fabf2c811296f9dca3854dc501cb309b02302c7b94717d0f
+    image: ghcr.io/tonylturner/rangerdanger-fuxa-hmi:${VERSION:-latest}
+    pull_policy: always
     container_name: rangerdanger-fuxa-hmi
     hostname: fuxa-hmi
     cap_add:
