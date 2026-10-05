@@ -51,7 +51,9 @@ Before tagging:
 The `release.yml` workflow takes over from there. It triggers on any
 `v*` tag push and:
 
-1. Builds all 14 first-party images in parallel via a matrix
+1. Builds all 16 first-party images in parallel via a matrix
+   (15 in the matrix plus `rangerdanger-frontend`, which has its own
+   per-arch jobs)
    (`linux/amd64` + `linux/arm64`, except `openplc` which is
    amd64-only - upstream `tuttas/openplc_v3` is amd64-only).
 2. Injects `VERSION=vX.Y.Z`, `COMMIT=<short sha>`, `DATE=<utc rfc3339>`

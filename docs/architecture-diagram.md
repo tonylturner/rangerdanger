@@ -324,7 +324,7 @@ posture relies on this.
 
 For the release flow (CI tags → buildx matrix → GHCR → `setup.sh`
 consumes via `docker compose pull`), see
-[`RELEASING.md`](../RELEASING.md). The 14 first-party images and 5
+[`RELEASING.md`](../RELEASING.md). The 16 first-party images and 5
 upstream pulls listed above are the canonical inventory; `release.yml`
 builds them on every `v*` tag push for `linux/amd64` + `linux/arm64`
 (except `openplc`, which is amd64-only - upstream `tuttas/openplc_v3`
