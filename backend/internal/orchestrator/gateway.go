@@ -65,6 +65,9 @@ func (o *Orchestrator) ProvisionGateways(ctx context.Context) {
 	// For each container, determine the correct gateway based on its network membership
 	var targets []containerGateway
 	for _, c := range containers {
+		if len(c.Names) == 0 {
+			continue
+		}
 		name := strings.TrimPrefix(c.Names[0], "/")
 
 		// Skip infrastructure containers that shouldn't route through containd
@@ -82,16 +85,16 @@ func (o *Orchestrator) ProvisionGateways(ctx context.Context) {
 	}
 
 	// Apply gateway to each container
-	provisioned := 0
+	started := 0
 	for _, t := range targets {
 		if err := o.setContainerGateway(ctx, t.ContainerName, t.GatewayIP); err != nil {
 			log.Printf("gateway provisioner: %s: %v", t.ContainerName, err)
 		} else {
-			provisioned++
+			started++
 		}
 	}
 
-	log.Printf("gateway provisioner: configured %d/%d containers to route through containd", provisioned, len(targets))
+	log.Printf("gateway provisioner: launched route-update commands for %d/%d containers; route state not verified", started, len(targets))
 }
 
 // isInfraContainer returns true for containers that should NOT have their gateway changed.
@@ -132,29 +135,21 @@ func pickGateway(c dtypes.Container, gwByNetwork map[string]string) string {
 }
 
 // setContainerGateway sets the default gateway on a container via docker exec.
-// It tries ip, then route, then installs iproute2 if needed (Debian/Ubuntu containers).
+// It tries ip, then route; lab images must include their routing tool.
 func (o *Orchestrator) setContainerGateway(ctx context.Context, containerName, gatewayIP string) error {
-	// Script that tries available tools, installs iproute2 if needed
+	// Script that tries the routing tools available in the container.
 	script := `
 if command -v ip >/dev/null 2>&1; then
     ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
+    ip route add default via "$1" 2>/dev/null
 elif command -v route >/dev/null 2>&1; then
     route del default 2>/dev/null
-    route add default gw ` + gatewayIP + ` 2>/dev/null
-elif command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq iproute2 >/dev/null 2>&1
-    ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
-elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache iproute2 >/dev/null 2>&1
-    ip route del default 2>/dev/null
-    ip route add default via ` + gatewayIP + ` 2>/dev/null
+    route add default gw "$1" 2>/dev/null
 else
-    echo "WARNING: no routing command available" >&2
+    echo "WARNING: no routing tool exists in container $2" >&2
 fi
 `
-	cmd := []string{"sh", "-c", script}
+	cmd := []string{"sh", "-c", script, "set-container-gateway", gatewayIP, containerName}
 
 	execConfig := container.ExecOptions{
 		Cmd:          cmd,

@@ -6,7 +6,7 @@ path, common errors, and what to do when something breaks.
 
 ## Prerequisites
 
-| | Minimum | Recommended |
+| | Workshop recommendation | More headroom |
 |---|---|---|
 | Docker | Docker Desktop or Engine + Compose v2 | latest |
 | Host RAM | 16 GB | 32 GB |
@@ -15,35 +15,35 @@ path, common errors, and what to do when something breaks.
 | Host arch | Apple Silicon or x86_64 | - |
 | Loopback ports free | 8088, 9080, 9443, 2222 | - |
 
-The 8 GB "Docker VM" line is what `setup.sh` checks against
-`docker info --format '{{.MemTotal}}'` (Docker Desktop) or
-`/proc/meminfo` (Linux-native Docker Engine). On Docker Desktop, raise
-it under Settings -> Resources -> Memory. The lab idles around 4 GB
-across all containers and peaks around 6-8 GB during a workshop -
-mostly the three webtop containers (`corp_ws` / `vendor_jump` /
-`eng_ws`) at their 2 GB caps plus OpenPLC ramping under runtime load.
+These are capacity recommendations, not `setup.sh` pass thresholds.
+The script warns when the checkout filesystem has less than 30 GB free;
+it does not measure Docker Desktop's storage volume or disk-image
+capacity. It reads Docker's reported memory and warns only below 7
+whole GiB, while recommending 8 GB. On Linux-native Docker, if Docker
+reports no memory, it falls back to `/proc/meminfo` host RAM. It does
+not check macOS host RAM. On Docker Desktop, raise VM memory under
+Settings -> Resources -> Memory. The lab idles around 4 GB across all
+containers and peaks around 6-8 GB during a workshop - mostly the
+three webtop containers (`corp_ws` / `vendor_jump` / `eng_workstation`) at
+their 2 GB caps plus OpenPLC ramping under runtime load.
 
 Host RAM has to cover the Docker VM allocation *plus* macOS/Windows
 itself plus the student's browser plus any IDE - 8 GB host is too
 tight in practice and will swap-thrash through the workshop. 16 GB
 is the realistic floor.
 
-A clean Docker Desktop install on macOS or Windows usually has the
-right settings out of the box. Linux hosts running Docker Engine
-need Compose v2 (`docker compose`, with a space - not `docker-compose`).
+Linux hosts running Docker Engine need Compose v2 (`docker compose`,
+with a space - not `docker-compose`).
 
-### ARM64 Linux laptops (handled automatically)
+### OpenPLC on ARM64 hosts
 
-One component, OpenPLC, is amd64-only upstream. macOS Apple Silicon
-runs it under Rosetta via Docker Desktop; Docker Engine on arm64 Linux
-has no such shim. `setup.sh` detects arm64 Linux and auto-registers a
-`qemu-x86_64` emulation handler via `tonistiigi/binfmt`, and
-`scripts/uninstall-rangerdanger.sh` reverts it (only if setup
-installed it). The offline SSD carries the helper image too -
-`stage-ssd.sh` and `stage-ssd-delta.sh` include `tonistiigi/binfmt` in
-`images-arm64.tar` / `delta-arm64.tar`, so an `--from-tarballs` install
-registers emulation with no network. You only need to register it by
-hand if you're offline *without* a staged SSD, or you skip `setup.sh`:
+OpenPLC is amd64-only upstream. On Apple Silicon, use a Docker Desktop
+backend with working amd64 emulation enabled (Rosetta is a Docker
+Desktop setting); `setup.sh` does not enable or verify it. On arm64
+Linux, `setup.sh` can register a `qemu-x86_64` handler via
+`tonistiigi/binfmt`, and `scripts/uninstall-rangerdanger.sh` reverts
+it only if setup installed it. If registration fails, setup prints a
+command to register the handler manually:
 
 ```bash
 docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64
@@ -85,9 +85,12 @@ cd rangerdanger
 .\setup.ps1 -Version v0.1.17
 ```
 
-`setup.sh` runs preflight checks (Docker reachable, Compose v2,
-arch, disk, memory, loopback ports), pulls images, brings up the
-stack, and waits for `/api/health` to come up.
+`setup.sh` checks Docker, Compose v2, architecture, and loopback ports.
+Its disk and memory checks only warn: disk is measured on the checkout
+filesystem (not Docker's storage volume), and low memory is reported
+when Docker reports less than 7 whole GiB. On Linux-native Docker, the
+memory check can fall back to host RAM. It then pulls images, starts
+the stack, and runs backend and workshop-readiness checks.
 
 To re-run only the preflight checks without installing:
 
@@ -128,12 +131,17 @@ separate kernel download.
 **On the workshop laptop (student):**
 
 ```bash
+tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~
+cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 # Windows: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
 ```
 
+The installer uses `docker-compose.release.yml`; `--from-tarballs`
+also selects `docker-compose.offline.yml`.
+
 `setup.sh` detects the host architecture, loads the matching
-tarball with `docker load`, then runs `docker compose up -d`.
+tarball with `docker load`, then starts the selected Compose stack.
 
 The release artifacts (image tarballs) are also attached to each
 [GitHub release](https://github.com/tonylturner/rangerdanger/releases)
@@ -147,12 +155,19 @@ if you'd rather download than stage your own SSD.
 | containd Web UI | http://localhost:9080 | containd / containd |
 | containd SSH | `ssh -p 2222 containd@localhost` | containd / containd |
 | FUXA HMI | http://localhost:8088/apps/fuxa-hmi/ | - |
-| OpenPLC | http://localhost:8088/apps/openplc/ | - |
+| OpenPLC | http://localhost:8088/apps/openplc/ | openplc / openplc |
 
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
 ## Common errors
+
+Compose commands below assume Path A: every one needs
+`-f docker-compose.release.yml`, because a bare `docker compose`
+selects the source stack and rebuilds from Dockerfiles. For a Path C
+offline install add `-f docker-compose.offline.yml` as well, so Compose
+uses the images loaded from the SSD instead of reaching GHCR. If you
+installed with Path B, drop both flags.
 
 ### "the lab doesn't come up"
 
@@ -165,9 +180,12 @@ Most "doesn't start" issues fall into one of these:
    Desktop or `apt install docker-compose-plugin`.
 3. **Ports already in use** (`8088`, `9080`, `9443`, `2222`).
    `./setup.sh --check-only` will tell you which.
-4. **Out of disk** during a 6+ GB image pull. Free up ≥30 GB.
-5. **Out of memory** on Docker Desktop's allocated VM. Bump to
-   ≥8 GB in Settings → Resources.
+4. **Out of disk** during a 6+ GB image pull. Leave at least 30 GB
+   free for the install, and check Docker Desktop's storage-volume
+   capacity separately; setup only reports free space where the
+   checkout lives.
+5. **Out of memory** on Docker Desktop's allocated VM. Allocate 8 GB
+   or more in Settings → Resources; setup warns only below 7 whole GiB.
 6. **Network blocks `ghcr.io`** (rare but happens on conference
    Wi-Fi or behind aggressive corporate proxies). Use the offline
    path (Path C above).
@@ -186,9 +204,9 @@ back.
 Stale local DB after a major schema change. Delete and restart:
 
 ```bash
-docker compose down
+docker compose -f docker-compose.release.yml down
 rm -f backend/data/rangerdanger.db
-docker compose up -d
+docker compose -f docker-compose.release.yml up -d
 ```
 
 ### "containd won't authenticate"
@@ -197,13 +215,13 @@ Stale local users.db after the default password got changed in
 a prior session. Delete and restart:
 
 ```bash
-docker compose down
+docker compose -f docker-compose.release.yml down
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose up -d
+docker compose -f docker-compose.release.yml up -d
 ```
 
 containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
-in `docker-compose.yml`) will restore the `containd` / `containd`
+in the compose file) will restore the `containd` / `containd`
 admin on next boot.
 
 ### "the build is slow"
@@ -213,8 +231,8 @@ builds reuse the layer cache. To force a clean re-pull of just the
 firewall image when containd publishes a security fix:
 
 ```bash
-docker compose pull firewall
-docker compose up -d firewall
+docker compose -f docker-compose.release.yml pull firewall
+docker compose -f docker-compose.release.yml up -d firewall
 ```
 
 ## What a good bug report includes

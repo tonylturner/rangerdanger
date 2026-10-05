@@ -49,7 +49,7 @@ flowchart TB
     firewall["firewall<br/>ghcr.io/tonylturner/containd:latest"]
 
     subgraph Webtops["Webtop containers (browser-accessible UIs)"]
-        corp_ws["corp_ws<br/>linuxserver/webtop"]
+        corp_ws["corp_ws<br/>build · Dockerfile.corp-ws"]
         vendor_jump["vendor_jump<br/>build · Dockerfile.vendor-jump"]
         eng_workstation["eng_workstation<br/>build · Dockerfile.eng-ws"]
         kali["kali<br/>build · Dockerfile.kali"]
@@ -106,22 +106,22 @@ flowchart TB
     regulator_sim --> firewall
     capbank_sim --> firewall
 
-    class backend,frontend,vendor_jump,eng_workstation,kali,openplc,rtac_sim,historian_sim,gps_sim,relay_sim,recloser_sim,regulator_sim,capbank_sim,opendss_sim built
-    class firewall,corp_ws,fuxa_hmi,hmi_poller,proxy pulled
+    class backend,frontend,corp_ws,vendor_jump,eng_workstation,kali,openplc,rtac_sim,historian_sim,gps_sim,relay_sim,recloser_sim,regulator_sim,capbank_sim,opendss_sim built
+    class firewall,fuxa_hmi,hmi_poller,proxy pulled
     class proxy,backend,frontend platform
 ```
 
 </details>
 
-**14 first-party images** built from this repo (one Dockerfile each
-for backend, frontend, kali, vendor-jump, eng-ws, openplc; one
+**15 first-party images** built from this repo (one Dockerfile each
+for backend, frontend, kali, vendor-jump, eng-ws, corp-ws, openplc; one
 multi-target `services/Dockerfile` producing 7 sim images; one
 standalone `services/opendss-sim/Dockerfile` for the Python physics
 solver).
 
-**5 upstream pulls** - `containd:latest` (the NGFW), `nginx:1.27-alpine`
-(reverse proxy), `linuxserver/webtop` (the corp-ws desktop, digest
-pinned), `frangoteam/fuxa` (HMI, digest pinned), and `alpine:3.21`
+**5 upstream images** - `containd:latest` (the NGFW), `nginx:1.27-alpine`
+(reverse proxy), `linuxserver/webtop` (the corp-ws image's digest-pinned
+base), `frangoteam/fuxa` (HMI, digest pinned), and `alpine:3.21`
 (hmi_poller sidecar).
 
 ---

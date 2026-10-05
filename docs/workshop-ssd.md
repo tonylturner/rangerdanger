@@ -82,25 +82,30 @@ Or on Windows:
 What `setup.sh --from-tarballs` does, in order:
 
 1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, disk ≥ 30 GB, RAM ≥ 8 GB, ports `8088 / 9080 / 9443
-   / 2222` free. `--check-only` runs just this stage and exits, useful
-   for a "is my laptop ready" pass the night before.
-2. **`docker load`** the matching `images-<arch>.tar`. Docker dedups
-   layers by content hash, so a re-run is cheap.
-3. **`docker compose -f release.yml -f offline.yml up -d`**. The
+   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Disk and
+   memory readings are advisory: setup warns below 30 GB free on the
+   checkout filesystem and below 7 whole GiB of reported memory (8 GB
+   recommended). Linux-native Docker can fall back to host RAM. It does
+   not measure Docker's storage volume or check macOS host RAM.
+   `--check-only` runs just this stage and exits.
+2. **`docker load`** the matching `images-<arch>.tar` every time.
+   Docker deduplicates existing layers by content hash.
+3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The
    offline overlay sets `pull_policy: never` on every release-image
    service so a slow/blocked GHCR can't ruin the day.
-4. **Health gate** - waits for `/api/health`, then runs the workshop
-   readiness gate (firewall apply weak/improved + workshop reset).
-   Fails loudly with diagnostics if any of those are broken.
+4. **Readiness checks** - a backend health timeout only warns. Failed
+   firewall API-health, policy-apply, or workshop-reset checks are
+   fatal. DPI degradation and a non-running OpenPLC only warn, so the
+   final banner can still print when those checks fail.
 
 Successful tail looks like:
 
 ```
-[+] Backend reports healthy at http://localhost:8088/api/health
-[+] Workshop-readiness gate: firewall health + apply + reset...
-[+] Firewall apply/reset workshop gate passed
-========== RangerDanger is up
+[+] Workshop-readiness: OpenPLC (protection-logic lab)...
+[+] OpenPLC container is running
+
+RangerDanger is up
+──────────────────
 ```
 
 The student's done. They open <http://localhost:8088/exercises> and
@@ -129,13 +134,13 @@ AirDrop, Slack, anything. Student replaces their repo and restarts:
 
 ```sh
 cd ~/rangerdanger
-docker compose down
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # overwrites ~/rangerdanger in place
-./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # idempotent; reuses loaded images
+./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # loads the image archive again
 ```
 
-The existing Docker images stay put. No `docker load` re-run is
-needed; `setup.sh` notices the images are already loaded and skips.
+`setup.sh` runs `docker load` on every import. Docker deduplicates
+layers that are already present.
 
 ### Pattern 2: image rebuild change (Dockerfile / Go / TS / sim code)
 
@@ -173,8 +178,8 @@ digest has changed since your last stage.
 - Always includes a fresh `rangerdanger.tgz` (since the repo
   archive is tiny anyway).
 - Writes a `DELTA-README.md` listing which images changed and the
-  exact `docker load + docker compose up -d` commands to apply
-  the delta.
+  `docker load` and offline Compose commands to apply the delta,
+  including `docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`.
 
 Example:
 
@@ -225,9 +230,13 @@ docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 The `docker load` for an unchanged-layer image is fast - Docker
 checks layer hashes and only writes the new top layer.
 
-If a student is uncertain which services need restart, `docker
-compose up -d` (no service list) is safe - Docker compose only
-restarts containers whose image digest changed.
+If a student is uncertain which services need restart, apply the whole
+offline stack. Compose only restarts containers whose image digest
+changed:
+
+```sh
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+```
 
 ## Recovery scenarios
 
@@ -244,7 +253,7 @@ break anything - the student can re-run `setup.sh --from-tarballs`
 and it'll pick up where it left off. If state's still weird:
 
 ```sh
-docker compose down -v
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down -v
 docker system prune -a              # nukes all images, frees disk
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
@@ -257,9 +266,9 @@ older images allowed it. `/api/workshop/reset` wipes containd's
 next firewall restart. Or manually:
 
 ```sh
-docker compose down
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose up -d
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
 ### "The lab YAML I edited mid-workshop isn't showing up"
@@ -269,7 +278,7 @@ Lab YAML is bind-mounted into the backend container at
 Restart the backend to pick up edits:
 
 ```sh
-docker compose restart backend
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml restart backend
 ```
 
 If a YAML edit landed in `rangerdanger.tgz` and the student already
@@ -292,15 +301,12 @@ require the new version to be tagged in GHCR - it can save from
 local images.
 
 **Q: Students get OpenPLC errors on an ARM host. Why?**
-`openplc` is built from `tuttas/openplc_v3`, which has no arm64
-variant, so it needs amd64 emulation. macOS Apple Silicon runs it
-under Rosetta 2 automatically. On **arm64 Linux** (Docker Engine, no
-Rosetta), `setup.sh` registers a `qemu-x86_64` handler via
-`tonistiigi/binfmt` (bundled in `images-arm64.tar`); if OpenPLC still
-errors there, run `docker run --privileged --rm
-tonistiigi/binfmt:qemu-v10.2.1 --install amd64` and re-run `setup.sh`.
-Emulated either way - slower but functional. A native arm64 OpenPLC
-image is a known gap, not a supported configuration.
+`openplc` is amd64-only and needs amd64 emulation. On Apple Silicon,
+use a Docker Desktop backend with working amd64 emulation enabled
+(Rosetta is a Docker Desktop setting); `setup.sh` does not enable or
+verify it. On **arm64 Linux**, `setup.sh` can register a
+`qemu-x86_64` handler via `tonistiigi/binfmt`. A native arm64 OpenPLC
+image is not available.
 
 **Q: Can students share a single SSD?**
 Yes for the load - `docker load` is read-only on the tarball. Eject

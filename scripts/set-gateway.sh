@@ -20,14 +20,12 @@ if [ -z "$GATEWAY" ]; then
     exit 0
 fi
 
-# Flush ALL default routes. BusyBox ip doesn't support 'ip route flush',
-# so loop until no default remains.
+# BusyBox ip lacks 'route flush', so loop until no default remains.
 while ip route del default 2>/dev/null; do :; done
 
-# Install the single zone-firewall default route
-if ip route add default via "$GATEWAY" 2>/dev/null; then
+if route_error=$(ip route add default via "$GATEWAY" 2>&1 >/dev/null); then
     echo "set-gateway: default gateway set to $GATEWAY"
 else
-    echo "set-gateway: failed to add default via $GATEWAY"
+    printf 'set-gateway: failed to add default via %s: %s\n' "$GATEWAY" "$route_error" >&2
     exit 1
 fi

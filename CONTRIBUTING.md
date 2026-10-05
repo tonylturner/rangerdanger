@@ -97,7 +97,9 @@ the compose stack to be up:
 docker compose up -d --build
 
 # 1. Inventory + boot. Lab YAML count, scenario IDs, sim health.
-./scripts/smoke-test.sh
+#    --keep leaves the stack up for the gates below; without it this
+#    script tears the stack down when it finishes.
+./scripts/smoke-test.sh --keep
 
 # 2. Firewall traffic enforcement matrix. Applies weak then improved
 #    via the lab API and probes positive + negative flows from inside

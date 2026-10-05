@@ -57,6 +57,9 @@ jobs:
           - image: rangerdanger-eng-ws
             dockerfile: Dockerfile.eng-ws
             platforms: linux/amd64,linux/arm64
+          - image: rangerdanger-corp-ws
+            dockerfile: Dockerfile.corp-ws
+            platforms: linux/amd64,linux/arm64
           - image: rangerdanger-openplc
             dockerfile: Dockerfile.openplc
             platforms: linux/amd64

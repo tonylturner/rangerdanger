@@ -418,6 +418,7 @@ steps:
 
   - title: "Probe for latent exposure"
     expected_config: weak
+    node: kali-1
     description: |
       Three of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
 
@@ -446,6 +447,13 @@ steps:
 
       This is also why segmentation needs both perimeter rules (block reachability) AND visibility (logging + DPI) - so when a previously-dormant path gets exercised, you actually see it.
       :::
+    action:
+      type: probe
+      outcome: reachable
+      targets:
+        - { host: 10.40.40.20, port: 502, note: "Kali Modbus to relay" }
+        - { host: 10.40.40.21, port: 20000, note: "Kali DNP3 to recloser" }
+        - { host: 10.30.30.20, port: 502, note: "Kali Modbus to RTAC" }
 
   - title: "Transition - decide what to fix first"
     description: |

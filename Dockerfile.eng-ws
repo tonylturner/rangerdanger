@@ -12,13 +12,14 @@ FROM linuxserver/webtop:ubuntu-mate@sha256:db3e3c309152b4f2d0835ee570c5141d08680
 # Install OT analysis tools and Modbus testing
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        wireshark \
-        tshark \
-        tcpdump \
-        nmap \
+        iproute2 \
         mbpoll \
+        nmap \
         python3 \
-        python3-pip && \
+        python3-pip \
+        tcpdump \
+        tshark \
+        wireshark && \
     pip3 install --no-cache-dir --break-system-packages pymodbus && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

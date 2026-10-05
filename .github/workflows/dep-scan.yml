@@ -55,6 +55,7 @@ jobs:
           - rangerdanger-kali
           - rangerdanger-vendor-jump
           - rangerdanger-eng-ws
+          - rangerdanger-corp-ws
           - rangerdanger-openplc
           - rangerdanger-rtac-sim
           - rangerdanger-relay-sim

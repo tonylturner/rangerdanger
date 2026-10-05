@@ -48,6 +48,16 @@ failed=$(jq -r '.failed' <<<"$response")
 auto_passed=$(jq -r '.auto_passed' <<<"$response")
 reset_failures=$(jq -r '.reset_failures' <<<"$response")
 
+if [ "$auto_passed" -ne 18 ]; then
+  err "expected 18 auto-passed steps, got $auto_passed"
+  exit 1
+fi
+if ! jq -e '[.scenarios[] | select(.scenario_id == "firewall-implementation") |
+  [.steps[] | select(.auto_pass != true)] | length] == [5]' <<<"$response" >/dev/null; then
+  err "firewall-implementation must execute exactly 5 steps"
+  exit 1
+fi
+
 while IFS= read -r scenario; do
   order=$(jq -r '.order // "-"' <<<"$scenario")
   id=$(jq -r '.scenario_id // "-"' <<<"$scenario")

@@ -124,7 +124,8 @@ services:
     restart: unless-stopped
 
   corp_ws:
-    image: linuxserver/webtop:ubuntu-mate@sha256:39afefa41a46fefe3ae910ccf5861933ead54e70d935f1695e70b0627f1b5666
+    image: ghcr.io/tonylturner/rangerdanger-corp-ws:${VERSION:-latest}
+    pull_policy: always
     container_name: rangerdanger-corp-ws
     hostname: corp-ws
     cap_add:

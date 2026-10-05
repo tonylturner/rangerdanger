@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -71,7 +72,9 @@ func (s *Server) handleCreateLabInstance(c *gin.Context) {
 	}
 
 	go func(inst models.LabInstance) {
-		_ = s.orchestrator.ProvisionLabInstance(context.Background(), s.db, &inst)
+		if err := s.orchestrator.ProvisionLabInstance(context.Background(), s.db, &inst); err != nil {
+			log.Printf("[lab %s] provisioning failed: %v", inst.ID, err)
+		}
 	}(instance)
 
 	c.JSON(http.StatusAccepted, instance)
