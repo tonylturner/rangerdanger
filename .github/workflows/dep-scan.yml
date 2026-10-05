@@ -44,7 +44,7 @@ env:
 jobs:
   scan:
     name: scan ${{ matrix.image }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     strategy:
       fail-fast: false

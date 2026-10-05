@@ -12,7 +12,7 @@ permissions:
 jobs:
   backend:
     name: Backend (Go)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -41,7 +41,7 @@ jobs:
 
   services:
     name: Services (Go)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -65,7 +65,7 @@ jobs:
 
   opendss-sim:
     name: opendss-sim (Python)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -80,7 +80,7 @@ jobs:
 
   dnp3go:
     name: dnp3go library (Go)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -104,7 +104,7 @@ jobs:
 
   frontend:
     name: Frontend (Next.js)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -127,7 +127,7 @@ jobs:
 
   compose-validate:
     name: Compose validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - name: docker compose config
@@ -139,7 +139,7 @@ jobs:
     # new finding: add a triage entry to security-known-issues.md and
     # add its GOID to ALLOWED in scripts/govulncheck-gate.sh.
     name: Go vulnerability scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
