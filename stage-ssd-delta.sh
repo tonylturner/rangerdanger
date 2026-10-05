@@ -211,7 +211,7 @@ inspect_platform_manifest() {
         --format '{{json .}}' 2>"$error_file"); then
         rm -f "$error_file"
     else
-        if grep -Eiq '(^|[^0-9])429([^0-9]|$)|toomanyrequests|too[[:space:]]+many[[:space:]]+requests' "$error_file"; then
+        if grep -Eiq '(^|[^[:alnum:]])429[[:space:]]+too[[:space:]]+many[[:space:]]+requests([^[:alnum:]]|$)|toomanyrequests|too[[:space:]]+many[[:space:]]+requests' "$error_file"; then
             rm -f "$error_file"
             return 3
         fi
