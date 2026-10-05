@@ -241,8 +241,13 @@ Saving 2 changed image(s) per arch...
 ```
 
 Distribution: the per-arch `delta-*.tar` files plus `rangerdanger.tgz`.
-That's typically tens of MB to a few hundred MB instead of the full
-6 GB.
+
+Size depends entirely on how many images changed, and that example is the
+best case. A tagged release rebuilds every first-party image, so every
+digest changes and a plain release-to-release delta is close to a full
+bundle: `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote
+8.1 GB. Use `--include <image>` when you are shipping one fix, which is
+what keeps a delta in the tens of MB.
 
 ### Student-side delta apply
 
