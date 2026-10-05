@@ -18,6 +18,7 @@ FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e979240677
 # Diagnostic tools so OpenPLC can play its lab role:
 # - sqlite3, net-tools: existing — DB introspection + netstat
 # - curl: API calls (existing)
+# - iproute2: set-gateway.sh needs ip; the base ships only net-tools
 # - nmap: Lab 2.4 step 3 asks students to test "non-RTAC OT host →
 #   field" — needs a port scanner here for the segmentation lesson
 #   to land. nmap is in bionic main; mbpoll isn't (would require
@@ -27,6 +28,7 @@ FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e979240677
 RUN apt-get update && apt-get install -y \
         sqlite3 \
         curl \
+        iproute2 \
         net-tools \
         nmap \
         python3 \
@@ -37,7 +39,8 @@ COPY --from=dnp3-builder /bin/dnp3cmd  /usr/local/bin/dnp3cmd
 
 # Copy the entrypoint script
 COPY scripts/openplc-entrypoint.sh /openplc-entrypoint.sh
-RUN chmod +x /openplc-entrypoint.sh
+COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
+RUN chmod +x /openplc-entrypoint.sh /usr/local/bin/set-gateway.sh
 
 # The workdir is mounted at runtime with the ST file
 WORKDIR /root/OpenPLC_v3/webserver

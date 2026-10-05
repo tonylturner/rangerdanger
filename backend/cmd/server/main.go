@@ -36,9 +36,6 @@ func main() {
 
 	orch := orchestrator.New(containdClient, cfg.LabDefinitionsPath)
 
-	// Provision container gateways to route all traffic through containd
-	go orch.ProvisionGateways(ctx)
-
 	srv := server.New(cfg, database, loader, orch, containdClient)
 
 	if err := srv.Run(ctx); err != nil {
