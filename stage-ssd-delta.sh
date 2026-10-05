@@ -28,6 +28,8 @@
 #
 # Runtime: ~5-15 min depending on how many images changed and how
 # fresh the layer cache is.
+# Compatible with stock macOS Bash 3.2; requires python3 for Compose
+# service mapping and registry-manifest fallback.
 #
 # See docs/workshop-ssd.md for the full operator runbook including
 # when to use this vs full stage-ssd.sh.
@@ -82,6 +84,7 @@ die()    { printf "%s[x]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s-' $(seq 1 ${#1}))"; }
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found - run from repo root."
+command -v python3 >/dev/null 2>&1 || die "python3 is required for exact Compose image-to-service mapping."
 mkdir -p "$OUT" || die "Couldn't create $OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -100,17 +103,18 @@ ALL_IMAGES=$(docker compose -f "$COMPOSE_FILE" config --images | sort -u)
 [ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
 
 if [ "$INCLUDE_UPSTREAM" -eq 0 ]; then
-    CANDIDATE_IMAGES=$(echo "$ALL_IMAGES" | grep -E 'ghcr\.io/tonylturner/' || true)
+    CANDIDATE_IMAGES=$(echo "$ALL_IMAGES" | grep -E 'ghcr\.io/tonylturner/rangerdanger-' || true)
 else
     CANDIDATE_IMAGES="$ALL_IMAGES"
 fi
 
-# Substitute :latest with the requested version for first-party images.
-# Upstream images keep their pinned tag/digest as-is.
+# Substitute the release tag only for first-party RangerDanger images.
+# containd deliberately remains :latest; its release cadence is independent.
+# Other upstream images keep their pinned tag/digest as-is.
 resolve_version() {
     local images="$1" version="$2"
-    echo "$images" | sed -E "s|^(ghcr\.io/tonylturner/(rangerdanger-[a-z0-9-]+|containd)):latest\$|\\1:$version|" \
-                  | sed -E "s|^(ghcr\.io/tonylturner/(rangerdanger-[a-z0-9-]+|containd)):[^@]+\$|\\1:$version|"
+    echo "$images" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest\$|\\1:$version|" \
+                  | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+\$|\\1:$version|"
 }
 
 SINCE_REF=$(resolve_version "$CANDIDATE_IMAGES" "$SINCE")
@@ -137,7 +141,7 @@ print(m.get("config", {}).get("digest", ""))
 ' 2>/dev/null || echo ""
 }
 
-INCLUDE_SET=" $(echo "${INCLUDE_LIST//,/ }") "
+INCLUDE_SET=" ${INCLUDE_LIST//,/ } "
 
 banner "Comparing $SINCE -> $NEW across $(echo "$CANDIDATE_IMAGES" | wc -l | tr -d ' ') candidate image(s)"
 
@@ -146,15 +150,30 @@ UNCHANGED=()
 FORCED=()
 MISSING_SINCE=()
 
-# Read the resolved lists in lockstep. We want the new-ref to save,
-# but compare since-ref vs new-ref to decide whether to include.
-mapfile -t SINCE_ARR <<<"$SINCE_REF"
-mapfile -t NEW_ARR <<<"$NEW_REF"
+# Read the resolved lists in lockstep with a here-string loop supported
+# by stock macOS Bash 3.2.
+SINCE_ARR=()
+NEW_ARR=()
+while IFS= read -r ref; do
+    SINCE_ARR+=("$ref")
+done <<< "$SINCE_REF"
+while IFS= read -r ref; do
+    NEW_ARR+=("$ref")
+done <<< "$NEW_REF"
+
+UNCHANGED_SINCE_REFS=()
+UNCHANGED_NEW_REFS=()
 
 for i in "${!NEW_ARR[@]}"; do
     new="${NEW_ARR[$i]}"
     since="${SINCE_ARR[$i]}"
     [ -z "$new" ] && continue
+
+    # A delta must never be built from an absent/local-only new image.
+    # Check every requested new ref even in --all and --include modes.
+    new_digest=$(remote_digest "$new" || echo "")
+    [ -n "$new_digest" ] \
+        || die "new version image is missing from the registry or its manifest cannot be read: $new"
 
     # Match against include list (compare against short image name).
     short=$(echo "$new" | sed -E 's|.*/||; s|:.*||')
@@ -169,14 +188,8 @@ for i in "${!NEW_ARR[@]}"; do
         continue
     fi
 
-    new_digest=$(remote_digest "$new" || echo "")
     since_digest=$(remote_digest "$since" || echo "")
 
-    if [ -z "$new_digest" ]; then
-        warn "  $short: couldn't read digest for $new - including in delta to be safe"
-        CHANGED+=("$new")
-        continue
-    fi
     if [ -z "$since_digest" ]; then
         warn "  $short: couldn't read $since (not pulled?) - including in delta to be safe"
         MISSING_SINCE+=("$short")
@@ -186,6 +199,8 @@ for i in "${!NEW_ARR[@]}"; do
 
     if [ "$new_digest" = "$since_digest" ]; then
         UNCHANGED+=("$short")
+        UNCHANGED_SINCE_REFS+=("$since")
+        UNCHANGED_NEW_REFS+=("$new")
     else
         CHANGED+=("$new")
     fi
@@ -228,26 +243,44 @@ fi
 # manifest, so save walks only that platform.
 resolve_platform_ref() {
     local img="$1" arch="$2"
-    local digest
-    digest=$(docker buildx imagetools inspect "$img" \
-        --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
-        2>/dev/null | head -1)
-    if [ -n "$digest" ] && [ "$digest" != "<no value>" ]; then
+    local manifest_arches digest
+    if ! manifest_arches=$(docker buildx imagetools inspect "$img" \
+        --format '{{range .Manifest.Manifests}}{{if eq .Platform.OS "linux"}}{{.Platform.Architecture}} {{end}}{{end}}' \
+        2>/dev/null); then
+        return 2
+    fi
+    if [ -n "$manifest_arches" ]; then
+        case " $manifest_arches " in
+            *" $arch "*) ;;
+            *) return 1 ;;
+        esac
+        if ! digest=$(docker buildx imagetools inspect "$img" \
+            --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
+            2>/dev/null); then
+            return 2
+        fi
+        [ -n "$digest" ] && [ "$digest" != "<no value>" ] || return 2
         local base="${img%@*}"
         local repo="${base%:*}"
         printf '%s@%s\n' "$repo" "$digest"
-        return 0
+        return
     fi
+
     local single_arch
-    single_arch=$(docker buildx imagetools inspect "$img" \
-        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null)
-    if [ -z "$single_arch" ]; then
-        single_arch=$(docker buildx imagetools inspect "$img" \
-            --format '{{.Image.architecture}}' 2>/dev/null)
+    if ! single_arch=$(docker buildx imagetools inspect "$img" \
+        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null); then
+        return 2
     fi
+    if [ -z "$single_arch" ] || [ "$single_arch" = "<no value>" ]; then
+        if ! single_arch=$(docker buildx imagetools inspect "$img" \
+            --format '{{.Image.architecture}}' 2>/dev/null); then
+            return 2
+        fi
+    fi
+    [ -n "$single_arch" ] && [ "$single_arch" != "<no value>" ] || return 2
     if [ "$single_arch" = "$arch" ]; then
         printf '%s\n' "$img"
-        return 0
+        return
     fi
     return 1
 }
@@ -271,27 +304,35 @@ stage_arch() {
 
     banner "Stage linux/$arch -> $(basename "$tarball")"
 
-    local pulled_tags=""
+    local -a pulled_tags=()
     for img in "${to_stage[@]}"; do
         say "resolve $arch  $img"
         local ref
-        if ! ref=$(resolve_platform_ref "$img" "$arch"); then
-            case "$img" in
-                *rangerdanger-openplc*)
-                    # See stage-ssd.sh for rationale: openplc is amd64-only
-                    # upstream and runs under Rosetta on Apple Silicon.
-                    # Cross-include the amd64 image in arm64 bundle.
-                    ref=$(resolve_platform_ref "$img" "amd64") \
-                        || die "openplc: amd64 fallback resolution also failed"
-                    say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
-                    ;;
-                *)
-                    say "    skip - not available for linux/$arch"
-                    continue
-                    ;;
-            esac
-        elif [ "$ref" != "$img" ]; then
-            say "    -> $ref"
+        local resolve_status
+        if ref=$(resolve_platform_ref "$img" "$arch"); then
+            if [ "$ref" != "$img" ]; then
+                say "    -> $ref"
+            fi
+        else
+            resolve_status=$?
+            if [ "$resolve_status" -eq 1 ] \
+                && [ "$arch" = "arm64" ] \
+                && [[ "$img" == *rangerdanger-openplc* ]]; then
+                # See stage-ssd.sh for rationale: openplc is amd64-only
+                # upstream and runs under emulation on arm64 hosts.
+                if ref=$(resolve_platform_ref "$img" "amd64"); then
+                    say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
+                else
+                    resolve_status=$?
+                    [ "$resolve_status" -eq 1 ] \
+                        && die "openplc manifest has no linux/amd64 image: $img"
+                    die "could not resolve the openplc linux/amd64 manifest: $img"
+                fi
+            elif [ "$resolve_status" -eq 1 ]; then
+                die "manifest for $img has no linux/$arch image; openplc is the only image allowed to cross-include another architecture."
+            else
+                die "could not resolve the manifest for $img on linux/$arch (registry, authentication, or manifest error)."
+            fi
         fi
         # Heads-up on the large images so a multi-minute pull doesn't look
         # like a hang (issue #81); show native layer progress (no --quiet).
@@ -302,23 +343,22 @@ stage_arch() {
                 say "    large image (~1 GB) — give it a minute" ;;
         esac
         docker pull "$ref" \
-            || die "pull failed for $ref on $arch - re-run after fixing the upstream issue."
+            || die "pull failed for new-version image $ref on $arch (registry entry may be missing or changed)."
         local target_tag="${img%@*}"
         if [ "$ref" != "$target_tag" ]; then
             docker tag "$ref" "$target_tag" \
                 || die "docker tag $ref -> $target_tag failed"
         fi
-        pulled_tags="$pulled_tags $target_tag"
+        pulled_tags+=("$target_tag")
     done
 
-    if [ -z "$pulled_tags" ]; then
+    if [ "${#pulled_tags[@]}" -eq 0 ]; then
         say "Nothing to save for $arch (no images compatible with this arch)"
         return 0
     fi
 
     say "save $arch -> $tarball"
-    # shellcheck disable=SC2086
-    docker save -o "$tarball" $pulled_tags \
+    docker save -o "$tarball" "${pulled_tags[@]}" \
         || die "docker save failed for $arch"
 
     local size
@@ -368,19 +408,79 @@ fi
 
 banner "Write DELTA-README.md"
 
-# Build the per-image apply summary for the README.
-APPLY_SERVICES=""
+# Derive image-to-service mappings from the release Compose model. This
+# avoids guessing names from image names (e.g. eng-ws is eng_workstation).
+# `config --images SERVICE` also includes transitive dependencies, so
+# read the service's direct image from Compose's resolved JSON model and
+# use the per-service image output only to confirm that reference exists.
+COMPOSE_SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services) \
+    || die "Couldn't enumerate services from $COMPOSE_FILE"
+COMPOSE_MODEL=$(docker compose -f "$COMPOSE_FILE" config --format json) \
+    || die "Couldn't read the resolved service model from $COMPOSE_FILE"
+SERVICE_NAMES=()
+SERVICE_REPOS=()
+image_repository() {
+    local ref="${1%@*}"
+    local final_component="${ref##*/}"
+    case "$final_component" in
+        *:*) ref="${ref%:*}" ;;
+    esac
+    printf '%s\n' "$ref"
+}
+while IFS= read -r service; do
+    [ -z "$service" ] && continue
+    service_images=$(docker compose -f "$COMPOSE_FILE" config --images "$service") \
+        || die "Couldn't enumerate images for Compose service $service"
+    service_image=$(printf '%s\n' "$COMPOSE_MODEL" | python3 -c '
+import json, sys
+service = sys.argv[1]
+print(json.load(sys.stdin)["services"][service].get("image", ""))
+' "$service") || die "Couldn't read the resolved image for Compose service $service"
+    [ -n "$service_image" ] || continue
+    printf '%s\n' "$service_images" | grep -Fqx "$service_image" \
+        || die "Compose did not list direct image $service_image for service $service"
+    SERVICE_NAMES+=("$service")
+    SERVICE_REPOS+=("$(image_repository "$service_image")")
+done <<< "$COMPOSE_SERVICES"
+
 APPLY_TABLE=""
 for img in "${CHANGED[@]}"; do
-    short=$(echo "$img" | sed -E 's|.*/||; s|:.*||')
-    # Map image name back to compose service name. For rangerdanger-*,
-    # the service name is the same as the bit after rangerdanger-, with
-    # underscores: rangerdanger-rtac-sim -> rtac_sim, etc.
-    svc=$(echo "$short" | sed -E 's|^rangerdanger-||; s|-|_|g')
-    APPLY_SERVICES="$APPLY_SERVICES $svc"
+    image_repo=$(image_repository "$img")
+    short="${image_repo##*/}"
+    svc=""
+    for i in "${!SERVICE_NAMES[@]}"; do
+        if [ "${SERVICE_REPOS[$i]}" = "$image_repo" ]; then
+            if [ -z "$svc" ]; then
+                svc="${SERVICE_NAMES[$i]}"
+            else
+                svc="$svc, ${SERVICE_NAMES[$i]}"
+            fi
+        fi
+    done
+    [ -n "$svc" ] || die "Changed image $img does not map to a service in $COMPOSE_FILE"
     APPLY_TABLE="$APPLY_TABLE| \`$short\` | \`$svc\` |
 "
 done
+
+APPLY_LOAD_COMMAND="# No image archive was created; no image load is needed."
+if [ "${#CHANGED[@]}" -gt 0 ]; then
+    # Preserve the command substitutions for the generated student recipe.
+    # shellcheck disable=SC2016
+    APPLY_LOAD_COMMAND='ARCH=$(uname -m | sed '\''s/x86_64/amd64/;s/aarch64/arm64/'\'')
+docker load -i "$DELTA_DIR/delta-$ARCH.tar"'
+fi
+
+APPLY_RETAG_COMMANDS=""
+for i in "${!UNCHANGED_NEW_REFS[@]}"; do
+    case "${UNCHANGED_NEW_REFS[$i]}" in
+        ghcr.io/tonylturner/rangerdanger-*)
+            APPLY_RETAG_COMMANDS="$APPLY_RETAG_COMMANDS"'docker image tag '"${UNCHANGED_SINCE_REFS[$i]}"' '"${UNCHANGED_NEW_REFS[$i]}"'
+' ;;
+    esac
+done
+if [ -z "$APPLY_RETAG_COMMANDS" ]; then
+    APPLY_RETAG_COMMANDS="# No unchanged first-party image tags need to be created."
+fi
 
 cat > "$OUT/DELTA-README.md" <<EOF
 # RangerDanger - delta patch
@@ -400,21 +500,37 @@ $([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" 
 Run from the student's existing \`~/rangerdanger\` directory:
 
 \`\`\`sh
-# 1. update the repo (extracts over your existing ~/rangerdanger in place)
+# Set this to the directory containing this delta bundle.
+DELTA_DIR="/path/to/delta-$NEW"
 cd ~/rangerdanger
-docker compose down
-tar xzf <delta-dir>/rangerdanger.tgz -C ~
 
-# 2. load only the changed images for this host's arch
-ARCH=\$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-docker load -i <delta-dir>/delta-\$ARCH.tar
+# Keep the installed version/settings for rollback, then stop the release stack.
+test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
+if [ ! -f ".env.before-$NEW" ]; then cp .env ".env.before-$NEW"; fi
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 
-# 3. restart with the offline overlay so docker compose doesn't try to pull
+# Update the repo, then load the changed images (if any).
+tar xzf "\$DELTA_DIR/rangerdanger.tgz" -C ~
+$APPLY_LOAD_COMMAND
+
+# Re-tag unchanged first-party images so every required :$NEW tag exists.
+$APPLY_RETAG_COMMANDS
+
+# Select the new release while preserving other .env settings.
+NEW_VERSION=$NEW awk '
+  BEGIN { version = ENVIRON["NEW_VERSION"]; replaced = 0 }
+  /^VERSION=/ {
+    if (!replaced) print "VERSION=" version
+    replaced = 1
+    next
+  }
+  { print }
+  END { if (!replaced) print "VERSION=" version }
+' .env > .env.delta.tmp && mv .env.delta.tmp .env
+
+# Start the complete stack from the new version without contacting GHCR.
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
-
-\`docker compose up -d\` (no service list) is safe - compose only
-recreates containers whose image digest changed.
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. \`delta-arm64.tar\`
 ships \`tonistiigi/binfmt\` for this; if OpenPLC isn't running after the
@@ -423,17 +539,19 @@ restart (\`docker ps | grep openplc\`), register it once with
 (setup.sh does this automatically on a fresh install; the registration
 does not persist across a host reboot.)
 
-If \`docker load\` fails with "no space left on device", run
-\`docker system prune -a\` to clear images not in the current
-compose, then re-load.
+If \`docker load\` fails with "no space left on device", free space
+without removing the prior \`$SINCE\` image tags; deleting those tags
+removes the offline rollback path.
 
 ## Rollback
 
-Pull the prior \`$SINCE\` images directly from GHCR (assumes student
-has internet, or the prior full SSD bundle):
+The apply recipe keeps the complete pre-upgrade \`.env\` (including
+\`VERSION=$SINCE\`) in \`.env.before-$NEW\`. The old image tags remain
+installed, so rollback does not need the network or another bundle:
 
 \`\`\`sh
-VERSION=$SINCE docker compose -f docker-compose.release.yml pull
+cd ~/rangerdanger
+cp ".env.before-$NEW" .env
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 EOF
@@ -454,9 +572,13 @@ echo "  Output dir:       $OUT"
 echo "  Changed images:   ${#CHANGED[@]}"
 echo "  Unchanged:        ${#UNCHANGED[@]}"
 echo
-ls -lh "$OUT" | awk 'NR>1 {printf "  %-30s %s\n", $9, $5}'
+for file in "$OUT"/*; do
+    [ -f "$file" ] || continue
+    size=$(du -h "$file" | awk '{print $1}')
+    printf "  %-30s %s\n" "${file##*/}" "$size"
+done
 echo
 echo "  Total: $(du -sh "$OUT" | awk '{print $1}')"
 echo
-echo "  Distribute the four files in $OUT to students. The README in"
+echo "  Distribute the files in $OUT to students. The README in"
 echo "  that directory contains the exact apply commands."

@@ -22,6 +22,7 @@
 #
 # Runtime: ~25–45 min on a fast connection (pulls each image twice,
 # once per architecture). Subsequent runs are cache-warm.
+# Requires python3 to verify the saved Docker archive manifests.
 
 set -euo pipefail
 
@@ -54,24 +55,35 @@ die()    { printf "%s[✗]%s %s\n" "$RED" "$RESET" "$*" >&2; exit 1; }
 banner() { printf "\n%s%s%s\n%s\n\n" "$BOLD" "$1" "$RESET" "$(printf '%.0s─' $(seq 1 ${#1}))"; }
 
 [ -f "$COMPOSE_FILE" ] || die "$COMPOSE_FILE not found — run from repo root."
+command -v python3 >/dev/null 2>&1 || die "python3 is required to verify the saved Docker archive manifests."
+
+# Image list comes from the release compose; Compose substitutes the
+# requested version into every first-party image reference.
+# Set VERSION for Compose itself so an existing repo .env cannot select
+# a different first-party release than the positional argument.
+if ! ALL_IMAGES=$(VERSION="$VERSION" docker compose -f "$COMPOSE_FILE" config --images | sort -u); then
+    die "Couldn't enumerate images from $COMPOSE_FILE"
+fi
+[ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
+
+# The Compose interpolation above is the only version-selection
+# mechanism. Refuse an environment/configuration mismatch before
+# creating the output directory or writing any bundle files.
+while IFS= read -r img; do
+    case "$img" in
+        ghcr.io/tonylturner/rangerdanger-*)
+            image_version="${img##*:}"
+            [ "$image_version" = "$VERSION" ] \
+                || die "Compose resolved first-party image $img, not requested version $VERSION (check Compose interpolation/environment)."
+            ;;
+    esac
+done <<< "$ALL_IMAGES"
+
 mkdir -p "$OUT" || die "Couldn't create $OUT"
 OUT=$(cd "$OUT" && pwd)
 say "Output:  $OUT"
 say "Version: $VERSION"
 
-# Image list comes from the release compose. Filter to what's actually
-# pullable per architecture: openplc is amd64-only (upstream limit).
-ALL_IMAGES=$(docker compose -f "$COMPOSE_FILE" config --images | sort -u)
-[ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
-
-# Substitute :latest → :$VERSION for first-party rangerdanger-* images.
-# Other images already carry their pinned tag/digest from compose.
-RESOLVED=$(echo "$ALL_IMAGES" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest\$|\\1:$VERSION|")
-
-# openplc is amd64-only because tuttas/openplc_v3 ships only amd64.
-# We don't filter the image list anymore — resolve_platform_ref below
-# returns empty for arch-incompatible images and the loop skips them.
-#
 # tonistiigi/binfmt is added to the arm64 bundle ONLY: it provides the
 # qemu-x86_64 handler that lets the amd64-only openplc image run on arm64
 # LINUX (macOS arm64 uses Docker Desktop/Rosetta instead). Without it on
@@ -79,8 +91,6 @@ RESOLVED=$(echo "$ALL_IMAGES" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a
 # air-gapped arm64 Linux laptop and openplc won't start. amd64 hosts run
 # openplc natively and never need it, so it stays out of images-amd64.tar.
 BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
-AMD64_IMAGES="$RESOLVED"
-ARM64_IMAGES=$(printf '%s\n%s\n' "$RESOLVED" "$BINFMT_IMAGE")
 
 # Resolve a tagged or digest-pinned image reference to a SINGLE-PLATFORM
 # manifest digest reference for the requested arch. This is the
@@ -98,35 +108,56 @@ ARM64_IMAGES=$(printf '%s\n%s\n' "$RESOLVED" "$BINFMT_IMAGE")
 # instead of by tag stores ONLY the single-arch manifest locally, with
 # no manifest-list to walk during save.
 #
-# Returns the resolved single-platform reference on stdout, or exits
-# nonzero if the image isn't available for the requested arch (e.g.
-# openplc on arm64 — upstream tuttas/openplc_v3 is amd64-only).
+# Returns the resolved single-platform reference on stdout. Exit 1 means
+# the readable manifest genuinely has no linux/$arch image; exit 2 means
+# the manifest/platform could not be resolved and staging must abort.
 resolve_platform_ref() {
     local img="$1" arch="$2"
-    local digest
-    digest=$(docker buildx imagetools inspect "$img" \
-        --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
-        2>/dev/null | head -1)
-    if [ -n "$digest" ] && [ "$digest" != "<no value>" ]; then
+    local manifest_arches digest
+    if ! manifest_arches=$(docker buildx imagetools inspect "$img" \
+        --format '{{range .Manifest.Manifests}}{{if eq .Platform.OS "linux"}}{{.Platform.Architecture}} {{end}}{{end}}' \
+        2>/dev/null); then
+        return 2
+    fi
+    if [ -n "$manifest_arches" ]; then
+        case " $manifest_arches " in
+            *" $arch "*) ;;
+            *) return 1 ;;
+        esac
+        if ! digest=$(docker buildx imagetools inspect "$img" \
+            --format '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "'"$arch"'")}}{{.Digest}}{{end}}{{end}}' \
+            2>/dev/null); then
+            return 2
+        fi
+        [ -n "$digest" ] && [ "$digest" != "<no value>" ] || return 2
         local base="${img%@*}"      # strip @sha256:... if present
         local repo="${base%:*}"     # strip :tag
         printf '%s@%s\n' "$repo" "$digest"
         return 0
     fi
+
     # No manifest list — single-arch image. Verify the platform matches.
     local single_arch
-    single_arch=$(docker buildx imagetools inspect "$img" \
-        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null)
-    if [ -z "$single_arch" ]; then
-        single_arch=$(docker buildx imagetools inspect "$img" \
-            --format '{{.Image.architecture}}' 2>/dev/null)
+    if ! single_arch=$(docker buildx imagetools inspect "$img" \
+        --format '{{.Manifest.Config.Platform.Architecture}}' 2>/dev/null); then
+        return 2
     fi
+    if [ -z "$single_arch" ] || [ "$single_arch" = "<no value>" ]; then
+        if ! single_arch=$(docker buildx imagetools inspect "$img" \
+            --format '{{.Image.architecture}}' 2>/dev/null); then
+            return 2
+        fi
+    fi
+    [ -n "$single_arch" ] && [ "$single_arch" != "<no value>" ] || return 2
     if [ "$single_arch" = "$arch" ]; then
         printf '%s\n' "$img"
         return 0
     fi
     return 1
 }
+
+AMD64_TAGS=()
+ARM64_TAGS=()
 
 stage_arch() {
     local arch="$1" image_list="$2"
@@ -141,33 +172,39 @@ stage_arch() {
     # still try to pull from GHCR because it can't see the digest-only
     # local image.
     local count=0
-    local pulled_tags=""
+    local -a pulled_tags=()
     while IFS= read -r img; do
         [ -z "$img" ] && continue
         count=$((count + 1))
         say "[$count] resolve $arch  $img"
         local ref
-        if ! ref=$(resolve_platform_ref "$img" "$arch"); then
-            case "$img" in
-                *rangerdanger-openplc*)
-                    # Apple Silicon students need amd64 openplc - upstream
-                    # tuttas/openplc_v3 ships only amd64, and
-                    # docker-compose.release.yml pins
-                    # `platform: linux/amd64` on the openplc service so
-                    # Docker Desktop runs it under Rosetta 2 emulation.
-                    # Cross-include the amd64 image in the arm64 bundle
-                    # so the SSD is self-sufficient on either arch.
-                    ref=$(resolve_platform_ref "$img" "amd64") \
-                        || die "openplc: amd64 fallback resolution also failed"
-                    say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
-                    ;;
-                *)
-                    say "    skip — not available for linux/$arch"
-                    continue
-                    ;;
-            esac
-        elif [ "$ref" != "$img" ]; then
-            say "    -> $ref"
+        local resolve_status
+        if ref=$(resolve_platform_ref "$img" "$arch"); then
+            if [ "$ref" != "$img" ]; then
+                say "    -> $ref"
+            fi
+        else
+            resolve_status=$?
+            if [ "$resolve_status" -eq 1 ] \
+                && [ "$arch" = "arm64" ] \
+                && [[ "$img" == *rangerdanger-openplc* ]]; then
+                # Apple Silicon students need amd64 openplc - upstream
+                # tuttas/openplc_v3 ships only amd64. Cross-include it in
+                # the arm64 bundle so it can run under Rosetta on macOS or
+                # registered qemu emulation on arm64 Linux.
+                if ref=$(resolve_platform_ref "$img" "amd64"); then
+                    say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
+                else
+                    resolve_status=$?
+                    [ "$resolve_status" -eq 1 ] \
+                        && die "openplc manifest has no linux/amd64 image: $img"
+                    die "could not resolve the openplc linux/amd64 manifest: $img"
+                fi
+            elif [ "$resolve_status" -eq 1 ]; then
+                die "manifest for $img has no linux/$arch image; openplc is the only image allowed to cross-include another architecture."
+            else
+                die "could not resolve the manifest for $img on linux/$arch (registry, authentication, or manifest error)."
+            fi
         fi
         # Heads-up on the large images so a multi-minute pull doesn't look
         # like a hang (issue #81). The webtop desktop images (corp-ws,
@@ -194,21 +231,25 @@ stage_arch() {
             docker tag "$ref" "$target_tag" \
                 || die "docker tag $ref → $target_tag failed"
         fi
-        pulled_tags="$pulled_tags $target_tag"
+        pulled_tags+=("$target_tag")
     done <<< "$image_list"
 
     say "save $arch → $tarball"
-    # shellcheck disable=SC2086
-    docker save -o "$tarball" $pulled_tags \
+    docker save -o "$tarball" "${pulled_tags[@]}" \
         || die "docker save failed for $arch"
+    if [ "$arch" = "amd64" ]; then
+        AMD64_TAGS=("${pulled_tags[@]}")
+    else
+        ARM64_TAGS=("${pulled_tags[@]}")
+    fi
 
     local size
     size=$(du -h "$tarball" | awk '{print $1}')
     say "wrote $tarball ($size)"
 }
 
-stage_arch amd64 "$AMD64_IMAGES"
-stage_arch arm64 "$ARM64_IMAGES"
+stage_arch amd64 "$ALL_IMAGES"
+stage_arch arm64 "$(printf '%s\n%s\n' "$ALL_IMAGES" "$BINFMT_IMAGE")"
 
 banner "Stage repo archive → rangerdanger.tgz"
 # --prefix=rangerdanger/ so `tar xzf rangerdanger.tgz -C ~` creates
@@ -226,6 +267,67 @@ say "wrote $OUT/rangerdanger.tgz ($size)"
 # VERSION (latest) doesn't match the staged tarball's actual tag.
 echo "$VERSION" > "$OUT/.version"
 say "wrote $OUT/.version ($VERSION)"
+
+# docker save archives expose their RepoTags in manifest.json. Verify the
+# complete requested tag set, including the version marker, before the
+# bundle is reported as complete. Python is used only to parse Docker's
+# archive manifest; it never contacts Docker or the registry.
+verify_archive() {
+    local arch="$1"
+    shift
+    python3 - "$OUT/images-$arch.tar" "$OUT/.version" "$@" <<'PY'
+import json
+import sys
+import tarfile
+
+archive_path, version_path, *expected = sys.argv[1:]
+with open(version_path, encoding="utf-8") as version_file:
+    version = version_file.read().strip()
+if not version:
+    raise SystemExit(f"{version_path} is empty")
+
+try:
+    with tarfile.open(archive_path, "r:*") as archive:
+        member = archive.extractfile("manifest.json")
+        if member is None:
+            raise KeyError("manifest.json")
+        manifest = json.load(member)
+except (OSError, KeyError, tarfile.TarError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"cannot verify {archive_path}: invalid Docker save manifest: {exc}")
+
+actual = {
+    tag
+    for image in manifest
+    for tag in (image.get("RepoTags") or [])
+}
+missing = sorted(set(expected) - actual)
+first_party = sorted(
+    tag for tag in actual
+    if tag.startswith("ghcr.io/tonylturner/rangerdanger-")
+)
+wrong_version = sorted(
+    tag for tag in first_party
+    if tag.rpartition(":")[2] != version
+)
+if missing or wrong_version:
+    if missing:
+        print("missing saved image tags: " + ", ".join(missing), file=sys.stderr)
+    if wrong_version:
+        print(
+            f"first-party image tags do not match .version={version}: "
+            + ", ".join(wrong_version),
+            file=sys.stderr,
+        )
+    raise SystemExit(1)
+print(
+    f"verified {archive_path}: all {len(expected)} enumerated image tags are present; "
+    f"first-party tags match .version={version}"
+)
+PY
+}
+
+verify_archive amd64 "${AMD64_TAGS[@]}" || die "amd64 archive verification failed"
+verify_archive arm64 "${ARM64_TAGS[@]}" || die "arm64 archive verification failed"
 
 # Bundle the WSL2 kernel asset for Windows students on offline /
 # air-gapped laptops. setup.ps1 -FromTarballs looks here for
@@ -305,7 +407,11 @@ fi
 banner "Done"
 echo
 echo "  Output dir: $OUT"
-echo "  $(ls -lh "$OUT" | awk 'NR>1 {print "  " $9 " " $5}')"
+for file in "$OUT"/*; do
+    [ -f "$file" ] || continue
+    size=$(du -h "$file" | awk '{print $1}')
+    printf "  %-30s %s\n" "${file##*/}" "$size"
+done
 echo
 echo "  Total: $(du -sh "$OUT" | awk '{print $1}')"
 echo
