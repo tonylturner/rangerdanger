@@ -129,12 +129,36 @@ function Stop-IfRateLimited($img, $details) {
     Die "$registry rate-limited the request while inspecting $img. Wait for its limit to reset or authenticate to $registry with 'docker login $registry', then retry."
 }
 
-function Get-RemoteDigest($ref, [switch]$Required) {
+function Get-JsonField($object, $name) {
+    if ($null -eq $object) { return $null }
+    $property = $object.PSObject.Properties[$name]
+    if ($property) { return $property.Value }
+    return $null
+}
+
+function Stop-ManifestInspection($img, $details) {
+    $message = "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
+    if ($details) { $message += " Registry detail: $($details.Trim())" }
+    Die $message
+}
+
+function Stop-PlatformManifest($img, $details, [switch]$Optional, [switch]$NewVersion) {
+    Stop-IfRateLimited $img $details
+    if ($Optional) { return $null }
+    if ($NewVersion) {
+        $message = "new-version registry manifest could not be inspected for $img; this is not a platform-availability result."
+        if ($details) { $message += " Registry detail: $($details.Trim())" }
+        Die $message
+    }
+    Stop-ManifestInspection $img $details
+}
+
+function Get-PlatformManifest($img, [switch]$Optional, [switch]$NewVersion) {
     $errorFile = [System.IO.Path]::GetTempFileName()
     try {
-        $digestOutput = & {
+        $inspectionOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect --format '{{.Manifest.Digest}}' $ref 2> $errorFile
+            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
         }
         $inspectStatus = $LASTEXITCODE
         $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
@@ -142,25 +166,66 @@ function Get-RemoteDigest($ref, [switch]$Required) {
         Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
     }
     if ($inspectStatus -ne 0) {
-        Stop-IfRateLimited $ref $inspectError
-        if ($Required) {
-            $message = "new-version registry manifest could not be inspected for $ref; this is not a platform-availability result."
-            if ($inspectError) { $message += " Registry detail: $($inspectError.Trim())" }
-            Die $message
+        return (Stop-PlatformManifest $img $inspectError -Optional:$Optional -NewVersion:$NewVersion)
+    }
+    $json = ($inspectionOutput -join "`n").Trim()
+    if (-not $json) {
+        return (Stop-PlatformManifest $img "inspection returned no manifest JSON" -Optional:$Optional -NewVersion:$NewVersion)
+    }
+    try {
+        $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+    } catch {
+        return (Stop-PlatformManifest $img "invalid manifest JSON: $($_.Exception.Message)" -Optional:$Optional -NewVersion:$NewVersion)
+    }
+    $manifest = Get-JsonField $inspection 'Manifest'
+    if ($null -eq $manifest -or $manifest -isnot [pscustomobject]) {
+        return (Stop-PlatformManifest $img "inspection has no readable manifest" -Optional:$Optional -NewVersion:$NewVersion)
+    }
+
+    $rootDigest = Get-JsonField $manifest 'Digest'
+    if (-not $rootDigest -or $rootDigest -eq '<no value>') { $rootDigest = "" }
+    $refs = @{ amd64 = ""; arm64 = "" }
+    $manifestsProperty = $manifest.PSObject.Properties['Manifests']
+    if ($manifestsProperty -and $null -ne $manifestsProperty.Value) {
+        if ($manifestsProperty.Value -isnot [array]) {
+            return (Stop-PlatformManifest $img "manifest index has no readable manifests list" -Optional:$Optional -NewVersion:$NewVersion)
         }
-        return ""
+        foreach ($entry in $manifestsProperty.Value) {
+            $platform = Get-JsonField $entry 'Platform'
+            $operatingSystem = Get-JsonField $platform 'OS'
+            $architecture = Get-JsonField $platform 'Architecture'
+            if ($operatingSystem -ne 'linux' -or $architecture -notin @('amd64', 'arm64')) { continue }
+            $digest = Get-JsonField $entry 'Digest'
+            if (-not $digest -or $digest -eq '<no value>') {
+                return (Stop-PlatformManifest $img "Linux image manifest entry has no digest" -Optional:$Optional -NewVersion:$NewVersion)
+            }
+            if (-not $refs[$architecture]) {
+                $base = ($img -split '@', 2)[0]
+                $lastComponent = ($base -split '/')[-1]
+                if ($lastComponent.Contains(':')) {
+                    $base = $base.Substring(0, $base.LastIndexOf(':'))
+                }
+                $refs[$architecture] = "${base}@$digest"
+            }
+        }
+    } else {
+        $image = Get-JsonField $inspection 'Image'
+        $architecture = Get-JsonField $image 'Architecture'
+        $operatingSystem = Get-JsonField $image 'OS'
+        if (-not $architecture -or -not $operatingSystem) {
+            return (Stop-PlatformManifest $img "single-image manifest has no readable platform architecture or operating system" -Optional:$Optional -NewVersion:$NewVersion)
+        }
+        if ($operatingSystem -eq 'linux' -and $architecture -in @('amd64', 'arm64')) {
+            $refs[$architecture] = $img
+        }
     }
-    $digest = ($digestOutput -join '').Trim()
-    if ($digest -and $digest -ne '<no value>') { return $digest }
-    if ($Required) {
-        Die "new version image is missing from the registry or its manifest digest cannot be read: $ref"
-    }
-    return ""
+    return @{ Digest = $rootDigest; Refs = $refs }
 }
 
 Banner "Comparing $Since -> $New across $($candidate.Count) candidate image(s)"
 
 $changed       = New-Object System.Collections.Generic.List[string]
+$changedManifests = New-Object System.Collections.Generic.List[object]
 $changedSince  = New-Object System.Collections.Generic.List[string]
 $unchanged     = New-Object System.Collections.Generic.List[string]
 $unchangedSince = New-Object System.Collections.Generic.List[string]
@@ -173,36 +238,51 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
     $sinceImg = $sinceRef[$i]
     if (-not $newImg) { continue }
 
+    # Reuse this inspection's platform refs for preflight after comparison.
+    $newManifest = Get-PlatformManifest $newImg -NewVersion
+    $newDigest = $newManifest.Digest
+    if (-not $newDigest) {
+        Die "new version image is missing from the registry or its manifest digest cannot be read: $newImg"
+    }
+
     $short = ($newImg -replace '.*/','' -replace ':.*','')
 
     if ($includeSet -contains $short) {
         $forced.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
+        $changedManifests.Add($newManifest) | Out-Null
         $changedSince.Add($sinceImg) | Out-Null
         continue
     }
     if ($All) {
         $changed.Add($newImg) | Out-Null
+        $changedManifests.Add($newManifest) | Out-Null
         $changedSince.Add($sinceImg) | Out-Null
         continue
     }
 
-    $newDigest   = Get-RemoteDigest $newImg -Required
-    $sinceDigest = Get-RemoteDigest $sinceImg
+    if ($sinceImg -ceq $newImg) {
+        $sinceDigest = $newDigest
+    } else {
+        $sinceManifest = Get-PlatformManifest $sinceImg -Optional
+        $sinceDigest = if ($null -eq $sinceManifest) { "" } else { $sinceManifest.Digest }
+    }
 
     if (-not $sinceDigest) {
         Warn "  ${short}: could not read $sinceImg (not pulled?) -- including in delta to be safe"
         $missingSince.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
+        $changedManifests.Add($newManifest) | Out-Null
         $changedSince.Add($sinceImg) | Out-Null
         continue
     }
-    if ($newDigest -eq $sinceDigest) {
+    if ($newDigest -ceq $sinceDigest) {
         $unchanged.Add($short) | Out-Null
         $unchangedSince.Add($sinceImg) | Out-Null
         $unchangedNew.Add($newImg) | Out-Null
     } else {
         $changed.Add($newImg) | Out-Null
+        $changedManifests.Add($newManifest) | Out-Null
         $changedSince.Add($sinceImg) | Out-Null
     }
 }
@@ -228,88 +308,10 @@ if ($changed.Count -eq 0) {
     Warn "No image changes detected. Use -All or -Include to force, or just ship a new rangerdanger.tgz alone if only repo content changed."
 }
 
-function Get-JsonField($object, $name) {
-    if ($null -eq $object) { return $null }
-    $property = $object.PSObject.Properties[$name]
-    if ($property) { return $property.Value }
-    return $null
-}
-
-function Stop-ManifestInspection($img, $details) {
-    Stop-IfRateLimited $img $details
-    $message = "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
-    if ($details) { $message += " Registry detail: $($details.Trim())" }
-    Die $message
-}
-
-function Get-PlatformRefs($img) {
-    $errorFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $inspectionOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
-        }
-        $inspectStatus = $LASTEXITCODE
-        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
-    } finally {
-        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
-    }
-    if ($inspectStatus -ne 0) { Stop-ManifestInspection $img $inspectError }
-
-    $json = ($inspectionOutput -join "`n").Trim()
-    if (-not $json) { Stop-ManifestInspection $img "inspection returned no manifest JSON" }
-    try {
-        $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
-    } catch {
-        Stop-ManifestInspection $img "invalid manifest JSON: $($_.Exception.Message)"
-    }
-    $manifest = Get-JsonField $inspection 'Manifest'
-    if ($null -eq $manifest -or $manifest -isnot [pscustomobject]) {
-        Stop-ManifestInspection $img "inspection has no readable manifest"
-    }
-
-    $refs = @{ amd64 = ""; arm64 = "" }
-    $manifestsProperty = $manifest.PSObject.Properties['Manifests']
-    if ($manifestsProperty -and $null -ne $manifestsProperty.Value) {
-        if ($manifestsProperty.Value -isnot [array]) {
-            Stop-ManifestInspection $img "manifest index has no readable manifests list"
-        }
-        foreach ($entry in $manifestsProperty.Value) {
-            $platform = Get-JsonField $entry 'Platform'
-            $operatingSystem = Get-JsonField $platform 'OS'
-            $architecture = Get-JsonField $platform 'Architecture'
-            if ($operatingSystem -ne 'linux' -or $architecture -notin @('amd64', 'arm64')) { continue }
-            $digest = Get-JsonField $entry 'Digest'
-            if (-not $digest -or $digest -eq '<no value>') {
-                Stop-ManifestInspection $img "Linux image manifest entry has no digest"
-            }
-            if (-not $refs[$architecture]) {
-                $base = ($img -split '@', 2)[0]
-                $lastComponent = ($base -split '/')[-1]
-                if ($lastComponent.Contains(':')) {
-                    $base = $base.Substring(0, $base.LastIndexOf(':'))
-                }
-                $refs[$architecture] = "${base}@$digest"
-            }
-        }
-    } else {
-        $image = Get-JsonField $inspection 'Image'
-        $architecture = Get-JsonField $image 'Architecture'
-        $operatingSystem = Get-JsonField $image 'OS'
-        if (-not $architecture -or -not $operatingSystem) {
-            Stop-ManifestInspection $img "single-image manifest has no readable platform architecture or operating system"
-        }
-        if ($operatingSystem -eq 'linux' -and $architecture -in @('amd64', 'arm64')) {
-            $refs[$architecture] = $img
-        }
-    }
-    return $refs
-}
-
 $preflightRefs = @{}
-function Add-PreflightImage($img, [switch]$Arm64Only) {
+function Add-PreflightImage($img, $manifest, [switch]$Arm64Only) {
     Say "preflight $img"
-    $refs = Get-PlatformRefs $img
+    $refs = $manifest.Refs
     $amd64Ref = $refs['amd64']
     $arm64Ref = $refs['arm64']
     if (-not $Arm64Only -and -not $amd64Ref) {
@@ -385,8 +387,11 @@ function Invoke-StageArch($arch) {
 }
 
 if ($changed.Count -gt 0) {
-    foreach ($img in $changed) { Add-PreflightImage $img }
-    Add-PreflightImage $BINFMT_IMAGE -Arm64Only
+    for ($i = 0; $i -lt $changed.Count; $i++) {
+        Add-PreflightImage $changed[$i] $changedManifests[$i]
+    }
+    $binfmtManifest = Get-PlatformManifest $BINFMT_IMAGE
+    Add-PreflightImage $BINFMT_IMAGE $binfmtManifest -Arm64Only
     Invoke-StageArch 'amd64'
     Invoke-StageArch 'arm64'
 }
