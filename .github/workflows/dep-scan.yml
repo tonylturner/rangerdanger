@@ -57,6 +57,7 @@ jobs:
           - rangerdanger-eng-ws
           - rangerdanger-corp-ws
           - rangerdanger-openplc
+          - rangerdanger-fuxa-hmi
           - rangerdanger-rtac-sim
           - rangerdanger-relay-sim
           - rangerdanger-recloser-sim

@@ -141,11 +141,10 @@ them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
   referenced by absolute IP inside lab YAML commands.
 - The `firewall` container (containd) is multi-homed as `.2` on every
   zone and is the only path between zones. The Go sims (via their
-  `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump` and
-  `eng_workstation` run `set-gateway.sh` at start to default-route
-  through it. `fuxa_hmi` and `openplc` receive `GATEWAY` as an env var
-  but do not run the script; treat them as known exceptions, not a
-  pattern to copy.
+  `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump`,
+  `eng_workstation`, `openplc`, and `fuxa_hmi` run `set-gateway.sh` at
+  start to default-route through it, using the service's `GATEWAY`
+  environment variable.
 - `rtac_sim` is intentionally four-homed. `scripts/rtac-harden.sh` plus
   the compose `sysctls` disable forwarding, drop FORWARD, and replace
   the connected field route with one via the firewall. The hardened

@@ -29,6 +29,8 @@ services:
     pull_policy: never
   eng_workstation:
     pull_policy: never
+  fuxa_hmi:
+    pull_policy: never
   rtac_sim:
     pull_policy: never
   openplc:

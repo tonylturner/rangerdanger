@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The HMI's cross-zone traffic now goes through the firewall.**
+  `fuxa_hmi` declared `GATEWAY=10.30.30.2` like every other lab
+  container, but the upstream FUXA image ships no routing tool, so the
+  route was never installed: the HMI's default route was the management
+  bridge, and anything it sent outside OT Operations left the lab
+  without passing containd. `rangerdanger-fuxa-hmi` is now a first-party
+  image — the same pinned upstream digest plus `iproute2` and an
+  entrypoint that installs the declared gateway before FUXA starts — so
+  the HMI obeys the same one routing mechanism as the rest of the lab.
+  `firewall-smoke` now proves it with a cross-zone row (HMI to a field
+  relay over Modbus: allowed under the weak policy, denied under the
+  improved one). This publishes a new `rangerdanger-fuxa-hmi` package,
+  so offline SSD bundles must be re-staged.
+
 ## [v0.1.32] - 2026-10-05
 
 A workshop-readiness release, cut after a full macOS deployment test
@@ -35,7 +51,8 @@ must be re-staged.
 - **Dev compose firewall no longer runs privileged.** `docker-compose.yml`
   dropped `privileged: true` and `seccomp=unconfined` from the containd
   service, a v0.1.13 workaround for the nflog bind failure on macOS
-  Docker Desktop that containd v0.1.30 fixed. Dev now grants the same
+  Docker Desktop that the containd build on `:latest` fixed. Dev now
+  grants the same
   NET_ADMIN/NET_RAW/SYS_TIME set as `docker-compose.release.yml`, so the
   stack developers test is the one students run.
 - **Install docs describe the real preflight.** The README, quickstart
@@ -129,9 +146,10 @@ modules, adds backend and services unit coverage, moves the frontend off
 the deprecated `xterm` packages and onto recharts 3, and stops the Smoke
 workflow flaking on firewall config commits. The flake was root-caused
 to a containd bug (the nflog log consumer lost a re-bind race with its
-predecessor on every config commit), fixed upstream in containd v0.1.30;
-the compose files' `:latest` pin now resolves to that build, verified in
-the lab with 25 rapid weak/improved applies and zero consumer failures.
+predecessor on every config commit), fixed upstream in the containd
+build the compose files track on `:latest` (containd publishes no tag for
+it; its newest published tag is 0.1.29), verified in the lab with 25
+rapid weak/improved applies and zero consumer failures.
 
 ### Changed
 
@@ -166,7 +184,8 @@ the lab with 25 rapid weak/improved applies and zero consumer failures.
   policy apply (as `firewall-smoke.sh` and `lab-commands-smoke.sh`
   already did) and, when the DENY event never lands, reports whether
   containd logged `service.nflog.unavailable` instead of blaming the
-  probe. The underlying consumer loss is fixed in containd v0.1.30.
+  probe. The underlying consumer loss is fixed in the containd build
+  tracked on `:latest`.
 
 ### Tests
 

@@ -195,7 +195,7 @@ $baseRefs = @($composeImages |
     Where-Object { $_ -match ':' -and $_ -notlike "ghcr.io/tonylturner/*" -and $_ -notmatch '^rangerdanger-' } |
     ForEach-Object { $_ -replace '@sha256:[0-9a-f]+', '' } | Sort-Object -Unique)
 if ($baseRefs.Count -eq 0) {
-    $baseRefs = @('alpine:3.21', 'nginx:1.27-alpine', 'frangoteam/fuxa:latest', 'linuxserver/webtop:ubuntu-mate')
+    $baseRefs = @('alpine:3.21', 'nginx:1.27-alpine', 'linuxserver/webtop:ubuntu-mate')
 }
 $rdBaseImages = @($baseRefs | Where-Object { $presentImages -contains $_ } | Sort-Object -Unique)
 

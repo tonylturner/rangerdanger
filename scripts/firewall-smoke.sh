@@ -180,6 +180,7 @@ rangerdanger-vendor-jump|10.30.30.20|tcp|443|allow|allow|vendor->rtac HTTPS mgmt
 rangerdanger-vendor-jump|10.30.30.20|tcp|502|allow|deny|vendor->rtac Modbus (improved blocks)
 rangerdanger-eng-ws|10.30.30.30|tcp|502|allow|deny|eng->openplc Modbus (weak wide)
 rangerdanger-fuxa-hmi|10.30.30.30|tcp|502|allow|allow|fuxa(intra-zone OT)->openplc Modbus
+rangerdanger-fuxa-hmi|10.40.40.20|tcp|502|allow|deny|fuxa->relay Modbus (cross-zone OT->field)
 rangerdanger-historian-sim|10.30.30.30|tcp|502|allow|allow|historian(intra-zone OT)->openplc Modbus
 rangerdanger-rtac-sim|10.30.30.30|tcp|502|allow|allow|rtac->openplc Modbus (intra-zone)
 rangerdanger-rtac-sim|10.30.30.30|tcp|20000|allow|allow|rtac->openplc DNP3 (intra-zone)
@@ -300,14 +301,15 @@ done
 [ "$fail" = "0" ] || { note "summary"; echo "  preflight failed; aborting"; exit 1; }
 
 # Wait for cross-zone routing to actually be ready at both ends.
-# FUXA and historian appear only in intra-OT rows, which need no
-# default route; the third-party FUXA image ships no routing tool.
+# FUXA now has a cross-zone probe and installs its own default route;
+# historian remains intra-OT only and needs no gateway preflight.
 note "wait for cross-zone routing"
 declare -a CROSS_ZONE_GATEWAYS=(
   "rangerdanger-kali|10.10.10.2"
   "rangerdanger-eng-ws|10.20.20.2"
   "rangerdanger-vendor-jump|10.20.20.2"
   "rangerdanger-rtac-sim|10.30.30.2"
+  "rangerdanger-fuxa-hmi|10.30.30.2"
   "rangerdanger-openplc|10.30.30.2"
   "rangerdanger-relay-sim|10.40.40.2"
 )

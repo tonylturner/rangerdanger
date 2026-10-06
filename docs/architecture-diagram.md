@@ -56,7 +56,7 @@ flowchart TB
     end
 
     subgraph OT["OT layer"]
-        fuxa_hmi["fuxa_hmi<br/>frangoteam/fuxa@sha256"]
+        fuxa_hmi["fuxa_hmi<br/>build · Dockerfile.fuxa-hmi"]
         hmi_poller["hmi_poller<br/>alpine:3.21"]
         openplc["openplc<br/>build · Dockerfile.openplc"]
         rtac_sim["rtac_sim<br/>build · services/Dockerfile :rtac-sim"]
@@ -106,22 +106,23 @@ flowchart TB
     regulator_sim --> firewall
     capbank_sim --> firewall
 
-    class backend,frontend,corp_ws,vendor_jump,eng_workstation,kali,openplc,rtac_sim,historian_sim,gps_sim,relay_sim,recloser_sim,regulator_sim,capbank_sim,opendss_sim built
-    class firewall,fuxa_hmi,hmi_poller,proxy pulled
+    class backend,frontend,corp_ws,vendor_jump,eng_workstation,kali,fuxa_hmi,openplc,rtac_sim,historian_sim,gps_sim,relay_sim,recloser_sim,regulator_sim,capbank_sim,opendss_sim built
+    class firewall,hmi_poller,proxy pulled
     class proxy,backend,frontend platform
 ```
 
 </details>
 
-**15 first-party images** built from this repo (one Dockerfile each
-for backend, frontend, kali, vendor-jump, eng-ws, corp-ws, openplc; one
+**16 first-party images** built from this repo (one Dockerfile each
+for backend, frontend, kali, vendor-jump, eng-ws, corp-ws, openplc, fuxa-hmi; one
 multi-target `services/Dockerfile` producing 7 sim images; one
 standalone `services/opendss-sim/Dockerfile` for the Python physics
 solver).
 
 **5 upstream images** - `containd:latest` (the NGFW), `nginx:1.27-alpine`
 (reverse proxy), `linuxserver/webtop` (the corp-ws image's digest-pinned
-base), `frangoteam/fuxa` (HMI, digest pinned), and `alpine:3.21`
+base), `frangoteam/fuxa` (digest-pinned base for the first-party HMI image),
+and `alpine:3.21`
 (hmi_poller sidecar).
 
 ---
@@ -323,7 +324,7 @@ posture relies on this.
 
 For the release flow (CI tags → buildx matrix → GHCR → `setup.sh`
 consumes via `docker compose pull`), see
-[`RELEASING.md`](../RELEASING.md). The 14 first-party images and 5
+[`RELEASING.md`](../RELEASING.md). The 16 first-party images and 5
 upstream pulls listed above are the canonical inventory; `release.yml`
 builds them on every `v*` tag push for `linux/amd64` + `linux/arm64`
 (except `openplc`, which is amd64-only - upstream `tuttas/openplc_v3`
