@@ -10,7 +10,9 @@
 #   ./stage-ssd-delta.sh <output-dir> <since-version> <new-version> [options]
 #
 # Options:
-#   --include image1,image2   force-include images even if their digest matches
+#   --include image1,image2   force-include images even if their digest matches.
+#                             Either form works (gps-sim or rangerdanger-gps-sim);
+#                             an entry that matches no candidate is an error.
 #   --all                     ignore digest comparison; save every image at <new-version>
 #   --include-upstream        also delta-check non-rangerdanger upstream images
 #                             (containd/nginx/fuxa/webtop/alpine — usually pinned by digest already)
@@ -71,7 +73,9 @@ COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
 
 # Cross-included into the arm64 delta (see stage_arch): the qemu-x86_64
 # binfmt helper that runs amd64-only OpenPLC on arm64 Linux.
-BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
+# Pinned; keep in sync with setup.sh, scripts/persist-emulation.sh,
+# stage-ssd.sh, stage-ssd.ps1, stage-ssd-delta.sh and stage-ssd-delta.ps1.
+BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"
 
 if [ -t 1 ]; then
     GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
@@ -118,7 +122,13 @@ resolve_version() {
 SINCE_REF=$(resolve_version "$CANDIDATE_IMAGES" "$SINCE")
 NEW_REF=$(resolve_version "$CANDIDATE_IMAGES" "$NEW")
 
-INCLUDE_SET=" ${INCLUDE_LIST//,/ } "
+# --include accepts either form a student-facing doc would use:
+# "gps-sim" or "rangerdanger-gps-sim". Normalise both sides to the short
+# form so the documented examples actually match.
+INCLUDE_SET=" "
+for include_name in ${INCLUDE_LIST//,/ }; do
+    INCLUDE_SET="$INCLUDE_SET${include_name#rangerdanger-} "
+done
 
 # Inspect each versioned image once and parse both Linux architectures
 # from the same JSON response. For indexes .Manifest contains the platform
@@ -282,7 +292,7 @@ for i in "${!NEW_ARR[@]}"; do
 
     # Match against include list (compare against short image name).
     short=$(echo "$new" | sed -E 's|.*/||; s|:.*||')
-    if [[ "$INCLUDE_SET" == *" $short "* ]]; then
+    if [[ "$INCLUDE_SET" == *" ${short#rangerdanger-} "* ]]; then
         FORCED+=("$short")
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
@@ -341,6 +351,15 @@ else
     done
 fi
 echo
+if [ -n "$INCLUDE_LIST" ]; then
+    for include_name in ${INCLUDE_LIST//,/ }; do
+        matched=0
+        for f in ${FORCED[@]+"${FORCED[@]}"}; do
+            [ "${f#rangerdanger-}" = "${include_name#rangerdanger-}" ] && matched=1
+        done
+        [ "$matched" -eq 1 ] || die "--include $include_name matched no candidate image. Candidates are the first-party images in $COMPOSE_FILE (short or rangerdanger- form); upstream images need --include-upstream."
+    done
+fi
 [ "${#FORCED[@]}" -gt 0 ]        && say "  Forced via --include: ${FORCED[*]}"
 [ "${#MISSING_SINCE[@]}" -gt 0 ] && warn "  Couldn't read since digests for: ${MISSING_SINCE[*]}"
 say "  Unchanged (skipped from delta):"
@@ -517,8 +536,14 @@ if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
     say "Downloading $KERNEL_URL"
     curl -fsSL "$KERNEL_URL" -o "$OUT/rangerdanger-wsl2-kernel" \
         || die "kernel download failed mid-stream - refusing to write a partial bundle. Re-run."
-    curl -fsSL "$KERNEL_SHA_URL" -o "$OUT/rangerdanger-wsl2-kernel.sha256" \
-        || warn "kernel sha256 download failed; on-install verification will be skipped."
+    # One retry, and report why it failed: without this file setup.ps1
+    # installs the kernel with no checksum to verify it against.
+    if ! sha_error=$(curl -fsSL --retry 2 --retry-delay 2 "$KERNEL_SHA_URL" \
+        -o "$OUT/rangerdanger-wsl2-kernel.sha256" 2>&1); then
+        rm -f "$OUT/rangerdanger-wsl2-kernel.sha256"
+        warn "kernel sha256 download failed; on-install verification will be skipped."
+        warn "  $KERNEL_SHA_URL: ${sha_error:-no error detail from curl}"
+    fi
     kernel_size=$(du -h "$OUT/rangerdanger-wsl2-kernel" | awk '{print $1}')
     say "wrote $OUT/rangerdanger-wsl2-kernel ($kernel_size)"
     KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` -- custom WSL2 kernel for Windows ICS DPI labs (\`setup.ps1 -FromTarballs\` picks it up automatically)."
@@ -638,7 +663,7 @@ Staged $(date -u +%FT%TZ) for upgrade from \`$SINCE\` -> \`$NEW\`.
 |---|---|
 $APPLY_TABLE
 $KERNEL_README_ROW
-$([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" && printf -- '- %s\n' "${UNCHANGED[@]}")
+$([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" && echo "" && printf -- '- %s\n' "${UNCHANGED[@]}")
 
 ## Apply
 
@@ -715,10 +740,10 @@ docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
-are included, \`delta-arm64.tar\` also ships \`tonistiigi/binfmt\`; if
+are included, \`delta-arm64.tar\` also ships \`$BINFMT_IMAGE\`; if
 OpenPLC isn't running after the restart (\`docker ps | grep openplc\`),
 register it once with
-\`docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64\`.
+\`docker run --privileged --rm $BINFMT_IMAGE --install amd64\`.
 (setup.sh does this automatically on a fresh install; the registration
 does not persist across a host reboot.) A repo-only delta has no image
 archives, so it cannot supply the binfmt image. Make sure that image is

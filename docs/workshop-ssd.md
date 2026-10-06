@@ -250,7 +250,9 @@ release-to-release delta is close to a full bundle:
 `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote 8.1 GB.
 `--include <image>` is additive: it force-adds a named image whose digest
 compared as unchanged. It does not exclude changed images or make a delta
-smaller; a delta is small only when few images differ.
+smaller; a delta is small only when few images differ. Either name form
+works (`gps-sim` or `rangerdanger-gps-sim`), and an entry that matches no
+candidate image stops the run rather than being dropped silently.
 
 ### Student-side delta apply
 

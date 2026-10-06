@@ -85,7 +85,9 @@ done <<< "$ALL_IMAGES"
 # the SSD, setup.sh's auto-register step has nothing to pull on an
 # air-gapped arm64 Linux laptop and openplc won't start. amd64 hosts run
 # openplc natively and never need it, so it stays out of images-amd64.tar.
-BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup.sh
+# Pinned; keep in sync with setup.sh, scripts/persist-emulation.sh,
+# stage-ssd.sh, stage-ssd.ps1, stage-ssd-delta.sh and stage-ssd-delta.ps1.
+BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"
 
 # Inspect once and parse both Linux architectures from the same JSON
 # response. For indexes .Manifest contains the platform descriptors; for
@@ -434,8 +436,14 @@ if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
     say "Downloading $KERNEL_URL"
     curl -fsSL "$KERNEL_URL" -o "$OUT/rangerdanger-wsl2-kernel" \
         || die "kernel download failed mid-stream — refusing to write a partial bundle. Re-run."
-    curl -fsSL "$KERNEL_SHA_URL" -o "$OUT/rangerdanger-wsl2-kernel.sha256" \
-        || warn "kernel sha256 download failed; on-install verification will be skipped."
+    # One retry, and report why it failed: without this file setup.ps1
+    # installs the kernel with no checksum to verify it against.
+    if ! sha_error=$(curl -fsSL --retry 2 --retry-delay 2 "$KERNEL_SHA_URL" \
+        -o "$OUT/rangerdanger-wsl2-kernel.sha256" 2>&1); then
+        rm -f "$OUT/rangerdanger-wsl2-kernel.sha256"
+        warn "kernel sha256 download failed; on-install verification will be skipped."
+        warn "  $KERNEL_SHA_URL: ${sha_error:-no error detail from curl}"
+    fi
     kernel_size=$(du -h "$OUT/rangerdanger-wsl2-kernel" | awk '{print $1}')
     say "wrote $OUT/rangerdanger-wsl2-kernel ($kernel_size)"
     KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` — custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
