@@ -224,6 +224,14 @@ class PlannerFixture(unittest.TestCase):
 
 
 class ReleaseImagePlanTests(PlannerFixture):
+    def _github_output_values(self, plan: dict[str, object]) -> dict[str, str]:
+        output_path = Path(self.temp.name) / "github-output"
+        release_image_plan._emit_github_output(plan, output_path)
+        return dict(
+            line.split("=", 1)
+            for line in output_path.read_text(encoding="utf-8").splitlines()
+        )
+
     def test_docs_change_promotes_15_and_always_builds_backend(self) -> None:
         commit = self._change_commit("README.md", "documentation only\n")
         plan = self._plan(commit=commit)
@@ -531,14 +539,39 @@ class ReleaseImagePlanTests(PlannerFixture):
         self.assertEqual(release_image_plan.planned_tags("v0.1.34-rc.1"),
                          ["v0.1.34-rc.1"])
 
+    def test_publish_matrix_excludes_frontend_while_plan_keeps_all_images(self) -> None:
+        plan = self._plan(record_path=Path(self.temp.name) / "no-record.json")
+        values = self._github_output_values(plan)
+        matrix = json.loads(values["matrix"])
+        plan_json = json.loads(json.dumps(plan))
+        inventory_names = [image["image"] for image in self.inventory["images"]]
+
+        self.assertEqual(
+            [image["image"] for image in plan_json["images"]],
+            inventory_names,
+        )
+        self.assertEqual(
+            [image["image"] for image in matrix["include"]],
+            [name for name in inventory_names if name != "rangerdanger-frontend"],
+        )
+
+    def test_publish_matrix_platforms_are_inventory_lists(self) -> None:
+        plan = self._plan(record_path=Path(self.temp.name) / "no-record.json")
+        values = self._github_output_values(plan)
+        matrix = json.loads(values["matrix"])
+        inventory = {image["image"]: image for image in self.inventory["images"]}
+
+        for entry in matrix["include"]:
+            with self.subTest(image=entry["image"]):
+                self.assertIsInstance(entry["platforms"], list)
+                self.assertEqual(
+                    entry["platforms"],
+                    inventory[entry["image"]]["platforms"],
+                )
+
     def test_github_output_matrix_has_only_the_frozen_publish_fields(self) -> None:
         plan = self._plan(record_path=Path(self.temp.name) / "no-record.json")
-        output_path = Path(self.temp.name) / "github-output"
-        release_image_plan._emit_github_output(plan, output_path)
-        values = dict(
-            line.split("=", 1)
-            for line in output_path.read_text(encoding="utf-8").splitlines()
-        )
+        values = self._github_output_values(plan)
         matrix = json.loads(values["matrix"])
         self.assertEqual(
             set(matrix["include"][0]),
