@@ -117,9 +117,11 @@ jobs:
       - name: Compute build metadata
         id: meta
         run: |
-          echo "version=${{ steps.tag.outputs.name }}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          echo "date=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=${{ steps.tag.outputs.name }}"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(date -u +%FT%TZ)"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v4
 
@@ -131,6 +133,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute artifact build labels
+        id: artifact-labels
+        env:
+          IMAGE_TITLE: ${{ matrix.image }}
+          SOURCE_URL: https://github.com/${{ github.repository }}
+        run: |
+          build_revision="$(git rev-parse HEAD)"
+          build_created="$(date -u +%FT%TZ)"
+          {
+            echo "build_labels<<EOF"
+            printf 'org.opencontainers.image.title=%s\n' "$IMAGE_TITLE"
+            printf 'org.opencontainers.image.source=%s\n' "$SOURCE_URL"
+            printf 'org.opencontainers.image.licenses=Apache-2.0\n'
+            printf 'org.opencontainers.image.revision=%s\n' "$build_revision"
+            printf 'org.opencontainers.image.created=%s\n' "$build_created"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
       - name: Image metadata + tag plan
         id: docker-meta
         uses: docker/metadata-action@v6
@@ -139,12 +159,6 @@ jobs:
           tags: |
             type=raw,value=${{ steps.tag.outputs.name }}
             type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.name, '-') }}
-          labels: |
-            org.opencontainers.image.title=${{ matrix.image }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.tag.outputs.name }}
-            org.opencontainers.image.revision=${{ steps.meta.outputs.commit }}
-            org.opencontainers.image.licenses=Apache-2.0
 
       # Three-attempt push chain. GHCR occasionally returns transient
       # 5xx during layer uploads when many parallel matrix jobs push
@@ -162,7 +176,7 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
-          labels: ${{ steps.docker-meta.outputs.labels }}
+          labels: ${{ steps.artifact-labels.outputs.build_labels }}
           # Build args are consumed by Dockerfile.backend; other
           # Dockerfiles ignore unknown ARGs without erroring.
           build-args: |
@@ -188,7 +202,7 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
-          labels: ${{ steps.docker-meta.outputs.labels }}
+          labels: ${{ steps.artifact-labels.outputs.build_labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -210,7 +224,7 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
-          labels: ${{ steps.docker-meta.outputs.labels }}
+          labels: ${{ steps.artifact-labels.outputs.build_labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -254,9 +268,11 @@ jobs:
       - name: Compute build metadata
         id: meta
         run: |
-          echo "version=${{ steps.tag.outputs.name }}" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          echo "date=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=${{ steps.tag.outputs.name }}"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(date -u +%FT%TZ)"
+          } >> "$GITHUB_OUTPUT"
           platform=${{ matrix.platform }}
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
@@ -268,17 +284,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Image labels
-        id: docker-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
-          labels: |
-            org.opencontainers.image.title=rangerdanger-frontend
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.tag.outputs.name }}
-            org.opencontainers.image.revision=${{ steps.meta.outputs.commit }}
-            org.opencontainers.image.licenses=Apache-2.0
+      - name: Compute artifact build labels
+        id: artifact-labels
+        env:
+          IMAGE_TITLE: rangerdanger-frontend
+          SOURCE_URL: https://github.com/${{ github.repository }}
+        run: |
+          build_revision="$(git rev-parse HEAD)"
+          build_created="$(date -u +%FT%TZ)"
+          {
+            echo "build_labels<<EOF"
+            printf 'org.opencontainers.image.title=%s\n' "$IMAGE_TITLE"
+            printf 'org.opencontainers.image.source=%s\n' "$SOURCE_URL"
+            printf 'org.opencontainers.image.licenses=Apache-2.0\n'
+            printf 'org.opencontainers.image.revision=%s\n' "$build_revision"
+            printf 'org.opencontainers.image.created=%s\n' "$build_created"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push by digest
         id: build
@@ -287,7 +309,7 @@ jobs:
           context: .
           file: Dockerfile.frontend
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.docker-meta.outputs.labels }}
+          labels: ${{ steps.artifact-labels.outputs.build_labels }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}

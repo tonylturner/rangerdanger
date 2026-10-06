@@ -56,14 +56,36 @@ The `release.yml` workflow takes over from there. It triggers on any
    per-arch jobs)
    (`linux/amd64` + `linux/arm64`, except `openplc` which is
    amd64-only - upstream `tuttas/openplc_v3` is amd64-only).
-2. Injects `VERSION=vX.Y.Z`, `COMMIT=<short sha>`, `DATE=<utc rfc3339>`
-   via `--build-arg` (consumed by `Dockerfile.backend`'s ldflags).
-3. Pushes each image to `ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`.
+2. Writes an explicit artifact-build OCI label whitelist on each new
+   image: title, source, license, the full checked-out source revision,
+   and the UTC time that build's labels were generated. Retries reuse
+   the same labels; each native frontend architecture job records its
+   own build time. These labels describe when and from what revision an
+   artifact was built, not which release later selects it. The workflow
+   does not set `org.opencontainers.image.version`.
+3. Injects `VERSION=vX.Y.Z`, `COMMIT=<short sha>`, `DATE=<utc rfc3339>`
+   via `--build-arg` (consumed by `Dockerfile.backend`'s ldflags and
+   reported by `/api/build`).
+4. Pushes each image to `ghcr.io/tonylturner/rangerdanger-<svc>:vX.Y.Z`.
    Pre-release tags (anything containing `-`, e.g. `v0.0.1-alpha`)
    do **not** retag `:latest`, so an alpha can never accidentally
    replace the stable `:latest` pointer.
-4. Caches build layers per-image via GHA cache for faster subsequent
+5. Caches build layers per-image via GHA cache for faster subsequent
    runs.
+
+Assembly identity remains the GitHub release/tag, the version selected
+through `.env` (and recorded in an SSD bundle's `.version`), and the
+backend's `/api/build` response. It is separate from an image's original
+artifact-build labels.
+
+The planned `release-images.json` GitHub release asset will record a
+schema version, the assembly tag and full commit, then map each image
+repository to its exact root digest, platform inventory, build-or-reuse
+decision, and original artifact build revision/time (and original
+release when known). Future input fingerprints may be recorded there as
+well. This defines a future release-to-artifact contract; the workflow
+does **not** generate or consume this file yet. It still builds every
+image and performs no conditional build or promotion.
 
 ## docker-compose.release.yml
 
