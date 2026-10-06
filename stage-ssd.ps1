@@ -56,6 +56,9 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
+if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
+    Die "python3 is required to verify the saved Docker archive manifests. Install Python 3 and ensure python3 is on PATH."
+}
 
 # --- Enumerate images from compose --------------------------------------
 $hadComposeVersion = Test-Path Env:VERSION
@@ -268,6 +271,11 @@ function Invoke-StageArch($arch) {
     Say "save $arch -> $tarball"
     & docker save -o $tarball @pulledTags
     if ($LASTEXITCODE -ne 0) { Die "docker save failed for $arch" }
+    if ($arch -eq 'amd64') {
+        $script:AMD64_TAGS = @($pulledTags)
+    } else {
+        $script:ARM64_TAGS = @($pulledTags)
+    }
 
     $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
     Say "wrote $tarball (${sizeMB} MB)"
@@ -283,7 +291,6 @@ $OutDir = (Resolve-Path $OutDir).Path
 
 Say "Output:  $OutDir"
 Say "Version: $Version"
-
 Invoke-StageArch 'amd64'
 Invoke-StageArch 'arm64'
 
@@ -304,6 +311,81 @@ Say "wrote $tgzPath (${tgzSizeMB} MB)"
 $verPath = Join-Path $OutDir ".version"
 Set-Content -Path $verPath -Value $Version -NoNewline -Encoding ascii
 Say "wrote $verPath ($Version)"
+
+# docker save archives expose their RepoTags in manifest.json. Verify the
+# complete requested tag set, including the version marker, before the
+# bundle is reported as complete. Python parses the Docker archive only;
+# it does not contact Docker or the registry.
+$verifyArchiveScript = @'
+import json
+import sys
+import tarfile
+
+archive_path, version_path, *expected = sys.argv[1:]
+with open(version_path, encoding="utf-8") as version_file:
+    version = version_file.read().strip()
+if not version:
+    raise SystemExit(f"{version_path} is empty")
+
+try:
+    with tarfile.open(archive_path, "r:*") as archive:
+        member = archive.extractfile("manifest.json")
+        if member is None:
+            raise KeyError("manifest.json")
+        manifest = json.load(member)
+except (OSError, KeyError, tarfile.TarError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"cannot verify {archive_path}: invalid Docker save manifest: {exc}")
+
+actual = {
+    tag
+    for image in manifest
+    for tag in (image.get("RepoTags") or [])
+}
+missing = sorted(set(expected) - actual)
+first_party = sorted(
+    tag for tag in actual
+    if tag.startswith("ghcr.io/tonylturner/rangerdanger-")
+)
+wrong_version = sorted(
+    tag for tag in first_party
+    if tag.rpartition(":")[2] != version
+)
+if missing or wrong_version:
+    if missing:
+        print("missing saved image tags: " + ", ".join(missing), file=sys.stderr)
+    if wrong_version:
+        print(
+            f"first-party image tags do not match .version={version}: "
+            + ", ".join(wrong_version),
+            file=sys.stderr,
+        )
+    raise SystemExit(1)
+print(
+    f"verified {archive_path}: all {len(expected)} enumerated image tags are present; "
+    f"first-party tags match .version={version}"
+)
+'@
+
+function Verify-Archive($arch, $expectedTags) {
+    $archivePath = Join-Path $OutDir "images-$arch.tar"
+    $errorFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $verificationOutput = & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            & python3 -c $verifyArchiveScript $archivePath $verPath @($expectedTags) 2> $errorFile
+        }
+        $verifyStatus = $LASTEXITCODE
+        $verifyError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($verificationOutput) { $verificationOutput | ForEach-Object { Write-Host $_ } }
+    if ($verifyError) { Write-Host $verifyError.TrimEnd() }
+    if ($verifyStatus -ne 0) { Die "$arch archive verification failed" }
+}
+
+Verify-Archive amd64 $AMD64_TAGS
+Verify-Archive arm64 $ARM64_TAGS
 
 # Bundle the WSL2 kernel asset for Windows students on offline /
 # air-gapped laptops. setup.ps1 -FromTarballs picks up
