@@ -84,30 +84,123 @@ $BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
 # sub-manifests and errors on the missing one. Pulling by single-platform
 # manifest digest stores only that platform's manifest, so save walks
 # only one and succeeds.
-function Resolve-PlatformRef($img, $arch) {
-    $tpl = '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "' + $arch + '")}}{{.Digest}}{{end}}{{end}}'
-    $digest = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        (& docker buildx imagetools inspect $img --format $tpl 2>$null | Select-Object -First 1)
+function Get-JsonField($object, $name) {
+    if ($null -eq $object) { return $null }
+    $property = $object.PSObject.Properties[$name]
+    if ($property) { return $property.Value }
+    return $null
+}
+
+function Get-RegistryName($img) {
+    $registry = "docker.io"
+    $firstComponent = ($img -split '/', 2)[0]
+    if (($img.Contains('/') -and ($firstComponent -match '[.:]' -or $firstComponent -eq 'localhost'))) {
+        $registry = $firstComponent
     }
-    if ($digest -and $digest -ne '<no value>') {
-        $base = $img -replace '@.*$',''
-        $repo = $base -replace ':[^:/]+$',''
-        return "${repo}@$digest"
+    return $registry
+}
+
+function Stop-ManifestInspection($img, $details) {
+    if ($details -match '(^|[^a-z0-9])429\s+too\s+many\s+requests([^a-z0-9]|$)|toomanyrequests|too\s+many\s+requests') {
+        $registry = Get-RegistryName $img
+        if ($registry -eq "docker.io" -or $registry -eq "index.docker.io") {
+            Die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+        }
+        Die "$registry rate-limited the request while inspecting $img. Wait for its limit to reset or authenticate to $registry with 'docker login $registry', then retry."
     }
-    # No manifest list -- single-arch image. Verify the platform matches.
-    $singleArch = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker buildx imagetools inspect $img --format '{{.Manifest.Config.Platform.Architecture}}' 2>$null
-    }
-    if (-not $singleArch) {
-        $singleArch = & {
+    $message = "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
+    if ($details) { $message += " Registry detail: $($details.Trim())" }
+    Die $message
+}
+
+function Get-PlatformRefs($img) {
+    $errorFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $inspectionOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{.Image.architecture}}' 2>$null
+            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
+        }
+        $inspectStatus = $LASTEXITCODE
+        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($inspectStatus -ne 0) { Stop-ManifestInspection $img $inspectError }
+
+    $json = ($inspectionOutput -join "`n").Trim()
+    if (-not $json) { Stop-ManifestInspection $img "inspection returned no manifest JSON" }
+    try {
+        $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+    } catch {
+        Stop-ManifestInspection $img "invalid manifest JSON: $($_.Exception.Message)"
+    }
+    $manifest = Get-JsonField $inspection 'Manifest'
+    if ($null -eq $manifest -or $manifest -isnot [pscustomobject]) {
+        Stop-ManifestInspection $img "inspection has no readable manifest"
+    }
+
+    $refs = @{ amd64 = ""; arm64 = "" }
+    $manifestsProperty = $manifest.PSObject.Properties['Manifests']
+    if ($manifestsProperty -and $null -ne $manifestsProperty.Value) {
+        if ($manifestsProperty.Value -isnot [array]) {
+            Stop-ManifestInspection $img "manifest index has no readable manifests list"
+        }
+        foreach ($entry in $manifestsProperty.Value) {
+            $platform = Get-JsonField $entry 'Platform'
+            $operatingSystem = Get-JsonField $platform 'OS'
+            $architecture = Get-JsonField $platform 'Architecture'
+            if ($operatingSystem -ne 'linux' -or $architecture -notin @('amd64', 'arm64')) { continue }
+            $digest = Get-JsonField $entry 'Digest'
+            if (-not $digest -or $digest -eq '<no value>') {
+                Stop-ManifestInspection $img "Linux image manifest entry has no digest"
+            }
+            if (-not $refs[$architecture]) {
+                $base = ($img -split '@', 2)[0]
+                $lastComponent = ($base -split '/')[-1]
+                if ($lastComponent.Contains(':')) {
+                    $base = $base.Substring(0, $base.LastIndexOf(':'))
+                }
+                $refs[$architecture] = "${base}@$digest"
+            }
+        }
+    } else {
+        $image = Get-JsonField $inspection 'Image'
+        $architecture = Get-JsonField $image 'Architecture'
+        $operatingSystem = Get-JsonField $image 'OS'
+        if (-not $architecture -or -not $operatingSystem) {
+            Stop-ManifestInspection $img "single-image manifest has no readable platform architecture or operating system"
+        }
+        if ($operatingSystem -eq 'linux' -and $architecture -in @('amd64', 'arm64')) {
+            $refs[$architecture] = $img
         }
     }
-    if ($singleArch -eq $arch) { return $img }
-    return $null
+    return $refs
+}
+
+$preflightRefs = @{}
+function Add-PreflightImage($img, [switch]$Arm64Only) {
+    Say "preflight $img"
+    $refs = Get-PlatformRefs $img
+    $amd64Ref = $refs['amd64']
+    $arm64Ref = $refs['arm64']
+    if (-not $Arm64Only -and -not $amd64Ref) {
+        Die "readable manifest for $img has no linux/amd64 image."
+    }
+    $crossArch = $false
+    if (-not $arm64Ref) {
+        if ($img -match 'rangerdanger-openplc' -and $amd64Ref) {
+            $arm64Ref = $amd64Ref
+            $crossArch = $true
+            Say "    openplc amd64 image will be cross-included for arm64"
+        } else {
+            Die "readable manifest for $img has no linux/arm64 image; openplc is the only image allowed to cross-include another architecture."
+        }
+    }
+    $preflightRefs[$img] = @{
+        amd64 = $amd64Ref
+        arm64 = $arm64Ref
+        arm64Cross = $crossArch
+    }
 }
 
 function Invoke-StageArch($arch) {
@@ -125,22 +218,15 @@ function Invoke-StageArch($arch) {
     foreach ($img in $toStage) {
         if (-not $img) { continue }
         $count++
-        Say "[$count] resolve $arch  $img"
-
-        $ref = Resolve-PlatformRef $img $arch
-        if (-not $ref) {
-            if ($img -match 'rangerdanger-openplc') {
-                # Apple Silicon students need amd64 openplc; upstream
-                # tuttas/openplc_v3 is amd64-only and compose pins
-                # platform: linux/amd64 so it runs under Rosetta on M1.
-                # Cross-include the amd64 image in the arm64 bundle.
-                $ref = Resolve-PlatformRef $img 'amd64'
-                if (-not $ref) { Die "openplc: amd64 fallback resolution also failed" }
-                Say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
-            } else {
-                Say "    skip -- not available for linux/$arch"
-                continue
-            }
+        Say "[$count] stage $arch  $img"
+        if (-not $preflightRefs.ContainsKey($img)) {
+            Die "no preflight result for $img on linux/$arch"
+        }
+        $preflight = $preflightRefs[$img]
+        $ref = if ($arch -eq 'amd64') { $preflight.amd64 } else { $preflight.arm64 }
+        if (-not $ref) { Die "no resolved manifest for $img on linux/$arch" }
+        if ($arch -eq 'arm64' -and $preflight.arm64Cross) {
+            Say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
         } elseif ($ref -ne $img) {
             Say "    -> $ref"
         }
@@ -173,6 +259,11 @@ function Invoke-StageArch($arch) {
     $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
     Say "wrote $tarball (${sizeMB} MB)"
 }
+
+foreach ($img in $resolved) {
+    if ($img) { Add-PreflightImage $img }
+}
+Add-PreflightImage $BINFMT_IMAGE -Arm64Only
 
 Invoke-StageArch 'amd64'
 Invoke-StageArch 'arm64'

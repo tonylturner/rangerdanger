@@ -109,12 +109,52 @@ function Resolve-Version($images, $version) {
 $sinceRef = @(Resolve-Version $candidate $Since)
 $newRef   = @(Resolve-Version $candidate $New)
 
-function Get-RemoteDigest($ref) {
-    $d = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker buildx imagetools inspect --format '{{.Manifest.Digest}}' $ref 2>$null
+function Get-RegistryName($img) {
+    $registry = "docker.io"
+    $firstComponent = ($img -split '/', 2)[0]
+    if (($img.Contains('/') -and ($firstComponent -match '[.:]' -or $firstComponent -eq 'localhost'))) {
+        $registry = $firstComponent
     }
-    if ($d) { return ($d -replace "`r","" -replace "`n","").Trim() }
+    return $registry
+}
+
+function Stop-IfRateLimited($img, $details) {
+    if ($details -notmatch '(^|[^a-z0-9])429\s+too\s+many\s+requests([^a-z0-9]|$)|toomanyrequests|too\s+many\s+requests') {
+        return
+    }
+    $registry = Get-RegistryName $img
+    if ($registry -eq "docker.io" -or $registry -eq "index.docker.io") {
+        Die "Docker Hub anonymous pull limit reached while inspecting $img. The anonymous pull budget resets within the hour; wait or run 'docker login' and retry."
+    }
+    Die "$registry rate-limited the request while inspecting $img. Wait for its limit to reset or authenticate to $registry with 'docker login $registry', then retry."
+}
+
+function Get-RemoteDigest($ref, [switch]$Required) {
+    $errorFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $digestOutput = & {
+            $ErrorActionPreference = 'SilentlyContinue'
+            & docker buildx imagetools inspect --format '{{.Manifest.Digest}}' $ref 2> $errorFile
+        }
+        $inspectStatus = $LASTEXITCODE
+        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($inspectStatus -ne 0) {
+        Stop-IfRateLimited $ref $inspectError
+        if ($Required) {
+            $message = "new-version registry manifest could not be inspected for $ref; this is not a platform-availability result."
+            if ($inspectError) { $message += " Registry detail: $($inspectError.Trim())" }
+            Die $message
+        }
+        return ""
+    }
+    $digest = ($digestOutput -join '').Trim()
+    if ($digest -and $digest -ne '<no value>') { return $digest }
+    if ($Required) {
+        Die "new version image is missing from the registry or its manifest digest cannot be read: $ref"
+    }
     return ""
 }
 
@@ -147,15 +187,9 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
         continue
     }
 
-    $newDigest   = Get-RemoteDigest $newImg
+    $newDigest   = Get-RemoteDigest $newImg -Required
     $sinceDigest = Get-RemoteDigest $sinceImg
 
-    if (-not $newDigest) {
-        Warn "  ${short}: could not read digest for $newImg -- including in delta to be safe"
-        $changed.Add($newImg) | Out-Null
-        $changedSince.Add($sinceImg) | Out-Null
-        continue
-    }
     if (-not $sinceDigest) {
         Warn "  ${short}: could not read $sinceImg (not pulled?) -- including in delta to be safe"
         $missingSince.Add($short) | Out-Null
@@ -194,29 +228,108 @@ if ($changed.Count -eq 0) {
     Warn "No image changes detected. Use -All or -Include to force, or just ship a new rangerdanger.tgz alone if only repo content changed."
 }
 
-function Resolve-PlatformRef($img, $arch) {
-    $tpl = '{{range .Manifest.Manifests}}{{if and (eq .Platform.OS "linux") (eq .Platform.Architecture "' + $arch + '")}}{{.Digest}}{{end}}{{end}}'
-    $digest = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        (& docker buildx imagetools inspect $img --format $tpl 2>$null | Select-Object -First 1)
-    }
-    if ($digest -and $digest -ne '<no value>') {
-        $base = $img -replace '@.*$',''
-        $repo = $base -replace ':[^:/]+$',''
-        return "${repo}@$digest"
-    }
-    $singleArch = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker buildx imagetools inspect $img --format '{{.Manifest.Config.Platform.Architecture}}' 2>$null
-    }
-    if (-not $singleArch) {
-        $singleArch = & {
+function Get-JsonField($object, $name) {
+    if ($null -eq $object) { return $null }
+    $property = $object.PSObject.Properties[$name]
+    if ($property) { return $property.Value }
+    return $null
+}
+
+function Stop-ManifestInspection($img, $details) {
+    Stop-IfRateLimited $img $details
+    $message = "could not inspect the registry manifest for $img; this is an inspection error, not evidence that a platform is absent."
+    if ($details) { $message += " Registry detail: $($details.Trim())" }
+    Die $message
+}
+
+function Get-PlatformRefs($img) {
+    $errorFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $inspectionOutput = & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{.Image.architecture}}' 2>$null
+            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
+        }
+        $inspectStatus = $LASTEXITCODE
+        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
+    } finally {
+        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($inspectStatus -ne 0) { Stop-ManifestInspection $img $inspectError }
+
+    $json = ($inspectionOutput -join "`n").Trim()
+    if (-not $json) { Stop-ManifestInspection $img "inspection returned no manifest JSON" }
+    try {
+        $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+    } catch {
+        Stop-ManifestInspection $img "invalid manifest JSON: $($_.Exception.Message)"
+    }
+    $manifest = Get-JsonField $inspection 'Manifest'
+    if ($null -eq $manifest -or $manifest -isnot [pscustomobject]) {
+        Stop-ManifestInspection $img "inspection has no readable manifest"
+    }
+
+    $refs = @{ amd64 = ""; arm64 = "" }
+    $manifestsProperty = $manifest.PSObject.Properties['Manifests']
+    if ($manifestsProperty -and $null -ne $manifestsProperty.Value) {
+        if ($manifestsProperty.Value -isnot [array]) {
+            Stop-ManifestInspection $img "manifest index has no readable manifests list"
+        }
+        foreach ($entry in $manifestsProperty.Value) {
+            $platform = Get-JsonField $entry 'Platform'
+            $operatingSystem = Get-JsonField $platform 'OS'
+            $architecture = Get-JsonField $platform 'Architecture'
+            if ($operatingSystem -ne 'linux' -or $architecture -notin @('amd64', 'arm64')) { continue }
+            $digest = Get-JsonField $entry 'Digest'
+            if (-not $digest -or $digest -eq '<no value>') {
+                Stop-ManifestInspection $img "Linux image manifest entry has no digest"
+            }
+            if (-not $refs[$architecture]) {
+                $base = ($img -split '@', 2)[0]
+                $lastComponent = ($base -split '/')[-1]
+                if ($lastComponent.Contains(':')) {
+                    $base = $base.Substring(0, $base.LastIndexOf(':'))
+                }
+                $refs[$architecture] = "${base}@$digest"
+            }
+        }
+    } else {
+        $image = Get-JsonField $inspection 'Image'
+        $architecture = Get-JsonField $image 'Architecture'
+        $operatingSystem = Get-JsonField $image 'OS'
+        if (-not $architecture -or -not $operatingSystem) {
+            Stop-ManifestInspection $img "single-image manifest has no readable platform architecture or operating system"
+        }
+        if ($operatingSystem -eq 'linux' -and $architecture -in @('amd64', 'arm64')) {
+            $refs[$architecture] = $img
         }
     }
-    if ($singleArch -eq $arch) { return $img }
-    return $null
+    return $refs
+}
+
+$preflightRefs = @{}
+function Add-PreflightImage($img, [switch]$Arm64Only) {
+    Say "preflight $img"
+    $refs = Get-PlatformRefs $img
+    $amd64Ref = $refs['amd64']
+    $arm64Ref = $refs['arm64']
+    if (-not $Arm64Only -and -not $amd64Ref) {
+        Die "readable manifest for $img has no linux/amd64 image."
+    }
+    $crossArch = $false
+    if (-not $arm64Ref) {
+        if ($img -match 'rangerdanger-openplc' -and $amd64Ref) {
+            $arm64Ref = $amd64Ref
+            $crossArch = $true
+            Say "    openplc amd64 image will be cross-included for arm64"
+        } else {
+            Die "readable manifest for $img has no linux/arm64 image; openplc is the only image allowed to cross-include another architecture."
+        }
+    }
+    $preflightRefs[$img] = @{
+        amd64 = $amd64Ref
+        arm64 = $arm64Ref
+        arm64Cross = $crossArch
+    }
 }
 
 function Invoke-StageArch($arch) {
@@ -232,17 +345,15 @@ function Invoke-StageArch($arch) {
         $toStage += $BINFMT_IMAGE
     }
     foreach ($img in $toStage) {
-        Say "resolve $arch  $img"
-        $ref = Resolve-PlatformRef $img $arch
-        if (-not $ref) {
-            if ($img -match 'rangerdanger-openplc') {
-                $ref = Resolve-PlatformRef $img 'amd64'
-                if (-not $ref) { Die "openplc: amd64 fallback resolution also failed" }
-                Say "    cross-arch (amd64 image, runs on arm64 via Rosetta): $ref"
-            } else {
-                Say "    skip - not available for linux/$arch"
-                continue
-            }
+        Say "stage $arch  $img"
+        if (-not $preflightRefs.ContainsKey($img)) {
+            Die "no preflight result for $img on linux/$arch"
+        }
+        $preflight = $preflightRefs[$img]
+        $ref = if ($arch -eq 'amd64') { $preflight.amd64 } else { $preflight.arm64 }
+        if (-not $ref) { Die "no resolved manifest for $img on linux/$arch" }
+        if ($arch -eq 'arm64' -and $preflight.arm64Cross) {
+            Say "    cross-arch (amd64 image, runs on arm64 via emulation): $ref"
         } elseif ($ref -ne $img) {
             Say "    -> $ref"
         }
@@ -274,6 +385,8 @@ function Invoke-StageArch($arch) {
 }
 
 if ($changed.Count -gt 0) {
+    foreach ($img in $changed) { Add-PreflightImage $img }
+    Add-PreflightImage $BINFMT_IMAGE -Arm64Only
     Invoke-StageArch 'amd64'
     Invoke-StageArch 'arm64'
 }
