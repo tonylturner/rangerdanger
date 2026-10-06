@@ -204,6 +204,14 @@ class CheckReleaseInputsTests(unittest.TestCase):
         self.assertTrue(any("uncovered local COPY/ADD source" in message
                             for message in messages))
 
+    def test_workflow_declared_build_context_is_rejected(self) -> None:
+        workflow = self.root / ".github/workflows/release.yml"
+        workflow.parent.mkdir(parents=True, exist_ok=True)
+        workflow.write_text("build-contexts: extra=./external\n", encoding="utf-8")
+        messages = self._messages()
+        self.assertTrue(any("contexts are not bounded" in message
+                            for message in messages))
+
     def test_inventory_compose_equality_and_target_resolution(self) -> None:
         self.image["target"] = "missing-stage"
         self._save_inventory([self.image])
