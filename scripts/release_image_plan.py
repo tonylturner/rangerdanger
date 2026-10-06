@@ -481,11 +481,12 @@ def _emit_github_output(plan: dict[str, Any], path: Path) -> None:
                 "image": item["image"],
                 "dockerfile": item["dockerfile"],
                 "target": item["target"],
-                "platforms": ",".join(item["platforms"]),
+                "platforms": item["platforms"],
                 "decision": item["decision"],
                 "source_digest": item["source_digest"],
             }
             for item in images
+            if item["image"] != "rangerdanger-frontend"
         ]
     }
     frontend_decision = next(
