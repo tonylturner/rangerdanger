@@ -47,16 +47,19 @@ up to .wslconfig.bak.foreign, then overwrite).
 
 .PARAMETER KernelPath
 Use this local file instead of downloading. Skips the network step
-and assumes the binary is correct (no sha256 verify unless -ExpectedSha256
-is also set). Useful for offline / SSD installs.
+and assumes the binary is correct when -ExpectedSha256 is omitted.
+Downloaded kernels always require a valid sha256 from -ExpectedSha256
+or the release sidecar; otherwise installation fails. Useful for a
+deliberately selected local build from wsl-kernel/.
 
 .PARAMETER KernelUrl
 Explicit download URL. Overrides the per-release computed URL.
 
 .PARAMETER ExpectedSha256
-Explicit sha256 to verify the downloaded kernel against. Required
-when using -KernelUrl with a non-GitHub-release source (no auto sha256
-file to fetch).
+Explicit sha256 to verify the downloaded kernel against. A downloaded
+kernel must have a valid hash here or in its release sidecar; otherwise
+installation fails with exit code 12. Required when using -KernelUrl
+with a non-GitHub-release source (no auto sha256 file to fetch).
 
 .PARAMETER ReleaseTag
 RangerDanger release to download the kernel from. Default: 'latest'
@@ -327,9 +330,12 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
         $expectedSha256 = (($shaRaw -split '\s+', 2)[0]).Trim().ToLower()
     }
     if (-not $expectedSha256) {
-        Warn "No expected sha256 supplied AND no .sha256 sidecar file -- skipping verification."
-        Warn "This is supported but not recommended. Use -ExpectedSha256 to lock down the binary."
-        return
+        Remove-Item $outPath -Force -ErrorAction SilentlyContinue
+        Die 12 "No expected sha256 supplied and no .sha256 sidecar hash was available. Refusing to install an unverified kernel."
+    }
+    if ($expectedSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+        Remove-Item $outPath -Force -ErrorAction SilentlyContinue
+        Die 12 "The expected sha256 is missing or invalid. Refusing to install an unverified kernel."
     }
 
     $actual = (Get-FileHash -Algorithm SHA256 -Path $outPath).Hash.ToLower()
