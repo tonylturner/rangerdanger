@@ -6,6 +6,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.33] - 2026-10-05
+
+A workshop-logistics release. It closes the last routing gap in the lab —
+the HMI, whose cross-zone traffic bypassed the firewall entirely — and
+makes the offline SSD tooling prove what it ships instead of assuming it:
+staging fails before it spends an hour, and a delta can now be applied
+and rolled back without losing the install it replaced. This release
+publishes a new `rangerdanger-fuxa-hmi` package, so offline SSD bundles
+must be re-staged.
+
 ### Fixed
 
 - **The HMI's cross-zone traffic now goes through the firewall.**
@@ -21,6 +31,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   relay over Modbus: allowed under the weak policy, denied under the
   improved one). This publishes a new `rangerdanger-fuxa-hmi` package,
   so offline SSD bundles must be re-staged.
+- **Offline staging now proves every image before it pulls anything.**
+  `stage-ssd.sh` resolved manifests image by image while it pulled, so a
+  registry refusal on the last image ended a 27-minute run with partial
+  archives on the SSD. It now resolves every image's per-architecture
+  manifest first and only then pulls, so an unresolvable image or a
+  registry rate limit aborts in seconds with nothing written. A registry
+  that answers `429` is reported as a rate limit, named by registry, with
+  what to do about it, instead of being reported as a missing platform.
+- **A delta refuses to apply to the wrong install.** The apply recipe
+  reads `VERSION` from the student's `.env` and stops before it stops any
+  service if the install is not the version the delta was built from,
+  including the case where the delta was already applied. Nothing is
+  stopped, snapshotted or overwritten when it refuses.
+- **Delta rollback restores the whole install, including its images.**
+  Rollback previously restored only `.env`, which left the new repo in
+  place; it now restores a snapshot of the complete install tree. The
+  stack is stopped before the snapshot is taken and before the tree is
+  replaced, so no database is archived while it is being written and no
+  container keeps a mount into a deleted directory. An image behind a
+  mutable tag the delta overwrites — `containd:latest` and the pinned
+  upstream images — is parked as `:before-<new version>` and restored on
+  rollback, so rolling back returns the old images, not just the old
+  files.
+
+### Documentation
+
+- **The SSD runbook describes delta sizing honestly.** `--include` is
+  additive: it force-adds an unchanged image and cannot shrink a delta.
+  A delta is small only when few image digests differ between the two
+  releases; v0.1.31 to v0.1.32 had 15 changed images and measured
+  8.1 GB. The rollback snapshot covers all of `./data/` and grows with
+  lab state, and a repo-only delta carries no image archives, so it
+  cannot supply `tonistiigi/binfmt` to an arm64 Linux host.
 
 ## [v0.1.32] - 2026-10-05
 
@@ -2651,7 +2694,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.32...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.33...HEAD
+[v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
 [v0.1.32]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.32
 [v0.1.31]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.31
 [v0.1.30]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.30
