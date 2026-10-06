@@ -124,6 +124,21 @@ than promote; checking the input additionally enables `pull: true` and
 `no-cache: true` on every build. The tag-message marker applies to a
 tag-push run; the dispatch checkbox is the manual equivalent.
 
+### Rehearsing promotion without touching a real tag
+
+`scripts/rehearse_promotion.sh` runs the publish paths against a scratch
+registry on loopback: it merges per-architecture manifests, promotes an
+index root and a single-manifest root, and runs
+`scripts/verify_published_image.sh` on each. It proves the three
+properties the workflow depends on — `docker buildx imagetools create`
+reports the pushed root digest only through `--metadata-file` (its stdout
+is empty), re-tagging preserves the recorded root digest, and a
+single-manifest source needs `--prefer-index=false` or buildx wraps it in
+a new index with a new root — plus that verification rejects a wrong
+platform set. It needs docker, buildx, jq and curl, and touches no real
+registry. Run it before a release that will promote, and after a buildx
+upgrade.
+
 ## docker-compose.release.yml
 
 `docker-compose.release.yml` (committed alongside `docker-compose.yml`)

@@ -618,16 +618,20 @@ jobs:
         working-directory: ${{ runner.temp }}/digests
         env:
           IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
+          METADATA_PATH: ${{ runner.temp }}/frontend-create-metadata.json
         run: |
-          # Both expansions word-split: planned -t flags and per-arch digests.
+          # imagetools create reports the pushed root digest only through
+          # --metadata-file: its stdout is empty and the copy/push progress
+          # goes to stderr. Both expansions word-split: planned -t flags and
+          # per-arch digests.
           # shellcheck disable=SC2046
-          create_output="$(docker buildx imagetools create \
+          docker buildx imagetools create \
+            --metadata-file "$METADATA_PATH" \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(for digest_file in *; do printf '%s@sha256:%s ' "$IMAGE_REPOSITORY" "$digest_file"; done))"
-          printf '%s\n' "$create_output"
-          root_digest="$(grep -Eo 'sha256:[0-9a-f]{64}' <<< "$create_output" | tail -n 1)"
+            $(for digest_file in *; do printf '%s@sha256:%s ' "$IMAGE_REPOSITORY" "$digest_file"; done)
+          root_digest="$(jq -r '."containerimage.descriptor".digest // empty' "$METADATA_PATH")"
           [[ "$root_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-            echo "imagetools create did not report the pushed root digest." >&2
+            echo "imagetools create metadata reported no root digest: [$root_digest]" >&2
             exit 1
           }
           echo "root_digest=$root_digest" >> "$GITHUB_OUTPUT"
