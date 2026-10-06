@@ -414,6 +414,34 @@ def _compose_first_party_images(compose_path: Path) -> tuple[set[str], dict[str,
     return set(image_lines), image_lines
 
 
+def _named_context_violations(root: Path, images: list[dict[str, Any]]) -> list[Violation]:
+    """Reject Buildx named contexts declared outside Dockerfile syntax."""
+    workflow = root / ".github/workflows/release.yml"
+    try:
+        lines = workflow.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return []
+    violations: list[Violation] = []
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        context_match = re.search(
+            r"(?:^|\s)context\s*:\s*['\"]?([^\s'\"#|]+)", stripped)
+        uses_external_context = context_match and context_match.group(1) not in (".", "./")
+        if uses_external_context or re.search(
+            r"\bbuild-contexts\s*:|--build-context(?:\s|=)", stripped):
+            for entry in images:
+                image = entry.get("image")
+                if isinstance(image, str):
+                    violations.append(Violation(
+                        ".github/workflows/release.yml", number, image,
+                        "named or non-root Buildx contexts are not bounded; express "
+                        "the input differently or mark the image always_build",
+                    ))
+    return violations
+
+
 def _line_for_image(path: Path, image: str) -> int:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -444,6 +472,13 @@ def validate(root: Path, inventory_path: Path) -> list[Violation]:
     if not isinstance(images, list):
         return [Violation(inventory_abs.as_posix(), 1, None,
                           "inventory images must be an array")]
+    if not isinstance(raw.get("registry"), str) or not raw["registry"] \
+            or not isinstance(raw.get("namespace"), str) or not raw["namespace"]:
+        violations.append(Violation(inventory_abs.as_posix(), 1, None,
+                                    "registry and namespace must be non-empty strings"))
+    if type(raw.get("policy_version")) is not int:
+        violations.append(Violation(inventory_abs.as_posix(), 1, None,
+                                    "policy_version must be an integer"))
     seen: set[str] = set()
     for entry in images:
         image = entry.get("image") if isinstance(entry, dict) else None
@@ -456,6 +491,15 @@ def validate(root: Path, inventory_path: Path) -> list[Violation]:
             violations.append(Violation(inventory_abs.as_posix(), line, image,
                                         "duplicate image entry"))
         seen.add(image)
+        platforms = entry.get("platforms")
+        if not isinstance(platforms, list) or not platforms \
+                or not all(isinstance(platform, str) for platform in platforms) \
+                or len(set(platforms)) != len(platforms):
+            violations.append(Violation(inventory_abs.as_posix(), line, image,
+                                        "platforms must be a non-empty unique string list"))
+        if type(entry.get("always_build")) is not bool:
+            violations.append(Violation(inventory_abs.as_posix(), line, image,
+                                        "always_build must be a boolean"))
         dockerfile_value = entry.get("dockerfile")
         if not isinstance(dockerfile_value, str) or not dockerfile_value:
             violations.append(Violation(inventory_abs.as_posix(), line, image,
@@ -560,6 +604,8 @@ def validate(root: Path, inventory_path: Path) -> list[Violation]:
                             "express the input differently or mark the image always_build",
                         ))
 
+    violations.extend(_named_context_violations(
+        root, [entry for entry in images if isinstance(entry, dict)]))
     compose_path = root / "docker-compose.release.yml"
     compose_images, compose_lines = _compose_first_party_images(compose_path)
     inventory_names = {
