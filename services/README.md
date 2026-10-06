@@ -109,7 +109,10 @@ in `services/shared/`.
    healthcheck, and `depends_on`.
 7. Add the node type to `backend/internal/labs/catalog.go` and any
    relevant lab-definition YAMLs.
-8. Add a job entry to `.github/workflows/release.yml` matrix.
+8. Add the image and its reviewed build-input envelope to
+   [`.github/release-images.json`](../.github/release-images.json). The
+   release matrix is generated from this inventory; do not add a workflow
+   matrix row.
 
 ## DNP3 module
 
