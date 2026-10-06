@@ -42,9 +42,18 @@ stale and `ok` after a good solve.
 ## Local development
 
 The Go simulators (relay/recloser/regulator/capbank/historian/gps/
-rtac) share a single module (`services/go.mod`) and a single
-multi-stage Dockerfile (`services/Dockerfile`). `opendss-sim` is
-Python/FastAPI and builds from its own `services/opendss-sim/Dockerfile`.
+rtac) share a single module (`services/go.mod`) and a multi-stage
+Dockerfile (`services/Dockerfile`). It has a common module/dependency
+stage, a shared-code builder, a DNP3-enabled builder for relay,
+recloser, regulator, capbank, and RTAC, then one `<target>-builder`
+leaf per simulator. Each leaf copies that simulator's Go files and
+builds only its binary. Historian and GPS branch from the shared-code
+builder without DNP3 package source. RTAC's `dnp3poll` and `dnp3cmd`
+tools use a separate, narrow DNP3 tools stage. Final images still share
+`sim-base` and copy in only their own simulator binary (plus RTAC's
+existing tools and management-init script). `opendss-sim` is
+Python/FastAPI and builds from its own
+`services/opendss-sim/Dockerfile`.
 
 ```sh
 # Run a single sim outside the lab
@@ -76,13 +85,22 @@ in `services/shared/`.
    every write with its source.
 3. Add `services/<name>-sim/modbus.go` - copy the relay/recloser
    pattern. Map register addresses to state fields.
-4. Add `services/<name>-sim/dnp3.go` - define
-   `BinaryInputs` / `BinaryOutputs` / `AnalogInputs` and assign a
-   DNP3 outstation address (next free integer in the table above).
-5. Add a target in `services/Dockerfile`:
+4. If the sim speaks DNP3, add `services/<name>-sim/dnp3.go` - define
+   `BinaryInputs` / `BinaryOutputs` / `AnalogInputs` and assign a DNP3
+   outstation address (next free integer in the table above).
+5. Add a target-specific builder leaf and final target in
+   `services/Dockerfile`. Derive DNP3 simulators from
+   `dnp3-sim-builder`; for a simulator without DNP3 imports, derive from
+   `sim-builder` instead:
    ```Dockerfile
+   FROM dnp3-sim-builder AS <name>-sim-builder
+   COPY services/<name>-sim/*.go ./<name>-sim/
+   RUN --mount=type=cache,target=/root/.cache/go-build \
+       --mount=type=cache,target=/go/pkg/mod \
+       CGO_ENABLED=0 go build -o /bin/<name>-sim ./<name>-sim
+
    FROM sim-base AS <name>-sim
-   COPY --from=builder /bin/<name>-sim /usr/local/bin/<name>-sim
+   COPY --from=<name>-sim-builder /bin/<name>-sim /usr/local/bin/<name>-sim
    EXPOSE 8080 502 20000
    CMD ["sh", "-c", "set-gateway.sh && <name>-sim"]
    ```

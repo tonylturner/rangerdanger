@@ -6,6 +6,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Published images no longer carry the release version as an OCI
+  label.** `org.opencontainers.image.version` is gone; each image keeps
+  `title`, `source`, `licenses`, the full source revision it was built
+  from (`revision`) and the time that build ran (`created`). Those
+  labels now answer "what source was this artifact built from, and
+  when?", not "which release shipped it". The release version is still
+  carried where it was always authoritative: the Git tag and GitHub
+  release, the versioned GHCR tags, `.env VERSION` / an SSD bundle's
+  `.version`, and the backend's `/api/build`. An instructor script that
+  read the version label off an image must read one of those instead.
+- **Each simulator now builds in its own Docker stage.** `services/
+  Dockerfile` previously compiled all seven simulators in one shared
+  builder step, so editing one simulator's source invalidated the build
+  of the other six. Each target now compiles only its own package from
+  its own narrow set of copied files. The shipped images are unchanged:
+  every file in all seven images is byte-identical to the v0.1.33 build.
+
 ## [v0.1.33] - 2026-10-05
 
 A workshop-logistics release. It closes the last routing gap in the lab —
