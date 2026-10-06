@@ -239,24 +239,31 @@ def _platform_from_descriptor(descriptor: dict[str, Any]) -> str | None:
 
 
 def _registry_identity(payload: dict[str, Any]) -> tuple[str, set[str]]:
-    digest = payload.get("digest")
+    manifest = payload.get("manifest")
+    if not isinstance(manifest, dict):
+        raise ValueError("registry response has no manifest object")
+    digest = manifest.get("digest")
     if not isinstance(digest, str) or not REGISTRY_DIGEST_RE.fullmatch(digest):
-        raise ValueError("registry response has no valid lowercase top-level digest")
-    root = payload.get("manifest")
-    descriptors: Any = payload.get("manifests")
-    if descriptors is None and isinstance(root, dict):
-        descriptors = root.get("manifests")
+        raise ValueError("registry response has no valid lowercase manifest.digest")
     platforms: set[str] = set()
-    if isinstance(descriptors, list):
+    if "manifests" in manifest:
+        descriptors = manifest["manifests"]
+        if not isinstance(descriptors, list):
+            raise ValueError("registry manifest.manifests is not an array")
         for descriptor in descriptors:
             if isinstance(descriptor, dict):
                 platform = _platform_from_descriptor(descriptor)
                 if platform:
                     platforms.add(platform)
-    if not platforms and isinstance(payload.get("platform"), dict):
-        platform = _platform_from_descriptor({"platform": payload["platform"]})
-        if platform:
-            platforms.add(platform)
+    else:
+        image = payload.get("image")
+        if not isinstance(image, dict):
+            raise ValueError("single-manifest registry response has no image object")
+        platform = _platform_from_descriptor({"platform": image})
+        if not platform:
+            raise ValueError(
+                "single-manifest registry response image has no valid platform")
+        platforms.add(platform)
     return digest, platforms
 
 
@@ -347,6 +354,10 @@ def build_plan(
         target_commit = _resolve_commit(root, commit)
     except RuntimeError as exc:
         raise PlanError(f"cannot resolve release commit {commit!r}: {exc}") from exc
+    try:
+        _run_git(root, "check-ref-format", f"refs/tags/{tag}")
+    except RuntimeError as exc:
+        raise PlanError(f"--tag must be a valid Git tag name: {tag!r}") from exc
     if event not in ("tag_push", "dispatch"):
         raise PlanError(f"unsupported event {event!r}")
 
@@ -367,13 +378,9 @@ def build_plan(
         raise PlanError("inventory path must be inside the repository") from exc
 
     guard_errors = check_release_inputs.validate(root, inventory_rel)
-    guard_by_image: dict[str, list[str]] = {}
-    guard_global: list[str] = []
-    for violation in guard_errors:
-        if violation.image:
-            guard_by_image.setdefault(violation.image, []).append(violation.message)
-        else:
-            guard_global.append(violation.message)
+    if guard_errors:
+        details = "; ".join(violation.format() for violation in guard_errors)
+        raise PlanError(f"release input guard rejected inventory/recipe: {details}")
 
     planned: list[dict[str, Any]] = []
     for image in inventory["images"]:
@@ -405,9 +412,6 @@ def build_plan(
             reason = "rebuild_all override is in effect"
         elif event == "dispatch":
             reason = "workflow_dispatch runs never promote"
-        elif guard_global or guard_by_image.get(name):
-            details = guard_global + guard_by_image.get(name, [])
-            reason = "release input guard rejected recipe/inventory: " + "; ".join(details)
         elif record_problem:
             reason = record_problem
         elif previous_release is None:

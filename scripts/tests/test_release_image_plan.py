@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -131,7 +134,7 @@ class PlannerFixture(unittest.TestCase):
         mismatch_tag: str | None = None,
         unresolved: str | None = None,
         mismatch_platform: str | None = None,
-        attestations: bool = False,
+        attestations: bool = True,
         missing_tag: bool = False,
     ):
         image_by_name = {item["image"]: item for item in self.inventory["images"]}
@@ -149,21 +152,44 @@ class PlannerFixture(unittest.TestCase):
             if image == mismatch_platform and "@" in reference:
                 platforms = platforms[:1]
             descriptors: list[dict[str, object]] = []
+            image_payload: dict[str, object] = {}
             for platform in platforms:
                 os_name, architecture = platform.split("/", 1)
                 descriptors.append({
-                    "platform": {"os": os_name, "architecture": architecture},
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
                     "digest": "sha256:" + "a" * 64,
+                    "size": 1618,
+                    "platform": {"architecture": architecture, "os": os_name},
+                    "annotations": None,
                 })
+                image_payload[platform] = {
+                    "architecture": architecture,
+                    "os": os_name,
+                }
             if attestations:
-                descriptors.append({
-                    "platform": {"os": "unknown", "architecture": "unknown"},
-                    "annotations": {
-                        "vnd.docker.reference.type": "attestation-manifest",
-                    },
-                    "digest": "sha256:" + "b" * 64,
-                })
-            return {"digest": digest, "manifests": descriptors}
+                for platform in platforms:
+                    _, architecture = platform.split("/", 1)
+                    descriptors.append({
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "digest": "sha256:" + architecture[0] * 64,
+                        "size": 838,
+                        "platform": {"architecture": "unknown", "os": "unknown"},
+                        "annotations": {
+                            "vnd.docker.reference.digest": "sha256:" + "a" * 64,
+                            "vnd.docker.reference.type": "attestation-manifest",
+                        },
+                    })
+            return {
+                "name": reference,
+                "manifest": {
+                    "schemaVersion": 2,
+                    "mediaType": "application/vnd.oci.image.index.v1+json",
+                    "digest": digest,
+                    "size": 1609,
+                    "manifests": descriptors,
+                },
+                "image": image_payload,
+            }
 
         return inspect
 
@@ -317,6 +343,23 @@ class ReleaseImagePlanTests(PlannerFixture):
             self._plan(record_path=unreadable))
         self.assertEqual(set(unreadable_decisions.values()), {"build"})
 
+    def test_unreadable_baseline_tree_is_a_per_image_build(self) -> None:
+        record = json.loads(self.record_path.read_text(encoding="utf-8"))
+        frontend = next(
+            item for item in record["images"]
+            if item["image"] == "rangerdanger-frontend"
+        )
+        frontend["build_revision"] = "f" * 40
+        self.record_path.write_text(json.dumps(record), encoding="utf-8")
+        inspect = Mock(side_effect=AssertionError(
+            "unreadable baseline must not inspect the registry"))
+        plan = self._plan(inspect=inspect)
+        results = {item["image"]: item for item in plan["images"]}
+        self.assertEqual(results["rangerdanger-frontend"]["decision"], "build")
+        self.assertIn("object identity unavailable",
+                      results["rangerdanger-frontend"]["reason"])
+        self.assertEqual(inspect.call_count, 14)
+
     def test_rebuild_all_override_builds_every_image_without_registry_access(self) -> None:
         inspect = Mock(side_effect=AssertionError("override must not inspect registry"))
         plan = self._plan(override=True, inspect=inspect)
@@ -341,10 +384,143 @@ class ReleaseImagePlanTests(PlannerFixture):
                 self.assertEqual(decisions[affected], "build")
 
     def test_attestation_descriptors_do_not_change_platform_set(self) -> None:
-        plan = self._plan(inspect=self._inspect(attestations=True))
+        plan = self._plan(inspect=self._inspect())
         decisions = self._decisions(plan)
         self.assertEqual(decisions["rangerdanger-backend"], "build")
         self.assertEqual(sum(value == "promote" for value in decisions.values()), 15)
+
+    def test_real_buildx_registry_shape_and_single_manifest_shape(self) -> None:
+        payload = self._inspect()(
+            "ghcr.io/tonylturner/rangerdanger-gps-sim@"
+            + self.digests["rangerdanger-gps-sim"])
+        self.assertEqual(set(payload), {"name", "manifest", "image"})
+        manifest = payload["manifest"]
+        self.assertEqual(set(manifest), {
+            "schemaVersion", "mediaType", "digest", "size", "manifests",
+        })
+        self.assertEqual(len(manifest["manifests"]), 4)
+        self.assertEqual(
+            sum(
+                bool(item["annotations"])
+                and item["annotations"].get("vnd.docker.reference.type")
+                == "attestation-manifest"
+                for item in manifest["manifests"]
+            ),
+            2,
+        )
+        self.assertEqual(
+            release_image_plan._registry_identity(payload),
+            (self.digests["rangerdanger-gps-sim"], {"linux/amd64", "linux/arm64"}),
+        )
+
+        single_manifest = {
+            "name": "ghcr.io/example/image:tag",
+            "manifest": {
+                "schemaVersion": 2,
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": "sha256:" + "c" * 64,
+                "size": 1234,
+            },
+            "image": {"architecture": "arm64", "os": "linux"},
+        }
+        self.assertEqual(
+            release_image_plan._registry_identity(single_manifest),
+            ("sha256:" + "c" * 64, {"linux/arm64"}),
+        )
+        single_without_root_digest = json.loads(json.dumps(single_manifest))
+        del single_without_root_digest["manifest"]["digest"]
+        with self.assertRaisesRegex(ValueError, "manifest.digest"):
+            release_image_plan._registry_identity(single_without_root_digest)
+
+    def test_global_guard_failure_exits_nonzero_but_image_registry_failure_exits_zero(
+        self,
+    ) -> None:
+        original_cwd = Path.cwd()
+        os.chdir(self.root)
+        try:
+            common_args = [
+                "--tag", "v0.1.34",
+                "--commit", self._git_text("rev-parse", "HEAD"),
+                "--event", "tag_push",
+                "--previous-record", str(self.record_path),
+            ]
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch.object(
+                release_image_plan.check_release_inputs,
+                "validate",
+                return_value=[
+                    release_image_plan.check_release_inputs.Violation(
+                        "Dockerfile.frontend", 4, "rangerdanger-frontend",
+                        "unsupported recipe",
+                    )
+                ],
+            ), redirect_stdout(stdout), redirect_stderr(stderr):
+                global_exit = release_image_plan.main(common_args)
+            self.assertEqual(global_exit, 1)
+            self.assertIn("release input guard rejected", stderr.getvalue())
+            self.assertEqual(stdout.getvalue(), "")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with patch.object(
+                release_image_plan.check_release_inputs,
+                "validate",
+                return_value=[],
+            ), patch.object(
+                release_image_plan,
+                "inspect_registry",
+                side_effect=self._inspect(unresolved="rangerdanger-frontend"),
+            ), redirect_stdout(stdout), redirect_stderr(stderr):
+                image_exit = release_image_plan.main(common_args)
+            self.assertEqual(image_exit, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            plan = json.loads(stdout.getvalue())
+            decisions = {item["image"]: item for item in plan["images"]}
+            self.assertEqual(decisions["rangerdanger-frontend"]["decision"], "build")
+            self.assertIn("recorded digest cannot be resolved",
+                          decisions["rangerdanger-frontend"]["reason"])
+        finally:
+            os.chdir(original_cwd)
+
+    def test_bad_cli_tag_commit_and_event_exit_nonzero(self) -> None:
+        original_cwd = Path.cwd()
+        os.chdir(self.root)
+        try:
+            base_args = [
+                "--tag", "v0.1.34",
+                "--commit", self._git_text("rev-parse", "HEAD"),
+                "--event", "tag_push",
+            ]
+            with patch.object(
+                release_image_plan.check_release_inputs,
+                "validate",
+                return_value=[],
+            ):
+                with redirect_stderr(io.StringIO()):
+                    self.assertEqual(
+                        release_image_plan.main([
+                            "--tag", "not a tag",
+                            *base_args[2:],
+                        ]),
+                        1,
+                    )
+                    self.assertEqual(
+                        release_image_plan.main([
+                            *base_args[:2],
+                            "--commit", "not-a-commit",
+                            *base_args[4:],
+                        ]),
+                        1,
+                    )
+                    with self.assertRaises(SystemExit) as bad_event:
+                        release_image_plan.main([
+                            *base_args[:4],
+                            "--event", "not-an-event",
+                        ])
+            self.assertEqual(bad_event.exception.code, 2)
+        finally:
+            os.chdir(original_cwd)
 
     def test_stable_and_prerelease_tag_plans_on_build_and_promote_paths(self) -> None:
         no_record = self._plan(
