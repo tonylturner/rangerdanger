@@ -88,16 +88,15 @@ if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
 $candidate = if ($IncludeUpstream) {
     $allImages
 } else {
-    $allImages | Where-Object { $_ -match 'ghcr\.io/tonylturner/' }
+    $allImages | Where-Object { $_ -match 'ghcr\.io/tonylturner/rangerdanger-' }
 }
 
 function Resolve-Version($images, $version) {
     $images | ForEach-Object {
         $i = $_
-        # First-party rangerdanger-* / containd with :latest -> :version
-        $i = $i -replace '^(ghcr\.io/tonylturner/(rangerdanger-[a-z0-9-]+|containd)):latest$', "`$1:$version"
-        # First-party with any non-digest tag -> :version
-        $i = $i -replace '^(ghcr\.io/tonylturner/(rangerdanger-[a-z0-9-]+|containd)):[^@]+$', "`$1:$version"
+        # First-party rangerdanger-* with :latest or another tag -> :version.
+        $i = $i -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest$', "`$1:$version"
+        $i = $i -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+$', "`$1:$version"
         $i
     }
 }
@@ -117,7 +116,10 @@ function Get-RemoteDigest($ref) {
 Banner "Comparing $Since -> $New across $($candidate.Count) candidate image(s)"
 
 $changed       = New-Object System.Collections.Generic.List[string]
+$changedSince  = New-Object System.Collections.Generic.List[string]
 $unchanged     = New-Object System.Collections.Generic.List[string]
+$unchangedSince = New-Object System.Collections.Generic.List[string]
+$unchangedNew = New-Object System.Collections.Generic.List[string]
 $forced        = New-Object System.Collections.Generic.List[string]
 $missingSince  = New-Object System.Collections.Generic.List[string]
 
@@ -131,9 +133,14 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
     if ($includeSet -contains $short) {
         $forced.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
         continue
     }
-    if ($All) { $changed.Add($newImg) | Out-Null; continue }
+    if ($All) {
+        $changed.Add($newImg) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
+        continue
+    }
 
     $newDigest   = Get-RemoteDigest $newImg
     $sinceDigest = Get-RemoteDigest $sinceImg
@@ -141,16 +148,24 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
     if (-not $newDigest) {
         Warn "  ${short}: could not read digest for $newImg -- including in delta to be safe"
         $changed.Add($newImg) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
         continue
     }
     if (-not $sinceDigest) {
         Warn "  ${short}: could not read $sinceImg (not pulled?) -- including in delta to be safe"
         $missingSince.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
         continue
     }
-    if ($newDigest -eq $sinceDigest) { $unchanged.Add($short) | Out-Null }
-    else                              { $changed.Add($newImg) | Out-Null }
+    if ($newDigest -eq $sinceDigest) {
+        $unchanged.Add($short) | Out-Null
+        $unchangedSince.Add($sinceImg) | Out-Null
+        $unchangedNew.Add($newImg) | Out-Null
+    } else {
+        $changed.Add($newImg) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
+    }
 }
 
 Write-Host ""
@@ -290,18 +305,197 @@ try {
 }
 
 Banner "Write DELTA-README.md"
-$applyTableRows = foreach ($img in $changed) {
-    $short = ($img -replace '.*/','' -replace ':.*','')
-    $svc   = ($short -replace '^rangerdanger-','') -replace '-','_'
-    "| ``$short`` | ``$svc`` |"
-}
-$applyTable = $applyTableRows -join "`n"
 $unchangedList = if ($unchanged.Count -gt 0) {
     "## Unchanged (kept from prior install)`n`n" + (($unchanged | ForEach-Object { "- $_" }) -join "`n")
 } else { "" }
 $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+$composeJson = & docker compose -f $ComposeFile config --format json 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $composeJson) { Die "Could not read the resolved service model from $ComposeFile" }
+try {
+    $composeModel = ($composeJson -join "`n") | ConvertFrom-Json -ErrorAction Stop
+} catch {
+    Die "Could not parse the resolved service model from $ComposeFile"
+}
+
+function Get-ImageRepository($reference) {
+    $base = ($reference -split '@', 2)[0]
+    $lastComponent = ($base -split '/')[-1]
+    if ($lastComponent.Contains(':')) {
+        $base = $base.Substring(0, $base.LastIndexOf(':'))
+    }
+    return $base
+}
+
+$serviceRepositories = @{}
+foreach ($serviceProperty in $composeModel.services.PSObject.Properties) {
+    $serviceImage = $serviceProperty.Value.image
+    if ($serviceImage) {
+        $repository = Get-ImageRepository $serviceImage
+        if (-not $serviceRepositories.ContainsKey($repository)) {
+            $serviceRepositories[$repository] = @()
+        }
+        $serviceRepositories[$repository] += $serviceProperty.Name
+    }
+}
+
+$applyTableRows = foreach ($img in $changed) {
+    $repository = Get-ImageRepository $img
+    $short = ($repository -split '/')[-1]
+    $services = $serviceRepositories[$repository]
+    if (-not $services) { Die "Changed image $img does not map to a service in $ComposeFile" }
+    "| ``$short`` | ``$($services -join ', ')`` |"
+}
+$applyTable = $applyTableRows -join "`n"
+
+$applyLoadCommand = if ($changed.Count -gt 0) {
+    'ARCH=$(uname -m | sed ''s/x86_64/amd64/;s/aarch64/arm64/'')
+docker load -i "$DELTA_DIR/delta-$ARCH.tar"'
+} else {
+    "# No image archive was created; no image load is needed."
+}
+
+$applyBackupCommands = New-Object System.Collections.Generic.List[string]
+$rollbackRestoreCommands = New-Object System.Collections.Generic.List[string]
+for ($i = 0; $i -lt $changed.Count; $i++) {
+    $sinceTag = ($changedSince[$i] -split '@', 2)[0]
+    $targetTag = ($changed[$i] -split '@', 2)[0]
+    if ($sinceTag -ne $targetTag) { continue }
+
+    $targetRepository = Get-ImageRepository $targetTag
+    $parkedTag = "${targetRepository}:before-$New"
+    $applyBackupCommands.Add(@"
+if ! docker image inspect "$parkedTag" >/dev/null 2>&1; then
+    if docker image inspect "$targetTag" >/dev/null 2>&1; then
+        docker image tag "$targetTag" "$parkedTag"
+    fi
+fi
+"@.Trim()) | Out-Null
+    $rollbackRestoreCommands.Add(@"
+if docker image inspect "$parkedTag" >/dev/null 2>&1; then
+    docker image tag "$parkedTag" "$targetTag"
+fi
+"@.Trim()) | Out-Null
+}
+if ($applyBackupCommands.Count -eq 0) {
+    $applyBackupText = "# No mutable image tags need to be parked."
+    $rollbackRestoreText = "# No mutable image tags need to be restored."
+} else {
+    $applyBackupText = $applyBackupCommands -join "`n"
+    $rollbackRestoreText = $rollbackRestoreCommands -join "`n"
+}
+
+$applyRetagCommands = New-Object System.Collections.Generic.List[string]
+for ($i = 0; $i -lt $unchangedNew.Count; $i++) {
+    if ($unchangedNew[$i] -like 'ghcr.io/tonylturner/rangerdanger-*') {
+        $applyRetagCommands.Add("docker image tag $($unchangedSince[$i]) $($unchangedNew[$i])") | Out-Null
+    }
+}
+if ($applyRetagCommands.Count -eq 0) {
+    $applyRetagText = "# No unchanged first-party image tags need to be created."
+} else {
+    $applyRetagText = $applyRetagCommands -join "`n"
+}
+
+$applyBlock = @'
+set -e
+# Set this to the directory containing this delta bundle.
+DELTA_DIR="/path/to/delta-__NEW__"
+cd ~/rangerdanger
+test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
+
+# Only apply a delta to the version it was built from. Check before stopping
+# services or touching the install so a wrong or repeated delta is harmless.
+CURRENT_VERSION=$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
+if [ "$CURRENT_VERSION" = "__NEW__" ]; then
+    echo "This delta looks already applied: install VERSION is $CURRENT_VERSION, but this delta expects __SINCE__; nothing was changed." >&2
+    exit 1
+fi
+if [ "$CURRENT_VERSION" != "__SINCE__" ]; then
+    if [ -n "$CURRENT_VERSION" ]; then
+        echo "Install VERSION is $CURRENT_VERSION; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
+    else
+        echo "Install .env has no VERSION= line; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
+    fi
+    exit 1
+fi
+
+# Stop services before reading their databases and other mutable state into
+# the rollback snapshot.
+if ! docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+then
+    echo "Could not stop the release + offline stack; some services may be stopped, but no snapshot or repo changes were made. Once Docker is available, run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    exit 1
+fi
+
+# Save the complete existing install, including .env and local lab/policy
+# edits, for rollback. Keep the first snapshot if this delta is re-applied.
+SNAPSHOT="../rangerdanger.before-__NEW__.tar.gz"
+if [ ! -f "$SNAPSHOT" ]; then
+    tar czf "$SNAPSHOT" -C .. rangerdanger || {
+        rm -f "$SNAPSHOT"
+        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+        exit 1
+    }
+fi
+tar tzf "$SNAPSHOT" >/dev/null || {
+    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    exit 1
+}
+
+# Update the repo, then load the changed images (if any).
+tar xzf "$DELTA_DIR/rangerdanger.tgz" -C ~
+__APPLY_BACKUP__
+__APPLY_LOAD__
+
+# Re-tag unchanged first-party images so every required :__NEW__ tag exists.
+__APPLY_RETAG__
+
+# Select the new release while preserving other .env settings.
+NEW_VERSION=__NEW__ awk '
+  BEGIN { version = ENVIRON["NEW_VERSION"]; replaced = 0 }
+  /^VERSION=/ {
+    if (!replaced) print "VERSION=" version
+    replaced = 1
+    next
+  }
+  { print }
+  END { if (!replaced) print "VERSION=" version }
+' .env > .env.delta.tmp && mv .env.delta.tmp .env
+
+# Start the complete stack from the new version without contacting GHCR.
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+'@
+$applyBlock = $applyBlock.Replace('__SINCE__', $Since).
+    Replace('__NEW__', $New).
+    Replace('__APPLY_BACKUP__', $applyBackupText).
+    Replace('__APPLY_LOAD__', $applyLoadCommand).
+    Replace('__APPLY_RETAG__', $applyRetagText)
+
+$rollbackBlock = @'
+set -e
+cd ~/rangerdanger
+test -f "../rangerdanger.before-__NEW__.tar.gz" || {
+    echo "Rollback snapshot not found beside ~/rangerdanger." >&2
+    exit 1
+}
+tar tzf "../rangerdanger.before-__NEW__.tar.gz" >/dev/null || {
+    echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
+    exit 1
+}
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+cd ..
+rm -rf rangerdanger
+tar xzf "rangerdanger.before-__NEW__.tar.gz"
+cd rangerdanger
+__ROLLBACK_RESTORE__
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+'@
+$rollbackBlock = $rollbackBlock.Replace('__NEW__', $New).
+    Replace('__ROLLBACK_RESTORE__', $rollbackRestoreText)
+
 $readme = @"
-# RangerDanger -- delta patch
+# RangerDanger - delta patch
 
 Staged $now for upgrade from ``$Since`` -> ``$New``.
 
@@ -319,29 +513,42 @@ $unchangedList
 Run from the student's existing ``~/rangerdanger`` directory:
 
 ``````sh
-# 1. update the repo (extracts over your existing ~/rangerdanger in place)
-cd ~/rangerdanger
-docker compose down
-tar xzf <delta-dir>/rangerdanger.tgz -C ~
-
-# 2. load only the changed images for this host's arch
-ARCH=`$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-docker load -i <delta-dir>/delta-`$ARCH.tar
-
-# 3. restart with the offline overlay so docker compose does not try to pull
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+$applyBlock
 ``````
 
-``docker compose up -d`` (no service list) is safe -- compose only
-recreates containers whose image digest changed.
+**ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
+are included, ``delta-arm64.tar`` also ships ``tonistiigi/binfmt``; if
+OpenPLC isn't running after the restart (``docker ps | grep openplc``),
+register it once with
+``docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64``.
+(setup.sh does this automatically on a fresh install; the registration
+does not persist across a host reboot.) A repo-only delta has no image
+archives, so it cannot supply the binfmt image. Make sure that image is
+already present before applying a repo-only delta offline.
+
+If ``docker load`` fails with "no space left on device", free space
+without removing the prior ``$Since`` image tags or parked mutable-image
+tags named ``:before-$New``; removing an old or parked tag forfeits rollback
+for that image. If any apply step after the stack is stopped fails, do not
+try to start a partially updated tree: keep the snapshot and old tags, then
+follow the ``Rollback`` section below.
 
 ## Rollback
 
-Pull the prior ``$Since`` images directly from GHCR:
+The apply recipe saves the complete pre-upgrade ``~/rangerdanger`` tree
+beside the install as ``../rangerdanger.before-$New.tar.gz``. That snapshot
+includes all files and directories in the install tree: ``.env``, Compose
+files, lab definitions, policy files, local edits, and all of ``./data/``
+(including captures, Kali home, and simulator state; nothing in ``./data/``
+is excluded). Docker images are not part of it. It can be large and grows
+with lab state.
+The retained ``$Since`` image tags and the parked mutable-image tags named
+``:before-$New`` are reused, so rollback needs no network and no second
+bundle. Keep the snapshot, retained old image tags, and parked tags until
+the rollback window closes:
 
 ``````sh
-VERSION=$Since docker compose -f docker-compose.release.yml pull
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+$rollbackBlock
 ``````
 "@
 Set-Content -Path (Join-Path $OutDir "DELTA-README.md") -Value $readme -Encoding utf8

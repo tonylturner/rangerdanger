@@ -66,9 +66,11 @@ Say "Version: $Version"
 $allImages = & docker compose -f $ComposeFile config --images 2>$null | Sort-Object -Unique
 if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
 
-# Substitute :latest with $Version for first-party rangerdanger-* images.
+# Resolve Compose's current image tag to the requested release tag. The
+# compose command may already resolve ${VERSION:-latest} from a repo .env.
 $resolved = foreach ($img in $allImages) {
-    $img -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest$', "`$1:$Version"
+    $resolvedImage = $img -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest$', "`$1:$Version"
+    $resolvedImage -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+$', "`$1:$Version"
 }
 
 # --- resolve_platform_ref -----------------------------------------------
