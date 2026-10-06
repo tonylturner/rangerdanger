@@ -90,7 +90,9 @@ foreach ($img in $allImages) {
 $resolved = $allImages
 
 # Binfmt is needed only by arm64 Linux hosts to run the amd64-only OpenPLC
-# image; keep this pin in sync with setup.sh and stage-ssd.sh.
+# image; keep this pin in sync with
+# setup.sh, scripts/persist-emulation.sh, stage-ssd.sh, stage-ssd.ps1,
+# stage-ssd-delta.sh and stage-ssd-delta.ps1.
 $BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
 
 # --- resolve_platform_ref -----------------------------------------------
@@ -411,10 +413,24 @@ try {
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
     Say "Downloading $kernelUrl"
     Invoke-WebRequest -Uri $kernelUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel") -UseBasicParsing -ErrorAction Stop
-    try {
-        Invoke-WebRequest -Uri $kernelShaUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256") -UseBasicParsing -ErrorAction Stop
-    } catch {
+    # One retry, and report why it failed: without this file setup.ps1
+    # installs the kernel with no checksum to verify it against.
+    $shaPath = Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256"
+    $shaError = ""
+    foreach ($attempt in 1, 2) {
+        try {
+            Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+            $shaError = ""
+            break
+        } catch {
+            $shaError = $_.Exception.Message
+            Remove-Item -Path $shaPath -Force -ErrorAction SilentlyContinue
+            if ($attempt -eq 1) { Start-Sleep -Seconds 2 }
+        }
+    }
+    if ($shaError) {
         Warn "kernel sha256 download failed; on-install verification will be skipped."
+        Warn "  ${kernelShaUrl}: $shaError"
     }
     $ksize = [math]::Round((Get-Item (Join-Path $OutDir "rangerdanger-wsl2-kernel")).Length / 1MB, 1)
     Say "wrote $OutDir\rangerdanger-wsl2-kernel ($ksize MB)"

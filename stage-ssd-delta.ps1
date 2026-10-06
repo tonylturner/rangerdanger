@@ -17,8 +17,9 @@ The version the student already has (e.g. v0.1.6).
 The new version to ship (e.g. v0.1.7).
 
 .PARAMETER Include
-Comma-separated short image names (or "rangerdanger-X" form) to force
-into the delta even if their digest matches.
+Comma-separated image names to force into the delta even if their
+digest matches. Either form works (gps-sim or rangerdanger-gps-sim);
+an entry that matches no candidate image is an error.
 
 .PARAMETER All
 Ignore digest comparison; save every image at <New>.
@@ -67,18 +68,23 @@ $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 
 # Binfmt is included in arm64 deltas so students applying deltas without
 # internet still have qemu-x86_64 for the amd64-only OpenPLC image.
-# Keep this pin in sync with setup.sh and stage-ssd-delta.sh.
+# Keep this pin in sync with
+# setup.sh, scripts/persist-emulation.sh, stage-ssd.sh, stage-ssd.ps1,
+# stage-ssd-delta.sh and stage-ssd-delta.ps1.
 $BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 $OutDir = (Resolve-Path $OutDir).Path
 
-# Normalize -Include into a flat list of short names.
+# Normalize -Include into a flat list of short names. Either form a
+# student-facing doc would use is accepted: "gps-sim" or
+# "rangerdanger-gps-sim"; both sides compare in the short form.
 $includeSet = @()
 foreach ($i in $Include) {
     if ($i) { $includeSet += ($i -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ } }
 }
+$includeKeys = @($includeSet | ForEach-Object { $_ -replace '^rangerdanger-', '' })
 
 Say "Output:           $OutDir"
 Say "Since version:    $Since"
@@ -247,7 +253,7 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
 
     $short = ($newImg -replace '.*/','' -replace ':.*','')
 
-    if ($includeSet -contains $short) {
+    if ($includeKeys -contains ($short -replace '^rangerdanger-', '')) {
         $forced.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
         $changedManifests.Add($newManifest) | Out-Null
@@ -298,6 +304,16 @@ if ($changed.Count -eq 0) {
     }
 }
 Write-Host ""
+# Fail closed on a -Include that matched nothing: silently dropping it
+# ships a delta without the image the operator meant to force.
+if ($includeSet.Count -gt 0) {
+    $forcedKeys = @($forced | ForEach-Object { $_ -replace '^rangerdanger-', '' })
+    foreach ($name in $includeSet) {
+        if ($forcedKeys -notcontains ($name -replace '^rangerdanger-', '')) {
+            Die "-Include $name matched no candidate image. Candidates are the first-party images in $ComposeFile (short or rangerdanger- form); upstream images need -IncludeUpstream."
+        }
+    }
+}
 if ($forced.Count -gt 0)       { Say "  Forced via -Include: $($forced -join ', ')" }
 if ($missingSince.Count -gt 0) { Warn "  Could not read since digests for: $($missingSince -join ', ')" }
 Say "  Unchanged (skipped from delta):"
@@ -425,10 +441,24 @@ try {
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
     Say "Downloading $kernelUrl"
     Invoke-WebRequest -Uri $kernelUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel") -UseBasicParsing -ErrorAction Stop
-    try {
-        Invoke-WebRequest -Uri $kernelShaUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256") -UseBasicParsing -ErrorAction Stop
-    } catch {
+    # One retry, and report why it failed: without this file setup.ps1
+    # installs the kernel with no checksum to verify it against.
+    $shaPath = Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256"
+    $shaError = ""
+    foreach ($attempt in 1, 2) {
+        try {
+            Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+            $shaError = ""
+            break
+        } catch {
+            $shaError = $_.Exception.Message
+            Remove-Item -Path $shaPath -Force -ErrorAction SilentlyContinue
+            if ($attempt -eq 1) { Start-Sleep -Seconds 2 }
+        }
+    }
+    if ($shaError) {
         Warn "kernel sha256 download failed; on-install verification will be skipped."
+        Warn "  ${kernelShaUrl}: $shaError"
     }
     $ksize = [math]::Round((Get-Item (Join-Path $OutDir "rangerdanger-wsl2-kernel")).Length / 1MB, 1)
     Say "wrote $OutDir\rangerdanger-wsl2-kernel ($ksize MB)"
@@ -482,7 +512,9 @@ $applyTableRows = foreach ($img in $changed) {
     if (-not $services) { Die "Changed image $img does not map to a service in $ComposeFile" }
     "| ``$short`` | ``$($services -join ', ')`` |"
 }
-$applyTable = $applyTableRows -join "`n"
+# The shell writes each row with a trailing newline, so the table block
+# ends with one and the kernel row below it starts a fresh block.
+$applyTable = ($applyTableRows -join "`n") + "`n"
 
 $applyLoadCommand = if ($changed.Count -gt 0) {
     'ARCH=$(uname -m | sed ''s/x86_64/amd64/;s/aarch64/arm64/'')
@@ -641,7 +673,6 @@ Staged $now for upgrade from ``$Since`` -> ``$New``.
 |---|---|
 $applyTable
 $kernelReadmeRow
-
 $unchangedList
 
 ## Apply
@@ -692,7 +723,7 @@ $rollbackBlock
 # CRLF, which `sh` reads as part of each value it compares.
 [System.IO.File]::WriteAllText(
     (Join-Path $OutDir "DELTA-README.md"),
-    ($readme -replace "`r`n", "`n"),
+    (($readme -replace "`r`n", "`n") + "`n"),
     (New-Object System.Text.UTF8Encoding $false))
 Say "wrote $OutDir\DELTA-README.md"
 
