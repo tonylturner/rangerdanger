@@ -373,6 +373,9 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # Both expansions must word-split: one emits a -t flag per planned
+          # tag, the other one digest reference per per-arch digest file.
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend@sha256:%s ' *)
