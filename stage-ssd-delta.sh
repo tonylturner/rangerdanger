@@ -122,8 +122,8 @@ INCLUDE_SET=" ${INCLUDE_LIST//,/ } "
 
 # Inspect each versioned image once and parse both Linux architectures
 # from the same JSON response. For indexes .Manifest contains the platform
-# descriptors; for single images .Manifest is only a descriptor, so .Image
-# supplies the platform. Unknown-platform attestations are ignored.
+# descriptors; for single images .Image supplies the platform.
+# Unknown-platform attestations are ignored.
 parse_manifest() {
     local img="$1"
     python3 -c '
@@ -183,17 +183,8 @@ if entries is not None:
     for architecture, reference in refs.items():
         print(architecture + "\t" + reference)
 else:
-    config = field(manifest, "config")
-    if isinstance(config, dict):
-        platform = field(config, "platform") or field(manifest, "platform")
-        architecture = field(platform, "architecture")
-        operating_system = field(platform, "os")
-        if architecture is None:
-            architecture = field(config, "architecture")
-            operating_system = field(config, "os")
-    else:
-        architecture = field(image_config, "architecture")
-        operating_system = field(image_config, "os")
+    architecture = field(image_config, "architecture")
+    operating_system = field(image_config, "os")
     if not isinstance(architecture, str) or not architecture:
         fail("single-image manifest has no readable platform architecture")
     if not isinstance(operating_system, str) or not operating_system:
@@ -630,25 +621,26 @@ set -e
 # Set this to the directory containing this delta bundle.
 DELTA_DIR="/path/to/delta-$NEW"
 cd ~/rangerdanger
+test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
+
+# Stop services before reading their databases and other mutable state into
+# the rollback snapshot.
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 
 # Save the complete existing install, including .env and local lab/policy
 # edits, for rollback. Keep the first snapshot if this delta is re-applied.
-test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
 SNAPSHOT="../rangerdanger.before-$NEW.tar.gz"
 if [ ! -f "\$SNAPSHOT" ]; then
     tar czf "\$SNAPSHOT" -C .. rangerdanger || {
         rm -f "\$SNAPSHOT"
-        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta." >&2
+        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
         exit 1
     }
 fi
 tar tzf "\$SNAPSHOT" >/dev/null || {
-    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta." >&2
+    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
     exit 1
 }
-
-# Stop the release stack only after the rollback snapshot is safely written.
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 
 # Update the repo, then load the changed images (if any).
 tar xzf "\$DELTA_DIR/rangerdanger.tgz" -C ~
@@ -673,25 +665,34 @@ NEW_VERSION=$NEW awk '
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 
-**ARM64 Linux only:** OpenPLC needs amd64 emulation. \`delta-arm64.tar\`
-ships \`tonistiigi/binfmt\` for this; if OpenPLC isn't running after the
-restart (\`docker ps | grep openplc\`), register it once with
+**ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
+are included, \`delta-arm64.tar\` also ships \`tonistiigi/binfmt\`; if
+OpenPLC isn't running after the restart (\`docker ps | grep openplc\`),
+register it once with
 \`docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64\`.
 (setup.sh does this automatically on a fresh install; the registration
-does not persist across a host reboot.)
+does not persist across a host reboot.) A repo-only delta has no image
+archives, so it cannot supply the binfmt image. Make sure that image is
+already present before applying a repo-only delta offline.
 
 If \`docker load\` fails with "no space left on device", free space
 without removing the prior \`$SINCE\` image tags; deleting those tags
-removes the offline rollback path.
+removes the offline rollback path. If any apply step after the stack is
+stopped fails, do not try to start a partially updated tree: keep the
+snapshot and old tags, then follow the \`Rollback\` section below.
 
 ## Rollback
 
 The apply recipe saves the complete pre-upgrade \`~/rangerdanger\` tree
 beside the install as \`../rangerdanger.before-$NEW.tar.gz\`. That snapshot
-includes \`.env\`, Compose files, lab definitions, policy files, and local
-edits; Docker images are not part of it. The retained \`$SINCE\` image tags
-are reused, so rollback needs no network and no second bundle. Keep both
-the snapshot and old image tags until the rollback window closes:
+includes all files and directories in the install tree: \`.env\`, Compose
+files, lab definitions, policy files, local edits, and all of \`./data/\`
+(including captures, Kali home, and simulator state; nothing in \`./data/\`
+is excluded). Docker images are not part of it. It can be large and grows
+with lab state.
+The retained \`$SINCE\` image tags are reused, so rollback needs no network
+and no second bundle. Keep both the snapshot and old image tags until the
+rollback window closes:
 
 \`\`\`sh
 set -e
@@ -704,6 +705,7 @@ tar tzf "../rangerdanger.before-$NEW.tar.gz" >/dev/null || {
     echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
     exit 1
 }
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 cd ..
 rm -rf rangerdanger
 tar xzf "rangerdanger.before-$NEW.tar.gz"

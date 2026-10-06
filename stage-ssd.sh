@@ -89,8 +89,8 @@ BINFMT_IMAGE="tonistiigi/binfmt:qemu-v10.2.1"  # pinned; keep in sync with setup
 
 # Inspect once and parse both Linux architectures from the same JSON
 # response. For indexes .Manifest contains the platform descriptors; for
-# single images .Manifest is only a descriptor, so .Image supplies the
-# platform. Unknown-platform entries are attestations, not runnable images.
+# single images .Image supplies the platform. Unknown-platform entries are
+# attestations, not runnable images.
 parse_manifest() {
     local img="$1"
     python3 -c '
@@ -150,17 +150,8 @@ if entries is not None:
     for architecture, reference in refs.items():
         print(architecture + "\t" + reference)
 else:
-    config = field(manifest, "config")
-    if isinstance(config, dict):
-        platform = field(config, "platform") or field(manifest, "platform")
-        architecture = field(platform, "architecture")
-        operating_system = field(platform, "os")
-        if architecture is None:
-            architecture = field(config, "architecture")
-            operating_system = field(config, "os")
-    else:
-        architecture = field(image_config, "architecture")
-        operating_system = field(image_config, "os")
+    architecture = field(image_config, "architecture")
+    operating_system = field(image_config, "os")
     if not isinstance(architecture, str) or not architecture:
         fail("single-image manifest has no readable platform architecture")
     if not isinstance(operating_system, str) or not operating_system:

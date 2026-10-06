@@ -256,17 +256,30 @@ smaller; a delta is small only when few images differ.
 
 Follow the generated `DELTA-README.md`: it contains the exact changed
 image-to-service table and the apply commands for the staged versions.
-Before stopping the release stack or extracting the repo, it saves the
-complete existing `~/rangerdanger` tree beside the install as
+It first stops the release + offline stack, then saves the complete
+existing `~/rangerdanger` tree beside the install as
 `../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
-`.env`, Compose files, lab definitions, policy files, and local edits (but
-not Docker images), and is not overwritten if the same delta is applied
-again. The recipe then extracts the repo and loads the changed-image
-archive for the host architecture. For every unchanged first-party image
-it emits a `docker image tag <old-ref> <new-ref>` command, so Compose can
-find every image at the selected new version while offline. It then
-updates `VERSION` in `.env` and finishes with the explicit release +
-offline Compose restart.
+`.env`, Compose files, lab definitions, policy files, local edits, and all
+of `./data/` (including captures, Kali home, and simulator state), but not
+Docker images. It also captures any other files present in the install
+tree. Snapshot size and creation time grow with lab state; allow enough
+free disk space for a compressed copy of the full tree. The snapshot is
+not overwritten if the same delta is applied again. If snapshot creation
+or its archive check fails, the generated instructions say the stack is
+stopped and give the command to bring the unchanged install back up.
+
+The recipe then extracts the repo and loads the changed-image archive for
+the host architecture. For every unchanged first-party image it emits a
+`docker image tag <old-ref> <new-ref>` command, so Compose can find every
+image at the selected new version while offline. It then updates `VERSION`
+in `.env` and finishes with the explicit release + offline Compose
+restart.
+
+For ARM64 Linux, OpenPLC uses amd64 emulation. A delta with changed images
+includes `tonistiigi/binfmt` in `delta-arm64.tar`; a repo-only delta creates
+no image archives and cannot provide that image. Ensure
+`tonistiigi/binfmt:qemu-v10.2.1` is already present before applying a
+repo-only delta offline if OpenPLC may need to restart after a host reboot.
 
 Do not restart only the changed services: first select the new image tags,
 then apply the complete stack so every service resolves against the same
@@ -276,11 +289,12 @@ release and updated repo files. The generated recipe's final command is:
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
-For offline rollback, the generated `Rollback` section removes the updated
-repo, restores the complete saved repo tree (including `.env` and local
-edits), and starts the complete stack with the old tags. It needs no
-network or second bundle. Docker images are not in the repo snapshot, so
-keep the snapshot and old image tags until the rollback window closes.
+For offline rollback, the generated `Rollback` section first stops the
+release + offline stack, then removes the updated repo and restores the
+complete saved repo tree (including `.env`, local edits, and `./data/`)
+before starting the complete stack with the old tags. It needs no network
+or second bundle. Docker images are not in the repo snapshot, so keep the
+snapshot and old image tags until the rollback window closes.
 
 ## Recovery scenarios
 
