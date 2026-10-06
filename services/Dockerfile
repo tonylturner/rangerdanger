@@ -1,26 +1,62 @@
 # Multi-stage Dockerfile for all substation simulator services.
 # Usage: docker build --target <service-name> -t <tag> .
 
-FROM golang:1.27-alpine AS builder
+FROM golang:1.27-alpine AS go-deps
 WORKDIR /app
-# Copy dnp3go library first (standalone module, referenced via replace directive)
-COPY dnp3go/ /dnp3go/
 COPY services/go.mod ./
+COPY dnp3go/go.mod /dnp3go/go.mod
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
-COPY services/ .
-# All seven sims built in one RUN so the go-build + module caches are
-# shared across them, and we end up with one image layer instead of
-# seven. Caches persist between CI runs via the workflow's GHA cache.
+
+# Shared imports feed every simulator. DNP3 library sources are only
+# present in builders for the five simulators that import the package.
+FROM go-deps AS sim-builder
+COPY services/shared/*.go ./shared/
+
+FROM sim-builder AS dnp3-sim-builder
+COPY dnp3go/*.go /dnp3go/
+
+FROM dnp3-sim-builder AS relay-sim-builder
+COPY services/relay-sim/*.go ./relay-sim/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim \
- && CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim \
- && CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim \
- && CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim \
- && CGO_ENABLED=0 go build -o /bin/capbank-sim ./capbank-sim \
- && CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim \
- && CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
+    CGO_ENABLED=0 go build -o /bin/relay-sim ./relay-sim
+
+FROM dnp3-sim-builder AS recloser-sim-builder
+COPY services/recloser-sim/*.go ./recloser-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/recloser-sim ./recloser-sim
+
+FROM dnp3-sim-builder AS regulator-sim-builder
+COPY services/regulator-sim/*.go ./regulator-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/regulator-sim ./regulator-sim
+
+FROM dnp3-sim-builder AS rtac-sim-builder
+COPY services/rtac-sim/*.go ./rtac-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/rtac-sim ./rtac-sim
+
+FROM dnp3-sim-builder AS capbank-sim-builder
+COPY services/capbank-sim/*.go ./capbank-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/capbank-sim ./capbank-sim
+
+FROM sim-builder AS historian-sim-builder
+COPY services/historian-sim/*.go ./historian-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/historian-sim ./historian-sim
+
+FROM sim-builder AS gps-sim-builder
+COPY services/gps-sim/*.go ./gps-sim/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
 # Build dnp3poll/dnp3cmd from the dnp3go library so rtac-sim can ship
 # them as student-runnable diagnostic tools. The eng-ws Dockerfile
@@ -28,7 +64,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # parallel build here avoids cross-Dockerfile coupling.
 FROM golang:1.27-alpine AS dnp3-builder
 WORKDIR /src
-COPY dnp3go/ .
+COPY dnp3go/go.mod ./go.mod
+COPY dnp3go/*.go ./
+COPY dnp3go/cmd/dnp3poll/*.go ./cmd/dnp3poll/
+COPY dnp3go/cmd/dnp3cmd/*.go ./cmd/dnp3cmd/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /bin/dnp3poll ./cmd/dnp3poll \
@@ -67,17 +106,17 @@ RUN chmod +x /usr/local/bin/set-gateway.sh \
               /usr/local/bin/rtac-route-monitor.sh
 
 FROM sim-base AS relay-sim
-COPY --from=builder /bin/relay-sim /usr/local/bin/relay-sim
+COPY --from=relay-sim-builder /bin/relay-sim /usr/local/bin/relay-sim
 EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && relay-sim"]
 
 FROM sim-base AS recloser-sim
-COPY --from=builder /bin/recloser-sim /usr/local/bin/recloser-sim
+COPY --from=recloser-sim-builder /bin/recloser-sim /usr/local/bin/recloser-sim
 EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && recloser-sim"]
 
 FROM sim-base AS regulator-sim
-COPY --from=builder /bin/regulator-sim /usr/local/bin/regulator-sim
+COPY --from=regulator-sim-builder /bin/regulator-sim /usr/local/bin/regulator-sim
 EXPOSE 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 
@@ -98,7 +137,7 @@ CMD ["sh", "-c", "set-gateway.sh && regulator-sim"]
 FROM sim-base AS rtac-sim
 RUN apk add --no-cache libmodbus curl python3 openssh-server openssh-keygen nginx openssl shadow
 COPY --from=mbpoll-builder /src/build/bin/mbpoll /usr/local/bin/mbpoll
-COPY --from=builder        /bin/rtac-sim         /usr/local/bin/rtac-sim
+COPY --from=rtac-sim-builder        /bin/rtac-sim         /usr/local/bin/rtac-sim
 COPY --from=dnp3-builder   /bin/dnp3poll         /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder   /bin/dnp3cmd          /usr/local/bin/dnp3cmd
 COPY scripts/rtac-mgmt-init.sh /usr/local/bin/rtac-mgmt-init.sh
@@ -115,17 +154,17 @@ EXPOSE 22 443 8080 502 20000
 CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-mgmt-init.sh && rtac-route-monitor.sh & exec rtac-sim"]
 
 FROM sim-base AS capbank-sim
-COPY --from=builder /bin/capbank-sim /usr/local/bin/capbank-sim
+COPY --from=capbank-sim-builder /bin/capbank-sim /usr/local/bin/capbank-sim
 EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && capbank-sim"]
 
 FROM sim-base AS historian-sim
-COPY --from=builder /bin/historian-sim /usr/local/bin/historian-sim
+COPY --from=historian-sim-builder /bin/historian-sim /usr/local/bin/historian-sim
 EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && historian-sim"]
 
 FROM sim-base AS gps-sim
-COPY --from=builder /bin/gps-sim /usr/local/bin/gps-sim
+COPY --from=gps-sim-builder /bin/gps-sim /usr/local/bin/gps-sim
 EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && gps-sim"]
 
