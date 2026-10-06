@@ -252,7 +252,13 @@ cd ~/rangerdanger
 ``setup.sh`` / ``setup.ps1`` auto-detects the host architecture and
 loads the right ``images-<arch>.tar`` before bringing the stack up.
 "@
-Set-Content -Path (Join-Path $OutDir "README.md") -Value $readme -Encoding utf8
+# Write LF and no BOM. This file carries a /bin/sh recipe the student runs
+# on Linux or macOS, and a Windows checkout gives the here-strings above
+# CRLF, which `sh` reads as part of each value it compares.
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutDir "README.md"),
+    ($readme -replace "`r`n", "`n"),
+    (New-Object System.Text.UTF8Encoding $false))
 Say "wrote $OutDir\README.md"
 
 Banner "Done"
