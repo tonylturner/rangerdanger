@@ -623,9 +623,29 @@ DELTA_DIR="/path/to/delta-$NEW"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
 
+# Only apply a delta to the version it was built from. Check before stopping
+# services or touching the install so a wrong or repeated delta is harmless.
+CURRENT_VERSION=\$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
+if [ "\$CURRENT_VERSION" = "$NEW" ]; then
+    echo "This delta looks already applied: install VERSION is \$CURRENT_VERSION, but this delta expects $SINCE; nothing was changed." >&2
+    exit 1
+fi
+if [ "\$CURRENT_VERSION" != "$SINCE" ]; then
+    if [ -n "\$CURRENT_VERSION" ]; then
+        echo "Install VERSION is \$CURRENT_VERSION; this delta expects $SINCE. Refusing to apply; nothing was changed." >&2
+    else
+        echo "Install .env has no VERSION= line; this delta expects $SINCE. Refusing to apply; nothing was changed." >&2
+    fi
+    exit 1
+fi
+
 # Stop services before reading their databases and other mutable state into
 # the rollback snapshot.
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+if ! docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+then
+    echo "Could not stop the release + offline stack; some services may be stopped, but no snapshot or repo changes were made. Once Docker is available, run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    exit 1
+fi
 
 # Save the complete existing install, including .env and local lab/policy
 # edits, for rollback. Keep the first snapshot if this delta is re-applied.

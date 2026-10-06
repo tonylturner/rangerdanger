@@ -256,8 +256,17 @@ smaller; a delta is small only when few images differ.
 
 Follow the generated `DELTA-README.md`: it contains the exact changed
 image-to-service table and the apply commands for the staged versions.
-It first stops the release + offline stack, then saves the complete
-existing `~/rangerdanger` tree beside the install as
+Before stopping anything, the recipe reads `VERSION` from the install's
+`.env` and requires it to match the delta's `<since-version>`. A missing
+version or any other version is refused without changing the install; if
+the install is already at `<new-version>`, the recipe says the delta looks
+already applied and nothing was changed. This also permits safely
+re-applying a delta after an interrupted attempt that left the install at
+`<since-version>`.
+
+After that precondition passes, the recipe stops the release + offline
+stack, then saves the complete existing `~/rangerdanger` tree beside the
+install as
 `../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
 `.env`, Compose files, lab definitions, policy files, local edits, and all
 of `./data/` (including captures, Kali home, and simulator state), but not
@@ -267,6 +276,9 @@ free disk space for a compressed copy of the full tree. The snapshot is
 not overwritten if the same delta is applied again. If snapshot creation
 or its archive check fails, the generated instructions say the stack is
 stopped and give the command to bring the unchanged install back up.
+If stopping the stack itself fails, no snapshot or repo changes have been
+made; the generated instructions note that some services may be stopped
+and give the same command to bring the unchanged install back up.
 
 The recipe then extracts the repo and loads the changed-image archive for
 the host architecture. For every unchanged first-party image it emits a
