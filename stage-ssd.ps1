@@ -401,6 +401,11 @@ $kernelUrl = if ($Version -eq 'latest') {
 }
 $kernelShaUrl = "$kernelUrl.sha256"
 $kernelReadmeRow = ""
+# Windows PowerShell 5.1 draws a per-chunk progress bar for
+# Invoke-WebRequest -OutFile, which can stall a 25 MB download for
+# minutes. Suppress it for the kernel transfer and restore it after.
+$previousProgress = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
 try {
     $head = Invoke-WebRequest -Uri $kernelUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
@@ -421,6 +426,8 @@ try {
     Warn "   kernel asset attaches to the release, OR manually drop rangerdanger-wsl2-kernel"
     Warn "   + .sha256 into $OutDir.)"
     Warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
+} finally {
+    $ProgressPreference = $previousProgress
 }
 
 Banner "Write README"

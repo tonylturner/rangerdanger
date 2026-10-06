@@ -290,6 +290,10 @@ function Invoke-DownloadVerified($url, $sha256Url, $expectedSha256, $outPath) {
     $parent = Split-Path -Parent $outPath
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
 
+    # Function-scoped: Windows PowerShell 5.1 draws a per-chunk progress
+    # bar for Invoke-WebRequest -OutFile that can stall this download for
+    # minutes. The assignment is restored when the function returns.
+    $ProgressPreference = 'SilentlyContinue'
     Say "Downloading kernel: $url"
     try {
         Invoke-WebRequest -Uri $url -OutFile $outPath -UseBasicParsing -ErrorAction Stop

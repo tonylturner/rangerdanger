@@ -415,6 +415,11 @@ $ghOwnerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturne
 $kernelUrl = "https://github.com/$ghOwnerRepo/releases/download/$New/rangerdanger-wsl2-kernel"
 $kernelShaUrl = "$kernelUrl.sha256"
 $kernelReadmeRow = ""
+# Windows PowerShell 5.1 draws a per-chunk progress bar for
+# Invoke-WebRequest -OutFile, which can stall a 25 MB download for
+# minutes. Suppress it for the kernel transfer and restore it after.
+$previousProgress = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
 try {
     $head = Invoke-WebRequest -Uri $kernelUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
@@ -431,6 +436,8 @@ try {
 } catch {
     Warn "rangerdanger-wsl2-kernel not yet published for release $New."
     Warn "  (Re-run this delta after the kernel asset publishes, OR drop the file into $OutDir manually.)"
+} finally {
+    $ProgressPreference = $previousProgress
 }
 
 Banner "Write DELTA-README.md"
