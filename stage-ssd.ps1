@@ -73,6 +73,10 @@ $resolved = foreach ($img in $allImages) {
     $resolvedImage -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+$', "`$1:$Version"
 }
 
+# Binfmt is needed only by arm64 Linux hosts to run the amd64-only OpenPLC
+# image; keep this pin in sync with setup.sh and stage-ssd.sh.
+$BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
+
 # --- resolve_platform_ref -----------------------------------------------
 # See stage-ssd.sh for the full rationale (long comment block above the
 # bash version). TL;DR: pulling --platform=<arch> on a different host arch
@@ -112,7 +116,13 @@ function Invoke-StageArch($arch) {
 
     $count = 0
     $pulledTags = @()
-    foreach ($img in $resolved) {
+    $toStage = @($resolved)
+    if ($arch -eq 'arm64') {
+        # arm64 Linux has no Rosetta fallback. Bundle qemu-x86_64 so the
+        # amd64-only OpenPLC image can run fully offline; amd64 never needs it.
+        $toStage += $BINFMT_IMAGE
+    }
+    foreach ($img in $toStage) {
         if (-not $img) { continue }
         $count++
         Say "[$count] resolve $arch  $img"
@@ -233,7 +243,7 @@ Staged $now for version ``$Version``.
 ## Contents
 
 - ``images-amd64.tar`` -- Docker images for Intel / AMD64 hosts
-- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2)
+- ``images-arm64.tar`` -- Docker images for Apple Silicon / ARM64 hosts (openplc is cross-included as the amd64 image and runs under Rosetta 2), plus ``$BINFMT_IMAGE`` for qemu-x86_64 on arm64 Linux
 - ``rangerdanger.tgz`` -- Repo archive at $shortSha ($($lastSubject.Substring(0, [Math]::Min(80, $lastSubject.Length))))
 $kernelReadmeRow
 
@@ -251,6 +261,13 @@ cd ~/rangerdanger
 
 ``setup.sh`` / ``setup.ps1`` auto-detects the host architecture and
 loads the right ``images-<arch>.tar`` before bringing the stack up.
+
+On arm64 Linux, register amd64 emulation after loading the bundle if it
+is not already enabled:
+
+``````sh
+docker run --privileged --rm $BINFMT_IMAGE --install amd64
+``````
 "@
 # Write LF and no BOM. This file carries a /bin/sh recipe the student runs
 # on Linux or macOS, and a Windows checkout gives the here-strings above

@@ -65,6 +65,11 @@ function Banner($m) {
 $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 
+# Binfmt is included in arm64 deltas so students applying deltas without
+# internet still have qemu-x86_64 for the amd64-only OpenPLC image.
+# Keep this pin in sync with setup.sh and stage-ssd-delta.sh.
+$BINFMT_IMAGE = "tonistiigi/binfmt:qemu-v10.2.1"
+
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 $OutDir = (Resolve-Path $OutDir).Path
@@ -220,7 +225,13 @@ function Invoke-StageArch($arch) {
     Banner "Stage linux/$arch -> $(Split-Path -Leaf $tarball)"
 
     $pulledTags = @()
-    foreach ($img in $changed) {
+    $toStage = @($changed)
+    if ($arch -eq 'arm64') {
+        # binfmt is not part of the changed-image comparison; always include
+        # it in an arm64 delta so OpenPLC works offline on arm64 Linux.
+        $toStage += $BINFMT_IMAGE
+    }
+    foreach ($img in $toStage) {
         Say "resolve $arch  $img"
         $ref = Resolve-PlatformRef $img $arch
         if (-not $ref) {
@@ -517,10 +528,10 @@ $applyBlock
 ``````
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
-are included, ``delta-arm64.tar`` also ships ``tonistiigi/binfmt``; if
+are included, ``delta-arm64.tar`` also ships ``$BINFMT_IMAGE``; if
 OpenPLC isn't running after the restart (``docker ps | grep openplc``),
 register it once with
-``docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.1 --install amd64``.
+``docker run --privileged --rm $BINFMT_IMAGE --install amd64``.
 (setup.sh does this automatically on a fresh install; the registration
 does not persist across a host reboot.) A repo-only delta has no image
 archives, so it cannot supply the binfmt image. Make sure that image is
