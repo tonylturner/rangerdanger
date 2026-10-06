@@ -503,7 +503,6 @@ if ($kernelPublished) {
         $ProgressPreference = $previousProgress
     }
 } else {
-    Remove-Item -Path (Join-Path $OutDir "rangerdanger-wsl2-kernel"), (Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256") -Force -ErrorAction SilentlyContinue
     Warn "rangerdanger-wsl2-kernel not yet published for release $New."
     Warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
     Warn "   Re-run this delta after the kernel asset publishes, OR drop the file into $OutDir manually.)"

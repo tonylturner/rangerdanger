@@ -471,6 +471,12 @@ if ($KernelPath) {
             Die 12 "sha256 mismatch on local file:`n  expected: $ExpectedSha256`n  actual:   $actual"
         }
         Say "sha256 verified: $actual"
+    } else {
+        # The one legitimate unverified case: a kernel the operator built from
+        # wsl-kernel/ and selected by hand. Every downloaded kernel, and every
+        # kernel a staged SSD bundle supplies, carries a checksum or fails.
+        Warn "No -ExpectedSha256 for $kernelSrc -- installing it without verification."
+        Warn "Only do this for a kernel you built yourself from wsl-kernel/."
     }
     # Stage into managed location.
     if (-not (Test-Path $Managed.KernelDir)) { New-Item -ItemType Directory -Path $Managed.KernelDir -Force | Out-Null }

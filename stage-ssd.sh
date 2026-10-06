@@ -466,7 +466,6 @@ if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
     say "wrote $kernel_path ($kernel_size)"
     KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` — custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
 else
-    rm -f "$OUT/rangerdanger-wsl2-kernel" "$OUT/rangerdanger-wsl2-kernel.sha256"
     warn "rangerdanger-wsl2-kernel not yet published for release $VERSION."
     warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
     warn "   If you are staging before that workflow has run, re-run stage-ssd.sh after the kernel"

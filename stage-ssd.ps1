@@ -475,7 +475,6 @@ if ($kernelPublished) {
         $ProgressPreference = $previousProgress
     }
 } else {
-    Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
     Warn "rangerdanger-wsl2-kernel not yet published for release $Version."
     Warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
     Warn "   If you are staging before that workflow has run, re-run stage-ssd.ps1 after the"

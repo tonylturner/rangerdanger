@@ -566,7 +566,6 @@ if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
     say "wrote $kernel_path ($kernel_size)"
     KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` -- custom WSL2 kernel for Windows ICS DPI labs (\`setup.ps1 -FromTarballs\` picks it up automatically)."
 else
-    rm -f "$OUT/rangerdanger-wsl2-kernel" "$OUT/rangerdanger-wsl2-kernel.sha256"
     warn "rangerdanger-wsl2-kernel not yet published for release $NEW."
     warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
     warn "   Re-run this delta after the kernel asset publishes, OR drop the file into $OUT manually.)"
