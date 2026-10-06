@@ -48,6 +48,23 @@ jobs:
           fi
           echo "name=$tag" >> "$GITHUB_OUTPUT"
 
+      - name: Reject an already-published target release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          release_view_error="$RUNNER_TEMP/release-view-error"
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>"$release_view_error")"; then
+            if [ "$is_draft" != "true" ]; then
+              echo "::error::Release $TAG is already published. Delete or unpublish it before rerunning this workflow."
+              exit 1
+            fi
+          elif ! grep -Fxq "release not found" "$release_view_error"; then
+            cat "$release_view_error" >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.name }}
@@ -307,9 +324,10 @@ jobs:
         run: |
           source_ref="${IMAGE_REPOSITORY}@${SOURCE_DIGEST}"
           source_metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$source_ref")"
-          media_type="$(jq -r '.MediaType // .mediaType // ""' <<< "$source_metadata")"
+          media_type="$(jq -er '.manifest.mediaType | strings | select(length > 0)' <<< "$source_metadata")"
           prefer_index_args=()
-          if [[ "$media_type" != *"image.index"* && "$media_type" != *"manifest.list"* ]]; then
+          if [[ "$media_type" != "application/vnd.oci.image.index.v1+json" &&
+                "$media_type" != "application/vnd.docker.distribution.manifest.list.v2+json" ]]; then
             prefer_index_args+=(--prefer-index=false)
           fi
           tag_args=()
@@ -356,51 +374,7 @@ jobs:
           IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
           ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.build-root.outputs.root_digest }}
           EXPECTED_PLATFORMS: ${{ toJSON(matrix.platforms) }}
-        run: &verify-published-root-script |
-          # shellcheck disable=SC2153 # Inputs are injected through step env.
-          expected_platforms="$(jq -r 'sort | join(",")' <<< "$EXPECTED_PLATFORMS")"
-          root_metadata=""
-          while IFS= read -r image_tag; do
-            [ -n "$image_tag" ] || continue
-            metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$image_tag")"
-            digest="$(jq -r '.Digest // .digest // ""' <<< "$metadata")"
-            [ "$digest" = "$ROOT_DIGEST" ] || {
-              echo "$image_tag resolves to $digest, expected $ROOT_DIGEST" >&2
-              exit 1
-            }
-            [ -n "$root_metadata" ] || root_metadata="$metadata"
-          done <<< "$IMAGE_TAGS"
-          [ -n "$root_metadata" ] || { echo "No planned image tags." >&2; exit 1; }
-
-          if jq -e '(.Manifests // .manifests // []) | length > 0' <<< "$root_metadata" >/dev/null; then
-            actual_platforms="$(jq -r '
-              [(.Manifests // .manifests // [])[] |
-               (.Platform // .platform // {}) as $platform |
-               select(((.Annotations // .annotations // {})["vnd.docker.reference.type"] // "") != "attestation-manifest" and
-                      ($platform.os != "unknown" or $platform.architecture != "unknown")) |
-               "\($platform.os)/\($platform.architecture)"] | sort | join(",")
-            ' <<< "$root_metadata")"
-            while IFS= read -r child_digest; do
-              [ -n "$child_digest" ] || { echo "A platform descriptor has no digest." >&2; exit 1; }
-              docker buildx imagetools inspect --format '{{json .}}' \
-                "${IMAGE_REPOSITORY}@${child_digest}" >/dev/null
-            done < <(jq -r '
-              [(.Manifests // .manifests // [])[] |
-               (.Platform // .platform // {}) as $platform |
-               select(((.Annotations // .annotations // {})["vnd.docker.reference.type"] // "") != "attestation-manifest" and
-                      ($platform.os != "unknown" or $platform.architecture != "unknown")) |
-               .Digest // .digest // ""] | .[]
-            ' <<< "$root_metadata")
-          else
-            root_ref="${IMAGE_REPOSITORY}@${ROOT_DIGEST}"
-            docker pull "$root_ref"
-            actual_platforms="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$root_ref")"
-          fi
-          [ "$actual_platforms" = "$expected_platforms" ] || {
-            echo "Published platforms $actual_platforms do not match $expected_platforms" >&2
-            exit 1
-          }
-          echo "Verified ${IMAGE_REPOSITORY}@${ROOT_DIGEST} ($actual_platforms)"
+        run: scripts/verify_published_image.sh "$IMAGE_REPOSITORY" "$ROOT_DIGEST" "$IMAGE_TAGS" "$EXPECTED_PLATFORMS"
 
       - name: Write image result
         env:
@@ -669,9 +643,10 @@ jobs:
           source_digest="$(jq -r '.images[] | select(.image == "rangerdanger-frontend") | .source_digest' "$PLAN_PATH")"
           source_ref="${IMAGE_REPOSITORY}@${source_digest}"
           source_metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$source_ref")"
-          media_type="$(jq -r '.MediaType // .mediaType // ""' <<< "$source_metadata")"
+          media_type="$(jq -er '.manifest.mediaType | strings | select(length > 0)' <<< "$source_metadata")"
           prefer_index_args=()
-          if [[ "$media_type" != *"image.index"* && "$media_type" != *"manifest.list"* ]]; then
+          if [[ "$media_type" != "application/vnd.oci.image.index.v1+json" &&
+                "$media_type" != "application/vnd.docker.distribution.manifest.list.v2+json" ]]; then
             prefer_index_args+=(--prefer-index=false)
           fi
           tag_args=()
@@ -691,7 +666,7 @@ jobs:
           IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
           ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.create.outputs.root_digest }}
           EXPECTED_PLATFORMS: '["linux/amd64","linux/arm64"]'
-        run: *verify-published-root-script
+        run: scripts/verify_published_image.sh "$IMAGE_REPOSITORY" "$ROOT_DIGEST" "$IMAGE_TAGS" "$EXPECTED_PLATFORMS"
 
       - name: Write frontend image result
         env:
@@ -783,18 +758,23 @@ jobs:
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create or return the release to draft
+      - name: Create release draft or require an existing draft
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.name }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          release_view_error="$RUNNER_TEMP/release-view-error"
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft 2>"$release_view_error")"; then
             if [ "$is_draft" != "true" ]; then
-              echo "Returning the existing release to draft before replacing its image record."
-              gh release edit "$TAG" --draft
+              echo "::error::Release $TAG is already published. Delete or unpublish it before rerunning this workflow."
+              exit 1
             fi
           else
+            if ! grep -Fxq "release not found" "$release_view_error"; then
+              cat "$release_view_error" >&2
+              exit 1
+            fi
             prerelease_flag=()
             if [[ "$TAG" == *-* ]]; then
               prerelease_flag+=(--prerelease)
@@ -977,6 +957,7 @@ jobs:
       - name: File or update a failure alert issue
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.tag.outputs.name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -984,9 +965,9 @@ jobs:
           body=$(printf '%s\n' \
             "The Release workflow for \`${TAG}\` did not complete: ${RUN_URL}" \
             "" \
-            "Likely effects: one or more GHCR images may be missing or partial. The GitHub Release is staged as a draft and will not be published without all 16 verified image results and its release-images.json asset." \
+            "Likely effects: if image jobs started, one or more GHCR images may be missing or partial. An existing published release is never re-drafted; otherwise, incomplete runs keep the release as a draft and do not publish it without all 16 verified image results and its release-images.json asset." \
             "" \
-            "Recover: fix the failing job above, then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. Manual runs build all images; set rebuild_all to refresh moving upstream bases and packages." \
+            "Recover: fix the failing job above. If the existing-published-release guard failed, delete or unpublish that release first. Then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. Manual runs build all images; set rebuild_all to refresh moving upstream bases and packages." \
             "" \
             "_Filed automatically by release.yml on failure._")
           existing=$(gh issue list --state open --search "in:title Release ${TAG} failed" --json number --jq '.[0].number // empty' 2>/dev/null || true)
