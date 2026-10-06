@@ -57,10 +57,9 @@ systemd unit once for permanent persistence:
 sudo ./scripts/persist-emulation.sh        # --uninstall to remove
 ```
 
-Everything else - the containd DPI engine and the other 13 first-party
-images - runs natively on arm64; only OpenPLC needs this, and nothing
-else depends on it, so the rest of the workshop works either way. x86_64
-Linux needs none of this (OpenPLC is native there).
+The release's other services use native arm64 images where published;
+OpenPLC is the stack's amd64-only first-party image and is cross-included
+in the arm64 SSD archive. x86_64 Linux runs OpenPLC natively.
 
 ## Install paths
 
@@ -100,8 +99,8 @@ To re-run only the preflight checks without installing:
 
 ### Path B - Build from source
 
-For developers / contributors. Builds all 14 first-party images
-locally; the first build takes several minutes (Go simulators, Kali
+For developers / contributors. Builds the first-party images locally;
+the first build takes several minutes (Go simulators, Kali
 trim, eng-ws, frontend bundle).
 
 ```bash
@@ -120,6 +119,10 @@ isn't realistic. The instructor stages an SSD; students load from it.
 ```bash
 ./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
 ```
+
+The positional version selects every first-party image tag independently
+of the instructor repo's `.env`; the helper records the same value in
+`.version` and verifies the saved image tags before reporting success.
 
 This produces `images-amd64.tar`, `images-arm64.tar`,
 `rangerdanger.tgz`, a `.version` marker, and an auto-generated SSD
@@ -143,9 +146,10 @@ also selects `docker-compose.offline.yml`.
 `setup.sh` detects the host architecture, loads the matching
 tarball with `docker load`, then starts the selected Compose stack.
 
-The release artifacts (image tarballs) are also attached to each
-[GitHub release](https://github.com/tonylturner/rangerdanger/releases)
-if you'd rather download than stage your own SSD.
+Do not assume each [GitHub release](https://github.com/tonylturner/rangerdanger/releases)
+has prebuilt image tarballs attached. Use an instructor-staged, verified
+bundle, or verify any manually supplied assets and their `.version`
+before using them offline.
 
 ## Once it's up
 
@@ -162,12 +166,13 @@ and start with **Lab 1.2** (Baseline Traffic Analysis).
 
 ## Common errors
 
-Compose commands below assume Path A: every one needs
-`-f docker-compose.release.yml`, because a bare `docker compose`
-selects the source stack and rebuilds from Dockerfiles. For a Path C
-offline install add `-f docker-compose.offline.yml` as well, so Compose
-uses the images loaded from the SSD instead of reaching GHCR. If you
-installed with Path B, drop both flags.
+Compose commands below use the release and offline files explicitly, so
+they also work after Path C without contacting GHCR. For an online Path A
+install, drop `-f docker-compose.offline.yml` if Compose should pull an
+updated image. A bare `docker compose` selects the source stack and may
+rebuild from Dockerfiles; Path B source-build users should drop both
+release flags. The firewall-pull example below is intentionally online
+and uses only the release file.
 
 ### "the lab doesn't come up"
 
@@ -204,9 +209,9 @@ back.
 Stale local DB after a major schema change. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml down
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 rm -f backend/data/rangerdanger.db
-docker compose -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
 ### "containd won't authenticate"
@@ -215,9 +220,9 @@ Stale local users.db after the default password got changed in
 a prior session. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml down
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml up -d
+docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
 containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
