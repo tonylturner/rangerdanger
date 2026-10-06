@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Release images can be promoted by digest or rebuilt.** Each release
+  records the verified image roots, platforms, original build metadata,
+  and build/promote decision in a `release-images.json` asset. A
+  `[rebuild-all]` tag marker or the manual `rebuild_all` input refreshes
+  moving upstream bases and packages.
 - **Published images no longer carry the release version as an OCI
   label.** `org.opencontainers.image.version` is gone; each image keeps
   `title`, `source`, `licenses`, the full source revision it was built

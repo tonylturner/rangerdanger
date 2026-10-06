@@ -1,18 +1,7 @@
 name: Release
 
-# Build and publish first-party images to GHCR on tag push.
-#
-# Triggers on any tag matching v* (so v0.1.0, v0.0.1-alpha,
-# v1.2.3-rc.1 all work). Pre-release tags (anything containing a
-# hyphen) get :vX.Y.Z-pre but do NOT update :latest, so an alpha
-# can't accidentally replace the stable :latest pointer.
-#
-# Multi-arch (linux/amd64 + linux/arm64) for everything except
-# openplc, whose upstream base (tuttas/openplc_v3) is amd64-only.
-#
-# To re-run for an existing tag: workflow_dispatch from the Actions
-# tab and provide the tag name.
-
+# Tag pushes build/promote; pre-releases do not move :latest. Frontend uses
+# native builders and OpenPLC is amd64-only.
 on:
   push:
     tags:
@@ -20,9 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to (re-)build (e.g. v0.1.0). Must already exist."
+        description: "Tag to (re-)publish (e.g. v0.1.0). Must already exist."
         required: true
-
+      rebuild_all:
+        description: "Refresh every image from upstream bases and packages"
+        type: boolean
+        required: false
+        default: false
 permissions:
   contents: write
   packages: write
@@ -32,99 +25,166 @@ env:
   NAMESPACE: tonylturner
 
 jobs:
+  plan:
+    name: Plan image builds and promotions
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      commit: ${{ steps.commit.outputs.commit }}
+      promote_count: ${{ steps.plan.outputs.promote_count }}
+      build_count: ${{ steps.plan.outputs.build_count }}
+      frontend_decision: ${{ steps.plan.outputs.frontend_decision }}
+      override: ${{ steps.commit.outputs.override }}
+    steps:
+      - name: Resolve target tag
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="$DISPATCH_TAG"
+          else
+            tag="${GITHUB_REF##*/}"
+          fi
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve released commit and rebuild override
+        id: commit
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+          DISPATCH_REBUILD_ALL: ${{ inputs.rebuild_all }}
+        run: |
+          commit="$(git rev-parse "$TAG^{commit}")"
+          tag_message="$(git tag -l --format='%(contents)' "$TAG")"
+          override=false
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$tag_message" == *"[rebuild-all]"* ]]; then
+            override=true
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DISPATCH_REBUILD_ALL" == "true" ]]; then
+            override=true
+          fi
+          {
+            echo "commit=$commit"
+            echo "override=$override"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Find previous published release and download its record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          RECORD_DIR: ${{ runner.temp }}/previous-release
+        run: |
+          previous_release="$(gh release list --limit 1000 --json tagName,isDraft \
+            --jq '[.[] | select(.isDraft == false) | select(.tagName != env.TAG)][0].tagName // ""')"
+          if [ -z "$previous_release" ]; then
+            echo "No previous published release; the planner will build without a baseline."
+          else
+            assets="$(gh release view "$previous_release" --json assets --jq '[.assets[].name]')"
+            if jq -e 'index("release-images.json") != null' >/dev/null <<< "$assets"; then
+              mkdir -p "$RECORD_DIR"
+              if ! gh release download "$previous_release" --pattern release-images.json --dir "$RECORD_DIR" ||
+                 ! python3 -m json.tool "$RECORD_DIR/release-images.json" >/dev/null; then
+                echo "::warning::The previous release record is unreadable; proceeding without a promotion baseline."
+                rm -f "$RECORD_DIR/release-images.json"
+              fi
+            else
+              echo "The previous release has no record; this is a normal build-only baseline."
+            fi
+          fi
+
+      - name: Run release image planner
+        id: plan
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+          OVERRIDE: ${{ steps.commit.outputs.override }}
+          EVENT: ${{ github.event_name == 'push' && 'tag_push' || 'dispatch' }}
+          PLAN_PATH: ${{ runner.temp }}/release-plan.json
+          PREVIOUS_RECORD: ${{ runner.temp }}/previous-release/release-images.json
+        run: |
+          override_args=()
+          previous_record_args=()
+          if [ "$OVERRIDE" = "true" ]; then
+            override_args+=(--override)
+          fi
+          if [ -f "$PREVIOUS_RECORD" ]; then
+            previous_record_args+=(--previous-record "$PREVIOUS_RECORD")
+          fi
+          python3 scripts/release_image_plan.py \
+            --tag "$TAG" \
+            --commit "$COMMIT" \
+            --event "$EVENT" \
+            "${override_args[@]}" \
+            "${previous_record_args[@]}" \
+            --out "$PLAN_PATH"
+
+      - name: Prepare plan and baseline artifact
+        env:
+          PLAN_PATH: ${{ runner.temp }}/release-plan.json
+          PLAN_DIR: ${{ runner.temp }}/release-plan
+          PREVIOUS_RECORD: ${{ runner.temp }}/previous-release/release-images.json
+        run: |
+          mkdir -p "$PLAN_DIR"
+          cp "$PLAN_PATH" "$PLAN_DIR/release-plan.json"
+          if [ -f "$PREVIOUS_RECORD" ]; then
+            cp "$PREVIOUS_RECORD" "$PLAN_DIR/release-images.json"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-plan/*
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: ${{ matrix.image }}
+    needs: plan
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - image: rangerdanger-backend
-            dockerfile: Dockerfile.backend
-            platforms: linux/amd64,linux/arm64
-          # NOTE: rangerdanger-frontend is built by the dedicated
-          # `frontend` + `frontend-merge` jobs below, NOT this matrix.
-          # Next.js SWC's native binary can't build under QEMU arm64
-          # emulation (@next/swc-linux-arm64-gnu: __res_init symbol not
-          # found), which silently broke the v0.1.19 + v0.1.20 releases.
-          # Those jobs build each arch on its own native runner instead.
-          - image: rangerdanger-kali
-            dockerfile: Dockerfile.kali
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-vendor-jump
-            dockerfile: Dockerfile.vendor-jump
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-eng-ws
-            dockerfile: Dockerfile.eng-ws
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-corp-ws
-            dockerfile: Dockerfile.corp-ws
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-openplc
-            dockerfile: Dockerfile.openplc
-            platforms: linux/amd64
-          - image: rangerdanger-fuxa-hmi
-            dockerfile: Dockerfile.fuxa-hmi
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-rtac-sim
-            dockerfile: services/Dockerfile
-            target: rtac-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-relay-sim
-            dockerfile: services/Dockerfile
-            target: relay-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-recloser-sim
-            dockerfile: services/Dockerfile
-            target: recloser-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-regulator-sim
-            dockerfile: services/Dockerfile
-            target: regulator-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-capbank-sim
-            dockerfile: services/Dockerfile
-            target: capbank-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-historian-sim
-            dockerfile: services/Dockerfile
-            target: historian-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-gps-sim
-            dockerfile: services/Dockerfile
-            target: gps-sim
-            platforms: linux/amd64,linux/arm64
-          - image: rangerdanger-opendss-sim
-            dockerfile: services/opendss-sim/Dockerfile
-            platforms: linux/amd64,linux/arm64
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
       - name: Resolve target tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "ref=refs/tags/${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
-            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.tag.outputs.ref }}
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-plan
 
       - name: Compute build metadata
         id: meta
+        env:
+          VERSION: ${{ steps.tag.outputs.name }}
         run: |
           {
-            echo "version=${{ steps.tag.outputs.name }}"
+            echo "version=$VERSION"
             echo "commit=$(git rev-parse --short HEAD)"
             echo "date=$(date -u +%FT%TZ)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v4
-
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -135,6 +195,7 @@ jobs:
 
       - name: Compute artifact build labels
         id: artifact-labels
+        if: matrix.decision == 'build'
         env:
           IMAGE_TITLE: ${{ matrix.image }}
           SOURCE_URL: https://github.com/${{ github.repository }}
@@ -149,6 +210,8 @@ jobs:
             printf 'org.opencontainers.image.revision=%s\n' "$build_revision"
             printf 'org.opencontainers.image.created=%s\n' "$build_created"
             echo EOF
+            echo "build_revision=$build_revision"
+            echo "build_created=$build_created"
           } >> "$GITHUB_OUTPUT"
 
       - name: Image metadata + tag plan
@@ -160,25 +223,22 @@ jobs:
             type=raw,value=${{ steps.tag.outputs.name }}
             type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.name, '-') }}
 
-      # Three-attempt push chain. GHCR occasionally returns transient
-      # 5xx during layer uploads when many parallel matrix jobs push
-      # simultaneously; buildkit treats those as fatal. Each retry
-      # reuses already-pushed layers, so only the failed blob(s)
-      # actually re-upload.
       - name: Build and push
         id: build
+        if: matrix.decision == 'build'
         uses: docker/build-push-action@v7
         continue-on-error: true
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
-          platforms: ${{ matrix.platforms }}
+          platforms: ${{ join(matrix.platforms, ',') }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.artifact-labels.outputs.build_labels }}
-          # Build args are consumed by Dockerfile.backend; other
-          # Dockerfiles ignore unknown ARGs without erroring.
+          pull: ${{ needs.plan.outputs.override == 'true' }}
+          no-cache: ${{ needs.plan.outputs.override == 'true' }}
+          # Backend consumes these; other Dockerfiles ignore them.
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -187,22 +247,24 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
       - name: Wait before retry 1
-        if: steps.build.outcome == 'failure'
+        if: matrix.decision == 'build' && steps.build.outcome == 'failure'
         run: sleep 30
 
       - name: Build and push (retry 1)
         id: retry1
-        if: steps.build.outcome == 'failure'
+        if: matrix.decision == 'build' && steps.build.outcome == 'failure'
         uses: docker/build-push-action@v7
         continue-on-error: true
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
-          platforms: ${{ matrix.platforms }}
+          platforms: ${{ join(matrix.platforms, ',') }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.artifact-labels.outputs.build_labels }}
+          pull: ${{ needs.plan.outputs.override == 'true' }}
+          no-cache: ${{ needs.plan.outputs.override == 'true' }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -211,20 +273,23 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
       - name: Wait before retry 2
-        if: steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
+        if: matrix.decision == 'build' && steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
         run: sleep 60
 
       - name: Build and push (retry 2)
-        if: steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
+        id: retry2
+        if: matrix.decision == 'build' && steps.build.outcome == 'failure' && steps.retry1.outcome == 'failure'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
-          platforms: ${{ matrix.platforms }}
+          platforms: ${{ join(matrix.platforms, ',') }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.artifact-labels.outputs.build_labels }}
+          pull: ${{ needs.plan.outputs.override == 'true' }}
+          no-cache: ${{ needs.plan.outputs.override == 'true' }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -232,14 +297,159 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-  # ── frontend: native-runner multi-arch build ────────────────────────
-  # Build each arch on its OWN native GitHub runner (free for public
-  # repos) so there is no QEMU emulation, then push by digest and stitch
-  # the manifest list in frontend-merge. This is the canonical Docker
-  # "distribute build across multiple runners" pattern and is the fix for
-  # the Next.js SWC __res_init failure that broke v0.1.19 / v0.1.20.
+      - name: Promote recorded image root
+        id: promote
+        if: matrix.decision == 'promote'
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
+          SOURCE_DIGEST: ${{ matrix.source_digest }}
+          IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
+        run: |
+          source_ref="${IMAGE_REPOSITORY}@${SOURCE_DIGEST}"
+          source_metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$source_ref")"
+          media_type="$(jq -r '.MediaType // .mediaType // ""' <<< "$source_metadata")"
+          prefer_index_args=()
+          if [[ "$media_type" != *"image.index"* && "$media_type" != *"manifest.list"* ]]; then
+            prefer_index_args+=(--prefer-index=false)
+          fi
+          tag_args=()
+          while IFS= read -r image_tag; do
+            [ -z "$image_tag" ] || tag_args+=(-t "$image_tag")
+          done <<< "$IMAGE_TAGS"
+          [ "${#tag_args[@]}" -gt 0 ] || { echo "No planned tags for $IMAGE_REPOSITORY" >&2; exit 1; }
+          docker buildx imagetools create \
+            "${prefer_index_args[@]}" \
+            "${tag_args[@]}" \
+            "$source_ref"
+          echo "root_digest=$SOURCE_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve build root digest
+        id: build-root
+        if: matrix.decision == 'build'
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          RETRY1_OUTCOME: ${{ steps.retry1.outcome }}
+          RETRY1_DIGEST: ${{ steps.retry1.outputs.digest }}
+          RETRY2_OUTCOME: ${{ steps.retry2.outcome }}
+          RETRY2_DIGEST: ${{ steps.retry2.outputs.digest }}
+        run: |
+          if [ "$BUILD_OUTCOME" = "success" ]; then
+            digest="$BUILD_DIGEST"
+          elif [ "$RETRY1_OUTCOME" = "success" ]; then
+            digest="$RETRY1_DIGEST"
+          elif [ "$RETRY2_OUTCOME" = "success" ]; then
+            digest="$RETRY2_DIGEST"
+          else
+            echo "No successful build attempt produced a root digest." >&2
+            exit 1
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Build output was not a full root digest: $digest" >&2
+            exit 1
+          }
+          echo "root_digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published root and platform manifests
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
+          IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
+          ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.build-root.outputs.root_digest }}
+          EXPECTED_PLATFORMS: ${{ toJSON(matrix.platforms) }}
+        run: &verify-published-root-script |
+          # shellcheck disable=SC2153 # Inputs are injected through step env.
+          expected_platforms="$(jq -r 'sort | join(",")' <<< "$EXPECTED_PLATFORMS")"
+          root_metadata=""
+          while IFS= read -r image_tag; do
+            [ -n "$image_tag" ] || continue
+            metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$image_tag")"
+            digest="$(jq -r '.Digest // .digest // ""' <<< "$metadata")"
+            [ "$digest" = "$ROOT_DIGEST" ] || {
+              echo "$image_tag resolves to $digest, expected $ROOT_DIGEST" >&2
+              exit 1
+            }
+            [ -n "$root_metadata" ] || root_metadata="$metadata"
+          done <<< "$IMAGE_TAGS"
+          [ -n "$root_metadata" ] || { echo "No planned image tags." >&2; exit 1; }
+
+          if jq -e '(.Manifests // .manifests // []) | length > 0' <<< "$root_metadata" >/dev/null; then
+            actual_platforms="$(jq -r '
+              [(.Manifests // .manifests // [])[] |
+               (.Platform // .platform // {}) as $platform |
+               select(((.Annotations // .annotations // {})["vnd.docker.reference.type"] // "") != "attestation-manifest" and
+                      ($platform.os != "unknown" or $platform.architecture != "unknown")) |
+               "\($platform.os)/\($platform.architecture)"] | sort | join(",")
+            ' <<< "$root_metadata")"
+            while IFS= read -r child_digest; do
+              [ -n "$child_digest" ] || { echo "A platform descriptor has no digest." >&2; exit 1; }
+              docker buildx imagetools inspect --format '{{json .}}' \
+                "${IMAGE_REPOSITORY}@${child_digest}" >/dev/null
+            done < <(jq -r '
+              [(.Manifests // .manifests // [])[] |
+               (.Platform // .platform // {}) as $platform |
+               select(((.Annotations // .annotations // {})["vnd.docker.reference.type"] // "") != "attestation-manifest" and
+                      ($platform.os != "unknown" or $platform.architecture != "unknown")) |
+               .Digest // .digest // ""] | .[]
+            ' <<< "$root_metadata")
+          else
+            root_ref="${IMAGE_REPOSITORY}@${ROOT_DIGEST}"
+            docker pull "$root_ref"
+            actual_platforms="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$root_ref")"
+          fi
+          [ "$actual_platforms" = "$expected_platforms" ] || {
+            echo "Published platforms $actual_platforms do not match $expected_platforms" >&2
+            exit 1
+          }
+          echo "Verified ${IMAGE_REPOSITORY}@${ROOT_DIGEST} ($actual_platforms)"
+
+      - name: Write image result
+        env:
+          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
+          IMAGE: ${{ matrix.image }}
+          REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ matrix.image }}
+          DECISION: ${{ matrix.decision }}
+          ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.build-root.outputs.root_digest }}
+          PLATFORMS: ${{ toJSON(matrix.platforms) }}
+          BUILD_REVISION: ${{ steps.artifact-labels.outputs.build_revision }}
+          BUILD_CREATED: ${{ steps.artifact-labels.outputs.build_created }}
+          RESULT_PATH: ${{ runner.temp }}/plan-result-${{ matrix.image }}.json
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          plan = json.loads(Path(os.environ["PLAN_PATH"]).read_text())
+          image = os.environ["IMAGE"]
+          planned = next(item for item in plan["images"] if item["image"] == image)
+          if planned["decision"] != os.environ["DECISION"]:
+              raise SystemExit("Matrix decision disagrees with the release plan")
+          revision, created, source = (
+              (planned["source_build_revision"], planned["source_build_created"], planned["source_release"])
+              if planned["decision"] == "promote" else
+              (os.environ["BUILD_REVISION"], os.environ["BUILD_CREATED"], plan["release"])
+          )
+          if not all((revision, created, source)):
+              raise SystemExit(f"Incomplete original build metadata for {image}")
+          result = dict(
+              image=image, repository=os.environ["REPOSITORY"], decision=planned["decision"],
+              reason=planned["reason"], root_digest=os.environ["ROOT_DIGEST"],
+              platforms=json.loads(os.environ["PLATFORMS"]), build_revision=revision,
+              build_created=created, source_release=source, policy_version=plan["policy_version"],
+          )
+          Path(os.environ["RESULT_PATH"]).write_text(json.dumps(result, sort_keys=True) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plan-result-${{ matrix.image }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan-result-${{ matrix.image }}.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── frontend: native-runner multi-arch build; avoid the SWC QEMU failure.
   frontend:
     name: rangerdanger-frontend (${{ matrix.platform }})
+    needs: plan
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -252,33 +462,40 @@ jobs:
     steps:
       - name: Resolve target tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "ref=refs/tags/${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
-            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.tag.outputs.ref }}
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 1
 
       - name: Compute build metadata
         id: meta
+        env:
+          VERSION: ${{ steps.tag.outputs.name }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           {
-            echo "version=${{ steps.tag.outputs.name }}"
+            echo "version=$VERSION"
             echo "commit=$(git rev-parse --short HEAD)"
             echo "date=$(date -u +%FT%TZ)"
           } >> "$GITHUB_OUTPUT"
-          platform=${{ matrix.platform }}
+          # shellcheck disable=SC2153 # Inputs are injected through step env.
+          platform=$PLATFORM
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
+        if: needs.plan.outputs.frontend_decision == 'build'
 
       - uses: docker/login-action@v4
+        if: needs.plan.outputs.frontend_decision == 'build'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -286,6 +503,7 @@ jobs:
 
       - name: Compute artifact build labels
         id: artifact-labels
+        if: needs.plan.outputs.frontend_decision == 'build'
         env:
           IMAGE_TITLE: rangerdanger-frontend
           SOURCE_URL: https://github.com/${{ github.repository }}
@@ -300,16 +518,21 @@ jobs:
             printf 'org.opencontainers.image.revision=%s\n' "$build_revision"
             printf 'org.opencontainers.image.created=%s\n' "$build_created"
             echo EOF
+            echo "build_revision=$build_revision"
+            echo "build_created=$build_created"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push by digest
         id: build
+        if: needs.plan.outputs.frontend_decision == 'build'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.frontend
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.artifact-labels.outputs.build_labels }}
+          pull: ${{ needs.plan.outputs.override == 'true' }}
+          no-cache: ${{ needs.plan.outputs.override == 'true' }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             COMMIT=${{ steps.meta.outputs.commit }}
@@ -319,38 +542,83 @@ jobs:
           cache-to: type=gha,mode=max,scope=rangerdanger-frontend-${{ steps.meta.outputs.pair }}
 
       - name: Export digest
+        if: needs.plan.outputs.frontend_decision == 'build'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST_DIR: ${{ runner.temp }}/digests
         run: |
-          mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          mkdir -p "$DIGEST_DIR"
+          touch "$DIGEST_DIR/${DIGEST#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v7
+        if: needs.plan.outputs.frontend_decision == 'build'
         with:
-          name: digests-frontend-${{ steps.meta.outputs.pair }}
+          name: digests-frontend-${{ steps.meta.outputs.pair }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Write frontend build metadata
+        if: needs.plan.outputs.frontend_decision == 'build'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_REVISION: ${{ steps.artifact-labels.outputs.build_revision }}
+          BUILD_CREATED: ${{ steps.artifact-labels.outputs.build_created }}
+          METADATA_PATH: ${{ runner.temp }}/frontend-build-${{ steps.meta.outputs.pair }}.json
+        run: |
+          printf '{"platform":"%s","build_revision":"%s","build_created":"%s"}\n' \
+            "$PLATFORM" "$BUILD_REVISION" "$BUILD_CREATED" > "$METADATA_PATH"
+
+      - name: Upload frontend build metadata
+        if: needs.plan.outputs.frontend_decision == 'build'
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-build-${{ steps.meta.outputs.pair }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frontend-build-${{ steps.meta.outputs.pair }}.json
           if-no-files-found: error
           retention-days: 1
 
   frontend-merge:
     name: rangerdanger-frontend (merge)
-    needs: frontend
+    needs: [plan, frontend]
     runs-on: ubuntu-24.04
     steps:
       - name: Resolve target tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-plan
+
       - name: Download digests
         uses: actions/download-artifact@v8
+        if: needs.plan.outputs.frontend_decision == 'build'
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-frontend-*
+          pattern: digests-frontend-*-${{ github.run_attempt }}
+          merge-multiple: true
+
+      - name: Download frontend build metadata
+        uses: actions/download-artifact@v8
+        if: needs.plan.outputs.frontend_decision == 'build'
+        with:
+          path: ${{ runner.temp }}/frontend-builds
+          pattern: frontend-build-*-${{ github.run_attempt }}
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@v4
@@ -371,53 +639,185 @@ jobs:
             type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.name, '-') }}
 
       - name: Create manifest list and push
+        id: create
+        if: needs.plan.outputs.frontend_decision == 'build'
         working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
         run: |
-          # Both expansions must word-split: one emits a -t flag per planned
-          # tag, the other one digest reference per per-arch digest file.
+          # Both expansions word-split: planned -t flags and per-arch digests.
           # shellcheck disable=SC2046
-          docker buildx imagetools create \
+          create_output="$(docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend@sha256:%s ' *)
+            $(for digest_file in *; do printf '%s@sha256:%s ' "$IMAGE_REPOSITORY" "$digest_file"; done))"
+          printf '%s\n' "$create_output"
+          root_digest="$(grep -Eo 'sha256:[0-9a-f]{64}' <<< "$create_output" | tail -n 1)"
+          [[ "$root_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "imagetools create did not report the pushed root digest." >&2
+            exit 1
+          }
+          echo "root_digest=$root_digest" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect
+      - name: Promote recorded frontend root
+        id: promote
+        if: needs.plan.outputs.frontend_decision == 'promote'
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
+          IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
+          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend:${{ steps.tag.outputs.name }}
+          source_digest="$(jq -r '.images[] | select(.image == "rangerdanger-frontend") | .source_digest' "$PLAN_PATH")"
+          source_ref="${IMAGE_REPOSITORY}@${source_digest}"
+          source_metadata="$(docker buildx imagetools inspect --format '{{json .}}' "$source_ref")"
+          media_type="$(jq -r '.MediaType // .mediaType // ""' <<< "$source_metadata")"
+          prefer_index_args=()
+          if [[ "$media_type" != *"image.index"* && "$media_type" != *"manifest.list"* ]]; then
+            prefer_index_args+=(--prefer-index=false)
+          fi
+          tag_args=()
+          while IFS= read -r image_tag; do
+            [ -z "$image_tag" ] || tag_args+=(-t "$image_tag")
+          done <<< "$IMAGE_TAGS"
+          [ "${#tag_args[@]}" -gt 0 ] || { echo "No planned frontend tags." >&2; exit 1; }
+          docker buildx imagetools create \
+            "${prefer_index_args[@]}" \
+            "${tag_args[@]}" \
+            "$source_ref"
+          echo "root_digest=$source_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published frontend root and platform manifests
+        env:
+          IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
+          IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
+          ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.create.outputs.root_digest }}
+          EXPECTED_PLATFORMS: '["linux/amd64","linux/arm64"]'
+        run: *verify-published-root-script
+
+      - name: Write frontend image result
+        env:
+          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
+          BUILD_METADATA_PATH: ${{ runner.temp }}/frontend-builds
+          DECISION: ${{ needs.plan.outputs.frontend_decision }}
+          ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.create.outputs.root_digest }}
+          RESULT_PATH: ${{ runner.temp }}/plan-result-rangerdanger-frontend.json
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          plan = json.loads(Path(os.environ["PLAN_PATH"]).read_text())
+          planned = next(image for image in plan["images"] if image["image"] == "rangerdanger-frontend")
+          if planned["decision"] != os.environ["DECISION"]:
+              raise SystemExit("Frontend decision disagrees with the saved release plan")
+
+          platform_builds = None
+          if planned["decision"] == "promote":
+              revision, created, source = (
+                  planned["source_build_revision"], planned["source_build_created"], planned["source_release"]
+              )
+              previous = Path(os.environ["PLAN_PATH"]).with_name("release-images.json")
+              if previous.exists():
+                  old = json.loads(previous.read_text())
+                  platform_builds = next(
+                      image for image in old["images"] if image["image"] == planned["image"]
+                  ).get("platform_builds")
+          else:
+              builds = [
+                  json.loads(path.read_text())
+                  for path in Path(os.environ["BUILD_METADATA_PATH"]).glob("*.json")
+              ]
+              builds.sort(key=lambda build: build["platform"])
+              if [build["platform"] for build in builds] != ["linux/amd64", "linux/arm64"]:
+                  raise SystemExit("Expected metadata from both native frontend builds")
+              if len({build["build_revision"] for build in builds}) != 1:
+                  raise SystemExit("Frontend architecture builds used different revisions")
+              revision, created, source = (
+                  builds[0]["build_revision"], builds[0]["build_created"], plan["release"]
+              )
+              platform_builds = [
+                  {key: build[key] for key in ("platform", "build_revision", "build_created")}
+                  for build in builds
+              ]
+          if not all((revision, created, source)):
+              raise SystemExit("Incomplete original frontend build metadata")
+          result = {
+              "image": planned["image"],
+              "repository": "ghcr.io/tonylturner/rangerdanger-frontend",
+              "decision": planned["decision"],
+              "reason": planned["reason"],
+              "root_digest": os.environ["ROOT_DIGEST"],
+              "platforms": planned["platforms"],
+              "build_revision": revision,
+              "build_created": created,
+              "source_release": source,
+              "policy_version": plan["policy_version"],
+          }
+          if platform_builds is not None:
+              result["platform_builds"] = platform_builds
+          Path(os.environ["RESULT_PATH"]).write_text(json.dumps(result, sort_keys=True) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plan-result-rangerdanger-frontend-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plan-result-rangerdanger-frontend.json
+          if-no-files-found: error
+          retention-days: 1
 
   github-release:
-    # Backfill the GitHub Releases page from CHANGELOG after every
-    # successful tag-driven image publish. Before this job existed,
-    # release.yml only built and pushed GHCR images on tag push; the
-    # GitHub Releases tab had to be populated by hand and silently
-    # drifted (v0.1.3-v0.1.9 were backfilled retroactively on
-    # 2026-05-11).
+    # Keep incomplete image mappings in a draft, even after job failures.
     name: GitHub Release
-    needs: [publish, frontend-merge]
+    needs: [plan, publish, frontend, frontend-merge]
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - name: Resolve target tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "ref=refs/tags/${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
-            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or return the release to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+            if [ "$is_draft" != "true" ]; then
+              echo "Returning the existing release to draft before replacing its image record."
+              gh release edit "$TAG" --draft
+            fi
+          else
+            prerelease_flag=()
+            if [[ "$TAG" == *-* ]]; then
+              prerelease_flag+=(--prerelease)
+            fi
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "Image publication and release record are in progress." \
+              --verify-tag \
+              --draft \
+              "${prerelease_flag[@]}"
           fi
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.tag.outputs.ref }}
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 1
 
       - name: Extract CHANGELOG section for tag
         id: notes
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
-          tag="${{ steps.tag.outputs.name }}"
-          # awk scans CHANGELOG.md for `## [vX.Y.Z] - YYYY-MM-DD`,
-          # then prints everything until the next `## [` heading.
-          # Leading/trailing blank lines are trimmed by the sed
-          # range hack that follows.
+          tag="$TAG"
           awk -v tag="$tag" '
             $0 ~ "^## \\[" tag "\\] - " { found=1; next }
             found && /^## \[/ { exit }
@@ -429,55 +829,128 @@ jobs:
           if [ ! -s release-body.md ]; then
             echo "Release ${tag}. See CHANGELOG.md for details." > release-body.md
           fi
-          echo "--- release body preview ($(wc -l < release-body.md) lines) ---"
-          head -20 release-body.md
-          echo "..."
 
-      - name: Create or update + publish GitHub Release
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-plan
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: plan-result-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/image-results
+          merge-multiple: true
+
+      - name: Validate all image results and compose release record
+        env:
+          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
+          RESULTS_PATH: ${{ runner.temp }}/image-results
+          RECORD_PATH: ${{ runner.temp }}/release-images.json
+          INVENTORY_PATH: .github/release-images.json
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+          RELEASE_COMMIT: ${{ needs.plan.outputs.commit }}
+          OVERRIDE: ${{ needs.plan.outputs.override }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          plan = json.loads(Path(os.environ["PLAN_PATH"]).read_text())
+          inventory = json.loads(Path(os.environ["INVENTORY_PATH"]).read_text())
+          result_paths = sorted(Path(os.environ["RESULTS_PATH"]).glob("plan-result-*.json"))
+          results = [json.loads(path.read_text()) for path in result_paths]
+          expected = {image["image"]: image for image in plan["images"]}
+          if set(expected) != {image["image"] for image in inventory["images"]}: raise SystemExit("Plan does not cover the image inventory")
+          if (plan["release"], plan["commit"], str(plan["override"]).lower()) != (os.environ["RELEASE_TAG"], os.environ["RELEASE_COMMIT"], os.environ["OVERRIDE"]): raise SystemExit("Plan identity or override disagrees")
+          names = [result.get("image") for result in results]
+          if len(names) != len(set(names)) or set(names) != set(expected):
+              raise SystemExit(f"Image results incomplete/duplicated: expected={sorted(expected)}, got={sorted(names)}")
+          observed = dict(zip(names, results))
+
+          images = []
+          for image_name, planned in expected.items():
+              result = observed[image_name]
+              if (
+                  result.get("repository") != planned["repository"]
+                  or result.get("decision") != planned["decision"]
+                  or sorted(result.get("platforms", [])) != sorted(planned["platforms"])
+                  or result.get("policy_version") != plan["policy_version"]
+                  or not re.fullmatch(r"sha256:[0-9a-f]{64}", result.get("root_digest", ""))
+                  or not re.fullmatch(r"[0-9a-f]{40}", result.get("build_revision", ""))
+                  or not result.get("build_created") or not result.get("source_release")
+              ):
+                  raise SystemExit(f"{image_name}: result is incomplete or disagrees with the plan")
+              if planned["decision"] == "build":
+                  if result["build_revision"] != plan["commit"] or result["source_release"] != plan["release"]:
+                      raise SystemExit(f"{image_name}: build metadata does not describe this release")
+              elif any(result.get(key) != planned.get(source) for key, source in (
+                  ("root_digest", "source_digest"), ("build_revision", "source_build_revision"),
+                  ("build_created", "source_build_created"), ("source_release", "source_release"),
+              )):
+                  raise SystemExit(f"{image_name}: promotion differs from the recorded evidence")
+              if image_name == "rangerdanger-frontend":
+                  platform_builds = result.get("platform_builds", [])
+                  if (
+                      sorted(build["platform"] for build in platform_builds) != ["linux/amd64", "linux/arm64"]
+                      or any(not build.get("build_created") for build in platform_builds)
+                  ):
+                      raise SystemExit("Frontend result must preserve both native build timestamps")
+                  if any(build["build_revision"] != result["build_revision"] for build in platform_builds):
+                      raise SystemExit("Frontend platform build revisions disagree")
+              images.append(result)
+
+          record = {
+              "schema": 1,
+              "release": plan["release"],
+              "commit": plan["commit"],
+              "previous_release": plan.get("previous_release"),
+              "override": plan["override"],
+              "policy_version": plan["policy_version"],
+              "images": images,
+          }
+          Path(os.environ["RECORD_PATH"]).write_text(
+              json.dumps(record, indent=2, sort_keys=True) + "\n"
+          )
+          print(f"Validated {len(images)} image results for {record['release']}")
+          PY
+
+      - name: Upload and verify release-images.json asset
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          RECORD_PATH: ${{ runner.temp }}/release-images.json
         run: |
-          tag="${{ steps.tag.outputs.name }}"
-          # Pre-release tags (containing a hyphen, e.g. v0.0.1-alpha)
-          # get flagged as such in the Releases UI so they don't appear
-          # as the top "Latest release" pointer.
-          prerelease_flag=""
-          latest_flag=""
-          if [[ "$tag" == *-* ]]; then
-            prerelease_flag="--prerelease"
-          else
-            latest_flag="--latest"
-          fi
+          gh release upload "$TAG" "$RECORD_PATH" --clobber
+          mkdir -p "${RUNNER_TEMP}/uploaded-record"
+          gh release download "$TAG" \
+            --pattern release-images.json \
+            --dir "${RUNNER_TEMP}/uploaded-record"
+          cmp "$RECORD_PATH" "${RUNNER_TEMP}/uploaded-record/release-images.json"
 
-          # This workflow is the "publish the release" gate.
-          # build-wsl-kernel.yml may have raced ahead and created the
-          # release as DRAFT so its assets attach to *something*; we
-          # always flip --draft=false on this side, so once images +
-          # release notes are in place the release becomes public.
-          # Idempotent: setting --draft=false on an already-published
-          # release is a no-op.
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists - updating notes + publishing"
-            gh release edit "$tag" \
-              --notes-file release-body.md \
-              --draft=false \
-              $prerelease_flag $latest_flag
+      - name: Publish complete GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          prerelease_flag=()
+          latest_flag=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease_flag+=(--prerelease)
           else
-            echo "creating release $tag"
-            gh release create "$tag" \
-              --title "$tag" \
-              --notes-file release-body.md \
-              $prerelease_flag $latest_flag
+            latest_flag+=(--latest)
           fi
+          gh release edit "$TAG" \
+            --title "$TAG" \
+            --notes-file release-body.md \
+            --draft=false \
+            "${prerelease_flag[@]}" \
+            "${latest_flag[@]}"
 
   release-failed:
-    # Make a failed release impossible to miss — it's how v0.1.19 / v0.1.20
-    # silently shipped as empty drafts (github-release needs every image, so
-    # one failed build skips publishing and leaves a stuck draft). Runs only
-    # on failure; files (or comments on) a tracking issue so the stuck draft
-    # + missing images get noticed instead of lingering.
+    # Alert on failure; incomplete results keep the GitHub Release as a draft.
     name: Alert on release failure
-    needs: [publish, frontend, frontend-merge, github-release]
+    needs: [plan, publish, frontend, frontend-merge, github-release]
     if: failure()
     runs-on: ubuntu-24.04
     permissions:
@@ -486,12 +959,20 @@ jobs:
     steps:
       - name: Resolve target tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=$DISPATCH_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "name=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
           fi
+
+      - uses: actions/checkout@v5
+        if: needs.plan.result == 'success'
+        with:
+          ref: ${{ needs.plan.outputs.commit }}
+          fetch-depth: 1
 
       - name: File or update a failure alert issue
         env:
@@ -503,9 +984,9 @@ jobs:
           body=$(printf '%s\n' \
             "The Release workflow for \`${TAG}\` did not complete: ${RUN_URL}" \
             "" \
-            "Likely effects: one or more GHCR images missing or partial, and the GitHub Release left as a **draft with no notes** (github-release only runs after every image publishes)." \
+            "Likely effects: one or more GHCR images may be missing or partial. The GitHub Release is staged as a draft and will not be published without all 16 verified image results and its release-images.json asset." \
             "" \
-            "Recover: fix the failing job above, then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. That republishes the images and flips the release out of draft with CHANGELOG notes." \
+            "Recover: fix the failing job above, then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. Manual runs build all images; set rebuild_all to refresh moving upstream bases and packages." \
             "" \
             "_Filed automatically by release.yml on failure._")
           existing=$(gh issue list --state open --search "in:title Release ${TAG} failed" --json number --jq '.[0].number // empty' 2>/dev/null || true)
