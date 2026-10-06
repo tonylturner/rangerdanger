@@ -707,8 +707,8 @@ jobs:
                   for path in Path(os.environ["BUILD_METADATA_PATH"]).glob("*.json")
               ]
               builds.sort(key=lambda build: build["platform"])
-              if [build["platform"] for build in builds] != ["linux/amd64", "linux/arm64"]:
-                  raise SystemExit("Expected metadata from both native frontend builds")
+              if [build["platform"] for build in builds] != sorted(planned["platforms"]):
+                  raise SystemExit("Expected metadata from every native frontend build")
               if len({build["build_revision"] for build in builds}) != 1:
                   raise SystemExit("Frontend architecture builds used different revisions")
               revision, created, source = (
@@ -873,13 +873,15 @@ jobs:
                   ("build_created", "source_build_created"), ("source_release", "source_release"),
               )):
                   raise SystemExit(f"{image_name}: promotion differs from the recorded evidence")
-              if image_name == "rangerdanger-frontend":
+              if image_name == "rangerdanger-frontend" and planned["decision"] == "build":
+                  # A promoted frontend carries whatever provenance the source
+                  # record held; only a fresh build owes both native timestamps.
                   platform_builds = result.get("platform_builds", [])
                   if (
-                      sorted(build["platform"] for build in platform_builds) != ["linux/amd64", "linux/arm64"]
+                      sorted(build["platform"] for build in platform_builds) != sorted(planned["platforms"])
                       or any(not build.get("build_created") for build in platform_builds)
                   ):
-                      raise SystemExit("Frontend result must preserve both native build timestamps")
+                      raise SystemExit("Frontend result must preserve every native build timestamp")
                   if any(build["build_revision"] != result["build_revision"] for build in platform_builds):
                       raise SystemExit("Frontend platform build revisions disagree")
               images.append(result)
