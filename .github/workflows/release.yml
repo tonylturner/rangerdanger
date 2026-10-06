@@ -665,8 +665,12 @@ jobs:
           IMAGE_REPOSITORY: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/rangerdanger-frontend
           IMAGE_TAGS: ${{ steps.docker-meta.outputs.tags }}
           ROOT_DIGEST: ${{ steps.promote.outputs.root_digest || steps.create.outputs.root_digest }}
-          EXPECTED_PLATFORMS: '["linux/amd64","linux/arm64"]'
-        run: scripts/verify_published_image.sh "$IMAGE_REPOSITORY" "$ROOT_DIGEST" "$IMAGE_TAGS" "$EXPECTED_PLATFORMS"
+          PLAN_PATH: ${{ runner.temp }}/release-plan/release-plan.json
+        run: |
+          # The inventory owns the platform list; do not restate it here.
+          expected_platforms="$(jq -c '.images[] | select(.image == "rangerdanger-frontend") | .platforms' "$PLAN_PATH")"
+          [ -n "$expected_platforms" ] || { echo "The plan has no frontend platforms." >&2; exit 1; }
+          scripts/verify_published_image.sh "$IMAGE_REPOSITORY" "$ROOT_DIGEST" "$IMAGE_TAGS" "$expected_platforms"
 
       - name: Write frontend image result
         env:
