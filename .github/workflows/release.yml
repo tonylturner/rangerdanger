@@ -16,6 +16,16 @@ on:
         type: boolean
         required: false
         default: false
+# One release at a time per target tag. A tag push and a manual rerun of the
+# same tag would otherwise both clear the "already published" guard and then
+# push the same image tags independently, so the second run could overwrite
+# the roots the first one recorded in release-images.json. Queue instead of
+# cancelling: a run that is already pushing manifests must finish, and the
+# queued one then fails on the guard.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
