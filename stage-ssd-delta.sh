@@ -241,6 +241,7 @@ banner "Comparing $SINCE -> $NEW across $(echo "$CANDIDATE_IMAGES" | wc -l | tr 
 
 CHANGED=()
 CHANGED_MANIFESTS=()
+CHANGED_SINCE_REFS=()
 UNCHANGED=()
 FORCED=()
 MISSING_SINCE=()
@@ -285,12 +286,14 @@ for i in "${!NEW_ARR[@]}"; do
         FORCED+=("$short")
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
+        CHANGED_SINCE_REFS+=("$since")
         continue
     fi
 
     if [ "$SAVE_ALL" -eq 1 ]; then
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
+        CHANGED_SINCE_REFS+=("$since")
         continue
     fi
 
@@ -312,6 +315,7 @@ for i in "${!NEW_ARR[@]}"; do
         MISSING_SINCE+=("$short")
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
+        CHANGED_SINCE_REFS+=("$since")
         continue
     fi
 
@@ -322,6 +326,7 @@ for i in "${!NEW_ARR[@]}"; do
     else
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
+        CHANGED_SINCE_REFS+=("$since")
     fi
 done
 
@@ -587,6 +592,29 @@ if [ "${#CHANGED[@]}" -gt 0 ]; then
 docker load -i "$DELTA_DIR/delta-$ARCH.tar"'
 fi
 
+APPLY_BACKUP_COMMANDS=""
+ROLLBACK_RESTORE_COMMANDS=""
+for i in "${!CHANGED[@]}"; do
+    since_tag="${CHANGED_SINCE_REFS[$i]%@*}"
+    target_tag="${CHANGED[$i]%@*}"
+    [ "$since_tag" = "$target_tag" ] || continue
+    parked_tag="${target_tag%:*}:before-$NEW"
+    APPLY_BACKUP_COMMANDS="$APPLY_BACKUP_COMMANDS"'if ! docker image inspect "'"$parked_tag"'" >/dev/null 2>&1; then
+    if docker image inspect "'"$target_tag"'" >/dev/null 2>&1; then
+        docker image tag "'"$target_tag"'" "'"$parked_tag"'"
+    fi
+fi
+'
+    ROLLBACK_RESTORE_COMMANDS="$ROLLBACK_RESTORE_COMMANDS"'if docker image inspect "'"$parked_tag"'" >/dev/null 2>&1; then
+    docker image tag "'"$parked_tag"'" "'"$target_tag"'"
+fi
+'
+done
+if [ -z "$APPLY_BACKUP_COMMANDS" ]; then
+    APPLY_BACKUP_COMMANDS="# No mutable image tags need to be parked."
+    ROLLBACK_RESTORE_COMMANDS="# No mutable image tags need to be restored."
+fi
+
 APPLY_RETAG_COMMANDS=""
 for i in "${!UNCHANGED_NEW_REFS[@]}"; do
     case "${UNCHANGED_NEW_REFS[$i]}" in
@@ -664,6 +692,7 @@ tar tzf "\$SNAPSHOT" >/dev/null || {
 
 # Update the repo, then load the changed images (if any).
 tar xzf "\$DELTA_DIR/rangerdanger.tgz" -C ~
+$APPLY_BACKUP_COMMANDS
 $APPLY_LOAD_COMMAND
 
 # Re-tag unchanged first-party images so every required :$NEW tag exists.
@@ -696,10 +725,11 @@ archives, so it cannot supply the binfmt image. Make sure that image is
 already present before applying a repo-only delta offline.
 
 If \`docker load\` fails with "no space left on device", free space
-without removing the prior \`$SINCE\` image tags; deleting those tags
-removes the offline rollback path. If any apply step after the stack is
-stopped fails, do not try to start a partially updated tree: keep the
-snapshot and old tags, then follow the \`Rollback\` section below.
+without removing the prior \`$SINCE\` image tags or parked mutable-image
+tags named \`:before-$NEW\`; removing an old or parked tag forfeits rollback
+for that image. If any apply step after the stack is stopped fails, do not
+try to start a partially updated tree: keep the snapshot and old tags, then
+follow the \`Rollback\` section below.
 
 ## Rollback
 
@@ -710,9 +740,10 @@ files, lab definitions, policy files, local edits, and all of \`./data/\`
 (including captures, Kali home, and simulator state; nothing in \`./data/\`
 is excluded). Docker images are not part of it. It can be large and grows
 with lab state.
-The retained \`$SINCE\` image tags are reused, so rollback needs no network
-and no second bundle. Keep both the snapshot and old image tags until the
-rollback window closes:
+The retained \`$SINCE\` image tags and the parked mutable-image tags named
+\`:before-$NEW\` are reused, so rollback needs no network and no second
+bundle. Keep the snapshot, retained old image tags, and parked tags until
+the rollback window closes:
 
 \`\`\`sh
 set -e
@@ -730,6 +761,7 @@ cd ..
 rm -rf rangerdanger
 tar xzf "rangerdanger.before-$NEW.tar.gz"
 cd rangerdanger
+$ROLLBACK_RESTORE_COMMANDS
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 EOF

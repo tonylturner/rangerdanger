@@ -306,7 +306,9 @@ release + offline stack, then removes the updated repo and restores the
 complete saved repo tree (including `.env`, local edits, and `./data/`)
 before starting the complete stack with the old tags. It needs no network
 or second bundle. Docker images are not in the repo snapshot, so keep the
-snapshot and old image tags until the rollback window closes.
+snapshot and old image tags until the rollback window closes. Images behind
+mutable tags overwritten by the delta are parked as `:before-<new version>`;
+deleting those parked tags forfeits rollback for those images.
 
 ## Recovery scenarios
 
