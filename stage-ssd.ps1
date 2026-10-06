@@ -403,47 +403,84 @@ $kernelUrl = if ($Version -eq 'latest') {
 }
 $kernelShaUrl = "$kernelUrl.sha256"
 $kernelReadmeRow = ""
-# Windows PowerShell 5.1 draws a per-chunk progress bar for
-# Invoke-WebRequest -OutFile, which can stall a 25 MB download for
-# minutes. Suppress it for the kernel transfer and restore it after.
-$previousProgress = $ProgressPreference
-$ProgressPreference = 'SilentlyContinue'
+$kernelPath = Join-Path $OutDir "rangerdanger-wsl2-kernel"
+$shaPath = Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256"
+$kernelPublished = $false
 try {
     $head = Invoke-WebRequest -Uri $kernelUrl -Method Head -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
     if ($head.StatusCode -ne 200) { throw "HTTP $($head.StatusCode)" }
-    Say "Downloading $kernelUrl"
-    Invoke-WebRequest -Uri $kernelUrl -OutFile (Join-Path $OutDir "rangerdanger-wsl2-kernel") -UseBasicParsing -ErrorAction Stop
-    # One retry, and report why it failed: without this file setup.ps1
-    # installs the kernel with no checksum to verify it against.
-    $shaPath = Join-Path $OutDir "rangerdanger-wsl2-kernel.sha256"
-    $shaError = ""
-    foreach ($attempt in 1, 2) {
-        try {
-            Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
-            $shaError = ""
-            break
-        } catch {
-            $shaError = $_.Exception.Message
-            Remove-Item -Path $shaPath -Force -ErrorAction SilentlyContinue
-            if ($attempt -eq 1) { Start-Sleep -Seconds 2 }
-        }
-    }
-    if ($shaError) {
-        Warn "kernel sha256 download failed; on-install verification will be skipped."
-        Warn "  ${kernelShaUrl}: $shaError"
-    }
-    $ksize = [math]::Round((Get-Item (Join-Path $OutDir "rangerdanger-wsl2-kernel")).Length / 1MB, 1)
-    Say "wrote $OutDir\rangerdanger-wsl2-kernel ($ksize MB)"
-    $kernelReadmeRow = "- ``rangerdanger-wsl2-kernel`` + ``.sha256`` -- custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). ``setup.ps1 -FromTarballs`` picks it up automatically."
+    $kernelPublished = $true
 } catch {
+    # A release without this optional asset still makes a valid SSD bundle.
+}
+
+if ($kernelPublished) {
+    # Windows PowerShell 5.1 draws a per-chunk progress bar for
+    # Invoke-WebRequest -OutFile, which can stall a 25 MB download for
+    # minutes. Suppress it for the kernel transfer and restore it after.
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        Say "Downloading $kernelUrl"
+        try {
+            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -ErrorAction Stop
+        } catch {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "WSL2 kernel download failed; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand. $_"
+        }
+
+        # One retry, then refuse to write a bundle whose kernel cannot be verified.
+        $shaError = ""
+        foreach ($attempt in 1, 2) {
+            try {
+                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+                $shaError = ""
+                break
+            } catch {
+                $shaError = $_.Exception.Message
+                Remove-Item -Path $shaPath -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 1) { Start-Sleep -Seconds 2 }
+            }
+        }
+        if ($shaError) {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "WSL2 kernel checksum unavailable; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand. ${kernelShaUrl}: $shaError"
+        }
+
+        try {
+            $shaContent = (Get-Content -Path $shaPath -Raw -ErrorAction Stop).Trim()
+        } catch {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "WSL2 kernel checksum is unreadable; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand."
+        }
+        $expectedSha = ($shaContent -split '\s+', 2)[0]
+        if ($expectedSha -notmatch '^[0-9a-fA-F]{64}$') {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "WSL2 kernel checksum is missing or invalid; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand."
+        }
+        try {
+            $actualSha = (Get-FileHash -Algorithm SHA256 -Path $kernelPath -ErrorAction Stop).Hash
+        } catch {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "Could not verify the staged WSL2 kernel; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand."
+        }
+        if ($actualSha -ne $expectedSha) {
+            Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
+            Die "WSL2 kernel checksum mismatch; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand."
+        }
+        $ksize = [math]::Round((Get-Item $kernelPath).Length / 1MB, 1)
+        Say "wrote $kernelPath ($ksize MB)"
+        $kernelReadmeRow = "- ``rangerdanger-wsl2-kernel`` + ``.sha256`` -- custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). ``setup.ps1 -FromTarballs`` picks it up automatically."
+    } finally {
+        $ProgressPreference = $previousProgress
+    }
+} else {
     Warn "rangerdanger-wsl2-kernel not yet published for release $Version."
     Warn "  (.github/workflows/build-wsl-kernel.yml builds the kernel on tag push."
     Warn "   If you are staging before that workflow has run, re-run stage-ssd.ps1 after the"
     Warn "   kernel asset attaches to the release, OR manually drop rangerdanger-wsl2-kernel"
     Warn "   + .sha256 into $OutDir.)"
     Warn "  Without the kernel, Windows students on this SSD lose ICS DPI on Labs 2.3 / 2.3-bonus."
-} finally {
-    $ProgressPreference = $previousProgress
 }
 
 Banner "Write README"

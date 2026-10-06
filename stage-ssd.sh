@@ -434,18 +434,36 @@ else
 fi
 if curl -fsSL -o /dev/null --head "$KERNEL_URL" 2>/dev/null; then
     say "Downloading $KERNEL_URL"
-    curl -fsSL "$KERNEL_URL" -o "$OUT/rangerdanger-wsl2-kernel" \
-        || die "kernel download failed mid-stream — refusing to write a partial bundle. Re-run."
-    # One retry, and report why it failed: without this file setup.ps1
-    # installs the kernel with no checksum to verify it against.
-    if ! sha_error=$(curl -fsSL --retry 2 --retry-delay 2 "$KERNEL_SHA_URL" \
-        -o "$OUT/rangerdanger-wsl2-kernel.sha256" 2>&1); then
-        rm -f "$OUT/rangerdanger-wsl2-kernel.sha256"
-        warn "kernel sha256 download failed; on-install verification will be skipped."
-        warn "  $KERNEL_SHA_URL: ${sha_error:-no error detail from curl}"
+    kernel_path="$OUT/rangerdanger-wsl2-kernel"
+    kernel_sha_path="$OUT/rangerdanger-wsl2-kernel.sha256"
+    if ! curl -fsSL "$KERNEL_URL" -o "$kernel_path"; then
+        rm -f "$kernel_path" "$kernel_sha_path"
+        die "kernel download failed mid-stream — refusing to write a partial bundle. Re-run."
     fi
-    kernel_size=$(du -h "$OUT/rangerdanger-wsl2-kernel" | awk '{print $1}')
-    say "wrote $OUT/rangerdanger-wsl2-kernel ($kernel_size)"
+    # One retry, then refuse to write a bundle whose kernel cannot be verified.
+    if ! sha_error=$(curl -fsSL --retry 2 --retry-delay 2 "$KERNEL_SHA_URL" \
+        -o "$kernel_sha_path" 2>&1); then
+        rm -f "$kernel_path" "$kernel_sha_path"
+        die "WSL2 kernel checksum unavailable; refusing to stage an unverifiable kernel. Re-run stage-ssd.sh, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OUT by hand. $KERNEL_SHA_URL: ${sha_error:-no error detail from curl}"
+    fi
+
+    expected_sha256=""
+    IFS=' ' read -r expected_sha256 _ < "$kernel_sha_path" || true
+    if [[ ! "$expected_sha256" =~ ^[[:xdigit:]]{64}$ ]]; then
+        rm -f "$kernel_path" "$kernel_sha_path"
+        die "WSL2 kernel checksum is missing or invalid; refusing to stage an unverifiable kernel. Re-run stage-ssd.sh, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OUT by hand."
+    fi
+    expected_sha256=$(printf '%s' "$expected_sha256" | tr '[:upper:]' '[:lower:]')
+    if ! actual_sha256=$(shasum -a 256 "$kernel_path" | awk '{print $1}'); then
+        rm -f "$kernel_path" "$kernel_sha_path"
+        die "Could not verify the staged WSL2 kernel; refusing to stage an unverifiable kernel. Re-run stage-ssd.sh, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OUT by hand."
+    fi
+    if [ "$actual_sha256" != "$expected_sha256" ]; then
+        rm -f "$kernel_path" "$kernel_sha_path"
+        die "WSL2 kernel checksum mismatch; refusing to stage an unverifiable kernel. Re-run stage-ssd.sh, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OUT by hand."
+    fi
+    kernel_size=$(du -h "$kernel_path" | awk '{print $1}')
+    say "wrote $kernel_path ($kernel_size)"
     KERNEL_README_ROW="- \`rangerdanger-wsl2-kernel\` + \`.sha256\` — custom WSL2 kernel with CONFIG_NFT_QUEUE=y for Windows ICS DPI labs (see wsl-kernel/README.md). \`setup.ps1 -FromTarballs\` picks it up automatically."
 else
     warn "rangerdanger-wsl2-kernel not yet published for release $VERSION."

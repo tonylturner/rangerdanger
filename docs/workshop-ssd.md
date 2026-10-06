@@ -39,6 +39,12 @@ in the output directory. Distribute only after the helper reports success.
 | `.version` | Plain-text version marker (`vX.Y.Z` or `latest`) | <1 KB |
 | `rangerdanger-wsl2-kernel` + `.sha256` | Custom WSL2 kernel for Windows ICS DPI labs - only present when staging from a tagged release whose `build-wsl-kernel.yml` workflow has produced the asset. `setup.ps1 -FromTarballs` picks it up automatically. | ~14 MB |
 
+When the kernel asset is published, staging requires a valid checksum that
+matches the downloaded kernel. If the checksum cannot be fetched, is invalid,
+or does not match, staging fails and removes both kernel files instead of
+writing a bundle that could install an unverified kernel. Re-run the stage
+helper, or place both files in the output directory by hand.
+
 Both `images-*.tar` cover the release stack's image references, with
 different architecture-specific binaries. The arm64 archive additionally
 contains `tonistiigi/binfmt` and cross-includes the amd64-only `openplc`
@@ -242,6 +248,11 @@ Saving 2 changed image(s) per arch...
 ```
 
 Distribution: the per-arch `delta-*.tar` files plus `rangerdanger.tgz`.
+
+The delta helper includes the kernel pair only after verifying its checksum.
+If the checksum is unavailable, invalid, or mismatched, staging fails rather
+than writing a delta that could install an unverified kernel. Re-run the delta
+helper, or place both kernel files in the output directory by hand.
 
 Size depends entirely on how many image digests differ between the two
 releases, and that example is the best case. A tagged release rebuilds

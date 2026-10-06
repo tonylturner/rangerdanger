@@ -236,10 +236,20 @@ if ($kernelNeedsFix -and -not $SkipKernelFix) {
         if (Test-Path $bundledKernel) {
             $installerArgs['KernelPath'] = $bundledKernel
             $bundledSha = Join-Path $FromTarballs "rangerdanger-wsl2-kernel.sha256"
-            if (Test-Path $bundledSha) {
-                $shaContent = (Get-Content $bundledSha -Raw)
-                $installerArgs['ExpectedSha256'] = ($shaContent -split '\s+', 2)[0].Trim()
+            $checksumRecovery = "Bundle was staged without a usable checksum file ($bundledSha). Re-stage the SSD, or use -SkipKernelFix to continue without the kernel and lose ICS DPI on Labs 2.3 / 2.3-bonus."
+            if (-not (Test-Path $bundledSha)) {
+                Die $checksumRecovery
             }
+            try {
+                $shaContent = Get-Content -Path $bundledSha -Raw -ErrorAction Stop
+            } catch {
+                Die "$checksumRecovery Could not read the checksum: $_"
+            }
+            $expectedSha = ($shaContent.Trim() -split '\s+', 2)[0]
+            if ($expectedSha -notmatch '^[0-9a-fA-F]{64}$') {
+                Die $checksumRecovery
+            }
+            $installerArgs['ExpectedSha256'] = $expectedSha
             Say "Using bundled kernel from tarball: $bundledKernel"
         } else {
             Warn "No rangerdanger-wsl2-kernel found in $FromTarballs -- will attempt download."
