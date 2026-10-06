@@ -197,10 +197,11 @@ transient registry blip):
 4. The workflow checks out the tag's resolved commit. Dispatch runs
    never promote an existing artifact.
 
-A dispatch still builds and pushes the requested tag. For a stable tag,
-the existing hyphen rule also moves `:latest`; re-running an older stable
-tag can therefore replace the current `:latest`. Use that recovery path
-only when intentionally republishing the older release.
+A dispatch still builds and pushes the requested tag. It refuses to run
+when that tag already has a published GitHub Release; delete or unpublish
+that release before intentionally republishing it. For a stable tag, the
+existing hyphen rule also moves `:latest`; re-running an older stable tag
+can therefore replace the current `:latest`.
 
 ## Hotfix releases
 
