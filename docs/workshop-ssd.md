@@ -212,9 +212,10 @@ the helper does not pin containd's mutable tag to a prior-stage digest.
 - Writes a `DELTA-README.md` whose image/service table comes from the
   release Compose model (including the actual `eng_workstation` service).
   Its apply recipe loads changed tags, retags unchanged images from
-  `<since>` to `<new>`, saves the prior `.env`, selects `<new>`, then
-  starts the full offline release stack. Rollback restores that `.env`
-  and reuses the retained old image tags.
+  `<since>` to `<new>`, snapshots the complete existing repo (including
+  `.env` and local edits), selects `<new>`, then starts the full offline
+  release stack. Rollback restores that snapshot and reuses the retained
+  old image tags.
 
 Example:
 
@@ -242,23 +243,30 @@ Saving 2 changed image(s) per arch...
 
 Distribution: the per-arch `delta-*.tar` files plus `rangerdanger.tgz`.
 
-Size depends entirely on how many images changed, and that example is the
-best case. A tagged release rebuilds every first-party image, so every
-digest changes and a plain release-to-release delta is close to a full
-bundle: `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote
-8.1 GB. Use `--include <image>` when you are shipping one fix, which is
-what keeps a delta in the tens of MB.
+Size depends entirely on how many image digests differ between the two
+releases, and that example is the best case. A tagged release rebuilds
+every first-party image, so every digest changes and a plain
+release-to-release delta is close to a full bundle:
+`v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote 8.1 GB.
+`--include <image>` is additive: it force-adds a named image whose digest
+compared as unchanged. It does not exclude changed images or make a delta
+smaller; a delta is small only when few images differ.
 
 ### Student-side delta apply
 
 Follow the generated `DELTA-README.md`: it contains the exact changed
 image-to-service table and the apply commands for the staged versions.
-It saves the existing `.env` as `.env.before-<new-version>`, stops the
-release stack, extracts the repo, and loads the changed-image archive for
-the host architecture. For every unchanged first-party image it emits a
-`docker image tag <old-ref> <new-ref>` command, so Compose can find every
-image at the selected new version while offline. It then updates `VERSION`
-in `.env` and finishes with the explicit release + offline Compose restart.
+Before stopping the release stack or extracting the repo, it saves the
+complete existing `~/rangerdanger` tree beside the install as
+`../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
+`.env`, Compose files, lab definitions, policy files, and local edits (but
+not Docker images), and is not overwritten if the same delta is applied
+again. The recipe then extracts the repo and loads the changed-image
+archive for the host architecture. For every unchanged first-party image
+it emits a `docker image tag <old-ref> <new-ref>` command, so Compose can
+find every image at the selected new version while offline. It then
+updates `VERSION` in `.env` and finishes with the explicit release +
+offline Compose restart.
 
 Do not restart only the changed services: first select the new image tags,
 then apply the complete stack so every service resolves against the same
@@ -268,9 +276,11 @@ release and updated repo files. The generated recipe's final command is:
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 ```
 
-For offline rollback, the generated `Rollback` section restores the saved
-`.env` and starts the complete stack with the old tags. Keep those old
-images until the rollback window closes.
+For offline rollback, the generated `Rollback` section removes the updated
+repo, restores the complete saved repo tree (including `.env` and local
+edits), and starts the complete stack with the old tags. It needs no
+network or second bundle. Docker images are not in the repo snapshot, so
+keep the snapshot and old image tags until the rollback window closes.
 
 ## Recovery scenarios
 

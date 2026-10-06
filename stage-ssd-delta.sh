@@ -3,8 +3,8 @@
 # RangerDanger SSD delta-stage helper.
 #
 # Compares two release versions and saves only the images whose
-# content changed between them. Lets you push a mid-workshop fix as
-# a tens-of-MB tarball instead of re-shipping the full ~6 GB bundle.
+# content changed between them. Delta size depends on how many image
+# digests differ; a repo-only update can avoid re-shipping image archives.
 #
 # Usage:
 #   ./stage-ssd-delta.sh <output-dir> <since-version> <new-version> [options]
@@ -626,13 +626,28 @@ $([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" 
 Run from the student's existing \`~/rangerdanger\` directory:
 
 \`\`\`sh
+set -e
 # Set this to the directory containing this delta bundle.
 DELTA_DIR="/path/to/delta-$NEW"
 cd ~/rangerdanger
 
-# Keep the installed version/settings for rollback, then stop the release stack.
+# Save the complete existing install, including .env and local lab/policy
+# edits, for rollback. Keep the first snapshot if this delta is re-applied.
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
-if [ ! -f ".env.before-$NEW" ]; then cp .env ".env.before-$NEW"; fi
+SNAPSHOT="../rangerdanger.before-$NEW.tar.gz"
+if [ ! -f "\$SNAPSHOT" ]; then
+    tar czf "\$SNAPSHOT" -C .. rangerdanger || {
+        rm -f "\$SNAPSHOT"
+        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta." >&2
+        exit 1
+    }
+fi
+tar tzf "\$SNAPSHOT" >/dev/null || {
+    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta." >&2
+    exit 1
+}
+
+# Stop the release stack only after the rollback snapshot is safely written.
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
 
 # Update the repo, then load the changed images (if any).
@@ -671,13 +686,28 @@ removes the offline rollback path.
 
 ## Rollback
 
-The apply recipe keeps the complete pre-upgrade \`.env\` (including
-\`VERSION=$SINCE\`) in \`.env.before-$NEW\`. The old image tags remain
-installed, so rollback does not need the network or another bundle:
+The apply recipe saves the complete pre-upgrade \`~/rangerdanger\` tree
+beside the install as \`../rangerdanger.before-$NEW.tar.gz\`. That snapshot
+includes \`.env\`, Compose files, lab definitions, policy files, and local
+edits; Docker images are not part of it. The retained \`$SINCE\` image tags
+are reused, so rollback needs no network and no second bundle. Keep both
+the snapshot and old image tags until the rollback window closes:
 
 \`\`\`sh
+set -e
 cd ~/rangerdanger
-cp ".env.before-$NEW" .env
+test -f "../rangerdanger.before-$NEW.tar.gz" || {
+    echo "Rollback snapshot not found beside ~/rangerdanger." >&2
+    exit 1
+}
+tar tzf "../rangerdanger.before-$NEW.tar.gz" >/dev/null || {
+    echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
+    exit 1
+}
+cd ..
+rm -rf rangerdanger
+tar xzf "rangerdanger.before-$NEW.tar.gz"
+cd rangerdanger
 docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
 \`\`\`
 EOF
