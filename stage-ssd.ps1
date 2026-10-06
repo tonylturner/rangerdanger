@@ -56,22 +56,35 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
-if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
-$OutDir = (Resolve-Path $OutDir).Path
-
-Say "Output:  $OutDir"
-Say "Version: $Version"
 
 # --- Enumerate images from compose --------------------------------------
-$allImages = & docker compose -f $ComposeFile config --images 2>$null | Sort-Object -Unique
+$hadComposeVersion = Test-Path Env:VERSION
+$previousComposeVersion = $env:VERSION
+try {
+    $env:VERSION = $Version
+    $composeOutput = & docker compose -f $ComposeFile config --images 2>$null
+    $composeStatus = $LASTEXITCODE
+} finally {
+    if ($hadComposeVersion) {
+        $env:VERSION = $previousComposeVersion
+    } else {
+        Remove-Item Env:VERSION -ErrorAction SilentlyContinue
+    }
+}
+if ($composeStatus -ne 0) { Die "Could not enumerate images from $ComposeFile" }
+$allImages = @($composeOutput | Sort-Object -Unique)
 if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
 
-# Resolve Compose's current image tag to the requested release tag. The
-# compose command may already resolve ${VERSION:-latest} from a repo .env.
-$resolved = foreach ($img in $allImages) {
-    $resolvedImage = $img -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest$', "`$1:$Version"
-    $resolvedImage -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+$', "`$1:$Version"
+# Compose interpolation is the only version-selection mechanism. Refuse
+# an environment/configuration mismatch before creating the output dir.
+foreach ($img in $allImages) {
+    if (-not $img.StartsWith('ghcr.io/tonylturner/rangerdanger-', [System.StringComparison]::Ordinal)) { continue }
+    $imageVersion = ($img -split ':')[-1]
+    if ($imageVersion -cne $Version) {
+        Die "Compose resolved first-party image $img, not requested version $Version (check Compose interpolation/environment)."
+    }
 }
+$resolved = $allImages
 
 # Binfmt is needed only by arm64 Linux hosts to run the amd64-only OpenPLC
 # image; keep this pin in sync with setup.sh and stage-ssd.sh.
@@ -264,6 +277,12 @@ foreach ($img in $resolved) {
     if ($img) { Add-PreflightImage $img }
 }
 Add-PreflightImage $BINFMT_IMAGE -Arm64Only
+
+if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
+$OutDir = (Resolve-Path $OutDir).Path
+
+Say "Output:  $OutDir"
+Say "Version: $Version"
 
 Invoke-StageArch 'amd64'
 Invoke-StageArch 'arm64'
