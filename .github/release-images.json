@@ -1,0 +1,230 @@
+{
+  "schema": 1,
+  "policy_version": 1,
+  "registry": "ghcr.io",
+  "namespace": "tonylturner",
+  "images": [
+    {
+      "image": "rangerdanger-backend",
+      "dockerfile": "Dockerfile.backend",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": true,
+      "always_build_reason": "VERSION, COMMIT, and DATE are baked into the binary by linker flags.",
+      "inputs": [
+        {"kind": "dir", "path": "backend"}
+      ]
+    },
+    {
+      "image": "rangerdanger-frontend",
+      "dockerfile": "Dockerfile.frontend",
+      "target": "",
+      "path": "native-merge",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "frontend"}
+      ]
+    },
+    {
+      "image": "rangerdanger-kali",
+      "dockerfile": "Dockerfile.kali",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "dnp3go"}
+      ]
+    },
+    {
+      "image": "rangerdanger-vendor-jump",
+      "dockerfile": "Dockerfile.vendor-jump",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "dnp3go"},
+        {"kind": "file", "path": "scripts/vendor-jump-services.sh"},
+        {"kind": "file", "path": "scripts/vendor-jump-x11vnc-service.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-eng-ws",
+      "dockerfile": "Dockerfile.eng-ws",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "dnp3go"}
+      ]
+    },
+    {
+      "image": "rangerdanger-corp-ws",
+      "dockerfile": "Dockerfile.corp-ws",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": []
+    },
+    {
+      "image": "rangerdanger-openplc",
+      "dockerfile": "Dockerfile.openplc",
+      "target": "",
+      "platforms": ["linux/amd64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "dnp3go"},
+        {"kind": "file", "path": "scripts/openplc-entrypoint.sh"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-fuxa-hmi",
+      "dockerfile": "Dockerfile.fuxa-hmi",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/fuxa-entrypoint.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-rtac-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "rtac-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "dnp3go/*.go"},
+        {"kind": "glob", "path": "services/rtac-sim/*.go"},
+        {"kind": "glob", "path": "dnp3go/cmd/dnp3poll/*.go"},
+        {"kind": "glob", "path": "dnp3go/cmd/dnp3cmd/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"},
+        {"kind": "file", "path": "scripts/rtac-mgmt-init.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-relay-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "relay-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "dnp3go/*.go"},
+        {"kind": "glob", "path": "services/relay-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-recloser-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "recloser-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "dnp3go/*.go"},
+        {"kind": "glob", "path": "services/recloser-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-regulator-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "regulator-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "dnp3go/*.go"},
+        {"kind": "glob", "path": "services/regulator-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-capbank-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "capbank-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "dnp3go/*.go"},
+        {"kind": "glob", "path": "services/capbank-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-historian-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "historian-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "services/historian-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-gps-sim",
+      "dockerfile": "services/Dockerfile",
+      "target": "gps-sim",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "glob", "path": "services/gps-sim/*.go"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-opendss-sim",
+      "dockerfile": "services/opendss-sim/Dockerfile",
+      "target": "",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/opendss-sim/requirements.txt"},
+        {"kind": "file", "path": "services/opendss-sim/main.py"},
+        {"kind": "file", "path": "services/opendss-sim/circuit.py"},
+        {"kind": "file", "path": "services/opendss-sim/models.py"},
+        {"kind": "file", "path": "services/opendss-sim/runtime_state.py"},
+        {"kind": "file", "path": "services/opendss-sim/time_utils.py"},
+        {"kind": "dir", "path": "services/opendss-sim/dss"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
+      ]
+    }
+  ]
+}

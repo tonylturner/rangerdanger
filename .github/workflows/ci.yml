@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  release-tooling:
+    name: Release image planner and input guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check release image input coverage
+        run: python3 scripts/check_release_inputs.py
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts/tests -t .
+
   backend:
     name: Backend (Go)
     runs-on: ubuntu-24.04
