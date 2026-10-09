@@ -145,8 +145,8 @@ What is your design verdict for Enterprise → Field traffic?
 Concretely, here is what happens when a student makes a choice in Lab 1.4:
 
 1. The student clicks a remediation action in Lab 1.4 - say \`pin-rtac-to-field\`.
-2. \`scenario-runner.tsx\` writes the selection to localStorage under \`decision:remediation-planning:pin-rtac-to-field\` with the value \`SELECTED\`.
-3. Subsequent labs read the same key when their description is rendered. The \`injectDynamicContent()\` helper in \`scenario-runner.tsx\` looks for \`:::plan-coverage\` fences and computes coverage live based on what is in localStorage.
+2. \`decision-panel.tsx\` saves the selected actions to localStorage as the student's remediation plan, under \`rd:<package>:<revision>:remediation-plan\`.
+3. Subsequent labs read the same key when their description is rendered. Each \`:::plan-coverage\` fence computes coverage live from the saved plan and the Lab 1.3 verdicts, and the \`injectDynamicContent()\` helper in \`scenario-runner-logic.ts\` rewrites Lab 2.2's rule steps from the plan.
 4. Lab 2.2's Phase 3 text adapts based on whether the student selected DPI actions or not. Lab 2.3's "Apply the hardened policy" plan-coverage panel shows which attacks the student's plan actually closes. Lab 2.4's final reflection shows the full coverage matrix.
 
 ### Why This Matters Pedagogically
@@ -157,7 +157,7 @@ The same workshop can be run two different ways - straight through, treating the
 
 ### Resetting the State
 
-Student progress lives in localStorage on each student's browser, scoped by exercise ID. To reset a single lab's recorded decisions during a workshop, open the browser console on the lab page and run \`localStorage.clear()\` (clears everything) or \`Object.keys(localStorage).filter(k => k.startsWith("decision:remediation-planning")).forEach(k => localStorage.removeItem(k))\` to reset just one lab. The instructor-facing \`/api/workshop/reset\` endpoint resets simulator state (substation devices, firewall config) but does not touch student-side localStorage.`,
+Student progress lives in localStorage on each student's browser. Every key is \`rd:<package>:<revision>:<name>\`, where the package and its curriculum revision come from the backend: \`exercise:<lab-id>\` holds completed steps, notes and the command log, \`decision:<lab-id>:<decision-id>\` holds one recorded answer, and \`remediation-plan\` and \`firewall-track\` hold the Lab 1.4 plan and the Lab 2.2 track choice. To reset a single lab's recorded decisions during a workshop, open the browser console on the lab page and run \`localStorage.clear()\` (clears everything) or \`Object.keys(localStorage).filter(k => k.startsWith("rd:") && k.includes(":decision:segmentation-requirements:")).forEach(k => localStorage.removeItem(k))\` to reset just one lab. The instructor-facing \`/api/workshop/reset\` endpoint resets simulator state (substation devices, firewall config) but does not touch student-side localStorage.`,
       },
       {
         id: "live-dpi-events-strip",

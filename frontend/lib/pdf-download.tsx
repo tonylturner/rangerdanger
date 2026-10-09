@@ -29,7 +29,7 @@ export async function downloadExercisePDF(scenarioId: string, scenarioName: stri
     import("./api"),
     import("./exercise-pdf"),
   ]);
-  const res = await listScenarios("substation-segmentation");
+  const res = await listScenarios();
   const scenario = res.scenarios.find((s) => s.id === scenarioId);
   if (!scenario) throw new Error(`Exercise ${scenarioId} not found`);
   const safeName = scenarioName.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
@@ -44,7 +44,7 @@ export async function downloadWorkbookPDF(): Promise<void> {
     import("./api"),
     import("./exercise-pdf"),
   ]);
-  const res = await listScenarios("substation-segmentation");
+  const res = await listScenarios();
   const generatedAt = new Date().toLocaleString();
   await renderAndDownload(
     <WorkbookPDF scenarios={res.scenarios} generatedAt={generatedAt} />,

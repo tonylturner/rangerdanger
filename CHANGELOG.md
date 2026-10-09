@@ -20,6 +20,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   broken package now stops the backend at startup instead of being
   logged and skipped. The unused `POST /api/scenarios` and
   `POST /api/labs/templates` routes are gone.
+- **Browser progress follows the active package.** The portal reads the
+  active package from `GET /api/packages` and keys saved progress,
+  decisions, the remediation plan and the firewall track by package and
+  curriculum revision. Completed steps are recorded by step ID, so
+  reordering steps no longer shifts progress. Progress saved before
+  this change is not carried over: students start the labs fresh once.
 
 ### Fixed
 

@@ -38,10 +38,11 @@ import {
   type DynamicExercisePlan,
 } from "../lib/remediation-to-rules";
 import {
-  loadSaved,
-  saveToDisk,
-  storageKey,
+  clearProgress,
+  loadProgress,
+  saveProgress,
 } from "../lib/scenario-runner-storage";
+import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   POLICY_ACTION_SCENARIOS,
   VALIDATE_BUTTON_SCENARIOS,
@@ -69,9 +70,10 @@ type RunnerProps = {
 
 
 export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
-  const saved = loadSaved(scenario.id);
+  const scope = useCurriculumScope();
+  const [saved] = useState(() => loadProgress(scope, scenario));
   const [currentStep, setCurrentStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(saved.completedSteps));
+  const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(() => new Set(saved.completedStepIds));
   const [notes, setNotes] = useState<string>(saved.notes);
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -87,7 +89,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // plan)" from "(your containd commit)". Survives page reloads
   // because it's a backend field.
   const [policySource, setPolicySource] = useState<PolicySource>("");
-  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog || []);
+  const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog);
   const [executing, setExecuting] = useState(false);
   // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
   // each have copy/run buttons without index collisions.
@@ -105,15 +107,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // firewall-implementation - only that lab actually uses the
   // plan to rewrite step descriptions.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan() : null
+    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan(scope) : null
   );
   useEffect(() => {
     if (!POLICY_ACTION_SCENARIOS.includes(scenario.id)) return;
-    setDynamicPlan(loadDynamicPlan());
-    const onFocus = () => setDynamicPlan(loadDynamicPlan());
+    setDynamicPlan(loadDynamicPlan(scope));
+    const onFocus = () => setDynamicPlan(loadDynamicPlan(scope));
     document.addEventListener("visibilitychange", onFocus);
     return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [scenario.id]);
+  }, [scope, scenario.id]);
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
@@ -143,20 +145,20 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     document.addEventListener("mouseup", onUp);
   }, [panelHeight]);
 
-  // Persist to localStorage on change
+  // Persist to curriculum storage on change
   useEffect(() => {
-    saveToDisk(scenario.id, { completedSteps: [...completedSteps], notes, cmdLog });
-  }, [completedSteps, notes, cmdLog, scenario.id]);
+    saveProgress(scope, scenario.id, { completedStepIds: [...completedStepIds], notes, cmdLog });
+  }, [scope, completedStepIds, notes, cmdLog, scenario.id]);
 
   const resetProgress = () => {
     if (!window.confirm("Reset all exercise progress? This clears completed steps, notes, and command log.")) return;
-    setCompletedSteps(new Set());
+    setCompletedStepIds(new Set());
     setNotes("");
     setCurrentStep(0);
     setCmdLog([]);
     setValidation(null);
     setStepResult(null);
-    try { localStorage.removeItem(storageKey(scenario.id)); } catch { /* ignore */ }
+    clearProgress(scope, scenario.id);
   };
 
   const handleAutoRun = async (cmd: string, runId: string, stepDesc: string) => {
@@ -291,7 +293,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const result = await validateScenario(scenario.id);
       setValidation(result);
       if (result.outcome === "PASS") {
-        setCompletedSteps(new Set(scenario.steps.map((_, i) => i)));
+        setCompletedStepIds(new Set(scenario.steps.map((s) => s.id)));
       }
     } catch {
       setValidation(null);
@@ -341,7 +343,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   };
 
   const markStepDone = (idx: number) => {
-    setCompletedSteps((prev) => new Set([...prev, idx]));
+    const stepId = scenario.steps[idx]?.id;
+    if (stepId !== undefined) setCompletedStepIds((prev) => new Set([...prev, stepId]));
     if (idx < scenario.steps.length - 1) {
       setCurrentStep(idx + 1);
     }
@@ -349,8 +352,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
   const step = scenario.steps[currentStep];
   const elec = state?.electrical;
-  const progress = completedSteps.size / scenario.steps.length;
+  const progress = completedStepIds.size / scenario.steps.length;
   const hasAction = !!step?.action;
+  const stepDone = step !== undefined && completedStepIds.has(step.id);
 
   // Operational assessments
   const bkrClosed = elec?.breaker_closed ?? false;
@@ -371,7 +375,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
         <div className="flex items-center gap-2">
-          {completedSteps.size > 0 && (
+          {completedStepIds.size > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -452,7 +456,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           />
         </div>
         <span className="text-[10px] text-slate-500 shrink-0">
-          {completedSteps.size}/{scenario.steps.length} steps
+          {completedStepIds.size}/{scenario.steps.length} steps
         </span>
       </div>
 
@@ -463,7 +467,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       {showSummary && (
         <ExerciseSummary
           scenario={scenario}
-          completedSteps={completedSteps}
+          completedStepIds={completedStepIds}
           notes={notes}
           activeConfig={activeConfig}
         />
@@ -473,7 +477,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <StepNavigator
           scenario={scenario}
-          completedSteps={completedSteps}
+          completedStepIds={completedStepIds}
           currentStep={currentStep}
           setCurrentStep={setCurrentStep}
           setStepResult={setStepResult}
@@ -488,7 +492,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 Step {currentStep + 1}: {step?.title}
               </h3>
               <div className="flex items-center gap-2">
-                {hasAction && !completedSteps.has(currentStep) && (
+                {hasAction && !stepDone && (
                   <button
                     onClick={() => handleExecuteStep(currentStep)}
                     disabled={executing}
@@ -497,11 +501,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
                 )}
-                {!completedSteps.has(currentStep) && (() => {
+                {!stepDone && (() => {
                   // No force-pick: Lab 2.2 defaults to the Guided track
                   // (see useFirewallTrack), so step 1 advances freely.
                   // Students switch to Advanced from the picker / side
-                  // panel anytime; the choice persists to localStorage
+                  // panel anytime; the choice persists to curriculum storage
                   // so later firewall labs inherit it.
                   const trackGate = false;
                   return (

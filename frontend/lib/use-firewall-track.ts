@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useCurriculumScope } from "./curriculum-scope";
+import {
+  FIREWALL_TRACK,
+  curriculumKey,
+  readCurriculum,
+  removeCurriculum,
+  writeCurriculum,
+  type CurriculumScope,
+} from "./curriculum-storage";
 
 // useFirewallTrack — student's choice of how to interact with containd
 // across the firewall implementation labs (2.2 / 2.3 / 2.3-bonus / 2.4).
@@ -20,11 +29,10 @@ import { useEffect, useState, useCallback } from "react";
 
 export type FirewallTrack = "guided" | "technical" | null;
 
-const STORAGE_KEY = "rangerdanger.firewall-track";
+const TRACK_CHANGED_EVENT = "rangerdanger.firewall-track-changed";
 
-function readTrack(): FirewallTrack {
-  if (typeof window === "undefined") return "guided";
-  const v = window.localStorage.getItem(STORAGE_KEY);
+function readTrack(scope: CurriculumScope): FirewallTrack {
+  const v = readCurriculum(scope, FIREWALL_TRACK);
   if (v === "guided" || v === "technical") return v;
   return "guided";
 }
@@ -37,34 +45,33 @@ export function useFirewallTrack(): {
   // Guided path with no force-pick and no first-render flash of the
   // technical block. A returning student's saved choice is restored in
   // the effect below.
+  const scope = useCurriculumScope();
   const [track, setTrackState] = useState<FirewallTrack>("guided");
 
   useEffect(() => {
-    setTrackState(readTrack());
+    setTrackState(readTrack(scope));
+    const key = curriculumKey(scope, FIREWALL_TRACK);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setTrackState(readTrack());
+      if (e.key === key) setTrackState(readTrack(scope));
     };
-    const onCustom = () => setTrackState(readTrack());
+    const onCustom = () => setTrackState(readTrack(scope));
     window.addEventListener("storage", onStorage);
-    window.addEventListener("rangerdanger.firewall-track-changed", onCustom);
+    window.addEventListener(TRACK_CHANGED_EVENT, onCustom);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener(
-        "rangerdanger.firewall-track-changed",
-        onCustom,
-      );
+      window.removeEventListener(TRACK_CHANGED_EVENT, onCustom);
     };
-  }, []);
+  }, [scope]);
 
   const setTrack = useCallback((t: FirewallTrack) => {
     if (typeof window === "undefined") return;
-    if (t === null) window.localStorage.removeItem(STORAGE_KEY);
-    else window.localStorage.setItem(STORAGE_KEY, t);
+    if (t === null) removeCurriculum(scope, FIREWALL_TRACK);
+    else writeCurriculum(scope, FIREWALL_TRACK, t);
     setTrackState(t);
     // Custom event so other components in the same tab pick up the
     // change immediately (the storage event only fires cross-tab).
-    window.dispatchEvent(new Event("rangerdanger.firewall-track-changed"));
-  }, []);
+    window.dispatchEvent(new Event(TRACK_CHANGED_EVENT));
+  }, [scope]);
 
   return { track, setTrack };
 }

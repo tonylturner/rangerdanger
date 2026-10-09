@@ -20,6 +20,8 @@
 // they're "operational hygiene" beyond what the design spec requires
 // and the labor budget still constrains their selection.
 
+import { decisionName, readCurriculum, type CurriculumScope } from "./curriculum-storage";
+
 export type Requirement = {
   id: string;            // matches DecisionBlock decisionId
   label: string;         // human-readable for UI (e.g. "Enterprise → Field")
@@ -76,22 +78,21 @@ const MAPPINGS: Record<string, { label: string; impl: ImplementationMap }> = {
   },
 };
 
-// Storage key matches DecisionBlock.decisionStorageKey() in the
-// scenario-runner. Lab 1.3's scenario id is "segmentation-
-// requirements" — that's where the committed verdicts live.
+// Lab 1.3's scenario id is "segmentation-requirements" — that's where
+// DecisionBlock records the committed verdicts.
 const REQ_SCENARIO = "segmentation-requirements";
 
-export function readRequirements(): Requirement[] {
+function readVerdict(scope: CurriculumScope, decisionId: string): string {
+  return readCurriculum(scope, decisionName(REQ_SCENARIO, decisionId)) ?? "";
+}
+
+export function readRequirements(scope: CurriculumScope): Requirement[] {
   if (typeof window === "undefined") return [];
-  return Object.keys(MAPPINGS).map((id) => {
-    let verdict = "";
-    try {
-      verdict = window.localStorage.getItem(`decision:${REQ_SCENARIO}:${id}`) ?? "";
-    } catch {
-      /* localStorage blocked — return empty */
-    }
-    return { id, label: MAPPINGS[id].label, verdict };
-  });
+  return Object.keys(MAPPINGS).map((id) => ({
+    id,
+    label: MAPPINGS[id].label,
+    verdict: readVerdict(scope, id),
+  }));
 }
 
 // What 1.3 requirement(s) does this 1.4 action satisfy, given the
@@ -168,7 +169,7 @@ export function summariseCoverage(items: CoverageItem[]): {
 // Lab 1.3's resourcing-reality-check step captures four readiness
 // answers (OT engineering capacity, firewall admin skills, vendor
 // change windows, risk-acceptance authority). They live under the
-// same `decision:segmentation-requirements:*` localStorage prefix.
+// same `decision:segmentation-requirements:*` curriculum storage names.
 //
 // Lab 1.4 reads them and renders per-action overlays: actions that
 // depend on a resource the student marked as constrained get a
@@ -204,7 +205,7 @@ const READINESS_GOOD_VERDICT: Record<ReadinessKey, string> = {
   "risk-acceptance-authority": "CLEAR",
 };
 
-export function readReadiness(): ReadinessAnswer[] {
+export function readReadiness(scope: CurriculumScope): ReadinessAnswer[] {
   if (typeof window === "undefined") return [];
   const keys: ReadinessKey[] = [
     "ot-eng-availability",
@@ -213,10 +214,7 @@ export function readReadiness(): ReadinessAnswer[] {
     "risk-acceptance-authority",
   ];
   return keys.map((k) => {
-    let v = "";
-    try {
-      v = window.localStorage.getItem(`decision:${REQ_SCENARIO}:${k}`) ?? "";
-    } catch { /* localStorage blocked */ }
+    const v = readVerdict(scope, k);
     return {
       key: k,
       label: READINESS_LABELS[k],

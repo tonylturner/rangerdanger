@@ -1,8 +1,7 @@
-// Shared storage for the remediation-planning exercise decisions.
-// Writes from the DecisionPanel component; reads from any later exercise
-// that wants to display or branch on the student's plan.
+// The Lab 1.4 remediation plan. DecisionPanel writes it; later
+// exercises read it to display or branch on the student's plan.
 
-const STORAGE_KEY = "rd-remediation-plan";
+import { REMEDIATION_PLAN, readCurriculum, writeCurriculum, type CurriculumScope } from "./curriculum-storage";
 
 export type RemediationPlan = {
   exerciseId: string;
@@ -10,36 +9,18 @@ export type RemediationPlan = {
   savedAt: string; // ISO timestamp
 };
 
-export function saveRemediationPlan(plan: RemediationPlan): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
-  } catch {
-    // ignore
-  }
+export function saveRemediationPlan(scope: CurriculumScope, plan: RemediationPlan): void {
+  writeCurriculum(scope, REMEDIATION_PLAN, JSON.stringify(plan));
 }
 
-export function loadRemediationPlan(): RemediationPlan | null {
+export function loadRemediationPlan(scope: CurriculumScope): RemediationPlan | null {
+  const raw = readCurriculum(scope, REMEDIATION_PLAN);
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
     return JSON.parse(raw) as RemediationPlan;
   } catch {
     return null;
   }
-}
-
-export function clearRemediationPlan(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-// hasSelected checks whether a specific remediation action was selected.
-// Used by later exercises to branch on the student's decisions.
-export function hasSelected(plan: RemediationPlan | null, actionId: string): boolean {
-  return !!plan && plan.selectedActionIds.includes(actionId);
 }
 
 // Mapping of remediation action ids to the later attack exercises they

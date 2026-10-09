@@ -3,7 +3,7 @@
 How to write a workshop lab in a package's scenarios directory
 (`lab-definitions/scenarios/` for the US package). Covers
 the YAML shape the runner expects, the description-body fences for
-hints / decisions / findings panels, and the localStorage model
+hints / decisions / findings panels, and the browser storage model
 that lets a lab read what the student did in earlier labs.
 
 The runner that consumes these YAMLs lives in
@@ -167,7 +167,7 @@ Attributes:
 
 | Attribute | Required | Purpose |
 |---|---|---|
-| `id` | yes | Unique within the scenario. Forms the storage key as `decision:<scenario-id>:<id>`. |
+| `id` | yes | Unique within the scenario. Forms the storage name `decision:<scenario-id>:<id>` (see [Browser storage model](#browser-storage-model)). |
 | `options` | no | Comma-separated list of dropdown choices. Default: `BLOCK,BLOCK and LOG,RESTRICT,ALLOW`. Quote values that contain spaces (e.g. `options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW"`). |
 | `default-from` | no | `<source-scenario-id>:<source-decision-id>`. On first render with no local value, copies the upstream value so a downstream lab can pre-fill from an earlier one. The student can still adjust. |
 | `correct` | no | The "right" answer. When set, the dropdown renders a green ✓ chip when the student's pick matches, red ✗ otherwise. Use this **only on observation / factual prompts** (e.g. "what did you see in the capture?"), not on judgment-call design decisions. |
@@ -197,7 +197,7 @@ Attributes:
 
 | Attribute | Required | Purpose |
 |---|---|---|
-| `from` | yes | Upstream scenario id. The panel reads each item from `decision:<from>:<line-id>`. |
+| `from` | yes | Upstream scenario id. The panel reads each item from the storage name `decision:<from>:<line-id>`. |
 | `title` | no | Header text. Defaults to `"Inherited findings"`. |
 
 Body lines: one per item, format `<decision-id>: <human label>`.
@@ -276,14 +276,26 @@ If you wire a different kind of action picker, see
 [`frontend/components/decision-panel.tsx`](../frontend/components/decision-panel.tsx)
 for the integration pattern.
 
-## localStorage model
+## Browser storage model
 
-Decisions and the remediation plan persist client-side. Keys:
+Curriculum state persists client-side in `localStorage`. Every key is
+`rd:<package>:<revision>:<name>`, where `<package>` and `<revision>` are
+the active package's `id` and curriculum `revision` from
+`GET /api/packages`. Names:
 
 ```
-decision:<scenario-id>:<decision-id>     decision dropdown selections
-rd-remediation-plan                      JSON {exerciseId, selectedActionIds, savedAt}
+exercise:<scenario-id>                   JSON {completedStepIds, notes, cmdLog}
+decision:<scenario-id>:<decision-id>     decision dropdown selection
+remediation-plan                         JSON {exerciseId, selectedActionIds, savedAt}
+firewall-track                           guided | technical
 ```
+
+Progress records step `id`s, never array positions, so reordering
+steps keeps it; IDs a scenario no longer has are ignored. Bumping the
+package `revision` starts every student fresh under new keys. All keys
+are built in
+[`frontend/lib/curriculum-storage.ts`](../frontend/lib/curriculum-storage.ts);
+keys written before this scheme are not read.
 
 The runner exposes saved data via `:::findings-panel`, `default-from`
 on `:::decision`, and `:::plan-coverage`. If you need a brand-new way

@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use } from "react";
 import { useRouter } from "next/navigation";
 import { ExerciseRunner } from "../../../components/exercise-runner";
-import { listScenarios, type Scenario } from "../../../lib/api";
+import { CurriculumScopeProvider, useActiveCurriculum } from "../../../lib/curriculum-scope";
 
 type Params = { id: string };
 
@@ -12,33 +12,12 @@ export default function ExerciseDetailPage({ params }: { params: Promise<Params>
   // unwraps with React.use() rather than await.
   const { id } = use(params);
   const router = useRouter();
-  const [scenario, setScenario] = useState<Scenario | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "not_found">("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    listScenarios("substation-segmentation")
-      .then((res) => {
-        if (cancelled) return;
-        const match = res.scenarios.find((s) => s.id === id);
-        if (match) {
-          setScenario(match);
-          setStatus("ready");
-        } else {
-          setStatus("not_found");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("not_found");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const { pkg, scenarios, isLoading } = useActiveCurriculum();
+  const scenario = scenarios?.find((s) => s.id === id);
 
   const handleExit = () => router.push("/exercises");
 
-  if (status === "loading") {
+  if (isLoading) {
     return (
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
@@ -48,7 +27,7 @@ export default function ExerciseDetailPage({ params }: { params: Promise<Params>
     );
   }
 
-  if (status === "not_found" || !scenario) {
+  if (!pkg || !scenario) {
     return (
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
         <div className="rounded-xl border border-amber-800 bg-amber-950/30 p-5">
@@ -69,7 +48,9 @@ export default function ExerciseDetailPage({ params }: { params: Promise<Params>
 
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-10">
-      <ExerciseRunner scenario={scenario} onExit={handleExit} />
+      <CurriculumScopeProvider pkg={pkg}>
+        <ExerciseRunner key={`${pkg.id}:${pkg.revision}:${scenario.id}`} scenario={scenario} onExit={handleExit} />
+      </CurriculumScopeProvider>
     </main>
   );
 }
