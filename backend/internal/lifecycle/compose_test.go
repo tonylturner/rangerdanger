@@ -25,7 +25,7 @@ func TestComposeArgv(t *testing.T) {
 		"up": {cli.upArgs(file), append(append([]string(nil), model...),
 			"up", "-d", "--wait", "--wait-timeout", "300", "--no-build", "--pull", "never")},
 		// Label-only: no -f, no --project-directory.
-		"down": {cli.downArgs(), []string{"-p", "rangerdanger", "down", "--remove-orphans"}},
+		"down": {cli.downArgs(), []string{"-p", "rangerdanger", "down", "-v", "--remove-orphans"}},
 	}
 	for name, tt := range tests {
 		if !reflect.DeepEqual(tt.got, tt.want) {

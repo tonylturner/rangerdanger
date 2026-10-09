@@ -513,3 +513,25 @@ func TestPackageChecksFailPreflight(t *testing.T) {
 		})
 	}
 }
+
+func TestTeardownRemovesAndVerifiesVolumes(t *testing.T) {
+	h := newHarness(t)
+	m := h.ready(h.options(), "pkg-a")
+	if st := h.switchTo(m, "pkg-b"); st.Phase != PhaseReady {
+		t.Fatalf("status = %+v", st)
+	}
+	for _, container := range testContainers("pkg-a") {
+		if h.engine.volumes[anonymousVolume(container)] {
+			t.Errorf("volume of %s survived the switch", container)
+		}
+	}
+
+	h.compose.keepVolume = true
+	st := h.switchTo(m, "pkg-a")
+	if st.Phase != PhaseFailed || !strings.Contains(st.Error, anonymousVolume("rd-test-pkg-b-plc")) || !strings.Contains(st.Error, "remain after down") {
+		t.Fatalf("status = %+v, want failed naming the leftover volume", st)
+	}
+	if got := h.compose.callLog(); contains(got, "up pkg-a") {
+		t.Errorf("compose calls = %q: up ran after a failed teardown", got)
+	}
+}

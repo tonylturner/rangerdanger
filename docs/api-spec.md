@@ -49,7 +49,7 @@ Status body:
 A switch runs these phases, one switch at a time:
 
 1. `preflight` (old range untouched and still served): the package exists, its manifest loads, `docker compose config` succeeds for the mode's Compose file, every image it needs is already present locally (nothing is pulled or built), and its proxy routes and default firewall policy exist.
-2. `stopping`: in-flight range-bound work drains, then the old range is removed by its Compose project label and the removal is verified.
+2. `stopping`: in-flight range-bound work drains, then the old range is removed by its Compose project label together with its anonymous volumes (`down -v`; range models declare no named volumes), and the removal is verified: no container or network with the label, and none of the volumes its containers mounted, remains.
 3. `starting`: `compose up --wait` with no build and no pull (healthchecks have 300 s).
 4. `configuring`: the package's proxy routes are installed (`nginx -t`, then reload; a rejected file is rolled back), the firewall is waited for, and the package's default policy is imported. Every range start imports it, so a student's policy does not survive a switch.
 5. `ready`.

@@ -211,12 +211,23 @@ func (m *Manager) fail(p plan, gen *Generation, cause error) {
 }
 
 // teardown removes the range project by label and verifies that nothing
-// with its label is left.
+// with its label, and none of the volumes its containers mounted, is left.
 func (m *Manager) teardown(parent context.Context) error {
 	ctx, cancel := context.WithTimeout(parent, m.timeouts.Down)
 	defer cancel()
+	volumes, err := m.opts.Engine.MountedVolumes(ctx, manifest.RangeProject)
+	if err != nil {
+		return err
+	}
 	if err := m.opts.Compose.Down(ctx); err != nil {
 		return err
+	}
+	leftVolumes, err := m.opts.Engine.ExistingVolumes(ctx, volumes)
+	if err != nil {
+		return err
+	}
+	if len(leftVolumes) > 0 {
+		return fmt.Errorf("project %s volumes [%s] remain after down", manifest.RangeProject, strings.Join(leftVolumes, ", "))
 	}
 	containers, networks, err := m.opts.Engine.ProjectResources(ctx, manifest.RangeProject)
 	if err != nil {

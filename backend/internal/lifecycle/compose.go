@@ -29,7 +29,8 @@ type Compose interface {
 	// Up starts the range and waits for its healthchecks; it never builds
 	// or pulls.
 	Up(ctx context.Context, file string) error
-	// Down removes the range project by its labels alone.
+	// Down removes the range project, with its anonymous volumes, by its
+	// labels alone.
 	Down(ctx context.Context) error
 }
 
@@ -81,9 +82,11 @@ func (c *ComposeCLI) upArgs(file string) []string {
 
 // downArgs carries no -f and no --project-directory: with the root as
 // project directory Compose would load root/docker-compose.yml, the
-// platform model.
+// platform model. -v removes the anonymous volumes images declare (the
+// webtop desktops' /config); range models carry no named volumes
+// (manifest.CheckCompose), so nothing else is removed.
 func (c *ComposeCLI) downArgs() []string {
-	return []string{"-p", c.Project, "down", "--remove-orphans"}
+	return []string{"-p", c.Project, "down", "-v", "--remove-orphans"}
 }
 
 // Config implements Compose.

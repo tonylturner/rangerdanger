@@ -27,12 +27,13 @@ type fakeEngine struct {
 	project   []string        // containers labelled with the range project
 	networks  []string        // networks labelled with the range project
 	foreign   []string        // container names held outside the project
+	volumes   map[string]bool // anonymous volumes, by name
 	execs     []string
 	execCodes map[string]int // exit code by joined argv
 }
 
 func newFakeEngine() *fakeEngine {
-	return &fakeEngine{missing: map[string]bool{}, execCodes: map[string]int{}}
+	return &fakeEngine{missing: map[string]bool{}, execCodes: map[string]int{}, volumes: map[string]bool{}}
 }
 
 func (e *fakeEngine) MissingImages(_ context.Context, refs []string) ([]string, error) {
@@ -54,6 +55,34 @@ func (e *fakeEngine) ProjectResources(_ context.Context, project string) ([]stri
 		return nil, nil, nil
 	}
 	return append([]string(nil), e.project...), append([]string(nil), e.networks...), nil
+}
+
+// anonymousVolume is the volume each fake container's image declares.
+func anonymousVolume(container string) string { return "anon-" + container }
+
+func (e *fakeEngine) MountedVolumes(_ context.Context, project string) ([]string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if project != manifest.RangeProject {
+		return nil, nil
+	}
+	var names []string
+	for _, container := range e.project {
+		names = append(names, anonymousVolume(container))
+	}
+	return names, nil
+}
+
+func (e *fakeEngine) ExistingVolumes(_ context.Context, names []string) ([]string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var existing []string
+	for _, name := range names {
+		if e.volumes[name] {
+			existing = append(existing, name)
+		}
+	}
+	return existing, nil
 }
 
 func (e *fakeEngine) ContainersNamed(_ context.Context, names []string) ([]string, error) {
@@ -98,6 +127,7 @@ type fakeCompose struct {
 	calls      []string
 	upErr      error
 	downLeaves bool   // down leaves a container behind
+	keepVolume bool   // down leaves the containers' volumes behind
 	onConfig   func() // runs at the start of every config
 	onDown     func() // runs at the start of every down
 	// models replaces the normalized model of a package's file, by package dir.
@@ -187,19 +217,27 @@ func (c *fakeCompose) Up(_ context.Context, file string) error {
 	// A failed up still leaves resources behind, like a real half-start.
 	c.engine.project = append([]string(nil), created...)
 	c.engine.networks = []string{"rangerdanger_field_net"}
+	for _, container := range created {
+		c.engine.volumes[anonymousVolume(container)] = true
+	}
 	return upErr
 }
 
 func (c *fakeCompose) Down(context.Context) error {
 	c.record("down")
 	c.mu.Lock()
-	onDown, leaves := c.onDown, c.downLeaves
+	onDown, leaves, keepVolume := c.onDown, c.downLeaves, c.keepVolume
 	c.mu.Unlock()
 	if onDown != nil {
 		onDown()
 	}
 	c.engine.mu.Lock()
 	defer c.engine.mu.Unlock()
+	if !keepVolume {
+		for _, container := range c.engine.project {
+			delete(c.engine.volumes, anonymousVolume(container))
+		}
+	}
 	c.engine.project = nil
 	c.engine.networks = nil
 	if leaves {
