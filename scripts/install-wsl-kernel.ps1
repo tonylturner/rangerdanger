@@ -24,8 +24,10 @@ the lab's ICS DPI enforcement falls flat. This script:
 
 .PARAMETER Test
 Probe-only. Exits 0 if the running WSL2 kernel can apply queue rules,
-non-zero if it cannot. Useful for setup.ps1 to decide whether to call
-install mode.
+1 if it cannot, 2 if this is not Windows + WSL2, and 13 if no probe
+could run (no running firewall container, no local firewall image, and
+the Alpine fallback could not fetch nftables -- usually no network).
+setup.ps1 uses it to decide whether to call install mode.
 
 .PARAMETER Restore
 Undo: restores .wslconfig.bak, deletes our installed kernel binary,
@@ -87,7 +89,10 @@ Exit codes:
   10 = user declined the wsl --shutdown prompt
   11 = .wslconfig already has a foreign kernel= and -Force not set
   12 = download or sha256 verify failed
-  13 = stack-side probe (nft queue test) could not run at all
+  13 = the nft queue probe could not run at all, so kernel support is
+       unknown (see -Test). Install mode exits 13 before changing anything
+       when the pre-install probe cannot run, and after installing when
+       the post-install probe cannot run.
 #>
 
 [CmdletBinding()]
@@ -131,34 +136,54 @@ $Managed.WslConfigBakFg = "$($Managed.WslConfig).bak.foreign"
 # example online uses).
 $Managed.WslConfigKernelValue = ($Managed.KernelTarget -replace '\\','/')
 
-# --- Bounded docker info -------------------------------------------------
+# --- Bounded docker CLI calls -------------------------------------------
 # After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can fail to bring
 # its VM back ("running wsl-bootstrap: exit status 1") and sit on a
-# Restart/Quit error dialog. In that state `docker info` does not fail --
-# it blocks forever, so a bare `& docker info` hangs the caller no matter
-# what wait budget it prints. Run the probe as a child process and kill it
-# after $TimeoutSec. stderr is drained (blkio warnings on WSL2) but never
-# surfaces as a NativeCommandError. Returns trimmed stdout, or $null on
-# timeout / non-zero exit / empty output.
-function Get-DockerInfoBounded([string]$Format, [int]$TimeoutSec = 10) {
+# Restart/Quit error dialog. In that state docker CLI calls do not fail --
+# they block forever, so a bare `& docker ...` hangs the caller no matter
+# what wait budget it prints. Every docker call in this script therefore
+# runs as a child process that is killed after $TimeoutSec. stderr is
+# captured (blkio warnings on WSL2) but never surfaces as a
+# NativeCommandError.
+
+# ProcessStartInfo.Arguments is a single command line (Windows PowerShell
+# 5.1 has no ArgumentList), so quote each argument by the
+# CommandLineToArgvW rules the docker CLI parses it with.
+function Join-NativeArguments([string[]]$ArgList) {
+    ($ArgList | ForEach-Object {
+        if ($_ -ne '' -and $_ -notmatch '[\s"]') { $_ }
+        else { '"' + (($_ -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }
+    }) -join ' '
+}
+
+# Returns $null when the docker CLI is not on PATH; otherwise ExitCode,
+# StdOut, StdErr and TimedOut (ExitCode -1 when the call was killed).
+function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec) {
     $dockerCmd = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $dockerCmd) { return $null }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $dockerCmd.Source
-    $psi.Arguments = "info --format `"$Format`""
+    $psi.Arguments = Join-NativeArguments $DockerArgs
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
     $p = [System.Diagnostics.Process]::Start($psi)
     $stdout = $p.StandardOutput.ReadToEndAsync()
-    $null = $p.StandardError.ReadToEndAsync()
+    $stderr = $p.StandardError.ReadToEndAsync()
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         try { $p.Kill() } catch { }
-        return $null
+        return [pscustomobject]@{ ExitCode=-1; StdOut=''; StdErr=''; TimedOut=$true }
     }
-    if ($p.ExitCode -ne 0) { return $null }
-    $text = $stdout.Result.Trim()
+    [pscustomobject]@{ ExitCode=$p.ExitCode; StdOut=$stdout.Result; StdErr=$stderr.Result; TimedOut=$false }
+}
+
+# Trimmed `docker info --format` output, or $null on timeout / non-zero
+# exit / empty output.
+function Get-DockerInfoBounded([string]$Format, [int]$TimeoutSec = 10) {
+    $r = Invoke-DockerBounded @('info', '--format', $Format) $TimeoutSec
+    if (-not $r -or $r.TimedOut -or $r.ExitCode -ne 0) { return $null }
+    $text = $r.StdOut.Trim()
     if ($text) { return $text }
     return $null
 }
@@ -186,50 +211,83 @@ function Test-WindowsWsl2Backend {
 # Tries to apply a minimal nft rule containing `queue num <N>`. If the
 # current kernel has CONFIG_NFT_QUEUE compiled in, this succeeds; if
 # not, nft reports "Could not process rule: No such file or directory"
-# pointing at the queue token. We prefer running the probe in the
-# already-pulled rangerdanger-firewall container if it exists (no
-# extra pull). Otherwise we spin up a tiny one-shot Alpine container.
-function Test-NftQueueSupported {
-    $script = "nft 'add table inet rdprobe; add chain inet rdprobe c { type filter hook output priority 0; }; add rule inet rdprobe c queue num 999'"
+# pointing at the queue token. Probe sources, in order:
+#   1. the running rangerdanger-firewall container (lab already up);
+#   2. a one-shot container from the local containd firewall image with
+#      no network -- the SSD bundle carries this image, so an offline
+#      laptop can probe once setup.ps1 -FromTarballs has loaded it;
+#   3. only when that image is absent, a one-shot Alpine container that
+#      installs nftables (needs network for the image and apk).
+# Result is Supported, Missing (nft ran and the kernel rejected the rule)
+# or Unknown (no probe could run, or it ran without NET_ADMIN). Unknown is
+# never reported as Missing.
 
-    # Try the firewall container first if it already exists -- saves a
-    # pull on hosts that already ran setup.ps1.
-    $useFirewall = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker inspect -f '{{.State.Running}}' rangerdanger-firewall 2>$null
-    }
-    if ($useFirewall -eq 'true') {
-        $r = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker exec rangerdanger-firewall sh -c "$script 2>&1" 2>$null
-        }
-        $rc = $LASTEXITCODE
-        # Cleanup attempt -- ignore failure (rule may not have been added).
-        & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker exec rangerdanger-firewall sh -c "nft delete table inet rdprobe 2>/dev/null" *>$null
-        }
-        if ($rc -eq 0 -and "$r" -notmatch 'No such file or directory') {
-            return [pscustomobject]@{ Supported=$true; ProbeSource='rangerdanger-firewall'; Detail="$r" }
-        } else {
-            return [pscustomobject]@{ Supported=$false; ProbeSource='rangerdanger-firewall'; Detail="$r" }
-        }
-    }
+# Keep in sync with the firewall service image in docker-compose.release.yml.
+$FirewallImage = 'ghcr.io/tonylturner/containd:latest'
+$AlpineImage   = 'alpine:3.20'
+# The trailing rdprobe-rc marker proves nft itself ran; without it the
+# probe container could not start or had no nft. The table is deleted in
+# the same shell so the queue rule exists only for that instant.
+$NftProbeScript = 'command -v nft >/dev/null 2>&1 || { echo rdprobe-nonft; exit 90; }; ' +
+    'nft ''add table inet rdprobe; add chain inet rdprobe c { type filter hook output priority 0; }; add rule inet rdprobe c queue num 999'' 2>&1; ' +
+    'rc=$?; nft delete table inet rdprobe >/dev/null 2>&1; echo rdprobe-rc=$rc'
 
-    # Fallback: tiny one-shot Alpine container with nftables.
-    $img = "alpine:3.20"
-    Say "Probing kernel via a one-shot $img container (no rangerdanger stack required)..."
-    $r = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker run --rm --cap-add NET_ADMIN $img sh -c `
-            "apk add --quiet --no-progress nftables 2>/dev/null && $script 2>&1" 2>$null
-    }
-    $rc = $LASTEXITCODE
-    if ($rc -eq 0 -and "$r" -notmatch 'No such file or directory') {
-        return [pscustomobject]@{ Supported=$true; ProbeSource='alpine'; Detail="$r" }
+function ConvertTo-NftProbeResult($Run, [string]$Source) {
+    $result = 'Unknown'
+    if (-not $Run) {
+        $detail = 'docker CLI not on PATH'
+    } elseif ($Run.TimedOut) {
+        $detail = 'docker did not answer in time'
     } else {
-        return [pscustomobject]@{ Supported=$false; ProbeSource='alpine'; Detail="$r" }
+        $out = ("$($Run.StdOut)`n$($Run.StdErr)").Trim()
+        if ($out -match 'rdprobe-rc=(\d+)') {
+            $rc = [int]$Matches[1]
+            $detail = ($out -replace 'rdprobe-rc=\d+', '').Trim()
+            if ($rc -eq 0 -and $detail -notmatch 'No such file or directory') {
+                $result = 'Supported'
+            } elseif ($detail -notmatch 'Operation not permitted') {
+                # Permission errors mean the probe lacked NET_ADMIN, not
+                # that the kernel lacks the feature.
+                $result = 'Missing'
+            }
+        } else {
+            $detail = "probe could not run (docker exit $($Run.ExitCode)): $out"
+        }
     }
+    [pscustomobject]@{ Result=$result; ProbeSource=$Source; Detail=$detail }
+}
+
+function Test-NftQueueSupported {
+    $state = Invoke-DockerBounded @('inspect', '-f', '{{.State.Running}}', 'rangerdanger-firewall') 15
+    if ($state -and $state.ExitCode -eq 0 -and $state.StdOut.Trim() -eq 'true') {
+        $run = Invoke-DockerBounded @('exec', 'rangerdanger-firewall', 'sh', '-c', $NftProbeScript) 60
+        $probe = ConvertTo-NftProbeResult $run 'rangerdanger-firewall'
+        if ($probe.Result -ne 'Unknown') { return $probe }
+        Warn "Probe in the running rangerdanger-firewall container failed: $($probe.Detail)"
+    }
+
+    $image = Invoke-DockerBounded @('image', 'inspect', '--format', '{{.Id}}', $FirewallImage) 15
+    if ($image -and $image.ExitCode -eq 0) {
+        Say "Probing kernel via a one-shot $FirewallImage container (no network needed)..."
+        $run = Invoke-DockerBounded @('run', '--rm', '--network', 'none', '--cap-add', 'NET_ADMIN',
+            '--entrypoint', 'sh', $FirewallImage, '-c', $NftProbeScript) 120
+        return ConvertTo-NftProbeResult $run $FirewallImage
+    }
+
+    Say "Probing kernel via a one-shot $AlpineImage container (needs network for the image and nftables)..."
+    $alpineScript = 'apk add --quiet --no-progress nftables >/dev/null 2>&1 || { echo rdprobe-noapk; exit 91; }; ' + $NftProbeScript
+    $run = Invoke-DockerBounded @('run', '--rm', '--cap-add', 'NET_ADMIN', $AlpineImage, 'sh', '-c', $alpineScript) 180
+    return ConvertTo-NftProbeResult $run 'alpine'
+}
+
+# Shared wording for an Unknown probe result.
+function Write-ProbeUnknown($probe) {
+    Warn "Could not probe the WSL2 kernel via $($probe.ProbeSource): $($probe.Detail)"
+    if ($probe.ProbeSource -eq 'alpine') {
+        Warn "$FirewallImage is not loaded, and the Alpine fallback needs network"
+        Warn "to fetch its image and nftables."
+    }
+    Warn "CONFIG_NFT_QUEUE support is UNKNOWN, not missing."
 }
 
 # --- INI-aware merge for .wslconfig ------------------------------------
@@ -422,14 +480,22 @@ if ($Test) {
     }
     Say "Docker kernel: $($env_.Kernel)"
     $probe = Test-NftQueueSupported
-    if ($probe.Supported) {
-        Say "nft queue rule applies cleanly via $($probe.ProbeSource) -- no install needed."
-        exit 0
-    } else {
-        Warn "nft queue rule failed via $($probe.ProbeSource):"
-        Warn "$($probe.Detail)"
-        Warn "Install path needed: .\scripts\install-wsl-kernel.ps1"
-        exit 1
+    switch ($probe.Result) {
+        'Supported' {
+            Say "nft queue rule applies cleanly via $($probe.ProbeSource) -- no install needed."
+            exit 0
+        }
+        'Missing' {
+            Warn "nft queue rule failed via $($probe.ProbeSource):"
+            Warn "$($probe.Detail)"
+            Warn "Install path needed: .\scripts\install-wsl-kernel.ps1"
+            exit 1
+        }
+        default {
+            Write-ProbeUnknown $probe
+            Warn "Load or pull the lab images (setup.ps1 does both), then re-run -Test."
+            exit 13
+        }
     }
 }
 
@@ -492,10 +558,16 @@ Say "Docker kernel: $($env_.Kernel)"
 
 if (-not $Force) {
     $probe = Test-NftQueueSupported
-    if ($probe.Supported) {
+    if ($probe.Result -eq 'Supported') {
         Say "nft queue rule already applies via $($probe.ProbeSource) -- nothing to do."
         Say "(Use -Force to install anyway.)"
         exit 0
+    }
+    if ($probe.Result -eq 'Unknown') {
+        Write-ProbeUnknown $probe
+        Warn "Nothing was changed. Re-run after the lab images are loaded or pulled,"
+        Warn "or pass -Force to install without probing."
+        exit 13
     }
     Warn "nft queue rule fails on the current kernel. Proceeding with install."
 }
@@ -593,11 +665,16 @@ if (-not $newKernel) {
 # Re-probe.
 Banner "Post-install verification"
 $probe2 = Test-NftQueueSupported
-if ($probe2.Supported) {
+if ($probe2.Result -eq 'Supported') {
     Banner "Success"
     Say "Custom kernel installed and nft queue rule now applies."
     Say "Docker kernel: $newKernel"
     exit 0
+} elseif ($probe2.Result -eq 'Unknown') {
+    Write-ProbeUnknown $probe2
+    Warn "The kernel is installed (Docker kernel: $newKernel) but could not be verified."
+    Warn "Re-run with -Test once the lab images are loaded or pulled."
+    exit 13
 } else {
     Warn "Post-install probe still fails:"
     Warn "$($probe2.Detail)"
