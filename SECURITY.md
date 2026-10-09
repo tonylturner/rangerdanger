@@ -132,8 +132,9 @@ docker compose up -d   # picks up the loopback binding again
 On Windows, `setup.ps1` detects whether Docker Desktop's WSL2 backend
 has `CONFIG_NFT_QUEUE=y` in its kernel. Microsoft's stock WSL2 kernel
 does not, which silently breaks the ICS DPI rules used in Lab 2.3 and
-2.3-bonus. When the probe fails, `setup.ps1` offers to install a
-small prebuilt kernel before pulling images.
+2.3-bonus. When the probe finds the feature missing, `setup.ps1`
+installs a small prebuilt kernel after it pulls or loads the lab
+images and before it starts the stack.
 
 ### What gets installed
 
@@ -154,18 +155,24 @@ workflow log (`.github/workflows/build-wsl-kernel.yml`).
 
 ### What setup does on your machine
 
-1. Downloads `rangerdanger-wsl2-kernel` from the release matching
-   the rangerdanger version you are installing.
-2. Downloads `rangerdanger-wsl2-kernel.sha256` and verifies the
-   binary against it. If verification fails, the binary is deleted
-   and setup aborts.
+1. Takes `rangerdanger-wsl2-kernel` from the SSD bundle when you
+   install with `-FromTarballs` and the bundle has it; otherwise
+   downloads it from the release matching the rangerdanger version
+   you are installing (for an SSD, the version in its `.version`).
+2. Verifies the binary against `rangerdanger-wsl2-kernel.sha256`
+   (from the bundle, or downloaded with the binary). If the checksum
+   is missing, malformed or does not match, the binary is deleted and
+   setup aborts.
 3. Stages the binary to `%LOCALAPPDATA%\rangerdanger\wsl-kernel\`.
 4. Reads your existing `%USERPROFILE%\.wslconfig`, saves a backup at
    `.wslconfig.bak`, and writes a copy with the `kernel=` line under
    `[wsl2]` pointing at the staged binary. **No other keys or
    sections are touched.**
-5. Prompts you once before running `wsl --shutdown` (which stops the
-   Docker Desktop VM and any other WSL2 distros).
+5. Runs `wsl --shutdown` (which stops the Docker Desktop VM and any
+   other WSL2 distros). `setup.ps1` does not ask first: running it is
+   the go-ahead, and it prints what it is about to do. Run
+   `scripts\install-wsl-kernel.ps1` yourself to get a confirmation
+   prompt before the shutdown.
 6. Waits for Docker Desktop to reconnect and re-probes the kernel
    feature.
 
