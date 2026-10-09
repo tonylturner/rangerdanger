@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { RangeControl } from "./range-control";
 
 const navLinks = [
   { href: "/", label: "Overview" },
@@ -53,7 +54,11 @@ export function NavSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto pt-4 border-t border-slate-900">
+      <div className="mt-auto border-t border-slate-900 pt-4">
+        <RangeControl />
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-900">
         {/* Same-origin proxy path (nginx rewrites containd's internal */}
         {/* URLs back to /containd/* for iframe-safe navigation), so this */}
         {/* works under any host binding without hardcoding localhost. */}
