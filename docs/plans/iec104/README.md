@@ -1,7 +1,8 @@
 # Plan: selectable range packages and a European IEC104 workshop
 
-Status: **planning only. Nothing is built.** Branch `iec104`, cut from
-`v0.1.34` (`b653743`). `main` and the v0.1.34 release are not affected.
+Status: **approved 2026-10-09; increment 0 in progress.** Branch
+`iec104`, cut from `v0.1.34` (`b653743`). `main` and the v0.1.34
+release are not affected. Tony's answers are in section 5.
 
 Evidence: four code recon reports and one external research report in
 [`recon/`](recon/). Each finding there cites `file:line` at `b653743`.
@@ -11,9 +12,10 @@ first draft; this version includes their corrections.
 
 ## 1. Goal
 
-- An instructor selects a **range package** before class: one tested
-  combination of topology, devices, protocols, process model, firewall
-  policies, curriculum and verification.
+- A **student** selects a **range package** with a toggle in the
+  RangerDanger UI, and the range reprovisions on their machine. A
+  package is one tested combination of topology, devices, protocols,
+  process model, firewall policies, curriculum and verification.
 - The first new package is a **European telecontrol segmentation
   workshop that uses IEC 60870-5-104 (IEC104)** in place of DNP3.
 - Later packages: a vendor remote-access workshop, then a no-code
@@ -99,14 +101,28 @@ lab-definitions/packages/<package-id>/
 
 ### 3.3 Selection lifecycle
 
-- Selection is a setup action: `./setup.sh --package <id>` and
-  `.\setup.ps1 -Package <id>`. The default stays the US package.
-- The active package and its Compose file list are recorded in `.env`.
-  Every helper script reads them from there.
+- **Students switch packages from a toggle in the UI** (Tony,
+  2026-10-09). The instructor does not switch for them.
+- The backend already holds the Docker socket and is a platform service
+  on `mgmt_net` only (`docker-compose.yml:80-105`). The platform
+  (proxy, frontend, backend) stays up during a switch. Only the **range
+  layer** is replaced: containd, zone networks, devices, webtops.
+- That needs today's root Compose model split into a platform part and
+  a US range part. The split keeps every name, IP, network, port binding
+  and sysctl. Unchanged US gates prove it, not byte-identical files.
+- **One provisioning path.** Setup starts the platform and then the
+  default range through the same mechanism the toggle uses. Which
+  mechanism (the backend runs Compose for the range project, or drives
+  the Engine API from the manifest) is settled by recon in increment 2a.
+  Compose inside a container resolves bind paths in the container, not
+  on the host, so this is not a one-line change.
 - A switch is serial: check that the new package's images and assets
-  are present **before** stopping the old range. Then stop the old
-  range by its recorded identity, start the new one, and verify routes,
-  policies and readiness. Never switch inside an exercise.
+  are present (offline SSD installs carry the union), stop the old range
+  by its recorded identity, start the new one, verify routes, policies
+  and readiness. The UI shows progress and errors. Progress is stored
+  per package, so switching back resumes it.
+- `./setup.sh --package <id>` and `.\setup.ps1 -Package <id>` only set
+  the first-start default. The default stays the US package.
 - One range at a time. Concurrent ranges would need an identity
   redesign (fixed container names, loopback ports, subnets).
 
@@ -152,18 +168,27 @@ field devices (feeder breaker, RMU switches, OLTC)   field_net + process net
   double command `C_DC_NA_1` with select-before-execute, measured float
   `M_ME_NC_1`, general interrogation `C_IC_NA_1`, spontaneous events,
   STARTDT/STOPDT/TESTFR, t0-t3 timers, quality on link loss.
-- **Stack:** decision D3. An in-tree Go module (`iec104go`) is
-  recommended, but it is larger than `dnp3go`: IEC104 needs persistent
-  sessions, N(S)/N(R) windows, timers, an event queue and SBO state.
-  Expect several times `dnp3go`'s 2,055 lines. The stack choice comes
-  first, behind a time-boxed interop spike (increment 2).
-- **Correctness gate, not only "interop passes":** split and coalesced
+- **Stack: lib60870-C** (MZ Automation, GPLv3). Tony chose
+  correctness over licence purity (D3): a reference stack, not our own
+  session layer. Our IEC104 programs (RTU gateway, control-centre front
+  end, student tool) link it and live in `services/iec104/` under
+  GPLv3, built into their own images. They talk to the Apache-2.0
+  components only over network protocols (Modbus, HTTP), so the rest of
+  the repository stays Apache-2.0. Images carry the source location.
+  The spike in increment 2b picks the binding: `c104` (Python, GPLv3,
+  wraps lib60870-C) or C directly. A commercial lib60870 licence stays
+  available if GPL ever becomes a problem.
+- **Correctness gate, not only "it connects":** split and coalesced
   frames, window and ack handling, reconnect and GI, event-queue
   overflow, select expiry and value/peer matching, interlock rejection,
-  and feedback after execute. GPL tools (lib60870/c104) may run as test
-  fixtures and never ship in a distributed image.
-- **Student tools:** an `iec104cmd` CLI in the attacker and engineering
-  images, and `tshark`, which decodes IOA, COT, the select bit and
+  feedback after execute, and a clean Wireshark decode of every frame.
+- **Time:** time-tagged ASDUs (`M_DP_TB_1`, CP56Time2a) need a
+  synchronized station clock. The EU package keeps `gps-sim` as the
+  station clock for the RTU, and the time-spoofing lesson carries over:
+  a shifted clock corrupts the sequence-of-events record. Synchrophasors
+  are IEEE C37.118 / IEC 61850-90-5, not IEC104, and stay out of scope.
+- **Student tools:** an `iec104cmd` CLI on the same library in the
+  attacker and engineering images, and `tshark`, which decodes IOA, COT, the select bit and
   quality. [research] §4
 
 ### 3.6 Curriculum, validation and progress
@@ -191,8 +216,8 @@ otherwise send every US scenario into the generic electrical validator.
 
 | Milestone | What students can do | containd work | When |
 |---|---|---|---|
-| **A: port-level** | Pin TCP/2404 so that only the control centre reaches the RTU. Block every other source and path for new connections. Show that telemetry survives the hardened policy. | None. Pure L3/L4 rules; a lint rejects any `ics` block in EU policies. | First EU workshop |
-| **B: command-aware** | Allow monitoring ASDUs; alert on or block control ASDUs per CA/IOA. | IEC104 decoder and policy fields (about 2.8-5.2k LOC, provisional), plus dataplane fixes: first-packet verdict, TCP sequence propagation, multi-frame parsing. | Separate containd project |
+| **A: port-level** | Pin TCP/2404 so that only the control centre reaches the RTU. Block every other source and path for new connections. Show that telemetry survives the hardened policy. | None. Pure L3/L4 rules; a lint rejects any `ics` block in EU policies until B lands. | Increment 3 |
+| **B: command-aware** | Allow monitoring ASDUs; alert on or block control ASDUs per CA/IOA. | IEC104 decoder and policy fields (about 2.8-5.2k LOC, provisional), plus dataplane fixes: first-packet verdict, TCP sequence propagation, multi-frame parsing. | Gates the first EU course (D4). containd repo, own branch |
 
 - **Established sessions:** a session opened under the weak policy can
   survive the switch to hardened, because containd accepts established
@@ -251,39 +276,48 @@ increment-0 fixture.
 |---|---|---|
 | 0 | **Freeze the US baseline.** Record verbatim gate output, including skip lines and the containd image digest used. Reference: the v0.1.34 clean-clone run had firewall 54/54, lab-commands 69/69 (1 skipped), events 10/10, test-suite 40/40 (18 auto-passed). Fix the RTAC startup race (`services/Dockerfile:154`) and the backend's containd key mismatch (`proto`, `functionCode`); both are in the path of later work. | Fixture committed; US gates green on `iec104`. |
 | 1 | **Curriculum and validation ownership.** Namespaced IDs, validator kinds, transactional per-package loading, package-scoped frontend queries and storage. No stack change. | Unit tests: every qualified US ID validates as before; wrong-package access, missing evidence, missing capability, failed import and empty-curriculum pruning all fail correctly. US gates unchanged. |
-| 2 | **Package selector and IEC104 stack spike, in parallel.** (a) `package.yml`, manifest, lint, `--package`, manifest consumed by backend, proxy and smoke gates; US package points at today's files. (b) Time-boxed IEC104 client/server spike against lib60870, to settle D3. | (a) US Compose files byte-identical; US gates unchanged; lint rejects bad manifests. (b) Spike report with the correctness checks of 3.5 and an effort estimate. |
+| 2 | **Package selector and IEC104 stack spike, in parallel.** (a) `package.yml`, manifest, lint, platform/range Compose split, one provisioning path, the student UI toggle, manifest consumed by backend, proxy and smoke gates. (b) Time-boxed lib60870 spike: binding (`c104` or C), the first profile of 3.5, GPL packaging. | (a) US gates unchanged; lint rejects bad manifests; a toggle round trip US → US restores a working range. (b) Spike report with the correctness checks of 3.5 and an effort estimate. |
 | 3 | **EU vertical slice.** Minimal EU feeder, device model, truth plane, both observation hops, IEC104 command path, control-centre zone, milestone-A policies, one lab path. | Headless test: control centre → firewall → RTU → Modbus → breaker → OpenDSS → operator view → evidence. **Deny 2404 → the operator view goes stale with quality, OpenDSS keeps solving and local protection still trips.** New and established sessions tested. US gates unchanged. |
 | 4 | **Complete EU package.** CIGRE-derived feeder, RMUs, OLTC, point maps, adapted labs and knowledge base, EU smoke matrix, release union, SSD, handout. | All EU and US gates green on Linux CI. Owner-run acceptance: clean-clone install on macOS and Windows/WSL2, plus an SSD install. |
-| 5 | **containd milestone B** (containd repo, its own branch), after D10. | First-command prevention proven on Linux; monitoring behaviour matches D10. US gates pass against the branch before it merges. |
+| 5 | **containd milestone B** (containd repo, its own branch), after D10. Can start beside increment 3, with lib60870 as the traffic source. | First-command prevention proven on Linux; monitoring behaviour matches D10. US and EU gates pass against the branch before it merges. Required before the first EU course (D4). |
 | 6 | **Remote-access package.** | No change to the selector, loader or manifest schema. Every new validator kind and image is listed in the package. |
 
 Increment 3 is the first point where IEC104 runs end to end.
 
-## 5. Decisions for Tony
+## 5. Decisions (Tony, 2026-10-09)
 
-| # | Decision | Recommendation |
+| # | Decision | Answer |
 |---|---|---|
-| D1 | EU process: a 20 kV / 50 Hz European feeder, or IEC104 on today's US feeder? | European feeder, built up from a minimal slice (3.9). A European audience will notice US equipment. |
-| D2 | Topology: add a control-centre zone, or reuse enterprise as the SCADA site? | Add the zone (`lan4`, e.g. `10.60.60.0/24`). The conduit between corporate IT and the DSO control centre is the lesson. Cost: a 7th network, a firewall interface, and the manifest-fed subnet lists. |
-| D3 | IEC104 stack: in-tree Go (Apache-2.0, our maintenance), lib60870/c104 shipped in images (GPLv3: source-compliance duty) or a commercial lib60870 licence, or `go-iecp5` forks (unclear LGPL/GPL licensing). | In-tree Go, confirmed by the increment-2 spike. |
-| D4 | Ship the first EU workshop on firewall milestone A, or wait for B? | Ship on A. |
-| D5 | The US workshop stays as it is until the EU package ships. Its upgrade to the new device model (blocking DNP3 would then stale the operator view) is a later, separate change. Agree? | Yes. |
-| D6 | EU southbound: Modbus TCP, keep DNP3 too, or hardwired I/O inside the RTU (no field-zone conduit)? | Modbus TCP only, labelled as a simplification. It keeps the field-zone lesson. |
-| D7 | When is the first EU course? | Needed to size increments 3-4 and decide how far the CIGRE feeder goes. |
-| D8 | At the increment-1 cutover, may existing US browser progress reset once? | Yes. Students start fresh each course anyway. |
-| D9 | EU node inventory: which US nodes carry over? FUXA has no known IEC104 driver; OpenPLC, historian, GPS and the webtops each need a role or removal. | Keep Kali, vendor jump, engineering workstation and historian. Replace FUXA with the first-party control-centre view. Drop OpenPLC, GPS and DNP3 tooling from the EU package. |
-| D10 | Before milestone B: alert only, terminate and reconnect, or a protocol-aware proxy? | Not needed now. Decide before increment 5. |
-| D11 | containd for EU courses: pin a tested digest per course release, or track `:latest` like US? | Track `:latest` (your standing choice), with US and EU gates re-run before each course. |
+| D1 | EU process model | 20 kV / 50 Hz European feeder, grown from a minimal slice (3.9). |
+| D2 | Topology | Dedicated control-centre zone on `lan4` (e.g. `10.60.60.0/24`). |
+| D3 | IEC104 stack | lib60870 (GPLv3). Truthfulness first: "I would rather ship GPL code than get it wrong." (3.5) |
+| D4 | First EU workshop firewall | Wait for command-aware filtering (milestone B). |
+| D5 | US workshop | Unchanged until EU ships; its upgrade to the new device model is a later change. |
+| D6 | EU southbound | Modbus TCP only, labelled as a simplification. |
+| D7 | First EU course | Nov 7, 2026. See risks: open with D4. |
+| D8 | US browser progress | May reset once at the increment-1 cutover. |
+| D9 | EU nodes | Keep Kali, vendor jump, engineering workstation, historian, and GPS as the station clock (3.5). Replace FUXA with the first-party control-centre view; FUXA is little used today. Drop DNP3 tooling. OpenPLC: open, see below. |
+| D10 | Monitoring under milestone B | Open. |
+| D11 | containd for EU courses | Track `:latest`; re-run US and EU gates before each course. |
+| D12 | Who switches packages | Students, from a UI toggle that reprovisions the range (3.3). |
+
+Open: D4 against D7 (schedule), D10, and the OpenPLC role in the EU
+package (Tony: "if we will have PLCs don't we need it?").
 
 ## 6. Risks
 
-- **IEC104 stack effort.** A correct session layer is more work than
-  DNP3's one-shot poll. The increment-2 spike bounds it before
+- **IEC104 integration effort.** lib60870 removes the session-layer
+  risk; the spike bounds the binding and packaging work before
   increment 3 starts.
 - **containd floats on `:latest`.** Milestone B changes shared dataplane
   code (3.7).
+- **Schedule.** D7 is 29 days after approval. Increments 0-4 plus
+  milestone B (D4) do not fit that window at full scope.
 - **EU electrical credibility.** D1 and D7 decide how far the feeder
   goes before the first course.
+- **GPL services.** `services/iec104/` must stay a separate program
+  behind a network boundary. A lint can check that no Apache-2.0 module
+  imports it.
 - **Platform changes reach US code paths** in increments 1-2 (loader,
   validators, frontend storage, manifest consumers). The increment-0
   fixture and unchanged US gates control this.
