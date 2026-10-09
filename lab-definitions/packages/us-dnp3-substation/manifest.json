@@ -67,8 +67,7 @@
       "interfaces": [
         {"network": "enterprise_net", "ipv4": "10.10.10.10"},
         {"network": "mgmt_net", "ipv4": "10.99.99.70"}
-      ],
-      "endpoints": {"ui": "http://10.99.99.70:3000"}
+      ]
     },
     {
       "key": "kali",
@@ -87,8 +86,7 @@
       "interfaces": [
         {"network": "vendor_net", "ipv4": "10.20.20.10"},
         {"network": "mgmt_net", "ipv4": "10.99.99.60"}
-      ],
-      "endpoints": {"ui": "http://10.99.99.60:3000"}
+      ]
     },
     {
       "key": "eng_workstation",
@@ -98,8 +96,7 @@
       "interfaces": [
         {"network": "vendor_net", "ipv4": "10.20.20.20"},
         {"network": "mgmt_net", "ipv4": "10.99.99.61"}
-      ],
-      "endpoints": {"ui": "http://10.99.99.61:3000"}
+      ]
     },
     {
       "key": "fuxa_hmi",
@@ -109,8 +106,7 @@
       "interfaces": [
         {"network": "ot_ops_net", "ipv4": "10.30.30.10"},
         {"network": "mgmt_net", "ipv4": "10.99.99.50"}
-      ],
-      "endpoints": {"ui": "http://10.99.99.50:1881"}
+      ]
     },
     {
       "key": "hmi_poller",
@@ -139,8 +135,7 @@
       "interfaces": [
         {"network": "ot_ops_net", "ipv4": "10.30.30.30"},
         {"network": "mgmt_net", "ipv4": "10.99.99.30"}
-      ],
-      "endpoints": {"ui": "http://10.99.99.30:8080"}
+      ]
     },
     {
       "key": "relay_sim",

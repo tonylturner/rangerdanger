@@ -115,7 +115,7 @@ type Service struct {
 	Node       string      `json:"node,omitempty"` // topology node id, if the service is a visible node
 	Roles      []Role      `json:"roles"`
 	Interfaces []Interface `json:"interfaces"`
-	// Endpoints are URLs the backend calls, by name ("api", "ui"). They
+	// Endpoints are URLs the backend calls, by name ("api"). They
 	// use addresses reachable from the platform on the management network.
 	Endpoints map[string]string `json:"endpoints,omitempty"`
 }

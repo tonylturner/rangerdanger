@@ -110,8 +110,10 @@ in `services/shared/`.
    and `depends_on`, plus a service entry in the package's
    `manifest.json`. The root `docker-compose*.yml` files are the
    platform (backend, frontend, proxy) only.
-7. Add the node type to `backend/internal/labs/catalog.go` and any
-   relevant lab-definition YAMLs.
+7. Add the node to the package topology (the file `package.yml`'s
+   `topology:` names) and give its
+   manifest service the matching `node`; run
+   `(cd backend && go run ./cmd/packagelint)`.
 8. Add the image and its reviewed build-input envelope to
    [`.github/release-images.json`](../.github/release-images.json). The
    release matrix is generated from this inventory; do not add a workflow
