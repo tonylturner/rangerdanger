@@ -1,0 +1,228 @@
+{
+  "schema_version": "0.1.0",
+  "system": {
+    "hostname": "containd",
+    "mgmt": {
+      "listenAddr": ":8080",
+      "enableHTTP": true,
+      "enableHTTPS": true,
+      "httpListenAddr": ":8080",
+      "httpsListenAddr": ":8443",
+      "tlsCertFile": "/data/tls/server.crt",
+      "tlsKeyFile": "/data/tls/server.key"
+    },
+    "ssh": {}
+  },
+  "interfaces": [
+    {
+      "name": "wan",
+      "zone": "wan",
+      "access": {}
+    },
+    {
+      "name": "dmz",
+      "zone": "dmz",
+      "access": {}
+    },
+    {
+      "name": "lan1",
+      "zone": "lan1",
+      "access": {}
+    },
+    {
+      "name": "lan2",
+      "zone": "lan2",
+      "access": {}
+    },
+    {
+      "name": "lan3",
+      "zone": "lan3",
+      "access": {
+        "mgmt": true,
+        "ssh": true
+      }
+    },
+    {
+      "name": "lan4",
+      "zone": "lan4",
+      "access": {}
+    }
+  ],
+  "zones": [
+    {
+      "name": "wan",
+      "description": "Enterprise Zone - untrusted student and attacker access"
+    },
+    {
+      "name": "dmz",
+      "description": "Vendor and Engineering Zone"
+    },
+    {
+      "name": "lan1",
+      "description": "Station Zone - IEC104 RTU and GPS clock"
+    },
+    {
+      "name": "lan2",
+      "description": "Feeder Field Zone - Modbus breaker endpoint"
+    },
+    {
+      "name": "lan3",
+      "description": "RangerDanger control plane - backend and containd management"
+    },
+    {
+      "name": "lan4",
+      "description": "Control Centre Zone - IEC104 client"
+    }
+  ],
+  "routing": {},
+  "dataplane": {
+    "dpiMode": "enforce",
+    "nflogGroup": 100,
+    "nfqueueGroup": 101,
+    "dpiEnabled": false
+  },
+  "pcap": {
+    "filter": {}
+  },
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {
+        "id": "control-centre-to-rtu-iec104",
+        "description": "Allow the named Control Centre to open IEC104 sessions to the RTU",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "rtu-to-feeder-modbus",
+        "description": "Allow only the RTU to poll the feeder breaker over Modbus TCP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "destinations": [
+          "10.40.40.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "deny-unauthorized-iec104",
+        "description": "Deny and log other sources attempting to reach IEC104 on TCP/2404",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "2404"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      {
+        "id": "deny-unauthorized-modbus",
+        "description": "Deny and log other sources attempting to reach Modbus on TCP/502",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      }
+    ],
+    "nat": {
+      "enabled": false
+    }
+  },
+  "ids": {
+    "enabled": false
+  },
+  "services": {
+    "syslog": {
+      "forwarders": [],
+      "format": "rfc5424",
+      "batchSize": 500,
+      "flushEvery": 2
+    },
+    "dns": {
+      "enabled": false
+    },
+    "ntp": {
+      "enabled": false
+    },
+    "proxy": {
+      "forward": {
+        "enabled": false
+      },
+      "reverse": {
+        "enabled": false
+      }
+    },
+    "dhcp": {
+      "enabled": false
+    },
+    "vpn": {
+      "wireguard": {
+        "enabled": false
+      },
+      "openvpn": {
+        "enabled": false
+      }
+    },
+    "av": {
+      "enabled": false,
+      "icap": {},
+      "clamav": {}
+    }
+  }
+}

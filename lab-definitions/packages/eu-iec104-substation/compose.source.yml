@@ -1,0 +1,344 @@
+name: rangerdanger
+services:
+  firewall:
+    image: ghcr.io/tonylturner/containd:latest
+    container_name: rangerdanger-firewall
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_TIME
+    environment:
+    - CONTAIND_MODE=all
+    - CONTAIND_JWT_SECRET=${CONTAIND_JWT_SECRET:-rangerdanger-dev}
+    - CONTAIND_LAB_MODE=1
+    - CONTAIND_SSH_SHELL_MODE=linux
+    - CONTAIND_ALLOWED_ORIGINS=http://localhost:8088
+    - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
+    - CONTAIND_CONFIG_DB=/data/config.db
+    - CONTAIND_ENFORCE_ENABLED=1
+    - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
+    - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24
+    - CONTAIND_AUTO_LAN1_SUBNET=10.30.30.0/24
+    - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
+    - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
+    - CONTAIND_AUTO_LAN4_SUBNET=10.60.60.0/24
+    volumes:
+    - ./data/eu-iec104-substation/firewall:/data
+    ports:
+    - 127.0.0.1:9080:8080
+    - 127.0.0.1:9443:8443
+    - 127.0.0.1:2222:2222
+    networks:
+      mgmt_net:
+        ipv4_address: 10.99.99.2
+      enterprise_net:
+        ipv4_address: 10.10.10.2
+      vendor_net:
+        ipv4_address: 10.20.20.2
+      station_net:
+        ipv4_address: 10.30.30.2
+      field_net:
+        ipv4_address: 10.40.40.2
+      control_centre_net:
+        ipv4_address: 10.60.60.2
+    restart: unless-stopped
+  kali:
+    build:
+      context: .
+      dockerfile: Dockerfile.kali
+    container_name: rangerdanger-kali
+    hostname: kali
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    environment:
+    - GATEWAY=10.10.10.2
+    networks:
+      enterprise_net:
+        ipv4_address: 10.10.10.50
+    volumes:
+    - ./data/eu-iec104-substation/kali_home:/home/kali
+    - ./data/eu-iec104-substation/firewall/captures:/home/kali/pcaps:ro
+    - ./scripts/set-gateway.sh:/usr/local/bin/set-gateway.sh:ro
+    mem_limit: 1g
+    restart: unless-stopped
+    depends_on:
+    - firewall
+  vendor_jump:
+    build:
+      context: .
+      dockerfile: Dockerfile.vendor-jump
+    container_name: rangerdanger-vendor-jump
+    hostname: vendor-jump
+    environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=UTC
+    - GATEWAY=10.20.20.2
+    cap_add:
+    - NET_ADMIN
+    volumes:
+    - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+    networks:
+      vendor_net:
+        ipv4_address: 10.20.20.10
+      mgmt_net:
+        ipv4_address: 10.99.99.60
+    shm_size: 1gb
+    mem_limit: 2g
+    restart: unless-stopped
+    depends_on:
+    - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
+  eng_workstation:
+    build:
+      context: .
+      dockerfile: Dockerfile.eng-ws
+    container_name: rangerdanger-eng-ws
+    hostname: eng-workstation
+    cap_add:
+    - NET_ADMIN
+    environment:
+    - PUID=1000
+    - PGID=1000
+    - TZ=UTC
+    - GATEWAY=10.20.20.2
+    volumes:
+    - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
+    - ./scripts/strip-noisy-profile.sh:/custom-cont-init.d/30-strip-noisy-profile.sh:ro
+    - ./data/eu-iec104-substation/firewall/captures:/home/abc/pcaps:ro
+    networks:
+      vendor_net:
+        ipv4_address: 10.20.20.20
+      mgmt_net:
+        ipv4_address: 10.99.99.61
+    shm_size: 1gb
+    mem_limit: 2g
+    restart: unless-stopped
+    depends_on:
+    - firewall
+    sysctls:
+      net.ipv4.ip_forward: 0
+  gps_sim:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: gps-sim
+    container_name: rangerdanger-gps-sim
+    hostname: gps-sim
+    cap_add:
+    - NET_ADMIN
+    environment:
+    - GATEWAY=10.30.30.2
+    - NTP_POLL_TARGETS=
+    networks:
+      station_net:
+        ipv4_address: 10.30.30.50
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://localhost:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+    - firewall
+  opendss_sim:
+    build:
+      context: .
+      dockerfile: services/opendss-sim/Dockerfile
+    container_name: rangerdanger-opendss-sim
+    hostname: opendss-sim
+    cap_add:
+    - NET_ADMIN
+    networks:
+      mgmt_net:
+        ipv4_address: 10.99.99.23
+      process_net:
+        ipv4_address: 10.50.50.20
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/api/health',timeout=2).read();
+        sys.exit(0)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - OPENDSS_PROFILE=/profiles/profile.json
+    volumes:
+    - ./lab-definitions/packages/eu-iec104-substation/process:/profiles:ro
+  iec104_rtu:
+    image: rangerdanger-iec104
+    container_name: rangerdanger-iec104-rtu
+    hostname: iec104-rtu
+    cap_add:
+    - NET_ADMIN
+    environment:
+    - GATEWAY=10.30.30.2
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec iec104-rtu --config /etc/rangerdanger/points.json --bind 10.30.30.20
+      --port 2404
+    volumes:
+    - ./lab-definitions/packages/eu-iec104-substation/protocols/points.json:/etc/rangerdanger/points.json:ro
+    networks:
+      station_net:
+        ipv4_address: 10.30.30.20
+    healthcheck:
+      test:
+      - CMD
+      - nc
+      - -z
+      - 10.30.30.20
+      - '2404'
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      firewall:
+        condition: service_started
+      feeder_breaker:
+        condition: service_healthy
+      gps_sim:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: services/iec104/Dockerfile
+  control_centre:
+    image: rangerdanger-iec104
+    container_name: rangerdanger-control-centre
+    hostname: control-centre
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.60.60.2
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20
+      --target 10.30.30.20:2404 --http 10.99.99.21:8080
+    volumes:
+    - ./lab-definitions/packages/eu-iec104-substation/protocols/points.json:/etc/rangerdanger/points.json:ro
+    networks:
+      control_centre_net:
+        ipv4_address: 10.60.60.20
+      mgmt_net:
+        ipv4_address: 10.99.99.21
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.21:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      firewall:
+        condition: service_started
+      iec104_rtu:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: services/iec104/Dockerfile
+  feeder_breaker:
+    image: rangerdanger-feeder-breaker-sim
+    container_name: rangerdanger-feeder-breaker
+    hostname: feeder-breaker
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.40.40.2
+    - DEVICE_ID=feeder-breaker
+    - DEVICE_MODBUS_LISTEN=10.40.40.20:502
+    - DEVICE_PROCESS_LISTEN=10.50.50.30:8080
+    - DEVICE_INSTRUCTOR_LISTEN=10.99.99.22:8080
+    - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec feeder-breaker-sim
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.20
+      process_net:
+        ipv4_address: 10.50.50.30
+      mgmt_net:
+        ipv4_address: 10.99.99.22
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.22:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: feeder-breaker-sim
+networks:
+  mgmt_net:
+    external: true
+    name: rangerdanger_mgmt_net
+  enterprise_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.10.10.0/24
+        gateway: 10.10.10.1
+  vendor_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.20.20.0/24
+        gateway: 10.20.20.1
+  station_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.30.30.0/24
+        gateway: 10.30.30.1
+  field_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.40.40.0/24
+        gateway: 10.40.40.1
+  control_centre_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.60.60.0/24
+        gateway: 10.60.60.1
+  process_net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+      - subnet: 10.50.50.0/24
+        gateway: 10.50.50.1
