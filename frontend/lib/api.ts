@@ -27,7 +27,9 @@ function errorDetail(body: unknown): string {
   return typeof error === "string" ? error : "";
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Every API helper goes through here (lib/operator-api.ts too), so a
+// not-ready range is reported the same way for all of them.
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -153,11 +155,15 @@ export async function listScenarios() {
 
 // A curriculum package as GET /api/packages reports it. revision is the
 // curriculum revision: it changes when step IDs or validator meaning do.
+// operator_view names the operator screen the package uses; it stays a
+// string because the portal must show an error for a value it does not
+// know (lib/operator-view.ts), never fall back to another view.
 export type PackageSummary = {
   id: string;
   title: string;
   revision: number;
   active: boolean;
+  operator_view: string;
 };
 
 export async function listPackages() {

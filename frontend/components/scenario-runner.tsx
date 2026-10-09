@@ -39,9 +39,12 @@ import {
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
 import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
+import { useOperatorView } from "../lib/operator-queries";
+import { usFeederPolling } from "../lib/operator-view";
+import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
   POLICY_ACTION_SCENARIOS,
-  VALIDATE_BUTTON_SCENARIOS,
+  showsValidateButton,
   PHASE3_TITLES,
   titleMatches,
   deviceLabel,
@@ -74,7 +77,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
-  const stateQuery = useSubstationState(3000);
+  // US RTAC reads only for the US operator view; other packages show
+  // their own operator status (RunnerOperatorStatus).
+  const operatorView = useOperatorView();
+  const usFeeder = usFeederPolling(operatorView);
+  const stateQuery = useSubstationState(3000, usFeeder);
   const state = stateQuery.data ?? null;
   // No feeder while the range is being replaced; the status cards wait
   // instead of reading the missing state as an outage.
@@ -97,7 +104,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [autoRunning, setAutoRunning] = useState<string | null>(null);
   const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
-  const auditEntries = useSubstationAudit(3000).data?.entries;
+  const auditEntries = useSubstationAudit(3000, usFeeder).data?.entries;
   const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
   const refreshLive = useRefreshLive();
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
@@ -336,6 +343,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const progress = completedStepIds.size / scenario.steps.length;
   const hasAction = !!step?.action;
   const stepDone = step !== undefined && completedStepIds.has(step.id);
+  const showValidate = showsValidateButton(scenario);
 
   // Operational assessments
   const bkrClosed = elec?.breaker_closed ?? false;
@@ -768,55 +776,64 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 </div>
               )}
 
-              {/* Operational status */}
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
-              {feederWaiting ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {["Customer Service", "Protection", "Voltage", "Critical Load"].map((label) => (
-                    <MiniStatus key={label} label={label} value="WAITING" />
-                  ))}
-                </div>
+              {/* Operational status: the US feeder from the RTAC, or the
+                  operator status of another package. */}
+              {usFeeder ? (
+                <>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
+                  {feederWaiting ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {["Customer Service", "Protection", "Voltage", "Critical Load"].map((label) => (
+                        <MiniStatus key={label} label={label} value="WAITING" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <MiniStatus
+                        label="Customer Service"
+                        value={customersServed ? "Serving" : "OUTAGE"}
+                        ok={customersServed}
+                      />
+                      <MiniStatus
+                        label="Protection"
+                        value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
+                        ok={bkrClosed && rclClosed}
+                      />
+                      <MiniStatus
+                        label="Voltage"
+                        value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
+                        ok={critV > 0 && critV >= 114 && critV <= 126}
+                      />
+                      <MiniStatus
+                        label="Critical Load"
+                        value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
+                        ok={elec?.critical_load_energized}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <MiniStatus
-                    label="Customer Service"
-                    value={customersServed ? "Serving" : "OUTAGE"}
-                    ok={customersServed}
-                  />
-                  <MiniStatus
-                    label="Protection"
-                    value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
-                    ok={bkrClosed && rclClosed}
-                  />
-                  <MiniStatus
-                    label="Voltage"
-                    value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
-                    ok={critV > 0 && critV >= 114 && critV <= 126}
-                  />
-                  <MiniStatus
-                    label="Critical Load"
-                    value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
-                    ok={elec?.critical_load_energized}
-                  />
-                </div>
+                <RunnerOperatorStatus resolution={operatorView} />
               )}
             </div>
 
-            {/* Quick commands panel */}
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Supervisory Commands
+            {/* Quick commands panel (US RTAC commands) */}
+            {usFeeder && (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  Supervisory Commands
+                </div>
+                <QuickCommands execCmd={execCmd} stepTitle={step?.title} />
               </div>
-              <QuickCommands execCmd={execCmd} stepTitle={step?.title} />
-            </div>
+            )}
           </div>
 
           <CommandAuditPanels cmdLog={cmdLog} setCmdLog={setCmdLog} recentAudit={recentAudit} />
 
           {/* Validation - only on labs whose validator checks meaningful live
-              state (see VALIDATE_BUTTON_SCENARIOS). Hidden on planning/analysis
+              state (see showsValidateButton). Hidden on planning/analysis
               labs where the validator can only report "lab is healthy". */}
-          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && (
+          {showValidate && (
           <div className="flex items-center gap-3">
             <button
               onClick={handleValidate}
@@ -835,7 +852,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
           </div>
           )}
 
-          {VALIDATE_BUTTON_SCENARIOS.includes(scenario.id) && validation && (
+          {showValidate && validation && (
             <div className={`rounded-lg border p-3 ${
               validation.outcome === "PASS"
                 ? "border-green-700 bg-green-950/40"

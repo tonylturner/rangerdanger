@@ -8,18 +8,39 @@
 // one request at the fastest interval any of them asks for.
 
 import { useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getActiveFirewallConfig, getSubstationAudit, getSubstationNetworkEvents, getSubstationState } from "./api";
 
 export const SUBSTATION_KEY = ["substation"] as const;
 export const FIREWALL_ACTIVE_KEY = ["firewall-active"] as const;
 
-export function useSubstationState(intervalMs: number) {
-  return useQuery({ queryKey: [...SUBSTATION_KEY, "state"], queryFn: getSubstationState, refetchInterval: intervalMs });
+// The US RTAC reads. enabled is false wherever the active package's
+// operator view is not the US one (lib/operator-view.ts): those ranges
+// have no RTAC, so polling it would only produce errors.
+export function substationStateQuery(intervalMs: number, enabled = true) {
+  return queryOptions({
+    queryKey: [...SUBSTATION_KEY, "state"],
+    queryFn: getSubstationState,
+    refetchInterval: intervalMs,
+    enabled,
+  });
 }
 
-export function useSubstationAudit(intervalMs: number) {
-  return useQuery({ queryKey: [...SUBSTATION_KEY, "audit"], queryFn: getSubstationAudit, refetchInterval: intervalMs });
+export function substationAuditQuery(intervalMs: number, enabled = true) {
+  return queryOptions({
+    queryKey: [...SUBSTATION_KEY, "audit"],
+    queryFn: getSubstationAudit,
+    refetchInterval: intervalMs,
+    enabled,
+  });
+}
+
+export function useSubstationState(intervalMs: number, enabled = true) {
+  return useQuery(substationStateQuery(intervalMs, enabled));
+}
+
+export function useSubstationAudit(intervalMs: number, enabled = true) {
+  return useQuery(substationAuditQuery(intervalMs, enabled));
 }
 
 export function useSubstationNetworkEvents(intervalMs: number) {

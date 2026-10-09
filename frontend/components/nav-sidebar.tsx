@@ -2,19 +2,30 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useOperatorView } from "../lib/operator-queries";
+import { EU_OPERATOR_VIEW, isView, operatorNavLabel, type OperatorViewResolution } from "../lib/operator-view";
 import { RangeControl } from "./range-control";
 
-const navLinks = [
-  { href: "/", label: "Overview" },
-  { href: "/exercises", label: "Exercises" },
-  { href: "/substation", label: "Feeder HMI" },
-  { href: "/console", label: "Network Map" },
-  { href: "/labs", label: "Workshop Status" },
-  { href: "/knowledge", label: "Knowledge" },
-];
+type NavLink = { href: string; label: string };
+
+// The operator screen's label and the instructor link follow the active
+// package's operator view (lib/operator-view.ts).
+export function navLinksFor(resolution: OperatorViewResolution): NavLink[] {
+  const links = [
+    { href: "/", label: "Overview" },
+    { href: "/exercises", label: "Exercises" },
+    { href: "/substation", label: operatorNavLabel(resolution) },
+    { href: "/console", label: "Network Map" },
+    { href: "/labs", label: "Workshop Status" },
+    { href: "/knowledge", label: "Knowledge" },
+  ];
+  if (isView(resolution, EU_OPERATOR_VIEW)) links.push({ href: "/instructor", label: "Instructor Truth" });
+  return links;
+}
 
 export function NavSidebar() {
   const pathname = usePathname();
+  const navLinks = navLinksFor(useOperatorView());
 
   return (
     <aside className="hidden w-48 flex-col border-r border-slate-900 bg-slate-950/70 px-3 py-5 md:flex">
