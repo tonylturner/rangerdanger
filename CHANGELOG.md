@@ -8,6 +8,62 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The platform and the range are separate Compose projects.** The
+  portal (backend, frontend, proxy) runs as `rangerdanger-platform` from
+  `docker-compose.yml` (source) or `docker-compose.release.yml`; the
+  range runs as `rangerdanger` from the active package's
+  `lab-definitions/packages/<id>/compose.{source,release}.yml`. The
+  platform owns `rangerdanger_mgmt_net`. Container names, addresses,
+  ports and images of the US range are unchanged. `docker-compose.offline.yml`
+  is gone: offline is the release model with `--pull never`.
+- **Students switch the range from the portal.** The sidebar's Range
+  control restarts the range or switches packages (`GET/POST /api/range`).
+  The backend runs the transition itself: it checks the package and its
+  images, stops the old range, starts the new one with `--no-build
+  --pull never`, installs the package's proxy routes and imports the
+  package's default firewall policy. A failure tears the attempt down and
+  shows `failed` with a Retry; the previous package is not restored
+  automatically. Pages wait while the range is not ready.
+- **Every range start imports the package's default policy; a backend
+  restart no longer reseeds it.** The backend adopts a running range on
+  restart without touching the firewall.
+- **Range teardown removes the range's anonymous volumes.** The
+  engineering, corporate and vendor-jump desktops keep `/config` in
+  anonymous volumes; a range stop (`down -v`, by project label) now
+  removes them instead of leaving three dangling volumes per restart.
+- **setup.** The platform starts first, then setup asks the backend for
+  the range and waits for `ready` or `failed`. New `--from-source` and
+  `--package <id>` flags. `.env` holds `RANGERDANGER_ROOT` and, with
+  `--package`, `RANGERDANGER_PACKAGE`; `CONTAIND_JWT_SECRET` is written
+  only when it is set. An old single-project install is taken down by
+  project label first; a foreign owner of `rangerdanger_mgmt_net` stops
+  setup. Ports held by this install no longer fail the preflight. The
+  backend health timeout is now fatal.
+- **dev-up / dev-down.** `dev-up` is `setup.sh --from-source
+  --skip-firewall-gate`. `dev-down` stops the range, then the platform,
+  by project label only, and fails if anything is left; `--range-only`
+  stops only the range. `dev-down.ps1` no longer forwards Compose
+  arguments.
+- **uninstall** works by project label only and exits 3, removing
+  nothing else, if teardown leaves anything. `--keep-volumes` /
+  `-KeepVolumes` is removed. `--remove-dev-images` also removes the old
+  `rangerdanger-backend` / `rangerdanger-frontend` images.
+- **Gates.** The five US gates, `substation-validate` and
+  `validation-report` refuse to run unless the range is
+  `us-dnp3-substation` and ready; each prints one extra line.
+  `smoke-test` and CI smoke bring up through dev-up and tear down
+  through dev-down. `seed-labs` defaults to port 8088.
+- **Package lint.** `go run ./cmd/packagelint` (CI step) checks every
+  package's manifest, Compose models and proxy routes, and the platform
+  files.
+- **Release and SSD staging** enumerate platform and package images; the
+  release image asset records package membership and Compose file
+  hashes. Delta staging needs a full SSD baseline from a release that
+  carries this metadata.
+- **Range routes answer 503 while no range serves.** Range-bound API
+  routes, including `/api/workshop/graph`, answer
+  `{"error":"range not ready","phase":...}` outside `ready`.
+
 - **Lab content is organised as packages.** Each package
   (`lab-definitions/packages/<id>/package.yml`) owns a topology, a
   scenarios directory and a list of capabilities; the US workshop is
@@ -28,6 +84,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   this change is not carried over: students start the labs fresh once.
 
 ### Fixed
+
+- **Workshop graph interface addresses.** `interface_ips` used the
+  wrong keys for the RTAC and the PLC; every node now lists each
+  topology network it is on (the RTAC gains `field_net 10.40.40.10`).
 
 - **Firewall flow table works.** `GET /api/firewall/sessions` called a
   containd route that never existed and always answered 503. It is
