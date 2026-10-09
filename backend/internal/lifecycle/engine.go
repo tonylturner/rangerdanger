@@ -9,7 +9,9 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 )
 
@@ -23,6 +25,11 @@ type Engine interface {
 	// ProjectResources returns the names of the containers and networks
 	// that carry the project's Compose label.
 	ProjectResources(ctx context.Context, project string) (containers, networks []string, err error)
+	// MountedVolumes returns the names of the volumes the project's
+	// containers mount.
+	MountedVolumes(ctx context.Context, project string) ([]string, error)
+	// ExistingVolumes returns which of names still exist.
+	ExistingVolumes(ctx context.Context, names []string) ([]string, error)
 	// ContainersNamed returns which of names are held by a container,
 	// whatever its project.
 	ContainersNamed(ctx context.Context, names []string) ([]string, error)
@@ -36,6 +43,7 @@ type DockerAPI interface {
 	ImageInspectWithRaw(ctx context.Context, image string) (types.ImageInspect, []byte, error)
 	ContainerList(ctx context.Context, options container.ListOptions) ([]types.Container, error)
 	NetworkList(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
+	VolumeInspect(ctx context.Context, volumeID string) (volume.Volume, error)
 }
 
 // ExecFunc runs a command in a container: stdout, stderr, exit code. It is
@@ -93,6 +101,42 @@ func (e *DockerEngine) ProjectResources(ctx context.Context, project string) ([]
 	sort.Strings(containerNames)
 	sort.Strings(networkNames)
 	return containerNames, networkNames, nil
+}
+
+// MountedVolumes implements Engine.
+func (e *DockerEngine) MountedVolumes(ctx context.Context, project string) ([]string, error) {
+	label := filters.NewArgs(filters.Arg("label", projectLabel+"="+project))
+	containers, err := e.api.ContainerList(ctx, container.ListOptions{All: true, Filters: label})
+	if err != nil {
+		return nil, fmt.Errorf("list containers of project %s: %w", project, err)
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, c := range containers {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && m.Name != "" && !seen[m.Name] {
+				seen[m.Name] = true
+				names = append(names, m.Name)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// ExistingVolumes implements Engine.
+func (e *DockerEngine) ExistingVolumes(ctx context.Context, names []string) ([]string, error) {
+	var existing []string
+	for _, name := range names {
+		if _, err := e.api.VolumeInspect(ctx, name); err != nil {
+			if client.IsErrNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
+		}
+		existing = append(existing, name)
+	}
+	return existing, nil
 }
 
 // ContainersNamed implements Engine. The Engine's name filter matches

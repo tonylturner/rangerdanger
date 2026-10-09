@@ -187,6 +187,7 @@ describe("not-ready answers", () => {
   it("parses only the range body", () => {
     expect(parseRangeNotReady({ error: "range not ready", phase: "starting" })?.phase).toBe("starting");
     expect(parseRangeNotReady({ error: "range not ready", phase: "bogus" })?.phase).toBeNull();
+    expect(parseRangeNotReady({ error: "range is stopping" })?.phase).toBe("stopping");
     expect(parseRangeNotReady({ error: "upstream down" })).toBeNull();
     expect(parseRangeNotReady(null)).toBeNull();
   });
@@ -208,7 +209,7 @@ describe("not-ready answers", () => {
     const err = await getWorkshopGraph().catch((e: unknown) => e);
     expect(isRangeNotReady(err)).toBe(false);
     expect(err).toBeInstanceOf(ApiError);
-    expect(logLineFor(err, "Reset failed: ")).toBe("[ERROR] Reset failed: Error: Request failed: 503");
+    expect(logLineFor(err, "Reset failed: ")).toBe("[ERROR] Reset failed: Request failed: 503");
   });
 
   it("reads and requests the range", async () => {

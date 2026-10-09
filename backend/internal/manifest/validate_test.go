@@ -36,6 +36,9 @@ func TestValidFixture(t *testing.T) {
 	if err := CheckPlatform(m, platformRelease); err != nil {
 		t.Fatalf("CheckPlatform release: %v", err)
 	}
+	if err := CheckPlatformCrossMode(platformSource, platformRelease); err != nil {
+		t.Fatalf("CheckPlatformCrossMode: %v", err)
+	}
 	source := fixtureNormalized(t, root, "range.source.json")
 	release := fixtureNormalized(t, root, "range.release.json")
 	if err := CheckCompose(m, ModeSource, root, source); err != nil {
@@ -288,13 +291,48 @@ func TestCrossModeAndCrossPackageFailures(t *testing.T) {
 	release := fixtureNormalized(t, root, "range.release.json")
 	differentMode := jsonObject(t, release)
 	object(t, object(t, differentMode["services"])["firewall"])["container_name"] = "release-container"
-	if err := CheckCrossMode(source, marshalObject(t, differentMode)); err == nil || !strings.Contains(err.Error(), "differ outside") {
-		t.Fatalf("CheckCrossMode error = %v, want semantic divergence", err)
+	if err := CheckCrossMode(source, marshalObject(t, differentMode)); err == nil || !strings.Contains(err.Error(), "services.firewall.container_name") {
+		t.Fatalf("CheckCrossMode error = %v, want first differing path", err)
+	}
+	rangeSource := jsonObject(t, source)
+	rangeSourceFirewall := object(t, object(t, rangeSource["services"])["firewall"])
+	rangeSourceFirewall["environment"] = map[string]any{"SHARED": "yes"}
+	rangeModeDifference := jsonObject(t, release)
+	rangeFirewall := object(t, object(t, rangeModeDifference["services"])["firewall"])
+	rangeFirewall["environment"] = map[string]any{"SHARED": "yes", "RANGERDANGER_MODE": "release"}
+	if err := CheckCrossMode(marshalObject(t, rangeSource), marshalObject(t, rangeModeDifference)); err == nil || !strings.Contains(err.Error(), "services.firewall.environment.RANGERDANGER_MODE") {
+		t.Fatalf("CheckCrossMode error = %v, want unignored range environment path", err)
 	}
 	differentBuild := jsonObject(t, source)
 	object(t, object(t, object(t, differentBuild["services"])["firewall"])["build"])["context"] = "/other"
 	if err := CheckCrossPackage("valid", source, "other", marshalObject(t, differentBuild)); err == nil || !strings.Contains(err.Error(), "inconsistent source build") {
 		t.Fatalf("CheckCrossPackage error = %v, want build divergence", err)
+	}
+}
+
+func TestPlatformCrossModeFixturesAndPaths(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	source := fixtureNormalized(t, root, "platform.source.json")
+	release := fixtureNormalized(t, root, "platform.release.json")
+	if err := CheckPlatformCrossMode(source, release); err != nil {
+		t.Fatalf("valid platform pair: %v", err)
+	}
+
+	wrongMode, err := os.ReadFile(filepath.Join("testdata", "invalid", "compose", "platform-mode-mismatch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = CheckPlatformCrossMode(source, wrongMode)
+	if err == nil || !strings.Contains(err.Error(), "services.backend.environment.RANGERDANGER_MODE") || !strings.Contains(err.Error(), `want "release"`) {
+		t.Fatalf("mode mismatch error = %v, want mode selector path and expected value", err)
+	}
+
+	differentSetting := jsonObject(t, release)
+	backend := object(t, object(t, differentSetting["services"])["backend"])
+	object(t, backend["environment"])["RANGERDANGER_DB_PATH"] = "/different/db"
+	err = CheckPlatformCrossMode(source, marshalObject(t, differentSetting))
+	if err == nil || !strings.Contains(err.Error(), "services.backend.environment.RANGERDANGER_DB_PATH") {
+		t.Fatalf("platform cross-mode error = %v, want first differing path", err)
 	}
 }
 

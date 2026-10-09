@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Line,
   LineChart,
@@ -10,38 +10,44 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from "recharts";
-import { getSubstationState, type SubstationState } from "../lib/api";
+import { useSubstationState } from "../lib/live-queries";
+import { isRangeNotReady } from "../lib/range";
 
 type TimePoint = { time: string; voltage: number; critVoltage: number };
 
+const POLL_MS = 2000;
+// The chart keeps one point per poll interval even when another view on
+// the page (the load simulator) refreshes the shared state faster; the
+// slack absorbs request latency.
+const POINT_SPACING_MS = POLL_MS - 250;
+
 export function MetricsOverview() {
-  const [state, setState] = useState<SubstationState | null>(null);
+  const { data, dataUpdatedAt, error } = useSubstationState(POLL_MS);
+  const state = data ?? null;
+  // No feeder while the range is being replaced: the cards wait instead
+  // of reading the missing state as an outage.
+  const waiting = !state && isRangeNotReady(error);
   const [history, setHistory] = useState<TimePoint[]>([]);
+  const lastPointAt = useRef(0);
 
-  const poll = useCallback(async () => {
-    try {
-      const data = await getSubstationState();
-      setState(data);
-
-      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      setHistory((prev) => [
-        ...prev,
-        {
-          time: now,
-          voltage: data.electrical.downstream_voltage_v ?? 0,
-          critVoltage: data.electrical.critical_load_voltage_v ?? 0,
-        },
-      ].slice(-60));
-    } catch {
-      // offline
-    }
-  }, []);
-
+  // One point per successful fetch (dataUpdatedAt moves even when the
+  // answer is unchanged), spaced at least POINT_SPACING_MS apart.
   useEffect(() => {
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-  }, [poll]);
+    // The RTAC answer is proxied verbatim; like the polling loop this
+    // replaced, an answer without the electrical block adds no point.
+    const elec = data?.electrical;
+    if (!elec || dataUpdatedAt - lastPointAt.current < POINT_SPACING_MS) return;
+    lastPointAt.current = dataUpdatedAt;
+    const time = new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setHistory((prev) => [
+      ...prev,
+      {
+        time,
+        voltage: elec.downstream_voltage_v ?? 0,
+        critVoltage: elec.critical_load_voltage_v ?? 0,
+      },
+    ].slice(-60));
+  }, [data, dataUpdatedAt]);
 
   const elec = state?.electrical;
   const critV = elec?.critical_load_voltage_v ?? 0;
@@ -75,37 +81,45 @@ export function MetricsOverview() {
   return (
     <div className="space-y-3">
       {/* Operational summary strip */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <OpCard
-          label="Customer Service"
-          value={customersServed ? `~${estCustomers} served` : `~${estLost} without power`}
-          ok={customersServed}
-          detail={customersServed ? `${Math.round(totalKw)} kW load` : "ALL LOADS DE-ENERGIZED"}
-        />
-        <OpCard
-          label="Feeder Protection"
-          value={protectionOk ? "Normal" : "DEGRADED"}
-          ok={protectionOk}
-          detail={
-            !bkrClosed && !rclClosed ? "Breaker + recloser open"
-            : !bkrClosed ? "Feeder breaker open"
-            : !rclClosed ? "Recloser open"
-            : "Breaker + recloser closed"
-          }
-        />
-        <OpCard
-          label="Voltage Quality"
-          value={critV === 0 ? "Dead" : voltageOk ? `${(critV / 120).toFixed(3)} pu` : `${(critV / 120).toFixed(3)} pu - Out of Band`}
-          ok={critV > 0 && voltageOk}
-          detail={critV === 0 ? "12.47 kV feeder de-energized" : `${critV.toFixed(1)}V · Tap ${tap > 0 ? "+" : ""}${tap}`}
-        />
-        <OpCard
-          label="Critical Load"
-          value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
-          ok={elec?.critical_load_energized}
-          detail={elec?.critical_load_energized ? `${Math.round(critKw)} kW hospital / fire station` : "Hospital and fire station offline"}
-        />
-      </div>
+      {waiting ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {OP_LABELS.map((label) => (
+            <OpCard key={label} label={label} value="WAITING" detail="Range not ready" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <OpCard
+            label="Customer Service"
+            value={customersServed ? `~${estCustomers} served` : `~${estLost} without power`}
+            ok={customersServed}
+            detail={customersServed ? `${Math.round(totalKw)} kW load` : "ALL LOADS DE-ENERGIZED"}
+          />
+          <OpCard
+            label="Feeder Protection"
+            value={protectionOk ? "Normal" : "DEGRADED"}
+            ok={protectionOk}
+            detail={
+              !bkrClosed && !rclClosed ? "Breaker + recloser open"
+              : !bkrClosed ? "Feeder breaker open"
+              : !rclClosed ? "Recloser open"
+              : "Breaker + recloser closed"
+            }
+          />
+          <OpCard
+            label="Voltage Quality"
+            value={critV === 0 ? "Dead" : voltageOk ? `${(critV / 120).toFixed(3)} pu` : `${(critV / 120).toFixed(3)} pu - Out of Band`}
+            ok={critV > 0 && voltageOk}
+            detail={critV === 0 ? "12.47 kV feeder de-energized" : `${critV.toFixed(1)}V · Tap ${tap > 0 ? "+" : ""}${tap}`}
+          />
+          <OpCard
+            label="Critical Load"
+            value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
+            ok={elec?.critical_load_energized}
+            detail={elec?.critical_load_energized ? `${Math.round(critKw)} kW hospital / fire station` : "Hospital and fire station offline"}
+          />
+        </div>
+      )}
 
       {/* Voltage trend - single chart, focused */}
       <div className="relative rounded-lg border border-slate-800 bg-slate-900/70 p-3">
@@ -148,6 +162,8 @@ export function MetricsOverview() {
     </div>
   );
 }
+
+const OP_LABELS = ["Customer Service", "Feeder Protection", "Voltage Quality", "Critical Load"];
 
 function OpCard({ label, value, ok, detail }: { label: string; value: string; ok?: boolean; detail?: string }) {
   return (

@@ -228,16 +228,20 @@ the helper does not pin containd's mutable tag to a prior-stage digest.
   local-only images are not a fallback.
 - Always includes a fresh `rangerdanger.tgz` (since the repo
   archive is tiny anyway).
-- Runs with stock macOS Bash 3.2 and Compose support for
-  `config --format json`; it requires `python3` for registry fallback
-  and exact service mapping.
-- Writes a `DELTA-README.md` whose image/service table comes from the
-  release Compose model (including the actual `eng_workstation` service).
-  Its apply recipe loads changed tags, retags unchanged images from
-  `<since>` to `<new>`, snapshots the complete existing repo (including
-  `.env` and local edits), selects `<new>`, then restarts the lab
-  offline (the platform, then the range through the backend). Rollback restores that snapshot and reuses the retained
-  old image tags.
+- Runs with stock macOS Bash 3.2 and Compose `config --images`; it
+  requires `python3` for registry-manifest parsing and exact
+  image-to-service mapping.
+- Compares the union of images the platform release file and every
+  package's `compose.release.yml` name.
+- Writes a `DELTA-README.md` whose image table lists, for every changed
+  image, its package/service membership (the platform or the package
+  that uses it). Its apply recipe loads changed tags, retags unchanged
+  images from `<since>` to `<new>`, snapshots the complete existing repo
+  (including `.env` and local edits), selects `<new>`, then restarts the
+  lab offline: the platform with `--pull never`, then the recorded range
+  package through the backend (`POST /api/range`). Rollback restores
+  that snapshot and reuses the retained old image tags. The recipe needs
+  `curl` and `python3` on the student's machine.
 
 Example:
 
@@ -294,7 +298,8 @@ re-applying a delta after an interrupted attempt that left the install at
 `<since-version>`.
 
 After that precondition passes, the recipe stops the lab (the range,
-then the platform), then saves the complete existing `~/rangerdanger` tree beside the
+then the platform, each by its Compose project label from an empty
+directory, verifying that no container or network is left), then saves the complete existing `~/rangerdanger` tree beside the
 install as
 `../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
 `.env`, Compose files, lab definitions, policy files, local edits, and all
@@ -303,11 +308,11 @@ Docker images. It also captures any other files present in the install
 tree. Snapshot size and creation time grow with lab state; allow enough
 free disk space for a compressed copy of the full tree. The snapshot is
 not overwritten if the same delta is applied again. If snapshot creation
-or its archive check fails, the generated instructions say the lab is
-stopped and give the command to bring the unchanged install back up.
-If stopping the lab itself fails, no snapshot or repo changes have been
-made; the generated instructions note that some services may be stopped
-and give the same command to bring the unchanged install back up.
+or its archive check fails, the recipe stops with the lab down and
+points to its `Rollback` section to bring the unchanged install back.
+If stopping and verifying both projects fails (a container or network
+of either is left), it stops before any snapshot or repo change; some
+services may already be stopped.
 
 The recipe then extracts the repo and loads the changed-image archive for
 the host architecture. For every unchanged first-party image it emits a

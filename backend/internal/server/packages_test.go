@@ -167,12 +167,6 @@ func TestActivePackageDrivesWorkshopLookups(t *testing.T) {
 	if err := s.db.Create(&models.LabTemplate{ID: "other-workshop", PackageID: "other-package", Topology: `{"nodes":[{"id":"other-node"}]}`}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if node, err := s.resolveWorkshopNode("kali-1"); err != nil || node.Container != "kali" {
-		t.Errorf("resolveWorkshopNode(kali-1) = %#v, %v; want the active topology's node", node, err)
-	}
-	if _, err := s.resolveWorkshopNode("other-node"); err == nil {
-		t.Error("resolveWorkshopNode found a node from an inactive package")
-	}
 	rec := serve(s, http.MethodGet, "/api/workshop/graph")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"kali-1"`) {
 		t.Errorf("GET /api/workshop/graph = %d %s, want the active topology", rec.Code, rec.Body)

@@ -88,7 +88,7 @@ func TestWaitForFirewallPolicyCanary(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := firewallWaitTestServer(t, tt.active, true)
 			calls := scriptedFirewallCanary(t, s, tt.exitCodes)
-			if err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen.Containd()); err != nil {
+			if err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen); err != nil {
 				t.Fatalf("waitForFirewallPolicy() error = %v", err)
 			}
 			if *calls != 3 {
@@ -103,7 +103,7 @@ func TestWaitForFirewallPolicyCanaryTimeout(t *testing.T) {
 	s := firewallWaitTestServer(t, "improved", true)
 	calls := scriptedFirewallCanary(t, s, []int{0})
 	started := time.Now()
-	err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen.Containd())
+	err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen)
 	if err == nil || !strings.Contains(err.Error(), "still allow") {
 		t.Fatalf("waitForFirewallPolicy() error = %v, want still-allow timeout", err)
 	}
@@ -118,7 +118,7 @@ func TestWaitForFirewallPolicyCanaryTimeout(t *testing.T) {
 func TestWaitForFirewallPolicyCustomSkipsCanary(t *testing.T) {
 	s := firewallWaitTestServer(t, "custom", true)
 	calls := scriptedFirewallCanary(t, s, []int{0})
-	if err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen.Containd()); err != nil {
+	if err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen); err != nil {
 		t.Fatalf("waitForFirewallPolicy() error = %v", err)
 	}
 	if *calls != 0 {
@@ -130,7 +130,7 @@ func TestWaitForFirewallPolicyHashTimeoutSkipsCanary(t *testing.T) {
 	setFirewallWaitBudget(t, 25*time.Millisecond)
 	s := firewallWaitTestServer(t, "weak", false)
 	calls := scriptedFirewallCanary(t, s, []int{0})
-	err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen.Containd())
+	err := s.waitForFirewallPolicy(context.Background(), s.rng.(*fakeRange).gen)
 	if err == nil || !strings.Contains(err.Error(), "firewall config hash did not reconcile") {
 		t.Fatalf("waitForFirewallPolicy() error = %v, want config hash timeout", err)
 	}

@@ -1,27 +1,59 @@
 package server
 
 import (
+	"context"
 	"io"
+	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-// Substation data proxy — forwards requests to rtac-sim running in the OT ops zone.
-// This gives the frontend access to live substation state without direct OT network access.
-//
-// The backend runs on mgmt_net only, so it reaches rtac-sim over the shared
-// mgmt_net leg. Using the container hostname lets Docker DNS resolve to
-// whichever IP is reachable from the backend's networks (mgmt_net first).
+// Substation data proxy: forwards requests to the range's RTAC API, which
+// the manifest names by role. This gives the frontend access to live
+// substation state without direct OT network access.
 
-const rtacSimDefault = "http://rtac-sim:8080"
+// rtacTimeout bounds one RTAC API request.
+const rtacTimeout = 5 * time.Second
 
-func (s *Server) rtacURL() string {
-	return rtacSimDefault
+// rtacClient is shared: requests carry their own context and deadline.
+var rtacClient = &http.Client{}
+
+// rtacRequest sends one request to the RTAC API, bounded by rtacTimeout and
+// by ctx.
+func rtacRequest(ctx context.Context, method, url string, body io.Reader) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(ctx, rtacTimeout)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := rtacClient.Do(req)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	resp.Body = cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
+}
+
+// cancelOnClose releases a request's context when its body is closed.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b cancelOnClose) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
 }
 
 // handleSubstationTags returns all flattened RTAC tags (device state + electrical + alarms).
@@ -57,8 +89,20 @@ func (s *Server) handleSubstationHealth(c *gin.Context) {
 }
 
 func (s *Server) proxyRTAC(c *gin.Context, path string) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(s.rtacURL() + path)
+	s.forwardRTAC(c, http.MethodGet, path, nil)
+}
+
+func (s *Server) proxyRTACPost(c *gin.Context, path string) {
+	s.forwardRTAC(c, http.MethodPost, path, c.Request.Body)
+}
+
+func (s *Server) forwardRTAC(c *gin.Context, method, path string, body io.Reader) {
+	rtac, err := rtacURL(rangeOf(c))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	resp, err := rtacRequest(c.Request.Context(), method, rtac+path, body)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "rtac-sim not reachable",
@@ -68,8 +112,8 @@ func (s *Server) proxyRTAC(c *gin.Context, path string) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	c.Data(resp.StatusCode, "application/json", body)
+	respBody, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, "application/json", respBody)
 }
 
 // handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
@@ -85,10 +129,12 @@ func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
 		return
 	}
 
-	// Filter to OT-relevant subnets: 10.30.30.x (OT ops), 10.40.40.x (field), 10.10.10.x (enterprise attacking field)
+	// Keep traffic that touches a teaching zone (enterprise, vendor, OT ops
+	// and field for the US package): the manifest's zone networks.
+	zones := zoneSubnets(rangeOf(c))
 	var filtered []containd.Event
 	for _, e := range events {
-		if isSubstationRelevant(e.Source, e.Dest) {
+		if inAnySubnet(zones, e.Source) || inAnySubnet(zones, e.Dest) {
 			filtered = append(filtered, e)
 		}
 	}
@@ -99,29 +145,29 @@ func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
 	})
 }
 
-// isSubstationRelevant checks if traffic involves OT/field subnets.
-func isSubstationRelevant(src, dest string) bool {
-	relevantPrefixes := []string{"10.30.30.", "10.40.40.", "10.10.10.", "10.20.20."}
-	for _, prefix := range relevantPrefixes {
-		if strings.HasPrefix(src, prefix) || strings.HasPrefix(dest, prefix) {
+// zoneSubnets is the subnets of the manifest's teaching zone networks.
+func zoneSubnets(gen *lifecycle.Generation) []*net.IPNet {
+	var subnets []*net.IPNet
+	for _, network := range gen.Manifest.Networks {
+		if network.Zone == "" {
+			continue
+		}
+		if _, subnet, err := net.ParseCIDR(network.Subnet); err == nil {
+			subnets = append(subnets, subnet)
+		}
+	}
+	return subnets
+}
+
+func inAnySubnet(subnets []*net.IPNet, address string) bool {
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return false
+	}
+	for _, subnet := range subnets {
+		if subnet.Contains(ip) {
 			return true
 		}
 	}
 	return false
-}
-
-func (s *Server) proxyRTACPost(c *gin.Context, path string) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(s.rtacURL()+path, "application/json", c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error":   "rtac-sim not reachable",
-			"details": err.Error(),
-		})
-		return
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	c.Data(resp.StatusCode, "application/json", body)
 }

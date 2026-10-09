@@ -10,7 +10,7 @@ and confirms enough services report (healthy).
 
 .PARAMETER Keep
 Leave the lab running after the test finishes. Without -Keep, the
-script runs scripts\dev-down.ps1 -Volumes on exit.
+script runs scripts\dev-down.ps1 on exit.
 
 .EXAMPLE
 .\scripts\smoke-test.ps1
@@ -69,7 +69,7 @@ function Invoke-ComposePs([string]$Format) {
 function Invoke-Cleanup {
     if (-not $Keep) {
         Note "tearing down"
-        & { $ErrorActionPreference = 'SilentlyContinue'; & (Join-Path $RootDir "scripts\dev-down.ps1") -Volumes *>$null }
+        & { $ErrorActionPreference = 'SilentlyContinue'; & (Join-Path $RootDir "scripts\dev-down.ps1") *>$null }
         if ($LASTEXITCODE -ne 0) { Err "teardown left resources behind (run .\scripts\dev-down.ps1)" }
     } else {
         Note "lab left running (-Keep)"

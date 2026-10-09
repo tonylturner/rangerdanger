@@ -9,12 +9,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-// handleGetWorkshopGraph returns the topology graph for the active workshop template.
-// This does not require a lab instance — it reads directly from the template.
+// handleGetWorkshopGraph returns the topology graph for the active workshop
+// template, with zones and addresses from the range manifest. It does not
+// require a lab instance.
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
+	gen := rangeOf(c)
 	var template models.LabTemplate
 	if err := s.db.First(&template, "id = ?", s.activePackage().TemplateID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workshop template not found — run seed first"})
@@ -30,9 +33,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		return
 	}
 
-	zoneOrder := []string{
-		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
-	}
+	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
 
 	var nodes []graphNode
@@ -72,14 +73,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 
 		uiPath, externalURL := getNodeUIConfig(n.Type, n.Container, "workshop", n.ID)
 
-		interfaceIPs := map[string]string{}
-		if n.IP != "" && len(n.Networks) > 0 {
-			interfaceIPs[n.Networks[0]] = n.IP
-		}
-		// For multi-homed nodes, build IPs from the known addresses
-		if len(n.Networks) > 1 {
-			interfaceIPs = buildWorkshopInterfaceIPs(n)
-		}
+		interfaceIPs := manifestInterfaceIPs(gen, n)
 
 		nodes = append(nodes, graphNode{
 			ID:   n.ID,
@@ -117,7 +111,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	// Check RTAC health
 	rtacOk := false
-	rtacState, err := s.fetchRTACState()
+	rtacState, err := s.fetchRTACState(c.Request.Context(), rangeOf(c))
 	if err == nil && rtacState != nil {
 		rtacOk = true
 	}
@@ -158,31 +152,33 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	})
 }
 
-// buildWorkshopInterfaceIPs creates interface IP mapping for multi-homed workshop nodes.
-// Uses known IP assignments from the substation topology.
-func buildWorkshopInterfaceIPs(n labs.NodeYAML) map[string]string {
-	// Known multi-homed node IPs from docker-compose
-	knownIPs := map[string]map[string]string{
-		"rtac": {
-			"ot_ops_net": "10.30.30.20",
-			"field_net":  "10.40.40.10",
-		},
-		// openplc: single-homed on ot_ops_net (audit F-011). Kept in
-		// the multi-homed map as a single-entry key so callers that
-		// look up "which IP on which network" still resolve cleanly.
-		"openplc": {
-			"ot_ops_net": "10.30.30.30",
-		},
+// manifestZones is the teaching zones' network keys, in manifest order.
+func manifestZones(gen *lifecycle.Generation) []string {
+	var zones []string
+	for _, network := range gen.Manifest.Networks {
+		if network.Zone != "" {
+			zones = append(zones, network.Key)
+		}
 	}
+	return zones
+}
 
-	if ips, ok := knownIPs[n.ID]; ok {
+// manifestInterfaceIPs maps each of the node's topology networks to the
+// node's address there, from the manifest. A node without a manifest
+// service keeps its topology address on its first network.
+func manifestInterfaceIPs(gen *lifecycle.Generation, n labs.NodeYAML) map[string]string {
+	ips := map[string]string{}
+	svc, ok := gen.Manifest.ServiceByNode(n.ID)
+	if !ok {
+		if n.IP != "" && len(n.Networks) > 0 {
+			ips[n.Networks[0]] = n.IP
+		}
 		return ips
 	}
-
-	// Fallback: use primary IP for first network
-	result := map[string]string{}
-	if n.IP != "" && len(n.Networks) > 0 {
-		result[n.Networks[0]] = n.IP
+	for _, network := range n.Networks {
+		if ip, err := interfaceIP(svc, network); err == nil {
+			ips[network] = ip
+		}
 	}
-	return result
+	return ips
 }

@@ -61,7 +61,7 @@ func (m *Manager) preflight(ctx context.Context, pkg labs.Package) (plan, error)
 	if err != nil {
 		return plan{}, err
 	}
-	if err := checkPackage(man, normalized); err != nil {
+	if err := checkPackage(man, pkg, m.opts.Mode, m.opts.Root, normalized); err != nil {
 		return plan{}, err
 	}
 	images, err := m.opts.Compose.Images(configCtx, p.composeFile)
@@ -96,14 +96,19 @@ func (m *Manager) preflight(ctx context.Context, pkg labs.Package) (plan, error)
 	return p, nil
 }
 
-// checkPackage is the package-lint preflight step over the manifest and the
-// normalized Compose model. Integration wires lane B's
-// manifest.Validate(man, root) and manifest.CheckCompose(man, mode, root,
-// normalized) in here; until then it only requires Compose's output to be
-// the JSON model those checks read.
-func checkPackage(_ *manifest.Manifest, normalized []byte) error {
-	if !json.Valid(normalized) {
-		return errors.New("compose config --format json did not return JSON")
+// checkPackage is the package-lint preflight step: the manifest on its own,
+// against the curriculum topology, and against the normalized Compose model
+// of the mode. CheckPlatform stays with the package lint: the platform is
+// already running when a range starts.
+func checkPackage(man *manifest.Manifest, pkg labs.Package, mode manifest.Mode, root string, normalized []byte) error {
+	if err := manifest.Validate(man, root); err != nil {
+		return fmt.Errorf("manifest: %w", err)
+	}
+	if err := manifest.CheckTopology(man, pkg); err != nil {
+		return fmt.Errorf("manifest against topology: %w", err)
+	}
+	if err := manifest.CheckCompose(man, mode, root, normalized); err != nil {
+		return fmt.Errorf("manifest against compose %s model: %w", mode, err)
 	}
 	return nil
 }
@@ -206,12 +211,23 @@ func (m *Manager) fail(p plan, gen *Generation, cause error) {
 }
 
 // teardown removes the range project by label and verifies that nothing
-// with its label is left.
+// with its label, and none of the volumes its containers mounted, is left.
 func (m *Manager) teardown(parent context.Context) error {
 	ctx, cancel := context.WithTimeout(parent, m.timeouts.Down)
 	defer cancel()
+	volumes, err := m.opts.Engine.MountedVolumes(ctx, manifest.RangeProject)
+	if err != nil {
+		return err
+	}
 	if err := m.opts.Compose.Down(ctx); err != nil {
 		return err
+	}
+	leftVolumes, err := m.opts.Engine.ExistingVolumes(ctx, volumes)
+	if err != nil {
+		return err
+	}
+	if len(leftVolumes) > 0 {
+		return fmt.Errorf("project %s volumes [%s] remain after down", manifest.RangeProject, strings.Join(leftVolumes, ", "))
 	}
 	containers, networks, err := m.opts.Engine.ProjectResources(ctx, manifest.RangeProject)
 	if err != nil {

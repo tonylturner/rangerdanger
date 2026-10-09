@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,10 +30,28 @@ type fakeRange struct {
 	err       error
 }
 
-// servingRange is a ready range whose firewall is client.
+// repoRoot is the repository checkout the tests run in.
+func repoRoot() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+}
+
+// usGeneration is a generation of the real US package: its manifest and
+// default policy, with client as the firewall API.
+func usGeneration(client *containd.Client) *lifecycle.Generation {
+	man, err := manifest.Load(repoRoot(), usPackageID)
+	if err != nil {
+		panic(err)
+	}
+	pkg := labs.Package{ID: usPackageID, FirewallConfigPath: "firewall/substation-weak.json"}
+	return lifecycle.NewGeneration(1, pkg, man, client)
+}
+
+// servingRange is a ready US range whose firewall is client. The curriculum
+// the server serves stays testPackageID.
 func servingRange(client *containd.Client) *fakeRange {
 	return &fakeRange{
-		gen:    lifecycle.NewGeneration(1, labs.Package{ID: testPackageID}, &manifest.Manifest{Package: testPackageID}, client),
+		gen:    usGeneration(client),
 		status: lifecycle.Status{Generation: 1, Phase: lifecycle.PhaseReady, Package: testPackageID, Mode: manifest.ModeSource},
 		active: testPackageID,
 	}

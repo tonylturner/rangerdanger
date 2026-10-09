@@ -8,7 +8,9 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 )
 
 type notFoundError struct{}
@@ -20,7 +22,12 @@ type fakeDockerAPI struct {
 	images     map[string]error
 	containers []types.Container
 	networks   []network.Summary
+	volumes    map[string]error
 	listed     []container.ListOptions
+}
+
+func (f *fakeDockerAPI) VolumeInspect(_ context.Context, name string) (volume.Volume, error) {
+	return volume.Volume{Name: name}, f.volumes[name]
 }
 
 func (f *fakeDockerAPI) ImageInspectWithRaw(_ context.Context, ref string) (types.ImageInspect, []byte, error) {
@@ -89,5 +96,34 @@ func TestDockerEngineExecCombinesOutput(t *testing.T) {
 	code, output, err := NewDockerEngine(&fakeDockerAPI{}, exec).Exec(t.Context(), "rangerdanger-proxy", []string{"nginx", "-t"})
 	if err != nil || code != 1 || output != "nginx: configuration file test failed" {
 		t.Errorf("Exec = %d %q %v", code, output, err)
+	}
+}
+
+func TestDockerEngineVolumes(t *testing.T) {
+	api := &fakeDockerAPI{
+		containers: []types.Container{
+			{Names: []string{"/rangerdanger-eng-ws"}, Mounts: []types.MountPoint{
+				{Type: mount.TypeBind, Source: "/H/scripts/set-gateway.sh"},
+				{Type: mount.TypeVolume, Name: "c0ffee"},
+			}},
+			{Names: []string{"/rangerdanger-corp-ws"}, Mounts: []types.MountPoint{{Type: mount.TypeVolume, Name: "beef"}}},
+		},
+		volumes: map[string]error{"c0ffee": notFoundError{}},
+	}
+	engine := NewDockerEngine(api, nil)
+	mounted, err := engine.MountedVolumes(t.Context(), "rangerdanger")
+	if err != nil || !reflect.DeepEqual(mounted, []string{"beef", "c0ffee"}) {
+		t.Fatalf("MountedVolumes = %q, %v; want the volume mounts only", mounted, err)
+	}
+	if got := api.listed[0].Filters.Get("label"); !reflect.DeepEqual(got, []string{"com.docker.compose.project=rangerdanger"}) {
+		t.Errorf("label filter = %q", got)
+	}
+	existing, err := engine.ExistingVolumes(t.Context(), mounted)
+	if err != nil || !reflect.DeepEqual(existing, []string{"beef"}) {
+		t.Fatalf("ExistingVolumes = %q, %v", existing, err)
+	}
+	api.volumes["beef"] = errors.New("daemon unreachable")
+	if _, err := engine.ExistingVolumes(t.Context(), []string{"beef"}); err == nil {
+		t.Error("an inspect failure other than not-found was reported as gone")
 	}
 }

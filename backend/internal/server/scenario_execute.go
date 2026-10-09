@@ -39,6 +39,8 @@ type StepActionResult struct {
 // handleExecuteStep executes the action defined in a scenario step.
 // POST /api/scenarios/:id/steps/:stepIdx/execute
 func (s *Server) handleExecuteStep(c *gin.Context) {
+	ctx := c.Request.Context()
+	gen := rangeOf(c)
 	scenarioID := c.Param("id")
 	stepIdxStr := c.Param("stepIdx")
 	stepIdx, err := strconv.Atoi(stepIdxStr)
@@ -82,12 +84,12 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 
 	switch step.Action.Type {
 	case "command":
-		result := s.executeCommand(step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
+		result := s.executeCommand(ctx, gen, step.Action.Device, step.Action.Command, step.Action.Source, step.Action.Value)
 		results = append(results, result)
 
 	case "sequence":
 		for _, cmd := range step.Action.Commands {
-			result := s.executeCommand(cmd.Device, cmd.Command, cmd.Source, cmd.Value)
+			result := s.executeCommand(ctx, gen, cmd.Device, cmd.Command, cmd.Source, cmd.Value)
 			results = append(results, result)
 			if !result.Success {
 				break
@@ -96,15 +98,15 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		}
 
 	case "firewall":
-		result := s.executeFirewallAction(c.Request.Context(), rangeOf(c), step.Action.Config)
+		result := s.executeFirewallAction(ctx, gen, step.Action.Config)
 		results = append(results, result)
 
 	case "check":
-		checkResults := s.executeCheck(step.Action.Expect)
+		checkResults := s.executeCheck(ctx, gen, step.Action.Expect)
 		results = append(results, checkResults...)
 
 	case "probe":
-		results = s.executeProbe(c.Request.Context(), step)
+		results = s.executeProbe(ctx, gen, step)
 
 	default:
 		results = append(results, StepActionResult{
@@ -135,7 +137,7 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 // executeCommand sends a command to a field device via RTAC.
 // When the improved firewall config is active, it enforces source authorization:
 // only the RTAC and operator sources can reach field devices.
-func (s *Server) executeCommand(device, command, source string, value *float64) StepActionResult {
+func (s *Server) executeCommand(ctx context.Context, gen *lifecycle.Generation, device, command, source string, value *float64) StepActionResult {
 	// Check if the source is authorized under the current firewall policy.
 	// In "improved" mode, only RTAC (10.30.30.20) and "operator" can send
 	// commands to field devices — all other sources are blocked by containd.
@@ -162,12 +164,11 @@ func (s *Server) executeCommand(device, command, source string, value *float64) 
 	}
 
 	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(
-		s.rtacURL()+"/api/command/"+device,
-		"application/json",
-		bytes.NewReader(body),
-	)
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s", device, command), Detail: err.Error()}
+	}
+	resp, err := rtacRequest(ctx, http.MethodPost, rtac+"/api/command/"+device, bytes.NewReader(body))
 	if err != nil {
 		return StepActionResult{
 			Action:  fmt.Sprintf("%s/%s", device, command),
@@ -258,10 +259,10 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 }
 
 // executeCheck validates current substation state against expectations.
-func (s *Server) executeCheck(expect map[string]any) []StepActionResult {
+func (s *Server) executeCheck(ctx context.Context, gen *lifecycle.Generation, expect map[string]any) []StepActionResult {
 	var results []StepActionResult
 
-	state, err := s.fetchRTACState()
+	state, err := s.fetchRTACState(ctx, gen)
 	if err != nil {
 		return []StepActionResult{{
 			Action:  "Check substation state",

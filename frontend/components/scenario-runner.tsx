@@ -1,16 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   validateScenario,
-  getSubstationState,
-  getActiveFirewallConfig,
   applyFirewallConfig,
   applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
-  getSubstationAudit,
   execOnNode,
   resetWorkshop,
   startTrafficGeneration,
@@ -20,10 +17,7 @@ import {
   getPcapDownloadUrl,
   type Scenario,
   type ValidationResult,
-  type SubstationState,
   type StepExecutionResult,
-  type AuditEntry,
-  type PolicySource,
 } from "../lib/api";
 import { PolicyStatusBanner } from "./policy-status-banner";
 import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
@@ -43,7 +37,8 @@ import {
   saveProgress,
 } from "../lib/scenario-runner-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
-import { logLineFor } from "../lib/range";
+import { isRangeNotReady, logLineFor } from "../lib/range";
+import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
 import {
   POLICY_ACTION_SCENARIOS,
   VALIDATE_BUTTON_SCENARIOS,
@@ -79,8 +74,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
-  const [state, setState] = useState<SubstationState | null>(null);
-  const [activeConfig, setActiveConfig] = useState<string | null>(null);
+  const stateQuery = useSubstationState(3000);
+  const state = stateQuery.data ?? null;
+  // No feeder while the range is being replaced; the status cards wait
+  // instead of reading the missing state as an outage.
+  const feederWaiting = !state && isRangeNotReady(stateQuery.error);
+  const activeFirewall = useActiveFirewall(3000).data;
+  const activeConfig = activeFirewall?.active_config ?? null;
   // Firewall-track choice (guided | technical | null). Read here so
   // both the description renderer (for trackOnly segments) and the
   // side panel (for chip + button de-emphasis) share one source.
@@ -89,7 +89,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // PolicyStatusBanner to distinguish "Your custom policy (Lab 1.4
   // plan)" from "(your containd commit)". Survives page reloads
   // because it's a backend field.
-  const [policySource, setPolicySource] = useState<PolicySource>("");
+  const policySource = activeFirewall?.policy_source ?? "";
   const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog);
   const [executing, setExecuting] = useState(false);
   // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
@@ -97,7 +97,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [autoRunning, setAutoRunning] = useState<string | null>(null);
   const [resettingLab, setResettingLab] = useState(false);
   const [stepResult, setStepResult] = useState<StepExecutionResult | null>(null);
-  const [recentAudit, setRecentAudit] = useState<AuditEntry[]>([]);
+  const auditEntries = useSubstationAudit(3000).data?.entries;
+  const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
+  const refreshLive = useRefreshLive();
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
   // Load the saved Lab 1.4 remediation plan on every firewall lab,
   // not just firewall-implementation. The plan drives the side-
@@ -190,7 +192,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         ...output.map((l) => "  " + l),
         ...prev,
       ].slice(0, 100));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
       setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 100));
     } finally {
@@ -212,7 +214,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         ...actionLines,
         ...prev,
       ].slice(0, 100));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
       setCmdLog((prev) => [logLineFor(e, "Reset failed: "), ...prev].slice(0, 100));
     } finally {
@@ -266,28 +268,6 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     }
   };
 
-  const pollState = useCallback(async () => {
-    try {
-      const [s, fw, a] = await Promise.all([
-        getSubstationState(),
-        getActiveFirewallConfig(),
-        getSubstationAudit(),
-      ]);
-      setState(s);
-      setActiveConfig(fw.active_config);
-      setPolicySource(fw.policy_source ?? "");
-      setRecentAudit((a.entries ?? []).slice(-5));
-    } catch {
-      // offline
-    }
-  }, []);
-
-  useEffect(() => {
-    pollState();
-    const id = setInterval(pollState, 3000);
-    return () => clearInterval(id);
-  }, [pollState]);
-
   const handleValidate = async () => {
     setValidating(true);
     try {
@@ -321,7 +301,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         markStepDone(idx);
       }
 
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
       setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     } finally {
@@ -337,7 +317,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       const label = succeeded ? "SUCCEEDED" : "BLOCKED";
       const msg = `[${label}] ${deviceLabel(device)} - ${command}: ${impact}`;
       setCmdLog((prev) => [msg, ...prev].slice(0, 20));
-      setTimeout(pollState, 500);
+      setTimeout(refreshLive, 500);
     } catch (e) {
       setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     }
@@ -720,7 +700,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                     {/* Apply Hardened: load the canned reference. */}
                     {activeConfig !== "improved" && (
                       <button
-                        onClick={async () => { await applyFirewallConfig("improved"); pollState(); }}
+                        onClick={async () => { await applyFirewallConfig("improved"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
                             ? "rounded border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
@@ -740,7 +720,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         onClick={async () => {
                           const config = buildContaindConfig(dynamicPlan);
                           await applyCustomFirewallConfig(config);
-                          pollState();
+                          void refreshLive();
                           setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
                         }}
                         className={
@@ -774,7 +754,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         landed on the current policy. */}
                     {activeConfig !== "weak" && activeConfig && (
                       <button
-                        onClick={async () => { await applyFirewallConfig("weak"); pollState(); }}
+                        onClick={async () => { await applyFirewallConfig("weak"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
                             ? "rounded border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
@@ -790,28 +770,36 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
               {/* Operational status */}
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
-              <div className="grid grid-cols-2 gap-2">
-                <MiniStatus
-                  label="Customer Service"
-                  value={customersServed ? "Serving" : "OUTAGE"}
-                  ok={customersServed}
-                />
-                <MiniStatus
-                  label="Protection"
-                  value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
-                  ok={bkrClosed && rclClosed}
-                />
-                <MiniStatus
-                  label="Voltage"
-                  value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
-                  ok={critV > 0 && critV >= 114 && critV <= 126}
-                />
-                <MiniStatus
-                  label="Critical Load"
-                  value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
-                  ok={elec?.critical_load_energized}
-                />
-              </div>
+              {feederWaiting ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {["Customer Service", "Protection", "Voltage", "Critical Load"].map((label) => (
+                    <MiniStatus key={label} label={label} value="WAITING" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <MiniStatus
+                    label="Customer Service"
+                    value={customersServed ? "Serving" : "OUTAGE"}
+                    ok={customersServed}
+                  />
+                  <MiniStatus
+                    label="Protection"
+                    value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
+                    ok={bkrClosed && rclClosed}
+                  />
+                  <MiniStatus
+                    label="Voltage"
+                    value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
+                    ok={critV > 0 && critV >= 114 && critV <= 126}
+                  />
+                  <MiniStatus
+                    label="Critical Load"
+                    value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
+                    ok={elec?.critical_load_energized}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Quick commands panel */}

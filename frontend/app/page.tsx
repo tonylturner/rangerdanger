@@ -4,13 +4,18 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { MetricsOverview } from "../components/metrics-overview";
 import { getWorkshopStatus } from "../lib/api";
+import { isRangeNotReady } from "../lib/range";
 
 export default function DashboardPage() {
-  const { data: ws } = useQuery({
+  const { data: ws, error: wsError } = useQuery({
     queryKey: ["workshop-status"],
     queryFn: getWorkshopStatus,
     refetchInterval: 5000,
   });
+
+  // While the range is being replaced nothing is offline, it is not
+  // there yet; the cards stay neutral and the range banner says why.
+  const waiting = isRangeNotReady(wsError);
 
   const rtacOnline = ws?.rtac_online ?? false;
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
@@ -34,23 +39,23 @@ export default function DashboardPage() {
       <div className="grid gap-3 sm:grid-cols-4">
         <StatusCard
           label="RTAC Controller"
-          value={rtacOnline ? "ONLINE" : "OFFLINE"}
-          ok={rtacOnline}
+          value={waiting ? "WAITING" : rtacOnline ? "ONLINE" : "OFFLINE"}
+          ok={waiting ? undefined : rtacOnline}
         />
         <StatusCard
           label="Field Devices"
-          value={`${devicesOk}/${deviceCount}`}
-          ok={devicesOk === deviceCount && deviceCount > 0}
+          value={waiting ? "WAITING" : `${devicesOk}/${deviceCount}`}
+          ok={waiting ? undefined : devicesOk === deviceCount && deviceCount > 0}
         />
         <StatusCard
           label="Firewall Policy"
-          value={ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
-          ok={ws?.firewall_config === "improved"}
+          value={waiting ? "WAITING" : ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
+          ok={waiting ? undefined : ws?.firewall_config === "improved"}
         />
         <StatusCard
           label="Scenarios"
-          value={`${scenarioCount} available`}
-          ok={scenarioCount > 0}
+          value={waiting ? "WAITING" : `${scenarioCount} available`}
+          ok={waiting ? undefined : scenarioCount > 0}
         />
       </div>
 

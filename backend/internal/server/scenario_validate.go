@@ -11,8 +11,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // ValidationCheck is a single pass/fail condition.
@@ -53,7 +53,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 
 	var input validatorInput
 	if validator.needs(labs.CapabilityProcessElectrical) {
-		input.state, err = s.fetchRTACState()
+		input.state, err = s.fetchRTACState(c.Request.Context(), rangeOf(c))
 		if err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
 			return
@@ -61,12 +61,12 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	}
 	if validator.needs(labs.CapabilityAuditDeviceControl) {
 		// An unreachable audit log is non-fatal; validators treat nil as empty.
-		input.audit, _ = s.fetchRTACAudit()
+		input.audit, _ = s.fetchRTACAudit(c.Request.Context(), rangeOf(c))
 	}
 	s.activeConfigMu.RLock()
 	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
-	input.firewall = rangeOf(c).Containd()
+	input.gen = rangeOf(c)
 
 	checks := validator.run(c.Request.Context(), s, input)
 
@@ -135,9 +135,12 @@ func validateVendorRDPCompromise(state map[string]any, audit []map[string]any, a
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-func (s *Server) fetchRTACState() (map[string]any, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(s.rtacURL() + "/api/state")
+func (s *Server) fetchRTACState(ctx context.Context, gen *lifecycle.Generation) (map[string]any, error) {
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := rtacRequest(ctx, http.MethodGet, rtac+"/api/state", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +153,12 @@ func (s *Server) fetchRTACState() (map[string]any, error) {
 	return result, nil
 }
 
-func (s *Server) fetchRTACAudit() ([]map[string]any, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(s.rtacURL() + "/api/audit")
+func (s *Server) fetchRTACAudit(ctx context.Context, gen *lifecycle.Generation) ([]map[string]any, error) {
+	rtac, err := rtacURL(gen)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := rtacRequest(ctx, http.MethodGet, rtac+"/api/audit", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +267,7 @@ func countAuditByZoneAndCommand(entries []map[string]any, zone, command string) 
 
 // ── Exercise 0: Baseline Assessment ─────────────────────────────
 
-func (s *Server) validateBaselineAssessment(ctx context.Context, firewall *containd.Client, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func (s *Server) validateBaselineAssessment(ctx context.Context, gen *lifecycle.Generation, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
 	elec := mapGet(state, "electrical")
@@ -269,7 +275,7 @@ func (s *Server) validateBaselineAssessment(ctx context.Context, firewall *conta
 	comms := mapGet(state, "device_comms")
 
 	// 1. Check if a PCAP capture file exists (student completed the capture step)
-	pcapExists := s.checkPcapFileExists(ctx, firewall)
+	pcapExists := s.checkPcapFileExists(ctx, gen)
 	if pcapExists {
 		checks = append(checks, ValidationCheck{"PCAP captured", "pass", "Baseline capture file found — traffic was recorded"})
 	} else {
@@ -576,14 +582,15 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 }
 
 // checkPcapFileExists checks if any PCAP capture files are available.
-func (s *Server) checkPcapFileExists(ctx context.Context, firewall *containd.Client) bool {
+func (s *Server) checkPcapFileExists(ctx context.Context, gen *lifecycle.Generation) bool {
 	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
-	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+	firewall, err := firewallContainer(gen)
+	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil && err == nil {
 		execCfg := container.ExecOptions{
 			Cmd:          []string{"sh", "-c", "test -s /data/captures/baseline.pcap && echo YES"},
 			AttachStdout: true,
 		}
-		execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
 		if err == nil {
 			resp, err := dockerCli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 			if err == nil {
@@ -597,7 +604,7 @@ func (s *Server) checkPcapFileExists(ctx context.Context, firewall *containd.Cli
 	}
 
 	// 2. Check containd PCAP API (covers API-initiated captures)
-	files, err := firewall.ListPcapFiles(ctx)
+	files, err := gen.Containd().ListPcapFiles(ctx)
 	if err == nil && len(files) > 0 {
 		return true
 	}

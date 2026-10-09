@@ -42,10 +42,13 @@ and restarts the range. Extra arguments go to `setup.sh` (for example
 ./scripts/dev-down.sh         # the range, then the platform
 ```
 
-`dev-down.sh` tears each project down by its Compose label only
-(`docker compose -p <project> down --remove-orphans`, run from an empty
-directory) and fails unless no container or network of either project
-is left. For the release-image path see
+`dev-down.sh` tears each project down by its Compose label only, run
+from an empty directory: the range with
+`docker compose -p rangerdanger down -v --remove-orphans` (range models
+have no named volumes, so `-v` removes only the webtops' anonymous
+`/config` volumes), the platform without `-v`. It fails unless no
+container or network of either project, and no volume a range
+container mounted, is left. For the release-image path see
 [`docs/quickstart.md`](docs/quickstart.md).
 
 Open http://localhost:8088 - the UI is the entry point.

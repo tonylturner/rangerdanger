@@ -454,6 +454,44 @@ func checkRawCompose(path, expectedName string) error {
 // CheckCrossMode ensures the source and release models differ only in fields
 // that are intentionally mode-specific.
 func CheckCrossMode(source, release []byte) error {
+	return checkCrossMode(source, release, false)
+}
+
+// CheckPlatformCrossMode validates the platform mode selector and ensures the
+// platform source and release models otherwise differ only in their
+// mode-specific image/build/pull_policy fields.
+func CheckPlatformCrossMode(source, release []byte) error {
+	for _, expected := range []struct {
+		name string
+		data []byte
+		mode Mode
+	}{
+		{name: "source", data: source, mode: ModeSource},
+		{name: "release", data: release, mode: ModeRelease},
+	} {
+		model, err := decodeJSONMap(expected.data)
+		if err != nil {
+			return fmt.Errorf("decode normalized platform %s Compose: %w", expected.name, err)
+		}
+		services := mapValue(model, "services")
+		backend, exists := services["backend"].(map[string]any)
+		if !exists {
+			return fmt.Errorf("%s platform Compose differs at services.backend: service is missing", expected.name)
+		}
+		environment, exists := backend["environment"].(map[string]any)
+		if !exists {
+			return fmt.Errorf("%s platform Compose differs at services.backend.environment.RANGERDANGER_MODE: environment is missing", expected.name)
+		}
+		value, exists := environment["RANGERDANGER_MODE"]
+		mode, isString := value.(string)
+		if !exists || !isString || mode != string(expected.mode) {
+			return fmt.Errorf("%s platform Compose differs at services.backend.environment.RANGERDANGER_MODE: got %v, want %q", expected.name, value, expected.mode)
+		}
+	}
+	return checkCrossMode(source, release, true)
+}
+
+func checkCrossMode(source, release []byte, platform bool) error {
 	if _, err := decodeCompose(source); err != nil {
 		return fmt.Errorf("decode source Compose: %w", err)
 	}
@@ -481,10 +519,81 @@ func CheckCrossMode(source, release []byte) error {
 			delete(service, "pull_policy")
 		}
 	}
-	if !reflect.DeepEqual(left, right) {
-		return fmt.Errorf("source and release Compose differ outside image, build, and pull_policy")
+	if platform {
+		for _, services := range []map[string]any{leftServices, rightServices} {
+			if backend, ok := services["backend"].(map[string]any); ok {
+				if environment, ok := backend["environment"].(map[string]any); ok {
+					delete(environment, "RANGERDANGER_MODE")
+				}
+			}
+		}
+	}
+	if path := firstDifference(left, right, ""); path != "" {
+		if platform {
+			return fmt.Errorf("source and release platform Compose differ at %s outside image, build, pull_policy, and backend RANGERDANGER_MODE", path)
+		}
+		return fmt.Errorf("source and release Compose differ at %s outside image, build, and pull_policy", path)
 	}
 	return nil
+}
+
+func firstDifference(left, right any, path string) string {
+	leftMap, leftIsMap := left.(map[string]any)
+	rightMap, rightIsMap := right.(map[string]any)
+	if leftIsMap && rightIsMap {
+		keys := make([]string, 0, len(leftMap)+len(rightMap))
+		seen := make(map[string]bool, len(leftMap)+len(rightMap))
+		for key := range leftMap {
+			keys = append(keys, key)
+			seen[key] = true
+		}
+		for key := range rightMap {
+			if !seen[key] {
+				keys = append(keys, key)
+			}
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			leftValue, leftExists := leftMap[key]
+			rightValue, rightExists := rightMap[key]
+			child := key
+			if path != "" {
+				child = path + "." + key
+			}
+			if !leftExists || !rightExists {
+				return child
+			}
+			if difference := firstDifference(leftValue, rightValue, child); difference != "" {
+				return difference
+			}
+		}
+		return ""
+	}
+	leftSlice, leftIsSlice := left.([]any)
+	rightSlice, rightIsSlice := right.([]any)
+	if leftIsSlice && rightIsSlice {
+		limit := len(leftSlice)
+		if len(rightSlice) < limit {
+			limit = len(rightSlice)
+		}
+		for index := 0; index < limit; index++ {
+			child := fmt.Sprintf("%s[%d]", path, index)
+			if difference := firstDifference(leftSlice[index], rightSlice[index], child); difference != "" {
+				return difference
+			}
+		}
+		if len(leftSlice) != len(rightSlice) {
+			return fmt.Sprintf("%s[%d]", path, limit)
+		}
+		return ""
+	}
+	if !reflect.DeepEqual(left, right) {
+		if path == "" {
+			return "$"
+		}
+		return path
+	}
+	return ""
 }
 
 // CheckCrossPackage verifies build consistency for service keys shared by two

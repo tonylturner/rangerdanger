@@ -13,7 +13,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/models"
@@ -55,7 +54,7 @@ func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply fun
 // match the just-committed policy, then checks the dataplane canary for canned
 // policies. The backend's activeConfig flips at commit time, so neither it nor
 // the config hash alone establishes that the running dataplane is reconciled.
-func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.Client) error {
+func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Generation) error {
 	s.activeConfigMu.RLock()
 	want := s.lastAppliedHash
 	active := s.activeConfig
@@ -70,7 +69,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.C
 		if !time.Now().Before(deadline) {
 			return firewallHashTimeout(budget, lastErr)
 		}
-		got, err := firewall.GetFirewallHash(ctx)
+		got, err := gen.Containd().GetFirewallHash(ctx)
 		if err == nil && got == want {
 			if time.Now().Before(deadline) {
 				break
@@ -86,15 +85,22 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.C
 	if active != "weak" && active != "improved" {
 		return nil
 	}
-	node, err := s.resolveWorkshopNode("kali-1")
+	recipe, err := recipeFor(gen)
 	if err != nil {
-		return fmt.Errorf("dataplane never reconciled to %s: resolve canary kali→10.30.30.20:502: %w", active, err)
+		return fmt.Errorf("dataplane never reconciled to %s: %w", active, err)
 	}
-	if node.Container == "" {
-		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 has no container", active)
+	canary := recipe.canary
+	from, err := nodeService(gen, canary.fromNode)
+	if err != nil {
+		return fmt.Errorf("dataplane never reconciled to %s: resolve canary source: %w", active, err)
 	}
+	target, err := nodeIP(gen, canary.toNode, canary.network)
+	if err != nil {
+		return fmt.Errorf("dataplane never reconciled to %s: resolve canary target: %w", active, err)
+	}
+	label := fmt.Sprintf("%s→%s:%d", canary.label, target, canary.port)
 	if s.execInContainer == nil {
-		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 cannot run without container exec", active)
+		return fmt.Errorf("dataplane never reconciled to %s: canary %s cannot run without container exec", active, label)
 	}
 
 	wantAllow := active == "weak"
@@ -102,11 +108,11 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.C
 	lastVerdict := "unknown"
 	for {
 		if !time.Now().Before(deadline) {
-			return firewallCanaryTimeout(active, lastVerdict, lastProbeErr, budget)
+			return firewallCanaryTimeout(active, label, lastVerdict, lastProbeErr, budget)
 		}
 		probeCtx, cancel := context.WithDeadline(ctx, deadline)
-		_, _, rc, probeErr := s.execInContainer(probeCtx, node.Container, []string{
-			"timeout", "1", "bash", "-c", "exec 3<>/dev/tcp/10.30.30.20/502",
+		_, _, rc, probeErr := s.execInContainer(probeCtx, from.Container, []string{
+			"timeout", "1", "bash", "-c", fmt.Sprintf("exec 3<>/dev/tcp/%s/%d", target, canary.port),
 		}, 2)
 		cancel()
 		lastProbeErr = probeErr
@@ -120,7 +126,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.C
 			}
 		}
 		if !sleepWithinFirewallBudget(ctx, deadline, firewallCanaryPollInterval) {
-			return firewallCanaryTimeout(active, lastVerdict, lastProbeErr, budget)
+			return firewallCanaryTimeout(active, label, lastVerdict, lastProbeErr, budget)
 		}
 	}
 }
@@ -156,11 +162,11 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func firewallCanaryTimeout(active, verdict string, probeErr error, budget time.Duration) error {
+func firewallCanaryTimeout(active, canary, verdict string, probeErr error, budget time.Duration) error {
 	if probeErr != nil {
-		return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 unavailable after %s: %w", active, budget, probeErr)
+		return fmt.Errorf("dataplane never reconciled to %s: canary %s unavailable after %s: %w", active, canary, budget, probeErr)
 	}
-	return fmt.Errorf("dataplane never reconciled to %s: canary kali→10.30.30.20:502 still %s after %s", active, verdict, budget)
+	return fmt.Errorf("dataplane never reconciled to %s: canary %s still %s after %s", active, canary, verdict, budget)
 }
 
 type scenarioTestResult struct {
@@ -188,6 +194,11 @@ type testSuiteResult struct {
 func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	ctx := c.Request.Context()
 	gen := rangeOf(c)
+	recipe, err := recipeFor(gen)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 	suiteStart := time.Now()
 
 	// Load the active package's scenarios ordered by `order`
@@ -216,8 +227,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
-		preResetProblems := s.resetLabState(ctx, gen)
-		if err := s.waitForFirewallPolicy(ctx, gen.Containd()); err != nil {
+		preResetProblems := s.resetLabState(ctx, gen, recipe)
+		if err := s.waitForFirewallPolicy(ctx, gen); err != nil {
 			preResetProblems = append(preResetProblems, "firewall dataplane: "+err.Error())
 		}
 
@@ -240,7 +251,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 				return s.applyFirewallConfigInternal(ctx, gen, name)
 			})
 			if prepErr == nil && applied {
-				prepErr = s.waitForFirewallPolicy(ctx, gen.Containd())
+				prepErr = s.waitForFirewallPolicy(ctx, gen)
 			}
 
 			result := stepTestResult{StepIndex: i, StepTitle: step.Title}
@@ -248,16 +259,18 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 				result.Detail = "hardened precondition: " + prepErr.Error()
 			} else {
 				result = evaluateTestStep(i, step, stepExecutors{
-					command:  s.executeCommand,
+					command: func(device, command, source string, value *float64) StepActionResult {
+						return s.executeCommand(ctx, gen, device, command, source, value)
+					},
 					firewall: func(name string) StepActionResult { return s.executeFirewallAction(ctx, gen, name) },
-					check:    s.executeCheck,
-					probe:    func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, step) },
+					check:    func(expect map[string]any) []StepActionResult { return s.executeCheck(ctx, gen, expect) },
+					probe:    func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, gen, step) },
 					sequencePause: func() {
 						sleepCtx(ctx, 300*time.Millisecond)
 					},
 				})
 				if step.Action != nil && step.Action.Type == "firewall" && result.Passed {
-					if err := s.waitForFirewallPolicy(ctx, gen.Containd()); err != nil {
+					if err := s.waitForFirewallPolicy(ctx, gen); err != nil {
 						result.Passed = false
 						result.Detail += "; dataplane: " + err.Error()
 					}
@@ -296,7 +309,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		// Reset after scenario
-		postResetProblems := s.resetLabState(ctx, gen)
+		postResetProblems := s.resetLabState(ctx, gen, recipe)
 		resetOK, resetDetail := aggregateResetProblems(preResetProblems, postResetProblems)
 
 		scenarioResult := scenarioTestResult{
@@ -338,7 +351,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 }
 
 // resetLabState restores all devices to defaults.
-func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation) []string {
+func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe) []string {
 	var problems []string
 	warnings, err := s.applyFirewallConfigInternal(ctx, gen, "weak")
 	if err != nil {
@@ -349,28 +362,25 @@ func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation) [
 		}
 	}
 
-	for _, cmd := range resetDeviceCommands {
-		result := s.executeCommand(cmd.device, cmd.command, "reset-script", nil)
+	for _, cmd := range recipe.resetCommands {
+		result := s.executeCommand(ctx, gen, cmd.device, cmd.command, "reset-script", cmd.value)
 		if !result.Success {
 			problems = append(problems, fmt.Sprintf("%s/%s: %s", cmd.device, cmd.command, result.Detail))
 		}
-	}
-
-	tapZero := float64(0)
-	tapResult := s.executeCommand("regulator", "set_tap", "reset-script", &tapZero)
-	if !tapResult.Success {
-		problems = append(problems, "regulator/set_tap: "+tapResult.Detail)
 	}
 
 	// Clear PCAP captures so validators don't see stale files
 	s.pcapMu.Lock()
 	s.pcap.FileReady = false
 	s.pcapMu.Unlock()
-	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
+	firewall, err := firewallContainer(gen)
+	if err != nil {
+		problems = append(problems, "clear PCAP captures: "+err.Error())
+	} else if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
 		execCfg := container.ExecOptions{
 			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
 		}
-		execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
 		if err != nil {
 			problems = append(problems, "clear PCAP captures: "+err.Error())
 		} else if err := dockerCli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{}); err != nil {

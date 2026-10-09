@@ -94,7 +94,7 @@ export function NetworkConsole() {
   });
 
   // Validate workshop environment on render
-  const { data: workshopStatus } = useQuery({
+  const { data: workshopStatus, error: workshopStatusError } = useQuery({
     queryKey: ["workshop", "status"],
     queryFn: getWorkshopStatus,
     refetchInterval: 10000,
@@ -244,7 +244,7 @@ export function NetworkConsole() {
 
   const errors = useMemo(() => {
     const list: string[] = [];
-    if (graphIsError && graphError && !isRangeNotReady(graphError))
+    if (graphIsError && graphError)
       list.push(`Failed to load topology: ${graphError instanceof Error ? graphError.message : "Unknown error"}`);
     return list;
   }, [graphIsError, graphError]);
@@ -293,9 +293,11 @@ export function NetworkConsole() {
         )}
       </header>
 
-      {isRangeNotReady(graphError) && (
+      {/* GET /workshop/graph is served whatever the range does; the
+          live status behind the node and edge colours is range-bound. */}
+      {isRangeNotReady(workshopStatusError) && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
-          The network map loads once the range is ready.
+          Live device, firewall and traffic status shows once the range is ready.
         </div>
       )}
 

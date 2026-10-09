@@ -3,14 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
@@ -27,94 +26,36 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// handleWorkshopTerminal handles WebSocket terminal connections for workshop mode.
-// Resolves nodes from the workshop template instead of a lab instance.
+// handleWorkshopTerminal handles WebSocket terminal connections for workshop
+// mode: the node's container comes from the range manifest.
 func (s *Server) handleWorkshopTerminal(c *gin.Context) {
-	nodeID := c.Param("nodeId")
-
-	nodeConfig, err := s.resolveWorkshopNode(nodeID)
+	svc, err := nodeService(rangeOf(c), c.Param("nodeId"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-
-	s.connectTerminal(c, nodeConfig)
+	s.connectTerminal(c, svc)
 }
 
-// handleTerminal handles WebSocket connections for container terminal access.
+// handleTerminal handles WebSocket connections for a lab instance node. The
+// instance must exist; its node resolves in the range manifest.
 func (s *Server) handleTerminal(c *gin.Context) {
-	labID := c.Param("id")
-	nodeID := c.Param("nodeId")
-
-	// Get lab instance with template to access topology
 	var instance models.LabInstance
-	if err := s.db.Preload("Template").First(&instance, "id = ?", labID).Error; err != nil {
+	if err := s.db.First(&instance, "id = ?", c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "lab not found"})
 		return
 	}
-
-	// Parse topology to find node config
-	var topo struct {
-		Nodes []labs.NodeYAML `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(instance.Template.Topology), &topo); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
+	svc, err := nodeService(rangeOf(c), c.Param("nodeId"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Find the node in topology
-	var nodeConfig *labs.NodeYAML
-	for i := range topo.Nodes {
-		if topo.Nodes[i].ID == nodeID {
-			nodeConfig = &topo.Nodes[i]
-			break
-		}
-	}
-	if nodeConfig == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found in topology"})
-		return
-	}
-
-	s.connectTerminal(c, nodeConfig)
+	s.connectTerminal(c, svc)
 }
 
-// resolveWorkshopNode finds a node in the active package's topology.
-func (s *Server) resolveWorkshopNode(nodeID string) (*labs.NodeYAML, error) {
-	var template models.LabTemplate
-	if err := s.db.First(&template, "id = ?", s.activePackage().TemplateID).Error; err != nil {
-		return nil, fmt.Errorf("workshop template not found")
-	}
-
-	var topo struct {
-		Nodes []labs.NodeYAML `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(template.Topology), &topo); err != nil {
-		return nil, fmt.Errorf("invalid topology")
-	}
-
-	for i := range topo.Nodes {
-		if topo.Nodes[i].ID == nodeID {
-			return &topo.Nodes[i], nil
-		}
-	}
-	return nil, fmt.Errorf("node %s not found in topology", nodeID)
-}
-
-// connectTerminal upgrades the connection to WebSocket and connects to the container.
-func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
-	// containd_ngfw previously used SSH, but the containd image's
-	// built-in SSH server changed auth between versions and breaks
-	// unpredictably. Docker exec to /bin/bash is reliable and gives
-	// the same Linux shell (CONTAIND_SSH_SHELL_MODE=linux is set).
-	// The SSH handler is kept below as a fallback if needed.
-
-	// Get container name from topology
-	containerName := nodeConfig.Container
-	if containerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no container configured for node"})
-		return
-	}
-
+// connectTerminal upgrades the connection to WebSocket and connects to the
+// service's container. The firewall lands in its appliance CLI.
+func (s *Server) connectTerminal(c *gin.Context, svc manifest.Service) {
 	// Upgrade HTTP connection to WebSocket
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -123,7 +64,7 @@ func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 	defer ws.Close()
 
 	// Execute shell in container (using container name)
-	hijack, execID, err := s.orchestrator.ExecShell(c.Request.Context(), containerName)
+	hijack, execID, err := s.orchestrator.ExecShell(c.Request.Context(), svc.Container, isFirewall(svc))
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Error: "+err.Error()+"\r\n"))
 		return

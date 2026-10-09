@@ -46,17 +46,12 @@ func (s *Server) handleWorkshopExec(c *gin.Context) {
 		return
 	}
 
-	nodeConfig, err := s.resolveWorkshopNode(nodeID)
+	svc, err := nodeService(rangeOf(c), nodeID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Determine container name
-	containerName := nodeConfig.Container
-	if containerName == "" {
-		containerName = "rangerdanger-" + strings.ReplaceAll(nodeConfig.ID, "_", "-")
-	}
+	containerName := svc.Container
 
 	timeout := req.TimeoutSec
 	if timeout <= 0 {

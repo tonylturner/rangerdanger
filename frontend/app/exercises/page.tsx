@@ -8,6 +8,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "../../components/ui/too
 import { Toast, type ToastState } from "../../components/ui/toast";
 import { downloadExercisePDF, downloadWorkbookPDF } from "../../lib/pdf-download";
 import type { Scenario } from "../../lib/api";
+import { errorMessage } from "../../lib/utils";
 
 export default function ExercisesPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function ExercisesPage() {
       setToast({
         kind: "error",
         title: "PDF export failed",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorMessage(err),
       });
     }
   }, []);
@@ -63,7 +64,7 @@ export default function ExercisesPage() {
       setToast({
         kind: "error",
         title: "Workbook export failed",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: errorMessage(err),
       });
     } finally {
       setWorkbookExporting(false);

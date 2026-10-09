@@ -10,9 +10,10 @@ the custom WSL2 kernel that setup.ps1 installed for ICS DPI labs.
 By default, this script:
   - Stops the range, then the platform (scripts\dev-down.ps1: label-only,
     by Compose project rangerdanger / rangerdanger-platform), removing
-    their containers and Docker networks.
-  - Removes the anonymous volumes those containers mounted (the webtops'
-    /config; the lab has no named volumes).
+    their containers and Docker networks. The range teardown also
+    removes its anonymous volumes (the webtops' /config); the lab has no
+    named volumes, and its state lives in bind-mounted directories
+    (backend\data, data\), which this script never removes.
   - Removes the .env file setup.ps1 wrote.
   - Reverts the custom WSL2 kernel (restores .wslconfig.bak or removes
     our kernel= line) and runs `wsl --shutdown` so the change takes
@@ -23,7 +24,8 @@ large (~6 GB total) and you may want to keep them for a later run.
 Images fall into three categories:
   A. release -- pulled ghcr.io/tonylturner/rangerdanger-*, containd
   B. dev     -- locally-built rangerdanger-platform-<service> and
-                rangerdanger-<service> images
+                rangerdanger-<service> images, plus the pre-split
+                rangerdanger-backend / rangerdanger-frontend
   C. base    -- shared public images (alpine, nginx, fuxa, webtop)
                 that OTHER projects on this host may also use
 Pass -RemoveImages (A), -RemoveDevImages (B), and/or -RemoveBaseImages
@@ -52,11 +54,6 @@ Shorthand for -RemoveImages -RemoveDevImages: a clean slate for
 redeploy testing. Base images are left alone; add -RemoveBaseImages
 to remove those too.
 
-.PARAMETER KeepVolumes
-Do NOT remove the anonymous volumes (the webtops' /config) on teardown.
-Lab state lives in bind-mounted directories (backend\data, data\),
-which this script never removes.
-
 .PARAMETER KeepKernel
 Do NOT revert the custom WSL2 kernel. Useful if you have other
 RangerDanger labs installed that also rely on the kernel, or if you
@@ -82,7 +79,8 @@ Exit codes:
   0  = uninstall completed (or partial completion with warnings)
   1  = user declined the confirmation prompt
   2  = no rangerdanger state detected (nothing to do)
-  3  = teardown left containers or networks behind; nothing else removed
+  3  = teardown left containers, networks or range volumes behind;
+       nothing else removed
 #>
 
 [CmdletBinding()]
@@ -92,7 +90,6 @@ param(
     [switch]$RemoveDevImages,
     [switch]$RemoveBaseImages,
     [switch]$Purge,
-    [switch]$KeepVolumes,
     [switch]$KeepKernel
 )
 
@@ -141,12 +138,10 @@ Banner "RangerDanger uninstall"
 
 # --- inventory ---------------------------------------------------------
 $rdContainers = @()
-$rdContainerIds = @()
 $rdNetworks = @()
 foreach ($p in $Projects) {
     $label = "label=com.docker.compose.project=$p"
     $rdContainers   += @(& { $ErrorActionPreference = 'SilentlyContinue'; & docker ps -a --format "{{.Names}}" --filter $label 2>$null } | Where-Object { $_ })
-    $rdContainerIds += @(& { $ErrorActionPreference = 'SilentlyContinue'; & docker ps -aq --filter $label 2>$null } | Where-Object { $_ })
     $rdNetworks     += @(& { $ErrorActionPreference = 'SilentlyContinue'; & docker network ls -q --filter $label 2>$null } | Where-Object { $_ })
 }
 Say "Containers found: $($rdContainers.Count)"
@@ -189,12 +184,16 @@ try {
 } finally { $env:RANGERDANGER_ROOT = $savedRoot }
 $composeImages = @($composeImages | Sort-Object -Unique)
 
-# Category B -- locally-built dev images (rangerdanger-<service>:latest).
+# Category B -- locally-built dev images.
 $devRepos = @($composeImages | Where-Object { $_ -notmatch ':' })
 if ($devRepos.Count -eq 0) {
     $devRepos = @($presentImages | ForEach-Object { ($_ -split ':')[0] } |
         Where-Object { $_ -match '^rangerdanger-[a-z]' -and $_ -notmatch '/' } | Sort-Object -Unique)
 }
+# The pre-split single project built the platform as rangerdanger-backend
+# and rangerdanger-frontend; the platform project now builds
+# rangerdanger-platform-<service>, so the old names are in no Compose file.
+$devRepos += @('rangerdanger-backend', 'rangerdanger-frontend')
 $rdDevImages = @()
 foreach ($repo in $devRepos) {
     $rdDevImages += @($presentImages | Where-Object { $_ -like "${repo}:*" })
@@ -213,17 +212,6 @@ $rdBaseImages = @($baseRefs | Where-Object { $presentImages -contains $_ } | Sor
 Say "Release images (ghcr):    $($rdImages.Count)"
 Say "Dev images (local build): $($rdDevImages.Count)"
 Say "Base images (shared):     $($rdBaseImages.Count)"
-
-# The lab has no named volumes. The webtop images declare VOLUME /config,
-# so their containers carry anonymous volumes that a plain `down` leaves.
-$rdVolumes = @()
-if ($rdContainerIds.Count -gt 0) {
-    $rdVolumes = @(& {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' @rdContainerIds 2>$null
-    } | Where-Object { $_ })
-}
-Say "Anonymous volumes: $($rdVolumes.Count)"
 
 $kernelInstalled = $false
 $wslConfig = Join-Path $env:USERPROFILE ".wslconfig"
@@ -248,9 +236,8 @@ if ($rdContainers.Count -eq 0 -and $rdNetworks.Count -eq 0 -and $rdImages.Count 
 
 # --- confirm -----------------------------------------------------------
 Banner "About to:"
-Write-Host "  - Stop the range, then the platform (containers + networks, by Compose project)"
-if (-not $KeepVolumes) { Write-Host "      and remove their $($rdVolumes.Count) anonymous volume(s)" }
-else                    { Write-Host "      anonymous volumes kept (-KeepVolumes)" }
+Write-Host "  - Stop the range (containers, networks, anonymous volumes), then the"
+Write-Host "    platform (containers, networks), by Compose project"
 if ($RemoveImages -and $rdImages.Count -gt 0) {
     Write-Host "  - Remove $($rdImages.Count) release image(s) (~6 GB)"
 }
@@ -282,11 +269,9 @@ if (-not $Yes) {
 # Fail closed: if anything of either project survives, stop here and
 # remove nothing else.
 Banner "Stopping the range and the platform"
-$downArgs = @{}
-if (-not $KeepVolumes) { $downArgs['Volumes'] = $true }
-& $DevDown @downArgs 2>&1 | ForEach-Object { Write-Host "  $_" }
+& $DevDown 2>&1 | ForEach-Object { Write-Host "  $_" }
 if ($LASTEXITCODE -ne 0) {
-    Warn "Teardown left containers or networks behind (see above). Nothing else was removed."
+    Warn "Teardown left resources behind (see above). Nothing else was removed."
     Warn "Fix the cause, then re-run this script."
     exit 3
 }
@@ -334,9 +319,7 @@ if ($kernelInstalled -and -not $KeepKernel) {
 
 # --- done --------------------------------------------------------------
 Banner "RangerDanger removed"
-Write-Host "  Containers + networks: removed"
-if (-not $KeepVolumes) { Write-Host "  Anonymous volumes:     removed" }
-else                    { Write-Host "  Anonymous volumes:     kept (-KeepVolumes)" }
+Write-Host "  Containers + networks: removed (and the range's anonymous volumes)"
 if ($RemoveImages)     { Write-Host "  Release images:        removed (~6 GB freed)" }
 else                    { Write-Host "  Release images:        kept (pass -RemoveImages to free disk)" }
 if ($RemoveDevImages)  { Write-Host "  Dev images:            removed" }

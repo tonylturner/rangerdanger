@@ -48,7 +48,7 @@ WORKDIR=$(mktemp -d)
 cleanup() {
   if [ "$KEEP" = "0" ]; then
     note "tearing down"
-    ./scripts/dev-down.sh --volumes >/dev/null 2>&1 || err "teardown left resources behind (run ./scripts/dev-down.sh)"
+    ./scripts/dev-down.sh >/dev/null 2>&1 || err "teardown left resources behind (run ./scripts/dev-down.sh)"
   else
     note "lab left running (--keep)"
   fi
