@@ -1,0 +1,8 @@
+{"schema":1,"cache_epoch":"3b9f6c0e2a5d4e71","package_id":"eu-iec104-substation","range_generation":3,
+ "link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-09T21:01:55.120Z","last_rx_at":"2026-10-09T21:02:10.410Z","connection_seq":1,
+         "gi":{"state":"complete","started_at":"2026-10-09T21:01:55.131Z","completed_at":"2026-10-09T21:01:55.180Z"}},
+ "points":[
+  {"id":"feeder-breaker-position","ioa":1001,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.170Z","cot":20},
+  {"id":"feeder-protection-trip","ioa":1002,"asdu":"M_SP_TB_1","value":false,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.171Z","cot":20},
+  {"id":"feeder-current","ioa":2001,"asdu":"M_ME_NC_1","value":28.87,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.172Z","cot":20},
+  {"id":"feeder-voltage","ioa":2002,"asdu":"M_ME_NC_1","value":19.93,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.173Z","cot":20}]}

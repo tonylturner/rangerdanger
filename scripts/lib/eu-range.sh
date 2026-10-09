@@ -1,6 +1,32 @@
 # shellcheck shell=bash
 # EU IEC104 gate helpers; the US range library remains unchanged.
 
+# jq definitions shared by every operator-state predicate (eu_wait_for_state,
+# eu_assert_jq*): the four monitored points and their per-point quality.
+# shellcheck disable=SC2016
+EU_JQ_DEFS='
+def four_points: ([.points[].id] | sort)
+  == ["feeder-breaker-position","feeder-current","feeder-protection-trip","feeder-voltage"];
+def good: .quality.iv == false and .quality.nt == false and (.stale_reason == null or .stale_reason == "");
+def all_good: four_points and all(.points[]; good);
+def all_stale($reason): four_points
+  and all(.points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
+def point($id): ([.points[] | select(.id == $id)][0] // {});
+def near($a; $b; $tolerance):
+  ($a | type) == "number" and ($b | type) == "number" and (($a - $b) | fabs) <= $tolerance;
+'
+
+eu_now_ms() {
+  python3 -c 'import time; print(int(time.monotonic() * 1000))'
+}
+
+# Every API response is appended to the run's response log, which is kept as
+# evidence when the gate fails (eu_save_evidence).
+eu_log_response() {
+  printf '%s %s %s HTTP %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" \
+    "${HTTP_STATUS:-none}" "$API_BODY" >>"$TMP_DIR/api-responses.log"
+}
+
 eu_api_get() {
   local path="$1"
   API_BODY=""
@@ -10,6 +36,7 @@ eu_api_get() {
     return 1
   }
   API_BODY=$(cat "$TMP_DIR/api-get.json")
+  eu_log_response GET "$path"
   if [ "$HTTP_STATUS" != "200" ]; then
     printf 'GET %s returned HTTP %s, expected 200: %s\n' "$path" "$HTTP_STATUS" "$API_BODY" >&2
     return 1
@@ -32,6 +59,7 @@ eu_api_post() {
       return 1
     }
   API_BODY=$(cat "$TMP_DIR/api-response.json")
+  eu_log_response POST "$path"
   printf '%s' "$API_BODY" | jq -e 'type == "object" or type == "array"' >/dev/null 2>&1 || {
     printf 'POST %s returned empty or unparsable JSON (HTTP %s): %s\n' \
       "$path" "$HTTP_STATUS" "$API_BODY" >&2
@@ -42,7 +70,7 @@ eu_api_post() {
 
 eu_assert_jq() {
   local body="$1" expression="$2" label="$3"
-  if printf '%s' "$body" | jq -e "$expression" >/dev/null 2>&1; then
+  if printf '%s' "$body" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
     pass "$label"
   else
     fail "$label (response did not satisfy: $expression)"
@@ -50,7 +78,7 @@ eu_assert_jq() {
 }
 eu_assert_jq_truth() {
   local body="$1" truth="$2" expression="$3" label="$4"
-  if printf '%s' "$body" | jq -e --argjson truth "$truth" "$expression" >/dev/null 2>&1; then
+  if printf '%s' "$body" | jq -e --argjson truth "$truth" "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
     pass "$label"
   else
     fail "$label (response did not satisfy the truth comparison)"
@@ -90,6 +118,15 @@ eu_assert_device_state_response() {
     return 1
   fi
 }
+# eu_instructor_action PATH BODY LABEL: one instructor fault/reset whose answer
+# must be the device /api/state shape (left in API_BODY).
+eu_instructor_action() {
+  if ! eu_api_post "$1" "$2"; then
+    fail "$3 returned no parseable response"
+    return 1
+  fi
+  eu_assert_device_state_response "$3"
+}
 eu_check_tools() {
   local tool missing=0
   for tool in curl jq python3 docker tshark; do
@@ -110,6 +147,7 @@ eu_check_tools() {
 
 # Check a service's required listening address and count, using ss inside the
 # service image. A missing ss utility or an unparsable table fails closed.
+# Address *:PORT means one wildcard listener (ss prints *, 0.0.0.0 or [::]).
 check_listener() {
   local container="$1" address="$2" label="$3" expected_count="${4:-1}" listeners port
   port="${address##*:}"
@@ -118,7 +156,8 @@ check_listener() {
     return 1
   }
   if printf '%s\n' "$listeners" | awk -v endpoint="$address" -v port="$port" -v expected="$expected_count" '
-    $4 == endpoint { found++ }
+    $4 == endpoint ||
+      (endpoint == "*:" port && ($4 == "0.0.0.0:" port || $4 == "[::]:" port)) { found++ }
     NR > 1 && substr($4, length($4) - length(port)) == ":" port { count++ }
     END { exit(found == 1 && count == expected ? 0 : 1) }
   '; then
@@ -377,84 +416,9 @@ eu_make_custom_policy() {
     return 1
   }
 }
-eu_read_sessions() {
-  local dport="$1" src="$2"
-  if ! eu_api_get "/api/firewall/sessions?dport=$dport&src=$src"; then
-    fail "firewall session list for src $src dport $dport is unavailable or unparsable"
-    return 1
-  fi
-  SESSION_BODY="$API_BODY"
-  if ! printf '%s' "$SESSION_BODY" | jq -e --arg src "$src" --argjson dport "$dport" '
-    type == "object"
-    and (.sessions | type == "array")
-    and (.count | type == "number" and . >= 0 and floor == .)
-    and .count == (.sessions | length)
-    and .count > 0
-    and all(.sessions[];
-            (.proto | type) == "string"
-            and (.src | type) == "string"
-            and (.dst | type) == "string"
-            and (.sport | type == "number" and floor == . and . >= 1 and . <= 65535)
-            and (.dport | type == "number" and floor == . and . == $dport)
-            and has("state") and has("timeout") and .src == $src)
-  ' >/dev/null 2>&1; then
-    fail "firewall session envelope is empty or violates the filtered integer-port contract (src $src dport $dport): $SESSION_BODY"
-    return 1
-  fi
-  return 0
-}
-eu_session_tuple() {
-  local body="$1" src="$2" dst="$3" dport="$4" matches count
-  SESSION_TUPLE=""
-  matches=$(printf '%s' "$body" | jq -c --arg src "$src" --arg dst "$dst" \
-    --argjson dport "$dport" '
-      [.sessions[] | select((.proto | ascii_downcase) == "tcp"
-        and .src == $src and .dst == $dst and .dport == $dport)]
-    ') || {
-      printf 'session response cannot be parsed while selecting %s -> %s tcp/%s\n' \
-        "$src" "$dst" "$dport" >&2
-      return 1
-    }
-  count=$(printf '%s' "$matches" | jq 'length') || count=""
-  if [ "$count" != "1" ]; then
-    printf 'expected exactly one session tuple for %s -> %s tcp/%s, found %s\n' \
-      "$src" "$dst" "$dport" "${count:-unparsable}" >&2
-    return 1
-  fi
-  # shellcheck disable=SC2034
-  SESSION_TUPLE="$matches"
-  return 0
-}
-eu_kill_tuple() {
-  local tuple="$1" src dst sport dport proto response
-  proto=$(printf '%s' "$tuple" | jq -r '.[0].proto // empty') || return 1
-  src=$(printf '%s' "$tuple" | jq -r '.[0].src // empty') || return 1
-  dst=$(printf '%s' "$tuple" | jq -r '.[0].dst // empty') || return 1
-  sport=$(printf '%s' "$tuple" | jq -r '.[0].sport // empty') || return 1
-  dport=$(printf '%s' "$tuple" | jq -r '.[0].dport // empty') || return 1
-  if [ -z "$proto" ] || [ -z "$src" ] || [ -z "$dst" ] \
-    || ! [[ "$sport" =~ ^[0-9]+$ ]] || ! [[ "$dport" =~ ^[0-9]+$ ]]; then
-    fail "session kill tuple is incomplete or has non-integer ports: $tuple"
-    return 1
-  fi
-  if ! eu_api_post "/api/firewall/sessions/kill" \
-    "{\"proto\":\"$proto\",\"src\":\"$src\",\"dst\":\"$dst\",\"sport\":$sport,\"dport\":$dport}"; then
-    fail "session kill returned no parseable response for $src:$sport -> $dst:$dport"
-    return 1
-  fi
-  response="$API_BODY"
-  if [ "$HTTP_STATUS" != "200" ] \
-    || ! printf '%s' "$response" | jq -e '.status == "deleted"' >/dev/null 2>&1; then
-    fail "conntrack kill was not a confirmed 200/deleted for $src:$sport -> $dst:$dport: HTTP $HTTP_STATUS $response"
-    return 1
-  fi
-  pass "exact conntrack tuple deleted: $src:$sport -> $dst:$dport"
-  return 0
-}
-
 eu_wait_for_state() {
   local path="$1" expression="$2" budget="$3" label="$4" start_ms="${5:-}" now_ms
-  [ -n "$start_ms" ] || start_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || {
+  [ -n "$start_ms" ] || start_ms=$(eu_now_ms) || {
     fail "$label cannot establish monotonic timeout"
     return 1
   }
@@ -464,13 +428,13 @@ eu_wait_for_state() {
       return 1
     fi
     WAIT_BODY="$API_BODY"
-    now_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || now_ms=""
+    now_ms=$(eu_now_ms) || now_ms=""
     if ! [[ "$now_ms" =~ ^[0-9]+$ ]]; then
       fail "$label cannot read monotonic clock"
       return 1
     fi
     if [ "$((now_ms - start_ms))" -le "$((budget * 1000))" ] \
-      && printf '%s' "$WAIT_BODY" | jq -e "$expression" >/dev/null 2>&1; then
+      && printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
       return 0
     fi
     if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
@@ -478,7 +442,7 @@ eu_wait_for_state() {
     fi
     sleep 0.1
   done
-  fail "$label did not reach expected state within ${budget}s"
+  fail "$label did not reach expected state within ${budget}s; last response: $WAIT_BODY"
   return 1
 }
 
@@ -532,6 +496,84 @@ eu_get_point_snapshot() {
     else error("float point source_time must be null and both float points must exist")
     end
   '
+}
+
+# eu_baseline_mismatches OPERATOR INSTRUCTOR: one line per disagreement between
+# the operator view, device truth and solver; no output means a GOOD baseline.
+# GI (COT 20) reports are untimed (contract §3.2), so a status point's time tag
+# must fit its COT; whether a timed tag is synchronised is G2's check.
+eu_baseline_mismatches() {
+  printf '%s' "$1" | jq -r --argjson truth "$2" "$EU_JQ_DEFS"'
+    def time_fits_cot:
+      if .cot == 20 then .source_time == null and .source_time_invalid == null
+      else (.source_time | type == "string" and length > 0)
+        and (.source_time_invalid | type == "boolean")
+      end;
+    def pair($what; $operator; $device): "\($what): operator \($operator | tojson), truth \($device | tojson)";
+    $truth.device as $device | $truth.process as $solver
+    | (if .link.state != "started" then "link state \(.link.state | tojson), expected started" else empty end),
+      (if .link.gi.state != "complete" then "GI state \(.link.gi.state | tojson), expected complete" else empty end),
+      (if four_points then empty else "operator point ids \([.points[].id] | sort | tojson)" end),
+      (.points[] | select(good | not)
+        | "\(.id) not GOOD: iv=\(.quality.iv) nt=\(.quality.nt) stale_reason=\(.stale_reason | tojson)"),
+      (.points[] | select(.id == "feeder-breaker-position" or .id == "feeder-protection-trip")
+        | select(time_fits_cot | not)
+        | "\(.id) time tag does not fit COT \(.cot | tojson): source_time=\(.source_time | tojson) source_time_invalid=\(.source_time_invalid | tojson)"),
+      (point("feeder-breaker-position").value as $value
+        | if $value == $device.position then empty else pair("position"; $value; $device.position) end),
+      (point("feeder-protection-trip").value as $value
+        | if $value == $device.protection_tripped then empty
+          else pair("protection trip"; $value; $device.protection_tripped) end),
+      (point("feeder-current").value as $value
+        | if near($value; $solver.current_a; 0.5) then empty
+          else pair("current A (tolerance 0.5)"; $value; $solver.current_a) end),
+      (point("feeder-voltage").value as $value
+        | if near($value; $solver.load_voltage_kv_ll; 0.05) then empty
+          else pair("voltage kV (tolerance 0.05)"; $value; $solver.load_voltage_kv_ll) end),
+      (if $solver.truth_revision == $device.revision and ($device.revision | type) == "number" then empty
+        else "solver truth_revision \($solver.truth_revision | tojson) != device revision \($device.revision | tojson)" end),
+      (if $solver.truth_generation == $device.generation and ($device.generation | type) == "number" then empty
+        else "solver truth_generation \($solver.truth_generation | tojson) != device generation \($device.generation | tojson)" end)
+  '
+}
+
+# eu_wait_for_baseline LABEL BUDGET: poll operator and instructor state until
+# eu_baseline_mismatches is empty; on timeout print every mismatch and both
+# last snapshots (BASELINE_OPERATOR, BASELINE_TRUTH).
+eu_wait_for_baseline() {
+  local label="$1" budget="$2" start_ms now_ms mismatches
+  start_ms=$(eu_now_ms) || {
+    fail "$label cannot establish monotonic timeout"
+    return 1
+  }
+  while :; do
+    BASELINE_OPERATOR="" BASELINE_TRUTH=""
+    if ! eu_api_get "/api/operator/state" 2>"$TMP_DIR/baseline.err"; then
+      mismatches="operator state unavailable: $(cat "$TMP_DIR/baseline.err")"
+    else
+      BASELINE_OPERATOR="$API_BODY"
+      if ! eu_api_get "/api/instructor/state" 2>"$TMP_DIR/baseline.err"; then
+        mismatches="instructor state unavailable: $(cat "$TMP_DIR/baseline.err")"
+      else
+        BASELINE_TRUTH="$API_BODY"
+        mismatches=$(eu_baseline_mismatches "$BASELINE_OPERATOR" "$BASELINE_TRUTH" 2>&1) \
+          || mismatches="cannot compare operator and instructor state: $mismatches"
+      fi
+    fi
+    if [ -z "$mismatches" ]; then
+      eu_assert_operator_shape "$BASELINE_OPERATOR" "$label"
+      return
+    fi
+    now_ms=$(eu_now_ms) || now_ms=""
+    if ! [[ "$now_ms" =~ ^[0-9]+$ ]] || [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
+      break
+    fi
+    sleep 0.25
+  done
+  fail "$label did not converge within ${budget}s"
+  printf '%s\n' "$mismatches" | sed 's/^/  mismatch: /' >&2
+  printf '  operator snapshot: %s\n  instructor snapshot: %s\n' "${BASELINE_OPERATOR:-none}" "${BASELINE_TRUTH:-none}" >&2
+  return 1
 }
 eu_wait_command() {
   local operation="$1" expected="$2" response
@@ -723,27 +765,26 @@ eu_stop_capture() {
   return 1
 }
 
-# shellcheck disable=SC2329
-eu_stop_monitor() {
-  [ "$monitor_running" -eq 1 ] || return 0
-  if docker exec "$KALI" sh -c "test -s '$MONITOR_RC'" >/dev/null 2>&1; then
-    monitor_running=0
-    return 0
-  fi
-  local pid
-  local attempt
-  for ((attempt = 0; attempt < 20; attempt++)); do
-    pid=$(docker exec "$KALI" cat "$MONITOR_PID" 2>"$TMP_DIR/monitor-pid.err") || pid=""
-    [[ "$pid" =~ ^[0-9]+$ ]] && break
-    sleep 0.1
-  done
-  if ! [[ "$pid" =~ ^[0-9]+$ ]] || ! docker exec "$KALI" kill -TERM "$pid" \
-    >/dev/null 2>"$TMP_DIR/monitor-kill.err"; then
-    fail "could not terminate owned background monitor (PID $pid): $(cat "$TMP_DIR/monitor-kill.err")"
+# eu_save_evidence: before cleanup deletes them, copy every API response and
+# session row (the response log), the decoded captures, the Kali monitor files
+# and the firewall capture to EU_GATE_EVIDENCE_DIR.
+eu_save_evidence() {
+  local dir="${EU_GATE_EVIDENCE_DIR:-$ROOT/build/deploy-test/eu-evidence/$(date -u +%Y%m%dT%H%M%SZ)}" file
+  if ! mkdir -p "$dir" || ! cp -R "$TMP_DIR/." "$dir/"; then
+    fail "could not keep gate evidence in $dir"
     return 1
   fi
-  monitor_running=0
-  pass "owned background monitor stopped during cleanup"
+  if [ -n "$MONITOR_LOG" ]; then
+    for file in "$MONITOR_LOG" "$MONITOR_ERR" "$MONITOR_RC" "$MONITOR_PID"; do
+      docker cp "$KALI:$file" "$dir/kali-${file##*/}" >/dev/null 2>&1 \
+        || printf 'evidence: Kali %s was not available\n' "$file" >&2
+    done
+  fi
+  if [ -n "$CAPTURE_PATH" ]; then
+    docker cp "$FW:$CAPTURE_PATH" "$dir/firewall-${CAPTURE_PATH##*/}" >/dev/null 2>&1 \
+      || printf 'evidence: firewall capture %s was not available\n' "$CAPTURE_PATH" >&2
+  fi
+  printf 'Gate evidence kept in %s\n' "$dir" >&2
 }
 
 # shellcheck disable=SC2329
@@ -757,7 +798,13 @@ eu_cleanup() {
   eu_unpause_owned "$GPS" gps "$gps_paused" || true
   eu_unpause_owned "$OPENDSS" opendss "$opendss_paused" || true
   eu_unpause_owned "$RTU" rtu "$rtu_paused" || true
-  if [ -n "$MONITOR_LOG" ] && ! docker exec "$KALI" rm -f \
+  # shellcheck disable=SC2154
+  if [ "$failures" -gt 0 ] || [ "$exit_status" -ne 0 ]; then
+    eu_save_evidence || true
+  fi
+  if [ "$MONITOR_STOP_FAILED" -eq 1 ]; then
+    printf 'cleanup kept the Kali monitor files %s* for diagnosis\n' "${MONITOR_LOG%.jsonl}" >&2
+  elif [ -n "$MONITOR_LOG" ] && ! docker exec "$KALI" rm -f \
     "$MONITOR_LOG" "$MONITOR_ERR" "$MONITOR_RC" "$MONITOR_PID" \
     >/dev/null 2>"$TMP_DIR/monitor-rm.err"; then
     fail "cleanup could not remove Kali monitor logs: $(cat "$TMP_DIR/monitor-rm.err")"
@@ -768,20 +815,11 @@ eu_cleanup() {
     fail "cleanup could not remove firewall capture files: $(cat "$TMP_DIR/capture-rm.err")"
   fi
   if [ "$state_touched" -eq 1 ]; then
-    if eu_apply_named weak; then
-      :
-    else
+    if ! eu_apply_named weak; then
       fail "cleanup could not restore weak policy"
       weak_reset=1
     fi
-    if eu_api_post "/api/instructor/reset" '{}'; then
-      if ! eu_assert_device_state_response "cleanup instructor reset"; then
-        weak_reset=1
-      fi
-    else
-      fail "cleanup instructor reset returned no parseable response"
-      weak_reset=1
-    fi
+    eu_instructor_action /api/instructor/reset '{}' "cleanup instructor reset" || weak_reset=1
     if [ "$weak_reset" -eq 0 ] && eu_get_instructor; then
       if printf '%s' "$API_BODY" | jq -e \
         '.device.position == "closed" and .device.lockout == false and .device.fault_active == false and .device.protection_tripped == false' \
@@ -818,6 +856,34 @@ eu_on_exit() {
   eu_cleanup "$result"
 }
 
+# eu_iec104_command_filter CA IOA SE: CC-to-RTU frames carrying a C_DC_NA_1
+# (TypeID 46) activation for the breaker command with S/E = SE. The # layer
+# operator binds the fields to one ASDU, so a segment carrying several APDUs
+# cannot combine fields of different ASDUs; up to k = 12 APDUs per segment.
+eu_iec104_command_filter() {
+  local ca="$1" ioa="$2" se="$3" layer filter=""
+  for layer in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    filter="$filter${filter:+ || }(iec60870_asdu.typeid#$layer == 46"
+    filter="$filter && iec60870_asdu.causetx#$layer == 6 && iec60870_asdu.addr#$layer == $ca"
+    filter="$filter && iec60870_asdu.ioa#$layer == $ioa && iec60870_asdu.dco.se#$layer == $se)"
+  done
+  printf 'ip.src == %s && ip.dst == %s && tcp.dstport == 2404 && (%s)' "$CC_IP" "$RTU_IP" "$filter"
+}
+# eu_check_iec104_command PCAP CA IOA SE NAME: at least one frame matches the
+# filter. Frame existence avoids parsing tshark's Boolean or aggregated fields.
+eu_check_iec104_command() {
+  local pcap="$1" ca="$2" ioa="$3" se="$4" name="$5" frames
+  if ! frames=$(tshark -r "$pcap" -Y "$(eu_iec104_command_filter "$ca" "$ioa" "$se")" \
+    -T fields -e frame.number 2>"$TMP_DIR/tshark-iec104.err"); then
+    fail "G3 IEC104 $name decode failed: $(cat "$TMP_DIR/tshark-iec104.err")"
+    return 1
+  fi
+  if [ -z "$frames" ]; then
+    fail "G3 capture has no C_DC_NA_1 TypeID 46 $name (COT 6, CA $ca, IOA $ioa) from $CC_IP to $RTU_IP:2404"
+    return 1
+  fi
+  pass "G3 capture decodes C_DC_NA_1 $name (COT 6, CA $ca, IOA $ioa) from $CC_IP to $RTU_IP:2404 in frame(s) $(printf '%s' "$frames" | tr '\n' ' ')"
+}
 eu_decode_capture() {
   if [ ! -s "$TMP_DIR/eu-iec104-gate.pcap" ]; then
     fail "G3 packet capture is empty"
@@ -834,22 +900,16 @@ eu_decode_capture() {
   else
     fail "G3 tshark malformed-frame decode failed: $(cat "$TMP_DIR/tshark.err")"
   fi
-  if tshark -r "$TMP_DIR/eu-iec104-gate.pcap" -Y 'tcp.port == 2404' -T fields \
-    -e ip.src -e ip.dst -e iec60870_asdu.typeid -e iec60870_asdu.dco.se \
-    >"$TMP_DIR/iec104-decode.txt" 2>"$TMP_DIR/tshark-iec104.err"; then
-    if awk -F '\t' '
-      $1 == "10.60.60.20" && $2 == "10.30.30.20" && $3 == "46" {
-        if ($4 == "1") select = 1
-        if ($4 == "0") execute = 1
-      }
-      END { exit(select && execute ? 0 : 1) }
-    ' "$TMP_DIR/iec104-decode.txt"; then
-      pass "G3 capture decodes C_DC_NA_1 select and execute on the CC/RTU hop"
-    else
-      fail "G3 capture does not prove C_DC_NA_1 TypeID 46 select and execute on the CC/RTU hop"
-    fi
+  local ca ioa
+  ca=$(jq -e '.ca | numbers' "$PACKAGE/protocols/points.json" 2>/dev/null) || ca=""
+  ioa=$(jq -e '[.commands[] | select(.id == "feeder-breaker-command") | .ioa | numbers]
+    | if length == 1 then .[0] else error("one command IOA expected") end' \
+    "$PACKAGE/protocols/points.json" 2>/dev/null) || ioa=""
+  if [ -z "$ca" ] || [ -z "$ioa" ]; then
+    fail "G3 points.json lacks the common address or the feeder-breaker-command IOA"
   else
-    fail "G3 IEC104 tshark decode failed: $(cat "$TMP_DIR/tshark-iec104.err")"
+    eu_check_iec104_command "$TMP_DIR/eu-iec104-gate.pcap" "$ca" "$ioa" 1 select
+    eu_check_iec104_command "$TMP_DIR/eu-iec104-gate.pcap" "$ca" "$ioa" 0 execute
   fi
   if tshark -r "$TMP_DIR/eu-iec104-gate.pcap" -Y 'tcp.port == 502 && modbus.func_code == 6' \
     -T fields -e ip.src -e ip.dst -e modbus.func_code >"$TMP_DIR/modbus-decode.txt" \
