@@ -28,6 +28,7 @@ import { zoneColors } from "../lib/zone-colors";
 import { nodeZone } from "../lib/observed-flows";
 import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
+import { isRangeNotReady } from "../lib/range";
 import {
   ActiveFlowsPanel,
   InfoRow,
@@ -243,7 +244,7 @@ export function NetworkConsole() {
 
   const errors = useMemo(() => {
     const list: string[] = [];
-    if (graphIsError && graphError)
+    if (graphIsError && graphError && !isRangeNotReady(graphError))
       list.push(`Failed to load topology: ${graphError instanceof Error ? graphError.message : "Unknown error"}`);
     return list;
   }, [graphIsError, graphError]);
@@ -291,6 +292,12 @@ export function NetworkConsole() {
           </div>
         )}
       </header>
+
+      {isRangeNotReady(graphError) && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+          The network map loads once the range is ready.
+        </div>
+      )}
 
       {errors.length > 0 && (
         <div className="rounded-xl border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-100">

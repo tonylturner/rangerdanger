@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { runValidationReport, type ValidationReport } from "../lib/api";
+import { isRangeNotReady } from "../lib/range";
 import { MarkdownProse } from "./markdown-prose";
 
 // ValidationReportPanel - rendered inline in Lab 2.4 via the
@@ -13,7 +14,7 @@ import { MarkdownProse } from "./markdown-prose";
 export function ValidationReportPanel() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<ValidationReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   const generate = async () => {
     setLoading(true);
@@ -21,7 +22,7 @@ export function ValidationReportPanel() {
     try {
       setReport(await runValidationReport());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate report");
+      setError(e instanceof Error ? e : new Error("Failed to generate report"));
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,9 @@ export function ValidationReportPanel() {
           Probing ~19 flows and capturing PCAP - this takes a few seconds.
         </div>
       )}
-      {error && <div className="mt-3 text-xs text-red-400">{error}</div>}
+      {error && (
+        <div className={`mt-3 text-xs ${isRangeNotReady(error) ? "text-slate-400" : "text-red-400"}`}>{error.message}</div>
+      )}
 
       {report && !loading && (
         <div className="mt-4">
