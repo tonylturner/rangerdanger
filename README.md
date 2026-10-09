@@ -69,7 +69,7 @@ cd rangerdanger
 **Build from source instead** (developers):
 
 ```bash
-docker compose up -d --build
+./setup.sh --from-source     # or ./scripts/dev-up.sh; see CONTRIBUTING.md
 ```
 
 **Offline / SSD** (for workshops where bandwidth is constrained):
@@ -149,7 +149,7 @@ Most OT segmentation labs hand students a PDF workbook, a Wireshark capture, and
 | Lab content | PDF workbook | Inline command runner, embedded terminals, persistent notes, dynamic content from earlier-lab choices |
 | Reference material | "Look it up in the textbook" | Integrated wiki at `/knowledge` with curated substation, protocol, and segmentation articles |
 | Evidence | Wireshark exports manually correlated | One-command change-board evidence: probe matrix + policy fingerprint + PCAP source analysis |
-| Distribution | Bring-your-own VMs | Single `docker compose up -d` or `setup.sh --from-tarballs` for offline workshops; runs on a laptop |
+| Distribution | Bring-your-own VMs | Single `./setup.sh`, or `setup.sh --from-tarballs` for offline workshops; runs on a laptop |
 
 ## Architecture at a glance
 

@@ -332,6 +332,21 @@ curl -fsS "$API/api/health" >/dev/null 2>&1 \
     && infook "backend $API healthy" \
     || { err "backend not reachable at $API — bring stack up first"; exit 1; }
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+us_range_ready() {
+  curl -fsS "$API/api/range" 2>/dev/null | python3 -c 'import json, sys
+r = json.load(sys.stdin)
+sys.exit(0 if (r.get("package"), r.get("phase")) == ("us-dnp3-substation", "ready") else 1)' 2>/dev/null
+}
+range_status() { curl -fsS "$API/api/range" 2>/dev/null || echo unreachable; }
+if us_range_ready; then
+  infook "range us-dnp3-substation ready"
+else
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
+
 if ! python3 -c 'import yaml' 2>/dev/null; then
   err "python3 + pyyaml required (pip3 install pyyaml)"
   exit 1

@@ -12,12 +12,12 @@ npm run dev    # next dev on :3000
 
 The dev server runs standalone, but most of the lab functionality
 (exercise validators, terminal sessions, firewall control, traffic
-generation) requires the backend and the running compose stack. For
-end-to-end work:
+generation) requires the backend and a running range. For end-to-end
+work:
 
 ```sh
-# from repo root
-docker compose up -d --build
+# from repo root: builds and starts the platform, then the range
+./scripts/dev-up.sh
 ```
 
 …then open <http://localhost:8088> (the nginx proxy serves both the

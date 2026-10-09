@@ -2,7 +2,7 @@
 
 This document describes how to cut a RangerDanger release. It is the
 runbook for tagging, publishing images to GHCR, and producing the
-release-flavor compose file students consume.
+release-flavor compose files students consume.
 
 ## Versioning
 
@@ -24,9 +24,12 @@ Before tagging:
 1. **CI is green** on the branch you're cutting from.
 2. **`go test -race ./...`** clean across `backend/`, `services/`, and
    `dnp3go/`.
-3. **`docker compose config -q`** validates with no warnings.
-4. **`docker compose up -d --build`** comes up clean on a workstation
-   with the configured RAM (≥8 GB) and disk (≥30 GB).
+3. **Compose validation** (the loop in `CONTRIBUTING.md` → Running
+   tests) passes with no warnings for the platform files and every
+   package's range files.
+4. **`./scripts/dev-up.sh`** comes up clean on a workstation with the
+   configured RAM (≥8 GB) and disk (≥30 GB): the platform starts and
+   `GET /api/range` reports the US range `ready`.
 5. **`CHANGELOG.md`** has an entry under `[Unreleased]` summarizing
    user-visible changes.
 
@@ -139,33 +142,36 @@ platform set. It needs docker, buildx, jq and curl, and touches no real
 registry. Run it before a release that will promote, and after a buildx
 upgrade.
 
-## docker-compose.release.yml
+## Release Compose files
 
-`docker-compose.release.yml` (committed alongside `docker-compose.yml`)
-is the image-only flavor for users who don't want the build toolchain.
-Every `build:` block from the dev compose is replaced with `image:
-ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`. Users:
+Each source Compose file has an image-only release twin for users who
+don't want the build toolchain: `docker-compose.release.yml` for the
+platform (Compose project `rangerdanger-platform`) and
+`lab-definitions/packages/<id>/compose.release.yml` for each range
+package (project `rangerdanger`). Every `build:` block is replaced with
+`image: ghcr.io/tonylturner/rangerdanger-<svc>:${VERSION:-latest}`.
+`setup.sh` writes `VERSION` and `RANGERDANGER_ROOT` to `.env`, pulls the
+platform and every package, starts the platform, and asks the backend
+for the range:
 
 ```sh
-# default - :latest
-docker compose -f docker-compose.release.yml up -d
-
-# pin to a specific release
-VERSION=v0.1.0 docker compose -f docker-compose.release.yml up -d
+./setup.sh                       # default - :latest
+./setup.sh --version v0.1.0      # pin to a specific release
 ```
 
-When you bump `docker-compose.yml`, mirror the change into the release
-file too.
+Offline installs (`--from-tarballs`) use the same release files with
+`--pull never`. When you change a source file, mirror the change into
+its release twin; the package lint checks that the two agree.
 
 ## containd image policy
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
-are co-developed by the same maintainer. Both compose files reference
-`ghcr.io/tonylturner/containd:latest` rather than a per-release pinned
-tag. The contract is **"fix containd, not the pin"** - if a containd
-release breaks RangerDanger behavior, the fix lands in containd, and
-RangerDanger picks it up on the next `docker compose pull`. This keeps
-both repos honest about regressions instead of accumulating workarounds
+are co-developed by the same maintainer. Both of the US package's range
+Compose files reference `ghcr.io/tonylturner/containd:latest` rather
+than a per-release pinned tag. The contract is **"fix containd, not the
+pin"** - if a containd release breaks RangerDanger behavior, the fix
+lands in containd, and RangerDanger picks it up on the next `./setup.sh`
+(which pulls). This keeps both repos honest about regressions instead of accumulating workarounds
 in the lab.
 
 The trade-off is workshop-day determinism. `:latest` resolves at pull
@@ -175,7 +181,7 @@ of class can shift behavior under you. **Mitigations for instructors:**
 1. **Pre-pull the night before** and lock the resolved digest:
 
    ```sh
-   docker compose -f docker-compose.release.yml pull
+   docker pull ghcr.io/tonylturner/containd:latest
    docker image inspect ghcr.io/tonylturner/containd:latest \
      --format '{{index .RepoDigests 0}}'
    ```
@@ -191,12 +197,12 @@ of class can shift behavior under you. **Mitigations for instructors:**
 
 3. **Stage to SSD** for an offline class. `stage-ssd.sh` snapshots
    whatever is currently `:latest` and produces a tarball that
-   `setup.sh --from-tarballs` consumes via `docker-compose.offline.yml`
-   (`pull_policy: never`). Once staged, the SSD is immutable.
+   `setup.sh --from-tarballs` loads and starts with `--pull never`.
+   Once staged, the SSD is immutable.
 
 If a workshop scenario demands hard determinism (regulatory audit,
 certified curriculum), pin a known-good `containd:vX.Y.Z` tag in both
-compose files for that engagement and document the pin in the
+of the package's range Compose files for that engagement and document the pin in the
 engagement's README. The default `:latest` posture is for the public
 project where currency-of-fixes outweighs frozen-behavior.
 

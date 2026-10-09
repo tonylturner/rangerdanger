@@ -159,33 +159,49 @@ function Test-WindowsWsl2Backend {
 # Tries to apply a minimal nft rule containing `queue num <N>`. If the
 # current kernel has CONFIG_NFT_QUEUE compiled in, this succeeds; if
 # not, nft reports "Could not process rule: No such file or directory"
-# pointing at the queue token. We prefer running the probe in the
-# already-pulled rangerdanger-firewall container if it exists (no
-# extra pull). Otherwise we spin up a tiny one-shot Alpine container.
+# pointing at the queue token. We prefer running the probe in the running
+# range's firewall container if there is one (no extra pull). Otherwise we
+# spin up a tiny one-shot Alpine container.
+
+# The running range's firewall: the container of the service with the
+# firewall role in a package manifest, running under the range's Compose
+# project. One range runs at a time, so at most one matches.
+function Get-RangeFirewallContainer {
+    $packages = Join-Path (Split-Path -Parent $PSScriptRoot) 'lab-definitions\packages\*\manifest.json'
+    foreach ($file in Get-ChildItem -Path $packages -ErrorAction SilentlyContinue) {
+        $manifest = Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json
+        foreach ($svc in @($manifest.services | Where-Object { $_.roles -contains 'firewall' })) {
+            $running = & {
+                $ErrorActionPreference = 'SilentlyContinue'
+                & docker ps -q --filter "label=com.docker.compose.project=rangerdanger" --filter "name=^$($svc.container)`$" 2>$null
+            }
+            if ($running) { return $svc.container }
+        }
+    }
+    return $null
+}
+
 function Test-NftQueueSupported {
     $script = "nft 'add table inet rdprobe; add chain inet rdprobe c { type filter hook output priority 0; }; add rule inet rdprobe c queue num 999'"
 
-    # Try the firewall container first if it already exists -- saves a
+    # Try the range's firewall container first if it is running -- saves a
     # pull on hosts that already ran setup.ps1.
-    $useFirewall = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker inspect -f '{{.State.Running}}' rangerdanger-firewall 2>$null
-    }
-    if ($useFirewall -eq 'true') {
+    $firewall = Get-RangeFirewallContainer
+    if ($firewall) {
         $r = & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & docker exec rangerdanger-firewall sh -c "$script 2>&1" 2>$null
+            & docker exec $firewall sh -c "$script 2>&1" 2>$null
         }
         $rc = $LASTEXITCODE
         # Cleanup attempt -- ignore failure (rule may not have been added).
         & {
             $ErrorActionPreference = 'SilentlyContinue'
-            & docker exec rangerdanger-firewall sh -c "nft delete table inet rdprobe 2>/dev/null" *>$null
+            & docker exec $firewall sh -c "nft delete table inet rdprobe 2>/dev/null" *>$null
         }
         if ($rc -eq 0 -and "$r" -notmatch 'No such file or directory') {
-            return [pscustomobject]@{ Supported=$true; ProbeSource='rangerdanger-firewall'; Detail="$r" }
+            return [pscustomobject]@{ Supported=$true; ProbeSource=$firewall; Detail="$r" }
         } else {
-            return [pscustomobject]@{ Supported=$false; ProbeSource='rangerdanger-firewall'; Detail="$r" }
+            return [pscustomobject]@{ Supported=$false; ProbeSource=$firewall; Detail="$r" }
         }
     }
 

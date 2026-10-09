@@ -104,9 +104,12 @@ in `services/shared/`.
    EXPOSE 8080 502 20000
    CMD ["sh", "-c", "set-gateway.sh && <name>-sim"]
    ```
-6. Add a service block in `docker-compose.yml` (and mirror in
-   `docker-compose.release.yml`) with appropriate zone networks,
-   healthcheck, and `depends_on`.
+6. Add a service block to the range package's
+   `lab-definitions/packages/<id>/compose.source.yml` (and mirror in its
+   `compose.release.yml`) with appropriate zone networks, healthcheck,
+   and `depends_on`, plus a service entry in the package's
+   `manifest.json`. The root `docker-compose*.yml` files are the
+   platform (backend, frontend, proxy) only.
 7. Add the node type to `backend/internal/labs/catalog.go` and any
    relevant lab-definition YAMLs.
 8. Add the image and its reviewed build-input envelope to

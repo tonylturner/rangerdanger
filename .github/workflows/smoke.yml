@@ -1,8 +1,11 @@
 name: Smoke
 
-# Bring the lab up against the locally-built images, run a layered
-# series of correctness gates, then tear it down:
+# Bring the lab up against the locally-built images (./scripts/dev-up.sh:
+# the platform, then the US range through POST /api/range), run a layered
+# series of correctness gates, then tear it down (./scripts/dev-down.sh,
+# label-only by Compose project):
 #
+#   0. GET /api/range reports us-dnp3-substation ready (range gate)
 #   1. /api/health and /api/build respond              (boot gate)
 #   2. lab inventory matches the workshop deck         (content gate)
 #   3. sim healthchecks pass                           (init gate)
@@ -39,9 +42,18 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Validate compose syntax
+        # Platform files under the platform project, every package's range
+        # files under the range project, with the checkout as the project
+        # directory and RANGERDANGER_ROOT, as setup runs them.
         run: |
-          docker compose config -q
-          docker compose -f docker-compose.release.yml config -q
+          set -euo pipefail
+          export RANGERDANGER_ROOT="$PWD"
+          for f in docker-compose.yml docker-compose.release.yml; do
+            docker compose -p rangerdanger-platform --project-directory "$PWD" -f "$f" config -q
+          done
+          for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/*/compose.release.yml; do
+            docker compose -p rangerdanger --project-directory "$PWD" -f "$f" config -q
+          done
 
       - name: Free disk space (GH runner has ~14 GB by default)
         run: |
@@ -51,23 +63,19 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - name: Build the stack
-        run: docker compose build --parallel
+      - name: Build and bring up the platform and the US range
+        # setup.sh --from-source: build every platform and package image,
+        # start the platform, wait for /api/health, POST /api/range and
+        # wait until the range reports ready.
+        run: ./scripts/dev-up.sh
 
-      - name: Bring up the stack
-        run: docker compose up -d
-
-      - name: Wait for backend to report healthy
+      - name: Confirm the US range is ready
         run: |
-          for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8088/api/health >/dev/null 2>&1; then
-              echo "backend healthy after ${i}0 seconds"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "backend did not report healthy in 5 minutes"
-          exit 1
+          set -euo pipefail
+          range=$(curl -fsS http://localhost:8088/api/range)
+          echo "$range"
+          echo "$range" | jq -e '.package == "us-dnp3-substation" and .phase == "ready"' >/dev/null \
+            || { echo "::error::range is not us-dnp3-substation ready"; exit 1; }
 
       - name: Probe API endpoints
         run: |
@@ -130,8 +138,15 @@ jobs:
           # All 7 alpine sims + opendss expose /api/health; rtac depends
           # on the field sims being healthy via service_healthy gates.
           # If startup ordering broke, this is where it surfaces.
-          docker compose ps --format '{{.Service}} {{.Status}}'
-          healthy=$(docker compose ps --format '{{.Status}}' | grep -c '(healthy)')
+          # Platform + range, label-only from an empty directory (from the
+          # checkout Compose would load docker-compose.yml as the model).
+          cd "$(mktemp -d)"
+          ps_all() {
+            docker compose -p rangerdanger-platform ps "$@"
+            docker compose -p rangerdanger ps "$@"
+          }
+          ps_all --format '{{.Service}} {{.Status}}'
+          healthy=$(ps_all --format '{{.Status}}' | grep -c '(healthy)')
           [ "$healthy" -ge 8 ] || { echo "expected >=8 healthy services, got $healthy"; exit 1; }
 
       - name: Firewall traffic enforcement smoke
@@ -189,12 +204,15 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
-      - name: Dump compose logs on failure
+      - name: Dump container logs on failure
         if: failure()
         run: |
           mkdir -p /tmp/logs
-          for svc in backend firewall rtac_sim relay_sim recloser_sim regulator_sim capbank_sim opendss_sim fuxa_hmi proxy frontend; do
-            docker compose logs --tail=200 "$svc" > "/tmp/logs/$svc.log" 2>&1 || true
+          curl -sS http://localhost:8088/api/range > /tmp/logs/range.json 2>&1 || true
+          for project in rangerdanger-platform rangerdanger; do
+            for c in $(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}'); do
+              docker logs --tail=200 "$c" > "/tmp/logs/$c.log" 2>&1 || true
+            done
           done
 
       - name: Upload logs on failure
@@ -207,4 +225,4 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: ./scripts/dev-down.sh

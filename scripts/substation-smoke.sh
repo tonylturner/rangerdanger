@@ -72,6 +72,20 @@ cleanup_physics() {
 }
 trap cleanup_physics EXIT
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+us_range_ready() {
+  curl -fsS "$API/api/range" 2>/dev/null \
+    | jq -e '.package == "us-dnp3-substation" and .phase == "ready"' >/dev/null 2>&1
+}
+range_status() { curl -fsS "$API/api/range" 2>/dev/null || echo unreachable; }
+if us_range_ready; then
+  ok "range us-dnp3-substation ready"
+else
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
+
 # 1. State endpoint exposes the full field-device set.
 state=$(get) || { echo "  cannot reach $sub/state"; exit 1; }
 for d in relay recloser regulator capbank; do

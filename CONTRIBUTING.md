@@ -17,23 +17,36 @@ You will need:
   minimum but pin the same `go1.26.7` toolchain.
 - **Node.js 20+** and **npm** for the frontend.
 
-Bring up the stack - either invocation works:
+The lab runs as two Compose projects. The **platform**
+(`rangerdanger-platform`: backend, frontend, proxy) comes from the root
+`docker-compose.yml` (source) or `docker-compose.release.yml` (release)
+and stays up. The **range** (`rangerdanger`: containd, the zones, the
+devices, the webtops) comes from
+`lab-definitions/packages/<id>/compose.{source,release}.yml`; only the
+backend starts and stops it, through `POST /api/range`, which is also
+what the UI's package toggle sends. One range runs at a time.
+
+Bring it up from source:
 
 ```sh
-./scripts/dev-up.sh           # build-from-source path; passes extra args through
-docker compose up -d --build  # equivalent if you prefer the raw command
+./scripts/dev-up.sh           # = ./setup.sh --from-source --skip-firewall-gate
 ```
 
-`dev-up.sh` is a thin wrapper around `docker compose up --build -d`
-that resolves the compose file relative to the script (so it works
-from any cwd) and forwards extra args. To stop:
+It builds the platform and every package's images, starts the
+platform, then asks the backend for the range and waits until
+`GET /api/range` reports `ready`. Re-run it after a change: it rebuilds
+and restarts the range. Extra arguments go to `setup.sh` (for example
+`--package <id>` for the first-start package). To stop:
 
 ```sh
-./scripts/dev-down.sh         # → docker compose down
+./scripts/dev-down.sh         # the range, then the platform
 ```
 
-Both scripts target `docker-compose.yml` (the source-build file).
-For the release-image path see [`docs/quickstart.md`](docs/quickstart.md).
+`dev-down.sh` tears each project down by its Compose label only
+(`docker compose -p <project> down --remove-orphans`, run from an empty
+directory) and fails unless no container or network of either project
+is left. For the release-image path see
+[`docs/quickstart.md`](docs/quickstart.md).
 
 Open http://localhost:8088 - the UI is the entry point.
 
@@ -47,6 +60,7 @@ Open http://localhost:8088 - the UI is the entry point.
 | `dnp3go/` | Standalone Go DNP3 library, vendored as its own module |
 | `lab-definitions/` | YAML lab topologies, exercises, firewall configs |
 | `docs/` | Architecture, API spec, workshop guides, lab-authoring guide |
+| `lab-definitions/packages/` | Range packages: curriculum (`package.yml`), `manifest.json`, the range Compose files and proxy routes |
 | `scripts/` | Dev helpers (`dev-up.sh`, `dev-down.sh`, `seed-labs.sh`) |
 | `.github/workflows/` | CI |
 
@@ -71,9 +85,15 @@ test -z "$(git ls-files '*.go' | xargs gofmt -l)"
 # Frontend
 (cd frontend && npm ci && npm run lint && npm test && npm run build)
 
-# Compose validation (dev and release)
-docker compose config -q
-docker compose -f docker-compose.release.yml config -q
+# Compose validation: platform files, then every package's range files,
+# with the checkout as project directory and RANGERDANGER_ROOT
+export RANGERDANGER_ROOT="$PWD"
+for f in docker-compose.yml docker-compose.release.yml; do
+  docker compose -p rangerdanger-platform --project-directory "$PWD" -f "$f" config -q
+done
+for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/*/compose.release.yml; do
+  docker compose -p rangerdanger --project-directory "$PWD" -f "$f" config -q
+done
 
 # Vulnerability scan (go install golang.org/x/vuln/cmd/govulncheck@latest first)
 ./scripts/assert-unreachable-vulns.sh
@@ -91,14 +111,15 @@ is a faster type-check than waiting for `next build`.
 Four layered smoke gates protect the lab against regressions. Run
 them after any change that touches lab content, the firewall
 dataplane, the policy YAMLs, or the simulator images. Each requires
-the compose stack to be up:
+the lab to be up with the US range (`us-dnp3-substation`) ready, and
+each checks `GET /api/range` for that before it asserts anything:
 
 ```sh
-docker compose up -d --build
+./scripts/dev-up.sh
 
 # 1. Inventory + boot. Lab YAML count, scenario IDs, sim health.
-#    --keep leaves the stack up for the gates below; without it this
-#    script tears the stack down when it finishes.
+#    It runs dev-up itself; --keep leaves the lab up for the gates
+#    below, without it this script runs dev-down when it finishes.
 ./scripts/smoke-test.sh --keep
 
 # 2. Firewall traffic enforcement matrix. Applies weak then improved
@@ -161,7 +182,8 @@ them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
   canned policies in `lab-definitions/firewall/` are what the
   validators and firewall smoke gate assert against.
 
-This covers the compose files, network settings, port bindings,
+This covers the compose files (the platform files and every package's
+range files), network settings, port bindings,
 sysctls, gateway and hardening scripts, and the policy JSONs.
 
 ## Code style

@@ -24,10 +24,20 @@ npx --yes @mermaid-js/mermaid-cli -t dark -b transparent \
 
 ## Compose stack - services, images, dependencies
 
-Every box is a `docker-compose.yml` service. `build:` services build
+Every box is a Compose service in one of two projects. The **platform**
+(`rangerdanger-platform`: backend, frontend, proxy) comes from the root
+`docker-compose.yml`; the **range** (`rangerdanger`: everything else)
+comes from the US package's
+`lab-definitions/packages/us-dnp3-substation/compose.source.yml`. The
+release files (`docker-compose.release.yml`, `compose.release.yml`)
+have the same services with published images. `build:` services build
 locally from a Dockerfile in this repo; `image:` services pull from a
 public registry. Arrows are `depends_on` (solid = `service_started`,
-dashed = `service_healthy`).
+dashed = `service_healthy`), which only exists inside a project. The
+backend starts the range itself (`POST /api/range`: `up --wait`, then
+proxy routes and the default policy) and serves range routes only once
+the range is ready, so nothing in the platform depends on a range
+service.
 
 ![Compose stack diagram](images/docker-compose-stack.svg)
 
@@ -40,11 +50,13 @@ flowchart TB
     classDef pulled fill:#581c87,stroke:#c084fc,color:#f3e8ff
     classDef platform fill:#14532d,stroke:#86efac,color:#dcfce7
 
-    subgraph Platform["Platform services (mgmt_net only)"]
+    subgraph Platform["Platform: rangerdanger-platform (mgmt_net only)"]
         proxy["proxy<br/>nginx:1.27-alpine"]
         backend["backend<br/>build · Dockerfile.backend"]
         frontend["frontend<br/>build · Dockerfile.frontend"]
     end
+
+    subgraph Range["Range: rangerdanger (US package)"]
 
     firewall["firewall<br/>ghcr.io/tonylturner/containd:latest"]
 
@@ -73,12 +85,12 @@ flowchart TB
 
     opendss_sim["opendss_sim<br/>build · services/opendss-sim/Dockerfile<br/>physics solver"]
 
-    backend --> firewall
-    backend -.healthy.-> rtac_sim
+    end
+
     frontend --> backend
     proxy --> backend
     proxy --> frontend
-    proxy --> firewall
+    backend == "POST /api/range<br/>(range lifecycle)" ==> Range
 
     rtac_sim --> firewall
     rtac_sim -.healthy.-> relay_sim
@@ -304,6 +316,15 @@ posture relies on this.
 **Critical bind mounts:**
 - `./lab-definitions:/lab-definitions:ro` on `backend` - YAML lab
   source, loaded at backend startup (restart the backend after edits).
+- `${RANGERDANGER_ROOT}:${RANGERDANGER_ROOT}:ro` on `backend` - the
+  installation root at its host path, so the range Compose the backend
+  runs resolves relative binds (`./data/firewall`, ...) to paths the
+  Docker daemon accepts.
+- `./data/proxy-routes` on `backend` (`/proxy-routes`, writable) and on
+  `proxy` (`/etc/nginx/rd-routes`, read-only) - the active range's
+  routes. On a range start the backend installs the package's
+  `nginx.routes.conf` there, then runs `nginx -t` and `nginx -s reload`
+  in the proxy.
 - `/var/run/docker.sock:/var/run/docker.sock` on `backend` - Docker
   SDK access for orchestration. The trust boundary: anything that
   reaches the backend container can spawn / kill any container on
@@ -315,15 +336,17 @@ posture relies on this.
 - `./data/openplc:/workdir` on `openplc` - the ladder logic
   (`substation_automation.st`).
 - `./proxy/nginx.conf:/etc/nginx/nginx.conf:ro` on `proxy` - the
-  routing rules above. Edit + `docker compose restart proxy` to
-  iterate without a rebuild.
+  platform routes (frontend, backend) and the include of the range
+  routes. Edit + `docker restart rangerdanger-proxy` to iterate without
+  a rebuild. Range routes live in the package's `nginx.routes.conf`;
+  restart the range (`POST /api/range`) to install an edit.
 
 ---
 
 ## Image build and release pipeline
 
 For the release flow (CI tags → buildx matrix → GHCR → `setup.sh`
-consumes via `docker compose pull`), see
+pulls the platform's and every package's release file), see
 [`RELEASING.md`](../RELEASING.md). The 16 first-party images and 5
 upstream pulls listed above are the canonical inventory; `release.yml`
 builds them on every `v*` tag push for `linux/amd64` + `linux/arm64`
