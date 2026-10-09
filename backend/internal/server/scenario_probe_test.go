@@ -3,36 +3,13 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-
 	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
-
-func probeTestServer(t *testing.T) *Server {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:probe-%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(&models.LabTemplate{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&models.LabTemplate{
-		ID:       testTemplateID,
-		Topology: `{"nodes":[{"id":"kali-1","container":"range-kali"},{"id":"eng-ws-1","container":"range-eng"},{"id":"rtac-1"}]}`,
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	return activePackageServer(db)
-}
 
 func TestProbeVerdicts(t *testing.T) {
 	tests := []struct {
@@ -57,7 +34,7 @@ func TestProbeVerdicts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := probeTestServer(t)
+			s := activePackageServer(nil)
 			s.execInContainer = func(_ context.Context, container string, cmd []string, timeout int) (string, string, int, error) {
 				if container != "rangerdanger-kali" || timeout != 4 || len(cmd) != 6 || cmd[4] != "10.40.40.20" || cmd[5] != "502" || !strings.Contains(cmd[2], "timeout 3 nc -w 3") {
 					t.Errorf("exec arguments: container=%q timeout=%d cmd=%q", container, timeout, cmd)
@@ -75,7 +52,7 @@ func TestProbeVerdicts(t *testing.T) {
 }
 
 func TestProbeMultiSourceAndOrder(t *testing.T) {
-	s := probeTestServer(t)
+	s := activePackageServer(nil)
 	var mu sync.Mutex
 	containers := map[string]bool{}
 	s.execInContainer = func(_ context.Context, container string, _ []string, _ int) (string, string, int, error) {
@@ -103,7 +80,7 @@ func TestProbeMultiSourceAndOrder(t *testing.T) {
 }
 
 func TestProbeUnknownSourceNode(t *testing.T) {
-	s := probeTestServer(t)
+	s := activePackageServer(nil)
 	s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
 		t.Error("probe ran for a node outside the manifest")
 		return "", "", 0, nil

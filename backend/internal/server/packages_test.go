@@ -166,17 +166,14 @@ func TestSeedFailureIsReturnedAndKeepsCatalog(t *testing.T) {
 	}
 }
 
-func TestActivePackageDrivesWorkshopLookups(t *testing.T) {
+func TestWorkshopGraphReadsTheServingPackage(t *testing.T) {
 	s := routedServer(t)
-	if err := s.db.Create(&models.LabTemplate{ID: testTemplateID, PackageID: testPackageID, Topology: `{"nodes":[{"id":"kali-1","container":"kali"}]}`}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.Create(&models.LabTemplate{ID: "other-workshop", PackageID: "other-package", Topology: `{"nodes":[{"id":"other-node"}]}`}).Error; err != nil {
-		t.Fatal(err)
-	}
+	// The catalog's copy of the package has no nodes: the graph describes
+	// the range that runs, from the package its generation started with.
+	s.rng.(*fakeRange).gen.Package.Template = labs.LabYAML{ID: testTemplateID, Nodes: []labs.NodeYAML{{ID: "kali-1"}}}
 	rec := serve(s, http.MethodGet, "/api/workshop/graph")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"kali-1"`) {
-		t.Errorf("GET /api/workshop/graph = %d %s, want the active topology", rec.Code, rec.Body)
+		t.Errorf("GET /api/workshop/graph = %d %s, want the serving topology", rec.Code, rec.Body)
 	}
 }
 
@@ -196,22 +193,20 @@ func TestShippedPackagesLoad(t *testing.T) {
 	info, ok := catalog.Info(config.DefaultPackage)
 	wantInfo := labs.PackageInfo{
 		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 1,
-		TemplateID:   "substation-segmentation",
 		Capabilities: []string{"process.electrical", "policy.containd", "audit.device-control", "capture.firewall"},
 	}
 	if !ok || !reflect.DeepEqual(info, wantInfo) {
 		t.Errorf("default package = %#v, %v; want %#v", info, ok, wantInfo)
 	}
-	var template models.LabTemplate
-	if err := database.First(&template, "id = ?", "substation-segmentation").Error; err != nil {
-		t.Fatalf("load US template: %v", err)
-	}
-	if template.PackageID != "us-dnp3-substation" {
-		t.Errorf("US template package = %q, want us-dnp3-substation", template.PackageID)
-	}
 	for _, pkg := range catalog.Packages {
-		if pkg.ID == config.DefaultPackage && pkg.FirewallConfigPath != "firewall/substation-weak.json" {
+		if pkg.ID != config.DefaultPackage {
+			continue
+		}
+		if pkg.FirewallConfigPath != "firewall/substation-weak.json" {
 			t.Errorf("US firewall config path = %q, want firewall/substation-weak.json", pkg.FirewallConfigPath)
+		}
+		if pkg.Template.ID != "substation-segmentation" {
+			t.Errorf("US topology id = %q, want substation-segmentation", pkg.Template.ID)
 		}
 	}
 

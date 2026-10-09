@@ -152,7 +152,7 @@ func TestSeedImportsPackage(t *testing.T) {
 	}
 
 	info, ok := catalog.Info("alpha")
-	want := PackageInfo{ID: "alpha", Title: "Package alpha", Revision: 3, TemplateID: "substation", Capabilities: []string{CapabilityProcessElectrical}}
+	want := PackageInfo{ID: "alpha", Title: "Package alpha", Revision: 3, Capabilities: []string{CapabilityProcessElectrical}}
 	if !ok || !reflect.DeepEqual(info, want) {
 		t.Errorf("catalog.Info(alpha) = %#v, %v; want %#v", info, ok, want)
 	}
@@ -160,27 +160,10 @@ func TestSeedImportsPackage(t *testing.T) {
 		t.Errorf("firewall config path = %q, want %q (resolved from the topology directory)", got, want)
 	}
 
-	var template models.LabTemplate
-	if err := database.First(&template, "id = ?", "substation").Error; err != nil {
-		t.Fatalf("load template: %v", err)
-	}
-	if template.PackageID != "alpha" {
-		t.Errorf("template package = %q, want alpha", template.PackageID)
-	}
-	var topology map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(template.Topology), &topology); err != nil {
-		t.Fatalf("decode topology %q: %v", template.Topology, err)
-	}
-	if _, inline := topology["scenarios"]; inline || len(topology) != 2 {
-		t.Errorf("topology keys = %v, want only networks and nodes", reflect.ValueOf(topology).MapKeys())
-	}
-	var nodes []NodeYAML
-	if err := json.Unmarshal(topology["nodes"], &nodes); err != nil {
-		t.Fatal(err)
-	}
+	topology := catalog.Packages[0].Template
 	wantNodes := []NodeYAML{{ID: "rtac-1", Type: "controller", Name: "RTAC", Networks: []string{"ot-ops"}, IP: "10.30.30.20", Container: "rtac_sim"}}
-	if !reflect.DeepEqual(nodes, wantNodes) {
-		t.Errorf("topology nodes = %#v, want %#v", nodes, wantNodes)
+	if topology.ID != "substation" || !reflect.DeepEqual(topology.Nodes, wantNodes) {
+		t.Errorf("catalog topology = %q %#v, want substation %#v", topology.ID, topology.Nodes, wantNodes)
 	}
 
 	var scenario models.Scenario
@@ -218,8 +201,8 @@ func TestSeedRefreshesExistingRows(t *testing.T) {
 		t.Fatalf("second Seed(): %v", err)
 	}
 
-	if templates, scenarios := countRows(t, database, &models.LabTemplate{}, "1 = 1"), countRows(t, database, &models.Scenario{}, "1 = 1"); templates != 1 || scenarios != 1 {
-		t.Fatalf("row counts after re-seed: templates=%d scenarios=%d, want one each", templates, scenarios)
+	if n := countRows(t, database, &models.Scenario{}, "1 = 1"); n != 1 {
+		t.Fatalf("scenario rows after re-seed = %d, want 1", n)
 	}
 	var scenario models.Scenario
 	if err := database.First(&scenario, "id = ?", "baseline").Error; err != nil {
@@ -242,17 +225,11 @@ func TestSeedPrunesStaleAndLegacyRows(t *testing.T) {
 	if err := database.Exec(`INSERT INTO scenarios (id, name, lab_template_id) VALUES ('legacy', 'Legacy', 'substation')`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.Exec(`INSERT INTO lab_templates (id, name) VALUES ('legacy-template', 'Legacy')`).Error; err != nil {
-		t.Fatal(err)
-	}
 	if _, err := seedLoader(definitions).Seed(context.Background(), database, "alpha"); err != nil {
 		t.Fatalf("Seed(): %v", err)
 	}
 	if n := countRows(t, database, &models.Scenario{}, "id IN ?", []string{"stale", "legacy"}); n != 0 {
 		t.Errorf("stale and legacy scenarios left = %d, want 0", n)
-	}
-	if n := countRows(t, database, &models.LabTemplate{}, "id = ?", "legacy-template"); n != 0 {
-		t.Errorf("legacy template rows = %d, want 0", n)
 	}
 	if n := countRows(t, database, &models.Scenario{}, "id = ?", "baseline"); n != 1 {
 		t.Errorf("current scenario rows = %d, want 1", n)
@@ -275,9 +252,6 @@ func TestSeedPrunesEmptyCurriculum(t *testing.T) {
 	}
 	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 0 {
 		t.Errorf("scenarios after emptying the package = %d, want 0", n)
-	}
-	if n := countRows(t, database, &models.LabTemplate{}, "id = ?", "substation"); n != 1 {
-		t.Errorf("template rows = %d, want the template kept", n)
 	}
 }
 
@@ -305,9 +279,6 @@ func TestSeedPrunesRemovedPackage(t *testing.T) {
 	}
 	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "beta"); n != 0 {
 		t.Errorf("scenarios of removed package = %d, want 0", n)
-	}
-	if n := countRows(t, database, &models.LabTemplate{}, "id = ?", "beta-topology"); n != 0 {
-		t.Errorf("templates of removed package = %d, want 0", n)
 	}
 	if n := countRows(t, database, &models.Scenario{}, "package_id = ?", "alpha"); n != 1 {
 		t.Errorf("alpha scenarios = %d, want 1", n)
@@ -357,8 +328,8 @@ steps:
 			t.Errorf("Seed() error = %q, want it to contain %q", err, want)
 		}
 	}
-	if templates, scenarios := countRows(t, database, &models.LabTemplate{}, "1 = 1"), countRows(t, database, &models.Scenario{}, "1 = 1"); templates != 0 || scenarios != 0 {
-		t.Fatalf("failed seed left writes: templates=%d scenarios=%d", templates, scenarios)
+	if n := countRows(t, database, &models.Scenario{}, "1 = 1"); n != 0 {
+		t.Fatalf("failed seed left %d scenario rows", n)
 	}
 }
 

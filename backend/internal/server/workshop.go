@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,27 +9,13 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-// handleGetWorkshopGraph returns the topology graph for the active workshop
-// template, with zones and addresses from the range manifest.
+// handleGetWorkshopGraph returns the serving range's topology as a graph,
+// with zones and addresses from its manifest.
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	gen := rangeOf(c)
-	var template models.LabTemplate
-	if err := s.db.First(&template, "id = ?", s.activePackage().TemplateID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "workshop template not found — run seed first"})
-		return
-	}
-
-	var topo struct {
-		Networks []labs.NetworkYAML `json:"networks"`
-		Nodes    []labs.NodeYAML    `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(template.Topology), &topo); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
-		return
-	}
+	topology := gen.Package.Template
 
 	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
@@ -55,7 +40,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 
 	var edges []graphEdge
 
-	for _, n := range topo.Nodes {
+	for _, n := range topology.Nodes {
 		zone := ""
 		if len(n.Networks) > 0 {
 			zone = n.Networks[0]
@@ -108,15 +93,16 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 
 // handleGetWorkshopStatus returns the status of the workshop environment.
 func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
+	gen := rangeOf(c)
 	// Check RTAC health
 	rtacOk := false
-	rtacState, err := s.fetchRTACState(c.Request.Context(), rangeOf(c))
+	rtacState, err := s.fetchRTACState(c.Request.Context(), gen)
 	if err == nil && rtacState != nil {
 		rtacOk = true
 	}
 
 	// Check containd health
-	_, fwErr := rangeOf(c).Containd().GetHealth(c.Request.Context())
+	_, fwErr := gen.Containd().GetHealth(c.Request.Context())
 	fwOk := fwErr == nil
 
 	// Count scenarios
@@ -141,7 +127,7 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"workshop_id":     s.activePackage().TemplateID,
+		"workshop_id":     gen.Package.Template.ID,
 		"workshop_name":   "Distribution Substation Segmentation",
 		"rtac_online":     rtacOk,
 		"firewall_online": fwOk,

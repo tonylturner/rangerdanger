@@ -19,7 +19,7 @@ All endpoints return JSON unless otherwise noted. Most request and response bodi
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/seed` | Reload all YAML lab and scenario definitions from `lab-definitions/` into the database. The active package (see `GET /packages`) must still exist. |
+| `POST` | `/admin/seed` | Reload every package from `lab-definitions/`: the package list, each package's topology and default policy (used from the next range start; the serving range keeps the package it started with), and the scenario rows in the database. The active package (see `GET /packages`) must still exist. A load error answers `500` and keeps the previous packages. |
 
 ## Range
 
@@ -60,7 +60,7 @@ On backend start, a range recorded as `ready` is adopted when every container of
 
 ## Workshop
 
-The workshop endpoints operate on the serving range, with nodes from the active package's topology, and are what the exercise runner uses.
+The workshop endpoints operate on the serving range, with nodes from the topology of the package that range started with, and are what the exercise runner uses.
 
 | Method | Path | Description |
 |--------|------|-------------|
