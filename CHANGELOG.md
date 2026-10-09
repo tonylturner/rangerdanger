@@ -26,17 +26,19 @@ still install the v0.1.34 release unchanged.
   run, the preflight fails instead of passing.
 - **Offline Windows installs can probe the WSL2 kernel.** The
   `CONFIG_NFT_QUEUE` probe fell back to an Alpine container that
-  installs nftables from the network, and `setup.ps1 -FromTarballs` ran
-  it before loading the SSD images, so an offline laptop reported the
-  kernel as missing when the probe simply could not run. `-FromTarballs`
-  now loads the images first and probes in a no-network container from
-  the loaded containd firewall image; Alpine is used only when that
-  image is absent. When no probe can run, the result is "unknown"
-  (`install-wsl-kernel.ps1 -Test` exit 13), never "missing", and
-  `-CheckOnly -FromTarballs` says setup will probe after loading the SSD
-  images. An SSD staged without the kernel now downloads it for the
-  SSD's `.version`, not for `latest`. The online install still probes
-  and installs the kernel before pulling images.
+  installs nftables from the network, and `setup.ps1` ran it before
+  pulling or loading any image, so an offline laptop reported the
+  kernel as missing when the probe simply could not run. `setup.ps1`
+  now pulls or loads the images first, then probes in a no-network
+  container from the local containd firewall image, installs the lab
+  kernel if needed, and only then starts the stack. Alpine is used only
+  when that image is absent. When no probe can run, the result is
+  "unknown" (`install-wsl-kernel.ps1 -Test` exit 13), never "missing":
+  `-CheckOnly` warns that setup probes after it pulls or loads the
+  images, and an install stops, because with the images present that
+  means Docker itself failed. An SSD staged without the kernel now
+  downloads it for the SSD's `.version`, not for `latest`. `setup.ps1
+  -FromTarballs` also stops when `docker load` fails.
 - **`setup.ps1` runs under PowerShell 7.** It called `Get-WmiObject`,
   which PowerShell 7 removed, and stopped before any check ran.
 - **Windows setup and uninstall no longer hang after the WSL2 kernel

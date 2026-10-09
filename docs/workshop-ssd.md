@@ -117,7 +117,11 @@ What `setup.sh --from-tarballs` does, in order:
    passes when the ports are held by the running lab, so it also works
    as a night-before check on an installed laptop.
 2. **`docker load`** the matching `images-<arch>.tar` every time.
-   Docker deduplicates existing layers by content hash.
+   Docker deduplicates existing layers by content hash. On Windows,
+   `setup.ps1 -FromTarballs` then probes the WSL2 kernel in the loaded
+   containd image (no network needed) and, if `CONFIG_NFT_QUEUE` is
+   missing, installs the bundled kernel. That runs `wsl --shutdown`,
+   which restarts Docker Desktop before the stack starts.
 3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The
    offline overlay sets `pull_policy: never` on every release-image
    service so a slow/blocked GHCR can't ruin the day.

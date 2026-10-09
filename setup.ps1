@@ -252,10 +252,12 @@ if ($portsFree.Count -gt 0) {
 #   2  = not on Windows / not WSL2 backend (skip silently)
 #   13 = no probe could run, so support is unknown (no running firewall,
 #        no local firewall image, and the Alpine fallback had no network)
-# The probe uses the containd firewall image when it is loaded, so online
-# installs probe before pulling and -FromTarballs installs probe after
-# loading the SSD images. The install step never runs under -CheckOnly, so
-# a probe-only invocation does not modify .wslconfig.
+# An install probes only after it has pulled or loaded the images, so the
+# probe runs in the local containd firewall image with no network and 13
+# there is a real fault. -CheckOnly probes up front, before any image may
+# exist locally, so 13 there is expected on an offline laptop. The install
+# step never runs under -CheckOnly, so a probe-only invocation does not
+# modify .wslconfig.
 $kernelNeedsFix = $false
 $kernelProbeEnabled = $false
 $kernelInstaller = Join-Path $RootDir "scripts\install-wsl-kernel.ps1"
@@ -336,26 +338,20 @@ function Install-LabKernel {
         10 { Die "User declined kernel install. Re-run with -SkipKernelFix to bypass." }
         11 { Die "Foreign kernel= already in .wslconfig. Re-run with -SkipKernelFix to bypass, or see install-wsl-kernel.ps1 -Force." }
         12 { Die "Kernel download or verification failed. See errors above." }
-        13 {
-            Warn "The kernel installer could not run its nft probe (see above), so the kernel is unverified."
-            Warn "Continuing. The workshop-readiness gate after start-up reports whether ICS DPI enforces."
-        }
+        13 { Die "The kernel installer could not run its nft probe (see above). Fix Docker, then re-run setup; pass -SkipKernelFix to bypass." }
         default { Die "Kernel install failed with exit $LASTEXITCODE. See errors above. Pass -SkipKernelFix to bypass." }
     }
 }
 
-# Install mode: probe, and install the lab kernel when it is missing.
+# Install mode: probe, and install the lab kernel when it is missing. Runs
+# after image acquisition, so the firewall image is local and the probe
+# needs no network: "unknown" here means the probe itself broke.
 function Invoke-KernelStep {
     if (-not $kernelProbeEnabled) { return }
     switch (Get-KernelProbeResult) {
         0  { Say "WSL2 kernel: CONFIG_NFT_QUEUE present (ICS DPI labs will work)" }
         2  { Say "WSL2 kernel: probe skipped (not Windows/WSL2 backend)" }
-        13 {
-            Warn "WSL2 kernel: the nft probe could not run, so CONFIG_NFT_QUEUE support is unknown."
-            Warn "  Continuing without changing the kernel. The workshop-readiness gate after"
-            Warn "  start-up reports whether ICS DPI enforces; if it does not, run"
-            Warn "  .\scripts\install-wsl-kernel.ps1"
-        }
+        13 { Die "WSL2 kernel: the nft probe could not run even with the lab images present (see above). Fix Docker, then re-run setup; pass -SkipKernelFix to bypass." }
         default {
             Write-KernelMissing
             Install-LabKernel
@@ -377,7 +373,8 @@ if ($CheckOnly) {
                 } else {
                     Warn "WSL2 kernel: the nft probe could not run (no local firewall image, and the"
                     Warn "  Alpine fallback needs network), so CONFIG_NFT_QUEUE support is unknown."
-                    Warn "  setup.ps1 probes again before it pulls the images."
+                    Warn "  setup.ps1 probes the kernel after it pulls the images, and installs the"
+                    Warn "  lab kernel if needed."
                 }
             }
             default {
@@ -435,17 +432,9 @@ if ($FromTarballs) {
     Say "Loading $tarball (${sizeMB} MB) - decompressing each image, ~5-15 min on a fast SSD."
     Say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
     docker load -i $tarball
+    if ($LASTEXITCODE -ne 0) { Die "docker load failed for $tarball -- see the error above." }
     Say "Images loaded"
-    # Probe (and install the kernel if needed) only now: the probe runs in
-    # the firewall image just loaded, with no network, and the kernel
-    # release tag comes from the SSD's .version read above. Loaded images
-    # sit on Docker Desktop's persistent data disk, so the installer's
-    # wsl --shutdown does not discard them.
-    Invoke-KernelStep
 } else {
-    # Kernel before the pull, so the installer's wsl --shutdown cannot kill
-    # an in-progress pull.
-    Invoke-KernelStep
     Banner "Pulling images from GHCR"
     Say "Version: $Version"
     Say "(this can take a while on first run; subsequent pulls are layer-cached)"
@@ -471,6 +460,15 @@ Pulling images failed after 3 attempts. Common causes:
 "@
     }
 }
+
+# --- WSL2 kernel probe + install --------------------------------------
+# Both paths probe only now, with the images local: the probe runs in the
+# containd firewall image just pulled or loaded, with no network, and the
+# kernel release tag is the resolved $Version (for -FromTarballs, the SSD's
+# .version read above). The pull has finished, so the installer's
+# wsl --shutdown cannot interrupt it; pulled and loaded images sit on
+# Docker Desktop's persistent data disk, which wsl --shutdown keeps.
+Invoke-KernelStep
 
 # --- pin VERSION in .env for later release-file compose commands ----
 # Without this, a student who runs `.\setup.ps1 -FromTarballs <SSD>` and
