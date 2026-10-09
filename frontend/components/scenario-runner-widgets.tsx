@@ -95,26 +95,26 @@ export function MiniStatus({ label, value, ok }: { label: string; value: string;
 
 export function ExerciseSummary({
   scenario,
-  completedSteps,
+  completedStepIds,
   notes,
   activeConfig,
 }: {
   scenario: Scenario;
-  completedSteps: Set<number>;
+  completedStepIds: Set<string>;
   notes: string;
   activeConfig: string | null;
 }) {
-  const completionPct = Math.round((completedSteps.size / scenario.steps.length) * 100);
+  const completionPct = Math.round((completedStepIds.size / scenario.steps.length) * 100);
   const timestamp = new Date().toLocaleString();
 
   const summaryText = [
     `Lab ${scenario.order ?? ""}: ${scenario.name}`,
-    `Completed: ${completedSteps.size}/${scenario.steps.length} steps (${completionPct}%)`,
+    `Completed: ${completedStepIds.size}/${scenario.steps.length} steps (${completionPct}%)`,
     `Firewall Config: ${activeConfig || "unknown"}`,
     `Date: ${timestamp}`,
     "",
     ...scenario.steps.map((s, i) => {
-      const done = completedSteps.has(i) ? "[x]" : "[ ]";
+      const done = completedStepIds.has(s.id) ? "[x]" : "[ ]";
       return `${done} Step ${i + 1}: ${s.title}`;
     }),
     ...(notes ? ["", "Notes:", notes] : []),
@@ -158,7 +158,7 @@ export function ExerciseSummary({
 
         <div className="space-y-2">
           {scenario.steps.map((s, i) => {
-            const done = completedSteps.has(i);
+            const done = completedStepIds.has(s.id);
             return (
               <div key={i} className={`rounded border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
                 <div className="flex items-center gap-2">

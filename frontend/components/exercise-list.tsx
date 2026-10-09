@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { FileText, Star, Clock } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { listScenarios, type Scenario } from "../lib/api";
+import { type Scenario } from "../lib/api";
+import { scopeOf, useActiveCurriculum } from "../lib/curriculum-scope";
+import type { CurriculumScope } from "../lib/curriculum-storage";
+import { completionPercent } from "../lib/scenario-runner-storage";
 
 // stripTimeEstimate removes a trailing "(NN min)" / "(~NN min, ...)" parenthetical
 // from a card summary. The time now lives in a dedicated chip (from the
@@ -12,19 +14,6 @@ import { listScenarios, type Scenario } from "../lib/api";
 // render time. Leaves the underlying summary text intact for PDF export etc.
 function stripTimeEstimate(text: string): string {
   return text.replace(/\s*\((?:~?\s*\d+\s*min(?:utes)?[^)]*)\)\s*\.?\s*$/i, ".").trim();
-}
-
-function getCompletionPct(exerciseId: string, totalSteps: number): number {
-  if (totalSteps === 0) return 0;
-  try {
-    const raw = localStorage.getItem(`rd-exercise-${exerciseId}`);
-    if (!raw) return 0;
-    const saved = JSON.parse(raw);
-    const completed = saved.completedSteps?.length || 0;
-    return Math.round((completed / totalSteps) * 100);
-  } catch {
-    return 0;
-  }
 }
 
 export function ExerciseList({
@@ -35,16 +24,13 @@ export function ExerciseList({
   onExportExercise?: (scenario: Scenario) => void | Promise<void>;
 }) {
   const [showBonus, setShowBonus] = useState(true);
-  const { data, isLoading } = useQuery({
-    queryKey: ["scenarios", "substation-segmentation"],
-    queryFn: () => listScenarios("substation-segmentation"),
-  });
+  const { pkg, scenarios, isLoading } = useActiveCurriculum();
 
   if (isLoading) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Loading exercises...</div>;
   }
 
-  if (!data || data.scenarios.length === 0) {
+  if (!pkg || !scenarios || scenarios.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/70 px-5 py-10 text-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -59,8 +45,9 @@ export function ExerciseList({
     );
   }
 
-  const exercises = data.scenarios.filter((ex) => showBonus || !ex.tags.includes("bonus"));
-  const bonusCount = data.scenarios.filter((ex) => ex.tags.includes("bonus")).length;
+  const scope = scopeOf(pkg);
+  const exercises = scenarios.filter((ex) => showBonus || !ex.tags.includes("bonus"));
+  const bonusCount = scenarios.filter((ex) => ex.tags.includes("bonus")).length;
 
   return (
     <div className="space-y-3">
@@ -84,6 +71,7 @@ export function ExerciseList({
           <ExerciseCard
             key={exercise.id}
             exercise={exercise}
+            scope={scope}
             onStartExercise={onStartExercise}
             onExportExercise={onExportExercise}
           />
@@ -95,16 +83,18 @@ export function ExerciseList({
 
 function ExerciseCard({
   exercise,
+  scope,
   onStartExercise,
   onExportExercise,
 }: {
   exercise: Scenario;
+  scope: CurriculumScope;
   onStartExercise?: (scenario: Scenario) => void;
   onExportExercise?: (scenario: Scenario) => void | Promise<void>;
 }) {
   const cardText = exercise.summary || exercise.description;
   const isBonus = exercise.tags.includes("bonus");
-  const pct = getCompletionPct(exercise.id, exercise.steps.length);
+  const pct = completionPercent(scope, exercise);
   const section = exercise.order;
 
   const handleExportPDF = (e: React.MouseEvent) => {

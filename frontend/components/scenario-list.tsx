@@ -1,25 +1,22 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { listScenarios, type Scenario } from "../lib/api";
+import { type Scenario } from "../lib/api";
+import { useActiveCurriculum } from "../lib/curriculum-scope";
 
 export function ScenarioList({ onStartExercise }: { onStartExercise?: (scenario: Scenario) => void }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["scenarios", "substation-segmentation"],
-    queryFn: () => listScenarios("substation-segmentation"),
-  });
+  const { scenarios, isLoading } = useActiveCurriculum();
 
   if (isLoading) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">Loading scenarios...</div>;
   }
 
-  if (!data || data.scenarios.length === 0) {
+  if (!scenarios || scenarios.length === 0) {
     return <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-300">No scenarios defined yet.</div>;
   }
 
   return (
     <div className="grid gap-3">
-      {data?.scenarios.map((scenario) => (
+      {scenarios.map((scenario) => (
         <ScenarioCard key={scenario.id} scenario={scenario} onStartExercise={onStartExercise} />
       ))}
     </div>

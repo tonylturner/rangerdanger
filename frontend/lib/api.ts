@@ -37,6 +37,7 @@ export type LabTemplate = {
   name: string;
   description: string;
   topology: string;
+  package_id: string;
   compose_file?: string;
 };
 
@@ -114,14 +115,19 @@ export type StepAction = {
   actions?: DecisionAction[];
 };
 
-export type ScenarioStep = { title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
+// id is the authored, stable step identifier (unique in its scenario).
+// Progress is stored by it; the execute route stays index-based.
+export type ScenarioStep = { id: string; title: string; description: string; expected_config?: string; action?: StepAction; node?: string };
 export type Scenario = {
   id: string;
   name: string;
   summary?: string;
   description: string;
   order?: number;
+  package_id: string;
   lab_template_id: string;
+  // Validator key declared by the scenario; empty when it has none.
+  validator: string;
   tags: string[];
   steps: ScenarioStep[];
   nodes?: string[];
@@ -192,10 +198,29 @@ export async function deleteLabInstance(id: string) {
   return request<void>(`/labs/instances/${id}`, { method: "DELETE" });
 }
 
-export async function listScenarios(templateId?: string) {
-  const query = templateId ? `?lab_template_id=${encodeURIComponent(templateId)}` : "";
-  const res = await request<{ scenarios: RawScenario[] }>(`/scenarios${query}`);
+// The backend serves only the active package's scenarios.
+export async function listScenarios() {
+  const res = await request<{ scenarios: RawScenario[] }>("/scenarios");
   return { scenarios: res.scenarios.map(hydrateScenario) };
+}
+
+// A curriculum package as GET /api/packages reports it. revision is the
+// curriculum revision: it changes when step IDs or validator meaning do.
+export type PackageSummary = {
+  id: string;
+  title: string;
+  revision: number;
+  active: boolean;
+};
+
+export async function listPackages() {
+  return request<PackageSummary[]>("/packages");
+}
+
+export async function getActivePackage(): Promise<PackageSummary> {
+  const active = (await listPackages()).find((p) => p.active);
+  if (!active) throw new Error("The backend reports no active curriculum package");
+  return active;
 }
 
 // Firewall rule summaries for topology edge labels

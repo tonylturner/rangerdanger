@@ -30,7 +30,13 @@ import {
   type Segment,
   type FindingsPanelItem,
 } from "../lib/scenario-description";
-import { decisionStorageKey } from "../lib/decision-storage";
+import {
+  decisionName,
+  readCurriculum,
+  removeCurriculum,
+  writeCurriculum,
+} from "../lib/curriculum-storage";
+import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   injectDynamicContent,
   PHASE3_TITLES,
@@ -92,14 +98,13 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
 
 // DecisionBlock renders a question + dropdown for student-facing
 // "what would you do here?" prompts. The selected value is persisted
-// to localStorage so refreshes don't lose progress AND so later labs
-// (1.3 / 1.4) can read the student's earlier decisions and tailor
+// to curriculum storage so refreshes don't lose progress AND so later
+// labs (1.3 / 1.4) can read the student's earlier decisions and tailor
 // their content accordingly.
 //
-// Storage key: `decision:<scenario.id>:<decisionId>`. The step title
-// is intentionally NOT in the key so a renamed step doesn't orphan
-// the answer; uniqueness comes from the decision id chosen by the
-// YAML author (e.g. "enterprise-to-field").
+// Storage name: decisionName(scenario.id, decisionId); uniqueness comes
+// from the decision id chosen by the YAML author (e.g.
+// "enterprise-to-field").
 type DecisionBlockProps = {
   scenarioId: string;
   decisionId: string;
@@ -119,48 +124,40 @@ type DecisionBlockProps = {
 };
 
 export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFrom, correct }: DecisionBlockProps) {
-  const storageKey = decisionStorageKey(scenarioId, decisionId);
+  const scope = useCurriculumScope();
+  const storageName = decisionName(scenarioId, decisionId);
   const [value, setValue] = useState<string>("");
   const [inheritedFrom, setInheritedFrom] = useState<string>("");
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved && options.includes(saved)) {
-        setValue(saved);
-        return;
-      }
-      // No saved value - try to inherit from the upstream decision.
-      if (defaultFrom && defaultFrom.includes(":")) {
-        const [srcScenario, srcId] = defaultFrom.split(":", 2);
-        const srcKey = decisionStorageKey(srcScenario, srcId);
-        const srcVal = window.localStorage.getItem(srcKey);
-        if (srcVal && options.includes(srcVal)) {
-          setValue(srcVal);
-          setInheritedFrom(defaultFrom);
-          // Persist the inherited value so subsequent changes are
-          // tracked against THIS decision's storage key, not the
-          // upstream one. The student is now committing this verdict
-          // for this lab specifically.
-          window.localStorage.setItem(storageKey, srcVal);
-        }
-      }
-    } catch {
-      /* localStorage unavailable - fall back to in-memory state */
+    const saved = readCurriculum(scope, storageName);
+    if (saved && options.includes(saved)) {
+      setValue(saved);
+      return;
     }
-  }, [storageKey, options, defaultFrom]);
+    // No saved value - try to inherit from the upstream decision.
+    if (defaultFrom && defaultFrom.includes(":")) {
+      const [srcScenario, srcId] = defaultFrom.split(":", 2);
+      const srcVal = readCurriculum(scope, decisionName(srcScenario, srcId));
+      if (srcVal && options.includes(srcVal)) {
+        setValue(srcVal);
+        setInheritedFrom(defaultFrom);
+        // Persist the inherited value so subsequent changes are
+        // tracked against THIS decision's storage name, not the
+        // upstream one. The student is now committing this verdict
+        // for this lab specifically.
+        writeCurriculum(scope, storageName, srcVal);
+      }
+    }
+  }, [scope, storageName, options, defaultFrom]);
 
   const onChange = (next: string) => {
     setValue(next);
     setInheritedFrom("");   // student touched the dropdown - no longer "inherited"
-    try {
-      if (next) {
-        window.localStorage.setItem(storageKey, next);
-      } else {
-        window.localStorage.removeItem(storageKey);
-      }
-    } catch {
-      /* swallow - UI still works without persistence */
+    if (next) {
+      writeCurriculum(scope, storageName, next);
+    } else {
+      removeCurriculum(scope, storageName);
     }
   };
 
@@ -253,8 +250,8 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
 
 // FindingsPanel renders read-only cards for a set of upstream
 // decisions (e.g. Lab 1.3 showing the student's Lab 1.2 findings).
-// Reads each id's localStorage value via the same key shape
-// DecisionBlock writes. Quiet on the empty case - if the upstream
+// Reads each id's value via the same storage name DecisionBlock
+// writes. Quiet on the empty case - if the upstream
 // lab wasn't done, the panel says so and links back.
 type FindingsPanelProps = {
   sourceScenario: string;
@@ -263,18 +260,15 @@ type FindingsPanelProps = {
 };
 
 export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelProps) {
+  const scope = useCurriculumScope();
   const [values, setValues] = useState<Record<string, string>>({});
   useEffect(() => {
-    try {
-      const out: Record<string, string> = {};
-      for (const it of items) {
-        out[it.id] = window.localStorage.getItem(decisionStorageKey(sourceScenario, it.id)) ?? "";
-      }
-      setValues(out);
-    } catch {
-      /* localStorage blocked */
+    const out: Record<string, string> = {};
+    for (const it of items) {
+      out[it.id] = readCurriculum(scope, decisionName(sourceScenario, it.id)) ?? "";
     }
-  }, [sourceScenario, items]);
+    setValues(out);
+  }, [scope, sourceScenario, items]);
 
   const anySet = items.some((it) => values[it.id]);
 
@@ -322,6 +316,7 @@ export function FindingsPanel({ sourceScenario, title, items }: FindingsPanelPro
 // to surface "what did your plan close vs defer" without making the
 // student manually recall their selections.
 export function PlanCoveragePanel({ title }: { title: string }) {
+  const scope = useCurriculumScope();
   const [snapshot, setSnapshot] = useState<{
     hasPlan: boolean;
     coverage: ReturnType<typeof computeCoverage>;
@@ -333,8 +328,8 @@ export function PlanCoveragePanel({ title }: { title: string }) {
   });
 
   useEffect(() => {
-    const requirements = readRequirements();
-    const plan = loadRemediationPlan();
+    const requirements = readRequirements(scope);
+    const plan = loadRemediationPlan(scope);
     const selected = new Set(plan?.selectedActionIds ?? []);
     const coverage = computeCoverage(requirements, selected);
     const summary = summariseCoverage(coverage);
@@ -343,7 +338,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
       coverage,
       summary,
     });
-  }, []);
+  }, [scope]);
 
   if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
     return (

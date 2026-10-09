@@ -2,6 +2,7 @@
 // rules for Exercise 3. The student's plan drives which rules they must build.
 
 import { loadRemediationPlan, type RemediationPlan } from "./remediation-plan";
+import type { CurriculumScope } from "./curriculum-storage";
 
 export type FirewallRule = {
   id: string;
@@ -314,8 +315,8 @@ export function buildDynamicPlan(plan: RemediationPlan | null): DynamicExerciseP
   };
 }
 
-export function loadDynamicPlan(): DynamicExercisePlan {
-  return buildDynamicPlan(loadRemediationPlan());
+export function loadDynamicPlan(scope: CurriculumScope): DynamicExercisePlan {
+  return buildDynamicPlan(loadRemediationPlan(scope));
 }
 
 // Generate the markdown rule table for Exercise 3 Phase 3.

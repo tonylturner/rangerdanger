@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 import { loadRemediationPlan, ACTION_IMPACT, type RemediationPlan } from "../lib/remediation-plan";
+import { useCurriculumScope } from "../lib/curriculum-scope";
 
 type RemediationPlanBannerProps = {
   currentExerciseId: string;
@@ -18,12 +19,13 @@ type RemediationPlanBannerProps = {
 //   - the current exercise is the planning exercise itself
 //   - the current exercise is the baseline (no plan yet)
 export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBannerProps) {
+  const scope = useCurriculumScope();
   const [plan, setPlan] = useState<RemediationPlan | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    setPlan(loadRemediationPlan());
-  }, [currentExerciseId]);
+    setPlan(loadRemediationPlan(scope));
+  }, [scope, currentExerciseId]);
 
   // Hide on exercises where the banner isn't meaningful
   if (currentExerciseId === "baseline-assessment") return null;

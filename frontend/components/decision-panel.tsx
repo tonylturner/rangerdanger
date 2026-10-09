@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
 import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
 import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   readRequirements,
   actionImplements,
@@ -33,10 +34,11 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   const roles: DecisionRole[] = useMemo(() => action.roles ?? [], [action.roles]);
   const catalog: DecisionAction[] = useMemo(() => action.actions ?? [], [action.actions]);
 
+  const scope = useCurriculumScope();
   // Load any previously saved plan for this exercise
   const [selected, setSelected] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
-    const plan = loadRemediationPlan();
+    const plan = loadRemediationPlan(scope);
     if (plan && plan.exerciseId === exerciseId) {
       return new Set(plan.selectedActionIds);
     }
@@ -49,20 +51,20 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [readiness, setReadiness] = useState<ReadinessAnswer[]>([]);
   useEffect(() => {
-    setRequirements(readRequirements());
-    setReadiness(readReadiness());
-  }, []);
+    setRequirements(readRequirements(scope));
+    setReadiness(readReadiness(scope));
+  }, [scope]);
   const hasAnyReadiness = readiness.some((r) => r.verdict !== "");
 
   // Persist on change
   useEffect(() => {
     if (typeof window === "undefined") return;
-    saveRemediationPlan({
+    saveRemediationPlan(scope, {
       exerciseId,
       selectedActionIds: [...selected],
       savedAt: new Date().toISOString(),
     });
-  }, [selected, exerciseId]);
+  }, [scope, selected, exerciseId]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
