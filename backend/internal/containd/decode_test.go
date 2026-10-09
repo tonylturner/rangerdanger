@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -94,7 +95,7 @@ func TestGetEventsDecodesContaindProto(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	events, err := newTestClient(srv.URL).GetEvents("", 2)
+	events, err := newTestClient(srv.URL).GetEvents(context.Background(), "", 2)
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestZoneRuleSummariesImprovedPolicy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rules, err := newTestClient(srv.URL).GetFirewallRules()
+	rules, err := newTestClient(srv.URL).GetFirewallRules(context.Background())
 	if err != nil {
 		t.Fatalf("GetFirewallRules: %v", err)
 	}

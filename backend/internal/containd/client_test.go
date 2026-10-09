@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -100,7 +101,7 @@ func TestClientMintsTokenPerRequest(t *testing.T) {
 
 	for _, at := range []time.Time{start, start.Add(25 * time.Hour)} {
 		clock = at
-		if _, err := client.GetHealth(); err != nil {
+		if _, err := client.GetHealth(context.Background()); err != nil {
 			t.Fatalf("GetHealth at %v: %v", at, err)
 		}
 	}
@@ -157,7 +158,7 @@ func TestAuthHeaderFormat(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.GetHealth()
+	_, err := client.GetHealth(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestDoRequestWithBodySetsContentType(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	client.ImportConfig([]byte(`{}`))
+	client.ImportConfig(context.Background(), []byte(`{}`))
 }
 
 // --- helpers ---

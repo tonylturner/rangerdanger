@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestGetFirewallRulesSuccess(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	rules, err := client.GetFirewallRules()
+	rules, err := client.GetFirewallRules(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +70,7 @@ func TestGetZoneRuleSummariesGrouping(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	summaries, err := client.GetZoneRuleSummaries()
+	summaries, err := client.GetZoneRuleSummaries(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestGetZoneRuleSummariesMixedAction(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	summaries, err := client.GetZoneRuleSummaries()
+	summaries, err := client.GetZoneRuleSummaries(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

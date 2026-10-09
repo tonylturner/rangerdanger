@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,12 +52,12 @@ type PcapFileInfo struct {
 }
 
 // SetPcapConfig updates the PCAP configuration on containd.
-func (c *Client) SetPcapConfig(cfg PcapConfig) error {
+func (c *Client) SetPcapConfig(ctx context.Context, cfg PcapConfig) error {
 	body, err := json.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/config", body)
+	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/pcap/config", body)
 	if err != nil {
 		return fmt.Errorf("set pcap config: %w", err)
 	}
@@ -71,7 +72,7 @@ func (c *Client) SetPcapConfig(cfg PcapConfig) error {
 
 // StartPcap starts packet capture. Accepts an optional PcapConfig override.
 // Returns the capture status.
-func (c *Client) StartPcap(cfg *PcapConfig) (*PcapStatus, error) {
+func (c *Client) StartPcap(ctx context.Context, cfg *PcapConfig) (*PcapStatus, error) {
 	var body []byte
 	if cfg != nil {
 		var err error
@@ -80,7 +81,7 @@ func (c *Client) StartPcap(cfg *PcapConfig) (*PcapStatus, error) {
 			return nil, err
 		}
 	}
-	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/start", body)
+	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/pcap/start", body)
 	if err != nil {
 		return nil, fmt.Errorf("start pcap: %w", err)
 	}
@@ -102,8 +103,8 @@ func (c *Client) StartPcap(cfg *PcapConfig) (*PcapStatus, error) {
 }
 
 // StopPcap stops an active capture.
-func (c *Client) StopPcap() (*PcapStatus, error) {
-	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/pcap/stop", nil)
+func (c *Client) StopPcap(ctx context.Context) (*PcapStatus, error) {
+	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/pcap/stop", nil)
 	if err != nil {
 		return nil, fmt.Errorf("stop pcap: %w", err)
 	}
@@ -122,8 +123,8 @@ func (c *Client) StopPcap() (*PcapStatus, error) {
 }
 
 // GetPcapStatus returns the current capture status.
-func (c *Client) GetPcapStatus() (*PcapStatus, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/status")
+func (c *Client) GetPcapStatus(ctx context.Context) (*PcapStatus, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/pcap/status")
 	if err != nil {
 		return nil, fmt.Errorf("pcap status: %w", err)
 	}
@@ -141,8 +142,8 @@ func (c *Client) GetPcapStatus() (*PcapStatus, error) {
 }
 
 // ListPcapFiles returns all stored PCAP files. containd returns a raw array.
-func (c *Client) ListPcapFiles() ([]PcapFileInfo, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/list")
+func (c *Client) ListPcapFiles(ctx context.Context) ([]PcapFileInfo, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/pcap/list")
 	if err != nil {
 		return nil, fmt.Errorf("list pcap files: %w", err)
 	}
@@ -173,8 +174,8 @@ func (c *Client) ListPcapFiles() ([]PcapFileInfo, error) {
 }
 
 // DownloadPcapFile streams a PCAP file from containd by filename.
-func (c *Client) DownloadPcapFile(name string) (io.ReadCloser, string, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/pcap/download/"+name)
+func (c *Client) DownloadPcapFile(ctx context.Context, name string) (io.ReadCloser, string, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/pcap/download/"+name)
 	if err != nil {
 		return nil, "", fmt.Errorf("download pcap: %w", err)
 	}
@@ -195,8 +196,8 @@ func (c *Client) DownloadPcapFile(name string) (io.ReadCloser, string, error) {
 }
 
 // DeletePcapFile removes a stored PCAP file by name.
-func (c *Client) DeletePcapFile(name string) error {
-	resp, err := c.doRequest("DELETE", c.BaseURL+"/api/v1/pcap/"+name)
+func (c *Client) DeletePcapFile(ctx context.Context, name string) error {
+	resp, err := c.doRequest(ctx, "DELETE", c.BaseURL+"/api/v1/pcap/"+name)
 	if err != nil {
 		return fmt.Errorf("delete pcap file: %w", err)
 	}

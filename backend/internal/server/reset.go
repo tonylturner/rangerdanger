@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -46,7 +45,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	var actions []resetAction
 
 	// 1. Apply weak firewall config
-	_, err := s.applyFirewallConfigInternal("weak")
+	_, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), "weak")
 	actions = append(actions, resetAction{
 		Action:  "Apply weak firewall baseline",
 		Success: err == nil,
@@ -80,9 +79,9 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		execCfg := container.ExecOptions{
 			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
 		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(c.Request.Context(), firewallContainer, execCfg)
 		if err == nil {
-			dockerCli.ContainerExecStart(context.Background(), execID.ID, container.ExecStartOptions{})
+			dockerCli.ContainerExecStart(c.Request.Context(), execID.ID, container.ExecStartOptions{})
 		}
 		actions = append(actions, resetAction{
 			Action:  "Clear PCAP captures",
@@ -103,9 +102,9 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		credCfg := container.ExecOptions{
 			Cmd: []string{"sh", "-c", "rm -f /data/users.db /data/sessions.db 2>/dev/null; true"},
 		}
-		credExecID, credErr := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, credCfg)
+		credExecID, credErr := dockerCli.ContainerExecCreate(c.Request.Context(), firewallContainer, credCfg)
 		if credErr == nil {
-			dockerCli.ContainerExecStart(context.Background(), credExecID.ID, container.ExecStartOptions{})
+			dockerCli.ContainerExecStart(c.Request.Context(), credExecID.ID, container.ExecStartOptions{})
 		}
 		actions = append(actions, resetAction{
 			Action:  "Reset containd credentials to default",

@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 const firewallContainer = "rangerdanger-firewall"
@@ -66,7 +67,8 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 	}
 
 	// Try containd PCAP API: start with config inline
-	status, err := s.containdClient.StartPcap(&cfg)
+	gen := rangeOf(c)
+	status, err := gen.Containd().StartPcap(c.Request.Context(), &cfg)
 	if err == nil {
 		s.pcapMu.Lock()
 		s.pcap = pcapState{
@@ -79,7 +81,12 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		s.pcapMu.Unlock()
 
 		// Poll containd until capture stops
-		go s.pollPcapCompletion(prefix, req.DurationSec)
+		if !gen.Go("pcap-poll", func(ctx context.Context) {
+			s.pollPcapCompletion(ctx, gen, prefix, req.DurationSec)
+		}) {
+			rangeUnavailable(c)
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"status":       "capturing",
@@ -95,12 +102,15 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 }
 
 // pollPcapCompletion polls containd /pcap/status until running==false,
-// then queries /pcap/list to find files matching our prefix.
-func (s *Server) pollPcapCompletion(prefix string, durationSec int) {
+// then queries /pcap/list to find files matching our prefix. It is a
+// generation worker; a result after the range stopped is dropped.
+func (s *Server) pollPcapCompletion(ctx context.Context, gen *lifecycle.Generation, prefix string, durationSec int) {
 	deadline := time.Now().Add(time.Duration(durationSec+15) * time.Second)
 	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		status, err := s.containdClient.GetPcapStatus()
+		if !sleepCtx(ctx, 2*time.Second) {
+			return
+		}
+		status, err := gen.Containd().GetPcapStatus(ctx)
 		if err != nil {
 			continue
 		}
@@ -110,7 +120,7 @@ func (s *Server) pollPcapCompletion(prefix string, durationSec int) {
 	}
 
 	// Capture done — list files matching our prefix
-	files, err := s.containdClient.ListPcapFiles()
+	files, err := gen.Containd().ListPcapFiles(ctx)
 	var matchedNames []string
 	if err == nil {
 		for _, f := range files {
@@ -120,11 +130,15 @@ func (s *Server) pollPcapCompletion(prefix string, durationSec int) {
 		}
 	}
 
-	s.pcapMu.Lock()
-	s.pcap.Capturing = false
-	s.pcap.FileReady = len(matchedNames) > 0
-	s.pcap.Files = matchedNames
-	s.pcapMu.Unlock()
+	if !gen.Commit(func() {
+		s.pcapMu.Lock()
+		s.pcap.Capturing = false
+		s.pcap.FileReady = len(matchedNames) > 0
+		s.pcap.Files = matchedNames
+		s.pcapMu.Unlock()
+	}) {
+		return
+	}
 
 	if len(matchedNames) > 0 {
 		log.Printf("[pcap] containd capture complete: %d files (prefix=%s)", len(matchedNames), prefix)
@@ -144,14 +158,14 @@ func (s *Server) handlePcapStop(c *gin.Context) {
 		return
 	}
 
-	status, err := s.containdClient.StopPcap()
+	status, err := rangeOf(c).Containd().StopPcap(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("stop pcap: %v", err)})
 		return
 	}
 
 	// Collect files matching our prefix
-	files, _ := s.containdClient.ListPcapFiles()
+	files, _ := rangeOf(c).Containd().ListPcapFiles(c.Request.Context())
 	var matchedNames []string
 	for _, f := range files {
 		if strings.HasPrefix(f.Name, prefix) {
@@ -175,7 +189,7 @@ func (s *Server) handlePcapStatus(c *gin.Context) {
 
 	// If using containd, get fresh status
 	if !state.Fallback && state.FilePrefix != "" {
-		status, err := s.containdClient.GetPcapStatus()
+		status, err := rangeOf(c).Containd().GetPcapStatus(c.Request.Context())
 		if err == nil {
 			c.JSON(http.StatusOK, gin.H{
 				"capturing":    status.Running,
@@ -210,7 +224,7 @@ func (s *Server) handlePcapDownload(c *gin.Context) {
 	// Try containd: download first matched file
 	if !state.Fallback && len(state.Files) > 0 && validPcapName(state.Files[0]) {
 		name := state.Files[0]
-		body, filename, err := s.containdClient.DownloadPcapFile(name)
+		body, filename, err := rangeOf(c).Containd().DownloadPcapFile(c.Request.Context(), name)
 		if err == nil {
 			defer body.Close()
 			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
@@ -236,7 +250,7 @@ func (s *Server) handlePcapDownloadFile(c *gin.Context) {
 		return
 	}
 
-	body, filename, err := s.containdClient.DownloadPcapFile(name)
+	body, filename, err := rangeOf(c).Containd().DownloadPcapFile(c.Request.Context(), name)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("download failed: %v", err)})
 		return
@@ -276,7 +290,7 @@ func validPcapComponent(name string, maxLen int) bool {
 }
 
 func (s *Server) handlePcapList(c *gin.Context) {
-	files, err := s.containdClient.ListPcapFiles()
+	files, err := rangeOf(c).Containd().ListPcapFiles(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"files": []interface{}{}, "error": err.Error()})
 		return
@@ -342,8 +356,16 @@ func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interface
 		cmd += " " + filter
 	}
 
-	go func() {
-		ctx := context.Background()
+	gen := rangeOf(c)
+	finish := func(fileReady bool) {
+		gen.Commit(func() {
+			s.pcapMu.Lock()
+			s.pcap.Capturing = false
+			s.pcap.FileReady = fileReady
+			s.pcapMu.Unlock()
+		})
+	}
+	if !gen.Go("pcap-tcpdump", func(ctx context.Context) {
 		execCfg := container.ExecOptions{
 			Cmd:          []string{"sh", "-c", cmd},
 			AttachStdout: false,
@@ -353,34 +375,26 @@ func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interface
 		execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
 		if err != nil {
 			log.Printf("[pcap] exec create failed: %v", err)
-			s.pcapMu.Lock()
-			s.pcap.Capturing = false
-			s.pcapMu.Unlock()
+			finish(false)
 			return
 		}
 		if err := dockerCli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{}); err != nil {
 			log.Printf("[pcap] exec start failed: %v", err)
-			s.pcapMu.Lock()
-			s.pcap.Capturing = false
-			s.pcapMu.Unlock()
+			finish(false)
 			return
 		}
 		for {
 			inspect, err := dockerCli.ContainerExecInspect(ctx, execID.ID)
-			if err != nil {
+			if err != nil || !inspect.Running || !sleepCtx(ctx, time.Second) {
 				break
 			}
-			if !inspect.Running {
-				break
-			}
-			time.Sleep(1 * time.Second)
 		}
-		s.pcapMu.Lock()
-		s.pcap.Capturing = false
-		s.pcap.FileReady = true
-		s.pcapMu.Unlock()
+		finish(true)
 		log.Println("[pcap] fallback capture complete")
-	}()
+	}) {
+		rangeUnavailable(c)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":       "capturing",
@@ -493,7 +507,11 @@ func (s *Server) handleTrafficGenerate(c *gin.Context) {
 	}
 	s.trafficMu.Unlock()
 
-	go s.runTrafficGeneration(req.DurationSec)
+	gen := rangeOf(c)
+	if !gen.Go("traffic", func(ctx context.Context) { s.runTrafficGeneration(ctx, gen, req.DurationSec) }) {
+		rangeUnavailable(c)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":       "generating",
@@ -536,8 +554,10 @@ func (s *Server) handleTrafficStatus(c *gin.Context) {
 //   - HMI → RTAC:            Modbus via hmi_poller sidecar (docker-compose)
 //   - Historian → RTAC:      HTTP via historian-sim pollRTAC()
 //   - GPS → field devices:   NTP broadcast via gps-sim broadcastNTP()
-func (s *Server) runTrafficGeneration(durationSec int) {
-	ctx := context.Background()
+//
+// It is a generation worker: the range stopping ends it, and its counts
+// are dropped once the generation is gone.
+func (s *Server) runTrafficGeneration(ctx context.Context, gen *lifecycle.Generation, durationSec int) {
 	deadline := time.Now().Add(time.Duration(durationSec) * time.Second)
 	flows := 0
 
@@ -615,18 +635,24 @@ func (s *Server) runTrafficGeneration(durationSec int) {
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
 	}
 
+	record := func(generating bool) {
+		gen.Commit(func() {
+			s.trafficMu.Lock()
+			s.traffic.Generating = generating
+			s.traffic.FlowsGenerated = flows
+			s.trafficMu.Unlock()
+		})
+	}
 	dockerCli := s.orchestrator.DockerClient()
 	if dockerCli == nil {
 		log.Println("[traffic] docker client not available")
-		s.trafficMu.Lock()
-		s.traffic.Generating = false
-		s.trafficMu.Unlock()
+		record(false)
 		return
 	}
 
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && ctx.Err() == nil {
 		for _, t := range targets {
-			if time.Now().After(deadline) {
+			if time.Now().After(deadline) || ctx.Err() != nil {
 				break
 			}
 			execCfg := container.ExecOptions{
@@ -644,20 +670,15 @@ func (s *Server) runTrafficGeneration(durationSec int) {
 				continue
 			}
 			flows++
-			s.trafficMu.Lock()
-			s.traffic.FlowsGenerated = flows
-			s.trafficMu.Unlock()
-			time.Sleep(200 * time.Millisecond)
+			record(true)
+			sleepCtx(ctx, 200*time.Millisecond)
 		}
 		// Brief pause between polling cycles — mimics 1-sec SCADA scan rate
 		if time.Now().Before(deadline) {
-			time.Sleep(500 * time.Millisecond)
+			sleepCtx(ctx, 500*time.Millisecond)
 		}
 	}
 
-	s.trafficMu.Lock()
-	s.traffic.Generating = false
-	s.traffic.FlowsGenerated = flows
-	s.trafficMu.Unlock()
+	record(false)
 	log.Printf("[traffic] generation complete: %d flows generated", flows)
 }

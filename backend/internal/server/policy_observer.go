@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // policyObserver watches containd's running config for changes the
@@ -50,21 +51,9 @@ const (
 	observerGracePeriod = 5 * time.Second
 )
 
-// startPolicyObserver kicks off the background goroutine. Idempotent
-// per Server instance — caller should invoke once from New() after
-// the containd client is wired up. Returns immediately; the
-// goroutine runs until ctx is cancelled (test code) or the
-// process exits (production).
-func (s *Server) startPolicyObserver(ctx context.Context) {
-	if s.containdClient == nil {
-		// Tests construct Server without a containd client; the
-		// observer just becomes a no-op in that case.
-		return
-	}
-	go s.policyObserverLoop(ctx)
-}
-
-func (s *Server) policyObserverLoop(ctx context.Context) {
+// policyObserverLoop is a generation worker: activateRange starts it with
+// the generation's context, which ends when the range stops.
+func (s *Server) policyObserverLoop(ctx context.Context, gen *lifecycle.Generation) {
 	ticker := time.NewTicker(observerInterval)
 	defer ticker.Stop()
 
@@ -73,22 +62,28 @@ func (s *Server) policyObserverLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.observePolicyOnce()
+			s.observePolicyOnce(ctx, gen)
 		}
 	}
 }
 
 // observePolicyOnce is one tick of the observer. Extracted so the
-// unit test can step it deterministically.
-func (s *Server) observePolicyOnce() {
-	hash, err := s.containdClient.GetFirewallHash()
+// unit test can step it deterministically. An observation that lands after
+// its generation stopped is dropped.
+func (s *Server) observePolicyOnce(ctx context.Context, gen *lifecycle.Generation) {
+	hash, err := gen.Containd().GetFirewallHash(ctx)
 	if err != nil {
 		// Containd may be restarting / unreachable. The next tick
 		// will retry; no value in spamming logs on a transient
 		// failure, so this stays silent.
 		return
 	}
+	gen.Commit(func() { s.classifyObservedPolicy(hash) })
+}
 
+// classifyObservedPolicy compares containd's running hash with the last
+// backend apply and relabels the policy as a manual commit on divergence.
+func (s *Server) classifyObservedPolicy(hash string) {
 	s.activeConfigMu.Lock()
 	defer s.activeConfigMu.Unlock()
 
@@ -100,13 +95,12 @@ func (s *Server) observePolicyOnce() {
 		return
 	}
 
-	// No baseline yet (server just started, never applied anything
-	// since boot) — adopt the current running hash as the baseline.
-	// Don't try to label it; some other path (the seed-from-config
-	// step in New()) sets activeConfig from the config path. This
-	// just stops the next tick from spuriously flipping to
-	// manual-custom because the very first observation looks
-	// "different from empty".
+	// No baseline yet (range just activated, nothing applied since) —
+	// adopt the current running hash as the baseline. Don't try to
+	// label it; activateRange set activeConfig from the package's
+	// default policy. This just stops the next tick from spuriously
+	// flipping to manual-custom because the very first observation
+	// looks "different from empty".
 	if s.lastAppliedHash == "" {
 		s.lastAppliedHash = hash
 		return

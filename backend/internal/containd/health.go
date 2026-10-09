@@ -19,8 +19,8 @@ type HealthStatus struct {
 }
 
 // GetHealth returns the firewall health status.
-func (c *Client) GetHealth() (*HealthStatus, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/health")
+func (c *Client) GetHealth(ctx context.Context) (*HealthStatus, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/health")
 	if err != nil {
 		return nil, fmt.Errorf("health check failed: %w", err)
 	}
@@ -39,16 +39,20 @@ func (c *Client) GetHealth() (*HealthStatus, error) {
 }
 
 // IsAvailable checks if containd is reachable.
-func (c *Client) IsAvailable() bool {
-	status, err := c.GetHealth()
+func (c *Client) IsAvailable(ctx context.Context) bool {
+	status, err := c.GetHealth(ctx)
 	return err == nil && status.Status != ""
 }
 
-// WaitReady polls containd health until it responds or the context is cancelled.
+// WaitReady polls containd health, first at once and then every two
+// seconds, until it responds or the context is cancelled.
 func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if c.IsAvailable(ctx) {
+		return nil
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -57,7 +61,7 @@ func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 		case <-ctx.Done():
 			return fmt.Errorf("containd not ready after %s: %w", timeout, ctx.Err())
 		case <-ticker.C:
-			if c.IsAvailable() {
+			if c.IsAvailable(ctx) {
 				return nil
 			}
 		}

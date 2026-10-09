@@ -14,7 +14,7 @@ import (
 // handleSeedDefinitions reloads every package. It fails with the same
 // error startup would, and keeps the previous catalog when it does.
 func (s *Server) handleSeedDefinitions(c *gin.Context) {
-	catalog, err := s.loader.Seed(c.Request.Context(), s.db, s.cfg.Package)
+	catalog, err := s.loader.Seed(c.Request.Context(), s.db, s.rng.ActivePackage())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -59,11 +59,16 @@ func (s *Server) handleCreateLabInstance(c *gin.Context) {
 		return
 	}
 
-	go func(inst models.LabInstance) {
-		if err := s.orchestrator.ProvisionLabInstance(context.Background(), s.db, &inst); err != nil {
-			log.Printf("[lab %s] provisioning failed: %v", inst.ID, err)
+	gen := rangeOf(c)
+	provisioned := instance // the worker updates its own copy
+	if !gen.Go("lab-instance-provision", func(ctx context.Context) {
+		if err := s.orchestrator.ProvisionLabInstance(ctx, s.db, &provisioned, gen.Containd()); err != nil {
+			log.Printf("[lab %s] provisioning failed: %v", provisioned.ID, err)
 		}
-	}(instance)
+	}) {
+		rangeUnavailable(c)
+		return
+	}
 
 	c.JSON(http.StatusAccepted, instance)
 }

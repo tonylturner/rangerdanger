@@ -24,7 +24,7 @@ func TestGetHealthSuccess(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	health, err := client.GetHealth()
+	health, err := client.GetHealth(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestGetHealthSuccess(t *testing.T) {
 // TestGetHealthUnreachable verifies error handling when containd is down.
 func TestGetHealthUnreachable(t *testing.T) {
 	client := newTestClient("http://127.0.0.1:1") // nothing listening
-	_, err := client.GetHealth()
+	_, err := client.GetHealth(context.Background())
 	if err == nil {
 		t.Fatal("expected error for unreachable server")
 	}
@@ -60,7 +60,7 @@ func TestGetHealthNon200(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.GetHealth()
+	_, err := client.GetHealth(context.Background())
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -74,13 +74,13 @@ func TestIsAvailable(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	if !client.IsAvailable() {
+	if !client.IsAvailable(context.Background()) {
 		t.Error("expected available with healthy response")
 	}
 
 	// Unreachable server
 	client2 := newTestClient("http://127.0.0.1:1")
-	if client2.IsAvailable() {
+	if client2.IsAvailable(context.Background()) {
 		t.Error("expected unavailable for unreachable server")
 	}
 }

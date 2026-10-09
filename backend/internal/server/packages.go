@@ -25,14 +25,20 @@ func (s *Server) setCatalog(catalog *labs.Catalog) {
 	s.catalogMu.Unlock()
 }
 
-// activePackage is the single source of the package the workshop serves.
-// The ID comes from configuration (RANGERDANGER_PACKAGE); its metadata comes
-// from the last successful load. Without a loaded match it returns the zero
-// value, whose empty IDs match no template or scenario row.
-func (s *Server) activePackage() labs.PackageInfo {
+// currentCatalog is the catalog of the last successful seed.
+func (s *Server) currentCatalog() *labs.Catalog {
 	s.catalogMu.RLock()
 	defer s.catalogMu.RUnlock()
-	info, _ := s.catalog.Info(s.cfg.Package)
+	return s.catalog
+}
+
+// activePackage is the single source of the package the workshop serves.
+// The ID is the range lifecycle's: the recorded package, else
+// RANGERDANGER_PACKAGE; its metadata comes from the last successful load.
+// Without a loaded match it returns the zero value, whose empty IDs match
+// no template or scenario row.
+func (s *Server) activePackage() labs.PackageInfo {
+	info, _ := s.currentCatalog().Info(s.rng.ActivePackage())
 	return info
 }
 
@@ -49,9 +55,8 @@ func (s *Server) findActiveScenario(id string) (models.Scenario, error) {
 }
 
 func (s *Server) handleListPackages(c *gin.Context) {
-	s.catalogMu.RLock()
-	infos := s.catalog.Infos()
-	s.catalogMu.RUnlock()
+	infos := s.currentCatalog().Infos()
+	active := s.rng.ActivePackage()
 
 	packages := make([]packageSummary, len(infos))
 	for index, info := range infos {
@@ -59,7 +64,7 @@ func (s *Server) handleListPackages(c *gin.Context) {
 			ID:       info.ID,
 			Title:    info.Title,
 			Revision: info.Revision,
-			Active:   info.ID == s.cfg.Package,
+			Active:   info.ID == active,
 		}
 	}
 	c.JSON(http.StatusOK, packages)

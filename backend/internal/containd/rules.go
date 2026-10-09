@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,8 +81,8 @@ type ZoneRuleSummary struct {
 }
 
 // GetFirewallRules returns the firewall rules from containd config.
-func (c *Client) GetFirewallRules() ([]FirewallRule, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/config")
+func (c *Client) GetFirewallRules(ctx context.Context) ([]FirewallRule, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/config")
 	if err != nil {
 		return nil, fmt.Errorf("get config failed: %w", err)
 	}
@@ -103,8 +104,8 @@ func (c *Client) GetFirewallRules() ([]FirewallRule, error) {
 }
 
 // GetZoneRuleSummaries returns summarized rules grouped by zone pairs.
-func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
-	rules, err := c.GetFirewallRules()
+func (c *Client) GetZoneRuleSummaries(ctx context.Context) ([]ZoneRuleSummary, error) {
+	rules, err := c.GetFirewallRules(ctx)
 	if err != nil {
 		return nil, err
 	}

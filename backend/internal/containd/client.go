@@ -2,6 +2,7 @@ package containd
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -23,17 +24,21 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// JWTSecret is the secret the backend signs containd tokens with:
+// CONTAIND_JWT_SECRET, else the Compose default. The backend starts the range
+// with this value so the range firewall verifies what the backend signs.
+func JWTSecret() string {
+	if secret := os.Getenv("CONTAIND_JWT_SECRET"); secret != "" {
+		return secret
+	}
+	return "rangerdanger-dev"
+}
+
 // NewClient creates a containd API client with JWT authentication.
 func NewClient(baseURL string) *Client {
-	// Get JWT secret from environment (same as containd uses)
-	secret := os.Getenv("CONTAIND_JWT_SECRET")
-	if secret == "" {
-		secret = "rangerdanger-dev" // Default matches docker-compose
-	}
-
 	return &Client{
 		BaseURL:   baseURL,
-		jwtSecret: secret,
+		jwtSecret: JWTSecret(),
 		now:       time.Now,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -68,8 +73,8 @@ func (c *Client) send(req *http.Request) (*http.Response, error) {
 }
 
 // doRequest performs an authenticated HTTP request.
-func (c *Client) doRequest(method, url string) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, nil)
+func (c *Client) doRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +82,8 @@ func (c *Client) doRequest(method, url string) (*http.Response, error) {
 }
 
 // doRequestWithBody performs an authenticated HTTP request with a body.
-func (c *Client) doRequestWithBody(method, url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+func (c *Client) doRequestWithBody(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
