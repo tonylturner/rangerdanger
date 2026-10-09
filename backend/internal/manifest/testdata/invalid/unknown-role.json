@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "package": "valid",
+  "networks": [
+    {
+      "key": "mgmt_net",
+      "name": "rangerdanger_mgmt_net",
+      "subnet": "10.99.99.0/24",
+      "gateway": "10.99.99.1",
+      "platform": true
+    },
+    {
+      "key": "field_net",
+      "name": "rangerdanger_field_net",
+      "subnet": "10.40.40.0/24",
+      "gateway": "10.40.40.1",
+      "zone": "lan1"
+    }
+  ],
+  "services": [
+    {
+      "key": "firewall",
+      "container": "fixture-firewall",
+      "node": "fw-1",
+      "roles": [
+        "unknown"
+      ],
+      "interfaces": [
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.2"
+        },
+        {
+          "network": "field_net",
+          "ipv4": "10.40.40.2"
+        }
+      ],
+      "endpoints": {
+        "api": "http://10.99.99.2:8080"
+      }
+    }
+  ]
+}
