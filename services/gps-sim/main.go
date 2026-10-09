@@ -207,8 +207,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	targets, err := ntpPollTargetsFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
 	go startModbusServer()
-	go broadcastNTP()
+	if len(targets) > 0 {
+		go broadcastNTP(targets)
+	} else {
+		log.Printf("NTP client generator disabled")
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", handleState)

@@ -195,3 +195,53 @@ func TestGPSSnapshotOffsetAndTimestamps(t *testing.T) {
 		t.Errorf("reported time offset = %v, want approximately 30s", delta)
 	}
 }
+
+func TestNTPPollTargetsConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		set       bool
+		want      []string
+		wantError bool
+	}{
+		{
+			name: "unset preserves existing target list",
+			want: []string{
+				"10.40.40.20:123",
+				"10.40.40.21:123",
+				"10.40.40.22:123",
+				"10.40.40.23:123",
+				"10.30.30.20:123",
+			},
+		},
+		{name: "empty disables", set: true},
+		{name: "whitespace disables", value: "  ", set: true},
+		{
+			name:  "comma-separated hosts use UDP 123",
+			value: "10.30.30.50, clock.example ",
+			set:   true,
+			want:  []string{"10.30.30.50:123", "clock.example:123"},
+		},
+		{name: "empty list item is invalid", value: "host,,other", set: true, wantError: true},
+		{name: "host with a port is invalid", value: "host:123", set: true, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseNTPPollTargets(test.value, test.set)
+			if (err != nil) != test.wantError {
+				t.Fatalf("parseNTPPollTargets() error = %v, wantError %v", err, test.wantError)
+			}
+			if err != nil {
+				return
+			}
+			if len(got) != len(test.want) {
+				t.Fatalf("targets = %#v, want %#v", got, test.want)
+			}
+			for i := range got {
+				if got[i] != test.want[i] {
+					t.Errorf("target[%d] = %q, want %q", i, got[i], test.want[i])
+				}
+			}
+		})
+	}
+}

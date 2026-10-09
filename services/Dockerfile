@@ -58,6 +58,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /bin/gps-sim ./gps-sim
 
+FROM sim-builder AS feeder-breaker-sim-builder
+COPY services/devices/ ./devices/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 go build -o /bin/feeder-breaker-sim ./devices/cmd/feeder-breaker-sim
+
 # Build dnp3poll/dnp3cmd from the dnp3go library so rtac-sim can ship
 # them as student-runnable diagnostic tools. The eng-ws Dockerfile
 # uses the same dnp3go module via its own builder stage; keeping a
@@ -171,3 +177,7 @@ COPY --from=gps-sim-builder /bin/gps-sim /usr/local/bin/gps-sim
 EXPOSE 8080 502
 CMD ["sh", "-c", "set-gateway.sh && gps-sim"]
 
+FROM sim-base AS feeder-breaker-sim
+COPY --from=feeder-breaker-sim-builder /bin/feeder-breaker-sim /usr/local/bin/feeder-breaker-sim
+EXPOSE 8080 502
+CMD ["sh", "-c", "set -e; set-gateway.sh; exec feeder-breaker-sim"]

@@ -1,7 +1,8 @@
 # RangerDanger field-device simulators
 
-Each simulator is a single Go binary that exposes the **same
-in-memory state across three protocols simultaneously**:
+The legacy US relay, recloser, regulator, and capacitor-bank
+simulators are single Go binaries that expose the **same in-memory
+state across three protocols simultaneously**:
 
 - **HTTP REST** on `:8080` - `GET /api/state`, `POST /api/command`,
   `GET /api/audit`, `GET /api/health`; `rtac-sim` also exposes
@@ -19,6 +20,9 @@ the same instant, and the audit log records the source of every
 write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 `source: rtac-sim`).
 
+The EU `feeder-breaker-sim` is separate: it owns breaker truth, serves
+Modbus plus process/instructor HTTP APIs, and does not expose DNP3.
+
 ## Services
 
 | Service | DNP3 addr | Description |
@@ -28,9 +32,15 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 | `regulator-sim` | 3  | Load tap changer, ±16 tap range, voltage regulation |
 | `capbank-sim`   | 4  | Switched capacitor bank, lockout-after-N-operations |
 | `rtac-sim`      | 10 | Supervisory controller. Polls field devices via DNP3 master and HTTP; exposes aggregated state. Read-only DNP3 outstation. |
+| `feeder-breaker-sim` | - | EU feeder breaker truth owner. Modbus TCP field interface and separate process / instructor HTTP listeners. |
 | `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
-| `gps-sim`       | -  | NTP/IRIG-B time source. UDP NTP server. |
+| `gps-sim`       | -  | GPS/IRIG-B time source; sends synthetic NTP client packets to configured targets. Not an NTP server. |
 | `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
+
+`gps-sim` reads `NTP_POLL_TARGETS` for its outbound UDP/123 generator:
+when unset it uses the existing US target list, when empty it disables
+the generator, and a comma-separated list supplies target hosts (the
+generator uses UDP port 123 for each).
 
 The RTAC includes OpenDSS freshness in `/api/state` as `physics` (`stale`,
 `consecutive_failures`, `last_good_at`, `solved_at`, `last_error`), flattens
@@ -42,7 +52,7 @@ stale and `ok` after a good solve.
 ## Local development
 
 The Go simulators (relay/recloser/regulator/capbank/historian/gps/
-rtac) share a single module (`services/go.mod`) and a multi-stage
+rtac/feeder-breaker) share a single module (`services/go.mod`) and a multi-stage
 Dockerfile (`services/Dockerfile`). It has a common module/dependency
 stage, a shared-code builder, a DNP3-enabled builder for relay,
 recloser, regulator, capbank, and RTAC, then one `<target>-builder`
@@ -54,6 +64,10 @@ tools use a separate, narrow DNP3 tools stage. Final images still share
 existing tools and management-init script). `opendss-sim` is
 Python/FastAPI and builds from its own
 `services/opendss-sim/Dockerfile`.
+
+The EU `feeder-breaker-sim` builder copies the in-tree `devices/`
+packages and builds `./devices/cmd/feeder-breaker-sim` from
+`sim-builder`.
 
 ```sh
 # Run a single sim outside the lab
