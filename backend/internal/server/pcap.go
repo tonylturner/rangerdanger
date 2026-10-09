@@ -39,6 +39,14 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		prefix = fmt.Sprintf("rangerdanger-%s", time.Now().UTC().Format("20060102-150405"))
 	}
 
+	// A package's capture filter names ports, which containd's structured
+	// filter cannot express; tcpdump captures it directly.
+	gen := rangeOf(c)
+	if recipe, err := recipeFor(gen); err == nil && recipe.captureFilter != "" {
+		s.startTcpdumpFallback(c, req.DurationSec, nil, recipe.captureFilter)
+		return
+	}
+
 	// containd's /api/v1/pcap/start resolves Interfaces[] entries
 	// via netlink as literal kernel interface names — it does NOT
 	// autobind zone names the way policy interfaces do (commit
@@ -65,7 +73,6 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 	}
 
 	// Try containd PCAP API: start with config inline
-	gen := rangeOf(c)
 	status, err := gen.Containd().StartPcap(c.Request.Context(), &cfg)
 	if err == nil {
 		s.pcapMu.Lock()
@@ -500,15 +507,19 @@ func (s *Server) handleTrafficGenerate(c *gin.Context) {
 		req.DurationSec = 30
 	}
 
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.traffic != nil })
+	if !ok {
+		return
+	}
 	dockerCli := s.orchestrator.DockerClient()
 	if dockerCli == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "docker client not available"})
 		return
 	}
 	gen := rangeOf(c)
-	targets, err := resolveTraffic(gen)
+	targets, err := recipe.resolveTraffic(gen)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

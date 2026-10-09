@@ -90,6 +90,10 @@ const validationPcapDurationSec = 8
 // handleValidationReport runs the probe matrix against the active policy,
 // captures PCAP, and returns the markdown report + a structured summary.
 func (s *Server) handleValidationReport(c *gin.Context) {
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.validation != nil })
+	if !ok {
+		return
+	}
 	cli := s.orchestrator.DockerClient()
 	if cli == nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "docker client not available"})
@@ -97,11 +101,6 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	gen := rangeOf(c)
-	recipe, err := recipeFor(gen)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
 	matrix, err := recipe.resolveValidation(gen)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

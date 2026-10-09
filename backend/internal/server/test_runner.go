@@ -82,14 +82,14 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		}
 	}
 
-	if active != "weak" && active != "improved" {
-		return nil
-	}
 	recipe, err := recipeFor(gen)
 	if err != nil {
 		return fmt.Errorf("dataplane never reconciled to %s: %w", active, err)
 	}
 	canary := recipe.canary
+	if active != canary.allowUnder && active != canary.denyUnder {
+		return nil
+	}
 	from, err := nodeService(gen, canary.fromNode)
 	if err != nil {
 		return fmt.Errorf("dataplane never reconciled to %s: resolve canary source: %w", active, err)
@@ -103,7 +103,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context, gen *lifecycle.Gener
 		return fmt.Errorf("dataplane never reconciled to %s: canary %s cannot run without container exec", active, label)
 	}
 
-	wantAllow := active == "weak"
+	wantAllow := active == canary.allowUnder
 	var lastProbeErr error
 	lastVerdict := "unknown"
 	for {
@@ -194,9 +194,8 @@ type testSuiteResult struct {
 func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	ctx := c.Request.Context()
 	gen := rangeOf(c)
-	recipe, err := recipeFor(gen)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.testSuite })
+	if !ok {
 		return
 	}
 	suiteStart := time.Now()
@@ -353,7 +352,11 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 // resetLabState restores all devices to defaults.
 func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe) []string {
 	var problems []string
-	warnings, err := s.applyFirewallConfigInternal(ctx, gen, "weak")
+	policy, err := defaultPolicy(gen)
+	if err != nil {
+		return []string{"firewall apply: " + err.Error()}
+	}
+	warnings, err := s.applyFirewallConfigInternal(ctx, gen, policy)
 	if err != nil {
 		problems = append(problems, "firewall apply: "+err.Error())
 	} else {

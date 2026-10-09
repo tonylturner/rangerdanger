@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 // handleGetWorkshopGraph returns the serving range's topology as a graph,
@@ -91,18 +94,15 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "edges": edges})
 }
 
-// handleGetWorkshopStatus returns the status of the workshop environment.
+// handleGetWorkshopStatus returns the status of the workshop environment:
+// the firewall, the curriculum, and the package's supervisory service (the
+// RTAC's health and device comms, or the control centre's link and GI).
 func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	gen := rangeOf(c)
-	// Check RTAC health
-	rtacOk := false
-	rtacState, err := s.fetchRTACState(c.Request.Context(), gen)
-	if err == nil && rtacState != nil {
-		rtacOk = true
-	}
+	ctx := c.Request.Context()
 
 	// Check containd health
-	_, fwErr := gen.Containd().GetHealth(c.Request.Context())
+	_, fwErr := gen.Containd().GetHealth(ctx)
 	fwOk := fwErr == nil
 
 	// Count scenarios
@@ -114,27 +114,67 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	activeConfig := s.activeConfig
 	s.activeConfigMu.RUnlock()
 
-	// Get device comms from RTAC state
-	deviceComms := map[string]bool{}
-	if rtacState != nil {
-		if comms, ok := rtacState["device_comms"].(map[string]any); ok {
-			for k, v := range comms {
-				if b, ok := v.(bool); ok {
-					deviceComms[k] = b
-				}
-			}
-		}
+	name := gen.Package.Template.Name
+	if recipe, err := recipeFor(gen); err == nil && recipe.workshopName != "" {
+		name = recipe.workshopName
 	}
-
-	c.JSON(http.StatusOK, gin.H{
+	status := gin.H{
 		"workshop_id":     gen.Package.Template.ID,
-		"workshop_name":   "Distribution Substation Segmentation",
-		"rtac_online":     rtacOk,
+		"workshop_name":   name,
 		"firewall_online": fwOk,
 		"firewall_config": activeConfig,
 		"scenario_count":  scenarioCount,
-		"device_comms":    deviceComms,
-	})
+	}
+	if _, ok := gen.Manifest.ServiceByRole(manifest.RoleRTAC); ok {
+		status["rtac_online"], status["device_comms"] = s.rtacStatus(ctx, gen)
+	}
+	if cc, ok := controlCentreURL(gen); ok {
+		status["control_centre"] = controlCentreLinkStatus(ctx, cc)
+	}
+	c.JSON(http.StatusOK, status)
+}
+
+// rtacStatus is whether the RTAC answers, and its device comms.
+func (s *Server) rtacStatus(ctx context.Context, gen *lifecycle.Generation) (bool, map[string]bool) {
+	deviceComms := map[string]bool{}
+	rtacState, err := s.fetchRTACState(ctx, gen)
+	if err != nil || rtacState == nil {
+		return false, deviceComms
+	}
+	if comms, ok := rtacState["device_comms"].(map[string]any); ok {
+		for k, v := range comms {
+			if b, ok := v.(bool); ok {
+				deviceComms[k] = b
+			}
+		}
+	}
+	return true, deviceComms
+}
+
+// ccLinkStatus is the control centre's link and GI state in the workshop
+// status; both are null while the control centre does not answer.
+type ccLinkStatus struct {
+	Link *string `json:"link"`
+	GI   *string `json:"gi"`
+}
+
+func controlCentreLinkStatus(ctx context.Context, cc string) ccLinkStatus {
+	body, err := fetchUpstreamObject(ctx, controlCentreService, cc+"/api/state")
+	if err != nil {
+		return ccLinkStatus{}
+	}
+	var state struct {
+		Link struct {
+			State *string `json:"state"`
+			GI    struct {
+				State *string `json:"state"`
+			} `json:"gi"`
+		} `json:"link"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil {
+		return ccLinkStatus{}
+	}
+	return ccLinkStatus{Link: state.Link.State, GI: state.Link.GI.State}
 }
 
 // manifestZones is the teaching zones' network keys, in manifest order.

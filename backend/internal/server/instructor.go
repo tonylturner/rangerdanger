@@ -144,3 +144,15 @@ func postInstructorAction(ctx context.Context, device, path string, body []byte)
 	}
 	return fetchUpstreamObject(ctx, instructorService, device+"/api/state")
 }
+
+// resetInstructorDevice is the workshop reset's step for the instructor
+// device: its own reset, which restores the initial state.
+func resetInstructorDevice(ctx context.Context, gen *lifecycle.Generation) resetAction {
+	const action = "Reset the instructor device to its initial state"
+	device, ok := instructorURL(gen)
+	if !ok {
+		return resetAction{Action: action, Detail: "package " + gen.Package.ID + " has no instructor device"}
+	}
+	_, err := postInstructorAction(ctx, device, "/api/instructor/reset", []byte(`{}`))
+	return resetAction{Action: action, Success: err == nil, Detail: boolDetail(err == nil, "device reset", errStr(err))}
+}

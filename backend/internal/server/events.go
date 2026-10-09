@@ -53,13 +53,20 @@ func (s *Server) handleGetFirewallFlows(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"flows": flows})
 }
 
-// handleGetFirewallRules returns summarized firewall rules grouped by zone pairs.
+// handleGetFirewallRules returns summarized firewall rules grouped by zone
+// pairs. While containd is unreachable a package with static summaries
+// shows those; any other package fails.
 func (s *Server) handleGetFirewallRules(c *gin.Context) {
-	summaries, err := rangeOf(c).Containd().GetZoneRuleSummaries(c.Request.Context())
+	gen := rangeOf(c)
+	summaries, err := gen.Containd().GetZoneRuleSummaries(c.Request.Context())
 	if err != nil {
-		// Return fallback static rules if containd is unavailable
+		recipe, recipeErr := recipeFor(gen)
+		if recipeErr != nil || recipe.staticRules == nil {
+			upstreamFailed(c, err)
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"summaries": getStaticRuleSummaries(),
+			"summaries": recipe.staticRules,
 			"source":    "static",
 			"error":     err.Error(),
 		})
@@ -70,17 +77,4 @@ func (s *Server) handleGetFirewallRules(c *gin.Context) {
 		"summaries": summaries,
 		"source":    "containd",
 	})
-}
-
-// getStaticRuleSummaries returns fallback rule summaries when containd is unavailable.
-func getStaticRuleSummaries() []containd.ZoneRuleSummary {
-	return []containd.ZoneRuleSummary{
-		{SourceZone: "wan", DestZone: "dmz", Summary: "SSH/HTTP/S", Action: "ALLOW", RuleDetails: []string{"Enterprise to Vendor: Standard protocols"}},
-		{SourceZone: "wan", DestZone: "lan1", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Enterprise direct access to OT Ops (should be blocked)"}},
-		{SourceZone: "wan", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Enterprise direct access to Field Devices (should be blocked)"}},
-		{SourceZone: "dmz", DestZone: "lan1", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Vendor broad access to OT Ops (should be narrowed)"}},
-		{SourceZone: "dmz", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Vendor direct access to Field Devices (should be blocked)"}},
-		{SourceZone: "lan1", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: All OT nodes can reach Field Devices (should be RTAC only)"}},
-		{SourceZone: "lan1", DestZone: "lan1", Summary: "OT Internal", Action: "ALLOW", RuleDetails: []string{"OT Operations internal communication"}},
-	}
 }

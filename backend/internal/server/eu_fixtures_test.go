@@ -17,8 +17,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-const euPackageID = "eu-iec104-substation"
-
 // euStartedAt is the start of every EU test generation.
 var euStartedAt = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 

@@ -70,7 +70,7 @@ func TestUSTrafficResolvesToTheFrozenTargets(t *testing.T) {
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi fuxa"},
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
 	}
-	got, err := resolveTraffic(usGeneration(nil))
+	got, err := usRecipe.resolveTraffic(usGeneration(nil))
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("resolveTraffic = %v, %v\nwant %v", got, err, want)
 	}
@@ -91,13 +91,10 @@ func TestUSIdentitiesFromTheManifest(t *testing.T) {
 	}
 }
 
-func TestRecipesAreUSOnly(t *testing.T) {
-	gen := lifecycle.NewGeneration(1, labs.Package{ID: "eu-iec104-substation"}, &manifest.Manifest{}, nil, time.Time{})
-	if _, err := recipeFor(gen); err == nil || !strings.Contains(err.Error(), "eu-iec104-substation has no workshop recipe") {
-		t.Errorf("recipeFor(EU) = %v, want no recipe", err)
-	}
-	if _, err := resolveTraffic(gen); err == nil {
-		t.Error("traffic resolved for a package without a recipe")
+func TestRecipeForUnknownPackage(t *testing.T) {
+	gen := lifecycle.NewGeneration(1, labs.Package{ID: "other-package"}, &manifest.Manifest{}, nil, time.Time{})
+	if _, err := recipeFor(gen); err == nil || !strings.Contains(err.Error(), "other-package has no workshop recipe") {
+		t.Errorf("recipeFor(other-package) = %v, want no recipe", err)
 	}
 }
 

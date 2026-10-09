@@ -14,14 +14,13 @@ type resetAction struct {
 	Detail  string `json:"detail"`
 }
 
-// handleWorkshopReset restores the lab to its default state:
-// weak firewall config, all devices in normal operating condition.
+// handleWorkshopReset restores the lab to its default state: the package's
+// default firewall policy, all devices in normal operating condition.
 func (s *Server) handleWorkshopReset(c *gin.Context) {
 	ctx := c.Request.Context()
 	gen := rangeOf(c)
-	recipe, err := recipeFor(gen)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	recipe, ok := supportedRecipe(c, func(*packageRecipe) bool { return true })
+	if !ok {
 		return
 	}
 	firewall, err := firewallContainer(gen)
@@ -29,14 +28,19 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	policy, err := defaultPolicy(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	var actions []resetAction
 
-	// 1. Apply weak firewall config
-	_, err = s.applyFirewallConfigInternal(ctx, gen, "weak")
+	// 1. Apply the default firewall policy
+	_, err = s.applyFirewallConfigInternal(ctx, gen, policy)
 	actions = append(actions, resetAction{
-		Action:  "Apply weak firewall baseline",
+		Action:  "Apply " + policy + " firewall baseline",
 		Success: err == nil,
-		Detail:  boolDetail(err == nil, "weak config applied", errStr(err)),
+		Detail:  boolDetail(err == nil, policy+" config applied", errStr(err)),
 	})
 
 	// 2. Reset all field devices via RTAC commands
@@ -47,6 +51,9 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Success: result.Success,
 			Detail:  result.Detail,
 		})
+	}
+	if recipe.resetInstructor {
+		actions = append(actions, resetInstructorDevice(ctx, gen))
 	}
 
 	// Clear PCAP captures so validators reflect fresh state

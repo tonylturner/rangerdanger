@@ -1,75 +1,9 @@
 package server
 
-import (
-	"fmt"
-	"net"
-	"strings"
-
-	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
-)
-
-// packageRecipe is the curriculum-specific operations of one package: the
-// probes that prove the dataplane, the traffic a lab generates. Recipes name
-// topology nodes and manifest networks; the generation's manifest resolves
-// them to containers and addresses. A package without a recipe has none of
-// these operations. Named policies are package data (package.yml
-// `policies`), not recipe code.
-type packageRecipe struct {
-	resetCommands []deviceCommand
-	canary        canaryProbe
-	validation    []validationProbeSpec
-	// validationCapture names the devices the validation report's PCAP
-	// watches, and the network they sit on.
-	validationCapture captureSpec
-	traffic           []trafficTarget
-}
-
-// deviceCommand is one RTAC device command; value is its argument, if any.
-type deviceCommand struct {
-	device, command, desc string
-	value                 *float64
-}
-
-// canaryProbe is the TCP connect whose verdict shows the dataplane enforces
-// a canned policy: allowed under weak, denied under improved.
-type canaryProbe struct {
-	fromNode, label string
-	toNode, network string
-	port            int
-}
-
-// validationProbeSpec is one row of the validation matrix before the
-// manifest resolves it.
-type validationProbeSpec struct {
-	fromNode, label          string
-	toNode, network, port    string
-	expected, note, category string
-}
-
-type captureSpec struct {
-	nodes   []string
-	network string
-}
-
-// trafficTarget runs command, with %s replaced by toNode's address on
-// network, in fromNode's container.
-type trafficTarget struct {
-	fromNode, toNode, network, command, desc string
-}
+import "github.com/tturner/rangerdanger/backend/internal/containd"
 
 // usPackageID is the package the US recipe belongs to.
 const usPackageID = "us-dnp3-substation"
-
-var packageRecipes = map[string]*packageRecipe{usPackageID: usRecipe}
-
-// recipeFor returns the recipe of the generation's package.
-func recipeFor(gen *lifecycle.Generation) (*packageRecipe, error) {
-	recipe, ok := packageRecipes[gen.Package.ID]
-	if !ok {
-		return nil, fmt.Errorf("package %s has no workshop recipe", gen.Package.ID)
-	}
-	return recipe, nil
-}
 
 // resetDeviceCommands is the canonical list of (device, command) pairs the
 // workshop reset and the test-runner replay against the sims to restore
@@ -97,7 +31,13 @@ var resetDeviceCommands = []deviceCommand{
 
 var usRecipe = &packageRecipe{
 	resetCommands: resetDeviceCommands,
-	canary:        canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502},
+	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502,
+		allowUnder: "weak", denyUnder: "improved"},
+	testSuite:    true,
+	compare:      usCompare,
+	staticRules:  usStaticRules,
+	workshopName: "Distribution Substation Segmentation",
+	policyLabels: map[string]string{"weak": "weak baseline", "improved": "hardened (RTAC-only field access)"},
 	// Mirrors the matrix in scripts/validation-report.sh (kept narrow and
 	// listener-backed so verdicts are reliable on Docker Desktop).
 	validation: []validationProbeSpec{
@@ -152,78 +92,52 @@ var usRecipe = &packageRecipe{
 	},
 }
 
-// resolveValidation turns the recipe's matrix into probes against the
-// generation's containers and addresses.
-func (r *packageRecipe) resolveValidation(gen *lifecycle.Generation) ([]validationProbe, error) {
-	probes := make([]validationProbe, 0, len(r.validation))
-	for _, spec := range r.validation {
-		from, err := nodeService(gen, spec.fromNode)
-		if err != nil {
-			return nil, err
-		}
-		dst, err := nodeIP(gen, spec.toNode, spec.network)
-		if err != nil {
-			return nil, err
-		}
-		probes = append(probes, validationProbe{
-			Src: from.Container, SrcLabel: spec.label, Dst: dst, Port: spec.port,
-			Expected: spec.expected, Note: spec.note, Category: spec.category,
-		})
-	}
-	return probes, nil
+// usCompare is the US policy comparison: every cross-zone relationship in
+// both directions, plus the OT intra-zone pairs.
+var usCompare = &compareSpec{
+	// Every entry here is rendered as a row in the Segmentation drawer
+	// even if neither policy has an explicit rule — the implicit
+	// default-deny is the pedagogical point of the panel (per the Lab 1.3
+	// review: students need to see that "no explicit rule" still means
+	// "denied at the policy edge"). Both shipping configs have
+	// defaultAction: DENY, so an absent rule resolves to DENY there.
+	//
+	// We list BOTH directions for each cross-zone relationship so the
+	// drawer surfaces implicit-deny rows even under the weak baseline
+	// (which has explicit ALLOWs for the 8 "lower-to-higher" pairs but
+	// no rules for the reverse). The first half is the forward
+	// direction (lower-trust → higher-trust, the segmentation lesson);
+	// the second half is the reverse (higher-trust → lower-trust,
+	// which falls through to default-deny for new connections —
+	// conntrack still permits established return traffic).
+	pairs: []zonePair{
+		// Forward (lower trust → higher trust)
+		{"wan", "dmz"}, {"wan", "lan1"}, {"wan", "lan2"},
+		{"dmz", "lan1"}, {"dmz", "lan2"},
+		{"lan1", "lan2"},
+		// Intra-zone
+		{"lan1", "lan1"}, {"lan2", "lan2"},
+		// Reverse (higher trust → lower trust). These are
+		// implicit-deny under both shipping configs; their value is
+		// pedagogical: showing the student that the policy has zero
+		// explicit rules permitting OT-to-corporate or field-to-OT
+		// new connections, even though conntrack happily allows
+		// established return traffic.
+		{"lan2", "lan1"}, {"lan2", "dmz"}, {"lan2", "wan"},
+		{"lan1", "dmz"}, {"lan1", "wan"},
+		{"dmz", "wan"},
+	},
+	labels: map[string]string{"wan": "Enterprise", "dmz": "Vendor", "lan1": "OT Ops", "lan2": "Field"},
 }
 
-// resolveCapture returns the capture's device addresses and the first three
-// octets of their /24 network, which the PCAP summary leaves out.
-func (r *packageRecipe) resolveCapture(gen *lifecycle.Generation) ([]string, []string, error) {
-	var hosts []string
-	for _, node := range r.validationCapture.nodes {
-		ip, err := nodeIP(gen, node, r.validationCapture.network)
-		if err != nil {
-			return nil, nil, err
-		}
-		hosts = append(hosts, ip)
-	}
-	for _, network := range gen.Manifest.Networks {
-		if network.Key != r.validationCapture.network {
-			continue
-		}
-		_, subnet, err := net.ParseCIDR(network.Subnet)
-		if err != nil || subnet.IP.To4() == nil || maskOnes(subnet) != 24 {
-			return nil, nil, fmt.Errorf("capture network %s subnet %s is not an IPv4 /24", network.Key, network.Subnet)
-		}
-		return hosts, strings.Split(subnet.IP.To4().String(), ".")[:3], nil
-	}
-	return nil, nil, fmt.Errorf("package %s has no network %s", gen.Package.ID, r.validationCapture.network)
-}
-
-func maskOnes(subnet *net.IPNet) int {
-	ones, _ := subnet.Mask.Size()
-	return ones
-}
-
-// resolvedTraffic is a trafficTarget against the generation's containers.
-type resolvedTraffic struct {
-	container, cmd, desc string
-}
-
-// resolveTraffic resolves the generation's traffic recipe.
-func resolveTraffic(gen *lifecycle.Generation) ([]resolvedTraffic, error) {
-	recipe, err := recipeFor(gen)
-	if err != nil {
-		return nil, err
-	}
-	targets := make([]resolvedTraffic, 0, len(recipe.traffic))
-	for _, t := range recipe.traffic {
-		from, err := nodeService(gen, t.fromNode)
-		if err != nil {
-			return nil, err
-		}
-		to, err := nodeIP(gen, t.toNode, t.network)
-		if err != nil {
-			return nil, err
-		}
-		targets = append(targets, resolvedTraffic{container: from.Container, cmd: fmt.Sprintf(t.command, to), desc: t.desc})
-	}
-	return targets, nil
+// usStaticRules are the rule summaries /firewall/rules shows while
+// containd is unavailable.
+var usStaticRules = []containd.ZoneRuleSummary{
+	{SourceZone: "wan", DestZone: "dmz", Summary: "SSH/HTTP/S", Action: "ALLOW", RuleDetails: []string{"Enterprise to Vendor: Standard protocols"}},
+	{SourceZone: "wan", DestZone: "lan1", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Enterprise direct access to OT Ops (should be blocked)"}},
+	{SourceZone: "wan", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Enterprise direct access to Field Devices (should be blocked)"}},
+	{SourceZone: "dmz", DestZone: "lan1", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Vendor broad access to OT Ops (should be narrowed)"}},
+	{SourceZone: "dmz", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: Vendor direct access to Field Devices (should be blocked)"}},
+	{SourceZone: "lan1", DestZone: "lan2", Summary: "WEAK ALLOW", Action: "ALLOW", RuleDetails: []string{"WEAK: All OT nodes can reach Field Devices (should be RTAC only)"}},
+	{SourceZone: "lan1", DestZone: "lan1", Summary: "OT Internal", Action: "ALLOW", RuleDetails: []string{"OT Operations internal communication"}},
 }

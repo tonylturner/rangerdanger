@@ -36,8 +36,13 @@ type PolicyComparison struct {
 	Summary        string           `json:"summary"`
 }
 
-// handleFirewallCompare returns a structured comparison of weak vs improved firewall configs.
+// handleFirewallCompare returns a structured comparison of weak vs improved
+// firewall configs, for packages whose recipe has a comparison table.
 func (s *Server) handleFirewallCompare(c *gin.Context) {
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.compare != nil })
+	if !ok {
+		return
+	}
 	pkg := rangeOf(c).Package
 	weakPath, err := s.policyPath(pkg, "weak")
 	if err != nil {
@@ -63,7 +68,7 @@ func (s *Server) handleFirewallCompare(c *gin.Context) {
 	}
 
 	// Build diff by zone pair
-	diffs := compareRuleSets(weakRules, improvedRules)
+	diffs := compareRuleSets(recipe.compare, weakRules, improvedRules)
 
 	tightened := 0
 	added := 0
@@ -337,28 +342,9 @@ func loadFirewallRules(path string) (*fwConfigFile, error) {
 	return &cfg, nil
 }
 
-// zonePairLabel maps containd zone names to human-readable labels.
-func zonePairLabel(src, dst string) string {
-	names := map[string]string{
-		"wan":  "Enterprise",
-		"dmz":  "Vendor",
-		"lan1": "OT Ops",
-		"lan2": "Field",
-	}
-	s := names[src]
-	if s == "" {
-		s = src
-	}
-	d := names[dst]
-	if d == "" {
-		d = dst
-	}
-	return s + " → " + d
-}
-
-func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
+// compareRuleSets diffs the two policies over spec's zone pairs, in order.
+func compareRuleSets(spec *compareSpec, weak, improved *fwConfigFile) []PolicyRuleDiff {
 	// Index rules by zone pair for each config
-	type zonePair struct{ src, dst string }
 	type ruleInfo struct {
 		desc   string
 		action string
@@ -388,49 +374,6 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 		}
 	}
 
-	// Collect all zone pairs
-	allPairs := map[zonePair]bool{}
-	for p := range weakByPair {
-		allPairs[p] = true
-	}
-	for p := range improvedByPair {
-		allPairs[p] = true
-	}
-
-	// Ordered zone pairs for consistent output. Every entry here is
-	// rendered as a row in the Segmentation drawer even if neither
-	// policy has an explicit rule — the implicit default-deny is the
-	// pedagogical point of the panel (per the Lab 1.3 review:
-	// students need to see that "no explicit rule" still means
-	// "denied at the policy edge"). Both shipping configs have
-	// defaultAction: DENY, so an absent rule resolves to DENY here.
-	//
-	// We list BOTH directions for each cross-zone relationship so the
-	// drawer surfaces implicit-deny rows even under the weak baseline
-	// (which has explicit ALLOWs for the 8 "lower-to-higher" pairs but
-	// no rules for the reverse). The first half is the forward
-	// direction (lower-trust → higher-trust, the segmentation lesson);
-	// the second half is the reverse (higher-trust → lower-trust,
-	// which falls through to default-deny for new connections —
-	// conntrack still permits established return traffic).
-	orderedPairs := []zonePair{
-		// Forward (lower trust → higher trust)
-		{"wan", "dmz"}, {"wan", "lan1"}, {"wan", "lan2"},
-		{"dmz", "lan1"}, {"dmz", "lan2"},
-		{"lan1", "lan2"},
-		// Intra-zone
-		{"lan1", "lan1"}, {"lan2", "lan2"},
-		// Reverse (higher trust → lower trust). These are
-		// implicit-deny under both shipping configs; their value is
-		// pedagogical: showing the student that the policy has zero
-		// explicit rules permitting OT-to-corporate or field-to-OT
-		// new connections, even though conntrack happily allows
-		// established return traffic.
-		{"lan2", "lan1"}, {"lan2", "dmz"}, {"lan2", "wan"},
-		{"lan1", "dmz"}, {"lan1", "wan"},
-		{"dmz", "wan"},
-	}
-
 	weakDefault := strings.ToUpper(weak.Firewall.DefaultAction)
 	if weakDefault == "" {
 		weakDefault = "DENY" // containd's runtime default if the field is absent
@@ -442,7 +385,7 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 
 	var diffs []PolicyRuleDiff
 
-	for _, pair := range orderedPairs {
+	for _, pair := range spec.pairs {
 		wRules := weakByPair[pair]
 		iRules := improvedByPair[pair]
 
@@ -499,7 +442,7 @@ func compareRuleSets(weak, improved *fwConfigFile) []PolicyRuleDiff {
 		}
 
 		diffs = append(diffs, PolicyRuleDiff{
-			ZonePair:       zonePairLabel(pair.src, pair.dst),
+			ZonePair:       spec.label(pair.src, pair.dst),
 			WeakRule:       strings.Join(wDesc, "; "),
 			ImprovedRule:   strings.Join(iDesc, "; "),
 			WeakAction:     wAction,
