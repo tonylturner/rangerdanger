@@ -8,7 +8,7 @@ Automation):
 
 | Program | Role | IEC 104 station |
 |---|---|---|
-| `iec104-rtu` | substation RTU / gateway | controlled (server), CA 1 |
+| `iec104-rtu` | substation RTU / gateway | controlled (server), CA 1 and CA 2 |
 | `iec104-cc` | control-centre SCADA front end | controlling (client) |
 | `iec104cmd` | student / attack CLI for Lab 2.3 | controlling (client) |
 
@@ -52,17 +52,32 @@ docker run --rm rd-iec104:spike iec104cmd <rtu-host> gi
 docker run --rm rd-iec104:spike iec104cmd <rtu-host> dc 3001 open -sbo
 ```
 
-## Point set (spike)
+## Point map (spike)
 
-In-memory, defined in `src/points.h`. Increment 3 moves this into package
-data (`lab-definitions/packages/<id>/protocols/`).
+In-memory, defined in `src/points.h`. A station GI returns the monitoring
+points for the requested CA. Increment 3 moves this into package data
+(`lab-definitions/packages/<id>/protocols/`).
 
-| IOA | Type | Meaning |
-|---|---|---|
-| 1001 | `M_DP_NA_1` / `M_DP_TB_1` | feeder breaker position (GI / spontaneous) |
-| 2001 | `M_ME_NC_1` | feeder current (A) |
-| 2002 | `M_ME_NC_1` | busbar voltage (kV) |
-| 3001 | `C_DC_NA_1` | breaker double command, select-before-execute only |
+| CA | IOA | Type | Meaning |
+|---:|---:|---|---|
+| 1 | 1001 | `M_DP_NA_1` / `M_DP_TB_1` | feeder breaker position (GI / spontaneous) |
+| 1 | 2001 | `M_ME_NC_1` | feeder current (A) |
+| 1 | 2002 | `M_ME_NC_1` | busbar voltage (kV) |
+| 1 | 3001 | `C_DC_NA_1` | breaker double command, select-before-execute only; not returned by GI |
+| 1 | 65535 | `M_ME_NC_1` | test measurement at the 16-bit boundary |
+| 1 | 65536 | `M_ME_NC_1` | test measurement immediately above the 16-bit boundary |
+| 1 | 16777215 | `M_ME_NC_1` | test measurement at the maximum 24-bit IOA |
+| 2 | 4001 | `M_ME_NC_1` | auxiliary-station frequency (Hz) |
+
+IOA 0 is not a configured monitoring point. It is used as the information
+object address of the `C_IC_NA_1` station-interrogation command. A double
+command sent to the unassigned `(CA 1, IOA 0)` is answered negatively with
+COT 47, “unknown information object address.” That response is the
+standard's unknown-address cause, not a special rule that every use of
+address zero is invalid. See IEC 60870-5-101:2003+A1:2005, cause of
+transmission code 47 (“unknown information object address”), as used by
+IEC 60870-5-104:2006+A1:2016; the `C_IC_NA_1` Type ID 100 definition
+specifies the interrogation command.
 
 The RTU accepts a breaker command only as select-before-execute: a direct
 execute, an execute after the select timeout, an execute whose value
@@ -78,6 +93,15 @@ network's bridge, and asserts each check on the tshark decode. Evidence
 lands in `build/iec104-spike/`. Results are recorded in
 `docs/plans/iec104/spike-iec104.md`.
 
+## Reference captures
+
+The capture bundle is test data licensed under Apache-2.0; see
+`captures/LICENSE`. The IEC104 programs and their linked lib60870-C
+remain GPLv3 as described above. The pcaps contain protocol traffic, not
+lib60870 source or binaries. See [`captures/README.md`](captures/README.md)
+for the point map, capture contents, harness streams, version/configuration
+details, SHA256 checksums, and the exact regeneration command.
+
 ## Layout
 
 ```
@@ -89,4 +113,5 @@ src/cc.c         iec104-cc: client, GI, SBO, stale-on-link-loss cache
 src/iec104cmd.c  iec104cmd: one-shot GI / single / double command
 Dockerfile       multi-arch image carrying all three programs
 check/           rerunnable correctness checks (run.sh, capture helper)
+captures/        Apache-2.0 reference pcaps, checksums and regeneration
 ```

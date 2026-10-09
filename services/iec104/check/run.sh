@@ -43,7 +43,11 @@ cmd() {
   log "run $name: iec104cmd $* (10.204.104.$octet)"
   local rc=0
   docker run --rm --network "$NET" --ip "10.204.104.$octet" "$IMG" iec104cmd "$RTU_IP" "$@" >"$OUT/$name.log" 2>&1 || rc=$?
-  [ "$rc" = "$want" ] && pass "$name exit=$rc" || fail "$name exit=$rc want=$want (see $name.log)"
+  if [ "$rc" = "$want" ] && pass "$name exit=$rc"; then
+    :
+  else
+    fail "$name exit=$rc want=$want (see $name.log)"
+  fi
 }
 # wait_cc <pattern> <count> <limit-seconds>
 wait_cc() {
@@ -75,8 +79,10 @@ docker run -d --name "$CC" --network "$NET" --ip "$CC_IP" "$IMG" iec104-cc "$RTU
 wait_cc "GI complete" 1 20
 
 cmd 35 01-gi               0 gi
+cmd 37 04-gi-ca2           0 -ca 2 gi
 cmd 30 02-sbo-open         0 dc 3001 open  -sbo
 cmd 36 03-sbo-close        0 dc 3001 close -sbo
+cmd 38 09-ioa-zero-unassigned 1 dc 0 close
 log "local protection trip: SIGUSR1 to the RTU"
 docker kill -s USR1 "$RTU" >/dev/null; sleep 1
 cmd 31 05-exec-no-select   1 dc 3001 close
@@ -107,36 +113,112 @@ docker image inspect "$IMG" --format '{{.Architecture}} {{.Size}}' >"$OUT/image.
 
 # ---- assertions on protocol evidence ----
 log "assert on the capture"
-[ "$(tf '_ws.malformed || _ws.expert.severity=="Error"' -e frame.number | wc -l | tr -d ' ')" = 0 ] \
-  && pass "zero malformed/error frames" || fail "malformed or error frames present"
+if [ "$(tf '_ws.malformed || _ws.expert.severity=="Error"' -e frame.number | wc -l | tr -d ' ')" = 0 ] \
+  && pass "zero malformed/error frames"; then
+  :
+else
+  fail "malformed or error frames present"
+fi
 # GI: ACT(6) -> ACT_CON(7) -> ACT_TERM(10), and monitoring objects at COT 20
-grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
+if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
   && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.causetx==10' -e frame.number) \
-  && grep -q . <(tf '(iec60870_asdu.typeid==3||iec60870_asdu.typeid==13) && iec60870_asdu.causetx==20' -e frame.number) \
-  && pass "GI: ACT_CON + ACT_TERM + COT20 monitoring objects" || fail "GI evidence missing"
+  && grep -q . <(tf 'iec60870_asdu.typeid==3 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20' -e frame.number) \
+  && grep -q . <(tf 'iec60870_asdu.typeid==13 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20' -e frame.number) \
+  && pass "GI: ACT_CON + ACT_TERM + COT20 monitoring objects"; then
+  :
+else
+  fail "GI evidence missing"
+fi
+# On CA 1, the unassigned command IOA 0 is rejected as UNKNOWN_IOA (COT 47).
+if grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.addr==1 && iec60870_asdu.ioa==0 && iec60870_asdu.causetx==47 && iec60870_asdu.nega==1' -e frame.number) \
+  && pass "unassigned command IOA 0 rejected with COT 47"; then
+  :
+else
+  fail "IOA 0 unknown-address response missing"
+fi
+# CA 1's 3-octet monitoring addresses straddle the 16-bit boundary and reach the 24-bit maximum.
+for ioa in 65535 65536 16777215; do
+  if grep -q . <(tf "iec60870_asdu.typeid==13 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20 && iec60870_asdu.ioa==$ioa" -e frame.number) \
+    && pass "GI on CA 1 returned M_ME_NC_1 IOA $ioa"; then
+    :
+  else
+    fail "GI on CA 1 missing M_ME_NC_1 IOA $ioa"
+  fi
+done
+# CA 2 is an independent interrogation station with its own measurement.
+if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
+  && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==10' -e frame.number) \
+  && grep -q . <(tf 'iec60870_asdu.typeid==13 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==20 && iec60870_asdu.ioa==4001' -e frame.number) \
+  && pass "GI on CA 2 returned M_ME_NC_1 IOA 4001"; then
+  :
+else
+  fail "CA 2 GI evidence missing"
+fi
+# C_IC_NA_1 uses IOA 0; this is a command address, not a configured monitoring point.
+if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==6 && iec60870_asdu.ioa==0' -e frame.number) \
+  && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==6 && iec60870_asdu.ioa==0' -e frame.number) \
+  && pass "GI requests on CA 1 and CA 2 use command IOA 0"; then
+  :
+else
+  fail "GI IOA 0 command evidence missing"
+fi
 # Spontaneous M_DP_TB_1 (type 31) COT 3 with a CP56Time2a timestamp (the local trip)
-grep -q . <(tf 'iec60870_asdu.typeid==31 && iec60870_asdu.causetx==3 && iec60870_asdu.cp56time' -e frame.number) \
-  && pass "spontaneous M_DP_TB_1 COT 3 with CP56Time2a" || fail "spontaneous COT-3 time-tagged event missing"
+if grep -q . <(tf 'iec60870_asdu.typeid==31 && iec60870_asdu.causetx==3 && iec60870_asdu.cp56time' -e frame.number) \
+  && pass "spontaneous M_DP_TB_1 COT 3 with CP56Time2a"; then
+  :
+else
+  fail "spontaneous COT-3 time-tagged event missing"
+fi
 # SBO: positive select then positive execute (dco.se marks select)
-grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==1 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
+if grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==1 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
   && grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==0 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
-  && pass "SBO select+execute confirmed positively" || fail "SBO positive confirms missing"
+  && pass "SBO select+execute confirmed positively"; then
+  :
+else
+  fail "SBO positive confirms missing"
+fi
 # At least one negative execute confirm (no-select / expiry / mismatch)
-[ "$(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==0 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==1' -e frame.number | wc -l | tr -d ' ')" -ge 3 ] \
-  && pass "execute without/invalid select rejected (>=3 negative confirms)" || fail "expected >=3 negative execute confirms"
+if [ "$(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==0 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==1' -e frame.number | wc -l | tr -d ' ')" -ge 3 ] \
+  && pass "execute without/invalid select rejected (>=3 negative confirms)"; then
+  :
+else
+  fail "expected >=3 negative execute confirms"
+fi
 # TESTFR act (U 0x10) and con (0x20) on idle
-grep -q . <(tf 'iec60870_104.utype==0x10' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x20' -e frame.number) \
-  && pass "TESTFR act/con exchanged on idle" || fail "TESTFR frames missing"
+if grep -q . <(tf 'iec60870_104.utype==0x10' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x20' -e frame.number) \
+  && pass "TESTFR act/con exchanged on idle"; then
+  :
+else
+  fail "TESTFR frames missing"
+fi
 # STOPDT/STARTDT: act (0x04/0x01) and con (0x08/0x02)
-grep -q . <(tf 'iec60870_104.utype==0x04' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x08' -e frame.number) \
-  && pass "STOPDT act/con exchanged" || fail "STOPDT frames missing"
+if grep -q . <(tf 'iec60870_104.utype==0x04' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x08' -e frame.number) \
+  && pass "STOPDT act/con exchanged"; then
+  :
+else
+  fail "STOPDT frames missing"
+fi
 
 log "assert on the control-centre log"
-[ "$(grep -c 'cache marked stale on link loss: .*q=IV|NT' "$OUT/cc.log")" -ge 2 ] \
-  && pass "control centre marked values IV|NT on link loss (x>=2)" || fail "link-loss quality marking missing"
-[ "$(grep -c 'GI complete' "$OUT/cc.log")" -ge 3 ] \
-  && pass "control centre reconnected and re-ran GI, quality recovered (x>=3)" || fail "reconnect+GI recovery missing"
+if [ "$(grep -c 'cache marked stale on link loss: .*q=IV|NT' "$OUT/cc.log")" -ge 2 ] \
+  && pass "control centre marked values IV|NT on link loss (x>=2)"; then
+  :
+else
+  fail "link-loss quality marking missing"
+fi
+if [ "$(grep -c 'GI complete' "$OUT/cc.log")" -ge 3 ] \
+  && pass "control centre reconnected and re-ran GI, quality recovered (x>=3)"; then
+  :
+else
+  fail "reconnect+GI recovery missing"
+fi
 
 "$TSHARK" -r "$PCAP" -q -z expert > "$OUT/expert.txt" 2>&1 || true
 echo; cat "$OUT/results.log"
-[ "$FAILED" = 0 ] && { log "ALL CHECKS PASSED"; exit 0; } || { log "SOME CHECKS FAILED"; exit 1; }
+if [ "$FAILED" = 0 ]; then
+  log "ALL CHECKS PASSED"
+  exit 0
+else
+  log "SOME CHECKS FAILED"
+  exit 1
+fi

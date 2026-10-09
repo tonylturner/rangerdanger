@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * iec104-rtu: substation RTU / gateway, IEC 104 controlled station
- * (server) for common address 1, built on lib60870-C.
+ * (server) for common addresses 1 and 2, built on lib60870-C.
  *
  * lib60870 owns the session layer (APCI, k/w, t0-t3, STARTDT/STOPDT,
  * TESTFR). This file owns what the library deliberately leaves to the
@@ -101,6 +101,12 @@ static struct {
 static volatile sig_atomic_t stopRequested = 0;
 static volatile sig_atomic_t tripRequested = 0;
 
+static bool
+known_ca(int ca)
+{
+    return ca == RD_CA || ca == RD_CA_AUX;
+}
+
 static void
 on_signal(int sig)
 {
@@ -140,6 +146,36 @@ send_breaker_event(CS101_CauseOfTransmission cot)
     CS101_ASDU_addInformationObject(asdu, io);
     InformationObject_destroy(io);
     broadcast(asdu);
+    CS101_ASDU_destroy(asdu);
+}
+
+static void
+add_measurement(CS101_ASDU asdu, int ioa, float value)
+{
+    InformationObject io =
+        (InformationObject)MeasuredValueShort_create(NULL, ioa, value, IEC60870_QUALITY_GOOD);
+    CS101_ASDU_addInformationObject(asdu, io);
+    InformationObject_destroy(io);
+}
+
+/* Caller holds rtu.lock. */
+static void
+send_measurements(IMasterConnection conn, int ca, int oa)
+{
+    CS101_ASDU asdu =
+        CS101_ASDU_create(rtu.al, false, CS101_COT_INTERROGATED_BY_STATION, oa, ca, false, false);
+
+    if (ca == RD_CA) {
+        add_measurement(asdu, RD_IOA_CURRENT, rtu.current);
+        add_measurement(asdu, RD_IOA_VOLTAGE, rtu.voltage);
+        add_measurement(asdu, RD_IOA_EDGE_16BIT_MAX, 65.535f);
+        add_measurement(asdu, RD_IOA_EDGE_16BIT_OVERFLOW, 65.536f);
+        add_measurement(asdu, RD_IOA_EDGE_24BIT_MAX, 167.77215f);
+    } else if (ca == RD_CA_AUX) {
+        add_measurement(asdu, RD_IOA_AUX_FREQUENCY, 50.02f);
+    }
+
+    IMasterConnection_sendASDU(conn, asdu);
     CS101_ASDU_destroy(asdu);
 }
 
@@ -183,7 +219,8 @@ interrogation_handler(void* param, IMasterConnection conn, CS101_ASDU asdu, uint
     (void)param;
     rd_log_asdu("rx", asdu);
 
-    if (CS101_ASDU_getCA(asdu) != RD_CA) {
+    int ca = CS101_ASDU_getCA(asdu);
+    if (!known_ca(ca)) {
         CS101_ASDU_setCOT(asdu, CS101_COT_UNKNOWN_CA);
         CS101_ASDU_setNegative(asdu, true);
         IMasterConnection_sendASDU(conn, asdu);
@@ -211,22 +248,18 @@ interrogation_handler(void* param, IMasterConnection conn, CS101_ASDU asdu, uint
 
     IMasterConnection_sendACT_CON(conn, asdu, false);
 
-    CS101_ASDU dp = CS101_ASDU_create(rtu.al, false, CS101_COT_INTERROGATED_BY_STATION, oa, RD_CA, false, false);
-    InformationObject io =
-        (InformationObject)DoublePointInformation_create(NULL, RD_IOA_BREAKER, rtu.breaker, IEC60870_QUALITY_GOOD);
-    CS101_ASDU_addInformationObject(dp, io);
-    InformationObject_destroy(io);
-    IMasterConnection_sendASDU(conn, dp);
-    CS101_ASDU_destroy(dp);
+    if (ca == RD_CA) {
+        CS101_ASDU dp =
+            CS101_ASDU_create(rtu.al, false, CS101_COT_INTERROGATED_BY_STATION, oa, ca, false, false);
+        InformationObject io = (InformationObject)DoublePointInformation_create(
+            NULL, RD_IOA_BREAKER, rtu.breaker, IEC60870_QUALITY_GOOD);
+        CS101_ASDU_addInformationObject(dp, io);
+        InformationObject_destroy(io);
+        IMasterConnection_sendASDU(conn, dp);
+        CS101_ASDU_destroy(dp);
+    }
 
-    CS101_ASDU me = CS101_ASDU_create(rtu.al, false, CS101_COT_INTERROGATED_BY_STATION, oa, RD_CA, false, false);
-    io = (InformationObject)MeasuredValueShort_create(NULL, RD_IOA_CURRENT, rtu.current, IEC60870_QUALITY_GOOD);
-    CS101_ASDU_addInformationObject(me, io);
-    MeasuredValueShort_create((MeasuredValueShort)io, RD_IOA_VOLTAGE, rtu.voltage, IEC60870_QUALITY_GOOD);
-    CS101_ASDU_addInformationObject(me, io);
-    InformationObject_destroy(io);
-    IMasterConnection_sendASDU(conn, me);
-    CS101_ASDU_destroy(me);
+    send_measurements(conn, ca, oa);
 
     IMasterConnection_sendACT_TERM(conn, asdu);
 
@@ -237,7 +270,15 @@ interrogation_handler(void* param, IMasterConnection conn, CS101_ASDU asdu, uint
 static void
 reply_negative(IMasterConnection conn, CS101_ASDU asdu, CS101_CauseOfTransmission cot, const char* why)
 {
-    rd_log("reject ioa=%d cot=%d: %s", RD_IOA_BREAKER_CMD, (int)cot, why);
+    int ioa = -1;
+    if (CS101_ASDU_getNumberOfElements(asdu) > 0) {
+        InformationObject io = CS101_ASDU_getElement(asdu, 0);
+        if (io) {
+            ioa = InformationObject_getObjectAddress(io);
+            InformationObject_destroy(io);
+        }
+    }
+    rd_log("reject ioa=%d cot=%d: %s", ioa, (int)cot, why);
     CS101_ASDU_setCOT(asdu, cot);
     CS101_ASDU_setNegative(asdu, true);
     IMasterConnection_sendASDU(conn, asdu);
@@ -326,7 +367,8 @@ asdu_handler(void* param, IMasterConnection conn, CS101_ASDU asdu)
 
     rd_log_asdu("rx", asdu);
 
-    if (CS101_ASDU_getCA(asdu) != RD_CA) {
+    int ca = CS101_ASDU_getCA(asdu);
+    if (!known_ca(ca)) {
         reply_negative(conn, asdu, CS101_COT_UNKNOWN_CA, "unknown common address");
         return true;
     }
@@ -339,7 +381,7 @@ asdu_handler(void* param, IMasterConnection conn, CS101_ASDU asdu)
 
     InformationObject io = CS101_ASDU_getElement(asdu, 0);
     if (io == NULL || CS101_ASDU_getNumberOfElements(asdu) != 1 ||
-        InformationObject_getObjectAddress(io) != RD_IOA_BREAKER_CMD) {
+        ca != RD_CA || InformationObject_getObjectAddress(io) != RD_IOA_BREAKER_CMD) {
         if (io)
             InformationObject_destroy(io);
         reply_negative(conn, asdu, CS101_COT_UNKNOWN_IOA, "no command point at this IOA");
@@ -361,7 +403,7 @@ static bool
 allowed_ca_handler(void* param, int ca)
 {
     (void)param;
-    return ca == RD_CA;
+    return known_ca(ca);
 }
 
 static bool
@@ -484,10 +526,10 @@ usage(void)
 {
     fprintf(stderr, "Usage: iec104-rtu [-bind ADDR] [-port N] [-select-timeout MS] [-t3 S]\n"
                     "\n"
-                    "IEC 104 server, CA %d. Points: breaker DP ioa %d, current ioa %d, voltage ioa %d,\n"
+                    "IEC 104 server, CA %d and %d. Points: breaker DP ioa %d, current ioa %d, voltage ioa %d,\n"
                     "breaker command C_DC_NA_1 ioa %d (select-before-execute only).\n"
                     "SIGUSR1 trips the breaker locally.\n",
-            RD_CA, RD_IOA_BREAKER, RD_IOA_CURRENT, RD_IOA_VOLTAGE, RD_IOA_BREAKER_CMD);
+            RD_CA, RD_CA_AUX, RD_IOA_BREAKER, RD_IOA_CURRENT, RD_IOA_VOLTAGE, RD_IOA_BREAKER_CMD);
     exit(2);
 }
 

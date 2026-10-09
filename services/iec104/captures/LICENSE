@@ -1,0 +1,6 @@
+The reference packet captures and SHA256SUMS in this directory are
+licensed under the Apache License, Version 2.0. See the repository-root
+LICENSE for the complete license text.
+
+This data license does not change the GPLv3 license of the programs under
+services/iec104/.

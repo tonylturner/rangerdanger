@@ -598,25 +598,57 @@ decisions are separate from what happened on the wire.
 
 ## 9. Test fixtures from RangerDanger
 
-RangerDanger **will** commit reference captures to
-`RD:services/iec104/captures/` on branch `iec104`. They do not exist
-yet; until they land, L1 works from synthetic fixtures and does not
+RangerDanger's capture README and regeneration script are under
+`RD:services/iec104/captures/` on branch `iec104`. The committed bundle
+is `startup-gi-monitor.pcap`, `sbo-double-command.pcap`,
+`session-management.pcap`, and `edge-addressing.pcap`, with
+`SHA256SUMS`; the generated files are committed after the harness run.
+Until those files land, L1 works from synthetic fixtures and does not
 block on them. The lib60870 RTU and control centre they come from are
 on `iec104` now (`RD:services/iec104/`, report
 `RD:docs/plans/iec104/spike-iec104.md`). Point map: CA 1; breaker
 M_DP_NA_1/M_DP_TB_1 at IOA 1001; current and voltage M_ME_NC_1 at
 2001/2002; breaker command C_DC_NA_1 at IOA 3001, select-before-execute
-only. The README will list SHA256, stack versions, configuration
-(COT 2, CA 2, IOA 3, k/w, t0-t3), the CA/IOA/type point map, command
-values and endpoints, and a regeneration script. The captures will be
-Apache-2.0 test data and contain no lib60870 code.
+only; M_ME_NC_1 boundary points at IOAs 65535, 65536, and 16777215;
+and M_ME_NC_1 at IOA 4001 on CA 2. An unassigned C_DC_NA_1 at
+(CA 1, IOA 0) receives COT 47 (unknown information object address);
+station GI uses a C_IC_NA_1 command with IOA 0. The README lists
+SHA256, stack versions, configuration (COT 2, CA 2, IOA 3, k/w,
+t0-t3), the CA/IOA/type point map, command values and endpoints, and
+the exact regeneration command. The captures are Apache-2.0 test data
+and contain no lib60870 code. Whole-stream extraction includes the
+control-centre streams in both `startup-gi-monitor.pcap` and
+`session-management.pcap`, so those two captures intentionally overlap.
 
 | Capture | Contents |
 |---|---|
-| `startup-gi-monitor` | handshake; STARTDT act/con; GI act/con/data (COT 20)/term; types 3, 13, 31 with quality and time; spontaneous (COT 3); S-frames; TESTFR act/con |
-| `sbo-double-command` | type 46 select/con, execute/con/term; execute without select (negative); select expiry; execute value ≠ select value |
-| `session-management` | STOPDT/STARTDT; TESTFR; t1 timeout; FIN; link loss then reconnect + GI |
-| `edge-addressing` | IOA 0, 65535, 65536, 16777215; a second CA |
+| `startup-gi-monitor.pcap` | handshake; STARTDT act/con; GI act/con/data (COT 20)/term; types 3, 13, 31 with quality and time; spontaneous (COT 3); S-frames; TESTFR act/con |
+| `sbo-double-command.pcap` | type 46 select/con, execute/con/term; execute without select (negative); select expiry; execute value ≠ select value |
+| `session-management.pcap` | STOPDT/STARTDT; TESTFR; t1 timeout; FIN; link loss then reconnect + GI |
+| `edge-addressing.pcap` | unassigned command IOA 0 (negative COT 47) and GI command IOA 0; CA 1 IOAs 65535, 65536, 16777215; GI point at CA 2 / IOA 4001 |
+
+### Public corpora (references only)
+
+These external traces are not vendored. The public-capture research report
+did not include SHA256 values; do not infer or invent them. Wireshark's
+attachment provenance/licence is unconfirmed, so reference only, never
+vendor:
+
+- Wireshark SampleCaptures
+  ([source page](https://wiki.wireshark.org/SampleCaptures#iec-60870-5-104)):
+  `iec104.pcap` (10,135 B) adds direct-operate Type IDs 45–51 (our type
+  46 traffic is SBO) and
+  multi-APDU TCP segments (up to 12); `IEC104_SQ.pcapng` (584 B) adds
+  SQ=1 with 16 objects per ASDU and multiple APDUs in one packet, neither
+  exercised by our captures.
+  SHA256 for each: not supplied in the research report.
+- Peter Maynard, [dataset-v1](https://figshare.com/articles/dataset/dataset-v1_pcap/6133457)
+  (38,337,304 B, CC BY 4.0): adds COT 42 MITM traffic, clock-sync Type
+  103, multi-APDU segments, retransmissions and capture gaps. SHA256:
+  not supplied in the research report; reference/fetch only, not vendored.
+
+containd may fetch these only in an opt-in corpus/integration job, never
+in default unit tests. No public corpora are bundled in this repository.
 
 - Derive Go byte fixtures from these captures with checked-in
   extraction metadata. Go unit tests must not need tshark at run time.
