@@ -629,8 +629,8 @@ control-centre streams in both `startup-gi-monitor.pcap` and
 
 ### Public corpora (references only)
 
-These external traces are not vendored. The public-capture research report
-did not include SHA256 values; do not infer or invent them. Wireshark's
+These external traces are not vendored; a fetch must check the SHA256
+below (recorded on 2026-10-09). Wireshark's
 attachment provenance/licence is unconfirmed, so reference only, never
 vendor:
 
@@ -641,11 +641,12 @@ vendor:
   multi-APDU TCP segments (up to 12); `IEC104_SQ.pcapng` (584 B) adds
   SQ=1 with 16 objects per ASDU and multiple APDUs in one packet, neither
   exercised by our captures.
-  SHA256 for each: not supplied in the research report.
+  Downloads: `https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/iec104.pcap` (SHA256 `a78aa971adc51e54413a865937f1799ef57118d397cef57ccd93a358ed5b85d6`),
+  `https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/IEC104_SQ.pcapng` (SHA256 `f855a11326f7aa4f719b1fbb65e5f8dfe3d9d194185a8f5faf5b5dc3cb831227`).
 - Peter Maynard, [dataset-v1](https://figshare.com/articles/dataset/dataset-v1_pcap/6133457)
   (38,337,304 B, CC BY 4.0): adds COT 42 MITM traffic, clock-sync Type
-  103, multi-APDU segments, retransmissions and capture gaps. SHA256:
-  not supplied in the research report; reference/fetch only, not vendored.
+  103, multi-APDU segments, retransmissions and capture gaps. Download
+  `https://ndownloader.figshare.com/files/11064965` (SHA256 `663c73fd9a957070f88d6bc47cac0dc859610d045f4516e6ffae099c7c6f84da`); reference/fetch only, not vendored.
 
 containd may fetch these only in an opt-in corpus/integration job, never
 in default unit tests. No public corpora are bundled in this repository.

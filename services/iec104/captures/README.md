@@ -38,12 +38,13 @@ neither is a time-window-only slice.
   SBO) and multi-APDU TCP segments; `IEC104_SQ.pcapng` adds SQ=1 (16
   objects) and multiple APDUs per packet, neither exercised by our
   captures. Attachment provenance/licence is unconfirmed:
-  reference only, never vendor. The supplied research report has no
-  SHA256 values for either file.
+  reference only, never vendor. Downloads: `https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/iec104.pcap`
+  (SHA256 `a78aa971adc51e54413a865937f1799ef57118d397cef57ccd93a358ed5b85d6`) and `https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/IEC104_SQ.pcapng`
+  (SHA256 `f855a11326f7aa4f719b1fbb65e5f8dfe3d9d194185a8f5faf5b5dc3cb831227`).
 - Peter Maynard [dataset-v1](https://figshare.com/articles/dataset/dataset-v1_pcap/6133457)
   (38,337,304 B, CC BY 4.0) adds COT 42 MITM and clock-sync Type 103
-  traffic, plus multi-APDU segments. The supplied research report has no
-  SHA256 for it; reference/fetch only, not bundled.
+  traffic, plus multi-APDU segments. Download `https://ndownloader.figshare.com/files/11064965`
+  (SHA256 `663c73fd9a957070f88d6bc47cac0dc859610d045f4516e6ffae099c7c6f84da`); reference/fetch only, not bundled.
 
 containd tests may fetch these only in an opt-in job, never in default
 unit tests. Do not download or vendor them as part of capture regeneration.
