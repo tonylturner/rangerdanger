@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import {
   FIREWALL_ACTIVE_KEY,
+  NETWORK_EVENTS_KEY,
   SUBSTATION_KEY,
   WORKSHOP_STATUS_KEY,
   substationAuditQuery,
@@ -14,7 +15,7 @@ import { isRangeScopedQuery, resetRangeScopedQueries } from "./range";
 const LIVE_KEYS = [
   [...SUBSTATION_KEY, "state"],
   [...SUBSTATION_KEY, "audit"],
-  [...SUBSTATION_KEY, "network-events"],
+  NETWORK_EVENTS_KEY,
   FIREWALL_ACTIVE_KEY,
   WORKSHOP_STATUS_KEY,
 ];
@@ -34,9 +35,11 @@ describe("live queries", () => {
   it("refresh by the substation prefix without touching other reads", async () => {
     const client = new QueryClient();
     client.setQueryData([...SUBSTATION_KEY, "state"], 1);
+    client.setQueryData(NETWORK_EVENTS_KEY, 1);
     client.setQueryData(["substation-health"], 1);
     await client.invalidateQueries({ queryKey: SUBSTATION_KEY });
     expect(client.getQueryState([...SUBSTATION_KEY, "state"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(NETWORK_EVENTS_KEY)?.isInvalidated).toBe(true);
     expect(client.getQueryState(["substation-health"])?.isInvalidated).toBe(false);
     client.clear();
   });

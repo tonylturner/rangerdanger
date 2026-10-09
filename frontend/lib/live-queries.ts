@@ -23,6 +23,10 @@ export const FIREWALL_ACTIVE_KEY = ["firewall-active"] as const;
 // GET /api/workshop/status: the one key for it, so a policy apply that
 // invalidates it refreshes every view that shows it.
 export const WORKSHOP_STATUS_KEY = ["workshop", "status"] as const;
+// GET /api/substation/network-events (containd's recent events), read by
+// the US feeder panel and the segmentation drawer. It takes no query
+// parameters, so one key serves both.
+export const NETWORK_EVENTS_KEY = [...SUBSTATION_KEY, "network-events"] as const;
 
 // The US RTAC reads. enabled is false wherever the active package's
 // operator view is not the US one (lib/operator-view.ts): those ranges
@@ -53,11 +57,14 @@ export function useSubstationAudit(intervalMs: number, enabled = true) {
   return useQuery(substationAuditQuery(intervalMs, enabled));
 }
 
-export function useSubstationNetworkEvents(intervalMs: number) {
+// refetchOnWindowFocus is per caller: the drawer's strip polls fast
+// enough that a focus refetch only adds a request.
+export function useSubstationNetworkEvents(intervalMs: number, { refetchOnWindowFocus = true } = {}) {
   return useQuery({
-    queryKey: [...SUBSTATION_KEY, "network-events"],
+    queryKey: NETWORK_EVENTS_KEY,
     queryFn: getSubstationNetworkEvents,
     refetchInterval: intervalMs,
+    refetchOnWindowFocus,
   });
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError, getRange, getWorkshopGraph, requestRange } from "./api";
-import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "./live-queries";
+import { FIREWALL_ACTIVE_KEY, NETWORK_EVENTS_KEY, WORKSHOP_STATUS_KEY } from "./live-queries";
 import {
   INITIAL_OBSERVATION,
   IDLE_POLL_MS,
@@ -149,7 +149,7 @@ describe("range-scoped queries", () => {
       FIREWALL_ACTIVE_KEY,
       ["traffic-status"],
       ["pcap-status"],
-      ["segmentation", "live-events"],
+      NETWORK_EVENTS_KEY,
     ]) {
       expect(isRangeScopedQuery(key)).toBe(true);
     }

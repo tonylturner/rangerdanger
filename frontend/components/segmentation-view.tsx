@@ -17,11 +17,10 @@ import {
   ApiError,
   getActiveFirewallConfig,
   getFirewallComparison,
-  getSubstationNetworkEvents,
   type NetworkEvent,
   type PolicyComparison,
 } from "../lib/api";
-import { FIREWALL_ACTIVE_KEY } from "../lib/live-queries";
+import { FIREWALL_ACTIVE_KEY, useSubstationNetworkEvents } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
@@ -420,12 +419,7 @@ function LiveEvents({
   // 2.5s poll matches the substation Command Audit cadence and keeps
   // the strip responsive without burning bandwidth when nothing is
   // happening on the wire.
-  const { data } = useQuery({
-    queryKey: ["segmentation", "live-events"],
-    queryFn: getSubstationNetworkEvents,
-    refetchInterval: 2500,
-    refetchOnWindowFocus: false,
-  });
+  const { data } = useSubstationNetworkEvents(2500, { refetchOnWindowFocus: false });
 
   const events = data?.events ?? [];
   const unavailable = data?.source === "unavailable";
