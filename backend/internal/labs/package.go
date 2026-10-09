@@ -210,7 +210,7 @@ func (l *Loader) loadPackage(manifestPath string) (Package, error) {
 	if pkg.Scenarios, err = loadScenarioFiles(scenarioDir); err != nil {
 		return Package{}, err
 	}
-	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, l.Validators); err != nil {
+	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, pkg.Policies, l.Validators); err != nil {
 		return Package{}, err
 	}
 	return pkg, nil

@@ -73,11 +73,39 @@ func (i validationIssue) Error() string {
 	return fmt.Sprintf("scenario %s step %d %q: %s", scenarioID, i.stepIndex, i.title, i.problem)
 }
 
+// ExpectedConfigHardened is the step expected_config alias for "the
+// package's HardenedPolicy or a custom policy". The frontend policy banner
+// and the test runner resolve it; a package must declare HardenedPolicy to
+// use it.
+const (
+	ExpectedConfigHardened = "hardened"
+	HardenedPolicy         = "improved"
+)
+
+// policyNames is the set of a package's named policies, for validation.
+type policyNames map[string]string
+
+// has reports whether name is one of the package's policies.
+func (p policyNames) has(name string) bool {
+	_, ok := p[name]
+	return ok
+}
+
+// list is the policy names, sorted, for error messages.
+func (p policyNames) list() string {
+	names := make([]string, 0, len(p))
+	for name := range p {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 // ValidateLab checks a package's scenarios against its topology, its
-// declared capabilities and the registered validators: IDs, node
-// references, step IDs, validator keys and structured actions. Step indexes
-// in errors are zero-based, matching the scenario executor.
-func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, validators ValidatorRequirements) error {
+// declared capabilities, its named policies and the registered validators:
+// IDs, node references, step IDs, validator keys and structured actions.
+// Step indexes in errors are zero-based, matching the scenario executor.
+func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, policies map[string]string, validators ValidatorRequirements) error {
 	if def == nil {
 		return fmt.Errorf("lab definition is nil")
 	}
@@ -91,6 +119,7 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 		declared[capability] = true
 	}
 	vocabulary := vocabularyFor(capabilities)
+	names := policyNames(policies)
 
 	issues := make([]validationIssue, 0)
 	seenScenarioIDs := make(map[string]bool, len(scenarios))
@@ -159,14 +188,14 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 			if step.Title == "" {
 				stepAdd("step title must not be empty")
 			}
-			if step.ExpectedConfig != "" && step.ExpectedConfig != "weak" && step.ExpectedConfig != "hardened" {
-				stepAdd(fmt.Sprintf("expected_config must be weak or hardened, got %q", step.ExpectedConfig))
+			if step.ExpectedConfig != "" && !validExpectedConfig(step.ExpectedConfig, names) {
+				stepAdd(fmt.Sprintf("expected_config must be one of the package policies (%s) or %s, got %q", names.list(), ExpectedConfigHardened, step.ExpectedConfig))
 			}
 			if step.Node != "" && !nodeIDs[step.Node] {
 				stepAdd(fmt.Sprintf("unknown node %q", step.Node))
 			}
 			if step.Action != nil {
-				validateAction(*step.Action, step.Node, nodeIDs, vocabulary, stepAdd)
+				validateAction(*step.Action, step.Node, nodeIDs, vocabulary, names, stepAdd)
 			}
 		}
 	}
@@ -181,7 +210,16 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 	return fmt.Errorf("lab validation failed:\n%s", strings.Join(lines, "\n"))
 }
 
-func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool, vocabulary *actionVocabulary, add func(string)) {
+// validExpectedConfig reports whether value names a package policy, or is
+// the hardened alias of a package that declares the policy it stands for.
+func validExpectedConfig(value string, names policyNames) bool {
+	if value == ExpectedConfigHardened {
+		return names.has(HardenedPolicy)
+	}
+	return names.has(value)
+}
+
+func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool, vocabulary *actionVocabulary, names policyNames, add func(string)) {
 	if _, ok := validActionTypes[action.Type]; !ok {
 		add(fmt.Sprintf("unsupported action type %q", action.Type))
 		return
@@ -202,8 +240,8 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 			validateCommand(vocabulary.commands, command.Device, command.Command, fmt.Sprintf("commands[%d] ", index), add)
 		}
 	case "firewall":
-		if action.Config != "weak" && action.Config != "improved" {
-			add(fmt.Sprintf("firewall config must be weak or improved, got %q", action.Config))
+		if !names.has(action.Config) {
+			add(fmt.Sprintf("firewall config must be one of the package policies (%s), got %q", names.list(), action.Config))
 		}
 	case "check":
 		if len(action.Expect) == 0 {
@@ -224,8 +262,8 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 				config, ok := value.(string)
 				if !ok {
 					add("check firewall_config value must be a string")
-				} else if config != "weak" && config != "improved" {
-					add(fmt.Sprintf("check firewall_config must be weak or improved, got %q", config))
+				} else if !names.has(config) {
+					add(fmt.Sprintf("check firewall_config must be one of the package policies (%s), got %q", names.list(), config))
 				}
 				continue
 			}

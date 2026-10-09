@@ -11,7 +11,7 @@ import (
 )
 
 func testGeneration(id uint64) *Generation {
-	return NewGeneration(id, labs.Package{ID: "pkg-a"}, &manifest.Manifest{}, nil)
+	return NewGeneration(id, labs.Package{ID: "pkg-a"}, &manifest.Manifest{}, nil, time.Time{})
 }
 
 func TestStaleCompletionDropped(t *testing.T) {

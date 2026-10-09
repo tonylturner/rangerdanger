@@ -160,7 +160,8 @@ func Load(root, packageID string) (*Manifest, error) {
 	return &m, nil
 }
 
-// ServiceByRole returns the first service with the role.
+// ServiceByRole returns the first service with the role. Validate allows
+// only one holder of each singleHolderRoles role.
 func (m *Manifest) ServiceByRole(role Role) (Service, bool) {
 	for _, svc := range m.Services {
 		for _, r := range svc.Roles {
@@ -180,6 +181,21 @@ func (m *Manifest) ServiceByNode(node string) (Service, bool) {
 		}
 	}
 	return Service{}, false
+}
+
+// EndpointInstructor names the out-of-band instructor API of the one field
+// device that has it (EU feeder breaker). Validate allows one per manifest.
+const EndpointInstructor = "instructor"
+
+// ServiceWithEndpoint returns the first service that declares the named
+// endpoint, and the endpoint.
+func (m *Manifest) ServiceWithEndpoint(name string) (Service, string, bool) {
+	for _, svc := range m.Services {
+		if url, ok := svc.Endpoints[name]; ok {
+			return svc, url, true
+		}
+	}
+	return Service{}, "", false
 }
 
 // Endpoint returns a named endpoint of the first service with the role.

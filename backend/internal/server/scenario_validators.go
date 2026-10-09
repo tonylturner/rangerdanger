@@ -69,6 +69,12 @@ var scenarioValidators = map[string]scenarioValidator{
 			return validateVendorRDPCompromise(in.state, in.audit, in.activeConfig)
 		},
 	},
+	"eu-iec104-telecontrol": {
+		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			return s.validateTelecontrol(ctx, in.gen, in.activeConfig)
+		},
+	},
 	"us-validation-evidence": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {

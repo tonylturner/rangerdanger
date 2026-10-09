@@ -118,7 +118,7 @@ func (s *Server) forwardRTAC(c *gin.Context, method, path string, body io.Reader
 
 // handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
 func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
-	events, err := rangeOf(c).Containd().GetEvents(c.Request.Context(), "", 50)
+	events, err := rangeOf(c).Containd().GetEvents(c.Request.Context(), 50, time.Time{})
 	if err != nil {
 		// Return empty with source info rather than error
 		c.JSON(http.StatusOK, gin.H{

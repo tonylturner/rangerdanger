@@ -108,7 +108,9 @@ func (m *Manager) reconcileReady(rec Record) error {
 		return fmt.Errorf("proxy routes are not the routes of %s", pkg.ID)
 	}
 
-	gen := NewGeneration(rec.Generation, pkg, man, m.opts.NewContaind(api))
+	// The range was started by an earlier backend; the ready record's
+	// time is the latest bound that still precedes anything done on it.
+	gen := NewGeneration(rec.Generation, pkg, man, m.opts.NewContaind(api), rec.UpdatedAt)
 	m.opts.Activate(gen)
 	m.mu.Lock()
 	m.current = gen

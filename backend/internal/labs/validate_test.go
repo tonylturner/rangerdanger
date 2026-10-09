@@ -13,6 +13,9 @@ var testValidators = ValidatorRequirements{
 
 var electricalPackage = []string{CapabilityProcessElectrical}
 
+// usPolicies are the US package's policy names; validation reads only the names.
+var usPolicies = map[string]string{"weak": "firewall/weak.json", "improved": "firewall/improved.json"}
+
 func validatorFixture() (*LabYAML, ScenarioYAML) {
 	def := &LabYAML{
 		ID:    "substation",
@@ -27,7 +30,7 @@ func validatorFixture() (*LabYAML, ScenarioYAML) {
 
 // validateElectrical validates scenarios as a process.electrical package.
 func validateElectrical(def *LabYAML, scenarios ...ScenarioYAML) error {
-	return ValidateLab(def, scenarios, electricalPackage, testValidators)
+	return ValidateLab(def, scenarios, electricalPackage, usPolicies, testValidators)
 }
 
 func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
@@ -46,9 +49,9 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 		{
 			name: "bad expected config",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].ExpectedConfig = "improved"
+				scenario.Steps[0].ExpectedConfig = "strict"
 			},
-			problem: "expected_config must be weak or hardened",
+			problem: `expected_config must be one of the package policies (improved, weak) or hardened, got "strict"`,
 		},
 		{
 			name: "unknown step node",
@@ -83,7 +86,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].Action = &StepAction{Type: "firewall", Config: "hardened"}
 			},
-			problem: "firewall config must be weak or improved",
+			problem: `firewall config must be one of the package policies (improved, weak), got "hardened"`,
 		},
 		{
 			name: "unknown check key",
@@ -104,7 +107,7 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "hardened"}}
 			},
-			problem: "check firewall_config must be weak or improved",
+			problem: `check firewall_config must be one of the package policies (improved, weak), got "hardened"`,
 		},
 		{
 			name: "empty check expect",
@@ -221,7 +224,7 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 		},
 	}
 	scenario.Steps = append(scenario.Steps, ScenarioStep{
-		ID: "bad-node", Title: "Bad node", Node: "not-in-template", ExpectedConfig: "improved",
+		ID: "bad-node", Title: "Bad node", Node: "not-in-template", ExpectedConfig: "strict",
 	})
 	err := validateElectrical(def, scenario)
 	if err == nil {
@@ -231,7 +234,7 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 		`scenario baseline step 0 "Review policy": unknown check key "unknown"`,
 		`scenario baseline step 0 "Review policy": check breaker_closed value must be a boolean`,
 		`scenario baseline step 1 "Bad node": unknown node "not-in-template"`,
-		`scenario baseline step 1 "Bad node": expected_config must be weak or hardened`,
+		`scenario baseline step 1 "Bad node": expected_config must be one of the package policies`,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("aggregated error %q does not contain %q", err, want)
@@ -377,10 +380,55 @@ func TestValidateLabGatesActionVocabularyOnCapability(t *testing.T) {
 			if err := validateElectrical(def, scenario); err != nil {
 				t.Fatalf("electrical package rejected %s: %v", action.Type, err)
 			}
-			err := ValidateLab(def, []ScenarioYAML{scenario}, []string{CapabilityPolicyContaind}, testValidators)
+			err := ValidateLab(def, []ScenarioYAML{scenario}, []string{CapabilityPolicyContaind}, usPolicies, testValidators)
 			want := action.Type + " actions need a package capability with an action vocabulary (process.electrical)"
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("ValidateLab() error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+// TestValidateLabChecksPolicyNamesAgainstThePackage accepts whatever names
+// the package declares, and the hardened alias only where the package has
+// the policy it stands for.
+func TestValidateLabChecksPolicyNamesAgainstThePackage(t *testing.T) {
+	custom := map[string]string{"baseline": "a.json", "locked": "b.json"}
+	tests := []struct {
+		name     string
+		policies map[string]string
+		step     ScenarioStep
+		problem  string
+	}{
+		{"declared firewall action", custom, ScenarioStep{Action: &StepAction{Type: "firewall", Config: "locked"}}, ""},
+		{"undeclared firewall action", custom, ScenarioStep{Action: &StepAction{Type: "firewall", Config: "improved"}},
+			`firewall config must be one of the package policies (baseline, locked), got "improved"`},
+		{"declared expected config", custom, ScenarioStep{ExpectedConfig: "baseline"}, ""},
+		{"undeclared expected config", custom, ScenarioStep{ExpectedConfig: "weak"},
+			`expected_config must be one of the package policies (baseline, locked) or hardened, got "weak"`},
+		{"hardened alias without improved", custom, ScenarioStep{ExpectedConfig: "hardened"},
+			`expected_config must be one of the package policies (baseline, locked) or hardened, got "hardened"`},
+		{"hardened alias with improved", usPolicies, ScenarioStep{ExpectedConfig: "hardened"}, ""},
+		{"improved by name", usPolicies, ScenarioStep{ExpectedConfig: "improved"}, ""},
+		{"declared check", custom, ScenarioStep{Action: &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "locked"}}}, ""},
+		{"undeclared check", custom, ScenarioStep{Action: &StepAction{Type: "check", Expect: map[string]any{"firewall_config": "weak"}}},
+			`check firewall_config must be one of the package policies (baseline, locked), got "weak"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			def, scenario := validatorFixture()
+			step := test.step
+			step.ID, step.Title = "policy-step", "Policy step"
+			scenario.Steps = []ScenarioStep{step}
+			err := ValidateLab(def, []ScenarioYAML{scenario}, electricalPackage, test.policies, testValidators)
+			if test.problem == "" {
+				if err != nil {
+					t.Fatalf("ValidateLab() = %v, want pass", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.problem) {
+				t.Fatalf("ValidateLab() error = %v, want %q", err, test.problem)
 			}
 		})
 	}

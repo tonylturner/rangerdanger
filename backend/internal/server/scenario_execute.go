@@ -239,9 +239,9 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 		}
 	}
 
-	label := "weak baseline"
-	if configName == "improved" {
-		label = "hardened (RTAC-only field access)"
+	label := configName
+	if recipe, err := recipeFor(gen); err == nil {
+		label = recipe.policyLabel(configName)
 	}
 	detail := "containd policy set to " + label
 	if len(warnings) > 0 {

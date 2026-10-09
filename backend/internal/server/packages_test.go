@@ -287,6 +287,28 @@ func TestShippedPackagesLoad(t *testing.T) {
 			t.Errorf("%s step ids = %v, want %v", scenario.ID, ids, expected.steps)
 		}
 	}
+	var euScenarios []models.Scenario
+	if err := database.Where("package_id = ?", euPackageID).Find(&euScenarios).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(euScenarios) != 1 || euScenarios[0].ID != "iec104-telecontrol-boundary" || euScenarios[0].Validator != "eu-iec104-telecontrol" {
+		t.Fatalf("EU scenarios = %+v, want iec104-telecontrol-boundary with validator eu-iec104-telecontrol", euScenarios)
+	}
+	var euSteps []labs.ScenarioStep
+	if err := json.Unmarshal([]byte(euScenarios[0].Steps), &euSteps); err != nil {
+		t.Fatal(err)
+	}
+	euIDs := make([]string, len(euSteps))
+	for index, step := range euSteps {
+		euIDs[index] = step.ID
+	}
+	wantEU := []string{"observe-baseline", "operate-breaker", "expose-weak", "apply-improved", "established-session",
+		"cut-session", "stale-view", "local-trip", "restore", "evidence"}
+	if !reflect.DeepEqual(euIDs, wantEU) {
+		t.Errorf("EU step ids = %v, want %v", euIDs, wantEU)
+	}
+	used[euScenarios[0].Validator] = true
+
 	for key := range scenarioValidators {
 		if !used[key] {
 			t.Errorf("registered validator %q is not declared by any shipped scenario", key)

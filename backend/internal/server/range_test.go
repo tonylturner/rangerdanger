@@ -49,7 +49,7 @@ func usGeneration(client *containd.Client) *lifecycle.Generation {
 	if err != nil {
 		panic(err)
 	}
-	return lifecycle.NewGeneration(1, pkg, man, client)
+	return lifecycle.NewGeneration(1, pkg, man, client, time.Time{})
 }
 
 // servingRange is a ready US range whose firewall is client. The curriculum
@@ -208,7 +208,7 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 		"improved": "packages/p/firewall/b.json.improved",
 		"weak":     "packages/p/firewall/a.json",
 	}}
-	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"))
+	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"), time.Time{})
 	s.activateRange(gen)
 	s.activeConfigMu.RLock()
 	activeConfig, source, hash := s.activeConfig, s.policySource, s.lastAppliedHash

@@ -489,3 +489,57 @@ func TestValidateEURoles(t *testing.T) {
 		t.Errorf("rtu service = %+v, %v", svc, ok)
 	}
 }
+
+// TestValidateSingleHolders rejects a second holder of the roles the
+// backend resolves to one service, and an instructor endpoint that is
+// ambiguous or outside a field device.
+func TestValidateSingleHolders(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	service := func(key, ip string, role Role, endpoints map[string]string) Service {
+		return Service{Key: key, Container: "fixture-" + key, Roles: []Role{role},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: ip}}, Endpoints: endpoints}
+	}
+	instructor := func(ip string) map[string]string {
+		return map[string]string{EndpointInstructor: "http://" + ip + ":8080"}
+	}
+	cases := []struct {
+		name  string
+		extra []Service
+		want  string
+	}{
+		{"two rtus", []Service{service("rtu_a", "10.99.99.31", RoleRTU, nil), service("rtu_b", "10.99.99.32", RoleRTU, nil)},
+			`role "rtu" is held by rtu_a, rtu_b`},
+		{"two control centres", []Service{service("cc_a", "10.99.99.31", RoleControlCentre, nil), service("cc_b", "10.99.99.32", RoleControlCentre, nil)},
+			`role "control-centre" is held by cc_a, cc_b`},
+		{"two process solvers", []Service{service("dss_a", "10.99.99.31", RoleProcessSolver, nil), service("dss_b", "10.99.99.32", RoleProcessSolver, nil)},
+			`role "process-solver" is held by dss_a, dss_b`},
+		{"two instructor endpoints", []Service{service("brk_a", "10.99.99.31", RoleFieldDevice, instructor("10.99.99.31")), service("brk_b", "10.99.99.32", RoleFieldDevice, instructor("10.99.99.32"))},
+			"instructor endpoint is declared by brk_a, brk_b"},
+		{"instructor outside a field device", []Service{service("cc", "10.99.99.31", RoleControlCentre, instructor("10.99.99.31"))},
+			`service "cc" has an instructor endpoint but not the field-device role`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := Load(root, "valid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Services = append(m.Services, test.extra...)
+			if err := Validate(m, root); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Validate error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, instructor("10.99.99.31")))
+	if err := Validate(m, root); err != nil {
+		t.Fatalf("Validate one instructor endpoint: %v", err)
+	}
+	if svc, url, ok := m.ServiceWithEndpoint(EndpointInstructor); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
+		t.Errorf("ServiceWithEndpoint = %+v %q %v", svc, url, ok)
+	}
+}
