@@ -26,8 +26,8 @@ Ignore digest comparison; save every image at <New>.
 
 .PARAMETER IncludeUpstream
 Also delta-check non-rangerdanger upstream images (containd/nginx/
-fuxa/webtop/alpine). Usually skipped because they are pinned by digest
-already.
+fuxa/webtop/alpine) even when their references are unchanged. New or
+changed upstream references are included automatically.
 
 .EXAMPLE
 .\stage-ssd-delta.ps1 D:\WORKSHOP_SSD\delta-v0.1.7 v0.1.6 v0.1.7
@@ -93,27 +93,101 @@ if ($All)             { Say "Mode:             -All (skip digest comparison)" }
 if ($includeSet)      { Say "Force-include:    $($includeSet -join ', ')" }
 if ($IncludeUpstream) { Say "Upstream images:  included in delta check" }
 
-$allImages = & docker compose -f $ComposeFile config --images 2>$null | Sort-Object -Unique
-if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
-
-$candidate = if ($IncludeUpstream) {
-    $allImages
-} else {
-    $allImages | Where-Object { $_ -match 'ghcr\.io/tonylturner/rangerdanger-' }
-}
-
-function Resolve-Version($images, $version) {
-    $images | ForEach-Object {
-        $i = $_
-        # First-party rangerdanger-* with :latest or another tag -> :version.
-        $i = $i -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest$', "`$1:$version"
-        $i = $i -replace '^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+$', "`$1:$version"
-        $i
+$releaseFiles = @($ComposeFile)
+$packagesRoot = Join-Path $RootDir "lab-definitions/packages"
+if (Test-Path $packagesRoot) {
+    foreach ($packageDir in (Get-ChildItem -Path $packagesRoot -Directory | Sort-Object Name)) {
+        $packageCompose = Join-Path $packageDir.FullName "compose.release.yml"
+        if (-not (Test-Path $packageCompose)) {
+            Die "Missing package release Compose file: $packageCompose"
+        }
+        $releaseFiles += $packageCompose
     }
 }
+$hadComposeVersion = Test-Path Env:VERSION
+$previousComposeVersion = $env:VERSION
+$hadRoot = Test-Path Env:RANGERDANGER_ROOT
+$previousRoot = $env:RANGERDANGER_ROOT
+$allImages = New-Object System.Collections.Generic.List[string]
+$composeStatus = 0
+try {
+    $env:VERSION = $New
+    $env:RANGERDANGER_ROOT = $RootDir
+    foreach ($releaseFile in $releaseFiles) {
+        $imagesForFile = & docker compose --project-directory $RootDir `
+            -f $releaseFile config --images 2>$null
+        $composeStatus = $LASTEXITCODE
+        if ($composeStatus -ne 0) { break }
+        foreach ($image in $imagesForFile) { $allImages.Add([string]$image) }
+    }
+} finally {
+    if ($hadComposeVersion) {
+        $env:VERSION = $previousComposeVersion
+    } else {
+        Remove-Item Env:VERSION -ErrorAction SilentlyContinue
+    }
+    if ($hadRoot) {
+        $env:RANGERDANGER_ROOT = $previousRoot
+    } else {
+        Remove-Item Env:RANGERDANGER_ROOT -ErrorAction SilentlyContinue
+    }
+}
+if ($composeStatus -ne 0) { Die "Could not enumerate the platform/package release image union" }
+$allImages = @($allImages | Sort-Object -Unique)
+if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
-$sinceRef = @(Resolve-Version $candidate $Since)
-$newRef   = @(Resolve-Version $candidate $New)
+function Get-ImageRepository($reference) {
+    $base = ($reference -split '@', 2)[0]
+    $lastComponent = ($base -split '/')[-1]
+    if ($lastComponent.Contains(':')) {
+        $base = $base.Substring(0, $base.LastIndexOf(':'))
+    }
+    return $base
+}
+
+$ownerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
+$membershipDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-delta-membership-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $membershipDir | Out-Null
+try {
+    $sinceRecordPath = Join-Path $membershipDir "since.json"
+    $newRecordPath = Join-Path $membershipDir "new.json"
+    $composeImagesPath = Join-Path $membershipDir "compose-images.txt"
+    foreach ($release in @(
+        @{ Tag = $Since; Path = $sinceRecordPath },
+        @{ Tag = $New; Path = $newRecordPath }
+    )) {
+        $recordUrl = "https://github.com/$ownerRepo/releases/download/$([uri]::EscapeDataString($release.Tag))/release-images.json"
+        Invoke-WebRequest -Uri $recordUrl -OutFile $release.Path -UseBasicParsing -ErrorAction Stop
+    }
+    [System.IO.File]::WriteAllLines($composeImagesPath, $allImages)
+    $membershipArgs = @(
+        "delta-candidates",
+        "--since-record", $sinceRecordPath,
+        "--new-record", $newRecordPath,
+        "--since", $Since,
+        "--new", $New,
+        "--compose-images", $composeImagesPath,
+        "--format", "json"
+    )
+    if ($IncludeUpstream -or $All) { $membershipArgs += "--include-upstream" }
+    $membershipOutput = & python3 (Join-Path $RootDir "scripts/release_image_plan.py") @membershipArgs
+    $membershipStatus = $LASTEXITCODE
+    if ($membershipStatus -ne 0) {
+        Die "Release records and Compose image union disagree or lack package membership."
+    }
+    try {
+        $candidateRows = @(($membershipOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop)
+    } catch {
+        Die "Could not parse validated release membership from release_image_plan.py: $_"
+    }
+} catch {
+    Die "Could not read old/new release package membership: $_"
+} finally {
+    Remove-Item -Path $membershipDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+if (-not $candidateRows) { Die "The new release membership has no stageable images." }
+$sinceRef = @($candidateRows | ForEach-Object { $_.since })
+$newRef = @($candidateRows | ForEach-Object { $_.image })
 
 function Get-RegistryName($img) {
     $registry = "docker.io"
@@ -228,7 +302,7 @@ function Get-PlatformManifest($img, [switch]$Optional, [switch]$NewVersion) {
     return @{ Digest = $rootDigest; Refs = $refs }
 }
 
-Banner "Comparing $Since -> $New across $($candidate.Count) candidate image(s)"
+Banner "Comparing $Since -> $New across $($candidateRows.Count) candidate image(s)"
 
 $changed       = New-Object System.Collections.Generic.List[string]
 $changedManifests = New-Object System.Collections.Generic.List[object]
@@ -242,6 +316,7 @@ $missingSince  = New-Object System.Collections.Generic.List[string]
 for ($i = 0; $i -lt $newRef.Count; $i++) {
     $newImg   = $newRef[$i]
     $sinceImg = $sinceRef[$i]
+    $membership = $candidateRows[$i]
     if (-not $newImg) { continue }
 
     # Reuse this inspection's platform refs for preflight after comparison.
@@ -261,6 +336,15 @@ for ($i = 0; $i -lt $newRef.Count; $i++) {
         continue
     }
     if ($All) {
+        $changed.Add($newImg) | Out-Null
+        $changedManifests.Add($newManifest) | Out-Null
+        $changedSince.Add($sinceImg) | Out-Null
+        continue
+    }
+
+    if (-not $membership.old_member) {
+        Warn "  ${short}: absent from the $Since package membership -- including in delta"
+        $missingSince.Add($short) | Out-Null
         $changed.Add($newImg) | Out-Null
         $changedManifests.Add($newManifest) | Out-Null
         $changedSince.Add($sinceImg) | Out-Null
@@ -310,7 +394,7 @@ if ($includeSet.Count -gt 0) {
     $forcedKeys = @($forced | ForEach-Object { $_ -replace '^rangerdanger-', '' })
     foreach ($name in $includeSet) {
         if ($forcedKeys -notcontains ($name -replace '^rangerdanger-', '')) {
-            Die "-Include $name matched no candidate image. Candidates are the first-party images in $ComposeFile (short or rangerdanger- form); upstream images need -IncludeUpstream."
+            Die "-Include $name matched no image in the selected new platform/package membership; unchanged upstream images need -IncludeUpstream."
         }
     }
 }
@@ -513,40 +597,12 @@ $unchangedList = if ($unchanged.Count -gt 0) {
 } else { "" }
 $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-$composeJson = & docker compose -f $ComposeFile config --format json 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $composeJson) { Die "Could not read the resolved service model from $ComposeFile" }
-try {
-    $composeModel = ($composeJson -join "`n") | ConvertFrom-Json -ErrorAction Stop
-} catch {
-    Die "Could not parse the resolved service model from $ComposeFile"
-}
-
-function Get-ImageRepository($reference) {
-    $base = ($reference -split '@', 2)[0]
-    $lastComponent = ($base -split '/')[-1]
-    if ($lastComponent.Contains(':')) {
-        $base = $base.Substring(0, $base.LastIndexOf(':'))
-    }
-    return $base
-}
-
-$serviceRepositories = @{}
-foreach ($serviceProperty in $composeModel.services.PSObject.Properties) {
-    $serviceImage = $serviceProperty.Value.image
-    if ($serviceImage) {
-        $repository = Get-ImageRepository $serviceImage
-        if (-not $serviceRepositories.ContainsKey($repository)) {
-            $serviceRepositories[$repository] = @()
-        }
-        $serviceRepositories[$repository] += $serviceProperty.Name
-    }
-}
-
 $applyTableRows = foreach ($img in $changed) {
     $repository = Get-ImageRepository $img
     $short = ($repository -split '/')[-1]
-    $services = $serviceRepositories[$repository]
-    if (-not $services) { Die "Changed image $img does not map to a service in $ComposeFile" }
+    $services = @($candidateRows | Where-Object { $_.repository -eq $repository } |
+        ForEach-Object { $_.owners } | Sort-Object -Unique)
+    if (-not $services) { Die "Changed image $img has no package/service membership in $New" }
     "| ``$short`` | ``$($services -join ', ')`` |"
 }
 # The shell writes each row with a trailing newline, so the table block
@@ -609,6 +665,53 @@ DELTA_DIR="/path/to/delta-__NEW__"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
 
+compose_down_project() {
+    project="$1"
+    compose_dir=$(mktemp -d) || return 1
+    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+        rmdir "$compose_dir"
+        return 1
+    fi
+    rmdir "$compose_dir"
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Containers remain for Compose project $project." >&2; return 1; }
+    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Networks remain for Compose project $project." >&2; return 1; }
+}
+
+start_platform_and_selected_range() {
+    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+        --project-directory "$PWD" -f docker-compose.release.yml \
+        up -d --pull never || return 1
+    ready=0
+    for attempt in $(seq 1 120); do
+        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
+    for attempt in $(seq 1 150); do
+        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
+            sleep 2
+            continue
+        }
+        phase=$(printf '%s' "$range_status" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
+        [ "$phase" = "ready" ] && return 0
+        if [ "$phase" = "failed" ]; then
+            echo "Selected range failed to start: $range_status" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "Selected range did not become ready." >&2
+    return 1
+}
+
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
 CURRENT_VERSION=$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
@@ -625,11 +728,11 @@ if [ "$CURRENT_VERSION" != "__SINCE__" ]; then
     exit 1
 fi
 
-# Stop services before reading their databases and other mutable state into
-# the rollback snapshot.
-if ! docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+# Stop only the two owned projects by labels before reading mutable state
+# into the rollback snapshot. Teardown does not load either Compose model.
+if ! compose_down_project rangerdanger || ! compose_down_project rangerdanger-platform
 then
-    echo "Could not stop the release + offline stack; some services may be stopped, but no snapshot or repo changes were made. Once Docker is available, run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    echo "Could not stop and verify both RangerDanger projects; no snapshot or repo changes were made." >&2
     exit 1
 fi
 
@@ -639,12 +742,12 @@ SNAPSHOT="../rangerdanger.before-__NEW__.tar.gz"
 if [ ! -f "$SNAPSHOT" ]; then
     tar czf "$SNAPSHOT" -C .. rangerdanger || {
         rm -f "$SNAPSHOT"
-        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
         exit 1
     }
 fi
 tar tzf "$SNAPSHOT" >/dev/null || {
-    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
     exit 1
 }
 
@@ -668,8 +771,9 @@ NEW_VERSION=__NEW__ awk '
   END { if (!replaced) print "VERSION=" version }
 ' .env > .env.delta.tmp && mv .env.delta.tmp .env
 
-# Start the complete stack from the new version without contacting GHCR.
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+# Start the platform from local images without contacting GHCR, then ask
+# its backend to select the package recorded for this installation.
+start_platform_and_selected_range
 '@
 $applyBlock = $applyBlock.Replace('__SINCE__', $Since).
     Replace('__NEW__', $New).
@@ -680,6 +784,51 @@ $applyBlock = $applyBlock.Replace('__SINCE__', $Since).
 $rollbackBlock = @'
 set -e
 cd ~/rangerdanger
+compose_down_project() {
+    project="$1"
+    compose_dir=$(mktemp -d) || return 1
+    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+        rmdir "$compose_dir"
+        return 1
+    fi
+    rmdir "$compose_dir"
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Containers remain for Compose project $project." >&2; return 1; }
+    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Networks remain for Compose project $project." >&2; return 1; }
+}
+start_platform_and_selected_range() {
+    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+        --project-directory "$PWD" -f docker-compose.release.yml \
+        up -d --pull never || return 1
+    ready=0
+    for attempt in $(seq 1 120); do
+        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
+    for attempt in $(seq 1 150); do
+        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
+            sleep 2
+            continue
+        }
+        phase=$(printf '%s' "$range_status" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
+        [ "$phase" = "ready" ] && return 0
+        if [ "$phase" = "failed" ]; then
+            echo "Selected range failed to start: $range_status" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "Selected range did not become ready." >&2
+    return 1
+}
 test -f "../rangerdanger.before-__NEW__.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
@@ -688,13 +837,14 @@ tar tzf "../rangerdanger.before-__NEW__.tar.gz" >/dev/null || {
     echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
     exit 1
 }
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+compose_down_project rangerdanger
+compose_down_project rangerdanger-platform
 cd ..
 rm -rf rangerdanger
 tar xzf "rangerdanger.before-__NEW__.tar.gz"
 cd rangerdanger
 __ROLLBACK_RESTORE__
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+start_platform_and_selected_range
 '@
 $rollbackBlock = $rollbackBlock.Replace('__NEW__', $New).
     Replace('__ROLLBACK_RESTORE__', $rollbackRestoreText)
@@ -706,7 +856,7 @@ Staged $now for upgrade from ``$Since`` -> ``$New``.
 
 ## Changed
 
-| Image | Compose service |
+| Image | Package/service membership |
 |---|---|
 $applyTable
 $kernelReadmeRow

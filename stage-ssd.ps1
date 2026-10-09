@@ -60,23 +60,49 @@ if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
     Die "python3 is required to verify the saved Docker archive manifests. Install Python 3 and ensure python3 is on PATH."
 }
 
-# --- Enumerate images from compose --------------------------------------
+# --- Enumerate the platform/package image union ------------------------
+$releaseFiles = @($ComposeFile)
+$packagesRoot = Join-Path $RootDir "lab-definitions/packages"
+if (Test-Path $packagesRoot) {
+    foreach ($packageDir in (Get-ChildItem -Path $packagesRoot -Directory | Sort-Object Name)) {
+        $packageCompose = Join-Path $packageDir.FullName "compose.release.yml"
+        if (-not (Test-Path $packageCompose)) {
+            Die "Missing package release Compose file: $packageCompose"
+        }
+        $releaseFiles += $packageCompose
+    }
+}
 $hadComposeVersion = Test-Path Env:VERSION
 $previousComposeVersion = $env:VERSION
+$hadRoot = Test-Path Env:RANGERDANGER_ROOT
+$previousRoot = $env:RANGERDANGER_ROOT
+$composeOutput = @()
+$composeStatus = 0
 try {
     $env:VERSION = $Version
-    $composeOutput = & docker compose -f $ComposeFile config --images 2>$null
-    $composeStatus = $LASTEXITCODE
+    $env:RANGERDANGER_ROOT = $RootDir
+    foreach ($releaseFile in $releaseFiles) {
+        $imagesForFile = & docker compose --project-directory $RootDir `
+            -f $releaseFile config --images 2>$null
+        $composeStatus = $LASTEXITCODE
+        if ($composeStatus -ne 0) { break }
+        $composeOutput += $imagesForFile
+    }
 } finally {
     if ($hadComposeVersion) {
         $env:VERSION = $previousComposeVersion
     } else {
         Remove-Item Env:VERSION -ErrorAction SilentlyContinue
     }
+    if ($hadRoot) {
+        $env:RANGERDANGER_ROOT = $previousRoot
+    } else {
+        Remove-Item Env:RANGERDANGER_ROOT -ErrorAction SilentlyContinue
+    }
 }
-if ($composeStatus -ne 0) { Die "Could not enumerate images from $ComposeFile" }
+if ($composeStatus -ne 0) { Die "Could not enumerate the platform/package release image union" }
 $allImages = @($composeOutput | Sort-Object -Unique)
-if (-not $allImages) { Die "Could not enumerate images from $ComposeFile" }
+if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 # Compose interpolation is the only version-selection mechanism. Refuse
 # an environment/configuration mismatch before creating the output dir.

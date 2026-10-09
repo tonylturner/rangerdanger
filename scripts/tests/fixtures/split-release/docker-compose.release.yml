@@ -1,0 +1,7 @@
+services:
+  backend:
+    image: ghcr.io/tonylturner/rangerdanger-backend:${VERSION:-latest}
+  frontend:
+    image: ghcr.io/tonylturner/rangerdanger-frontend:${VERSION:-latest}
+  proxy:
+    image: nginx:1.27-alpine

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -222,6 +223,100 @@ class CheckReleaseInputsTests(unittest.TestCase):
                             message for message in messages))
         self.assertTrue(any("inventory image is not a first-party image" in
                             message for message in messages))
+
+    def test_first_party_inventory_covers_platform_and_package_release_files(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx@sha256:" + "a" * 64 + "\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-test:${VERSION-latest}\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(any("first-party Compose image" in message
+                             or "inventory image is not" in message
+                             for message in self._messages()))
+
+    def test_release_guard_requires_images_in_package_services(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx:1\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n    environment:\n      MODE: release\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(any("release service must declare an image" in message
+                            for message in self._messages()))
+
+    def test_split_release_models_emit_service_membership_and_exact_hashes(self) -> None:
+        (self.root / "docker-compose.release.yml").write_text(
+            "services:\n  portal:\n    image: nginx:1\n",
+            encoding="utf-8",
+        )
+        package_file = self.root / (
+            "lab-definitions/packages/test-package/compose.release.yml")
+        package_file.parent.mkdir(parents=True)
+        package_file.write_text(
+            "services:\n  simulator:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-test:${VERSION-latest}\n",
+            encoding="utf-8",
+        )
+
+        metadata = check_release_inputs.release_compose_metadata(
+            self.root, "v9.9.9")
+
+        self.assertEqual(metadata["platform"]["services"], {"portal": "nginx:1"})
+        self.assertEqual(
+            metadata["platform"]["sha256"],
+            hashlib.sha256(
+                (self.root / "docker-compose.release.yml").read_bytes()).hexdigest(),
+        )
+        package = metadata["packages"]["test-package"]
+        self.assertEqual(package["file"],
+                         "lab-definitions/packages/test-package/compose.release.yml")
+        self.assertEqual(
+            package["services"],
+            {"simulator": "ghcr.io/tonylturner/rangerdanger-test:v9.9.9"},
+        )
+        self.assertEqual(
+            package["sha256"], hashlib.sha256(package_file.read_bytes()).hexdigest())
+
+    def test_checked_in_split_layout_fixture_keeps_package_models_independent(self) -> None:
+        fixture = Path(__file__).parent / "fixtures/split-release"
+        metadata = check_release_inputs.release_compose_metadata(fixture, "v2.0.0")
+        self.assertEqual(
+            set(metadata["packages"]), {"package-a", "package-b"})
+        self.assertEqual(
+            metadata["packages"]["package-a"]["services"]["firewall"],
+            "ghcr.io/tonylturner/rangerdanger-kali:v2.0.0",
+        )
+        self.assertEqual(
+            metadata["packages"]["package-b"]["services"]["firewall"],
+            "ghcr.io/tonylturner/rangerdanger-vendor-jump:v2.0.0",
+        )
+        union = set()
+        for model in [metadata["platform"], *metadata["packages"].values()]:
+            union.update(model["services"].values())
+        self.assertEqual(
+            union,
+            {
+                "ghcr.io/tonylturner/rangerdanger-backend:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-frontend:v2.0.0",
+                "nginx:1.27-alpine",
+                "ghcr.io/tonylturner/rangerdanger-kali:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-relay-sim:v2.0.0",
+                "ghcr.io/tonylturner/rangerdanger-vendor-jump:v2.0.0",
+                "alpine:3.20",
+            },
+        )
 
 
 if __name__ == "__main__":

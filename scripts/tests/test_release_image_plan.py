@@ -504,28 +504,27 @@ class ReleaseImagePlanTests(PlannerFixture):
                 release_image_plan.check_release_inputs,
                 "validate",
                 return_value=[],
-            ):
-                with redirect_stderr(io.StringIO()):
-                    self.assertEqual(
-                        release_image_plan.main([
-                            "--tag", "not a tag",
-                            *base_args[2:],
-                        ]),
-                        1,
-                    )
-                    self.assertEqual(
-                        release_image_plan.main([
-                            *base_args[:2],
-                            "--commit", "not-a-commit",
-                            *base_args[4:],
-                        ]),
-                        1,
-                    )
-                    with self.assertRaises(SystemExit) as bad_event:
-                        release_image_plan.main([
-                            *base_args[:4],
-                            "--event", "not-an-event",
-                        ])
+            ), redirect_stderr(io.StringIO()):
+                self.assertEqual(
+                    release_image_plan.main([
+                        "--tag", "not a tag",
+                        *base_args[2:],
+                    ]),
+                    1,
+                )
+                self.assertEqual(
+                    release_image_plan.main([
+                        *base_args[:2],
+                        "--commit", "not-a-commit",
+                        *base_args[4:],
+                    ]),
+                    1,
+                )
+                with self.assertRaises(SystemExit) as bad_event:
+                    release_image_plan.main([
+                        *base_args[:4],
+                        "--event", "not-an-event",
+                    ])
             self.assertEqual(bad_event.exception.code, 2)
         finally:
             os.chdir(original_cwd)
@@ -586,6 +585,137 @@ class ReleaseImagePlanTests(PlannerFixture):
             sum(value == "promote" for value in self._decisions(promoted).values()), 15)
         self.assertEqual(release_image_plan.planned_tags("v0.1.34-rc.1"),
                          ["v0.1.34-rc.1"])
+
+    def test_plan_records_split_model_membership_and_file_hashes(self) -> None:
+        self._write(
+            "docker-compose.release.yml",
+            "services:\n  portal:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-frontend:${VERSION:-latest}\n",
+        )
+        package_file = (
+            "lab-definitions/packages/us-dnp3-substation/compose.release.yml")
+        self._write(
+            package_file,
+            "services:\n  relay_sim:\n"
+            "    image: ghcr.io/tonylturner/rangerdanger-relay-sim:${VERSION:-latest}\n",
+        )
+        self._commit("add package release model")
+
+        plan = self._plan(record_path=None)
+        models = plan["compose_files"]
+        self.assertEqual(
+            models["platform"]["services"],
+            {"portal": "ghcr.io/tonylturner/rangerdanger-frontend:v0.1.34"},
+        )
+        package = models["packages"]["us-dnp3-substation"]
+        self.assertEqual(
+            package["services"],
+            {"relay_sim": "ghcr.io/tonylturner/rangerdanger-relay-sim:v0.1.34"},
+        )
+        self.assertEqual(
+            package["sha256"],
+            hashlib.sha256((self.root / package_file).read_bytes()).hexdigest(),
+        )
+
+    def test_delta_candidates_use_old_and_new_package_membership(self) -> None:
+        fixture = Path(__file__).parent / "fixtures/split-release"
+        new_models = release_image_plan.check_release_inputs.release_compose_metadata(
+            fixture, "v2.0.0")
+        old_models = json.loads(json.dumps(new_models))
+        old_models["packages"].pop("package-b")
+        for model in [old_models["platform"], *old_models["packages"].values()]:
+            model["services"] = {
+                service: image.replace(":v2.0.0", ":v1.9.0")
+                for service, image in model["services"].items()
+            }
+
+        def record(release: str, models: dict[str, object]) -> dict[str, object]:
+            references = [
+                reference
+                for model in [models["platform"], *models["packages"].values()]
+                for reference in model["services"].values()
+            ]
+            first_party = {
+                release_image_plan._image_repository(reference)
+                for reference in references
+                if release_image_plan._image_repository(reference).startswith(
+                    "ghcr.io/tonylturner/rangerdanger-")
+            }
+            return {
+                "schema": 1,
+                "release": release,
+                "images": [
+                    {"image": repository.rsplit("/", 1)[-1]}
+                    for repository in sorted(first_party)
+                ],
+                "compose_files": models,
+            }
+
+        old_record = record("v1.9.0", old_models)
+        new_record = record("v2.0.0", new_models)
+        compose_images = [
+            reference
+            for model in [new_models["platform"], *new_models["packages"].values()]
+            for reference in model["services"].values()
+        ]
+
+        candidates = release_image_plan.delta_image_candidates(
+            previous_record=old_record,
+            new_record=new_record,
+            compose_images=compose_images,
+            since_tag="v1.9.0",
+            new_tag="v2.0.0",
+        )
+
+        by_repository = {item["repository"]: item for item in candidates}
+        vendor_jump = by_repository[
+            "ghcr.io/tonylturner/rangerdanger-vendor-jump"]
+        self.assertFalse(vendor_jump["old_member"])
+        self.assertEqual(vendor_jump["owners"], ["package-b/firewall"])
+        alpine = by_repository["alpine"]
+        self.assertFalse(alpine["old_member"])
+        self.assertTrue(by_repository[
+            "ghcr.io/tonylturner/rangerdanger-relay-sim"]["old_member"])
+        self.assertEqual(len(candidates), 6)
+        all_candidates = release_image_plan.delta_image_candidates(
+            previous_record=old_record,
+            new_record=new_record,
+            compose_images=compose_images,
+            since_tag="v1.9.0",
+            new_tag="v2.0.0",
+            include_upstream=True,
+        )
+        self.assertEqual(len(all_candidates), len(compose_images))
+
+        old_path = Path(self.temp.name) / "old-membership.json"
+        new_path = Path(self.temp.name) / "new-membership.json"
+        images_path = Path(self.temp.name) / "compose-images.txt"
+        old_path.write_text(json.dumps(old_record), encoding="utf-8")
+        new_path.write_text(json.dumps(new_record), encoding="utf-8")
+        images_path.write_text("\n".join(compose_images) + "\n", encoding="utf-8")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = release_image_plan.main([
+                "delta-candidates",
+                "--since-record", str(old_path),
+                "--new-record", str(new_path),
+                "--since", "v1.9.0",
+                "--new", "v2.0.0",
+                "--compose-images", str(images_path),
+                "--format", "json",
+            ])
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue()), candidates)
+
+        with self.assertRaisesRegex(
+            release_image_plan.PlanError, "Compose image union differs"):
+            release_image_plan.delta_image_candidates(
+                previous_record=old_record,
+                new_record=new_record,
+                compose_images=compose_images[:-1],
+                since_tag="v1.9.0",
+                new_tag="v2.0.0",
+            )
 
     def test_git_identity_captures_mode_changes_in_globs_and_directory_trees(self) -> None:
         before = self.baseline

@@ -1,0 +1,5 @@
+services:
+  firewall:
+    image: ghcr.io/tonylturner/rangerdanger-kali:${VERSION:-latest}
+  relay_sim:
+    image: ghcr.io/tonylturner/rangerdanger-relay-sim:${VERSION:-latest}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import re
 import shlex
@@ -16,7 +17,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
 
 FIRST_PARTY_PREFIX = "ghcr.io/tonylturner/"
 IMAGE_SUFFIX = "rangerdanger-"
@@ -158,10 +158,11 @@ def _input_covers(inputs: list[dict[str, Any]], source: str) -> bool:
         declared = str(entry.get("path", "")).rstrip("/")
         if kind == "file" and normalized == declared:
             return True
-        if kind == "dir":
-            if declared == "." or normalized == declared \
-                    or normalized.startswith(declared + "/"):
-                return True
+        if kind == "dir" and (
+            declared == "." or normalized == declared
+            or normalized.startswith(declared + "/")
+        ):
+            return True
         if kind == "glob":
             directory, _, pattern = declared.rpartition("/")
             source_directory, _, source_name = normalized.rpartition("/")
@@ -184,14 +185,11 @@ def _source_patterns_supported(
                 f"{instruction.name} source {source!r} uses variable interpolation; "
                 "express the input differently or mark the image always_build",
             ))
-        if any(char in source for char in "?[]") or source.count("*") > 1:
-            violations.append(Violation(
-                path, instruction.line, image,
-                f"{instruction.name} source pattern {source!r} is outside the "
-                "file/dir/single-segment glob model; express the input differently "
-                "or mark the image always_build",
-            ))
-        elif "*" in source and not _valid_glob(source):
+        if (
+            any(char in source for char in "?[]")
+            or source.count("*") > 1
+            or ("*" in source and not _valid_glob(source))
+        ):
             violations.append(Violation(
                 path, instruction.line, image,
                 f"{instruction.name} source pattern {source!r} is outside the "
@@ -212,10 +210,7 @@ def _check_add_source(
         lowered = source.lower()
         is_url_or_git = (
             "://" in source
-            or source.startswith("git@")
-            or source.startswith("github.com:")
-            or source.startswith("github.com/")
-            or source.startswith("git+")
+            or source.startswith(("git@", "github.com:", "github.com/", "git+"))
             or "#" in source
         )
         if is_url_or_git:
@@ -370,17 +365,22 @@ def _reachable_stages(
     return reachable, violations
 
 
-def _compose_first_party_images(compose_path: Path) -> tuple[set[str], dict[str, int]]:
-    """Read only service-level image fields; intentionally not a YAML parser."""
+def _compose_service_images(
+    compose_path: Path,
+) -> tuple[dict[str, tuple[str, int]], list[Violation]]:
+    """Read service-level image fields from the deliberately small Compose subset."""
     services_indent: int | None = None
     service_indent: int | None = None
     image_indent: int | None = None
     current_service: str | None = None
-    image_lines: dict[str, int] = {}
+    service_lines: dict[str, int] = {}
+    service_images: dict[str, tuple[str, int]] = {}
     try:
         lines = compose_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return set(), {}
+    except (OSError, UnicodeError) as exc:
+        return {}, [Violation(compose_path.as_posix(), 1, None,
+                              f"cannot read release Compose file: {exc}")]
+    violations: list[Violation] = []
     for number, line in enumerate(lines, start=1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
@@ -396,22 +396,102 @@ def _compose_first_party_images(compose_path: Path) -> tuple[set[str], dict[str,
             services_indent = None
             current_service = None
             continue
-        if service_indent is None or indent <= service_indent:
-            if text.endswith(":") and not text.startswith("-"):
-                current_service = text[:-1].strip("'\"")
-                service_indent = indent
-                image_indent = None
-                continue
+        if (service_indent is None or indent <= service_indent) \
+                and text.endswith(":") and not text.startswith("-"):
+            current_service = text[:-1].strip("'\"")
+            service_lines[current_service] = number
+            service_indent = indent
+            image_indent = None
+            continue
         if current_service is not None and text.startswith("image:"):
             if image_indent is None:
                 image_indent = indent
             if indent == image_indent:
                 value = text.partition(":")[2].strip().strip("'\"")
-                if value.startswith(FIRST_PARTY_PREFIX):
-                    suffix = value[len(FIRST_PARTY_PREFIX):].split(":", 1)[0]
-                    if suffix.startswith(IMAGE_SUFFIX):
-                        image_lines[suffix] = number
-    return set(image_lines), image_lines
+                if not value:
+                    violations.append(Violation(
+                        compose_path.as_posix(), number, current_service,
+                        "release service image must be a non-empty scalar"))
+                elif current_service in service_images:
+                    violations.append(Violation(
+                        compose_path.as_posix(), number, current_service,
+                        "service declares more than one image"))
+                else:
+                    service_images[current_service] = value, number
+    for service, number in service_lines.items():
+        if service not in service_images:
+            violations.append(Violation(
+                compose_path.as_posix(), number, service,
+                "release service must declare an image"))
+    return service_images, violations
+
+
+def _first_party_name(reference: str) -> str | None:
+    if not reference.startswith(FIRST_PARTY_PREFIX):
+        return None
+    name = reference[len(FIRST_PARTY_PREFIX):].split(":", 1)[0].split("@", 1)[0]
+    return name if name.startswith(IMAGE_SUFFIX) else None
+
+
+def _release_compose_paths(root: Path) -> list[tuple[str, str, Path]]:
+    """Return platform and package release models in stable owner order."""
+    paths = [("platform", "docker-compose.release.yml",
+              root / "docker-compose.release.yml")]
+    packages_root = root / "lab-definitions/packages"
+    if packages_root.is_dir():
+        for package_dir in sorted(packages_root.iterdir(), key=lambda item: item.name):
+            if not package_dir.is_dir():
+                continue
+            relative = f"lab-definitions/packages/{package_dir.name}/compose.release.yml"
+            paths.append((package_dir.name, relative, root / relative))
+    return paths
+
+
+def release_compose_metadata(root: Path, release_tag: str) -> dict[str, Any]:
+    """Describe each release model's service/image membership and exact file hash."""
+    root = root.resolve()
+    models: dict[str, Any] = {"platform": None, "packages": {}}
+    for owner, relative, path in _release_compose_paths(root):
+        if not path.is_file():
+            raise ValueError(f"release Compose file is missing: {relative}")
+        services, violations = _compose_service_images(path)
+        if violations:
+            raise ValueError("; ".join(item.format() for item in violations))
+        resolved: dict[str, str] = {}
+        for service, (reference, _) in sorted(services.items()):
+            reference = re.sub(
+                r"\$\{VERSION(?::?[-+?][^}]*)?\}|\$VERSION(?![A-Za-z0-9_])",
+                release_tag,
+                reference,
+            )
+            if "$" in reference:
+                raise ValueError(
+                    f"{relative}: {service}: unsupported image interpolation "
+                    f"in {reference!r}")
+            resolved[service] = reference
+        model = {
+            "file": relative,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "services": resolved,
+        }
+        if owner == "platform":
+            models["platform"] = model
+        else:
+            models["packages"][owner] = model
+    return models
+
+
+def _compose_first_party_images(
+    compose_path: Path,
+) -> tuple[set[str], dict[str, int], list[Violation]]:
+    """Extract first-party release image names and their source lines."""
+    services, violations = _compose_service_images(compose_path)
+    names: dict[str, int] = {}
+    for reference, line in services.values():
+        name = _first_party_name(reference)
+        if name:
+            names[name] = line
+    return set(names), names, violations
 
 
 def _named_context_violations(root: Path, images: list[dict[str, Any]]) -> list[Violation]:
@@ -606,20 +686,34 @@ def validate(root: Path, inventory_path: Path) -> list[Violation]:
 
     violations.extend(_named_context_violations(
         root, [entry for entry in images if isinstance(entry, dict)]))
-    compose_path = root / "docker-compose.release.yml"
-    compose_images, compose_lines = _compose_first_party_images(compose_path)
+    compose_images: set[str] = set()
+    compose_lines: dict[str, tuple[str, int]] = {}
+    for owner, relative, compose_path in _release_compose_paths(root):
+        if not compose_path.is_file():
+            violations.append(Violation(relative, 1, None,
+                                        "release Compose file does not exist"))
+            continue
+        owner_images, owner_lines, compose_issues = _compose_first_party_images(compose_path)
+        violations.extend(Violation(
+            relative, issue.line, issue.image, issue.message)
+            for issue in compose_issues
+        )
+        compose_images.update(owner_images)
+        compose_lines.update({
+            image: (relative, line) for image, line in owner_lines.items()
+        })
     inventory_names = {
         entry.get("image") for entry in images if isinstance(entry, dict)
         and isinstance(entry.get("image"), str)
     }
     for image in sorted(compose_images - inventory_names):
-        line = compose_lines.get(image, 1)
-        violations.append(Violation("docker-compose.release.yml", line, image,
+        path, line = compose_lines.get(image, ("docker-compose.release.yml", 1))
+        violations.append(Violation(path, line, image,
                                     "first-party Compose image is missing from inventory"))
     for image in sorted(inventory_names - compose_images):
         violations.append(Violation(
             inventory_abs.as_posix(), _line_for_image(inventory_abs, image), image,
-            "inventory image is not a first-party image in docker-compose.release.yml"))
+            "inventory image is not a first-party image in any release Compose file"))
     return violations
 
 

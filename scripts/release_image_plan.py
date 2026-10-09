@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-from functools import lru_cache
 import json
 import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 try:
     import check_release_inputs
@@ -22,6 +23,7 @@ except ModuleNotFoundError:  # package import from the repository-root unittest 
 
 INVENTORY_DEFAULT = ".github/release-images.json"
 REGISTRY_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+FILE_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -48,7 +50,7 @@ def inspect_registry(reference: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"registry returned invalid JSON for {reference}: {exc}") from exc
     if not isinstance(payload, dict):
-        raise RuntimeError(f"registry returned a non-object for {reference}")
+        raise TypeError(f"registry returned a non-object for {reference}")
     return payload
 
 
@@ -205,6 +207,189 @@ def _record_index(record: Any) -> tuple[dict[str, dict[str, Any]], str | None]:
     return indexed, release
 
 
+def _image_repository(reference: str) -> str:
+    """Strip a tag or digest while preserving any registry port."""
+    value = reference.split("@", 1)[0]
+    last_component = value.rsplit("/", 1)[-1]
+    if ":" in last_component:
+        value = value.rsplit(":", 1)[0]
+    return value
+
+
+def _release_membership(
+    record: Any,
+    expected_tag: str,
+) -> tuple[dict[str, set[str]], dict[str, dict[str, set[str]]], set[str]]:
+    """Read validated repository references and package/service membership."""
+    if not isinstance(record, dict) \
+            or type(record.get("schema")) is not int or record.get("schema") != 1 \
+            or record.get("release") != expected_tag:
+        raise PlanError(f"release record does not identify {expected_tag}")
+    compose_files = record.get("compose_files")
+    if not isinstance(compose_files, dict) \
+            or not isinstance(compose_files.get("platform"), dict) \
+            or not isinstance(compose_files.get("packages"), dict):
+        raise PlanError(f"release {expected_tag} has no platform/package membership")
+
+    refs: dict[str, set[str]] = {}
+    owners: dict[str, dict[str, set[str]]] = {}
+    models = [("platform", compose_files["platform"])]
+    models.extend(sorted(compose_files["packages"].items()))
+    for owner, model in models:
+        if not isinstance(owner, str) or not isinstance(model, dict) \
+                or not isinstance(model.get("file"), str) \
+                or not isinstance(model.get("sha256"), str) \
+                or not FILE_HASH_RE.fullmatch(model["sha256"]) \
+                or not isinstance(model.get("services"), dict):
+            raise PlanError(f"release {expected_tag} has malformed {owner} Compose metadata")
+        for service, reference in model["services"].items():
+            if not isinstance(service, str) or not isinstance(reference, str) or not reference:
+                raise PlanError(
+                    f"release {expected_tag} has malformed {owner} service membership")
+            repository = _image_repository(reference)
+            refs.setdefault(repository, set()).add(reference)
+            owners.setdefault(repository, {}).setdefault(reference, set()).add(
+                f"{owner}/{service}")
+
+    images = record.get("images")
+    if not isinstance(images, list):
+        raise PlanError(f"release {expected_tag} has no image build inventory")
+    recorded_builds = {
+        f"ghcr.io/tonylturner/{item['image']}"
+        for item in images
+        if isinstance(item, dict) and isinstance(item.get("image"), str)
+    }
+    first_party = {
+        repository for repository in refs
+        if repository.startswith("ghcr.io/tonylturner/rangerdanger-")
+    }
+    if first_party != recorded_builds:
+        raise PlanError(
+            f"release {expected_tag} package/platform membership differs from "
+            "the authored build inventory")
+    return refs, owners, first_party
+
+
+def delta_image_candidates(
+    *,
+    previous_record: Any,
+    new_record: Any,
+    compose_images: list[str],
+    since_tag: str,
+    new_tag: str,
+    include_upstream: bool = False,
+) -> list[dict[str, Any]]:
+    """Select new runtime images while using old/new package membership."""
+    old_refs, old_owners, _ = _release_membership(previous_record, since_tag)
+    new_refs, new_owners, new_first_party = _release_membership(new_record, new_tag)
+    local_first_party = {
+        repository for image in compose_images
+        if (repository := _image_repository(image)).startswith(
+            "ghcr.io/tonylturner/rangerdanger-")
+    }
+    if local_first_party != new_first_party:
+        raise PlanError(
+            "new Compose image union differs from release asset first-party membership")
+
+    new_references = {
+        reference for references in new_refs.values() for reference in references
+    }
+    local_references = set(compose_images)
+    if local_references != new_references:
+        raise PlanError(
+            "new Compose image union differs from release asset membership "
+            f"(compose-only={sorted(local_references - new_references)}, "
+            f"asset-only={sorted(new_references - local_references)})")
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for reference in sorted(set(compose_images)):
+        repository = _image_repository(reference)
+        first_party = repository.startswith("ghcr.io/tonylturner/rangerdanger-")
+        if first_party:
+            if repository not in new_refs:
+                raise PlanError(
+                    f"Compose image {reference} is absent from the new release record")
+            tag = reference.rsplit(":", 1)[-1] if "@" not in reference else ""
+            if tag != new_tag:
+                raise PlanError(
+                    f"Compose image {reference} does not use release tag {new_tag}")
+        elif reference not in new_references:
+            raise PlanError(
+                f"Compose image {reference} is absent from the new release record")
+        if (reference, repository) in seen:
+            continue
+        seen.add((reference, repository))
+
+        old_candidates = old_refs.get(repository, set())
+        service_owners = new_owners.get(repository, {}).get(reference, set())
+        matching_old = sorted(
+            old_reference for old_reference in old_candidates
+            if service_owners & old_owners.get(repository, {}).get(old_reference, set())
+        )
+        previous_reference = (
+            matching_old[0] if matching_old else
+            min(old_candidates) if old_candidates else reference
+        )
+        if not first_party and not include_upstream \
+                and previous_reference == reference and old_candidates:
+            continue
+        candidates.append({
+            "image": reference,
+            "since": previous_reference,
+            "repository": repository,
+            "first_party": first_party,
+            "old_member": bool(old_candidates),
+            "owners": sorted(service_owners),
+        })
+    return candidates
+
+
+def _delta_candidates_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Select delta images from old/new release package membership")
+    parser.add_argument("--since-record", required=True)
+    parser.add_argument("--new-record", required=True)
+    parser.add_argument("--since", required=True)
+    parser.add_argument("--new", required=True)
+    parser.add_argument("--compose-images", required=True)
+    parser.add_argument("--include-upstream", action="store_true")
+    parser.add_argument("--format", choices=("json", "tsv"), default="json")
+    args = parser.parse_args(argv)
+    try:
+        previous_record = json.loads(
+            Path(args.since_record).read_text(encoding="utf-8"))
+        new_record = json.loads(Path(args.new_record).read_text(encoding="utf-8"))
+        compose_images = [
+            line.strip()
+            for line in Path(args.compose_images).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        candidates = delta_image_candidates(
+            previous_record=previous_record,
+            new_record=new_record,
+            compose_images=compose_images,
+            since_tag=args.since,
+            new_tag=args.new,
+            include_upstream=args.include_upstream,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, PlanError) as exc:
+        print(f"release membership rejected: {exc}", file=sys.stderr)
+        return 1
+    if args.format == "json":
+        print(json.dumps(candidates, separators=(",", ":")))
+    else:
+        for item in candidates:
+            print("\t".join((
+                item["image"],
+                item["since"],
+                item["repository"],
+                "yes" if item["first_party"] else "no",
+                "yes" if item["old_member"] else "no",
+                ",".join(item["owners"]),
+            )))
+    return 0
+
+
 def _load_previous_record(
     path: Path | None,
 ) -> tuple[dict[str, dict[str, Any]], str | None, Any, str]:
@@ -241,7 +426,7 @@ def _platform_from_descriptor(descriptor: dict[str, Any]) -> str | None:
 def _registry_identity(payload: dict[str, Any]) -> tuple[str, set[str]]:
     manifest = payload.get("manifest")
     if not isinstance(manifest, dict):
-        raise ValueError("registry response has no manifest object")
+        raise TypeError("registry response has no manifest object")
     digest = manifest.get("digest")
     if not isinstance(digest, str) or not REGISTRY_DIGEST_RE.fullmatch(digest):
         raise ValueError("registry response has no valid lowercase manifest.digest")
@@ -306,7 +491,7 @@ def _promote_failure(
     try:
         source_digest, source_platforms = _registry_identity(
             inspect(f"{repository}@{digest}"))
-    except Exception as exc:  # registry errors fail closed into an image build
+    except Exception as exc:  # noqa: BLE001 -- registry errors fail closed into an image build
         return f"recorded digest cannot be resolved: {exc}"
     if source_digest != digest:
         return "registry digest response disagrees with recorded root digest"
@@ -317,7 +502,7 @@ def _promote_failure(
     try:
         tagged_digest, _ = _registry_identity(
             inspect(f"{repository}:{previous_release}"))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- registry errors fail closed into an image build
         return f"previous release tag cannot be resolved: {exc}"
     if tagged_digest != digest:
         return ("previous release tag disagrees with recorded root digest "
@@ -381,6 +566,10 @@ def build_plan(
     if guard_errors:
         details = "; ".join(violation.format() for violation in guard_errors)
         raise PlanError(f"release input guard rejected inventory/recipe: {details}")
+    try:
+        compose_files = check_release_inputs.release_compose_metadata(root, tag)
+    except (OSError, ValueError) as exc:
+        raise PlanError(f"cannot describe release Compose membership: {exc}") from exc
 
     planned: list[dict[str, Any]] = []
     for image in inventory["images"]:
@@ -470,6 +659,7 @@ def build_plan(
         "override": bool(override),
         "policy_version": current_policy,
         "images": planned,
+        "compose_files": compose_files,
     }
 
 
@@ -505,6 +695,9 @@ def _emit_github_output(plan: dict[str, Any], path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "delta-candidates":
+        return _delta_candidates_main(arguments[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
@@ -512,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--override", action="store_true")
     parser.add_argument("--previous-record", type=Path)
     parser.add_argument("--out", type=Path)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
     try:
         plan = build_plan(
             root=Path.cwd(),

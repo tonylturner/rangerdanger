@@ -861,6 +861,20 @@ jobs:
           expected = {image["image"]: image for image in plan["images"]}
           if set(expected) != {image["image"] for image in inventory["images"]}: raise SystemExit("Plan does not cover the image inventory")
           if (plan["release"], plan["commit"], str(plan["override"]).lower()) != (os.environ["RELEASE_TAG"], os.environ["RELEASE_COMMIT"], os.environ["OVERRIDE"]): raise SystemExit("Plan identity or override disagrees")
+          compose_files = plan.get("compose_files")
+          if not isinstance(compose_files, dict) or not isinstance(compose_files.get("platform"), dict) or not isinstance(compose_files.get("packages"), dict):
+              raise SystemExit("Plan does not contain platform/package Compose membership")
+          compose_models = [("platform", compose_files["platform"])] + sorted(compose_files["packages"].items())
+          for owner, model in compose_models:
+              if (
+                  not isinstance(model, dict)
+                  or not isinstance(model.get("file"), str)
+                  or not re.fullmatch(r"[0-9a-f]{64}", model.get("sha256", ""))
+                  or not isinstance(model.get("services"), dict)
+                  or any(not isinstance(service, str) or not isinstance(image, str) or not image
+                         for service, image in model["services"].items())
+              ):
+                  raise SystemExit(f"{owner}: Compose membership or file hash is incomplete")
           names = [result.get("image") for result in results]
           if len(names) != len(set(names)) or set(names) != set(expected):
               raise SystemExit(f"Image results incomplete/duplicated: expected={sorted(expected)}, got={sorted(names)}")
@@ -907,6 +921,7 @@ jobs:
               "previous_release": plan.get("previous_release"),
               "override": plan["override"],
               "policy_version": plan["policy_version"],
+              "compose_files": compose_files,
               "images": images,
           }
           Path(os.environ["RECORD_PATH"]).write_text(
