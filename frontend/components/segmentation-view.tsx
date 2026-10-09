@@ -305,14 +305,8 @@ function ActionChip({ action }: { action: string; label?: string }) {
 // anomalies belong in the separate `ids` count alongside the amber
 // row tone. (Codex review on PR #47 caught the original conflation.)
 //
-// Legacy heuristics (type/severity/details) are kept as fallback so an
-// older containd image in the loop still produces sensible output.
 function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
   if (e.attributes?.action === "DENY") return "DENY";
-  // Legacy schema fallbacks (pre-v0.1.25 containd builds)
-  if (e.type === "alert") return "DENY";
-  if (e.severity === "critical") return "DENY";
-  if (e.details && /blocked|denied|deny/i.test(e.details)) return "DENY";
   return "ALLOW";
 }
 
@@ -347,17 +341,14 @@ function eventLabel(e: NetworkEvent): string {
     case "ids":
       return a.anomaly_type ?? a.message ?? "IDS anomaly";
     default:
-      return e.kind ?? e.type ?? "event";
+      return e.kind ?? "event";
   }
 }
 
-// Pull a printable src→dst pair from whichever schema is present.
-// Prefer v0.1.25+ camelCase; fall back to legacy snake_case so the
-// strip degrades gracefully if an older containd is in the loop.
 function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
   return {
-    src: e.srcIp ?? e.source ?? "?",
-    dst: e.dstIp ?? e.dest ?? "?",
+    src: e.srcIp ?? "?",
+    dst: e.dstIp ?? "?",
   };
 }
 
@@ -477,8 +468,8 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
   const category = eventCategory(e);
   const { src, dst } = eventEndpoints(e);
   const label = eventLabel(e);
-  const port = e.dstPort ?? e.dst_port ?? null;
-  const proto = e.transport ?? e.protocol ?? "";
+  const port = e.dstPort ?? null;
+  const proto = e.protocol ?? e.transport ?? "";
 
   // Row tone is dominated by DENY (red) since that's the highest-value
   // signal for the operator. ALLOWs use the standard slate background;
@@ -514,11 +505,6 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
           <span className="text-[9px] text-purple-400">[{proto}]</span>
         )}
       </div>
-      {e.details && (
-        <div className="ml-14 mt-0.5 text-[10px] leading-tight text-slate-500">
-          {e.details}
-        </div>
-      )}
     </div>
   );
 }

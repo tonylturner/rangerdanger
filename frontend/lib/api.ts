@@ -342,14 +342,8 @@ export async function getSubstationHealth() {
 
 // Network DPI events from containd filtered to substation traffic.
 //
-// containd v0.1.25+ emits camelCase keys (srcIp/dstIp/srcPort/dstPort/kind)
-// with semantic data in a nested `attributes` object. The legacy snake_case
-// fields (source/dest/src_port/dst_port/type/details/severity/zone) are
-// still present as empty strings for backward-compat with older clients
-// that pre-date the schema bump; new code should read the camelCase fields
-// and `attributes.*`. See rangerdanger#46 for why this matters: a stale
-// type definition here caused LiveEventRow to render blank src→dst columns
-// and miss DENY events entirely.
+// containd events use camelCase keys and semantic data in a nested
+// `attributes` object. The backend maps containd's `proto` to `protocol`.
 //
 // Three event `kind` values reach this endpoint:
 //   - "firewall.rule.hit" — nft drop/accept with attributes.action +
@@ -380,25 +374,14 @@ export type NetworkEventAttributes = {
 export type NetworkEvent = {
   id: string;
   timestamp: string;
-  // v0.1.25+ schema (the one current containd actually emits)
   kind?: string;
   srcIp?: string;
   dstIp?: string;
   srcPort?: number;
   dstPort?: number;
   transport?: string;
-  attributes?: NetworkEventAttributes;
-  // Legacy fallback fields — kept for resilience if an older containd
-  // is in the loop. New code should prefer the camelCase fields above.
-  type?: string;
-  source?: string;
-  dest?: string;
   protocol?: string;
-  src_port?: number;
-  dst_port?: number;
-  details?: string;
-  severity?: string;
-  zone?: string;
+  attributes?: NetworkEventAttributes;
 };
 
 export async function getSubstationNetworkEvents() {
