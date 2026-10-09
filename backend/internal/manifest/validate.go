@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -161,6 +162,7 @@ func Validate(m *Manifest, root string) error {
 	if !firewallAPI {
 		problems = append(problems, "a firewall service with an api endpoint is required")
 	}
+	problems = append(problems, checkSingleHolders(m.Services)...)
 
 	if root == "" {
 		problems = append(problems, "installation root is empty")
@@ -179,6 +181,41 @@ func Validate(m *Manifest, root string) error {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// singleHolderRoles are roles the backend resolves to exactly one service:
+// a second holder would make ServiceByRole pick one by manifest order.
+var singleHolderRoles = []Role{RoleRTU, RoleControlCentre, RoleProcessSolver}
+
+// checkSingleHolders reports roles and the instructor endpoint held by more
+// than one service, and an instructor endpoint outside a field device.
+func checkSingleHolders(services []Service) []string {
+	var problems []string
+	for _, role := range singleHolderRoles {
+		var holders []string
+		for _, service := range services {
+			if slices.Contains(service.Roles, role) {
+				holders = append(holders, service.Key)
+			}
+		}
+		if len(holders) > 1 {
+			problems = append(problems, fmt.Sprintf("role %q is held by %s; at most one service may hold it", role, strings.Join(holders, ", ")))
+		}
+	}
+	var instructors []string
+	for _, service := range services {
+		if _, ok := service.Endpoints[EndpointInstructor]; !ok {
+			continue
+		}
+		instructors = append(instructors, service.Key)
+		if !slices.Contains(service.Roles, RoleFieldDevice) {
+			problems = append(problems, fmt.Sprintf("service %q has an %s endpoint but not the %s role", service.Key, EndpointInstructor, RoleFieldDevice))
+		}
+	}
+	if len(instructors) > 1 {
+		problems = append(problems, fmt.Sprintf("%s endpoint is declared by %s; at most one service may declare it", EndpointInstructor, strings.Join(instructors, ", ")))
+	}
+	return problems
 }
 
 // CheckPlatform verifies that the platform Compose model owns the declared
