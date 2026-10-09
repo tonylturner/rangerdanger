@@ -6,6 +6,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.34] - 2026-10-08
+
+The pre-course release. Every image is rebuilt from fresh upstream bases
+(`[rebuild-all]`), and this is the first release recorded by the new
+plan/record workflow, so its `release-images.json` becomes the baseline
+later releases promote from. Offline Windows installs now refuse a WSL2
+kernel they cannot verify. No lab or exercise content changes.
+
+### Security
+
+- **Go toolchain 1.26.7 -> 1.26.9, `golang.org/x/net` v0.57.0 ->
+  v0.60.0.** Clears thirteen standard-library findings published after
+  v0.1.33 (`GO-2026-6599` through `GO-2026-6617`, including an
+  `html/template` context-tracking escape bug and an HTTP/2 HPACK
+  encoder race) that had the `govulncheck` gate red on `main`. The
+  `x/net` bump carries `x/crypto`, `x/sys` and `x/text` patch updates
+  with it. Images build from the `golang:1.27` base, which the full
+  rebuild refreshes.
+
 ### Changed
 
 - **Release images can be promoted by digest or rebuilt.** Each release
@@ -29,6 +48,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the other six. Each target now compiles only its own package from
   its own narrow set of copied files. The shipped images are unchanged:
   every file in all seven images is byte-identical to the v0.1.33 build.
+
+### Fixed
+
+- **An offline Windows install never applies an unverified WSL2
+  kernel.** When a release publishes the DPI kernel, `stage-ssd` and
+  `stage-ssd-delta` (both `.sh` and `.ps1`) now require its `.sha256`
+  to download, be well-formed and match; otherwise they delete the pair
+  and stop. `setup.ps1` and `install-wsl-kernel.ps1` refuse a bundled or
+  downloaded kernel whose checksum is missing, unreadable, malformed or
+  mismatched, and name the two ways forward (re-stage the SSD, or
+  `-SkipKernelFix`). The one unverified path left is deliberate:
+  `-KernelPath` without `-ExpectedSha256`, for a kernel built locally
+  from `wsl-kernel/`, which now says so when it runs.
+- **PowerShell SSD staging follows the same contract as the shell
+  scripts.** `stage-ssd.ps1` and `stage-ssd-delta.ps1` now preflight
+  every image manifest, verify the Docker archives they write, bundle
+  binfmt for arm64 stages, reuse delta manifests, and write the staged
+  README with LF and no BOM (a Windows checkout had put carriage
+  returns into the student's shell recipe). Windows PowerShell 5.1 no
+  longer stalls the kernel download behind a per-chunk progress bar.
+  Diffing the `.sh` and `.ps1` delta output over the same version pair
+  exposed four further gaps, also closed.
 
 ## [v0.1.33] - 2026-10-05
 
@@ -2718,7 +2759,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.33...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.34...HEAD
+[v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
 [v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
 [v0.1.32]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.32
 [v0.1.31]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.31
