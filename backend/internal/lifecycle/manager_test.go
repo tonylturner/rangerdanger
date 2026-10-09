@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 func TestSwitchFromNoneReachesReady(t *testing.T) {
@@ -464,4 +466,50 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestPackageChecksFailPreflight(t *testing.T) {
+	tests := []struct {
+		name   string
+		break_ func(h *harness)
+		want   string
+	}{
+		{"manifest invalid", func(h *harness) {
+			man := testManifest("pkg-b", "http://10.0.0.9:8080")
+			h.writeManifest(man)
+		}, "manifest: "},
+		{"manifest disagrees with topology", func(h *harness) {
+			man := testManifest("pkg-b", h.firewall.server.URL)
+			man.Services[1].Node = "plc-9"
+			h.writeManifest(man)
+		}, "manifest against topology: "},
+		{"manifest disagrees with compose", func(h *harness) {
+			model, err := normalizedModel(manifest.Dir(h.root, "pkg-b"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.compose.models = map[string][]byte{"pkg-b": []byte(strings.Replace(string(model), "rd-test-pkg-b-plc", "rd-test-renamed", 1))}
+		}, "manifest against compose release model: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			m := h.ready(h.options(), "pkg-a")
+			tt.break_(h)
+
+			st := h.switchTo(m, "pkg-b")
+			if st.Phase != PhaseReady || st.Package != "pkg-a" || st.Generation != 1 {
+				t.Fatalf("status = %+v, want pkg-a still ready", st)
+			}
+			if !strings.Contains(st.Error, "preflight pkg-b: "+tt.want) {
+				t.Errorf("error = %q, want it to name %q", st.Error, tt.want)
+			}
+			if got := h.compose.callLog(); !reflect.DeepEqual(got, []string{"config pkg-b"}) {
+				t.Errorf("compose calls = %q, want only config before the failed check", got)
+			}
+			if rec := h.loadRecord(); rec.Phase != PhaseReady || rec.Package != "pkg-a" {
+				t.Errorf("record = %+v, want untouched", rec)
+			}
+		})
+	}
 }

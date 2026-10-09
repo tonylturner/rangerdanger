@@ -100,6 +100,8 @@ type fakeCompose struct {
 	downLeaves bool   // down leaves a container behind
 	onConfig   func() // runs at the start of every config
 	onDown     func() // runs at the start of every down
+	// models replaces the normalized model of a package's file, by package dir.
+	models map[string][]byte
 }
 
 func (c *fakeCompose) record(call string) {
@@ -130,7 +132,44 @@ func (c *fakeCompose) Config(_ context.Context, file string) ([]byte, error) {
 	if onConfig != nil {
 		onConfig()
 	}
-	return []byte(`{"name":"rangerdanger","services":{}}`), nil
+	c.mu.Lock()
+	model, replaced := c.models[packageOf(file)]
+	c.mu.Unlock()
+	if replaced {
+		return model, nil
+	}
+	return normalizedModel(filepath.Dir(file))
+}
+
+// normalizedModel is what `compose config --format json` prints for a
+// Compose file that agrees with the package's manifest.
+func normalizedModel(dir string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(dir, manifest.FileName))
+	if err != nil {
+		return nil, err
+	}
+	var man manifest.Manifest
+	if err := json.Unmarshal(data, &man); err != nil {
+		return nil, err
+	}
+	services := map[string]any{}
+	for _, svc := range man.Services {
+		networks := map[string]any{}
+		for _, iface := range svc.Interfaces {
+			networks[iface.Network] = map[string]any{"ipv4_address": iface.IPv4}
+		}
+		services[svc.Key] = map[string]any{"container_name": svc.Container, "networks": networks}
+	}
+	networks := map[string]any{}
+	for _, network := range man.Networks {
+		if network.Platform {
+			networks[network.Key] = map[string]any{"name": network.Name, "external": true}
+			continue
+		}
+		networks[network.Key] = map[string]any{"name": network.Name,
+			"ipam": map[string]any{"config": []any{map[string]any{"subnet": network.Subnet, "gateway": network.Gateway}}}}
+	}
+	return json.Marshal(map[string]any{"name": manifest.RangeProject, "services": services, "networks": networks})
 }
 
 func (c *fakeCompose) Images(_ context.Context, file string) ([]string, error) {
@@ -241,25 +280,50 @@ func (h *harness) addPackage(id string) {
 	dir := manifest.Dir(h.root, id)
 	mustMkdir(h.t, dir)
 	names := testContainers(id)
-	man := manifest.Manifest{
+	h.writeManifest(testManifest(id, h.firewall.server.URL))
+	mustWrite(h.t, filepath.Join(dir, "package.yml"), []byte("id: "+id+"\n"))
+	mustWrite(h.t, filepath.Join(dir, manifest.RoutesFile), []byte("# routes of "+id+"\n"))
+	for _, mode := range []manifest.Mode{manifest.ModeSource, manifest.ModeRelease} {
+		mustWrite(h.t, filepath.Join(dir, manifest.ComposeFile(mode)), []byte("name: rangerdanger\n"))
+	}
+	mustWrite(h.t, filepath.Join(h.defs, "firewall", id+".json"), []byte(`{"firewall":{"rules":[]}}`))
+	h.catalog.Packages = append(h.catalog.Packages, labs.Package{ID: id, Revision: 3, FirewallConfigPath: "firewall/" + id + ".json",
+		Template: labs.LabYAML{
+			ID:       "tpl-" + id,
+			Networks: []labs.NetworkYAML{{ID: "field_net", Zone: "lan2"}},
+			Nodes:    []labs.NodeYAML{{ID: "fw-1", Container: names[0]}, {ID: "plc-1", Container: names[1]}},
+		}})
+	h.compose.containers[id] = names
+}
+
+// testManifest is a valid manifest: the firewall answers the fake containd
+// API on the loopback "management" network, the PLC sits on the field.
+func testManifest(id, firewallAPI string) manifest.Manifest {
+	names := testContainers(id)
+	return manifest.Manifest{
 		Schema:  manifest.Schema,
 		Package: id,
+		Networks: []manifest.Network{
+			{Key: "mgmt_net", Name: "rangerdanger_mgmt_net", Subnet: "127.0.0.0/24", Gateway: "127.0.0.254", Platform: true},
+			{Key: "field_net", Name: "rangerdanger_field_net", Subnet: "10.199.40.0/24", Gateway: "10.199.40.1", Zone: "field_net"},
+		},
 		Services: []manifest.Service{
-			{Key: "firewall", Container: names[0], Roles: []manifest.Role{manifest.RoleFirewall},
-				Endpoints: map[string]string{"api": h.firewall.server.URL}},
-			{Key: "plc", Container: names[1], Roles: []manifest.Role{manifest.RolePLC}},
+			{Key: "firewall", Container: names[0], Node: "fw-1", Roles: []manifest.Role{manifest.RoleFirewall},
+				Interfaces: []manifest.Interface{{Network: "mgmt_net", IPv4: "127.0.0.1"}, {Network: "field_net", IPv4: "10.199.40.2"}},
+				Endpoints:  map[string]string{"api": firewallAPI}},
+			{Key: "plc", Container: names[1], Node: "plc-1", Roles: []manifest.Role{manifest.RolePLC},
+				Interfaces: []manifest.Interface{{Network: "field_net", IPv4: "10.199.40.30"}}},
 		},
 	}
+}
+
+func (h *harness) writeManifest(man manifest.Manifest) {
+	h.t.Helper()
 	data, err := json.Marshal(man)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	mustWrite(h.t, filepath.Join(dir, manifest.FileName), data)
-	mustWrite(h.t, filepath.Join(dir, manifest.RoutesFile), []byte("# routes of "+id+"\n"))
-	mustWrite(h.t, filepath.Join(dir, manifest.ComposeFile(manifest.ModeRelease)), []byte("name: rangerdanger\n"))
-	mustWrite(h.t, filepath.Join(h.defs, "firewall", id+".json"), []byte(`{"firewall":{"rules":[]}}`))
-	h.catalog.Packages = append(h.catalog.Packages, labs.Package{ID: id, Revision: 3, FirewallConfigPath: "firewall/" + id + ".json"})
-	h.compose.containers[id] = names
+	mustWrite(h.t, filepath.Join(manifest.Dir(h.root, man.Package), manifest.FileName), data)
 }
 
 func (h *harness) options() Options {
