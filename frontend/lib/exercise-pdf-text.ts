@@ -1,3 +1,5 @@
+import { CMD_TOOL_RE } from "./scenario-description";
+
 // ── Text sanitization ──────────────────────────────────────────────
 //
 // Roboto has full Latin Extended + symbol coverage,
@@ -51,8 +53,6 @@ export function softWrapCode(s: string, maxLen = 78): string {
 
 // ── Segment splitter (same logic as scenario-runner) ────────────────
 
-const CMD_TOOL_RE =
-  /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 const HINT_OPEN_RE = /^:::hint(?:\s+(.+))?$/;
 const HINT_CLOSE_RE = /^:::$/;
 
