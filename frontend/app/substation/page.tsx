@@ -1,23 +1,19 @@
-import { MetricsOverview } from "../../components/metrics-overview";
-import { LoadSimulator } from "../../components/load-simulator";
-import { SubstationPanel } from "../../components/substation-panel";
+"use client";
 
+import { ControlCentreView } from "../../components/control-centre-view";
+import { OperatorViewSwitch } from "../../components/operator-view-switch";
+import { UsSubstationView } from "../../components/us-substation-view";
+import { useOperatorView } from "../../lib/operator-queries";
+
+// The operator screen of the active package (lib/operator-view.ts).
 export default function SubstationPage() {
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
-      <header>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-          Feeder 101 — Distribution Substation
-        </p>
-        <h1 className="text-2xl font-bold text-white">Substation Process View</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Live feeder state from RTAC via OpenDSS physics engine. Commands are forwarded through the RTAC to field devices.
-        </p>
-      </header>
-
-      <MetricsOverview />
-      <LoadSimulator />
-      <SubstationPanel />
-    </main>
+    <OperatorViewSwitch
+      resolution={useOperatorView()}
+      views={{
+        "us-dnp3-substation": () => <UsSubstationView />,
+        "eu-iec104": () => <ControlCentreView />,
+      }}
+    />
   );
 }

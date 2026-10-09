@@ -4,6 +4,7 @@ import {
   negativeValidationTests,
   type DynamicExercisePlan,
 } from "./remediation-to-rules";
+import type { Scenario } from "./api";
 
 // Step title fragments used to identify dynamic phases in firewall-implementation.
 export const PHASE3_TITLES = ["create minimal", "phase 3"];
@@ -35,6 +36,15 @@ export const VALIDATE_BUTTON_SCENARIOS = [
   "vendor-rdp-compromise",       // Lab 2.3-bonus
   "validation-evidence",         // Lab 2.4
 ];
+
+// The US package keeps the allowlist above. Every other package shows
+// Validate exactly when the scenario declares a validator.
+export const US_PACKAGE_ID = "us-dnp3-substation";
+
+export function showsValidateButton(scenario: Pick<Scenario, "id" | "package_id" | "validator">): boolean {
+  if (scenario.package_id === US_PACKAGE_ID) return VALIDATE_BUTTON_SCENARIOS.includes(scenario.id);
+  return scenario.validator !== "";
+}
 
 export function titleMatches(title: string, fragments: string[]): boolean {
   const lower = title.toLowerCase();

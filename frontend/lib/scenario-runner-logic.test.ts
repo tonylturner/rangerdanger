@@ -6,6 +6,7 @@ import {
   injectDynamicContent,
   isBaselineStep,
   isSegmentationStep,
+  showsValidateButton,
   titleMatches,
 } from "./scenario-runner-logic";
 
@@ -53,5 +54,15 @@ describe("scenario runner logic", () => {
     expect(isSegmentationStep("Collect observations")).toBe(false);
     expect(isBaselineStep("Observe the baseline")).toBe(true);
     expect(isBaselineStep("Apply hardened policy")).toBe(false);
+  });
+
+  it("keeps the US validate allowlist and follows the declared validator elsewhere", () => {
+    const us = { package_id: "us-dnp3-substation", validator: "us-baseline-assessment" };
+    expect(showsValidateButton({ ...us, id: "firewall-implementation" })).toBe(true);
+    // A US planning lab with a validator stays hidden.
+    expect(showsValidateButton({ ...us, id: "baseline-assessment" })).toBe(false);
+    const eu = { package_id: "eu-iec104-substation", id: "iec104-telecontrol-boundary" };
+    expect(showsValidateButton({ ...eu, validator: "eu-iec104-telecontrol" })).toBe(true);
+    expect(showsValidateButton({ ...eu, validator: "" })).toBe(false);
   });
 });
