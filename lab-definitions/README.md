@@ -11,6 +11,10 @@ compiled. A broken package stops the backend from starting, and
 | Path | Purpose |
 |------|---------|
 | `packages/<id>/package.yml` | A curriculum package: its topology, its scenarios directory and its capabilities |
+| `packages/<id>/manifest.json` | Deployment identities and endpoints for package services, networks and UI |
+| `packages/<id>/compose.source.yml` | Complete range model built from source |
+| `packages/<id>/compose.release.yml` | Complete range model using published images |
+| `packages/<id>/nginx.routes.conf` | Package-specific proxy locations included by the platform nginx config |
 | `substation-segmentation.yml` | Lab topology of the US package - nodes, networks, IPs, container names |
 | `scenarios/*.yml` | One file per exercise; numbered via the `order` field |
 | `firewall/*.json` | Containd firewall policies (weak baseline + improved hardened state) |
@@ -18,9 +22,10 @@ compiled. A broken package stops the backend from starting, and
 ## Packages
 
 A package owns a topology and the scenarios students run on it. The
-backend loads every `packages/*/package.yml` (nothing else); the US
-workshop is `packages/us-dnp3-substation/package.yml`, which points at
-the files in this directory where they have always lived:
+backend loads each `packages/*/package.yml` for its curriculum content;
+deployment metadata lives in the adjacent `manifest.json` and Compose
+files. The US workshop is `packages/us-dnp3-substation/package.yml`,
+which points at the files in this directory where they have always lived:
 
 ```yaml
 schema: 1
@@ -34,6 +39,22 @@ capabilities: [process.electrical, policy.containd, audit.device-control, captur
 
 - Every file (package, topology, scenario) is decoded strictly: an
   unknown field is a load error.
+- `manifest.json` is the package's deployment contract. Its service keys,
+  container names, topology-node IDs, network interfaces and endpoint URLs
+  must agree with both complete Compose models. Compose remains the
+  deployment authority.
+- The root `docker-compose.yml` and `docker-compose.release.yml` own the
+  persistent platform project (`rangerdanger-platform`: backend, frontend,
+  proxy). A package's `compose.source.yml` or `compose.release.yml` owns the
+  replaceable range project (`rangerdanger`). Run each model with the
+  installation root as `RANGERDANGER_ROOT` and `--project-directory`;
+  relative bind and build paths in the package files resolve from the
+  installation root, not from the package directory.
+- The platform owns `rangerdanger_mgmt_net`. Range Compose files reference it
+  as an external network so switching a range does not remove the platform's
+  management network. The other package networks belong to the range.
+- Offline installation uses the release Compose files with `--pull never`
+  after loading the staged images; there is no separate offline overlay.
 - Paths inside a topology (`firewall_config`) resolve from the
   topology file's directory and must stay inside `lab-definitions/`.
 - A topology must not list scenarios inline; `scenarios: []` is the
@@ -164,14 +185,15 @@ schema. Tested by `backend/internal/containd/firewall_config_test.go`.
 
 `substation-segmentation.yml` defines the US package's lab topology - the set of
 nodes, which networks each one attaches to, and which container name
-they map to in `docker-compose.yml`. The frontend's network console
+they map to in `packages/us-dnp3-substation/compose.source.yml` and
+`packages/us-dnp3-substation/compose.release.yml`. The frontend's network console
 (`/console`) is rendered from this file via the
 `GET /api/workshop/graph` endpoint.
 
 If you change network membership here, you must also change
-`docker-compose.yml` to match - the YAML is the source of truth for
-the UI but Docker is the source of truth for actual reachability.
-The two should never disagree.
+both package Compose models to match - the YAML is the source of truth for
+the UI but Docker is the source of truth for actual reachability. Update the
+package manifest at the same time.
 
 ## Conventions
 

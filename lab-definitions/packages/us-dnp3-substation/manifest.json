@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "package": "us-dnp3-substation",
+  "networks": [
+    {
+      "key": "mgmt_net",
+      "name": "rangerdanger_mgmt_net",
+      "subnet": "10.99.99.0/24",
+      "gateway": "10.99.99.1",
+      "platform": true
+    },
+    {
+      "key": "enterprise_net",
+      "name": "rangerdanger_enterprise_net",
+      "subnet": "10.10.10.0/24",
+      "gateway": "10.10.10.1",
+      "zone": "enterprise_net"
+    },
+    {
+      "key": "vendor_net",
+      "name": "rangerdanger_vendor_net",
+      "subnet": "10.20.20.0/24",
+      "gateway": "10.20.20.1",
+      "zone": "vendor_net"
+    },
+    {
+      "key": "ot_ops_net",
+      "name": "rangerdanger_ot_ops_net",
+      "subnet": "10.30.30.0/24",
+      "gateway": "10.30.30.1",
+      "zone": "ot_ops_net"
+    },
+    {
+      "key": "field_net",
+      "name": "rangerdanger_field_net",
+      "subnet": "10.40.40.0/24",
+      "gateway": "10.40.40.1",
+      "zone": "field_net"
+    },
+    {
+      "key": "physics_net",
+      "name": "rangerdanger_physics_net",
+      "subnet": "10.50.50.0/24",
+      "gateway": "10.50.50.1"
+    }
+  ],
+  "services": [
+    {
+      "key": "firewall",
+      "container": "rangerdanger-firewall",
+      "node": "fw-1",
+      "roles": ["firewall"],
+      "interfaces": [
+        {"network": "mgmt_net", "ipv4": "10.99.99.2"},
+        {"network": "enterprise_net", "ipv4": "10.10.10.2"},
+        {"network": "vendor_net", "ipv4": "10.20.20.2"},
+        {"network": "ot_ops_net", "ipv4": "10.30.30.2"},
+        {"network": "field_net", "ipv4": "10.40.40.2"}
+      ],
+      "endpoints": {"api": "http://10.99.99.2:8080"}
+    },
+    {
+      "key": "corp_ws",
+      "container": "rangerdanger-corp-ws",
+      "node": "corp-ws-1",
+      "roles": ["corporate-ws"],
+      "interfaces": [
+        {"network": "enterprise_net", "ipv4": "10.10.10.10"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.70"}
+      ],
+      "endpoints": {"ui": "http://10.99.99.70:3000"}
+    },
+    {
+      "key": "kali",
+      "container": "rangerdanger-kali",
+      "node": "kali-1",
+      "roles": ["attacker"],
+      "interfaces": [
+        {"network": "enterprise_net", "ipv4": "10.10.10.50"}
+      ]
+    },
+    {
+      "key": "vendor_jump",
+      "container": "rangerdanger-vendor-jump",
+      "node": "vendor-jump-1",
+      "roles": ["jump-host"],
+      "interfaces": [
+        {"network": "vendor_net", "ipv4": "10.20.20.10"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.60"}
+      ],
+      "endpoints": {"ui": "http://10.99.99.60:3000"}
+    },
+    {
+      "key": "eng_workstation",
+      "container": "rangerdanger-eng-ws",
+      "node": "eng-ws-1",
+      "roles": ["engineering-ws"],
+      "interfaces": [
+        {"network": "vendor_net", "ipv4": "10.20.20.20"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.61"}
+      ],
+      "endpoints": {"ui": "http://10.99.99.61:3000"}
+    },
+    {
+      "key": "fuxa_hmi",
+      "container": "rangerdanger-fuxa-hmi",
+      "node": "hmi-1",
+      "roles": ["hmi"],
+      "interfaces": [
+        {"network": "ot_ops_net", "ipv4": "10.30.30.10"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.50"}
+      ],
+      "endpoints": {"ui": "http://10.99.99.50:1881"}
+    },
+    {
+      "key": "hmi_poller",
+      "container": "rangerdanger-hmi-poller",
+      "roles": ["hmi-poller"],
+      "interfaces": []
+    },
+    {
+      "key": "rtac_sim",
+      "container": "rangerdanger-rtac-sim",
+      "node": "rtac-1",
+      "roles": ["rtac"],
+      "interfaces": [
+        {"network": "ot_ops_net", "ipv4": "10.30.30.20"},
+        {"network": "field_net", "ipv4": "10.40.40.10"},
+        {"network": "physics_net", "ipv4": "10.50.50.10"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.20"}
+      ],
+      "endpoints": {"api": "http://10.99.99.20:8080"}
+    },
+    {
+      "key": "openplc",
+      "container": "rangerdanger-openplc",
+      "node": "openplc-1",
+      "roles": ["plc"],
+      "interfaces": [
+        {"network": "ot_ops_net", "ipv4": "10.30.30.30"},
+        {"network": "mgmt_net", "ipv4": "10.99.99.30"}
+      ],
+      "endpoints": {"ui": "http://10.99.99.30:8080"}
+    },
+    {
+      "key": "relay_sim",
+      "container": "rangerdanger-relay-sim",
+      "node": "relay-1",
+      "roles": ["field-device"],
+      "interfaces": [{"network": "field_net", "ipv4": "10.40.40.20"}]
+    },
+    {
+      "key": "recloser_sim",
+      "container": "rangerdanger-recloser-sim",
+      "node": "recloser-1",
+      "roles": ["field-device"],
+      "interfaces": [{"network": "field_net", "ipv4": "10.40.40.21"}]
+    },
+    {
+      "key": "regulator_sim",
+      "container": "rangerdanger-regulator-sim",
+      "node": "regulator-1",
+      "roles": ["field-device"],
+      "interfaces": [{"network": "field_net", "ipv4": "10.40.40.22"}]
+    },
+    {
+      "key": "capbank_sim",
+      "container": "rangerdanger-capbank-sim",
+      "node": "capbank-1",
+      "roles": ["field-device"],
+      "interfaces": [{"network": "field_net", "ipv4": "10.40.40.23"}]
+    },
+    {
+      "key": "historian_sim",
+      "container": "rangerdanger-historian-sim",
+      "node": "historian-1",
+      "roles": ["historian"],
+      "interfaces": [{"network": "ot_ops_net", "ipv4": "10.30.30.40"}]
+    },
+    {
+      "key": "gps_sim",
+      "container": "rangerdanger-gps-sim",
+      "node": "gps-1",
+      "roles": ["time-source"],
+      "interfaces": [{"network": "ot_ops_net", "ipv4": "10.30.30.50"}]
+    },
+    {
+      "key": "opendss_sim",
+      "container": "rangerdanger-opendss-sim",
+      "roles": ["process-solver"],
+      "interfaces": [{"network": "physics_net", "ipv4": "10.50.50.20"}]
+    }
+  ]
+}
