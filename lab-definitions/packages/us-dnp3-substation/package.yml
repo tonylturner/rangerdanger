@@ -1,0 +1,11 @@
+# The US workshop package. Its topology and scenarios stay where they have
+# always lived; this file only declares that the package owns them.
+schema: 1
+id: us-dnp3-substation
+title: "US distribution substation (DNP3)"
+# Curriculum revision: bump when step IDs or validator meaning change.
+# Browser progress is keyed by it.
+revision: 1
+topology: ../../substation-segmentation.yml
+scenarios: ../../scenarios
+capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]

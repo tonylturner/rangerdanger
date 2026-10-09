@@ -41,7 +41,7 @@ func firewallWaitTestServer(t *testing.T, active string, hashMatches bool) *Serv
 	t.Cleanup(containdServer.Close)
 
 	s := probeTestServer(t)
-	if err := s.db.Model(&models.LabTemplate{}).Where("id = ?", workshopTemplateID).Update("topology", `{"nodes":[{"id":"kali-1","container":"rangerdanger-kali"}]}`).Error; err != nil {
+	if err := s.db.Model(&models.LabTemplate{}).Where("id = ?", testTemplateID).Update("topology", `{"nodes":[{"id":"kali-1","container":"rangerdanger-kali"}]}`).Error; err != nil {
 		t.Fatalf("set canary topology: %v", err)
 	}
 	s.containdClient = containd.NewClient(containdServer.URL)

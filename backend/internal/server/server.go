@@ -46,6 +46,8 @@ type Server struct {
 	cfg             *config.Config
 	db              *gorm.DB
 	loader          *labs.Loader
+	catalogMu       sync.RWMutex
+	catalog         *labs.Catalog // packages from the last successful seed
 	orchestrator    *orchestrator.Orchestrator
 	execInContainer func(context.Context, string, []string, int) (string, string, int, error)
 	containdClient  *containd.Client
@@ -85,8 +87,9 @@ type Server struct {
 	traffic       trafficState
 }
 
-// New constructs a server with routes registered.
-func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orchestrator.Orchestrator, containdClient *containd.Client) *Server {
+// New constructs a server with routes registered. catalog is the result of
+// the startup seed and must contain cfg.Package.
+func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, catalog *labs.Catalog, orchestrator *orchestrator.Orchestrator, containdClient *containd.Client) *Server {
 	engine := gin.Default()
 
 	// Determine initial active config from seed path
@@ -102,6 +105,7 @@ func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, orchestrator *orc
 		containdClient: containdClient,
 		activeConfig:   activeConfig,
 		loader:         loader,
+		catalog:        catalog,
 		orchestrator:   orchestrator,
 	}
 	s.execInContainer = s.orchestrator.ExecCommand
@@ -149,7 +153,6 @@ func (s *Server) registerRoutes() {
 		labsGroup := api.Group("/labs")
 		{
 			labsGroup.GET("/templates", s.handleListLabTemplates)
-			labsGroup.POST("/templates", s.handleCreateLabTemplate)
 
 			labsGroup.POST("/instances", s.handleCreateLabInstance)
 			labsGroup.GET("/instances", s.handleListLabInstances)
@@ -214,8 +217,10 @@ func (s *Server) registerRoutes() {
 		api.POST("/traffic/generate", s.handleTrafficGenerate)
 		api.GET("/traffic/status", s.handleTrafficStatus)
 
+		api.GET("/packages", s.handleListPackages)
+
+		// Scenario routes serve the active package only.
 		api.GET("/scenarios", s.handleListScenarios)
-		api.POST("/scenarios", s.handleCreateScenario)
 		api.GET("/scenarios/:id", s.handleGetScenario)
 		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
 		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)

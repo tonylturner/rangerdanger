@@ -77,10 +77,10 @@ func (s *Server) handleTerminal(c *gin.Context) {
 	s.connectTerminal(c, nodeConfig)
 }
 
-// resolveWorkshopNode finds a node in the workshop template topology.
+// resolveWorkshopNode finds a node in the active package's topology.
 func (s *Server) resolveWorkshopNode(nodeID string) (*labs.NodeYAML, error) {
 	var template models.LabTemplate
-	if err := s.db.First(&template, "id = ?", workshopTemplateID).Error; err != nil {
+	if err := s.db.First(&template, "id = ?", s.activePackage().TemplateID).Error; err != nil {
 		return nil, fmt.Errorf("workshop template not found")
 	}
 

@@ -3,6 +3,7 @@ order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
 estimated_minutes: 18
+validator: us-remediation-planning
 description: >
   You have findings from the baseline assessment but not unlimited time,
   people, or political capital. Pick which remediations to execute this
@@ -18,7 +19,8 @@ tags:
   - defense
   - tradeoffs
 steps:
-  - title: "Review the findings you captured"
+  - id: review-the-findings-you-captured
+    title: "Review the findings you captured"
     expected_config: weak
     description: |
       Below are the findings you documented in [Lab 1.2 (Baseline Traffic Analysis)](/exercises/baseline-assessment) - both your passive capture analysis and the active probe result. Each of the actions in the next step maps to one or more of these findings. As you read the action catalog, mentally connect each one back to which finding it addresses.
@@ -46,7 +48,8 @@ steps:
 
       **Time budget:** ~18 minutes (Guided path).
 
-  - title: "Understand the team budget"
+  - id: understand-the-team-budget
+    title: "Understand the team budget"
     description: >
       You have 500 hours of total labor for this quarter's
       segmentation work. That total is split across four
@@ -76,7 +79,8 @@ steps:
       Watch the role utilization bars as you select actions
       in the next step. A role in red cannot absorb more work.
 
-  - title: "Choose your remediation plan"
+  - id: choose-your-remediation-plan
+    title: "Choose your remediation plan"
     description: >
       Select the actions you will execute this quarter. The
       total effort must fit inside 500 hours AND each role's
@@ -278,7 +282,8 @@ steps:
           roles: ["Network Engineer", "Firewall Admin", "Security Analyst"]
           tags: ["vendor", "modernization", "identity"]
 
-  - title: "Reflect - what are you accepting?"
+  - id: reflect-what-are-you-accepting
+    title: "Reflect - what are you accepting?"
     description: |
       Below is your plan, mapped against the Lab 1.3 design verdicts
       and the Lab 1.2 findings they address. Use it to anchor the

@@ -4,169 +4,189 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
+	"sort"
 
-	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-// Loader imports YAML definitions into persistence.
+// Loader imports curriculum packages into persistence.
 type Loader struct {
 	DefinitionsDir string
+	// Validators lists the validator keys scenarios may declare and the
+	// capabilities each one needs.
+	Validators ValidatorRequirements
 }
 
-// NewLoader builds a Loader for a given directory.
-func NewLoader(definitionsDir string) *Loader {
-	return &Loader{DefinitionsDir: definitionsDir}
+// NewLoader builds a Loader for a definitions directory and validator set.
+func NewLoader(definitionsDir string, validators ValidatorRequirements) *Loader {
+	return &Loader{DefinitionsDir: definitionsDir, Validators: validators}
 }
 
-func loadScenarioFiles(dir string) ([]ScenarioYAML, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.yml"))
-	if err != nil {
-		return nil, fmt.Errorf("find scenario YAML files: %w", err)
-	}
-
-	scenarios := make([]ScenarioYAML, 0, len(files))
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return nil, fmt.Errorf("read scenario %s: %w", filepath.Base(file), err)
-		}
-		var scenario ScenarioYAML
-		if err := yaml.Unmarshal(data, &scenario); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", filepath.Base(file), err)
-		}
-		scenarios = append(scenarios, scenario)
-	}
-	return scenarios, nil
-}
-
-// SeedFromDisk ingests all YAML lab definition files at startup.
-func (l *Loader) SeedFromDisk(ctx context.Context, db *gorm.DB) error {
+// Load parses and validates every packages/*/package.yml without touching
+// persistence. Any package failure fails the whole load.
+func (l *Loader) Load() (*Catalog, error) {
 	if l.DefinitionsDir == "" {
-		return fmt.Errorf("definitions dir not configured")
+		return nil, fmt.Errorf("definitions dir not configured")
 	}
-
-	// Load all *.yml files in the definitions directory
-	ymlFiles, _ := filepath.Glob(filepath.Join(l.DefinitionsDir, "*.yml"))
-	if len(ymlFiles) == 0 {
-		return fmt.Errorf("no lab definition YAML files found in %s", l.DefinitionsDir)
-	}
-
-	scenarios, err := loadScenarioFiles(filepath.Join(l.DefinitionsDir, "scenarios"))
+	manifests, err := filepath.Glob(filepath.Join(l.DefinitionsDir, packagesDirName, "*", packageManifestName))
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("find packages: %w", err)
 	}
+	if len(manifests) == 0 {
+		return nil, fmt.Errorf("no packages found in %s", filepath.Join(l.DefinitionsDir, packagesDirName))
+	}
+	sort.Strings(manifests)
 
-	for _, file := range ymlFiles {
-		if err := l.importLabFile(ctx, db, file, scenarios); err != nil {
-			return fmt.Errorf("import %s: %w", filepath.Base(file), err)
+	catalog := &Catalog{Packages: make([]Package, 0, len(manifests))}
+	templateOwners := map[string]string{}
+	scenarioOwners := map[string]string{}
+	for _, manifest := range manifests {
+		pkg, err := l.loadPackage(manifest)
+		if err != nil {
+			return nil, fmt.Errorf("package %s: %w", filepath.Base(filepath.Dir(manifest)), err)
 		}
+		if owner, taken := templateOwners[pkg.Template.ID]; taken {
+			return nil, fmt.Errorf("package %s: topology id %q is already used by package %s", pkg.ID, pkg.Template.ID, owner)
+		}
+		templateOwners[pkg.Template.ID] = pkg.ID
+		for _, scenario := range pkg.Scenarios {
+			if owner, taken := scenarioOwners[scenario.ID]; taken {
+				return nil, fmt.Errorf("package %s: scenario id %q is already used by package %s; scenario ids must be unique across packages", pkg.ID, scenario.ID, owner)
+			}
+			scenarioOwners[scenario.ID] = pkg.ID
+		}
+		catalog.Packages = append(catalog.Packages, pkg)
 	}
-
-	return nil
+	return catalog, nil
 }
 
-// importLabFile imports a single lab definition YAML file.
-func (l *Loader) importLabFile(ctx context.Context, db *gorm.DB, path string, scenarios []ScenarioYAML) error {
-	data, err := os.ReadFile(path)
+// Seed loads every package, requires activeID among them, and only then
+// writes: one transaction per package, then a prune of rows whose package
+// no longer exists.
+func (l *Loader) Seed(ctx context.Context, db *gorm.DB, activeID string) (*Catalog, error) {
+	catalog, err := l.Load()
 	if err != nil {
-		return fmt.Errorf("read lab: %w", err)
+		return nil, err
 	}
+	if _, ok := catalog.Info(activeID); !ok {
+		return nil, fmt.Errorf("active package %q not found in %s", activeID, filepath.Join(l.DefinitionsDir, packagesDirName))
+	}
+	for _, pkg := range catalog.Packages {
+		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return storePackage(tx, pkg)
+		}); err != nil {
+			return nil, fmt.Errorf("store package %s: %w", pkg.ID, err)
+		}
+	}
+	if err := pruneRemovedPackages(ctx, db, catalog); err != nil {
+		return nil, err
+	}
+	return catalog, nil
+}
 
-	var def LabYAML
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		return fmt.Errorf("unmarshal lab: %w", err)
-	}
-
-	if def.ID == "" {
-		return fmt.Errorf("lab definition missing id in %s", filepath.Base(path))
-	}
-
-	if err := ValidateLab(&def, scenarios); err != nil {
-		return err
-	}
-
-	topology := map[string]any{
-		"networks":  def.Networks,
-		"nodes":     def.Nodes,
-		"scenarios": def.Scenarios,
-	}
-	topologyJSON, err := json.Marshal(topology)
+func storePackage(tx *gorm.DB, pkg Package) error {
+	topologyJSON, err := json.Marshal(map[string]any{
+		"networks": pkg.Template.Networks,
+		"nodes":    pkg.Template.Nodes,
+	})
 	if err != nil {
 		return fmt.Errorf("marshal topology: %w", err)
 	}
-
-	var defaultScenarioIDs []string
-	for _, scn := range def.Scenarios {
-		defaultScenarioIDs = append(defaultScenarioIDs, scn.ID)
-	}
-	defaultScenariosJSON, _ := json.Marshal(defaultScenarioIDs)
-
-	tmpl := models.LabTemplate{
-		ID:                 def.ID,
-		Name:               def.Name,
-		Description:        def.Description,
+	template := models.LabTemplate{
+		ID:                 pkg.Template.ID,
+		PackageID:          pkg.ID,
+		Name:               pkg.Template.Name,
+		Description:        pkg.Template.Description,
 		Topology:           string(topologyJSON),
-		DefaultScenarios:   string(defaultScenariosJSON),
 		ComposeFile:        "docker-compose.yml",
-		FirewallConfigPath: def.FirewallConfig,
+		FirewallConfigPath: pkg.FirewallConfigPath,
+	}
+	if err := upsert(tx, &template); err != nil {
+		return fmt.Errorf("upsert template %s: %w", template.ID, err)
 	}
 
-	if err := db.WithContext(ctx).Where(models.LabTemplate{ID: def.ID}).Assign(tmpl).FirstOrCreate(&tmpl).Error; err != nil {
-		return err
-	}
-
-	for _, sc := range def.Scenarios {
-		if err := l.importScenario(ctx, db, sc, def.ID); err != nil {
+	ids := make([]string, 0, len(pkg.Scenarios))
+	for _, scenario := range pkg.Scenarios {
+		row, err := scenarioRow(scenario, pkg.ID, pkg.Template.ID)
+		if err != nil {
 			return err
 		}
-	}
-	for _, sc := range scenarios {
-		if err := l.importScenario(ctx, db, sc, def.ID); err != nil {
-			return err
+		if err := upsert(tx, &row); err != nil {
+			return fmt.Errorf("upsert scenario %s: %w", row.ID, err)
 		}
+		ids = append(ids, scenario.ID)
 	}
 
-	// Collect all valid exercise IDs and delete stale DB entries
-	validIDs := make(map[string]bool)
-	for _, sc := range def.Scenarios {
-		validIDs[sc.ID] = true
+	stale := tx.Where("package_id = ?", pkg.ID)
+	if len(ids) > 0 {
+		stale = stale.Where("id NOT IN ?", ids)
 	}
-	for _, sc := range scenarios {
-		validIDs[sc.ID] = true
+	if err := stale.Delete(&models.Scenario{}).Error; err != nil {
+		return fmt.Errorf("prune scenarios: %w", err)
 	}
-	if len(validIDs) > 0 {
-		var ids []string
-		for id := range validIDs {
-			ids = append(ids, id)
-		}
-		if err := db.WithContext(ctx).Where("lab_template_id = ? AND id NOT IN ?", def.ID, ids).Delete(&models.Scenario{}).Error; err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
-func (l *Loader) importScenario(ctx context.Context, db *gorm.DB, sc ScenarioYAML, templateID string) error {
-	tagsJSON, _ := json.Marshal(sc.Tags)
-	stepsJSON, _ := json.Marshal(sc.Steps)
-	nodesJSON, _ := json.Marshal(sc.Nodes)
-	scenario := models.Scenario{
+// upsert inserts a row or overwrites every non-key column, so a field that
+// became empty on disk is cleared too.
+func upsert(tx *gorm.DB, row any) error {
+	return tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(row).Error
+}
+
+func scenarioRow(sc ScenarioYAML, packageID, templateID string) (models.Scenario, error) {
+	encode := func(field string, value any) (string, error) {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return "", fmt.Errorf("scenario %s: marshal %s: %w", sc.ID, field, err)
+		}
+		return string(data), nil
+	}
+	tags, err := encode("tags", sc.Tags)
+	if err != nil {
+		return models.Scenario{}, err
+	}
+	steps, err := encode("steps", sc.Steps)
+	if err != nil {
+		return models.Scenario{}, err
+	}
+	nodes, err := encode("nodes", sc.Nodes)
+	if err != nil {
+		return models.Scenario{}, err
+	}
+	return models.Scenario{
 		ID:               sc.ID,
+		PackageID:        packageID,
 		Name:             sc.Name,
 		Summary:          sc.Summary,
 		Description:      sc.Description,
 		Order:            sc.Order,
 		LabTemplateID:    templateID,
-		Tags:             string(tagsJSON),
-		Steps:            string(stepsJSON),
-		Nodes:            string(nodesJSON),
+		Tags:             tags,
+		Steps:            steps,
+		Nodes:            nodes,
 		EstimatedMinutes: sc.EstimatedMinutes,
+		Validator:        sc.Validator,
+	}, nil
+}
+
+func pruneRemovedPackages(ctx context.Context, db *gorm.DB, catalog *Catalog) error {
+	ids := make([]string, len(catalog.Packages))
+	for index, pkg := range catalog.Packages {
+		ids[index] = pkg.ID
 	}
-	return db.WithContext(ctx).Where(models.Scenario{ID: sc.ID}).Assign(scenario).FirstOrCreate(&scenario).Error
+	// Rows written before packages existed carry a NULL package_id.
+	const gone = "package_id IS NULL OR package_id NOT IN ?"
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where(gone, ids).Delete(&models.Scenario{}).Error; err != nil {
+			return fmt.Errorf("prune scenarios of removed packages: %w", err)
+		}
+		if err := tx.Where(gone, ids).Delete(&models.LabTemplate{}).Error; err != nil {
+			return fmt.Errorf("prune templates of removed packages: %w", err)
+		}
+		return nil
+	})
 }

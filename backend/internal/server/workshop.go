@@ -12,13 +12,11 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
-const workshopTemplateID = "substation-segmentation"
-
 // handleGetWorkshopGraph returns the topology graph for the active workshop template.
 // This does not require a lab instance — it reads directly from the template.
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	var template models.LabTemplate
-	if err := s.db.First(&template, "id = ?", workshopTemplateID).Error; err != nil {
+	if err := s.db.First(&template, "id = ?", s.activePackage().TemplateID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workshop template not found — run seed first"})
 		return
 	}
@@ -133,7 +131,7 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 
 	// Count scenarios
 	var scenarioCount int64
-	s.db.Model(&models.Scenario{}).Where("lab_template_id = ?", workshopTemplateID).Count(&scenarioCount)
+	s.activeScenarios().Count(&scenarioCount)
 
 	// Get active firewall config
 	s.activeConfigMu.RLock()
@@ -153,7 +151,7 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"workshop_id":     workshopTemplateID,
+		"workshop_id":     s.activePackage().TemplateID,
 		"workshop_name":   "Distribution Substation Segmentation",
 		"rtac_online":     rtacOk,
 		"firewall_online": fwOk,

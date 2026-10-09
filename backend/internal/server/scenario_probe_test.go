@@ -26,12 +26,12 @@ func probeTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.LabTemplate{
-		ID:       workshopTemplateID,
+		ID:       testTemplateID,
 		Topology: `{"nodes":[{"id":"kali-1","container":"range-kali"},{"id":"eng-ws-1","container":"range-eng"},{"id":"rtac-1"}]}`,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	return &Server{db: db}
+	return activePackageServer(db)
 }
 
 func TestProbeVerdicts(t *testing.T) {

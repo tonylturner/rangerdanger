@@ -217,18 +217,6 @@ func TestValidateRemediationPlanning_AlwaysProducesChecks(t *testing.T) {
 	}
 }
 
-// ── Generic fallback ─────────────────────────────────────────────
-
-func TestValidateGeneric_FallbackForUnknownScenario(t *testing.T) {
-	state := substationState(healthyOpts())
-	checks := validateGeneric(state, "weak")
-	if len(checks) == 0 {
-		t.Errorf("generic fallback must always return some checks")
-	}
-}
-
-// ── Helper smoke-tests ───────────────────────────────────────────
-
 func TestMapGet_NilSafe(t *testing.T) {
 	if got := mapGet(nil, "x"); got != nil {
 		t.Errorf("mapGet(nil,_) must return nil, got %v", got)

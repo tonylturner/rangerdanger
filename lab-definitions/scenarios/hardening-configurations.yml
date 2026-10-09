@@ -3,6 +3,7 @@ order: "2.3"
 name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks."
 estimated_minutes: 10
+validator: us-hardening-configurations
 description: >
   Stress-test the policy you built in Lab 2.2 against the canonical
   distribution-substation attack: a DNP3 Direct Operate (FC05) injection
@@ -21,7 +22,8 @@ tags:
   - hardening
   - modbus
 steps:
-  - title: "Verify normal operations"
+  - id: verify-normal-operations
+    title: "Verify normal operations"
     expected_config: weak
     node: rtac-1
     description: |
@@ -68,7 +70,8 @@ steps:
         reclose_enabled: true
         voltage_normal: true
 
-  - title: "Attack - DNP3 Direct Operate injection against the recloser"
+  - id: attack-dnp3-direct-operate-injection-against-the-recloser
+    title: "Attack - DNP3 Direct Operate injection against the recloser"
     expected_config: weak
     node: kali-1
     description: |
@@ -189,7 +192,8 @@ steps:
           command: open
           source: "10.10.10.50"
 
-  - title: "Restore the substation"
+  - id: restore-the-substation
+    title: "Restore the substation"
     expected_config: weak
     description: |
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
@@ -232,7 +236,8 @@ steps:
           command: close
           source: "operator"
 
-  - title: "Apply the hardened policy"
+  - id: apply-the-hardened-policy
+    title: "Apply the hardened policy"
     description: |
       Get a hardened policy active in containd before the re-test.
       The policy banner at the top of this step is your signal -
@@ -290,7 +295,8 @@ steps:
       type: firewall
       config: improved
 
-  - title: "Re-test the attack under the hardened policy"
+  - id: re-test-the-attack-under-the-hardened-policy
+    title: "Re-test the attack under the hardened policy"
     expected_config: hardened
     node: kali-1
     description: |
@@ -392,7 +398,8 @@ steps:
       command: disable_reclose
       source: "10.10.10.50"
 
-  - title: "Validate"
+  - id: validate
+    title: "Validate"
     expected_config: hardened
     description: |
       Confirm the attack was blocked, the substation is healthy,

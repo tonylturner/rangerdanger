@@ -11,7 +11,7 @@ import (
 
 func (s *Server) handleListScenarios(c *gin.Context) {
 	var scenarios []models.Scenario
-	query := s.db
+	query := s.activeScenarios()
 	if templateID := c.Query("lab_template_id"); templateID != "" {
 		query = query.Where("lab_template_id = ?", templateID)
 	}
@@ -22,26 +22,9 @@ func (s *Server) handleListScenarios(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"scenarios": scenarios})
 }
 
-func (s *Server) handleCreateScenario(c *gin.Context) {
-	var payload models.Scenario
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if payload.ID == "" {
-		payload.ID = uuid.NewString()
-	}
-	if err := s.db.WithContext(c).Save(&payload).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, payload)
-}
-
 func (s *Server) handleGetScenario(c *gin.Context) {
-	id := c.Param("id")
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", id).Error; err != nil {
+	scenario, err := s.findActiveScenario(c.Param("id"))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
@@ -63,8 +46,8 @@ func (s *Server) handleStartScenarioRun(c *gin.Context) {
 		return
 	}
 
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", id).Error; err != nil {
+	scenario, err := s.findActiveScenario(id)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}

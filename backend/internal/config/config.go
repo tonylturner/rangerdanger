@@ -17,7 +17,12 @@ type Config struct {
 	LabDefinitionsPath string
 	ContaindAPIURL     string
 	ContaindConfigPath string
+	// Package is the active curriculum package ID (RANGERDANGER_PACKAGE).
+	Package string
 }
+
+// DefaultPackage is the curriculum package served when none is configured.
+const DefaultPackage = "us-dnp3-substation"
 
 // envPrefix is the Viper env var prefix. Configuration is read from
 // RANGERDANGER_* environment variables. The legacy OTLAB_* prefix is
@@ -71,6 +76,7 @@ func Load() (*Config, error) {
 	v.SetDefault("lab_definitions_path", "lab-definitions")
 	v.SetDefault("containd_api_url", "http://firewall:8080")
 	v.SetDefault("containd_config_path", "lab-definitions/firewall/substation-weak.json")
+	v.SetDefault("package", DefaultPackage)
 
 	if err := v.ReadInConfig(); err != nil {
 		// Config file is optional; ignore if not found.
@@ -82,6 +88,7 @@ func Load() (*Config, error) {
 		LabDefinitionsPath: v.GetString("lab_definitions_path"),
 		ContaindAPIURL:     v.GetString("containd_api_url"),
 		ContaindConfigPath: v.GetString("containd_config_path"),
+		Package:            v.GetString("package"),
 	}
 
 	if origins := v.GetStringSlice("allowed_origins"); len(origins) > 0 {
@@ -96,6 +103,10 @@ func Load() (*Config, error) {
 
 	if cfg.LabDefinitionsPath == "" {
 		cfg.LabDefinitionsPath = "lab-definitions"
+	}
+
+	if cfg.Package == "" {
+		cfg.Package = DefaultPackage
 	}
 
 	return cfg, nil

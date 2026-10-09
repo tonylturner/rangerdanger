@@ -11,23 +11,51 @@ var validActionTypes = map[string]struct{}{
 	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {},
 }
 
-var validCheckKeys = map[string]bool{
-	"breaker_closed":  true,
-	"loads_energized": true,
-	"recloser_closed": true,
-	"reclose_enabled": true,
-	"voltage_normal":  true,
-	"firewall_config": true,
+// vocabularyActionTypes are the action types checked against a
+// capability's action vocabulary.
+var vocabularyActionTypes = map[string]bool{"command": true, "sequence": true, "check": true}
+
+// actionVocabulary is the device-command and check-key vocabulary a
+// capability brings to command, sequence and check actions.
+type actionVocabulary struct {
+	commands  map[string][]string
+	checkKeys map[string]bool
 }
 
-// commandVocabulary mirrors the device case tables in the services' sim
-// main.go files. Keep this vocabulary here so validation does not depend on
-// importing service binaries into the backend.
-var commandVocabulary = map[string][]string{
-	"relay":     {"trip", "close", "lockout", "unlock", "inject_fault", "clear_fault", "set_current", "set_voltage"},
-	"recloser":  {"open", "close", "enable_reclose", "disable_reclose", "reset_lockout", "inject_fault", "clear_fault"},
-	"regulator": {"raise_tap", "lower_tap", "set_manual", "set_auto", "set_setpoint", "set_tap"},
-	"capbank":   {"switch_in", "switch_out", "set_auto", "set_manual", "reset_lockout", "set_thresh_low", "set_thresh_high"},
+// capabilityVocabularies lists the action vocabulary each capability adds.
+// Only process.electrical has one today; a package without it cannot use
+// command, sequence or check actions.
+var capabilityVocabularies = map[string]actionVocabulary{
+	CapabilityProcessElectrical: {
+		// commands mirrors the device case tables in the services' sim
+		// main.go files. Keep it here so validation does not depend on
+		// importing service binaries into the backend.
+		commands: map[string][]string{
+			"relay":     {"trip", "close", "lockout", "unlock", "inject_fault", "clear_fault", "set_current", "set_voltage"},
+			"recloser":  {"open", "close", "enable_reclose", "disable_reclose", "reset_lockout", "inject_fault", "clear_fault"},
+			"regulator": {"raise_tap", "lower_tap", "set_manual", "set_auto", "set_setpoint", "set_tap"},
+			"capbank":   {"switch_in", "switch_out", "set_auto", "set_manual", "reset_lockout", "set_thresh_low", "set_thresh_high"},
+		},
+		checkKeys: map[string]bool{
+			"breaker_closed":  true,
+			"loads_energized": true,
+			"recloser_closed": true,
+			"reclose_enabled": true,
+			"voltage_normal":  true,
+			"firewall_config": true,
+		},
+	},
+}
+
+// vocabularyFor returns the action vocabulary a package's capabilities
+// provide, or nil when none of them brings one.
+func vocabularyFor(capabilities []string) *actionVocabulary {
+	for _, capability := range capabilities {
+		if vocabulary, ok := capabilityVocabularies[capability]; ok {
+			return &vocabulary
+		}
+	}
+	return nil
 }
 
 type validationIssue struct {
@@ -45,10 +73,11 @@ func (i validationIssue) Error() string {
 	return fmt.Sprintf("scenario %s step %d %q: %s", scenarioID, i.stepIndex, i.title, i.problem)
 }
 
-// ValidateLab checks that each scenario's structured actions and node
-// references match the template and the runtime vocabulary. Step indexes in
-// errors are zero-based, matching the scenario executor.
-func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
+// ValidateLab checks a package's scenarios against its topology, its
+// declared capabilities and the registered validators: IDs, node
+// references, step IDs, validator keys and structured actions. Step indexes
+// in errors are zero-based, matching the scenario executor.
+func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, validators ValidatorRequirements) error {
 	if def == nil {
 		return fmt.Errorf("lab definition is nil")
 	}
@@ -57,14 +86,15 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 	for _, node := range def.Nodes {
 		nodeIDs[node.ID] = true
 	}
-
-	allScenarios := make([]ScenarioYAML, 0, len(def.Scenarios)+len(scenarios))
-	allScenarios = append(allScenarios, def.Scenarios...)
-	allScenarios = append(allScenarios, scenarios...)
+	declared := make(map[string]bool, len(capabilities))
+	for _, capability := range capabilities {
+		declared[capability] = true
+	}
+	vocabulary := vocabularyFor(capabilities)
 
 	issues := make([]validationIssue, 0)
-	seenScenarioIDs := make(map[string]bool, len(allScenarios))
-	for _, scenario := range allScenarios {
+	seenScenarioIDs := make(map[string]bool, len(scenarios))
+	for _, scenario := range scenarios {
 		contextTitle := "<scenario>"
 		if len(scenario.Steps) > 0 {
 			contextTitle = scenario.Steps[0].Title
@@ -84,6 +114,8 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 
 		if scenario.ID == "" {
 			addScenario("scenario id must not be empty")
+		} else if !slugPattern.MatchString(scenario.ID) {
+			addScenario("scenario id must be " + slugRule)
 		}
 		if scenario.Name == "" {
 			addScenario("scenario name must not be empty")
@@ -92,9 +124,20 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 			addScenario("scenario order must not be empty")
 		}
 		if seenScenarioIDs[scenario.ID] {
-			addScenario("scenario id must be unique across the template and scenario files")
+			addScenario("scenario id must be unique within the package")
 		}
 		seenScenarioIDs[scenario.ID] = true
+		if scenario.Validator != "" {
+			required, known := validators[scenario.Validator]
+			if !known {
+				addScenario(fmt.Sprintf("unknown validator %q", scenario.Validator))
+			}
+			for _, capability := range required {
+				if !declared[capability] {
+					addScenario(fmt.Sprintf("validator %q requires capability %q, which the package does not declare", scenario.Validator, capability))
+				}
+			}
+		}
 
 		for _, nodeID := range scenario.Nodes {
 			if !nodeIDs[nodeID] {
@@ -102,8 +145,17 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 			}
 		}
 
+		seenStepIDs := make(map[string]bool, len(scenario.Steps))
 		for stepIndex, step := range scenario.Steps {
 			stepAdd := func(problem string) { add(stepIndex, step.Title, problem) }
+			if step.ID == "" {
+				stepAdd("step id must not be empty")
+			} else if !slugPattern.MatchString(step.ID) {
+				stepAdd(fmt.Sprintf("step id %q must be %s", step.ID, slugRule))
+			} else if seenStepIDs[step.ID] {
+				stepAdd(fmt.Sprintf("step id %q must be unique within the scenario", step.ID))
+			}
+			seenStepIDs[step.ID] = true
 			if step.Title == "" {
 				stepAdd("step title must not be empty")
 			}
@@ -114,7 +166,7 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 				stepAdd(fmt.Sprintf("unknown node %q", step.Node))
 			}
 			if step.Action != nil {
-				validateAction(*step.Action, step.Node, nodeIDs, stepAdd)
+				validateAction(*step.Action, step.Node, nodeIDs, vocabulary, stepAdd)
 			}
 		}
 	}
@@ -129,21 +181,25 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML) error {
 	return fmt.Errorf("lab validation failed:\n%s", strings.Join(lines, "\n"))
 }
 
-func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool, add func(string)) {
+func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool, vocabulary *actionVocabulary, add func(string)) {
 	if _, ok := validActionTypes[action.Type]; !ok {
 		add(fmt.Sprintf("unsupported action type %q", action.Type))
+		return
+	}
+	if vocabularyActionTypes[action.Type] && vocabulary == nil {
+		add(fmt.Sprintf("%s actions need a package capability with an action vocabulary (%s)", action.Type, CapabilityProcessElectrical))
 		return
 	}
 
 	switch action.Type {
 	case "command":
-		validateCommand(action.Device, action.Command, "", add)
+		validateCommand(vocabulary.commands, action.Device, action.Command, "", add)
 	case "sequence":
 		if len(action.Commands) == 0 {
 			add("sequence must contain at least one command")
 		}
 		for index, command := range action.Commands {
-			validateCommand(command.Device, command.Command, fmt.Sprintf("commands[%d] ", index), add)
+			validateCommand(vocabulary.commands, command.Device, command.Command, fmt.Sprintf("commands[%d] ", index), add)
 		}
 	case "firewall":
 		if action.Config != "weak" && action.Config != "improved" {
@@ -160,7 +216,7 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 		sort.Strings(keys)
 		for _, key := range keys {
 			value := action.Expect[key]
-			if !validCheckKeys[key] {
+			if !vocabulary.checkKeys[key] {
 				add(fmt.Sprintf("unknown check key %q", key))
 				continue
 			}
@@ -210,7 +266,7 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 	}
 }
 
-func validateCommand(device, command, prefix string, add func(string)) {
+func validateCommand(vocabulary map[string][]string, device, command, prefix string, add func(string)) {
 	if command == "" {
 		add(prefix + "command name must not be empty")
 	}
@@ -218,7 +274,7 @@ func validateCommand(device, command, prefix string, add func(string)) {
 		add(prefix + "command device must not be empty")
 		return
 	}
-	commands, ok := commandVocabulary[device]
+	commands, ok := vocabulary[device]
 	if !ok {
 		add(fmt.Sprintf("%sunknown device %q", prefix, device))
 		return

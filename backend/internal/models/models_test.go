@@ -19,9 +19,9 @@ func TestModelsJSONRoundTripAndTags(t *testing.T) {
 	}{
 		{
 			name: "lab template",
-			in:   &LabTemplate{ID: "template-1", Name: "Substation", Description: "Practice", Topology: `{"nodes":[]}`, DefaultScenarios: `["baseline"]`, ComposeFile: "compose.yml", FirewallConfigPath: "weak.json", CreatedAt: created, UpdatedAt: updated},
+			in:   &LabTemplate{ID: "template-1", PackageID: "package-1", Name: "Substation", Description: "Practice", Topology: `{"nodes":[]}`, ComposeFile: "compose.yml", FirewallConfigPath: "weak.json", CreatedAt: created, UpdatedAt: updated},
 			out:  &LabTemplate{},
-			keys: []string{"id", "name", "description", "topology", "default_scenarios", "compose_file", "firewall_config_path", "created_at", "updated_at"},
+			keys: []string{"id", "package_id", "name", "description", "topology", "compose_file", "firewall_config_path", "created_at", "updated_at"},
 		},
 		{
 			name: "lab instance",
@@ -37,9 +37,9 @@ func TestModelsJSONRoundTripAndTags(t *testing.T) {
 		},
 		{
 			name: "scenario",
-			in:   &Scenario{ID: "scenario-1", Name: "Baseline", Summary: "Review access", Description: "Check flows", Order: "1.2", LabTemplateID: "template-1", Tags: `["segmentation"]`, Steps: `[{}]`, Nodes: `["rtac-1"]`, EstimatedMinutes: 15, CreatedAt: created, UpdatedAt: updated},
+			in:   &Scenario{ID: "scenario-1", PackageID: "package-1", Name: "Baseline", Summary: "Review access", Description: "Check flows", Order: "1.2", LabTemplateID: "template-1", Tags: `["segmentation"]`, Steps: `[{}]`, Nodes: `["rtac-1"]`, EstimatedMinutes: 15, Validator: "baseline", CreatedAt: created, UpdatedAt: updated},
 			out:  &Scenario{},
-			keys: []string{"id", "name", "summary", "description", "order", "lab_template_id", "tags", "steps", "nodes", "estimated_minutes", "created_at", "updated_at"},
+			keys: []string{"id", "package_id", "name", "summary", "description", "order", "lab_template_id", "tags", "steps", "nodes", "estimated_minutes", "validator", "created_at", "updated_at"},
 		},
 		{
 			name: "scenario run",
@@ -132,15 +132,12 @@ func TestModelsJSONRoundTripAndTags(t *testing.T) {
 	if err := json.Unmarshal(data, &templateJSON); err != nil {
 		t.Fatalf("decode template JSON: %v", err)
 	}
-	var topology, defaultScenarios string
+	var topology string
 	if err := json.Unmarshal(templateJSON["topology"], &topology); err != nil {
 		t.Fatalf("decode topology string: %v", err)
 	}
-	if err := json.Unmarshal(templateJSON["default_scenarios"], &defaultScenarios); err != nil {
-		t.Fatalf("decode default scenarios string: %v", err)
-	}
-	if topology != `{"nodes":[]}` || defaultScenarios != `["baseline"]` {
-		t.Errorf("template embedded JSON fields = (%q, %q), want string values", topology, defaultScenarios)
+	if topology != `{"nodes":[]}` {
+		t.Errorf("template embedded topology = %q, want string value", topology)
 	}
 }
 

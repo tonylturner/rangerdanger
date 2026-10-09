@@ -3,6 +3,7 @@ order: "2.4"
 name: "Testing & Validation"
 summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
 estimated_minutes: 6
+validator: us-validation-evidence
 description: >
   After applying the hardened firewall configuration in Lab 2.2 and
   stress-testing it in Lab 2.3, this exercise builds the formal
@@ -22,7 +23,8 @@ tags:
   - evidence
   - defense
 steps:
-  - title: "Confirm hardened config is active"
+  - id: confirm-hardened-config-is-active
+    title: "Confirm hardened config is active"
     expected_config: hardened
     description: |
       You're now validating the work you did across Labs 1.2 → 2.3. Below is the design + plan you committed; this validation pass tests whether the firewall enforces what you specified.
@@ -69,7 +71,8 @@ steps:
       expect:
         firewall_config: improved
 
-  - title: "Generate the validation report"
+  - id: generate-the-validation-report
+    title: "Generate the validation report"
     expected_config: hardened
     description: |
       A segmentation change ships with *evidence*: proof that authorized
@@ -206,7 +209,8 @@ steps:
         firewall_config: improved
         breaker_closed: true
 
-  - title: "Reflection - what did your plan close?"
+  - id: reflection-what-did-your-plan-close
+    title: "Reflection - what did your plan close?"
     description: |
       Before wrapping up, take five minutes to look at what your plan addressed vs deferred.
 

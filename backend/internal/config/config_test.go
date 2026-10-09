@@ -13,12 +13,14 @@ var configEnvKeys = []string{
 	"RANGERDANGER_LAB_DEFINITIONS_PATH",
 	"RANGERDANGER_CONTAIND_API_URL",
 	"RANGERDANGER_CONTAIND_CONFIG_PATH",
+	"RANGERDANGER_PACKAGE",
 	"OTLAB_HTTP_PORT",
 	"OTLAB_DB_PATH",
 	"OTLAB_ALLOWED_ORIGINS",
 	"OTLAB_LAB_DEFINITIONS_PATH",
 	"OTLAB_CONTAIND_API_URL",
 	"OTLAB_CONTAIND_CONFIG_PATH",
+	"OTLAB_PACKAGE",
 }
 
 // isolateConfigEnv prevents the developer's shell environment from influencing
@@ -53,12 +55,14 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 		"RANGERDANGER_LAB_DEFINITIONS_PATH": "fixtures/labs",
 		"RANGERDANGER_CONTAIND_API_URL":     "http://firewall.example:9000",
 		"RANGERDANGER_CONTAIND_CONFIG_PATH": "fixtures/weak.json",
+		"RANGERDANGER_PACKAGE":              "eu-iec104-substation",
 		"OTLAB_HTTP_PORT":                   "9999",
 		"OTLAB_DB_PATH":                     "legacy.sqlite",
 		"OTLAB_ALLOWED_ORIGINS":             "https://legacy.example",
 		"OTLAB_LAB_DEFINITIONS_PATH":        "legacy-labs",
 		"OTLAB_CONTAIND_API_URL":            "http://legacy-firewall:8080",
 		"OTLAB_CONTAIND_CONFIG_PATH":        "legacy-weak.json",
+		"OTLAB_PACKAGE":                     "legacy-package",
 	} {
 		t.Setenv(key, value)
 	}
@@ -74,6 +78,7 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 		LabDefinitionsPath: "fixtures/labs",
 		ContaindAPIURL:     "http://firewall.example:9000",
 		ContaindConfigPath: "fixtures/weak.json",
+		Package:            "eu-iec104-substation",
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %#v, want %#v", cfg, want)
@@ -94,6 +99,7 @@ func TestLoadDefaults(t *testing.T) {
 		LabDefinitionsPath: "lab-definitions",
 		ContaindAPIURL:     "http://firewall:8080",
 		ContaindConfigPath: "lab-definitions/firewall/substation-weak.json",
+		Package:            DefaultPackage,
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %#v, want defaults %#v", cfg, want)

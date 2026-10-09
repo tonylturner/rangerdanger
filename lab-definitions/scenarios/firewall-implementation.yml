@@ -3,6 +3,7 @@ order: "2.2"
 name: "Firewall Policy Implementation"
 summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds."
 estimated_minutes: 12
+validator: us-firewall-implementation
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
@@ -23,7 +24,8 @@ tags:
   - defense
   - containd
 steps:
-  - title: "Exercise overview"
+  - id: exercise-overview
+    title: "Exercise overview"
     expected_config: weak
     description: |
       In the Baseline Traffic Analysis, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
@@ -65,7 +67,8 @@ steps:
 
       **Time budget:** ~12 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
 
-  - title: "Verify access to containd"
+  - id: verify-access-to-containd
+    title: "Verify access to containd"
     expected_config: weak
     description: |
       Confirm you can reach the containd NGFW through either of its
@@ -111,7 +114,8 @@ steps:
       run the containd daemon binary. Only `containd cli` enters the
       appliance shell.)
 
-  - title: "Phase 1 - Verify current access under the weak baseline"
+  - id: phase-1-verify-current-access-under-the-weak-baseline
+    title: "Phase 1 - Verify current access under the weak baseline"
     expected_config: weak
     node: kali-1
     description: |
@@ -157,7 +161,8 @@ steps:
         - { from: eng-ws-1, host: 10.40.40.22, port: 502, note: "Modbus to regulator" }
         - { from: eng-ws-1, host: 10.40.40.23, port: 502, note: "Modbus to capbank" }
 
-  - title: "Phase 2 - Remove broad trust and establish default-deny"
+  - id: phase-2-remove-broad-trust-and-establish-default-deny
+    title: "Phase 2 - Remove broad trust and establish default-deny"
     expected_config: weak
     description: |
       Move from a permissive posture to default-deny for all
@@ -253,7 +258,8 @@ steps:
       re-check your rule list and whether you committed.
       :::
 
-  - title: "Phase 3 - Create minimal required rules"
+  - id: phase-3-create-minimal-required-rules
+    title: "Phase 3 - Create minimal required rules"
     description: |
       The six rules below are the contract for what cross-zone
       traffic the substation must allow. Everything else stays
@@ -368,7 +374,8 @@ steps:
       type: firewall
       config: improved
 
-  - title: "Phase 4 - Enable logging and visibility"
+  - id: phase-4-enable-logging-and-visibility
+    title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
       A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
@@ -437,7 +444,8 @@ steps:
       blocked (TCP timeout + no kinetic change).
       :::
 
-  - title: "Phase 5 - Validate allowed traffic"
+  - id: phase-5-validate-allowed-traffic
+    title: "Phase 5 - Validate allowed traffic"
     expected_config: hardened
     node: rtac-1
     description: |
@@ -486,7 +494,8 @@ steps:
         - { host: 10.40.40.20, port: 20000, note: "RTAC DNP3 to relay" }
         - { host: 10.30.30.10, port: 1881, note: "OT ops to FUXA HMI" }
 
-  - title: "Phase 6 - Validate blocked traffic"
+  - id: phase-6-validate-blocked-traffic
+    title: "Phase 6 - Validate blocked traffic"
     expected_config: hardened
     node: kali-1
     description: |
@@ -553,7 +562,8 @@ steps:
         - { from: vendor-jump-1, host: 10.40.40.20, port: 502, note: "Vendor Modbus to relay" }
         - { from: vendor-jump-1, host: 10.40.40.20, port: 20000, note: "Vendor DNP3 to relay" }
 
-  - title: "Export your policy"
+  - id: export-your-policy
+    title: "Export your policy"
     expected_config: hardened
     description: |
       You have a working least-privilege firewall policy active.

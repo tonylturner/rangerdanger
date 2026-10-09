@@ -3,6 +3,7 @@ order: "1.2"
 name: "Baseline Traffic Analysis"
 summary: "Capture cross-zone traffic at the firewall, identify the critical conduits your operations depend on, and define what good segmentation would look like."
 estimated_minutes: 15
+validator: us-baseline-assessment
 description: >
   Before you can segment a substation network, you need to
   understand two things: what traffic actually exists between
@@ -20,7 +21,8 @@ tags:
   - baseline
   - defense
 steps:
-  - title: "Walk the topology and inspect the crossings"
+  - id: walk-the-topology-and-inspect-the-crossings
+    title: "Walk the topology and inspect the crossings"
     expected_config: weak
     description: |
       Open the [Network Map](/console). Before reading anything below,
@@ -104,7 +106,8 @@ steps:
       expect:
         breaker_closed: true
 
-  - title: "Generate scenario traffic"
+  - id: generate-scenario-traffic
+    title: "Generate scenario traffic"
     description: |
       The substation's **autonomous baseline** is already running continuously:
 
@@ -156,7 +159,8 @@ steps:
       the kali host - you'll get to that in step 7.
       :::
 
-  - title: "Capture traffic at the firewall"
+  - id: capture-traffic-at-the-firewall
+    title: "Capture traffic at the firewall"
     node: fw-1
     description: |
       > **Tip - where you run commands:** click **Show terminal** (the
@@ -187,7 +191,8 @@ steps:
 
       > **About the filter:** the only thing we exclude is `127.0.0.1` (loopback), which carries containd's own internal dataplane-to-engine RPC and is unrelated to the substation scenario. Every other packet in the capture is real scenario traffic - no management UI traffic, no platform telemetry, no external browser flows, because the RangerDanger platform runs on its own out-of-band management network and does not appear on any zone interface the firewall sees.
 
-  - title: "Analyze cross-zone flows"
+  - id: analyze-cross-zone-flows
+    title: "Analyze cross-zone flows"
     node: eng-ws-1
     description: |
       Analysis happens on the **engineering workstation**, not on the firewall. The PCAP you just captured is shared with eng-ws at `/home/abc/pcaps/baseline.pcap` via a read-only volume mount - no copy needed. The eng-ws terminal has `tshark` installed, which gives us purpose-built statistics commands that are much shorter and clearer than raw `tcpdump` + `awk`.
@@ -296,7 +301,8 @@ steps:
       > You have visibility into all cross-zone traffic from the firewall capture.
       > **What important system relationships are you missing?**
 
-  - title: "Critical conduits - what MUST flow"
+  - id: critical-conduits-what-must-flow
+    title: "Critical conduits - what MUST flow"
     description: |
       Shift from *"what traffic exists"* to *"what traffic is required for the substation to run."*
 
@@ -376,7 +382,8 @@ steps:
       - So a table line like "~500 ICS poll packets in 30 seconds" for the RTAC poller is a bidirectional count over persistent sessions - roughly **250 request/response transactions**, lining up with the RTAC's ~8/sec aggregate poll rate across the four field devices.
       :::
 
-  - title: "Findings - what you observed"
+  - id: findings-what-you-observed
+    title: "Findings - what you observed"
     description: |
       Now look at what you captured through a security lens. This step is **observation**, not decision - for each category below, mark what you saw in your analysis. Was it present and concerning? Present but justified? Or not visible at all?
 
@@ -416,7 +423,8 @@ steps:
       Three categories landed at `NOT_OBSERVED` - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
       :::
 
-  - title: "Probe for latent exposure"
+  - id: probe-for-latent-exposure
+    title: "Probe for latent exposure"
     expected_config: weak
     node: kali-1
     description: |
@@ -455,7 +463,8 @@ steps:
         - { host: 10.40.40.21, port: 20000, note: "Kali DNP3 to recloser" }
         - { host: 10.30.30.20, port: 502, note: "Kali Modbus to RTAC" }
 
-  - title: "Transition - decide what to fix first"
+  - id: transition-decide-what-to-fix-first
+    title: "Transition - decide what to fix first"
     description: |
       You have now:
 

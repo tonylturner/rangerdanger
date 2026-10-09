@@ -1,14 +1,17 @@
 package labs
 
-// LabYAML mirrors the YAML schema for lab templates.
+// LabYAML mirrors the YAML schema for a package's topology template.
 type LabYAML struct {
-	ID             string         `yaml:"id"`
-	Name           string         `yaml:"name"`
-	Description    string         `yaml:"description"`
-	FirewallConfig string         `yaml:"firewall_config"` // path relative to lab-definitions dir
-	Networks       []NetworkYAML  `yaml:"networks"`
-	Nodes          []NodeYAML     `yaml:"nodes"`
-	Scenarios      []ScenarioYAML `yaml:"scenarios"`
+	ID             string        `yaml:"id"`
+	Name           string        `yaml:"name"`
+	Description    string        `yaml:"description"`
+	FirewallConfig string        `yaml:"firewall_config"` // path relative to the topology file's directory
+	Networks       []NetworkYAML `yaml:"networks"`
+	Nodes          []NodeYAML    `yaml:"nodes"`
+	// Scenarios is accepted only as an empty list. A package's scenarios
+	// directory is its only curriculum source; inline scenarios are a load
+	// error so a topology cannot smuggle exercises past package ownership.
+	Scenarios []any `yaml:"scenarios"`
 }
 
 // NetworkYAML defines a virtual network.
@@ -45,10 +48,17 @@ type ScenarioYAML struct {
 	// track, skipping Advanced hints and optional drill-downs). Surfaced as a
 	// chip on the exercise card. Optional; 0/absent renders no chip.
 	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
+	// Validator names the registered Go validator behind
+	// GET /api/scenarios/:id/validate. Empty means the scenario has no
+	// validation result.
+	Validator string `yaml:"validator,omitempty"`
 }
 
 // ScenarioStep describes a single scenario instruction.
 type ScenarioStep struct {
+	// ID is the authored, stable step identifier (unique in its scenario).
+	// Progress and references use it; step execution stays index-based.
+	ID             string      `yaml:"id" json:"id"`
 	Title          string      `yaml:"title" json:"title"`
 	Description    string      `yaml:"description" json:"description"`
 	ExpectedConfig string      `yaml:"expected_config,omitempty" json:"expected_config,omitempty"`

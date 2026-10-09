@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 // ValidationCheck is a single pass/fail condition.
@@ -29,50 +30,44 @@ type ValidationResult struct {
 	Timestamp  string            `json:"timestamp"`
 }
 
-// handleValidateScenario checks current substation state against scenario pass criteria.
+// handleValidateScenario runs the active-package scenario's declared
+// validator against current substation state. A scenario outside the active
+// package, or one without a validator, has no validation result (404).
 func (s *Server) handleValidateScenario(c *gin.Context) {
 	scenarioID := c.Param("id")
-
-	// Fetch current state from RTAC
-	state, err := s.fetchRTACState()
+	scenario, err := s.findActiveScenario(scenarioID)
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+	if scenario.Validator == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "scenario has no validator"})
+		return
+	}
+	validator, ok := scenarioValidators[scenario.Validator]
+	if !ok {
+		// The loader rejects unknown keys, so only a stale row can get here.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unknown validator " + scenario.Validator})
 		return
 	}
 
-	// Fetch audit log
-	audit, err := s.fetchRTACAudit()
-	if err != nil {
-		audit = nil // non-fatal
+	var input validatorInput
+	if validator.needs(labs.CapabilityProcessElectrical) {
+		input.state, err = s.fetchRTACState()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cannot reach RTAC: " + err.Error()})
+			return
+		}
 	}
-
-	// Get active firewall config
+	if validator.needs(labs.CapabilityAuditDeviceControl) {
+		// An unreachable audit log is non-fatal; validators treat nil as empty.
+		input.audit, _ = s.fetchRTACAudit()
+	}
 	s.activeConfigMu.RLock()
-	activeConfig := s.activeConfig
+	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
 
-	var checks []ValidationCheck
-
-	switch scenarioID {
-	case "baseline-assessment":
-		checks = s.validateBaselineAssessment(state, audit, activeConfig)
-	case "segmentation-requirements":
-		checks = validateSegmentationRequirements(state, audit, activeConfig)
-	case "remediation-planning":
-		checks = validateRemediationPlanning(state, activeConfig)
-	case "firewall-implementation":
-		checks = validateFirewallImplementation(state, audit, activeConfig)
-	case "hardening-configurations":
-		checks = validateHardeningConfigurations(state, audit, activeConfig)
-	case "vendor-rdp-compromise":
-		checks = validateVendorRDPCompromise(state, audit, activeConfig)
-	case "validation-evidence":
-		checks = validateValidationEvidence(state, audit, activeConfig)
-	default:
-		// Generic validation: check basic operational state.
-		// Used for any scenario without a dedicated validator.
-		checks = validateGeneric(state, activeConfig)
-	}
+	checks := validator.run(s, input)
 
 	// Determine overall outcome
 	outcome := "PASS"
@@ -575,29 +570,6 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 		checks = append(checks, ValidationCheck{"Audit: unauthorized writes", "warn",
 			strings.Replace("N unauthorized command(s) reached field devices", "N", itoa(badWrites), 1)})
 	}
-
-	return checks
-}
-
-// ── Generic validation (fallback) ───────────────────────────────
-
-func validateGeneric(state map[string]any, activeConfig string) []ValidationCheck {
-	var checks []ValidationCheck
-
-	elec := mapGet(state, "electrical")
-	if boolGet(elec, "breaker_closed") {
-		checks = append(checks, ValidationCheck{"Breaker", "pass", "Feeder breaker CLOSED"})
-	} else {
-		checks = append(checks, ValidationCheck{"Breaker", "fail", "Feeder breaker OPEN"})
-	}
-
-	if boolGet(elec, "critical_load_energized") {
-		checks = append(checks, ValidationCheck{"Critical load", "pass", "Energized"})
-	} else {
-		checks = append(checks, ValidationCheck{"Critical load", "fail", "De-energized"})
-	}
-
-	checks = append(checks, ValidationCheck{"Firewall config", "pass", "Active: " + activeConfig})
 
 	return checks
 }

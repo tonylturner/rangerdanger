@@ -11,11 +11,15 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
+// handleSeedDefinitions reloads every package. It fails with the same
+// error startup would, and keeps the previous catalog when it does.
 func (s *Server) handleSeedDefinitions(c *gin.Context) {
-	if err := s.loader.SeedFromDisk(c.Request.Context(), s.db); err != nil {
+	catalog, err := s.loader.Seed(c.Request.Context(), s.db, s.cfg.Package)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.setCatalog(catalog)
 	c.JSON(http.StatusOK, gin.H{"status": "seeded"})
 }
 
@@ -26,22 +30,6 @@ func (s *Server) handleListLabTemplates(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"templates": templates})
-}
-
-func (s *Server) handleCreateLabTemplate(c *gin.Context) {
-	var payload models.LabTemplate
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if payload.ID == "" {
-		payload.ID = uuid.NewString()
-	}
-	if err := s.db.WithContext(c).Save(&payload).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, payload)
 }
 
 func (s *Server) handleCreateLabInstance(c *gin.Context) {

@@ -3,6 +3,7 @@ order: "1.3"
 name: "Segmentation Requirements & Policy Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
 estimated_minutes: 12
+validator: us-segmentation-requirements
 description: >
   Using the baseline assessment findings, define what
   communications should be allowed between each zone pair.
@@ -16,7 +17,8 @@ tags:
   - segmentation
   - defense
 steps:
-  - title: "Translate findings into design requirements"
+  - id: translate-findings-into-design-requirements
+    title: "Translate findings into design requirements"
     expected_config: weak
     description: |
       **Time budget:** ~12 minutes (Guided path). This is a design and
@@ -149,7 +151,8 @@ steps:
       - **DNP3**: RTAC may poll (FC01 Read) only - its DNP3 master only sends integrity polls. Direct Operate (FC05) and No-Ack (FC06) are blocked for **every** source, including the RTAC, since no legitimate flow uses them. This is what the Lab 2.3 DPI lesson demonstrates.
       :::
 
-  - title: "Resourcing reality check"
+  - id: resourcing-reality-check
+    title: "Resourcing reality check"
     expected_config: weak
     description: |
       Real OT segmentation projects fail more often on resourcing than on technology - vendor change windows that never materialise, OT engineers stretched between operations and security work, unclear risk-acceptance authority. Before you pick remediation actions in Lab 1.4, commit to your team's current state. Lab 1.4 will surface dependencies on these answers per action.
@@ -176,7 +179,8 @@ steps:
       Right now these annotations are observational - they don't reduce the Lab 1.4 labor budget. A future workshop iteration may drive 1.4's role caps directly from these answers (tracked in [issue #27](https://github.com/tonylturner/rangerdanger/issues/27)).
       :::
 
-  - title: "Define success criteria for segmentation"
+  - id: define-success-criteria-for-segmentation
+    title: "Define success criteria for segmentation"
     description: |
       Before moving on, write down what **"good"** looks like for this substation. These are concrete, testable statements - not a plan, not a matrix. You will use them in Lab 2.4 (Testing & Validation) to validate your changes worked.
 

@@ -13,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
 // StepExecutionResult is the response from executing a scenario step action.
@@ -46,9 +45,8 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		return
 	}
 
-	// Load scenario
-	var scenario models.Scenario
-	if err := s.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
+	scenario, err := s.findActiveScenario(scenarioID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}

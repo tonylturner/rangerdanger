@@ -3,6 +3,7 @@ order: "2.3-bonus"
 name: "Vendor Remote Access Compromise (Bonus)"
 summary: "Optional - Compromised vendor RDP/VNC credentials let an enterprise attacker pivot through the DMZ to OT field devices."
 estimated_minutes: 12
+validator: us-vendor-rdp-compromise
 description: >
   Optional companion to Lab 2.3. Phished vendor credentials let an
   attacker RDP/VNC into the vendor jump box from an enterprise foothold,
@@ -19,7 +20,8 @@ tags:
   - segmentation
   - bonus
 steps:
-  - title: "Confirm the lateral path is open"
+  - id: confirm-the-lateral-path-is-open
+    title: "Confirm the lateral path is open"
     expected_config: weak
     node: kali-1
     description: |
@@ -47,7 +49,8 @@ steps:
         - { host: 10.20.20.10, port: 3389, note: "RDP to vendor jump" }
         - { host: 10.20.20.10, port: 5900, note: "VNC to vendor jump" }
 
-  - title: "Pivot via RDP (or VNC)"
+  - id: pivot-via-rdp-or-vnc
+    title: "Pivot via RDP (or VNC)"
     expected_config: weak
     node: kali-1
     description: |
@@ -82,7 +85,8 @@ steps:
       open remote-access into the vendor DMZ.
       :::
 
-  - title: "Use the vendor foothold to attack field devices"
+  - id: use-the-vendor-foothold-to-attack-field-devices
+    title: "Use the vendor foothold to attack field devices"
     expected_config: weak
     node: vendor-jump-1
     description: |
@@ -191,7 +195,8 @@ steps:
           command: inject_fault
           source: "10.20.20.10"
 
-  - title: "Restore service"
+  - id: restore-service
+    title: "Restore service"
     expected_config: weak
     description: |
       Use the Supervisory Control tab in the [Feeder HMI](/substation)
@@ -213,7 +218,8 @@ steps:
           command: close
           source: "operator"
 
-  - title: "Apply hardened policy"
+  - id: apply-hardened-policy
+    title: "Apply hardened policy"
     description: |
       Apply the hardened firewall configuration with **Apply Hardened**
       in the **containd NGFW - policy actions** panel below this step, or
@@ -248,7 +254,8 @@ steps:
       type: firewall
       config: improved
 
-  - title: "Re-attempt the pivot"
+  - id: re-attempt-the-pivot
+    title: "Re-attempt the pivot"
     expected_config: hardened
     node: kali-1
     description: |
@@ -303,7 +310,8 @@ steps:
         recloser_closed: true
         reclose_enabled: true
 
-  - title: "Validate"
+  - id: validate
+    title: "Validate"
     expected_config: hardened
     description: |
       Confirm the feeder is operating normally with the hardened
