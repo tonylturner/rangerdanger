@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSubstationState, sendLabControl } from "../lib/api";
+import { sendLabControl } from "../lib/api";
+import { useSubstationState } from "../lib/live-queries";
 
 // Load Simulator - a training-infrastructure control for exploring the OpenDSS
 // physics engine. It drives the feeder loads (general/critical kW + PF) via the
@@ -37,7 +38,6 @@ export function LoadSimulator() {
   const [pf, setPf] = useState(100); // 80-100 slider (=> 0.80-1.00)
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [engaged, setEngaged] = useState(false);
-  const [tele, setTele] = useState<{ totalKw: number; pf: number } | null>(null);
   const [lastChange, setLastChange] = useState<{ label: string; ts: number } | null>(null);
   const [now, setNow] = useState(0);
   const [modal, setModal] = useState(false);
@@ -47,9 +47,9 @@ export function LoadSimulator() {
   const genRef = useRef(0);
   const critRef = useRef(0);
   const pfRef = useRef(100);
-  const setGenV = (v: number) => { genRef.current = v; setGen(v); };
-  const setCritV = (v: number) => { critRef.current = v; setCrit(v); };
-  const setPfV = (v: number) => { pfRef.current = v; setPf(v); };
+  const setGenV = useCallback((v: number) => { genRef.current = v; setGen(v); }, []);
+  const setCritV = useCallback((v: number) => { critRef.current = v; setCrit(v); }, []);
+  const setPfV = useCallback((v: number) => { pfRef.current = v; setPf(v); }, []);
 
   const animRef = useRef<number | null>(null);
   const dropTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -69,33 +69,19 @@ export function LoadSimulator() {
     });
 
   // live telemetry for the status string - every 500ms, even collapsed
+  const elec = useSubstationState(500).data?.electrical;
+  const tele = elec
+    ? { totalKw: (elec.general_load_kw ?? 0) + (elec.critical_load_kw ?? 0), pf: elec.power_factor ?? 0 }
+    : null;
+
+  // seed sliders from the live (default) load once, before engaging
   useEffect(() => {
-    let live = true;
-    const poll = async () => {
-      try {
-        const s = await getSubstationState();
-        if (!live) return;
-        const g = s.electrical.general_load_kw ?? 0;
-        const c = s.electrical.critical_load_kw ?? 0;
-        setTele({ totalKw: g + c, pf: s.electrical.power_factor ?? 0 });
-        // seed sliders from the live (default) load once, before engaging
-        if (!initedRef.current && !engagedRef.current) {
-          initedRef.current = true;
-          setGenV(Math.round((g / GEN_MAX_KW) * 100));
-          setCritV(Math.round((c / CRIT_MAX_KW) * 100));
-          setPfV(clampPf(Math.round((s.electrical.power_factor ?? 1) * 100)));
-        }
-      } catch {
-        /* offline */
-      }
-    };
-    poll();
-    const id = setInterval(poll, 500);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, []);
+    if (!elec || initedRef.current || engagedRef.current) return;
+    initedRef.current = true;
+    setGenV(Math.round(((elec.general_load_kw ?? 0) / GEN_MAX_KW) * 100));
+    setCritV(Math.round(((elec.critical_load_kw ?? 0) / CRIT_MAX_KW) * 100));
+    setPfV(clampPf(Math.round((elec.power_factor ?? 1) * 100)));
+  }, [elec, setGenV, setCritV, setPfV]);
 
   // tick for the "Xs ago" audit line
   useEffect(() => {
@@ -160,7 +146,7 @@ export function LoadSimulator() {
       else { animRef.current = null; setGenV(tg); setCritV(tc); setPfV(tp); pushOverride(tg, tc, tp, true); onDone?.(); }
     };
     animRef.current = requestAnimationFrame(stepFn);
-  }, [pushOverride]);
+  }, [pushOverride, setGenV, setCritV, setPfV]);
 
   // ── presets ────────────────────────────────────────────────────
   const clickPreset = (preset: Preset) => {

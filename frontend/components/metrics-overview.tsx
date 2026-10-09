@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Line,
   LineChart,
@@ -10,38 +10,37 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from "recharts";
-import { getSubstationState, type SubstationState } from "../lib/api";
+import { useSubstationState } from "../lib/live-queries";
 
 type TimePoint = { time: string; voltage: number; critVoltage: number };
 
+const POLL_MS = 2000;
+// The chart keeps one point per poll interval even when another view on
+// the page (the load simulator) refreshes the shared state faster; the
+// slack absorbs request latency.
+const POINT_SPACING_MS = POLL_MS - 250;
+
 export function MetricsOverview() {
-  const [state, setState] = useState<SubstationState | null>(null);
+  const { data, dataUpdatedAt } = useSubstationState(POLL_MS);
+  const state = data ?? null;
   const [history, setHistory] = useState<TimePoint[]>([]);
+  const lastPointAt = useRef(0);
 
-  const poll = useCallback(async () => {
-    try {
-      const data = await getSubstationState();
-      setState(data);
-
-      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      setHistory((prev) => [
-        ...prev,
-        {
-          time: now,
-          voltage: data.electrical.downstream_voltage_v ?? 0,
-          critVoltage: data.electrical.critical_load_voltage_v ?? 0,
-        },
-      ].slice(-60));
-    } catch {
-      // offline
-    }
-  }, []);
-
+  // One point per successful fetch (dataUpdatedAt moves even when the
+  // answer is unchanged), spaced at least POINT_SPACING_MS apart.
   useEffect(() => {
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => clearInterval(id);
-  }, [poll]);
+    if (!data || dataUpdatedAt - lastPointAt.current < POINT_SPACING_MS) return;
+    lastPointAt.current = dataUpdatedAt;
+    const time = new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setHistory((prev) => [
+      ...prev,
+      {
+        time,
+        voltage: data.electrical.downstream_voltage_v ?? 0,
+        critVoltage: data.electrical.critical_load_voltage_v ?? 0,
+      },
+    ].slice(-60));
+  }, [data, dataUpdatedAt]);
 
   const elec = state?.electrical;
   const critV = elec?.critical_load_voltage_v ?? 0;

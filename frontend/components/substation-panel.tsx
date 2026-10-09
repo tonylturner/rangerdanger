@@ -1,15 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  getSubstationState,
-  getSubstationAudit,
-  getSubstationNetworkEvents,
-  sendSubstationCommand,
-  type SubstationState,
-  type AuditEntry,
-  type NetworkEvent,
-} from "../lib/api";
+import { useState } from "react";
+import { sendSubstationCommand, type AuditEntry, type NetworkEvent } from "../lib/api";
+import { useRefreshLive, useSubstationAudit, useSubstationNetworkEvents, useSubstationState } from "../lib/live-queries";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 import { OneLine } from "./substation-one-line";
@@ -17,33 +10,18 @@ import { CommandPanel } from "./substation-commands";
 import { CommandAuditView } from "./substation-audit";
 import { ElectricalDetailView } from "./substation-electrical";
 
+// Stable empties so children memoising on these props do not recompute
+// on every render before the first answer.
+const NO_AUDIT: AuditEntry[] = [];
+const NO_EVENTS: NetworkEvent[] = [];
+
 export function SubstationPanel() {
-  const [state, setState] = useState<SubstationState | null>(null);
-  const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
+  const state = useSubstationState(3000).data ?? null;
+  const audit = useSubstationAudit(3000).data?.entries ?? NO_AUDIT;
+  const networkEvents = useSubstationNetworkEvents(3000).data?.events ?? NO_EVENTS;
+  const refresh = useRefreshLive();
   const [tab, setTab] = useState<"diagram" | "commands" | "correlation" | "electrical">("diagram");
   const [cmdResult, setCmdResult] = useState<string | null>(null);
-
-  const poll = useCallback(async () => {
-    try {
-      const [s, a, ne] = await Promise.all([
-        getSubstationState(),
-        getSubstationAudit(),
-        getSubstationNetworkEvents(),
-      ]);
-      setState(s);
-      setAudit(a.entries ?? []);
-      setNetworkEvents(ne.events ?? []);
-    } catch {
-      // offline
-    }
-  }, []);
-
-  useEffect(() => {
-    poll();
-    const id = setInterval(poll, 3000);
-    return () => clearInterval(id);
-  }, [poll]);
 
   const elec = state?.electrical;
   const relay = state?.devices?.relay;
@@ -55,7 +33,7 @@ export function SubstationPanel() {
     try {
       const res = await sendSubstationCommand(device, command, undefined, value);
       setCmdResult(`${res.result}: ${res.process_impact || res.detail}`);
-      setTimeout(poll, 500);
+      setTimeout(refresh, 500);
     } catch (e) {
       setCmdResult(isRangeNotReady(e) ? e.message : `Error: ${errorMessage(e)}`);
     }
