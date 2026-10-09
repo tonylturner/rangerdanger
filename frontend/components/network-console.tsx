@@ -31,6 +31,8 @@ import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
 import { isRangeNotReady } from "../lib/range";
 import { controlCentreLinkText } from "../lib/operator-format";
+import { useOperatorView } from "../lib/operator-queries";
+import { networkMapHeading } from "../lib/operator-view";
 import {
   ActiveFlowsPanel,
   InfoRow,
@@ -43,6 +45,7 @@ import { useStyledGraph } from "./use-styled-graph";
 import { ExternalLink, Map as MapIcon, Maximize2, X } from "lucide-react";
 
 export function NetworkConsole() {
+  const heading = networkMapHeading(useOperatorView());
   const [inspectorNode, setInspectorNode] = useState<Node | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -266,8 +269,8 @@ export function NetworkConsole() {
           />
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Network Map</p>
-            <h1 className="text-3xl font-semibold text-white">Substation Network Map</h1>
-            <p className="text-sm text-slate-400">Distribution co-op feeder topology. Click a node to inspect, open UI, or terminal.</p>
+            <h1 className="text-3xl font-semibold text-white">{heading.title}</h1>
+            <p className="text-sm text-slate-400">{heading.subtitle}</p>
           </div>
         </div>
         {workshopStatus && (

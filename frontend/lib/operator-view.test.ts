@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EU_PACKAGE, US_PACKAGE } from "./operator-fixtures.test-util";
 import {
+  networkMapHeading,
   operatorNavLabel,
   operatorViewProblem,
   resolveOperatorView,
@@ -54,5 +55,25 @@ describe("operatorNavLabel", () => {
   it("names the EU screen Control Centre and keeps Feeder HMI otherwise", () => {
     expect(operatorNavLabel(resolveOperatorView(EU_PACKAGE, null))).toBe("Control Centre");
     expect(operatorNavLabel(resolveOperatorView(US_PACKAGE, null))).toBe("Feeder HMI");
+  });
+});
+
+describe("networkMapHeading", () => {
+  it("keeps the US substation's words and names any other package by its title", () => {
+    expect(networkMapHeading(resolveOperatorView(US_PACKAGE, null))).toEqual({
+      title: "Substation Network Map",
+      subtitle: "Distribution co-op feeder topology. Click a node to inspect, open UI, or terminal.",
+    });
+    expect(networkMapHeading(resolveOperatorView(EU_PACKAGE, null))).toEqual({
+      title: "Network Map",
+      subtitle: "EU IEC 104 Substation topology. Click a node to inspect, open UI, or terminal.",
+    });
+  });
+
+  it("stays neutral until the package is known", () => {
+    expect(networkMapHeading(resolveOperatorView(undefined, null))).toEqual({
+      title: "Network Map",
+      subtitle: "Click a node to inspect, open UI, or terminal.",
+    });
   });
 });

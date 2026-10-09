@@ -49,6 +49,18 @@ export function operatorNavLabel(resolution: OperatorViewResolution): string {
   return isView(resolution, EU_OPERATOR_VIEW) ? "Control Centre" : "Feeder HMI";
 }
 
+const MAP_HINT = "Click a node to inspect, open UI, or terminal.";
+
+// The network map header: the US substation's own words, else the
+// package title once it is known.
+export function networkMapHeading(resolution: OperatorViewResolution): { title: string; subtitle: string } {
+  if (isView(resolution, US_OPERATOR_VIEW)) {
+    return { title: "Substation Network Map", subtitle: `Distribution co-op feeder topology. ${MAP_HINT}` };
+  }
+  if (resolution.kind === "known") return { title: "Network Map", subtitle: `${resolution.pkg.title} topology. ${MAP_HINT}` };
+  return { title: "Network Map", subtitle: MAP_HINT };
+}
+
 // Text of the panel shown instead of an operator screen.
 export function operatorViewProblem(resolution: OperatorViewResolution): string | null {
   switch (resolution.kind) {
