@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
-	"gopkg.in/yaml.v3"
 )
 
 type lintRun struct {
@@ -230,7 +228,9 @@ func discoverPackages(root string) ([]packageModel, error) {
 		if err != nil {
 			return nil, fmt.Errorf("package %s: %w", id, err)
 		}
-		topology, err := loadTopologyPackage(root, directory)
+		// The catalog's own reader: package.yml, topology and every named
+		// policy, linted exactly as the backend loads them.
+		topology, err := labs.ReadDefinition(filepath.Join(root, "lab-definitions"), filepath.Join(directory, "package.yml"))
 		if err != nil {
 			return nil, fmt.Errorf("package %s: %w", id, err)
 		}
@@ -246,44 +246,6 @@ func discoverPackages(root string) ([]packageModel, error) {
 		return nil, fmt.Errorf("no packages found in %s", filepath.Join(root, "lab-definitions", "packages"))
 	}
 	return result, nil
-}
-
-func loadTopologyPackage(root, packageDir string) (labs.Package, error) {
-	var packageYAML labs.PackageYAML
-	if err := decodeYAMLFile(filepath.Join(packageDir, "package.yml"), &packageYAML); err != nil {
-		return labs.Package{}, err
-	}
-	if packageYAML.ID != filepath.Base(packageDir) {
-		return labs.Package{}, fmt.Errorf("package.yml id %q does not match directory %q", packageYAML.ID, filepath.Base(packageDir))
-	}
-	topologyPath := filepath.Clean(filepath.Join(packageDir, packageYAML.Topology))
-	relative, err := filepath.Rel(root, topologyPath)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return labs.Package{}, fmt.Errorf("topology path %q escapes installation root", packageYAML.Topology)
-	}
-	var topology labs.LabYAML
-	if err := decodeYAMLFile(topologyPath, &topology); err != nil {
-		return labs.Package{}, fmt.Errorf("topology: %w", err)
-	}
-	return labs.Package{ID: packageYAML.ID, Template: topology}, nil
-}
-
-func decodeYAMLFile(path string, target any) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("%s must contain one YAML document", path)
-	}
-	return nil
 }
 
 func installationRoot(argument string) (string, error) {

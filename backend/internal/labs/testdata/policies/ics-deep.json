@@ -1,0 +1,4 @@
+{
+  "services": {"a/b": [[{"c~d": {"ics": []}}]]},
+  "firewall": {"rules": [{"id": "dup", "ics": {}, "ics": null}]}
+}

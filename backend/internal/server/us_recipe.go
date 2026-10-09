@@ -9,14 +9,12 @@ import (
 )
 
 // packageRecipe is the curriculum-specific operations of one package: the
-// policies the firewall buttons apply, the probes that prove the dataplane,
-// the traffic a lab generates. Recipes name topology nodes and manifest
-// networks; the generation's manifest resolves them to containers and
-// addresses. A package without a recipe has none of these operations.
+// probes that prove the dataplane, the traffic a lab generates. Recipes name
+// topology nodes and manifest networks; the generation's manifest resolves
+// them to containers and addresses. A package without a recipe has none of
+// these operations. Named policies are package data (package.yml
+// `policies`), not recipe code.
 type packageRecipe struct {
-	// policies maps the names the UI applies ("weak", "improved") to
-	// policy files relative to the definitions directory.
-	policies      map[string]string
 	resetCommands []deviceCommand
 	canary        canaryProbe
 	validation    []validationProbeSpec
@@ -98,10 +96,6 @@ var resetDeviceCommands = []deviceCommand{
 }
 
 var usRecipe = &packageRecipe{
-	policies: map[string]string{
-		"weak":     "firewall/substation-weak.json",
-		"improved": "firewall/substation-improved.json",
-	},
 	resetCommands: resetDeviceCommands,
 	canary:        canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502},
 	// Mirrors the matrix in scripts/validation-report.sh (kept narrow and

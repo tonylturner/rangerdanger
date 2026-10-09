@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 // firewall_apply_test exercises the HTTP handlers (handleFirewallApply
@@ -316,5 +317,73 @@ func TestHandleFirewallApplyCustom_RejectsOversizedBody(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for oversized body", rec.Code)
+	}
+}
+
+// ── package policies and ics_rules ──────────────────────────────────
+
+// forbidICS makes the serving generation's package forbid ics keys.
+func forbidICS(s *Server) {
+	s.rng.(*fakeRange).gen.Package.ICSRules = labs.ICSRulesForbidden
+}
+
+func TestHandleFirewallApplyCustom_ForbiddenICSNamesPointer(t *testing.T) {
+	for _, ics := range []string{`{"protocol":"iec104"}`, `{}`, `null`} {
+		fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
+		s := newTestServer(t, fake.URL)
+		forbidICS(s)
+		cfg := `{"interfaces":[{"name":"lan1"}],"firewall":{"rules":[{"id":"r1","action":"DENY"},{"id":"r2","ics":` + ics + `}]}}`
+		rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
+
+		want := `custom policy: key "ics" at /firewall/rules/1/ics is forbidden (ics_rules: forbidden)`
+		if rec.Code != http.StatusBadRequest || body["error"] != want {
+			t.Errorf("ics %s: status = %d body = %s; want 400 %q", ics, rec.Code, rec.Body, want)
+		}
+		if n := atomic.LoadInt32(&counters.candidateCount); n != 0 {
+			t.Errorf("ics %s: containd called %d times for a rejected policy", ics, n)
+		}
+	}
+}
+
+func TestHandleFirewallApplyCustom_ForbiddenICSAcceptsCleanPolicy(t *testing.T) {
+	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
+	s := newTestServer(t, fake.URL)
+	forbidICS(s)
+	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", minimalValidCustom)
+	if rec.Code != http.StatusOK || atomic.LoadInt32(&counters.candidateCount) != 1 {
+		t.Errorf("status = %d, candidates = %d; want 200 and one import", rec.Code, counters.candidateCount)
+	}
+}
+
+// Named policies are package data: a package without a workshop recipe
+// applies them, and they are linted against the package's ics_rules.
+func TestHandleFirewallApply_UsesPackagePolicies(t *testing.T) {
+	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
+	s := newTestServer(t, fake.URL)
+	gen := s.rng.(*fakeRange).gen
+	gen.Package = labs.Package{
+		ID:       "eu-iec104-substation",
+		Policies: map[string]string{"baseline": "firewall/substation-weak.json"},
+		ICSRules: labs.ICSRulesAllowed,
+	}
+
+	rec, body := invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "weak"})
+	if rec.Code != http.StatusBadGateway || body["error"] != "config must be one of 'baseline'" {
+		t.Errorf("apply weak = %d %s, want the package's names only", rec.Code, rec.Body)
+	}
+	rec, _ = invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "baseline"})
+	if rec.Code != http.StatusOK || atomic.LoadInt32(&counters.candidateCount) != 1 {
+		t.Fatalf("apply baseline = %d %s, want 200 and one import", rec.Code, rec.Body)
+	}
+
+	// The US weak policy carries ics blocks.
+	gen.Package.ICSRules = labs.ICSRulesForbidden
+	rec, body = invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "baseline"})
+	errText, _ := body["error"].(string)
+	if rec.Code != http.StatusBadGateway || !strings.HasPrefix(errText, `firewall/substation-weak.json: key "ics" at /firewall/rules/`) {
+		t.Errorf("apply under forbidden = %d %s, want the file and pointer", rec.Code, rec.Body)
+	}
+	if n := atomic.LoadInt32(&counters.candidateCount); n != 1 {
+		t.Errorf("containd imports = %d, want none for the rejected policy", n)
 	}
 }

@@ -9,3 +9,10 @@ revision: 1
 topology: ../../substation-segmentation.yml
 scenarios: ../../scenarios
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
+# Named policies the firewall buttons and lab actions apply, relative to
+# this file. The topology's firewall_config is the default and must be one
+# of them.
+policies:
+  weak: ../../firewall/substation-weak.json
+  improved: ../../firewall/substation-improved.json
+operator_view: us-dnp3-substation
