@@ -24,7 +24,8 @@ large (~6 GB total) and you may want to keep them for a later run.
 Images fall into three categories:
   A. release -- pulled ghcr.io/tonylturner/rangerdanger-*, containd
   B. dev     -- locally-built rangerdanger-platform-<service> and
-                rangerdanger-<service> images
+                rangerdanger-<service> images, plus the pre-split
+                rangerdanger-backend / rangerdanger-frontend
   C. base    -- shared public images (alpine, nginx, fuxa, webtop)
                 that OTHER projects on this host may also use
 Pass -RemoveImages (A), -RemoveDevImages (B), and/or -RemoveBaseImages
@@ -189,6 +190,10 @@ if ($devRepos.Count -eq 0) {
     $devRepos = @($presentImages | ForEach-Object { ($_ -split ':')[0] } |
         Where-Object { $_ -match '^rangerdanger-[a-z]' -and $_ -notmatch '/' } | Sort-Object -Unique)
 }
+# The pre-split single project built the platform as rangerdanger-backend
+# and rangerdanger-frontend; the platform project now builds
+# rangerdanger-platform-<service>, so the old names are in no Compose file.
+$devRepos += @('rangerdanger-backend', 'rangerdanger-frontend')
 $rdDevImages = @()
 foreach ($repo in $devRepos) {
     $rdDevImages += @($presentImages | Where-Object { $_ -like "${repo}:*" })

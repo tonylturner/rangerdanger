@@ -20,7 +20,8 @@
 # Image categories this script knows about:
 #   A. release  -- pulled ghcr.io/tonylturner/rangerdanger-*, containd
 #   B. dev      -- locally-built rangerdanger-platform-<service> and
-#                  rangerdanger-<service> images
+#                  rangerdanger-<service> images, plus the pre-split
+#                  rangerdanger-backend / rangerdanger-frontend
 #   C. base     -- shared public images (alpine, nginx, fuxa, webtop)
 #                  that OTHER projects on this host may also use
 #
@@ -153,6 +154,10 @@ COMPOSE_IMAGES=$(echo "$COMPOSE_IMAGES" | grep . | sort -u || true)
 DEV_REPOS=$(echo "$COMPOSE_IMAGES" | grep -v ':' | grep . || true)
 [ -z "$DEV_REPOS" ] && DEV_REPOS=$(echo "$PRESENT_IMAGES" | sed 's/:.*//' \
     | grep -E '^rangerdanger-[a-z]' | grep -v '/' | sort -u || true)
+# The pre-split single project built the platform as rangerdanger-backend
+# and rangerdanger-frontend; the platform project now builds
+# rangerdanger-platform-<service>, so the old names are in no Compose file.
+DEV_REPOS="${DEV_REPOS}"$'\n'"rangerdanger-backend"$'\n'"rangerdanger-frontend"
 DEV_IMAGES=""
 while IFS= read -r _repo; do
     [ -z "$_repo" ] && continue
