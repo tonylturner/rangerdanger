@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +17,7 @@ import (
 // TestGenerateJWT verifies that the self-generated JWT has valid structure
 // and is compatible with containd's lab-mode token validation.
 func TestGenerateJWT(t *testing.T) {
-	token := generateJWT("test-secret")
+	token := generateJWT("test-secret", time.Now())
 	parts := splitJWT(t, token)
 
 	// Verify header
@@ -56,8 +55,8 @@ func TestGenerateJWT(t *testing.T) {
 func TestGenerateJWTDeterministicSignature(t *testing.T) {
 	// Two tokens with the same secret should have identical header+payload structure
 	// (payload differs due to exp timestamp, but the signing mechanism should work)
-	token1 := generateJWT("shared-secret")
-	token2 := generateJWT("different-secret")
+	token1 := generateJWT("shared-secret", time.Now())
+	token2 := generateJWT("different-secret", time.Now())
 
 	parts1 := splitJWT(t, token1)
 	parts2 := splitJWT(t, token2)
@@ -76,18 +75,50 @@ func TestGenerateJWTDeterministicSignature(t *testing.T) {
 // TestNewClientUsesEnvSecret verifies the client reads CONTAIND_JWT_SECRET
 // from environment and falls back to default.
 func TestNewClientUsesEnvSecret(t *testing.T) {
-	// Test default
-	os.Unsetenv("CONTAIND_JWT_SECRET")
-	client := NewClient("http://localhost:8080")
-	if client.AuthToken == "" {
-		t.Error("expected non-empty auth token with default secret")
+	t.Setenv("CONTAIND_JWT_SECRET", "")
+	if got := NewClient("http://localhost:8080").jwtSecret; got != "rangerdanger-dev" {
+		t.Errorf("default secret: got %q, want rangerdanger-dev", got)
 	}
 
-	// Test custom secret
 	t.Setenv("CONTAIND_JWT_SECRET", "custom-secret-123")
-	client2 := NewClient("http://localhost:8080")
-	if client2.AuthToken == client.AuthToken {
-		t.Error("expected different token with different secret")
+	if got := NewClient("http://localhost:8080").jwtSecret; got != "custom-secret-123" {
+		t.Errorf("env secret: got %q, want custom-secret-123", got)
+	}
+}
+
+// TestClientMintsTokenPerRequest pins that a long-lived shared client
+// keeps authenticating past the 24h token lifetime: each request carries
+// a token whose expiry is measured from the request, not from NewClient.
+func TestClientMintsTokenPerRequest(t *testing.T) {
+	var tokens []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokens = append(tokens, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
+	}))
+	defer srv.Close()
+
+	start := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
+	clock := start
+	client := newTestClient(srv.URL)
+	client.now = func() time.Time { return clock }
+
+	for _, at := range []time.Time{start, start.Add(25 * time.Hour)} {
+		clock = at
+		if _, err := client.GetHealth(); err != nil {
+			t.Fatalf("GetHealth at %v: %v", at, err)
+		}
+	}
+	var exps []float64
+	for _, token := range tokens {
+		exp, _ := decodeJWTPart(t, splitJWT(t, token)[1])["exp"].(float64)
+		exps = append(exps, exp)
+	}
+	want := []float64{
+		float64(start.Add(24 * time.Hour).Unix()),
+		float64(start.Add(49 * time.Hour).Unix()),
+	}
+	if len(exps) != 2 || exps[0] != want[0] || exps[1] != want[1] {
+		t.Errorf("token exp per request: got %v, want %v", exps, want)
 	}
 }
 
@@ -802,7 +833,8 @@ func decodeJWTPart(t *testing.T, part string) map[string]any {
 func newTestClient(baseURL string) *Client {
 	return &Client{
 		BaseURL:    baseURL,
-		AuthToken:  generateJWT("test-secret"),
+		jwtSecret:  "test-secret",
+		now:        time.Now,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 }

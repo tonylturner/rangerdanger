@@ -18,10 +18,15 @@ import (
 	"time"
 )
 
-// Client communicates with the containd NGFW API.
+// Client communicates with the containd NGFW API. One Client is shared
+// by the whole backend for the life of the process, so it holds the JWT
+// secret rather than a token and signs a fresh token for every request:
+// containd rejects expired tokens, and a token minted once at startup
+// would expire 24h into a long-running workshop.
 type Client struct {
 	BaseURL    string
-	AuthToken  string
+	jwtSecret  string
+	now        func() time.Time
 	httpClient *http.Client
 }
 
@@ -182,25 +187,24 @@ func NewClient(baseURL string) *Client {
 		secret = "rangerdanger-dev" // Default matches docker-compose
 	}
 
-	// Generate a simple JWT token for API access
-	token := generateJWT(secret)
-
 	return &Client{
 		BaseURL:   baseURL,
-		AuthToken: token,
+		jwtSecret: secret,
+		now:       time.Now,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-// generateJWT creates a minimal JWT token for containd API auth.
-func generateJWT(secret string) string {
+// generateJWT creates a minimal JWT token for containd API auth, valid
+// for 24h from now.
+func generateJWT(secret string, now time.Time) string {
 	// JWT header: {"alg":"HS256","typ":"JWT"}
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 
 	// JWT payload with admin role and long expiry
-	exp := time.Now().Add(24 * time.Hour).Unix()
+	exp := now.Add(24 * time.Hour).Unix()
 	payload := fmt.Sprintf(`{"sub":"rangerdanger-backend","role":"admin","exp":%d}`, exp)
 	payloadEnc := base64.RawURLEncoding.EncodeToString([]byte(payload))
 
@@ -213,16 +217,19 @@ func generateJWT(secret string) string {
 	return message + "." + signature
 }
 
+// send signs req with a freshly minted token and performs it.
+func (c *Client) send(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+generateJWT(c.jwtSecret, c.now()))
+	return c.httpClient.Do(req)
+}
+
 // doRequest performs an authenticated HTTP request.
 func (c *Client) doRequest(method, url string) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
-	return c.httpClient.Do(req)
+	return c.send(req)
 }
 
 // doRequestWithBody performs an authenticated HTTP request with a body.
@@ -232,10 +239,7 @@ func (c *Client) doRequestWithBody(method, url string, body []byte) (*http.Respo
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
-	return c.httpClient.Do(req)
+	return c.send(req)
 }
 
 // GetHealth returns the firewall health status.
@@ -890,14 +894,7 @@ func (c *Client) DownloadPcapFile(name string) (io.ReadCloser, string, error) {
 
 // DeletePcapFile removes a stored PCAP file by name.
 func (c *Client) DeletePcapFile(name string) error {
-	req, err := http.NewRequest("DELETE", c.BaseURL+"/api/v1/pcap/"+name, nil)
-	if err != nil {
-		return err
-	}
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest("DELETE", c.BaseURL+"/api/v1/pcap/"+name)
 	if err != nil {
 		return fmt.Errorf("delete pcap file: %w", err)
 	}
