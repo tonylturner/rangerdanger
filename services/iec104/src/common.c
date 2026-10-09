@@ -144,6 +144,20 @@ describe_io(TypeID type, InformationObject io, char* buf, size_t len)
                  rd_cp56_str(DoublePointWithCP56Time2a_getTimestamp(dp), ts, sizeof(ts)));
         break;
     }
+    case M_SP_NA_1: {
+        SinglePointInformation sp = (SinglePointInformation)io;
+        snprintf(buf, len, "value=%s q=%s", SinglePointInformation_getValue(sp) ? "ON" : "OFF",
+                 rd_quality_str(SinglePointInformation_getQuality(sp), q, sizeof(q)));
+        break;
+    }
+    case M_SP_TB_1: {
+        SinglePointWithCP56Time2a sp = (SinglePointWithCP56Time2a)io;
+        snprintf(buf, len, "value=%s q=%s time=%s",
+                 SinglePointInformation_getValue((SinglePointInformation)sp) ? "ON" : "OFF",
+                 rd_quality_str(SinglePointInformation_getQuality((SinglePointInformation)sp), q, sizeof(q)),
+                 rd_cp56_str(SinglePointWithCP56Time2a_getTimestamp(sp), ts, sizeof(ts)));
+        break;
+    }
     case M_ME_NC_1: {
         MeasuredValueShort mv = (MeasuredValueShort)io;
         snprintf(buf, len, "value=%.3f q=%s", (double)MeasuredValueShort_getValue(mv),
@@ -167,7 +181,7 @@ describe_io(TypeID type, InformationObject io, char* buf, size_t len)
         snprintf(buf, len, "qoi=%d", InterrogationCommand_getQOI((InterrogationCommand)io));
         break;
     default:
-        snprintf(buf, len, "(no decoder for this type in the spike)");
+        snprintf(buf, len, "(no decoder for this type)");
         break;
     }
 }

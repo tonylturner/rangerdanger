@@ -25,7 +25,8 @@ FROM alpine:3.22@${ALPINE_DIGEST} AS build
 ARG LIB60870_VERSION=2.4.1
 ARG LIB60870_SHA256=d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a
 # cJSON (Dave Gamble, MIT), pinned to a release tag and verified. Used by the
-# RTU's strict point-map loader; a GPLv3-compatible, pure-C dependency.
+# strict point-map loader (RTU and CC) and the CC's HTTP API; a
+# GPLv3-compatible, pure-C dependency.
 ARG CJSON_VERSION=1.7.19
 ARG CJSON_SHA256=7fa616e3046edfa7a28a32d5f9eacfd23f92900fe1f8ccd988c1662f30454562
 
@@ -56,7 +57,9 @@ RUN set -eux; \
     LIBS="/opt/lib60870/lib/liblib60870.a -lpthread -lm"; \
     cc $CFLAGS -o /out/iec104-rtu \
         src/rtu.c src/common.c src/pointmap.c src/modbus.c src/stationclock.c /src/cjson/cJSON.c $LIBS; \
-    cc $CFLAGS -o /out/iec104-cc  src/cc.c       src/common.c src/client.c $LIBS; \
+    cc $CFLAGS -o /out/iec104-cc \
+        src/cc.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c \
+        src/common.c src/pointmap.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104cmd  src/iec104cmd.c src/common.c src/client.c $LIBS
 
 FROM alpine:3.22@${ALPINE_DIGEST}

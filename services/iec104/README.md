@@ -38,11 +38,11 @@ or TypeScript module imports or links this code.
 | Dependency | Version | Licence | How it ships |
 |---|---|---|---|
 | lib60870-C | v2.4.1 (sha256 `d5708b98…c36c3a`) | GPL-3.0-or-later | tarball fetched + checksummed at build; source under `/usr/share/src` |
-| cJSON | v1.7.19 (sha256 `7fa616e3…54562`) | MIT | tarball fetched + checksummed at build; `cJSON.c` compiled into `iec104-rtu`; source + `LICENSE.cJSON` under `/usr/share/{src,licenses}/iec104` |
+| cJSON | v1.7.19 (sha256 `7fa616e3…54562`) | MIT | tarball fetched + checksummed at build; `cJSON.c` compiled into `iec104-rtu` and `iec104-cc`; source + `LICENSE.cJSON` under `/usr/share/{src,licenses}/iec104` |
 
-cJSON (MIT) is GPLv3-compatible and is used only by the RTU's strict point-map
-loader. `iec104cmd` parses no JSON, so the Kali static build needs only
-lib60870.
+cJSON (MIT) is GPLv3-compatible and is used by the strict point-map loader
+(RTU and CC) and the control centre's HTTP API. `iec104cmd` parses no JSON,
+so the Kali static build needs only lib60870.
 
 GPL compliance for released images: the image ships the corresponding source
 for every binary — the pinned lib60870 and cJSON tarballs and these sources
@@ -131,9 +131,55 @@ built in `Dockerfile.kali`'s own stage (not copied from the iec104 image).
 
 ## iec104-cc
 
-The control centre (controlling station with an HTTP read API for the portal)
-is owned by lane C2; its design and usage are documented in its own section
-when that lane lands.
+```
+iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20 \
+          --target 10.30.30.20:2404 --http 10.99.99.21:8080
+```
+
+The control centre is the trusted operator path (contract §6). It learns
+plant state **only through IEC 104**; the portal reads it through the HTTP
+API, which the backend proxies verbatim (`/api/operator/*`).
+
+- **One persistent session.** Connects from `--bind` (a non-local address
+  is fatal) to `--target`, sends STARTDT and a station GI after every
+  connect, holds the session, and reconnects `reconnect_interval_ms` after
+  it ends. APCI timers (`t0`–`t3`, `k`, `w`) come from the point map.
+  `connection_seq` counts TCP connections to the RTU.
+- **Per-point cache.** Value, quality (IV/NT/SB/BL/OV), RTU observation
+  time (CP56Time2a; `null` for untimed ASDUs, so floats and GI answers carry
+  none), receipt time and COT. The RTU's quality maps to `stale_reason`:
+  NT set → `device_unreachable`, IV alone → `measurement_invalid`. On link
+  loss every point keeps its value and times and goes IV+NT `link_lost`; it
+  is GOOD again only when a fresh report for it arrives on the new session.
+  Never-received points have `value: null`, `stale_reason: never_received`.
+- **Commands.** Select-before-execute `C_DC_NA_1`, one at a time, at most
+  10 s, never retried. `completed` needs a positive select and execute
+  ACT-CON, ACT-TERM, and a COT 11 feedback report of the feedback point
+  after the execute ACT-CON with the commanded value; `rejected` is a
+  negative select or execute; `failed` means the execute was never sent
+  (link lost first, or no select confirmation); `unknown` means the execute
+  was sent and the outcome is ambiguous (no ACT-CON or ACT-TERM, link lost,
+  or feedback missing or not the commanded value).
+- **Journal.** A ring of 500 entries (`link_up`, `link_down`, `gi_started`,
+  `gi_complete`, `point_stale`, `point_good`, `command`) tagged with the
+  random per-boot `cache_epoch`. `link_down.reason`: `t1_timeout` (nothing
+  received for t1 before lib60870 dropped the session), `peer_closed` (the
+  RTU closed or reset the stream), `io_error` (the CC closed it after a GI
+  failure), `connect_failed` (TCP or STARTDT failed; journaled once per
+  outage, not per attempt).
+
+| Endpoint | Answer |
+|---|---|
+| `GET /api/health` | `{"status":"ok","link":"disconnected\|connecting\|started"}` |
+| `GET /api/state` | `schema`, `cache_epoch`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
+| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close"}` → 200 command result; 409 while a command is in flight; 503 when the link is not started; 400 on bad input |
+| `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
+
+The HTTP server is in-tree (`src/cc_http.c`): HTTP/1.0 and 1.1, GET and
+POST, `Content-Length` bodies only (no chunked), headers ≤ 8 KiB, bodies
+≤ 4 KiB, one request per connection, 5 s I/O timeouts, at most 32
+concurrent connections. A failed bind of `--http` is fatal. Unknown paths
+404, wrong methods 405, unknown query parameters or request fields 400.
 
 ## Build and run
 
@@ -157,12 +203,27 @@ containd firewall) before exec'ing the selected program.
 
 `check/run.sh` builds the image and runs the RTU against a fake Modbus
 feeder breaker (`check/fake_breaker.py`), a fake GPS clock
-(`check/fake_gps.py`) and `iec104cmd` on a throwaway Docker network
-(`rd3-c1-*`), asserting GI values and quality, spontaneous COT 3 changes, SBO
-open/close with COT 11 feedback and ACT-TERM, a no-op command, a negative
-ACT-CON on interlock, Modbus-loss IV+NT, measurement-invalid IV on floats,
-GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on link loss.
-Everything it creates is removed on exit. Needs docker only.
+(`check/fake_gps.py`), `iec104cmd` and the real control centre on throwaway
+Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
+172.28.104.0/24 and 172.28.105.0/24).
+
+- RTU + `iec104cmd`: GI values and quality, spontaneous COT 3 changes, SBO
+  open/close with COT 11 feedback and ACT-TERM, a no-op command, a negative
+  ACT-CON on interlock, Modbus-loss IV+NT, measurement-invalid IV on
+  floats, GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on
+  link loss.
+- Control centre (`check/cc_checks.sh`, every assertion through its HTTP
+  API via `check/ccprobe.py`): GI and the four points GOOD; open, close and
+  no-op → `completed` with matched feedback; interlock → `rejected`; 409,
+  503 and every 4xx/5xx input case; `measurement_invalid` and
+  `device_unreachable` with the link started; RTU paused → `t1_timeout`,
+  `link_lost` with values and times preserved, then recovery on a higher
+  `connection_seq`; RTU stopped → `peer_closed`; an unreachable RTU →
+  one `connect_failed` and `never_received` points; fatal binds; SIGTERM
+  exit 0; journal ordering and detail shapes.
+
+Everything it creates (containers, networks, the image) is removed on exit.
+Needs docker only.
 
 ## Reference captures
 
@@ -176,13 +237,17 @@ src/pointmap.{c,h}     strict point-map loader (shared with the CC)
 src/modbus.{c,h}       in-tree Modbus TCP master (FC3/FC4/FC6)
 src/stationclock.{c,h} GPS-fed station clock (HTTP poller)
 src/common.{c,h}       logging, quality/time/ASDU formatting, arg parsing
-src/client.{c,h}       synchronous wrapper over a lib60870 CS104_Connection
-src/points.h           spike IOA constants still used by iec104-cc/iec104cmd
+src/client.{c,h}       synchronous wrapper over a lib60870 CS104_Connection (iec104cmd)
 src/rtu.c              iec104-rtu: Modbus-driven controlled station
-src/cc.c               iec104-cc: control-centre client (lane C2)
+src/cc.c               iec104-cc: flags, startup, shutdown
+src/cc_state.{c,h}     CC shared model: point cache, link/GI status, journal, renderers
+src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, GI, reconnect, sends
+src/cc_command.{c,h}   CC select-before-execute state machine
+src/cc_http.{c,h}      CC minimal HTTP/1.1 server
+src/cc_api.{c,h}       CC HTTP routes
 src/iec104cmd.c        iec104cmd: one-shot ops and the monitor session
 Dockerfile             image carrying all three programs
 entrypoint.sh          set-gateway.sh then exec the selected program
-check/                 the headless RTU + iec104cmd checks
+check/                 the headless RTU, iec104cmd and control-centre checks
 captures/              spike-era Apache-2.0 reference pcaps
 ```
