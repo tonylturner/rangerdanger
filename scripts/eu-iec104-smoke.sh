@@ -135,6 +135,10 @@ if [ "$health_status" != "200" ]; then
 fi
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib/range.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib/eu-range.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/lib/eu-monitor.sh"
 range_http_status=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' \
   "$API/api/range" 2>/dev/null) || range_http_status=""
 if [ "$range_http_status" != "200" ]; then
@@ -281,7 +285,7 @@ done
 gate_end G0
 gate_start G1
 if eu_api_post "/api/instructor/reset" '{}'; then
-  eu_assert_status_200 "G1 instructor baseline reset HTTP 200"
+  eu_assert_device_state_response "G1 instructor baseline reset"
 else
   fail "G1 instructor baseline reset returned no parseable response"
 fi
@@ -425,7 +429,7 @@ else
   fail "G3 post-no-op truth read unavailable"
 fi
 if eu_api_post "/api/instructor/fault" '{"active":true}'; then
-  eu_assert_status_200 "G3 instructor local fault HTTP 200"
+  eu_assert_device_state_response "G3 instructor local fault"
 else
   fail "G3 instructor fault request returned no parseable response"
 fi
@@ -436,7 +440,7 @@ if eu_wait_command close rejected; then
   :
 fi
 if eu_api_post "/api/instructor/reset" '{}'; then
-  eu_assert_status_200 "G3 instructor reset HTTP 200"
+  eu_assert_device_state_response "G3 instructor reset"
 else
   fail "G3 instructor reset returned no parseable response"
 fi
@@ -497,23 +501,15 @@ if eu_apply_named weak && eu_monitor_start; then
   if eu_monitor_asdu_count; then
     asdus_before=$MONITOR_ASDUS
     if eu_apply_named improved; then
-      eu_read_sessions 2404 || true
-      if [ "$MONITOR_LINES" -gt 0 ]; then
-        connected_local=$(printf '%s\n' "$MONITOR_BODY" | jq -rs '
-          [.[] | select(.event == "connected") | .local] | first // empty
-        ' 2>/dev/null) || connected_local=""
-        connected_peer=$(printf '%s\n' "$MONITOR_BODY" | jq -rs '
-          [.[] | select(.event == "connected") | .peer] | first // empty
-        ' 2>/dev/null) || connected_peer=""
-      else
-        connected_local=""
-        connected_peer=""
-      fi
-      if [[ "$connected_local" =~ ^10\.10\.10\.50:[0-9]+$ ]] \
-        && [ "$connected_peer" = "$RTU_IP:2404" ]; then
-        monitor_sport="${connected_local##*:}"
-        kali_tuple=$(eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" "$monitor_sport" 2404) || kali_tuple=""
-        if [ "$(printf '%s' "$kali_tuple" | jq 'length' 2>/dev/null)" = "1" ]; then
+      if eu_monitor_read && [ "$MONITOR_LINES" -gt 0 ] \
+        && printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
+          [.[] | select(.event == "connected")] as $connected
+          | ($connected | length) == 1
+            and $connected[0].local == null and $connected[0].peer == $peer
+        ' >/dev/null 2>&1; then
+        if eu_read_sessions 2404 10.10.10.50 \
+          && eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
+          kali_tuple="$SESSION_TUPLE"
           pass "G6 non-empty dport 2404 session list contains the monitor's exact Kali tuple"
           for _ in 1 2 3 4 5 6 7 8 9 10; do
             sleep 1
@@ -558,15 +554,15 @@ print("none")
               else
                 fail "G6 post-kill monitor data was invalid or contained later ASDUs: $(cat "$TMP_DIR/post-kill-parse.err")"
               fi
-            else
-              fail "G6 monitor log was unparsable after conntrack kill"
-            fi
+          else
+            fail "G6 monitor log was unparsable after conntrack kill"
           fi
         else
-          fail "G6 empty/missing session tuple for monitor sport $monitor_sport: $SESSION_BODY"
+          fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple"
+        fi
         fi
       else
-        fail "G6 monitor connected event has invalid local/peer endpoints: $connected_local -> $connected_peer"
+        fail "G6 monitor must emit exactly one connected event with local=null and peer=$RTU_IP:2404"
       fi
     else
       fail "G6 monitor ASDU JSON could not be parsed"
@@ -580,9 +576,7 @@ gate_end G6
 gate_start G7
 if eu_get_operator; then
   before_g7="$API_BODY"
-  local_endpoint=$(printf '%s' "$before_g7" | jq -r '.link.local // empty')
-  if [[ "$local_endpoint" =~ ^10\.60\.60\.20:[0-9]+$ ]]; then
-    cc_sport="${local_endpoint##*:}"
+  if printf '%s' "$before_g7" | jq -e '.link.state == "started"' >/dev/null 2>&1; then
     g7_policy="$TMP_DIR/improved-without-cc.json"
     if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$g7_policy"; then
       if eu_policy_has_no_ephemeral_allow "$g7_policy"; then
@@ -592,9 +586,9 @@ if eu_get_operator; then
       fi
       if eu_apply_custom "$g7_policy" "G7 improved minus CC allow"; then
         eu_check_nft_chain G7-custom || true
-        if eu_read_sessions 2404; then
-          cc_tuple=$(eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" "$cc_sport" 2404) || cc_tuple=""
-          if [ "$(printf '%s' "$cc_tuple" | jq 'length' 2>/dev/null)" = "1" ]; then
+        if eu_read_sessions 2404 "$CC_IP" \
+          && eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
+            cc_tuple="$SESSION_TUPLE"
             pass "G7 exact established CC tuple exists before kill"
             g7_kill_started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || g7_kill_started_ms=""
             if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
@@ -609,14 +603,13 @@ if eu_get_operator; then
             ' 30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
               pass "G7 CC link is not started and all points are IV+NT link_lost"
             fi
-          else
-            fail "G7 empty/missing exact CC conntrack tuple (must read policy back before killing): $SESSION_BODY"
-          fi
+        else
+          fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
         fi
       fi
     fi
   else
-    fail "G7 operator link.local is null or not 10.60.60.20:<port>: $local_endpoint"
+    fail "G7 operator link state was not started before applying the CC restriction: $before_g7"
   fi
 else
   fail "G7 operator state unavailable before restrictive policy"
@@ -635,7 +628,7 @@ if eu_get_operator; then
   fi
   for active in true false true; do
     if eu_api_post "/api/instructor/fault" "{\"active\":$active}"; then
-      eu_assert_status_200 "G8 instructor fault active=$active HTTP 200"
+      eu_assert_device_state_response "G8 instructor fault active=$active"
     else
       fail "G8 instructor fault active=$active returned no parseable response"
     fi
@@ -654,7 +647,8 @@ if eu_get_operator; then
         g8_operator="$API_BODY"
         current_points=$(eu_get_point_snapshot "$g8_operator") || current_points=""
         current_epoch=$(printf '%s' "$g8_operator" | jq -r '.cache_epoch // empty')
-        if [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
+        if [ -n "$g8_points" ] && [ -n "$current_points" ] \
+          && [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
           pass "G8 operator values/received_at/source_time and cache_epoch unchanged with fault active=$active"
         else
           fail "G8 operator cache changed while CC path denied with fault active=$active"
@@ -745,18 +739,15 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
     else
       fail "G11 cannot snapshot operator points before Modbus loss"
     fi
-    if eu_read_sessions 502; then
-      g11_matches=$(printf '%s' "$SESSION_BODY" | jq -c --arg src "$RTU_IP" --arg dst "$BREAKER_IP" \
-        '[.[] | select((.proto | ascii_downcase) == "tcp" and .src == $src and .dst == $dst and .dport == 502)]')
-      g11_count=$(printf '%s' "$g11_matches" | jq 'length' 2>/dev/null) || g11_count=0
-      if [ "$g11_count" = "1" ]; then
+    if eu_read_sessions 502 "$RTU_IP" \
+      && eu_session_tuple "$SESSION_BODY" "$RTU_IP" "$BREAKER_IP" 502; then
+        g11_tuple="$SESSION_TUPLE"
         pass "G11 exact RTU-to-breaker Modbus session exists before kill"
-        g11_tuple=$(printf '%s' "$g11_matches" | jq -c '.[0]')
         g11_loss_started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || g11_loss_started_ms=""
         if ! [[ "$g11_loss_started_ms" =~ ^[0-9]+$ ]]; then
           fail "G11 cannot establish monotonic timeout before conntrack kill"
         fi
-        eu_kill_tuple "[$g11_tuple]" || true
+        eu_kill_tuple "$g11_tuple" || true
         stale_ms=$(jq -r '.devices[] | select(.id == "feeder-breaker") | .stale_after_ms' \
           "$PACKAGE/protocols/points.json" 2>/dev/null) || stale_ms=""
         if [[ "$stale_ms" =~ ^[0-9]+$ ]] && [ "$stale_ms" -eq 3000 ]; then
@@ -787,7 +778,7 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
           fail "G11 operator state unavailable after stale transition"
         fi
         if eu_api_post "/api/instructor/reset" '{}'; then
-          eu_assert_status_200 "G11 instructor reset changes truth HTTP 200"
+          eu_assert_device_state_response "G11 instructor reset changes truth"
         else
           fail "G11 instructor reset returned no parseable response"
         fi
@@ -795,7 +786,9 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
           g11_truth="$API_BODY"
           if eu_get_operator; then
             g11_after_reset="$API_BODY"
-            if [ "$(eu_get_point_snapshot "$g11_after_reset")" = "$g11_stale_points" ] \
+            g11_after_reset_points=$(eu_get_point_snapshot "$g11_after_reset") || g11_after_reset_points=""
+            if [ -n "$g11_stale_points" ] && [ -n "$g11_after_reset_points" ] \
+              && [ "$g11_after_reset_points" = "$g11_stale_points" ] \
               && [ "$(printf '%s' "$g11_after_reset" | jq -r '.cache_epoch // empty')" = "$g11_stale_epoch" ]; then
               pass "G11 instructor reset changed truth without changing cached values/times/epoch"
             else
@@ -835,9 +828,8 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
             fail "G11 instructor state read after restore failed"
           fi
         fi
-      else
-        fail "G11 session list empty or not exactly one RTU-to-breaker tuple: $SESSION_BODY"
-      fi
+    else
+      fail "G11 session lookup did not yield exactly one RTU-to-breaker tuple"
     fi
   fi
 fi
@@ -899,7 +891,7 @@ fi
 g13_revisions=""
 for active in true false; do
   if eu_api_post "/api/instructor/fault" "{\"active\":$active}"; then
-    eu_assert_status_200 "G13 fault active=$active HTTP 200 while RTU paused"
+    eu_assert_device_state_response "G13 fault active=$active while RTU paused"
   else
     fail "G13 fault active=$active returned no parseable response"
   fi
@@ -971,7 +963,7 @@ gate_end G13
 
 gate_start G14
 if eu_api_post "/api/instructor/reset" '{}'; then
-  eu_assert_status_200 "G14 instructor reset HTTP 200"
+  eu_assert_device_state_response "G14 instructor reset"
 else
   fail "G14 instructor reset returned no parseable response"
 fi
