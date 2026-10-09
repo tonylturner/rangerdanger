@@ -194,6 +194,13 @@ Most "doesn't start" issues fall into one of these:
 6. **Network blocks `ghcr.io`** (rare but happens on conference
    Wi-Fi or behind aggressive corporate proxies). Use the offline
    path (Path C above).
+7. **Windows: Docker Desktop shows "A WSL distro Docker Desktop
+   relies on has exited unexpectedly"** while setup says it is
+   waiting for Docker Desktop to reconnect. Setup restarts WSL to
+   load the lab kernel, and older Docker Desktop releases (seen on
+   4.34) do not recover from that by themselves. Click **Restart** in
+   the dialog; setup continues on its own. Updating Docker Desktop
+   avoids it (4.94 recovers without the dialog).
 
 ### "the firewall (`fw-1`) terminal says command not found"
 

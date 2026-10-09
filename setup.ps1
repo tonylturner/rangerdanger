@@ -82,8 +82,29 @@ if (-not (Test-Path $ComposeFile)) {
 # throws -- even with `2>$null` or `*>$null`, because Stop intercepts
 # before the redirect is fully applied. Lower ErrorAction in a child
 # scope so the warning is genuinely discarded, then trust $LASTEXITCODE.
-& { $ErrorActionPreference = 'SilentlyContinue'; docker info *>$null }
-if ($LASTEXITCODE -ne 0) { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
+#
+# The probe also runs as a child process with a timeout: when Docker
+# Desktop's VM has died (e.g. after a `wsl --shutdown`) and it is sitting
+# on its Restart/Quit error dialog, `docker info` blocks forever instead
+# of failing. Same pattern as Get-DockerInfoBounded in
+# scripts\install-wsl-kernel.ps1.
+$dockerExe = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $dockerExe) { Die "Docker is not installed (docker CLI not on PATH). Install Docker Desktop, then re-run." }
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $dockerExe.Source
+$psi.Arguments = "info"
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.CreateNoWindow = $true
+$infoProc = [System.Diagnostics.Process]::Start($psi)
+$null = $infoProc.StandardOutput.ReadToEndAsync()
+$null = $infoProc.StandardError.ReadToEndAsync()
+if (-not $infoProc.WaitForExit(30000)) {
+    try { $infoProc.Kill() } catch { }
+    Die "Docker is not responding ('docker info' timed out after 30 s). If Docker Desktop shows an error dialog, click Restart; otherwise quit and restart Docker Desktop. Wait for 'Engine running', then re-run."
+}
+if ($infoProc.ExitCode -ne 0) { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
 Say "Docker reachable"
 
 # Compose v2
