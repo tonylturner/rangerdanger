@@ -72,9 +72,11 @@ local protection trip (a spontaneous open that no client commanded).
 
 ## Correctness checks
 
-The scripted, rerunnable check harness is not in this directory yet. See
-`docs/plans/iec104/spike-iec104.md` for what was verified, how, and what
-is still open.
+`check/run.sh` builds the image, runs the RTU, the control centre and
+`iec104cmd` on a throwaway Docker network, captures TCP/2404 on that
+network's bridge, and asserts each check on the tshark decode. Evidence
+lands in `build/iec104-spike/`. Results are recorded in
+`docs/plans/iec104/spike-iec104.md`.
 
 ## Layout
 
@@ -86,4 +88,5 @@ src/rtu.c        iec104-rtu: server, GI, select-before-execute
 src/cc.c         iec104-cc: client, GI, SBO, stale-on-link-loss cache
 src/iec104cmd.c  iec104cmd: one-shot GI / single / double command
 Dockerfile       multi-arch image carrying all three programs
+check/           rerunnable correctness checks (run.sh, capture helper)
 ```
