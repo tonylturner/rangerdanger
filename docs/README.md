@@ -58,6 +58,9 @@ investigating the lab's design decisions.
   Useful when wiring custom tools or automation.
 - [`tool-inventory.md`](tool-inventory.md) - Which CLI tool lives in
   which Dockerfile by lab persona. Useful when authoring new exercises.
+- [`plans/iec104/`](plans/iec104/README.md) - Plan (not built yet) for
+  selectable range packages and a European IEC104 workshop, with the
+  recon evidence behind it.
 
 ## Lab content
 
