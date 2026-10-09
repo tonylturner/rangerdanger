@@ -1,7 +1,7 @@
 "use client";
 
 import type { OperatorJournal } from "../lib/operator-api";
-import { formatUtcTime, journalSummary, journalTone, type Tone } from "../lib/operator-format";
+import { formatUtcTime, journalRangeText, journalSummary, journalTone, type Tone } from "../lib/operator-format";
 
 const SHOWN = 60;
 
@@ -19,9 +19,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-x-4 text-[10px] text-slate-500">
-        <span>
-          seq {journal.oldest_seq}–{journal.latest_seq}
-        </span>
+        <span>{journalRangeText(journal.oldest_seq, journal.latest_seq)}</span>
         <span>cache epoch {journal.cache_epoch}</span>
         {journal.entries.length > SHOWN && <span>showing the latest {SHOWN}</span>}
       </div>

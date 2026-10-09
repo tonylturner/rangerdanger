@@ -30,6 +30,7 @@ import { nodeZone } from "../lib/observed-flows";
 import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
 import { isRangeNotReady } from "../lib/range";
+import { controlCentreLinkText } from "../lib/operator-format";
 import {
   ActiveFlowsPanel,
   InfoRow,
@@ -277,18 +278,30 @@ export function NetworkConsole() {
               tooltipTitle="Segmentation enforcement"
               tooltipBody="containd NGFW. Mediates every cross-zone flow in the lab. Down = no cross-zone path is enforced."
             />
-            <StatusDot
-              ok={workshopStatus.rtac_online}
-              label="RTAC"
-              tooltipTitle="Supervisory control"
-              tooltipBody="Real-Time Automation Controller. The only host that polls field devices and brokers HMI/historian state. Down = no supervisory loop."
-            />
-            <StatusDot
-              ok={workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).every(Boolean) : false}
-              label={`Devices ${workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).filter(Boolean).length : 0}/${workshopStatus.device_comms ? Object.keys(workshopStatus.device_comms).length : 0}`}
-              tooltipTitle="Field protection layer"
-              tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken - device down, network issue, or firewall rule change."
-            />
+            {workshopStatus.rtac_online !== undefined && (
+              <>
+                <StatusDot
+                  ok={workshopStatus.rtac_online}
+                  label="RTAC"
+                  tooltipTitle="Supervisory control"
+                  tooltipBody="Real-Time Automation Controller. The only host that polls field devices and brokers HMI/historian state. Down = no supervisory loop."
+                />
+                <StatusDot
+                  ok={workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).every(Boolean) : false}
+                  label={`Devices ${workshopStatus.device_comms ? Object.values(workshopStatus.device_comms).filter(Boolean).length : 0}/${workshopStatus.device_comms ? Object.keys(workshopStatus.device_comms).length : 0}`}
+                  tooltipTitle="Field protection layer"
+                  tooltipBody="Relay, recloser, regulator. RTAC polls these via Modbus and DNP3. A drop here means a poll path is broken - device down, network issue, or firewall rule change."
+                />
+              </>
+            )}
+            {workshopStatus.control_centre && (
+              <StatusDot
+                ok={workshopStatus.control_centre.link === "started"}
+                label={`Control centre ${controlCentreLinkText(workshopStatus.control_centre)}`}
+                tooltipTitle="Supervisory control"
+                tooltipBody="The control centre's IEC 104 link to the RTU on tcp/2404 and its general interrogation. Down = the operator's view is stale."
+              />
+            )}
             <PolicyBadge activeConfig={workshopStatus.firewall_config} />
           </div>
         )}

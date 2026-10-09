@@ -3,11 +3,13 @@
 // carries the lesson (a stale value stays visible and says why) is
 // unit-tested.
 
-import { ApiError } from "./api";
+import { ApiError, type WorkshopControlCentre } from "./api";
 import type {
   CommandPhaseStatus,
   CommandResult,
   ControlCentreLink,
+  DeviceState,
+  LinkDownReason,
   OperatorPoint,
   PointQuality,
   PointValue,
@@ -128,12 +130,20 @@ export const GI_STATE_TEXT: Record<ControlCentreLink["gi"]["state"], string> = {
   complete: "COMPLETE",
 };
 
-// "10.60.60.20:49152" → ip and port; null for anything else.
-export function parseEndpoint(endpoint: string | null): { ip: string; port: number } | null {
-  if (endpoint === null) return null;
-  const match = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(endpoint);
-  if (!match) return null;
-  return { ip: match[1], port: Number(match[2]) };
+// The control centre's link and GI as GET /api/workshop/status reports
+// them.
+export function controlCentreLinkText(cc: WorkshopControlCentre): string {
+  if (cc.link === null) return "NOT ANSWERING";
+  const gi = cc.gi === null ? "" : ` · GI ${GI_STATE_TEXT[cc.gi]}`;
+  return `${LINK_STATE_TEXT[cc.link]}${gi}`;
+}
+
+// online: link started and GI complete; degraded: on its way there;
+// offline: no link, or the control centre does not answer.
+export function controlCentreHealth(cc: WorkshopControlCentre | undefined): "online" | "degraded" | "offline" {
+  if (!cc || cc.link === null || cc.link === "disconnected") return "offline";
+  if (cc.link === "connecting") return "degraded";
+  return cc.gi === "complete" ? "online" : "degraded";
 }
 
 // ── Commands ─────────────────────────────────────────────────────
@@ -162,13 +172,15 @@ export function commandOutcome(result: CommandResult): CommandOutcome {
       return {
         tone: "bad",
         title: "FAILED",
-        explanation: "The link was lost before execute was sent. The breaker was not commanded.",
+        explanation:
+          "Execute was never sent: the link was lost or the select got no confirmation. The breaker was not commanded.",
       };
     case "unknown":
       return {
         tone: "warn",
         title: "UNKNOWN",
-        explanation: "Execute was sent but the outcome is ambiguous. It is not retried; check the breaker position.",
+        explanation:
+          "Execute was sent but the outcome is not proven (no confirmation, or no matching COT 11 feedback). It is not retried; check the breaker position.",
       };
   }
 }
@@ -227,12 +239,24 @@ function journalValue(detail: Record<string, unknown>): string {
   return valid ? formatPointValue(point, value as PointValue) : "—";
 }
 
+export const LINK_DOWN_REASON_TEXT: Record<LinkDownReason, string> = {
+  t1_timeout: "nothing received from the RTU for t1",
+  peer_closed: "the RTU end closed or reset the connection",
+  connect_failed: "TCP connect or STARTDT failed",
+  io_error: "the control centre closed it after a failed general interrogation",
+};
+
+function linkDownReasonText(reason: string): string {
+  const text = (LINK_DOWN_REASON_TEXT as Record<string, string | undefined>)[reason];
+  return text ? `${text} (${reason})` : reason;
+}
+
 export function journalSummary(kind: string, detail: Record<string, unknown>): string {
   switch (kind) {
     case "link_up":
-      return `Link up #${str(detail, "connection_seq")} ${str(detail, "local")} → ${str(detail, "peer")}`;
+      return `Link up #${str(detail, "connection_seq")} to ${str(detail, "peer")}`;
     case "link_down":
-      return `Link down #${str(detail, "connection_seq")} (${str(detail, "reason")})`;
+      return `Link down #${str(detail, "connection_seq")}: ${linkDownReasonText(str(detail, "reason"))}`;
     case "gi_started":
       return `General interrogation started on link #${str(detail, "connection_seq")}`;
     case "gi_complete":
@@ -255,6 +279,25 @@ export function journalTone(kind: string, detail: Record<string, unknown>): Tone
   if (kind === "link_up" || kind === "gi_complete" || kind === "point_good") return "ok";
   if (kind === "command") return detail.status === "completed" ? "ok" : detail.status === "unknown" ? "warn" : "bad";
   return null;
+}
+
+// The journal's sequence range; both bounds are null while it is empty.
+export function journalRangeText(oldest: number | null, latest: number | null): string {
+  return oldest === null || latest === null ? "empty" : `seq ${oldest}–${latest}`;
+}
+
+// ── Instructor ───────────────────────────────────────────────────
+
+// The device state a fault or reset answered with.
+export function deviceStateSummary(state: DeviceState): string {
+  const yes = (value: boolean) => (value ? "YES" : "no");
+  return [
+    `breaker ${state.position.toUpperCase()}`,
+    `fault ${yes(state.fault_active)}`,
+    `lockout ${yes(state.lockout)}`,
+    `protection tripped ${yes(state.protection_tripped)}`,
+    `revision ${state.revision}`,
+  ].join(", ");
 }
 
 // ── Summary ──────────────────────────────────────────────────────

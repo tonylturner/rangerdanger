@@ -542,14 +542,24 @@ export async function getTrafficStatus() {
   return request<TrafficStatus>("/traffic/status");
 }
 
+// The control centre's link and GI states; null while it does not answer.
+export type WorkshopControlCentre = {
+  link: "disconnected" | "connecting" | "started" | null;
+  gi: "none" | "running" | "complete" | null;
+};
+
+// The package's supervisory service decides the optional part: an RTAC
+// package (US) sends rtac_online and device_comms, a control-centre
+// package (EU) sends control_centre.
 export type WorkshopStatus = {
   workshop_id: string;
   workshop_name: string;
-  rtac_online: boolean;
   firewall_online: boolean;
   firewall_config: string;
   scenario_count: number;
-  device_comms: Record<string, boolean>;
+  rtac_online?: boolean;
+  device_comms?: Record<string, boolean>;
+  control_centre?: WorkshopControlCentre;
 };
 
 export async function getWorkshopGraph(): Promise<LabGraph> {

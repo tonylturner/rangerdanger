@@ -43,7 +43,7 @@ export function LinkStrip({ link, now }: { link: ControlCentreLink; now: number 
           ⚠ IEC 104 LINK {LINK_STATE_TEXT[link.state]}: telemetry is stale. Every value below is the last one received.
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Cell label="Link" emphasis>
           <span className={started ? "text-green-400" : "text-amber-300"}>
             {started ? "● " : "○ "}
@@ -54,9 +54,8 @@ export function LinkStrip({ link, now }: { link: ControlCentreLink; now: number 
           <span className={giDone ? "text-green-400" : "text-amber-300"}>{GI_STATE_TEXT[link.gi.state]}</span>
         </Cell>
         <Cell label="RTU (peer)">{link.peer}</Cell>
-        <Cell label="CC (local)">{link.local ?? "—"}</Cell>
         <Cell label="Since (UTC)">{formatUtcTime(link.since)}</Cell>
-        <Cell label="Last receive">{formatAge(ageMs(link.last_rx_at, now))} ago</Cell>
+        <Cell label="Last receive">{link.last_rx_at === null ? "—" : `${formatAge(ageMs(link.last_rx_at, now))} ago`}</Cell>
         <Cell label="Connection #">{link.connection_seq}</Cell>
         <Cell label="GI complete (UTC)">{formatUtcTime(link.gi.completed_at)}</Cell>
       </div>

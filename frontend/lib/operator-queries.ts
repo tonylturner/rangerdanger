@@ -60,7 +60,7 @@ export function useInstructorAudit(intervalMs: number) {
 export function useFirewallSessions(dport: number, intervalMs: number) {
   return useQuery({
     queryKey: [...SESSIONS_KEY, dport],
-    queryFn: () => getFirewallSessions(dport),
+    queryFn: () => getFirewallSessions({ dport }),
     refetchInterval: intervalMs,
   });
 }
