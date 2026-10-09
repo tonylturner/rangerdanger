@@ -64,14 +64,10 @@ ok "backend healthy"
 
 # These checks assert the US range. Refuse another package or a range
 # mid-switch: GET /api/range must report us-dnp3-substation ready.
-us_range_ready() {
-  curl -fsS "$API/api/range" 2>/dev/null | python3 -c 'import json, sys
-r = json.load(sys.stdin)
-sys.exit(0 if (r.get("package"), r.get("phase")) == ("us-dnp3-substation", "ready") else 1)' 2>/dev/null
-}
-range_status() { curl -fsS "$API/api/range" 2>/dev/null || echo unreachable; }
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
 # Printed, not ok(): ok() counts toward the gate's passed/total.
-if us_range_ready; then
+if range_is_ready us-dnp3-substation; then
   printf '  ✓ %s\n' "range us-dnp3-substation ready"
 else
   err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"

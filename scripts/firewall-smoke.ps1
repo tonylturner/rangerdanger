@@ -266,17 +266,9 @@ try {
 
 # These checks assert the US range. Refuse another package or a range
 # mid-switch: GET /api/range must report us-dnp3-substation ready.
-function Get-RangeStatus {
-    try { Invoke-RestMethod -Uri "$Api/api/range" -TimeoutSec 5 -ErrorAction Stop } catch { $null }
-}
-function Test-UsRangeReady($range) {
-    return ($range -and $range.package -eq 'us-dnp3-substation' -and $range.phase -eq 'ready')
-}
-function Format-RangeStatus($range) {
-    if ($range) { return ($range | ConvertTo-Json -Compress) } else { return 'unreachable' }
-}
-$range = Get-RangeStatus
-if (Test-UsRangeReady $range) {
+. (Join-Path $PSScriptRoot 'lib\range.ps1')
+$range = Get-RangeStatus $Api
+if (Test-RangeReady $range us-dnp3-substation) {
     OK "range us-dnp3-substation ready"
 } else {
     Err "range is not us-dnp3-substation ready -- GET $Api/api/range: $(Format-RangeStatus $range)"

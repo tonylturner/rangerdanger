@@ -156,12 +156,10 @@ with_pull_retry() {
     - Disk filled mid-pull (df -h to verify)"
 }
 
-# One top-level string field of a GET/POST /api/range body: the status
-# object is flat, so a field is `"key": "value"`; absent, null and "" all
-# read as empty. sed keeps setup free of a jq/python dependency.
-range_field() { # <json> <key>
-    printf '%s' "$1" | sed -nE 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)".*/\1/p'
-}
+# range_field and range_status: GET /api/range parsing shared with the
+# host scripts.
+# shellcheck source=scripts/lib/range.sh
+. "$ROOT_DIR/scripts/lib/range.sh"
 
 # ─── pre-flight checks ──────────────────────────────────────────────
 banner "Pre-flight checks"

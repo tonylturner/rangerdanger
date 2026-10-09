@@ -86,12 +86,9 @@ reset_clean() {
 
 # These checks assert the US range. Refuse another package or a range
 # mid-switch: GET /api/range must report us-dnp3-substation ready.
-us_range_ready() {
-  curl -fsS "$API/api/range" 2>/dev/null \
-    | jq -e '.package == "us-dnp3-substation" and .phase == "ready"' >/dev/null 2>&1
-}
-range_status() { curl -fsS "$API/api/range" 2>/dev/null || echo unreachable; }
-if ! us_range_ready; then
+# shellcheck source=lib/range.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/range.sh"
+if ! range_is_ready us-dnp3-substation; then
   echo "  range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)" >&2
   exit 1
 fi
