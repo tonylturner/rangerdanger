@@ -1,0 +1,9 @@
+Set DefaultBaseFrequency=50
+New Circuit.EUFeeder phases=3 bus1=sourcebus basekv=20 pu=1 frequency=50 MVAsc3=1000 MVAsc1=1000 X1R1=1 X0R0=1
+New Line.Breaker phases=3 bus1=sourcebus bus2=breakerbus r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 length=0.001 units=km switch=yes
+New Line.Feeder phases=3 bus1=breakerbus bus2=loadbus r1=0.1 x1=0.1 r0=0.1 x0=0.1 length=1 units=km
+New Load.FeederLoad phases=3 bus1=loadbus conn=wye kv=20 kw=1000 pf=1 model=1
+Set VoltageBases=[20]
+CalcVoltageBases
+Set Mode=Snap
+Set Frequency=50
