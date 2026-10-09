@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
 func firewallWaitTestServer(t *testing.T, active string, hashMatches bool) *Server {
@@ -40,10 +39,7 @@ func firewallWaitTestServer(t *testing.T, active string, hashMatches bool) *Serv
 	}))
 	t.Cleanup(containdServer.Close)
 
-	s := probeTestServer(t)
-	if err := s.db.Model(&models.LabTemplate{}).Where("id = ?", testTemplateID).Update("topology", `{"nodes":[{"id":"kali-1","container":"rangerdanger-kali"}]}`).Error; err != nil {
-		t.Fatalf("set canary topology: %v", err)
-	}
+	s := activePackageServer(nil)
 	s.rng = servingRange(containd.NewClient(containdServer.URL))
 	s.activeConfig = active
 	s.lastAppliedHash = wantHash

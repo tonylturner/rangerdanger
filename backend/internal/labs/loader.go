@@ -65,8 +65,8 @@ func (l *Loader) Load() (*Catalog, error) {
 }
 
 // Seed loads every package, requires activeID among them, and only then
-// writes: one transaction per package, then a prune of rows whose package
-// no longer exists.
+// writes scenarios: one transaction per package, then a prune of rows whose
+// package no longer exists.
 func (l *Loader) Seed(ctx context.Context, db *gorm.DB, activeID string) (*Catalog, error) {
 	catalog, err := l.Load()
 	if err != nil {
@@ -88,25 +88,9 @@ func (l *Loader) Seed(ctx context.Context, db *gorm.DB, activeID string) (*Catal
 	return catalog, nil
 }
 
+// storePackage writes the package's scenarios and drops the ones whose file
+// is gone. The topology stays in the catalog; nothing persists it.
 func storePackage(tx *gorm.DB, pkg Package) error {
-	topologyJSON, err := json.Marshal(map[string]any{
-		"networks": pkg.Template.Networks,
-		"nodes":    pkg.Template.Nodes,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal topology: %w", err)
-	}
-	template := models.LabTemplate{
-		ID:          pkg.Template.ID,
-		PackageID:   pkg.ID,
-		Name:        pkg.Template.Name,
-		Description: pkg.Template.Description,
-		Topology:    string(topologyJSON),
-	}
-	if err := upsert(tx, &template); err != nil {
-		return fmt.Errorf("upsert template %s: %w", template.ID, err)
-	}
-
 	ids := make([]string, 0, len(pkg.Scenarios))
 	for _, scenario := range pkg.Scenarios {
 		row, err := scenarioRow(scenario, pkg.ID, pkg.Template.ID)
@@ -178,13 +162,8 @@ func pruneRemovedPackages(ctx context.Context, db *gorm.DB, catalog *Catalog) er
 	}
 	// Rows written before packages existed carry a NULL package_id.
 	const gone = "package_id IS NULL OR package_id NOT IN ?"
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where(gone, ids).Delete(&models.Scenario{}).Error; err != nil {
-			return fmt.Errorf("prune scenarios of removed packages: %w", err)
-		}
-		if err := tx.Where(gone, ids).Delete(&models.LabTemplate{}).Error; err != nil {
-			return fmt.Errorf("prune templates of removed packages: %w", err)
-		}
-		return nil
-	})
+	if err := db.WithContext(ctx).Where(gone, ids).Delete(&models.Scenario{}).Error; err != nil {
+		return fmt.Errorf("prune scenarios of removed packages: %w", err)
+	}
+	return nil
 }

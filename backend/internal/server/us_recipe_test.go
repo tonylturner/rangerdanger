@@ -10,7 +10,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
 // The US recipe used to hard-code containers and addresses. Resolved
@@ -105,10 +104,9 @@ func TestWorkshopGraphInterfaceIPsFromManifest(t *testing.T) {
 	s := routedServer(t)
 	// The topology lists the RTAC on two networks; the old lookup keyed
 	// "rtac" never matched node "rtac-1" and reported only the first.
-	if err := s.db.Create(&models.LabTemplate{ID: testTemplateID, PackageID: testPackageID,
-		Topology: `{"nodes":[{"id":"rtac-1","type":"rtac_sim","networks":["ot_ops_net","field_net"],"ip":"10.30.30.20","container":"rangerdanger-rtac-sim"}]}`}).Error; err != nil {
-		t.Fatal(err)
-	}
+	s.rng.(*fakeRange).gen.Package.Template = labs.LabYAML{ID: testTemplateID, Nodes: []labs.NodeYAML{
+		{ID: "rtac-1", Type: "rtac_sim", Networks: []string{"ot_ops_net", "field_net"}, IP: "10.30.30.20", Container: "rangerdanger-rtac-sim"},
+	}}
 	rec := serve(s, http.MethodGet, "/api/workshop/graph")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/workshop/graph = %d %s", rec.Code, rec.Body)

@@ -40,29 +40,19 @@ func TestConnectCreatesNestedDatabaseAndMigratesModels(t *testing.T) {
 		t.Fatalf("database path is not a regular file: mode %v", info.Mode())
 	}
 
-	cases := []struct {
-		name      string
-		row       any
-		got       any
-		id        string
-		wantValue string
-		readValue func(any) string
-	}{
-		{"lab template", &models.LabTemplate{ID: "template-1", Name: "Substation"}, &models.LabTemplate{}, "template-1", "Substation", func(row any) string { return row.(*models.LabTemplate).Name }},
-		{"scenario", &models.Scenario{ID: "scenario-1", Name: "Baseline"}, &models.Scenario{}, "scenario-1", "Baseline", func(row any) string { return row.(*models.Scenario).Name }},
+	if err := database.Create(&models.Scenario{ID: "scenario-1", Name: "Baseline"}).Error; err != nil {
+		t.Fatalf("Create(): %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := database.Create(tc.row).Error; err != nil {
-				t.Fatalf("Create(): %v", err)
-			}
-			if err := database.First(tc.got, "id = ?", tc.id).Error; err != nil {
-				t.Fatalf("query row %q: %v", tc.id, err)
-			}
-			if tc.readValue(tc.got) != tc.wantValue {
-				t.Errorf("queried row value = %q, want %q", tc.readValue(tc.got), tc.wantValue)
-			}
-		})
+	var got models.Scenario
+	if err := database.First(&got, "id = ?", "scenario-1").Error; err != nil {
+		t.Fatalf("query row: %v", err)
+	}
+	if got.Name != "Baseline" {
+		t.Errorf("queried scenario name = %q, want Baseline", got.Name)
+	}
+	// Topology lives in the package catalog, never in the database.
+	if database.Migrator().HasTable("lab_templates") {
+		t.Error("a fresh database has a lab_templates table")
 	}
 }
 
@@ -87,16 +77,16 @@ func TestConnectParentIsRegularFile(t *testing.T) {
 func TestConnectIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.sqlite")
 	first := openTestDB(t, path)
-	if err := first.Create(&models.LabTemplate{ID: "kept", Name: "Before reconnect"}).Error; err != nil {
+	if err := first.Create(&models.Scenario{ID: "kept", Name: "Before reconnect"}).Error; err != nil {
 		t.Fatalf("create before reconnect: %v", err)
 	}
 
 	second := openTestDB(t, path)
-	var got models.LabTemplate
+	var got models.Scenario
 	if err := second.First(&got, "id = ?", "kept").Error; err != nil {
 		t.Fatalf("query after reconnect: %v", err)
 	}
 	if got.Name != "Before reconnect" {
-		t.Errorf("row after reconnect = %#v, want existing template", got)
+		t.Errorf("row after reconnect = %#v, want the existing scenario", got)
 	}
 }

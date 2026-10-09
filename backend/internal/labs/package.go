@@ -79,7 +79,6 @@ type PackageInfo struct {
 	ID           string
 	Title        string
 	Revision     int
-	TemplateID   string
 	Capabilities []string
 }
 
@@ -89,7 +88,6 @@ func (p Package) Info() PackageInfo {
 		ID:           p.ID,
 		Title:        p.Title,
 		Revision:     p.Revision,
-		TemplateID:   p.Template.ID,
 		Capabilities: append([]string(nil), p.Capabilities...),
 	}
 }

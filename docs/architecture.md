@@ -61,14 +61,14 @@ The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`); range files 
 
 ### Backend (Go + Gin)
 
-The backend at `backend/cmd/server` exposes a Gin HTTP API, runs the range through Compose, execs into its containers through the Docker SDK, persists lab state in SQLite via GORM, and proxies to the containd firewall over REST and SSE.
+The backend at `backend/cmd/server` exposes a Gin HTTP API, runs the range through Compose, execs into its containers through the Docker SDK, keeps the packages' scenarios in SQLite via GORM (topologies are served from the package catalog loaded at startup), and proxies to the containd firewall over REST and SSE.
 
 Internal packages:
 
 - `internal/config` - Viper-based configuration
 - `internal/db` - GORM + SQLite setup
-- `internal/models` - LabTemplate (a package's topology) and Scenario
-- `internal/labs` - YAML definition loader
+- `internal/models` - Scenario, the one persisted model
+- `internal/labs` - package loader: the in-memory catalog (topology, default policy, scenarios) and the scenario rows
 - `internal/orchestrator` - Docker SDK wrapper for exec sessions and exec resize; Compose owns container lifecycle
 - `internal/containd` - REST client for containd firewall API
 - `internal/server` - HTTP handlers, WebSocket terminals, exercise validators, PCAP management, traffic generation

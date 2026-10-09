@@ -227,7 +227,7 @@ func TestPackagesActiveFollowsTheRange(t *testing.T) {
 			t.Errorf("package %s active = %v", pkg.ID, pkg.Active)
 		}
 	}
-	if info := s.activePackage(); info.ID != "other-package" || info.TemplateID != "other-workshop" {
+	if info := s.activePackage(); info.ID != "other-package" || info.Title != "Other" {
 		t.Errorf("activePackage() = %+v, want other-package", info)
 	}
 }
