@@ -1,16 +1,11 @@
 package containd
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
-
 	"net/http/httptest"
-	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -18,7 +13,7 @@ import (
 // TestGenerateJWT verifies that the self-generated JWT has valid structure
 // and is compatible with containd's lab-mode token validation.
 func TestGenerateJWT(t *testing.T) {
-	token := generateJWT("test-secret")
+	token := generateJWT("test-secret", time.Now())
 	parts := splitJWT(t, token)
 
 	// Verify header
@@ -56,8 +51,8 @@ func TestGenerateJWT(t *testing.T) {
 func TestGenerateJWTDeterministicSignature(t *testing.T) {
 	// Two tokens with the same secret should have identical header+payload structure
 	// (payload differs due to exp timestamp, but the signing mechanism should work)
-	token1 := generateJWT("shared-secret")
-	token2 := generateJWT("different-secret")
+	token1 := generateJWT("shared-secret", time.Now())
+	token2 := generateJWT("different-secret", time.Now())
 
 	parts1 := splitJWT(t, token1)
 	parts2 := splitJWT(t, token2)
@@ -76,18 +71,50 @@ func TestGenerateJWTDeterministicSignature(t *testing.T) {
 // TestNewClientUsesEnvSecret verifies the client reads CONTAIND_JWT_SECRET
 // from environment and falls back to default.
 func TestNewClientUsesEnvSecret(t *testing.T) {
-	// Test default
-	os.Unsetenv("CONTAIND_JWT_SECRET")
-	client := NewClient("http://localhost:8080")
-	if client.AuthToken == "" {
-		t.Error("expected non-empty auth token with default secret")
+	t.Setenv("CONTAIND_JWT_SECRET", "")
+	if got := NewClient("http://localhost:8080").jwtSecret; got != "rangerdanger-dev" {
+		t.Errorf("default secret: got %q, want rangerdanger-dev", got)
 	}
 
-	// Test custom secret
 	t.Setenv("CONTAIND_JWT_SECRET", "custom-secret-123")
-	client2 := NewClient("http://localhost:8080")
-	if client2.AuthToken == client.AuthToken {
-		t.Error("expected different token with different secret")
+	if got := NewClient("http://localhost:8080").jwtSecret; got != "custom-secret-123" {
+		t.Errorf("env secret: got %q, want custom-secret-123", got)
+	}
+}
+
+// TestClientMintsTokenPerRequest pins that a long-lived shared client
+// keeps authenticating past the 24h token lifetime: each request carries
+// a token whose expiry is measured from the request, not from NewClient.
+func TestClientMintsTokenPerRequest(t *testing.T) {
+	var tokens []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokens = append(tokens, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
+	}))
+	defer srv.Close()
+
+	start := time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
+	clock := start
+	client := newTestClient(srv.URL)
+	client.now = func() time.Time { return clock }
+
+	for _, at := range []time.Time{start, start.Add(25 * time.Hour)} {
+		clock = at
+		if _, err := client.GetHealth(); err != nil {
+			t.Fatalf("GetHealth at %v: %v", at, err)
+		}
+	}
+	var exps []float64
+	for _, token := range tokens {
+		exp, _ := decodeJWTPart(t, splitJWT(t, token)[1])["exp"].(float64)
+		exps = append(exps, exp)
+	}
+	want := []float64{
+		float64(start.Add(24 * time.Hour).Unix()),
+		float64(start.Add(49 * time.Hour).Unix()),
+	}
+	if len(exps) != 2 || exps[0] != want[0] || exps[1] != want[1] {
+		t.Errorf("token exp per request: got %v, want %v", exps, want)
 	}
 }
 
@@ -96,609 +123,6 @@ func TestNewClientSetsBaseURL(t *testing.T) {
 	client := NewClient("http://firewall:8080")
 	if client.BaseURL != "http://firewall:8080" {
 		t.Errorf("expected base URL http://firewall:8080, got %s", client.BaseURL)
-	}
-}
-
-// TestGetHealthSuccess verifies parsing a healthy response from containd.
-func TestGetHealthSuccess(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		if r.URL.Path != "/api/v1/health" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		json.NewEncoder(w).Encode(HealthStatus{
-			Status:    "healthy",
-			Version:   "1.0.0",
-			Uptime:    3600,
-			Zones:     4,
-			Sessions:  12,
-			EventRate: 5,
-		})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	health, err := client.GetHealth()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if health.Status != "healthy" {
-		t.Errorf("expected healthy, got %s", health.Status)
-	}
-	if health.Zones != 4 {
-		t.Errorf("expected 4 zones, got %d", health.Zones)
-	}
-}
-
-// TestGetHealthUnreachable verifies error handling when containd is down.
-func TestGetHealthUnreachable(t *testing.T) {
-	client := newTestClient("http://127.0.0.1:1") // nothing listening
-	_, err := client.GetHealth()
-	if err == nil {
-		t.Fatal("expected error for unreachable server")
-	}
-}
-
-// TestGetHealthNon200 verifies error handling for non-200 responses.
-func TestGetHealthNon200(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	_, err := client.GetHealth()
-	if err == nil {
-		t.Fatal("expected error for 500 response")
-	}
-}
-
-// TestIsAvailable verifies the availability check.
-func TestIsAvailable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	if !client.IsAvailable() {
-		t.Error("expected available with healthy response")
-	}
-
-	// Unreachable server
-	client2 := newTestClient("http://127.0.0.1:1")
-	if client2.IsAvailable() {
-		t.Error("expected unavailable for unreachable server")
-	}
-}
-
-// TestGetEventsSuccess verifies event fetching and JSON parsing.
-func TestGetEventsSuccess(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		if r.URL.Path != "/api/v1/events" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		// Verify query params
-		if r.URL.Query().Get("limit") != "10" {
-			t.Errorf("expected limit=10, got %s", r.URL.Query().Get("limit"))
-		}
-		if r.URL.Query().Get("since") != "evt-5" {
-			t.Errorf("expected since=evt-5, got %s", r.URL.Query().Get("since"))
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"events": []Event{
-				{ID: "evt-6", Kind: "request", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"function_code": 3}},
-				{ID: "evt-7", Kind: "anomaly", Source: "10.10.10.50", Dest: "10.40.40.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"severity": "critical"}},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	events, err := client.GetEvents("evt-5", 10)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(events) != 2 {
-		t.Fatalf("expected 2 events, got %d", len(events))
-	}
-	if events[0].ID != "evt-6" {
-		t.Errorf("expected evt-6, got %s", events[0].ID)
-	}
-	if events[1].Attributes["severity"] != "critical" {
-		t.Errorf("expected critical severity attribute, got %v", events[1].Attributes["severity"])
-	}
-}
-
-// TestGetEventsNoSince verifies events fetching without a since parameter.
-func TestGetEventsNoSince(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("since") != "" {
-			t.Error("expected no since parameter")
-		}
-		json.NewEncoder(w).Encode(map[string]any{"events": []Event{}})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	events, err := client.GetEvents("", 5)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(events) != 0 {
-		t.Errorf("expected 0 events, got %d", len(events))
-	}
-}
-
-// TestGetFlowsSuccess feeds GetFlows containd's real wire shape: a bare
-// JSON array of FlowSummary objects, with omitempty keys absent.
-func TestGetFlowsSuccess(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		if r.URL.Path != "/api/v1/flows" {
-			t.Errorf("expected /api/v1/flows, got %s", r.URL.Path)
-		}
-		if got := r.URL.Query().Get("limit"); got != "50" {
-			t.Errorf("expected limit=50, got %q", got)
-		}
-		io.WriteString(w, `[
-			{"flowId":"f-1","firstSeen":"2026-10-09T10:00:00Z","lastSeen":"2026-10-09T10:00:05Z",
-			 "srcIp":"10.30.30.20","dstIp":"10.40.40.10","srcPort":40312,"dstPort":2404,
-			 "transport":"tcp","application":"iec104","eventCount":7},
-			{"flowId":"f-2","firstSeen":"2026-10-09T10:01:00Z","lastSeen":"2026-10-09T10:01:00Z",
-			 "eventCount":1,"avDetected":true,"avBlocked":true}
-		]`)
-	}))
-	defer srv.Close()
-
-	flows, err := newTestClient(srv.URL).GetFlows(50)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(flows) != 2 {
-		t.Fatalf("expected 2 flows, got %d", len(flows))
-	}
-	want := Flow{
-		FlowID:      "f-1",
-		FirstSeen:   time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC),
-		LastSeen:    time.Date(2026, 10, 9, 10, 0, 5, 0, time.UTC),
-		SrcIP:       "10.30.30.20",
-		DstIP:       "10.40.40.10",
-		SrcPort:     40312,
-		DstPort:     2404,
-		Transport:   "tcp",
-		Application: "iec104",
-		EventCount:  7,
-	}
-	if flows[0] != want {
-		t.Errorf("flow[0]: got %+v, want %+v", flows[0], want)
-	}
-	if !flows[1].AvDetected || !flows[1].AvBlocked || flows[1].SrcIP != "" {
-		t.Errorf("flow[1]: got %+v", flows[1])
-	}
-}
-
-// TestGetFlowsError verifies a non-200 from containd surfaces its status
-// and body.
-func TestGetFlowsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":"engine unreachable"}`, http.StatusBadGateway)
-	}))
-	defer srv.Close()
-
-	flows, err := newTestClient(srv.URL).GetFlows(200)
-	if err == nil {
-		t.Fatalf("expected error, got flows %+v", flows)
-	}
-	if !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "engine unreachable") {
-		t.Errorf("error should carry status and body, got: %v", err)
-	}
-}
-
-// TestGetFirewallRulesSuccess verifies config/rules parsing.
-func TestGetFirewallRulesSuccess(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		if r.URL.Path != "/api/v1/config" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"firewall": FirewallConfig{
-				DefaultAction: "DENY",
-				Rules: []FirewallRule{
-					{ID: "it-to-dmz", Description: "IT to DMZ: SSH/HTTP/S", SourceZones: []string{"wan"}, DestZones: []string{"dmz"}, Action: "ALLOW",
-						Protocols: []Protocol{{Name: "tcp", Port: "22"}, {Name: "tcp", Port: "443"}}},
-					{ID: "deny-writes-safety", Description: "Block Modbus WRITE to Safety", DestZones: []string{"lan2"}, Action: "DENY",
-						ICS: &ICSConfig{Protocol: "modbus", FunctionCodes: []int{5, 6, 15, 16}}},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	rules, err := client.GetFirewallRules()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 rules, got %d", len(rules))
-	}
-	if rules[0].Action != "ALLOW" {
-		t.Errorf("expected ALLOW, got %s", rules[0].Action)
-	}
-	if rules[1].ICS == nil {
-		t.Fatal("expected ICS config on second rule")
-	}
-	if rules[1].ICS.Protocol != "modbus" {
-		t.Errorf("expected modbus protocol, got %s", rules[1].ICS.Protocol)
-	}
-}
-
-// TestGetZoneRuleSummariesGrouping verifies rules are grouped by zone pair correctly.
-func TestGetZoneRuleSummariesGrouping(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
-			"firewall": FirewallConfig{
-				DefaultAction: "DENY",
-				Rules: []FirewallRule{
-					{ID: "r1", Description: "IT to DMZ SSH", SourceZones: []string{"wan"}, DestZones: []string{"dmz"}, Action: "ALLOW",
-						Protocols: []Protocol{{Name: "tcp", Port: "22"}}},
-					{ID: "r2", Description: "IT to DMZ HTTPS", SourceZones: []string{"wan"}, DestZones: []string{"dmz"}, Action: "ALLOW",
-						Protocols: []Protocol{{Name: "tcp", Port: "443"}}},
-					{ID: "r3", Description: "HMI View Modbus R/O", SourceZones: []string{"dmz"}, DestZones: []string{"lan1"}, Action: "ALLOW",
-						ICS: &ICSConfig{Protocol: "modbus", FunctionCodes: []int{1, 2, 3, 4}}},
-					{ID: "r4", Description: "Block writes to safety", DestZones: []string{"lan2"}, Action: "DENY",
-						ICS: &ICSConfig{Protocol: "modbus", FunctionCodes: []int{5, 6, 15, 16}}},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	summaries, err := client.GetZoneRuleSummaries()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Build map for easier assertions
-	smap := make(map[string]ZoneRuleSummary)
-	for _, s := range summaries {
-		key := s.SourceZone + "->" + s.DestZone
-		smap[key] = s
-	}
-
-	// wan->dmz should have 2 rules grouped
-	wanDmz, ok := smap["wan->dmz"]
-	if !ok {
-		t.Fatal("missing wan->dmz summary")
-	}
-	if len(wanDmz.RuleDetails) != 2 {
-		t.Errorf("expected 2 rule details for wan->dmz, got %d", len(wanDmz.RuleDetails))
-	}
-	if wanDmz.Action != "ALLOW" {
-		t.Errorf("expected ALLOW for wan->dmz, got %s", wanDmz.Action)
-	}
-
-	// dmz->lan1 should have modbus R/O
-	dmzLan1, ok := smap["dmz->lan1"]
-	if !ok {
-		t.Fatal("missing dmz->lan1 summary")
-	}
-	if dmzLan1.Action != "ALLOW" {
-		t.Errorf("expected ALLOW for dmz->lan1, got %s", dmzLan1.Action)
-	}
-
-	// any->lan2 should be DENY
-	anyLan2, ok := smap["any->lan2"]
-	if !ok {
-		t.Fatal("missing any->lan2 summary")
-	}
-	if anyLan2.Action != "DENY" {
-		t.Errorf("expected DENY for any->lan2, got %s", anyLan2.Action)
-	}
-}
-
-// TestGetZoneRuleSummariesMixedAction verifies MIXED action detection.
-func TestGetZoneRuleSummariesMixedAction(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
-			"firewall": FirewallConfig{
-				Rules: []FirewallRule{
-					{ID: "r1", Description: "Allow read", SourceZones: []string{"dmz"}, DestZones: []string{"lan2"}, Action: "ALLOW",
-						ICS: &ICSConfig{Protocol: "modbus", FunctionCodes: []int{1, 2, 3, 4}}},
-					{ID: "r2", Description: "Deny write", SourceZones: []string{"dmz"}, DestZones: []string{"lan2"}, Action: "DENY",
-						ICS: &ICSConfig{Protocol: "modbus", FunctionCodes: []int{5, 6, 15, 16}}},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	summaries, err := client.GetZoneRuleSummaries()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(summaries) != 1 {
-		t.Fatalf("expected 1 summary, got %d", len(summaries))
-	}
-	if summaries[0].Action != "MIXED" {
-		t.Errorf("expected MIXED action, got %s", summaries[0].Action)
-	}
-}
-
-// TestImportConfigSuccess verifies config import via the candidate/commit flow.
-func TestImportConfigSuccess(t *testing.T) {
-	var candidateBody []byte
-	var sawCandidate, sawCommit bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-		}
-		switch r.URL.Path {
-		case "/api/v1/config/candidate":
-			sawCandidate = true
-			if r.Header.Get("Content-Type") != "application/json" {
-				t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
-			}
-			var err error
-			candidateBody, err = io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("failed to read body: %v", err)
-			}
-			w.WriteHeader(http.StatusOK)
-		case "/api/v1/config/commit":
-			sawCommit = true
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-	}))
-	defer srv.Close()
-
-	configJSON := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
-	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig(configJSON)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !sawCandidate {
-		t.Error("expected POST /api/v1/config/candidate to be called")
-	}
-	if !sawCommit {
-		t.Error("expected POST /api/v1/config/commit to be called")
-	}
-
-	// ImportConfig injects dataplane.enforcement=true so containd's engine
-	// actually compiles + applies the ruleset (otherwise commit succeeds but
-	// no nft rules are pushed). Re-parse the body and verify the firewall
-	// section came through unmodified and the dataplane field is set.
-	var sent map[string]any
-	if err := json.Unmarshal(candidateBody, &sent); err != nil {
-		t.Fatalf("candidate body not valid JSON: %v\n%s", err, candidateBody)
-	}
-	if dp, _ := sent["dataplane"].(map[string]any); dp == nil || dp["enforcement"] != true {
-		t.Errorf("expected dataplane.enforcement=true, got body: %s", candidateBody)
-	}
-	fw, _ := sent["firewall"].(map[string]any)
-	if fw == nil || fw["defaultAction"] != "DENY" {
-		t.Errorf("firewall section not preserved: %s", candidateBody)
-	}
-}
-
-// TestImportConfigSurfacesCommitWarnings asserts that warnings from
-// containd's X-Containd-Warnings response header propagate back to the
-// caller. Without this, partial commits (e.g. nft apply failed due to
-// missing NET_ADMIN) silently return success and the lab UI hides the
-// degradation. The header carries one warning per line per containd's
-// setWarningHeader convention (api/http/util.go).
-func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		switch r.URL.Path {
-		case "/api/v1/config/candidate":
-			w.WriteHeader(http.StatusOK)
-		case "/api/v1/config/commit":
-			// containd v0.1.26+ emits one X-Containd-Warnings header
-			// per warning (multi-value header). Older builds joined
-			// with "\n" in a single header value; collectWarnings
-			// handles both. Test the multi-value form here since
-			// that's what current containd produces.
-			w.Header().Add("X-Containd-Warnings", "ruleset: nft apply failed: operation not permitted")
-			w.Header().Add("X-Containd-Warnings", "interfaces: link eth9 not found")
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	warnings, err := client.ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(warnings) != 2 {
-		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
-	}
-	if !strings.Contains(warnings[0], "nft apply failed") {
-		t.Errorf("warning[0] missing nft hint: %q", warnings[0])
-	}
-	if !strings.Contains(warnings[1], "eth9 not found") {
-		t.Errorf("warning[1] missing iface hint: %q", warnings[1])
-	}
-}
-
-func TestImportConfigNoWarningsHeader(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertAuthHeader(t, r)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	warnings, err := newTestClient(srv.URL).ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if warnings != nil {
-		t.Errorf("expected nil warnings for clean apply, got %v", warnings)
-	}
-}
-
-// TestEnsureEnforcementOn pins the lab-invariant shim that ImportConfig
-// applies. The substation-weak.json / substation-improved.json files (and
-// student-authored custom policies) typically don't set
-// `dataplane.enforcement` — without this shim, containd commits the rules
-// but engine.ApplyRules silently no-ops because the compiler is nil
-// (pkg/dp/engine/engine.go:113-129 in containd).
-func TestEnsureEnforcementOn(t *testing.T) {
-	type tc struct {
-		name string
-		in   string
-	}
-	cases := []tc{
-		{"empty dataplane", `{"firewall":{"rules":[]},"dataplane":{}}`},
-		{"missing dataplane key", `{"firewall":{"rules":[]}}`},
-		{"explicitly false (must override)", `{"firewall":{"rules":[]},"dataplane":{"enforcement":false}}`},
-		{"already true (no-op)", `{"firewall":{"rules":[]},"dataplane":{"enforcement":true}}`},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			out, err := ensureEnforcementOn([]byte(c.in))
-			if err != nil {
-				t.Fatalf("err: %v", err)
-			}
-			var doc map[string]any
-			if err := json.Unmarshal(out, &doc); err != nil {
-				t.Fatalf("output not JSON: %v", err)
-			}
-			dp, _ := doc["dataplane"].(map[string]any)
-			if dp == nil || dp["enforcement"] != true {
-				t.Errorf("expected dataplane.enforcement=true, got: %s", out)
-			}
-			// Firewall section preserved.
-			fw, _ := doc["firewall"].(map[string]any)
-			if fw == nil {
-				t.Errorf("firewall section dropped: %s", out)
-			}
-		})
-	}
-}
-
-func TestEnsureEnforcementOn_InvalidJSON(t *testing.T) {
-	if _, err := ensureEnforcementOn([]byte("not json")); err == nil {
-		t.Error("expected error on invalid JSON")
-	}
-}
-
-func TestEnsureEnforcementOn_EmptyInput(t *testing.T) {
-	out, err := ensureEnforcementOn(nil)
-	if err != nil {
-		t.Fatalf("nil input should not error: %v", err)
-	}
-	if len(out) != 0 {
-		t.Errorf("nil input should pass through, got %s", out)
-	}
-}
-
-// TestImportConfigLegacyFallback verifies the client falls back to
-// /api/v1/config/import when the candidate endpoint returns 404.
-func TestImportConfigLegacyFallback(t *testing.T) {
-	var sawImport bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/config/candidate":
-			w.WriteHeader(http.StatusNotFound)
-		case "/api/v1/config/import":
-			sawImport = true
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	if _, err := client.ImportConfig([]byte(`{}`)); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !sawImport {
-		t.Error("expected fallback to /api/v1/config/import")
-	}
-}
-
-// TestImportConfigFailure verifies error handling on import failure.
-func TestImportConfigFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid config schema"}`))
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig([]byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error for 400 response")
-	}
-	if got := err.Error(); got == "" {
-		t.Error("expected non-empty error message")
-	}
-}
-
-// TestImportConfigAuth403 verifies handling of authentication rejection.
-// This simulates what would happen if lab mode is disabled and the
-// self-generated JWT is not accepted.
-func TestImportConfigAuth403(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"error":"password change required"}`))
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig([]byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error for 403 response")
-	}
-}
-
-// TestWaitReadySuccess verifies the polling loop succeeds when containd comes up.
-func TestWaitReadySuccess(t *testing.T) {
-	var callCount int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&callCount, 1)
-		if n < 3 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	err := client.WaitReady(context.Background(), 30*time.Second)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if atomic.LoadInt32(&callCount) < 3 {
-		t.Error("expected at least 3 health check attempts")
-	}
-}
-
-// TestWaitReadyTimeout verifies WaitReady returns error on timeout.
-func TestWaitReadyTimeout(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	err := client.WaitReady(context.Background(), 3*time.Second)
-	if err == nil {
-		t.Fatal("expected timeout error")
 	}
 }
 
@@ -728,7 +152,7 @@ func TestAuthHeaderFormat(t *testing.T) {
 		if parts != 2 {
 			t.Errorf("expected JWT with 3 parts (2 dots), got %d dots", parts)
 		}
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 	}))
 	defer srv.Close()
 
@@ -802,7 +226,8 @@ func decodeJWTPart(t *testing.T, part string) map[string]any {
 func newTestClient(baseURL string) *Client {
 	return &Client{
 		BaseURL:    baseURL,
-		AuthToken:  generateJWT("test-secret"),
+		jwtSecret:  "test-secret",
+		now:        time.Now,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 }

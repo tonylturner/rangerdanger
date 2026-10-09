@@ -10,15 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newFlowsServer builds a Server whose config points handleGetFirewallFlows
-// at containdURL, the same way a deployment's CONTAIND_API_URL does.
-func newFlowsServer(t *testing.T, containdURL string) *Server {
-	t.Helper()
-	s := newTestServer(t, containdURL)
-	s.cfg.ContaindAPIURL = containdURL
-	return s
-}
-
 // getFlows serves target (which may carry a query string; the shared
 // invoke helper registers its path verbatim as the route) through the
 // flows handler.
@@ -45,7 +36,7 @@ func TestHandleGetFirewallFlows(t *testing.T) {
 		io.WriteString(w, `[{"flowId":"f-1","firstSeen":"2026-10-09T10:00:00Z","lastSeen":"2026-10-09T10:00:05Z","srcIp":"10.30.30.20","dstIp":"10.40.40.10","srcPort":40312,"dstPort":2404,"transport":"tcp","application":"iec104","eventCount":7}]`)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	tests := []struct {
 		name      string
@@ -88,7 +79,7 @@ func TestHandleGetFirewallFlows_EmptyTable(t *testing.T) {
 		io.WriteString(w, `[]`)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	rec, _ := getFlows(s, "/api/firewall/flows")
 	if rec.Code != http.StatusOK {
@@ -104,7 +95,7 @@ func TestHandleGetFirewallFlows_ContaindError(t *testing.T) {
 		http.Error(w, "engine unreachable", http.StatusBadGateway)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	rec, body := getFlows(s, "/api/firewall/flows")
 	if rec.Code != http.StatusServiceUnavailable {
@@ -115,5 +106,39 @@ func TestHandleGetFirewallFlows_ContaindError(t *testing.T) {
 	}
 	if body["error"] == nil {
 		t.Error("expected error field")
+	}
+}
+
+// TestHandleGetFirewallHealth pins the portal's /api/firewall/health
+// body: containd's own health fields, passed through.
+func TestHandleGetFirewallHealth(t *testing.T) {
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/health" {
+			t.Errorf("unexpected containd path: %s", r.URL.Path)
+		}
+		io.WriteString(w, `{"build":"v0.1.40","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
+	}))
+	t.Cleanup(fake.Close)
+	s := newTestServer(t, fake.URL)
+
+	rec, _ := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d (%s)", rec.Code, rec.Body.String())
+	}
+	want := `{"status":"ok","component":"mgmt","build":"v0.1.40","time":"2026-10-09T12:34:56.789Z"}`
+	if got := rec.Body.String(); got != want {
+		t.Errorf("body: got %s, want %s", got, want)
+	}
+}
+
+func TestHandleGetFirewallHealth_Unreachable(t *testing.T) {
+	s := newTestServer(t, "http://127.0.0.1:1")
+
+	rec, body := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503", rec.Code)
+	}
+	if body["status"] != "unavailable" || body["error"] == nil {
+		t.Errorf("body: got %v", body)
 	}
 }
