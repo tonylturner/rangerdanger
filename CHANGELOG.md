@@ -20,6 +20,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list was empty. The activity feed and substation audit now tag Modbus
   and DNP3 events. A rule is labelled "R/O" only when it really allows
   only reads, not whenever it lists four or fewer function codes.
+- **The substation audit's DPI rows show who talked to whom.** They
+  read event fields containd never sends, so every row showed a blank
+  "→". They now show source and destination address and port, plus the
+  protocol, function code and rule.
 
 ## [v0.1.34] - 2026-10-08
 
