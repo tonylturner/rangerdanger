@@ -24,17 +24,21 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// JWTSecret is the secret the backend signs containd tokens with:
+// CONTAIND_JWT_SECRET, else the Compose default. The backend starts the range
+// with this value so the range firewall verifies what the backend signs.
+func JWTSecret() string {
+	if secret := os.Getenv("CONTAIND_JWT_SECRET"); secret != "" {
+		return secret
+	}
+	return "rangerdanger-dev"
+}
+
 // NewClient creates a containd API client with JWT authentication.
 func NewClient(baseURL string) *Client {
-	// Get JWT secret from environment (same as containd uses)
-	secret := os.Getenv("CONTAIND_JWT_SECRET")
-	if secret == "" {
-		secret = "rangerdanger-dev" // Default matches docker-compose
-	}
-
 	return &Client{
 		BaseURL:   baseURL,
-		jwtSecret: secret,
+		jwtSecret: JWTSecret(),
 		now:       time.Now,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,

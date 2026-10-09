@@ -44,11 +44,15 @@ func (c *Client) IsAvailable(ctx context.Context) bool {
 	return err == nil && status.Status != ""
 }
 
-// WaitReady polls containd health until it responds or the context is cancelled.
+// WaitReady polls containd health, first at once and then every two
+// seconds, until it responds or the context is cancelled.
 func (c *Client) WaitReady(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if c.IsAvailable(ctx) {
+		return nil
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
