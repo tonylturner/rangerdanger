@@ -131,7 +131,7 @@ function ExerciseCard({
 
           <div>
             <h2 className="text-sm font-bold text-white">
-              Exercise {exercise.order ?? ""}: {exercise.name}
+              Exercise {exercise.order}: {exercise.name}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">{stripTimeEstimate(cardText)}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">

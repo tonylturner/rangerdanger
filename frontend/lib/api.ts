@@ -123,7 +123,7 @@ export type Scenario = {
   name: string;
   summary?: string;
   description: string;
-  order?: number;
+  order: string;
   package_id: string;
   lab_template_id: string;
   // Validator key declared by the scenario; empty when it has none.

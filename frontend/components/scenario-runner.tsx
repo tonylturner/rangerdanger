@@ -369,7 +369,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
-            Lab {scenario.order ?? ""}
+            Lab {scenario.order}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>

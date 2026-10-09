@@ -29,6 +29,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Firewall flow table works.** `GET /api/firewall/sessions` called a
+  containd route that never existed and always answered 503. It is
+  replaced by `GET /api/firewall/flows`, which returns containd's engine
+  flow table (`/api/v1/flows`, optional `?limit=` 1..5000).
+- **Workbook PDF lab order.** The PDF sorted labs with numeric
+  subtraction on string lab numbers, so `2.3-bonus` produced an
+  undefined order. Labs now sort the same way as the backend.
 - **The RTAC starts only after its network is configured.** The
   container used to background its gateway, hardening and management
   setup together with the simulator, so the simulator could serve

@@ -773,7 +773,7 @@ export function WorkbookPDF({
   scenarios: Scenario[];
   generatedAt: string;
 }) {
-  const sorted = [...scenarios].sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+  const sorted = [...scenarios].sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
   return (
     <Document title="RangerDanger Substation Segmentation Workbook" author="RangerDanger">
       {/* Cover page */}
