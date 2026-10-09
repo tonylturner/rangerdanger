@@ -32,6 +32,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  # Base images come from Docker Hub; log in when the secrets exist so
+  # builds do not hit the anonymous pull limit (see smoke.yml).
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   NAMESPACE: tonylturner
 
 jobs:
@@ -219,6 +222,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: matrix.decision == 'build' && env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compute artifact build labels
         id: artifact-labels
@@ -484,6 +494,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: needs.plan.outputs.frontend_decision == 'build' && env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Compute artifact build labels
         id: artifact-labels
