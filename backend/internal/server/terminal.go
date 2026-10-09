@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,6 +129,14 @@ func (s *Server) connectTerminal(c *gin.Context, nodeConfig *labs.NodeYAML) {
 		return
 	}
 	defer hijack.Close()
+
+	// The session belongs to the range generation: when it stops, closing
+	// both ends unblocks the copy loops below.
+	stopOnRangeEnd := context.AfterFunc(c.Request.Context(), func() {
+		_ = ws.Close()
+		hijack.Close()
+	})
+	defer stopOnRangeEnd()
 
 	// Bidirectional copy between WebSocket and Docker exec
 	done := make(chan struct{})

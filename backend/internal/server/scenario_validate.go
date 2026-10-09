@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
@@ -65,6 +66,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	s.activeConfigMu.RLock()
 	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
+	input.firewall = rangeOf(c).Containd()
 
 	checks := validator.run(c.Request.Context(), s, input)
 
@@ -259,7 +261,7 @@ func countAuditByZoneAndCommand(entries []map[string]any, zone, command string) 
 
 // ── Exercise 0: Baseline Assessment ─────────────────────────────
 
-func (s *Server) validateBaselineAssessment(ctx context.Context, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func (s *Server) validateBaselineAssessment(ctx context.Context, firewall *containd.Client, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
 	elec := mapGet(state, "electrical")
@@ -267,7 +269,7 @@ func (s *Server) validateBaselineAssessment(ctx context.Context, state map[strin
 	comms := mapGet(state, "device_comms")
 
 	// 1. Check if a PCAP capture file exists (student completed the capture step)
-	pcapExists := s.checkPcapFileExists(ctx)
+	pcapExists := s.checkPcapFileExists(ctx, firewall)
 	if pcapExists {
 		checks = append(checks, ValidationCheck{"PCAP captured", "pass", "Baseline capture file found — traffic was recorded"})
 	} else {
@@ -574,7 +576,7 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 }
 
 // checkPcapFileExists checks if any PCAP capture files are available.
-func (s *Server) checkPcapFileExists(ctx context.Context) bool {
+func (s *Server) checkPcapFileExists(ctx context.Context, firewall *containd.Client) bool {
 	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
 	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
 		execCfg := container.ExecOptions{
@@ -595,7 +597,7 @@ func (s *Server) checkPcapFileExists(ctx context.Context) bool {
 	}
 
 	// 2. Check containd PCAP API (covers API-initiated captures)
-	files, err := s.containdClient.ListPcapFiles(ctx)
+	files, err := firewall.ListPcapFiles(ctx)
 	if err == nil && len(files) > 0 {
 		return true
 	}

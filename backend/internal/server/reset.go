@@ -45,7 +45,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	var actions []resetAction
 
 	// 1. Apply weak firewall config
-	_, err := s.applyFirewallConfigInternal(c.Request.Context(), "weak")
+	_, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), "weak")
 	actions = append(actions, resetAction{
 		Action:  "Apply weak firewall baseline",
 		Success: err == nil,

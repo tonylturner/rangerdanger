@@ -15,7 +15,7 @@ import (
 // flows handler.
 func getFlows(s *Server, target string) (*httptest.ResponseRecorder, map[string]any) {
 	router := gin.New()
-	router.GET("/api/firewall/flows", s.handleGetFirewallFlows)
+	router.GET("/api/firewall/flows", s.rangeBound(), s.handleGetFirewallFlows)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
 	var body map[string]any

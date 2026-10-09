@@ -123,11 +123,8 @@ func (s *Server) handleGetWorkshopStatus(c *gin.Context) {
 	}
 
 	// Check containd health
-	fwOk := false
-	if s.containdClient != nil {
-		_, err := s.containdClient.GetHealth(c.Request.Context())
-		fwOk = err == nil
-	}
+	_, fwErr := rangeOf(c).Containd().GetHealth(c.Request.Context())
+	fwOk := fwErr == nil
 
 	// Count scenarios
 	var scenarioCount int64

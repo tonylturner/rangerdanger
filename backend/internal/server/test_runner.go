@@ -13,7 +13,9 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
@@ -53,7 +55,7 @@ func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply fun
 // match the just-committed policy, then checks the dataplane canary for canned
 // policies. The backend's activeConfig flips at commit time, so neither it nor
 // the config hash alone establishes that the running dataplane is reconciled.
-func (s *Server) waitForFirewallPolicy(ctx context.Context) error {
+func (s *Server) waitForFirewallPolicy(ctx context.Context, firewall *containd.Client) error {
 	s.activeConfigMu.RLock()
 	want := s.lastAppliedHash
 	active := s.activeConfig
@@ -68,7 +70,7 @@ func (s *Server) waitForFirewallPolicy(ctx context.Context) error {
 		if !time.Now().Before(deadline) {
 			return firewallHashTimeout(budget, lastErr)
 		}
-		got, err := s.containdClient.GetFirewallHash(ctx)
+		got, err := firewall.GetFirewallHash(ctx)
 		if err == nil && got == want {
 			if time.Now().Before(deadline) {
 				break
@@ -185,6 +187,7 @@ type testSuiteResult struct {
 // handleWorkshopTestSuite runs all exercises in order and reports results.
 func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 	ctx := c.Request.Context()
+	gen := rangeOf(c)
 	suiteStart := time.Now()
 
 	// Load the active package's scenarios ordered by `order`
@@ -213,8 +216,8 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		scenarioStart := time.Now()
 
 		// Reset lab before each scenario
-		preResetProblems := s.resetLabState(ctx)
-		if err := s.waitForFirewallPolicy(ctx); err != nil {
+		preResetProblems := s.resetLabState(ctx, gen)
+		if err := s.waitForFirewallPolicy(ctx, gen.Containd()); err != nil {
 			preResetProblems = append(preResetProblems, "firewall dataplane: "+err.Error())
 		}
 
@@ -234,10 +237,10 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			active := s.activeConfig
 			s.activeConfigMu.RUnlock()
 			applied, prepErr := ensureHardenedPrecondition(step, active, func(name string) ([]string, error) {
-				return s.applyFirewallConfigInternal(ctx, name)
+				return s.applyFirewallConfigInternal(ctx, gen, name)
 			})
 			if prepErr == nil && applied {
-				prepErr = s.waitForFirewallPolicy(ctx)
+				prepErr = s.waitForFirewallPolicy(ctx, gen.Containd())
 			}
 
 			result := stepTestResult{StepIndex: i, StepTitle: step.Title}
@@ -246,7 +249,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 			} else {
 				result = evaluateTestStep(i, step, stepExecutors{
 					command:  s.executeCommand,
-					firewall: func(name string) StepActionResult { return s.executeFirewallAction(ctx, name) },
+					firewall: func(name string) StepActionResult { return s.executeFirewallAction(ctx, gen, name) },
 					check:    s.executeCheck,
 					probe:    func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, step) },
 					sequencePause: func() {
@@ -254,7 +257,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					},
 				})
 				if step.Action != nil && step.Action.Type == "firewall" && result.Passed {
-					if err := s.waitForFirewallPolicy(ctx); err != nil {
+					if err := s.waitForFirewallPolicy(ctx, gen.Containd()); err != nil {
 						result.Passed = false
 						result.Detail += "; dataplane: " + err.Error()
 					}
@@ -293,7 +296,7 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 		}
 
 		// Reset after scenario
-		postResetProblems := s.resetLabState(ctx)
+		postResetProblems := s.resetLabState(ctx, gen)
 		resetOK, resetDetail := aggregateResetProblems(preResetProblems, postResetProblems)
 
 		scenarioResult := scenarioTestResult{
@@ -335,9 +338,9 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 }
 
 // resetLabState restores all devices to defaults.
-func (s *Server) resetLabState(ctx context.Context) []string {
+func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation) []string {
 	var problems []string
-	warnings, err := s.applyFirewallConfigInternal(ctx, "weak")
+	warnings, err := s.applyFirewallConfigInternal(ctx, gen, "weak")
 	if err != nil {
 		problems = append(problems, "firewall apply: "+err.Error())
 	} else {

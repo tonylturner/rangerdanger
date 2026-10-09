@@ -12,8 +12,8 @@ import (
 // and improved" panel. The pure-logic helpers (compareRuleSets,
 // zonePairLabel, loadFirewallRules) are testable without a server.
 // The HTTP handlers (handleFirewallApply, handleFirewallApplyCustom)
-// route through s.containdClient.ImportConfig — those need a mocked
-// containd to test cleanly and are deferred.
+// route through the generation's containd client — those need a
+// mocked containd to test cleanly and are deferred.
 //
 // NB: same external-data caveat as firewall_config_test.go — these
 // tests read JSON from lab-definitions/firewall/ at runtime via

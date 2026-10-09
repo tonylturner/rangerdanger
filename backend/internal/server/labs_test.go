@@ -56,11 +56,11 @@ func labServer(t *testing.T, fake *lifecycleDocker) (*Server, *gorm.DB) {
 	}
 	var o *orchestrator.Orchestrator
 	if fake == nil {
-		o = orchestrator.NewWithDocker(nil, nil, "")
+		o = orchestrator.NewWithDocker(nil, "")
 	} else {
-		o = orchestrator.NewWithDocker(fake, nil, "")
+		o = orchestrator.NewWithDocker(fake, "")
 	}
-	return &Server{db: database, orchestrator: o}, database
+	return &Server{db: database, orchestrator: o, rng: servingRange(nil)}, database
 }
 func seedHandlerLab(t *testing.T, database *gorm.DB) {
 	t.Helper()

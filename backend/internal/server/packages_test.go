@@ -31,6 +31,7 @@ func activePackageServer(database *gorm.DB) *Server {
 	return &Server{
 		db:  database,
 		cfg: &config.Config{Package: testPackageID},
+		rng: servingRange(nil),
 		catalog: &labs.Catalog{Packages: []labs.Package{
 			{ID: "other-package", Title: "Other", Revision: 2, Template: labs.LabYAML{ID: "other-workshop"}},
 			{ID: testPackageID, Title: "Test", Revision: 1, Template: labs.LabYAML{ID: testTemplateID}},

@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // StepExecutionResult is the response from executing a scenario step action.
@@ -95,7 +96,7 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		}
 
 	case "firewall":
-		result := s.executeFirewallAction(c.Request.Context(), step.Action.Config)
+		result := s.executeFirewallAction(c.Request.Context(), rangeOf(c), step.Action.Config)
 		results = append(results, result)
 
 	case "check":
@@ -227,8 +228,8 @@ func sourceZoneLabel(source string) string {
 }
 
 // executeFirewallAction applies a firewall configuration.
-func (s *Server) executeFirewallAction(ctx context.Context, configName string) StepActionResult {
-	warnings, err := s.applyFirewallConfigInternal(ctx, configName)
+func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Generation, configName string) StepActionResult {
+	warnings, err := s.applyFirewallConfigInternal(ctx, gen, configName)
 	if err != nil {
 		return StepActionResult{
 			Action:  "Apply firewall: " + configName,

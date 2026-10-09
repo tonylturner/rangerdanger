@@ -20,6 +20,7 @@ func invokePcapDownloadFile(s *Server, name string) *httptest.ResponseRecorder {
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/pcap/download/"+name, nil)
 	c.Params = gin.Params{{Key: "name", Value: name}}
+	c.Set(generationKey, s.rng.(*fakeRange).gen)
 	s.handlePcapDownloadFile(c)
 	return rec
 }

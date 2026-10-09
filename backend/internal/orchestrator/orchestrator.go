@@ -56,18 +56,17 @@ type Orchestrator struct {
 	logger         *log.Logger
 	dockerClient   DockerAPI
 	concreteClient *client.Client
-	containdClient *containd.Client
 	labDefsDir     string
 }
 
 // New creates a new orchestrator with Docker SDK client.
-func New(containdClient *containd.Client, labDefsDir string) *Orchestrator {
+func New(labDefsDir string) *Orchestrator {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Printf("WARNING: Docker client init failed: %v (orchestrator will use stub mode)", err)
-		return &Orchestrator{logger: log.Default(), dockerClient: nil, containdClient: containdClient, labDefsDir: labDefsDir}
+		return &Orchestrator{logger: log.Default(), dockerClient: nil, labDefsDir: labDefsDir}
 	}
-	return &Orchestrator{logger: log.Default(), dockerClient: cli, concreteClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
+	return &Orchestrator{logger: log.Default(), dockerClient: cli, concreteClient: cli, labDefsDir: labDefsDir}
 }
 
 // DockerClient returns the underlying Docker client for direct API access.
@@ -78,12 +77,13 @@ func (o *Orchestrator) DockerClient() *client.Client {
 
 // NewWithDocker constructs an orchestrator around a Docker implementation.
 // DockerClient remains nil unless New created the real SDK client.
-func NewWithDocker(cli DockerAPI, containdClient *containd.Client, labDefsDir string) *Orchestrator {
-	return &Orchestrator{logger: log.Default(), dockerClient: cli, containdClient: containdClient, labDefsDir: labDefsDir}
+func NewWithDocker(cli DockerAPI, labDefsDir string) *Orchestrator {
+	return &Orchestrator{logger: log.Default(), dockerClient: cli, labDefsDir: labDefsDir}
 }
 
-// ProvisionLabInstance creates containers for lab nodes.
-func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, instance *models.LabInstance) error {
+// ProvisionLabInstance creates containers for lab nodes and imports the
+// template's firewall policy through firewall, the range's containd client.
+func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, instance *models.LabInstance, firewall *containd.Client) error {
 	o.logger.Printf("[lab %s] provisioning", instance.ID)
 
 	var template models.LabTemplate
@@ -219,13 +219,13 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 	}
 
 	// Push lab-specific firewall config to containd
-	if template.FirewallConfigPath != "" && o.containdClient != nil {
+	if template.FirewallConfigPath != "" && firewall != nil {
 		cfgPath := filepath.Join(o.labDefsDir, template.FirewallConfigPath)
 		data, err := os.ReadFile(cfgPath)
 		if err != nil {
 			o.logger.Printf("[lab %s] failed to read firewall config %s: %v", instance.ID, cfgPath, err)
 			failures = append(failures, fmt.Errorf("read firewall config %s: %w", cfgPath, err))
-		} else if warnings, err := o.containdClient.ImportConfig(ctx, data); err != nil {
+		} else if warnings, err := firewall.ImportConfig(ctx, data); err != nil {
 			o.logger.Printf("[lab %s] failed to import firewall config: %v", instance.ID, err)
 			failures = append(failures, fmt.Errorf("import firewall config: %w", err))
 		} else {

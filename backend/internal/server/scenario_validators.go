@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
@@ -14,6 +15,7 @@ type validatorInput struct {
 	state        map[string]any
 	audit        []map[string]any
 	activeConfig string
+	firewall     *containd.Client // the range firewall, for capture evidence
 }
 
 // scenarioValidator is the Go code behind one declared validator key and
@@ -34,7 +36,7 @@ var scenarioValidators = map[string]scenarioValidator{
 	"us-baseline-assessment": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityCaptureFirewall},
 		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return s.validateBaselineAssessment(ctx, in.state, in.audit, in.activeConfig)
+			return s.validateBaselineAssessment(ctx, in.firewall, in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-segmentation-requirements": {

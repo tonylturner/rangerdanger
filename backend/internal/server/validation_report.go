@@ -125,12 +125,10 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	s.activeConfigMu.RUnlock()
 
 	hash := "unknown"
-	if s.containdClient != nil {
-		if h, err := s.containdClient.GetFirewallHash(ctx); err == nil && h != "" {
-			hash = strings.TrimPrefix(h, "sha256:")
-			if len(hash) > 12 {
-				hash = hash[:12]
-			}
+	if h, err := rangeOf(c).Containd().GetFirewallHash(ctx); err == nil && h != "" {
+		hash = strings.TrimPrefix(h, "sha256:")
+		if len(hash) > 12 {
+			hash = hash[:12]
 		}
 	}
 

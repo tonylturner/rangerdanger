@@ -11,16 +11,16 @@ var configEnvKeys = []string{
 	"RANGERDANGER_DB_PATH",
 	"RANGERDANGER_ALLOWED_ORIGINS",
 	"RANGERDANGER_LAB_DEFINITIONS_PATH",
-	"RANGERDANGER_CONTAIND_API_URL",
-	"RANGERDANGER_CONTAIND_CONFIG_PATH",
 	"RANGERDANGER_PACKAGE",
+	"RANGERDANGER_ROOT",
+	"RANGERDANGER_MODE",
 	"OTLAB_HTTP_PORT",
 	"OTLAB_DB_PATH",
 	"OTLAB_ALLOWED_ORIGINS",
 	"OTLAB_LAB_DEFINITIONS_PATH",
-	"OTLAB_CONTAIND_API_URL",
-	"OTLAB_CONTAIND_CONFIG_PATH",
 	"OTLAB_PACKAGE",
+	"OTLAB_ROOT",
+	"OTLAB_MODE",
 }
 
 // isolateConfigEnv prevents the developer's shell environment from influencing
@@ -53,16 +53,16 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 		"RANGERDANGER_DB_PATH":              "var/test.sqlite",
 		"RANGERDANGER_ALLOWED_ORIGINS":      "https://portal.example",
 		"RANGERDANGER_LAB_DEFINITIONS_PATH": "fixtures/labs",
-		"RANGERDANGER_CONTAIND_API_URL":     "http://firewall.example:9000",
-		"RANGERDANGER_CONTAIND_CONFIG_PATH": "fixtures/weak.json",
 		"RANGERDANGER_PACKAGE":              "eu-iec104-substation",
+		"RANGERDANGER_ROOT":                 "/srv/rangerdanger",
+		"RANGERDANGER_MODE":                 "release",
 		"OTLAB_HTTP_PORT":                   "9999",
 		"OTLAB_DB_PATH":                     "legacy.sqlite",
 		"OTLAB_ALLOWED_ORIGINS":             "https://legacy.example",
 		"OTLAB_LAB_DEFINITIONS_PATH":        "legacy-labs",
-		"OTLAB_CONTAIND_API_URL":            "http://legacy-firewall:8080",
-		"OTLAB_CONTAIND_CONFIG_PATH":        "legacy-weak.json",
 		"OTLAB_PACKAGE":                     "legacy-package",
+		"OTLAB_ROOT":                        "/legacy",
+		"OTLAB_MODE":                        "source",
 	} {
 		t.Setenv(key, value)
 	}
@@ -76,17 +76,25 @@ func TestLoadEnvironmentAndLegacyPrecedence(t *testing.T) {
 		DBPath:             "var/test.sqlite",
 		AllowedOrigins:     []string{"https://portal.example"},
 		LabDefinitionsPath: "fixtures/labs",
-		ContaindAPIURL:     "http://firewall.example:9000",
-		ContaindConfigPath: "fixtures/weak.json",
 		Package:            "eu-iec104-substation",
+		Root:               "/srv/rangerdanger",
+		Mode:               "release",
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %#v, want %#v", cfg, want)
 	}
 }
 
+// setRange sets the two variables the platform Compose file always provides.
+func setRange(t *testing.T) {
+	t.Helper()
+	t.Setenv("RANGERDANGER_ROOT", "/srv/rangerdanger")
+	t.Setenv("RANGERDANGER_MODE", "source")
+}
+
 func TestLoadDefaults(t *testing.T) {
 	isolateConfigEnv(t)
+	setRange(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -97,9 +105,9 @@ func TestLoadDefaults(t *testing.T) {
 		DBPath:             "backend/data/rangerdanger.db",
 		AllowedOrigins:     []string{"*"},
 		LabDefinitionsPath: "lab-definitions",
-		ContaindAPIURL:     "http://firewall:8080",
-		ContaindConfigPath: "lab-definitions/firewall/substation-weak.json",
 		Package:            DefaultPackage,
+		Root:               "/srv/rangerdanger",
+		Mode:               "source",
 	}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("Load() = %#v, want defaults %#v", cfg, want)
@@ -108,6 +116,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadPromotesLegacyHTTPPort(t *testing.T) {
 	isolateConfigEnv(t)
+	setRange(t)
 	t.Setenv("OTLAB_HTTP_PORT", "8181")
 
 	cfg, err := Load()
@@ -116,5 +125,25 @@ func TestLoadPromotesLegacyHTTPPort(t *testing.T) {
 	}
 	if cfg.HTTPPort != 8181 {
 		t.Errorf("HTTPPort = %d, want legacy value 8181", cfg.HTTPPort)
+	}
+}
+
+func TestLoadRequiresRootAndMode(t *testing.T) {
+	tests := map[string]map[string]string{
+		"no root":       {"RANGERDANGER_MODE": "source"},
+		"relative root": {"RANGERDANGER_ROOT": "rangerdanger", "RANGERDANGER_MODE": "source"},
+		"no mode":       {"RANGERDANGER_ROOT": "/srv/rangerdanger"},
+		"unknown mode":  {"RANGERDANGER_ROOT": "/srv/rangerdanger", "RANGERDANGER_MODE": "offline"},
+	}
+	for name, env := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateConfigEnv(t)
+			for key, value := range env {
+				t.Setenv(key, value)
+			}
+			if cfg, err := Load(); err == nil {
+				t.Errorf("Load() = %#v, want an error", cfg)
+			}
+		})
 	}
 }

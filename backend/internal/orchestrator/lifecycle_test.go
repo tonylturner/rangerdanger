@@ -64,7 +64,7 @@ func TestProvisionLabInstance(t *testing.T) {
 			if tc.stub {
 				o.dockerClient = nil
 			}
-			err := o.ProvisionLabInstance(context.Background(), database, instance)
+			err := o.ProvisionLabInstance(context.Background(), database, instance, nil)
 			if tc.want == "error" && (err == nil || !strings.Contains(err.Error(), "alpha")) {
 				t.Fatalf("error = %v", err)
 			}
@@ -100,7 +100,7 @@ func TestProvisionBadTopology(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := &Orchestrator{logger: log.New(io.Discard, "", 0)}
-	if err := o.ProvisionLabInstance(context.Background(), database, inst); err == nil || inst.Status != "error" {
+	if err := o.ProvisionLabInstance(context.Background(), database, inst, nil); err == nil || inst.Status != "error" {
 		t.Fatalf("err=%v status=%s", err, inst.Status)
 	}
 }
@@ -210,8 +210,8 @@ func TestProvisionFirewallImportFailure(t *testing.T) {
 	if err := database.Model(&models.LabTemplate{}).Where("id = ?", inst.TemplateID).Update("firewall_config_path", "policy.json").Error; err != nil {
 		t.Fatal(err)
 	}
-	o := &Orchestrator{logger: log.New(io.Discard, "", 0), labDefsDir: dir, containdClient: containd.NewClient("http://127.0.0.1:1")}
-	err := o.ProvisionLabInstance(context.Background(), database, inst)
+	o := &Orchestrator{logger: log.New(io.Discard, "", 0), labDefsDir: dir}
+	err := o.ProvisionLabInstance(context.Background(), database, inst, containd.NewClient("http://127.0.0.1:1"))
 	if err == nil || !strings.Contains(err.Error(), "import firewall config") || inst.Status != "error" {
 		t.Fatalf("err=%v status=%s", err, inst.Status)
 	}
@@ -231,7 +231,7 @@ func TestProvisionNodeSaveFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := &Orchestrator{logger: log.New(io.Discard, "", 0)}
-	err := o.ProvisionLabInstance(context.Background(), database, inst)
+	err := o.ProvisionLabInstance(context.Background(), database, inst, nil)
 	if err == nil || !strings.Contains(err.Error(), "node alpha save") || inst.Status != "error" {
 		t.Fatalf("err=%v status=%s", err, inst.Status)
 	}

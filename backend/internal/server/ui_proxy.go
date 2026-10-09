@@ -178,7 +178,7 @@ func singleJoiningSlash(a, b string) string {
 // This enables same-origin access, allowing the containd UI to be embedded
 // in iframes with full authentication/cookie support.
 func (s *Server) handleProxyContaind(c *gin.Context) {
-	target, err := url.Parse(s.containdClient.BaseURL)
+	target, err := url.Parse(rangeOf(c).Containd().BaseURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid containd url"})
 		return

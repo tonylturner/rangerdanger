@@ -79,10 +79,10 @@ func newTestServer(t *testing.T, containdURL string) *Server {
 		LabDefinitionsPath: filepath.Join(repoRoot, "lab-definitions"),
 	}
 	return &Server{
-		engine:         gin.New(),
-		cfg:            cfg,
-		containdClient: containd.NewClient(containdURL),
-		activeConfig:   "weak",
+		engine:       gin.New(),
+		cfg:          cfg,
+		rng:          servingRange(containd.NewClient(containdURL)),
+		activeConfig: "weak",
 	}
 }
 
@@ -90,7 +90,7 @@ func newTestServer(t *testing.T, containdURL string) *Server {
 // router/request/recorder wiring in every test.
 func invoke(s *Server, handler gin.HandlerFunc, method, path string, body any) (*httptest.ResponseRecorder, gin.H) {
 	router := gin.New()
-	router.Handle(method, path, handler)
+	router.Handle(method, path, s.rangeBound(), handler)
 
 	var bodyReader io.Reader
 	if body != nil {

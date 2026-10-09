@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 // PolicyRuleDiff shows a single rule change between two configs.
@@ -116,7 +118,7 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		return
 	}
 
-	warnings, err := s.applyFirewallConfigInternal(c.Request.Context(), req.Config)
+	warnings, err := s.applyFirewallConfigInternal(c.Request.Context(), rangeOf(c), req.Config)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -176,7 +178,7 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // X-Containd-Warnings) so callers can surface partial failures — typical
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
-func (s *Server) applyFirewallConfigInternal(ctx context.Context, configName string) ([]string, error) {
+func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
 	if configName != "weak" && configName != "improved" {
 		return nil, fmt.Errorf("config must be 'weak' or 'improved'")
 	}
@@ -192,11 +194,7 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, configName str
 		return nil, err
 	}
 
-	if s.containdClient == nil {
-		return nil, fmt.Errorf("containd client not configured")
-	}
-
-	warnings, err := s.containdClient.ImportConfig(ctx, data)
+	warnings, err := gen.Containd().ImportConfig(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
@@ -210,11 +208,15 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, configName str
 		source = "hardened-reference"
 	}
 
-	s.activeConfigMu.Lock()
-	s.activeConfig = configName
-	s.policySource = source
-	s.recordApplyLocked(data)
-	s.activeConfigMu.Unlock()
+	if !gen.Commit(func() {
+		s.activeConfigMu.Lock()
+		s.activeConfig = configName
+		s.policySource = source
+		s.recordApplyLocked(data)
+		s.activeConfigMu.Unlock()
+	}) {
+		return nil, errRangeStopped
+	}
 
 	return warnings, nil
 }
@@ -248,12 +250,8 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		return
 	}
 
-	if s.containdClient == nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "containd client not configured"})
-		return
-	}
-
-	warnings, err := s.containdClient.ImportConfig(c.Request.Context(), data)
+	gen := rangeOf(c)
+	warnings, err := gen.Containd().ImportConfig(c.Request.Context(), data)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
 		return
@@ -265,11 +263,16 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 	// status banner can distinguish "(Lab 1.4 plan)" from a future
 	// "(your containd commit)" state that Phase B will detect via a
 	// background poller.
-	s.activeConfigMu.Lock()
-	s.activeConfig = "custom"
-	s.policySource = "plan-custom"
-	s.recordApplyLocked(data)
-	s.activeConfigMu.Unlock()
+	if !gen.Commit(func() {
+		s.activeConfigMu.Lock()
+		s.activeConfig = "custom"
+		s.policySource = "plan-custom"
+		s.recordApplyLocked(data)
+		s.activeConfigMu.Unlock()
+	}) {
+		rangeUnavailable(c)
+		return
+	}
 
 	resp := gin.H{
 		"status":        "applied",
