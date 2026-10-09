@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { ApiError, getRange, getWorkshopGraph, requestRange } from "./api";
+import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "./live-queries";
 import {
   INITIAL_OBSERVATION,
   IDLE_POLL_MS,
@@ -142,11 +143,10 @@ describe("range-scoped queries", () => {
       ["packages", "active"],
       ["scenarios", "us-dnp3-substation"],
       ["workshop", "graph"],
-      ["workshop", "status"],
-      ["workshop-status"],
+      WORKSHOP_STATUS_KEY,
       ["substation-health"],
       ["firewall-rules"],
-      ["firewall-active"],
+      FIREWALL_ACTIVE_KEY,
       ["traffic-status"],
       ["pcap-status"],
       ["segmentation", "live-events"],
@@ -161,6 +161,7 @@ describe("range-scoped queries", () => {
     client.setQueryData(["workshop", "graph"], { nodes: ["old"], edges: [] });
     client.setQueryData(["traffic-status"], { generating: true });
     client.setQueryData(["packages", "active"], { id: "us" });
+    client.setQueryData(WORKSHOP_STATUS_KEY, { firewall_config: "improved" });
 
     await resetRangeScopedQueries(client);
 
@@ -168,6 +169,7 @@ describe("range-scoped queries", () => {
     expect(client.getQueryData(["workshop", "graph"])).toBeUndefined();
     expect(client.getQueryData(["traffic-status"])).toBeUndefined();
     expect(client.getQueryData(["packages", "active"])).toBeUndefined();
+    expect(client.getQueryData(WORKSHOP_STATUS_KEY)).toBeUndefined();
     client.clear();
   });
 });

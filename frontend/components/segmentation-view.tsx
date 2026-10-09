@@ -21,6 +21,7 @@ import {
   type NetworkEvent,
   type PolicyComparison,
 } from "../lib/api";
+import { FIREWALL_ACTIVE_KEY } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
@@ -120,7 +121,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // manual containd commits the policy-observer flips to
   // "manual-custom" within its grace window.
   const { data: activeData } = useQuery({
-    queryKey: ["firewall-active"],
+    queryKey: FIREWALL_ACTIVE_KEY,
     queryFn: getActiveFirewallConfig,
     refetchInterval: 5000,
     staleTime: 2000,

@@ -25,11 +25,11 @@ import {
   getPcapDownloadUrl,
   getPcapStatus,
   getTrafficStatus,
-  getWorkshopStatus,
   startPcapCapture,
   startTrafficGeneration,
   stopPcapCapture,
 } from "../lib/api";
+import { useWorkshopStatus } from "../lib/live-queries";
 import {
   OBSERVED_FLOWS,
   resolveLiveness,
@@ -191,11 +191,7 @@ export function TrafficMatrixView({
   // Same React Query keys as the rest of the app so we share cache
   // and so invalidation from this drawer (after Generate Traffic)
   // refreshes the canvas Traffic edges in the same render cycle.
-  const { data: workshopStatus } = useQuery({
-    queryKey: ["workshop", "status"],
-    queryFn: getWorkshopStatus,
-    refetchInterval: 5000,
-  });
+  const { data: workshopStatus } = useWorkshopStatus(5000);
   const { data: trafficStatus } = useQuery({
     queryKey: ["traffic-status"],
     queryFn: getTrafficStatus,

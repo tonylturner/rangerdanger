@@ -1,18 +1,28 @@
 "use client";
 
-// Live substation and firewall reads shared by the process views, the
-// load simulator and the exercise runner. They go through React Query
-// so the range lifecycle applies to them like every other query: a
+// Live substation, firewall and workshop-status reads shared by the
+// process views, the load simulator, the overviews, the network console
+// and the exercise runner. They go through React Query so the range
+// lifecycle applies to them like every other query: a
 // not-ready answer is not retried, and a range change resets them
 // (lib/range.ts). Components on one page that poll the same read share
 // one request at the fastest interval any of them asks for.
 
 import { useCallback } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getActiveFirewallConfig, getSubstationAudit, getSubstationNetworkEvents, getSubstationState } from "./api";
+import {
+  getActiveFirewallConfig,
+  getSubstationAudit,
+  getSubstationNetworkEvents,
+  getSubstationState,
+  getWorkshopStatus,
+} from "./api";
 
 export const SUBSTATION_KEY = ["substation"] as const;
 export const FIREWALL_ACTIVE_KEY = ["firewall-active"] as const;
+// GET /api/workshop/status: the one key for it, so a policy apply that
+// invalidates it refreshes every view that shows it.
+export const WORKSHOP_STATUS_KEY = ["workshop", "status"] as const;
 
 // The US RTAC reads. enabled is false wherever the active package's
 // operator view is not the US one (lib/operator-view.ts): those ranges
@@ -49,6 +59,10 @@ export function useSubstationNetworkEvents(intervalMs: number) {
     queryFn: getSubstationNetworkEvents,
     refetchInterval: intervalMs,
   });
+}
+
+export function useWorkshopStatus(intervalMs: number) {
+  return useQuery({ queryKey: WORKSHOP_STATUS_KEY, queryFn: getWorkshopStatus, refetchInterval: intervalMs });
 }
 
 export function useActiveFirewall(intervalMs: number) {

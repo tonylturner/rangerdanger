@@ -1,9 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { getWorkshopStatus } from "../lib/api";
 import { CONTROL_CENTRE_IP, IEC104_PORT, RTU_IP } from "../lib/firewall-sessions";
 import { controlCentreHealth, controlCentreLinkText, telemetrySummary, telemetryText } from "../lib/operator-format";
+import { useWorkshopStatus } from "../lib/live-queries";
 import { useOperatorState } from "../lib/operator-queries";
 import { isHardened } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
@@ -18,7 +17,7 @@ import { DashboardStatusCard, QuickLink, WorkshopStatusCard } from "./overview-c
 const CC_FLOW = `${CONTROL_CENTRE_IP} → ${RTU_IP}:${IEC104_PORT}`;
 
 function useEuStatus() {
-  const ws = useQuery({ queryKey: ["workshop-status"], queryFn: getWorkshopStatus, refetchInterval: 5000 });
+  const ws = useWorkshopStatus(5000);
   const operator = useOperatorState(5000);
   return {
     ws: ws.data,

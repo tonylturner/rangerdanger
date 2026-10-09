@@ -6,15 +6,17 @@
 
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { applyFirewallConfig } from "./api";
+import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "./live-queries";
 import { isRangeNotReady } from "./range";
 import { errorMessage } from "./utils";
 
 // Everything that shows the firewall state: the canvas reads the rules,
-// the header badge the workshop status, the drawer the active policy.
+// the header badge and the overviews the workshop status, the drawer
+// the active policy.
 // Refreshing all three keeps every entry point in step whichever one
 // applied the policy; without firewall-active, the drawer's Active
 // Policy banner stayed on the prior value until its own 5s refetch.
-const POLICY_QUERY_KEYS = [["firewall-rules"], ["workshop", "status"], ["firewall-active"]] as const;
+const POLICY_QUERY_KEYS = [["firewall-rules"], WORKSHOP_STATUS_KEY, FIREWALL_ACTIVE_KEY] as const;
 
 export async function applyPackagePolicy(client: QueryClient, name: string): Promise<void> {
   await applyFirewallConfig(name);

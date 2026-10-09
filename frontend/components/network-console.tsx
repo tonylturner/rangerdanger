@@ -16,7 +16,6 @@ import "reactflow/dist/style.css";
 import { useQuery } from "@tanstack/react-query";
 import {
   getWorkshopGraph,
-  getWorkshopStatus,
   getFirewallRules,
   getTrafficStatus,
 } from "../lib/api";
@@ -31,6 +30,7 @@ import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
 import { isRangeNotReady } from "../lib/range";
 import { controlCentreLinkText } from "../lib/operator-format";
+import { useWorkshopStatus } from "../lib/live-queries";
 import { useOperatorView } from "../lib/operator-queries";
 import { networkMapHeading } from "../lib/operator-view";
 import {
@@ -99,11 +99,7 @@ export function NetworkConsole() {
   });
 
   // Validate workshop environment on render
-  const { data: workshopStatus, error: workshopStatusError } = useQuery({
-    queryKey: ["workshop", "status"],
-    queryFn: getWorkshopStatus,
-    refetchInterval: 10000,
-  });
+  const { data: workshopStatus, error: workshopStatusError } = useWorkshopStatus(10000);
 
   // Pulse Rook briefly whenever the firewall config changes. Initial
   // load is skipped via the ref so we don't pulse on first paint.

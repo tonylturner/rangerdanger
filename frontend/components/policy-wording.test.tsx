@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PackageSummary, WorkshopStatus } from "../lib/api";
+import { WORKSHOP_STATUS_KEY } from "../lib/live-queries";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { packagePolicies } from "../lib/policy-wording";
 import { EuDashboard } from "./eu-overview";
@@ -16,7 +17,7 @@ function text(html: string): string {
 function renderWith(pkg: PackageSummary | undefined, node: ReactNode, status?: WorkshopStatus): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (pkg) client.setQueryData(["packages", "active"], pkg);
-  if (status) client.setQueryData(["workshop-status"], status);
+  if (status) client.setQueryData(WORKSHOP_STATUS_KEY, status);
   const html = renderToStaticMarkup(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
   client.clear();
   return text(html);

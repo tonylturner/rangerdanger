@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { FIREWALL_ACTIVE_KEY, SUBSTATION_KEY, substationAuditQuery, substationStateQuery } from "./live-queries";
+import {
+  FIREWALL_ACTIVE_KEY,
+  SUBSTATION_KEY,
+  WORKSHOP_STATUS_KEY,
+  substationAuditQuery,
+  substationStateQuery,
+} from "./live-queries";
 import { EU_PACKAGE, US_PACKAGE } from "./operator-fixtures.test-util";
 import { resolveOperatorView, usFeederPolling } from "./operator-view";
 import { isRangeScopedQuery, resetRangeScopedQueries } from "./range";
@@ -10,6 +16,7 @@ const LIVE_KEYS = [
   [...SUBSTATION_KEY, "audit"],
   [...SUBSTATION_KEY, "network-events"],
   FIREWALL_ACTIVE_KEY,
+  WORKSHOP_STATUS_KEY,
 ];
 
 describe("live queries", () => {

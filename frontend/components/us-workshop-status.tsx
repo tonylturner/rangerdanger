@@ -1,17 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getWorkshopStatus, getSubstationHealth } from "../lib/api";
+import { getSubstationHealth } from "../lib/api";
+import { useWorkshopStatus } from "../lib/live-queries";
 import { isRangeNotReady } from "../lib/range";
 import { WorkshopStatusCard } from "./overview-cards";
 
 // The US package's workshop status: RTAC and field-device health.
 export function UsWorkshopStatus() {
-  const { data: ws, error: wsError } = useQuery({
-    queryKey: ["workshop-status"],
-    queryFn: getWorkshopStatus,
-    refetchInterval: 5000,
-  });
+  const { data: ws, error: wsError } = useWorkshopStatus(5000);
 
   const { data: health } = useQuery({
     queryKey: ["substation-health"],

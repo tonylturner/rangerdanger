@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
+import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "./live-queries";
 import { applyPackagePolicy, policyApplyErrorText } from "./policy-apply";
 import { RangeNotReadyError } from "./range";
 
@@ -22,8 +23,8 @@ describe("applyPackagePolicy", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/firewall/apply", expect.objectContaining({ method: "POST", body: '{"config":"improved"}' }));
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([
       ["firewall-rules"],
-      ["workshop", "status"],
-      ["firewall-active"],
+      [...WORKSHOP_STATUS_KEY],
+      [...FIREWALL_ACTIVE_KEY],
     ]);
   });
 

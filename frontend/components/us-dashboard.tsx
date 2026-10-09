@@ -1,18 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { MetricsOverview } from "./metrics-overview";
 import { DashboardStatusCard, QuickLink } from "./overview-cards";
-import { getWorkshopStatus } from "../lib/api";
+import { useWorkshopStatus } from "../lib/live-queries";
 import { isRangeNotReady } from "../lib/range";
 
 // The US package's overview: RTAC, field devices, feeder metrics.
 export function UsDashboard() {
-  const { data: ws, error: wsError } = useQuery({
-    queryKey: ["workshop-status"],
-    queryFn: getWorkshopStatus,
-    refetchInterval: 5000,
-  });
+  const { data: ws, error: wsError } = useWorkshopStatus(5000);
 
   // While the range is being replaced nothing is offline, it is not
   // there yet; the cards stay neutral and the range banner says why.
