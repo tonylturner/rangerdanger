@@ -33,8 +33,8 @@ func activePackageServer(database *gorm.DB) *Server {
 		cfg: &config.Config{Package: testPackageID},
 		rng: servingRange(nil),
 		catalog: &labs.Catalog{Packages: []labs.Package{
-			{ID: "other-package", Title: "Other", Revision: 2, Template: labs.LabYAML{ID: "other-workshop"}},
-			{ID: testPackageID, Title: "Test", Revision: 1, Template: labs.LabYAML{ID: testTemplateID}},
+			{ID: "other-package", Title: "Other", Revision: 2, Template: labs.LabYAML{ID: "other-workshop"}, OperatorView: labs.OperatorViewEUIEC104},
+			{ID: testPackageID, Title: "Test", Revision: 1, Template: labs.LabYAML{ID: testTemplateID}, OperatorView: labs.OperatorViewUSDNP3},
 		}},
 	}
 }
@@ -69,11 +69,14 @@ func TestListPackagesMarksActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []packageSummary{
-		{ID: "other-package", Title: "Other", Revision: 2},
-		{ID: testPackageID, Title: "Test", Revision: 1, Active: true},
+		{ID: "other-package", Title: "Other", Revision: 2, OperatorView: "eu-iec104"},
+		{ID: testPackageID, Title: "Test", Revision: 1, Active: true, OperatorView: "us-dnp3-substation"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("packages = %#v, want %#v", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), `"operator_view":"eu-iec104"`) {
+		t.Errorf("GET /api/packages = %s, want the operator_view field", rec.Body)
 	}
 }
 
@@ -194,6 +197,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 	wantInfo := labs.PackageInfo{
 		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 1,
 		Capabilities: []string{"process.electrical", "policy.containd", "audit.device-control", "capture.firewall"},
+		OperatorView: "us-dnp3-substation",
 	}
 	if !ok || !reflect.DeepEqual(info, wantInfo) {
 		t.Errorf("default package = %#v, %v; want %#v", info, ok, wantInfo)
@@ -204,6 +208,13 @@ func TestShippedPackagesLoad(t *testing.T) {
 		}
 		if pkg.FirewallConfigPath != "firewall/substation-weak.json" {
 			t.Errorf("US firewall config path = %q, want firewall/substation-weak.json", pkg.FirewallConfigPath)
+		}
+		wantPolicies := map[string]string{"weak": "firewall/substation-weak.json", "improved": "firewall/substation-improved.json"}
+		if !reflect.DeepEqual(pkg.Policies, wantPolicies) || pkg.ICSRules != labs.ICSRulesAllowed {
+			t.Errorf("US policies = %v, ics_rules = %q; want %v, allowed", pkg.Policies, pkg.ICSRules, wantPolicies)
+		}
+		if name, ok := pkg.PolicyName(pkg.FirewallConfigPath); !ok || name != "weak" {
+			t.Errorf("US default policy name = %q, %v; want weak", name, ok)
 		}
 		if pkg.Template.ID != "substation-segmentation" {
 			t.Errorf("US topology id = %q, want substation-segmentation", pkg.Template.ID)

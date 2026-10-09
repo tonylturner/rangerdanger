@@ -87,12 +87,15 @@ revision: 3
 topology: topology.yml
 scenarios: scenarios
 capabilities: [process.electrical]
+policies:
+  weak: firewall/weak.json
+operator_view: us-dnp3-substation
 `
 }
 
 // writePackage writes a self-contained package directory: its manifest,
-// a topology whose firewall_config resolves inside the package, and the
-// given scenario files keyed by file name.
+// a topology whose firewall_config resolves inside the package to the one
+// named policy, and the given scenario files keyed by file name.
 func writePackage(t *testing.T, definitions, id, topologyID string, scenarios map[string]string) string {
 	t.Helper()
 	dir := filepath.Join(definitions, "packages", id)
@@ -152,12 +155,18 @@ func TestSeedImportsPackage(t *testing.T) {
 	}
 
 	info, ok := catalog.Info("alpha")
-	want := PackageInfo{ID: "alpha", Title: "Package alpha", Revision: 3, Capabilities: []string{CapabilityProcessElectrical}}
+	want := PackageInfo{ID: "alpha", Title: "Package alpha", Revision: 3, Capabilities: []string{CapabilityProcessElectrical}, OperatorView: OperatorViewUSDNP3}
 	if !ok || !reflect.DeepEqual(info, want) {
 		t.Errorf("catalog.Info(alpha) = %#v, %v; want %#v", info, ok, want)
 	}
 	if got, want := catalog.Packages[0].FirewallConfigPath, "packages/alpha/firewall/weak.json"; got != want {
 		t.Errorf("firewall config path = %q, want %q (resolved from the topology directory)", got, want)
+	}
+	if got, want := catalog.Packages[0].Policies, map[string]string{"weak": "packages/alpha/firewall/weak.json"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("policies = %v, want %v (resolved from the package directory)", got, want)
+	}
+	if got := catalog.Packages[0].ICSRules; got != ICSRulesAllowed {
+		t.Errorf("ics_rules = %q, want the %q default", got, ICSRulesAllowed)
 	}
 
 	topology := catalog.Packages[0].Template
@@ -391,8 +400,46 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 		{"title", "package.yml", func(s string) string { return strings.Replace(s, `title: "Package alpha"`, `title: ""`, 1) }, "title must not be empty"},
 		{"revision", "package.yml", func(s string) string { return strings.Replace(s, "revision: 3", "revision: 0", 1) }, "revision must be at least 1"},
 		{"unknown capability", "package.yml", func(s string) string {
-			return strings.Replace(s, "[process.electrical]", "[process.electrical, protocol.iec104]", 1)
-		}, `unknown capability "protocol.iec104"`},
+			return strings.Replace(s, "[process.electrical]", "[process.electrical, protocol.goose]", 1)
+		}, `unknown capability "protocol.goose"`},
+		{"duplicate capability", "package.yml", func(s string) string {
+			return strings.Replace(s, "[process.electrical]", "[process.electrical, process.electrical]", 1)
+		}, `duplicate capability "process.electrical"`},
+		{"missing operator view", "package.yml", func(s string) string {
+			return strings.Replace(s, "operator_view: us-dnp3-substation\n", "", 1)
+		}, `operator_view must be us-dnp3-substation or eu-iec104, got ""`},
+		{"unknown operator view", "package.yml", func(s string) string {
+			return strings.Replace(s, "operator_view: us-dnp3-substation", "operator_view: hmi", 1)
+		}, `operator_view must be us-dnp3-substation or eu-iec104, got "hmi"`},
+		{"unknown ics rules", "package.yml", func(s string) string { return s + "ics_rules: maybe\n" }, `ics_rules must be allowed or forbidden, got "maybe"`},
+		{"missing policies", "package.yml", func(s string) string {
+			return strings.Replace(s, "policies:\n  weak: firewall/weak.json\n", "", 1)
+		}, "policies must name at least one policy file"},
+		{"empty policies", "package.yml", func(s string) string {
+			return strings.Replace(s, "policies:\n  weak: firewall/weak.json\n", "policies: {}\n", 1)
+		}, "policies must name at least one policy file"},
+		{"policy name not a slug", "package.yml", func(s string) string {
+			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  Strict: firewall/strict.json", 1)
+		}, `policy name "Strict" must be lowercase`},
+		{"missing policy file", "package.yml", func(s string) string {
+			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  improved: firewall/missing.json", 1)
+		}, "policy improved: open"},
+		{"policy outside definitions", "package.yml", func(s string) string {
+			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  improved: ../../../outside.json", 1)
+		}, `policy improved "../../../outside.json": must stay inside the definitions directory`},
+		{"two names share a policy file", "package.yml", func(s string) string {
+			return strings.Replace(s, "  weak: firewall/weak.json", "  weak: firewall/weak.json\n  baseline: firewall/../firewall/weak.json", 1)
+		}, "policies baseline and weak name the same file packages/alpha/firewall/weak.json"},
+		{"default is not a named policy", "package.yml", func(s string) string {
+			return strings.Replace(s, "  weak: firewall/weak.json", "  improved: firewall/improved.json", 1)
+		}, "firewall_config packages/alpha/firewall/weak.json is not one of the package policies"},
+		{"missing default policy", "topology.yml", func(s string) string {
+			return strings.Replace(s, "firewall_config: firewall/weak.json\n", "", 1)
+		}, "firewall_config must name the package's default policy"},
+		{"topology outside definitions", "package.yml", func(s string) string {
+			return strings.Replace(s, "topology: topology.yml", "topology: ../../../outside.yml", 1)
+		}, `topology "../../../outside.yml" must stay inside the definitions directory`},
+		{"invalid policy JSON", "firewall/weak.json", func(string) string { return "{" }, "policy weak: packages/alpha/firewall/weak.json: invalid JSON"},
 		{"missing topology", "package.yml", func(s string) string { return strings.Replace(s, "topology.yml", "missing.yml", 1) }, "topology: open"},
 		{"missing scenarios directory", "package.yml", func(s string) string {
 			return strings.Replace(s, "scenarios: scenarios", "scenarios: missing", 1)
@@ -418,6 +465,9 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 			definitions := t.TempDir()
 			dir := writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
 			writeDefinition(t, filepath.Join(definitions, "..", "outside.json"), "{}")
+			writeDefinition(t, filepath.Join(definitions, "..", "outside.yml"), validTopologyYAML)
+			writeDefinition(t, filepath.Join(dir, "firewall", "improved.json"), "{}")
+			writeDefinition(t, filepath.Join(dir, "firewall", "strict.json"), "{}")
 			path := filepath.Join(dir, test.file)
 			data, err := os.ReadFile(path)
 			if err != nil {

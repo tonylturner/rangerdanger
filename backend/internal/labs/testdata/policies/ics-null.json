@@ -1,0 +1,1 @@
+{"firewall": {"rules": [{"id": "any-to-rtu", "action": "ALLOW", "ics": null}]}}

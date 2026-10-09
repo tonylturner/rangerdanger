@@ -24,6 +24,15 @@ const (
 	CapabilityPolicyContaind     = "policy.containd"
 	CapabilityAuditDeviceControl = "audit.device-control"
 	CapabilityCaptureFirewall    = "capture.firewall"
+	CapabilityProtocolIEC104     = "protocol.iec104"
+	CapabilityProcessTruth       = "process.truth"
+)
+
+// Operator views a package declares in package.yml `operator_view`. The
+// frontend picks the operator page by this value.
+const (
+	OperatorViewUSDNP3   = "us-dnp3-substation"
+	OperatorViewEUIEC104 = "eu-iec104"
 )
 
 const (
@@ -39,6 +48,13 @@ var knownCapabilities = map[string]bool{
 	CapabilityPolicyContaind:     true,
 	CapabilityAuditDeviceControl: true,
 	CapabilityCaptureFirewall:    true,
+	CapabilityProtocolIEC104:     true,
+	CapabilityProcessTruth:       true,
+}
+
+var knownOperatorViews = map[string]bool{
+	OperatorViewUSDNP3:   true,
+	OperatorViewEUIEC104: true,
 }
 
 // slugPattern is the shape of package IDs, scenario IDs and step IDs.
@@ -58,6 +74,12 @@ type PackageYAML struct {
 	Topology     string   `yaml:"topology"`  // relative to package.yml
 	Scenarios    string   `yaml:"scenarios"` // directory, relative to package.yml
 	Capabilities []string `yaml:"capabilities"`
+	// Policies maps the names the firewall buttons and actions apply
+	// ("weak", "improved") to policy files relative to package.yml.
+	Policies     map[string]string `yaml:"policies"`
+	OperatorView string            `yaml:"operator_view"`
+	// ICSRules is ICSRulesAllowed or ICSRulesForbidden; empty means allowed.
+	ICSRules string `yaml:"ics_rules"`
 }
 
 // Package is one fully parsed and validated curriculum package.
@@ -71,7 +93,24 @@ type Package struct {
 	// topology file and re-expressed relative to the definitions directory,
 	// which is how the orchestrator joins it.
 	FirewallConfigPath string
-	Scenarios          []ScenarioYAML
+	// Policies maps each named policy to its file relative to the
+	// definitions directory. FirewallConfigPath is one of the values.
+	Policies     map[string]string
+	OperatorView string
+	// ICSRules is ICSRulesAllowed or ICSRulesForbidden, never empty.
+	ICSRules  string
+	Scenarios []ScenarioYAML
+}
+
+// PolicyName returns the name of the policy whose file is exactly path
+// (definitions-relative).
+func (p Package) PolicyName(path string) (string, bool) {
+	for name, file := range p.Policies {
+		if file == path {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // PackageInfo is the public summary of a package.
@@ -80,6 +119,7 @@ type PackageInfo struct {
 	Title        string
 	Revision     int
 	Capabilities []string
+	OperatorView string
 }
 
 // Info summarizes the package.
@@ -89,6 +129,7 @@ func (p Package) Info() PackageInfo {
 		Title:        p.Title,
 		Revision:     p.Revision,
 		Capabilities: append([]string(nil), p.Capabilities...),
+		OperatorView: p.OperatorView,
 	}
 }
 
@@ -150,60 +191,92 @@ func decodeFile(path string, out any) error {
 	return nil
 }
 
-// loadPackage parses one package.yml plus the topology and scenarios it
-// references, and validates all of it. It performs no database writes.
+// loadPackage parses one package.yml plus the topology, policies and
+// scenarios it references, and validates all of it. It performs no
+// database writes.
 func (l *Loader) loadPackage(manifestPath string) (Package, error) {
-	var manifest PackageYAML
-	if err := decodeFile(manifestPath, &manifest); err != nil {
-		return Package{}, err
-	}
-	packageDir := filepath.Dir(manifestPath)
-	if err := validateManifest(manifest, filepath.Base(packageDir)); err != nil {
-		return Package{}, err
-	}
-
-	topologyPath := filepath.Join(packageDir, manifest.Topology)
-	var def LabYAML
-	if err := decodeFile(topologyPath, &def); err != nil {
-		return Package{}, fmt.Errorf("topology: %w", err)
-	}
-	if def.ID == "" {
-		return Package{}, fmt.Errorf("topology %s: missing id", filepath.Base(topologyPath))
-	}
-	if len(def.Scenarios) > 0 {
-		return Package{}, fmt.Errorf("topology %s: inline scenarios are not supported; put each scenario in the package's scenarios directory", filepath.Base(topologyPath))
-	}
-
-	firewallConfigPath, err := l.resolveFirewallConfig(filepath.Dir(topologyPath), def.FirewallConfig)
+	pkg, scenarios, err := readDefinition(l.DefinitionsDir, manifestPath)
 	if err != nil {
-		return Package{}, fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+		return Package{}, err
 	}
-
-	scenarioDir := filepath.Join(packageDir, manifest.Scenarios)
+	scenarioDir := filepath.Join(filepath.Dir(manifestPath), scenarios)
 	info, err := os.Stat(scenarioDir)
 	if err != nil {
 		return Package{}, fmt.Errorf("scenarios directory: %w", err)
 	}
 	if !info.IsDir() {
-		return Package{}, fmt.Errorf("scenarios %s is not a directory", manifest.Scenarios)
+		return Package{}, fmt.Errorf("scenarios %s is not a directory", scenarios)
 	}
-	scenarios, err := loadScenarioFiles(scenarioDir)
-	if err != nil {
+	if pkg.Scenarios, err = loadScenarioFiles(scenarioDir); err != nil {
 		return Package{}, err
 	}
-	if err := ValidateLab(&def, scenarios, manifest.Capabilities, l.Validators); err != nil {
+	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, l.Validators); err != nil {
 		return Package{}, err
+	}
+	return pkg, nil
+}
+
+// ReadDefinition parses and validates the parts of a package that need no
+// validator registry: package.yml, its topology and its policies. The
+// package lint uses it; the loader adds the scenarios.
+func ReadDefinition(definitionsDir, manifestPath string) (Package, error) {
+	pkg, _, err := readDefinition(definitionsDir, manifestPath)
+	return pkg, err
+}
+
+// readDefinition is ReadDefinition plus the package.yml scenarios value.
+func readDefinition(definitionsDir, manifestPath string) (Package, string, error) {
+	var manifest PackageYAML
+	if err := decodeFile(manifestPath, &manifest); err != nil {
+		return Package{}, "", err
+	}
+	packageDir := filepath.Dir(manifestPath)
+	if err := validateManifest(manifest, filepath.Base(packageDir)); err != nil {
+		return Package{}, "", err
+	}
+	icsRules := manifest.ICSRules
+	if icsRules == "" {
+		icsRules = ICSRulesAllowed
 	}
 
-	return Package{
+	topologyPath := filepath.Join(packageDir, manifest.Topology)
+	if _, err := definitionsRelative(definitionsDir, topologyPath); err != nil {
+		return Package{}, "", fmt.Errorf("topology %q %w", manifest.Topology, err)
+	}
+	var def LabYAML
+	if err := decodeFile(topologyPath, &def); err != nil {
+		return Package{}, "", fmt.Errorf("topology: %w", err)
+	}
+	if def.ID == "" {
+		return Package{}, "", fmt.Errorf("topology %s: missing id", filepath.Base(topologyPath))
+	}
+	if len(def.Scenarios) > 0 {
+		return Package{}, "", fmt.Errorf("topology %s: inline scenarios are not supported; put each scenario in the package's scenarios directory", filepath.Base(topologyPath))
+	}
+
+	firewallConfigPath, err := resolveFirewallConfig(definitionsDir, filepath.Dir(topologyPath), def.FirewallConfig)
+	if err != nil {
+		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+	}
+	policies, err := resolvePolicies(definitionsDir, packageDir, manifest.Policies, icsRules)
+	if err != nil {
+		return Package{}, "", err
+	}
+	pkg := Package{
 		ID:                 manifest.ID,
 		Title:              manifest.Title,
 		Revision:           manifest.Revision,
 		Capabilities:       manifest.Capabilities,
 		Template:           def,
 		FirewallConfigPath: firewallConfigPath,
-		Scenarios:          scenarios,
-	}, nil
+		Policies:           policies,
+		OperatorView:       manifest.OperatorView,
+		ICSRules:           icsRules,
+	}
+	if _, ok := pkg.PolicyName(firewallConfigPath); !ok {
+		return Package{}, "", fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)
+	}
+	return pkg, manifest.Scenarios, nil
 }
 
 func validateManifest(manifest PackageYAML, dirName string) error {
@@ -228,6 +301,12 @@ func validateManifest(manifest PackageYAML, dirName string) error {
 	if manifest.Scenarios == "" {
 		problems = append(problems, "scenarios must not be empty")
 	}
+	if !knownOperatorViews[manifest.OperatorView] {
+		problems = append(problems, fmt.Sprintf("operator_view must be %s or %s, got %q", OperatorViewUSDNP3, OperatorViewEUIEC104, manifest.OperatorView))
+	}
+	if manifest.ICSRules != "" && manifest.ICSRules != ICSRulesAllowed && manifest.ICSRules != ICSRulesForbidden {
+		problems = append(problems, fmt.Sprintf("ics_rules must be %s or %s, got %q", ICSRulesAllowed, ICSRulesForbidden, manifest.ICSRules))
+	}
 	seen := make(map[string]bool, len(manifest.Capabilities))
 	for _, capability := range manifest.Capabilities {
 		if !knownCapabilities[capability] {
@@ -245,20 +324,21 @@ func validateManifest(manifest PackageYAML, dirName string) error {
 }
 
 // resolveFirewallConfig resolves firewall_config from the topology's
-// directory and returns it relative to the definitions directory.
-func (l *Loader) resolveFirewallConfig(topologyDir, value string) (string, error) {
+// directory and returns it relative to the definitions directory. Every
+// package names its default policy there.
+func resolveFirewallConfig(definitionsDir, topologyDir, value string) (string, error) {
 	if value == "" {
-		return "", nil
+		return "", errors.New("firewall_config must name the package's default policy")
 	}
 	resolved := filepath.Join(topologyDir, value)
 	if _, err := os.Stat(resolved); err != nil {
 		return "", fmt.Errorf("firewall_config: %w", err)
 	}
-	relative, err := filepath.Rel(l.DefinitionsDir, resolved)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("firewall_config %q must stay inside the definitions directory", value)
+	relative, err := definitionsRelative(definitionsDir, resolved)
+	if err != nil {
+		return "", fmt.Errorf("firewall_config %q %w", value, err)
 	}
-	return filepath.ToSlash(relative), nil
+	return relative, nil
 }
 
 func loadScenarioFiles(dir string) ([]ScenarioYAML, error) {

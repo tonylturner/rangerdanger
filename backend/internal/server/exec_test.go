@@ -37,6 +37,8 @@ func TestIsAllowedCommand_ExactMatchesAndPrefixes(t *testing.T) {
 		{"nmap -sT 10.40.40.20", true, "prefix: nmap with args"},
 		{"mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 1 10.40.40.20", true, "prefix: real exercise mbpoll command"},
 		{"dnp3poll 10.40.40.20:20000 -a 1", true, "prefix: real exercise dnp3poll command"},
+		{"iec104cmd 10.30.30.20 gi --json", true, "prefix: EU exercise iec104cmd command"},
+		{"iec104cmdx 10.30.30.20", false, "prefix must end at a space"},
 		{"curl -s http://10.30.30.20:8080/api/state", true, "prefix: curl with args"},
 		{"tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip", true, "prefix: real exercise tshark command"},
 		{"tcpdump -i any -w /data/captures/baseline.pcap", true, "prefix: real exercise tcpdump command"},
@@ -135,13 +137,14 @@ func TestIsAllowedCommand_ShellInjectionPasses(t *testing.T) {
 // (i.e., not auto-runnable through /api/workshop/.../exec).
 func TestAllowedCommandsCoverExerciseTools(t *testing.T) {
 	exerciseTools := []string{
-		"nmap",     // network scan
-		"mbpoll",   // Modbus client (33 references in scenarios)
-		"dnp3poll", // DNP3 master poll (25 references)
-		"dnp3cmd",  // DNP3 control (5 references)
-		"tshark",   // packet analysis (15 references)
-		"tcpdump",  // packet capture (8 references)
-		"curl",     // HTTP testing (16 references)
+		"nmap",      // network scan
+		"mbpoll",    // Modbus client (33 references in scenarios)
+		"dnp3poll",  // DNP3 master poll (25 references)
+		"dnp3cmd",   // DNP3 control (5 references)
+		"iec104cmd", // IEC 104 client (EU package, on kali-1)
+		"tshark",    // packet analysis (15 references)
+		"tcpdump",   // packet capture (8 references)
+		"curl",      // HTTP testing (16 references)
 	}
 	for _, tool := range exerciseTools {
 		if !isAllowedCommand(tool) {

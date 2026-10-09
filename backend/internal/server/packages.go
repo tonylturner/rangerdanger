@@ -16,6 +16,8 @@ type packageSummary struct {
 	Title    string `json:"title"`
 	Revision int    `json:"revision"`
 	Active   bool   `json:"active"`
+	// OperatorView selects the frontend operator page for the package.
+	OperatorView string `json:"operator_view"`
 }
 
 // setCatalog replaces the loaded package catalog after a successful seed.
@@ -61,10 +63,11 @@ func (s *Server) handleListPackages(c *gin.Context) {
 	packages := make([]packageSummary, len(infos))
 	for index, info := range infos {
 		packages[index] = packageSummary{
-			ID:       info.ID,
-			Title:    info.Title,
-			Revision: info.Revision,
-			Active:   info.ID == active,
+			ID:           info.ID,
+			Title:        info.Title,
+			Revision:     info.Revision,
+			Active:       info.ID == active,
+			OperatorView: info.OperatorView,
 		}
 	}
 	c.JSON(http.StatusOK, packages)

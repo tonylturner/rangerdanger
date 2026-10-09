@@ -1,0 +1,10 @@
+{
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {"id": "cc-to-rtu", "protocols": [{"name": "tcp", "port": "2404"}], "action": "ALLOW"},
+      {"id": "rtu-to-breaker", "protocols": [{"name": "tcp", "port": "502"}], "action": "ALLOW",
+       "ics": {"protocol": "modbus", "functionCode": [3, 4, 6]}}
+    ]
+  }
+}

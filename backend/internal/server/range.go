@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,11 +61,9 @@ func rangeOf(c *gin.Context) *lifecycle.Generation {
 // serves requests.
 func (s *Server) activateRange(gen *lifecycle.Generation) {
 	// The range starts on the package's default policy, which every range
-	// start imports.
-	activeConfig := "weak"
-	if strings.Contains(gen.Package.FirewallConfigPath, "improved") {
-		activeConfig = "improved"
-	}
+	// start imports. The loader guarantees the default is a named policy;
+	// a package built without one starts with no known policy name.
+	activeConfig, _ := gen.Package.PolicyName(gen.Package.FirewallConfigPath)
 	s.activeConfigMu.Lock()
 	s.activeConfig = activeConfig
 	s.policySource = ""

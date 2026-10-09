@@ -1,0 +1,10 @@
+{
+  "schema_version": "0.1.0",
+  "firewall": {
+    "defaultAction": "DENY",
+    "rules": [
+      {"id": "lan4-to-rtu", "sourceZones": ["lan4"], "destZones": ["lan1"],
+       "protocols": [{"name": "tcp", "port": "2404"}], "action": "ALLOW"}
+    ]
+  }
+}

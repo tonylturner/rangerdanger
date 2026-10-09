@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
@@ -37,17 +38,13 @@ type PolicyComparison struct {
 
 // handleFirewallCompare returns a structured comparison of weak vs improved firewall configs.
 func (s *Server) handleFirewallCompare(c *gin.Context) {
-	recipe, err := recipeFor(rangeOf(c))
+	pkg := rangeOf(c).Package
+	weakPath, err := s.policyPath(pkg, "weak")
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	weakPath, err := s.policyPath(recipe, "weak")
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	improvedPath, err := s.policyPath(recipe, "improved")
+	improvedPath, err := s.policyPath(pkg, "improved")
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -188,16 +185,16 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
 func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
-	recipe, err := recipeFor(gen)
-	if err != nil {
-		return nil, err
-	}
-	configPath, err := s.policyPath(recipe, configName)
+	configPath, err := s.policyPath(gen.Package, configName)
 	if err != nil {
 		return nil, err
 	}
 	data, err := readPolicyJSONWithRetry(configPath)
 	if err != nil {
+		return nil, err
+	}
+	// The catalog linted the file at load; it is re-read from disk here.
+	if err := labs.LintPolicy(gen.Package.Policies[configName], data, gen.Package.ICSRules); err != nil {
 		return nil, err
 	}
 
@@ -228,12 +225,12 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 	return warnings, nil
 }
 
-// policyPath is the file of the recipe's named policy.
-func (s *Server) policyPath(recipe *packageRecipe, name string) (string, error) {
-	relative, ok := recipe.policies[name]
+// policyPath is the file of the package's named policy.
+func (s *Server) policyPath(pkg labs.Package, name string) (string, error) {
+	relative, ok := pkg.Policies[name]
 	if !ok {
-		names := make([]string, 0, len(recipe.policies))
-		for known := range recipe.policies {
+		names := make([]string, 0, len(pkg.Policies))
+		for known := range pkg.Policies {
 			names = append(names, "'"+known+"'")
 		}
 		sort.Strings(names)
@@ -270,8 +267,12 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include interfaces"})
 		return
 	}
-
 	gen := rangeOf(c)
+	if err := labs.LintPolicy("custom policy", data, gen.Package.ICSRules); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	warnings, err := gen.Containd().ImportConfig(c.Request.Context(), data)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})

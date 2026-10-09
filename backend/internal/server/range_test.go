@@ -36,14 +36,19 @@ func repoRoot() string {
 	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
 }
 
-// usGeneration is a generation of the real US package: its manifest and
-// default policy, with client as the firewall API.
+// usGeneration is a generation of the real US package: its manifest,
+// topology and named policies as the catalog reads them, with client as the
+// firewall API.
 func usGeneration(client *containd.Client) *lifecycle.Generation {
 	man, err := manifest.Load(repoRoot(), usPackageID)
 	if err != nil {
 		panic(err)
 	}
-	pkg := labs.Package{ID: usPackageID, FirewallConfigPath: "firewall/substation-weak.json"}
+	definitions := filepath.Join(repoRoot(), "lab-definitions")
+	pkg, err := labs.ReadDefinition(definitions, filepath.Join(manifest.Dir(repoRoot(), usPackageID), "package.yml"))
+	if err != nil {
+		panic(err)
+	}
 	return lifecycle.NewGeneration(1, pkg, man, client)
 }
 
@@ -196,12 +201,19 @@ func TestRangeBoundContextEndsWithGeneration(t *testing.T) {
 func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 	s := &Server{activeConfig: "custom", policySource: "manual-custom", lastAppliedHash: "old",
 		pcap: pcapState{Capturing: true}, traffic: trafficState{Generating: true}}
-	gen := lifecycle.NewGeneration(2, labs.Package{ID: "p", FirewallConfigPath: "firewall/substation-improved.json"}, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"))
+	// The default's name comes from the package's policies by exact path,
+	// whatever the file is called.
+	pkg := labs.Package{ID: "p", FirewallConfigPath: "packages/p/firewall/b.json", Policies: map[string]string{
+		"strict":   "packages/p/firewall/b.json",
+		"improved": "packages/p/firewall/b.json.improved",
+		"weak":     "packages/p/firewall/a.json",
+	}}
+	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"))
 	s.activateRange(gen)
 	s.activeConfigMu.RLock()
 	activeConfig, source, hash := s.activeConfig, s.policySource, s.lastAppliedHash
 	s.activeConfigMu.RUnlock()
-	if activeConfig != "improved" || source != "" || hash != "" {
+	if activeConfig != "strict" || source != "" || hash != "" {
 		t.Errorf("policy state = %q %q %q, want the package default and no apply", activeConfig, source, hash)
 	}
 	if s.pcap.Capturing || s.traffic.Generating {

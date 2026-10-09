@@ -10,7 +10,7 @@ import (
 
 // Allowed command prefixes for the exec endpoint.
 var allowedCommands = []string{
-	"nmap", "mbpoll", "dnp3poll", "dnp3cmd", "curl", "tshark",
+	"nmap", "mbpoll", "dnp3poll", "dnp3cmd", "iec104cmd", "curl", "tshark",
 	"tcpdump", "nc", "ping", "traceroute", "wget", "cat", "ls",
 	"ip", "ss", "netstat",
 }
