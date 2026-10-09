@@ -189,7 +189,7 @@ sysctls, gateway and hardening scripts, and the policy JSONs.
 If you're writing a new lab or reshaping an existing one, see
 [`docs/lab-authoring.md`](docs/lab-authoring.md) - covers the YAML
 shape the runner expects, the description-body fences (`:::hint`,
-`:::decision`, `:::findings-panel`), the localStorage model that
+`:::decision`, `:::findings-panel`), the browser storage model that
 lets a lab read what the student did in earlier labs, and the
 authoring checklist (run the smoke tests before opening a PR).
 

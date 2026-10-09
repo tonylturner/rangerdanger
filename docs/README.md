@@ -69,7 +69,7 @@ ones.
 
 - [`lab-authoring.md`](lab-authoring.md) - How to write a workshop lab.
   YAML shape, the runner-specific fences (`:::hint`, `:::decision`,
-  `:::findings-panel`, `:::plan-coverage`), the localStorage model that
+  `:::findings-panel`, `:::plan-coverage`), the browser storage model that
   lets a lab read student selections from earlier labs, authoring
   checklist.
 - The 7 shipped labs live in
