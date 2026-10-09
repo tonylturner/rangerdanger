@@ -156,6 +156,7 @@ func (m *Manager) switchTo(ctx context.Context, p plan) (*Generation, error) {
 	if err := m.persist(rec); err != nil {
 		return nil, fmt.Errorf("starting: %w", err)
 	}
+	startedAt := m.opts.Now().UTC()
 	upCtx, cancel := context.WithTimeout(ctx, m.timeouts.Up)
 	err = m.opts.Compose.Up(upCtx, p.composeFile)
 	cancel()
@@ -171,7 +172,7 @@ func (m *Manager) switchTo(ctx context.Context, p plan) (*Generation, error) {
 	if err := m.installRoutes(ctx, p.routes); err != nil {
 		return nil, fmt.Errorf("configuring: %w", err)
 	}
-	gen := NewGeneration(rec.Generation, p.pkg, p.manifest, m.opts.NewContaind(p.firewallAPI))
+	gen := NewGeneration(rec.Generation, p.pkg, p.manifest, m.opts.NewContaind(p.firewallAPI), startedAt)
 	if err := m.seedPolicy(ctx, gen.Containd(), p); err != nil {
 		return gen, fmt.Errorf("configuring: %w", err)
 	}

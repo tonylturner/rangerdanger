@@ -15,6 +15,7 @@ import (
 )
 
 func TestSwitchFromNoneReachesReady(t *testing.T) {
+	before := time.Now().UTC()
 	h := newHarness(t)
 	m := h.manager(h.options())
 	if st := m.Status(); st.Phase != PhaseNone || st.UpdatedAt != nil {
@@ -59,6 +60,9 @@ func TestSwitchFromNoneReachesReady(t *testing.T) {
 	if rec.Phase != PhaseReady || rec.Package != "pkg-b" || rec.Revision != 3 || rec.Generation != 1 ||
 		rec.Mode != "release" || rec.Root != h.root || rec.Version != "test" {
 		t.Errorf("record = %+v", rec)
+	}
+	if gen.StartedAt.Before(before) || gen.StartedAt.After(rec.UpdatedAt) {
+		t.Errorf("generation started at %s, want between the request (%s) and ready (%s)", gen.StartedAt, before, rec.UpdatedAt)
 	}
 	if got := m.ActivePackage(); got != "pkg-b" {
 		t.Errorf("ActivePackage() = %q, want pkg-b", got)
@@ -345,6 +349,7 @@ func TestReconcileReadyAdoptsRunningRange(t *testing.T) {
 	h := newHarness(t)
 	h.ready(h.options(), "pkg-a")
 	imports := h.firewall.imports.Load()
+	readyAt := h.loadRecord().UpdatedAt
 
 	// A new backend process finds the range it left running.
 	m := h.manager(h.options())
@@ -357,6 +362,9 @@ func TestReconcileReadyAdoptsRunningRange(t *testing.T) {
 	gen := <-h.activated
 	if gen.ID != 1 || gen.Package.ID != "pkg-a" {
 		t.Errorf("activated generation %d %s", gen.ID, gen.Package.ID)
+	}
+	if !gen.StartedAt.Equal(readyAt) {
+		t.Errorf("reconciled generation started at %s, want the ready record's %s", gen.StartedAt, readyAt)
 	}
 	if got := h.compose.callLog(); len(got) != 0 {
 		t.Errorf("compose calls = %q, want none", got)

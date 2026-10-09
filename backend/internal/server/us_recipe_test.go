@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -91,7 +92,7 @@ func TestUSIdentitiesFromTheManifest(t *testing.T) {
 }
 
 func TestRecipesAreUSOnly(t *testing.T) {
-	gen := lifecycle.NewGeneration(1, labs.Package{ID: "eu-iec104-substation"}, &manifest.Manifest{}, nil)
+	gen := lifecycle.NewGeneration(1, labs.Package{ID: "eu-iec104-substation"}, &manifest.Manifest{}, nil, time.Time{})
 	if _, err := recipeFor(gen); err == nil || !strings.Contains(err.Error(), "eu-iec104-substation has no workshop recipe") {
 		t.Errorf("recipeFor(EU) = %v, want no recipe", err)
 	}

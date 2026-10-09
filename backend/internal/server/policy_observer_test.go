@@ -196,7 +196,7 @@ func TestObserver_ConcurrentApplyAndObserve(t *testing.T) {
 
 // observedGeneration is a live generation whose firewall is url.
 func observedGeneration(url string) *lifecycle.Generation {
-	return lifecycle.NewGeneration(1, labs.Package{}, &manifest.Manifest{}, containd.NewClient(url))
+	return lifecycle.NewGeneration(1, labs.Package{}, &manifest.Manifest{}, containd.NewClient(url), time.Time{})
 }
 
 // TestObserver_StoppedGenerationDropsObservation: an observation that

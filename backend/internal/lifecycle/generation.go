@@ -21,6 +21,10 @@ type Generation struct {
 	ID       uint64
 	Package  labs.Package
 	Manifest *manifest.Manifest
+	// StartedAt bounds the range's own evidence from below: nothing the
+	// range logged (firewall events, which survive in the package's data
+	// directory) before it belongs to this generation.
+	StartedAt time.Time
 
 	containd *containd.Client
 	ctx      context.Context
@@ -37,18 +41,19 @@ type Generation struct {
 	drained chan struct{}     // closed once stopped with nothing active
 }
 
-// NewGeneration builds a live generation.
-func NewGeneration(id uint64, pkg labs.Package, man *manifest.Manifest, client *containd.Client) *Generation {
+// NewGeneration builds a live generation that started at startedAt.
+func NewGeneration(id uint64, pkg labs.Package, man *manifest.Manifest, client *containd.Client, startedAt time.Time) *Generation {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Generation{
-		ID:       id,
-		Package:  pkg,
-		Manifest: man,
-		containd: client,
-		ctx:      ctx,
-		cancel:   cancel,
-		active:   map[uint64]string{},
-		drained:  make(chan struct{}),
+		ID:        id,
+		Package:   pkg,
+		Manifest:  man,
+		StartedAt: startedAt,
+		containd:  client,
+		ctx:       ctx,
+		cancel:    cancel,
+		active:    map[uint64]string{},
+		drained:   make(chan struct{}),
 	}
 }
 
