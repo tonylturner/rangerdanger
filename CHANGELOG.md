@@ -15,10 +15,14 @@ still install the v0.1.34 release unchanged.
 - **The night-before preflight passes on a laptop that already runs the
   lab.** `./setup.sh --check-only` and `.\setup.ps1 -CheckOnly` failed
   on the student's own running lab, because it holds ports 8088, 9080,
-  9443 and 2222. Ports published by the running `rangerdanger` Compose
-  project now pass with "RangerDanger is already installed and running".
-  An install on such a laptop stops and prints the commands to stop and
-  refresh the lab. A port held by anything else still fails both.
+  9443 and 2222. When running containers of the `rangerdanger` Compose
+  project publish all four, the check now passes with "RangerDanger is
+  already installed and running". A lab holding only some of them (for
+  example the firewall is up but the portal on 8088 is not) is reported
+  as partly running, naming the ports held and missing, and fails with
+  the commands to stop the lab and re-run setup. An install on a laptop
+  with the lab up stops and prints the same commands. A port held by
+  anything else still fails both.
 - **`setup.sh` no longer reports ports free when `lsof` is missing.**
   The port check now connects to each loopback port with bash's
   `/dev/tcp`, so it needs no extra tool on macOS or Linux; `lsof`, when

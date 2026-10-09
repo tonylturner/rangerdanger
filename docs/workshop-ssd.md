@@ -114,8 +114,10 @@ What `setup.sh --from-tarballs` does, in order:
    reported memory (8 GB recommended). Linux-native Docker can fall back
    to host RAM. It does not measure Docker's storage volume or check
    macOS host RAM. `--check-only` runs just this stage and exits; it
-   passes when the ports are held by the running lab, so it also works
-   as a night-before check on an installed laptop.
+   passes when the running lab holds all four ports, so it also works
+   as a night-before check on an installed laptop. A lab holding only
+   some of them is reported as partly running and fails, with the
+   commands to stop it and re-run setup.
 2. **`docker load`** the matching `images-<arch>.tar` every time.
    Docker deduplicates existing layers by content hash. On Windows,
    `setup.ps1 -FromTarballs` then probes the WSL2 kernel in the loaded

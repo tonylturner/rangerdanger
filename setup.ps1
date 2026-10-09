@@ -151,10 +151,11 @@ function Get-LabHeldPorts {
     @([regex]::Matches($r.StdOut, ':(\d+)->') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
 }
 
-# Required ports -- bind a TcpListener briefly to confirm free. A busy port
-# held by the running lab passes -CheckOnly (the "night before" check on an
-# installed laptop) and stops an install with how to refresh. Anything else
-# holding a port fails both, with the holding process when we can find it.
+# Required ports -- bind a TcpListener briefly to confirm free. When the
+# running lab holds every one of them, -CheckOnly passes (the "night
+# before" check on an installed laptop) and an install stops with how to
+# refresh. Anything else holding a port fails both, with the holding
+# process when we can find it.
 $portsRequired = @(8088, 9080, 9443, 2222)
 $portsBusy = @()
 foreach ($port in $portsRequired) {
@@ -204,8 +205,22 @@ $downCmd += " down"
 $rerunCmd = ".\setup.ps1"
 if ($Version -ne "latest") { $rerunCmd += " -Version $Version" }
 if ($FromTarballs) { $rerunCmd += " -FromTarballs `"$FromTarballs`"" }
+# Foreign ports died above, so every required port the lab does not hold
+# is free. A lab holding only some of them (e.g. the firewall is up but the
+# proxy on 8088 is not) is partly running and fails -CheckOnly and install
+# alike, with the same stop-and-re-run commands.
+$portsFree = @($portsRequired | Where-Object { $labPorts -notcontains $_ })
 if ($labPorts.Count -gt 0) {
     $labList = $labPorts -join ", "
+    if ($portsFree.Count -gt 0) {
+        Die @"
+RangerDanger is only partly running: it holds loopback ports $labList,
+  but nothing listens on $($portsFree -join ", ").
+  Stop the lab, then re-run setup:
+    $downCmd
+    $rerunCmd
+"@
+    }
     if (-not $CheckOnly) {
         Die @"
 RangerDanger is already installed and running (it holds loopback ports $labList).
@@ -217,7 +232,6 @@ RangerDanger is already installed and running (it holds loopback ports $labList)
     }
     Say "RangerDanger is already installed and running on loopback ports $labList"
 }
-$portsFree = @($portsRequired | Where-Object { $labPorts -notcontains $_ })
 if ($portsFree.Count -gt 0) {
     Say ("Free loopback ports: " + ($portsFree -join ", "))
 }

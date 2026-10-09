@@ -219,9 +219,12 @@ lab_held_ports() {
         | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
 }
 
-# A port held by the running lab passes --check-only (the "night before"
-# check on an installed laptop) and stops an install with how to refresh.
-# Anything else holding a port fails both; lsof, when present, names it.
+# When the running lab holds every required port, --check-only passes (the
+# "night before" check on an installed laptop) and an install stops with
+# how to refresh. A lab holding only some of them (e.g. the firewall is up
+# but the proxy on 8088 is not) is partly running and fails both, with the
+# same stop-and-re-run commands. Anything else holding a port fails both;
+# lsof, when present, names it.
 PORTS_REQUIRED="8088 9080 9443 2222"
 PORTS_FREE=""
 PORTS_LAB=""
@@ -272,6 +275,14 @@ RERUN_CMD="./setup.sh"
 [ "$VERSION" = "latest" ] || RERUN_CMD="$RERUN_CMD --version $VERSION"
 [ -z "$TARBALL_DIR" ] || RERUN_CMD="$RERUN_CMD --from-tarballs \"$TARBALL_DIR\""
 if [ -n "$PORTS_LAB" ]; then
+    # Foreign and unknown ports died above, so the rest are free.
+    if [ -n "$PORTS_FREE" ]; then
+        die "RangerDanger is only partly running: it holds loopback ports$PORTS_LAB,
+  but nothing listens on$PORTS_FREE.
+  Stop the lab, then re-run setup:
+    $DOWN_CMD
+    $RERUN_CMD"
+    fi
     if [ "$CHECK_ONLY" -ne 1 ]; then
         die "RangerDanger is already installed and running (it holds loopback ports$PORTS_LAB).
   To check it without reinstalling:  ./setup.sh --check-only
