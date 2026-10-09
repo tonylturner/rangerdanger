@@ -472,16 +472,18 @@ Pulling images failed after 3 attempts. Common causes:
     }
 }
 
-# --- pin VERSION in .env so bare `docker compose` works after install --
+# --- pin VERSION in .env for later release-file compose commands ----
 # Without this, a student who runs `.\setup.ps1 -FromTarballs <SSD>` and
-# later wants to run `docker compose -f docker-compose.release.yml
+# later runs `docker compose -f docker-compose.release.yml
 # -f docker-compose.offline.yml up -d` directly will hit
 # `No such image: ...:latest` because compose interpolates
 # `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
-# Writing the resolved Version to .env (compose auto-loads .env from
-# cwd) makes the bare compose invocation work the same as setup did.
-# .env is gitignored. Idempotent: replaces an existing VERSION= line,
-# appends if absent.
+# Compose auto-loads .env from the project directory (the repo root), so
+# writing the resolved Version there makes those explicit release-file
+# commands use the tag setup installed. A bare `docker compose` with no -f
+# still selects the source stack (docker-compose.yml), not the release
+# one; see docs/quickstart.md. .env is gitignored. Idempotent: replaces an
+# existing VERSION= line, appends if absent.
 $envFile = Join-Path $RootDir ".env"
 if (Test-Path $envFile) {
     $content = Get-Content $envFile -Raw

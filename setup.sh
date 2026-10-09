@@ -357,15 +357,18 @@ else
     fi
 fi
 
-# ─── pin VERSION in .env so bare `docker compose` works after install ──
+# ─── pin VERSION in .env for later release-file compose commands ────
 # Without this, a student who runs `./setup.sh --from-tarballs <SSD>` and
-# later wants to run `docker compose -f docker-compose.release.yml
+# later runs `docker compose -f docker-compose.release.yml
 # -f docker-compose.offline.yml up -d` directly will hit
 # `No such image: ...:latest` because compose interpolates
 # `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
-# Writing the resolved VERSION to .env (compose auto-loads .env from
-# cwd) makes the bare compose invocation work the same as it did via
-# setup.sh. .env is gitignored, so this is safe to write into the repo.
+# Compose auto-loads .env from the project directory (the repo root), so
+# writing the resolved VERSION there makes those explicit release-file
+# commands use the tag setup.sh installed. A bare `docker compose` with no
+# -f still selects the source stack (docker-compose.yml), not the release
+# one; see docs/quickstart.md. .env is gitignored, so this is safe to
+# write into the repo.
 # Idempotent: replaces an existing VERSION= line, appends if absent.
 ENV_FILE="$ROOT_DIR/.env"
 if [ -f "$ENV_FILE" ] && grep -q "^VERSION=" "$ENV_FILE"; then
