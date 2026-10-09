@@ -2,10 +2,10 @@
 #
 # RangerDanger -- post-workshop cleanup, macOS / Linux.
 #
-# Stops the range and then the platform (scripts/dev-down.sh: label-only,
-# by Compose project), removes setup's .env and the anonymous volumes the
-# lab's containers mounted, optionally removes the lab images, and
-# reverts the amd64 emulation handler that
+# Stops the range (with its anonymous volumes) and then the platform
+# (scripts/dev-down.sh: label-only, by Compose project), removes setup's
+# .env, optionally removes the lab images, and reverts the amd64
+# emulation handler that
 # setup.sh registers on arm64 Linux hosts for OpenPLC (only if setup
 # installed it). Unlike Windows there is no custom-kernel install to
 # undo -- Docker on macOS / Linux already ships CONFIG_NFT_QUEUE=y -- so
@@ -16,11 +16,11 @@
 #   ./scripts/uninstall-rangerdanger.sh --yes               # no prompt
 #   ./scripts/uninstall-rangerdanger.sh --yes --remove-images
 #   ./scripts/uninstall-rangerdanger.sh --yes --purge       # clean slate
-#   ./scripts/uninstall-rangerdanger.sh --yes --keep-volumes
 #
 # Image categories this script knows about:
 #   A. release  -- pulled ghcr.io/tonylturner/rangerdanger-*, containd
-#   B. dev      -- locally-built rangerdanger-<service>:latest images
+#   B. dev      -- locally-built rangerdanger-platform-<service> and
+#                  rangerdanger-<service> images
 #   C. base     -- shared public images (alpine, nginx, fuxa, webtop)
 #                  that OTHER projects on this host may also use
 #
@@ -34,16 +34,18 @@
 #   --purge               --remove-images + --remove-dev-images (a clean
 #                         slate for redeploy testing; base images are
 #                         left alone -- add --remove-base-images for those)
-#   --keep-volumes        leave the anonymous volumes (the webtops' /config)
-#                         in place. Lab state lives in bind-mounted
-#                         directories (backend/data, data/), which this
-#                         script never removes.
+#
+# Lab state lives in bind-mounted directories (backend/data, data/),
+# which this script never removes. The only volumes are the anonymous
+# ones the range's images declare (the webtops' /config); the range
+# teardown always removes them.
 #
 # Exit codes:
 #   0 = uninstall completed (or partial with warnings)
 #   1 = user declined the confirmation prompt
 #   2 = nothing to do (no rangerdanger state detected)
-#   3 = teardown left containers or networks behind; nothing else removed
+#   3 = teardown left containers, networks or range volumes behind;
+#       nothing else removed
 
 set -uo pipefail
 
@@ -51,7 +53,6 @@ YES=0
 REMOVE_IMAGES=0
 REMOVE_DEV_IMAGES=0
 REMOVE_BASE_IMAGES=0
-KEEP_VOLUMES=0
 while [ $# -gt 0 ]; do
     case "$1" in
         -y|--yes)             YES=1; shift ;;
@@ -59,7 +60,6 @@ while [ $# -gt 0 ]; do
         --remove-dev-images)  REMOVE_DEV_IMAGES=1; shift ;;
         --remove-base-images) REMOVE_BASE_IMAGES=1; shift ;;
         --purge)              REMOVE_IMAGES=1; REMOVE_DEV_IMAGES=1; shift ;;
-        --keep-volumes)       KEEP_VOLUMES=1; shift ;;
         -h|--help)
             sed -n '2,/^set/p' "$0" | sed 's/^# \?//;/^set/d'
             exit 0 ;;
@@ -108,11 +108,9 @@ banner "RangerDanger uninstall"
 
 # --- inventory --------------------------------------------------------
 CONTAINERS=""
-CONTAINER_IDS=""
 NETWORKS=""
 for _project in $PROJECTS; do
     CONTAINERS="${CONTAINERS}$(docker ps -a --format '{{.Names}}' --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
-    CONTAINER_IDS="${CONTAINER_IDS}$(docker ps -aq --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
     NETWORKS="${NETWORKS}$(docker network ls -q --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
 done
 CONTAINERS=$(echo "$CONTAINERS" | grep . || true)
@@ -186,16 +184,6 @@ say "Release images (ghcr):    $N_IMAGES"
 say "Dev images (local build): $N_DEV_IMAGES"
 say "Base images (shared):     $N_BASE_IMAGES"
 
-# The lab has no named volumes. The webtop images declare VOLUME /config,
-# so their containers carry anonymous volumes that a plain `down` leaves.
-N_VOLUMES=0
-if [ -n "$(echo "$CONTAINER_IDS" | grep . || true)" ]; then
-    # shellcheck disable=SC2046 # one container id per word
-    N_VOLUMES=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' \
-        $(echo "$CONTAINER_IDS" | grep .) 2>/dev/null | grep -c . || true)
-fi
-say "Anonymous volumes: $N_VOLUMES"
-
 ENV_FOUND=0
 [ -f "$ENV_FILE" ] && { ENV_FOUND=1; say ".env file found at $ENV_FILE"; }
 
@@ -211,9 +199,8 @@ fi
 
 # --- confirm ---------------------------------------------------------
 banner "About to:"
-echo "  - Stop the range, then the platform (containers + networks, by Compose project)"
-if [ "$KEEP_VOLUMES" = "0" ]; then echo "      and remove their $N_VOLUMES anonymous volume(s)"
-else echo "      anonymous volumes kept (--keep-volumes)"; fi
+echo "  - Stop the range (containers, networks, anonymous volumes), then the"
+echo "    platform (containers, networks), by Compose project"
 if [ "$REMOVE_IMAGES" = "1" ] && [ "$N_IMAGES" != "0" ]; then
     echo "  - Remove $N_IMAGES release image(s) (~6 GB)"
 fi
@@ -240,10 +227,8 @@ fi
 # Fail closed: if anything of either project survives, stop here and
 # remove nothing else.
 banner "Stopping the range and the platform"
-DOWN_ARGS=()
-[ "$KEEP_VOLUMES" = "0" ] && DOWN_ARGS+=(--volumes)
-if ! "$ROOT_DIR/scripts/dev-down.sh" ${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"} 2>&1 | sed 's/^/  /'; then
-    warn "Teardown left containers or networks behind (see above). Nothing else was removed."
+if ! "$ROOT_DIR/scripts/dev-down.sh" 2>&1 | sed 's/^/  /'; then
+    warn "Teardown left resources behind (see above). Nothing else was removed."
     warn "Fix the cause, then re-run this script."
     exit 3
 fi
@@ -307,9 +292,7 @@ fi
 
 # --- done ------------------------------------------------------------
 banner "RangerDanger removed"
-echo "  Containers + networks: removed"
-if [ "$KEEP_VOLUMES" = "0" ]; then echo "  Anonymous volumes:     removed"
-else echo "  Anonymous volumes:     kept (--keep-volumes)"; fi
+echo "  Containers + networks: removed (and the range's anonymous volumes)"
 if [ "$REMOVE_IMAGES" = "1" ]; then echo "  Release images:        removed (~6 GB freed)"
 else echo "  Release images:        kept (pass --remove-images to free disk)"; fi
 if [ "$REMOVE_DEV_IMAGES" = "1" ]; then echo "  Dev images:            removed"
