@@ -598,10 +598,15 @@ decisions are separate from what happened on the wire.
 
 ## 9. Test fixtures from RangerDanger
 
-RangerDanger's lib60870 spike lane **will** commit reference captures
-to `RD:services/iec104/captures/` on branch `iec104` by checkpoint
-2026-10-12. They do not exist yet; until then L1 works from synthetic
-fixtures. The README will list SHA256, stack versions, configuration
+RangerDanger **will** commit reference captures to
+`RD:services/iec104/captures/` on branch `iec104`. They do not exist
+yet; until they land, L1 works from synthetic fixtures and does not
+block on them. The lib60870 RTU and control centre they come from are
+on `iec104` now (`RD:services/iec104/`, report
+`RD:docs/plans/iec104/spike-iec104.md`). Point map: CA 1; breaker
+M_DP_NA_1/M_DP_TB_1 at IOA 1001; current and voltage M_ME_NC_1 at
+2001/2002; breaker command C_DC_NA_1 at IOA 3001, select-before-execute
+only. The README will list SHA256, stack versions, configuration
 (COT 2, CA 2, IOA 3, k/w, t0-t3), the CA/IOA/type point map, command
 values and endpoints, and a regeneration script. The captures will be
 Apache-2.0 test data and contain no lib60870 code.
@@ -830,7 +835,7 @@ EU policies use the same top-level keys as
    "sources": ["10.60.60.10/32"], "destinations": ["10.30.30.30/32"],
    "protocols": [{"name": "tcp", "port": "2404"}],
    "ics": {"protocol": "iec104", "typeIds": [46], "classes": ["control"],
-           "direction": "request", "ca": [1], "ioa": [{"start": 2001, "end": 2001}],
+           "direction": "request", "ca": [1], "ioa": [{"start": 3001, "end": 3001}],
            "mode": "enforce"},
    "action": "ALLOW", "log": true},
   {"id": "rtu-cc-command-confirm", "sourceZones": ["lan4"], "destZones": ["lan1"],
