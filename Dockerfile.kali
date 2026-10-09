@@ -18,13 +18,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # satisfy the GPLv3 corresponding-source obligation (see
 # services/iec104/README.md).
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS iec104cmd-builder
-ARG LIB60870_VERSION=2.4.1
-ARG LIB60870_SHA256=d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a
+# Literal pins (not ARGs) so the release-input planner can hash this file.
 RUN apk add --no-cache build-base curl linux-headers
 WORKDIR /src
 RUN curl -fsSL -o lib60870.tar.gz \
-        "https://github.com/mz-automation/lib60870/archive/refs/tags/v${LIB60870_VERSION}.tar.gz" \
- && echo "${LIB60870_SHA256}  lib60870.tar.gz" | sha256sum -c - \
+        "https://github.com/mz-automation/lib60870/archive/refs/tags/v2.4.1.tar.gz" \
+ && echo "d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a  lib60870.tar.gz" | sha256sum -c - \
  && mkdir lib60870 \
  && tar -xzf lib60870.tar.gz -C lib60870 --strip-components=1 \
  && make -C lib60870/lib60870-C -j"$(nproc)" \

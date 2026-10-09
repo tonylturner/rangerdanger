@@ -225,6 +225,10 @@
         {"kind": "file", "path": "services/opendss-sim/models.py"},
         {"kind": "file", "path": "services/opendss-sim/runtime_state.py"},
         {"kind": "file", "path": "services/opendss-sim/time_utils.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_app.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_circuit.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_profile.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_truth_loop.py"},
         {"kind": "dir", "path": "services/opendss-sim/dss"},
         {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]
@@ -238,6 +242,7 @@
       "always_build_reason": "Pinned IEC104 dependency and build ARGs determine the GPLv3 binaries.",
       "inputs": [
         {"kind": "file", "path": "services/iec104/Dockerfile"},
+        {"kind": "file", "path": "services/iec104/entrypoint.sh"},
         {"kind": "dir", "path": "services/iec104/src"},
         {"kind": "file", "path": "services/iec104/LICENSE"},
         {"kind": "file", "path": "services/iec104/README.md"},
