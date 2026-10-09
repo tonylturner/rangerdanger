@@ -2,15 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getWorkshopStatus } from "../lib/api";
-import type { OperatorState } from "../lib/operator-api";
-import { GI_STATE_TEXT, LINK_STATE_TEXT, telemetrySummary, telemetryText } from "../lib/operator-format";
+import { CONTROL_CENTRE_IP, IEC104_PORT, RTU_IP } from "../lib/firewall-sessions";
+import { controlCentreHealth, controlCentreLinkText, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { useOperatorState } from "../lib/operator-queries";
 import { isRangeNotReady } from "../lib/range";
 import { DashboardStatusCard, QuickLink, WorkshopStatusCard } from "./overview-cards";
 
-// Overview and workshop status for the EU IEC 104 package. They read
-// the generic workshop status (firewall, scenarios) and the control
-// centre; there is no RTAC or US field-device health here.
+// Overview and workshop status for the EU IEC 104 package. The link and
+// GI come from the workshop status (its control_centre part); the
+// telemetry summary needs the points, so it reads the control centre.
+// There is no RTAC or US field-device health here.
+
+const CC_FLOW = `${CONTROL_CENTRE_IP} → ${RTU_IP}:${IEC104_PORT}`;
 
 function useEuStatus() {
   const ws = useQuery({ queryKey: ["workshop-status"], queryFn: getWorkshopStatus, refetchInterval: 5000 });
@@ -23,13 +26,10 @@ function useEuStatus() {
   };
 }
 
-function linkOk(operator: OperatorState | undefined): boolean | undefined {
-  return operator ? operator.link.state === "started" : undefined;
-}
-
 export function EuDashboard({ title }: { title: string }) {
-  const { ws, waiting, operator, operatorDown } = useEuStatus();
+  const { ws, waiting, operator } = useEuStatus();
   const summary = operator ? telemetrySummary(operator.points) : null;
+  const cc = ws?.control_centre;
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
       <header>
@@ -44,8 +44,8 @@ export function EuDashboard({ title }: { title: string }) {
       <div className="grid gap-3 sm:grid-cols-4">
         <DashboardStatusCard
           label="Control Centre Link"
-          value={waiting ? "WAITING" : operatorDown ? "API DOWN" : operator ? `${LINK_STATE_TEXT[operator.link.state]} · GI ${GI_STATE_TEXT[operator.link.gi.state]}` : "—"}
-          ok={waiting ? undefined : operatorDown ? false : linkOk(operator)}
+          value={waiting ? "WAITING" : cc ? controlCentreLinkText(cc) : "—"}
+          ok={waiting || !cc ? undefined : controlCentreHealth(cc) === "online"}
         />
         <DashboardStatusCard
           label="Telemetry"
@@ -84,15 +84,8 @@ export function EuDashboard({ title }: { title: string }) {
 export function EuWorkshopStatus({ title }: { title: string }) {
   const { ws, waiting, operator, operatorDown } = useEuStatus();
   const summary = operator ? telemetrySummary(operator.points) : null;
-  const linkStatus = waiting
-    ? "waiting"
-    : operatorDown || !operator
-      ? "offline"
-      : operator.link.state === "started"
-        ? "online"
-        : operator.link.state === "connecting"
-          ? "degraded"
-          : "offline";
+  const cc = ws?.control_centre;
+  const linkStatus = waiting ? "waiting" : controlCentreHealth(cc);
   const telemetryStatus = waiting
     ? "waiting"
     : !summary || summary.good === 0
@@ -120,12 +113,12 @@ export function EuWorkshopStatus({ title }: { title: string }) {
             <WorkshopStatusCard
               label="Control Centre Link"
               status={linkStatus}
-              detail={operatorDown ? "control centre API unavailable" : "10.60.60.20 → 10.30.30.20:2404"}
+              detail={cc ? `${controlCentreLinkText(cc)} · ${CC_FLOW}` : CC_FLOW}
             />
             <WorkshopStatusCard
               label="RTU Telemetry"
               status={telemetryStatus}
-              detail={summary ? telemetryText(summary) : "—"}
+              detail={operatorDown ? "control centre API unavailable" : summary ? telemetryText(summary) : "—"}
             />
             <WorkshopStatusCard
               label="Scenarios"

@@ -4,6 +4,8 @@ import { FRESH_POINTS, STALE_STATE, TRUTH, commandResult } from "./operator-fixt
 import {
   commandErrorText,
   commandOutcome,
+  controlCentreHealth,
+  controlCentreLinkText,
   deviceStateSummary,
   formatAge,
   formatPointValue,
@@ -136,6 +138,19 @@ describe("journalSummary", () => {
   it("names an empty journal, whose bounds are null", () => {
     expect(journalRangeText(null, null)).toBe("empty");
     expect(journalRangeText(1, 50)).toBe("seq 1–50");
+  });
+});
+
+describe("workshop status control centre", () => {
+  it("reads link and GI, null while the control centre does not answer", () => {
+    expect(controlCentreLinkText({ link: "started", gi: "complete" })).toBe("STARTED · GI COMPLETE");
+    expect(controlCentreLinkText({ link: null, gi: null })).toBe("NOT ANSWERING");
+    expect(controlCentreHealth({ link: "started", gi: "complete" })).toBe("online");
+    expect(controlCentreHealth({ link: "started", gi: "running" })).toBe("degraded");
+    expect(controlCentreHealth({ link: "connecting", gi: "none" })).toBe("degraded");
+    expect(controlCentreHealth({ link: "disconnected", gi: "none" })).toBe("offline");
+    expect(controlCentreHealth({ link: null, gi: null })).toBe("offline");
+    expect(controlCentreHealth(undefined)).toBe("offline");
   });
 });
 

@@ -3,7 +3,7 @@
 // carries the lesson (a stale value stays visible and says why) is
 // unit-tested.
 
-import { ApiError } from "./api";
+import { ApiError, type WorkshopControlCentre } from "./api";
 import type {
   CommandPhaseStatus,
   CommandResult,
@@ -129,6 +129,22 @@ export const GI_STATE_TEXT: Record<ControlCentreLink["gi"]["state"], string> = {
   running: "RUNNING",
   complete: "COMPLETE",
 };
+
+// The control centre's link and GI as GET /api/workshop/status reports
+// them.
+export function controlCentreLinkText(cc: WorkshopControlCentre): string {
+  if (cc.link === null) return "NOT ANSWERING";
+  const gi = cc.gi === null ? "" : ` · GI ${GI_STATE_TEXT[cc.gi]}`;
+  return `${LINK_STATE_TEXT[cc.link]}${gi}`;
+}
+
+// online: link started and GI complete; degraded: on its way there;
+// offline: no link, or the control centre does not answer.
+export function controlCentreHealth(cc: WorkshopControlCentre | undefined): "online" | "degraded" | "offline" {
+  if (!cc || cc.link === null || cc.link === "disconnected") return "offline";
+  if (cc.link === "connecting") return "degraded";
+  return cc.gi === "complete" ? "online" : "degraded";
+}
 
 // ── Commands ─────────────────────────────────────────────────────
 
