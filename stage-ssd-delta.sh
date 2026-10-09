@@ -633,7 +633,87 @@ else
 fi
 
 banner "Write DELTA-README.md"
-
+UNCHANGED_SECTION=""
+if [ "${#UNCHANGED[@]}" -gt 0 ]; then
+    UNCHANGED_SECTION=$'\n## Unchanged (kept from prior install)\n\n'
+    for image in "${UNCHANGED[@]}"; do
+        UNCHANGED_SECTION+="- $image"$'\n'
+    done
+fi
+COMPOSE_DOWN_FUNCTION=$(cat <<'FUNCTION'
+compose_down_project() {
+    local project="$1" compose_dir range_containers volume_names remaining_volumes volume
+    compose_dir=$(mktemp -d) || return 1
+    volume_names=""
+    if [ "$project" = "rangerdanger" ]; then
+        range_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || return 1
+        if [ -n "$range_containers" ]; then
+            volume_names=$(printf '%s\n' "$range_containers" |
+                xargs docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}') || return 1
+        fi
+        if ! (cd "$compose_dir" && docker compose -p "$project" down -v --remove-orphans); then
+            rmdir "$compose_dir"
+            return 1
+        fi
+    elif ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+        rmdir "$compose_dir"
+        return 1
+    fi
+    rmdir "$compose_dir"
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Containers remain for Compose project $project." >&2; return 1; }
+    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Networks remain for Compose project $project." >&2; return 1; }
+    if [ "$project" = "rangerdanger" ]; then
+        remaining_volumes=$(docker volume ls -q) || return 1
+        while IFS= read -r volume; do
+            [ -n "$volume" ] || continue
+            printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume" && {
+                echo "Range volume $volume remains after teardown." >&2
+                return 1
+            }
+        done <<< "$volume_names"
+    fi
+}
+FUNCTION
+)
+START_PLATFORM_FUNCTION=$(cat <<'FUNCTION'
+start_platform_and_selected_range() {
+    local ready attempt range_status phase
+    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+        --project-directory "$PWD" -f docker-compose.release.yml \
+        up -d --pull never || return 1
+    ready=0
+    for attempt in $(seq 1 120); do
+        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
+    for attempt in $(seq 1 150); do
+        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
+            sleep 2
+            continue
+        }
+        phase=$(printf '%s' "$range_status" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
+        [ "$phase" = "ready" ] && return 0
+        if [ "$phase" = "failed" ]; then
+            echo "Selected range failed to start: $range_status" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "Selected range did not become ready." >&2
+    return 1
+}
+FUNCTION
+)
+README_TEMPLATE="$MEMBERSHIP_DIR/DELTA-README.template"
 APPLY_TABLE=""
 for img in "${CHANGED[@]}"; do
     image_repo=$(python3 -c '
@@ -709,19 +789,18 @@ if [ -z "$APPLY_RETAG_COMMANDS" ]; then
     APPLY_RETAG_COMMANDS="# No unchanged first-party image tags need to be created."
 fi
 
-# shellcheck disable=SC2154 # This here-document contains a separate shell program emitted for the operator.
-cat > "$OUT/DELTA-README.md" <<EOF
+cat > "$README_TEMPLATE" <<'README'
 # RangerDanger - delta patch
 
-Staged $(date -u +%FT%TZ) for upgrade from \`$SINCE\` -> \`$NEW\`.
+Staged __STAGED_AT__ for upgrade from \`__SINCE__\` -> \`__NEW__\`.
 
 ## Changed
 
 | Image | Package/service membership |
 |---|---|
-$APPLY_TABLE
-$KERNEL_README_ROW
-$([ "${#UNCHANGED[@]}" -gt 0 ] && echo "## Unchanged (kept from prior install)" && echo "" && printf -- '- %s\n' "${UNCHANGED[@]}")
+__APPLY_TABLE__
+__KERNEL_README_ROW__
+__UNCHANGED_SECTION__
 
 ## Apply
 
@@ -730,70 +809,23 @@ Run from the student's existing \`~/rangerdanger\` directory:
 \`\`\`sh
 set -e
 # Set this to the directory containing this delta bundle.
-DELTA_DIR="/path/to/delta-$NEW"
+DELTA_DIR="/path/to/delta-__NEW__"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
-
-compose_down_project() {
-    local project="$1" compose_dir
-    compose_dir=$(mktemp -d) || return 1
-    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
-        rmdir "$compose_dir"
-        return 1
-    fi
-    rmdir "$compose_dir"
-    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Containers remain for Compose project $project." >&2; return 1; }
-    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Networks remain for Compose project $project." >&2; return 1; }
-}
-
-start_platform_and_selected_range() {
-    local ready attempt range_status phase
-    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
-        --project-directory "$PWD" -f docker-compose.release.yml \
-        up -d --pull never || return 1
-    ready=0
-    for attempt in $(seq 1 120); do
-        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
-            ready=1
-            break
-        fi
-        sleep 2
-    done
-    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
-    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
-        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
-    for attempt in $(seq 1 150); do
-        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
-            sleep 2
-            continue
-        }
-        phase=$(printf '%s' "$range_status" | python3 -c \
-            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
-        [ "$phase" = "ready" ] && return 0
-        if [ "$phase" = "failed" ]; then
-            echo "Selected range failed to start: $range_status" >&2
-            return 1
-        fi
-        sleep 2
-    done
-    echo "Selected range did not become ready." >&2
-    return 1
-}
-
+__COMPOSE_DOWN_FUNCTION__
+__START_PLATFORM_FUNCTION__
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
 CURRENT_VERSION=\$(awk '/^VERSION=/ { sub(/^VERSION=/, ""); print; exit }' .env)
-if [ "\$CURRENT_VERSION" = "$NEW" ]; then
-    echo "This delta looks already applied: install VERSION is \$CURRENT_VERSION, but this delta expects $SINCE; nothing was changed." >&2
+if [ "\$CURRENT_VERSION" = "__NEW__" ]; then
+    echo "This delta looks already applied: install VERSION is \$CURRENT_VERSION, but this delta expects __SINCE__; nothing was changed." >&2
     exit 1
 fi
-if [ "\$CURRENT_VERSION" != "$SINCE" ]; then
+if [ "\$CURRENT_VERSION" != "__SINCE__" ]; then
     if [ -n "\$CURRENT_VERSION" ]; then
-        echo "Install VERSION is \$CURRENT_VERSION; this delta expects $SINCE. Refusing to apply; nothing was changed." >&2
+        echo "Install VERSION is \$CURRENT_VERSION; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
     else
-        echo "Install .env has no VERSION= line; this delta expects $SINCE. Refusing to apply; nothing was changed." >&2
+        echo "Install .env has no VERSION= line; this delta expects __SINCE__. Refusing to apply; nothing was changed." >&2
     fi
     exit 1
 fi
@@ -808,7 +840,7 @@ fi
 
 # Save the complete existing install, including .env and local lab/policy
 # edits, for rollback. Keep the first snapshot if this delta is re-applied.
-SNAPSHOT="../rangerdanger.before-$NEW.tar.gz"
+SNAPSHOT="../rangerdanger.before-__NEW__.tar.gz"
 if [ ! -f "\$SNAPSHOT" ]; then
     tar czf "\$SNAPSHOT" -C .. rangerdanger || {
         rm -f "\$SNAPSHOT"
@@ -823,14 +855,14 @@ tar tzf "\$SNAPSHOT" >/dev/null || {
 
 # Update the repo, then load the changed images (if any).
 tar xzf "\$DELTA_DIR/rangerdanger.tgz" -C ~
-$APPLY_BACKUP_COMMANDS
-$APPLY_LOAD_COMMAND
+__APPLY_BACKUP_COMMANDS__
+__APPLY_LOAD_COMMAND__
 
-# Re-tag unchanged first-party images so every required :$NEW tag exists.
-$APPLY_RETAG_COMMANDS
+# Re-tag unchanged first-party images so every required :__NEW__ tag exists.
+__APPLY_RETAG_COMMANDS__
 
 # Select the new release while preserving other .env settings.
-NEW_VERSION=$NEW awk '
+NEW_VERSION=__NEW__ awk '
   BEGIN { version = ENVIRON["NEW_VERSION"]; replaced = 0 }
   /^VERSION=/ {
     if (!replaced) print "VERSION=" version
@@ -847,18 +879,18 @@ start_platform_and_selected_range
 \`\`\`
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
-are included, \`delta-arm64.tar\` also ships \`$BINFMT_IMAGE\`; if
+are included, \`delta-arm64.tar\` also ships \`__BINFMT_IMAGE__\`; if
 OpenPLC isn't running after the restart (\`docker ps | grep openplc\`),
 register it once with
-\`docker run --privileged --rm $BINFMT_IMAGE --install amd64\`.
+\`docker run --privileged --rm __BINFMT_IMAGE__ --install amd64\`.
 (setup.sh does this automatically on a fresh install; the registration
 does not persist across a host reboot.) A repo-only delta has no image
 archives, so it cannot supply the binfmt image. Make sure that image is
 already present before applying a repo-only delta offline.
 
 If \`docker load\` fails with "no space left on device", free space
-without removing the prior \`$SINCE\` image tags or parked mutable-image
-tags named \`:before-$NEW\`; removing an old or parked tag forfeits rollback
+without removing the prior \`__SINCE__\` image tags or parked mutable-image
+tags named \`:before-__NEW__\`; removing an old or parked tag forfeits rollback
 for that image. If any apply step after the stack is stopped fails, do not
 try to start a partially updated tree: keep the snapshot and old tags, then
 follow the \`Rollback\` section below.
@@ -866,71 +898,27 @@ follow the \`Rollback\` section below.
 ## Rollback
 
 The apply recipe saves the complete pre-upgrade \`~/rangerdanger\` tree
-beside the install as \`../rangerdanger.before-$NEW.tar.gz\`. That snapshot
+beside the install as \`../rangerdanger.before-__NEW__.tar.gz\`. That snapshot
 includes all files and directories in the install tree: \`.env\`, Compose
 files, lab definitions, policy files, local edits, and all of \`./data/\`
 (including captures, Kali home, and simulator state; nothing in \`./data/\`
 is excluded). Docker images are not part of it. It can be large and grows
 with lab state.
-The retained \`$SINCE\` image tags and the parked mutable-image tags named
-\`:before-$NEW\` are reused, so rollback needs no network and no second
+The retained \`__SINCE__\` image tags and the parked mutable-image tags named
+\`:before-__NEW__\` are reused, so rollback needs no network and no second
 bundle. Keep the snapshot, retained old image tags, and parked tags until
 the rollback window closes:
 
 \`\`\`sh
 set -e
 cd ~/rangerdanger
-compose_down_project() {
-    local project="$1" compose_dir
-    compose_dir=$(mktemp -d) || return 1
-    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
-        rmdir "$compose_dir"
-        return 1
-    fi
-    rmdir "$compose_dir"
-    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Containers remain for Compose project $project." >&2; return 1; }
-    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
-        || { echo "Networks remain for Compose project $project." >&2; return 1; }
-}
-start_platform_and_selected_range() {
-    local ready attempt range_status phase
-    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
-        --project-directory "$PWD" -f docker-compose.release.yml \
-        up -d --pull never || return 1
-    ready=0
-    for attempt in $(seq 1 120); do
-        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
-            ready=1
-            break
-        fi
-        sleep 2
-    done
-    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
-    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
-        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
-    for attempt in $(seq 1 150); do
-        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
-            sleep 2
-            continue
-        }
-        phase=$(printf '%s' "$range_status" | python3 -c \
-            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
-        [ "$phase" = "ready" ] && return 0
-        if [ "$phase" = "failed" ]; then
-            echo "Selected range failed to start: $range_status" >&2
-            return 1
-        fi
-        sleep 2
-    done
-    echo "Selected range did not become ready." >&2
-    return 1
-}
-test -f "../rangerdanger.before-$NEW.tar.gz" || {
+__COMPOSE_DOWN_FUNCTION__
+__START_PLATFORM_FUNCTION__
+test -f "../rangerdanger.before-__NEW__.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
 }
-tar tzf "../rangerdanger.before-$NEW.tar.gz" >/dev/null || {
+tar tzf "../rangerdanger.before-__NEW__.tar.gz" >/dev/null || {
     echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
     exit 1
 }
@@ -938,12 +926,50 @@ compose_down_project rangerdanger
 compose_down_project rangerdanger-platform
 cd ..
 rm -rf rangerdanger
-tar xzf "rangerdanger.before-$NEW.tar.gz"
+tar xzf "rangerdanger.before-__NEW__.tar.gz"
 cd rangerdanger
-$ROLLBACK_RESTORE_COMMANDS
+__ROLLBACK_RESTORE_COMMANDS__
 start_platform_and_selected_range
 \`\`\`
-EOF
+README
+
+python3 - "$README_TEMPLATE" "$OUT/DELTA-README.md" "$SINCE" "$NEW" \
+    "$APPLY_TABLE" "$KERNEL_README_ROW" "$UNCHANGED_SECTION" \
+    "$APPLY_BACKUP_COMMANDS" "$APPLY_LOAD_COMMAND" "$APPLY_RETAG_COMMANDS" \
+    "$BINFMT_IMAGE" "$ROLLBACK_RESTORE_COMMANDS" \
+    "$COMPOSE_DOWN_FUNCTION" "$START_PLATFORM_FUNCTION" \
+    <<'PY' || die "Could not render DELTA-README.md"
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+
+(
+    template_path, output_path, since, new, apply_table, kernel_row,
+    unchanged_section, backup_commands, load_command, retag_commands,
+    binfmt_image, rollback_commands, compose_down_function,
+    start_platform_function,
+) = sys.argv[1:]
+template = Path(template_path).read_text(encoding="utf-8")
+template = template.replace(r"\$", "$").replace(r"\`", "`")
+replacements = {
+    "__STAGED_AT__": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "__SINCE__": since,
+    "__NEW__": new,
+    "__APPLY_TABLE__": apply_table,
+    "__KERNEL_README_ROW__": kernel_row,
+    "__UNCHANGED_SECTION__": unchanged_section,
+    "__APPLY_BACKUP_COMMANDS__": backup_commands,
+    "__APPLY_LOAD_COMMAND__": load_command,
+    "__APPLY_RETAG_COMMANDS__": retag_commands,
+    "__BINFMT_IMAGE__": binfmt_image,
+    "__ROLLBACK_RESTORE_COMMANDS__": rollback_commands,
+    "__COMPOSE_DOWN_FUNCTION__": compose_down_function + "\n",
+    "__START_PLATFORM_FUNCTION__": start_platform_function + "\n",
+}
+for token, value in replacements.items():
+    template = template.replace(token, value)
+Path(output_path).write_text(template, encoding="utf-8")
+PY
 say "wrote $OUT/DELTA-README.md"
 
 # Sweep any macOS AppleDouble (._*) sidecar files written before

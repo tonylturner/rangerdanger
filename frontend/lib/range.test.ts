@@ -150,7 +150,6 @@ describe("range-scoped queries", () => {
       ["traffic-status"],
       ["pcap-status"],
       ["segmentation", "live-events"],
-      ["lab-instances"],
     ]) {
       expect(isRangeScopedQuery(key)).toBe(true);
     }

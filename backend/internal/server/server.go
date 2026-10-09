@@ -13,7 +13,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 	"github.com/tturner/rangerdanger/backend/internal/version"
 )
@@ -112,7 +111,6 @@ func New(cfg *config.Config, db *gorm.DB, loader *labs.Loader, catalog *labs.Cat
 	}
 	s.rng = manager
 
-	s.applyMigrations()
 	s.registerMiddleware()
 	s.registerRoutes()
 	return s, nil
@@ -123,17 +121,6 @@ func (s *Server) Run(_ context.Context) error {
 	s.rng.Start()
 	addr := fmt.Sprintf(":%d", s.cfg.HTTPPort)
 	return s.engine.Run(addr)
-}
-
-func (s *Server) applyMigrations() {
-	_ = s.db.AutoMigrate(
-		&models.LabTemplate{},
-		&models.LabInstance{},
-		&models.NodeDefinition{},
-		&models.Scenario{},
-		&models.ScenarioRun{},
-		&models.TelemetryPoint{},
-	)
 }
 
 func (s *Server) registerRoutes() {
@@ -151,25 +138,9 @@ func (s *Server) registerRoutes() {
 		admin := api.Group("/admin")
 		admin.POST("/seed", s.handleSeedDefinitions)
 
-		// Curriculum and lab-instance records live in the database and
-		// are served whatever the range is doing.
-		labsGroup := api.Group("/labs")
-		{
-			labsGroup.GET("/templates", s.handleListLabTemplates)
-			labsGroup.GET("/instances", s.handleListLabInstances)
-			labsGroup.GET("/instances/:id", s.handleGetLabInstance)
-			labsGroup.GET("/instances/:id/topology", s.handleGetTopology)
-			labsGroup.PATCH("/instances/:id/topology", s.handlePatchTopology)
-			labsGroup.GET("/instances/:id/metrics", s.handleGetMetrics)
-			labsGroup.GET("/instances/:id/events", s.handleGetEvents)
-		}
-		api.POST("/nodes/:node_id/action", s.handleNodeAction)
-
 		// Scenario routes serve the active package only.
 		api.GET("/scenarios", s.handleListScenarios)
 		api.GET("/scenarios/:id", s.handleGetScenario)
-		api.POST("/scenarios/:id/run", s.handleStartScenarioRun)
-		api.GET("/scenario-runs/:id", s.handleGetScenarioRun)
 
 		s.registerRangeRoutes(api.Group("", s.rangeBound()))
 	}
@@ -178,18 +149,6 @@ func (s *Server) registerRoutes() {
 // registerRangeRoutes registers every route that reaches the range: its
 // containers, its firewall, or its services.
 func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
-	instances := rng.Group("/labs/instances")
-	{
-		instances.POST("", s.handleCreateLabInstance)
-		instances.POST("/:id/start", s.handleStartLabInstance)
-		instances.POST("/:id/stop", s.handleStopLabInstance)
-		instances.DELETE("/:id", s.handleDeleteLabInstance)
-		instances.Any("/:id/nodes/:nodeId/ui/*path", s.handleProxyNodeUI)
-		instances.GET("/:id/nodes/:nodeId/terminal", s.handleTerminal)
-		instances.GET("/:id/live-events", s.handleGetLiveEvents)
-		instances.GET("/:id/graph", s.handleGetInstanceGraph)
-	}
-
 	firewall := rng.Group("/firewall")
 	{
 		firewall.GET("/health", s.handleGetFirewallHealth)

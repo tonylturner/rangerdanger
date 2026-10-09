@@ -3,7 +3,6 @@ import dynamic from "next/dynamic";
 
 type NodeTerminalProps = {
   nodeId: string;
-  labId: string;
   onClose?: () => void;
   expanded?: boolean;
   hideHeader?: boolean;
@@ -19,7 +18,7 @@ const TerminalComponent = dynamic(() => import("./terminal-inner"), {
   ),
 });
 
-export function NodeTerminal({ nodeId, labId, onClose, expanded = false, hideHeader = false }: NodeTerminalProps) {
+export function NodeTerminal({ nodeId, onClose, expanded = false, hideHeader = false }: NodeTerminalProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ minHeight: 0 }}>
       {!hideHeader && (
@@ -38,7 +37,7 @@ export function NodeTerminal({ nodeId, labId, onClose, expanded = false, hideHea
         </div>
       )}
       <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-        <TerminalComponent nodeId={nodeId} labId={labId} expanded={expanded} />
+        <TerminalComponent nodeId={nodeId} expanded={expanded} />
       </div>
     </div>
   );

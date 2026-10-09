@@ -46,7 +46,7 @@ func main() {
 		log.Fatalf("seed lab packages: %v", err)
 	}
 
-	orch := orchestrator.New(cfg.LabDefinitionsPath)
+	orch := orchestrator.New()
 	dockerClient := orch.DockerClient()
 	if dockerClient == nil {
 		log.Fatalf("docker client unavailable: the range lifecycle needs the Docker socket")

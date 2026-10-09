@@ -24,14 +24,7 @@ func Connect(path string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	if err := database.AutoMigrate(
-		&models.LabTemplate{},
-		&models.LabInstance{},
-		&models.NodeDefinition{},
-		&models.Scenario{},
-		&models.ScenarioRun{},
-		&models.TelemetryPoint{},
-	); err != nil {
+	if err := database.AutoMigrate(&models.LabTemplate{}, &models.Scenario{}); err != nil {
 		return nil, fmt.Errorf("auto-migrate: %w", err)
 	}
 

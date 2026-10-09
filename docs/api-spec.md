@@ -4,9 +4,9 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
-**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: `POST /labs/instances` and every `/labs/instances/:id/...` route except the database-only `GET /labs/instances/:id`, `.../topology`, `.../metrics` and `.../events`; all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
 
-**Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall, RTAC and UI targets by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe; only `us-dnp3-substation` has one, and other packages answer `404 {"error":"package <id> has no workshop recipe"}`.
+**Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe; only `us-dnp3-substation` has one, and other packages answer `404 {"error":"package <id> has no workshop recipe"}`.
 
 ## Health and build info
 
@@ -58,31 +58,9 @@ A switch runs these phases, one switch at a time:
 
 On backend start, a range recorded as `ready` is adopted when every container of its manifest exists and the proxy runs its routes (no restart, no policy import); otherwise the phase becomes `failed` with `range missing: ...`. A switch that was cut short (`stopping`, `starting`, `configuring`) is torn down and recorded as `failed` with `interrupted during <phase>`.
 
-## Labs
+## Workshop
 
-Legacy endpoints for arbitrary lab templates and instances. The current workshop-focused flow uses the `/workshop/*` endpoints instead, but these remain for managing custom labs.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/labs/templates` | List lab templates |
-| `GET` | `/labs/instances` | List lab instances |
-| `POST` | `/labs/instances` | Create a new instance from a template. Body: `{"template_id": "...", "name": "..."}` |
-| `GET` | `/labs/instances/:id` | Get instance detail including node definitions |
-| `POST` | `/labs/instances/:id/start` | Start orchestration for the instance |
-| `POST` | `/labs/instances/:id/stop` | Stop containers for the instance |
-| `DELETE` | `/labs/instances/:id` | Delete an instance |
-| `GET` | `/labs/instances/:id/topology` | Topology JSON shaped for React Flow |
-| `PATCH` | `/labs/instances/:id/topology` | Persist UI-only metadata (node positions, etc.) |
-| `GET` | `/labs/instances/:id/graph` | Alternate topology graph format |
-| `GET` | `/labs/instances/:id/metrics` | Telemetry points for the instance |
-| `GET` | `/labs/instances/:id/events` | Scenario runs / events log |
-| `GET` | `/labs/instances/:id/live-events` | SSE stream of live events |
-| `GET` | `/labs/instances/:id/nodes/:nodeId/terminal` | WebSocket terminal (see Terminals section) |
-| `*` | `/labs/instances/:id/nodes/:nodeId/ui/*path` | HTTP proxy to a node's web UI |
-
-## Workshop (current exercise flow)
-
-The workshop endpoints operate on the always-running substation lab defined in `lab-definitions/substation-segmentation.yml` and are what the exercise runner uses.
+The workshop endpoints operate on the serving range, with nodes from the active package's topology, and are what the exercise runner uses.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -101,10 +79,8 @@ Exercises are stored internally as "scenarios" for historical reasons - the user
 |--------|------|-------------|
 | `GET` | `/scenarios` | List the active package's exercises |
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
-| `POST` | `/scenarios/:id/run` | Start a scenario run against a lab instance |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute an automated action for a single step (e.g., inject_fault, apply firewall config) |
 | `GET` | `/scenarios/:id/validate` | Run all validators for the exercise. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
-| `GET` | `/scenario-runs/:id` | Status of a scenario run |
 
 ### Validation response
 
@@ -176,12 +152,6 @@ Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to
 | `GET` | `/pcap/download` | Download the most recent capture |
 | `GET` | `/pcap/download/:name` | Download a specific capture by filename |
 
-## Nodes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/nodes/:node_id/action` | Send a node action (restart, stop, etc.) - placeholder for orchestration hooks |
-
 ## Containd proxy
 
 | Method | Path | Description |
@@ -195,7 +165,6 @@ Terminal endpoints upgrade to a WebSocket and proxy between xterm.js clients and
 ### Endpoints
 
 - `GET /workshop/nodes/:nodeId/terminal` - Workshop node terminal
-- `GET /labs/instances/:id/nodes/:nodeId/terminal` - Lab instance node terminal
 
 ### Message protocol
 

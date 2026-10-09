@@ -38,7 +38,7 @@ Notable routes (`app/`):
 - `/console` - Cobalt Strike-style network console with React Flow
 - `/substation` - substation control panel
 - `/knowledge` - reference material accompanying the exercises (e.g. Purdue Model levels)
-- `/labs` and `/labs/[id]` - lab template and instance management
+- `/labs` - workshop environment status
 - `/scenarios` - legacy redirect to `/exercises`
 
 ## API and proxy
