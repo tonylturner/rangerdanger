@@ -668,7 +668,18 @@ test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior v
 compose_down_project() {
     project="$1"
     compose_dir=$(mktemp -d) || return 1
-    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+    volume_names=""
+    if [ "$project" = "rangerdanger" ]; then
+        range_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || return 1
+        if [ -n "$range_containers" ]; then
+            volume_names=$(printf '%s\n' "$range_containers" |
+                xargs docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}') || return 1
+        fi
+        if ! (cd "$compose_dir" && docker compose -p "$project" down -v --remove-orphans); then
+            rmdir "$compose_dir"
+            return 1
+        fi
+    elif ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
         rmdir "$compose_dir"
         return 1
     fi
@@ -677,6 +688,16 @@ compose_down_project() {
         || { echo "Containers remain for Compose project $project." >&2; return 1; }
     [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
         || { echo "Networks remain for Compose project $project." >&2; return 1; }
+    if [ "$project" = "rangerdanger" ]; then
+        remaining_volumes=$(docker volume ls -q) || return 1
+        while IFS= read -r volume; do
+            [ -n "$volume" ] || continue
+            printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume" && {
+                echo "Range volume $volume remains after teardown." >&2
+                return 1
+            }
+        done <<< "$volume_names"
+    fi
 }
 
 start_platform_and_selected_range() {
@@ -787,7 +808,18 @@ cd ~/rangerdanger
 compose_down_project() {
     project="$1"
     compose_dir=$(mktemp -d) || return 1
-    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+    volume_names=""
+    if [ "$project" = "rangerdanger" ]; then
+        range_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || return 1
+        if [ -n "$range_containers" ]; then
+            volume_names=$(printf '%s\n' "$range_containers" |
+                xargs docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}') || return 1
+        fi
+        if ! (cd "$compose_dir" && docker compose -p "$project" down -v --remove-orphans); then
+            rmdir "$compose_dir"
+            return 1
+        fi
+    elif ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
         rmdir "$compose_dir"
         return 1
     fi
@@ -796,6 +828,16 @@ compose_down_project() {
         || { echo "Containers remain for Compose project $project." >&2; return 1; }
     [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
         || { echo "Networks remain for Compose project $project." >&2; return 1; }
+    if [ "$project" = "rangerdanger" ]; then
+        remaining_volumes=$(docker volume ls -q) || return 1
+        while IFS= read -r volume; do
+            [ -n "$volume" ] || continue
+            printf '%s\n' "$remaining_volumes" | grep -Fxq "$volume" && {
+                echo "Range volume $volume remains after teardown." >&2
+                return 1
+            }
+        done <<< "$volume_names"
+    fi
 }
 start_platform_and_selected_range() {
     RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
