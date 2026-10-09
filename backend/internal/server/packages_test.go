@@ -122,7 +122,6 @@ func TestScenarioRoutesServeActivePackageOnly(t *testing.T) {
 	}
 	for _, request := range []struct{ method, path string }{
 		{http.MethodGet, "/api/scenarios/other-lab"},
-		{http.MethodPost, "/api/scenarios/other-lab/run"},
 		{http.MethodGet, "/api/scenarios/other-lab/validate"},
 		{http.MethodPost, "/api/scenarios/other-lab/steps/0/execute"},
 		{http.MethodGet, "/api/scenarios/missing/validate"},
@@ -130,6 +129,14 @@ func TestScenarioRoutesServeActivePackageOnly(t *testing.T) {
 		// The write routes are gone.
 		{http.MethodPost, "/api/scenarios"},
 		{http.MethodPost, "/api/labs/templates"},
+		// So are lab instances, templates and scenario runs.
+		{http.MethodGet, "/api/labs/templates"},
+		{http.MethodGet, "/api/labs/instances"},
+		{http.MethodPost, "/api/labs/instances"},
+		{http.MethodGet, "/api/labs/instances/lab/nodes/kali-1/terminal"},
+		{http.MethodPost, "/api/scenarios/active-lab/run"},
+		{http.MethodGet, "/api/scenario-runs/run"},
+		{http.MethodPost, "/api/nodes/kali-1/action"},
 	} {
 		if rec := serve(s, request.method, request.path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s %s = %d %s, want 404", request.method, request.path, rec.Code, rec.Body)
@@ -199,8 +206,13 @@ func TestShippedPackagesLoad(t *testing.T) {
 	if err := database.First(&template, "id = ?", "substation-segmentation").Error; err != nil {
 		t.Fatalf("load US template: %v", err)
 	}
-	if template.PackageID != "us-dnp3-substation" || template.FirewallConfigPath != "firewall/substation-weak.json" {
-		t.Errorf("US template = (%q, %q), want (us-dnp3-substation, firewall/substation-weak.json)", template.PackageID, template.FirewallConfigPath)
+	if template.PackageID != "us-dnp3-substation" {
+		t.Errorf("US template package = %q, want us-dnp3-substation", template.PackageID)
+	}
+	for _, pkg := range catalog.Packages {
+		if pkg.ID == config.DefaultPackage && pkg.FirewallConfigPath != "firewall/substation-weak.json" {
+			t.Errorf("US firewall config path = %q, want firewall/substation-weak.json", pkg.FirewallConfigPath)
+		}
 	}
 
 	want := map[string]struct {

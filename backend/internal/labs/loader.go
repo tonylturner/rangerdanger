@@ -97,13 +97,11 @@ func storePackage(tx *gorm.DB, pkg Package) error {
 		return fmt.Errorf("marshal topology: %w", err)
 	}
 	template := models.LabTemplate{
-		ID:                 pkg.Template.ID,
-		PackageID:          pkg.ID,
-		Name:               pkg.Template.Name,
-		Description:        pkg.Template.Description,
-		Topology:           string(topologyJSON),
-		ComposeFile:        "docker-compose.yml",
-		FirewallConfigPath: pkg.FirewallConfigPath,
+		ID:          pkg.Template.ID,
+		PackageID:   pkg.ID,
+		Name:        pkg.Template.Name,
+		Description: pkg.Template.Description,
+		Topology:    string(topologyJSON),
 	}
 	if err := upsert(tx, &template); err != nil {
 		return fmt.Errorf("upsert template %s: %w", template.ID, err)

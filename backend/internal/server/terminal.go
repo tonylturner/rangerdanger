@@ -10,7 +10,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
-	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
 // resizeMsg is a client → server message to resize the PTY.
@@ -29,22 +28,6 @@ var upgrader = websocket.Upgrader{
 // handleWorkshopTerminal handles WebSocket terminal connections for workshop
 // mode: the node's container comes from the range manifest.
 func (s *Server) handleWorkshopTerminal(c *gin.Context) {
-	svc, err := nodeService(rangeOf(c), c.Param("nodeId"))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	s.connectTerminal(c, svc)
-}
-
-// handleTerminal handles WebSocket connections for a lab instance node. The
-// instance must exist; its node resolves in the range manifest.
-func (s *Server) handleTerminal(c *gin.Context) {
-	var instance models.LabInstance
-	if err := s.db.First(&instance, "id = ?", c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "lab not found"})
-		return
-	}
 	svc, err := nodeService(rangeOf(c), c.Param("nodeId"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

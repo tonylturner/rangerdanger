@@ -14,8 +14,7 @@ import (
 )
 
 // handleGetWorkshopGraph returns the topology graph for the active workshop
-// template, with zones and addresses from the range manifest. It does not
-// require a lab instance.
+// template, with zones and addresses from the range manifest.
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	gen := rangeOf(c)
 	var template models.LabTemplate
@@ -71,7 +70,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		count := zoneCounts[zone]
 		zoneCounts[zone] = count + 1
 
-		uiPath, externalURL := getNodeUIConfig(n.Type, n.Container, "workshop", n.ID)
+		uiPath, externalURL := getNodeUIConfig(n.Type)
 
 		interfaceIPs := manifestInterfaceIPs(gen, n)
 

@@ -156,6 +156,9 @@ func TestSeedImportsPackage(t *testing.T) {
 	if !ok || !reflect.DeepEqual(info, want) {
 		t.Errorf("catalog.Info(alpha) = %#v, %v; want %#v", info, ok, want)
 	}
+	if got, want := catalog.Packages[0].FirewallConfigPath, "packages/alpha/firewall/weak.json"; got != want {
+		t.Errorf("firewall config path = %q, want %q (resolved from the topology directory)", got, want)
+	}
 
 	var template models.LabTemplate
 	if err := database.First(&template, "id = ?", "substation").Error; err != nil {
@@ -163,9 +166,6 @@ func TestSeedImportsPackage(t *testing.T) {
 	}
 	if template.PackageID != "alpha" {
 		t.Errorf("template package = %q, want alpha", template.PackageID)
-	}
-	if want := "packages/alpha/firewall/weak.json"; template.FirewallConfigPath != want {
-		t.Errorf("firewall config path = %q, want %q (resolved from the topology directory)", template.FirewallConfigPath, want)
 	}
 	var topology map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(template.Topology), &topology); err != nil {

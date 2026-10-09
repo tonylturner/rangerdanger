@@ -61,15 +61,15 @@ The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`); range files 
 
 ### Backend (Go + Gin)
 
-The backend at `backend/cmd/server` exposes a Gin HTTP API, manages container orchestration through the Docker SDK, persists lab state in SQLite via GORM, and proxies to the containd firewall over REST and SSE.
+The backend at `backend/cmd/server` exposes a Gin HTTP API, runs the range through Compose, execs into its containers through the Docker SDK, persists lab state in SQLite via GORM, and proxies to the containd firewall over REST and SSE.
 
 Internal packages:
 
 - `internal/config` - Viper-based configuration
 - `internal/db` - GORM + SQLite setup
-- `internal/models` - LabTemplate, LabInstance, NodeDefinition, Scenario, ScenarioRun, TelemetryPoint
-- `internal/labs` - YAML definition loader and node type catalog
-- `internal/orchestrator` - Docker SDK wrapper (container lifecycle, exec sessions, exec resize)
+- `internal/models` - LabTemplate (a package's topology) and Scenario
+- `internal/labs` - YAML definition loader
+- `internal/orchestrator` - Docker SDK wrapper for exec sessions and exec resize; Compose owns container lifecycle
 - `internal/containd` - REST client for containd firewall API
 - `internal/server` - HTTP handlers, WebSocket terminals, exercise validators, PCAP management, traffic generation
 
@@ -85,7 +85,7 @@ Top-level pages:
 - `/console` - Network Map with React Flow topology and per-node terminals
 - `/substation` - Substation control panel (live device state, control popups)
 - `/knowledge` - Reference material accompanying the exercises
-- `/labs` / `/labs/[id]` - Lab template and instance management
+- `/labs` - Workshop environment status
 - `/scenarios` - Legacy redirect to `/exercises`
 
 The operator HMI itself is **FUXA**, served via the nginx proxy at
@@ -158,7 +158,8 @@ Browser ──HTTP──> Nginx proxy ──┬──> /apps/*      → webtop/H
                                 ├──> /api/*       → backend
                                 └──> /            → frontend (Next.js)
 
-Backend ──Docker SDK──> container lifecycle + exec sessions
+Backend ──Compose────> range lifecycle (up / down of the range project)
+        ──Docker SDK──> exec sessions, image and container checks, proxy reload
         ──REST──────> containd /api/v1/* (firewall policy, PCAP, events)
         ──WebSocket─> xterm.js clients (Docker exec, with resize forwarding)
         ──GORM──────> SQLite at /data/rangerdanger.db
