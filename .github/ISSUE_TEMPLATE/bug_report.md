@@ -44,7 +44,7 @@ for the responsible-disclosure address.
 
 ## Logs
 
-<!-- Anything relevant from `docker compose logs <service>`. Fence with
+<!-- Anything relevant from `docker logs <container>` (for example `docker logs rangerdanger-backend`). Fence with
      ``` and trim to the salient part. -->
 
 ```
