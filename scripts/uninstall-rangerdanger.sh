@@ -150,6 +150,11 @@ BASE_REFS=$(echo "$COMPOSE_IMAGES" | grep ':' \
     | sed -E 's/@sha256:[0-9a-f]+//' | sort -u | grep . || true)
 [ -z "$BASE_REFS" ] && BASE_REFS=$(printf '%s\n' \
     'alpine:3.21' 'nginx:1.27-alpine' 'linuxserver/webtop:ubuntu-mate')
+# The Windows WSL2 kernel probe pulls this image when the containd image is
+# absent (scripts/install-wsl-kernel.ps1 $AlpineImage; keep in sync). It is
+# in no compose file. Listed here too because a Docker Desktop engine that
+# setup.ps1 used can be reached from a WSL distro running this script.
+BASE_REFS=$(printf '%s\nalpine:3.20\n' "$BASE_REFS" | grep . | sort -u)
 BASE_IMAGES=""
 while IFS= read -r _img; do
     [ -z "$_img" ] && continue

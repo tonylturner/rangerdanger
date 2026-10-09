@@ -197,6 +197,10 @@ $baseRefs = @($composeImages |
 if ($baseRefs.Count -eq 0) {
     $baseRefs = @('alpine:3.21', 'nginx:1.27-alpine', 'linuxserver/webtop:ubuntu-mate')
 }
+# The WSL2 kernel probe pulls this image when the containd image is absent
+# (scripts\install-wsl-kernel.ps1 $AlpineImage; keep in sync). It is in no
+# compose file, so add it explicitly.
+$baseRefs = @(@($baseRefs) + 'alpine:3.20' | Sort-Object -Unique)
 $rdBaseImages = @($baseRefs | Where-Object { $presentImages -contains $_ } | Sort-Object -Unique)
 
 Say "Release images (ghcr):    $($rdImages.Count)"

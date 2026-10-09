@@ -224,6 +224,7 @@ function Test-WindowsWsl2Backend {
 
 # Keep in sync with the firewall service image in docker-compose.release.yml.
 $FirewallImage = 'ghcr.io/tonylturner/containd:latest'
+# Removed by the uninstallers' base-image option; keep them in sync.
 $AlpineImage   = 'alpine:3.20'
 # The trailing rdprobe-rc marker proves nft itself ran; without it the
 # probe container could not start or had no nft. The table is deleted in
