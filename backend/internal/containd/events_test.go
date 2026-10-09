@@ -18,12 +18,8 @@ func TestGetEventsSuccess(t *testing.T) {
 		if r.URL.Path != "/api/v1/events" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		// Verify query params
 		if r.URL.Query().Get("limit") != "10" {
 			t.Errorf("expected limit=10, got %s", r.URL.Query().Get("limit"))
-		}
-		if r.URL.Query().Get("since") != "evt-5" {
-			t.Errorf("expected since=evt-5, got %s", r.URL.Query().Get("since"))
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"events": []Event{
@@ -35,7 +31,7 @@ func TestGetEventsSuccess(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	events, err := client.GetEvents(context.Background(), "evt-5", 10)
+	events, err := client.GetEvents(context.Background(), 10, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,23 +46,28 @@ func TestGetEventsSuccess(t *testing.T) {
 	}
 }
 
-// TestGetEventsNoSince verifies events fetching without a since parameter.
-func TestGetEventsNoSince(t *testing.T) {
+// TestGetEventsFiltersByTimestamp verifies that since is applied to each
+// event's timestamp here and never sent to containd, which ignores it.
+func TestGetEventsFiltersByTimestamp(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("since") != "" {
-			t.Error("expected no since parameter")
+		if r.URL.Query().Has("since") {
+			t.Error("since must not be sent to containd")
 		}
-		json.NewEncoder(w).Encode(map[string]any{"events": []Event{}})
+		io.WriteString(w, `[
+			{"id":3,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:02Z"},
+			{"id":2,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:01Z"},
+			{"id":1,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:00.999Z"}
+		]`)
 	}))
 	defer srv.Close()
 
-	client := newTestClient(srv.URL)
-	events, err := client.GetEvents(context.Background(), "", 5)
+	since := time.Date(2026, 10, 9, 12, 0, 1, 0, time.UTC)
+	events, err := newTestClient(srv.URL).GetEvents(context.Background(), 5, since)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(events) != 0 {
-		t.Errorf("expected 0 events, got %d", len(events))
+	if len(events) != 2 || events[0].ID != "3" || events[1].ID != "2" {
+		t.Errorf("events = %+v, want ids 3 and 2 (at or after since)", events)
 	}
 }
 

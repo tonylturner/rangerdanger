@@ -78,12 +78,15 @@ type Flow struct {
 	AvBlocked   bool      `json:"avBlocked,omitempty"`
 }
 
-// GetEvents returns recent events, optionally filtered by time.
-func (c *Client) GetEvents(ctx context.Context, since string, limit int) ([]Event, error) {
+// MaxEventLimit is the largest limit containd's GET /api/v1/events honours;
+// it silently uses its default (500) for anything larger.
+const MaxEventLimit = 5000
+
+// GetEvents returns up to limit of containd's most recent events, keeping
+// only those at or after since (zero keeps all). containd has no time
+// filter of its own, so the filter runs here on each event's timestamp.
+func (c *Client) GetEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
 	url := fmt.Sprintf("%s/api/v1/events?limit=%d", c.BaseURL, limit)
-	if since != "" {
-		url += "&since=" + since
-	}
 
 	resp, err := c.doRequest(ctx, "GET", url)
 	if err != nil {
@@ -113,8 +116,16 @@ func (c *Client) GetEvents(ctx context.Context, since string, limit int) ([]Even
 		}
 		events = result.Events
 	}
-
-	return events, nil
+	if since.IsZero() {
+		return events, nil
+	}
+	kept := events[:0]
+	for _, event := range events {
+		if !event.Timestamp.Before(since) {
+			kept = append(kept, event)
+		}
+	}
+	return kept, nil
 }
 
 // containd's GET /api/v1/flows bounds: it accepts a limit in
