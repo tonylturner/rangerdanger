@@ -1,13 +1,14 @@
 import { API_BASE_URL } from "./utils";
 import { parseRangeNotReady, reportRangeNotReady, type RangeStatus } from "./range";
 
-// A non-2xx answer. detail is the server's {"error"} text when it sent one.
+// A non-2xx answer. detail is the server's {"error"} text when it sent
+// one; the message carries it, so every banner shows the backend's cause.
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
 
   constructor(status: number, detail: string) {
-    super(`Request failed: ${status}`);
+    super(detail ? `${status} ${detail}` : `Request failed: ${status}`);
     this.status = status;
     this.detail = detail;
   }

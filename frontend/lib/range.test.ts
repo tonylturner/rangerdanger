@@ -208,7 +208,7 @@ describe("not-ready answers", () => {
     const err = await getWorkshopGraph().catch((e: unknown) => e);
     expect(isRangeNotReady(err)).toBe(false);
     expect(err).toBeInstanceOf(ApiError);
-    expect(logLineFor(err, "Reset failed: ")).toBe("[ERROR] Reset failed: Request failed: 503");
+    expect(logLineFor(err, "Reset failed: ")).toBe("[ERROR] Reset failed: 503 containd unavailable");
   });
 
   it("reads and requests the range", async () => {

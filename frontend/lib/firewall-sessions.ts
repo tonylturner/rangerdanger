@@ -80,19 +80,13 @@ export function tupleText(t: SessionTuple): string {
   return `${t.proto} ${t.src}:${t.sport} → ${t.dst}:${t.dport}`;
 }
 
-// The backend's {"error"} text carries the containd cause; keep it.
-function failureText(error: unknown): string {
-  if (error instanceof ApiError && error.detail) return `${error.status} ${error.detail}`;
-  return errorMessage(error);
-}
-
 export function killResultText(tuple: SessionTuple, error: unknown): string {
   if (error === null) {
     return `Deleted ${tupleText(tuple)} from conntrack. Its next packet is a new flow and meets the active policy: the session dies only if the policy denies it.`;
   }
   if (isRangeNotReady(error)) return error.message;
   if (error instanceof ApiError && error.status === 404) return `containd has no entry ${tupleText(tuple)} (already gone).`;
-  return `Kill of ${tupleText(tuple)} failed: ${failureText(error)}`;
+  return `Kill of ${tupleText(tuple)} failed: ${errorMessage(error)}`;
 }
 
 // What the cut button reports when the lookup or the kill failed.
@@ -100,5 +94,5 @@ export function cutFailureText(tuple: SessionTuple | null, error: unknown): stri
   if (error instanceof SessionLookupError) return error.message;
   if (tuple !== null) return killResultText(tuple, error);
   if (isRangeNotReady(error)) return error.message;
-  return `Could not read the firewall sessions: ${failureText(error)}. Nothing was killed.`;
+  return `Could not read the firewall sessions: ${errorMessage(error)}. Nothing was killed.`;
 }
