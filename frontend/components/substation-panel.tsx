@@ -16,7 +16,11 @@ const NO_AUDIT: AuditEntry[] = [];
 const NO_EVENTS: NetworkEvent[] = [];
 
 export function SubstationPanel() {
-  const state = useSubstationState(3000).data ?? null;
+  const stateQuery = useSubstationState(3000);
+  const state = stateQuery.data ?? null;
+  // Without a range there is no feeder to draw; an empty state would
+  // read as an outage (breaker open, loads dead).
+  const waiting = !state && isRangeNotReady(stateQuery.error);
   const audit = useSubstationAudit(3000).data?.entries ?? NO_AUDIT;
   const networkEvents = useSubstationNetworkEvents(3000).data?.events ?? NO_EVENTS;
   const refresh = useRefreshLive();
@@ -65,7 +69,12 @@ export function SubstationPanel() {
       </div>
 
       <div className="p-4">
-        {tab === "diagram" && (
+        {waiting && (tab === "diagram" || tab === "electrical") && (
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+            The feeder shows once the range is ready.
+          </div>
+        )}
+        {tab === "diagram" && !waiting && (
           <OneLine elec={elec} relay={relay} recloser={recloser} regulator={regulator} capbank={capbank} />
         )}
         {tab === "commands" && (
@@ -79,7 +88,7 @@ export function SubstationPanel() {
           />
         )}
         {tab === "correlation" && <CommandAuditView entries={audit} networkEvents={networkEvents} />}
-        {tab === "electrical" && (
+        {tab === "electrical" && !waiting && (
           <ElectricalDetailView
             elec={elec}
             relay={relay}

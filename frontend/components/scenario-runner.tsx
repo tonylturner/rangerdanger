@@ -37,7 +37,7 @@ import {
   saveProgress,
 } from "../lib/scenario-runner-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
-import { logLineFor } from "../lib/range";
+import { isRangeNotReady, logLineFor } from "../lib/range";
 import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
 import {
   POLICY_ACTION_SCENARIOS,
@@ -74,7 +74,11 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const [showSummary, setShowSummary] = useState(false);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
-  const state = useSubstationState(3000).data ?? null;
+  const stateQuery = useSubstationState(3000);
+  const state = stateQuery.data ?? null;
+  // No feeder while the range is being replaced; the status cards wait
+  // instead of reading the missing state as an outage.
+  const feederWaiting = !state && isRangeNotReady(stateQuery.error);
   const activeFirewall = useActiveFirewall(3000).data;
   const activeConfig = activeFirewall?.active_config ?? null;
   // Firewall-track choice (guided | technical | null). Read here so
@@ -766,28 +770,36 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
               {/* Operational status */}
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Feeder Status</div>
-              <div className="grid grid-cols-2 gap-2">
-                <MiniStatus
-                  label="Customer Service"
-                  value={customersServed ? "Serving" : "OUTAGE"}
-                  ok={customersServed}
-                />
-                <MiniStatus
-                  label="Protection"
-                  value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
-                  ok={bkrClosed && rclClosed}
-                />
-                <MiniStatus
-                  label="Voltage"
-                  value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
-                  ok={critV > 0 && critV >= 114 && critV <= 126}
-                />
-                <MiniStatus
-                  label="Critical Load"
-                  value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
-                  ok={elec?.critical_load_energized}
-                />
-              </div>
+              {feederWaiting ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {["Customer Service", "Protection", "Voltage", "Critical Load"].map((label) => (
+                    <MiniStatus key={label} label={label} value="WAITING" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <MiniStatus
+                    label="Customer Service"
+                    value={customersServed ? "Serving" : "OUTAGE"}
+                    ok={customersServed}
+                  />
+                  <MiniStatus
+                    label="Protection"
+                    value={bkrClosed && rclClosed ? "Normal" : "DEGRADED"}
+                    ok={bkrClosed && rclClosed}
+                  />
+                  <MiniStatus
+                    label="Voltage"
+                    value={critV === 0 ? "DEAD" : critV >= 114 && critV <= 126 ? `${critV.toFixed(0)}V OK` : `${critV.toFixed(0)}V BAD`}
+                    ok={critV > 0 && critV >= 114 && critV <= 126}
+                  />
+                  <MiniStatus
+                    label="Critical Load"
+                    value={elec?.critical_load_energized ? "Energized" : "NO POWER"}
+                    ok={elec?.critical_load_energized}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Quick commands panel */}
