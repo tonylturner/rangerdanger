@@ -2,8 +2,10 @@
 #
 # RangerDanger -- post-workshop cleanup, macOS / Linux.
 #
-# Brings the stack down, removes its persistent state, optionally
-# removes the lab images, and reverts the amd64 emulation handler that
+# Stops the range and then the platform (scripts/dev-down.sh: label-only,
+# by Compose project), removes setup's .env and the anonymous volumes the
+# lab's containers mounted, optionally removes the lab images, and
+# reverts the amd64 emulation handler that
 # setup.sh registers on arm64 Linux hosts for OpenPLC (only if setup
 # installed it). Unlike Windows there is no custom-kernel install to
 # undo -- Docker on macOS / Linux already ships CONFIG_NFT_QUEUE=y -- so
@@ -32,13 +34,16 @@
 #   --purge               --remove-images + --remove-dev-images (a clean
 #                         slate for redeploy testing; base images are
 #                         left alone -- add --remove-base-images for those)
-#   --keep-volumes        leave docker volumes alone (preserves lab DB
-#                         and student progress for a later session)
+#   --keep-volumes        leave the anonymous volumes (the webtops' /config)
+#                         in place. Lab state lives in bind-mounted
+#                         directories (backend/data, data/), which this
+#                         script never removes.
 #
 # Exit codes:
 #   0 = uninstall completed (or partial with warnings)
 #   1 = user declined the confirmation prompt
 #   2 = nothing to do (no rangerdanger state detected)
+#   3 = teardown left containers or networks behind; nothing else removed
 
 set -uo pipefail
 
@@ -88,30 +93,38 @@ $1
 EOF
 }
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-COMPOSE_FILE="$ROOT_DIR/docker-compose.release.yml"
-OFFLINE_FILE="$ROOT_DIR/docker-compose.offline.yml"
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 ENV_FILE="$ROOT_DIR/.env"
 BINFMT_MARKER="$ROOT_DIR/.setup-binfmt-amd64"
 # Pinned to match setup.sh + the SSD-staged image so offline revert finds it
 # locally with no pull. Keep in sync with setup.sh / stage-ssd*.sh.
 BINFMT_REF="tonistiigi/binfmt:qemu-v10.2.1"
 OS=$(uname -s)
-
-COMPOSE_ARGS=("-f" "$COMPOSE_FILE")
-if [ -f "$OFFLINE_FILE" ]; then COMPOSE_ARGS+=("-f" "$OFFLINE_FILE"); fi
+# What this script owns: the containers and networks of these two Compose
+# projects, by label. Never anything matched by name.
+PROJECTS="rangerdanger rangerdanger-platform"
 
 banner "RangerDanger uninstall"
 
 # --- inventory --------------------------------------------------------
-CONTAINERS=$(docker ps -a --format '{{.Names}}' --filter "name=rangerdanger-" 2>/dev/null || true)
+CONTAINERS=""
+CONTAINER_IDS=""
+NETWORKS=""
+for _project in $PROJECTS; do
+    CONTAINERS="${CONTAINERS}$(docker ps -a --format '{{.Names}}' --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
+    CONTAINER_IDS="${CONTAINER_IDS}$(docker ps -aq --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
+    NETWORKS="${NETWORKS}$(docker network ls -q --filter "label=com.docker.compose.project=$_project" 2>/dev/null || true)"$'\n'
+done
+CONTAINERS=$(echo "$CONTAINERS" | grep . || true)
 N_CONTAINERS=$(echo "$CONTAINERS" | grep -c . || true)
+N_NETWORKS=$(echo "$NETWORKS" | grep -c . || true)
 say "Containers found: $N_CONTAINERS"
 if [ -n "$CONTAINERS" ]; then
     while IFS= read -r _container; do
         printf '  %s\n' "$_container"
     done <<< "$CONTAINERS"
 fi
+say "Networks found: $N_NETWORKS"
 
 PRESENT_IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
 
@@ -120,14 +133,23 @@ ALL_IMAGES=$(echo "$PRESENT_IMAGES" \
     | grep -E '^ghcr\.io/tonylturner/(rangerdanger-|containd)' || true)
 N_IMAGES=$(echo "$ALL_IMAGES" | grep -c . || true)
 
-# Categories B + C are derived from the dev compose file as the single
-# source of truth. `docker compose config --images` prints locally-built
-# images WITHOUT a tag (e.g. "rangerdanger-backend") and pulled images
-# WITH one (e.g. "nginx:1.27-alpine"), which lets us split them apart
-# without hard-coding service lists.
-DEV_COMPOSE="$ROOT_DIR/docker-compose.yml"
+# Categories B + C are derived from the source Compose files (the
+# platform's and every range package's) as the single source of truth.
+# `docker compose config --images` prints locally-built images WITHOUT a
+# tag (e.g. "rangerdanger-platform-backend", "rangerdanger-rtac_sim") and
+# pulled images WITH one (e.g. "nginx:1.27-alpine"), which lets us split
+# them apart without hard-coding service lists.
 COMPOSE_IMAGES=""
-[ -f "$DEV_COMPOSE" ] && COMPOSE_IMAGES=$(docker compose -f "$DEV_COMPOSE" config --images 2>/dev/null || true)
+if [ -f "$ROOT_DIR/docker-compose.yml" ]; then
+    COMPOSE_IMAGES=$(RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p rangerdanger-platform \
+        --project-directory "$ROOT_DIR" -f "$ROOT_DIR/docker-compose.yml" config --images 2>/dev/null || true)
+fi
+for _file in "$ROOT_DIR"/lab-definitions/packages/*/compose.source.yml; do
+    [ -f "$_file" ] || continue
+    COMPOSE_IMAGES="${COMPOSE_IMAGES}"$'\n'"$(RANGERDANGER_ROOT="$ROOT_DIR" docker compose -p rangerdanger \
+        --project-directory "$ROOT_DIR" -f "$_file" config --images 2>/dev/null || true)"
+done
+COMPOSE_IMAGES=$(echo "$COMPOSE_IMAGES" | grep . | sort -u || true)
 
 # Category B -- locally-built dev images (rangerdanger-<service>:latest).
 DEV_REPOS=$(echo "$COMPOSE_IMAGES" | grep -v ':' | grep . || true)
@@ -164,9 +186,15 @@ say "Release images (ghcr):    $N_IMAGES"
 say "Dev images (local build): $N_DEV_IMAGES"
 say "Base images (shared):     $N_BASE_IMAGES"
 
-VOLUMES=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '^rangerdanger' || true)
-N_VOLUMES=$(echo "$VOLUMES" | grep -c . || true)
-say "Volumes: $N_VOLUMES"
+# The lab has no named volumes. The webtop images declare VOLUME /config,
+# so their containers carry anonymous volumes that a plain `down` leaves.
+N_VOLUMES=0
+if [ -n "$(echo "$CONTAINER_IDS" | grep . || true)" ]; then
+    # shellcheck disable=SC2046 # one container id per word
+    N_VOLUMES=$(docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' \
+        $(echo "$CONTAINER_IDS" | grep .) 2>/dev/null | grep -c . || true)
+fi
+say "Anonymous volumes: $N_VOLUMES"
 
 ENV_FOUND=0
 [ -f "$ENV_FILE" ] && { ENV_FOUND=1; say ".env file found at $ENV_FILE"; }
@@ -175,7 +203,7 @@ BINFMT_FOUND=0
 [ -f "$BINFMT_MARKER" ] && { BINFMT_FOUND=1; say "amd64 emulation: registered by setup (will revert)"; }
 
 # Nothing to do?
-if [ "$N_CONTAINERS" = "0" ] && [ "$N_IMAGES" = "0" ] && [ "$N_DEV_IMAGES" = "0" ] && [ "$ENV_FOUND" = "0" ] && [ "$BINFMT_FOUND" = "0" ]; then
+if [ "$N_CONTAINERS" = "0" ] && [ "$N_NETWORKS" = "0" ] && [ "$N_IMAGES" = "0" ] && [ "$N_DEV_IMAGES" = "0" ] && [ "$ENV_FOUND" = "0" ] && [ "$BINFMT_FOUND" = "0" ]; then
     banner "Nothing to uninstall"
     echo "  No RangerDanger state detected on this machine."
     exit 2
@@ -183,9 +211,9 @@ fi
 
 # --- confirm ---------------------------------------------------------
 banner "About to:"
-echo "  - docker compose down (containers + networks)"
-if [ "$KEEP_VOLUMES" = "0" ]; then echo "      with -v (removes lab DB, captures, sim state)"
-else echo "      volumes kept (--keep-volumes)"; fi
+echo "  - Stop the range, then the platform (containers + networks, by Compose project)"
+if [ "$KEEP_VOLUMES" = "0" ]; then echo "      and remove their $N_VOLUMES anonymous volume(s)"
+else echo "      anonymous volumes kept (--keep-volumes)"; fi
 if [ "$REMOVE_IMAGES" = "1" ] && [ "$N_IMAGES" != "0" ]; then
     echo "  - Remove $N_IMAGES release image(s) (~6 GB)"
 fi
@@ -208,14 +236,18 @@ if [ "$YES" = "0" ]; then
     esac
 fi
 
-# --- 1. compose down -------------------------------------------------
-banner "Stopping the stack"
-if [ "$KEEP_VOLUMES" = "0" ]; then
-    docker compose "${COMPOSE_ARGS[@]}" down -v 2>&1 | sed 's/^/  /' || true
-else
-    docker compose "${COMPOSE_ARGS[@]}" down 2>&1 | sed 's/^/  /' || true
+# --- 1. range, then platform -----------------------------------------
+# Fail closed: if anything of either project survives, stop here and
+# remove nothing else.
+banner "Stopping the range and the platform"
+DOWN_ARGS=()
+[ "$KEEP_VOLUMES" = "0" ] && DOWN_ARGS+=(--volumes)
+if ! "$ROOT_DIR/scripts/dev-down.sh" ${DOWN_ARGS[@]+"${DOWN_ARGS[@]}"} 2>&1 | sed 's/^/  /'; then
+    warn "Teardown left containers or networks behind (see above). Nothing else was removed."
+    warn "Fix the cause, then re-run this script."
+    exit 3
 fi
-say "compose down complete"
+say "Range and platform removed"
 
 # --- 2. release images (optional) ------------------------------------
 if [ "$REMOVE_IMAGES" = "1" ] && [ "$N_IMAGES" != "0" ]; then
@@ -275,9 +307,9 @@ fi
 
 # --- done ------------------------------------------------------------
 banner "RangerDanger removed"
-echo "  Containers + networks: stopped"
-if [ "$KEEP_VOLUMES" = "0" ]; then echo "  Volumes:               removed"
-else echo "  Volumes:               kept (--keep-volumes)"; fi
+echo "  Containers + networks: removed"
+if [ "$KEEP_VOLUMES" = "0" ]; then echo "  Anonymous volumes:     removed"
+else echo "  Anonymous volumes:     kept (--keep-volumes)"; fi
 if [ "$REMOVE_IMAGES" = "1" ]; then echo "  Release images:        removed (~6 GB freed)"
 else echo "  Release images:        kept (pass --remove-images to free disk)"; fi
 if [ "$REMOVE_DEV_IMAGES" = "1" ]; then echo "  Dev images:            removed"

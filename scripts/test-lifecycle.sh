@@ -47,8 +47,11 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO" || { echo "cannot cd to repo root"; exit 2; }
 COMPOSE_FILE="$REPO/docker-compose.release.yml"
 MARKER="$REPO/.setup-binfmt-amd64"
-CF=(-f "$COMPOSE_FILE")
-[ -n "$TARBALL_DIR" ] && CF+=(-f "$REPO/docker-compose.offline.yml")
+PROJECTS=(rangerdanger-platform rangerdanger)
+# Label-only Compose calls run from an empty directory: from the repo
+# root Compose would load docker-compose.yml as the model.
+WORKDIR=$(mktemp -d)
+trap 'rmdir "$WORKDIR"' EXIT
 
 phase "RangerDanger lifecycle test"
 OS=$(uname -s); MACH=$(uname -m)
@@ -80,9 +83,19 @@ assert_up() {
     if http_ok http://localhost:9080/;            then ok "containd UI (9080)";   else no "containd UI (9080)"; fi
     if http_ok http://localhost:8088/api/firewall/health; then ok "containd firewall health"; else no "containd firewall health"; fi
 
-    # Every compose service should be in state 'running' (not restarting/exited).
-    local bad
-    bad=$(docker compose "${CF[@]}" ps -a --format '{{.Service}} {{.State}}' 2>/dev/null | awk '$2!="running"{printf "%s(%s) ",$1,$2}')
+    # The range setup started, through the backend.
+    local range
+    range=$(curl -fsS --max-time 10 http://localhost:8088/api/range 2>/dev/null || true)
+    if echo "$range" | grep -Eq '"phase"[[:space:]]*:[[:space:]]*"ready"'; then
+        ok "range ready ($(echo "$range" | sed -nE 's/.*"package"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p'))"
+    else no "range not ready (GET /api/range: ${range:-<none>})"; fi
+
+    # Every service of the platform and the range should be in state
+    # 'running' (not restarting/exited).
+    local bad project
+    bad=$(for project in "${PROJECTS[@]}"; do
+        (cd "$WORKDIR" && docker compose -p "$project" ps -a --format '{{.Service}} {{.State}}' 2>/dev/null)
+    done | awk '$2!="running"{printf "%s(%s) ",$1,$2}')
     if [ -z "$bad" ]; then ok "all compose services running"; else no "services not running: $bad"; fi
 
     # OpenPLC explicitly — setup's probe is non-fatal, so verify here.
@@ -132,9 +145,16 @@ assert_teardown() {
     local had_marker=0; [ -f "$MARKER" ] && had_marker=1
     if ./scripts/uninstall-rangerdanger.sh --yes; then ok "uninstall exited 0"; else no "uninstall exited non-zero"; fi
 
-    local left
-    left=$(docker ps -a --format '{{.Names}}' --filter "name=rangerdanger-" 2>/dev/null | grep -c . || true)
+    # Ownership is the Compose project label of the platform and the range.
+    local left nets project
+    left=$(for project in "${PROJECTS[@]}"; do
+        docker ps -aq --filter "label=com.docker.compose.project=$project" 2>/dev/null
+    done | grep -c . || true)
     if [ "$left" = "0" ]; then ok "no rangerdanger containers remain"; else no "$left rangerdanger container(s) still present"; fi
+    nets=$(for project in "${PROJECTS[@]}"; do
+        docker network ls -q --filter "label=com.docker.compose.project=$project" 2>/dev/null
+    done | grep -c . || true)
+    if [ "$nets" = "0" ]; then ok "no rangerdanger networks remain"; else no "$nets rangerdanger network(s) still present"; fi
 
     local vols
     vols=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -cE '^rangerdanger' || true)

@@ -56,6 +56,7 @@ $RepoRoot    = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Pa
 Set-Location $RepoRoot
 $ComposeFile = Join-Path $RepoRoot "docker-compose.release.yml"
 $EnvFile     = Join-Path $RepoRoot ".env"
+$Projects    = @('rangerdanger-platform', 'rangerdanger')
 
 Phase "RangerDanger lifecycle test (Windows)"
 Info "Repo: $RepoRoot   install: $(if ($FromTarballs) { "offline ($FromTarballs)" } else { 'online' })"
@@ -85,9 +86,26 @@ function AssertUp {
     if (HttpOk "http://localhost:9080/")                    { Ok "containd UI (9080)" }  else { Bad "containd UI (9080)" }
     if (HttpOk "http://localhost:8088/api/firewall/health") { Ok "containd firewall health" } else { Bad "containd firewall health" }
 
-    # Every compose service should be in state 'running'.
-    $notRunning = @(& docker compose -f $ComposeFile ps -a --format '{{.Service}} {{.State}}' 2>$null |
-        Where-Object { $_ -and ($_ -notmatch ' running$') })
+    # The range setup started, through the backend.
+    try {
+        $range = Invoke-RestMethod -Uri "http://localhost:8088/api/range" -TimeoutSec 10 -ErrorAction Stop
+        if ($range.phase -eq 'ready') { Ok "range ready ($($range.package))" } else { Bad "range not ready ($($range | ConvertTo-Json -Compress))" }
+    } catch { Bad "range not ready (GET /api/range failed)" }
+
+    # Every service of the platform and the range should be in state
+    # 'running'. Label-only Compose calls run from an empty directory: from
+    # the repo root Compose would load docker-compose.yml as the model.
+    $workDir = Join-Path ([IO.Path]::GetTempPath()) ("rd-lifecycle-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $workDir | Out-Null
+    Push-Location $workDir
+    try {
+        $notRunning = @($Projects | ForEach-Object {
+            & docker compose -p $_ ps -a --format '{{.Service}} {{.State}}' 2>$null
+        } | Where-Object { $_ -and ($_ -notmatch ' running$') })
+    } finally {
+        Pop-Location
+        Remove-Item -LiteralPath $workDir -Force
+    }
     if ($notRunning.Count -eq 0) { Ok "all compose services running" } else { Bad "not running: $($notRunning -join ', ')" }
 
     # OpenPLC explicitly -- setup's probe is non-fatal.
@@ -127,8 +145,11 @@ function AssertTeardown {
     & .\scripts\uninstall-rangerdanger.ps1 -Yes
     if ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE) { Ok "uninstall exited 0" } else { Bad "uninstall exited $LASTEXITCODE" }
 
-    $left = @(& docker ps -a --format '{{.Names}}' --filter "name=rangerdanger-" 2>$null | Where-Object { $_ })
+    # Ownership is the Compose project label of the platform and the range.
+    $left = @($Projects | ForEach-Object { & docker ps -aq --filter "label=com.docker.compose.project=$_" 2>$null } | Where-Object { $_ })
     if ($left.Count -eq 0) { Ok "no rangerdanger containers remain" } else { Bad "$($left.Count) container(s) remain" }
+    $nets = @($Projects | ForEach-Object { & docker network ls -q --filter "label=com.docker.compose.project=$_" 2>$null } | Where-Object { $_ })
+    if ($nets.Count -eq 0) { Ok "no rangerdanger networks remain" } else { Bad "$($nets.Count) network(s) remain" }
 
     $vols = @(& docker volume ls --format '{{.Name}}' 2>$null | Where-Object { $_ -like 'rangerdanger*' })
     if ($vols.Count -eq 0) { Ok "no rangerdanger volumes remain" } else { Bad "$($vols.Count) volume(s) remain" }
