@@ -31,6 +31,23 @@ neither is a time-window-only slice.
 
 `SHA256SUMS` contains a SHA256 digest for each pcap.
 
+## Public references (not bundled)
+
+- Wireshark [SampleCaptures](https://wiki.wireshark.org/SampleCaptures#iec-60870-5-104):
+  `iec104.pcap` adds direct-operate types 45–51 (our type 46 traffic is
+  SBO) and multi-APDU TCP segments; `IEC104_SQ.pcapng` adds SQ=1 (16
+  objects) and multiple APDUs per packet, neither exercised by our
+  captures. Attachment provenance/licence is unconfirmed:
+  reference only, never vendor. The supplied research report has no
+  SHA256 values for either file.
+- Peter Maynard [dataset-v1](https://figshare.com/articles/dataset/dataset-v1_pcap/6133457)
+  (38,337,304 B, CC BY 4.0) adds COT 42 MITM and clock-sync Type 103
+  traffic, plus multi-APDU segments. The supplied research report has no
+  SHA256 for it; reference/fetch only, not bundled.
+
+containd tests may fetch these only in an opt-in job, never in default
+unit tests. Do not download or vendor them as part of capture regeneration.
+
 ## Stack and configuration
 
 The endpoint image uses lib60870-C v2.4.1 (source tarball SHA256

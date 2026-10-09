@@ -627,6 +627,29 @@ control-centre streams in both `startup-gi-monitor.pcap` and
 | `session-management.pcap` | STOPDT/STARTDT; TESTFR; t1 timeout; FIN; link loss then reconnect + GI |
 | `edge-addressing.pcap` | unassigned command IOA 0 (negative COT 47) and GI command IOA 0; CA 1 IOAs 65535, 65536, 16777215; GI point at CA 2 / IOA 4001 |
 
+### Public corpora (references only)
+
+These external traces are not vendored. The public-capture research report
+did not include SHA256 values; do not infer or invent them. Wireshark's
+attachment provenance/licence is unconfirmed, so reference only, never
+vendor:
+
+- Wireshark SampleCaptures
+  ([source page](https://wiki.wireshark.org/SampleCaptures#iec-60870-5-104)):
+  `iec104.pcap` (10,135 B) adds direct-operate Type IDs 45–51 (our type
+  46 traffic is SBO) and
+  multi-APDU TCP segments (up to 12); `IEC104_SQ.pcapng` (584 B) adds
+  SQ=1 with 16 objects per ASDU and multiple APDUs in one packet, neither
+  exercised by our captures.
+  SHA256 for each: not supplied in the research report.
+- Peter Maynard, [dataset-v1](https://figshare.com/articles/dataset/dataset-v1_pcap/6133457)
+  (38,337,304 B, CC BY 4.0): adds COT 42 MITM traffic, clock-sync Type
+  103, multi-APDU segments, retransmissions and capture gaps. SHA256:
+  not supplied in the research report; reference/fetch only, not vendored.
+
+containd may fetch these only in an opt-in corpus/integration job, never
+in default unit tests. No public corpora are bundled in this repository.
+
 - Derive Go byte fixtures from these captures with checked-in
   extraction metadata. Go unit tests must not need tshark at run time.
 - Split/coalesced variants are deterministic transforms of real bytes
