@@ -3,32 +3,72 @@
 YAML configuration that drives the lab content: the network topology,
 the firewall policy variants, and the exercises students walk
 through. The backend reads these on startup; nothing here is built or
-compiled.
+compiled. A broken package stops the backend from starting, and
+`POST /api/admin/seed` returns the same error.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `substation-segmentation.yml` | Active lab topology - nodes, networks, IPs, container names |
+| `packages/<id>/package.yml` | A curriculum package: its topology, its scenarios directory and its capabilities |
+| `substation-segmentation.yml` | Lab topology of the US package - nodes, networks, IPs, container names |
 | `scenarios/*.yml` | One file per exercise; numbered via the `order` field |
 | `firewall/*.json` | Containd firewall policies (weak baseline + improved hardened state) |
 
-## Adding an exercise
+## Packages
 
-Create `scenarios/<id>.yml` with the schema below. The backend's
-loader (`backend/internal/labs/loader.go`) auto-discovers every
-`*.yml` in the `scenarios/` subdirectory and exposes them via
-`GET /api/scenarios`. (Top-level `*.yml` in `lab-definitions/`
-itself is the lab topology template, not a scenario.)
+A package owns a topology and the scenarios students run on it. The
+backend loads every `packages/*/package.yml` (nothing else); the US
+workshop is `packages/us-dnp3-substation/package.yml`, which points at
+the files in this directory where they have always lived:
 
 ```yaml
-id: my-new-exercise         # url-safe slug; must be unique
+schema: 1
+id: us-dnp3-substation            # slug; must match the directory name
+title: "US distribution substation (DNP3)"
+revision: 1                       # bump when step IDs or validator meaning change
+topology: ../../substation-segmentation.yml   # relative to package.yml
+scenarios: ../../scenarios                    # directory of <slug>.yml; the only scenario source
+capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
+```
+
+- Every file (package, topology, scenario) is decoded strictly: an
+  unknown field is a load error.
+- Paths inside a topology (`firewall_config`) resolve from the
+  topology file's directory and must stay inside `lab-definitions/`.
+- A topology must not list scenarios inline; `scenarios: []` is the
+  only accepted value.
+- Scenario IDs are slugs unique across **all** packages; a duplicate
+  is a load error.
+- Each package loads in its own transaction: scenarios whose file is
+  gone are removed, and a package directory that disappears takes its
+  template and scenarios with it.
+- The backend serves one active package, chosen by the
+  `RANGERDANGER_PACKAGE` environment variable (default
+  `us-dnp3-substation`). Scenario routes answer for the active package
+  only. `GET /api/packages` lists packages and marks the active one.
+- Known capabilities: `process.electrical` (substation state and the
+  device-command / check vocabulary for `command`, `sequence` and
+  `check` actions), `policy.containd` (validators read the active
+  firewall policy), `audit.device-control` (validators read the device
+  audit log), `capture.firewall` (validators look for firewall
+  captures).
+
+## Adding an exercise
+
+Create `<package scenarios dir>/<id>.yml` with the schema below. For
+the US package that is `scenarios/<id>.yml`; it is exposed via
+`GET /api/scenarios`.
+
+```yaml
+id: my-new-exercise         # slug; unique across every package
 order: "2.5"                # quoted string; sorts lexicographically.
                             # Use the deck numbering (e.g. "1.2",
                             # "2.3-bonus"); the loader unmarshals
                             # this field as `string`.
 name: "My New Exercise"
 summary: "One-line summary that appears in the card view (≤120 chars)."
+validator: us-my-new-exercise   # optional; a registered validator key (see below)
 description: |
   Long-form prose. Rendered as Markdown in the exercise runner.
   Explain the scenario, what the student is doing, and why it
@@ -41,7 +81,10 @@ tags:
   - field-device
   - segmentation
 steps:
-  - title: "Observe normal operations"
+  - id: observe-normal-operations   # required slug, unique in the scenario.
+                                    # Progress is stored by it: renaming it
+                                    # resets students' progress for the step.
+    title: "Observe normal operations"
     expected_config: weak   # see "expected_config values" below
     description: |
       Each step's description is Markdown. Code fences become
@@ -52,7 +95,8 @@ steps:
       Use absolute IPs (no DNS) so commands are copy-pasteable into
       a student's terminal independent of any in-cluster name
       resolution.
-  - title: "Trigger the attack"
+  - id: trigger-the-attack
+    title: "Trigger the attack"
     expected_config: weak
     description: |
       ...
@@ -60,7 +104,7 @@ steps:
 
 ### `expected_config` values
 
-The string values used in step YAMLs are `weak` and `hardened`. The
+The loader accepts only `weak` and `hardened` (or no value). The
 runtime semantics are:
 
 - The backend's `/api/firewall/apply` only accepts the literal
@@ -79,27 +123,28 @@ runtime semantics are:
 
 ## Validators
 
-If your exercise has measurable success criteria (firewall state,
-PCAP contents, substation telemetry), add a validator in
-`backend/internal/server/scenario_validate.go` as a package-level
-function matching the existing pattern:
+`GET /api/scenarios/:id/validate` runs the validator the scenario
+declares with `validator: <key>`. A scenario without one has no
+validation result (the route returns 404). Keys and their Go code live
+in the registry in `backend/internal/server/scenario_validators.go`;
+each entry also lists the package capabilities it needs. An unknown
+key, or a key whose capabilities the package does not declare, is a
+load error.
+
+To add a validator, write a function in
+`backend/internal/server/scenario_validate.go` following the existing
+pattern, then register it:
 
 ```go
-// 1. Add a top-level function. Signature is fixed.
-func validateMyNewExercise(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
-    // ...inspect state, return pass/fail/warn checks with detail strings.
-    return []ValidationCheck{
-        {Name: "..."), Status: "pass", Detail: "..."},
-    }
-}
-
-// 2. Wire it into the dispatch switch in handleValidateScenario:
-case "my-new-exercise":
-    checks = validateMyNewExercise(state, audit, activeConfig)
+"us-my-new-exercise": {
+    capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+    run: func(_ *Server, in validatorInput) []ValidationCheck {
+        return validateMyNewExercise(in.state, in.activeConfig)
+    },
+},
 ```
 
-Validators are invoked from `GET /api/scenarios/:id/validate` and
-surface in the exercise runner UI as ✓ / ✗ on each step.
+Results surface in the exercise runner UI as ✓ / ✗ checks.
 
 ## Firewall configs
 
@@ -117,7 +162,7 @@ schema. Tested by `backend/internal/containd/firewall_config_test.go`.
 
 ## Topology
 
-`substation-segmentation.yml` defines the lab topology - the set of
+`substation-segmentation.yml` defines the US package's lab topology - the set of
 nodes, which networks each one attaches to, and which container name
 they map to in `docker-compose.yml`. The frontend's network console
 (`/console`) is rendered from this file via the
@@ -130,8 +175,9 @@ The two should never disagree.
 
 ## Conventions
 
-- Every scenario `id` and node ID stays kebab-case
-  (`my-new-exercise`, `eng-ws-1`).
+- Package, scenario and step IDs are slugs (lowercase letters and
+  digits separated by single hyphens); the loader rejects anything
+  else. Node IDs stay kebab-case too (`eng-ws-1`).
 - Step descriptions favor inline code blocks the runner can auto-run,
   not block paragraphs of "type this then this then this."
 - Process consequence is a first-class outcome - describe what

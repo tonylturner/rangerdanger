@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Lab content is organised as packages.** Each package
+  (`lab-definitions/packages/<id>/package.yml`) owns a topology, a
+  scenarios directory and a list of capabilities; the US workshop is
+  `us-dnp3-substation` and its files did not move. The backend serves
+  one active package (`RANGERDANGER_PACKAGE`, default
+  `us-dnp3-substation`) and lists them at `GET /api/packages`. Scenarios
+  now name their validator (`validator:`) and every step has a stable
+  `id`; `/api/scenarios` returns `package_id`, `validator` and step
+  `id`. Package, topology and scenario files are read strictly, and a
+  broken package now stops the backend at startup instead of being
+  logged and skipped. The unused `POST /api/scenarios` and
+  `POST /api/labs/templates` routes are gone.
+
 ### Fixed
 
 - **The RTAC starts only after its network is configured.** The

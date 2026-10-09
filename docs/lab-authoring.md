@@ -1,6 +1,7 @@
 # Lab authoring guide
 
-How to write a workshop lab in `lab-definitions/scenarios/`. Covers
+How to write a workshop lab in a package's scenarios directory
+(`lab-definitions/scenarios/` for the US package). Covers
 the YAML shape the runner expects, the description-body fences for
 hints / decisions / findings panels, and the localStorage model
 that lets a lab read what the student did in earlier labs.
@@ -12,19 +13,26 @@ file an issue or PR.
 
 ## File location and naming
 
-Each lab is one YAML file under `lab-definitions/scenarios/`. The
-filename matches the scenario `id` (e.g. `baseline-assessment.yml`
-contains `id: baseline-assessment`).
+Each lab is one YAML file in the scenarios directory its package
+names (`lab-definitions/packages/<package>/package.yml`, key
+`scenarios:`). For the US package that is `lab-definitions/scenarios/`.
+By convention the filename matches the scenario `id` (e.g.
+`baseline-assessment.yml` contains `id: baseline-assessment`).
+Scenario IDs must be unique across every package. The package layout
+is described in [`lab-definitions/README.md`](../lab-definitions/README.md#packages).
 
-Backend loads them at startup - restart `backend` after changes.
+Backend loads them at startup - restart `backend` after changes. Any
+error in any package (an unknown field, a bad step, an unknown
+validator) stops the backend from starting, so check the backend log.
 
 ## Top-level shape
 
 ```yaml
-id: my-new-lab               # required, kebab-case, must match filename stem
+id: my-new-lab               # required slug, unique across packages; by convention the filename stem
 order: "1.5"                 # required, string. Sorts in the inventory; matches workshop deck numbering.
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list
+validator: us-my-new-lab     # optional. Registered validator key; see lab-definitions/README.md
 description: |               # multi-paragraph. Shown above the steps.
   Longer prose that introduces the lab. Markdown allowed.
 nodes:                       # optional. Hint to the UI which containers
@@ -34,27 +42,40 @@ tags:                        # optional. Free-form labels.
   - segmentation
   - defense
 steps:
-  - title: "Step 1 - Do the thing"
-    expected_config: weak    # optional. weak | improved | hardened
+  - id: step-1-do-the-thing  # required slug, unique in this scenario
+    title: "Step 1 - Do the thing"
+    expected_config: weak    # optional. weak | hardened
     node: fw-1               # optional. Pins which container the Run button targets.
     description: |
       ...
-  - title: "Step 2 - ..."
+  - id: step-2
+    title: "Step 2 - ..."
     description: |
       ...
 ```
 
-Required fields: `id`, `order`, `name`, `description`, `steps`.
-Each step requires `title` and `description`.
+The loader requires `id`, `order` and `name` on the scenario, and `id`
+and `title` on each step; write a `description` for both anyway.
+Unknown fields are rejected.
+
+### Step `id`
+
+Each step's `id` is a slug (lowercase letters and digits separated by
+single hyphens) unique within its scenario. Derive it once from the
+title and then leave it alone: browser progress is stored by step ID,
+so renaming one resets that step for students. Retitling a step does
+not require a new ID. If a change alters what a step ID means, bump
+the package `revision`.
 
 ### `expected_config`
 
-Sets the policy state the step assumes. Values:
+Sets the policy state the step assumes. The loader accepts only
+these values (`improved` is rejected):
 
 | Value | Meaning |
 |---|---|
 | `weak` | The weak-baseline `lab-definitions/firewall/substation-weak.json` is applied. Used during assessment / before-state phases. |
-| `improved` (alias `hardened`) | The hardened policy `substation-improved.json` is applied. Used after-state and validation phases. |
+| `hardened` | A hardened policy is active: the canned `substation-improved.json` (backend config `improved`) or the student's own (`custom`). Used in after-state and validation phases. |
 
 If a student's running policy doesn't match `expected_config`, the
 runner shows a config-mismatch banner with a one-click reset.
