@@ -86,8 +86,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Workshop graph interface addresses.** `interface_ips` used the
-  wrong keys for the RTAC and the PLC; every node now lists each
-  topology network it is on (the RTAC gains `field_net 10.40.40.10`).
+  wrong node keys, so nodes listed at most one network; every node now
+  lists each topology network it is on (the RTAC gains
+  `field_net 10.40.40.10`, the firewall all four zones).
 
 - **Firewall flow table works.** `GET /api/firewall/sessions` called a
   containd route that never existed and always answered 503. It is
