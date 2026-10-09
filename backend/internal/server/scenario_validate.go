@@ -602,43 +602,6 @@ func validateGeneric(state map[string]any, activeConfig string) []ValidationChec
 	return checks
 }
 
-// checkPcapFileOnDisk checks if PCAP capture files exist on the filesystem
-// or via the containd API. Does NOT check the in-memory flag, which can be
-// stale from a previous session and survive lab resets.
-func (s *Server) checkPcapFileOnDisk() bool {
-	// 1. Check filesystem inside the firewall container
-	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
-		execCfg := container.ExecOptions{
-			Cmd:          []string{"sh", "-c", "ls /data/captures/*.pcap 2>/dev/null | head -1"},
-			AttachStdout: true,
-		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
-		if err == nil {
-			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
-			if err == nil {
-				out, _ := io.ReadAll(resp.Reader)
-				resp.Close()
-				if strings.Contains(string(out), ".pcap") {
-					return true
-				}
-			}
-		}
-	}
-
-	// 2. Check containd PCAP API
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-	client := containd.NewClient(containdURL)
-	files, err := client.ListPcapFiles()
-	if err == nil && len(files) > 0 {
-		return true
-	}
-
-	return false
-}
-
 // checkPcapFileExists checks if any PCAP capture files are available.
 func (s *Server) checkPcapFileExists() bool {
 	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)

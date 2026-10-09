@@ -45,11 +45,6 @@ type ScenarioYAML struct {
 	// track, skipping Advanced hints and optional drill-downs). Surfaced as a
 	// chip on the exercise card. Optional; 0/absent renders no chip.
 	EstimatedMinutes int `yaml:"estimated_minutes,omitempty"`
-	// BaselineGridState names the Load Simulator grid state a scenario starts
-	// in (e.g. "peak", "overnight"). Optional; absent/empty is treated as
-	// "steady_state" (the default feeder load). The Load Simulator is a bonus
-	// free-play tool, so this only matters when a scenario pre-loads a state.
-	BaselineGridState string `yaml:"baseline_grid_state" json:"baseline_grid_state,omitempty"`
 }
 
 // ScenarioStep describes a single scenario instruction.
