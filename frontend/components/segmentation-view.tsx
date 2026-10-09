@@ -12,17 +12,17 @@
 // firewall flips between the package's policies.
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
   getActiveFirewallConfig,
   getFirewallComparison,
-  applyFirewallConfig,
   getSubstationNetworkEvents,
   type NetworkEvent,
   type PolicyComparison,
 } from "../lib/api";
 import { usePackagePolicies } from "../lib/operator-queries";
+import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
   HARDENED_POLICY,
   isHardened,
@@ -102,10 +102,10 @@ type ComparisonState =
   | { kind: "failed"; message: string };
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
-  const queryClient = useQueryClient();
   const packagePolicies = usePackagePolicies();
   const [comparisonState, setComparisonState] = useState<ComparisonState>({ kind: "loading" });
-  const [applying, setApplying] = useState(false);
+  const apply = useApplyPolicy();
+  const applying = apply.isPending;
   // Which policy the evaluation panel is previewing. Defaults to
   // whatever is currently applied so the panel opens "self-consistent".
   // Track whether the user has manually changed the selection so we
@@ -149,27 +149,20 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConfig, policies]);
 
-  const handleApply = async (config: string) => {
-    setApplying(true);
-    try {
-      await applyFirewallConfig(config);
-      setSelectedPolicyId(config);
-      setUserPickedPolicy(false); // re-sync with active after apply
-      // All three of these queries care about firewall state; the
-      // PolicyBadge subscribes to workshop status, the canvas
-      // subscribes to firewall-rules, and this drawer subscribes
-      // to firewall-active. Invalidate all of them so any entry
-      // point that flips policy (drawer apply, badge apply,
-      // observer-detected manual commit) propagates everywhere.
-      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
-      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
-    } catch {
-      // swallow - UI state stays as-is
-    } finally {
-      setApplying(false);
-    }
+  // The apply refreshes every firewall view (lib/policy-apply.ts); on
+  // success the inspector re-syncs with the policy now active.
+  const handleApply = (config: string) => {
+    apply.mutate(config, {
+      onSuccess: () => {
+        setSelectedPolicyId(config);
+        setUserPickedPolicy(false);
+      },
+    });
   };
+  const failedMeta = policies.find((p) => p.id === apply.variables);
+  const applyFailure = apply.error
+    ? policyApplyErrorText(failedMeta?.label ?? apply.variables ?? "", apply.error)
+    : null;
 
   // Build the evaluation rows for the currently-selected policy. Each
   // row reads the chosen policy's action/rule columns from the diff
@@ -276,6 +269,11 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
             </button>
           ))}
         </div>
+        {applyFailure && (
+          <div role="alert" className="text-[10px] leading-snug text-red-400">
+            {applyFailure}
+          </div>
+        )}
       </div>
 
       {/* Live containd DPI events - shows real allow/deny decisions

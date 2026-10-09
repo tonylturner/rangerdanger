@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { applyFirewallConfig, ZoneRuleSummary } from "../lib/api";
+import type { ZoneRuleSummary } from "../lib/api";
 import { usePackagePolicies } from "../lib/operator-queries";
+import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import { isHardened, policyWording, type PolicyWording } from "../lib/policy-wording";
 import {
   INTRA_ZONE_FLOWS,
@@ -87,8 +87,8 @@ function policyBadgeText(activeConfig: string | undefined, usWording: boolean): 
 // drawer. It waits for the package, whose policies it lists.
 export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
   const [open, setOpen] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const queryClient = useQueryClient();
+  const apply = useApplyPolicy();
+  const applying = apply.isPending;
   const packagePolicies = usePackagePolicies();
 
   if (!packagePolicies) return null;
@@ -97,30 +97,24 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
 
   const policies = packagePolicies.names.map((id) => ({ id, ...policyWording(id, packagePolicies, US_MENU_WORDING) }));
 
-  const handleApply = async (config: string) => {
+  const handleApply = (config: string) => {
     if (config === activeConfig || applying) return;
-    setApplying(true);
     setOpen(false);
-    try {
-      await applyFirewallConfig(config);
-      queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
-      queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
-      // SegmentationView (the left drawer) subscribes to this; without
-      // invalidating it here, flipping policy from the badge left
-      // the drawer's Active Policy banner stuck on the prior value
-      // until its own 5s refetch caught up.
-      queryClient.invalidateQueries({ queryKey: ["firewall-active"] });
-    } catch {
-      // swallow
-    } finally {
-      setApplying(false);
-    }
+    apply.mutate(config);
   };
+
+  // The menu closes on apply, so a failure shows under the badge until
+  // the menu opens again.
+  const failedLabel = policies.find((p) => p.id === apply.variables)?.label ?? apply.variables ?? "";
+  const failure = apply.error && !open ? policyApplyErrorText(failedLabel, apply.error) : null;
 
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) apply.reset();
+          setOpen(!open);
+        }}
         className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
           hardened
             ? "border-green-600/60 bg-green-950/40 text-green-300 hover:bg-green-950/60"
@@ -140,6 +134,15 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
         <span>Firewall · {policyBadgeText(activeConfig, packagePolicies.usWording)}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
+
+      {failure && (
+        <div
+          role="alert"
+          className="absolute right-0 top-full z-50 mt-1 w-72 rounded-lg border border-red-800/70 bg-red-950/90 px-3 py-2 text-[11px] leading-snug text-red-200 shadow-2xl"
+        >
+          {failure}
+        </div>
+      )}
 
       {open && (
         <>
