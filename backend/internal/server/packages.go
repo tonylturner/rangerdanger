@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,6 +19,27 @@ type packageSummary struct {
 	Active   bool   `json:"active"`
 	// OperatorView selects the frontend operator page for the package.
 	OperatorView string `json:"operator_view"`
+	// Policies are the names package.yml declares under `policies`, the
+	// ones POST /api/firewall/apply accepts: the topology's default
+	// policy first, then the others by name.
+	Policies []string `json:"policies"`
+}
+
+// policyNames orders the package's policy names default first, then by
+// name, so the firewall menus list the starting policy first.
+func policyNames(pkg labs.Package) []string {
+	defaultName, _ := pkg.PolicyName(pkg.FirewallConfigPath)
+	names := make([]string, 0, len(pkg.Policies))
+	for name := range pkg.Policies {
+		if name != defaultName {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	if _, ok := pkg.Policies[defaultName]; ok {
+		names = append([]string{defaultName}, names...)
+	}
+	return names
 }
 
 // setCatalog replaces the loaded package catalog after a successful seed.
@@ -57,18 +79,22 @@ func (s *Server) findActiveScenario(id string) (models.Scenario, error) {
 }
 
 func (s *Server) handleListPackages(c *gin.Context) {
-	infos := s.currentCatalog().Infos()
+	packages := []packageSummary{}
+	catalog := s.currentCatalog()
+	if catalog == nil {
+		c.JSON(http.StatusOK, packages)
+		return
+	}
 	active := s.rng.ActivePackage()
-
-	packages := make([]packageSummary, len(infos))
-	for index, info := range infos {
-		packages[index] = packageSummary{
-			ID:           info.ID,
-			Title:        info.Title,
-			Revision:     info.Revision,
-			Active:       info.ID == active,
-			OperatorView: info.OperatorView,
-		}
+	for _, pkg := range catalog.Packages {
+		packages = append(packages, packageSummary{
+			ID:           pkg.ID,
+			Title:        pkg.Title,
+			Revision:     pkg.Revision,
+			Active:       pkg.ID == active,
+			OperatorView: pkg.OperatorView,
+			Policies:     policyNames(pkg),
+		})
 	}
 	c.JSON(http.StatusOK, packages)
 }

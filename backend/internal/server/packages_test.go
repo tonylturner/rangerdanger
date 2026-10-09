@@ -33,8 +33,16 @@ func activePackageServer(database *gorm.DB) *Server {
 		cfg: &config.Config{Package: testPackageID},
 		rng: servingRange(nil),
 		catalog: &labs.Catalog{Packages: []labs.Package{
-			{ID: "other-package", Title: "Other", Revision: 2, Template: labs.LabYAML{ID: "other-workshop"}, OperatorView: labs.OperatorViewEUIEC104},
-			{ID: testPackageID, Title: "Test", Revision: 1, Template: labs.LabYAML{ID: testTemplateID}, OperatorView: labs.OperatorViewUSDNP3},
+			{
+				ID: "other-package", Title: "Other", Revision: 2, Template: labs.LabYAML{ID: "other-workshop"}, OperatorView: labs.OperatorViewEUIEC104,
+				FirewallConfigPath: "other/open.json",
+				Policies:           map[string]string{"strict": "other/strict.json", "open": "other/open.json", "audit": "other/audit.json"},
+			},
+			{
+				ID: testPackageID, Title: "Test", Revision: 1, Template: labs.LabYAML{ID: testTemplateID}, OperatorView: labs.OperatorViewUSDNP3,
+				FirewallConfigPath: "test/weak.json",
+				Policies:           map[string]string{"weak": "test/weak.json", "improved": "test/improved.json"},
+			},
 		}},
 	}
 }
@@ -68,15 +76,27 @@ func TestListPackagesMarksActive(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
+	// Policies list the default first, then the rest by name.
 	want := []packageSummary{
-		{ID: "other-package", Title: "Other", Revision: 2, OperatorView: "eu-iec104"},
-		{ID: testPackageID, Title: "Test", Revision: 1, Active: true, OperatorView: "us-dnp3-substation"},
+		{ID: "other-package", Title: "Other", Revision: 2, OperatorView: "eu-iec104", Policies: []string{"open", "audit", "strict"}},
+		{ID: testPackageID, Title: "Test", Revision: 1, Active: true, OperatorView: "us-dnp3-substation", Policies: []string{"weak", "improved"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("packages = %#v, want %#v", got, want)
 	}
-	if !strings.Contains(rec.Body.String(), `"operator_view":"eu-iec104"`) {
-		t.Errorf("GET /api/packages = %s, want the operator_view field", rec.Body)
+	for _, field := range []string{`"operator_view":"eu-iec104"`, `"policies":["weak","improved"]`} {
+		if !strings.Contains(rec.Body.String(), field) {
+			t.Errorf("GET /api/packages = %s, want %s", rec.Body, field)
+		}
+	}
+}
+
+func TestListPackagesWithoutCatalogIsEmpty(t *testing.T) {
+	s := routedServer(t)
+	s.setCatalog(nil)
+	rec := serve(s, http.MethodGet, "/api/packages")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("GET /api/packages without a catalog = %d %s, want 200 []", rec.Code, rec.Body)
 	}
 }
 
@@ -202,7 +222,14 @@ func TestShippedPackagesLoad(t *testing.T) {
 	if !ok || !reflect.DeepEqual(info, wantInfo) {
 		t.Errorf("default package = %#v, %v; want %#v", info, ok, wantInfo)
 	}
+	euListed := false
 	for _, pkg := range catalog.Packages {
+		if pkg.ID == euPackageID {
+			euListed = true
+			if names := policyNames(pkg); !reflect.DeepEqual(names, []string{"weak", "improved"}) {
+				t.Errorf("EU listed policies = %v, want [weak improved]", names)
+			}
+		}
 		if pkg.ID != config.DefaultPackage {
 			continue
 		}
@@ -216,9 +243,15 @@ func TestShippedPackagesLoad(t *testing.T) {
 		if name, ok := pkg.PolicyName(pkg.FirewallConfigPath); !ok || name != "weak" {
 			t.Errorf("US default policy name = %q, %v; want weak", name, ok)
 		}
+		if names := policyNames(pkg); !reflect.DeepEqual(names, []string{"weak", "improved"}) {
+			t.Errorf("US listed policies = %v, want [weak improved]", names)
+		}
 		if pkg.Template.ID != "substation-segmentation" {
 			t.Errorf("US topology id = %q, want substation-segmentation", pkg.Template.ID)
 		}
+	}
+	if !euListed {
+		t.Errorf("catalog has no %s package", euPackageID)
 	}
 
 	want := map[string]struct {
