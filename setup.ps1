@@ -76,36 +76,16 @@ if (-not (Test-Path $ComposeFile)) {
 }
 
 # Docker engine.
-# Every docker call that talks to the daemon runs as a child process with a
-# timeout: when Docker Desktop's VM has died (e.g. after a `wsl --shutdown`)
-# and it is sitting on its Restart/Quit error dialog, `docker info` and
-# friends block forever instead of failing. stderr is drained, so benign
-# warnings (e.g. "WARNING: No blkio throttle.read_bps_device support" on
-# WSL2 + cgroups v1) never become a NativeCommandError under Windows
-# PowerShell 5.1 + $ErrorActionPreference = "Stop". Same pattern as
-# Invoke-DockerBounded in scripts\install-wsl-kernel.ps1. $Arguments is one
-# command line; callers pass only arguments without spaces or quotes.
-function Invoke-DockerBounded([string]$Arguments, [int]$TimeoutSec) {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $dockerExe.Source
-    $psi.Arguments = $Arguments
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $proc.StandardOutput.ReadToEndAsync()
-    $null = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($TimeoutSec * 1000)) {
-        try { $proc.Kill() } catch { }
-        return [pscustomobject]@{ ExitCode = -1; StdOut = ''; TimedOut = $true }
-    }
-    [pscustomobject]@{ ExitCode = $proc.ExitCode; StdOut = $stdout.Result; TimedOut = $false }
-}
+# Every docker call that talks to the daemon goes through the bounded
+# helpers in scripts\lib\docker-bounded.ps1 (shared with
+# scripts\install-wsl-kernel.ps1): when Docker Desktop's VM has died (e.g.
+# after a `wsl --shutdown`) and it is sitting on its Restart/Quit error
+# dialog, `docker info` and friends block forever instead of failing.
+. (Join-Path (Join-Path (Join-Path $PSScriptRoot 'scripts') 'lib') 'docker-bounded.ps1')
 
 $dockerExe = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $dockerExe) { Die "Docker is not installed (docker CLI not on PATH). Install Docker Desktop, then re-run." }
-$dockerInfo = Invoke-DockerBounded "info" 30
+$dockerInfo = Invoke-DockerBounded @('info') 30
 if ($dockerInfo.TimedOut) {
     Die "Docker is not responding ('docker info' timed out after 30 s). If Docker Desktop shows an error dialog, click Restart; otherwise quit and restart Docker Desktop. Wait for 'Engine running', then re-run."
 }
@@ -149,9 +129,9 @@ if ($freeGB -lt 30) {
 }
 
 # Docker memory (Docker Desktop reports its allocation via 'docker info').
-$memRun = Invoke-DockerBounded "info --format {{.MemTotal}}" 30
+$memRun = Invoke-DockerBounded @('info', '--format', '{{.MemTotal}}') 30
 $memBytes = [int64]0
-if ($memRun.ExitCode -eq 0) { $null = [int64]::TryParse($memRun.StdOut.Trim(), [ref]$memBytes) }
+if ($memRun -and $memRun.ExitCode -eq 0) { $null = [int64]::TryParse($memRun.StdOut.Trim(), [ref]$memBytes) }
 if ($memBytes -gt 0) {
     $memGB = [math]::Round($memBytes / 1GB)
     if ($memGB -lt 7) {
@@ -166,8 +146,8 @@ if ($memBytes -gt 0) {
 # both set `name: rangerdanger`). A busy required port in this set is the
 # student's own running lab, not a conflict.
 function Get-LabHeldPorts {
-    $r = Invoke-DockerBounded "ps --filter label=com.docker.compose.project=rangerdanger --format {{.Ports}}" 15
-    if ($r.ExitCode -ne 0) { return @() }
+    $r = Invoke-DockerBounded @('ps', '--filter', 'label=com.docker.compose.project=rangerdanger', '--format', '{{.Ports}}') 15
+    if (-not $r -or $r.ExitCode -ne 0) { return @() }
     @([regex]::Matches($r.StdOut, ':(\d+)->') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
 }
 
