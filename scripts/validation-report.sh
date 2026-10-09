@@ -116,6 +116,19 @@ EOF
 # a field-device originator), so it's now the same shape as
 # historian for these probes.
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+us_range_ready() {
+  curl -fsS "$API/api/range" 2>/dev/null | python3 -c 'import json, sys
+r = json.load(sys.stdin)
+sys.exit(0 if (r.get("package"), r.get("phase")) == ("us-dnp3-substation", "ready") else 1)' 2>/dev/null
+}
+range_status() { curl -fsS "$API/api/range" 2>/dev/null || echo unreachable; }
+if ! us_range_ready; then
+  err "range is not us-dnp3-substation ready — GET $API/api/range: $(range_status)"
+  exit 1
+fi
+
 # ── Apply hardened policy ────────────────────────────────────────────
 err "applying hardened policy via $API/api/firewall/apply"
 apply_resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \

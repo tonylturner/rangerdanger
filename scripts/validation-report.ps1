@@ -103,6 +103,23 @@ $Ts = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $PcapPath = "/data/captures/validation-${Ts}.pcap"
 $PcapHostPath = "data/firewall/captures/validation-${Ts}.pcap"
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+function Get-RangeStatus {
+    try { Invoke-RestMethod -Uri "$Api/api/range" -TimeoutSec 5 -ErrorAction Stop } catch { $null }
+}
+function Test-UsRangeReady($range) {
+    return ($range -and $range.package -eq 'us-dnp3-substation' -and $range.phase -eq 'ready')
+}
+function Format-RangeStatus($range) {
+    if ($range) { return ($range | ConvertTo-Json -Compress) } else { return 'unreachable' }
+}
+$range = Get-RangeStatus
+if (-not (Test-UsRangeReady $range)) {
+    Write-Status "range is not us-dnp3-substation ready -- GET $Api/api/range: $(Format-RangeStatus $range)"
+    exit 1
+}
+
 # Apply hardened policy
 Write-Status "applying hardened policy via $Api/api/firewall/apply"
 try {

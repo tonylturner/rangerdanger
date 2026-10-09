@@ -304,6 +304,25 @@ try {
     exit 1
 }
 
+# These checks assert the US range. Refuse another package or a range
+# mid-switch: GET /api/range must report us-dnp3-substation ready.
+function Get-RangeStatus {
+    try { Invoke-RestMethod -Uri "$Api/api/range" -TimeoutSec 5 -ErrorAction Stop } catch { $null }
+}
+function Test-UsRangeReady($range) {
+    return ($range -and $range.package -eq 'us-dnp3-substation' -and $range.phase -eq 'ready')
+}
+function Format-RangeStatus($range) {
+    if ($range) { return ($range | ConvertTo-Json -Compress) } else { return 'unreachable' }
+}
+$range = Get-RangeStatus
+if (Test-UsRangeReady $range) {
+    InfoOK "range us-dnp3-substation ready"
+} else {
+    Err "range is not us-dnp3-substation ready -- GET $Api/api/range: $(Format-RangeStatus $range)"
+    exit 1
+}
+
 # --- Extract commands ---------------------------------------------------
 Note "extracting commands$(if ($Scenario) { " ($Scenario)" })"
 $pyArgs = @()
