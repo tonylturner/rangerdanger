@@ -294,15 +294,13 @@ Increment 3 is the first point where IEC104 runs end to end.
 | D4 | First EU workshop firewall | Wait for command-aware filtering (milestone B). |
 | D5 | US workshop | Unchanged until EU ships; its upgrade to the new device model is a later change. |
 | D6 | EU southbound | Modbus TCP only, labelled as a simplification. |
-| D7 | First EU course | Nov 7, 2026. See risks: open with D4. |
+| D7 | First EU course | Nov 7, 2026, with milestone B as its gate. Tony: "we can get it done in time." |
 | D8 | US browser progress | May reset once at the increment-1 cutover. |
-| D9 | EU nodes | Keep Kali, vendor jump, engineering workstation, historian, and GPS as the station clock (3.5). Replace FUXA with the first-party control-centre view; FUXA is little used today. Drop DNP3 tooling. OpenPLC: open, see below. |
-| D10 | Monitoring under milestone B | Open. |
+| D9 | EU nodes | Keep Kali, vendor jump, engineering workstation, historian, and GPS as the station clock (3.5). Replace FUXA with the first-party control-centre view; FUXA is little used today. Drop DNP3 tooling. OpenPLC stays as the station automation PLC with a seeded tap-changer voltage-control program; the RTU reads it over Modbus. |
+| D10 | Monitoring under milestone B | Drop the command and reset the session; the control centre reconnects and re-runs general interrogation. |
 | D11 | containd for EU courses | Track `:latest`; re-run US and EU gates before each course. |
 | D12 | Who switches packages | Students, from a UI toggle that reprovisions the range (3.3). |
-
-Open: D4 against D7 (schedule), D10, and the OpenPLC role in the EU
-package (Tony: "if we will have PLCs don't we need it?").
+| D13 | Gate runs on Tony's Mac | Allowed to replace the running v0.1.34 stack with `iec104` builds; v0.1.34 is restored after each run. |
 
 ## 6. Risks
 
@@ -311,8 +309,9 @@ package (Tony: "if we will have PLCs don't we need it?").
   increment 3 starts.
 - **containd floats on `:latest`.** Milestone B changes shared dataplane
   code (3.7).
-- **Schedule.** D7 is 29 days after approval. Increments 0-4 plus
-  milestone B (D4) do not fit that window at full scope.
+- **Schedule.** D7 is 29 days after approval and keeps milestone B as
+  its gate. So milestone B, increment 1 and the increment-2 spike run in
+  parallel from the start, not in sequence.
 - **EU electrical credibility.** D1 and D7 decide how far the feeder
   goes before the first course.
 - **GPL services.** `services/iec104/` must stay a separate program
