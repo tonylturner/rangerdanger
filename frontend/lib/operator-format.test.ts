@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { FRESH_POINTS, STALE_STATE, commandResult } from "./operator-fixtures.test-util";
+import { FRESH_POINTS, STALE_STATE, TRUTH, commandResult } from "./operator-fixtures.test-util";
 import {
   commandErrorText,
   commandOutcome,
+  deviceStateSummary,
   formatAge,
   formatPointValue,
   formatUtcTime,
+  journalRangeText,
   journalSummary,
-  parseEndpoint,
   pointCondition,
   qualityFlags,
   staleReasonText,
@@ -76,12 +77,6 @@ describe("times", () => {
     expect(formatAge(185_000)).toBe("3 min 05 s");
     expect(formatAge(3_720_000)).toBe("1 h 02 min");
   });
-
-  it("parses link endpoints", () => {
-    expect(parseEndpoint("10.60.60.20:49152")).toEqual({ ip: "10.60.60.20", port: 49152 });
-    expect(parseEndpoint(null)).toBeNull();
-    expect(parseEndpoint("bogus")).toBeNull();
-  });
 });
 
 describe("commands", () => {
@@ -92,6 +87,7 @@ describe("commands", () => {
     expect(commandOutcome(commandResult("rejected")).explanation).toContain("execute");
     expect(commandOutcome({ ...commandResult("rejected"), select: { status: "negative", at: null } }).explanation).toContain("select");
     expect(commandOutcome(commandResult("failed"))).toMatchObject({ tone: "bad", title: "FAILED" });
+    expect(commandOutcome(commandResult("failed")).explanation).toContain("select got no confirmation");
     expect(commandOutcome(commandResult("unknown"))).toMatchObject({ tone: "warn", title: "UNKNOWN" });
   });
 
@@ -106,7 +102,10 @@ describe("commands", () => {
 
 describe("journalSummary", () => {
   it("summarises every journal kind", () => {
-    expect(journalSummary("link_down", { connection_seq: 3, reason: "t1_timeout" })).toBe("Link down #3 (t1_timeout)");
+    expect(journalSummary("link_up", { peer: "10.30.30.20:2404", connection_seq: 3 })).toBe("Link up #3 to 10.30.30.20:2404");
+    expect(journalSummary("link_down", { peer: "10.30.30.20:2404", connection_seq: 3, reason: "t1_timeout" })).toBe(
+      "Link down #3: nothing received from the RTU for t1 (t1_timeout)",
+    );
     expect(journalSummary("gi_complete", { connection_seq: 4, points_good: 4 })).toContain("4 points good");
     expect(journalSummary("point_stale", { point: "feeder-current", stale_reason: "link_lost", value: 28.93 })).toBe(
       "Feeder current STALE (IEC 104 link to the RTU lost), keeps 28.9 A",
@@ -124,5 +123,24 @@ describe("journalSummary", () => {
       }),
     ).toBe("Command OPEN COMPLETED (select confirmed, execute confirmed, feedback matched)");
     expect(journalSummary("new_kind", { a: 1 })).toBe('new_kind {"a":1}');
+  });
+
+  it("explains every link_down reason the control centre emits", () => {
+    const reason = (r: string) => journalSummary("link_down", { connection_seq: 0, reason: r });
+    expect(reason("peer_closed")).toBe("Link down #0: the RTU end closed or reset the connection (peer_closed)");
+    expect(reason("connect_failed")).toBe("Link down #0: TCP connect or STARTDT failed (connect_failed)");
+    expect(reason("io_error")).toContain("failed general interrogation (io_error)");
+    expect(reason("later_reason")).toBe("Link down #0: later_reason");
+  });
+
+  it("names an empty journal, whose bounds are null", () => {
+    expect(journalRangeText(null, null)).toBe("empty");
+    expect(journalRangeText(1, 50)).toBe("seq 1–50");
+  });
+});
+
+describe("instructor", () => {
+  it("summarises the device state a fault or reset answered with", () => {
+    expect(deviceStateSummary(TRUTH.device)).toBe("breaker OPEN, fault YES, lockout YES, protection tripped YES, revision 5");
   });
 });

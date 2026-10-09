@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import type { DeviceAudit, DeviceAuditEntry, InstructorState, OperatorState } from "../lib/operator-api";
+import type { DeviceAudit, DeviceAuditEntry, DeviceState, InstructorState, OperatorState } from "../lib/operator-api";
 import { IEC104_PORT } from "../lib/firewall-sessions";
-import { formatPointValue, formatUtcTime, pointCondition } from "../lib/operator-format";
+import { deviceStateSummary, formatPointValue, formatUtcTime, pointCondition } from "../lib/operator-format";
 import {
   useFirewallSessions,
   useInstructorAudit,
@@ -118,15 +118,17 @@ export function OperatorContrast({ truth, operator }: { truth: InstructorState; 
   );
 }
 
+// The position change, a first solve's numbers, or the device's reason
+// (a rejection cause or "no_op").
 function change(entry: DeviceAuditEntry): string {
-  if (entry.operation === "first_solve" && entry.detail) {
-    const d = entry.detail;
-    return `revision ${String(d.revision)} · solve ${String(d.solve_seq)} · ${String(d.current_a)} A`;
+  const { detail } = entry;
+  if (entry.operation === "first_solve" && typeof detail === "object") {
+    return `revision ${String(detail.revision)} · solve ${String(detail.solve_seq)} · ${String(detail.current_a)} A`;
   }
-  const before = entry.before?.position;
-  const after = entry.after?.position;
-  if (typeof before === "string" && typeof after === "string" && before !== after) return `${before} → ${after}`;
-  return "";
+  const parts: string[] = [];
+  if (entry.before.position !== entry.after.position) parts.push(`${entry.before.position} → ${entry.after.position}`);
+  if (typeof detail === "string") parts.push(detail);
+  return parts.join(" · ");
 }
 
 export function AuditTable({ audit }: { audit: DeviceAudit }) {
@@ -168,36 +170,41 @@ function DeviceControls({ faultActive }: { faultActive: boolean | undefined }) {
   const fault = useInstructorFault();
   const reset = useInstructorReset();
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
-  const done = (text: string) => ({
-    onSuccess: () => setMessage({ text, ok: true }),
-    onError: (error: Error) => setMessage({ text: `Failed: ${errorMessage(error)}`, ok: false }),
+  // Fault and reset answer with the device state after the action.
+  const done = (action: string) => ({
+    onSuccess: (state: DeviceState) => setMessage({ text: `${action}: ${deviceStateSummary(state)}.`, ok: true }),
+    onError: (error: Error) => setMessage({ text: `${action} failed: ${errorMessage(error)}`, ok: false }),
   });
   const busy = fault.isPending || reset.isPending;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         <button
-          onClick={() => fault.mutate(true, done("Fault injected: local protection opens the breaker and latches lockout."))}
+          onClick={() => fault.mutate(true, done("Fault injected"))}
           disabled={busy || faultActive === true}
           className="rounded border border-red-700 bg-red-950/40 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-900/50 disabled:opacity-50"
         >
           Inject fault
         </button>
         <button
-          onClick={() => fault.mutate(false, done("Fault cleared. The breaker stays open and locked out until reset."))}
+          onClick={() => fault.mutate(false, done("Fault cleared"))}
           disabled={busy || faultActive === false}
           className="rounded border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
         >
           Clear fault
         </button>
         <button
-          onClick={() => reset.mutate(undefined, done("Device reset: closed, no fault, no lockout."))}
+          onClick={() => reset.mutate(undefined, done("Device reset"))}
           disabled={busy}
           className="rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs font-bold text-sky-300 hover:bg-sky-900/50 disabled:opacity-50"
         >
           Reset device
         </button>
       </div>
+      <p className="text-[11px] text-slate-500">
+        A fault opens the breaker at once and latches lockout. Clearing it neither recloses nor unlatches; reset
+        restores closed, no fault, no lockout.
+      </p>
       {message && <p className={`text-xs ${message.ok ? "text-green-300" : "text-red-300"}`}>{message.text}</p>}
     </div>
   );
@@ -246,7 +253,7 @@ export function InstructorView() {
       </Card>
 
       <Card title={`Firewall sessions · tcp/${IEC104_PORT}`} subtitle="containd conntrack, original direction">
-        <SessionControls sessions={sessions.data} sessionsError={sessions.error} link={operator?.link} />
+        <SessionControls sessions={sessions.data?.sessions} sessionsError={sessions.error} />
       </Card>
 
       <Card title="Device audit" subtitle="Every accepted or rejected action, newest first">

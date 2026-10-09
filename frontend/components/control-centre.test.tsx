@@ -9,7 +9,9 @@ import {
   AUDIT,
   FRESH_STATE,
   JOURNAL,
+  EMPTY_JOURNAL,
   NOW,
+  SESSIONS,
   STALE_STATE,
   TRUTH,
   commandResult,
@@ -17,7 +19,7 @@ import {
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreScreen } from "./control-centre-view";
-import { SessionsTable } from "./instructor-sessions";
+import { SessionControls, SessionsTable } from "./instructor-sessions";
 import { AuditTable, OperatorContrast, TruthCards } from "./instructor-view";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 
@@ -100,8 +102,19 @@ describe("ControlCentreScreen", () => {
 
   it("shows the journal newest first", () => {
     const out = text(screen({}));
-    expect(out.indexOf("Feeder breaker position STALE")).toBeLessThan(out.indexOf("Link down #3 (t1_timeout)"));
+    expect(out.indexOf("Feeder breaker position STALE")).toBeLessThan(out.indexOf("Link down #3: nothing received from the RTU for t1 (t1_timeout)"));
     expect(out).toContain("cache epoch a1b2c3d4");
+    expect(out).toContain("seq 1–4");
+  });
+
+  it("shows an empty journal, whose sequence bounds are null", () => {
+    const out = text(screen({ journal: EMPTY_JOURNAL }));
+    expect(out).toContain("empty");
+    expect(out).toContain("No journal entries yet.");
+  });
+
+  it("shows no local endpoint: lib60870 cannot report it", () => {
+    expect(text(screen({}))).not.toContain("CC (local)");
   });
 });
 
@@ -135,14 +148,14 @@ describe("CommandPanelView", () => {
     expect(out).toContain("OPEN REJECTED");
     expect(out).toMatch(/Execute ✗ NEGATIVE/);
     expect(out).toContain("NO ACT-TERM");
-    expect(out).toContain("negative ACT-CON (interlock)");
+    expect(out).toContain("execute rejected (negative ACT-CON)");
   });
 
   it("renders a failed command", () => {
     const out = result("failed");
     expect(out).toContain("OPEN FAILED");
     expect(out).toContain("Execute not sent");
-    expect(out).toContain("link lost before execute");
+    expect(out).toContain("link lost before the execute was sent");
   });
 
   it("renders an unknown outcome", () => {
@@ -183,28 +196,36 @@ describe("instructor truth", () => {
   });
 
   it("lists 2404 sessions, marks the control centre's and offers a kill per row", () => {
-    const html = renderToStaticMarkup(
-      <SessionsTable
-        sessions={[
-          { proto: "tcp", src: "10.60.60.20", dst: "10.30.30.20", sport: 49152, dport: 2404, state: "ESTABLISHED", assured: true, timeoutSecs: 431999 },
-          { proto: "tcp", src: "10.10.10.50", dst: "10.30.30.20", sport: 40000, dport: 2404, state: "ESTABLISHED" },
-        ]}
-        ccTuple={{ proto: "tcp", src: "10.60.60.20", dst: "10.30.30.20", sport: 49152, dport: 2404 }}
-        pending={false}
-        onKill={() => {}}
-      />,
-    );
+    const html = renderToStaticMarkup(<SessionsTable sessions={SESSIONS.sessions} pending={false} onKill={() => {}} />);
     const out = text(html);
-    expect(out).toContain("tcp 10.60.60.20:49152 → 10.30.30.20:2404 CONTROL CENTRE");
-    expect(out).toContain("tcp 10.10.10.50:40000 → 10.30.30.20:2404");
+    expect(out).toContain("tcp 10.60.60.20:40312 → 10.30.30.20:2404 CONTROL CENTRE ESTABLISHED 431999 s");
+    expect(out).toContain("tcp 10.10.10.50:51000 → 10.30.30.20:2404 ESTABLISHED 431980 s");
+    expect(out.match(/CONTROL CENTRE/g)).toHaveLength(1);
     expect(out.match(/Kill/g)).toHaveLength(2);
+  });
+
+  it("cannot kill a listed session without both ports", () => {
+    const partial = { ...SESSIONS.sessions[1], sport: null, state: null };
+    const html = renderToStaticMarkup(<SessionsTable sessions={[partial]} pending={false} onKill={() => {}} />);
+    expect(text(html)).toContain("tcp 10.10.10.50:? → 10.30.30.20:2404 —");
+    expect(html.match(/disabled=""/g)).toHaveLength(1);
+  });
+
+  it("previews the control centre's session the cut would delete", () => {
+    expect(text(render(<SessionControls sessions={SESSIONS.sessions} sessionsError={null} />))).toContain(
+      "Cut control-centre session tcp 10.60.60.20:40312 → 10.30.30.20:2404",
+    );
+    expect(text(render(<SessionControls sessions={[SESSIONS.sessions[1]]} sessionsError={null} />))).toContain(
+      "containd lists no tcp 10.60.60.20 → 10.30.30.20:2404 session.",
+    );
   });
 
   it("shows the device audit newest first", () => {
     const out = text(renderToStaticMarkup(<AuditTable audit={AUDIT} />));
-    expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("trip"));
-    expect(out).toContain("closed → open");
-    expect(out).toContain("local-protection");
+    expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
+    expect(out).toContain("local_protection_trip accepted local-protection · field · protection closed → open");
+    expect(out).toContain("revision 5 · solve 113 · 0 A");
+    expect(out).toContain("close rejected modbus · station · 10.30.30.20:41000 lockout");
   });
 });
 

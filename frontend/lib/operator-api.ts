@@ -20,9 +20,10 @@ export type GeneralInterrogation = {
 
 export type ControlCentreLink = {
   state: LinkState;
+  // The RTU, "<ip>:<port>". lib60870 cannot report the CC's own end of
+  // the session, so the firewall session list is the only source of the
+  // CC's ephemeral port (lib/firewall-sessions.ts).
   peer: string;
-  // "<ip>:<port>" of the CC end of the current session; null when none.
-  local: string | null;
   since: string | null;
   last_rx_at: string | null;
   connection_seq: number;
@@ -51,7 +52,9 @@ export type OperatorPoint = {
   value: PointValue;
   quality: PointQuality;
   stale_reason: StaleReason | null;
-  // RTU observation time (CP56Time2a); null for untimed ASDUs.
+  // RTU observation time (CP56Time2a) of the last report. null for
+  // untimed ASDUs: always for the floats (M_ME_NC_1), and for status
+  // points answered by GI until their next timed report.
   source_time: string | null;
   source_time_invalid: boolean | null;
   received_at: string | null;
@@ -72,12 +75,14 @@ export type CommandStatus = "completed" | "rejected" | "failed" | "unknown";
 export type CommandPhaseStatus = "confirmed" | "negative" | "timeout" | null;
 export type FeedbackStatus = "matched" | "mismatched" | "missing";
 
+// id is the CC's "cmd-<n>", counted per CC boot.
 export type CommandResult = {
   id: string;
   status: CommandStatus;
   select: { status: CommandPhaseStatus; at: string | null };
   execute: { status: CommandPhaseStatus; at: string | null; terminated_at: string | null };
-  feedback: { status: FeedbackStatus; value: PointValue; received_at: string | null };
+  // The feedback point is a double point; value is null when missing.
+  feedback: { status: FeedbackStatus; value: DoublePointValue | null; received_at: string | null };
   error: string | null;
 };
 
@@ -97,6 +102,10 @@ export async function getOperatorState() {
   return request<OperatorState>("/operator/state");
 }
 
+// Why the CC journals a link_down. lib60870 reports no close cause, so
+// the CC infers it (services/iec104/README.md).
+export type LinkDownReason = "t1_timeout" | "peer_closed" | "connect_failed" | "io_error";
+
 // detail differs per kind (link_up, link_down, gi_started, gi_complete,
 // point_stale, point_good, command); lib/operator-format.ts reads it.
 export type JournalEntry = {
@@ -106,11 +115,12 @@ export type JournalEntry = {
   detail: Record<string, unknown>;
 };
 
+// The sequence bounds are null while the journal is empty.
 export type OperatorJournal = {
   cache_epoch: string;
   entries: JournalEntry[];
-  latest_seq: number;
-  oldest_seq: number;
+  latest_seq: number | null;
+  oldest_seq: number | null;
 };
 
 export async function getOperatorJournal() {
@@ -131,7 +141,9 @@ export type DeviceMeasurements = {
 
 export type BreakerPosition = "open" | "closed";
 
+// GET /api/state of the device; fault and reset answer with it too.
 export type DeviceState = {
+  schema: number;
   device_id: string;
   generation: number;
   revision: number;
@@ -170,22 +182,26 @@ export type InstructorState = {
   process: ProcessElectrical;
 };
 
+// before and after are full device snapshots. detail is absent, a
+// reason string ("no_op", "lockout", "stale_truth", ...) or an object
+// (first_solve: revision, solver_epoch, solve_seq, solved_at, current_a).
 export type DeviceAuditEntry = {
   seq: number;
   at: string;
   operation: string;
   result: string;
-  before: Record<string, unknown> | null;
-  after: Record<string, unknown> | null;
+  before: DeviceState;
+  after: DeviceState;
   context: { peer: string; protocol: string; zone: string };
-  detail?: Record<string, unknown>;
+  detail?: string | Record<string, unknown>;
 };
 
+// The sequence bounds are null while the audit is empty.
 export type DeviceAudit = {
   generation: number;
   entries: DeviceAuditEntry[];
-  latest_seq: number;
-  oldest_seq: number;
+  latest_seq: number | null;
+  oldest_seq: number | null;
 };
 
 export async function getInstructorState() {
@@ -209,20 +225,21 @@ export async function resetInstructorDevice() {
 
 // ── Firewall sessions (GET /api/firewall/sessions) ───────────────
 
-// One containd conntrack entry; the backend turns its ports into ints.
+// One containd conntrack entry, original direction. A port or state
+// containd left out is null; timeout is in seconds.
 export type FirewallSession = {
   proto: string;
-  state?: string;
-  src?: string;
-  dst?: string;
-  sport?: number;
-  dport?: number;
-  replySrc?: string;
-  replyDst?: string;
-  replySport?: number;
-  replyDport?: number;
-  assured?: boolean;
-  timeoutSecs?: number;
+  src: string;
+  dst: string;
+  sport: number | null;
+  dport: number | null;
+  state: string | null;
+  timeout: number;
+};
+
+export type FirewallSessionList = {
+  sessions: FirewallSession[];
+  count: number;
 };
 
 // The original-direction tuple containd deletes. Zero ports are not
@@ -235,8 +252,12 @@ export type SessionTuple = {
   dport: number;
 };
 
-export async function getFirewallSessions(dport: number) {
-  return request<FirewallSession[]>(`/firewall/sessions?dport=${dport}`);
+export type SessionFilter = { dport: number; src?: string };
+
+export async function getFirewallSessions(filter: SessionFilter) {
+  const query = new URLSearchParams({ dport: String(filter.dport) });
+  if (filter.src !== undefined) query.set("src", filter.src);
+  return request<FirewallSessionList>(`/firewall/sessions?${query.toString()}`);
 }
 
 // 404 when containd has no such entry.

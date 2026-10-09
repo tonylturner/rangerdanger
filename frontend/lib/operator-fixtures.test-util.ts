@@ -1,10 +1,14 @@
-// Contract-shaped answers of the EU control-centre and instructor
-// routes, shared by the operator tests.
+// Answers of the EU control-centre, instructor and firewall-session
+// routes in the shapes the backend and the services really send
+// (services/iec104/src/cc_*.c, services/devices, backend/internal/server),
+// shared by the operator tests.
 
 import type { PackageSummary } from "./api";
 import type {
   CommandResult,
   DeviceAudit,
+  DeviceState,
+  FirewallSessionList,
   InstructorState,
   OperatorJournal,
   OperatorPoint,
@@ -43,7 +47,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     source_time: "2026-10-09T12:00:00.120Z",
     source_time_invalid: false,
     received_at: "2026-10-09T12:00:00.150Z",
-    cot: 20,
+    cot: 3,
   },
   {
     id: "feeder-protection-trip",
@@ -89,7 +93,6 @@ export const FRESH_STATE: OperatorState = {
   link: {
     state: "started",
     peer: "10.30.30.20:2404",
-    local: "10.60.60.20:49152",
     since: "2026-10-09T11:59:58.000Z",
     last_rx_at: "2026-10-09T12:00:29.900Z",
     connection_seq: 3,
@@ -106,7 +109,6 @@ export const STALE_STATE: OperatorState = {
   link: {
     ...FRESH_STATE.link,
     state: "connecting",
-    local: null,
     last_rx_at: "2026-10-09T12:00:09.900Z",
     gi: { state: "none", started_at: null, completed_at: null },
   },
@@ -122,12 +124,15 @@ export const JOURNAL: OperatorJournal = {
   oldest_seq: 1,
   latest_seq: 4,
   entries: [
-    { seq: 1, at: "2026-10-09T11:59:58.000Z", kind: "link_up", detail: { peer: "10.30.30.20:2404", local: "10.60.60.20:49152", connection_seq: 3 } },
+    { seq: 1, at: "2026-10-09T11:59:58.000Z", kind: "link_up", detail: { peer: "10.30.30.20:2404", connection_seq: 3 } },
     { seq: 2, at: "2026-10-09T11:59:58.300Z", kind: "gi_complete", detail: { connection_seq: 3, points_good: 4 } },
-    { seq: 3, at: "2026-10-09T12:00:10.000Z", kind: "link_down", detail: { peer: "10.30.30.20:2404", local: "10.60.60.20:49152", connection_seq: 3, reason: "t1_timeout" } },
+    { seq: 3, at: "2026-10-09T12:00:10.000Z", kind: "link_down", detail: { peer: "10.30.30.20:2404", connection_seq: 3, reason: "t1_timeout" } },
     { seq: 4, at: "2026-10-09T12:00:10.000Z", kind: "point_stale", detail: { point: "feeder-breaker-position", stale_reason: "link_lost", value: "closed" } },
   ],
 };
+
+// The CC before its first connect attempt settles.
+export const EMPTY_JOURNAL: OperatorJournal = { cache_epoch: "a1b2c3d4", oldest_seq: null, latest_seq: null, entries: [] };
 
 export function commandResult(status: CommandResult["status"]): CommandResult {
   const base: CommandResult = {
@@ -146,27 +151,28 @@ export function commandResult(status: CommandResult["status"]): CommandResult {
         ...base,
         execute: { status: "negative", at: "2026-10-09T12:00:01.100Z", terminated_at: null },
         feedback: { status: "missing", value: null, received_at: null },
-        error: "negative ACT-CON (interlock)",
+        error: "execute rejected (negative ACT-CON)",
       };
     case "failed":
       return {
         ...base,
         execute: { status: null, at: null, terminated_at: null },
         feedback: { status: "missing", value: null, received_at: null },
-        error: "link lost before execute",
+        error: "link lost before the execute was sent",
       };
     case "unknown":
       return {
         ...base,
         execute: { status: "timeout", at: "2026-10-09T12:00:01.100Z", terminated_at: null },
         feedback: { status: "missing", value: null, received_at: null },
-        error: "no ACT-CON for execute",
+        error: "no execute confirmation within the command budget",
       };
   }
 }
 
 export const TRUTH: InstructorState = {
   device: {
+    schema: 1,
     device_id: "feeder-breaker",
     generation: 3141592,
     revision: 5,
@@ -208,29 +214,71 @@ export const TRUTH: InstructorState = {
   },
 };
 
+const CLOSED_DEVICE: DeviceState = {
+  ...TRUTH.device,
+  revision: 4,
+  position: "closed",
+  lockout: false,
+  fault_active: false,
+  protection_tripped: false,
+  event_seq: 8,
+  changed_at: "2026-10-09T11:50:00.000Z",
+};
+
+const INSTRUCTOR = { peer: "10.99.99.3:51234", protocol: "instructor", zone: "mgmt" };
+
 export const AUDIT: DeviceAudit = {
   generation: 3141592,
   oldest_seq: 1,
-  latest_seq: 2,
+  latest_seq: 4,
   entries: [
     {
       seq: 1,
       at: "2026-10-09T12:00:12.000Z",
-      operation: "trip",
+      operation: "fault",
       result: "accepted",
-      before: { position: "closed" },
-      after: { position: "open" },
-      context: { peer: "local", protocol: "local-protection", zone: "local" },
+      before: CLOSED_DEVICE,
+      after: TRUTH.device,
+      context: INSTRUCTOR,
     },
     {
       seq: 2,
+      at: "2026-10-09T12:00:12.000Z",
+      operation: "local_protection_trip",
+      result: "accepted",
+      before: CLOSED_DEVICE,
+      after: TRUTH.device,
+      context: { peer: "protection", protocol: "local-protection", zone: "field" },
+      detail: { cause: "fault_active" },
+    },
+    {
+      seq: 3,
       at: "2026-10-09T12:00:12.900Z",
       operation: "first_solve",
       result: "accepted",
-      before: null,
-      after: null,
-      context: { peer: "10.50.50.20", protocol: "process", zone: "process" },
+      before: TRUTH.device,
+      after: TRUTH.device,
+      context: { peer: "10.50.50.20:40112", protocol: "process", zone: "process" },
       detail: { revision: 5, solver_epoch: "e1", solve_seq: 113, solved_at: "2026-10-09T12:00:12.800Z", current_a: 0 },
     },
+    {
+      seq: 4,
+      at: "2026-10-09T12:00:13.500Z",
+      operation: "close",
+      result: "rejected",
+      before: TRUTH.device,
+      after: TRUTH.device,
+      context: { peer: "10.30.30.20:41000", protocol: "modbus", zone: "station" },
+      detail: "lockout",
+    },
+  ],
+};
+
+// GET /api/firewall/sessions?dport=2404: the CC's session and Kali's.
+export const SESSIONS: FirewallSessionList = {
+  count: 2,
+  sessions: [
+    { proto: "tcp", src: "10.60.60.20", dst: "10.30.30.20", sport: 40312, dport: 2404, state: "ESTABLISHED", timeout: 431999 },
+    { proto: "tcp", src: "10.10.10.50", dst: "10.30.30.20", sport: 51000, dport: 2404, state: "ESTABLISHED", timeout: 431980 },
   ],
 };
