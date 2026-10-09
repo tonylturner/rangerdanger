@@ -76,7 +76,9 @@ The same commands CI runs (`.github/workflows/ci.yml`):
 test -z "$(git ls-files '*.go' | xargs gofmt -l)"
 
 # Backend. -count=1 matters: firewall_config_test reads the policy JSONs
-# at runtime and Go's test cache does not see them.
+# at runtime and Go's test cache does not see them. The backend builds
+# only on unix: it ships as a Linux container and has no native Windows
+# build (on Windows, run these in WSL).
 (cd backend && go vet ./... && go test -race -count=1 ./... && go build ./cmd/server)
 
 # Services (simulators)
