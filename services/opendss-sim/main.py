@@ -5,12 +5,12 @@ distribution feeder circuit. Same REST API contract as the original Go service.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
+from circuit import FeederSolver
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-
-from circuit import FeederSolver
 from models import DeviceStates
 from runtime_state import RuntimeState
 
@@ -78,6 +78,14 @@ def get_electrical() -> JSONResponse:
 def health() -> JSONResponse:
     """Report last solve status and failure streak."""
     return JSONResponse(content=runtime_state.health())
+
+
+# Keep the legacy service as the default. EU mode replaces the whole app with
+# its own routes and lifespan so pushes cannot mutate its autonomous process.
+if os.environ.get("OPENDSS_PROFILE") is not None:
+    from eu_app import create_configured_eu_app
+
+    app = create_configured_eu_app()
 
 
 if __name__ == "__main__":
