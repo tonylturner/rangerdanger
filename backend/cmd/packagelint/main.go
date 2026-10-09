@@ -74,7 +74,7 @@ func (run *lintRun) check() {
 		platform[mode] = normalized
 	}
 	if len(platform[manifest.ModeSource]) > 0 && len(platform[manifest.ModeRelease]) > 0 {
-		if err := manifest.CheckCrossMode(platform[manifest.ModeSource], platform[manifest.ModeRelease]); err != nil {
+		if err := manifest.CheckPlatformCrossMode(platform[manifest.ModeSource], platform[manifest.ModeRelease]); err != nil {
 			run.problem("platform cross-mode", err)
 		}
 	}
