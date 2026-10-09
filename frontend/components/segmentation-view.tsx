@@ -469,7 +469,7 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
   const { src, dst } = eventEndpoints(e);
   const label = eventLabel(e);
   const port = e.dstPort ?? null;
-  const proto = e.protocol ?? e.transport ?? "";
+  const proto = e.protocol || e.transport || "";
 
   // Row tone is dominated by DENY (red) since that's the highest-value
   // signal for the operator. ALLOWs use the standard slate background;
