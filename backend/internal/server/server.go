@@ -159,6 +159,8 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		firewall.POST("/apply", s.handleFirewallApply)
 		firewall.POST("/apply-custom", s.handleFirewallApplyCustom)
 		firewall.POST("/validation-report", s.handleValidationReport)
+		firewall.GET("/sessions", s.handleFirewallSessions)
+		firewall.POST("/sessions/kill", s.handleFirewallSessionKill)
 	}
 
 	workshop := rng.Group("/workshop")
