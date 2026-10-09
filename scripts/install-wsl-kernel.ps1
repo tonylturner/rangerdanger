@@ -131,6 +131,38 @@ $Managed.WslConfigBakFg = "$($Managed.WslConfig).bak.foreign"
 # example online uses).
 $Managed.WslConfigKernelValue = ($Managed.KernelTarget -replace '\\','/')
 
+# --- Bounded docker info -------------------------------------------------
+# After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can fail to bring
+# its VM back ("running wsl-bootstrap: exit status 1") and sit on a
+# Restart/Quit error dialog. In that state `docker info` does not fail --
+# it blocks forever, so a bare `& docker info` hangs the caller no matter
+# what wait budget it prints. Run the probe as a child process and kill it
+# after $TimeoutSec. stderr is drained (blkio warnings on WSL2) but never
+# surfaces as a NativeCommandError. Returns trimmed stdout, or $null on
+# timeout / non-zero exit / empty output.
+function Get-DockerInfoBounded([string]$Format, [int]$TimeoutSec = 10) {
+    $dockerCmd = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $dockerCmd) { return $null }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $dockerCmd.Source
+    $psi.Arguments = "info --format `"$Format`""
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $p.StandardOutput.ReadToEndAsync()
+    $null = $p.StandardError.ReadToEndAsync()
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+        try { $p.Kill() } catch { }
+        return $null
+    }
+    if ($p.ExitCode -ne 0) { return $null }
+    $text = $stdout.Result.Trim()
+    if ($text) { return $text }
+    return $null
+}
+
 # --- Pre-flight: are we even on Windows + WSL2? ------------------------
 function Test-WindowsWsl2Backend {
     if ($env:OS -ne 'Windows_NT') {
@@ -140,14 +172,9 @@ function Test-WindowsWsl2Backend {
     if (-not $dockerCmd) {
         return [pscustomobject]@{ Supported=$false; Reason='docker CLI not on PATH' }
     }
-    # Probe docker info. Apply the same NativeCommandError dance as
-    # setup.ps1 -- docker on WSL2 often writes blkio warnings to stderr.
-    $kernel = & {
-        $ErrorActionPreference = 'SilentlyContinue'
-        & docker info --format '{{.KernelVersion}}' 2>$null
-    }
+    $kernel = Get-DockerInfoBounded '{{.KernelVersion}}' 30
     if (-not $kernel) {
-        return [pscustomobject]@{ Supported=$false; Reason='docker daemon not reachable' }
+        return [pscustomobject]@{ Supported=$false; Reason='docker daemon not reachable (if Docker Desktop shows an error dialog, click Restart)' }
     }
     if ($kernel -notmatch 'WSL2') {
         return [pscustomobject]@{ Supported=$false; Reason="docker is using a non-WSL2 backend (kernel: $kernel)" }
@@ -369,21 +396,35 @@ function Invoke-WslShutdown {
     if ($LASTEXITCODE -ne 0) { Warn "wsl --shutdown exited $LASTEXITCODE (continuing anyway)" }
 }
 
+# Budget is wall-clock: each probe is bounded (Get-DockerInfoBounded), so a
+# wedged Docker Desktop can no longer stretch "up to N s" into forever. The
+# budget is generous because recovery may need the user to click Restart.
 function Wait-DockerReconnect($maxSecs = 120) {
     Say "Waiting up to ${maxSecs}s for Docker Desktop to reconnect..."
-    for ($i = 0; $i -lt $maxSecs; $i++) {
-        $k = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker info --format '{{.KernelVersion}}' 2>$null
-        }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $hinted = $false
+    $nextNote = 30
+    while ($sw.Elapsed.TotalSeconds -lt $maxSecs) {
+        $k = Get-DockerInfoBounded '{{.KernelVersion}}' 10
         if ($k) {
             Say "Docker reachable again. Kernel now: $k"
             return $k
         }
-        Start-Sleep -Seconds 1
-        if (($i -gt 0) -and ($i % 10 -eq 0)) { Write-Host "  ...still waiting (${i}s)..." }
+        $t = [int]$sw.Elapsed.TotalSeconds
+        if ((-not $hinted) -and ($t -ge 45)) {
+            Warn "Docker Desktop has not come back yet. After 'wsl --shutdown' it can show an"
+            Warn "error dialog: 'A WSL distro Docker Desktop relies on has exited unexpectedly'."
+            Warn "If you see it, click Restart. No dialog? Quit Docker Desktop from the tray"
+            Warn "icon and start it again. This script keeps waiting and continues by itself."
+            $hinted = $true
+        }
+        if ($t -ge $nextNote) {
+            Write-Host "  ...still waiting (${t}s)..."
+            $nextNote += 30
+        }
+        Start-Sleep -Seconds 2
     }
-    Warn "Docker did not reconnect within ${maxSecs}s. You may need to launch Docker Desktop manually."
+    Warn "Docker did not reconnect within ${maxSecs}s."
     return $null
 }
 
@@ -450,7 +491,7 @@ if ($Restore) {
     }
     if (-not $DryRun) {
         Invoke-WslShutdown
-        Wait-DockerReconnect 60 | Out-Null
+        Wait-DockerReconnect 300 | Out-Null
     }
     exit 0
 }
@@ -557,9 +598,11 @@ Say "Wrote $($Managed.WslConfig)"
 
 # Restart.
 Invoke-WslShutdown
-$newKernel = Wait-DockerReconnect 180
+$newKernel = Wait-DockerReconnect 600
 if (-not $newKernel) {
-    Warn "Docker did not reconnect in time. Please launch Docker Desktop manually and re-run -Test."
+    Warn "The kernel is installed, but Docker Desktop did not come back in time."
+    Warn "Restart Docker Desktop, wait for it to show 'Engine running', then re-run"
+    Warn ".\setup.ps1 (it detects the installed kernel and carries on from here)."
     exit 1
 }
 
