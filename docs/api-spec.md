@@ -106,7 +106,7 @@ Direct operations against the containd NGFW.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/firewall/health` | containd health status |
+| `GET` | `/firewall/health` | containd management health, as containd sends it: `{"status":"ok","component","build","time"}`. |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/flows` | containd engine flow table (proxied from containd `GET /api/v1/flows`). Optional `?limit=` 1..5000, default 200; anything else is `400`. Returns `{"flows":[{"flowId","firstSeen","lastSeen","srcIp","dstIp","srcPort","dstPort","transport","application","eventCount","avDetected","avBlocked"}]}`; containd omits empty `srcIp`/`dstIp`/ports/`transport`/`application` and false `av*` fields. `503` with `{"flows":[],"error":"..."}` when containd is unreachable or errors. |
 | `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` is set by the backend's policy observer, started in `New`, when it detects a policy committed directly in containd). |

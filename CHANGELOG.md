@@ -36,6 +36,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Workbook PDF lab order.** The PDF sorted labs with numeric
   subtraction on string lab numbers, so `2.3-bonus` produced an
   undefined order. Labs now sort the same way as the backend.
+- **containd calls keep working after 24 hours.** The backend signed one
+  containd token at startup with a 24-hour expiry, so PCAP, policy
+  apply, the policy observer and workshop status started failing with
+  401 after a day of uptime. It now signs a fresh token per request.
+- **`GET /api/firewall/health` returns what containd sends**
+  (`status`, `component`, `build`, `time`). The `version`, `uptime`,
+  `zones`, `sessions` and `event_rate` fields were never filled in and
+  are gone.
 - **The RTAC starts only after its network is configured.** The
   container used to background its gateway, hardening and management
   setup together with the simulator, so the simulator could serve
