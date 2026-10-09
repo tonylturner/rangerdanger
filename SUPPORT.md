@@ -61,8 +61,10 @@ Most "the lab won't start" issues fall into one of these:
 If none of those, a good bug report includes:
 
 - The output of `./setup.sh --check-only` (or `-CheckOnly`)
-- `docker compose -f docker-compose.release.yml logs <service>`
-  for whichever service didn't come up
+- `curl -s http://localhost:8088/api/range` (the range phase and its
+  error, if any)
+- `docker logs rangerdanger-<service>` for whichever service didn't
+  come up (for example `rangerdanger-backend`, `rangerdanger-firewall`)
 - `GET /api/build` if the API is reachable at all
 - The relevant excerpt from `~/Library/Logs/Docker Desktop/log.log`
   (macOS) or `%LOCALAPPDATA%\Docker\log` (Windows) if Docker itself

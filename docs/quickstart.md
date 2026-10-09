@@ -88,8 +88,28 @@ cd rangerdanger
 Its disk and memory checks only warn: disk is measured on the checkout
 filesystem (not Docker's storage volume), and low memory is reported
 when Docker reports less than 7 whole GiB. On Linux-native Docker, the
-memory check can fall back to host RAM. It then pulls images, starts
-the stack, and runs backend and workshop-readiness checks.
+memory check can fall back to host RAM. Ports already held by this
+install's own containers (a re-run) do not fail the check. It then
+writes `.env` (`VERSION`, `RANGERDANGER_ROOT`), pulls the images of the
+platform and of every range package, starts the platform (backend,
+frontend, proxy), asks the backend to start the range
+(`POST /api/range`), waits until `GET /api/range` reports `ready`, and
+runs the workshop-readiness checks.
+
+The lab is two Compose projects: the **platform**
+(`rangerdanger-platform`), which stays up, and the **range**
+(`rangerdanger`: containd, the zone networks, the devices and
+workstations), which the backend starts and replaces. One range runs
+at a time. The default range package is `us-dnp3-substation`;
+`./setup.sh --package <id>` picks another one for the first start, and
+students switch packages from the web UI afterwards. A switch, or
+re-running setup, restarts the range and resets the firewall policy to
+the package default; browser progress is kept.
+
+If an older single-project install is still on the machine (it owned
+`rangerdanger_mgmt_net`), setup takes it down by its Compose label
+before it starts the platform. Setup stops with an error if that
+network belongs to anything else.
 
 To re-run only the preflight checks without installing:
 
@@ -104,10 +124,13 @@ the first build takes several minutes (Go simulators, Kali
 trim, eng-ws, frontend bundle).
 
 ```bash
-docker compose up -d --build
+./setup.sh --from-source
+# or, without the workshop firewall gate:
+./scripts/dev-up.sh
 ```
 
-Subsequent runs reuse the layer cache and start in seconds.
+Subsequent runs reuse the layer cache. Re-run either one after a
+change: it rebuilds and restarts the range.
 
 ### Path C - Offline / SSD (workshops)
 
@@ -140,11 +163,12 @@ cd ~/rangerdanger
 # Windows: .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
 ```
 
-The installer uses `docker-compose.release.yml`; `--from-tarballs`
-also selects `docker-compose.offline.yml`.
-
-`setup.sh` detects the host architecture, loads the matching
-tarball with `docker load`, then starts the selected Compose stack.
+The installer uses the release Compose files (the platform's
+`docker-compose.release.yml` and each package's
+`compose.release.yml`). `setup.sh` detects the host architecture, loads
+the matching tarball with `docker load`, then starts the platform with
+`--pull never`, so nothing is fetched from GHCR. The backend always
+starts ranges with `--pull never`.
 
 Do not assume each [GitHub release](https://github.com/tonylturner/rangerdanger/releases)
 has prebuilt image tarballs attached. Use an instructor-staged, verified
@@ -164,15 +188,27 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
+To stop the lab (the range, then the platform), and to start it again:
+
+```bash
+./scripts/dev-down.sh
+./setup.sh                 # with the options you installed with
+```
+
 ## Common errors
 
-Compose commands below use the release and offline files explicitly, so
-they also work after Path C without contacting GHCR. For an online Path A
-install, drop `-f docker-compose.offline.yml` if Compose should pull an
-updated image. A bare `docker compose` selects the source stack and may
-rebuild from Dockerfiles; Path B source-build users should drop both
-release flags. The firewall-pull example below is intentionally online
-and uses only the release file.
+The commands below use container names and the backend's range API, so
+they work the same after every install path. The range is started by
+the backend, not by Compose commands on the host: to restart it, ask
+the backend (this tears the range down and starts it again, and resets
+the firewall policy to the package default):
+
+```bash
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
+curl -s http://localhost:8088/api/range      # phase: ... -> ready
+```
+
+The firewall-pull example below is intentionally online.
 
 ### "the lab doesn't come up"
 
@@ -209,35 +245,36 @@ back.
 Stale local DB after a major schema change. Delete and restart:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-backend
 rm -f backend/data/rangerdanger.db
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+docker start rangerdanger-backend
 ```
 
 ### "containd won't authenticate"
 
 Stale local users.db after the default password got changed in
-a prior session. Delete and restart:
+a prior session. Delete it and restart the range:
 
 ```bash
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-firewall
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 
 containd's lab-mode default-admin seeding (`CONTAIND_LAB_MODE=1`
-in the compose file) will restore the `containd` / `containd`
+in the range's Compose file) will restore the `containd` / `containd`
 admin on next boot.
 
 ### "the build is slow"
 
-The first `docker compose build` pulls + compiles a lot. Subsequent
-builds reuse the layer cache. To force a clean re-pull of just the
-firewall image when containd publishes a security fix:
+The first source build (`./setup.sh --from-source`) pulls + compiles
+a lot. Subsequent builds reuse the layer cache. To force a clean re-pull
+of just the firewall image when containd publishes a security fix, pull
+it and restart the range on it:
 
 ```bash
-docker compose -f docker-compose.release.yml pull firewall
-docker compose -f docker-compose.release.yml up -d firewall
+docker pull ghcr.io/tonylturner/containd:latest
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
 
 ## What a good bug report includes
@@ -247,8 +284,10 @@ If none of the above fits, file an issue against
 Helpful contents:
 
 - The output of `./setup.sh --check-only` (or `-CheckOnly`)
-- `docker compose -f docker-compose.release.yml logs <service>`
-  for whichever service didn't come up
+- `curl -s http://localhost:8088/api/range` (the range phase and its
+  error, if any)
+- `docker logs rangerdanger-<service>` for whichever service didn't
+  come up (for example `rangerdanger-backend`, `rangerdanger-firewall`)
 - `GET /api/build` if the API is reachable at all
 - The relevant excerpt from `~/Library/Logs/Docker Desktop/log.log`
   (macOS) or `%LOCALAPPDATA%\Docker\log` (Windows) if Docker itself

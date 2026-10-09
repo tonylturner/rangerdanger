@@ -97,8 +97,11 @@ this - point at the overlay's private address space.
 
 ### Option C - Bind to a specific LAN interface (not recommended)
 
-Edit `docker-compose.yml` to bind to your laptop's LAN IP instead of
-loopback:
+Edit the platform Compose file you installed with
+(`docker-compose.release.yml`, or `docker-compose.yml` for a source
+install) to bind the portal to your laptop's LAN IP instead of loopback.
+containd's ports (9080 / 9443 / 2222) live in the range package's
+`lab-definitions/packages/<id>/compose.*.yml`:
 
 ```yaml
 proxy:
@@ -123,8 +126,8 @@ wanting this, you almost certainly want Option A or B instead.
 Once you're done with the external access:
 
 ```sh
-git checkout -- docker-compose.yml
-docker compose up -d   # picks up the loopback binding again
+git checkout -- docker-compose.yml docker-compose.release.yml lab-definitions/packages
+./setup.sh             # same options as the install; picks up the loopback binding again
 ```
 
 ## Custom WSL2 kernel (Windows hosts only)

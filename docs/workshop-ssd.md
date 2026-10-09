@@ -45,7 +45,8 @@ or does not match, staging fails and removes both kernel files instead of
 writing a bundle that could install an unverified kernel. Re-run the stage
 helper, or place both files in the output directory by hand.
 
-Both `images-*.tar` cover the release stack's image references, with
+Both `images-*.tar` cover the image references of the release Compose
+files (the platform's and every range package's), with
 different architecture-specific binaries. The arm64 archive additionally
 contains `tonistiigi/binfmt` and cross-includes the amd64-only `openplc`
 image because no arm64 manifest exists for it.
@@ -106,21 +107,36 @@ Or on Windows:
 What `setup.sh --from-tarballs` does, in order:
 
 1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Disk and
+   recognized, and ports `8088 / 9080 / 9443 / 2222` free (or held by
+   this install's own containers, on a re-run). Disk and
    memory readings are advisory: setup warns below 30 GB free on the
    checkout filesystem and below 7 whole GiB of reported memory (8 GB
    recommended). Linux-native Docker can fall back to host RAM. It does
    not measure Docker's storage volume or check macOS host RAM.
    `--check-only` runs just this stage and exits.
-2. **`docker load`** the matching `images-<arch>.tar` every time.
-   Docker deduplicates existing layers by content hash.
-3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The
-   offline overlay sets `pull_policy: never` on every release-image
-   service so a slow/blocked GHCR can't ruin the day.
-4. **Readiness checks** - a backend health timeout only warns. Failed
-   firewall API-health, policy-apply, or workshop-reset checks are
-   fatal. DPI degradation and a non-running OpenPLC only warn, so the
-   final banner can still print when those checks fail.
+2. **`.env`** - writes `VERSION` (from the SSD's `.version`) and
+   `RANGERDANGER_ROOT` (the install directory) to `.env`.
+3. **Migration** - an older single-project install (Compose project
+   `rangerdanger` owning `rangerdanger_mgmt_net`) is taken down by its
+   Compose label first. A `rangerdanger_mgmt_net` owned by anything
+   else stops setup with an error.
+4. **`docker load`** the matching `images-<arch>.tar` every time.
+   Docker deduplicates existing layers by content hash. The archive
+   carries the images of the platform and of every range package.
+5. **Platform** - `docker compose -p rangerdanger-platform ... -f
+   docker-compose.release.yml up -d --wait --pull never` starts the
+   backend, frontend and proxy. `--pull never` overrides the release
+   file's pull policy, so a slow/blocked GHCR can't ruin the day.
+6. **Range** - once `/api/health` answers, `POST /api/range` asks the
+   backend to start the range (containd, the zones, the devices), the
+   same request the UI's package toggle sends. The backend always runs
+   ranges with `--pull never`. Setup waits until `GET /api/range`
+   reports `ready`; a failed range start is fatal and prints the
+   backend's error.
+7. **Readiness checks** - failed firewall API-health, policy-apply, or
+   workshop-reset checks are fatal. DPI degradation and a non-running
+   OpenPLC only warn, so the final banner can still print when those
+   checks fail.
 
 Successful tail looks like:
 
@@ -149,7 +165,7 @@ into an image at build time:
 - Lab YAML edits (`lab-definitions/scenarios/*.yml`)
 - Compose file tweaks
 - Documentation
-- nginx config (`proxy/nginx.conf`)
+- nginx config (`proxy/nginx.conf`, a package's `nginx.routes.conf`)
 - Setup script changes
 - containd policy JSONs (`lab-definitions/firewall/*.json`)
 
@@ -158,7 +174,7 @@ AirDrop, Slack, anything. Student replaces their repo and restarts:
 
 ```sh
 cd ~/rangerdanger
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+./scripts/dev-down.sh                                 # the range, then the platform
 tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # overwrites ~/rangerdanger in place
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # loads the image archive again
 ```
@@ -219,8 +235,8 @@ the helper does not pin containd's mutable tag to a prior-stage digest.
   release Compose model (including the actual `eng_workstation` service).
   Its apply recipe loads changed tags, retags unchanged images from
   `<since>` to `<new>`, snapshots the complete existing repo (including
-  `.env` and local edits), selects `<new>`, then starts the full offline
-  release stack. Rollback restores that snapshot and reuses the retained
+  `.env` and local edits), selects `<new>`, then restarts the lab
+  offline (the platform, then the range through the backend). Rollback restores that snapshot and reuses the retained
   old image tags.
 
 Example:
@@ -277,8 +293,8 @@ already applied and nothing was changed. This also permits safely
 re-applying a delta after an interrupted attempt that left the install at
 `<since-version>`.
 
-After that precondition passes, the recipe stops the release + offline
-stack, then saves the complete existing `~/rangerdanger` tree beside the
+After that precondition passes, the recipe stops the lab (the range,
+then the platform), then saves the complete existing `~/rangerdanger` tree beside the
 install as
 `../rangerdanger.before-<new-version>.tar.gz`. The snapshot includes
 `.env`, Compose files, lab definitions, policy files, local edits, and all
@@ -287,9 +303,9 @@ Docker images. It also captures any other files present in the install
 tree. Snapshot size and creation time grow with lab state; allow enough
 free disk space for a compressed copy of the full tree. The snapshot is
 not overwritten if the same delta is applied again. If snapshot creation
-or its archive check fails, the generated instructions say the stack is
+or its archive check fails, the generated instructions say the lab is
 stopped and give the command to bring the unchanged install back up.
-If stopping the stack itself fails, no snapshot or repo changes have been
+If stopping the lab itself fails, no snapshot or repo changes have been
 made; the generated instructions note that some services may be stopped
 and give the same command to bring the unchanged install back up.
 
@@ -297,8 +313,7 @@ The recipe then extracts the repo and loads the changed-image archive for
 the host architecture. For every unchanged first-party image it emits a
 `docker image tag <old-ref> <new-ref>` command, so Compose can find every
 image at the selected new version while offline. It then updates `VERSION`
-in `.env` and finishes with the explicit release + offline Compose
-restart.
+in `.env` and finishes by restarting the lab offline.
 
 For ARM64 Linux, OpenPLC uses amd64 emulation. A delta with changed images
 includes `tonistiigi/binfmt` in `delta-arm64.tar`; a repo-only delta creates
@@ -307,17 +322,15 @@ no image archives and cannot provide that image. Ensure
 repo-only delta offline if OpenPLC may need to restart after a host reboot.
 
 Do not restart only the changed services: first select the new image tags,
-then apply the complete stack so every service resolves against the same
-release and updated repo files. The generated recipe's final command is:
-
-```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
-```
+then restart the whole lab so every service resolves against the same
+release and updated repo files: the platform with `--pull never`, then the
+range through the backend (`POST /api/range`). The generated
+`DELTA-README.md` gives the exact commands.
 
 For offline rollback, the generated `Rollback` section first stops the
-release + offline stack, then removes the updated repo and restores the
+lab, then removes the updated repo and restores the
 complete saved repo tree (including `.env`, local edits, and `./data/`)
-before starting the complete stack with the old tags. It needs no network
+before starting the complete lab with the old tags. It needs no network
 or second bundle. Docker images are not in the repo snapshot, so keep the
 snapshot and old image tags until the rollback window closes. Images behind
 mutable tags overwritten by the delta are parked as `:before-<new version>`;
@@ -341,8 +354,7 @@ break anything - the student can re-run `setup.sh --from-tarballs`
 and it'll pick up where it left off. If state's still weird:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down -v
-docker system prune -a              # nukes all images, frees disk
+./scripts/uninstall-rangerdanger.sh --yes --purge   # the lab, .env and its release/dev images
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
@@ -354,10 +366,13 @@ older images allowed it. `/api/workshop/reset` wipes containd's
 next firewall restart. Or manually:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+docker stop rangerdanger-firewall
 rm -f data/firewall/users.db data/firewall/users.db-*
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+curl -fsS -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:8088/api/range
 ```
+
+The `POST` restarts the range (offline-safe: the backend never pulls)
+and resets the firewall policy to the package default.
 
 ### "The lab YAML I edited mid-workshop isn't showing up"
 
@@ -366,7 +381,7 @@ Lab YAML is bind-mounted into the backend container at
 Restart the backend to pick up edits:
 
 ```sh
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml restart backend
+docker restart rangerdanger-backend
 ```
 
 If a YAML edit landed in `rangerdanger.tgz` and the student already

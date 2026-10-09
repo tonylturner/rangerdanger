@@ -73,7 +73,8 @@ runs OpenPLC natively (no emulation; the binfmt/qemu path does not apply):
 # 2. ASSERT UP
 (Invoke-WebRequest http://localhost:8088/api/health -UseBasicParsing).StatusCode   # 200
 (Invoke-WebRequest http://localhost:9080/            -UseBasicParsing).StatusCode   # 200 (containd UI)
-docker compose -f docker-compose.release.yml ps                                    # every service "running"
+Invoke-RestMethod http://localhost:8088/api/range                                  # phase = ready
+docker compose ls                                                                  # rangerdanger-platform + rangerdanger running
 docker inspect -f '{{.State.Status}}' rangerdanger-openplc                         # running
 
 # 3. EXECUTE (workshop-critical surfaces)
@@ -84,7 +85,8 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8088/api/workshop/reset    
 
 # 4. TEARDOWN
 .\scripts\uninstall-rangerdanger.ps1 -Yes
-docker ps -a --filter "name=rangerdanger-"     # expect: none
+docker ps -a --filter "label=com.docker.compose.project=rangerdanger"            # expect: none
+docker ps -a --filter "label=com.docker.compose.project=rangerdanger-platform"   # expect: none
 Test-Path .env                                 # expect: False
 #   The uninstaller also reverts the custom WSL2 kernel and runs `wsl --shutdown`.
 

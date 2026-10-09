@@ -15,7 +15,7 @@ The substation is modeled as four firewalled zones plus one non-firewalled physi
 | Management (`mgmt_net`) | 10.99.99.0/24 | lan3 | Backend ↔ firewall control plane (out of band) |
 | Physics (`physics_net`) | 10.50.50.0/24 | not firewalled | OpenDSS feeder simulation |
 
-Zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) are containd's logical interface names. They auto-bind to whatever `ethN` Docker assigns at boot via the `CONTAIND_AUTO_*_SUBNET` env in `docker-compose.yml`. **`ethN` ordering is not stable across hosts** - Docker assigns `ethN` by alphabetical network name, not by compose declaration order - so policy and tooling reference zone names rather than `eth` indices. The `eth0`/`eth1`/`...` mapping is a runtime artifact of the host you're on; never rely on it.
+Zone names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) are containd's logical interface names. They auto-bind to whatever `ethN` Docker assigns at boot via the `CONTAIND_AUTO_*_SUBNET` env in the range package's Compose files. **`ethN` ordering is not stable across hosts** - Docker assigns `ethN` by alphabetical network name, not by compose declaration order - so policy and tooling reference zone names rather than `eth` indices. The `eth0`/`eth1`/`...` mapping is a runtime artifact of the host you're on; never rely on it.
 
 The RTAC is intentionally multi-homed on **four** networks: OT Operations (`10.30.30.20`), Field (`10.40.40.10`), Physics (`10.50.50.10`, so it can poll the OpenDSS model), and Management (`10.99.99.20`, so the backend can reach `http://rtac-sim:8080`). However, `scripts/rtac-harden.sh` actively prevents the RTAC from acting as a firewall bypass by replacing the directly-connected route to `field_net` with an indirect route via the OT-Ops firewall, disabling IP forwarding, dropping the FORWARD chain, and disabling proxy ARP. The result: **all RTAC → field traffic transits the containd firewall and is visible to its capture/policy pipeline**, with the wire-visible source IP being `10.30.30.20` (the RTAC's OT-Ops leg). The field leg exists for realism - many production RTACs have one - but is intentionally inert as a routed source.
 
@@ -44,7 +44,18 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
 | Proxy | `proxy` | mgmt | 10.99.99.3 | Nginx reverse proxy to all node UIs |
 
-The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; `rtac_sim` likewise gets a mgmt leg (10.99.99.20) so the backend can reach `http://rtac-sim:8080`. The firewall (containd) sits on every zone.
+The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; `rtac_sim` likewise gets a mgmt leg (10.99.99.20) so the backend can reach it at `http://10.99.99.20:8080`. The firewall (containd) sits on every zone.
+
+### Platform and range
+
+The lab runs as two Compose projects:
+
+| Project | Services | Compose files | Started by |
+|---|---|---|---|
+| `rangerdanger-platform` | backend, frontend, proxy | `docker-compose.yml` (source) or `docker-compose.release.yml` (release) | `setup.sh` / `scripts/dev-up.sh` on the host; never stopped by a range switch |
+| `rangerdanger` (the range) | everything else in the tables above | `lab-definitions/packages/<id>/compose.{source,release}.yml` | the backend only, through `POST /api/range` |
+
+The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`); range files declare it external. The other five networks belong to the range and keep their `rangerdanger_<key>` names. One range runs at a time; switching packages (the UI toggle) stops the old range, starts the new one, installs its proxy routes (`nginx.routes.conf`) and imports its default firewall policy. Each package's `manifest.json` names which container plays which role and the endpoints the backend calls. `setup.sh` writes `RANGERDANGER_ROOT` (the install directory) to `.env`; every Compose call uses it as the project directory, and the backend mounts it read-only at the same path so the range's relative binds resolve to host paths. Teardown is by Compose project label only (`scripts/dev-down.sh`). The API is in [`api-spec.md`](api-spec.md).
 
 ## Services
 
@@ -193,15 +204,18 @@ Backend-read variables (`backend/internal/config`):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `RANGERDANGER_HTTP_PORT` | 8080 | Backend listen port |
-| `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via `docker-compose.yml`) | SQLite path |
+| `RANGERDANGER_DB_PATH` | `backend/data/rangerdanger.db` (the in-container deployment overrides this to `/data/rangerdanger.db` via the platform Compose file) | SQLite path |
 | `RANGERDANGER_LAB_DEFINITIONS_PATH` | `lab-definitions` | YAML source directory |
-| `RANGERDANGER_CONTAIND_API_URL` | `http://firewall:8080` | containd HTTP base URL |
-| `RANGERDANGER_CONTAIND_CONFIG_PATH` | `lab-definitions/firewall/substation-weak.json` | Initial firewall config |
-| `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API |
+| `RANGERDANGER_ROOT` | none; the platform Compose files refuse to start without it (`setup.sh` writes it to `.env`) | Installation root: Compose project directory for ranges, mounted read-only at the same path |
+| `RANGERDANGER_MODE` | `source` in `docker-compose.yml`, `release` in `docker-compose.release.yml` | Which range Compose file (`compose.source.yml` / `compose.release.yml`) the backend runs |
+| `RANGERDANGER_PACKAGE` | `us-dnp3-substation` | Range package for the first start only; afterwards the recorded package (`/data/range.json`) wins. `setup.sh --package <id>` sets it |
+| `CONTAIND_JWT_SECRET` | `rangerdanger-dev` | Shared secret the backend uses to mint JWTs for containd's REST API; the backend passes its value to the range's Compose so the firewall shares it |
+
+The containd API URL and the initial firewall policy are no longer variables: they come from the active package (the firewall's `api` endpoint in `manifest.json`, and the package's default policy).
 
 The legacy `OTLAB_*` prefix is honored as a deprecated alias - existing deployments continue to work but emit a warning at startup.
 
-Variables read by the **containd container itself** (not the backend) and set in `docker-compose.yml`:
+Variables read by the **containd container itself** (not the backend) and set in the US package's range Compose files:
 
 | Variable | Value | Purpose |
 |----------|-------|---------|
