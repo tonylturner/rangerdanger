@@ -1,0 +1,177 @@
+id: iec104-telecontrol-boundary
+order: "1.0"
+name: "IEC104 Telecontrol Boundary"
+summary: "Observe the IEC104 control path, tighten its network boundary, and distinguish a stale operator cache from physical truth."
+estimated_minutes: 25
+validator: eu-iec104-telecontrol
+description: |
+  Follow one command and telemetry path from the Control Centre, over IEC
+  60870-5-104, through the RTU, and over Modbus TCP to the feeder breaker.
+  Then constrain those conduits to their named sources and ports.
+
+  **Milestone A is port/source segmentation, not command filtering.** The
+  improved policy limits who can open an IEC104 session and which RTU may
+  poll Modbus; it does not inspect or selectively block IEC104 command types.
+  The allowed Control Centre can still issue both open and close commands.
+
+  **Out-of-band limit:** the Control Centre shares `mgmt_net` with the breaker
+  instructor API and the OpenDSS solver. Nothing structurally prevents an HTTP
+  read from those management endpoints. This workshop gate proves behaviorally
+  that the Control Centre learns process state through IEC104 rather than by
+  reading those endpoints.
+nodes:
+  - cc-1
+  - rtu-1
+  - kali-1
+  - fw-1
+  - breaker-1
+tags:
+  - iec104
+  - telecontrol
+  - firewall
+  - process-truth
+steps:
+  - id: observe-baseline
+    title: "Observe the control-centre baseline"
+    expected_config: weak
+    node: kali-1
+    description: |
+      The weak baseline exposes TCP/2404 from the enterprise zone. Confirm
+      that Kali can establish a station session and request a General
+      Interrogation:
+
+          iec104cmd 10.30.30.20 gi --json
+
+      Compare the four RTU points with the Control Centre view at
+      [/substation](/substation). The IEC104 timestamps are the RTU's
+      observation times, not device-provided SOE times.
+    action:
+      type: probe
+      outcome: reachable
+      targets:
+        - host: 10.30.30.20
+          port: 2404
+          note: "Kali IEC104 session to the RTU"
+
+  - id: operate-breaker
+    title: "Operate the feeder breaker"
+    expected_config: weak
+    node: cc-1
+    description: |
+      From the Control Centre view, issue an **open** command and then a
+      **close** command. Each operation uses select-before-operate, waits
+      for activation termination, and requires matching IEC104 feedback.
+      Confirm that the operator value follows the device and process view.
+
+      A source/port policy is not command authorization: while the CC→RTU
+      conduit is allowed, both open and close are still valid operations.
+
+  - id: expose-weak
+    title: "Expose and observe the weak boundary"
+    expected_config: weak
+    node: kali-1
+    description: |
+      Keep a long-lived Kali session open while the weak policy is active.
+      In one terminal start the monitor and leave it running; use another
+      terminal for later checks:
+
+          iec104cmd 10.30.30.20 monitor --json --hold 180 --gi-every 2
+
+      The weak policy permits TCP/2404 from wan, dmz, and lan4 into lan1,
+      and permits TCP/502 from lan1 into lan2.
+    action:
+      type: firewall
+      config: weak
+
+  - id: apply-improved
+    title: "Apply source- and port-restricted rules"
+    expected_config: hardened
+    description: |
+      Apply the improved policy. It allows only the Control Centre
+      `10.60.60.20/32` to the RTU `10.30.30.20/32` on TCP/2404 and only
+      that RTU to the breaker `10.40.40.20/32` on TCP/502. Other connection
+      attempts to those control ports are logged and denied. An established
+      Kali flow may continue until its conntrack entry is removed.
+    action:
+      type: firewall
+      config: improved
+
+  - id: established-session
+    title: "Compare a new attempt with the established session"
+    expected_config: hardened
+    node: kali-1
+    description: |
+      The Kali monitor started under the weak policy should continue to
+      receive IEC104 ASDUs for the existing session. A new session is
+      denied:
+
+          iec104cmd 10.30.30.20 gi --json
+
+      The deny is based on the endpoint and port, not the command payload.
+    action:
+      type: probe
+      outcome: blocked
+      targets:
+        - host: 10.30.30.20
+          port: 2404
+          note: "New Kali session after the improved policy is applied"
+
+  - id: cut-session
+    title: "Cut an established control-centre session"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      To demonstrate a true CC outage, make a temporary copy of the improved
+      policy in containd and remove its Control Centre-to-RTU allow. Apply
+      that restrictive policy, verify it is active, then open the
+      [Instructor truth page](/instructor) and use **Cut control-centre
+      session**. The button removes the exact conntrack tuple; it does not
+      send a TCP reset. The next packet is new and is denied by policy.
+
+      A deny alone does not sever an already established flow. Do not kill
+      the session before applying and verifying the restrictive policy.
+
+  - id: stale-view
+    title: "Read the stale operator cache"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      While the CC conduit is denied, open [/substation](/substation).
+      The Control Centre retains each last value and its observation and
+      receipt times, marks the points `link_lost` and IV+NT, and reports a
+      disconnected link. It must not replace stale data with zero or read
+      the instructor/device HTTP endpoints to refresh its cache.
+
+  - id: local-trip
+    title: "Trip local protection while the CC is isolated"
+    expected_config: hardened
+    node: breaker-1
+    description: |
+      On [/instructor](/instructor), activate a fault. The local protection
+      opens the breaker and latches lockout and trip state even though the
+      Control Centre cannot reach the RTU. OpenDSS follows the device truth
+      through `process_net`. The operator cache stays unchanged and stale.
+      Clear the fault and activate it once more to observe the latched trip.
+
+  - id: restore
+    title: "Restore the named control paths"
+    expected_config: hardened
+    description: |
+      Restore the improved policy, which restores only the approved CC→RTU
+      and RTU→breaker paths. The Control Centre reconnects, performs a new
+      GI, and refreshes all four points from the RTU. The trip remains
+      latched until an instructor reset.
+    action:
+      type: firewall
+      config: improved
+
+  - id: evidence
+    title: "Review the temporal evidence"
+    expected_config: hardened
+    description: |
+      Run the scenario validator after the improved policy is active. It
+      checks the logged deny, CC link-down and stale-point journal entries,
+      the later reconnect and GI, the device's local-protection audit and
+      corresponding solver result, and the final good operator values.
+      The evidence is bounded by boot identity and journal sequence; a
+      missing or truncated journal is a failure, not a pass.

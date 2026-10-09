@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "ca": 1,
+  "timers": {
+    "t0_s": 10,
+    "t1_s": 10,
+    "t2_s": 5,
+    "t3_s": 5,
+    "k": 12,
+    "w": 8
+  },
+  "select_timeout_ms": 5000,
+  "reconnect_interval_ms": 2000,
+  "clock": {
+    "url": "http://10.30.30.50:8080/api/state",
+    "poll_ms": 1000,
+    "stale_after_ms": 5000,
+    "synced_status": ["locked"]
+  },
+  "devices": [
+    {
+      "id": "feeder-breaker",
+      "host": "10.40.40.20",
+      "port": 502,
+      "unit": 1,
+      "poll_ms": 500,
+      "timeout_ms": 1000,
+      "stale_after_ms": 3000,
+      "measurements_valid": {
+        "table": "input",
+        "address": 2,
+        "bit": 0
+      }
+    }
+  ],
+  "points": [
+    {
+      "id": "feeder-breaker-position",
+      "ioa": 1001,
+      "kind": "double-point",
+      "asdu": "M_DP_TB_1",
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 0,
+        "format": "dp"
+      }
+    },
+    {
+      "id": "feeder-protection-trip",
+      "ioa": 1002,
+      "kind": "single-point",
+      "asdu": "M_SP_TB_1",
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 1,
+        "format": "bit",
+        "bit": 3
+      }
+    },
+    {
+      "id": "feeder-current",
+      "ioa": 2001,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "A",
+      "deadband": 0.5,
+      "measurement": true,
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 3,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "feeder-voltage",
+      "ioa": 2002,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "kV",
+      "deadband": 0.05,
+      "measurement": true,
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 5,
+        "format": "f32"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "id": "feeder-breaker-command",
+      "ioa": 3001,
+      "kind": "double-command",
+      "asdu": "C_DC_NA_1",
+      "sbo": true,
+      "target": {
+        "device": "feeder-breaker",
+        "table": "holding",
+        "address": 0
+      },
+      "feedback": "feeder-breaker-position"
+    }
+  ]
+}

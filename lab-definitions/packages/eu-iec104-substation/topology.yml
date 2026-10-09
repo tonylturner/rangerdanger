@@ -1,0 +1,111 @@
+id: telecontrol-segmentation
+name: European Feeder Telecontrol Segmentation
+description: >
+  A 20 kV feeder uses IEC 60870-5-104 between the control centre and RTU,
+  Modbus TCP between the RTU and feeder breaker, and an OpenDSS truth model.
+  Students validate source- and port-based segmentation without mistaking
+  transport policy for command-level filtering.
+
+firewall_config: firewall/weak.json
+
+networks:
+  - id: enterprise_net
+    name: Enterprise Zone
+    subnet: 10.10.10.0/24
+    zone: wan
+    description: Enterprise attacker workstation and untrusted ingress
+
+  - id: vendor_net
+    name: Vendor / Engineering Zone
+    subnet: 10.20.20.0/24
+    zone: dmz
+    description: Vendor access and engineering maintenance
+
+  - id: station_net
+    name: Station Zone
+    subnet: 10.30.30.0/24
+    zone: lan1
+    description: IEC104 RTU and station clock
+
+  - id: field_net
+    name: Field Device Zone
+    subnet: 10.40.40.0/24
+    zone: lan2
+    description: Feeder breaker Modbus endpoint
+
+  - id: control_centre_net
+    name: Control Centre Zone
+    subnet: 10.60.60.0/24
+    zone: lan4
+    description: IEC104 control-centre client
+
+nodes:
+  - id: fw-1
+    type: containd_ngfw
+    name: Containd Firewall
+    container: rangerdanger-firewall
+    networks:
+      - enterprise_net
+      - vendor_net
+      - station_net
+      - field_net
+      - control_centre_net
+    ip: 10.10.10.2
+
+  - id: kali-1
+    type: kali_pentest
+    name: Kali Attacker
+    container: rangerdanger-kali
+    networks:
+      - enterprise_net
+    ip: 10.10.10.50
+
+  - id: vendor-jump-1
+    type: vendor_jumpbox
+    name: Vendor Jump Box
+    container: rangerdanger-vendor-jump
+    networks:
+      - vendor_net
+    ip: 10.20.20.10
+
+  - id: eng-ws-1
+    type: eng_workstation
+    name: Engineering Workstation
+    container: rangerdanger-eng-ws
+    networks:
+      - vendor_net
+    ip: 10.20.20.20
+
+  - id: gps-1
+    type: gps_sim
+    name: Station GPS Clock
+    container: rangerdanger-gps-sim
+    networks:
+      - station_net
+    ip: 10.30.30.50
+
+  - id: rtu-1
+    type: iec104_rtu
+    name: IEC104 Remote Terminal Unit
+    container: rangerdanger-iec104-rtu
+    networks:
+      - station_net
+    ip: 10.30.30.20
+
+  - id: cc-1
+    type: control_centre
+    name: Control Centre
+    container: rangerdanger-control-centre
+    networks:
+      - control_centre_net
+    ip: 10.60.60.20
+
+  - id: breaker-1
+    type: feeder_breaker
+    name: Feeder Breaker
+    container: rangerdanger-feeder-breaker
+    networks:
+      - field_net
+    ip: 10.40.40.20
+
+scenarios: []
