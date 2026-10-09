@@ -70,7 +70,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$SHOW_HELP" -eq 1 ]; then
-    sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+    sed -n '2,/^$/p' "$0" | sed -e 's/^# //' -e 's/^#$//'
     exit 0
 fi
 
