@@ -31,22 +31,17 @@ type graphEdge struct {
 
 // getNodeUIConfig returns the proxy path of a node type's web UI and an
 // external URL for it. Both are same-origin paths served by the package's
-// proxy routes; types without a web UI get neither.
+// proxy routes; types without a web UI get neither. Only node types some
+// topology uses are listed.
 func getNodeUIConfig(nodeType string) (uiPath, externalURL string) {
 	switch nodeType {
 	case "containd_ngfw":
 		// Same-origin paths only: hardcoding localhost:9080 here would
 		// break any deployment that isn't bound to loopback.
 		return "/apps/firewall/", "/containd/"
-	case "hmi_view":
-		return "/apps/hmi-view/", ""
-	case "hmi_control":
-		return "/apps/hmi-control/", ""
-	case "hmi_scada":
-		return "/apps/fuxa/", ""
 	case "fuxa_hmi":
 		return "/apps/fuxa-hmi/", ""
-	case "plc_trainer", "sis_plc", "openplc":
+	case "openplc":
 		return "/apps/openplc/", ""
 	case "corp_workstation":
 		return "/apps/corp-ws/", ""
