@@ -60,16 +60,33 @@ type Event struct {
 	Dest          string         `json:"dstIp"`            // v0.1.25+ field
 	SourceLegacy  string         `json:"source,omitempty"` // legacy fallback
 	DestLegacy    string         `json:"dest,omitempty"`   // legacy fallback
-	Protocol      string         `json:"protocol"`
-	Transport     string         `json:"transport"` // v0.1.25+ ("tcp", "udp")
-	SrcPort       int            `json:"srcPort"`   // v0.1.25+ field
-	DstPort       int            `json:"dstPort"`   // v0.1.25+ field
+	Protocol      string         `json:"protocol"`         // decoded from containd's `proto`; see UnmarshalJSON
+	Transport     string         `json:"transport"`        // v0.1.25+ ("tcp", "udp")
+	SrcPort       int            `json:"srcPort"`          // v0.1.25+ field
+	DstPort       int            `json:"dstPort"`          // v0.1.25+ field
 	SrcPortLegacy int            `json:"src_port,omitempty"`
 	DstPortLegacy int            `json:"dst_port,omitempty"`
 	Attributes    map[string]any `json:"attributes"` // v0.1.25+: ruleId, action, via, etc.
 	Details       string         `json:"details"`    // legacy human-readable
 	Severity      string         `json:"severity"`   // legacy: info/warning/critical
 	Zone          string         `json:"zone"`
+}
+
+// UnmarshalJSON decodes containd's wire key `proto` into Protocol.
+// The backend re-serialises events to the portal under `protocol`,
+// so the containd key and the portal key differ.
+func (e *Event) UnmarshalJSON(data []byte) error {
+	type eventFields Event
+	var wire struct {
+		eventFields
+		Proto string `json:"proto"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*e = Event(wire.eventFields)
+	e.Protocol = wire.Proto
+	return nil
 }
 
 // Normalize fills v0.1.25 fields from legacy fallbacks when only the older
@@ -133,10 +150,41 @@ type Protocol struct {
 	Port string `json:"port,omitempty"`
 }
 
-// ICSConfig defines ICS-specific DPI settings.
+// ICSConfig is the subset of containd's ICS rule predicate that the
+// backend reads. containd's GET /api/v1/config always serialises
+// functionCode as a numeric array.
 type ICSConfig struct {
-	Protocol      string `json:"protocol,omitempty"`      // "modbus", "dnp3", etc.
-	FunctionCodes []int  `json:"functionCodes,omitempty"` // Allowed function codes
+	Protocol      string `json:"protocol,omitempty"`     // "modbus", "dnp3", etc.
+	FunctionCodes []int  `json:"functionCode,omitempty"` // Allowed function codes
+	ReadOnly      bool   `json:"readOnly,omitempty"`     // containd's read-only class
+}
+
+// readFunctionCodes lists, per ICS protocol, the function codes that
+// only read from the device: Modbus 1-4 (coils, discrete inputs,
+// holding and input registers) and DNP3 1 (READ).
+var readFunctionCodes = map[string]map[int]bool{
+	"modbus": {1: true, 2: true, 3: true, 4: true},
+	"dnp3":   {1: true},
+}
+
+// IsReadOnly reports whether the predicate admits only reads: either
+// containd's readOnly class is set, or every listed function code is a
+// read code for the protocol. An empty code list matches every
+// function code, so it is not read-only.
+func (ics *ICSConfig) IsReadOnly() bool {
+	if ics.ReadOnly {
+		return true
+	}
+	if len(ics.FunctionCodes) == 0 {
+		return false
+	}
+	reads := readFunctionCodes[ics.Protocol]
+	for _, fc := range ics.FunctionCodes {
+		if !reads[fc] {
+			return false
+		}
+	}
+	return true
 }
 
 // FirewallConfig represents the firewall section of containd config.
@@ -471,7 +519,7 @@ func (c *Client) GetZoneRuleSummaries() ([]ZoneRuleSummary, error) {
 
 			// Check for ICS protocols
 			if rule.ICS != nil && rule.ICS.Protocol != "" {
-				if len(rule.ICS.FunctionCodes) > 0 && len(rule.ICS.FunctionCodes) <= 4 {
+				if rule.ICS.IsReadOnly() {
 					protocols = append(protocols, rule.ICS.Protocol+" R/O")
 				} else {
 					protocols = append(protocols, rule.ICS.Protocol)

@@ -151,7 +151,10 @@ EXPOSE 22 443 8080 502 20000
 # RTAC silently loses cross-zone reachability when peers restart.
 # rtac-mgmt-init.sh: starts sshd on :22 and nginx on :443 so the
 # vendor-to-ot-restricted firewall rule has real listeners to probe.
-CMD ["sh", "-c", "set-gateway.sh && rtac-harden.sh && rtac-mgmt-init.sh && rtac-route-monitor.sh & exec rtac-sim"]
+# The three init steps run in the foreground under set -e, so rtac-sim
+# never starts on a half-configured network and a failed step exits
+# the container non-zero. Only the route monitor is backgrounded.
+CMD ["sh", "-c", "set -e; set-gateway.sh; rtac-harden.sh; rtac-mgmt-init.sh; rtac-route-monitor.sh & exec rtac-sim"]
 
 FROM sim-base AS capbank-sim
 COPY --from=capbank-sim-builder /bin/capbank-sim /usr/local/bin/capbank-sim
