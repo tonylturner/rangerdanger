@@ -1,0 +1,5 @@
+services:
+  firewall:
+    image: ghcr.io/tonylturner/rangerdanger-vendor-jump:${VERSION:-latest}
+  protocol_service:
+    image: alpine:3.20

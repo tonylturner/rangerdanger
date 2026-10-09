@@ -14,8 +14,8 @@
 #                             Either form works (gps-sim or rangerdanger-gps-sim);
 #                             an entry that matches no candidate is an error.
 #   --all                     ignore digest comparison; save every image at <new-version>
-#   --include-upstream        also delta-check non-rangerdanger upstream images
-#                             (containd/nginx/fuxa/webtop/alpine — usually pinned by digest already)
+#   --include-upstream        also delta-check unchanged non-rangerdanger upstream
+#                             images; new/changed upstream references are included automatically
 #
 # Examples:
 #   ./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.7 v0.1.6 v0.1.7
@@ -97,30 +97,92 @@ say "New version:      $NEW"
 [ -n "$INCLUDE_LIST" ]         && say "Force-include:    $INCLUDE_LIST"
 [ "$INCLUDE_UPSTREAM" -eq 1 ]  && say "Upstream images:  included in delta check"
 
-# Enumerate images from compose. Filter to first-party rangerdanger-*
-# unless --include-upstream is set, since the upstream images are
-# already pinned by sha256 digest in compose and almost never need
-# to ship in a delta.
-ALL_IMAGES=$(docker compose -f "$COMPOSE_FILE" config --images | sort -u)
-[ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from $COMPOSE_FILE"
-
-if [ "$INCLUDE_UPSTREAM" -eq 0 ]; then
-    CANDIDATE_IMAGES=$(echo "$ALL_IMAGES" | grep -E 'ghcr\.io/tonylturner/rangerdanger-' || true)
-else
-    CANDIDATE_IMAGES="$ALL_IMAGES"
-fi
-
-# Substitute the release tag only for first-party RangerDanger images.
-# containd deliberately remains :latest; its release cadence is independent.
-# Other upstream images keep their pinned tag/digest as-is.
-resolve_version() {
-    local images="$1" version="$2"
-    echo "$images" | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):latest\$|\\1:$version|" \
-                  | sed -E "s|^(ghcr\.io/tonylturner/rangerdanger-[a-z0-9-]+):[^@]+\$|\\1:$version|"
+# Compose package models must be enumerated independently: combining
+# them would merge same-named services from different packages.
+collect_release_images() {
+    local package_dir compose_file
+    RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$NEW" \
+        docker compose --project-directory "$ROOT_DIR" \
+        -f "$COMPOSE_FILE" config --images || return 1
+    for package_dir in "$ROOT_DIR"/lab-definitions/packages/*; do
+        [ -d "$package_dir" ] || continue
+        compose_file="$package_dir/compose.release.yml"
+        [ -f "$compose_file" ] || {
+            printf 'Missing package release Compose file: %s\n' "$compose_file" >&2
+            return 1
+        }
+        RANGERDANGER_ROOT="$ROOT_DIR" VERSION="$NEW" \
+            docker compose --project-directory "$ROOT_DIR" \
+            -f "$compose_file" config --images || return 1
+    done
 }
+if ! ALL_IMAGES=$(collect_release_images | sort -u); then
+    die "Couldn't enumerate the platform/package release image union"
+fi
+[ -n "$ALL_IMAGES" ] || die "Couldn't enumerate images from the release models"
 
-SINCE_REF=$(resolve_version "$CANDIDATE_IMAGES" "$SINCE")
-NEW_REF=$(resolve_version "$CANDIDATE_IMAGES" "$NEW")
+# Delta membership is release-owned data, not inferred from today's package
+# tree. Both records must describe the same package models as their releases.
+MEMBERSHIP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/rd-delta-membership.XXXXXX") \
+    || die "Couldn't create a temporary directory for release membership"
+trap 'rm -rf "$MEMBERSHIP_DIR"' EXIT
+OWNER_REPO="${GH_OWNER_REPO:-tonylturner/rangerdanger}"
+fetch_release_record() {
+    local tag="$1" output="$2"
+    python3 - "$OWNER_REPO" "$tag" "$output" <<'PY'
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+
+owner_repo, tag, output = sys.argv[1:]
+url = (f"https://github.com/{owner_repo}/releases/download/"
+       f"{quote(tag, safe='')}/release-images.json")
+try:
+    request = Request(url, headers={"User-Agent": "RangerDanger-SSD-delta"})
+    with urlopen(request, timeout=30) as response, open(output, "wb") as record:
+        record.write(response.read())
+except (HTTPError, URLError, OSError) as error:
+    raise SystemExit(f"cannot download release-images.json for {tag}: {error}")
+PY
+}
+SINCE_RECORD="$MEMBERSHIP_DIR/since.json"
+NEW_RECORD="$MEMBERSHIP_DIR/new.json"
+fetch_release_record "$SINCE" "$SINCE_RECORD" \
+    || die "Could not read the old release package membership"
+fetch_release_record "$NEW" "$NEW_RECORD" \
+    || die "Could not read the new release package membership"
+
+printf '%s\n' "$ALL_IMAGES" > "$MEMBERSHIP_DIR/compose-images.txt"
+CANDIDATE_NEW_REFS=()
+CANDIDATE_OLD_REFS=()
+CANDIDATE_OLD_MEMBERSHIP=()
+MEMBERSHIP_ARGS=(
+    delta-candidates
+    --since-record "$SINCE_RECORD"
+    --new-record "$NEW_RECORD"
+    --since "$SINCE"
+    --new "$NEW"
+    --compose-images "$MEMBERSHIP_DIR/compose-images.txt"
+    --format tsv
+)
+if [ "$INCLUDE_UPSTREAM" -eq 1 ] || [ "$SAVE_ALL" -eq 1 ]; then
+    MEMBERSHIP_ARGS+=(--include-upstream)
+fi
+if ! CANDIDATE_DATA=$(python3 "$ROOT_DIR/scripts/release_image_plan.py" \
+    "${MEMBERSHIP_ARGS[@]}"); then
+    die "Release records and Compose image union disagree or lack package membership"
+fi
+CANDIDATE_IMAGES=""
+while IFS=$'\t' read -r new_ref old_ref _ _ old_member _; do
+    [ -n "$new_ref" ] || continue
+    CANDIDATE_IMAGES="${CANDIDATE_IMAGES}${CANDIDATE_IMAGES:+
+}$new_ref"
+    CANDIDATE_NEW_REFS+=("$new_ref")
+    CANDIDATE_OLD_REFS+=("$old_ref")
+    CANDIDATE_OLD_MEMBERSHIP+=("$old_member")
+done <<< "$CANDIDATE_DATA"
+[ -n "$CANDIDATE_IMAGES" ] || die "The new release membership has no stageable images"
 
 # --include accepts either form a student-facing doc would use:
 # "gps-sim" or "rangerdanger-gps-sim". Normalise both sides to the short
@@ -256,23 +318,13 @@ UNCHANGED=()
 FORCED=()
 MISSING_SINCE=()
 
-# Read the resolved lists in lockstep with a here-string loop supported
-# by stock macOS Bash 3.2.
-SINCE_ARR=()
-NEW_ARR=()
-while IFS= read -r ref; do
-    SINCE_ARR+=("$ref")
-done <<< "$SINCE_REF"
-while IFS= read -r ref; do
-    NEW_ARR+=("$ref")
-done <<< "$NEW_REF"
-
 UNCHANGED_SINCE_REFS=()
 UNCHANGED_NEW_REFS=()
 
-for i in "${!NEW_ARR[@]}"; do
-    new="${NEW_ARR[$i]}"
-    since="${SINCE_ARR[$i]}"
+for i in "${!CANDIDATE_NEW_REFS[@]}"; do
+    new="${CANDIDATE_NEW_REFS[$i]}"
+    since="${CANDIDATE_OLD_REFS[$i]}"
+    old_member="${CANDIDATE_OLD_MEMBERSHIP[$i]}"
     [ -z "$new" ] && continue
 
     # This response provides both the comparison digest and the platform
@@ -301,6 +353,15 @@ for i in "${!NEW_ARR[@]}"; do
     fi
 
     if [ "$SAVE_ALL" -eq 1 ]; then
+        CHANGED+=("$new")
+        CHANGED_MANIFESTS+=("$new_manifest")
+        CHANGED_SINCE_REFS+=("$since")
+        continue
+    fi
+
+    if [ "$old_member" != "yes" ]; then
+        warn "  $short: absent from the $SINCE package membership; including in delta"
+        MISSING_SINCE+=("$short")
         CHANGED+=("$new")
         CHANGED_MANIFESTS+=("$new_manifest")
         CHANGED_SINCE_REFS+=("$since")
@@ -357,7 +418,7 @@ if [ -n "$INCLUDE_LIST" ]; then
         for f in ${FORCED[@]+"${FORCED[@]}"}; do
             [ "${f#rangerdanger-}" = "${include_name#rangerdanger-}" ] && matched=1
         done
-        [ "$matched" -eq 1 ] || die "--include $include_name matched no candidate image. Candidates are the first-party images in $COMPOSE_FILE (short or rangerdanger- form); upstream images need --include-upstream."
+        [ "$matched" -eq 1 ] || die "--include $include_name matched no image in the selected new platform/package membership; unchanged upstream images need --include-upstream."
     done
 fi
 [ "${#FORCED[@]}" -gt 0 ]        && say "  Forced via --include: ${FORCED[*]}"
@@ -573,56 +634,34 @@ fi
 
 banner "Write DELTA-README.md"
 
-# Derive image-to-service mappings from the release Compose model. This
-# avoids guessing names from image names (e.g. eng-ws is eng_workstation).
-# `config --images SERVICE` also includes transitive dependencies, so
-# read the service's direct image from Compose's resolved JSON model and
-# use the per-service image output only to confirm that reference exists.
-COMPOSE_SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services) \
-    || die "Couldn't enumerate services from $COMPOSE_FILE"
-COMPOSE_MODEL=$(docker compose -f "$COMPOSE_FILE" config --format json) \
-    || die "Couldn't read the resolved service model from $COMPOSE_FILE"
-SERVICE_NAMES=()
-SERVICE_REPOS=()
-image_repository() {
-    local ref="${1%@*}"
-    local final_component="${ref##*/}"
-    case "$final_component" in
-        *:*) ref="${ref%:*}" ;;
-    esac
-    printf '%s\n' "$ref"
-}
-while IFS= read -r service; do
-    [ -z "$service" ] && continue
-    service_images=$(docker compose -f "$COMPOSE_FILE" config --images "$service") \
-        || die "Couldn't enumerate images for Compose service $service"
-    service_image=$(printf '%s\n' "$COMPOSE_MODEL" | python3 -c '
-import json, sys
-service = sys.argv[1]
-print(json.load(sys.stdin)["services"][service].get("image", ""))
-' "$service") || die "Couldn't read the resolved image for Compose service $service"
-    [ -n "$service_image" ] || continue
-    printf '%s\n' "$service_images" | grep -Fqx "$service_image" \
-        || die "Compose did not list direct image $service_image for service $service"
-    SERVICE_NAMES+=("$service")
-    SERVICE_REPOS+=("$(image_repository "$service_image")")
-done <<< "$COMPOSE_SERVICES"
-
 APPLY_TABLE=""
 for img in "${CHANGED[@]}"; do
-    image_repo=$(image_repository "$img")
+    image_repo=$(python3 -c '
+import sys
+value = sys.argv[1].split("@", 1)[0]
+last = value.rsplit("/", 1)[-1]
+print(value.rsplit(":", 1)[0] if ":" in last else value)
+' "$img") || die "Could not normalize changed image $img"
     short="${image_repo##*/}"
-    svc=""
-    for i in "${!SERVICE_NAMES[@]}"; do
-        if [ "${SERVICE_REPOS[$i]}" = "$image_repo" ]; then
-            if [ -z "$svc" ]; then
-                svc="${SERVICE_NAMES[$i]}"
-            else
-                svc="$svc, ${SERVICE_NAMES[$i]}"
-            fi
-        fi
-    done
-    [ -n "$svc" ] || die "Changed image $img does not map to a service in $COMPOSE_FILE"
+    svc=$(python3 - "$NEW_RECORD" "$image_repo" <<'PY'
+import json
+import sys
+
+record = json.load(open(sys.argv[1], encoding="utf-8"))
+target = sys.argv[2]
+models = record["compose_files"]
+owners = []
+for owner, model in [("platform", models["platform"])] + sorted(models["packages"].items()):
+    for service, image in model["services"].items():
+        value = image.split("@", 1)[0]
+        last = value.rsplit("/", 1)[-1]
+        repository = value.rsplit(":", 1)[0] if ":" in last else value
+        if repository == target:
+            owners.append(f"{owner}/{service}")
+print(", ".join(sorted(set(owners))))
+PY
+) || die "Could not read image membership for $img"
+    [ -n "$svc" ] || die "Changed image $img has no package/service membership in $NEW"
     APPLY_TABLE="$APPLY_TABLE| \`$short\` | \`$svc\` |
 "
 done
@@ -670,6 +709,7 @@ if [ -z "$APPLY_RETAG_COMMANDS" ]; then
     APPLY_RETAG_COMMANDS="# No unchanged first-party image tags need to be created."
 fi
 
+# shellcheck disable=SC2154 # This here-document contains a separate shell program emitted for the operator.
 cat > "$OUT/DELTA-README.md" <<EOF
 # RangerDanger - delta patch
 
@@ -677,7 +717,7 @@ Staged $(date -u +%FT%TZ) for upgrade from \`$SINCE\` -> \`$NEW\`.
 
 ## Changed
 
-| Image | Compose service |
+| Image | Package/service membership |
 |---|---|
 $APPLY_TABLE
 $KERNEL_README_ROW
@@ -693,6 +733,54 @@ set -e
 DELTA_DIR="/path/to/delta-$NEW"
 cd ~/rangerdanger
 test -f .env || { echo "Expected .env from setup.sh; cannot preserve the prior version." >&2; exit 1; }
+
+compose_down_project() {
+    local project="$1" compose_dir
+    compose_dir=$(mktemp -d) || return 1
+    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+        rmdir "$compose_dir"
+        return 1
+    fi
+    rmdir "$compose_dir"
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Containers remain for Compose project $project." >&2; return 1; }
+    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Networks remain for Compose project $project." >&2; return 1; }
+}
+
+start_platform_and_selected_range() {
+    local ready attempt range_status phase
+    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+        --project-directory "$PWD" -f docker-compose.release.yml \
+        up -d --pull never || return 1
+    ready=0
+    for attempt in $(seq 1 120); do
+        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
+    for attempt in $(seq 1 150); do
+        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
+            sleep 2
+            continue
+        }
+        phase=$(printf '%s' "$range_status" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
+        [ "$phase" = "ready" ] && return 0
+        if [ "$phase" = "failed" ]; then
+            echo "Selected range failed to start: $range_status" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "Selected range did not become ready." >&2
+    return 1
+}
 
 # Only apply a delta to the version it was built from. Check before stopping
 # services or touching the install so a wrong or repeated delta is harmless.
@@ -710,11 +798,11 @@ if [ "\$CURRENT_VERSION" != "$SINCE" ]; then
     exit 1
 fi
 
-# Stop services before reading their databases and other mutable state into
-# the rollback snapshot.
-if ! docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+# Stop only the two owned projects by labels before reading mutable state
+# into the rollback snapshot. Teardown does not load either Compose model.
+if ! compose_down_project rangerdanger || ! compose_down_project rangerdanger-platform
 then
-    echo "Could not stop the release + offline stack; some services may be stopped, but no snapshot or repo changes were made. Once Docker is available, run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    echo "Could not stop and verify both RangerDanger projects; no snapshot or repo changes were made." >&2
     exit 1
 fi
 
@@ -724,12 +812,12 @@ SNAPSHOT="../rangerdanger.before-$NEW.tar.gz"
 if [ ! -f "\$SNAPSHOT" ]; then
     tar czf "\$SNAPSHOT" -C .. rangerdanger || {
         rm -f "\$SNAPSHOT"
-        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+        echo "Could not snapshot ~/rangerdanger; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
         exit 1
     }
 fi
 tar tzf "\$SNAPSHOT" >/dev/null || {
-    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The release stack is stopped; run 'docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d' to restore the unchanged install." >&2
+    echo "Rollback snapshot is not a readable tar archive; refusing to apply the delta. The RangerDanger projects are stopped; restore them from the rollback procedure." >&2
     exit 1
 }
 
@@ -753,8 +841,9 @@ NEW_VERSION=$NEW awk '
   END { if (!replaced) print "VERSION=" version }
 ' .env > .env.delta.tmp && mv .env.delta.tmp .env
 
-# Start the complete stack from the new version without contacting GHCR.
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+# Start the platform from local images without contacting GHCR, then have
+# its backend select the recorded package through the normal range API.
+start_platform_and_selected_range
 \`\`\`
 
 **ARM64 Linux only:** OpenPLC needs amd64 emulation. When changed images
@@ -791,6 +880,52 @@ the rollback window closes:
 \`\`\`sh
 set -e
 cd ~/rangerdanger
+compose_down_project() {
+    local project="$1" compose_dir
+    compose_dir=$(mktemp -d) || return 1
+    if ! (cd "$compose_dir" && docker compose -p "$project" down --remove-orphans); then
+        rmdir "$compose_dir"
+        return 1
+    fi
+    rmdir "$compose_dir"
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Containers remain for Compose project $project." >&2; return 1; }
+    [ -z "$(docker network ls -q --filter "label=com.docker.compose.project=$project")" ] \
+        || { echo "Networks remain for Compose project $project." >&2; return 1; }
+}
+start_platform_and_selected_range() {
+    local ready attempt range_status phase
+    RANGERDANGER_ROOT="$PWD" docker compose -p rangerdanger-platform \
+        --project-directory "$PWD" -f docker-compose.release.yml \
+        up -d --pull never || return 1
+    ready=0
+    for attempt in $(seq 1 120); do
+        if curl -fsS --max-time 5 http://127.0.0.1:8088/api/health >/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$ready" -eq 1 ] || { echo "Platform API did not become ready." >&2; return 1; }
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+        -d '{}' http://127.0.0.1:8088/api/range >/dev/null || return 1
+    for attempt in $(seq 1 150); do
+        range_status=$(curl -fsS --max-time 5 http://127.0.0.1:8088/api/range) || {
+            sleep 2
+            continue
+        }
+        phase=$(printf '%s' "$range_status" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("phase", ""))') || return 1
+        [ "$phase" = "ready" ] && return 0
+        if [ "$phase" = "failed" ]; then
+            echo "Selected range failed to start: $range_status" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "Selected range did not become ready." >&2
+    return 1
+}
 test -f "../rangerdanger.before-$NEW.tar.gz" || {
     echo "Rollback snapshot not found beside ~/rangerdanger." >&2
     exit 1
@@ -799,13 +934,14 @@ tar tzf "../rangerdanger.before-$NEW.tar.gz" >/dev/null || {
     echo "Rollback snapshot is not readable; leaving the current install untouched." >&2
     exit 1
 }
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
+compose_down_project rangerdanger
+compose_down_project rangerdanger-platform
 cd ..
 rm -rf rangerdanger
 tar xzf "rangerdanger.before-$NEW.tar.gz"
 cd rangerdanger
 $ROLLBACK_RESTORE_COMMANDS
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d
+start_platform_and_selected_range
 \`\`\`
 EOF
 say "wrote $OUT/DELTA-README.md"
