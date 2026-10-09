@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,13 +37,21 @@ type PolicyComparison struct {
 
 // handleFirewallCompare returns a structured comparison of weak vs improved firewall configs.
 func (s *Server) handleFirewallCompare(c *gin.Context) {
-	labDefsDir := s.cfg.LabDefinitionsPath
-	if labDefsDir == "" {
-		labDefsDir = "lab-definitions"
+	recipe, err := recipeFor(rangeOf(c))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
 	}
-
-	weakPath := filepath.Join(labDefsDir, "firewall", "substation-weak.json")
-	improvedPath := filepath.Join(labDefsDir, "firewall", "substation-improved.json")
+	weakPath, err := s.policyPath(recipe, "weak")
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	improvedPath, err := s.policyPath(recipe, "improved")
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 
 	weakRules, err := loadFirewallRules(weakPath)
 	if err != nil {
@@ -71,8 +80,8 @@ func (s *Server) handleFirewallCompare(c *gin.Context) {
 	}
 
 	comparison := PolicyComparison{
-		WeakConfig:     "substation-weak.json",
-		ImprovedConfig: "substation-improved.json",
+		WeakConfig:     filepath.Base(weakPath),
+		ImprovedConfig: filepath.Base(improvedPath),
 		Diffs:          diffs,
 		Summary: func() string {
 			parts := []string{}
@@ -179,16 +188,14 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
 func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
-	if configName != "weak" && configName != "improved" {
-		return nil, fmt.Errorf("config must be 'weak' or 'improved'")
+	recipe, err := recipeFor(gen)
+	if err != nil {
+		return nil, err
 	}
-
-	labDefsDir := s.cfg.LabDefinitionsPath
-	if labDefsDir == "" {
-		labDefsDir = "lab-definitions"
+	configPath, err := s.policyPath(recipe, configName)
+	if err != nil {
+		return nil, err
 	}
-
-	configPath := filepath.Join(labDefsDir, "firewall", "substation-"+configName+".json")
 	data, err := readPolicyJSONWithRetry(configPath)
 	if err != nil {
 		return nil, err
@@ -219,6 +226,20 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 	}
 
 	return warnings, nil
+}
+
+// policyPath is the file of the recipe's named policy.
+func (s *Server) policyPath(recipe *packageRecipe, name string) (string, error) {
+	relative, ok := recipe.policies[name]
+	if !ok {
+		names := make([]string, 0, len(recipe.policies))
+		for known := range recipe.policies {
+			names = append(names, "'"+known+"'")
+		}
+		sort.Strings(names)
+		return "", fmt.Errorf("config must be one of %s", strings.Join(names, ", "))
+	}
+	return filepath.Join(s.cfg.LabDefinitionsPath, relative), nil
 }
 
 // handleFirewallApplyCustom accepts a raw JSON config and applies it to containd.

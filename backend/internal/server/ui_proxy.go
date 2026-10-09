@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,51 +10,31 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
 
+// handleProxyNodeUI proxies a lab instance node's web UI: the manifest's
+// "ui" endpoint of the node's service.
 func (s *Server) handleProxyNodeUI(c *gin.Context) {
 	labID := c.Param("id")
 	nodeID := c.Param("nodeId")
 
-	// Get lab instance with template to access topology
 	var instance models.LabInstance
-	if err := s.db.Preload("Template").First(&instance, "id = ?", labID).Error; err != nil {
+	if err := s.db.First(&instance, "id = ?", labID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "lab not found"})
 		return
 	}
-
-	// Parse topology to find node config
-	var topo struct {
-		Nodes []labs.NodeYAML `json:"nodes"`
-	}
-	if err := json.Unmarshal([]byte(instance.Template.Topology), &topo); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid topology"})
+	svc, err := nodeService(rangeOf(c), nodeID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Find the node in topology
-	var nodeConfig *labs.NodeYAML
-	for i := range topo.Nodes {
-		if topo.Nodes[i].ID == nodeID {
-			nodeConfig = &topo.Nodes[i]
-			break
-		}
-	}
-	if nodeConfig == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "node not found in topology"})
+	endpoint, ok := svc.Endpoints["ui"]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ui proxy not configured for this node"})
 		return
 	}
-
-	// Get UI host and port based on node type and container
-	host, port := getNodeUIHostPort(nodeConfig.Type, nodeConfig.Container)
-	if host == "" || port == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ui proxy not configured for this node type"})
-		return
-	}
-
-	target, err := url.Parse(fmt.Sprintf("http://%s:%d", host, port))
+	target, err := url.Parse(endpoint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid upstream host"})
 		return
@@ -112,53 +91,6 @@ func (s *Server) handleProxyNodeUI(c *gin.Context) {
 	}
 
 	proxy.ServeHTTP(c.Writer, c.Request)
-}
-
-// getNodeUIHostPort returns the host and port for a node's web UI based on type.
-func getNodeUIHostPort(nodeType, container string) (string, int) {
-	// Use container name as host if available, otherwise derive from type
-	host := container
-	if host == "" {
-		switch nodeType {
-		case "plc_trainer":
-			host = "plc_process"
-		case "sis_plc":
-			host = "plc_safety"
-		case "openplc":
-			host = "openplc"
-		case "hmi_view":
-			host = "hmi_view"
-		case "hmi_control":
-			host = "hmi_control"
-		case "fuxa_hmi":
-			host = "fuxa_hmi"
-		case "ews":
-			host = "ews"
-		case "ubuntu_jumpbox":
-			host = "ubuntu_jumpbox"
-		case "corp_workstation":
-			host = "corp_ws"
-		case "vendor_jumpbox":
-			host = "vendor_jump"
-		case "eng_workstation":
-			host = "eng_workstation"
-		default:
-			return "", 0
-		}
-	}
-
-	switch nodeType {
-	case "plc_trainer", "sis_plc", "openplc":
-		return host, 8080
-	case "hmi_view", "hmi_control", "hmi_scada", "fuxa_hmi":
-		return host, 1881
-	case "ews", "ubuntu_jumpbox", "corp_workstation", "vendor_jumpbox", "eng_workstation":
-		return host, 3000
-	case "historian":
-		return host, 8086
-	default:
-		return "", 0
-	}
 }
 
 // Mirrors httputil.singleJoiningSlash without importing unexported logic.

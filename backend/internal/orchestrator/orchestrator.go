@@ -352,7 +352,9 @@ func (o *Orchestrator) RemoveContainer(ctx context.Context, containerID string) 
 
 // ExecShell executes an interactive shell in a container and returns
 // the hijacked connection along with the exec ID (needed for resize).
-func (o *Orchestrator) ExecShell(ctx context.Context, containerID string) (types.HijackedResponse, string, error) {
+// applianceCLI starts the containd CLI: the caller sets it for the range's
+// firewall role.
+func (o *Orchestrator) ExecShell(ctx context.Context, containerID string, applianceCLI bool) (types.HijackedResponse, string, error) {
 	if o.dockerClient == nil {
 		return types.HijackedResponse{}, "", fmt.Errorf("docker client not available")
 	}
@@ -367,7 +369,7 @@ func (o *Orchestrator) ExecShell(ctx context.Context, containerID string) (types
 	// All other containers default to bash (or sh fallback). The -il flags
 	// make bash read /etc/profile and ~/.bashrc so PS1 and aliases are set.
 	var cmd []string
-	if containerID == "rangerdanger-firewall" {
+	if applianceCLI {
 		cmd = []string{"sh", "-c", "containd cli; exec bash -il || exec sh -i"}
 	} else {
 		cmd = []string{"sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash -il || exec sh -i"}

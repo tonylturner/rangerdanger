@@ -3,18 +3,18 @@ package server
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 const probeCommand = `if command -v bash >/dev/null 2>&1; then timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' _ "$1" "$2"; else timeout 3 nc -w 3 "$1" "$2" </dev/null; fi`
 
 // executeProbe tests TCP reachability from topology nodes. Rows remain in YAML
 // order even though blocked targets run concurrently.
-func (s *Server) executeProbe(ctx context.Context, step labs.ScenarioStep) []StepActionResult {
+func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) []StepActionResult {
 	results := make([]StepActionResult, len(step.Action.Targets))
 	var workers sync.WaitGroup
 	limit := make(chan struct{}, 5)
@@ -24,14 +24,14 @@ func (s *Server) executeProbe(ctx context.Context, step labs.ScenarioStep) []Ste
 		go func() {
 			defer workers.Done()
 			defer func() { <-limit }()
-			results[i] = s.probeTarget(ctx, step, target)
+			results[i] = s.probeTarget(ctx, gen, step, target)
 		}()
 	}
 	workers.Wait()
 	return results
 }
 
-func (s *Server) probeTarget(ctx context.Context, step labs.ScenarioStep, target labs.ProbeTarget) StepActionResult {
+func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget) StepActionResult {
 	source := target.From
 	if source == "" {
 		source = step.Node
@@ -41,15 +41,12 @@ func (s *Server) probeTarget(ctx context.Context, step labs.ScenarioStep, target
 	if target.Note != "" {
 		prefix = target.Note + ": "
 	}
-	node, err := s.resolveWorkshopNode(source)
+	svc, err := nodeService(gen, source)
 	if err != nil {
 		row.Detail = prefix + err.Error()
 		return row
 	}
-	container := node.Container
-	if container == "" {
-		container = "rangerdanger-" + strings.ReplaceAll(node.ID, "_", "-")
-	}
+	container := svc.Container
 	cmd := []string{"/bin/sh", "-c", probeCommand, "_", target.Host, fmt.Sprint(target.Port)}
 	start := time.Now()
 	_, _, rc, err := s.execInContainer(ctx, container, cmd, 4)

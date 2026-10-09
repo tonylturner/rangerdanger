@@ -23,9 +23,8 @@ import (
 // and returns a change-board-ready markdown report. This is the in-app
 // equivalent of scripts/validation-report.sh.
 
-// validationProbe is one row of the segmentation validation matrix. Mirrors
-// the matrix in scripts/validation-report.sh (kept narrow + listener-backed
-// so verdicts are reliable on Docker Desktop).
+// validationProbe is one row of the segmentation validation matrix,
+// resolved against the range (packageRecipe.resolveValidation).
 type validationProbe struct {
 	Src      string // container name
 	SrcLabel string // friendly source name for the report
@@ -34,28 +33,6 @@ type validationProbe struct {
 	Expected string // "allow" | "deny"
 	Note     string
 	Category string // "authorized" | "unauthorized"
-}
-
-var validationMatrix = []validationProbe{
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.20", "502", "allow", "RTAC Modbus poll to relay", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.21", "20000", "allow", "RTAC DNP3 poll to recloser", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.22", "20000", "allow", "RTAC DNP3 poll to regulator", "authorized"},
-	{"rangerdanger-rtac-sim", "rtac-sim", "10.30.30.30", "8080", "allow", "RTAC HTTP API to OpenPLC (intra-zone)", "authorized"},
-	{"rangerdanger-fuxa-hmi", "fuxa-hmi", "10.30.30.20", "8080", "allow", "HMI to RTAC HTTP intra-zone", "authorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.30.30.20", "8080", "allow", "Historian to RTAC intra-zone", "authorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "22", "allow", "Vendor SSH mgmt to RTAC", "authorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "443", "allow", "Vendor HTTPS mgmt to RTAC", "authorized"},
-	{"rangerdanger-kali", "kali", "10.40.40.20", "502", "deny", "Enterprise Modbus to field relay", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.40.40.20", "20000", "deny", "Enterprise DNP3 to field relay", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.30", "8080", "deny", "Enterprise HTTP to OpenPLC", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.20", "8080", "deny", "Enterprise HTTP to RTAC", "unauthorized"},
-	{"rangerdanger-kali", "kali", "10.30.30.20", "502", "deny", "Enterprise Modbus to RTAC", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "502", "deny", "Vendor Modbus to field recloser", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "20000", "deny", "Vendor DNP3 to field recloser", "unauthorized"},
-	{"rangerdanger-eng-ws", "eng-ws", "10.30.30.30", "8080", "deny", "Vendor HTTP to OpenPLC (only 443/22 allowed)", "unauthorized"},
-	{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "502", "deny", "Vendor Modbus to RTAC (improved blocks non-mgmt)", "unauthorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "502", "deny", "Non-RTAC OT (historian) to field regulator (Modbus)", "unauthorized"},
-	{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "20000", "deny", "Non-RTAC OT (historian) to field regulator (DNP3)", "unauthorized"},
 }
 
 type validationRow struct {
@@ -119,13 +96,34 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	gen := rangeOf(c)
+	recipe, err := recipeFor(gen)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	matrix, err := recipe.resolveValidation(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	captureHosts, captureNet, err := recipe.resolveCapture(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	firewall, err := firewallContainer(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	s.activeConfigMu.RLock()
 	active, source := s.activeConfig, s.policySource
 	s.activeConfigMu.RUnlock()
 
 	hash := "unknown"
-	if h, err := rangeOf(c).Containd().GetFirewallHash(ctx); err == nil && h != "" {
+	if h, err := gen.Containd().GetFirewallHash(ctx); err == nil && h != "" {
 		hash = strings.TrimPrefix(h, "sha256:")
 		if len(hash) > 12 {
 			hash = hash[:12]
@@ -138,18 +136,18 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	pcapPath := "/data/captures/validation-" + ts + ".pcap"
 	pcapHostPath := "data/firewall/captures/validation-" + ts + ".pcap"
 	pcapCmd := fmt.Sprintf(
-		"mkdir -p /data/captures; timeout %d tcpdump -i any -w %s 'host 10.40.40.20 or host 10.40.40.21 or host 10.40.40.22 or host 10.40.40.23' >/dev/null 2>&1",
-		validationPcapDurationSec, pcapPath)
-	pcapOK := s.execDetached(ctx, cli, firewallContainer, []string{"sh", "-c", pcapCmd}) == nil
+		"mkdir -p /data/captures; timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>&1",
+		validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "))
+	pcapOK := s.execDetached(ctx, cli, firewall, []string{"sh", "-c", pcapCmd}) == nil
 	pcapStart := time.Now()
 	time.Sleep(1 * time.Second) // let tcpdump open the file
 
 	// Run the probe matrix concurrently (independent containers; the PCAP
 	// captures all of it). Verdicts land well inside the PCAP window.
-	rows := make([]validationRow, len(validationMatrix))
+	rows := make([]validationRow, len(matrix))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8) // cap concurrent docker execs to limit contention
-	for i, p := range validationMatrix {
+	for i, p := range matrix {
 		wg.Add(1)
 		go func(i int, p validationProbe) {
 			defer wg.Done()
@@ -179,7 +177,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		if remain := time.Duration(validationPcapDurationSec)*time.Second - time.Since(pcapStart); remain > 0 {
 			time.Sleep(remain)
 		}
-		pcapSummary = s.analyzePcapSources(ctx, cli, pcapPath)
+		pcapSummary = s.analyzePcapSources(ctx, cli, firewall, pcapPath, captureNet)
 	}
 
 	authPass, authTotal := tally.authPass, tally.authTotal
@@ -235,12 +233,14 @@ func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, por
 // analyzePcapSources reads the capture on the firewall and aggregates the
 // source IPs that were actually FORWARDED toward field (direction "Out" on
 // tcpdump -i any). Same awk as validation-report.sh.
-func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, pcapPath string) string {
+// captureNet is the first three octets of the captured devices' /24, whose
+// own traffic the summary leaves out.
+func (s *Server) analyzePcapSources(ctx context.Context, cli *client.Client, firewall, pcapPath string, captureNet []string) string {
 	awk := `tcpdump -r ` + pcapPath + ` -nn 2>/dev/null | awk '` +
 		`/^[0-9]/ { if ($3 != "Out") next; ip=$5; n=split(ip,a,"."); if (n<4) next; ` +
-		`if (a[1]=="10" && a[2]=="40" && a[3]=="40") next; print a[1]"."a[2]"."a[3]"."a[4] }' ` +
+		fmt.Sprintf(`if (a[1]=="%s" && a[2]=="%s" && a[3]=="%s") next; print a[1]"."a[2]"."a[3]"."a[4] }' `, captureNet[0], captureNet[1], captureNet[2]) +
 		`| sort | uniq -c | sort -rn | head -10`
-	out, _, err := s.execCapture(ctx, cli, firewallContainer, []string{"sh", "-c", awk})
+	out, _, err := s.execCapture(ctx, cli, firewall, []string{"sh", "-c", awk})
 	out = strings.TrimRight(out, "\n")
 	if err != nil || strings.TrimSpace(out) == "" {
 		return "(no packets captured during window)"

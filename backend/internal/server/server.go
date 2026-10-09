@@ -159,12 +159,10 @@ func (s *Server) registerRoutes() {
 			labsGroup.GET("/instances", s.handleListLabInstances)
 			labsGroup.GET("/instances/:id", s.handleGetLabInstance)
 			labsGroup.GET("/instances/:id/topology", s.handleGetTopology)
-			labsGroup.GET("/instances/:id/graph", s.handleGetInstanceGraph)
 			labsGroup.PATCH("/instances/:id/topology", s.handlePatchTopology)
 			labsGroup.GET("/instances/:id/metrics", s.handleGetMetrics)
 			labsGroup.GET("/instances/:id/events", s.handleGetEvents)
 		}
-		api.GET("/workshop/graph", s.handleGetWorkshopGraph)
 		api.POST("/nodes/:node_id/action", s.handleNodeAction)
 
 		// Scenario routes serve the active package only.
@@ -189,6 +187,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		instances.Any("/:id/nodes/:nodeId/ui/*path", s.handleProxyNodeUI)
 		instances.GET("/:id/nodes/:nodeId/terminal", s.handleTerminal)
 		instances.GET("/:id/live-events", s.handleGetLiveEvents)
+		instances.GET("/:id/graph", s.handleGetInstanceGraph)
 	}
 
 	firewall := rng.Group("/firewall")
@@ -205,6 +204,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 
 	workshop := rng.Group("/workshop")
 	{
+		workshop.GET("/graph", s.handleGetWorkshopGraph)
 		workshop.GET("/status", s.handleGetWorkshopStatus)
 		workshop.GET("/nodes/:nodeId/terminal", s.handleWorkshopTerminal)
 		workshop.POST("/nodes/:nodeId/exec", s.handleWorkshopExec)

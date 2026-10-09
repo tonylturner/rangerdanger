@@ -16,8 +16,6 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-const firewallContainer = "rangerdanger-firewall"
-
 // ---------- PCAP capture (via containd /api/v1/pcap/*, fallback to Docker exec) ----------
 
 func (s *Server) handlePcapStart(c *gin.Context) {
@@ -326,6 +324,11 @@ func (s *Server) handlePcapList(c *gin.Context) {
 // ---------- Fallback: Docker exec tcpdump ----------
 
 func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interfaces []string, filter string) {
+	firewall, err := firewallContainer(rangeOf(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	dockerCli := s.orchestrator.DockerClient()
 	if dockerCli == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "docker client not available"})
@@ -372,7 +375,7 @@ func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interface
 			AttachStderr: false,
 			Privileged:   true,
 		}
-		execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
 		if err != nil {
 			log.Printf("[pcap] exec create failed: %v", err)
 			finish(false)
@@ -404,6 +407,11 @@ func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interface
 }
 
 func (s *Server) stopTcpdumpFallback(c *gin.Context) {
+	firewall, err := firewallContainer(rangeOf(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	dockerCli := s.orchestrator.DockerClient()
 	if dockerCli == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "docker client not available"})
@@ -417,7 +425,7 @@ func (s *Server) stopTcpdumpFallback(c *gin.Context) {
 		AttachStderr: false,
 		Privileged:   true,
 	}
-	execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
+	execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("exec create: %v", err)})
 		return
@@ -444,6 +452,11 @@ func (s *Server) downloadFromContainerFallback(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no capture file available"})
 		return
 	}
+	firewall, err := firewallContainer(rangeOf(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	dockerCli := s.orchestrator.DockerClient()
 	if dockerCli == nil {
@@ -452,7 +465,7 @@ func (s *Server) downloadFromContainerFallback(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	reader, _, err := dockerCli.CopyFromContainer(ctx, firewallContainer, "/tmp/capture.pcap")
+	reader, _, err := dockerCli.CopyFromContainer(ctx, firewall, "/tmp/capture.pcap")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("copy from container: %v", err)})
 		return
@@ -492,6 +505,12 @@ func (s *Server) handleTrafficGenerate(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "docker client not available"})
 		return
 	}
+	gen := rangeOf(c)
+	targets, err := resolveTraffic(gen)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
 
 	s.trafficMu.Lock()
 	if s.traffic.Generating {
@@ -507,8 +526,7 @@ func (s *Server) handleTrafficGenerate(c *gin.Context) {
 	}
 	s.trafficMu.Unlock()
 
-	gen := rangeOf(c)
-	if !gen.Go("traffic", func(ctx context.Context) { s.runTrafficGeneration(ctx, gen, req.DurationSec) }) {
+	if !gen.Go("traffic", func(ctx context.Context) { s.runTrafficGeneration(ctx, gen, targets, req.DurationSec) }) {
 		rangeUnavailable(c)
 		return
 	}
@@ -557,83 +575,9 @@ func (s *Server) handleTrafficStatus(c *gin.Context) {
 //
 // It is a generation worker: the range stopping ends it, and its counts
 // are dropped once the generation is gone.
-func (s *Server) runTrafficGeneration(ctx context.Context, gen *lifecycle.Generation, durationSec int) {
+func (s *Server) runTrafficGeneration(ctx context.Context, gen *lifecycle.Generation, targets []resolvedTraffic, durationSec int) {
 	deadline := time.Now().Add(time.Duration(durationSec) * time.Second)
 	flows := 0
-
-	// Scenario-driven traffic only. The autonomous baseline runs
-	// continuously in the simulator services and is NEVER produced here.
-	//
-	// IPs below are hard-coded against the substation lab topology
-	// (lab-definitions/substation-segmentation.yml) and the static
-	// docker-compose.yml network assignments. If the topology IPs
-	// change, this list must change too — there is no auto-discovery
-	// path. The relevant IPs:
-	//   eng-ws       10.20.20.20  (vendor zone)
-	//   rtac         10.30.30.20  (OT ops zone)
-	//   openplc      10.30.30.30
-	//   relay        10.40.40.20  (field zone)
-	//   recloser     10.40.40.21
-	//   regulator    10.40.40.22
-	//   capbank      10.40.40.23
-	targets := []struct {
-		container string
-		cmd       string
-		desc      string // for logging
-	}{
-		// ─────────────────────────────────────────────────────────
-		// Engineering workstation (10.20.20.20) — vendor zone
-		//
-		// eng-ws has mbpoll, dnp3poll, dnp3cmd, nc, ssh, nmap,
-		// curl, and python3. We use real protocol tools so the
-		// generated traffic is indistinguishable from what a human
-		// engineer or attacker would produce.
-		// ─────────────────────────────────────────────────────────
-
-		// Eng-ws → RTAC: HTTP maintenance access (vendor→OT ops)
-		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http"},
-		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "eng-ws→rtac http health"},
-
-		// Eng-ws → OpenPLC: PLC programming HTTP (vendor→OT ops)
-		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.30:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
-
-		// Eng-ws → HMI: FUXA web interface (vendor→OT ops)
-		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "eng-ws→hmi fuxa"},
-
-		// ── Eng-ws → field devices: real ICS protocol traffic ──
-		// WEAK baseline allows these; hardened blocks them. Students
-		// see Modbus/DNP3 frames on the wire — not just HTTP curls.
-
-		// Modbus FC03 reads (mbpoll: read 5 holding registers, 1 poll, 1s timeout)
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20 > /dev/null 2>&1 || true", "eng-ws→relay modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21 > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.22 > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23 > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC03 (WEAK)"},
-
-		// DNP3 class 0 polls (dnp3poll: read all static data, 2s timeout)
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.20:20000 -a 1 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.21:20000 -a 2 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.22:20000 -a 3 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.23:20000 -a 4 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
-
-		// NOTE: No HTTP/8080 to field devices. Real relays, reclosers,
-		// regulators, and cap banks don't run web servers — Modbus
-		// and DNP3 are the realistic access protocols. The HTTP API
-		// on port 8080 is a lab convenience for the Go simulators;
-		// including it in generated traffic would teach the wrong
-		// mental model. Students should see Modbus FC03 + DNP3
-		// class-0 polls only when eng-ws reaches into the field zone.
-
-		// ─────────────────────────────────────────────────────────
-		// Vendor jump box (10.20.20.10) — vendor zone
-		// ─────────────────────────────────────────────────────────
-
-		// Vendor → HMI: remote monitoring via FUXA (vendor→OT ops)
-		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi fuxa"},
-
-		// Vendor → RTAC: support health check HTTP (vendor→OT ops)
-		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
-	}
 
 	record := func(generating bool) {
 		gen.Commit(func() {

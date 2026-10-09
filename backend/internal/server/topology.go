@@ -88,10 +88,8 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 		nodeLookup[n.ID] = n
 	}
 
-	zoneOrder := []string{
-		"enterprise_net", "vendor_net", "ot_ops_net", "field_net",
-		"it_net", "dmz_net", "ot_control_net", "ot_safety_net",
-	}
+	gen := rangeOf(c)
+	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
 
 	var nodes []graphNode
@@ -155,10 +153,9 @@ func (s *Server) handleGetInstanceGraph(c *gin.Context) {
 			externalURL = meta.ExternalUIURL
 		}
 
-		// Build interface IPs for multi-homed nodes
 		interfaceIPs := meta.InterfaceIPs
-		if interfaceIPs == nil && len(n.Networks) > 1 && n.IP != "" {
-			interfaceIPs = buildInterfaceIPs(n.Networks, n.IP)
+		if interfaceIPs == nil {
+			interfaceIPs = manifestInterfaceIPs(gen, n)
 		}
 
 		nodes = append(nodes, graphNode{
@@ -274,17 +271,4 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 	default:
 		return "", ""
 	}
-}
-
-// buildInterfaceIPs creates interface IP mapping for multi-homed nodes.
-// This is a simple implementation - in production you'd query Docker for actual IPs.
-func buildInterfaceIPs(networks []string, primaryIP string) map[string]string {
-	if len(networks) <= 1 {
-		return nil
-	}
-	// For now, we just return the primary IP for the first network
-	// A full implementation would query container inspect for all IPs
-	ips := make(map[string]string)
-	ips[networks[0]] = primaryIP
-	return ips
 }
