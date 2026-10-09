@@ -5,8 +5,9 @@
 #
 # A stand-in for the real services/devices feeder breaker, implementing just
 # the Modbus TCP register map the RTU reads (contract §4) plus a tiny HTTP
-# control plane so the RTU check harness can inject a fault, clear it,
-# invalidate measurements and reset. stdlib only; run with `python3 -I`.
+# control plane so the check harness can inject a fault, clear it,
+# invalidate measurements, delay FC6 answers and reset. stdlib only; run
+# with `python3 -I`.
 #
 # Modbus (unit 1, big-endian, FC4/FC3/FC6):
 #   input 0      position: 1 open, 2 closed (double-point code)
@@ -22,6 +23,7 @@ import socketserver
 import struct
 import sys
 import threading
+import time
 import urllib.parse
 
 CLOSED_CURRENT_A = 28.9
@@ -36,6 +38,9 @@ state = {
     "tripped": False,
     "measurements_valid": True,
 }
+# FC6 answer delay in ms (GET /delay?ms=N), so the CC harness can hold a
+# command in flight; reset() clears it.
+write_delay = {"ms": 0}
 
 
 def input_registers():
@@ -95,6 +100,7 @@ def reset():
             tripped=False,
             measurements_valid=True,
         )
+        write_delay["ms"] = 0
 
 
 def handle_pdu(pdu):
@@ -119,6 +125,10 @@ def handle_pdu(pdu):
         addr, value = struct.unpack(">HH", pdu[1:5])
         if addr != 0:
             return bytes([fc | 0x80, 2])
+        with lock:
+            delay = write_delay["ms"]
+        if delay:
+            time.sleep(delay / 1000.0)
         exc = write_holding(value)
         if exc is not None:
             return bytes([fc | 0x80, exc])
@@ -178,6 +188,9 @@ class Control(http.server.BaseHTTPRequestHandler):
         elif u.path == "/mvalid":
             with lock:
                 state["measurements_valid"] = q.get("valid", ["1"])[0] == "1"
+        elif u.path == "/delay":
+            with lock:
+                write_delay["ms"] = int(q.get("ms", ["0"])[0])
         with lock:
             snap = dict(state)
         body = (str(snap) + "\n").encode()

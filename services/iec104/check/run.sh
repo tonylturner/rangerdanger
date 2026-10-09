@@ -1,40 +1,60 @@
 #!/usr/bin/env bash
-# RangerDanger IEC 60870-5-104 increment-3 RTU + iec104cmd checks.
+# RangerDanger IEC 60870-5-104 increment-3 checks: RTU, iec104cmd and the
+# control centre.
 # Copyright (C) 2026 The RangerDanger contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Headless, rerunnable checks for the real RTU: a fake Modbus feeder breaker
-# and a fake GPS station clock on a throwaway Docker network, the RTU under
-# test, and iec104cmd as the controlling station. It asserts GI values and
-# quality, spontaneous COT 3 changes, SBO command open/close with COT 11
-# feedback and ACT-TERM, a no-op command, a negative ACT-CON on interlock,
-# Modbus-loss IV+NT, measurement-invalid IV on floats only, GPS-loss CP56 IV,
-# and monitor exit 3 when the RTU is killed. Everything it creates is named
-# rd3-c1-* and removed on exit. Needs docker only.
+# Headless, rerunnable checks on throwaway Docker networks: a fake Modbus
+# feeder breaker and a fake GPS station clock, the RTU under test,
+# iec104cmd as a controlling station, and the real control centre (CC) with
+# its HTTP API on a separate management network.
 #
-# Usage: services/iec104/check/run.sh [OUT_DIR]   (default <repo>/build/rd3-c1-rtu)
+# RTU + iec104cmd: GI values and quality, spontaneous COT 3 changes, SBO
+# open/close with COT 11 feedback and ACT-TERM, a no-op command, a negative
+# ACT-CON on interlock, Modbus-loss IV+NT, measurement-invalid IV on floats
+# only, GPS-loss CP56 IV, and monitor exit 3 when the RTU is killed.
+# CC (check/cc_checks.sh, through its HTTP API): GI and cache, commands and
+# their statuses, 400/409/503, quality causes, link loss and recovery, and
+# the journal.
+#
+# Everything it creates is named $RD_CHECK_PREFIX-* (default
+# rd-iec104-check) and removed on exit, including the image. Needs docker
+# only; the subnets below must not overlap an existing Docker network.
+#
+# Usage: [RD_CHECK_PREFIX=name] services/iec104/check/run.sh [OUT_DIR]
+#        (default OUT_DIR <repo>/build/$RD_CHECK_PREFIX)
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SVC="$(dirname "$HERE")"
 ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
-OUT="${1:-$ROOT/build/rd3-c1-rtu}"
+PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check}"
+OUT="${1:-$ROOT/build/$PREFIX}"
 
-IMG=rd3-c1-iec104:test
+IMG=$PREFIX-iec104:test
 PY=python:3.12-alpine
-NET=rd3-c1-net
+# station network: RTU, breaker, GPS and the CC's IEC 104 side (IPs match points.test.json)
+NET=$PREFIX-net
 SUBNET=172.28.104.0/24
 RTU_IP=172.28.104.10
 BRK_IP=172.28.104.20
+CC_IP=172.28.104.30
 GPS_IP=172.28.104.50
-RTU=rd3-c1-rtu BRK=rd3-c1-brk GPS=rd3-c1-gps MON=rd3-c1-mon
+# management network: the CC HTTP API and the probe that calls it
+MGMT=$PREFIX-mgmt
+MGMT_SUBNET=172.28.105.0/24
+CC_HTTP_IP=172.28.105.21
+# a second CC aimed at a port nothing listens on (connect_failed, never_received)
+CC2_IP=172.28.104.31
+CC2_HTTP_IP=172.28.105.22
+RTU=$PREFIX-rtu BRK=$PREFIX-brk GPS=$PREFIX-gps MON=$PREFIX-mon CC=$PREFIX-cc CC2=$PREFIX-cc2 PROBE=$PREFIX-probe
 FAILED=0
 
 cleanup() {
-  docker rm -f "$MON" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
-  docker network rm "$NET" >/dev/null 2>&1 || true
+  docker rm -f "$MON" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
+  docker network rm "$NET" "$MGMT" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+trap 'cleanup; docker image rm "$IMG" >/dev/null 2>&1 || true' EXIT
 log()  { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$OUT/timeline.log"; }
 pass() { printf 'PASS  %s\n' "$*" | tee -a "$OUT/results.log"; }
 fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
@@ -63,7 +83,8 @@ else
   fail "strict loader did not reject the bad config (loader.log)"
 fi
 
-docker network create --subnet "$SUBNET" "$NET" >/dev/null
+docker network create --subnet "$SUBNET" "$NET" >/dev/null || { fail "cannot create $NET ($SUBNET)"; exit 1; }
+docker network create --subnet "$MGMT_SUBNET" "$MGMT" >/dev/null || { fail "cannot create $MGMT ($MGMT_SUBNET)"; exit 1; }
 
 log "start fake GPS and fake breaker"
 docker run -d --name "$GPS" --network "$NET" --ip "$GPS_IP" \
@@ -78,7 +99,7 @@ docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" \
   iec104-rtu --config /etc/points.json --bind "$RTU_IP" --port 2404 >/dev/null
 
 # wait for the RTU to listen and complete a first poll
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   docker logs "$RTU" 2>&1 | grep -q "listening" && break
   sleep 1
 done
@@ -90,7 +111,7 @@ docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor 
 sleep 2
 mon() { docker logs "$MON" 2>/dev/null; }
 # wait up to ~10s for a pattern to appear in the monitor's broadcast stream
-mon_has() { local i; for i in $(seq 1 20); do mon | grep -q "$1" && return 0; sleep 0.5; done; return 1; }
+mon_has() { local _; for _ in $(seq 1 20); do mon | grep -q "$1" && return 0; sleep 0.5; done; return 1; }
 
 # ---- 1. GI values + quality (all GOOD) --------------------------------
 log "check 1: GI values and quality"
@@ -199,13 +220,17 @@ fi
 docker unpause "$BRK" >/dev/null
 sleep 3
 
+# ---- control centre checks (need the RTU running) ----------------------
+# shellcheck source=services/iec104/check/cc_checks.sh
+. "$HERE/cc_checks.sh"
+
 # ---- 8. monitor exit 3 when the RTU is killed -------------------------
 log "check 8: monitor exits 3 on link loss"
 docker rm -f "$MON" >/dev/null 2>&1 || true
 docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 60 >/dev/null
 sleep 3
 docker kill "$RTU" >/dev/null
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   st="$(docker inspect -f '{{.State.Status}}' "$MON" 2>/dev/null || echo gone)"
   [ "$st" = exited ] && break
   sleep 1
