@@ -65,13 +65,15 @@ type Role string
 const (
 	RoleFirewall      Role = "firewall"       // containd; endpoints: api
 	RoleRTAC          Role = "rtac"           // substation automation controller; endpoints: api
+	RoleRTU           Role = "rtu"            // IEC 104 outstation; no backend endpoint
+	RoleControlCentre Role = "control-centre" // IEC 104 control centre; endpoints: api
 	RolePLC           Role = "plc"            // OpenPLC
 	RoleHMI           Role = "hmi"            // operator HMI
 	RoleHMIPoller     Role = "hmi-poller"     // HMI data poller
 	RoleHistorian     Role = "historian"      // process historian
 	RoleTimeSource    Role = "time-source"    // GPS clock
-	RoleFieldDevice   Role = "field-device"   // relay, recloser, regulator, capacitor bank, ...
-	RoleProcessSolver Role = "process-solver" // OpenDSS truth plane
+	RoleFieldDevice   Role = "field-device"   // relay, recloser, ..., feeder breaker; EU breaker endpoints: instructor
+	RoleProcessSolver Role = "process-solver" // OpenDSS truth plane; EU endpoints: api
 	RoleAttacker      Role = "attacker"       // Kali
 	RoleJumpHost      Role = "jump-host"      // vendor jump box
 	RoleEngineeringWS Role = "engineering-ws" // engineering workstation
@@ -80,7 +82,7 @@ const (
 
 // Roles is the closed role set, for validation.
 var Roles = map[Role]bool{
-	RoleFirewall: true, RoleRTAC: true, RolePLC: true, RoleHMI: true,
+	RoleFirewall: true, RoleRTAC: true, RoleRTU: true, RoleControlCentre: true, RolePLC: true, RoleHMI: true,
 	RoleHMIPoller: true, RoleHistorian: true, RoleTimeSource: true,
 	RoleFieldDevice: true, RoleProcessSolver: true, RoleAttacker: true,
 	RoleJumpHost: true, RoleEngineeringWS: true, RoleCorporateWS: true,

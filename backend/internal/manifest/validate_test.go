@@ -457,3 +457,35 @@ func TestIPv4SubnetRejectsIPv6(t *testing.T) {
 		t.Fatal("unexpected IPv4 parser failure")
 	}
 }
+
+// TestValidateEURoles accepts the EU telecontrol roles and endpoint names
+// and resolves them by role.
+func TestValidateEURoles(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	m, err := Load(root, "valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Services = append(m.Services,
+		Service{Key: "iec104_rtu", Container: "fixture-rtu", Roles: []Role{RoleRTU},
+			Interfaces: []Interface{{Network: "field_net", IPv4: "10.40.40.20"}}},
+		Service{Key: "control_centre", Container: "fixture-cc", Roles: []Role{RoleControlCentre},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.21"}},
+			Endpoints:  map[string]string{"api": "http://10.99.99.21:8080"}},
+		Service{Key: "feeder_breaker", Container: "fixture-breaker", Roles: []Role{RoleFieldDevice},
+			Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.22"}},
+			Endpoints:  map[string]string{"instructor": "http://10.99.99.22:8080"}},
+	)
+	if err := Validate(m, root); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if url, ok := m.Endpoint(RoleControlCentre, "api"); !ok || url != "http://10.99.99.21:8080" {
+		t.Errorf("control-centre api = %q, %v", url, ok)
+	}
+	if url, ok := m.Endpoint(RoleFieldDevice, "instructor"); !ok || url != "http://10.99.99.22:8080" {
+		t.Errorf("field-device instructor = %q, %v", url, ok)
+	}
+	if svc, ok := m.ServiceByRole(RoleRTU); !ok || svc.Container != "fixture-rtu" {
+		t.Errorf("rtu service = %+v, %v", svc, ok)
+	}
+}
