@@ -290,7 +290,9 @@ else
   fail "G1 instructor baseline reset returned no parseable response"
 fi
 if eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete"' 30 "G1 CC link and GI"; then
-  eu_assert_jq "$WAIT_BODY" '([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort) and all(.points[]; .quality.iv == false and .quality.nt == false and (.stale_reason == null or .stale_reason == ""))' "G1 four expected operator points GOOD"
+  eu_assert_jq "$WAIT_BODY" '
+    ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort) and all(.points[]; .quality.iv == false and .quality.nt == false and (.stale_reason == null or .stale_reason == "")) and all(.points[] | select(.id == "feeder-breaker-position" or .id == "feeder-protection-trip"); .source_time_invalid == false and (.source_time | type == "string" and length > 0))
+  ' "G1 four expected operator points GOOD with synchronized status-point time"
 else
   fail "G1 CC did not reach started + GI-complete baseline"
 fi
@@ -342,24 +344,31 @@ sleep 6
 if eu_wait_command open completed; then
   :
 fi
+g2_invalid_seen=0
 if eu_wait_for_operator '
   any(.points[]; .id == "feeder-breaker-position"
       and .value == "open" and .source_time_invalid == true
       and (.source_time | type == "string" and length > 0))
 ' 5 "G2 status point with invalid station time"; then
+  g2_invalid_seen=1
   pass "G2 operator status change carries source_time_invalid=true"
 else
   fail "G2 timed operator status change did not carry invalid source time"
 fi
-eu_unpause_owned "$GPS" gps "$gps_paused" || true
-if eu_wait_for_instructor '.process.truth_revision == .device.revision' 10 "G2 solver after GPS resumes"; then
+g2_gps_unpaused=0
+if eu_unpause_owned "$GPS" gps "$gps_paused"; then
+  g2_gps_unpaused=1
+fi
+if [ "$g2_gps_unpaused" -eq 1 ] \
+  && eu_wait_for_instructor '.process.truth_revision == .device.revision' 10 "G2 solver after GPS resumes"; then
   :
 fi
 sleep 2
 if eu_wait_command close completed; then
   :
 fi
-if eu_wait_for_operator '
+if [ "$g2_invalid_seen" -eq 1 ] && [ "$g2_gps_unpaused" -eq 1 ] \
+  && eu_wait_for_operator '
   any(.points[]; .id == "feeder-breaker-position"
       and .value == "closed" and .source_time_invalid == false
       and (.source_time | type == "string" and length > 0))
@@ -492,6 +501,7 @@ else
 fi
 gate_end G5
 gate_start G6
+g6_kill_verified=0
 if eu_apply_named weak && eu_monitor_start; then
   if eu_monitor_wait_event connected 15 && eu_monitor_wait_event gi_complete 15; then
     pass "G6 monitor connected and completed GI under weak"
@@ -511,11 +521,16 @@ if eu_apply_named weak && eu_monitor_start; then
           && eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
           kali_tuple="$SESSION_TUPLE"
           pass "G6 non-empty dport 2404 session list contains the monitor's exact Kali tuple"
+          asdu_observation_valid=1
           for _ in 1 2 3 4 5 6 7 8 9 10; do
             sleep 1
-            eu_monitor_asdu_count || break
+            if ! eu_monitor_asdu_count; then
+              asdu_observation_valid=0
+              break
+            fi
           done
-          if [ "${MONITOR_ASDUS:-0}" -gt "$asdus_before" ]; then
+          if [ "$asdu_observation_valid" -eq 1 ] \
+            && [ "${MONITOR_ASDUS:-0}" -gt "$asdus_before" ]; then
             pass "G6 established IEC104 session continued receiving ASDUs for 10s after improved apply"
           else
             fail "G6 established monitor received no new ASDUs during the 10s observation"
@@ -526,54 +541,32 @@ if eu_apply_named weak && eu_monitor_start; then
             fail "G6 could not timestamp conntrack kill"
           elif eu_kill_tuple "$kali_tuple"; then
             if eu_monitor_finish 3 30 "$kill_started_ms"; then
-              :
-            fi
-            if eu_monitor_read; then
-              after_kill=$(printf '%s\n' "$MONITOR_BODY" | python3 -c '
-import calendar, datetime, json, re, sys
-cutoff = int(sys.argv[1])
-for line in sys.stdin:
-    event = json.loads(line)
-    if event.get("event") != "asdu":
-        continue
-    at = event.get("at")
-    if not isinstance(at, str):
-        raise SystemExit("ASDU event has no parseable timestamp")
-    match = re.fullmatch(r"(.*T\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)", at)
-    if not match:
-        raise SystemExit("ASDU timestamp is not RFC3339Nano")
-    parsed = datetime.datetime.fromisoformat(match.group(1) + match.group(3).replace("Z", "+00:00"))
-    seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
-    fraction = (match.group(2) or "")[:9].ljust(9, "0")
-    if seconds * 1_000_000_000 + int(fraction) > cutoff:
-        raise SystemExit("ASDU received after exact conntrack kill")
-print("none")
-' "$kill_epoch" 2>"$TMP_DIR/post-kill-parse.err") || after_kill=""
-              if [ "$after_kill" = "none" ]; then
-                pass "G6 no ASDU was received after conntrack kill"
-              else
-                fail "G6 post-kill monitor data was invalid or contained later ASDUs: $(cat "$TMP_DIR/post-kill-parse.err")"
+              if eu_monitor_no_asdu_after "$kill_epoch"; then
+                g6_kill_verified=1
               fi
-          else
-            fail "G6 monitor log was unparsable after conntrack kill"
+            fi
           fi
         else
           fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple"
         fi
-        fi
+      fi
       else
         fail "G6 monitor must emit exactly one connected event with local=null and peer=$RTU_IP:2404"
       fi
     else
       fail "G6 monitor ASDU JSON could not be parsed"
     fi
+  if [ "$g6_kill_verified" -eq 1 ]; then
+    eu_run_kali_gi G6-reconnect 2 || true
+  else
+    fail "G6 reconnect denial was not tested because the established-session kill was unverified"
   fi
-  eu_run_kali_gi G6-reconnect 2 || true
 else
   fail "G6 could not start a weak-policy persistent monitor"
 fi
 gate_end G6
 gate_start G7
+g7_loss_verified=0
 if eu_get_operator; then
   before_g7="$API_BODY"
   if printf '%s' "$before_g7" | jq -e '.link.state == "started"' >/dev/null 2>&1; then
@@ -593,15 +586,16 @@ if eu_get_operator; then
             g7_kill_started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || g7_kill_started_ms=""
             if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
               fail "G7 cannot establish monotonic timeout before conntrack kill"
-            fi
-            eu_kill_tuple "$cc_tuple" || true
-            if eu_wait_for_operator '
-              .link.state != "started"
-              and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
-                and all(.points[]; .quality.iv == true and .quality.nt == true
-                  and .stale_reason == "link_lost"))
-            ' 30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
-              pass "G7 CC link is not started and all points are IV+NT link_lost"
+            elif eu_kill_tuple "$cc_tuple"; then
+              if eu_wait_for_operator '
+                .link.state != "started"
+                and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
+                  and all(.points[]; .quality.iv == true and .quality.nt == true
+                    and .stale_reason == "link_lost"))
+              ' 30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
+                g7_loss_verified=1
+                pass "G7 CC link is not started and all points are IV+NT link_lost"
+              fi
             fi
         else
           fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
@@ -616,7 +610,7 @@ else
 fi
 gate_end G7
 gate_start G8
-if eu_get_operator; then
+if [ "$g7_loss_verified" -eq 1 ] && eu_get_operator; then
   g8_before="$API_BODY"
   g8_epoch=$(printf '%s' "$g8_before" | jq -r '.cache_epoch // empty')
   g8_points=$(eu_get_point_snapshot "$g8_before") || g8_points=""
@@ -686,13 +680,13 @@ if eu_get_operator; then
     fail "G8 solver state response failed"
   fi
 else
-  fail "G8 cannot snapshot the operator cache before truth changes"
+  fail "G8 cannot test cache isolation without the verified G7 CC disconnect"
 fi
 gate_end G8
 
 gate_start G9
 if eu_apply_named improved; then
-  if eu_wait_for_operator '
+  if [ "$g7_loss_verified" -eq 1 ] && eu_wait_for_operator '
     .link.state == "started" and .link.gi.state == "complete"
     and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
     and all(.points[]; .quality.iv == false
@@ -700,7 +694,7 @@ if eu_apply_named improved; then
   ' 30 "G9 CC reconnect/GI and four GOOD points"; then
     pass "G9 restored IEC104 observations after GI"
   fi
-  if eu_get_instructor; then
+  if [ "$g7_loss_verified" -eq 1 ] && eu_get_instructor; then
     g9_truth="$API_BODY"
     if eu_get_operator; then
       # shellcheck disable=SC2016
@@ -713,18 +707,17 @@ if eu_apply_named improved; then
       fail "G9 operator state unavailable after reconnect"
     fi
   else
-    fail "G9 instructor truth unavailable"
+    fail "G9 cannot verify recovery without the G7 disconnect or instructor truth"
   fi
 else
   fail "G9 cannot restore improved policy"
 fi
 gate_end G9
-
 gate_start G10
 eu_validate_scenario PASS || true
 gate_end G10
-
 gate_start G11
+g11_loss_verified=0
 g11_policy="$TMP_DIR/improved-without-rtu-modbus.json"
 if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_IP" 502 "$g11_policy"; then
   if eu_policy_has_no_ephemeral_allow "$g11_policy"; then
@@ -746,21 +739,22 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
         g11_loss_started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))') || g11_loss_started_ms=""
         if ! [[ "$g11_loss_started_ms" =~ ^[0-9]+$ ]]; then
           fail "G11 cannot establish monotonic timeout before conntrack kill"
-        fi
-        eu_kill_tuple "$g11_tuple" || true
-        stale_ms=$(jq -r '.devices[] | select(.id == "feeder-breaker") | .stale_after_ms' \
-          "$PACKAGE/protocols/points.json" 2>/dev/null) || stale_ms=""
-        if [[ "$stale_ms" =~ ^[0-9]+$ ]] && [ "$stale_ms" -eq 3000 ]; then
-          if eu_wait_for_operator '
-            .link.state == "started"
-            and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
-            and all(.points[]; .quality.iv == true and .quality.nt == true
-              and .stale_reason == "device_unreachable")
-          ' 5 "G11 RTU device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
-            pass "G11 four points IV+NT device_unreachable with IEC104 link started"
+        elif eu_kill_tuple "$g11_tuple"; then
+          stale_ms=$(jq -r '.devices[] | select(.id == "feeder-breaker") | .stale_after_ms' \
+            "$PACKAGE/protocols/points.json" 2>/dev/null) || stale_ms=""
+          if [[ "$stale_ms" =~ ^[0-9]+$ ]] && [ "$stale_ms" -eq 3000 ]; then
+            if eu_wait_for_operator '
+              .link.state == "started"
+              and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
+              and all(.points[]; .quality.iv == true and .quality.nt == true
+                and .stale_reason == "device_unreachable")
+            ' 5 "G11 RTU device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
+              g11_loss_verified=1
+              pass "G11 four points IV+NT device_unreachable with IEC104 link started"
+            fi
+          else
+            fail "G11 points.json stale_after_ms missing/invalid or differs from 3000: $stale_ms"
           fi
-        else
-          fail "G11 points.json stale_after_ms missing/invalid or differs from 3000: $stale_ms"
         fi
         if eu_get_operator; then
           g11_stale="$API_BODY"
@@ -805,12 +799,13 @@ if eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_I
           fail "G11 instructor truth unavailable after reset"
         fi
         if eu_apply_named improved; then
-          if eu_wait_for_operator '
+          if [ "$g11_loss_verified" -eq 1 ] && eu_wait_for_operator '
             .link.state == "started" and .link.gi.state == "complete"
             and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
             and all(.points[]; .quality.iv == false
               and .quality.nt == false and (.stale_reason == null or .stale_reason == ""))
           ' 30 "G11 Modbus recovery after improved restore"; then
+            g11_loss_verified=2
             pass "G11 four observations GOOD after restored Modbus conduit"
           fi
           if eu_get_instructor; then
@@ -840,13 +835,18 @@ g12_pause_started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 100
 if ! [[ "$g12_pause_started_ms" =~ ^[0-9]+$ ]]; then
   fail "G12 cannot establish monotonic timeout before pausing OpenDSS"
 fi
+g12_pause_succeeded=0
 opendss_paused=1
 if docker pause "$OPENDSS" >/dev/null 2>"$TMP_DIR/pause-opendss.err"; then
+  g12_pause_succeeded=1
   pass "G12 OpenDSS container paused"
 else
   fail "G12 could not pause OpenDSS: $(cat "$TMP_DIR/pause-opendss.err")"
 fi
-if eu_wait_for_operator '
+g12_measurement_loss_seen=0
+if [ "$g11_loss_verified" -eq 2 ] && [[ "$g12_pause_started_ms" =~ ^[0-9]+$ ]] \
+  && [ "$g12_pause_succeeded" -eq 1 ] \
+  && eu_wait_for_operator '
   any(.points[]; .id == "feeder-current" and .quality.iv == true
     and .quality.nt == false and .stale_reason == "measurement_invalid")
   and any(.points[]; .id == "feeder-voltage" and .quality.iv == true
@@ -854,10 +854,15 @@ if eu_wait_for_operator '
   and all(.points[] | select(.id == "feeder-breaker-position"
     or .id == "feeder-protection-trip"); .quality.iv == false and .quality.nt == false)
 ' 5 "G12 measurement-invalid quality within five seconds" "$g12_pause_started_ms"; then
+  g12_measurement_loss_seen=1
   pass "G12 current/voltage IV measurement_invalid; status points remain GOOD"
 fi
-eu_unpause_owned "$OPENDSS" opendss "$opendss_paused" || true
-if eu_wait_for_operator '
+g12_unpause_succeeded=0
+if eu_unpause_owned "$OPENDSS" opendss "$opendss_paused"; then
+  g12_unpause_succeeded=1
+fi
+if [ "$g12_measurement_loss_seen" -eq 1 ] && [ "$g12_unpause_succeeded" -eq 1 ] \
+  && eu_wait_for_operator '
   all(.points[]; .quality.iv == false and .quality.nt == false
     and (.stale_reason == null or .stale_reason == ""))
 ' 10 "G12 measurement recovery"; then
@@ -866,8 +871,10 @@ fi
 gate_end G12
 
 gate_start G13
+g13_pause_succeeded=0
 rtu_paused=1
 if docker pause "$RTU" >/dev/null 2>"$TMP_DIR/pause-rtu.err"; then
+  g13_pause_succeeded=1
   pass "G13 RTU container paused"
 else
   fail "G13 could not pause RTU: $(cat "$TMP_DIR/pause-rtu.err")"
@@ -906,8 +913,12 @@ for active in true false; do
     fail "G13 instructor state unavailable after fault active=$active"
   fi
 done
-eu_unpause_owned "$RTU" rtu "$rtu_paused" || true
-if eu_wait_for_operator '
+g13_unpause_succeeded=0
+if eu_unpause_owned "$RTU" rtu "$rtu_paused"; then
+  g13_unpause_succeeded=1
+fi
+if [ "$g13_pause_succeeded" -eq 1 ] && [ "$g13_unpause_succeeded" -eq 1 ] \
+  && eu_wait_for_operator '
   .link.state == "started" and .link.gi.state == "complete"
   and ([.points[].id] | sort) == (["feeder-breaker-position","feeder-protection-trip","feeder-current","feeder-voltage"] | sort)
   and all(.points[]; .quality.iv == false
@@ -985,5 +996,4 @@ else
   fail "G14 could not leave range on weak policy"
 fi
 gate_end G14
-
 exit 0

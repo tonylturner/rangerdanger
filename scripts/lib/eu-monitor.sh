@@ -194,3 +194,37 @@ eu_monitor_finish() {
   fail "background monitor did not exit within ${timeout}s"
   return 1
 }
+
+eu_monitor_no_asdu_after() {
+  local cutoff="$1" after_kill
+  if ! eu_monitor_read; then
+    fail "monitor log was unparsable after conntrack kill"
+    return 1
+  fi
+  after_kill=$(printf '%s\n' "$MONITOR_BODY" | python3 -c '
+import calendar, datetime, json, re, sys
+cutoff = int(sys.argv[1])
+for line in sys.stdin:
+    event = json.loads(line)
+    if event.get("event") != "asdu":
+        continue
+    at = event.get("at")
+    if not isinstance(at, str):
+        raise SystemExit("ASDU event has no parseable timestamp")
+    match = re.fullmatch(r"(.*T\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)", at)
+    if not match:
+        raise SystemExit("ASDU timestamp is not RFC3339Nano")
+    parsed = datetime.datetime.fromisoformat(match.group(1) + match.group(3).replace("Z", "+00:00"))
+    seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
+    fraction = (match.group(2) or "")[:9].ljust(9, "0")
+    if seconds * 1_000_000_000 + int(fraction) > cutoff:
+        raise SystemExit("ASDU received after exact conntrack kill")
+print("none")
+' "$cutoff" 2>"$TMP_DIR/post-kill-parse.err") || after_kill=""
+  if [ "$after_kill" = "none" ]; then
+    pass "G6 no ASDU was received after conntrack kill"
+    return 0
+  fi
+  fail "G6 post-kill monitor data was invalid or contained later ASDUs: $(cat "$TMP_DIR/post-kill-parse.err")"
+  return 1
+}
