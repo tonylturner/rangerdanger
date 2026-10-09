@@ -642,7 +642,6 @@ export function NetworkConsole() {
             <div className="h-full w-full rounded-lg border border-slate-700 overflow-hidden bg-slate-950">
               <NodeTerminal
                 nodeId={inspectorNode.id}
-                labId="workshop"
                 expanded={true}
                 hideHeader={true}
               />

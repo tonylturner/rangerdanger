@@ -84,7 +84,7 @@ export function SharedTerminalPanel({
             className="absolute inset-0"
             style={{ display: isVisible ? "block" : "none" }}
           >
-            <NodeTerminal nodeId={nodeId} labId="workshop" hideHeader />
+            <NodeTerminal nodeId={nodeId} hideHeader />
           </div>
         );
       })}

@@ -110,7 +110,7 @@ export function observeRange(
 
 // The query key of GET /api/range. It is the only cached query that
 // outlives a range: everything else (packages, scenarios, workshop
-// graph and status, firewall, traffic, captures, lab instances) is read
+// graph and status, firewall, traffic, captures) is read
 // from the package or the range that served it, so a deny-list keeps
 // queries added later scoped by default.
 export const RANGE_QUERY_KEY = ["range"] as const;
