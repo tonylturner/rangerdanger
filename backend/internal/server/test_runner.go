@@ -37,10 +37,10 @@ const (
 // ensureHardenedPrecondition applies the reference policy only when a step
 // declares that it must begin under hardened policy.
 func ensureHardenedPrecondition(step labs.ScenarioStep, active string, apply func(string) ([]string, error)) (bool, error) {
-	if step.ExpectedConfig != "hardened" || active == "improved" || active == "custom" {
+	if step.ExpectedConfig != labs.ExpectedConfigHardened || active == labs.HardenedPolicy || active == "custom" {
 		return false, nil
 	}
-	warnings, err := apply("improved")
+	warnings, err := apply(labs.HardenedPolicy)
 	if err != nil {
 		return false, err
 	}
