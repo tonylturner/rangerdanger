@@ -16,13 +16,22 @@
 #include "hal_time.h"
 
 static const char* logProgram = "iec104";
+static FILE* logStream; /* NULL until rd_log_init; may be redirected to stderr */
 
 void
 rd_log_init(const char* program)
 {
     logProgram = program;
+    logStream = stdout;
     /* Logs are evidence for the check script; never let them sit in a buffer. */
     setvbuf(stdout, NULL, _IOLBF, 0);
+}
+
+void
+rd_log_to_stderr(bool enable)
+{
+    logStream = enable ? stderr : stdout;
+    setvbuf(logStream, NULL, _IOLBF, 0);
 }
 
 void
@@ -42,7 +51,7 @@ rd_log(const char* fmt, ...)
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
 
-    printf("%s.%03uZ %s %s\n", stamp, (unsigned)(ms % 1000), logProgram, msg);
+    fprintf(logStream ? logStream : stdout, "%s.%03uZ %s %s\n", stamp, (unsigned)(ms % 1000), logProgram, msg);
 }
 
 const char*
@@ -98,6 +107,19 @@ rd_cp56_str(CP56Time2a t, char* buf, size_t len)
     gmtime_r(&secs, &tm);
     strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%S", &tm);
     snprintf(buf, len, "%s.%03uZ%s", stamp, (unsigned)(ms % 1000), CP56Time2a_isInvalid(t) ? "(IV)" : "");
+    return buf;
+}
+
+const char*
+rd_now_str(char* buf, size_t len)
+{
+    uint64_t ms = Hal_getTimeInMs();
+    time_t secs = (time_t)(ms / 1000);
+    struct tm tm;
+    char stamp[32];
+    gmtime_r(&secs, &tm);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%S", &tm);
+    snprintf(buf, len, "%s.%03uZ", stamp, (unsigned)(ms % 1000));
     return buf;
 }
 

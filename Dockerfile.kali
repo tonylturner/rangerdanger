@@ -6,6 +6,40 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll \
  && CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
+# ── iec104cmd (GPLv3) ────────────────────────────────────────────────
+#
+# The IEC 104 student/attack CLI for the EU workshop (Lab iec104). It is
+# built here, in Kali's own Dockerfile, as a fully static (musl) binary so
+# it runs on any glibc or musl host without extra libraries — never copied
+# from the rangerdanger-iec104 image. lib60870-C is pinned and checksummed
+# exactly as services/iec104/Dockerfile does; iec104cmd itself parses no
+# JSON, so cJSON is not needed here. The binary, the lib60870 source
+# tarball, our sources and the GPLv3 licence ship into the Kali image to
+# satisfy the GPLv3 corresponding-source obligation (see
+# services/iec104/README.md).
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS iec104cmd-builder
+ARG LIB60870_VERSION=2.4.1
+ARG LIB60870_SHA256=d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a
+RUN apk add --no-cache build-base curl linux-headers
+WORKDIR /src
+RUN curl -fsSL -o lib60870.tar.gz \
+        "https://github.com/mz-automation/lib60870/archive/refs/tags/v${LIB60870_VERSION}.tar.gz" \
+ && echo "${LIB60870_SHA256}  lib60870.tar.gz" | sha256sum -c - \
+ && mkdir lib60870 \
+ && tar -xzf lib60870.tar.gz -C lib60870 --strip-components=1 \
+ && make -C lib60870/lib60870-C -j"$(nproc)" \
+ && make -C lib60870/lib60870-C install INSTALL_PREFIX=/opt/lib60870
+COPY services/iec104/src/ /src/iec104/src/
+COPY services/iec104/LICENSE /src/iec104/LICENSE
+COPY services/iec104/README.md /src/iec104/README.md
+WORKDIR /src/iec104
+RUN set -eux; \
+    mkdir -p /out; \
+    cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -static \
+        -Isrc -I/opt/lib60870/include \
+        -o /out/iec104cmd src/iec104cmd.c src/common.c src/client.c \
+        /opt/lib60870/lib/liblib60870.a -lpthread -lm
+
 FROM kalilinux/kali-rolling
 
 # Avoid prompts during package installation.
@@ -117,6 +151,14 @@ RUN set -eu; \
 # sockets, so no Python DNP3 library is needed.
 COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
+
+# IEC 104 CLI (GPLv3), static binary plus its corresponding source and
+# licence (GPLv3 §6). Built in the iec104cmd-builder stage above.
+COPY --from=iec104cmd-builder /out/iec104cmd /usr/local/bin/iec104cmd
+COPY --from=iec104cmd-builder /src/lib60870.tar.gz /usr/share/src/iec104/lib60870.tar.gz
+COPY --from=iec104cmd-builder /src/iec104/src/ /usr/share/src/iec104/src/
+COPY --from=iec104cmd-builder /src/iec104/LICENSE /usr/share/licenses/iec104/LICENSE
+COPY --from=iec104cmd-builder /src/iec104/README.md /usr/share/licenses/iec104/README.md
 
 # Create workspace
 RUN mkdir -p /home/kali/workspace

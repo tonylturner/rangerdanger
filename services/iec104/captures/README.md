@@ -5,22 +5,24 @@ repository-root `LICENSE` for the complete license text. The programs in
 `services/iec104/` remain GPLv3. These files contain only protocol traffic,
 not lib60870 code or binaries.
 
-## Regenerate
+## Regenerate (deferred)
 
-From the repository root, run:
+These four pcaps are **spike-era (increment-2b) reference samples**. They
+were captured from the single-process fake-physics RTU by the then
+`check/run.sh`, which split a combined TCP/2404 capture by the harness's
+unique `iec104cmd` source addresses.
 
-```sh
-services/iec104/captures/regenerate.sh
-```
+Increment 3 replaced that RTU with a Modbus/GPS-driven RTU and rewrote
+`check/run.sh` into a multi-service behavioural harness (RTU + fake Modbus
+breaker + fake GPS + `iec104cmd`) that asserts on JSONL and program logs
+rather than on one combined capture. `regenerate.sh` therefore no longer
+rebuilds these pcaps; it prints that and exits non-zero. The committed
+pcaps stay as valid historical IEC 104 samples.
 
-The script runs `check/run.sh` in a temporary directory, splits the
-combined TCP/2404 capture by the harness's unique `iec104cmd` source
-addresses, writes the four pcaps below, and updates `SHA256SUMS`. Each
-`iec104cmd` invocation has a distinct TCP stream. All control-centre
-streams are included in both the startup and session captures: reconnects
-create separate TCP streams, and whole-stream extraction preserves both
-startup and session evidence. Those two outputs therefore overlap and
-neither is a time-window-only slice.
+Regenerating them against the real RTU is tracked separately: it needs a
+capture sidecar (`check/capture.Dockerfile` records TCP/2404 and TCP/502 on
+the throwaway bridge) wired into the increment-3 `check/run.sh`, plus new
+stream selection and a point-map description for the EU topology.
 
 | Capture | Contents | Source stream(s) from `check/run.sh` |
 |---|---|---|

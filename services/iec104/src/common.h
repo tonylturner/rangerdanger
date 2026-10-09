@@ -19,6 +19,12 @@
 /* Program name used as the log prefix; set once in main. */
 void rd_log_init(const char* program);
 
+/*
+ * Routes rd_log/rd_log_asdu to stderr instead of stdout. iec104cmd uses this
+ * in --json mode so stdout carries only the JSONL event stream the gate reads.
+ */
+void rd_log_to_stderr(bool enable);
+
 /* One line on stdout: "<UTC ISO-8601 ms> <program> <message>". */
 void rd_log(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
@@ -29,6 +35,9 @@ const char* rd_dpi_str(int dpi);
 
 /* UTC ISO-8601 with milliseconds; CP56Time2a carries no zone. */
 const char* rd_cp56_str(CP56Time2a t, char* buf, size_t len);
+
+/* Current wall-clock UTC as ISO-8601 with milliseconds. */
+const char* rd_now_str(char* buf, size_t len);
 
 /* Logs the ASDU header and one line per information object. */
 void rd_log_asdu(const char* direction, CS101_ASDU asdu);

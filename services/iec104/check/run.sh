@@ -1,224 +1,227 @@
 #!/usr/bin/env bash
-# RangerDanger IEC 60870-5-104 spike: scripted, rerunnable correctness checks.
+# RangerDanger IEC 60870-5-104 increment-3 RTU + iec104cmd checks.
 # Copyright (C) 2026 The RangerDanger contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Builds the image, runs the RTU, the control centre and iec104cmd on a
-# throwaway Docker network, records TCP/2404 on that network's bridge, and
-# asserts each check on the decoded capture plus the program logs. Needs
-# docker, tshark and python3 on the host. No host port is published and
-# nothing outside the throwaway network is touched. Evidence and the pcap
-# are left under the output directory for the report.
+# Headless, rerunnable checks for the real RTU: a fake Modbus feeder breaker
+# and a fake GPS station clock on a throwaway Docker network, the RTU under
+# test, and iec104cmd as the controlling station. It asserts GI values and
+# quality, spontaneous COT 3 changes, SBO command open/close with COT 11
+# feedback and ACT-TERM, a no-op command, a negative ACT-CON on interlock,
+# Modbus-loss IV+NT, measurement-invalid IV on floats only, GPS-loss CP56 IV,
+# and monitor exit 3 when the RTU is killed. Everything it creates is named
+# rd3-c1-* and removed on exit. Needs docker only.
 #
-# Usage: services/iec104/check/run.sh [OUT_DIR]   (default <repo>/build/iec104-spike)
-set -euo pipefail
+# Usage: services/iec104/check/run.sh [OUT_DIR]   (default <repo>/build/rd3-c1-rtu)
+set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SVC="$(dirname "$HERE")"
 ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
-OUT="${1:-$ROOT/build/iec104-spike}"
-TSHARK="${TSHARK:-tshark}"
+OUT="${1:-$ROOT/build/rd3-c1-rtu}"
 
-IMG=rd-iec104:spike
-CAPIMG=rd-iec104-capture:spike
-NET=rd-iec104-check
-SUBNET=10.204.104.0/24
-RTU_IP=10.204.104.10
-CC_IP=10.204.104.20
-RTU=rd-iec104-check-rtu CC=rd-iec104-check-cc CAP=rd-iec104-check-cap
-SELECT_TIMEOUT_MS=3000 CC_T1=3 CC_T3=4
-PCAP="$OUT/iec104.pcap"
+IMG=rd3-c1-iec104:test
+PY=python:3.12-alpine
+NET=rd3-c1-net
+SUBNET=172.28.104.0/24
+RTU_IP=172.28.104.10
+BRK_IP=172.28.104.20
+GPS_IP=172.28.104.50
+RTU=rd3-c1-rtu BRK=rd3-c1-brk GPS=rd3-c1-gps MON=rd3-c1-mon
 FAILED=0
 
-cleanup() { docker rm -f "$CC" "$RTU" "$CAP" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
+cleanup() {
+  docker rm -f "$MON" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
+  docker network rm "$NET" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
-log()  { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$OUT/timeline.log"; }
+log()  { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$OUT/timeline.log"; }
 pass() { printf 'PASS  %s\n' "$*" | tee -a "$OUT/results.log"; }
 fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
 
-# iec104cmd from a dedicated address; asserts the process exit code.
-# cmd <octet> <name> <want-exit> <args...>
-cmd() {
-  local octet=$1 name=$2 want=$3; shift 3
-  log "run $name: iec104cmd $* (10.204.104.$octet)"
-  local rc=0
-  docker run --rm --network "$NET" --ip "10.204.104.$octet" "$IMG" iec104cmd "$RTU_IP" "$@" >"$OUT/$name.log" 2>&1 || rc=$?
-  if [ "$rc" = "$want" ] && pass "$name exit=$rc"; then
-    :
-  else
-    fail "$name exit=$rc want=$want (see $name.log)"
-  fi
-}
-# wait_cc <pattern> <count> <limit-seconds>
-wait_cc() {
-  local p=$1 n=$2 lim=$3 w=0
-  while [ "$(docker logs "$CC" 2>&1 | grep -c -- "$p" || true)" -lt "$n" ]; do
-    [ "$w" -ge "$lim" ] && { fail "control centre never logged '$p' x$n in ${lim}s"; return 1; }
-    sleep 1; w=$((w+1))
-  done
-}
-# tshark field query on the capture
-tf() { "$TSHARK" -r "$PCAP" -Y "$1" -T fields "${@:2}" 2>/dev/null; }
+# run a short iec104cmd operation from a throwaway client container
+cli() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" "$@" 2>>"$OUT/cli.err"; }
+# breaker/gps control via busybox wget in the iec104 image
+ctl() { docker run --rm --network "$NET" "$IMG" wget -qO- "$1" >/dev/null 2>&1 || true; }
+# a 2s monitor snapshot; its JSONL GI reflects current quality
+snap() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 2 2>/dev/null; }
 
-command -v "$TSHARK" >/dev/null || { echo "tshark not found (set TSHARK)"; exit 2; }
 rm -rf "$OUT"; mkdir -p "$OUT"; cleanup
 
-log "build image and capture helper"
-docker build -q -t "$IMG" "$SVC" >/dev/null
-docker build -q -t "$CAPIMG" -f "$HERE/capture.Dockerfile" "$HERE" >/dev/null
+log "build the iec104 image"
+docker build -q -f "$SVC/Dockerfile" -t "$IMG" "$ROOT" >/dev/null
+docker image inspect "$PY" >/dev/null 2>&1 || docker pull -q "$PY" >/dev/null
 
-NET_ID="$(docker network create --subnet "$SUBNET" "$NET")"
-docker run -d --name "$CAP" --net host --cap-add NET_ADMIN --cap-add NET_RAW -v "$OUT:/out" \
-  "$CAPIMG" -i "br-${NET_ID:0:12}" -U -w /out/iec104.pcap 'tcp port 2404' >/dev/null
-sleep 1
-log "start RTU (select-timeout=${SELECT_TIMEOUT_MS}ms)"
-docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" "$IMG" iec104-rtu -select-timeout "$SELECT_TIMEOUT_MS" >/dev/null
-sleep 1
-log "start control centre (t1=${CC_T1}s t3=${CC_T3}s)"
-docker run -d --name "$CC" --network "$NET" --ip "$CC_IP" "$IMG" iec104-cc "$RTU_IP" -t1 "$CC_T1" -t3 "$CC_T3" -poll-ms 1000 >/dev/null
-wait_cc "GI complete" 1 20
+# ---- 0. strict point-map loader (no network needed) -------------------
+log "check 0: strict config loader rejects bad maps"
+printf '%s' '{"schema":1,"ca":1,"bogus":1,"timers":{"t0_s":10,"t1_s":10,"t2_s":5,"t3_s":5,"k":12,"w":8},"select_timeout_ms":5000,"reconnect_interval_ms":2000,"clock":{"url":"http://x/","poll_ms":1000,"stale_after_ms":5000,"synced_status":["locked"]},"devices":[{"id":"d","host":"h","port":502,"unit":1,"poll_ms":500,"timeout_ms":1000,"stale_after_ms":3000}],"points":[{"id":"p","ioa":1,"kind":"float","asdu":"M_ME_NC_1","source":{"device":"d","table":"input","address":0,"format":"f32"}}]}' >"$OUT/bad.json"
+rc=0
+docker run --rm -v "$OUT/bad.json:/c.json:ro" --entrypoint iec104-rtu "$IMG" --config /c.json >"$OUT/loader.log" 2>&1 || rc=$?
+if [ "$rc" != 0 ] && grep -q 'unknown key "bogus"' "$OUT/loader.log"; then
+  pass "strict loader rejected an unknown key with a clear message, exit $rc"
+else
+  fail "strict loader did not reject the bad config (loader.log)"
+fi
 
-cmd 35 01-gi               0 gi
-cmd 37 04-gi-ca2           0 -ca 2 gi
-cmd 30 02-sbo-open         0 dc 3001 open  -sbo
-cmd 36 03-sbo-close        0 dc 3001 close -sbo
-cmd 38 09-ioa-zero-unassigned 1 dc 0 close
-log "local protection trip: SIGUSR1 to the RTU"
-docker kill -s USR1 "$RTU" >/dev/null; sleep 1
-cmd 31 05-exec-no-select   1 dc 3001 close
-cmd 32 06-select-expiry    1 dc 3001 close -delay-ms $((SELECT_TIMEOUT_MS + 1500))
-cmd 33 07-value-mismatch   1 dc 3001 close -mismatch
-cmd 34 08-stopdt-startdt   0 stopstart
+docker network create --subnet "$SUBNET" "$NET" >/dev/null
 
-log "idle $((CC_T3 * 3))s so TESTFR runs on t3"
-sleep $((CC_T3 * 3))
-log "t1: pause the RTU so the control centre's TESTFR goes unanswered"
-docker pause "$RTU" >/dev/null
-wait_cc "cache marked stale" 1 $((CC_T3 + CC_T1 + 10)) || true
-sleep $((CC_T1 + 2))
-docker unpause "$RTU" >/dev/null
-wait_cc "GI complete" 2 60 || true
-log "restart: SIGKILL the RTU, then start it again"
-docker kill "$RTU" >/dev/null
-wait_cc "cache marked stale" 2 $((CC_T3 + CC_T1 + 15)) || true
-docker start "$RTU" >/dev/null
-wait_cc "GI complete" 3 60 || true
+log "start fake GPS and fake breaker"
+docker run -d --name "$GPS" --network "$NET" --ip "$GPS_IP" \
+  -v "$HERE/fake_gps.py:/app/fake_gps.py:ro" "$PY" python3 -I /app/fake_gps.py >/dev/null
+docker run -d --name "$BRK" --network "$NET" --ip "$BRK_IP" \
+  -v "$HERE/fake_breaker.py:/app/fake_breaker.py:ro" "$PY" python3 -I /app/fake_breaker.py >/dev/null
 sleep 2
 
-log "collect logs and pcap"
-docker stop -t 5 "$CC" >/dev/null; docker logs "$CC" >"$OUT/cc.log" 2>&1
-docker logs "$RTU" >"$OUT/rtu.log" 2>&1
-docker stop -t 5 "$CAP" >/dev/null
-docker image inspect "$IMG" --format '{{.Architecture}} {{.Size}}' >"$OUT/image.txt"
+log "start RTU"
+docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" \
+  -v "$HERE/points.test.json:/etc/points.json:ro" "$IMG" \
+  iec104-rtu --config /etc/points.json --bind "$RTU_IP" --port 2404 >/dev/null
 
-# ---- assertions on protocol evidence ----
-log "assert on the capture"
-if [ "$(tf '_ws.malformed || _ws.expert.severity=="Error"' -e frame.number | wc -l | tr -d ' ')" = 0 ] \
-  && pass "zero malformed/error frames"; then
-  :
-else
-  fail "malformed or error frames present"
-fi
-# GI: ACT(6) -> ACT_CON(7) -> ACT_TERM(10), and monitoring objects at COT 20
-if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.causetx==10' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==3 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==13 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20' -e frame.number) \
-  && pass "GI: ACT_CON + ACT_TERM + COT20 monitoring objects"; then
-  :
-else
-  fail "GI evidence missing"
-fi
-# On CA 1, the unassigned command IOA 0 is rejected as UNKNOWN_IOA (COT 47).
-if grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.addr==1 && iec60870_asdu.ioa==0 && iec60870_asdu.causetx==47 && iec60870_asdu.nega==1' -e frame.number) \
-  && pass "unassigned command IOA 0 rejected with COT 47"; then
-  :
-else
-  fail "IOA 0 unknown-address response missing"
-fi
-# CA 1's 3-octet monitoring addresses straddle the 16-bit boundary and reach the 24-bit maximum.
-for ioa in 65535 65536 16777215; do
-  if grep -q . <(tf "iec60870_asdu.typeid==13 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==20 && iec60870_asdu.ioa==$ioa" -e frame.number) \
-    && pass "GI on CA 1 returned M_ME_NC_1 IOA $ioa"; then
-    :
-  else
-    fail "GI on CA 1 missing M_ME_NC_1 IOA $ioa"
-  fi
+# wait for the RTU to listen and complete a first poll
+for i in $(seq 1 20); do
+  docker logs "$RTU" 2>&1 | grep -q "listening" && break
+  sleep 1
 done
-# CA 2 is an independent interrogation station with its own measurement.
-if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==10' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==13 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==20 && iec60870_asdu.ioa==4001' -e frame.number) \
-  && pass "GI on CA 2 returned M_ME_NC_1 IOA 4001"; then
-  :
+sleep 3  # let the first poll clear device_unreachable
+
+# one persistent monitor receives every spontaneous/feedback broadcast
+log "start persistent monitor"
+docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 120 >/dev/null
+sleep 2
+mon() { docker logs "$MON" 2>/dev/null; }
+# wait up to ~10s for a pattern to appear in the monitor's broadcast stream
+mon_has() { local i; for i in $(seq 1 20); do mon | grep -q "$1" && return 0; sleep 0.5; done; return 1; }
+
+# ---- 1. GI values + quality (all GOOD) --------------------------------
+log "check 1: GI values and quality"
+snap >"$OUT/gi-baseline.jsonl"
+if grep -q '"ioa":1001,.*"value":"closed","quality":"GOOD"' "$OUT/gi-baseline.jsonl" \
+  && grep -q '"ioa":1002,.*"value":false,"quality":"GOOD"' "$OUT/gi-baseline.jsonl" \
+  && grep -Eq '"ioa":2001,.*"value":2[89]\.[0-9]+,"quality":"GOOD"' "$OUT/gi-baseline.jsonl" \
+  && grep -q '"ioa":2002,.*"quality":"GOOD"' "$OUT/gi-baseline.jsonl"; then
+  pass "GI returned all four points GOOD with expected values"
 else
-  fail "CA 2 GI evidence missing"
-fi
-# C_IC_NA_1 uses IOA 0; this is a command address, not a configured monitoring point.
-if grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==1 && iec60870_asdu.causetx==6 && iec60870_asdu.ioa==0' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==100 && iec60870_asdu.addr==2 && iec60870_asdu.causetx==6 && iec60870_asdu.ioa==0' -e frame.number) \
-  && pass "GI requests on CA 1 and CA 2 use command IOA 0"; then
-  :
-else
-  fail "GI IOA 0 command evidence missing"
-fi
-# Spontaneous M_DP_TB_1 (type 31) COT 3 with a CP56Time2a timestamp (the local trip)
-if grep -q . <(tf 'iec60870_asdu.typeid==31 && iec60870_asdu.causetx==3 && iec60870_asdu.cp56time' -e frame.number) \
-  && pass "spontaneous M_DP_TB_1 COT 3 with CP56Time2a"; then
-  :
-else
-  fail "spontaneous COT-3 time-tagged event missing"
-fi
-# SBO: positive select then positive execute (dco.se marks select)
-if grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==1 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
-  && grep -q . <(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==0 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==0' -e frame.number) \
-  && pass "SBO select+execute confirmed positively"; then
-  :
-else
-  fail "SBO positive confirms missing"
-fi
-# At least one negative execute confirm (no-select / expiry / mismatch)
-if [ "$(tf 'iec60870_asdu.typeid==46 && iec60870_asdu.dco.se==0 && iec60870_asdu.causetx==7 && iec60870_asdu.nega==1' -e frame.number | wc -l | tr -d ' ')" -ge 3 ] \
-  && pass "execute without/invalid select rejected (>=3 negative confirms)"; then
-  :
-else
-  fail "expected >=3 negative execute confirms"
-fi
-# TESTFR act (U 0x10) and con (0x20) on idle
-if grep -q . <(tf 'iec60870_104.utype==0x10' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x20' -e frame.number) \
-  && pass "TESTFR act/con exchanged on idle"; then
-  :
-else
-  fail "TESTFR frames missing"
-fi
-# STOPDT/STARTDT: act (0x04/0x01) and con (0x08/0x02)
-if grep -q . <(tf 'iec60870_104.utype==0x04' -e frame.number) && grep -q . <(tf 'iec60870_104.utype==0x08' -e frame.number) \
-  && pass "STOPDT act/con exchanged"; then
-  :
-else
-  fail "STOPDT frames missing"
+  fail "GI baseline values/quality unexpected (see gi-baseline.jsonl)"
 fi
 
-log "assert on the control-centre log"
-if [ "$(grep -c 'cache marked stale on link loss: .*q=IV|NT' "$OUT/cc.log")" -ge 2 ] \
-  && pass "control centre marked values IV|NT on link loss (x>=2)"; then
-  :
+# ---- 2. SBO open with COT 11 feedback + ACT-TERM ----------------------
+log "check 2: SBO open command"
+cli dc 3001 open -sbo >"$OUT/cmd-open.log" 2>&1; openrc=$?
+sleep 1
+if [ "$openrc" = 0 ] && grep -q "execute terminated (ACT-TERM)" "$OUT/cmd-open.log" \
+  && mon_has '"type":31,"cot":11,"ioa":1001,"value":"open"'; then
+  pass "open command: execute confirmed, ACT-TERM, COT 11 feedback value=open"
 else
-  fail "link-loss quality marking missing"
+  fail "open command feedback missing (cmd-open.log)"
 fi
-if [ "$(grep -c 'GI complete' "$OUT/cc.log")" -ge 3 ] \
-  && pass "control centre reconnected and re-ran GI, quality recovered (x>=3)"; then
-  :
+if mon_has '"type":13,"cot":3,"ioa":2001,"value":0\.0'; then
+  pass "current reported spontaneously (COT 3) after open"
 else
-  fail "reconnect+GI recovery missing"
+  fail "spontaneous current change not observed after open"
 fi
 
-"$TSHARK" -r "$PCAP" -q -z expert > "$OUT/expert.txt" 2>&1 || true
+# ---- 3. close, then a no-op close -------------------------------------
+log "check 3: SBO close then no-op close"
+cli dc 3001 close -sbo >"$OUT/cmd-close.log" 2>&1
+sleep 1
+cli dc 3001 close -sbo >"$OUT/cmd-noop.log" 2>&1; nooprc=$?
+sleep 1
+mon_has '"type":31,"cot":11,"ioa":1001,"value":"closed"'
+closed_fb=$(mon | grep -c '"type":31,"cot":11,"ioa":1001,"value":"closed"')
+if [ "$nooprc" = 0 ] && grep -q "execute terminated (ACT-TERM)" "$OUT/cmd-noop.log" && [ "$closed_fb" -ge 2 ]; then
+  pass "close + no-op close both produced COT 11 feedback value=closed"
+else
+  fail "close/no-op feedback count=$closed_fb (expected >=2)"
+fi
+
+# ---- 4. interlock: close under lockout -> negative ACT-CON ------------
+log "check 4: close under lockout -> negative ACT-CON"
+cli dc 3001 open -sbo >/dev/null 2>&1   # open first so close is a real transition
+sleep 1
+ctl "http://$BRK_IP:8081/fault?active=1"   # lockout + fault + local trip
+sleep 1
+cli dc 3001 close -sbo >"$OUT/cmd-interlock.log" 2>&1; ilrc=$?
+if [ "$ilrc" != 0 ] && grep -q "execute REJECTED (negative)" "$OUT/cmd-interlock.log"; then
+  pass "close under lockout rejected with negative ACT-CON (exception 04 path)"
+else
+  fail "interlock negative ACT-CON not observed (cmd-interlock.log)"
+fi
+if mon_has '"type":30,"cot":3,"ioa":1002,"value":true'; then
+  pass "local protection trip reported spontaneously (M_SP_TB_1 COT 3)"
+else
+  fail "spontaneous trip single-point not observed"
+fi
+ctl "http://$BRK_IP:8081/reset"
+sleep 2
+
+# ---- 5. measurements_valid=0 -> IV on floats only ---------------------
+log "check 5: measurement invalid -> IV on floats only"
+ctl "http://$BRK_IP:8081/mvalid?valid=0"
+sleep 2
+snap >"$OUT/gi-mvalid.jsonl"
+if grep -q '"ioa":2001,.*"quality":"IV"' "$OUT/gi-mvalid.jsonl" \
+  && grep -q '"ioa":2002,.*"quality":"IV"' "$OUT/gi-mvalid.jsonl" \
+  && grep -q '"ioa":1001,.*"quality":"GOOD"' "$OUT/gi-mvalid.jsonl"; then
+  pass "measurements_valid=0 set IV on floats, status points stayed GOOD"
+else
+  fail "measurement-invalid quality unexpected (gi-mvalid.jsonl)"
+fi
+ctl "http://$BRK_IP:8081/mvalid?valid=1"
+sleep 2
+
+# ---- 6. GPS loss -> CP56 time IV --------------------------------------
+log "check 6: GPS loss -> CP56Time2a IV"
+docker pause "$GPS" >/dev/null
+sleep 5
+cli dc 3001 open -sbo >/dev/null 2>&1   # a status change carries a fresh time tag
+sleep 1
+mon >"$OUT/mon-gpsiv.jsonl"
+if grep -q '"ioa":1001,"value":"open"[^}]*(IV)' "$OUT/mon-gpsiv.jsonl"; then
+  pass "status change after GPS loss carried CP56 time with IV set"
+else
+  fail "CP56 IV after GPS loss not observed (mon-gpsiv.jsonl)"
+fi
+docker unpause "$GPS" >/dev/null
+cli dc 3001 close -sbo >/dev/null 2>&1
+sleep 2
+
+# ---- 7. Modbus loss -> IV+NT within stale_after_ms --------------------
+log "check 7: Modbus loss -> IV+NT"
+docker pause "$BRK" >/dev/null
+sleep 5   # stale_after_ms is 3000; allow margin
+snap >"$OUT/gi-modbusloss.jsonl"
+if grep -q '"ioa":1001,.*"quality":"IV|NT"' "$OUT/gi-modbusloss.jsonl" \
+  && grep -q '"ioa":2001,.*"quality":"IV|NT"' "$OUT/gi-modbusloss.jsonl"; then
+  pass "Modbus loss set IV+NT on all device points within stale_after_ms"
+else
+  fail "Modbus-loss IV+NT not observed (gi-modbusloss.jsonl)"
+fi
+docker unpause "$BRK" >/dev/null
+sleep 3
+
+# ---- 8. monitor exit 3 when the RTU is killed -------------------------
+log "check 8: monitor exits 3 on link loss"
+docker rm -f "$MON" >/dev/null 2>&1 || true
+docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 60 >/dev/null
+sleep 3
+docker kill "$RTU" >/dev/null
+for i in $(seq 1 30); do
+  st="$(docker inspect -f '{{.State.Status}}' "$MON" 2>/dev/null || echo gone)"
+  [ "$st" = exited ] && break
+  sleep 1
+done
+monrc="$(docker inspect -f '{{.State.ExitCode}}' "$MON" 2>/dev/null || echo X)"
+docker logs "$MON" >"$OUT/mon-linkdown.jsonl" 2>/dev/null
+if [ "$monrc" = 3 ] && grep -q '"event":"link_down"' "$OUT/mon-linkdown.jsonl"; then
+  pass "monitor emitted link_down and exited 3 after the RTU was killed"
+else
+  fail "monitor exit code=$monrc (expected 3) (mon-linkdown.jsonl)"
+fi
+
 echo; cat "$OUT/results.log"
 if [ "$FAILED" = 0 ]; then
   log "ALL CHECKS PASSED"
   exit 0
-else
-  log "SOME CHECKS FAILED"
-  exit 1
 fi
+log "SOME CHECKS FAILED"
+exit 1
