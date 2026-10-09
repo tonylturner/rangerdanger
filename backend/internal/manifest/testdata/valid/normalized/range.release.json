@@ -1,0 +1,56 @@
+{
+  "name": "rangerdanger",
+  "networks": {
+    "field_net": {
+      "name": "rangerdanger_field_net",
+      "driver": "bridge",
+      "ipam": {
+        "config": [
+          {
+            "subnet": "10.40.40.0/24",
+            "gateway": "10.40.40.1"
+          }
+        ]
+      }
+    },
+    "mgmt_net": {
+      "name": "rangerdanger_mgmt_net",
+      "ipam": {},
+      "external": true
+    }
+  },
+  "services": {
+    "firewall": {
+      "command": null,
+      "container_name": "fixture-firewall",
+      "entrypoint": null,
+      "image": "fixture/firewall:1",
+      "networks": {
+        "field_net": {
+          "ipv4_address": "10.40.40.2"
+        },
+        "mgmt_net": {
+          "ipv4_address": "10.99.99.2"
+        }
+      },
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 80,
+          "published": "9080",
+          "protocol": "tcp"
+        }
+      ],
+      "pull_policy": "always",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/fixture/root/data/firewall",
+          "target": "/data",
+          "bind": {}
+        }
+      ]
+    }
+  }
+}

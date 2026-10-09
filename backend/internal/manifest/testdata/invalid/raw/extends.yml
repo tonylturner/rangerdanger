@@ -1,0 +1,5 @@
+name: rangerdanger
+services:
+  firewall:
+    extends:
+      service: base

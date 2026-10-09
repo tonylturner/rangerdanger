@@ -51,6 +51,9 @@ jobs:
       - name: go build
         working-directory: backend
         run: go build ./cmd/server
+      - name: Package lint
+        working-directory: backend
+        run: go run ./cmd/packagelint
 
   services:
     name: Services (Go)
@@ -144,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: docker compose config
-        run: docker compose config -q
+        run: RANGERDANGER_ROOT="$PWD" docker compose config -q
 
   govulncheck:
     # Hard gate. Findings other than the documented exceptions in
