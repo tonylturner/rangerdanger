@@ -63,7 +63,7 @@ capabilities: [process.electrical, policy.containd, audit.device-control, captur
   is a load error.
 - Each package loads in its own transaction: scenarios whose file is
   gone are removed, and a package directory that disappears takes its
-  template and scenarios with it.
+  scenarios with it.
 - The backend serves one active package, chosen by the
   `RANGERDANGER_PACKAGE` environment variable (default
   `us-dnp3-substation`). Scenario routes answer for the active package

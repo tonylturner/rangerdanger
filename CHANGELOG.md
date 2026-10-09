@@ -60,6 +60,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release image asset records package membership and Compose file
   hashes. Delta staging needs a full SSD baseline from a release that
   carries this metadata.
+- **The Network Map's topology comes from the running range's
+  package**, not from a database copy; `POST /api/admin/seed` no longer
+  stores topologies. Existing databases keep an unused `lab_templates`
+  table (and the retired lab-instance tables).
 - **Range routes answer 503 while no range serves.** Range-bound API
   routes, including `/api/workshop/graph`, answer
   `{"error":"range not ready","phase":...}` outside `ready`.
