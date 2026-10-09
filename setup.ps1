@@ -119,8 +119,14 @@ if ($LASTEXITCODE -ne 0 -or -not $composeVer) {
 }
 Say "Compose v2 present ($composeVer)"
 
-# Architecture
-$archRaw = (Get-WmiObject Win32_Processor -ErrorAction SilentlyContinue).Architecture
+# Architecture. Get-CimInstance, not Get-WmiObject: PowerShell 7 removed
+# Get-WmiObject, and calling it there is a terminating error under
+# $ErrorActionPreference = "Stop". Any CIM failure falls back to the
+# environment variable below.
+$archRaw = $null
+try {
+    $archRaw = (Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1).Architecture
+} catch { }
 switch ($archRaw) {
     9   { $arch = "amd64" }      # x64
     12  { $arch = "arm64" }      # ARM64
