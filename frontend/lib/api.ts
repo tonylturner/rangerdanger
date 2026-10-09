@@ -37,7 +37,6 @@ export type LabTemplate = {
   name: string;
   description: string;
   topology: string;
-  default_scenarios?: string;
   compose_file?: string;
 };
 
@@ -61,7 +60,6 @@ export type LabTopologyNode = { id: string; name: string; type: string; networks
 export type LabTopology = {
   networks: LabTopologyNetwork[];
   nodes: LabTopologyNode[];
-  scenarios?: Scenario[];
 };
 
 export type GraphNodeData = {
@@ -198,20 +196,6 @@ export async function listScenarios(templateId?: string) {
   const query = templateId ? `?lab_template_id=${encodeURIComponent(templateId)}` : "";
   const res = await request<{ scenarios: RawScenario[] }>(`/scenarios${query}`);
   return { scenarios: res.scenarios.map(hydrateScenario) };
-}
-
-export async function saveLabTemplate(payload: { id?: string; name: string; description: string; topology: unknown }) {
-  return request<LabTemplate>("/labs/templates", {
-    method: "POST",
-    body: JSON.stringify({
-      id: payload.id,
-      name: payload.name,
-      description: payload.description,
-      topology: JSON.stringify(payload.topology),
-      compose_file: "deploy/docker-compose.yml",
-      default_scenarios: JSON.stringify([])
-    })
-  });
 }
 
 // Firewall rule summaries for topology edge labels

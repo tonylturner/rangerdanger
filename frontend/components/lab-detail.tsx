@@ -108,7 +108,7 @@ export function LabDetail({ labId }: LabDetailProps) {
         </div>
       )}
 
-      {activeTab === "scenarios" && <ScenarioList templateId={lab.template_id} />}
+      {activeTab === "scenarios" && <ScenarioList />}
 
       {activeTab === "metrics" && <MetricsOverview />}
 

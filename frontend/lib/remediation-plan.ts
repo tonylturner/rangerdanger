@@ -28,20 +28,6 @@ export function loadRemediationPlan(): RemediationPlan | null {
   }
 }
 
-export function clearRemediationPlan(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-// hasSelected checks whether a specific remediation action was selected.
-// Used by later exercises to branch on the student's decisions.
-export function hasSelected(plan: RemediationPlan | null, actionId: string): boolean {
-  return !!plan && plan.selectedActionIds.includes(actionId);
-}
-
 // Mapping of remediation action ids to the later attack exercises they
 // defend against. Consumed by the "Your Plan" banner in later exercises
 // to call out which prior choices make the current exercise easier or

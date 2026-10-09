@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { listScenarios, type Scenario } from "../lib/api";
 
-export function ScenarioList({ onStartExercise }: { templateId?: string; fetchAll?: boolean; onStartExercise?: (scenario: Scenario) => void }) {
+export function ScenarioList({ onStartExercise }: { onStartExercise?: (scenario: Scenario) => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ["scenarios", "substation-segmentation"],
     queryFn: () => listScenarios("substation-segmentation"),
