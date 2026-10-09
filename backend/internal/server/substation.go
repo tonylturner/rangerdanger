@@ -74,13 +74,7 @@ func (s *Server) proxyRTAC(c *gin.Context, path string) {
 
 // handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
 func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-
-	client := containd.NewClient(containdURL)
-	events, err := client.GetEvents("", 50)
+	events, err := s.containdClient.GetEvents("", 50)
 	if err != nil {
 		// Return empty with source info rather than error
 		c.JSON(http.StatusOK, gin.H{

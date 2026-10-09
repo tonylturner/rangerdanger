@@ -11,7 +11,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
@@ -596,12 +595,7 @@ func (s *Server) checkPcapFileExists() bool {
 	}
 
 	// 2. Check containd PCAP API (covers API-initiated captures)
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-	client := containd.NewClient(containdURL)
-	files, err := client.ListPcapFiles()
+	files, err := s.containdClient.ListPcapFiles()
 	if err == nil && len(files) > 0 {
 		return true
 	}

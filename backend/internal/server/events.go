@@ -20,14 +20,6 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("Access-Control-Allow-Origin", "*")
 
-	// Get containd client URL from environment
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-
-	client := containd.NewClient(containdURL)
-
 	// Track last event ID for polling
 	lastEventID := ""
 
@@ -35,7 +27,7 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 	defer ticker.Stop()
 
 	// Check if containd is available
-	if !client.IsAvailable() {
+	if !s.containdClient.IsAvailable() {
 		// Send fallback stub events
 		s.sendStubEvents(c)
 		return
@@ -45,7 +37,7 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 		select {
 		case <-ticker.C:
 			// Poll containd for events
-			events, err := client.GetEvents(lastEventID, 10)
+			events, err := s.containdClient.GetEvents(lastEventID, 10)
 			if err != nil {
 				// Send error event
 				c.SSEvent("error", gin.H{"message": err.Error()})
@@ -148,13 +140,7 @@ func (s *Server) sendStubEvents(c *gin.Context) {
 
 // handleGetFirewallHealth returns the containd firewall health status.
 func (s *Server) handleGetFirewallHealth(c *gin.Context) {
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-
-	client := containd.NewClient(containdURL)
-	health, err := client.GetHealth()
+	health, err := s.containdClient.GetHealth()
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "unavailable",
@@ -180,13 +166,7 @@ func (s *Server) handleGetFirewallFlows(c *gin.Context) {
 		limit = v
 	}
 
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-
-	client := containd.NewClient(containdURL)
-	flows, err := client.GetFlows(limit)
+	flows, err := s.containdClient.GetFlows(limit)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"flows": []containd.Flow{},
@@ -203,13 +183,7 @@ func (s *Server) handleGetFirewallFlows(c *gin.Context) {
 
 // handleGetFirewallRules returns summarized firewall rules grouped by zone pairs.
 func (s *Server) handleGetFirewallRules(c *gin.Context) {
-	containdURL := s.cfg.ContaindAPIURL
-	if containdURL == "" {
-		containdURL = "http://firewall:8080"
-	}
-
-	client := containd.NewClient(containdURL)
-	summaries, err := client.GetZoneRuleSummaries()
+	summaries, err := s.containdClient.GetZoneRuleSummaries()
 	if err != nil {
 		// Return fallback static rules if containd is unavailable
 		c.JSON(http.StatusOK, gin.H{

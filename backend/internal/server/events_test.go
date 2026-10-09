@@ -10,15 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newFlowsServer builds a Server whose config points handleGetFirewallFlows
-// at containdURL, the same way a deployment's CONTAIND_API_URL does.
-func newFlowsServer(t *testing.T, containdURL string) *Server {
-	t.Helper()
-	s := newTestServer(t, containdURL)
-	s.cfg.ContaindAPIURL = containdURL
-	return s
-}
-
 // getFlows serves target (which may carry a query string; the shared
 // invoke helper registers its path verbatim as the route) through the
 // flows handler.
@@ -45,7 +36,7 @@ func TestHandleGetFirewallFlows(t *testing.T) {
 		io.WriteString(w, `[{"flowId":"f-1","firstSeen":"2026-10-09T10:00:00Z","lastSeen":"2026-10-09T10:00:05Z","srcIp":"10.30.30.20","dstIp":"10.40.40.10","srcPort":40312,"dstPort":2404,"transport":"tcp","application":"iec104","eventCount":7}]`)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	tests := []struct {
 		name      string
@@ -88,7 +79,7 @@ func TestHandleGetFirewallFlows_EmptyTable(t *testing.T) {
 		io.WriteString(w, `[]`)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	rec, _ := getFlows(s, "/api/firewall/flows")
 	if rec.Code != http.StatusOK {
@@ -104,7 +95,7 @@ func TestHandleGetFirewallFlows_ContaindError(t *testing.T) {
 		http.Error(w, "engine unreachable", http.StatusBadGateway)
 	}))
 	t.Cleanup(fake.Close)
-	s := newFlowsServer(t, fake.URL)
+	s := newTestServer(t, fake.URL)
 
 	rec, body := getFlows(s, "/api/firewall/flows")
 	if rec.Code != http.StatusServiceUnavailable {
