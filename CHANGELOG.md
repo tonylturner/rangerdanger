@@ -6,6 +6,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Host-side Windows script fix only: no image, kernel, or lab content
+changes, so `setup.ps1 -Version v0.1.34` still installs the v0.1.34
+release unchanged.
+
+### Fixed
+
+- **Windows setup and uninstall no longer hang after the WSL2 kernel
+  restart.** After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can
+  fail to restart its VM (`running wsl-bootstrap: exit status 1`) and
+  wait on a Restart/Quit error dialog. While it does, `docker info`
+  blocks instead of failing, so the "Waiting up to 180s for Docker
+  Desktop to reconnect" step in `install-wsl-kernel.ps1` (run by
+  `setup.ps1` and the uninstaller) hung indefinitely. Every Docker probe
+  there now runs with a timeout, the wait is wall-clock bounded (600 s
+  install, 300 s restore), and after 45 s it tells the user to click
+  Restart in Docker Desktop, then continues by itself once Docker is
+  back. `setup.ps1`'s pre-flight `docker info` is bounded too (30 s), so
+  re-running setup while that dialog is open fails fast with the same
+  guidance. Docker Desktop 4.94 recovers from the restart without the
+  dialog; the quickstart troubleshooting list now covers it.
+
 ## [v0.1.34] - 2026-10-08
 
 The pre-course release. Every image is rebuilt from fresh upstream bases
