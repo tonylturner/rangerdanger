@@ -172,7 +172,7 @@ func (s *Server) registerRoutes() {
 
 		// Firewall endpoints
 		api.GET("/firewall/health", s.handleGetFirewallHealth)
-		api.GET("/firewall/sessions", s.handleGetFirewallSessions)
+		api.GET("/firewall/flows", s.handleGetFirewallFlows)
 		api.GET("/firewall/rules", s.handleGetFirewallRules)
 		api.GET("/firewall/compare", s.handleFirewallCompare)
 		api.GET("/firewall/active", s.handleFirewallActive)

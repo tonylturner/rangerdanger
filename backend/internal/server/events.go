@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -165,24 +167,38 @@ func (s *Server) handleGetFirewallHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, health)
 }
 
-// handleGetFirewallSessions returns active sessions through the firewall.
-func (s *Server) handleGetFirewallSessions(c *gin.Context) {
+// handleGetFirewallFlows returns containd's engine flow table. An
+// optional ?limit= within containd's own bounds is passed through.
+func (s *Server) handleGetFirewallFlows(c *gin.Context) {
+	limit := containd.DefaultFlowLimit
+	if q := c.Query("limit"); q != "" {
+		v, err := strconv.Atoi(q)
+		if err != nil || v < 1 || v > containd.MaxFlowLimit {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("limit must be an integer in 1..%d", containd.MaxFlowLimit)})
+			return
+		}
+		limit = v
+	}
+
 	containdURL := s.cfg.ContaindAPIURL
 	if containdURL == "" {
 		containdURL = "http://firewall:8080"
 	}
 
 	client := containd.NewClient(containdURL)
-	sessions, err := client.GetSessions()
+	flows, err := client.GetFlows(limit)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"sessions": []any{},
-			"error":    err.Error(),
+			"flows": []containd.Flow{},
+			"error": err.Error(),
 		})
 		return
 	}
+	if flows == nil {
+		flows = []containd.Flow{}
+	}
 
-	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
+	c.JSON(http.StatusOK, gin.H{"flows": flows})
 }
 
 // handleGetFirewallRules returns summarized firewall rules grouped by zone pairs.

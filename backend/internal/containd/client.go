@@ -75,17 +75,23 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Session represents an active connection through the firewall.
-type Session struct {
-	ID        string    `json:"id"`
-	Source    string    `json:"source"`
-	Dest      string    `json:"dest"`
-	Protocol  string    `json:"protocol"`
-	SrcPort   int       `json:"src_port"`
-	DstPort   int       `json:"dst_port"`
-	StartTime time.Time `json:"start_time"`
-	Bytes     int64     `json:"bytes"`
-	Packets   int64     `json:"packets"`
+// Flow mirrors containd's FlowSummary, one row of the engine flow table
+// served by GET /api/v1/flows. The table is a rollup of DPI events, so a
+// flow appears once the engine has seen traffic on it and disappears when
+// the engine drops it (for example after an IEC 104 session abort).
+type Flow struct {
+	FlowID      string    `json:"flowId"`
+	FirstSeen   time.Time `json:"firstSeen"`
+	LastSeen    time.Time `json:"lastSeen"`
+	SrcIP       string    `json:"srcIp,omitempty"`
+	DstIP       string    `json:"dstIp,omitempty"`
+	SrcPort     uint16    `json:"srcPort,omitempty"`
+	DstPort     uint16    `json:"dstPort,omitempty"`
+	Transport   string    `json:"transport,omitempty"`
+	Application string    `json:"application,omitempty"`
+	EventCount  uint64    `json:"eventCount"`
+	AvDetected  bool      `json:"avDetected,omitempty"`
+	AvBlocked   bool      `json:"avBlocked,omitempty"`
 }
 
 // HealthStatus represents the firewall health.
@@ -291,26 +297,32 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 	return events, nil
 }
 
-// GetSessions returns active sessions through the firewall.
-func (c *Client) GetSessions() ([]Session, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/sessions")
+// containd's GET /api/v1/flows bounds: it accepts a limit in
+// 1..MaxFlowLimit and silently uses DefaultFlowLimit for anything else.
+const (
+	DefaultFlowLimit = 200
+	MaxFlowLimit     = 5000
+)
+
+// GetFlows returns up to limit rows of the engine flow table. containd
+// answers with a bare JSON array.
+func (c *Client) GetFlows(limit int) ([]Flow, error) {
+	resp, err := c.doRequest("GET", fmt.Sprintf("%s/api/v1/flows?limit=%d", c.BaseURL, limit))
 	if err != nil {
-		return nil, fmt.Errorf("get sessions failed: %w", err)
+		return nil, fmt.Errorf("get flows failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get sessions returned %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get flows returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result struct {
-		Sessions []Session `json:"sessions"`
+	var flows []Flow
+	if err := json.NewDecoder(resp.Body).Decode(&flows); err != nil {
+		return nil, fmt.Errorf("decode flows: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode sessions: %w", err)
-	}
-
-	return result.Sessions, nil
+	return flows, nil
 }
 
 // IsAvailable checks if containd is reachable.
