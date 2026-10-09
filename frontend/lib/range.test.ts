@@ -187,6 +187,7 @@ describe("not-ready answers", () => {
   it("parses only the range body", () => {
     expect(parseRangeNotReady({ error: "range not ready", phase: "starting" })?.phase).toBe("starting");
     expect(parseRangeNotReady({ error: "range not ready", phase: "bogus" })?.phase).toBeNull();
+    expect(parseRangeNotReady({ error: "range is stopping" })?.phase).toBe("stopping");
     expect(parseRangeNotReady({ error: "upstream down" })).toBeNull();
     expect(parseRangeNotReady(null)).toBeNull();
   });

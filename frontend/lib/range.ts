@@ -31,7 +31,8 @@ export type RangeStatus = {
   target: string;
   mode: string;
   error: string;
-  updated_at: string;
+  // null in phase none.
+  updated_at: string | null;
 };
 
 // The four steps a transition walks through, in order.
@@ -141,11 +142,15 @@ export function isRangeNotReady(error: unknown): error is RangeNotReadyError {
 }
 
 export const RANGE_NOT_READY = "range not ready";
+// A range-bound request whose generation began stopping while it ran.
+export const RANGE_STOPPING = "range is stopping";
 
-// Recognises the 503 body; any other 503 stays an ordinary failure.
+// Recognises the two 503 bodies of docs/api-spec.md; any other 503
+// stays an ordinary failure.
 export function parseRangeNotReady(body: unknown): RangeNotReadyError | null {
   if (typeof body !== "object" || body === null) return null;
   const { error, phase } = body as { error?: unknown; phase?: unknown };
+  if (error === RANGE_STOPPING) return new RangeNotReadyError("stopping");
   if (error !== RANGE_NOT_READY) return null;
   return new RangeNotReadyError(isRangePhase(phase) ? phase : null);
 }
