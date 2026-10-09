@@ -3,6 +3,7 @@ package containd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -10,21 +11,15 @@ import (
 	"time"
 )
 
-// TestGetHealthSuccess verifies parsing a healthy response from containd.
+// TestGetHealthSuccess decodes the body containd's healthHandler
+// (api/http/server.go) writes.
 func TestGetHealthSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
 		if r.URL.Path != "/api/v1/health" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(HealthStatus{
-			Status:    "healthy",
-			Version:   "1.0.0",
-			Uptime:    3600,
-			Zones:     4,
-			Sessions:  12,
-			EventRate: 5,
-		})
+		io.WriteString(w, `{"build":"v0.1.40","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
 	}))
 	defer srv.Close()
 
@@ -33,11 +28,18 @@ func TestGetHealthSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if health.Status != "healthy" {
-		t.Errorf("expected healthy, got %s", health.Status)
+	want := HealthStatus{
+		Status:    "ok",
+		Component: "mgmt",
+		Build:     "v0.1.40",
+		Time:      time.Date(2026, 10, 9, 12, 34, 56, 789000000, time.UTC),
 	}
-	if health.Zones != 4 {
-		t.Errorf("expected 4 zones, got %d", health.Zones)
+	if !health.Time.Equal(want.Time) {
+		t.Errorf("time: got %v, want %v", health.Time, want.Time)
+	}
+	health.Time, want.Time = time.Time{}, time.Time{}
+	if *health != want {
+		t.Errorf("health: got %+v, want %+v", *health, want)
 	}
 }
 
@@ -67,7 +69,7 @@ func TestGetHealthNon200(t *testing.T) {
 // TestIsAvailable verifies the availability check.
 func TestIsAvailable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 	}))
 	defer srv.Close()
 
@@ -92,7 +94,7 @@ func TestWaitReadySuccess(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 	}))
 	defer srv.Close()
 

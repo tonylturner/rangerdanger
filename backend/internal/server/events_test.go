@@ -108,3 +108,37 @@ func TestHandleGetFirewallFlows_ContaindError(t *testing.T) {
 		t.Error("expected error field")
 	}
 }
+
+// TestHandleGetFirewallHealth pins the portal's /api/firewall/health
+// body: containd's own health fields, passed through.
+func TestHandleGetFirewallHealth(t *testing.T) {
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/health" {
+			t.Errorf("unexpected containd path: %s", r.URL.Path)
+		}
+		io.WriteString(w, `{"build":"v0.1.40","component":"mgmt","status":"ok","time":"2026-10-09T12:34:56.789Z"}`)
+	}))
+	t.Cleanup(fake.Close)
+	s := newTestServer(t, fake.URL)
+
+	rec, _ := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d (%s)", rec.Code, rec.Body.String())
+	}
+	want := `{"status":"ok","component":"mgmt","build":"v0.1.40","time":"2026-10-09T12:34:56.789Z"}`
+	if got := rec.Body.String(); got != want {
+		t.Errorf("body: got %s, want %s", got, want)
+	}
+}
+
+func TestHandleGetFirewallHealth_Unreachable(t *testing.T) {
+	s := newTestServer(t, "http://127.0.0.1:1")
+
+	rec, body := invoke(s, s.handleGetFirewallHealth, "GET", "/api/firewall/health", nil)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got %d, want 503", rec.Code)
+	}
+	if body["status"] != "unavailable" || body["error"] == nil {
+		t.Errorf("body: got %v", body)
+	}
+}

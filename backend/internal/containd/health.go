@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// HealthStatus represents the firewall health.
+// HealthStatus mirrors containd's GET /api/v1/health body. The endpoint
+// is a liveness probe of the management plane: it always answers
+// status "ok" while the API is up and says nothing about the engine.
 type HealthStatus struct {
-	Status    string `json:"status"` // "healthy", "degraded", "unhealthy"
-	Version   string `json:"version"`
-	Uptime    int64  `json:"uptime"`
-	Zones     int    `json:"zones"`
-	Sessions  int    `json:"sessions"`
-	EventRate int    `json:"event_rate"` // Events per second
+	Status    string    `json:"status"`    // "ok"
+	Component string    `json:"component"` // "mgmt"
+	Build     string    `json:"build"`     // containd build version
+	Time      time.Time `json:"time"`      // containd's clock, UTC
 }
 
 // GetHealth returns the firewall health status.

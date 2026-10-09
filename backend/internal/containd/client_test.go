@@ -152,7 +152,7 @@ func TestAuthHeaderFormat(t *testing.T) {
 		if parts != 2 {
 			t.Errorf("expected JWT with 3 parts (2 dots), got %d dots", parts)
 		}
-		json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
+		json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 	}))
 	defer srv.Close()
 

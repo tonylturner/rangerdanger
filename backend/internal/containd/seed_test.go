@@ -18,7 +18,7 @@ func TestSeedConfigIfNeededSuccess(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/health":
 			atomic.AddInt32(&healthCalls, 1)
-			json.NewEncoder(w).Encode(HealthStatus{Status: "healthy"})
+			json.NewEncoder(w).Encode(HealthStatus{Status: "ok"})
 		case "/api/v1/config/candidate":
 			atomic.AddInt32(&candidateCalls, 1)
 			w.WriteHeader(http.StatusOK)
