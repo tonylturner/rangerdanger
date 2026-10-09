@@ -83,7 +83,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reordering steps no longer shifts progress. Progress saved before
   this change is not carried over: students start the labs fresh once.
 
+### Removed
+
+- **The lab-instance API and its Docker SDK provisioner**
+  (`/api/labs/instances/*`). It created range containers outside
+  Compose, which a range switch could not tear down; Compose now creates
+  every range container. Containers an old install created through it
+  carry the label `rangerdanger.lab_id`; remove them with
+  `docker ps -aq --filter label=rangerdanger.lab_id | xargs docker rm -f`
+  before upgrading.
+- `GET /api/labs/templates`, `POST /api/scenarios/:id/run`,
+  `GET /api/scenario-runs/:id` and the placeholder
+  `POST /api/nodes/:node_id/action`, which served only lab instances,
+  and the unlinked `/labs/[id]` page.
+
 ### Fixed
+
+- **Network Map OpenPLC button.** It opened a lab-instance path that
+  always answered 404; it now opens `/apps/openplc/`.
 
 - **Workshop graph interface addresses.** `interface_ips` used the
   wrong node keys, so nodes listed at most one network; every node now
