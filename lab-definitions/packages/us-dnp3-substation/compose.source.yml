@@ -212,15 +212,15 @@ services:
     image: alpine:3.21
     container_name: rangerdanger-hmi-poller
     network_mode: "service:fuxa_hmi"
+    # Busybox nc is included in alpine and supports -w. Send a raw
+    # Modbus FC3 Read Holding Registers request (12-byte frame) to
+    # the RTAC at 10.30.30.20:502 on a steady interval. No output
+    # is needed; the goal is producing observable Modbus wire
+    # traffic from the HMI container.
     command:
       - sh
       - -c
       - |
-        # Busybox nc is included in alpine and supports -w. Send a raw
-        # Modbus FC3 Read Holding Registers request (12-byte frame) to
-        # the RTAC at 10.30.30.20:502 on a steady interval. No output
-        # is needed; the goal is producing observable Modbus wire
-        # traffic from the HMI container.
         MODBUS_FRAME='\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x0a'
         while true; do
           printf "$$MODBUS_FRAME" | nc -w 1 10.30.30.20 502 > /dev/null 2>&1 || true
