@@ -193,22 +193,28 @@ field devices (feeder breaker, RMU switches, OLTC)   field_net + process net
 
 ### 3.6 Curriculum, validation and progress
 
-These ship together in one increment, because namespaced IDs would
-otherwise send every US scenario into the generic electrical validator.
+Increment 1 ships these together. A review of the first draft showed
+that qualified IDs (`<package>--<slug>`) would break the US gates,
+workshop and terminal lookups, probes and many frontend comparisons for
+no EU benefit, so the design is:
 
-- Scenario ID `<package>--<slug>`, `LabTemplateID = <package>`, unique
-  `(package, slug)`. YAML stays package-local; the loader qualifies IDs
-  once. It loads, validates and prunes per package inside one
-  transaction. Double dash, not colon, because decision inheritance
-  already uses `scenario:decision`.
-- Validators are declared per check by kind (`probe.tcp`,
-  `policy.predicate`, `process.state`, `artifact.capture`) and declare
-  the capabilities they need. A missing capability or missing evidence
-  is a failure, never a generic pass.
-- Browser keys include package and curriculum revision. Steps get
-  stable IDs in place of array indexes.
+- Scenario IDs stay plain slugs, **unique across all packages**; the
+  loader fails on a duplicate. Scenarios carry `package_id`. The
+  template ID stays the topology ID. One active-package accessor
+  replaces the hardcoded workshop template. The loader loads, validates
+  and prunes per package inside one transaction; any package failure is
+  fatal.
+- Each scenario declares `validator: <key>`. A registry maps the key to
+  Go code and the capabilities it needs. An unknown key or a missing
+  capability is a load error; there is no generic fallback. US
+  validator logic does not change. Declarative check kinds wait for the
+  builder (§8).
+- Steps get authored stable IDs. Browser keys become
+  `rd:<package>:<revision>:<name>`, and progress is stored by step ID.
+- `GET /api/packages` lists packages and the active one.
 - Exercise IDs, title-based dispatch, requirement maps and the
-  remediation catalog move from TypeScript into package metadata.
+  remediation catalog move from TypeScript into package metadata in
+  increment 3, when EU content shows the shape.
 - US students' existing browser progress resets once at this cutover
   (decision D8).
 
