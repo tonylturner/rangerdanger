@@ -188,8 +188,8 @@ func TestGetEventsSuccess(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"events": []Event{
-				{ID: "evt-6", Type: "modbus", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "modbus", DstPort: 502, Details: "FC03 Read", Severity: "info", Zone: "dmz"},
-				{ID: "evt-7", Type: "alert", Source: "10.10.10.50", Dest: "10.40.40.20", Protocol: "modbus", DstPort: 502, Details: "FC16 BLOCKED", Severity: "critical", Zone: "wan"},
+				{ID: "evt-6", Kind: "request", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"function_code": 3}},
+				{ID: "evt-7", Kind: "anomaly", Source: "10.10.10.50", Dest: "10.40.40.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"severity": "critical"}},
 			},
 		})
 	}))
@@ -206,8 +206,8 @@ func TestGetEventsSuccess(t *testing.T) {
 	if events[0].ID != "evt-6" {
 		t.Errorf("expected evt-6, got %s", events[0].ID)
 	}
-	if events[1].Severity != "critical" {
-		t.Errorf("expected critical severity, got %s", events[1].Severity)
+	if events[1].Attributes["severity"] != "critical" {
+		t.Errorf("expected critical severity attribute, got %v", events[1].Attributes["severity"])
 	}
 }
 

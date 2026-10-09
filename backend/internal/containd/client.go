@@ -45,31 +45,17 @@ func (e *EventID) UnmarshalJSON(data []byte) error {
 }
 
 // Event represents a containd DPI/IDS event.
-//
-// containd v0.1.25+ emits camelCase keys (srcIp/dstIp/srcPort/dstPort) and
-// uses `kind` as the discriminator (e.g. "firewall.rule.hit", "dpi.event").
-// Older containd builds used `type`/`source`/`dest`/`src_port`/`dst_port`;
-// both schemas are accepted on unmarshal so the backend works against
-// either version. New writes should use the v0.1.25+ field names.
 type Event struct {
-	ID            EventID        `json:"id"`
-	Timestamp     time.Time      `json:"timestamp"`
-	Kind          string         `json:"kind"`             // v0.1.25+: "firewall.rule.hit" etc.
-	Type          string         `json:"type"`             // legacy: "connection", "modbus", "dns", "alert"
-	Source        string         `json:"srcIp"`            // v0.1.25+ field
-	Dest          string         `json:"dstIp"`            // v0.1.25+ field
-	SourceLegacy  string         `json:"source,omitempty"` // legacy fallback
-	DestLegacy    string         `json:"dest,omitempty"`   // legacy fallback
-	Protocol      string         `json:"protocol"`         // decoded from containd's `proto`; see UnmarshalJSON
-	Transport     string         `json:"transport"`        // v0.1.25+ ("tcp", "udp")
-	SrcPort       int            `json:"srcPort"`          // v0.1.25+ field
-	DstPort       int            `json:"dstPort"`          // v0.1.25+ field
-	SrcPortLegacy int            `json:"src_port,omitempty"`
-	DstPortLegacy int            `json:"dst_port,omitempty"`
-	Attributes    map[string]any `json:"attributes"` // v0.1.25+: ruleId, action, via, etc.
-	Details       string         `json:"details"`    // legacy human-readable
-	Severity      string         `json:"severity"`   // legacy: info/warning/critical
-	Zone          string         `json:"zone"`
+	ID         EventID        `json:"id"`
+	Timestamp  time.Time      `json:"timestamp"`
+	Kind       string         `json:"kind"`
+	Source     string         `json:"srcIp"`
+	Dest       string         `json:"dstIp"`
+	Protocol   string         `json:"protocol"` // mapped from containd's `proto`
+	Transport  string         `json:"transport"`
+	SrcPort    int            `json:"srcPort"`
+	DstPort    int            `json:"dstPort"`
+	Attributes map[string]any `json:"attributes"`
 }
 
 // UnmarshalJSON decodes containd's wire key `proto` into Protocol.
@@ -87,26 +73,6 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	*e = Event(wire.eventFields)
 	e.Protocol = wire.Proto
 	return nil
-}
-
-// Normalize fills v0.1.25 fields from legacy fallbacks when only the older
-// schema is present. Safe to call repeatedly.
-func (e *Event) Normalize() {
-	if e.Source == "" && e.SourceLegacy != "" {
-		e.Source = e.SourceLegacy
-	}
-	if e.Dest == "" && e.DestLegacy != "" {
-		e.Dest = e.DestLegacy
-	}
-	if e.SrcPort == 0 && e.SrcPortLegacy != 0 {
-		e.SrcPort = e.SrcPortLegacy
-	}
-	if e.DstPort == 0 && e.DstPortLegacy != 0 {
-		e.DstPort = e.DstPortLegacy
-	}
-	if e.Kind == "" && e.Type != "" {
-		e.Kind = e.Type
-	}
 }
 
 // Session represents an active connection through the firewall.
@@ -322,9 +288,6 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 		events = result.Events
 	}
 
-	for i := range events {
-		events[i].Normalize()
-	}
 	return events, nil
 }
 

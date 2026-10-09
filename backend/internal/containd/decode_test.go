@@ -135,6 +135,11 @@ func TestGetEventsDecodesContaindProto(t *testing.T) {
 	if _, ok := portal["proto"]; ok {
 		t.Errorf("portal JSON must not carry containd's proto key: %s", out)
 	}
+	for _, legacyField := range []string{"type", "source", "dest", "src_port", "dst_port", "details", "severity", "zone"} {
+		if _, ok := portal[legacyField]; ok {
+			t.Errorf("portal JSON must not carry legacy event field %q: %s", legacyField, out)
+		}
+	}
 }
 
 // TestZoneRuleSummariesImprovedPolicy serves the canned hardened policy
