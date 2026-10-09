@@ -39,7 +39,7 @@ import {
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
 import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
-import { useOperatorView } from "../lib/operator-queries";
+import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
 import { usFeederPolling } from "../lib/operator-view";
 import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
@@ -97,6 +97,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // plan)" from "(your containd commit)". Survives page reloads
   // because it's a backend field.
   const policySource = activeFirewall?.policy_source ?? "";
+  const packagePolicies = usePackagePolicies();
   const [cmdLog, setCmdLog] = useState<string[]>(saved.cmdLog);
   const [executing, setExecuting] = useState(false);
   // String IDs (e.g. "body-0", "hint-0-1") so body + hint commands can
@@ -526,6 +527,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               activeConfig={activeConfig}
               policySource={policySource}
               expectedConfig={step?.expected_config}
+              policies={packagePolicies}
             />
             {/* Per-step track chip: on the firewall labs (after the
                 picker on 2.2 step 1), show which path the student is on

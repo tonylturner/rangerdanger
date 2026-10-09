@@ -9,11 +9,12 @@
 // only depends on React Query for cross-component cache invalidation
 // when the user applies a new config - that lets the network map's
 // edge labels and the header policy badge update immediately when the
-// firewall flips between weak and improved.
+// firewall flips between the package's policies.
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ApiError,
   getActiveFirewallConfig,
   getFirewallComparison,
   applyFirewallConfig,
@@ -21,59 +22,96 @@ import {
   type NetworkEvent,
   type PolicyComparison,
 } from "../lib/api";
+import { usePackagePolicies } from "../lib/operator-queries";
+import {
+  HARDENED_POLICY,
+  isHardened,
+  policyWording,
+  type PackagePolicies,
+  type PolicyWording,
+} from "../lib/policy-wording";
+import { errorMessage } from "../lib/utils";
 
-// Catalogue of policies the drawer knows about. The backend currently
-// only validates `weak` and `improved`, but the frontend treats this
-// list as the source of truth for the dropdown so adding a new
-// policy is one entry here plus a matching JSON in the lab-definitions
-// folder. `actionField` tells the evaluation renderer which column of
-// PolicyComparison.diffs to read from for this policy.
-type PolicyId = "weak" | "improved";
-type PolicyMeta = {
-  id: PolicyId;
-  label: string;
-  description: string;
-  actionField: "weak_action" | "improved_action";
-  ruleField: "weak_rule" | "improved_rule";
-  toneActive: string;
-  toneInactive: string;
-};
-const POLICIES: PolicyMeta[] = [
-  {
-    id: "weak",
+// The policies are the active package's (package.yml `policies`). The
+// US package keeps its own wording; any other package's policies show
+// by their declared names, without a description.
+const US_DRAWER_WORDING: Record<string, PolicyWording> = {
+  weak: {
     label: "Weak Baseline",
     description:
       "All zones can reach field devices directly. Attackers have clear paths to breakers and regulators.",
-    actionField: "weak_action",
-    ruleField: "weak_rule",
-    toneActive: "border-red-700/60 bg-red-950/15 text-red-400",
-    toneInactive: "border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400",
   },
-  {
-    id: "improved",
+  improved: {
     label: "Hardened Segmentation",
-    description:
-      "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked.",
-    actionField: "improved_action",
-    ruleField: "improved_rule",
-    toneActive: "border-green-700/60 bg-green-950/15 text-green-400",
-    toneInactive: "border-slate-700 text-slate-400 hover:border-green-700 hover:text-green-400",
+    description: "Only the RTAC can reach field devices. Enterprise and vendor zones are blocked.",
   },
-];
-function policyMeta(id: string | null | undefined): PolicyMeta {
-  return POLICIES.find((p) => p.id === id) || POLICIES[0];
+};
+const US_PILL_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak", description: "" },
+  improved: { label: "Hardened", description: "" },
+};
+
+// The columns of PolicyComparison.diffs per policy. /firewall/compare
+// exists only for a package whose recipe has a comparison table (US),
+// and compares exactly these two policies.
+type ComparisonFields = {
+  actionField: "weak_action" | "improved_action";
+  ruleField: "weak_rule" | "improved_rule";
+};
+const COMPARISON_FIELDS: Record<string, ComparisonFields> = {
+  weak: { actionField: "weak_action", ruleField: "weak_rule" },
+  improved: { actionField: "improved_action", ruleField: "improved_rule" },
+};
+
+type PolicyMeta = PolicyWording & {
+  id: string;
+  pill: string;
+  toneActive: string;
+  toneInactive: string;
+};
+
+function policyMetas(policies: PackagePolicies): PolicyMeta[] {
+  return policies.names.map((id) => ({
+    id,
+    ...policyWording(id, policies, US_DRAWER_WORDING),
+    pill: policyWording(id, policies, US_PILL_WORDING).label,
+    toneActive: isHardened(id)
+      ? "border-green-700/60 bg-green-950/15 text-green-400"
+      : "border-red-700/60 bg-red-950/15 text-red-400",
+    toneInactive: isHardened(id)
+      ? "border-slate-700 text-slate-400 hover:border-green-700 hover:text-green-400"
+      : "border-slate-700 text-slate-400 hover:border-red-700 hover:text-red-400",
+  }));
 }
+
+// The meta of the active policy. A policy the package does not declare
+// (custom) shows by its name; the US drawer has always shown its default
+// policy there instead, and keeps doing so.
+function activePolicyMeta(metas: PolicyMeta[], activeConfig: string | null, usWording: boolean): PolicyMeta | undefined {
+  const declared = metas.find((p) => p.id === activeConfig);
+  if (declared || usWording || !activeConfig) return declared ?? metas[0];
+  return { id: activeConfig, label: activeConfig, description: "", pill: activeConfig, toneActive: "", toneInactive: "" };
+}
+
+// The comparison request: loading, loaded, not offered by the package
+// (404), or failed with the backend's cause.
+type ComparisonState =
+  | { kind: "loading" }
+  | { kind: "ready"; comparison: PolicyComparison }
+  | { kind: "absent" }
+  | { kind: "failed"; message: string };
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
-  const [comparison, setComparison] = useState<PolicyComparison | null>(null);
+  const packagePolicies = usePackagePolicies();
+  const [comparisonState, setComparisonState] = useState<ComparisonState>({ kind: "loading" });
   const [applying, setApplying] = useState(false);
   // Which policy the evaluation panel is previewing. Defaults to
   // whatever is currently applied so the panel opens "self-consistent".
   // Track whether the user has manually changed the selection so we
   // don't keep snapping back to the active config when they're trying
   // to inspect a different one.
-  const [selectedPolicyId, setSelectedPolicyId] = useState<PolicyId>("improved");
+  const [selectedPolicyId, setSelectedPolicyId] = useState<string>(HARDENED_POLICY);
   const [userPickedPolicy, setUserPickedPolicy] = useState(false);
 
   // Active firewall config - shared via React Query so this drawer
@@ -88,21 +126,30 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
     staleTime: 2000,
   });
   const activeConfig = activeData?.active_config ?? null;
+  const policies = useMemo(() => (packagePolicies ? policyMetas(packagePolicies) : []), [packagePolicies]);
 
   useEffect(() => {
-    getFirewallComparison().then(setComparison).catch(() => {});
+    getFirewallComparison()
+      .then((comparison) => setComparisonState({ kind: "ready", comparison }))
+      .catch((error: unknown) =>
+        setComparisonState(
+          error instanceof ApiError && error.status === 404
+            ? { kind: "absent" }
+            : { kind: "failed", message: errorMessage(error) },
+        ),
+      );
   }, []);
 
   useEffect(() => {
-    if (!userPickedPolicy && (activeConfig === "weak" || activeConfig === "improved")) {
-      setSelectedPolicyId(activeConfig);
+    if (!userPickedPolicy && policies.some((p) => p.id === activeConfig)) {
+      setSelectedPolicyId(activeConfig as string);
     }
     // userPickedPolicy intentionally excluded so the initial sync
     // happens but a manual pick stays sticky.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConfig]);
+  }, [activeConfig, policies]);
 
-  const handleApply = async (config: "weak" | "improved") => {
+  const handleApply = async (config: string) => {
     setApplying(true);
     try {
       await applyFirewallConfig(config);
@@ -128,21 +175,24 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // row reads the chosen policy's action/rule columns from the diff
   // and tags whether it differs from what's currently active - that
   // tag drives the "would change if applied" highlight.
-  const selectedMeta = policyMeta(selectedPolicyId);
-  const activeMeta = policyMeta(activeConfig);
+  const selectedMeta = policies.find((p) => p.id === selectedPolicyId) ?? policies[0];
+  const activeMeta = activePolicyMeta(policies, activeConfig, packagePolicies?.usWording ?? false);
+  const comparison = comparisonState.kind === "ready" ? comparisonState.comparison : null;
+  const selectedFields = selectedMeta ? COMPARISON_FIELDS[selectedMeta.id] : undefined;
+  const activeFields = activeMeta ? COMPARISON_FIELDS[activeMeta.id] : undefined;
   const evaluation = useMemo(() => {
-    if (!comparison) return [];
+    if (!comparison || !selectedFields || !activeFields) return [];
     return comparison.diffs.map((d) => {
-      const action = d[selectedMeta.actionField];
-      const rule = d[selectedMeta.ruleField];
-      const activeAction = d[activeMeta.actionField];
+      const action = d[selectedFields.actionField];
+      const rule = d[selectedFields.ruleField];
+      const activeAction = d[activeFields.actionField];
       const differsFromActive = action !== activeAction;
       return { zonePair: d.zone_pair, action, rule, activeAction, differsFromActive };
     });
-  }, [comparison, selectedMeta, activeMeta]);
+  }, [comparison, selectedFields, activeFields]);
   const changeCount = evaluation.filter((r) => r.differsFromActive).length;
 
-  if (!comparison) {
+  if (comparisonState.kind === "loading" || !packagePolicies || !selectedMeta || !activeMeta) {
     return (
       <div className="py-6 text-center text-sm text-slate-500">
         Loading policy comparison…
@@ -150,14 +200,15 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
     );
   }
 
-  const isSelectedActive = selectedPolicyId === activeConfig;
+  const isSelectedActive = selectedMeta.id === activeConfig;
+  const activeHardened = isHardened(activeConfig);
 
   return (
     <div className="space-y-3">
       {/* Active policy banner */}
       <div
         className={`rounded-lg border p-2.5 ${
-          activeConfig === "improved"
+          activeHardened
             ? "border-green-700/60 bg-green-950/15"
             : "border-red-700/60 bg-red-950/15"
         }`}
@@ -167,12 +218,12 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
         </div>
         <div
           className={`mt-0.5 text-sm font-bold ${
-            activeConfig === "improved" ? "text-green-400" : "text-red-400"
+            activeHardened ? "text-green-400" : "text-red-400"
           }`}
         >
           {activeMeta.label}
         </div>
-        {!compact && (
+        {!compact && activeMeta.description && (
           <div className="mt-1 text-[11px] leading-snug text-slate-500">
             {activeMeta.description}
           </div>
@@ -186,14 +237,14 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
         </div>
         <div className="flex items-center gap-1.5">
           <select
-            value={selectedPolicyId}
+            value={selectedMeta.id}
             onChange={(e) => {
-              setSelectedPolicyId(e.target.value as PolicyId);
+              setSelectedPolicyId(e.target.value);
               setUserPickedPolicy(true);
             }}
             className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-none"
           >
-            {POLICIES.map((p) => (
+            {policies.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
                 {p.id === activeConfig ? " · active" : ""}
@@ -201,7 +252,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
             ))}
           </select>
           <button
-            onClick={() => handleApply(selectedPolicyId)}
+            onClick={() => handleApply(selectedMeta.id)}
             disabled={applying || isSelectedActive}
             className="rounded border border-sky-700 bg-sky-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -211,7 +262,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
 
         {/* Quick-set pills */}
         <div className="flex items-center gap-1">
-          {POLICIES.map((p) => (
+          {policies.map((p) => (
             <button
               key={p.id}
               onClick={() => handleApply(p.id)}
@@ -221,7 +272,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
               }`}
               title={`Apply ${p.label}`}
             >
-              {p.id === "weak" ? "Weak" : "Hardened"}
+              {p.pill}
             </button>
           ))}
         </div>
@@ -231,13 +282,18 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           on the wire so students can watch the policy enforce when
           they fire a probe from a terminal. Empty under the weak
           baseline by design (no rules have log:true). */}
-      <LiveEvents compact={compact} activeConfig={activeConfig} />
+      <LiveEvents compact={compact} activeConfig={activeConfig} usWording={packagePolicies.usWording} />
 
       {/* Dynamic policy evaluation - driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
           "would change" tag so the user can see what applying the
           selected policy would actually do. */}
-      {!compact && (
+      {!compact && comparisonState.kind === "failed" && (
+        <div className="text-[10px] leading-snug text-red-400">
+          Policy comparison unavailable: {comparisonState.message}
+        </div>
+      )}
+      {!compact && comparison && selectedFields && activeFields && (
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
@@ -355,9 +411,11 @@ function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
 function LiveEvents({
   compact,
   activeConfig,
+  usWording,
 }: {
   compact: boolean;
   activeConfig: string | null;
+  usWording: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   // 2.5s poll matches the substation Command Audit cadence and keeps
@@ -405,7 +463,7 @@ function LiveEvents({
               containd unreachable
             </div>
           ) : events.length === 0 ? (
-            <EmptyEventsHint compact={compact} activeConfig={activeConfig} />
+            <EmptyEventsHint compact={compact} activeConfig={activeConfig} usWording={usWording} />
           ) : (
             events.slice(0, maxRows).map((e, i) => <LiveEventRow key={`${e.id}-${i}`} e={e} />)
           )}
@@ -420,15 +478,19 @@ function LiveEvents({
 // (no shipped rule has log:true - mirrors a real misconfigured
 // firewall and is part of the segmentation lesson); under hardened
 // the panel is "empty because no probe has been fired yet"; outside
-// those two there's not enough context to be more specific.
+// those two there's not enough context to be more specific. The two
+// specific hints describe the US policy files and tools, so another
+// package gets the generic one.
 function EmptyEventsHint({
   compact,
   activeConfig,
+  usWording,
 }: {
   compact: boolean;
   activeConfig: string | null;
+  usWording: boolean;
 }) {
-  if (activeConfig === "weak") {
+  if (usWording && activeConfig === "weak") {
     return (
       <div className="space-y-1 py-2 px-1 text-[10px] leading-snug text-slate-500">
         <div className="font-medium text-slate-400">
@@ -446,7 +508,7 @@ function EmptyEventsHint({
       </div>
     );
   }
-  if (activeConfig === "improved") {
+  if (usWording && activeConfig === "improved") {
     return (
       <div className="py-2 px-1 text-[10px] leading-snug text-slate-500">
         Hardened policy is active and rules have <span className="font-mono text-amber-400">log: true</span>,

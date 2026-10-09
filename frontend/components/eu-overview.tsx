@@ -5,13 +5,15 @@ import { getWorkshopStatus } from "../lib/api";
 import { CONTROL_CENTRE_IP, IEC104_PORT, RTU_IP } from "../lib/firewall-sessions";
 import { controlCentreHealth, controlCentreLinkText, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { useOperatorState } from "../lib/operator-queries";
+import { isHardened } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 import { DashboardStatusCard, QuickLink, WorkshopStatusCard } from "./overview-cards";
 
 // Overview and workshop status for the EU IEC 104 package. The link and
 // GI come from the workshop status (its control_centre part); the
 // telemetry summary needs the points, so it reads the control centre.
-// There is no RTAC or US field-device health here.
+// There is no RTAC or US field-device health here. The firewall policy
+// shows by the name the package declares (lib/policy-wording.ts).
 
 const CC_FLOW = `${CONTROL_CENTRE_IP} → ${RTU_IP}:${IEC104_PORT}`;
 
@@ -54,8 +56,8 @@ export function EuDashboard({ title }: { title: string }) {
         />
         <DashboardStatusCard
           label="Firewall Policy"
-          value={waiting ? "WAITING" : ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
-          ok={waiting ? undefined : ws?.firewall_config === "improved"}
+          value={waiting ? "WAITING" : ws?.firewall_config || "—"}
+          ok={waiting || !ws ? undefined : isHardened(ws.firewall_config)}
         />
         <DashboardStatusCard
           label="Scenarios"
@@ -108,7 +110,7 @@ export function EuWorkshopStatus({ title }: { title: string }) {
             <WorkshopStatusCard
               label="containd NGFW"
               status={waiting ? "waiting" : ws?.firewall_online ? "online" : "offline"}
-              detail={ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
+              detail={ws?.firewall_config ? `${ws.firewall_config} policy` : "—"}
             />
             <WorkshopStatusCard
               label="Control Centre Link"

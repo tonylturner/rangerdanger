@@ -21,6 +21,7 @@ export const US_PACKAGE: PackageSummary = {
   revision: 3,
   active: true,
   operator_view: "us-dnp3-substation",
+  policies: ["weak", "improved"],
 };
 
 export const EU_PACKAGE: PackageSummary = {
@@ -29,6 +30,7 @@ export const EU_PACKAGE: PackageSummary = {
   revision: 1,
   active: true,
   operator_view: "eu-iec104",
+  policies: ["weak", "improved"],
 };
 
 export const NOW = Date.parse("2026-10-09T12:00:30.000Z");

@@ -3,6 +3,8 @@
 import React, { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { applyFirewallConfig, ZoneRuleSummary } from "../lib/api";
+import { usePackagePolicies } from "../lib/operator-queries";
+import { isHardened, policyWording, type PolicyWording } from "../lib/policy-wording";
 import {
   INTRA_ZONE_FLOWS,
   ViewMode,
@@ -65,28 +67,42 @@ export function StatusDot({
   );
 }
 
+// The US package's menu wording; any other package's policies show by
+// their declared names (lib/policy-wording.ts).
+const US_MENU_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak Baseline", description: "All zones allowed - over-permissive" },
+  improved: { label: "Hardened", description: "Deny-default, RTAC-only field access" },
+};
+
+// The badge text: the US package's two words, else the active name.
+function policyBadgeText(activeConfig: string | undefined, usWording: boolean): string {
+  if (usWording) return isHardened(activeConfig) ? "Hardened" : "Weak baseline";
+  return activeConfig || "—";
+}
+
 // Policy badge + quick-switch dropdown in the header. Styled as a
 // rounded rectangle (matching the drawer button shapes) that doubles
-// as a dropdown trigger. Clicking reveals a small menu of available
-// policies so the student can switch without opening the drawer.
+// as a dropdown trigger. Clicking reveals a small menu of the active
+// package's policies so the student can switch without opening the
+// drawer. It waits for the package, whose policies it lists.
 export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
   const [open, setOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   const queryClient = useQueryClient();
+  const packagePolicies = usePackagePolicies();
 
-  const hardened = activeConfig === "improved";
+  if (!packagePolicies) return null;
 
-  const policies = [
-    { id: "weak", label: "Weak Baseline", desc: "All zones allowed - over-permissive" },
-    { id: "improved", label: "Hardened", desc: "Deny-default, RTAC-only field access" },
-  ];
+  const hardened = isHardened(activeConfig);
+
+  const policies = packagePolicies.names.map((id) => ({ id, ...policyWording(id, packagePolicies, US_MENU_WORDING) }));
 
   const handleApply = async (config: string) => {
     if (config === activeConfig || applying) return;
     setApplying(true);
     setOpen(false);
     try {
-      await applyFirewallConfig(config as "weak" | "improved");
+      await applyFirewallConfig(config);
       queryClient.invalidateQueries({ queryKey: ["firewall-rules"] });
       queryClient.invalidateQueries({ queryKey: ["workshop", "status"] });
       // SegmentationView (the left drawer) subscribes to this; without
@@ -121,7 +137,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="h-4 w-4"
           />
         )}
-        <span>Firewall · {hardened ? "Hardened" : "Weak baseline"}</span>
+        <span>Firewall · {policyBadgeText(activeConfig, packagePolicies.usWording)}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -152,7 +168,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
                   <span
                     className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
                       isActive
-                        ? p.id === "improved" ? "bg-green-400" : "bg-red-400"
+                        ? isHardened(p.id) ? "bg-green-400" : "bg-red-400"
                         : "bg-slate-600"
                     }`}
                   />
@@ -165,9 +181,11 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] leading-snug text-slate-500">
-                      {p.desc}
-                    </div>
+                    {p.description && (
+                      <div className="text-[10px] leading-snug text-slate-500">
+                        {p.description}
+                      </div>
+                    )}
                   </div>
                 </button>
               );

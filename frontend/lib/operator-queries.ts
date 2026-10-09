@@ -1,8 +1,9 @@
 "use client";
 
-// React Query reads for the operator view selection, the EU control
-// centre and the instructor truth page. Every key here is range-scoped
-// (lib/range.ts), so a range change drops them like any other query.
+// React Query reads for the active package (operator view, policies),
+// the EU control centre and the instructor truth page. Every key here
+// is range-scoped (lib/range.ts), so a range change drops them like
+// any other query.
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,12 +20,23 @@ import {
   setInstructorFault,
 } from "./operator-api";
 import { resolveOperatorView, type OperatorViewResolution } from "./operator-view";
+import { packagePolicies, type PackagePolicies } from "./policy-wording";
 
 // Same key and function as useActiveCurriculum, so the two share one
 // request.
+function useActivePackage() {
+  return useQuery({ queryKey: ["packages", "active"], queryFn: getActivePackage });
+}
+
 export function useOperatorView(): OperatorViewResolution {
-  const { data, error } = useQuery({ queryKey: ["packages", "active"], queryFn: getActivePackage });
+  const { data, error } = useActivePackage();
   return useMemo(() => resolveOperatorView(data, error), [data, error]);
+}
+
+// The active package's firewall policies; undefined until it is known.
+export function usePackagePolicies(): PackagePolicies | undefined {
+  const { data } = useActivePackage();
+  return useMemo(() => (data ? packagePolicies(data) : undefined), [data]);
 }
 
 export const OPERATOR_KEY = ["operator"] as const;

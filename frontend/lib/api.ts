@@ -159,12 +159,15 @@ export async function listScenarios() {
 // operator_view names the operator screen the package uses; it stays a
 // string because the portal must show an error for a value it does not
 // know (lib/operator-view.ts), never fall back to another view.
+// policies are the package.yml policy names /firewall/apply accepts,
+// the package's default first (lib/policy-wording.ts).
 export type PackageSummary = {
   id: string;
   title: string;
   revision: number;
   active: boolean;
   operator_view: string;
+  policies: string[];
 };
 
 export async function listPackages() {
@@ -420,7 +423,8 @@ export async function validateScenario(scenarioId: string) {
   return request<ValidationResult>(`/scenarios/${encodeURIComponent(scenarioId)}/validate`);
 }
 
-export async function applyFirewallConfig(config: "weak" | "improved") {
+// config is one of the active package's policy names.
+export async function applyFirewallConfig(config: string) {
   return request<{ status: string; active_config: string }>("/firewall/apply", {
     method: "POST",
     body: JSON.stringify({ config }),
