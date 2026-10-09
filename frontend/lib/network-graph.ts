@@ -58,7 +58,8 @@ export function buildStyledGraph(
     const zoneOrder = [
       "enterprise_net", "wan", "it_net",
       "vendor_net", "dmz", "dmz_net",
-      "ot_ops_net", "lan1", "ot_control", "ot_control_net",
+      "control_centre_net", "lan4",
+      "ot_ops_net", "station_net", "lan1", "ot_control", "ot_control_net",
       "field_net", "lan2", "ot_safety", "ot_safety_net",
     ];
     const activeZones = Object.keys(nodesByZone)
@@ -415,6 +416,8 @@ export function buildStyledGraph(
       vendor_net: "Vendor / Engineering",
       ot_ops_net: "OT Operations",
       field_net: "Field Devices",
+      station_net: "Station LAN",
+      control_centre_net: "Control Centre",
       wan: "Enterprise Zone",
       dmz: "Vendor / Engineering",
       ot_control: "OT Operations",
@@ -431,6 +434,8 @@ export function buildStyledGraph(
       vendor_net: "10.20.20.0/24",
       ot_ops_net: "10.30.30.0/24",
       field_net: "10.40.40.0/24",
+      station_net: "10.30.30.0/24",
+      control_centre_net: "10.60.60.0/24",
       wan: "10.10.10.0/24",
       dmz: "10.20.20.0/24",
       ot_control: "10.30.30.0/24",

@@ -25,6 +25,7 @@ import { NodeTerminal } from "./node-terminal";
 import { SharedTerminalPanel, useTerminals } from "./terminal-context";
 import { nodeTypes } from "./topology-nodes";
 import { zoneColors } from "../lib/zone-colors";
+import { nodeTypeLabel } from "../lib/node-types";
 import { nodeZone } from "../lib/observed-flows";
 import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
@@ -413,7 +414,7 @@ export function NetworkConsole() {
                 {inspectorNode.data?.zone}
               </p>
               <h3 className="text-xl font-semibold text-white">{inspectorNode.data?.label}</h3>
-              <p className="text-sm text-slate-400">{inspectorNode.data?.nodeType || inspectorNode.type}</p>
+              <p className="text-sm text-slate-400">{nodeTypeLabel(inspectorNode.data?.nodeType || inspectorNode.type || "")}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => { setInspectorNode(null); setIframeUrl(null); setShowTerminal(false); setShowTerminalModal(false); }}>
               Close
@@ -421,7 +422,7 @@ export function NetworkConsole() {
           </div>
 
           <div className="mt-4 space-y-3 text-sm text-slate-200">
-            <InfoRow label="Type" value={inspectorNode.data?.nodeType || inspectorNode.type || "unknown"} />
+            <InfoRow label="Type" value={nodeTypeLabel(inspectorNode.data?.nodeType || inspectorNode.type || "unknown")} />
             <InfoRow label="Status" value={inspectorNode.data?.status || "unknown"} />
 
             {/* Networks as chips */}

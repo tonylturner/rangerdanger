@@ -31,6 +31,9 @@ export const NODE_LABELS: Record<string, string> = {
   "capbank-1":         "Capbank",
   "historian-1":       "Historian",
   "gps-1":             "GPS",
+  "cc-1":              "Control Centre",
+  "rtu-1":             "IEC 104 RTU",
+  "breaker-1":         "Feeder Breaker",
 };
 
 // Nodes that have a web UI accessible via iframe

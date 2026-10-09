@@ -12,6 +12,9 @@ import {
   ShieldAlert,
   Satellite,
   Clock,
+  MonitorCog,
+  Cpu,
+  ToggleRight,
 } from "lucide-react";
 import { zoneColors } from "../lib/zone-colors";
 
@@ -86,6 +89,9 @@ const LucideDatabase: IconComponent = ({ size, color }) => <Database size={size}
 const LucideShieldAlert: IconComponent = ({ size, color }) => <ShieldAlert size={size} color={color} />;
 const LucideSatellite: IconComponent = ({ size, color }) => <Satellite size={size} color={color} />;
 const LucideClock: IconComponent = ({ size, color }) => <Clock size={size} color={color} />;
+const LucideMonitorCog: IconComponent = ({ size, color }) => <MonitorCog size={size} color={color} />;
+const LucideCpu: IconComponent = ({ size, color }) => <Cpu size={size} color={color} />;
+const LucideToggleRight: IconComponent = ({ size, color }) => <ToggleRight size={size} color={color} />;
 
 // Icon mapping for node types
 const nodeTypeIcons: Record<string, IconComponent> = {
@@ -134,6 +140,12 @@ const nodeTypeIcons: Record<string, IconComponent> = {
 
   // GPS / time server
   gps_clock: LucideClock,
+
+  // EU IEC 104 package: control centre (operator station), RTU and
+  // the breaker it telecontrols
+  control_centre: LucideMonitorCog,
+  iec104_rtu: LucideCpu,
+  feeder_breaker: LucideToggleRight,
 
   // Default
   default: LucideServer,

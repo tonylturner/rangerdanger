@@ -12,7 +12,7 @@
 
 // Tools whose indented lines are runnable command blocks. The PDF
 // export (exercise-pdf-text.ts) uses the same list.
-export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
+export const CMD_TOOL_RE = /^(nmap|mbpoll|dnp3poll|dnp3cmd|iec104cmd|curl|tshark|tcpdump|nc|telnet|ssh|wget|ls|grep|cat|docker)\s/;
 
 // containd appliance-CLI commands. These are NOT run via the lab's
 // per-node exec (they live in the containd CLI, reached from the fw-1
