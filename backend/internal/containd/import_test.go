@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -41,7 +42,7 @@ func TestImportConfigSuccess(t *testing.T) {
 
 	configJSON := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
 	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig(configJSON)
+	_, err := client.ImportConfig(context.Background(), configJSON)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	warnings, err := client.ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
+	warnings, err := client.ImportConfig(context.Background(), []byte(`{"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestImportConfigNoWarningsHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	warnings, err := newTestClient(srv.URL).ImportConfig([]byte(`{"firewall":{"rules":[]}}`))
+	warnings, err := newTestClient(srv.URL).ImportConfig(context.Background(), []byte(`{"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +201,7 @@ func TestImportConfigLegacyFallback(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	if _, err := client.ImportConfig([]byte(`{}`)); err != nil {
+	if _, err := client.ImportConfig(context.Background(), []byte(`{}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !sawImport {
@@ -217,7 +218,7 @@ func TestImportConfigFailure(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig([]byte(`{}`))
+	_, err := client.ImportConfig(context.Background(), []byte(`{}`))
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -237,7 +238,7 @@ func TestImportConfigAuth403(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig([]byte(`{}`))
+	_, err := client.ImportConfig(context.Background(), []byte(`{}`))
 	if err == nil {
 		t.Fatal("expected error for 403 response")
 	}

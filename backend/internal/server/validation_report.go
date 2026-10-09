@@ -118,7 +118,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "docker client not available"})
 		return
 	}
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	s.activeConfigMu.RLock()
 	active, source := s.activeConfig, s.policySource
@@ -126,7 +126,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 
 	hash := "unknown"
 	if s.containdClient != nil {
-		if h, err := s.containdClient.GetFirewallHash(); err == nil && h != "" {
+		if h, err := s.containdClient.GetFirewallHash(ctx); err == nil && h != "" {
 			hash = strings.TrimPrefix(h, "sha256:")
 			if len(hash) > 12 {
 				hash = hash[:12]

@@ -2,6 +2,7 @@ package containd
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -68,8 +69,8 @@ func (c *Client) send(req *http.Request) (*http.Response, error) {
 }
 
 // doRequest performs an authenticated HTTP request.
-func (c *Client) doRequest(method, url string) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, nil)
+func (c *Client) doRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +78,8 @@ func (c *Client) doRequest(method, url string) (*http.Response, error) {
 }
 
 // doRequestWithBody performs an authenticated HTTP request with a body.
-func (c *Client) doRequestWithBody(method, url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+func (c *Client) doRequestWithBody(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

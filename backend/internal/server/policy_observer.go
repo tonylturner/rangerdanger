@@ -73,15 +73,15 @@ func (s *Server) policyObserverLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.observePolicyOnce()
+			s.observePolicyOnce(ctx)
 		}
 	}
 }
 
 // observePolicyOnce is one tick of the observer. Extracted so the
 // unit test can step it deterministically.
-func (s *Server) observePolicyOnce() {
-	hash, err := s.containdClient.GetFirewallHash()
+func (s *Server) observePolicyOnce(ctx context.Context) {
+	hash, err := s.containdClient.GetFirewallHash(ctx)
 	if err != nil {
 		// Containd may be restarting / unreachable. The next tick
 		// will retry; no value in spamming logs on a transient

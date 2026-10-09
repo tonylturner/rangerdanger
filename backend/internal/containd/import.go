@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,19 +29,19 @@ import (
 // are invisible to the lab UI. Callers should propagate warnings up so a
 // student sees "config committed but X didn't apply" instead of a green
 // 200 hiding broken enforcement.
-func (c *Client) ImportConfig(configJSON []byte) ([]string, error) {
+func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string, error) {
 	patched, err := ensureEnforcementOn(configJSON)
 	if err != nil {
 		return nil, fmt.Errorf("ensure enforcement on: %w", err)
 	}
 
 	// Try the preferred candidate/commit flow first
-	if warnings, err := c.importViaCandidate(patched); err == nil {
+	if warnings, err := c.importViaCandidate(ctx, patched); err == nil {
 		return warnings, nil
 	} else {
 		// Fall back to legacy import endpoint
 		log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
-		return c.importLegacy(patched)
+		return c.importLegacy(ctx, patched)
 	}
 }
 
@@ -88,9 +89,9 @@ func ensureEnforcementOn(configJSON []byte) ([]byte, error) {
 // returned 200 but at least one step in applyRunningConfig surfaced a
 // warning (typical: nft apply failed, interface reconcile partial). The
 // caller decides whether to treat warnings as soft failures.
-func (c *Client) importViaCandidate(configJSON []byte) ([]string, error) {
+func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]string, error) {
 	// Stage the candidate config
-	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
+	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/candidate", configJSON)
 	if err != nil {
 		return nil, fmt.Errorf("post candidate config: %w", err)
 	}
@@ -105,7 +106,7 @@ func (c *Client) importViaCandidate(configJSON []byte) ([]string, error) {
 	}
 
 	// Commit the staged config
-	resp2, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/commit", nil)
+	resp2, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/commit", nil)
 	if err != nil {
 		return nil, fmt.Errorf("commit config: %w", err)
 	}
@@ -122,8 +123,8 @@ func (c *Client) importViaCandidate(configJSON []byte) ([]string, error) {
 // importLegacy uses the older /api/v1/config/import endpoint.
 // The legacy endpoint doesn't run applyRunningConfig and therefore can't
 // produce warnings — always returns nil for the warnings slice.
-func (c *Client) importLegacy(configJSON []byte) ([]string, error) {
-	resp, err := c.doRequestWithBody("POST", c.BaseURL+"/api/v1/config/import", configJSON)
+func (c *Client) importLegacy(ctx context.Context, configJSON []byte) ([]string, error) {
+	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/import", configJSON)
 	if err != nil {
 		return nil, fmt.Errorf("import config request failed: %w", err)
 	}

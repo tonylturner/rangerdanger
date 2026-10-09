@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,7 +95,7 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		}
 
 	case "firewall":
-		result := s.executeFirewallAction(step.Action.Config)
+		result := s.executeFirewallAction(c.Request.Context(), step.Action.Config)
 		results = append(results, result)
 
 	case "check":
@@ -102,7 +103,7 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		results = append(results, checkResults...)
 
 	case "probe":
-		results = s.executeProbe(step)
+		results = s.executeProbe(c.Request.Context(), step)
 
 	default:
 		results = append(results, StepActionResult{
@@ -226,8 +227,8 @@ func sourceZoneLabel(source string) string {
 }
 
 // executeFirewallAction applies a firewall configuration.
-func (s *Server) executeFirewallAction(configName string) StepActionResult {
-	warnings, err := s.applyFirewallConfigInternal(configName)
+func (s *Server) executeFirewallAction(ctx context.Context, configName string) StepActionResult {
+	warnings, err := s.applyFirewallConfigInternal(ctx, configName)
 	if err != nil {
 		return StepActionResult{
 			Action:  "Apply firewall: " + configName,

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,7 +116,7 @@ func (s *Server) handleFirewallApply(c *gin.Context) {
 		return
 	}
 
-	warnings, err := s.applyFirewallConfigInternal(req.Config)
+	warnings, err := s.applyFirewallConfigInternal(c.Request.Context(), req.Config)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -175,7 +176,7 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // X-Containd-Warnings) so callers can surface partial failures — typical
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
-func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error) {
+func (s *Server) applyFirewallConfigInternal(ctx context.Context, configName string) ([]string, error) {
 	if configName != "weak" && configName != "improved" {
 		return nil, fmt.Errorf("config must be 'weak' or 'improved'")
 	}
@@ -195,7 +196,7 @@ func (s *Server) applyFirewallConfigInternal(configName string) ([]string, error
 		return nil, fmt.Errorf("containd client not configured")
 	}
 
-	warnings, err := s.containdClient.ImportConfig(data)
+	warnings, err := s.containdClient.ImportConfig(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
 	}
@@ -252,7 +253,7 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		return
 	}
 
-	warnings, err := s.containdClient.ImportConfig(data)
+	warnings, err := s.containdClient.ImportConfig(c.Request.Context(), data)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
 		return

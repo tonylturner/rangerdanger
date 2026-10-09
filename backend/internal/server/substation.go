@@ -74,7 +74,7 @@ func (s *Server) proxyRTAC(c *gin.Context, path string) {
 
 // handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
 func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
-	events, err := s.containdClient.GetEvents("", 50)
+	events, err := s.containdClient.GetEvents(c.Request.Context(), "", 50)
 	if err != nil {
 		// Return empty with source info rather than error
 		c.JSON(http.StatusOK, gin.H{

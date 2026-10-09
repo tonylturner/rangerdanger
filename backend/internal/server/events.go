@@ -27,7 +27,7 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 	defer ticker.Stop()
 
 	// Check if containd is available
-	if !s.containdClient.IsAvailable() {
+	if !s.containdClient.IsAvailable(c.Request.Context()) {
 		// Send fallback stub events
 		s.sendStubEvents(c)
 		return
@@ -37,7 +37,7 @@ func (s *Server) handleGetLiveEvents(c *gin.Context) {
 		select {
 		case <-ticker.C:
 			// Poll containd for events
-			events, err := s.containdClient.GetEvents(lastEventID, 10)
+			events, err := s.containdClient.GetEvents(c.Request.Context(), lastEventID, 10)
 			if err != nil {
 				// Send error event
 				c.SSEvent("error", gin.H{"message": err.Error()})
@@ -140,7 +140,7 @@ func (s *Server) sendStubEvents(c *gin.Context) {
 
 // handleGetFirewallHealth returns the containd firewall health status.
 func (s *Server) handleGetFirewallHealth(c *gin.Context) {
-	health, err := s.containdClient.GetHealth()
+	health, err := s.containdClient.GetHealth(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status":  "unavailable",
@@ -166,7 +166,7 @@ func (s *Server) handleGetFirewallFlows(c *gin.Context) {
 		limit = v
 	}
 
-	flows, err := s.containdClient.GetFlows(limit)
+	flows, err := s.containdClient.GetFlows(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"flows": []containd.Flow{},
@@ -183,7 +183,7 @@ func (s *Server) handleGetFirewallFlows(c *gin.Context) {
 
 // handleGetFirewallRules returns summarized firewall rules grouped by zone pairs.
 func (s *Server) handleGetFirewallRules(c *gin.Context) {
-	summaries, err := s.containdClient.GetZoneRuleSummaries()
+	summaries, err := s.containdClient.GetZoneRuleSummaries(c.Request.Context())
 	if err != nil {
 		// Return fallback static rules if containd is unavailable
 		c.JSON(http.StatusOK, gin.H{

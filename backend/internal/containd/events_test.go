@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -34,7 +35,7 @@ func TestGetEventsSuccess(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	events, err := client.GetEvents("evt-5", 10)
+	events, err := client.GetEvents(context.Background(), "evt-5", 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestGetEventsNoSince(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	events, err := client.GetEvents("", 5)
+	events, err := client.GetEvents(context.Background(), "", 5)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestGetFlowsSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	flows, err := newTestClient(srv.URL).GetFlows(50)
+	flows, err := newTestClient(srv.URL).GetFlows(context.Background(), 50)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestGetFlowsError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	flows, err := newTestClient(srv.URL).GetFlows(200)
+	flows, err := newTestClient(srv.URL).GetFlows(context.Background(), 200)
 	if err == nil {
 		t.Fatalf("expected error, got flows %+v", flows)
 	}

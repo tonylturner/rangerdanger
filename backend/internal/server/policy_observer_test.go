@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ func TestObserver_NoChange_NoReclassify(t *testing.T) {
 	}
 	s.lastAppliedHash = h
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background())
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -91,7 +92,7 @@ func TestObserver_HashDivergence_FlipsManualCustom(t *testing.T) {
 		lastAppliedAt: time.Now().Add(-1 * time.Hour),
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background())
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -123,7 +124,7 @@ func TestObserver_GraceWindow_SuppressesFlip(t *testing.T) {
 		lastAppliedAt:   time.Now(), // INSIDE the grace window
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background())
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -148,7 +149,7 @@ func TestObserver_FirstObservation_SeedsBaseline(t *testing.T) {
 		// no lastAppliedHash set
 	}
 
-	s.observePolicyOnce()
+	s.observePolicyOnce(context.Background())
 
 	s.activeConfigMu.RLock()
 	defer s.activeConfigMu.RUnlock()
@@ -179,7 +180,7 @@ func TestObserver_ConcurrentApplyAndObserve(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			s.observePolicyOnce()
+			s.observePolicyOnce(context.Background())
 		}()
 		go func() {
 			defer wg.Done()

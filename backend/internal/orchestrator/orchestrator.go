@@ -225,7 +225,7 @@ func (o *Orchestrator) ProvisionLabInstance(ctx context.Context, db *gorm.DB, in
 		if err != nil {
 			o.logger.Printf("[lab %s] failed to read firewall config %s: %v", instance.ID, cfgPath, err)
 			failures = append(failures, fmt.Errorf("read firewall config %s: %w", cfgPath, err))
-		} else if warnings, err := o.containdClient.ImportConfig(data); err != nil {
+		} else if warnings, err := o.containdClient.ImportConfig(ctx, data); err != nil {
 			o.logger.Printf("[lab %s] failed to import firewall config: %v", instance.ID, err)
 			failures = append(failures, fmt.Errorf("import firewall config: %w", err))
 		} else {

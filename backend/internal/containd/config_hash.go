@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,8 +23,8 @@ import (
 // committed configs that differ only in whitespace / key order
 // produce the same hash, but two that differ in any rule field
 // produce different hashes.
-func (c *Client) GetFirewallHash() (string, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/config")
+func (c *Client) GetFirewallHash(ctx context.Context) (string, error) {
+	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/config")
 	if err != nil {
 		return "", fmt.Errorf("get config failed: %w", err)
 	}

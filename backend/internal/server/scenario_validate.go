@@ -66,7 +66,7 @@ func (s *Server) handleValidateScenario(c *gin.Context) {
 	input.activeConfig = s.activeConfig
 	s.activeConfigMu.RUnlock()
 
-	checks := validator.run(s, input)
+	checks := validator.run(c.Request.Context(), s, input)
 
 	// Determine overall outcome
 	outcome := "PASS"
@@ -259,7 +259,7 @@ func countAuditByZoneAndCommand(entries []map[string]any, zone, command string) 
 
 // ── Exercise 0: Baseline Assessment ─────────────────────────────
 
-func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
+func (s *Server) validateBaselineAssessment(ctx context.Context, state map[string]any, audit []map[string]any, activeConfig string) []ValidationCheck {
 	var checks []ValidationCheck
 
 	elec := mapGet(state, "electrical")
@@ -267,7 +267,7 @@ func (s *Server) validateBaselineAssessment(state map[string]any, audit []map[st
 	comms := mapGet(state, "device_comms")
 
 	// 1. Check if a PCAP capture file exists (student completed the capture step)
-	pcapExists := s.checkPcapFileExists()
+	pcapExists := s.checkPcapFileExists(ctx)
 	if pcapExists {
 		checks = append(checks, ValidationCheck{"PCAP captured", "pass", "Baseline capture file found — traffic was recorded"})
 	} else {
@@ -574,16 +574,16 @@ func validateHardeningConfigurations(state map[string]any, audit []map[string]an
 }
 
 // checkPcapFileExists checks if any PCAP capture files are available.
-func (s *Server) checkPcapFileExists() bool {
+func (s *Server) checkPcapFileExists(ctx context.Context) bool {
 	// 1. Check filesystem inside the firewall container (covers manual tcpdump captures)
 	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
 		execCfg := container.ExecOptions{
 			Cmd:          []string{"sh", "-c", "test -s /data/captures/baseline.pcap && echo YES"},
 			AttachStdout: true,
 		}
-		execID, err := dockerCli.ContainerExecCreate(context.Background(), firewallContainer, execCfg)
+		execID, err := dockerCli.ContainerExecCreate(ctx, firewallContainer, execCfg)
 		if err == nil {
-			resp, err := dockerCli.ContainerExecAttach(context.Background(), execID.ID, container.ExecAttachOptions{})
+			resp, err := dockerCli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 			if err == nil {
 				out, _ := io.ReadAll(resp.Reader)
 				resp.Close()
@@ -595,7 +595,7 @@ func (s *Server) checkPcapFileExists() bool {
 	}
 
 	// 2. Check containd PCAP API (covers API-initiated captures)
-	files, err := s.containdClient.ListPcapFiles()
+	files, err := s.containdClient.ListPcapFiles(ctx)
 	if err == nil && len(files) > 0 {
 		return true
 	}

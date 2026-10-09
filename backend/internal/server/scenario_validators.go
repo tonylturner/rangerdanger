@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"slices"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
@@ -19,7 +20,7 @@ type validatorInput struct {
 // the package capabilities it relies on.
 type scenarioValidator struct {
 	capabilities []string
-	run          func(s *Server, in validatorInput) []ValidationCheck
+	run          func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck
 }
 
 func (v scenarioValidator) needs(capability string) bool {
@@ -32,43 +33,43 @@ func (v scenarioValidator) needs(capability string) bool {
 var scenarioValidators = map[string]scenarioValidator{
 	"us-baseline-assessment": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityCaptureFirewall},
-		run: func(s *Server, in validatorInput) []ValidationCheck {
-			return s.validateBaselineAssessment(in.state, in.audit, in.activeConfig)
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			return s.validateBaselineAssessment(ctx, in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-segmentation-requirements": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateSegmentationRequirements(in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-remediation-planning": {
 		capabilities: []string{labs.CapabilityProcessElectrical},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateRemediationPlanning(in.state, in.activeConfig)
 		},
 	},
 	"us-firewall-implementation": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateFirewallImplementation(in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-hardening-configurations": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateHardeningConfigurations(in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-vendor-rdp-compromise": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateVendorRDPCompromise(in.state, in.audit, in.activeConfig)
 		},
 	},
 	"us-validation-evidence": {
 		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ *Server, in validatorInput) []ValidationCheck {
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
 			return validateValidationEvidence(in.state, in.audit, in.activeConfig)
 		},
 	},

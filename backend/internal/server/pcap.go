@@ -66,7 +66,7 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 	}
 
 	// Try containd PCAP API: start with config inline
-	status, err := s.containdClient.StartPcap(&cfg)
+	status, err := s.containdClient.StartPcap(c.Request.Context(), &cfg)
 	if err == nil {
 		s.pcapMu.Lock()
 		s.pcap = pcapState{
@@ -79,7 +79,7 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		s.pcapMu.Unlock()
 
 		// Poll containd until capture stops
-		go s.pollPcapCompletion(prefix, req.DurationSec)
+		go s.pollPcapCompletion(context.Background(), prefix, req.DurationSec)
 
 		c.JSON(http.StatusOK, gin.H{
 			"status":       "capturing",
@@ -96,11 +96,13 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 
 // pollPcapCompletion polls containd /pcap/status until running==false,
 // then queries /pcap/list to find files matching our prefix.
-func (s *Server) pollPcapCompletion(prefix string, durationSec int) {
+func (s *Server) pollPcapCompletion(ctx context.Context, prefix string, durationSec int) {
 	deadline := time.Now().Add(time.Duration(durationSec+15) * time.Second)
 	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		status, err := s.containdClient.GetPcapStatus()
+		if !sleepCtx(ctx, 2*time.Second) {
+			return
+		}
+		status, err := s.containdClient.GetPcapStatus(ctx)
 		if err != nil {
 			continue
 		}
@@ -110,7 +112,7 @@ func (s *Server) pollPcapCompletion(prefix string, durationSec int) {
 	}
 
 	// Capture done — list files matching our prefix
-	files, err := s.containdClient.ListPcapFiles()
+	files, err := s.containdClient.ListPcapFiles(ctx)
 	var matchedNames []string
 	if err == nil {
 		for _, f := range files {
@@ -144,14 +146,14 @@ func (s *Server) handlePcapStop(c *gin.Context) {
 		return
 	}
 
-	status, err := s.containdClient.StopPcap()
+	status, err := s.containdClient.StopPcap(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("stop pcap: %v", err)})
 		return
 	}
 
 	// Collect files matching our prefix
-	files, _ := s.containdClient.ListPcapFiles()
+	files, _ := s.containdClient.ListPcapFiles(c.Request.Context())
 	var matchedNames []string
 	for _, f := range files {
 		if strings.HasPrefix(f.Name, prefix) {
@@ -175,7 +177,7 @@ func (s *Server) handlePcapStatus(c *gin.Context) {
 
 	// If using containd, get fresh status
 	if !state.Fallback && state.FilePrefix != "" {
-		status, err := s.containdClient.GetPcapStatus()
+		status, err := s.containdClient.GetPcapStatus(c.Request.Context())
 		if err == nil {
 			c.JSON(http.StatusOK, gin.H{
 				"capturing":    status.Running,
@@ -210,7 +212,7 @@ func (s *Server) handlePcapDownload(c *gin.Context) {
 	// Try containd: download first matched file
 	if !state.Fallback && len(state.Files) > 0 && validPcapName(state.Files[0]) {
 		name := state.Files[0]
-		body, filename, err := s.containdClient.DownloadPcapFile(name)
+		body, filename, err := s.containdClient.DownloadPcapFile(c.Request.Context(), name)
 		if err == nil {
 			defer body.Close()
 			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
@@ -236,7 +238,7 @@ func (s *Server) handlePcapDownloadFile(c *gin.Context) {
 		return
 	}
 
-	body, filename, err := s.containdClient.DownloadPcapFile(name)
+	body, filename, err := s.containdClient.DownloadPcapFile(c.Request.Context(), name)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("download failed: %v", err)})
 		return
@@ -276,7 +278,7 @@ func validPcapComponent(name string, maxLen int) bool {
 }
 
 func (s *Server) handlePcapList(c *gin.Context) {
-	files, err := s.containdClient.ListPcapFiles()
+	files, err := s.containdClient.ListPcapFiles(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"files": []interface{}{}, "error": err.Error()})
 		return

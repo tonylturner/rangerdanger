@@ -1,6 +1,7 @@
 package containd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,13 +79,13 @@ type Flow struct {
 }
 
 // GetEvents returns recent events, optionally filtered by time.
-func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
+func (c *Client) GetEvents(ctx context.Context, since string, limit int) ([]Event, error) {
 	url := fmt.Sprintf("%s/api/v1/events?limit=%d", c.BaseURL, limit)
 	if since != "" {
 		url += "&since=" + since
 	}
 
-	resp, err := c.doRequest("GET", url)
+	resp, err := c.doRequest(ctx, "GET", url)
 	if err != nil {
 		return nil, fmt.Errorf("get events failed: %w", err)
 	}
@@ -125,8 +126,8 @@ const (
 
 // GetFlows returns up to limit rows of the engine flow table. containd
 // answers with a bare JSON array.
-func (c *Client) GetFlows(limit int) ([]Flow, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("%s/api/v1/flows?limit=%d", c.BaseURL, limit))
+func (c *Client) GetFlows(ctx context.Context, limit int) ([]Flow, error) {
+	resp, err := c.doRequest(ctx, "GET", fmt.Sprintf("%s/api/v1/flows?limit=%d", c.BaseURL, limit))
 	if err != nil {
 		return nil, fmt.Errorf("get flows failed: %w", err)
 	}
