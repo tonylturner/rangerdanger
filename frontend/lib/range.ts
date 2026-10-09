@@ -10,6 +10,7 @@
 // keyed by package (curriculum-storage.ts).
 
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
+import { errorMessage } from "./utils";
 
 export const RANGE_PHASES = [
   "none",
@@ -183,7 +184,7 @@ export function rangeNotReadyText(phase: RangePhase | null): string {
 // error otherwise.
 export function logLineFor(error: unknown, prefix = ""): string {
   if (isRangeNotReady(error)) return `[RANGE] ${error.message}`;
-  return `[ERROR] ${prefix}${String(error)}`;
+  return `[ERROR] ${prefix}${errorMessage(error)}`;
 }
 
 // The request a student can make from the current state, if any.

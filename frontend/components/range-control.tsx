@@ -13,6 +13,7 @@ import {
   transitionStepNumber,
   type RangeStatus,
 } from "../lib/range";
+import { errorMessage } from "../lib/utils";
 import { packageTitle } from "./range-banner";
 import { RangeConfirmDialog } from "./range-confirm-dialog";
 import { usePackages, useRange, useRangeRequest } from "./range-context";
@@ -23,7 +24,7 @@ export function rangeRequestErrorText(error: unknown): string {
     if (error.status === 409) return "Another range change is already running.";
     if (error.detail) return error.detail;
   }
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 // The package the range runs, or would run if started: the record's

@@ -11,6 +11,7 @@ import {
   type NetworkEvent,
 } from "../lib/api";
 import { isRangeNotReady } from "../lib/range";
+import { errorMessage } from "../lib/utils";
 import { OneLine } from "./substation-one-line";
 import { CommandPanel } from "./substation-commands";
 import { CommandAuditView } from "./substation-audit";
@@ -56,7 +57,7 @@ export function SubstationPanel() {
       setCmdResult(`${res.result}: ${res.process_impact || res.detail}`);
       setTimeout(poll, 500);
     } catch (e) {
-      setCmdResult(isRangeNotReady(e) ? e.message : `Error: ${e}`);
+      setCmdResult(isRangeNotReady(e) ? e.message : `Error: ${errorMessage(e)}`);
     }
   };
 
