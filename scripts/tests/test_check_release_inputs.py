@@ -24,10 +24,15 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         ("file", "scripts/rtac-route-monitor.sh"),
     }
     dnp3_sim = common | {("glob", "dnp3go/*.go")}
+    iec104_sources = {
+        ("dir", "services/iec104/src"),
+        ("file", "services/iec104/LICENSE"),
+        ("file", "services/iec104/README.md"),
+    }
     return {
         "rangerdanger-backend": {("dir", "backend")},
         "rangerdanger-frontend": {("dir", "frontend")},
-        "rangerdanger-kali": {("dir", "dnp3go")},
+        "rangerdanger-kali": {("dir", "dnp3go")} | iec104_sources,
         "rangerdanger-vendor-jump": {
             ("dir", "dnp3go"),
             ("file", "scripts/vendor-jump-services.sh"),
@@ -67,8 +72,21 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("file", "services/opendss-sim/models.py"),
             ("file", "services/opendss-sim/runtime_state.py"),
             ("file", "services/opendss-sim/time_utils.py"),
+            ("file", "services/opendss-sim/eu_app.py"),
+            ("file", "services/opendss-sim/eu_circuit.py"),
+            ("file", "services/opendss-sim/eu_profile.py"),
+            ("file", "services/opendss-sim/eu_truth_loop.py"),
             ("dir", "services/opendss-sim/dss"),
             ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-iec104": iec104_sources | {
+            ("file", "services/iec104/Dockerfile"),
+            ("file", "services/iec104/entrypoint.sh"),
+            ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-feeder-breaker-sim": common | {
+            ("file", "services/Dockerfile"),
+            ("dir", "services/devices"),
         },
     }
 

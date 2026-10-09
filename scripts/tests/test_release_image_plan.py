@@ -15,6 +15,9 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 _DEFAULT_RECORD = object()
+# Images the inventory marks always_build: they build on every plan, so they
+# are never promoted and every decision matrix includes them.
+ALWAYS_BUILD = {"rangerdanger-backend", "rangerdanger-iec104"}
 
 import release_image_plan
 
@@ -232,13 +235,21 @@ class ReleaseImagePlanTests(PlannerFixture):
             for line in output_path.read_text(encoding="utf-8").splitlines()
         )
 
-    def test_docs_change_promotes_15_and_always_builds_backend(self) -> None:
+    def test_docs_change_promotes_16_and_always_builds_backend_and_iec104(self) -> None:
+        self.assertEqual(
+            {image["image"] for image in self.inventory["images"]
+             if image["always_build"]},
+            ALWAYS_BUILD,
+        )
         commit = self._change_commit("README.md", "documentation only\n")
         plan = self._plan(commit=commit)
         decisions = self._decisions(plan)
-        self.assertEqual(decisions["rangerdanger-backend"], "build")
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 15)
-        self.assertEqual(sum(value == "build" for value in decisions.values()), 1)
+        self.assertEqual(
+            {name for name, decision in decisions.items() if decision == "build"},
+            ALWAYS_BUILD,
+        )
+        self.assertEqual(sum(value == "promote" for value in decisions.values()), 16)
+        self.assertEqual(sum(value == "build" for value in decisions.values()), 2)
 
     def test_simulator_input_decision_matrix(self) -> None:
         cases = [
@@ -258,6 +269,7 @@ class ReleaseImagePlanTests(PlannerFixture):
                     "rangerdanger-rtac-sim",
                     "rangerdanger-historian-sim",
                     "rangerdanger-gps-sim",
+                    "rangerdanger-feeder-breaker-sim",
                 },
             ),
             (
@@ -275,6 +287,21 @@ class ReleaseImagePlanTests(PlannerFixture):
                     "rangerdanger-openplc",
                 },
             ),
+            (
+                "services/devices/feederbreaker/model.go",
+                "changed feeder breaker model\n",
+                {"rangerdanger-feeder-breaker-sim"},
+            ),
+            (
+                "services/iec104/src/common.c",
+                "changed IEC 104 source\n",
+                {"rangerdanger-kali"},
+            ),
+            (
+                "services/opendss-sim/eu_app.py",
+                "changed EU solver\n",
+                {"rangerdanger-opendss-sim"},
+            ),
         ]
         for path, content, affected in cases:
             with self.subTest(path=path):
@@ -285,7 +312,7 @@ class ReleaseImagePlanTests(PlannerFixture):
                 build_names = {
                     name for name, decision in decisions.items() if decision == "build"
                 }
-                self.assertEqual(build_names, affected | {"rangerdanger-backend"})
+                self.assertEqual(build_names, affected | ALWAYS_BUILD)
 
     def test_each_global_control_invalidates_every_image(self) -> None:
         count = len(self.inventory["images"])
@@ -366,7 +393,7 @@ class ReleaseImagePlanTests(PlannerFixture):
         self.assertEqual(results["rangerdanger-frontend"]["decision"], "build")
         self.assertIn("object identity unavailable",
                       results["rangerdanger-frontend"]["reason"])
-        self.assertEqual(inspect.call_count, 14)
+        self.assertEqual(inspect.call_count, 15)
 
     def test_rebuild_all_override_builds_every_image_without_registry_access(self) -> None:
         inspect = Mock(side_effect=AssertionError("override must not inspect registry"))
@@ -394,8 +421,11 @@ class ReleaseImagePlanTests(PlannerFixture):
     def test_attestation_descriptors_do_not_change_platform_set(self) -> None:
         plan = self._plan(inspect=self._inspect())
         decisions = self._decisions(plan)
-        self.assertEqual(decisions["rangerdanger-backend"], "build")
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 15)
+        self.assertEqual(
+            {name for name, decision in decisions.items() if decision == "build"},
+            ALWAYS_BUILD,
+        )
+        self.assertEqual(sum(value == "promote" for value in decisions.values()), 16)
 
     def test_real_buildx_registry_shape_and_single_manifest_shape(self) -> None:
         payload = self._inspect()(
@@ -576,13 +606,13 @@ class ReleaseImagePlanTests(PlannerFixture):
             set(matrix["include"][0]),
             {"image", "dockerfile", "target", "platforms", "decision", "source_digest"},
         )
-        self.assertEqual(values["build_count"], "16")
+        self.assertEqual(values["build_count"], "18")
         self.assertEqual(values["promote_count"], "0")
         self.assertEqual(values["frontend_decision"], "build")
 
         promoted = self._plan(tag="v0.1.34-rc.1")
         self.assertEqual(
-            sum(value == "promote" for value in self._decisions(promoted).values()), 15)
+            sum(value == "promote" for value in self._decisions(promoted).values()), 16)
         self.assertEqual(release_image_plan.planned_tags("v0.1.34-rc.1"),
                          ["v0.1.34-rc.1"])
 
