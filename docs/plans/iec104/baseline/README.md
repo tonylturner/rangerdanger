@@ -31,3 +31,9 @@ must not be "fixed" by changing these numbers on this branch.
 
 Recorded in [`suites.md`](suites.md): Go (backend, services, dnp3go) and
 frontend (lint, vitest, build) at the plan commit.
+
+## Gate runs on `iec104`
+
+| Date | Commit | containd digest | Result |
+|---|---|---|---|
+| 2026-10-09 | `7d09667` (increment-0 fixes, source build, macOS) | `sha256:47fdae83…` | firewall 54/54, lab-commands 69 + 1 skipped, events 10/10, substation PASS, test-suite 40/40 (18 auto-passed). Matches baseline. |
