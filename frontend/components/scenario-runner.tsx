@@ -43,6 +43,7 @@ import {
   saveProgress,
 } from "../lib/scenario-runner-storage";
 import { useCurriculumScope } from "../lib/curriculum-scope";
+import { logLineFor } from "../lib/range";
 import {
   POLICY_ACTION_SCENARIOS,
   VALIDATE_BUTTON_SCENARIOS,
@@ -191,7 +192,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       ].slice(0, 100));
       setTimeout(pollState, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 100));
     } finally {
       setAutoRunning(null);
     }
@@ -213,7 +214,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       ].slice(0, 100));
       setTimeout(pollState, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Reset failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Reset failed: "), ...prev].slice(0, 100));
     } finally {
       setResettingLab(false);
     }
@@ -237,7 +238,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         } catch { clearInterval(pollId); setGeneratingTraffic(false); }
       }, 3000);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Traffic generation failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Traffic generation failed: "), ...prev].slice(0, 100));
       setGeneratingTraffic(false);
     }
   };
@@ -260,7 +261,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         } catch { clearInterval(pollId); setCapturing(false); }
       }, 3000);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] Capture failed: ${e}`, ...prev].slice(0, 100));
+      setCmdLog((prev) => [logLineFor(e, "Capture failed: "), ...prev].slice(0, 100));
       setCapturing(false);
     }
   };
@@ -322,7 +323,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
       setTimeout(pollState, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     } finally {
       setExecuting(false);
     }
@@ -338,7 +339,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       setCmdLog((prev) => [msg, ...prev].slice(0, 20));
       setTimeout(pollState, 500);
     } catch (e) {
-      setCmdLog((prev) => [`[ERROR] ${e}`, ...prev].slice(0, 20));
+      setCmdLog((prev) => [logLineFor(e), ...prev].slice(0, 20));
     }
   };
 

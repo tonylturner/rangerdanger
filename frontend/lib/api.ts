@@ -1,4 +1,31 @@
 import { API_BASE_URL } from "./utils";
+import { parseRangeNotReady, reportRangeNotReady, type RangeStatus } from "./range";
+
+// A non-2xx answer. detail is the server's {"error"} text when it sent one.
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+
+  constructor(status: number, detail: string) {
+    super(`Request failed: ${status}`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+async function errorBody(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function errorDetail(body: unknown): string {
+  if (typeof body !== "object" || body === null) return "";
+  const { error } = body as { error?: unknown };
+  return typeof error === "string" ? error : "";
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -11,7 +38,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    const body = await errorBody(res);
+    const notReady = res.status === 503 ? parseRangeNotReady(body) : null;
+    if (notReady) {
+      reportRangeNotReady(notReady);
+      throw notReady;
+    }
+    throw new ApiError(res.status, errorDetail(body));
   }
 
   if (res.status === 204) {
@@ -221,6 +254,19 @@ export async function getActivePackage(): Promise<PackageSummary> {
   const active = (await listPackages()).find((p) => p.active);
   if (!active) throw new Error("The backend reports no active curriculum package");
   return active;
+}
+
+export async function getRange() {
+  return request<RangeStatus>("/range");
+}
+
+// Starts, restarts or switches the range (202 with the new status). 409
+// means another transition is already running; 400 an unknown package.
+export async function requestRange(packageId: string) {
+  return request<RangeStatus>("/range", {
+    method: "POST",
+    body: JSON.stringify({ package: packageId }),
+  });
 }
 
 // Firewall rule summaries for topology edge labels

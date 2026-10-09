@@ -2,9 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getWorkshopStatus, getSubstationHealth } from "../../lib/api";
+import { isRangeNotReady } from "../../lib/range";
 
 export default function WorkshopPage() {
-  const { data: ws } = useQuery({
+  const { data: ws, error: wsError } = useQuery({
     queryKey: ["workshop-status"],
     queryFn: getWorkshopStatus,
     refetchInterval: 5000,
@@ -15,6 +16,10 @@ export default function WorkshopPage() {
     queryFn: getSubstationHealth,
     refetchInterval: 5000,
   });
+
+  // While the range is being replaced its devices are not offline, they
+  // are not there yet; the range banner says why.
+  const waiting = isRangeNotReady(wsError);
 
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
   const onlineCount = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
@@ -36,22 +41,22 @@ export default function WorkshopPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatusCard
               label="containd NGFW"
-              status={ws?.firewall_online ? "online" : "offline"}
+              status={waiting ? "waiting" : ws?.firewall_online ? "online" : "offline"}
               detail={ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
             />
             <StatusCard
               label="RTAC Controller"
-              status={ws?.rtac_online ? "online" : "offline"}
+              status={waiting ? "waiting" : ws?.rtac_online ? "online" : "offline"}
               detail="10.30.30.20"
             />
             <StatusCard
               label="Field Devices"
-              status={onlineCount === deviceCount && deviceCount > 0 ? "online" : onlineCount > 0 ? "degraded" : "offline"}
+              status={waiting ? "waiting" : onlineCount === deviceCount && deviceCount > 0 ? "online" : onlineCount > 0 ? "degraded" : "offline"}
               detail={`${onlineCount}/${deviceCount} responding`}
             />
             <StatusCard
               label="Scenarios"
-              status={ws?.scenario_count && ws.scenario_count > 0 ? "online" : "offline"}
+              status={waiting ? "waiting" : ws?.scenario_count && ws.scenario_count > 0 ? "online" : "offline"}
               detail={`${ws?.scenario_count ?? 0} available`}
             />
           </div>
@@ -101,13 +106,14 @@ export default function WorkshopPage() {
   );
 }
 
-function StatusCard({ label, status, detail }: { label: string; status: "online" | "offline" | "degraded"; detail: string }) {
+function StatusCard({ label, status, detail }: { label: string; status: "online" | "offline" | "degraded" | "waiting"; detail: string }) {
   const colors = {
     online: "border-green-800/60 bg-green-950/20 text-green-400",
     offline: "border-red-800/60 bg-red-950/20 text-red-400",
     degraded: "border-yellow-800/60 bg-yellow-950/20 text-yellow-400",
+    waiting: "border-slate-800 bg-slate-900/40 text-slate-400",
   };
-  const labels = { online: "ONLINE", offline: "OFFLINE", degraded: "DEGRADED" };
+  const labels = { online: "ONLINE", offline: "OFFLINE", degraded: "DEGRADED", waiting: "WAITING" };
   return (
     <div className={`rounded-lg border px-3 py-2 ${colors[status]}`}>
       <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">{label}</div>

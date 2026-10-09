@@ -1,14 +1,14 @@
 import { defineConfig } from "vitest/config";
 
-// Vitest config for pure-TypeScript module tests in frontend/lib/.
-// Component tests (React/JSX) need a richer setup (jsdom + plugin-
-// react + Testing Library) — those would go in a separate config or
-// be added here when the component test surface arrives. For now,
-// scope is the deterministic logic in lib/ that the lab UI hinges
-// on.
+// Vitest config for the frontend. Logic tests live in lib/; component
+// tests in components/ render to static markup with react-dom/server,
+// so everything runs in the node environment without a DOM library.
+// tsconfig keeps "jsx": "preserve" for Next, so the test transform is
+// told to emit the automatic runtime itself.
 export default defineConfig({
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
-    include: ["lib/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "components/**/*.test.tsx"],
     environment: "node",
   },
 });

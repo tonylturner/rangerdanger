@@ -2,6 +2,7 @@ import "./globals.css";
 import { ReactNode } from "react";
 import { ClientProviders } from "../components/client-providers";
 import { NavSidebar } from "../components/nav-sidebar";
+import { RangeScope } from "../components/range-scope";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -10,7 +11,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ClientProviders>
           <div className="flex min-h-screen">
             <NavSidebar />
-            <section className="flex-1">{children}</section>
+            <RangeScope>{children}</RangeScope>
           </div>
         </ClientProviders>
       </body>
