@@ -29,15 +29,18 @@ export function MetricsOverview() {
   // One point per successful fetch (dataUpdatedAt moves even when the
   // answer is unchanged), spaced at least POINT_SPACING_MS apart.
   useEffect(() => {
-    if (!data || dataUpdatedAt - lastPointAt.current < POINT_SPACING_MS) return;
+    // The RTAC answer is proxied verbatim; like the polling loop this
+    // replaced, an answer without the electrical block adds no point.
+    const elec = data?.electrical;
+    if (!elec || dataUpdatedAt - lastPointAt.current < POINT_SPACING_MS) return;
     lastPointAt.current = dataUpdatedAt;
     const time = new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     setHistory((prev) => [
       ...prev,
       {
         time,
-        voltage: data.electrical.downstream_voltage_v ?? 0,
-        critVoltage: data.electrical.critical_load_voltage_v ?? 0,
+        voltage: elec.downstream_voltage_v ?? 0,
+        critVoltage: elec.critical_load_voltage_v ?? 0,
       },
     ].slice(-60));
   }, [data, dataUpdatedAt]);
