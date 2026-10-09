@@ -40,7 +40,7 @@ import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
 import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
 import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
-import { usFeederPolling } from "../lib/operator-view";
+import { isView, US_OPERATOR_VIEW, usFeederPolling } from "../lib/operator-view";
 import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
   POLICY_ACTION_SCENARIOS,
@@ -81,6 +81,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // their own operator status (RunnerOperatorStatus).
   const operatorView = useOperatorView();
   const usFeeder = usFeederPolling(operatorView);
+  // The remediation plan is the US curriculum's Lab 1.4; no other
+  // package has one to point at.
+  const usCurriculum = isView(operatorView, US_OPERATOR_VIEW);
   const stateQuery = useSubstationState(3000, usFeeder);
   const state = stateQuery.data ?? null;
   // No feeder while the range is being replaced; the status cards wait
@@ -451,7 +454,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       </div>
 
       {/* ── Remediation Plan Banner (shown on later exercises) ── */}
-      {!showSummary && <RemediationPlanBanner currentExerciseId={scenario.id} />}
+      {!showSummary && usCurriculum && <RemediationPlanBanner currentExerciseId={scenario.id} />}
 
       {/* ── Summary View ──────────────────────────────────────── */}
       {showSummary && (
