@@ -4,6 +4,8 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: `POST /labs/instances` and every `/labs/instances/:id/...` route except the database-only `GET /labs/instances/:id`, `.../topology`, `.../graph`, `.../metrics` and `.../events`; all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*` and `/containd/*`; `/workshop/*` except `GET /workshop/graph`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+
 ## Health and build info
 
 | Method | Path | Description |
@@ -15,7 +17,44 @@ All endpoints return JSON unless otherwise noted. Most request and response bodi
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/admin/seed` | Reload all YAML lab and scenario definitions from `lab-definitions/` into the database |
+| `POST` | `/admin/seed` | Reload all YAML lab and scenario definitions from `lab-definitions/` into the database. The active package (see `GET /packages`) must still exist. |
+
+## Range
+
+The range is the one Compose project (`rangerdanger`) that runs the active package's containers; the platform (backend, frontend, proxy) runs separately and keeps serving while the range switches. The backend never starts a range on its own: setup, or the UI, asks for one with `POST /range`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/range` | Lifecycle status, `200` with the status body below. |
+| `POST` | `/range` | Start a switch to a package. Body `{"package":"<id>"}`; the body or the field may be omitted, which restarts the active package. Returns `202` with the status body (phase `preflight`). `409 {"error","phase"}` while a switch or the startup reconcile runs; `400 {"error"}` for an unknown package or a malformed body (unknown fields are rejected). Poll `GET /range` until `ready` or `failed`. |
+| `GET` | `/packages` | Curriculum packages: `[{"id","title","revision","active"}]`. `active` marks the range's recorded package, or `RANGERDANGER_PACKAGE` before any range was started. Scenario, workshop and seed routes serve the same package. |
+
+Status body:
+
+```json
+{"generation": 3, "phase": "ready", "package": "us-dnp3-substation", "target": "",
+ "mode": "release", "error": "", "updated_at": "2026-10-09T14:30:00Z"}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `generation` | Increments with every switch that gets past preflight. Range-bound work belongs to one generation; results that land after it stopped are dropped. |
+| `phase` | `none` (no range was ever started), `preflight`, `stopping`, `starting`, `configuring`, `ready`, `failed`. |
+| `package` | The recorded package. From `stopping` on it is the new package; in `preflight` it is still the old one. Empty in `none`. |
+| `target` | The requested package, only in `preflight`; otherwise empty. |
+| `mode` | `source` or `release`: which Compose file of the package runs (`RANGERDANGER_MODE`). |
+| `error` | Why the last switch failed. A failed preflight leaves the phase where it was (for example `ready`, with the old range still serving) and sets `error`; a failure from `stopping` on removes the attempted range and sets phase `failed`. The previous package is not restored automatically; retry or switch. |
+| `updated_at` | When the status last changed; `null` in phase `none`. |
+
+A switch runs these phases, one switch at a time:
+
+1. `preflight` (old range untouched and still served): the package exists, its manifest loads, `docker compose config` succeeds for the mode's Compose file, every image it needs is already present locally (nothing is pulled or built), and its proxy routes and default firewall policy exist.
+2. `stopping`: in-flight range-bound work drains, then the old range is removed by its Compose project label and the removal is verified.
+3. `starting`: `compose up --wait` with no build and no pull (healthchecks have 300 s).
+4. `configuring`: the package's proxy routes are installed (`nginx -t`, then reload; a rejected file is rolled back), the firewall is waited for, and the package's default policy is imported. Every range start imports it, so a student's policy does not survive a switch.
+5. `ready`.
+
+On backend start, a range recorded as `ready` is adopted when every container of its manifest exists and the proxy runs its routes (no restart, no policy import); otherwise the phase becomes `failed` with `range missing: ...`. A switch that was cut short (`stopping`, `starting`, `configuring`) is torn down and recorded as `failed` with `interrupted during <phase>`.
 
 ## Labs
 
@@ -24,7 +63,6 @@ Legacy endpoints for arbitrary lab templates and instances. The current workshop
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/labs/templates` | List lab templates |
-| `POST` | `/labs/templates` | Create or update a lab template |
 | `GET` | `/labs/instances` | List lab instances |
 | `POST` | `/labs/instances` | Create a new instance from a template. Body: `{"template_id": "...", "name": "..."}` |
 | `GET` | `/labs/instances/:id` | Get instance detail including node definitions |
@@ -59,8 +97,7 @@ Exercises are stored internally as "scenarios" for historical reasons - the user
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/scenarios` | List all exercises |
-| `POST` | `/scenarios` | Create an exercise |
+| `GET` | `/scenarios` | List the active package's exercises |
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
 | `POST` | `/scenarios/:id/run` | Start a scenario run against a lab instance |
 | `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute an automated action for a single step (e.g., inject_fault, apply firewall config) |
@@ -109,7 +146,7 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/health` | containd management health, as containd sends it: `{"status":"ok","component","build","time"}`. |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/flows` | containd engine flow table (proxied from containd `GET /api/v1/flows`). Optional `?limit=` 1..5000, default 200; anything else is `400`. Returns `{"flows":[{"flowId","firstSeen","lastSeen","srcIp","dstIp","srcPort","dstPort","transport","application","eventCount","avDetected","avBlocked"}]}`; containd omits empty `srcIp`/`dstIp`/ports/`transport`/`application` and false `av*` fields. `503` with `{"flows":[],"error":"..."}` when containd is unreachable or errors. |
-| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` is set by the backend's policy observer, started in `New`, when it detects a policy committed directly in containd). |
+| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` is set by the backend's policy observer, which runs with each range generation, when it detects a policy committed directly in containd). A new range starts with `active_config` from the package's default policy and an empty `policy_source`. |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
 | `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
 | `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom","policy_source":"plan-custom"}` plus `"warnings": [...]` when containd returned any. The `policy_source` tag lets the UI label the active policy as derived from the student's Lab 1.4 plan rather than a manual containd commit. |
@@ -147,7 +184,7 @@ Unified PCAP API. Uses the containd PCAP subsystem when available, falls back to
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `*` | `/containd/*path` | Transparent HTTP(S) proxy to the containd web UI at `http://firewall:8080/`. Used for same-origin iframe embedding |
+| `*` | `/containd/*path` | Transparent HTTP(S) proxy to the containd web UI at the range manifest's firewall `api` endpoint (`http://10.99.99.2:8080/` for the US package). Used for same-origin iframe embedding |
 
 ## Terminals (WebSocket)
 
