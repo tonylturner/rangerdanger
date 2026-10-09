@@ -106,12 +106,16 @@ Or on Windows:
 What `setup.sh --from-tarballs` does, in order:
 
 1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Disk and
-   memory readings are advisory: setup warns below 30 GB free on the
-   checkout filesystem and below 7 whole GiB of reported memory (8 GB
-   recommended). Linux-native Docker can fall back to host RAM. It does
-   not measure Docker's storage volume or check macOS host RAM.
-   `--check-only` runs just this stage and exits.
+   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Ports held
+   by an already-running RangerDanger lab stop an install, which prints
+   the commands to stop and refresh it; anything else holding them
+   fails. Disk and memory readings are advisory: setup warns below
+   30 GB free on the checkout filesystem and below 7 whole GiB of
+   reported memory (8 GB recommended). Linux-native Docker can fall back
+   to host RAM. It does not measure Docker's storage volume or check
+   macOS host RAM. `--check-only` runs just this stage and exits; it
+   passes when the ports are held by the running lab, so it also works
+   as a night-before check on an installed laptop.
 2. **`docker load`** the matching `images-<arch>.tar` every time.
    Docker deduplicates existing layers by content hash.
 3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The

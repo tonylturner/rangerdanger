@@ -6,12 +6,39 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Host-side Windows script fix only: no image, kernel, or lab content
-changes, so `setup.ps1 -Version v0.1.34` still installs the v0.1.34
-release unchanged.
+Host-side setup script fixes only: no image, kernel, or lab content
+changes, so `setup.sh --version v0.1.34` and `setup.ps1 -Version v0.1.34`
+still install the v0.1.34 release unchanged.
 
 ### Fixed
 
+- **The night-before preflight passes on a laptop that already runs the
+  lab.** `./setup.sh --check-only` and `.\setup.ps1 -CheckOnly` failed
+  on the student's own running lab, because it holds ports 8088, 9080,
+  9443 and 2222. Ports published by the running `rangerdanger` Compose
+  project now pass with "RangerDanger is already installed and running".
+  An install on such a laptop stops and prints the commands to stop and
+  refresh the lab. A port held by anything else still fails both.
+- **`setup.sh` no longer reports ports free when `lsof` is missing.**
+  The port check now connects to each loopback port with bash's
+  `/dev/tcp`, so it needs no extra tool on macOS or Linux; `lsof`, when
+  present, only names the process holding a port. If the probe cannot
+  run, the preflight fails instead of passing.
+- **Offline Windows installs can probe the WSL2 kernel.** The
+  `CONFIG_NFT_QUEUE` probe fell back to an Alpine container that
+  installs nftables from the network, and `setup.ps1 -FromTarballs` ran
+  it before loading the SSD images, so an offline laptop reported the
+  kernel as missing when the probe simply could not run. `-FromTarballs`
+  now loads the images first and probes in a no-network container from
+  the loaded containd firewall image; Alpine is used only when that
+  image is absent. When no probe can run, the result is "unknown"
+  (`install-wsl-kernel.ps1 -Test` exit 13), never "missing", and
+  `-CheckOnly -FromTarballs` says setup will probe after loading the SSD
+  images. An SSD staged without the kernel now downloads it for the
+  SSD's `.version`, not for `latest`. The online install still probes
+  and installs the kernel before pulling images.
+- **`setup.ps1` runs under PowerShell 7.** It called `Get-WmiObject`,
+  which PowerShell 7 removed, and stopped before any check ran.
 - **Windows setup and uninstall no longer hang after the WSL2 kernel
   restart.** After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can
   fail to restart its VM (`running wsl-bootstrap: exit status 1`) and
