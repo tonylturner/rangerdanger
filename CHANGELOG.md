@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The RTAC starts only after its network is configured.** The
+  container used to background its gateway, hardening and management
+  setup together with the simulator, so the simulator could serve
+  traffic before the routes were in place, and a failed setup step went
+  unnoticed. Setup now runs first; a failed step stops the container and
+  Docker restarts it.
+- **Firewall events show their protocol.** The backend read
+  containd's event protocol and ICS function codes under the wrong JSON
+  keys, so DPI events had no protocol tag and every rule's function-code
+  list was empty. The activity feed and substation audit now tag Modbus
+  and DNP3 events. A rule is labelled "R/O" only when it really allows
+  only reads, not whenever it lists four or fewer function codes.
+
 ## [v0.1.34] - 2026-10-08
 
 The pre-course release. Every image is rebuilt from fresh upstream bases
