@@ -59,6 +59,12 @@ still install the v0.1.34 release unchanged.
   re-running setup while that dialog is open fails fast with the same
   guidance. Docker Desktop 4.94 recovers from the restart without the
   dialog; the quickstart troubleshooting list now covers it.
+- **CI image builds no longer fail on Docker Hub's anonymous pull
+  limit.** Smoke and Release build from Docker Hub base images, and
+  anonymous pulls from shared GitHub runners hit `429 Too Many
+  Requests`. Both workflows now log in to Docker Hub when the
+  repository has `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets;
+  forks without them still pull anonymously.
 
 ## [v0.1.34] - 2026-10-08
 
