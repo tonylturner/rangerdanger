@@ -43,6 +43,15 @@ still install the v0.1.34 release unchanged.
   means Docker itself failed. An SSD staged without the kernel now
   downloads it for the SSD's `.version`, not for `latest`. `setup.ps1
   -FromTarballs` also stops when `docker load` fails.
+- **`stage-ssd.ps1` no longer needs Python.** It verified each saved
+  image archive by passing an inline script to `python3 -c`, which
+  failed on Windows twice over: `python3` is usually the Microsoft
+  Store stub, and Windows PowerShell 5.1 strips the double quotes
+  embedded in native-command arguments, so even a real Python got a
+  mangled script. It now reads each archive's `manifest.json` with the
+  `tar.exe` built into Windows 10 and 11 and checks the same things
+  natively: every expected tag present, every first-party tag at the
+  bundle's `.version`.
 - **`setup.ps1` runs under PowerShell 7.** It called `Get-WmiObject`,
   which PowerShell 7 removed, and stopped before any check ran.
 - **Windows setup and uninstall no longer hang after the WSL2 kernel
