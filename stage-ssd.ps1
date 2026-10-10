@@ -56,8 +56,13 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
-if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
-    Die "python3 is required to verify the saved Docker archive manifests. Install Python 3 and ensure python3 is on PATH."
+# tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
+# saved archives' manifest.json for verification -- no Python needed.
+$TarExe = Join-Path $env:SystemRoot "System32\tar.exe"
+if (-not (Test-Path $TarExe)) {
+    $tarCmd = Get-Command tar -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $tarCmd) { Die "tar.exe is required to verify the saved Docker archives (built into Windows 10 1803+ and Windows 11)." }
+    $TarExe = $tarCmd.Source
 }
 
 # --- Enumerate images from compose --------------------------------------
@@ -316,74 +321,46 @@ Say "wrote $verPath ($Version)"
 
 # docker save archives expose their RepoTags in manifest.json. Verify the
 # complete requested tag set, including the version marker, before the
-# bundle is reported as complete. Python parses the Docker archive only;
-# it does not contact Docker or the registry.
-$verifyArchiveScript = @'
-import json
-import sys
-import tarfile
-
-archive_path, version_path, *expected = sys.argv[1:]
-with open(version_path, encoding="utf-8") as version_file:
-    version = version_file.read().strip()
-if not version:
-    raise SystemExit(f"{version_path} is empty")
-
-try:
-    with tarfile.open(archive_path, "r:*") as archive:
-        member = archive.extractfile("manifest.json")
-        if member is None:
-            raise KeyError("manifest.json")
-        manifest = json.load(member)
-except (OSError, KeyError, tarfile.TarError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"cannot verify {archive_path}: invalid Docker save manifest: {exc}")
-
-actual = {
-    tag
-    for image in manifest
-    for tag in (image.get("RepoTags") or [])
-}
-missing = sorted(set(expected) - actual)
-first_party = sorted(
-    tag for tag in actual
-    if tag.startswith("ghcr.io/tonylturner/rangerdanger-")
-)
-wrong_version = sorted(
-    tag for tag in first_party
-    if tag.rpartition(":")[2] != version
-)
-if missing or wrong_version:
-    if missing:
-        print("missing saved image tags: " + ", ".join(missing), file=sys.stderr)
-    if wrong_version:
-        print(
-            f"first-party image tags do not match .version={version}: "
-            + ", ".join(wrong_version),
-            file=sys.stderr,
-        )
-    raise SystemExit(1)
-print(
-    f"verified {archive_path}: all {len(expected)} enumerated image tags are present; "
-    f"first-party tags match .version={version}"
-)
-'@
-
+# bundle is reported as complete. Only the archive is read; nothing
+# contacts Docker or the registry. Native tar.exe + ConvertFrom-Json
+# rather than an inline `python -c` script (the stage-ssd.sh approach):
+# Windows laptops often have no real Python (python3 is a Store stub),
+# and PS 5.1 strips embedded double quotes from native-exe arguments,
+# which broke the inline script outright.
 function Verify-Archive($arch, $expectedTags) {
     $archivePath = Join-Path $OutDir "images-$arch.tar"
-    $errorFile = [System.IO.Path]::GetTempFileName()
+    $version = (Get-Content -Path $verPath -Raw).Trim()
+    if (-not $version) { Die "$verPath is empty" }
+
+    $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-verify-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $extractDir | Out-Null
     try {
-        $verificationOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & python3 -c $verifyArchiveScript $archivePath $verPath @($expectedTags) 2> $errorFile
+        & { $ErrorActionPreference = 'SilentlyContinue'; & $TarExe -xf $archivePath -C $extractDir manifest.json *>$null }
+        $manifestPath = Join-Path $extractDir "manifest.json"
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $manifestPath)) {
+            Die "cannot verify ${archivePath}: no manifest.json (not a Docker save archive?)"
         }
-        $verifyStatus = $LASTEXITCODE
-        $verifyError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
+        try {
+            $manifest = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
+        } catch {
+            Die "cannot verify ${archivePath}: invalid Docker save manifest: $_"
+        }
     } finally {
-        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if ($verificationOutput) { $verificationOutput | ForEach-Object { Write-Host $_ } }
-    if ($verifyError) { Write-Host $verifyError.TrimEnd() }
-    if ($verifyStatus -ne 0) { Die "$arch archive verification failed" }
+
+    $actual = @{}
+    foreach ($image in @($manifest)) {
+        foreach ($tag in @($image.RepoTags)) { if ($tag) { $actual[$tag] = $true } }
+    }
+    $missing = @($expectedTags | Where-Object { -not $actual.ContainsKey($_) } | Sort-Object -Unique)
+    $wrongVersion = @($actual.Keys |
+        Where-Object { $_.StartsWith("ghcr.io/tonylturner/rangerdanger-") -and ($_.Substring($_.LastIndexOf(':') + 1) -ne $version) } |
+        Sort-Object)
+    if ($missing.Count -gt 0) { Write-Host ("missing saved image tags: " + ($missing -join ", ")) }
+    if ($wrongVersion.Count -gt 0) { Write-Host ("first-party image tags do not match .version=${version}: " + ($wrongVersion -join ", ")) }
+    if ($missing.Count -gt 0 -or $wrongVersion.Count -gt 0) { Die "$arch archive verification failed" }
+    Write-Host "verified ${archivePath}: all $(@($expectedTags).Count) enumerated image tags are present; first-party tags match .version=$version"
 }
 
 Verify-Archive amd64 $AMD64_TAGS
