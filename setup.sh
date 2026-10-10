@@ -6,7 +6,8 @@
 #   ./setup.sh                              # pull pre-built images from GHCR (default)
 #   ./setup.sh --version v0.1.0             # pin to a specific release
 #   ./setup.sh --from-tarballs <PATH>       # offline: docker load from images-<arch>.tar
-#   ./setup.sh --check-only                 # run pre-flight only and exit (no install)
+#   ./setup.sh --check-only                 # run pre-flight only and exit (no install);
+#                                           # passes on an already-running lab
 #   ./setup.sh --skip-firewall-gate         # bring stack up without the workshop
 #                                           # firewall apply/reset gate (developer
 #                                           # iteration on a known-broken stack)
@@ -69,7 +70,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$SHOW_HELP" -eq 1 ]; then
-    sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+    sed -n '2,/^$/p' "$0" | sed -e 's/^# //' -e 's/^#$//'
     exit 0
 fi
 
@@ -188,28 +189,124 @@ else
     warn "Could not determine memory — verify manually with 'free -g' or Docker Desktop → Resources."
 fi
 
-# Required host ports — show what's holding any conflict so the user
-# doesn't have to dig with lsof themselves.
-PORTS_REQUIRED="8088 9080 9443 2222"
-PORTS_BUSY=""
-PORT_DETAILS=""
-for port in $PORTS_REQUIRED; do
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-        PORTS_BUSY="$PORTS_BUSY $port"
-        # Pull the first matching process line for the diagnostic message.
-        proc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, "pid="$2}')
-        PORT_DETAILS="$PORT_DETAILS\n    $port: $proc"
+# ─── required host ports ────────────────────────────────────────────
+# Probe each port by connecting to it with bash's /dev/tcp (no lsof, nc or
+# ss needed; works in macOS bash 3.2 and Linux bash). Sets PORT_STATE to
+# free (connection refused), busy (the connect succeeded, or a listener that
+# is not accepting let it time out or reset it), or unknown (the probe itself
+# could not run, e.g. a bash built without /dev/tcp; PORT_ERR has bash's
+# message). LC_ALL=C keeps those messages unlocalized.
+probe_port() {
+    local out
+    PORT_ERR=""
+    if out=$( (LC_ALL=C; exec 3<>"/dev/tcp/127.0.0.1/$1") 2>&1 ); then
+        PORT_STATE=busy
+        return
     fi
+    case "$out" in
+        *"Connection refused"*) PORT_STATE=free ;;
+        *"timed out"*|*"Connection reset"*) PORT_STATE=busy ;;
+        *) PORT_STATE=unknown; PORT_ERR=${out##*: } ;;
+    esac
+}
+
+# Host ports published by running containers of the installed lab: Compose
+# project "rangerdanger" (docker-compose.release.yml and docker-compose.yml
+# both set `name: rangerdanger`). A busy required port in this set is the
+# student's own running lab, not a conflict.
+lab_held_ports() {
+    docker ps --filter label=com.docker.compose.project=rangerdanger --format '{{.Ports}}' 2>/dev/null \
+        | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
+}
+
+# When the running lab holds every required port, --check-only passes (the
+# "night before" check on an installed laptop) and an install stops with
+# how to refresh. A lab holding only some of them (e.g. the firewall is up
+# but the proxy on 8088 is not) is partly running and fails both, with the
+# same stop-and-re-run commands. Anything else holding a port fails both;
+# lsof, when present, names it.
+PORTS_REQUIRED="8088 9080 9443 2222"
+PORTS_FREE=""
+PORTS_LAB=""
+PORTS_FOREIGN=""
+PORTS_UNKNOWN=""
+PORT_DETAILS=""
+LAB_HELD=" $(lab_held_ports) " || LAB_HELD=" "
+for port in $PORTS_REQUIRED; do
+    probe_port "$port"
+    case "$PORT_STATE" in
+        free) PORTS_FREE="$PORTS_FREE $port" ;;
+        unknown) PORTS_UNKNOWN="$PORTS_UNKNOWN $port" ;;
+        busy)
+            case "$LAB_HELD" in
+                *" $port "*) PORTS_LAB="$PORTS_LAB $port" ;;
+                *)
+                    PORTS_FOREIGN="$PORTS_FOREIGN $port"
+                    proc=""
+                    if command -v lsof >/dev/null 2>&1; then
+                        proc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, "pid="$2}') || proc=""
+                    fi
+                    PORT_DETAILS="$PORT_DETAILS
+    $port: ${proc:-held by a process this check cannot name}"
+                    ;;
+            esac
+            ;;
+    esac
 done
-if [ -n "$PORTS_BUSY" ]; then
-    die "Required loopback ports already in use:$PORTS_BUSY$(printf "$PORT_DETAILS")
+if [ -n "$PORTS_FOREIGN" ]; then
+    lab_note=""
+    [ -z "$PORTS_LAB" ] || lab_note="
+  (Ports$PORTS_LAB are held by your running RangerDanger lab; that is fine.)"
+    die "Required loopback ports already in use:$PORTS_FOREIGN$PORT_DETAILS$lab_note
   Stop whatever is bound to them, then re-run. (kill the PID above, or
   bring down a competing dev stack.)"
 fi
-say "Loopback ports 8088, 9080, 9443, 2222 are free"
+if [ -n "$PORTS_UNKNOWN" ]; then
+    die "Could not test loopback ports:$PORTS_UNKNOWN (bash /dev/tcp connect failed: $PORT_ERR).
+  This check never reports a port free without a working probe. Check by
+  hand what listens on them, e.g. 'lsof -nP -iTCP -sTCP:LISTEN' or 'ss -ltn'."
+fi
+# The explicit release (+ offline) files, as docs/quickstart.md uses them:
+# a bare `docker compose` selects the source stack.
+DOWN_CMD="docker compose -f docker-compose.release.yml"
+[ -z "$TARBALL_DIR" ] || DOWN_CMD="$DOWN_CMD -f docker-compose.offline.yml"
+DOWN_CMD="$DOWN_CMD down"
+RERUN_CMD="./setup.sh"
+[ "$VERSION" = "latest" ] || RERUN_CMD="$RERUN_CMD --version $VERSION"
+[ -z "$TARBALL_DIR" ] || RERUN_CMD="$RERUN_CMD --from-tarballs \"$TARBALL_DIR\""
+if [ -n "$PORTS_LAB" ]; then
+    # Foreign and unknown ports died above, so the rest are free.
+    if [ -n "$PORTS_FREE" ]; then
+        die "RangerDanger is only partly running: it holds loopback ports$PORTS_LAB,
+  but nothing listens on$PORTS_FREE.
+  Stop the lab, then re-run setup:
+    $DOWN_CMD
+    $RERUN_CMD"
+    fi
+    if [ "$CHECK_ONLY" -ne 1 ]; then
+        die "RangerDanger is already installed and running (it holds loopback ports$PORTS_LAB).
+  To check it without reinstalling:  ./setup.sh --check-only
+  To refresh or reinstall it, stop it first, then re-run setup:
+    $DOWN_CMD
+    $RERUN_CMD"
+    fi
+    say "RangerDanger is already installed and running on loopback ports$PORTS_LAB"
+fi
+[ -z "$PORTS_FREE" ] || say "Free loopback ports:$PORTS_FREE"
 
 # ─── check-only short-circuit ───────────────────────────────────────
 if [ "$CHECK_ONLY" -eq 1 ]; then
+    if [ -n "$PORTS_LAB" ]; then
+        banner "Pre-flight passed — RangerDanger is already installed and running"
+        cat <<EOF
+  Open http://localhost:8088. To refresh or reinstall it, stop it first,
+  then re-run setup:
+
+    $DOWN_CMD
+    $RERUN_CMD
+EOF
+        exit 0
+    fi
     banner "Pre-flight passed — laptop is ready"
     cat <<EOF
   All checks above passed. To install:
@@ -271,15 +368,18 @@ else
     fi
 fi
 
-# ─── pin VERSION in .env so bare `docker compose` works after install ──
+# ─── pin VERSION in .env for later release-file compose commands ────
 # Without this, a student who runs `./setup.sh --from-tarballs <SSD>` and
-# later wants to run `docker compose -f docker-compose.release.yml
+# later runs `docker compose -f docker-compose.release.yml
 # -f docker-compose.offline.yml up -d` directly will hit
 # `No such image: ...:latest` because compose interpolates
 # `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
-# Writing the resolved VERSION to .env (compose auto-loads .env from
-# cwd) makes the bare compose invocation work the same as it did via
-# setup.sh. .env is gitignored, so this is safe to write into the repo.
+# Compose auto-loads .env from the project directory (the repo root), so
+# writing the resolved VERSION there makes those explicit release-file
+# commands use the tag setup.sh installed. A bare `docker compose` with no
+# -f still selects the source stack (docker-compose.yml), not the release
+# one; see docs/quickstart.md. .env is gitignored, so this is safe to
+# write into the repo.
 # Idempotent: replaces an existing VERSION= line, appends if absent.
 ENV_FILE="$ROOT_DIR/.env"
 if [ -f "$ENV_FILE" ] && grep -q "^VERSION=" "$ENV_FILE"; then

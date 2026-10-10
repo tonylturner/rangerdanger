@@ -6,12 +6,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Host-side Windows script fix only: no image, kernel, or lab content
-changes, so `setup.ps1 -Version v0.1.34` still installs the v0.1.34
-release unchanged.
+Host-side setup script fixes only: no image, kernel, or lab content
+changes, so `setup.sh --version v0.1.34` and `setup.ps1 -Version v0.1.34`
+still install the v0.1.34 release unchanged.
 
 ### Fixed
 
+- **The night-before preflight passes on a laptop that already runs the
+  lab.** `./setup.sh --check-only` and `.\setup.ps1 -CheckOnly` failed
+  on the student's own running lab, because it holds ports 8088, 9080,
+  9443 and 2222. When running containers of the `rangerdanger` Compose
+  project publish all four, the check now passes with "RangerDanger is
+  already installed and running". A lab holding only some of them (for
+  example the firewall is up but the portal on 8088 is not) is reported
+  as partly running, naming the ports held and missing, and fails with
+  the commands to stop the lab and re-run setup. An install on a laptop
+  with the lab up stops and prints the same commands. A port held by
+  anything else still fails both.
+- **`setup.sh` no longer reports ports free when `lsof` is missing.**
+  The port check now connects to each loopback port with bash's
+  `/dev/tcp`, so it needs no extra tool on macOS or Linux; `lsof`, when
+  present, only names the process holding a port. If the probe cannot
+  run, the preflight fails instead of passing.
+- **Offline Windows installs can probe the WSL2 kernel.** The
+  `CONFIG_NFT_QUEUE` probe fell back to an Alpine container that
+  installs nftables from the network, and `setup.ps1` ran it before
+  pulling or loading any image, so an offline laptop reported the
+  kernel as missing when the probe simply could not run. `setup.ps1`
+  now pulls or loads the images first, then probes in a no-network
+  container from the local containd firewall image, installs the lab
+  kernel if needed, and only then starts the stack. Alpine is used only
+  when that image is absent. When no probe can run, the result is
+  "unknown" (`install-wsl-kernel.ps1 -Test` exit 13), never "missing":
+  `-CheckOnly` warns that setup probes after it pulls or loads the
+  images, and an install stops, because with the images present that
+  means Docker itself failed. An SSD staged without the kernel now
+  downloads it for the SSD's `.version`, not for `latest`. `setup.ps1
+  -FromTarballs` also stops when `docker load` fails.
+- **`setup.ps1` runs under PowerShell 7.** It called `Get-WmiObject`,
+  which PowerShell 7 removed, and stopped before any check ran.
 - **Windows setup and uninstall no longer hang after the WSL2 kernel
   restart.** After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can
   fail to restart its VM (`running wsl-bootstrap: exit status 1`) and

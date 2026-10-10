@@ -106,14 +106,24 @@ Or on Windows:
 What `setup.sh --from-tarballs` does, in order:
 
 1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Disk and
-   memory readings are advisory: setup warns below 30 GB free on the
-   checkout filesystem and below 7 whole GiB of reported memory (8 GB
-   recommended). Linux-native Docker can fall back to host RAM. It does
-   not measure Docker's storage volume or check macOS host RAM.
-   `--check-only` runs just this stage and exits.
+   recognized, and ports `8088 / 9080 / 9443 / 2222` free. Ports held
+   by an already-running RangerDanger lab stop an install, which prints
+   the commands to stop and refresh it; anything else holding them
+   fails. Disk and memory readings are advisory: setup warns below
+   30 GB free on the checkout filesystem and below 7 whole GiB of
+   reported memory (8 GB recommended). Linux-native Docker can fall back
+   to host RAM. It does not measure Docker's storage volume or check
+   macOS host RAM. `--check-only` runs just this stage and exits; it
+   passes when the running lab holds all four ports, so it also works
+   as a night-before check on an installed laptop. A lab holding only
+   some of them is reported as partly running and fails, with the
+   commands to stop it and re-run setup.
 2. **`docker load`** the matching `images-<arch>.tar` every time.
-   Docker deduplicates existing layers by content hash.
+   Docker deduplicates existing layers by content hash. On Windows,
+   `setup.ps1 -FromTarballs` then probes the WSL2 kernel in the loaded
+   containd image (no network needed) and, if `CONFIG_NFT_QUEUE` is
+   missing, installs the bundled kernel. That runs `wsl --shutdown`,
+   which restarts Docker Desktop before the stack starts.
 3. **`docker compose -f docker-compose.release.yml -f docker-compose.offline.yml up -d`**. The
    offline overlay sets `pull_policy: never` on every release-image
    service so a slow/blocked GHCR can't ruin the day.

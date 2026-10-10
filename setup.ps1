@@ -14,9 +14,10 @@ Path to a directory containing 'images-amd64.tar' (or 'images-arm64.tar'
 for ARM Windows). Used for offline / SSD installs.
 
 .PARAMETER CheckOnly
-Run pre-flight checks (Docker, Compose, ports, disk, memory) and exit
-without installing. Useful for a pre-workshop "is my laptop ready?"
-check.
+Run pre-flight checks (Docker, Compose, ports, disk, memory, WSL2 kernel)
+and exit without installing. Useful for a pre-workshop "is my laptop
+ready?" check, before or after installing: ports held by an
+already-running RangerDanger lab pass.
 
 .EXAMPLE
 .\setup.ps1
@@ -75,36 +76,20 @@ if (-not (Test-Path $ComposeFile)) {
 }
 
 # Docker engine.
-# Note: docker info can emit harmless warnings to stderr (e.g.
-# "WARNING: No blkio throttle.read_bps_device support" on WSL2 +
-# cgroups v1). Under Windows PowerShell 5.1 + $ErrorActionPreference =
-# "Stop", any native-exe stderr is wrapped as a NativeCommandError and
-# throws -- even with `2>$null` or `*>$null`, because Stop intercepts
-# before the redirect is fully applied. Lower ErrorAction in a child
-# scope so the warning is genuinely discarded, then trust $LASTEXITCODE.
-#
-# The probe also runs as a child process with a timeout: when Docker
-# Desktop's VM has died (e.g. after a `wsl --shutdown`) and it is sitting
-# on its Restart/Quit error dialog, `docker info` blocks forever instead
-# of failing. Same pattern as Get-DockerInfoBounded in
-# scripts\install-wsl-kernel.ps1.
+# Every docker call that talks to the daemon goes through the bounded
+# helpers in scripts\lib\docker-bounded.ps1 (shared with
+# scripts\install-wsl-kernel.ps1): when Docker Desktop's VM has died (e.g.
+# after a `wsl --shutdown`) and it is sitting on its Restart/Quit error
+# dialog, `docker info` and friends block forever instead of failing.
+. (Join-Path (Join-Path (Join-Path $PSScriptRoot 'scripts') 'lib') 'docker-bounded.ps1')
+
 $dockerExe = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $dockerExe) { Die "Docker is not installed (docker CLI not on PATH). Install Docker Desktop, then re-run." }
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $dockerExe.Source
-$psi.Arguments = "info"
-$psi.UseShellExecute = $false
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.CreateNoWindow = $true
-$infoProc = [System.Diagnostics.Process]::Start($psi)
-$null = $infoProc.StandardOutput.ReadToEndAsync()
-$null = $infoProc.StandardError.ReadToEndAsync()
-if (-not $infoProc.WaitForExit(30000)) {
-    try { $infoProc.Kill() } catch { }
+$dockerInfo = Invoke-DockerBounded @('info') 30
+if ($dockerInfo.TimedOut) {
     Die "Docker is not responding ('docker info' timed out after 30 s). If Docker Desktop shows an error dialog, click Restart; otherwise quit and restart Docker Desktop. Wait for 'Engine running', then re-run."
 }
-if ($infoProc.ExitCode -ne 0) { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
+if ($dockerInfo.ExitCode -ne 0) { Die "Docker is not running or not installed. Start Docker Desktop, then re-run." }
 Say "Docker reachable"
 
 # Compose v2
@@ -114,8 +99,14 @@ if ($LASTEXITCODE -ne 0 -or -not $composeVer) {
 }
 Say "Compose v2 present ($composeVer)"
 
-# Architecture
-$archRaw = (Get-WmiObject Win32_Processor -ErrorAction SilentlyContinue).Architecture
+# Architecture. Get-CimInstance, not Get-WmiObject: PowerShell 7 removed
+# Get-WmiObject, and calling it there is a terminating error under
+# $ErrorActionPreference = "Stop". Any CIM failure falls back to the
+# environment variable below.
+$archRaw = $null
+try {
+    $archRaw = (Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1).Architecture
+} catch { }
 switch ($archRaw) {
     9   { $arch = "amd64" }      # x64
     12  { $arch = "arm64" }      # ARM64
@@ -138,11 +129,9 @@ if ($freeGB -lt 30) {
 }
 
 # Docker memory (Docker Desktop reports its allocation via 'docker info').
-# Same NativeCommandError trap as above -- run in a child scope with
-# ErrorAction relaxed so any benign stderr warning (blkio etc.) does not
-# blow up parsing of the MemTotal field.
-$memRaw = & { $ErrorActionPreference = 'SilentlyContinue'; docker info --format '{{.MemTotal}}' 2>$null }
-$memBytes = if ($memRaw) { [int64]$memRaw } else { 0 }
+$memRun = Invoke-DockerBounded @('info', '--format', '{{.MemTotal}}') 30
+$memBytes = [int64]0
+if ($memRun -and $memRun.ExitCode -eq 0) { $null = [int64]::TryParse($memRun.StdOut.Trim(), [ref]$memBytes) }
 if ($memBytes -gt 0) {
     $memGB = [math]::Round($memBytes / 1GB)
     if ($memGB -lt 7) {
@@ -152,18 +141,40 @@ if ($memBytes -gt 0) {
     }
 }
 
-# Required ports -- bind a TcpListener briefly to confirm free, and
-# look up the holding process when one is busy so the user doesn't
-# have to dig with netstat.
+# Host ports published by running containers of the installed lab: Compose
+# project "rangerdanger" (docker-compose.release.yml and docker-compose.yml
+# both set `name: rangerdanger`). A busy required port in this set is the
+# student's own running lab, not a conflict.
+function Get-LabHeldPorts {
+    $r = Invoke-DockerBounded @('ps', '--filter', 'label=com.docker.compose.project=rangerdanger', '--format', '{{.Ports}}') 15
+    if (-not $r -or $r.ExitCode -ne 0) { return @() }
+    @([regex]::Matches($r.StdOut, ':(\d+)->') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
+}
+
+# Required ports -- bind a TcpListener briefly to confirm free. When the
+# running lab holds every one of them, -CheckOnly passes (the "night
+# before" check on an installed laptop) and an install stops with how to
+# refresh. Anything else holding a port fails both, with the holding
+# process when we can find it.
+$portsRequired = @(8088, 9080, 9443, 2222)
 $portsBusy = @()
-$portDetails = @()
-foreach ($port in 8088, 9080, 9443, 2222) {
+foreach ($port in $portsRequired) {
     try {
         $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
         $listener.Start()
         $listener.Stop()
     } catch {
         $portsBusy += $port
+    }
+}
+$labPorts = @()
+$foreignPorts = @()
+$portDetails = @()
+if ($portsBusy.Count -gt 0) {
+    $labHeld = @(Get-LabHeldPorts)
+    foreach ($port in $portsBusy) {
+        if ($labHeld -contains $port) { $labPorts += $port; continue }
+        $foreignPorts += $port
         try {
             $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($conn) {
@@ -174,75 +185,100 @@ foreach ($port in 8088, 9080, 9443, 2222) {
         } catch { }
     }
 }
-if ($portsBusy.Count -gt 0) {
-    $msg = "Required loopback ports already in use: " + ($portsBusy -join ", ")
+if ($foreignPorts.Count -gt 0) {
+    $msg = "Required loopback ports already in use: " + ($foreignPorts -join ", ")
     if ($portDetails.Count -gt 0) {
         $msg += "`n" + ($portDetails -join "`n")
+    }
+    if ($labPorts.Count -gt 0) {
+        $msg += "`n  (Ports " + ($labPorts -join ", ") + " are held by your running RangerDanger lab; that is fine.)"
     }
     $msg += "`n  Stop whatever is bound to them, then re-run. (kill the PID above, or"
     $msg += "`n  bring down a competing dev stack.)"
     Die $msg
 }
-Say "Loopback ports 8088, 9080, 9443, 2222 are free"
+# The explicit release (+ offline) files, as docs/quickstart.md uses them:
+# a bare `docker compose` selects the source stack.
+$downCmd = "docker compose -f docker-compose.release.yml"
+if ($FromTarballs) { $downCmd += " -f docker-compose.offline.yml" }
+$downCmd += " down"
+$rerunCmd = ".\setup.ps1"
+if ($Version -ne "latest") { $rerunCmd += " -Version $Version" }
+if ($FromTarballs) { $rerunCmd += " -FromTarballs `"$FromTarballs`"" }
+# Foreign ports died above, so every required port the lab does not hold
+# is free. A lab holding only some of them (e.g. the firewall is up but the
+# proxy on 8088 is not) is partly running and fails -CheckOnly and install
+# alike, with the same stop-and-re-run commands.
+$portsFree = @($portsRequired | Where-Object { $labPorts -notcontains $_ })
+if ($labPorts.Count -gt 0) {
+    $labList = $labPorts -join ", "
+    if ($portsFree.Count -gt 0) {
+        Die @"
+RangerDanger is only partly running: it holds loopback ports $labList,
+  but nothing listens on $($portsFree -join ", ").
+  Stop the lab, then re-run setup:
+    $downCmd
+    $rerunCmd
+"@
+    }
+    if (-not $CheckOnly) {
+        Die @"
+RangerDanger is already installed and running (it holds loopback ports $labList).
+  To check it without reinstalling:  .\setup.ps1 -CheckOnly
+  To refresh or reinstall it, stop it first, then re-run setup:
+    $downCmd
+    $rerunCmd
+"@
+    }
+    Say "RangerDanger is already installed and running on loopback ports $labList"
+}
+if ($portsFree.Count -gt 0) {
+    Say ("Free loopback ports: " + ($portsFree -join ", "))
+}
 
-# --- WSL2 kernel feature probe (Windows + WSL2 backend only) ---------
+# --- WSL2 kernel (Windows + WSL2 backend only) ------------------------
 # Microsoft's stock WSL2 kernel does not enable CONFIG_NFT_QUEUE, which
-# silently breaks the ICS DPI rules in Lab 2.3 / 2.3-bonus. Probe here
-# (cheap; just runs `nft ... queue num` inside a Linux container) so
-# the user knows BEFORE we pull 6 GB of images. The actual install
-# step runs after the -CheckOnly short-circuit so we don't modify
-# .wslconfig in a probe-only invocation.
+# silently breaks the ICS DPI rules in Lab 2.3 / 2.3-bonus.
+# install-wsl-kernel.ps1 -Test probes it with `nft ... queue num` inside a
+# Linux container and exits:
+#   0  = kernel already good
+#   1  = kernel needs install
+#   2  = not on Windows / not WSL2 backend (skip silently)
+#   13 = no probe could run, so support is unknown (no running firewall,
+#        no local firewall image, and the Alpine fallback had no network)
+# An install probes only after it has pulled or loaded the images, so the
+# probe runs in the local containd firewall image with no network and 13
+# there is a real fault. -CheckOnly probes up front, before any image may
+# exist locally, so 13 there is expected on an offline laptop. The install
+# step never runs under -CheckOnly, so a probe-only invocation does not
+# modify .wslconfig.
 $kernelNeedsFix = $false
+$kernelProbeEnabled = $false
 $kernelInstaller = Join-Path $RootDir "scripts\install-wsl-kernel.ps1"
 if ($SkipKernelFix) {
     Say "Skipping WSL2 kernel feature probe (-SkipKernelFix)"
 } elseif (-not (Test-Path $kernelInstaller)) {
     Warn "scripts\install-wsl-kernel.ps1 not found -- skipping WSL2 kernel probe (older release?)."
 } else {
-    # The probe is verbose; suppress its banner output by piping through
-    # a temp file so the setup.ps1 log stays clean. Exit codes:
-    #   0  = kernel already good
-    #   1  = kernel needs install
-    #   2  = not on Windows / not WSL2 backend (skip silently)
+    $kernelProbeEnabled = $true
+}
+
+function Get-KernelProbeResult {
+    # Only the exit code matters here; the probe's own lines still show.
     & $kernelInstaller -Test 2>&1 | Out-Null
-    switch ($LASTEXITCODE) {
-        0 { Say "WSL2 kernel: CONFIG_NFT_QUEUE present (ICS DPI labs will work)" }
-        2 { Say "WSL2 kernel: probe skipped (not Windows/WSL2 backend)" }
-        default {
-            Warn "WSL2 kernel: CONFIG_NFT_QUEUE missing -- ICS DPI labs (2.3, 2.3-bonus) will not enforce."
-            Warn "  This is a known limitation of the stock WSL2 kernel. setup.ps1 will install"
-            Warn "  a prebuilt rangerdanger kernel after these pre-flight checks complete."
-            Warn "  Pass -SkipKernelFix to skip and run with stock kernel anyway."
-            $kernelNeedsFix = $true
-        }
-    }
+    return $LASTEXITCODE
 }
 
-# --- check-only short-circuit ---------------------------------------
-if ($CheckOnly) {
-    Banner "Pre-flight passed -- laptop is ready"
-    @"
-  All checks above passed. To install:
-
-    .\setup.ps1                       # latest
-    .\setup.ps1 -Version v0.1.0       # pinned release
-
-  For offline / SSD install, use -FromTarballs <PATH>.
-"@ | Write-Host
-    if ($kernelNeedsFix) {
-        Write-Host ""
-        Warn "Note: the WSL2 kernel is missing CONFIG_NFT_QUEUE. Setup will offer to install"
-        Warn "a prebuilt fix when you run without -CheckOnly. Pass -SkipKernelFix to skip."
-    }
-    exit 0
+function Write-KernelMissing {
+    Warn "WSL2 kernel: CONFIG_NFT_QUEUE missing -- ICS DPI labs (2.3, 2.3-bonus) will not enforce."
+    Warn "  This is a known limitation of the stock WSL2 kernel."
 }
 
-# --- WSL2 kernel install (if probe flagged it) ----------------------
-# Runs BEFORE image acquisition so wsl --shutdown does not kill an
-# in-progress pull. For -FromTarballs offline installs we look for a
-# bundled kernel binary in the tarball directory; for online installs
-# we download from the release matching $Version.
-if ($kernelNeedsFix -and -not $SkipKernelFix) {
+# Install the prebuilt lab kernel. For -FromTarballs installs we look for a
+# bundled kernel binary in the tarball directory; otherwise (and when the
+# bundle has none) we download from the release matching $Version, which
+# for -FromTarballs is the version already read from the SSD's .version.
+function Install-LabKernel {
     Banner "Installing WSL2 kernel"
     # Splat as a HASHTABLE, not an array. PowerShell array-splatting does not
     # reliably bind "-Name value" pairs to a called script's parameters: e.g.
@@ -273,13 +309,13 @@ if ($kernelNeedsFix -and -not $SkipKernelFix) {
             $installerArgs['ExpectedSha256'] = $expectedSha
             Say "Using bundled kernel from tarball: $bundledKernel"
         } else {
-            Warn "No rangerdanger-wsl2-kernel found in $FromTarballs -- will attempt download."
+            Warn "No rangerdanger-wsl2-kernel found in $FromTarballs -- will attempt to download it for $Version."
             Warn "(For fully-offline installs, stage the kernel alongside the image tarballs."
             Warn " See wsl-kernel/README.md.)"
         }
     }
     if (-not $installerArgs.ContainsKey('KernelPath')) {
-        $installerArgs['ReleaseTag'] = if ($Version -eq 'latest') { 'latest' } else { $Version }
+        $installerArgs['ReleaseTag'] = $Version
     }
     # Install unattended. Running setup.ps1 is already the user's go-ahead to
     # bring the lab up, and the kernel step is required for the DPI labs, so
@@ -291,13 +327,82 @@ if ($kernelNeedsFix -and -not $SkipKernelFix) {
     $installerArgs['Yes'] = $true
     & $kernelInstaller @installerArgs
     switch ($LASTEXITCODE) {
-        0  { Say "WSL2 kernel installed; continuing with image acquisition." }
+        0  { Say "WSL2 kernel installed; continuing." }
         2  { Say "Kernel installer skipped (not Windows/WSL2). Continuing." }
         10 { Die "User declined kernel install. Re-run with -SkipKernelFix to bypass." }
         11 { Die "Foreign kernel= already in .wslconfig. Re-run with -SkipKernelFix to bypass, or see install-wsl-kernel.ps1 -Force." }
         12 { Die "Kernel download or verification failed. See errors above." }
+        13 { Die "The kernel installer could not run its nft probe (see above). Fix Docker, then re-run setup; pass -SkipKernelFix to bypass." }
         default { Die "Kernel install failed with exit $LASTEXITCODE. See errors above. Pass -SkipKernelFix to bypass." }
     }
+}
+
+# Install mode: probe, and install the lab kernel when it is missing. Runs
+# after image acquisition, so the firewall image is local and the probe
+# needs no network: "unknown" here means the probe itself broke.
+function Invoke-KernelStep {
+    if (-not $kernelProbeEnabled) { return }
+    switch (Get-KernelProbeResult) {
+        0  { Say "WSL2 kernel: CONFIG_NFT_QUEUE present (ICS DPI labs will work)" }
+        2  { Say "WSL2 kernel: probe skipped (not Windows/WSL2 backend)" }
+        13 { Die "WSL2 kernel: the nft probe could not run even with the lab images present (see above). Fix Docker, then re-run setup; pass -SkipKernelFix to bypass." }
+        default {
+            Write-KernelMissing
+            Install-LabKernel
+        }
+    }
+}
+
+# --- check-only short-circuit ---------------------------------------
+if ($CheckOnly) {
+    if ($kernelProbeEnabled) {
+        switch (Get-KernelProbeResult) {
+            0  { Say "WSL2 kernel: CONFIG_NFT_QUEUE present (ICS DPI labs will work)" }
+            2  { Say "WSL2 kernel: probe skipped (not Windows/WSL2 backend)" }
+            13 {
+                if ($FromTarballs) {
+                    Warn "WSL2 kernel: not probed yet. The firewall image is not loaded and the"
+                    Warn "  Alpine fallback needs network. setup.ps1 -FromTarballs probes the kernel"
+                    Warn "  after it loads the SSD images, and installs the bundled kernel if needed."
+                } else {
+                    Warn "WSL2 kernel: the nft probe could not run (no local firewall image, and the"
+                    Warn "  Alpine fallback needs network), so CONFIG_NFT_QUEUE support is unknown."
+                    Warn "  setup.ps1 probes the kernel after it pulls the images, and installs the"
+                    Warn "  lab kernel if needed."
+                }
+            }
+            default {
+                Write-KernelMissing
+                $kernelNeedsFix = $true
+            }
+        }
+    }
+    if ($labPorts.Count -gt 0) {
+        Banner "Pre-flight passed -- RangerDanger is already installed and running"
+        @"
+  Open http://localhost:8088. To refresh or reinstall it, stop it first,
+  then re-run setup:
+
+    $downCmd
+    $rerunCmd
+"@ | Write-Host
+    } else {
+        Banner "Pre-flight passed -- laptop is ready"
+        @"
+  All checks above passed. To install:
+
+    .\setup.ps1                       # latest
+    .\setup.ps1 -Version v0.1.0       # pinned release
+
+  For offline / SSD install, use -FromTarballs <PATH>.
+"@ | Write-Host
+    }
+    if ($kernelNeedsFix) {
+        Write-Host ""
+        Warn "Note: the WSL2 kernel is missing CONFIG_NFT_QUEUE. Setup will install"
+        Warn "a prebuilt fix when you run without -CheckOnly. Pass -SkipKernelFix to skip."
+    }
+    exit 0
 }
 
 # --- image acquisition ----------------------------------------------
@@ -321,6 +426,7 @@ if ($FromTarballs) {
     Say "Loading $tarball (${sizeMB} MB) - decompressing each image, ~5-15 min on a fast SSD."
     Say "Watch the 'Loaded image:' lines below - one per image, 14-19 total."
     docker load -i $tarball
+    if ($LASTEXITCODE -ne 0) { Die "docker load failed for $tarball -- see the error above." }
     Say "Images loaded"
 } else {
     Banner "Pulling images from GHCR"
@@ -349,16 +455,27 @@ Pulling images failed after 3 attempts. Common causes:
     }
 }
 
-# --- pin VERSION in .env so bare `docker compose` works after install --
+# --- WSL2 kernel probe + install --------------------------------------
+# Both paths probe only now, with the images local: the probe runs in the
+# containd firewall image just pulled or loaded, with no network, and the
+# kernel release tag is the resolved $Version (for -FromTarballs, the SSD's
+# .version read above). The pull has finished, so the installer's
+# wsl --shutdown cannot interrupt it; pulled and loaded images sit on
+# Docker Desktop's persistent data disk, which wsl --shutdown keeps.
+Invoke-KernelStep
+
+# --- pin VERSION in .env for later release-file compose commands ----
 # Without this, a student who runs `.\setup.ps1 -FromTarballs <SSD>` and
-# later wants to run `docker compose -f docker-compose.release.yml
+# later runs `docker compose -f docker-compose.release.yml
 # -f docker-compose.offline.yml up -d` directly will hit
 # `No such image: ...:latest` because compose interpolates
 # `${VERSION:-latest}` and the SSD tarball is tagged :vX.Y.Z.
-# Writing the resolved Version to .env (compose auto-loads .env from
-# cwd) makes the bare compose invocation work the same as setup did.
-# .env is gitignored. Idempotent: replaces an existing VERSION= line,
-# appends if absent.
+# Compose auto-loads .env from the project directory (the repo root), so
+# writing the resolved Version there makes those explicit release-file
+# commands use the tag setup installed. A bare `docker compose` with no -f
+# still selects the source stack (docker-compose.yml), not the release
+# one; see docs/quickstart.md. .env is gitignored. Idempotent: replaces an
+# existing VERSION= line, appends if absent.
 $envFile = Join-Path $RootDir ".env"
 if (Test-Path $envFile) {
     $content = Get-Content $envFile -Raw
