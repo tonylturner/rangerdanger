@@ -19,10 +19,12 @@ import (
 //
 // Canonical form: parse to map, re-marshal with json.Marshal so map
 // keys come out in stable sorted order (Go's encoding/json sorts
-// map keys when serialising). Hash the resulting bytes. Two
-// committed configs that differ only in whitespace / key order
-// produce the same hash, but two that differ in any rule field
-// produce different hashes.
+// map keys when serialising). For each firewall rule, an empty `ics`
+// object is omitted before hashing: containd's
+// `json:"ics,omitzero"` field omits a zero ICS predicate, while older
+// builds echo it as `{}`. Thus those representations hash alike; any
+// non-empty `ics` value, other rule field, or rule order difference
+// remains significant.
 func (c *Client) GetFirewallHash(ctx context.Context) (string, error) {
 	resp, err := c.doRequest(ctx, "GET", c.BaseURL+"/api/v1/config")
 	if err != nil {
@@ -55,9 +57,13 @@ func (c *Client) GetFirewallHash(ctx context.Context) (string, error) {
 }
 
 // canonicalHash returns SHA-256 of v marshalled to canonical JSON
-// (sorted map keys via encoding/json). Exported helper kept private
-// so other packages can't accidentally hash a non-canonical form.
+// (sorted map keys via encoding/json). It omits only rules[].ics when
+// that value is an empty object: containd's
+// `json:"ics,omitzero"` field omits a zero ICS predicate, while older
+// builds echo it as `{}`. All other rule fields, non-empty ICS values,
+// and rule order remain significant.
 func canonicalHash(v any) string {
+	v = omitEmptyRuleICS(v)
 	buf, err := json.Marshal(v)
 	if err != nil {
 		// json.Marshal only fails on truly weird inputs (cycles,
@@ -67,6 +73,61 @@ func canonicalHash(v any) string {
 	}
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:])
+}
+
+// omitEmptyRuleICS makes only the representation difference between
+// an omitted zero ICS predicate and an empty object canonical. Values
+// are decoded JSON objects, so firewall rules are represented as
+// []any containing map[string]any.
+func omitEmptyRuleICS(v any) any {
+	firewall, ok := v.(map[string]any)
+	if !ok {
+		return v
+	}
+	rules, ok := firewall["rules"].([]any)
+	if !ok {
+		return v
+	}
+
+	var normalizedRules []any
+	for i, value := range rules {
+		rule, ok := value.(map[string]any)
+		if !ok {
+			if normalizedRules != nil {
+				normalizedRules[i] = value
+			}
+			continue
+		}
+		ics, hasICS := rule["ics"]
+		icsObject, isObject := ics.(map[string]any)
+		if !hasICS || !isObject || len(icsObject) != 0 {
+			if normalizedRules != nil {
+				normalizedRules[i] = value
+			}
+			continue
+		}
+		if normalizedRules == nil {
+			normalizedRules = make([]any, len(rules))
+			copy(normalizedRules, rules)
+		}
+		normalizedRule := make(map[string]any, len(rule)-1)
+		for key, field := range rule {
+			if key != "ics" {
+				normalizedRule[key] = field
+			}
+		}
+		normalizedRules[i] = normalizedRule
+	}
+	if normalizedRules == nil {
+		return v
+	}
+
+	normalizedFirewall := make(map[string]any, len(firewall))
+	for key, value := range firewall {
+		normalizedFirewall[key] = value
+	}
+	normalizedFirewall["rules"] = normalizedRules
+	return normalizedFirewall
 }
 
 // FirewallHashFromBytes returns the canonical hash of an already-
