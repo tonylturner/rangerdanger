@@ -1,0 +1,334 @@
+id: eu-rmu-switching
+order: "3.0"
+name: "RMU Switching, Interlocks and Restoration"
+summary: "Predict load loss, prove authority and interlock refusals, isolate a section fault, and restore commercial supply through the normally-open tie."
+estimated_minutes: 40
+validator: eu-rmu-switching
+description: |
+  You are the switching operator for a reduced CIGRE-derived teaching
+  feeder, not the full CIGRE benchmark. Carry forward lab 2's named-source
+  conduit plan. A network permit is not a switching instruction: topology,
+  local authority and live-live interlocks still govern each operation.
+
+  Keep a switching sheet with predicted load loss, actual observations,
+  source/receipt times, command results and a restoration hold point.
+  The CC view is IEC 104 evidence; the separately labelled field/process
+  section is truth. Neither substitutes for the other. Stop if measurements
+  are invalid, the baseline differs, or a result is unknown.
+nodes: [cc-1, rtu-1, rmu-1, rmu-2, breaker-1, vendor-jump-1, fw-1]
+tags: [iec104, rmu, switching, restoration, authority]
+steps:
+  - id: energised-baseline
+    title: "Establish the energised switching baseline"
+    expected_config: weak
+    node: cc-1
+    description: |
+      Use **Reset Lab** once before starting. This resets process, devices,
+      clock and weak policy, but does not erase the historian. Wait for a
+      fresh CC GI and good measurements. Do not reset again until you have
+      exported the assurance record: device audit rings and CC journals
+      are bounded, and restart/reset identity matters to the evidence.
+
+      At [/substation](/substation), record CB1 closed, RMU1 closed and RMU2
+      open. The separate process view should show no section fault, F2
+      untripped, and S1 residential, S2 commercial and S3 industrial live.
+      Draw the route: CB1 → S1 → RMU1 → S2; F2 → S3 reaches the far side
+      of the normally-open RMU2 tie. RMU1 and RMU2 are not interchangeable
+      series switches.
+
+      Record voltages on both sides of each RMU, quality and observation
+      times. The F2 head is a process element, not a remotely observed
+      breaker. S3 energisation is observed through RMU2 source voltage
+      (IOA 2203). Never label an unobserved F2 position as CC-confirmed.
+
+      From the CC terminal, retain the starting journal and state:
+
+          curl -fsS http://10.99.99.21:8080/api/state > /tmp/rmu-before.json
+          curl -fsS 'http://10.99.99.21:8080/api/journal?after=0' > /tmp/rmu-journal-before.json
+
+      Read: [Feeder](#eu-mv-feeder), [RMUs](#eu-rmu-switchgear),
+      [Node map](#eu-range-node-map), [Reset acceptance](#eu-reset-acceptance).
+
+  - id: predict-load-loss
+    title: "Write predictions before touching a switch"
+    node: cc-1
+    description: |
+      Write three predictions on the switching sheet before operating:
+      opening RMU1 with the tie open; closing RMU2 with RMU1 still closed;
+      and opening RMU2 after S2 has been transferred to feeder 2.
+      For each, name the source, the interrupted section, the loads left
+      supplied and the interlock you expect to intervene.
+
+      S1 is upstream of RMU1. S3 has its own feeder-2 head. A close across
+      two live sides is not an innocent way to test the ring; the model
+      refuses it. Predict a refusal, not a fictitious radial solve.
+      Record your stop/rollback condition before taking the first command.
+
+      :::decision id=rmu-predicted-loss options=S2_ONLY,S1_AND_S2,ALL_SECTIONS correct=S2_ONLY
+      With RMU2 open, which loads lose supply when RMU1 opens?
+      :::
+
+      :::hint Trace sources, not icon order
+      Trace CB1 to S1 before reaching RMU1. Opening RMU1 cuts the only
+      normal path into S2; it does not open CB1 or the F2 head.
+      :::
+
+      Read: [Switching orders](#eu-rmu-switching-orders),
+      [Outage consequences](#eu-outage-voltage-consequences).
+
+  - id: operate-and-distinguish-rmus
+    title: "Operate both RMUs through the CC and compare load effects"
+    node: cc-1
+    description: |
+      Use the individual RMU command panels on [/substation](/substation).
+      Open RMU1; wait for **completed** and fresh feedback at 1101.
+      Compare S1, S2 and S3 against your prediction, not just the switch
+      colour. S2 should lose supply while S1 and S3 remain live.
+
+      Now close RMU2 (3201). Its source is live from F2 and S2 is dead.
+      Wait for fresh measurements after each revision. S2 returns from
+      feeder 2. Open RMU2 again: this removes that back-feed, not S1 or
+      S3. Finally close RMU1 and return to the starting radial baseline.
+      Retain each command id, select/execute/confirmation/termination time
+      and feedback value. Do not issue a second command while one is busy.
+
+      A CC API alternative, from the CC terminal, is:
+
+          curl -fsS -H 'Content-Type: application/json' \
+            -d '{"point":"rmu-1-command","operation":"open"}' \
+            http://10.99.99.21:8080/api/commands
+
+      Change the point to `rmu-2-command` for the tie, and the operation to
+      `close` when instructed. A completed result includes matching IEC 104
+      feedback; HTTP success or ACT-CON alone does not prove completion.
+
+      :::decision id=rmu-distinct-effects options=DIFFERENT_PATHS,SAME_SWITCH,ALL_LOADS_LOST correct=DIFFERENT_PATHS
+      Why does opening the tie after transfer differ from opening RMU1?
+      :::
+
+      :::hint Separate acknowledgement from outcome
+      Unknown means the outcome is unconfirmed; do not retry blindly.
+      Export the journal and inspect field truth separately before deciding
+      how to recover. Never fill a missing CC value from process truth.
+      :::
+
+      Read: [SBO](#iec104-sbo-commands), [Operator API](#eu-rtu-control-centre-apis).
+
+  - id: local-authority-refusal
+    title: "Make local authority refuse a remote open"
+    node: cc-1
+    description: |
+      Run this step action to place RMU1 in **local**. With RMU1 closed
+      and RMU2 open, issue a CC **open RMU1** command. Expect **rejected**:
+      negative ACT-CON, no position change, and a `not_remote` device audit
+      entry associated with the RTU's Modbus peer.
+
+      Record the attempted command even though no load changes. Distinguish
+      this application refusal from a firewall deny: the RTU reached the
+      device, and the model enforced its local/remote selector atomically.
+      If CC quality is stale, it may refuse before select; that is not the
+      intended device-authority demonstration. Restore communications and
+      repeat only when the starting feedback is fresh and good.
+
+      :::decision id=rmu-local-authority options=DEVICE_AUTHORITY,FIREWALL_DROP,CC_COMPLETED correct=DEVICE_AUTHORITY
+      Which boundary refused a valid remote command delivered over an allowed conduit?
+      :::
+
+      :::hint Evidence of a refusal
+      Keep the CC rejected result and device `not_remote` audit together.
+      A switch that merely stayed closed cannot prove a command was tried.
+      :::
+
+      Read: [Authority](#eu-control-authority), [Modbus](#eu-southbound-modbus).
+    action: {type: command, device: rmu-1, command: set_local}
+
+  - id: refuse-paralleling-close
+    title: "Restore remote and test the live-live interlock"
+    node: cc-1
+    description: |
+      Run the action to restore RMU1 remote authority. Keep CB1 and RMU1
+      closed, RMU2 open, all three sections energised. Wait until both
+      RMU2 side voltages are valid. Attempt **close RMU2** from the CC.
+      Expect **rejected** with device reason `live_live`, and the tie
+      remains open. Record both live side measurements alongside the result.
+
+      Do not defeat the interlock with reset, an earth switch or a stale
+      measurement. `no_measurement` is a different refusal and is not proof
+      of the live-live rule. Interlocks reduce switching risk; they do not
+      approve an operating order, replace authority or establish isolation.
+
+      :::decision id=rmu-parallel options=LIVE_LIVE,NO_MEASUREMENT,PORT_DENY correct=LIVE_LIVE
+      What is the expected refusal with fresh measurements and both tie sides live?
+      :::
+
+      :::hint Do not manufacture a ring
+      Restore the known radial baseline if your earlier exercise left S2
+      dead or tie closed. The check needs an actual attempted close and
+      its reason, not a screenshot of an open tie.
+      :::
+
+      Read: [Switchgear interlocks](#eu-rmu-switchgear),
+      [Switching orders](#eu-rmu-switching-orders).
+    action: {type: command, device: rmu-1, command: set_remote}
+
+  - id: inject-s1-and-read-fpi
+    title: "Inject an S1 fault and interpret the FPI"
+    node: breaker-1
+    description: |
+      Confirm the radial baseline again, then run the action to inject a
+      bolted three-phase **S1** fault. Local protection opens CB1 and
+      latches lockout. Wait for fresh CC telemetry and compare it with the
+      separate process fault and delivered-revision information.
+
+      Read RMU1's fault-passage indicator at 1104. For this S1 fault it is
+      **clear**: RMU1 is downstream of the fault and did not carry fault
+      current. S1 and S2 lose supply; S3 remains on F2. Do not misread a
+      clear FPI as proof that there is no feeder fault.
+
+      Record fault section, breaker trip time, RMU1 FPI and voltage quality.
+      With an S2 fault RMU1 would carry fault current and latch its FPI;
+      closing the tie into that uncleared fault would trip F2 and lose S3.
+      That is a different switching order, not permission to try it here.
+
+      :::decision id=rmu-fpi-meaning options=NO_PASSAGE_AT_RMU1,NO_FAULT,ALL_DEVICES_TRIPPED correct=NO_PASSAGE_AT_RMU1
+      What does a clear RMU1 FPI mean for the specified S1 fault?
+      :::
+
+      :::hint Fault ownership
+      The process owns `fault_section`. A local breaker reset does not
+      remove the fault. Keep it in place for the isolation exercise.
+      :::
+
+      Read: [Protection](#eu-feeder-breaker-protection),
+      [Reference cases](#eu-process-reference-cases).
+    action: {type: command, device: process, command: fault_s1}
+
+  - id: isolate-and-backfeed
+    title: "Isolate S1 and restore S2 through the tie"
+    node: cc-1
+    description: |
+      Hold at the switching boundary: verify CB1 open and S1/S2 dead with
+      good observations, not zeros caused by missing data. Command **open
+      RMU1** from the CC and require completion. This isolates the faulted
+      S1 side from the commercial section before the tie is closed.
+
+      Wait for new valid measurements after the switch revision, then
+      command **close RMU2**. S2 is restored from F2 while S1 remains dead
+      with its fault still present. S3 should remain supplied. Record the
+      order and independent observations: trip → RMU1 isolation completed
+      → tie select/execute → S2 voltage returns.
+
+      Do not reclose CB1, parallel the sources or claim the F2 head is
+      CC-observed. If the fault section is not S1, stop and correct the
+      operating order; the live-live rule is not a fault-location algorithm.
+      Keep the transfer state for the vendor test.
+
+      :::decision id=rmu-restoration options=ISOLATE_THEN_BACKFEED,CLOSE_TIE_FIRST,RESET_BREAKER_INTO_FAULT correct=ISOLATE_THEN_BACKFEED
+      Which sequence restores S2 without reconnecting the S1 fault?
+      :::
+
+      :::hint Separate three claims
+      A completed switch command, an observed live section and a cleared
+      fault are different claims. The first two can be true while S1
+      still has a fault. Your assurance record must say so.
+      :::
+
+      Read: [Switching orders](#eu-rmu-switching-orders),
+      [Evidence lifecycle](#eu-evidence-lifecycle).
+
+  - id: vendor-open-under-weak
+    title: "Repeat the tie-open operation from the vendor zone"
+    expected_config: weak
+    node: vendor-jump-1
+    description: |
+      Run the action to apply weak policy. Preserve the isolated S1 fault
+      and transferred S2 supply. From the **vendor-jump** terminal, make
+      a direct Modbus write to the same tie-open function used through
+      the CC earlier. This bypasses the IEC 104 operator path, not the
+      device's authority/interlock model:
+
+          mbpoll -m tcp -a 1 -0 -r 0 -t 4 -1 -o 3 10.40.40.22 1
+
+      `-0` makes HR0 zero-based; value 1 means open, 2 means close.
+      Keep the command output and its time. S2 loses its back-feed again,
+      while S3 stays live. The device audit should attribute the accepted
+      `open` to vendor `10.20.20.10`, not the RTU. Record whether this is
+      authorised by the switching order; network reachability does not
+      make a vendor write an authorised operation.
+
+      Restore **close RMU2 through the CC**, wait for fresh completion and
+      S2 voltage, then end the vendor client. The next step repeats the
+      exact same vendor write against the improved boundary.
+
+      :::decision id=rmu-vendor-authorised options=REACHABLE_NOT_AUTHORISED,AUTHORISED_BY_SESSION,IEC104_FILTERED correct=REACHABLE_NOT_AUTHORISED
+      What does the successful weak-policy write demonstrate?
+      :::
+
+      :::hint Prepare the comparison
+      Save source, destination, HR, value and timestamps. Close the client
+      before applying improved so the retest uses a new connection.
+      :::
+
+      Read: [Trusted-host misuse](#eu-trusted-host-misuse),
+      [mbpoll](#eu-tool-mbpoll), [Vendor access](#eu-vendor-engineering-access).
+    action: {type: firewall, config: weak}
+
+  - id: vendor-open-under-improved
+    title: "Deny the same vendor operation without breaking CC switching"
+    expected_config: hardened
+    node: vendor-jump-1
+    description: |
+      Run the action to apply improved. Verify the running policy and close
+      any remaining vendor connection before the new attempt. Run the exact
+      same `mbpoll` tie-open command from step 8. Expect a failed connection
+      or timeout, a logged deny to `10.40.40.22:502`, no accepted vendor
+      device write, and no S2 outage. A timeout alone is inconclusive:
+      source/destination and the matching firewall event matter.
+
+      Positive-test the permitted path too. Through the CC open RMU2,
+      observe S2 lose supply, then close it and observe restoration.
+      The source-pinned RTU still has Modbus access. This is an L4 source
+      boundary, not a filter that understands a switching instruction.
+
+      :::decision id=rmu-improved-evidence options=DENY_PLUS_ALLOWED_OPERATION,TIMEOUT_ONLY,UNCHANGED_ICON_ONLY correct=DENY_PLUS_ALLOWED_OPERATION
+      Which evidence distinguishes a working boundary from a broken device?
+      :::
+
+      :::hint Keep claims proportional
+      A logged TCP deny identifies the rejected connection, not its
+      unsent Modbus payload. Keep your terminal transcript to document
+      that you attempted the same command.
+      :::
+
+      Read: [Port/source boundary](#eu-port-source-boundary),
+      [Established sessions](#eu-established-sessions).
+    action: {type: firewall, config: improved}
+
+  - id: switching-assurance-record
+    title: "Hand over the switching assurance record"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      Run the scenario validator before resetting. It checks CC operations
+      against device audits in each execute/confirmation window, local and
+      live-live refusals, trip-before-isolation-before-back-feed, and the
+      vendor write/later logged source deny with improved running. It does
+      not grade your load predictions, infer a denied payload or certify
+      an electrical safety procedure. Export the evidence while retained.
+
+      Hand over a table with: instruction and authority; predicted loads;
+      actual section voltages and quality; command id/result and times;
+      audit peer/reason; weak versus improved source evidence; exceptions;
+      and the person accepting the residual risk. Include CC epoch and
+      device generations so another operator can detect stale evidence.
+
+      **Final hold point:** S1 fault remains isolated, CB1 open/locked out,
+      RMU1 open, RMU2 closed, S2/S3 supplied from feeder 2, improved active.
+      Mark S1 unavailable and arrange fault repair; do not call this normal
+      topology. After saving the record, **Reset Lab** establishes the
+      unfaulted radial baseline for lab 4. Confirm the reset results and
+      fresh GI before handing the controls to the voltage operator.
+
+      Read: [Exports](#eu-tool-curl-exports),
+      [Acceptance handover](#eu-acceptance-handover),
+      [Reset acceptance](#eu-reset-acceptance).
