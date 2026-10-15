@@ -13,8 +13,9 @@ name: Smoke
 #   5. every documented lab command runs cleanly       (lab-doc gate)
 #   6. the workshop test-suite reports no step/reset failures
 #
-# Runs on every push to main + PR. Catches startup regressions and
-# lab-doc rot before a workshop student trips over them.
+# The US smoke job catches startup regressions and lab-doc rot. The separate
+# EU job runs its package gate on the iec104 branch without sharing a Docker
+# daemon with the US range.
 #
 # Budget: ~9–12 min on a GitHub-hosted runner. ~6 min for the build
 # (no cache pull), ~2 min for boot, ~3 min for the matrix probes
@@ -24,9 +25,9 @@ name: Smoke
 
 on:
   push:
-    branches: [main]
+    branches: [main, iec104]
   pull_request:
-    branches: [main]
+    branches: [main, iec104]
   workflow_dispatch:
 
 permissions:
@@ -224,5 +225,77 @@ jobs:
           retention-days: 7
 
       - name: Tear down
+        if: always()
+        run: ./scripts/dev-down.sh
+
+  eu-smoke:
+    name: EU IEC104 source gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EU_GATE_EVIDENCE_DIR: /tmp/eu-gate-evidence
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Install host tshark
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark
+          tshark --version
+
+      - name: Verify EU gate host tools
+        run: |
+          set -euo pipefail
+          for tool in curl jq python3 docker tshark; do
+            command -v "$tool"
+          done
+          docker compose version
+
+      - name: Prepare evidence directory
+        run: mkdir -p "$EU_GATE_EVIDENCE_DIR"
+
+      - name: Build and bring up the platform and EU range
+        run: ./scripts/dev-up.sh --package eu-iec104-substation
+
+      - name: Confirm the EU range is ready
+        run: |
+          set -euo pipefail
+          range=$(curl -fsS http://localhost:8088/api/range)
+          echo "$range"
+          echo "$range" | jq -e '.package == "eu-iec104-substation" and .phase == "ready"' >/dev/null \
+            || { echo "::error::range is not eu-iec104-substation ready"; exit 1; }
+
+      - name: EU IEC104 smoke gate
+        run: ./scripts/eu-iec104-smoke.sh
+
+      - name: Collect range logs and EU gate evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/logs "$EU_GATE_EVIDENCE_DIR"
+          curl -sS http://localhost:8088/api/range > /tmp/logs/range.json 2>&1 || true
+          for project in rangerdanger-platform rangerdanger; do
+            for c in $(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}'); do
+              docker logs --tail=200 "$c" > "/tmp/logs/$c.log" 2>&1 || true
+            done
+          done
+
+      - name: Upload EU evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eu-compose-logs-and-gate-evidence
+          path: |
+            /tmp/logs/
+            /tmp/eu-gate-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Tear down EU range and platform
         if: always()
         run: ./scripts/dev-down.sh
