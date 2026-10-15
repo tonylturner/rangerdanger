@@ -492,7 +492,7 @@ func TestValidateEURoles(t *testing.T) {
 
 // TestValidateSingleHolders rejects a second holder of the roles the
 // backend resolves to one service, and a sim endpoint that is
-// outside a field device. Multiple field sims are allowed.
+// outside a field device or time source. Multiple sims are allowed.
 func TestValidateSingleHolders(t *testing.T) {
 	root := fixturePath(t, fixtureRoot)
 	service := func(key, ip string, role Role, endpoints map[string]string) Service {
@@ -513,8 +513,8 @@ func TestValidateSingleHolders(t *testing.T) {
 			`role "control-centre" is held by cc_a, cc_b`},
 		{"two process solvers", []Service{service("dss_a", "10.99.99.31", RoleProcessSolver, nil), service("dss_b", "10.99.99.32", RoleProcessSolver, nil)},
 			`role "process-solver" is held by dss_a, dss_b`},
-		{"sim outside a field device", []Service{service("cc", "10.99.99.31", RoleControlCentre, sim("10.99.99.31"))},
-			`service "cc" has a sim endpoint but not the field-device role`},
+		{"sim outside permitted roles", []Service{service("cc", "10.99.99.31", RoleControlCentre, sim("10.99.99.31"))},
+			`service "cc" has a sim endpoint but neither the field-device nor time-source role`},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -539,5 +539,51 @@ func TestValidateSingleHolders(t *testing.T) {
 	}
 	if svc, url, ok := m.ServiceWithEndpoint(EndpointSim); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
 		t.Errorf("ServiceWithEndpoint = %+v %q %v", svc, url, ok)
+	}
+}
+
+func TestValidateSimEndpointRoles(t *testing.T) {
+	root := fixturePath(t, fixtureRoot)
+	tests := []struct {
+		name  string
+		roles []Role
+		valid bool
+	}{
+		{"field device", []Role{RoleFieldDevice}, true},
+		{"time source", []Role{RoleTimeSource}, true},
+		{"field device with another role", []Role{RolePLC, RoleFieldDevice}, true},
+		{"time source with another role", []Role{RolePLC, RoleTimeSource}, true},
+		{"both permitted roles", []Role{RoleFieldDevice, RoleTimeSource}, true},
+		{"no roles", nil, false},
+	}
+	for role := range Roles {
+		if role != RoleFieldDevice && role != RoleTimeSource {
+			tests = append(tests, struct {
+				name  string
+				roles []Role
+				valid bool
+			}{string(role), []Role{role}, false})
+		}
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m, err := Load(root, "valid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.Services = append(m.Services, Service{
+				Key: "sim_test", Container: "fixture-sim-test", Node: "sim-1", Roles: test.roles,
+				Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.31"}},
+				Endpoints:  map[string]string{EndpointSim: "http://10.99.99.31:8080"},
+			})
+			err = Validate(m, root)
+			if test.valid {
+				if err != nil {
+					t.Fatalf("permitted sim role rejected: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "neither the field-device nor time-source role") {
+				t.Fatalf("sim role must be rejected, got %v", err)
+			}
+		})
 	}
 }

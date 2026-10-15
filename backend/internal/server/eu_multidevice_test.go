@@ -124,6 +124,47 @@ func TestEUGPSRejectedIsNotSuccess(t *testing.T) {
 	}
 }
 
+func TestEUGPSUsesTimeSourceSimEndpoint(t *testing.T) {
+	for _, command := range []string{"set_offset", "reset_offset"} {
+		t.Run(command, func(t *testing.T) {
+			stub, upstream := newUpstreamStub(t, map[string]stubResponse{
+				"POST /gps-1/api/command": {http.StatusOK, `{"result":"executed","detail":"offset changed"}`},
+			})
+			gen := multiDeviceGeneration(t, upstream.URL)
+			for i := range gen.Manifest.Services {
+				service := &gen.Manifest.Services[i]
+				if service.Node == "gps-1" {
+					service.Roles = []manifest.Role{manifest.RoleTimeSource}
+					// A GPS api endpoint must never substitute for sim.
+					service.Endpoints["api"] = upstream.URL + "/wrong-api"
+				}
+			}
+			// Nor may a different time-source service substitute for node gps-1.
+			gen.Manifest.Services = append([]manifest.Service{{
+				Key: "other-clock", Node: "other-clock", Roles: []manifest.Role{manifest.RoleTimeSource},
+				Endpoints: map[string]string{manifest.EndpointSim: upstream.URL + "/wrong-clock"},
+			}}, gen.Manifest.Services...)
+			var value *float64
+			if command == "set_offset" {
+				offset := 2.5
+				value = &offset
+			}
+			s := rangeServer(gen, "weak")
+			result := s.executeCommand(t.Context(), gen, "gps", command, "", value)
+			if !result.Success || !reflect.DeepEqual(stub.requests, []string{"POST /gps-1/api/command"}) {
+				t.Fatalf("GPS dispatch = %+v, requests=%v", result, stub.requests)
+			}
+			want := `{"command":"reset_offset","source":"lab"}`
+			if command == "set_offset" {
+				want = `{"command":"set_offset","value":2.5,"source":"lab"}`
+			}
+			if len(stub.bodies) != 1 || stub.bodies[0] != want {
+				t.Fatalf("GPS wire = %v, want %s", stub.bodies, want)
+			}
+		})
+	}
+}
+
 func TestFieldStateEverySimNode(t *testing.T) {
 	routes := map[string]stubResponse{
 		"GET /process/api/electrical": {http.StatusOK, electricalFixture},

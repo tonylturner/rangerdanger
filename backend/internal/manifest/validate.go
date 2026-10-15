@@ -188,7 +188,8 @@ func Validate(m *Manifest, root string) error {
 var singleHolderRoles = []Role{RoleRTU, RoleControlCentre, RoleProcessSolver}
 
 // checkSingleHolders reports ambiguous singleton roles and sim endpoints
-// outside field devices. The endpoint map allows one sim per service.
+// outside field devices and time sources. Endpoint decoding rejects duplicate
+// names before they can be collapsed into the service's endpoint map.
 func checkSingleHolders(services []Service) []string {
 	var problems []string
 	for _, role := range singleHolderRoles {
@@ -206,8 +207,8 @@ func checkSingleHolders(services []Service) []string {
 		if _, ok := service.Endpoints[EndpointSim]; !ok {
 			continue
 		}
-		if !slices.Contains(service.Roles, RoleFieldDevice) {
-			problems = append(problems, fmt.Sprintf("service %q has a %s endpoint but not the %s role", service.Key, EndpointSim, RoleFieldDevice))
+		if !slices.Contains(service.Roles, RoleFieldDevice) && !slices.Contains(service.Roles, RoleTimeSource) {
+			problems = append(problems, fmt.Sprintf("service %q has a %s endpoint but neither the %s nor %s role", service.Key, EndpointSim, RoleFieldDevice, RoleTimeSource))
 		}
 	}
 	return problems

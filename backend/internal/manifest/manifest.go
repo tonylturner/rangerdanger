@@ -142,6 +142,9 @@ func Load(root, packageID string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var m Manifest
