@@ -23,22 +23,35 @@ source_definitions() (
   sleep() { unexpected_command sleep; }
   # shellcheck source-path=SCRIPTDIR source=../../eu-iec104-smoke.sh
   . "$T_REPO/scripts/eu-iec104-smoke.sh"
-  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G14 G15 G16 G17 G18 G19; do
+  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G14 G15 G16 G17 G18 G19 G20 G21 G22; do
     declare -F "eu_gate_$gate" >/dev/null || return 1
   done
   if [ "$#" -gt 0 ]; then eu_gate_main "$@"; fi
 )
 
 t_run source_definitions
-t_expect_eq "$T_STATUS" 0 "sourcing defines all twenty gates without dispatch"
+t_expect_eq "$T_STATUS" 0 "sourcing defines all twenty-three gates without dispatch"
 t_expect_eq "$T_OUT" "" "sourcing has no output"
 t_expect_eq "$(cat "$SOURCE_CALLS")" "" "sourcing never calls range or capture tools"
 t_run source_definitions --list
 PLAN="$T_OUT"
 t_expect_eq "$T_STATUS" 0 "--list exits successfully without preflight"
 t_expect_out "EU IEC104 gate plan" "--list retains the gate plan"
+t_expect_out "G20 Lab 2 student walk" "--list includes the conduit walk"
+t_expect_out "G21 Lab 3 student walk" "--list includes the switching walk"
+t_expect_out "G22 Lab 4 student walk" "--list includes the tap/time walk"
 t_run source_definitions --dry-run
 t_expect_eq "$T_STATUS" 0 "--dry-run exits successfully without preflight"
 t_expect_eq "$T_OUT" "$PLAN" "--dry-run and --list are identical"
 t_expect_eq "$(cat "$SOURCE_CALLS")" "" "plan modes never call range or capture tools"
+run_order() (
+  # shellcheck disable=SC2329 # dispatched by eu_gate_main
+  eu_gate_preflight() { :; }
+  # shellcheck disable=SC2329
+  eu_run_gate() { printf '%s ' "$1"; }
+  eu_gate_main
+)
+t_run run_order
+t_expect_eq "$T_STATUS" 0 "stubbed full dispatch completes"
+t_expect_out "G19 G20 G21 G22 G14" "lab gates run after G19 and before final reset"
 t_finish

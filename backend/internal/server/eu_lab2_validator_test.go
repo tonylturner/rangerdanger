@@ -64,6 +64,55 @@ func TestConduitsShippedCurriculum(t *testing.T) {
 	}
 }
 
+func TestEULab2To4DescriptionsPlainText(t *testing.T) {
+	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"eu-station-conduits":   false,
+		"eu-rmu-switching":      false,
+		"eu-oltc-plc-historian": false,
+	}
+	for _, pkg := range catalog.Packages {
+		for _, scenario := range pkg.Scenarios {
+			if _, ok := want[scenario.ID]; !ok {
+				continue
+			}
+			want[scenario.ID] = true
+			t.Run(scenario.ID, func(t *testing.T) {
+				// The runner's header is a plain paragraph; only steps render Markdown.
+				if strings.ContainsAny(scenario.Description, "*_`[]<>#") || strings.Contains(scenario.Description, ":::") {
+					t.Error("scenario description contains Markdown in a plain-text surface")
+				}
+				if scenario.ID != "eu-station-conduits" {
+					return
+				}
+				if words := len(strings.Fields(scenario.Description)); words < 80 || words > 110 {
+					t.Errorf("mission description has %d words, want 80–110", words)
+				}
+				if strings.Contains(scenario.Description, "Evidence prerequisite") {
+					t.Error("obsolete evidence prerequisite remains in the mission")
+				}
+				first := scenario.Steps[0].Description
+				for _, text := range []string{
+					"**Acceptance limit:**", "mgmt_net", "unrestricted acceptance sign-off",
+					"(#eu-zone-conduit-design)", "(#eu-iec62443-risk-design)", "(#eu-change-resource-plan)",
+				} {
+					if !strings.Contains(first, text) {
+						t.Errorf("step 1 lost %q", text)
+					}
+				}
+			})
+		}
+	}
+	for id, found := range want {
+		if !found {
+			t.Errorf("missing scenario %s", id)
+		}
+	}
+}
+
 // Refresh fixed fixtures to now, without relying on the real range or Docker.
 func currentConduits(t *testing.T) conduitEvidence {
 	t.Helper()
