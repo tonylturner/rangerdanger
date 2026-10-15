@@ -265,3 +265,20 @@ func TestEvaluateTelecontrolPicksTheOutageWithTheTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestTelecontrolIgnoresNonBreakerPointQuality(t *testing.T) {
+	ev := passingEvidence(t)
+	for _, id := range []string{"rmu-1-position", "rmu-2-position", "oltc-1-tap", "plc-1-running"} {
+		point := ccPoint{ID: id, Value: json.RawMessage(`null`)}
+		point.Quality.IV, point.Quality.NT = true, true
+		ev.ccState.Points = append(ev.ccState.Points, point)
+	}
+	if len(telecontrolPoints) != 4 {
+		t.Fatalf("lab-1 must keep exactly four breaker points: %v", telecontrolPoints)
+	}
+	for _, check := range evaluateTelecontrol(ev) {
+		if check.Status != "pass" {
+			t.Errorf("%s: %s", check.Name, check.Detail)
+		}
+	}
+}

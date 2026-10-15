@@ -1,163 +1,121 @@
-"""Strict loader for the opt-in EU process profile."""
+"""Strict schema-2 configuration for the CIGRE-derived EU teaching feeder."""
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
 
 class ProfileError(ValueError):
-    """Raised when an explicitly configured EU profile is unusable."""
+    """The explicitly configured EU profile is unusable."""
+
+
+DEVICE_KINDS = {
+    "feeder-breaker": "breaker", "rmu-1": "rmu", "rmu-2": "rmu", "oltc-1": "oltc"
+}
+ELEMENT_KEYS = set(DEVICE_KINDS) | {"source", "f2", "fault_s1", "fault_s2"}
+BUS_KEYS = {"hv", "bus20", "s1", "s2", "s3"}
+PROFILE_KEYS = {
+    "schema", "id", "frequency_hz", "hv_kv", "mv_kv", "circuit_file",
+    "devices", "elements", "buses", "solve_interval_ms", "request_timeout_ms",
+    "truth_stale_after_ms",
+}
+
+
+@dataclass(frozen=True)
+class DeviceProfile:
+    id: str
+    kind: str
+    truth_url: str
 
 
 @dataclass(frozen=True)
 class EUProfile:
     id: str
     frequency_hz: int
-    primary_kv: int
+    hv_kv: int
+    mv_kv: int
     circuit_file: Path
-    load_kw: int
-    load_pf: float
-    breaker_element: str
-    load_element: str
-    load_bus: str
-    device_id: str
-    truth_url: str
+    devices: tuple[DeviceProfile, ...]
+    elements: dict[str, str]
+    buses: dict[str, str]
     solve_interval_ms: int
     request_timeout_ms: int
     truth_stale_after_ms: int
 
 
-_PROFILE_KEYS = {
-    "schema",
-    "id",
-    "frequency_hz",
-    "primary_kv",
-    "circuit_file",
-    "load_kw",
-    "load_pf",
-    "elements",
-    "device",
-    "solve_interval_ms",
-    "request_timeout_ms",
-    "truth_stale_after_ms",
-}
-
-
 def _positive_integer(value: object, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+    if type(value) is not int or value <= 0:
         raise ProfileError(f"{name} must be a positive integer")
     return value
 
 
-def _profile_object(path: Path) -> dict:
+def _origin(value: object) -> str:
+    if not isinstance(value, str):
+        raise ProfileError("truth_url must be an HTTP origin")
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ProfileError(f"cannot load profile {path}: {error}") from error
-    if not isinstance(value, dict):
-        raise ProfileError("profile must be a JSON object")
-    if set(value) != _PROFILE_KEYS:
-        missing = sorted(_PROFILE_KEYS - set(value))
-        unknown = sorted(set(value) - _PROFILE_KEYS)
-        raise ProfileError(
-            f"profile fields mismatch (missing={missing}, unknown={unknown})"
-        )
+        url = urlsplit(value)
+        port = url.port
+    except ValueError as error:
+        raise ProfileError("truth_url must be an HTTP origin") from error
+    if (url.scheme != "http" or not url.hostname or url.username is not None
+            or url.password is not None or url.path not in ("", "/")
+            or url.query or url.fragment or (port is not None and not 1 <= port <= 65535)):
+        raise ProfileError("truth_url must be an HTTP origin")
+    return value.rstrip("/")
+
+
+def _mapping(value: object, keys: set[str], field: str) -> dict:
+    if (not isinstance(value, dict) or set(value) != keys
+            or any(not isinstance(v, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*", v)
+                   for v in value.values())):
+        raise ProfileError(f"invalid {field} mapping")
+    if len(set(v.lower() for v in value.values())) != len(value):
+        raise ProfileError(f"duplicate {field} mapping")
     return value
 
 
 def load_profile(path: str | Path) -> EUProfile:
-    """Load and validate the complete profile and its circuit file."""
-    profile_path = Path(path)
-    value = _profile_object(profile_path)
-    if value["schema"] != 1 or isinstance(value["schema"], bool):
-        raise ProfileError("schema must be 1")
-    profile_id = value["id"]
-    if not isinstance(profile_id, str) or not profile_id:
-        raise ProfileError("id must be a non-empty string")
-    frequency_hz = _positive_integer(value["frequency_hz"], "frequency_hz")
-    primary_kv = _positive_integer(value["primary_kv"], "primary_kv")
-    if frequency_hz != 50 or primary_kv != 20:
-        raise ProfileError(
-            "EU feeder profile requires frequency_hz=50 and primary_kv=20"
-        )
-
-    circuit_name = value["circuit_file"]
-    if not isinstance(circuit_name, str) or not Path(circuit_name).is_absolute():
+    """Reject older profiles, missing devices and ambiguous element mappings."""
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ProfileError(f"cannot load profile: {error}") from error
+    if not isinstance(value, dict) or set(value) != PROFILE_KEYS:
+        raise ProfileError("profile fields mismatch")
+    if type(value["schema"]) is not int or value["schema"] != 2:
+        raise ProfileError("schema must be 2")
+    if value["id"] != "eu-cigre-mv-teaching":
+        raise ProfileError("id must be eu-cigre-mv-teaching")
+    for name, expected in (("frequency_hz", 50), ("hv_kv", 110), ("mv_kv", 20)):
+        if _positive_integer(value[name], name) != expected:
+            raise ProfileError(f"{name} must be {expected}")
+    name = value["circuit_file"]
+    if not isinstance(name, str) or not Path(name).is_absolute() or '"' in name or '\n' in name:
         raise ProfileError("circuit_file must be an absolute path")
-    circuit_file = Path(circuit_name)
+    circuit_file = Path(name)
     if not circuit_file.is_file():
         raise ProfileError(f"circuit_file does not exist: {circuit_file}")
-
-    load_kw = _positive_integer(value["load_kw"], "load_kw")
-    load_pf = value["load_pf"]
-    if (
-        isinstance(load_pf, bool)
-        or not isinstance(load_pf, (int, float))
-        or not 0.0 < load_pf <= 1.0
-    ):
-        raise ProfileError("load_pf must be greater than 0 and no greater than 1")
-    if load_kw != 1000 or load_pf != 1.0:
-        raise ProfileError("EU reference feeder requires load_kw=1000 and load_pf=1.0")
-
-    elements = value["elements"]
-    expected_elements = {
-        "breaker": "Line.Breaker",
-        "load": "Load.FeederLoad",
-        "load_bus": "loadbus",
-    }
-    if not isinstance(elements, dict) or elements != expected_elements:
-        raise ProfileError(f"elements must be exactly {expected_elements}")
-    device = value["device"]
-    if (
-        not isinstance(device, dict)
-        or set(device) != {"id", "truth_url"}
-        or device["id"] != "feeder-breaker"
-        or not isinstance(device["truth_url"], str)
-    ):
-        raise ProfileError("device must identify feeder-breaker and its truth_url")
-    parsed_url = urlsplit(device["truth_url"])
-    try:
-        url_port = parsed_url.port
-    except ValueError as error:
-        raise ProfileError("device.truth_url has an invalid port") from error
-    if (
-        parsed_url.scheme != "http"
-        or not parsed_url.hostname
-        or (url_port is not None and not 1 <= url_port <= 65535)
-        or parsed_url.username is not None
-        or parsed_url.password is not None
-        or parsed_url.path not in ("", "/")
-        or parsed_url.query
-        or parsed_url.fragment
-    ):
-        raise ProfileError("device.truth_url must be an HTTP origin URL")
-
-    solve_interval_ms = _positive_integer(
-        value["solve_interval_ms"], "solve_interval_ms"
-    )
-    request_timeout_ms = _positive_integer(
-        value["request_timeout_ms"], "request_timeout_ms"
-    )
-    truth_stale_after_ms = _positive_integer(
-        value["truth_stale_after_ms"], "truth_stale_after_ms"
-    )
-    if request_timeout_ms >= truth_stale_after_ms:
-        raise ProfileError("request_timeout_ms must be less than truth_stale_after_ms")
-
-    return EUProfile(
-        id=profile_id,
-        frequency_hz=frequency_hz,
-        primary_kv=primary_kv,
-        circuit_file=circuit_file,
-        load_kw=load_kw,
-        load_pf=float(load_pf),
-        breaker_element=elements["breaker"],
-        load_element=elements["load"],
-        load_bus=elements["load_bus"],
-        device_id=device["id"],
-        truth_url=device["truth_url"].rstrip("/"),
-        solve_interval_ms=solve_interval_ms,
-        request_timeout_ms=request_timeout_ms,
-        truth_stale_after_ms=truth_stale_after_ms,
-    )
+    devices = value["devices"]
+    if not isinstance(devices, list) or len(devices) != 4:
+        raise ProfileError("devices must contain all four devices")
+    parsed = []
+    for device in devices:
+        if (not isinstance(device, dict) or set(device) != {"id", "kind", "truth_url"}
+                or not isinstance(device["id"], str)
+                or device["id"] not in DEVICE_KINDS
+                or device["kind"] != DEVICE_KINDS[device["id"]]):
+            raise ProfileError("invalid device identity/kind")
+        parsed.append(DeviceProfile(device["id"], device["kind"], _origin(device["truth_url"])))
+    if len({d.id for d in parsed}) != 4 or len({d.truth_url for d in parsed}) != 4:
+        raise ProfileError("duplicate device or truth_url")
+    elements = _mapping(value["elements"], ELEMENT_KEYS, "elements")
+    buses = _mapping(value["buses"], BUS_KEYS, "buses")
+    interval = _positive_integer(value["solve_interval_ms"], "solve_interval_ms")
+    timeout = _positive_integer(value["request_timeout_ms"], "request_timeout_ms")
+    stale = _positive_integer(value["truth_stale_after_ms"], "truth_stale_after_ms")
+    if interval != 1000 or stale != 3000 or timeout >= interval:
+        raise ProfileError("require interval=1000, stale=3000 and timeout < interval")
+    return EUProfile(value["id"], 50, 110, 20, circuit_file, tuple(parsed),
+                     elements, buses, interval, timeout, stale)

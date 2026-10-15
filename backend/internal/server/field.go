@@ -20,9 +20,13 @@ const (
 	solverService = "process solver"
 )
 
-// simURL is the sim device's API base URL, if any.
-func simURL(gen *lifecycle.Generation) (string, bool) {
-	_, url, ok := gen.Manifest.ServiceWithEndpoint(manifest.EndpointSim)
+// nodeSimURL resolves one node, never the first sim in manifest order.
+func nodeSimURL(gen *lifecycle.Generation, node string) (string, bool) {
+	service, ok := gen.Manifest.ServiceByNode(node)
+	if !ok {
+		return "", false
+	}
+	url, ok := service.Endpoints[manifest.EndpointSim]
 	return url, ok
 }
 
@@ -33,40 +37,51 @@ func solverURL(gen *lifecycle.Generation) (string, bool) {
 
 // fieldState is GET /api/field/state.
 type fieldState struct {
-	Device  json.RawMessage `json:"device"`
-	Process json.RawMessage `json:"process"`
+	Devices map[string]json.RawMessage `json:"devices"`
+	Process json.RawMessage            `json:"process"`
 }
 
 // handleFieldState is the device state and the solver's electrical
 // result; it fails when either does.
 func (s *Server) handleFieldState(c *gin.Context) {
 	gen := rangeOf(c)
-	device, ok := simURL(gen)
-	if !ok {
-		notSupported(c)
-		return
-	}
 	solver, ok := solverURL(gen)
 	if !ok {
 		notSupported(c)
 		return
 	}
-	state, err := fetchUpstreamObject(c.Request.Context(), simService, device+"/api/state")
-	if err != nil {
-		upstreamFailed(c, err)
+	devices := map[string]json.RawMessage{}
+	for _, service := range gen.Manifest.Services {
+		url, ok := service.Endpoints[manifest.EndpointSim]
+		if !ok {
+			continue
+		}
+		if service.Node == "" {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "sim service " + service.Key + " has no node id"})
+			return
+		}
+		state, err := fetchUpstreamObject(c.Request.Context(), service.Node, url+"/api/state")
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		devices[service.Node] = state
+	}
+	if len(devices) == 0 {
+		notSupported(c)
 		return
 	}
 	electrical, err := fetchUpstreamObject(c.Request.Context(), solverService, solver+"/api/electrical")
 	if err != nil {
-		upstreamFailed(c, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, fieldState{Device: state, Process: electrical})
+	c.JSON(http.StatusOK, fieldState{Devices: devices, Process: electrical})
 }
 
 // handleFieldAudit is the device audit after ?after=.
 func (s *Server) handleFieldAudit(c *gin.Context) {
-	device, ok := simURL(rangeOf(c))
+	device, ok := nodeSimURL(rangeOf(c), "breaker-1")
 	if !ok {
 		notSupported(c)
 		return
@@ -83,17 +98,16 @@ func (s *Server) handleFieldAudit(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", audit)
 }
 
-// postSimAction posts one sim action and requires the device
-// to return its state rather than an action acknowledgement.
-func postSimAction(ctx context.Context, device, path string, body []byte) (json.RawMessage, error) {
+// postStateAction sends one action and rejects transport-only acknowledgements.
+func postStateAction(ctx context.Context, service, device, path string, body []byte) (json.RawMessage, error) {
 	status, answer, err := callUpstream(ctx, http.MethodPost, device+path, body, upstreamReadTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("%s unreachable: %w", simService, err)
+		return nil, fmt.Errorf("%s unreachable: %w", service, err)
 	}
 	if status != http.StatusOK {
-		return nil, &upstreamError{service: simService, status: status, body: answer}
+		return nil, &upstreamError{service: service, status: status, body: answer}
 	}
-	state, err := jsonObject(simService, answer)
+	state, err := jsonObject(service, answer)
 	if err != nil {
 		return nil, err
 	}
@@ -102,19 +116,7 @@ func postSimAction(ctx context.Context, device, path string, body []byte) (json.
 		return nil, err
 	}
 	if _, acknowledgement := fields["accepted"]; acknowledgement {
-		return nil, fmt.Errorf("%s returned an action acknowledgement instead of state", simService)
+		return nil, fmt.Errorf("%s returned an action acknowledgement instead of state", service)
 	}
 	return state, nil
-}
-
-// resetSimDevice is the workshop reset's step for the sim
-// device: its own reset, which restores the initial state.
-func resetSimDevice(ctx context.Context, gen *lifecycle.Generation) resetAction {
-	const action = "Reset the sim device to its initial state"
-	device, ok := simURL(gen)
-	if !ok {
-		return resetAction{Action: action, Detail: "package " + gen.Package.ID + " has no sim device"}
-	}
-	_, err := postSimAction(ctx, device, "/api/sim/reset", []byte(`{}`))
-	return resetAction{Action: action, Success: err == nil, Detail: boolDetail(err == nil, "device reset", errStr(err))}
 }

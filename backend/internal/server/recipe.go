@@ -30,10 +30,9 @@ type packageRecipe struct {
 	sessionCuts map[string]sessionCutSpec
 	// resetCommands are RTAC device commands the reset replays.
 	resetCommands []deviceCommand
-	// resetSim makes the reset restore the sim device
-	// (the service with a sim endpoint) through its reset.
-	resetSim bool
-	canary   canaryProbe
+	// resetTruth restores simulation truth and waits for consistent delivery.
+	resetTruth func(context.Context, *lifecycle.Generation, *packageRecipe) []resetAction
+	canary     canaryProbe
 	// captureFilter is the tcpdump filter of /api/pcap/start; empty
 	// captures everything.
 	captureFilter string

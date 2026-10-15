@@ -199,6 +199,11 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		field.GET("/state", s.handleFieldState)
 		field.GET("/audit", s.handleFieldAudit)
 	}
+	historian := rng.Group("/historian")
+	{
+		historian.GET("/points", s.handleHistorianPoints)
+		historian.GET("/history", s.handleHistorianHistory)
+	}
 
 	// PCAP capture endpoints (containd API with tcpdump fallback)
 	pcap := rng.Group("/pcap")

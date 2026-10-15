@@ -1,20 +1,27 @@
 {
-  "schema": 1,
-  "id": "eu-feeder-20kv",
+  "schema": 2,
+  "id": "eu-cigre-mv-teaching",
   "frequency_hz": 50,
-  "primary_kv": 20,
+  "hv_kv": 110,
+  "mv_kv": 20,
   "circuit_file": "/profiles/feeder.dss",
-  "load_kw": 1000,
-  "load_pf": 1.0,
+  "devices": [
+    {"id": "feeder-breaker", "kind": "breaker", "truth_url": "http://10.50.50.30:8080"},
+    {"id": "rmu-1", "kind": "rmu", "truth_url": "http://10.50.50.31:8080"},
+    {"id": "rmu-2", "kind": "rmu", "truth_url": "http://10.50.50.32:8080"},
+    {"id": "oltc-1", "kind": "oltc", "truth_url": "http://10.50.50.33:8080"}
+  ],
   "elements": {
-    "breaker": "Line.Breaker",
-    "load": "Load.FeederLoad",
-    "load_bus": "loadbus"
+    "source": "Vsource.Source",
+    "feeder-breaker": "Line.CB1",
+    "rmu-1": "Line.RMU1",
+    "rmu-2": "Line.RMU2",
+    "oltc-1": "Transformer.T1",
+    "f2": "Line.F2",
+    "fault_s1": "Fault.S1",
+    "fault_s2": "Fault.S2"
   },
-  "device": {
-    "id": "feeder-breaker",
-    "truth_url": "http://10.50.50.30:8080"
-  },
+  "buses": {"hv": "hv", "bus20": "bus20", "s1": "s1", "s2": "s2", "s3": "s3"},
   "solve_interval_ms": 1000,
   "request_timeout_ms": 500,
   "truth_stale_after_ms": 3000

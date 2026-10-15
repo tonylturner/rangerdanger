@@ -59,18 +59,18 @@ func executeAuthoredStep(t *testing.T, s *Server, steps []labs.ScenarioStep, id 
 
 func TestEUAuthoredDeviceSteps(t *testing.T) {
 	stub, device := newUpstreamStub(t, map[string]stubResponse{
-		"POST /api/sim/fault": {http.StatusOK, deviceStateFixture},
-		"POST /api/sim/reset": {http.StatusOK, deviceStateFixture},
+		"POST /api/process/actions": {http.StatusOK, electricalFixture},
+		"POST /api/sim/actions":     {http.StatusOK, deviceStateFixture},
 	})
-	s := rangeServer(euGeneration(t, nil, map[string]string{"feeder_breaker": device.URL}), "improved")
+	s := rangeServer(euGeneration(t, nil, map[string]string{"feeder_breaker": device.URL, "opendss_sim": device.URL}), "improved")
 	steps := seedEUScenario(t, s)
 	for _, id := range []string{"local-trip", "clear-fault", "restore-device"} {
 		if result := executeAuthoredStep(t, s, steps, id); !result.Success || result.ActionType != "command" {
 			t.Errorf("%s = %+v", id, result)
 		}
 	}
-	if !reflect.DeepEqual(stub.requests, []string{"POST /api/sim/fault", "POST /api/sim/fault", "POST /api/sim/reset"}) ||
-		!reflect.DeepEqual(stub.bodies, []string{`{"active":true}`, `{"active":false}`, `{}`}) {
+	if !reflect.DeepEqual(stub.requests, []string{"POST /api/process/actions", "POST /api/process/actions", "POST /api/sim/actions"}) ||
+		!reflect.DeepEqual(stub.bodies, []string{`{"action":"fault_s1"}`, `{"action":"clear_fault"}`, `{"action":"reset"}`}) {
 		t.Fatalf("device requests = %q %q", stub.requests, stub.bodies)
 	}
 }
@@ -94,7 +94,7 @@ func TestEUDeviceDispatchRefusesInvalidActions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			stub, device := newUpstreamStub(t, map[string]stubResponse{
-				"POST /api/sim/reset": {test.status, test.answer},
+				"POST /api/sim/actions": {test.status, test.answer},
 			})
 			s := rangeServer(euGeneration(t, nil, map[string]string{"feeder_breaker": device.URL}), "improved")
 			result := s.executeCommand(context.Background(), s.rng.(*fakeRange).gen, test.device, test.command, test.source, test.value)

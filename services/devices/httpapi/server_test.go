@@ -3,35 +3,28 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"strings"
 	"testing"
-	"time"
 
-	"github.com/tturner/rangerdanger/services/devices/feederbreaker"
+	"github.com/tturner/rangerdanger/services/devices/fielddevice"
 )
 
-func newTestAPI(t *testing.T) (*feederbreaker.Model, *Server) {
+func newTestAPI(t *testing.T, kind fielddevice.Kind) (*fielddevice.Model, *Server) {
 	t.Helper()
-	zones, err := feederbreaker.ParseZones("field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24")
+	zones, err := fielddevice.ParseZones("field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24")
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := feederbreaker.NewModel(feederbreaker.Config{
-		DeviceID: "feeder-breaker", Generation: 321,
-		Now:            func() time.Time { return time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC) },
-		LocalContext:   feederbreaker.AuditContext{Peer: "protection", Protocol: "local-protection", Zone: zones.Name("field")},
-		ProcessContext: feederbreaker.AuditContext{Peer: "measurement-expiry", Protocol: "process", Zone: zones.Name("process")},
-	})
+	id := map[fielddevice.Kind]string{fielddevice.Breaker: "feeder-breaker", fielddevice.RMU: "rmu-1", fielddevice.OLTC: "oltc-1"}[kind]
+	model, err := fielddevice.NewModel(fielddevice.Config{Kind: kind, DeviceID: id, RMUNormal: fielddevice.PositionClosed, Generation: 321})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return model, New(model, zones)
 }
-
 func perform(handler http.Handler, method, path, body, remote string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	if remote != "" {
@@ -41,239 +34,221 @@ func perform(handler http.Handler, method, path, body, remote string) *httptest.
 	handler.ServeHTTP(response, request)
 	return response
 }
-
-func TestListenerSeparationAndHealthShape(t *testing.T) {
-	_, api := newTestAPI(t)
-	processHealth := perform(api.ProcessHandler(), http.MethodGet, "/api/health", "", "10.50.50.20:44321")
-	if processHealth.Code != http.StatusNotFound {
-		t.Fatalf("process listener exposed sim health: %d", processHealth.Code)
-	}
-	simTruth := perform(api.SimHandler(), http.MethodGet, "/api/truth", "", "10.99.99.22:44321")
-	if simTruth.Code != http.StatusNotFound {
-		t.Fatalf("sim listener exposed process truth route: %d", simTruth.Code)
-	}
-	operatorCommand := perform(api.SimHandler(), http.MethodPost, "/api/command", `{}`, "10.99.99.22:44321")
-	if operatorCommand.Code != http.StatusNotFound {
-		t.Fatalf("sim listener exposed a command endpoint: %d", operatorCommand.Code)
-	}
-
-	health := perform(api.SimHandler(), http.MethodGet, "/api/health", "", "10.99.99.10:44321")
-	if health.Code != http.StatusOK {
-		t.Fatalf("health status = %d: %s", health.Code, health.Body)
-	}
+func decode(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
 	var result map[string]any
-	if err := json.Unmarshal(health.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("JSON %d %s: %v", response.Code, response.Body, err)
 	}
-	if result["status"] != "ok" || result["measurements_valid"] != false || result["measurement_age_ms"] != nil {
-		t.Fatalf("health body = %#v", result)
-	}
+	return result
 }
-
-func TestMeasurementsHTTPAcceptanceReplayStaleAndValidation(t *testing.T) {
-	model, api := newTestAPI(t)
-	handler := api.ProcessHandler()
-	truth := model.Truth()
-	input := feederbreaker.MeasurementInput{
-		Schema: 1, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
-		SolverEpoch: "solver-one", SolveSeq: 1, SolvedAt: "2026-10-09T12:00:00.123456789Z",
-		CurrentA: 28.9, VoltageKV: 19.9,
-	}
+func inputFor(m *fielddevice.Model) fielddevice.MeasurementInput {
+	truth := m.Truth()
+	return fielddevice.MeasurementInput{Schema: 2, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
+		SolverEpoch: "solver-a", SolveSeq: 1, SolvedAt: "2026-10-15T10:00:00Z", CurrentA: 41.2, VoltageKV: 19.93, SourceKV: 20, SectionLive: true, SourceLive: false}
+}
+func postMeasurement(t *testing.T, api *Server, input fielddevice.MeasurementInput) *httptest.ResponseRecorder {
+	t.Helper()
 	body, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := perform(handler, http.MethodPost, "/api/measurements", string(body), "10.50.50.20:43123")
-	if first.Code != http.StatusOK {
-		t.Fatalf("first measurement status=%d body=%s", first.Code, first.Body)
-	}
-	var accepted map[string]any
-	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil || accepted["accepted"] != true || accepted["revision"] != float64(1) {
-		t.Fatalf("accepted response=%#v err=%v", accepted, err)
-	}
-
-	replay := perform(handler, http.MethodPost, "/api/measurements", string(body), "10.50.50.20:43123")
-	if replay.Code != http.StatusConflict {
-		t.Fatalf("replay status=%d body=%s", replay.Code, replay.Body)
-	}
-	var conflict map[string]any
-	if err := json.Unmarshal(replay.Body.Bytes(), &conflict); err != nil || conflict["reason"] != "replay" || conflict["accepted"] != false {
-		t.Fatalf("replay response=%#v err=%v", conflict, err)
-	}
-
-	stale := input
-	stale.Generation++
-	stale.SolveSeq++
-	staleBody, _ := json.Marshal(stale)
-	staleResponse := perform(handler, http.MethodPost, "/api/measurements", string(staleBody), "10.50.50.20:43123")
-	if staleResponse.Code != http.StatusConflict || !bytes.Contains(staleResponse.Body.Bytes(), []byte(`"stale_truth"`)) {
-		t.Fatalf("stale response=%d %s", staleResponse.Code, staleResponse.Body)
-	}
-
-	invalid := input
-	invalid.SolveSeq++
-	invalid.CurrentA = -1
-	invalidBody, _ := json.Marshal(invalid)
-	invalidResponse := perform(handler, http.MethodPost, "/api/measurements", string(invalidBody), "10.50.50.20:43123")
-	if invalidResponse.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("invalid values status=%d body=%s", invalidResponse.Code, invalidResponse.Body)
-	}
-	missingValue := bytes.TrimSuffix(body, []byte("}"))
-	missingValue = bytes.Replace(missingValue, []byte(`,"current_a":28.9`), nil, 1)
-	missingResponse := perform(handler, http.MethodPost, "/api/measurements", string(missingValue)+`}`, "10.50.50.20:43123")
-	if missingResponse.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("missing measurement field status=%d body=%s", missingResponse.Code, missingResponse.Body)
-	}
-	nullValue := bytes.Replace(body, []byte(`"current_a":28.9`), []byte(`"current_a":null`), 1)
-	nullResponse := perform(handler, http.MethodPost, "/api/measurements", string(nullValue), "10.50.50.20:43123")
-	if nullResponse.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("null measurement field status=%d body=%s", nullResponse.Code, nullResponse.Body)
-	}
-	unknown := bytes.TrimSuffix(body, []byte("}"))
-	unknown = append(unknown, []byte(`,"extra":true}`)...)
-	unknownResponse := perform(handler, http.MethodPost, "/api/measurements", string(unknown), "10.50.50.20:43123")
-	if unknownResponse.Code != http.StatusBadRequest {
-		t.Fatalf("unknown field status=%d body=%s", unknownResponse.Code, unknownResponse.Body)
-	}
-	unknownOnly := perform(handler, http.MethodPost, "/api/measurements", `{"extra":true}`, "10.50.50.20:43123")
-	if unknownOnly.Code != http.StatusBadRequest {
-		t.Fatalf("unknown-only field status=%d body=%s", unknownOnly.Code, unknownOnly.Body)
-	}
-
-	state := perform(api.SimHandler(), http.MethodGet, "/api/state", "", "10.99.99.22:43123")
-	var stateBody map[string]any
-	if err := json.Unmarshal(state.Body.Bytes(), &stateBody); err != nil {
-		t.Fatal(err)
-	}
-	measurements := stateBody["measurements"].(map[string]any)
-	if stateBody["revision"] != float64(1) || measurements["valid"] != true || measurements["solver_epoch"] != "solver-one" {
-		t.Fatalf("state response = %#v", stateBody)
-	}
+	return perform(api.ProcessHandler(), http.MethodPost, "/api/measurements", string(body), "10.50.50.20:43001")
 }
-
-func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
-	model, api := newTestAPI(t)
-	sim := api.SimHandler()
-	missingActive := perform(sim, http.MethodPost, "/api/sim/fault", `{}`, "10.99.99.22:54321")
-	if missingActive.Code != http.StatusBadRequest {
-		t.Fatalf("missing active status=%d", missingActive.Code)
-	}
-	unknown := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true,"extra":1}`, "10.99.99.22:54321")
-	if unknown.Code != http.StatusBadRequest {
-		t.Fatalf("unknown fault field status=%d", unknown.Code)
-	}
-	fault := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true}`, "10.99.99.22:54321")
-	if fault.Code != http.StatusOK || !snapshotResponseMatches(t, fault, model.Snapshot()) {
-		t.Fatalf("fault status=%d body=%s", fault.Code, fault.Body)
-	}
-	truth := model.Truth()
-	if truth.Position != feederbreaker.PositionOpen || !truth.Lockout || !truth.FaultActive || !truth.ProtectionTripped {
-		t.Fatalf("fault state = %+v", truth)
-	}
-	noOpFault := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true}`, "10.99.99.22:54321")
-	if noOpFault.Code != http.StatusOK || !snapshotResponseMatches(t, noOpFault, model.Snapshot()) {
-		t.Fatalf("no-op fault status=%d body=%s", noOpFault.Code, noOpFault.Body)
-	}
-	resetNull := perform(sim, http.MethodPost, "/api/sim/reset", `null`, "10.99.99.22:54321")
-	if resetNull.Code != http.StatusBadRequest {
-		t.Fatalf("null reset body status=%d", resetNull.Code)
-	}
-	resetUnknown := perform(sim, http.MethodPost, "/api/sim/reset", `{"extra":1}`, "10.99.99.22:54321")
-	if resetUnknown.Code != http.StatusBadRequest {
-		t.Fatalf("unknown reset field status=%d", resetUnknown.Code)
-	}
-	reset := perform(sim, http.MethodPost, "/api/sim/reset", `{}`, "10.99.99.22:54321")
-	if reset.Code != http.StatusOK || !snapshotResponseMatches(t, reset, model.Snapshot()) ||
-		model.Truth().Position != feederbreaker.PositionClosed {
-		t.Fatalf("reset status=%d body=%s truth=%+v", reset.Code, reset.Body, model.Truth())
-	}
-
-	badAfter := perform(sim, http.MethodGet, "/api/audit?after=nope", "", "10.99.99.22:54321")
-	if badAfter.Code != http.StatusBadRequest {
-		t.Fatalf("bad audit cursor status=%d", badAfter.Code)
-	}
-	audit := perform(sim, http.MethodGet, "/api/audit?after=0", "", "10.99.99.22:54321")
-	var auditBody struct {
-		Generation uint32                     `json:"generation"`
-		Entries    []feederbreaker.AuditEntry `json:"entries"`
-		Latest     *uint64                    `json:"latest_seq"`
-		Oldest     *uint64                    `json:"oldest_seq"`
-	}
-	if err := json.Unmarshal(audit.Body.Bytes(), &auditBody); err != nil {
-		t.Fatal(err)
-	}
-	if audit.Code != http.StatusOK || auditBody.Generation != 321 || auditBody.Latest == nil || auditBody.Oldest == nil {
-		t.Fatalf("audit body = %+v status=%d", auditBody, audit.Code)
-	}
-	foundTrip := false
-	foundLab := false
-	for _, entry := range auditBody.Entries {
-		if entry.Operation == "fault" || entry.Operation == "reset" {
-			if entry.Context.Protocol != "lab" || entry.Context.Peer != "10.99.99.22:54321" {
-				t.Fatalf("simulation action lost lab actor/peer: %+v", entry.Context)
-			}
-			foundLab = true
-		}
-		if entry.Operation == "local_protection_trip" {
-			foundTrip = entry.Context.Protocol == "local-protection" && entry.Context.Zone == "field"
-		}
-	}
-	if !foundLab {
-		t.Fatal("missing lab simulation actions")
-	}
-	if !foundTrip {
-		t.Fatalf("local protection context missing from audit: %+v", auditBody.Entries)
-	}
-}
-
-func snapshotResponseMatches(t *testing.T, response *httptest.ResponseRecorder, want feederbreaker.Snapshot) bool {
+func assertAck(t *testing.T, response *httptest.ResponseRecorder, solved, revision uint64) {
 	t.Helper()
-	var got feederbreaker.Snapshot
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Errorf("response is not a state snapshot: %v", err)
-		return false
+	got := decode(t, response)
+	if response.Code != 200 || len(got) != 3 || got["accepted"] != true || got["solved_revision"] != float64(solved) || got["revision"] != float64(revision) {
+		t.Fatalf("ack %d: %v", response.Code, got)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("snapshot response = %+v, want %+v", got, want)
-		return false
+}
+func TestListenerSeparationAndRemovedRoutes(t *testing.T) {
+	_, api := newTestAPI(t, fielddevice.Breaker)
+	for _, tt := range []struct {
+		name         string
+		handler      http.Handler
+		method, path string
+	}{
+		{"sim health on process", api.ProcessHandler(), "GET", "/api/health"},
+		{"state on process", api.ProcessHandler(), "GET", "/api/state"},
+		{"truth on sim", api.SimHandler(), "GET", "/api/truth"},
+		{"measurements on sim", api.SimHandler(), "POST", "/api/measurements"},
+		{"actions on process", api.ProcessHandler(), "POST", "/api/sim/actions"},
+		{"operator command", api.SimHandler(), "POST", "/api/command"},
+		{"old fault", api.SimHandler(), "POST", "/api/sim/fault"},
+		{"old reset", api.SimHandler(), "POST", "/api/sim/reset"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if r := perform(tt.handler, tt.method, tt.path, `{}`, ""); r.Code != 404 {
+				t.Fatalf("code=%d", r.Code)
+			}
+		})
 	}
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Errorf("decode snapshot response: %v", err)
-		return false
+	r := perform(api.SimHandler(), "GET", "/api/health", "", "")
+	got := decode(t, r)
+	if r.Code != 200 || got["status"] != "ok" || got["measurements_valid"] != false || got["measurement_age_ms"] != nil {
+		t.Fatalf("health=%v", got)
 	}
-	var measurements map[string]json.RawMessage
-	if err := json.Unmarshal(body["measurements"], &measurements); err != nil {
-		t.Errorf("decode measurements: %v", err)
-		return false
+}
+
+func TestMeasurementsHTTPAcceptanceConflictsAndProtectionAck(t *testing.T) {
+	for _, kind := range []fielddevice.Kind{fielddevice.Breaker, fielddevice.RMU, fielddevice.OLTC} {
+		t.Run(string(kind), func(t *testing.T) {
+			model, api := newTestAPI(t, kind)
+			input := inputFor(model)
+			assertAck(t, postMeasurement(t, api, input), 1, 1)
+			for _, tt := range []struct {
+				name   string
+				edit   func(*fielddevice.MeasurementInput)
+				reason string
+			}{
+				{"replay", func(i *fielddevice.MeasurementInput) {}, "replay"},
+				{"stale revision", func(i *fielddevice.MeasurementInput) { i.Revision++ }, "stale_truth"},
+				{"stale generation", func(i *fielddevice.MeasurementInput) { i.Generation++ }, "stale_truth"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					bad := input
+					tt.edit(&bad)
+					r := postMeasurement(t, api, bad)
+					got := decode(t, r)
+					if r.Code != 409 || len(got) != 2 || got["accepted"] != false || got["reason"] != tt.reason {
+						t.Fatalf("response=%d %v", r.Code, got)
+					}
+				})
+			}
+			input.SolveSeq++
+			input.FaultCurrent = true
+			expected := uint64(1)
+			if kind != fielddevice.OLTC {
+				expected = 2
+			}
+			assertAck(t, postMeasurement(t, api, input), 1, expected)
+			if kind != fielddevice.OLTC {
+				if model.Snapshot().Measurements.Valid {
+					t.Fatal("protection/FPI revision kept old measurements valid")
+				}
+				input.Revision = expected
+				input.SolveSeq++
+				assertAck(t, postMeasurement(t, api, input), expected, expected)
+			}
+			state := decode(t, perform(api.SimHandler(), "GET", "/api/state", "", ""))
+			values := state["measurements"].(map[string]any)
+			if state["schema"] != float64(2) || values["valid"] != true || values["source_kv_ll"] != float64(20) || values["fault_current"] != true {
+				t.Fatalf("state=%v", state)
+			}
+			if _, old := state["fault_active"]; old {
+				t.Fatal("schema1 field leaked")
+			}
+		})
 	}
-	for _, field := range []string{"current_a", "voltage_kv_ll", "valid", "solver_epoch", "solve_seq", "solved_at", "received_at"} {
-		if _, ok := measurements[field]; !ok {
-			t.Errorf("snapshot response lacks measurements.%s", field)
-			return false
+}
+
+func TestMeasurementStrictSchemaTwoBodies(t *testing.T) {
+	model, api := newTestAPI(t, fielddevice.Breaker)
+	base, _ := json.Marshal(inputFor(model))
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{"schema1", strings.Replace(string(base), `"schema":2`, `"schema":1`, 1)},
+		{"unknown", strings.TrimSuffix(string(base), "}") + `,"fault_active":true}`},
+		{"missing", strings.Replace(string(base), `,"source_live":false`, "", 1)},
+		{"null", strings.Replace(string(base), `"source_live":false`, `"source_live":null`, 1)},
+		{"negative", strings.Replace(string(base), `"current_a":41.2`, `"current_a":-1`, 1)},
+		{"overflow", strings.Replace(string(base), `"current_a":41.2`, `"current_a":1e309`, 1)},
+		{"nonUTC", strings.Replace(string(base), `2026-10-15T10:00:00Z`, `2026-10-15T10:00:00+00:00`, 1)},
+		{"trailing JSON", string(base) + `{}`}, {"array", `[]`}, {"null body", `null`}, {"empty", ``},
+		{"oversized", `{"x":"` + strings.Repeat("x", maxRequestBody) + `"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := perform(api.ProcessHandler(), "POST", "/api/measurements", tt.body, "")
+			got := decode(t, r)
+			if r.Code != 400 || len(got) != 2 || got["accepted"] != false || got["reason"] != "invalid" {
+				t.Fatalf("invalid response=%d %v", r.Code, got)
+			}
+		})
+	}
+	// Every schema-2 field, including false booleans, is required and non-null.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(base, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for key := range fields {
+		t.Run("missing-"+key, func(t *testing.T) {
+			copyFields := map[string]json.RawMessage{}
+			for k, v := range fields {
+				if k != key {
+					copyFields[k] = v
+				}
+			}
+			body, _ := json.Marshal(copyFields)
+			if r := perform(api.ProcessHandler(), "POST", "/api/measurements", string(body), ""); r.Code != 400 {
+				t.Fatalf("missing %s accepted", key)
+			}
+		})
+	}
+}
+
+func TestSimActionsAndAudit(t *testing.T) {
+	for _, tt := range []struct {
+		kind    fielddevice.Kind
+		actions []string
+	}{
+		{fielddevice.Breaker, []string{"reset_lockout", "reset"}},
+		{fielddevice.RMU, []string{"set_local", "set_remote", "earth_open", "reset_fault_passage", "reset"}},
+		{fielddevice.OLTC, []string{"set_local", "set_remote", "block", "unblock", "reset"}},
+	} {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			model, api := newTestAPI(t, tt.kind)
+			for _, name := range tt.actions {
+				r := perform(api.SimHandler(), "POST", "/api/sim/actions", `{"action":"`+name+`"}`, "10.99.99.10:43001")
+				if r.Code != 200 {
+					t.Fatalf("%s response=%d %s", name, r.Code, r.Body)
+				}
+				got := decode(t, r)
+				if got["revision"] != float64(model.Truth().Revision) || got["measurements"] == nil {
+					t.Fatal("action did not return state")
+				}
+			}
+			audit := decode(t, perform(api.SimHandler(), "GET", "/api/audit?after=0", "", ""))
+			if audit["generation"] != float64(321) {
+				t.Fatal("audit generation")
+			}
+			entries := audit["entries"].([]any)
+			if len(entries) != len(tt.actions) {
+				t.Fatalf("audit=%v", entries)
+			}
+			for _, raw := range entries {
+				ctx := raw.(map[string]any)["context"].(map[string]any)
+				if ctx["protocol"] != "lab" || ctx["peer"] != "10.99.99.10:43001" || ctx["zone"] != "mgmt" {
+					t.Fatalf("lost lab actor=%v", ctx)
+				}
+			}
+		})
+	}
+	_, api := newTestAPI(t, fielddevice.RMU)
+	r := perform(api.SimHandler(), "POST", "/api/sim/actions", `{"action":"earth_close"}`, "")
+	if r.Code != 409 || decode(t, r)["reason"] != "way_closed" {
+		t.Fatal("earth interlock not surfaced")
+	}
+	for _, body := range []string{`{}`, `null`, `{"action":null}`, `{"action":""}`, `{"action":"inject_fault"}`, `{"action":"reset","value":1}`, `{"action":"reset"}{}`} {
+		r := perform(api.SimHandler(), "POST", "/api/sim/actions", body, "")
+		if r.Code != 400 {
+			t.Fatalf("bad action %s accepted=%d", body, r.Code)
 		}
 	}
-	return true
+	if r := perform(api.SimHandler(), "GET", "/api/audit?after=invalid", "", ""); r.Code != 400 {
+		t.Fatal("bad cursor accepted")
+	}
 }
 
 func TestListenAddressRequiresExplicitIPv4(t *testing.T) {
-	for _, address := range []string{":8080", "0.0.0.0:8080", "localhost:8080", "10.0.0.1:0"} {
+	for _, address := range []string{":8080", "0.0.0.0:8080", "localhost:8080", "10.0.0.1:0", "[::1]:8080"} {
 		if _, err := ListenAddress(address); err == nil {
-			t.Errorf("ListenAddress(%q) unexpectedly accepted", address)
+			t.Errorf("accepted %s", address)
 		}
 	}
 	if got, err := ListenAddress("10.50.50.30:8080"); err != nil || got != "10.50.50.30:8080" {
-		t.Fatalf("ListenAddress explicit IPv4 = %q, %v", got, err)
-	}
-}
-
-func TestCanceledMeasurementDoesNotChangeState(t *testing.T) {
-	model, _ := newTestAPI(t)
-	input := feederbreaker.MeasurementInput{Schema: 1, DeviceID: "feeder-breaker"}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err := model.ApplyMeasurements(ctx, input, feederbreaker.AuditContext{})
-	if err == nil || model.Snapshot().Measurements.Valid {
-		t.Fatalf("canceled measurement err=%v snapshot=%+v", err, model.Snapshot())
+		t.Fatalf("listen=%s %v", got, err)
 	}
 }

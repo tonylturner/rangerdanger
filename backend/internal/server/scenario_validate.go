@@ -634,3 +634,50 @@ func countAuditNonRTACCommand(entries []map[string]any, command string) int {
 	}
 	return count
 }
+
+func init() {
+	registerScenarioValidator("us-baseline-assessment", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityCaptureFirewall},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			return s.validateBaselineAssessment(ctx, in.gen, in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-segmentation-requirements", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateSegmentationRequirements(in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-remediation-planning", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateRemediationPlanning(in.state, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-firewall-implementation", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateFirewallImplementation(in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-hardening-configurations", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateHardeningConfigurations(in.state, in.audit, in.activeConfig)
+		},
+	})
+	registerScenarioValidator("us-vendor-rdp-compromise", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateVendorRDPCompromise(in.state, in.audit, in.activeConfig)
+		},
+	})
+
+	registerScenarioValidator("us-validation-evidence", scenarioValidator{
+		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
+		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
+			return validateValidationEvidence(in.state, in.audit, in.activeConfig)
+		},
+	})
+
+}

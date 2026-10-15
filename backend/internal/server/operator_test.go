@@ -119,6 +119,8 @@ func TestOperatorAndSimRoutesNeedTheirServices(t *testing.T) {
 		{http.MethodGet, "/api/operator/journal", "", s.handleOperatorJournal},
 		{http.MethodGet, "/api/field/state", "", s.handleFieldState},
 		{http.MethodGet, "/api/field/audit", "", s.handleFieldAudit},
+		{http.MethodGet, "/api/historian/points", "", s.handleHistorianPoints},
+		{http.MethodGet, "/api/historian/history", "", s.handleHistorianHistory},
 	}
 	// The routes are registered on the range router as well.
 	routed := routedServer(t)

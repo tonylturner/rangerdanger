@@ -177,8 +177,8 @@ steps:
       Read: [Local protection](/knowledge#eu-feeder-breaker-protection).
     action:
       type: command
-      device: breaker
-      command: inject_fault
+      device: process
+      command: fault_s1
 
   - id: clear-fault
     title: "Clear the local fault"
@@ -191,7 +191,7 @@ steps:
       a disconnected IEC 104 cache.
     action:
       type: command
-      device: breaker
+      device: process
       command: clear_fault
 
   - id: restore

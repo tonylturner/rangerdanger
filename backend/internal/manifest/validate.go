@@ -187,8 +187,9 @@ func Validate(m *Manifest, root string) error {
 // a second holder would make ServiceByRole pick one by manifest order.
 var singleHolderRoles = []Role{RoleRTU, RoleControlCentre, RoleProcessSolver}
 
-// checkSingleHolders reports roles and the sim endpoint held by more
-// than one service, and a sim endpoint outside a field device.
+// checkSingleHolders reports ambiguous singleton roles and sim endpoints
+// outside field devices and time sources. Endpoint decoding rejects duplicate
+// names before they can be collapsed into the service's endpoint map.
 func checkSingleHolders(services []Service) []string {
 	var problems []string
 	for _, role := range singleHolderRoles {
@@ -202,18 +203,13 @@ func checkSingleHolders(services []Service) []string {
 			problems = append(problems, fmt.Sprintf("role %q is held by %s; at most one service may hold it", role, strings.Join(holders, ", ")))
 		}
 	}
-	var sims []string
 	for _, service := range services {
 		if _, ok := service.Endpoints[EndpointSim]; !ok {
 			continue
 		}
-		sims = append(sims, service.Key)
-		if !slices.Contains(service.Roles, RoleFieldDevice) {
-			problems = append(problems, fmt.Sprintf("service %q has a %s endpoint but not the %s role", service.Key, EndpointSim, RoleFieldDevice))
+		if !slices.Contains(service.Roles, RoleFieldDevice) && !slices.Contains(service.Roles, RoleTimeSource) {
+			problems = append(problems, fmt.Sprintf("service %q has a %s endpoint but neither the %s nor %s role", service.Key, EndpointSim, RoleFieldDevice, RoleTimeSource))
 		}
-	}
-	if len(sims) > 1 {
-		problems = append(problems, fmt.Sprintf("%s endpoint is declared by %s; at most one service may declare it", EndpointSim, strings.Join(sims, ", ")))
 	}
 	return problems
 }
