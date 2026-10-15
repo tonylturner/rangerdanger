@@ -281,7 +281,11 @@ src/modbus.{c,h}       in-tree Modbus TCP master (FC3/FC4/FC6)
 src/stationclock.{c,h} GPS-fed station clock (HTTP poller)
 src/common.{c,h}       logging, quality/time/ASDU formatting, arg parsing
 src/client.{c,h}       synchronous wrapper over a lib60870 CS104_Connection (iec104cmd)
-src/rtu.c              iec104-rtu: Modbus-driven controlled station
+src/rtu.c              iec104-rtu: flags, startup, main loop, shutdown
+src/rtu_internal.h     private RTU shared model, locking rules and module interfaces
+src/rtu_server.c       RTU IEC 104 handlers, connection events, quality and reporting
+src/rtu_poll.c         RTU independent Modbus poll workers and register decoding
+src/rtu_command.c      RTU SBO validation, FC6 execution and fresh-feedback completion
 src/cc.c               iec104-cc: flags, startup, shutdown
 src/cc_state.{c,h}     CC shared model: point cache, link/GI status, journal, renderers
 src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, GI, reconnect, sends

@@ -56,7 +56,8 @@ RUN set -eux; \
     CFLAGS="-std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -Isrc -I/src/cjson -I/opt/lib60870/include"; \
     LIBS="/opt/lib60870/lib/liblib60870.a -lpthread -lm"; \
     cc $CFLAGS -o /out/iec104-rtu \
-        src/rtu.c src/common.c src/pointmap.c src/modbus.c src/stationclock.c /src/cjson/cJSON.c $LIBS; \
+        src/rtu.c src/rtu_server.c src/rtu_poll.c src/rtu_command.c \
+        src/common.c src/pointmap.c src/modbus.c src/stationclock.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104-cc \
         src/cc.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c src/cc_historian.c \
         src/common.c src/pointmap.c /src/cjson/cJSON.c $LIBS; \
