@@ -80,10 +80,10 @@ steps:
     expected_config: weak
     node: fw-1
     description: |
-      Apply weak only for the agreed baseline window. At the firewall's
-      shell capture `tcpdump -ni any -w /data/captures/lab2-before.pcap
-      'tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081'`.
-      Stop after at least 15 seconds. Identify source, destination, request,
+      Apply weak only for the agreed baseline window. Use the portal capture
+      for at least 15 seconds: it covers IEC 104 (2404), Modbus (502),
+      HTTP reads and PLC maintenance (8080), and historian ingest (8081).
+      Download the PCAP. Identify source, destination, request,
       response, cadence, business owner and loss consequence for each flow.
       The firewall cannot observe same-subnet RTU→PLC or RTU→GPS traffic.
       Record CC protocol observations of PLC health and valid station time
