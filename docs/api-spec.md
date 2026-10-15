@@ -4,7 +4,7 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
-**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*`, `/historian/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
 
 **Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe. `us-dnp3-substation` and `eu-iec104-substation` have one; other packages answer `404 {"error":"package <id> has no workshop recipe"}`. A recipe that lacks an operation answers `404 {"error":"not supported by this package"}`.
 
@@ -89,8 +89,10 @@ The workshop endpoints operate on the serving range, with nodes from the topolog
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
 | `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
-| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) |
+| `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.). Returns `{"success","actions":[{"action","success","detail"}]}`; any failed step returns `502`. |
 | `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
+
+For `eu-iec104-substation`, `POST /workshop/reset` runs process `reset`, then device `reset` for the OLTC, RMU2, RMU1 and breaker, then GPS `reset_offset`, and waits up to 5 s until every process device reports `solved_revision == revision` at or after its post-reset revision. The PLC is not reset and historian data is kept. Shared firewall-baseline and cleanup steps follow.
 
 The graph's `flows` entries have `id`, `source`, `target` (node IDs),
 `protocol` (display label), `port`, `cadence`, `category` (`baseline` or
@@ -164,8 +166,19 @@ For packages whose manifest has a control centre and a field device simulator (`
 | `GET` | `/operator/state` | Control-centre state with `package_id` and `range_generation` added |
 | `POST` | `/operator/commands` | Relay one command to the control centre. The CC runs select, execute and feedback; the backend sends it once and never retries. A CC refusal keeps its status. |
 | `GET` | `/operator/journal?after=<seq>` | Control-centre command journal after a sequence number |
-| `GET` | `/field/state` | `{"device", "process"}`: the field device state and the solver's electrical result. Fails when either upstream fails. |
-| `GET` | `/field/audit?after=<seq>` | Field device audit after a sequence number |
+| `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"process":<electrical state>}`. Includes every manifest `sim` endpoint, keyed by topology node ID. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
+| `GET` | `/field/audit?after=<seq>` | Breaker (`breaker-1`) audit after a sequence number |
+
+## Historian
+
+Range-bound read routes to the serving manifest's historian `api` endpoint over the management network. Packages without that endpoint answer `404 {"error":"not supported by this package"}`. There is no ingest or write route.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/historian/points` | The historian's `[{id,ioa,asdu,last}]` array, unchanged |
+| `GET` | `/historian/history?point=<id>&since=<rfc3339>&until=<rfc3339>` | `{point,segments:[{cache_epoch,samples:[...]}],gaps:[{from,to}]}`, unchanged, with quality, timestamps and gaps |
+
+A historian `400` keeps its status and body. Other upstream failures return `502`, or `504` on timeout, naming the historian.
 
 ## Firewall
 
