@@ -130,6 +130,24 @@
         "action": "ALLOW"
       },
       {
+        "id": "weak-foreign-field-modbus",
+        "description": "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)",
+        "sourceZones": [
+          "wan",
+          "dmz"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
         "id": "weak-historian-ingest",
         "description": "WEAK: any control-centre-zone source can push historian snapshots",
         "sourceZones": [

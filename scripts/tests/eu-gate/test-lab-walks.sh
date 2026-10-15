@@ -4,6 +4,27 @@
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# The weak teaching exposure is deliberate; improved must still log and deny
+# identical foreign-source Modbus probes (the live walks prove enforcement).
+t_run jq -e '
+  .firewall.defaultAction == "DENY" and
+  ([.firewall.rules[] | select(.id == "weak-foreign-field-modbus")] |
+    length == 1 and all(.[];
+      .sourceZones == ["wan","dmz"] and .destZones == ["lan2"] and
+      .protocols == [{"name":"tcp","port":"502"}] and .action == "ALLOW" and
+      (.description | startswith("WEAK teaching exposure:"))))
+' "$PACKAGE/firewall/weak.json"
+t_expect_eq "$T_STATUS" 0 "weak exposes only field TCP/502 to enterprise and vendor"
+t_run jq -e '
+  [.firewall.rules[] | select(.id == "deny-unauthorized-modbus")] |
+  length == 1 and all(.[];
+    (.sourceZones | index("wan")) != null and
+    (.sourceZones | index("dmz")) != null and .destZones == ["lan2"] and
+    .protocols == [{"name":"tcp","port":"502"}] and
+    .action == "DENY" and .log == true)
+' "$PACKAGE/firewall/improved.json"
+t_expect_eq "$T_STATUS" 0 "improved retains the logged foreign field-Modbus deny"
+
 CALLS=""
 RESPONSE='{"exit_code":0,"stdout":"ok","stderr":""}'
 STATUS=200
