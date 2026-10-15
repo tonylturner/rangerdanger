@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,13 +63,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 	s.pcap.FileReady = false
 	s.pcapMu.Unlock()
 	if dockerCli := s.orchestrator.DockerClient(); dockerCli != nil {
-		execCfg := container.ExecOptions{
-			Cmd: []string{"sh", "-c", "rm -f /data/captures/*.pcap /tmp/capture*.pcap 2>/dev/null; true"},
-		}
-		execID, err := dockerCli.ContainerExecCreate(ctx, firewall, execCfg)
-		if err == nil {
-			dockerCli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{})
-		}
+		err := runResetCleanup(ctx, s.orchestrator, firewall, "rm -f /data/captures/*.pcap /tmp/capture*.pcap")
 		actions = append(actions, resetAction{
 			Action:  "Clear PCAP captures",
 			Success: err == nil,
@@ -84,13 +80,7 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		// its next restart. The wipe is a no-op on a clean stack
 		// (file is already containing the default cred) so this is
 		// always safe to run from Reset Lab.
-		credCfg := container.ExecOptions{
-			Cmd: []string{"sh", "-c", "rm -f /data/users.db /data/sessions.db 2>/dev/null; true"},
-		}
-		credExecID, credErr := dockerCli.ContainerExecCreate(ctx, firewall, credCfg)
-		if credErr == nil {
-			dockerCli.ContainerExecStart(ctx, credExecID.ID, container.ExecStartOptions{})
-		}
+		credErr := runResetCleanup(ctx, s.orchestrator, firewall, "rm -f /data/users.db /data/sessions.db")
 		actions = append(actions, resetAction{
 			Action:  "Reset containd credentials to default",
 			Success: credErr == nil,
@@ -122,6 +112,23 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		"success": allSuccess,
 		"actions": actions,
 	})
+}
+
+type resetCommandRunner interface {
+	ExecCommand(context.Context, string, []string, int) (string, string, int, error)
+}
+
+// runResetCleanup checks both Docker transport errors and the command's
+// exit status. A created exec is not evidence that cleanup succeeded.
+func runResetCleanup(ctx context.Context, runner resetCommandRunner, container, command string) error {
+	_, stderr, code, err := runner.ExecCommand(ctx, container, []string{"sh", "-c", command}, 5)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("reset cleanup exited %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return nil
 }
 
 func boolDetail(ok bool, success, failure string) string {
