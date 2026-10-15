@@ -1,0 +1,31 @@
+! CIGRE-derived teaching feeder, NOT the CIGRE benchmark.
+! Numerical preflight only: not selected by profile.json.
+! Parameter provenance, reductions and BSD-3 notices: PROVENANCE.md, NOTICE.txt.
+Clear
+Set DefaultBaseFrequency=50
+New Circuit.EUReferenceCandidate phases=3 bus1=hv basekv=110 pu=1 frequency=50 MVAsc3=5000 MVAsc1=5000 X1R1=10 X0R0=10
+
+! pandapower T1: 25 MVA, 110/20 kV, vkr=0.16%, vk=12.00107%.
+! X = sqrt(vk^2 - vkr^2) = 12.000003381%; split copper loss equally.
+New Transformer.T1 phases=3 windings=2 buses=[hv bus20] conns=[delta wye] kvs=[110 20] kvas=[25000 25000] %rs=[0.08 0.08] xhl=12.000003381 %noloadloss=0 %imag=0
+
+! Idealised switch impedances; explicit zero capacitance.
+New Line.CB1 phases=3 bus1=bus20 bus2=f1 switch=yes r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 c1=0 c0=0 length=0.001 units=km
+New Line.Section1 phases=3 bus1=f1 bus2=s1 r1=0.501 x1=0.716 r0=0.817 x0=1.598 c1=151.1749 c0=151.1749 length=2.82 units=km
+New Line.RMU1 phases=3 bus1=s1 bus2=f1b switch=yes r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 c1=0 c0=0 length=0.001 units=km
+New Line.Section2 phases=3 bus1=f1b bus2=s2 r1=0.501 x1=0.716 r0=0.817 x0=1.598 c1=151.1749 c0=151.1749 length=4.42 units=km
+New Line.F2 phases=3 bus1=bus20 bus2=f2 switch=yes r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 c1=0 c0=0 length=0.001 units=km
+New Line.Section3 phases=3 bus1=f2 bus2=s3 r1=0.510 x1=0.366 r0=0.658 x0=1.611 c1=10.09679 c0=4.074 length=4.89 units=km
+New Line.RMU2 phases=3 bus1=s3 bus2=s2 switch=yes r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 c1=0 c0=0 length=0.001 units=km
+Open Line.RMU2 1
+
+! Unscaled CIGRE subset: R3+R4+R5, CI9, CI14 (S * power factor).
+! Teaching categories, not a claim that the source distinguishes CI9 commercial.
+New Load.Residential phases=3 bus1=s1 conn=wye kv=20 kw=1435.6 pf=0.97 model=1
+New Load.Commercial phases=3 bus1=s2 conn=wye kv=20 kw=573.75 pf=0.85 model=1
+New Load.Industrial phases=3 bus1=s3 conn=wye kv=20 kw=331.5 pf=0.85 model=1
+Set VoltageBases=[110 20]
+CalcVoltageBases
+Set Mode=Snap ControlMode=Off
+Set Frequency=50
+Set Tolerance=0.00000001 MaxIterations=100
