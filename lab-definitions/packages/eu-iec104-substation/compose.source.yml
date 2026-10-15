@@ -26,6 +26,7 @@ services:
     - CONTAIND_AUTO_LAN2_SUBNET=10.40.40.0/24
     - CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24
     - CONTAIND_AUTO_LAN4_SUBNET=10.60.60.0/24
+    - CONTAIND_AUTO_LAN5_SUBNET=10.70.70.0/24
     volumes:
     - ./data/eu-iec104-substation/firewall:/data
     ports:
@@ -45,6 +46,8 @@ services:
         ipv4_address: 10.40.40.2
       control_centre_net:
         ipv4_address: 10.60.60.2
+      ops_dmz_net:
+        ipv4_address: 10.70.70.2
     restart: unless-stopped
   kali:
     build:
@@ -131,6 +134,8 @@ services:
       target: gps-sim
     container_name: rangerdanger-gps-sim
     hostname: gps-sim
+    sysctls:
+      net.ipv4.ip_forward: 0
     cap_add:
     - NET_ADMIN
     environment:
@@ -139,6 +144,8 @@ services:
     networks:
       station_net:
         ipv4_address: 10.30.30.50
+      mgmt_net:
+        ipv4_address: 10.99.99.27
     healthcheck:
       test:
       - CMD
@@ -238,6 +245,7 @@ services:
     - -c
     - set -e; set-gateway.sh; exec iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20
       --target 10.30.30.20:2404 --http 10.99.99.21:8080
+      --historian-url http://10.70.70.40:8081/api/ingest --historian-bind 10.60.60.20
     volumes:
     - ./lab-definitions/packages/eu-iec104-substation/protocols/points.json:/etc/rangerdanger/points.json:ro
     networks:
@@ -265,7 +273,7 @@ services:
       context: .
       dockerfile: services/iec104/Dockerfile
   feeder_breaker:
-    image: rangerdanger-feeder-breaker-sim
+    image: rangerdanger-field-device-sim
     container_name: rangerdanger-feeder-breaker
     hostname: feeder-breaker
     cap_add:
@@ -275,6 +283,7 @@ services:
     environment:
     - GATEWAY=10.40.40.2
     - DEVICE_ID=feeder-breaker
+    - DEVICE_KIND=breaker
     - DEVICE_MODBUS_LISTEN=10.40.40.20:502
     - DEVICE_PROCESS_LISTEN=10.50.50.30:8080
     - DEVICE_SIM_LISTEN=10.99.99.22:8080
@@ -282,7 +291,7 @@ services:
     command:
     - sh
     - -c
-    - set -e; set-gateway.sh; exec feeder-breaker-sim
+    - set -e; set-gateway.sh; exec field-device-sim
     networks:
       field_net:
         ipv4_address: 10.40.40.20
@@ -304,7 +313,203 @@ services:
     build:
       context: .
       dockerfile: services/Dockerfile
-      target: feeder-breaker-sim
+      target: field-device-sim
+  rmu_1:
+    image: rangerdanger-field-device-sim
+    container_name: rangerdanger-rmu-1
+    hostname: rmu-1
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.40.40.2
+    - DEVICE_ID=rmu-1
+    - DEVICE_KIND=rmu
+    - DEVICE_MODBUS_LISTEN=10.40.40.21:502
+    - DEVICE_PROCESS_LISTEN=10.50.50.31:8080
+    - DEVICE_SIM_LISTEN=10.99.99.24:8080
+    - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
+    - DEVICE_RMU_NORMAL=closed
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec field-device-sim
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.21
+      process_net:
+        ipv4_address: 10.50.50.31
+      mgmt_net:
+        ipv4_address: 10.99.99.24
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.24:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: field-device-sim
+  rmu_2:
+    image: rangerdanger-field-device-sim
+    container_name: rangerdanger-rmu-2
+    hostname: rmu-2
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.40.40.2
+    - DEVICE_ID=rmu-2
+    - DEVICE_KIND=rmu
+    - DEVICE_MODBUS_LISTEN=10.40.40.22:502
+    - DEVICE_PROCESS_LISTEN=10.50.50.32:8080
+    - DEVICE_SIM_LISTEN=10.99.99.25:8080
+    - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
+    - DEVICE_RMU_NORMAL=open
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec field-device-sim
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.22
+      process_net:
+        ipv4_address: 10.50.50.32
+      mgmt_net:
+        ipv4_address: 10.99.99.25
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.25:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: field-device-sim
+  oltc_1:
+    image: rangerdanger-field-device-sim
+    container_name: rangerdanger-oltc-1
+    hostname: oltc-1
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.40.40.2
+    - DEVICE_ID=oltc-1
+    - DEVICE_KIND=oltc
+    - DEVICE_MODBUS_LISTEN=10.40.40.23:502
+    - DEVICE_PROCESS_LISTEN=10.50.50.33:8080
+    - DEVICE_SIM_LISTEN=10.99.99.26:8080
+    - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec field-device-sim
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.23
+      process_net:
+        ipv4_address: 10.50.50.33
+      mgmt_net:
+        ipv4_address: 10.99.99.26
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.26:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: field-device-sim
+  openplc_eu:
+    container_name: rangerdanger-openplc
+    hostname: openplc
+    platform: linux/amd64
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - TZ=UTC
+    - GATEWAY=10.30.30.2
+    networks:
+      station_net:
+        ipv4_address: 10.30.30.30
+      mgmt_net:
+        ipv4_address: 10.99.99.30
+    # UI availability only; the EU smoke gate proves the seeded control loop.
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -fsS
+      - http://10.99.99.30:8080/login
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    depends_on:
+    - firewall
+    image: rangerdanger-openplc-eu
+    build:
+      context: .
+      dockerfile: Dockerfile.openplc-eu
+  historian_eu:
+    container_name: rangerdanger-historian
+    hostname: historian
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.70.70.2
+    - HISTORIAN_INGEST_LISTEN=10.70.70.40:8081
+    - HISTORIAN_READ_LISTEN=10.70.70.40:8080,10.99.99.40:8080
+    networks:
+      ops_dmz_net:
+        ipv4_address: 10.70.70.40
+      mgmt_net:
+        ipv4_address: 10.99.99.40
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.40:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    depends_on:
+    - firewall
+    image: rangerdanger-historian-eu
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: historian-eu
 networks:
   mgmt_net:
     external: true
@@ -346,3 +551,9 @@ networks:
       config:
       - subnet: 10.50.50.0/24
         gateway: 10.50.50.1
+  ops_dmz_net:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 10.70.70.0/24
+        gateway: 10.70.70.1

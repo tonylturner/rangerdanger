@@ -41,6 +41,10 @@ class PlannerFixture(unittest.TestCase):
         self._write("scripts/release_image_plan.py", "planner\n")
         self._write("scripts/check_release_inputs.py", "checker\n")
         self._write("docker-compose.release.yml", "services: {}\n")
+        # The baked-in EU seed creates a package directory in this fixture.
+        # Keep its release model present, as required for every package.
+        eu_release = "lab-definitions/packages/eu-iec104-substation/compose.release.yml"
+        self._write(eu_release, (ROOT / eu_release).read_text(encoding="utf-8"))
         for image in self.inventory["images"]:
             self._write(image["dockerfile"], "FROM scratch\n")
             for entry in image["inputs"]:
@@ -235,7 +239,7 @@ class ReleaseImagePlanTests(PlannerFixture):
             for line in output_path.read_text(encoding="utf-8").splitlines()
         )
 
-    def test_docs_change_promotes_16_and_always_builds_backend_and_iec104(self) -> None:
+    def test_docs_change_promotes_except_always_build_images(self) -> None:
         self.assertEqual(
             {image["image"] for image in self.inventory["images"]
              if image["always_build"]},
@@ -248,7 +252,8 @@ class ReleaseImagePlanTests(PlannerFixture):
             {name for name, decision in decisions.items() if decision == "build"},
             ALWAYS_BUILD,
         )
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 16)
+        self.assertEqual(sum(value == "promote" for value in decisions.values()),
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD))
         self.assertEqual(sum(value == "build" for value in decisions.values()), 2)
 
     def test_simulator_input_decision_matrix(self) -> None:
@@ -268,8 +273,9 @@ class ReleaseImagePlanTests(PlannerFixture):
                     "rangerdanger-capbank-sim",
                     "rangerdanger-rtac-sim",
                     "rangerdanger-historian-sim",
+                    "rangerdanger-historian-eu",
                     "rangerdanger-gps-sim",
-                    "rangerdanger-feeder-breaker-sim",
+                    "rangerdanger-field-device-sim",
                 },
             ),
             (
@@ -288,9 +294,24 @@ class ReleaseImagePlanTests(PlannerFixture):
                 },
             ),
             (
-                "services/devices/feederbreaker/model.go",
-                "changed feeder breaker model\n",
-                {"rangerdanger-feeder-breaker-sim"},
+                "services/devices/cmd/field-device-sim/main.go",
+                "changed field device source\n",
+                {"rangerdanger-field-device-sim"},
+            ),
+            (
+                "services/historian-eu/main.go",
+                "changed EU historian\n",
+                {"rangerdanger-historian-eu"},
+            ),
+            (
+                "lab-definitions/packages/eu-iec104-substation/seeds/openplc/controller.st",
+                "changed EU PLC seed\n",
+                {"rangerdanger-openplc-eu"},
+            ),
+            (
+                "scripts/openplc-eu-entrypoint.sh",
+                "changed EU PLC startup\n",
+                {"rangerdanger-openplc-eu"},
             ),
             (
                 "services/iec104/src/common.c",
@@ -408,7 +429,8 @@ class ReleaseImagePlanTests(PlannerFixture):
         self.assertEqual(results["rangerdanger-frontend"]["decision"], "build")
         self.assertIn("object identity unavailable",
                       results["rangerdanger-frontend"]["reason"])
-        self.assertEqual(inspect.call_count, 15)
+        self.assertEqual(inspect.call_count,
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD) - 1)
 
     def test_rebuild_all_override_builds_every_image_without_registry_access(self) -> None:
         inspect = Mock(side_effect=AssertionError("override must not inspect registry"))
@@ -440,7 +462,8 @@ class ReleaseImagePlanTests(PlannerFixture):
             {name for name, decision in decisions.items() if decision == "build"},
             ALWAYS_BUILD,
         )
-        self.assertEqual(sum(value == "promote" for value in decisions.values()), 16)
+        self.assertEqual(sum(value == "promote" for value in decisions.values()),
+                         len(self.inventory["images"]) - len(ALWAYS_BUILD))
 
     def test_real_buildx_registry_shape_and_single_manifest_shape(self) -> None:
         payload = self._inspect()(
@@ -621,13 +644,14 @@ class ReleaseImagePlanTests(PlannerFixture):
             set(matrix["include"][0]),
             {"image", "dockerfile", "target", "platforms", "decision", "source_digest"},
         )
-        self.assertEqual(values["build_count"], "18")
+        self.assertEqual(values["build_count"], str(len(self.inventory["images"])))
         self.assertEqual(values["promote_count"], "0")
         self.assertEqual(values["frontend_decision"], "build")
 
         promoted = self._plan(tag="v0.1.34-rc.1")
         self.assertEqual(
-            sum(value == "promote" for value in self._decisions(promoted).values()), 16)
+            sum(value == "promote" for value in self._decisions(promoted).values()),
+            len(self.inventory["images"]) - len(ALWAYS_BUILD))
         self.assertEqual(release_image_plan.planned_tags("v0.1.34-rc.1"),
                          ["v0.1.34-rc.1"])
 

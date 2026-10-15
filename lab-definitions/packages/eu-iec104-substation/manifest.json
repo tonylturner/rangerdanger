@@ -49,6 +49,13 @@
       "name": "rangerdanger_process_net",
       "subnet": "10.50.50.0/24",
       "gateway": "10.50.50.1"
+    },
+    {
+      "key": "ops_dmz_net",
+      "name": "rangerdanger_ops_dmz_net",
+      "subnet": "10.70.70.0/24",
+      "gateway": "10.70.70.1",
+      "zone": "ops_dmz_net"
     }
   ],
   "services": [
@@ -83,6 +90,10 @@
         {
           "network": "control_centre_net",
           "ipv4": "10.60.60.2"
+        },
+        {
+          "network": "ops_dmz_net",
+          "ipv4": "10.70.70.2"
         }
       ],
       "endpoints": {
@@ -150,8 +161,15 @@
         {
           "network": "station_net",
           "ipv4": "10.30.30.50"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.27"
         }
-      ]
+      ],
+      "endpoints": {
+        "sim": "http://10.99.99.27:8080"
+      }
     },
     {
       "key": "iec104_rtu",
@@ -231,6 +249,120 @@
       ],
       "endpoints": {
         "api": "http://10.99.99.23:8080"
+      }
+    },
+    {
+      "key": "rmu_1",
+      "container": "rangerdanger-rmu-1",
+      "node": "rmu-1",
+      "roles": [
+        "field-device"
+      ],
+      "interfaces": [
+        {
+          "network": "field_net",
+          "ipv4": "10.40.40.21"
+        },
+        {
+          "network": "process_net",
+          "ipv4": "10.50.50.31"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.24"
+        }
+      ],
+      "endpoints": {
+        "sim": "http://10.99.99.24:8080"
+      }
+    },
+    {
+      "key": "rmu_2",
+      "container": "rangerdanger-rmu-2",
+      "node": "rmu-2",
+      "roles": [
+        "field-device"
+      ],
+      "interfaces": [
+        {
+          "network": "field_net",
+          "ipv4": "10.40.40.22"
+        },
+        {
+          "network": "process_net",
+          "ipv4": "10.50.50.32"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.25"
+        }
+      ],
+      "endpoints": {
+        "sim": "http://10.99.99.25:8080"
+      }
+    },
+    {
+      "key": "oltc_1",
+      "container": "rangerdanger-oltc-1",
+      "node": "oltc-1",
+      "roles": [
+        "field-device"
+      ],
+      "interfaces": [
+        {
+          "network": "field_net",
+          "ipv4": "10.40.40.23"
+        },
+        {
+          "network": "process_net",
+          "ipv4": "10.50.50.33"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.26"
+        }
+      ],
+      "endpoints": {
+        "sim": "http://10.99.99.26:8080"
+      }
+    },
+    {
+      "key": "openplc_eu",
+      "container": "rangerdanger-openplc",
+      "node": "plc-1",
+      "roles": [
+        "plc"
+      ],
+      "interfaces": [
+        {
+          "network": "station_net",
+          "ipv4": "10.30.30.30"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.30"
+        }
+      ]
+    },
+    {
+      "key": "historian_eu",
+      "container": "rangerdanger-historian",
+      "node": "historian-1",
+      "roles": [
+        "historian"
+      ],
+      "interfaces": [
+        {
+          "network": "ops_dmz_net",
+          "ipv4": "10.70.70.40"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.40"
+        }
+      ],
+      "endpoints": {
+        "api": "http://10.99.99.40:8080"
       }
     }
   ]

@@ -46,6 +46,11 @@
       "name": "lan4",
       "zone": "lan4",
       "access": {}
+    },
+    {
+      "name": "lan5",
+      "zone": "lan5",
+      "access": {}
     }
   ],
   "zones": [
@@ -59,11 +64,11 @@
     },
     {
       "name": "lan1",
-      "description": "Station Zone - IEC104 RTU and GPS clock"
+      "description": "Station Zone - IEC104 RTU, OpenPLC and GPS clock"
     },
     {
       "name": "lan2",
-      "description": "Feeder Field Zone - Modbus breaker endpoint"
+      "description": "Feeder Field Zone - breaker, RMUs and OLTC Modbus endpoints"
     },
     {
       "name": "lan3",
@@ -72,6 +77,10 @@
     {
       "name": "lan4",
       "description": "Control Centre Zone - IEC104 client"
+    },
+    {
+      "name": "lan5",
+      "description": "Operations DMZ - read-only historian"
     }
   ],
   "routing": {},
@@ -105,7 +114,7 @@
       },
       {
         "id": "weak-rtu-modbus",
-        "description": "WEAK: all station-zone nodes can reach the feeder breaker over Modbus TCP",
+        "description": "WEAK: all station-zone nodes can reach every field device over Modbus TCP",
         "sourceZones": [
           "lan1"
         ],
@@ -116,6 +125,42 @@
           {
             "name": "tcp",
             "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "weak-historian-ingest",
+        "description": "WEAK: any control-centre-zone source can push historian snapshots",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "weak-historian-read",
+        "description": "WEAK: enterprise, vendor and control centre can read the historian",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
           }
         ],
         "action": "ALLOW"

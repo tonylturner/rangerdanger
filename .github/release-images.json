@@ -255,9 +255,9 @@
       ]
     },
     {
-      "image": "rangerdanger-feeder-breaker-sim",
+      "image": "rangerdanger-field-device-sim",
       "dockerfile": "services/Dockerfile",
-      "target": "feeder-breaker-sim",
+      "target": "field-device-sim",
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
@@ -269,6 +269,34 @@
         {"kind": "file", "path": "scripts/set-gateway.sh"},
         {"kind": "file", "path": "scripts/rtac-harden.sh"},
         {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-historian-eu",
+      "dockerfile": "services/Dockerfile",
+      "target": "historian-eu",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "file", "path": "services/go.mod"},
+        {"kind": "file", "path": "dnp3go/go.mod"},
+        {"kind": "glob", "path": "services/shared/*.go"},
+        {"kind": "dir", "path": "services/historian-eu"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"},
+        {"kind": "file", "path": "scripts/rtac-harden.sh"},
+        {"kind": "file", "path": "scripts/rtac-route-monitor.sh"}
+      ]
+    },
+    {
+      "image": "rangerdanger-openplc-eu",
+      "dockerfile": "Dockerfile.openplc-eu",
+      "target": "",
+      "platforms": ["linux/amd64"],
+      "always_build": false,
+      "inputs": [
+        {"kind": "dir", "path": "lab-definitions/packages/eu-iec104-substation/seeds/openplc"},
+        {"kind": "file", "path": "scripts/openplc-eu-entrypoint.sh"},
+        {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]
     }
   ]
