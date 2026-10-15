@@ -91,7 +91,8 @@ name: "My New Exercise"
 summary: "One-line summary that appears in the card view (≤120 chars)."
 validator: us-my-new-exercise   # optional; a registered validator key (see below)
 description: |
-  Long-form prose. Rendered as Markdown in the exercise runner.
+  Plain text: the runner shows it as one paragraph, so put Markdown,
+  links and hints in step descriptions.
   Explain the scenario, what the student is doing, and why it
   matters operationally.
 nodes:
