@@ -186,6 +186,13 @@ export function renderArticleBody(
   body: string,
   linkRenderer: (href: string, text: React.ReactNode) => React.ReactElement,
 ): React.ReactNode[] {
+  // marked-react keys only its built-in elements; a custom link must take
+  // the renderer's element id as its key or React warns about the list.
+  const renderer = {
+    link(this: { elementId: string }, href: string, text: React.ReactNode) {
+      return <React.Fragment key={this.elementId}>{linkRenderer(href, text)}</React.Fragment>;
+    },
+  };
   const segments: React.ReactNode[] = [];
   const re = /^:::(tip|note|warning|caution)(?:[ \t]+(.+))?\n([\s\S]+?)\n:::[ \t]*$/gm;
   let lastIdx = 0;
@@ -196,7 +203,7 @@ export function renderArticleBody(
       const md = body.slice(lastIdx, m.index);
       if (md.trim()) {
         segments.push(
-          <Markdown key={key++} renderer={{ link: linkRenderer }}>
+          <Markdown key={key++} renderer={renderer}>
             {md}
           </Markdown>,
         );
@@ -204,7 +211,7 @@ export function renderArticleBody(
     }
     segments.push(
       <Admonition key={key++} kind={m[1]} title={m[2]}>
-        <Markdown renderer={{ link: linkRenderer }}>{m[3]}</Markdown>
+        <Markdown renderer={renderer}>{m[3]}</Markdown>
       </Admonition>,
     );
     lastIdx = m.index + m[0].length;
@@ -213,7 +220,7 @@ export function renderArticleBody(
     const md = body.slice(lastIdx);
     if (md.trim()) {
       segments.push(
-        <Markdown key={key++} renderer={{ link: linkRenderer }}>
+        <Markdown key={key++} renderer={renderer}>
           {md}
         </Markdown>,
       );
