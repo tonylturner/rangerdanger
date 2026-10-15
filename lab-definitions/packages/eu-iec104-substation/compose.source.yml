@@ -1,7 +1,11 @@
 name: rangerdanger
 services:
   firewall:
-    image: ghcr.io/tonylturner/containd:latest
+    image: rangerdanger-firewall
+    build:
+      # Set CONTAIND_SOURCE to a local containd checkout for unpushed work.
+      context: "${CONTAIND_SOURCE:-https://github.com/tonylturner/containd.git#iec104}"
+      dockerfile: build/Dockerfile.mgmt
     container_name: rangerdanger-firewall
     cap_add:
     - NET_ADMIN

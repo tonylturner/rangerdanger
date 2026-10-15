@@ -234,9 +234,10 @@ no EU benefit, so the design is:
   10 minutes, so dropping one command also stops telemetry. B needs a
   decision first: alert only, terminate and reconnect, or a
   protocol-aware proxy (decision D10).
-- **containd tracks `:latest`.** B changes dataplane code that the US
-  workshop also uses. B stays on a containd branch until the US gates
-  pass against it.
+- **containd source builds use its `iec104` branch.** Until containd
+  releases its IEC104 work, RangerDanger's `iec104` branch builds it
+  locally, leaving published `:latest` untouched. B changes shared
+  dataplane code; the US and EU gates still govern release (D11).
 
 ### 3.8 Release, SSD and CI
 
@@ -304,7 +305,7 @@ Increment 3 is the first point where IEC104 runs end to end.
 | D8 | US browser progress | May reset once at the increment-1 cutover. |
 | D9 | EU nodes | Keep Kali, vendor jump, engineering workstation, historian, and GPS as the station clock (3.5). Replace FUXA with the first-party control-centre view; FUXA is little used today. Drop DNP3 tooling. OpenPLC stays as the station automation PLC with a seeded tap-changer voltage-control program; the RTU reads it over Modbus. |
 | D10 | Monitoring under milestone B | Drop the command and reset the session; the control centre reconnects and re-runs general interrogation. |
-| D11 | containd for EU courses | Track `:latest`; re-run US and EU gates before each course. |
+| D11 | containd for EU courses | Until containd releases its IEC104 work, this branch builds containd's `iec104` branch, leaving `:latest` untouched. Release-time decision unchanged: track `:latest`; re-run US and EU gates before each course. |
 | D12 | Who switches packages | Students, from a UI toggle that reprovisions the range (3.3). |
 | D13 | Gate runs on Tony's Mac | Allowed to replace the running v0.1.34 stack with `iec104` builds; v0.1.34 is restored after each run. |
 
@@ -313,8 +314,9 @@ Increment 3 is the first point where IEC104 runs end to end.
 - **IEC104 integration effort.** lib60870 removes the session-layer
   risk; the spike bounds the binding and packaging work before
   increment 3 starts.
-- **containd floats on `:latest`.** Milestone B changes shared dataplane
-  code (3.7).
+- **containd changes shared dataplane code.** Until its IEC104 work is
+  released, this branch builds containd's `iec104` branch without
+  touching `:latest`; release gates remain unchanged (3.7, D11).
 - **Schedule.** D7 is 29 days after approval and keeps milestone B as
   its gate. So milestone B, increment 1 and the increment-2 spike run in
   parallel from the start, not in sequence.

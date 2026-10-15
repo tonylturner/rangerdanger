@@ -24,9 +24,12 @@ the contracts between the two projects.
 ## 1. Why
 
 RangerDanger is a Docker cyber range that teaches OT segmentation.
-containd is its firewall (the `firewall` service, image
-`ghcr.io/tonylturner/containd:latest`). The current US workshop uses
-DNP3 and Modbus. The new EU package adds an IEC104 link:
+containd is its firewall (the `firewall` service). Until containd
+releases its IEC104 work, RangerDanger's `iec104` branch builds
+containd's `iec104` branch as `rangerdanger-firewall`, leaving published
+`:latest` untouched; release Compose files still use the published
+image. The current US workshop uses DNP3 and Modbus. The new EU package
+adds an IEC104 link:
 
 ```text
 control-centre SCADA (IEC104 client)   zone lan4, 10.60.60.0/24
@@ -48,9 +51,9 @@ is this spec.
 |---|---|
 | D3 | The RangerDanger IEC104 programs (RTU, control centre, student tool `iec104cmd`) use **lib60870-C** (GPLv3) in separate images. containd's decoder is its **own Go parser**, Apache-2.0. Do not copy, link or port lib60870 code into containd. Captures from lib60870 are test data, not code (§9). |
 | D4 | Milestone B (command-aware filtering) **gates the first EU course**. Alert-only does not satisfy it. |
-| D5 | Verbatim: "US workshop: Unchanged until EU ships; its upgrade to the new device model is a later change." The plan allows B to change shared dataplane code because "B stays on a containd branch until the US gates pass against it" (`RD:docs/plans/iec104/README.md:237-239`). So: the US workshop keeps its behaviour, the US-visible changes are only those listed in §4.1, and the US gates (§10.4) must pass unchanged. |
+| D5 | Verbatim: "US workshop: Unchanged until EU ships; its upgrade to the new device model is a later change." The plan allows B to change shared dataplane code on containd's `iec104` branch, with the US and EU gates governing release (`RD:docs/plans/iec104/README.md`, §3.7). So: the US workshop keeps its behaviour, the US-visible changes are only those listed in §4.1, and the US gates (§10.4) must pass unchanged. |
 | D10 | When policy denies an IEC104 command: **drop it and reset the session** in both directions. The control centre reconnects and re-runs general interrogation (GI). No 10-minute ban, no silent removal of one ASDU from the stream. |
-| D11 | RangerDanger tracks containd `:latest` and re-runs the US and EU gates before each course. Therefore milestone B stays off containd `main` and off `:latest` until both gates pass (§10). |
+| D11 | Until containd releases its IEC104 work, RangerDanger's `iec104` branch builds containd's `iec104` branch, leaving `:latest` untouched. Release-time decision unchanged: track containd `:latest` and re-run the US and EU gates before each course. Milestone B stays off containd `main` and off `:latest` until both gates pass (§10). |
 | — | Plain IPv4, TCP/2404, no NAT on the IEC104 path. Field widths are fixed: COT 2 octets, CA 2 octets, IOA 3 octets. |
 
 ## 3. Defaults for open owner questions
@@ -892,9 +895,11 @@ EU policies use the same top-level keys as
 
 ### 12.5 Candidate images and release
 
-- Build candidates from the containd `iec104` branch as linux/amd64 and
-  linux/arm64 images. Hand RangerDanger the digest (a local image or a
-  non-`latest` tag that Tony pushes).
+- Until containd releases its IEC104 work, RangerDanger's `iec104`
+  source mode builds containd's `iec104` branch as `rangerdanger-firewall`,
+  leaving published `:latest` untouched. For release candidates, build
+  linux/amd64 and linux/arm64 images and record the digest (a local
+  image or a non-`latest` tag that Tony pushes).
 - RangerDanger runs §10.4 with that digest. Only after US **and** EU
   gates pass does Tony merge to containd `main` and publish `:latest`.
 - Release notes must state: first-packet DROP for US Modbus/DNP3,
