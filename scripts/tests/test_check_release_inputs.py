@@ -48,6 +48,13 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("file", "scripts/openplc-entrypoint.sh"),
             ("file", "scripts/set-gateway.sh"),
         },
+        "rangerdanger-openplc-eu": {
+            ("dir", "lab-definitions/packages/eu-iec104-substation/seeds/openplc"),
+            ("file", "scripts/openplc-eu-entrypoint.sh"),
+            ("file", "scripts/set-gateway.sh"),
+        },
+        "rangerdanger-historian-eu": common | {
+            ("dir", "services/historian-eu")},
         "rangerdanger-fuxa-hmi": {
             ("file", "scripts/set-gateway.sh"),
             ("file", "scripts/fuxa-entrypoint.sh"),
@@ -87,7 +94,7 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("file", "services/iec104/entrypoint.sh"),
             ("file", "scripts/set-gateway.sh"),
         },
-        "rangerdanger-feeder-breaker-sim": common | {
+        "rangerdanger-field-device-sim": common | {
             ("file", "services/Dockerfile"),
             ("dir", "services/devices"),
         },
@@ -150,6 +157,51 @@ class CheckReleaseInputsTests(unittest.TestCase):
         }
         self.assertEqual(set(actual), set(expected))
         self.assertEqual(actual, expected)
+
+    def test_eu_release_membership_uses_the_increment_four_images(self) -> None:
+        metadata = check_release_inputs.release_compose_metadata(ROOT, "v9.9.9")
+        eu = metadata["packages"]["eu-iec104-substation"]["services"]
+        field_image = "ghcr.io/tonylturner/rangerdanger-field-device-sim:v9.9.9"
+        for service in ("feeder_breaker", "rmu_1", "rmu_2", "oltc_1"):
+            with self.subTest(service=service):
+                self.assertEqual(eu[service], field_image)
+        self.assertEqual(
+            eu["openplc_eu"], "ghcr.io/tonylturner/rangerdanger-openplc-eu:v9.9.9")
+        self.assertEqual(
+            eu["historian_eu"], "ghcr.io/tonylturner/rangerdanger-historian-eu:v9.9.9")
+        self.assertEqual(eu["firewall"], "ghcr.io/tonylturner/containd:latest")
+        us = metadata["packages"]["us-dnp3-substation"]["services"]
+        self.assertEqual(us["openplc"], "ghcr.io/tonylturner/rangerdanger-openplc:v9.9.9")
+        self.assertEqual(
+            us["historian_sim"], "ghcr.io/tonylturner/rangerdanger-historian-sim:v9.9.9")
+        self.assertFalse(any("feeder-breaker-sim" in image for image in eu.values()))
+
+    def test_eu_simulator_targets_and_architecture_contract(self) -> None:
+        inventory = json.loads(
+            (ROOT / ".github/release-images.json").read_text(encoding="utf-8"))
+        images = {item["image"]: item for item in inventory["images"]}
+        instructions, issues = check_release_inputs._read_instructions(
+            ROOT / "services/Dockerfile")
+        self.assertEqual(issues, [])
+        for image, target in (
+            ("rangerdanger-field-device-sim", "field-device-sim"),
+            ("rangerdanger-historian-eu", "historian-eu"),
+        ):
+            with self.subTest(image=image):
+                entry = images[image]
+                self.assertEqual(entry["target"], target)
+                self.assertEqual(entry["platforms"], ["linux/amd64", "linux/arm64"])
+                stages, aliases, issues = check_release_inputs._resolve_stages(
+                    instructions, entry["dockerfile"], image)
+                self.assertEqual(issues, [])
+                reachable, issues = check_release_inputs._reachable_stages(
+                    stages, aliases, target, entry["dockerfile"], image)
+                self.assertEqual(issues, [])
+                self.assertIn(aliases[target + "-builder"], reachable)
+                self.assertNotIn("feeder-breaker-sim", aliases)
+        plc = images["rangerdanger-openplc-eu"]
+        self.assertEqual(plc["dockerfile"], "Dockerfile.openplc-eu")
+        self.assertEqual(plc["platforms"], ["linux/amd64"])
 
     def test_catches_copy_source_not_covered_by_reviewed_envelope(self) -> None:
         with (self.root / "src/extra.txt").open("w", encoding="utf-8") as output:

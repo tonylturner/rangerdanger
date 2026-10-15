@@ -3,237 +3,202 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
-import type { CommandResult } from "../lib/operator-api";
+import type { CommandResult, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText } from "../lib/operator-format";
-import {
-  AUDIT,
-  FRESH_STATE,
-  JOURNAL,
-  EMPTY_JOURNAL,
-  NOW,
-  STALE_STATE,
-  TRUTH,
-  commandResult,
-} from "../lib/operator-fixtures.test-util";
+import { AUDIT, FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, TRUTH, commandResult } from "../lib/operator-fixtures.test-util";
 import { RangeNotReadyError } from "../lib/range";
-import { CommandPanelView, type CommandPanelState } from "./control-centre-command";
+import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
+import { ControlCentreOneLine, observedReading } from "./control-centre-one-line";
 import { ControlCentreScreen } from "./control-centre-view";
 import { AuditTable, OperatorContrast, FieldCards, PhysicalFeederScreen } from "./physical-feeder";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 
-function text(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 function render(node: ReactNode): string {
-  const client = new QueryClient();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
   client.clear();
   return html;
 }
-
-function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]>): string {
-  return render(
-    <ControlCentreScreen
-      state={FRESH_STATE}
-      stateError={null}
-      stateUpdatedAt={NOW - 1000}
-      journal={JOURNAL}
-      now={NOW}
-      {...props}
-    />,
-  );
+function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) {
+  return render(<ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...props} />);
 }
 
-const NO_JOURNAL = { ...JOURNAL, entries: [] };
-
-describe("ControlCentreScreen", () => {
-  it("shows a started link and four good points", () => {
-    const html = screen({ journal: NO_JOURNAL });
+describe("ControlCentreScreen schema 2", () => {
+  it("shows all 31 points, per-device controls and snapshot identity", () => {
+    const html = screen();
     const out = text(html);
-    expect(out).toContain("STARTED");
-    expect(out).toContain("COMPLETE");
-    expect(out).toContain("4/4 good");
-    expect(out).toContain("CLOSED");
-    expect(out).toContain("28.9 A");
-    expect(out).toContain("19.94 kV");
-    expect(out).not.toContain("STALE");
-    expect(html.match(/data-condition="good"/g)).toHaveLength(4);
+    expect(FEEDER_STATE.points).toHaveLength(31);
+    expect(out).toContain("31/31 good");
+    expect(html.match(/data-condition="good"/g)).toHaveLength(31);
+    for (const label of ["STARTED", "COMPLETE", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · UNOBSERVED", "snapshot 120", "Historian"]) expect(out).toContain(label);
+    expect(out).toContain("Select RAISE");
+    expect(out).toContain("Select MANUAL");
   });
 
-  it("keeps every last value on a cut link and flags it stale with reason and age", () => {
-    const html = screen({ state: STALE_STATE, journal: NO_JOURNAL });
+  it("keeps last values on link loss, including age and reason", () => {
+    const html = screen({ state: STALE_STATE, journal: EMPTY_JOURNAL });
     const out = text(html);
     expect(out).toContain("IEC 104 LINK CONNECTING: telemetry is stale");
     expect(html.match(/data-condition="stale"/g)).toHaveLength(4);
-    // Last values, not zero.
-    expect(out).toContain("CLOSED");
-    expect(out).toContain("NORMAL");
-    expect(out).toContain("28.9 A");
-    expect(out).toContain("19.94 kV");
+    for (const value of ["CLOSED", "28.9 A", "19.94 kV", "IV NT", "29 s", "0/4 good · 4 STALE"]) expect(out).toContain(value);
     expect(out).not.toContain("0.0 A");
     expect(out).not.toContain("0.00 kV");
-    expect(out.match(/last known value/g)).toHaveLength(4);
-    expect(out.match(/IV NT/g)).toHaveLength(4);
-    expect(out.match(/IEC 104 link to the RTU lost/g)).toHaveLength(4);
-    // Times are kept and the age grows: received 12:00:00.150, now 12:00:30.
-    expect(out).toContain("12:00:00.150");
-    expect(out).toContain("29 s");
-    expect(out).toContain("0/4 good · 4 STALE");
-    // The one-line says unknown rather than open or dead.
-    expect(out).toContain("⚠ STALE · last known");
-    expect(html).toContain('aria-label="Feeder one-line: breaker CLOSED ⚠ STALE"');
+    expect(html).toContain("CB1: CLOSED · STALE · IV NT · link_lost");
   });
 
-  it("marks the API as unavailable but keeps the last answer on screen", () => {
-    const out = text(screen({ stateError: new ApiError(502, "control centre unreachable") }));
-    expect(out).toContain("Control centre API unavailable");
-    expect(out).toContain("Showing the last answer");
-    expect(out).toContain("CLOSED");
+  it("disables every control when CC API fails and marks each observed symbol stale", () => {
+    const html = screen({ stateError: new ApiError(502, "control centre unreachable") });
+    expect(text(html)).toContain("Showing the last answer");
+    expect(html).toContain("CB1: CLOSED · STALE · CC API unavailable");
+    expect(html.match(/disabled=""/g)).toHaveLength(10);
   });
 
-  it("waits while the range is not ready", () => {
+  it("does not command a cached range while a not-ready answer is being handled", () => {
+    const html = screen({ stateError: new RangeNotReadyError("starting") });
+    expect(text(html)).toContain("Range not ready. Showing the last CC answer");
+    expect(html.match(/disabled=""/g)).toHaveLength(10);
+  });
+
+  it("waits for a ready range", () => {
     const out = text(screen({ state: undefined, stateError: new RangeNotReadyError("starting") }));
     expect(out).toContain("The control centre shows once the range is ready.");
-    expect(out).not.toContain("API unavailable");
+    expect(out).not.toContain("Control centre API unavailable");
   });
 
-  it("shows the journal newest first", () => {
-    const out = text(screen({}));
-    expect(out.indexOf("Feeder breaker position STALE")).toBeLessThan(out.indexOf("Link down #3: nothing received from the RTU for t1 (t1_timeout)"));
-    expect(out).toContain("cache epoch a1b2c3d4");
+  it("shows journal newest first and preserves null empty bounds", () => {
+    const out = text(screen());
+    expect(out.indexOf("Feeder breaker position STALE")).toBeLessThan(out.indexOf("Link down #3"));
     expect(out).toContain("seq 1–4");
-  });
-
-  it("shows an empty journal, whose sequence bounds are null", () => {
-    const out = text(screen({ journal: EMPTY_JOURNAL }));
-    expect(out).toContain("empty");
-    expect(out).toContain("No journal entries yet.");
-  });
-
-  it("shows no local endpoint: lib60870 cannot report it", () => {
-    expect(text(screen({}))).not.toContain("CC (local)");
+    expect(text(screen({ journal: EMPTY_JOURNAL }))).toContain("No journal entries yet.");
   });
 });
 
-function panel(state: CommandPanelState, linkState: "started" | "connecting" = "started"): string {
-  return renderToStaticMarkup(
-    <CommandPanelView
-      linkState={linkState}
-      position={FRESH_STATE.points[0]}
-      state={state}
-      onArm={() => {}}
-      onExecute={() => {}}
-      onCancel={() => {}}
-    />,
-  );
+describe("CC one-line observation integrity", () => {
+  const points = (id: string, patch: Partial<OperatorPoint>) => FEEDER_STATE.points.map((p) => p.id === id ? { ...p, ...patch } : p);
+  it("does not infer section voltage from breaker or RMU position", () => {
+    const p = points("feeder-breaker-position", { value: "open" });
+    const out = text(render(<ControlCentreOneLine points={p} />));
+    expect(out).toContain("S1 residential · LIVE");
+    const zero = p.map((point) => point.id === "feeder-voltage" ? { ...point, value: 0 } : point);
+    expect(text(render(<ControlCentreOneLine points={zero} />))).toContain("S1 residential · DEAD");
+    const missing = p.filter((point) => point.id !== "feeder-voltage");
+    expect(text(render(<ControlCentreOneLine points={missing} />))).toContain("S1 residential · UNKNOWN");
+  });
+
+  it("keeps mixed stale, unknown, substituted and transient states on their own symbols", () => {
+    const mixed = FEEDER_STATE.points.map((p) => {
+      if (p.id === "rmu-1-position") return { ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "device_unreachable" as const };
+      if (p.id === "rmu-2-position") return { ...p, value: null };
+      if (p.id === "oltc-1-tap") return { ...p, value: { value: -3, transient: true }, quality: { ...p.quality, sb: true } };
+      if (p.id === "plc-1-running") return { ...p, quality: { ...p.quality, iv: true }, stale_reason: "heartbeat" as const };
+      return p;
+    });
+    const html = render(<ControlCentreOneLine points={mixed} />);
+    expect(html).toContain("CB1: CLOSED · GOOD");
+    expect(html).toContain("RMU1 · NC: CLOSED · STALE · IV NT · device_unreachable");
+    expect(html).toContain("RMU2 tie · NO: not received · UNKNOWN");
+    expect(html).toContain("T1 OLTC: -3 · TRANSIENT · GOOD · SB");
+    expect(text(html)).toContain("IV · heartbeat");
+    expect(observedReading(mixed, "oltc-1-tap").transient).toBe(true);
+  });
+});
+
+function panel(state: CommandPanelState, definition = CONTROL_PANELS[0] as (typeof CONTROL_PANELS)[number], patch: Partial<Parameters<typeof CommandPanelView>[0]> = {}) {
+  return render(<CommandPanelView panel={definition} linkState="started" position={FEEDER_STATE.points.find((p) => p.id === definition.feedback)} state={state} onArm={() => {}} onExecute={() => {}} onCancel={() => {}} {...patch} />);
 }
 
-describe("CommandPanelView", () => {
-  const result = (status: CommandResult["status"]) => text(panel({ phase: "result", operation: "open", result: commandResult(status) }));
-
-  it("renders a completed command with every phase", () => {
-    const out = result("completed");
-    expect(out).toContain("OPEN COMPLETED");
-    expect(out).toMatch(/Select ✓ CONFIRMED 12:00:01\.000/);
-    expect(out).toMatch(/Execute ✓ CONFIRMED 12:00:01\.100/);
-    expect(out).toMatch(/Terminated ✓ ACT-TERM 12:00:01\.700/);
-    expect(out).toMatch(/Feedback ✓ MATCHED · OPEN 12:00:01\.600/);
+describe("select-then-execute controls", () => {
+  it.each(CONTROL_PANELS)("requires explicit select/execute for $point", (definition) => {
+    const idle = panel({ phase: "idle" }, definition);
+    expect(text(idle)).not.toContain("Execute");
+    for (const operation of definition.operations) {
+      expect(text(idle)).toContain(`Select ${operation.toUpperCase()}`);
+      const armed = text(panel({ phase: "armed", operation }, definition));
+      expect(armed).toContain(`Select then execute ${operation.toUpperCase()}`);
+      expect(armed).toContain(`Execute ${operation.toUpperCase()}`);
+      expect(armed).toContain("Cancel");
+    }
   });
 
-  it("renders a rejected command", () => {
-    const out = result("rejected");
-    expect(out).toContain("OPEN REJECTED");
-    expect(out).toMatch(/Execute ✗ NEGATIVE/);
-    expect(out).toContain("NO ACT-TERM");
-    expect(out).toContain("execute rejected (negative ACT-CON)");
+  it.each(["completed", "rejected", "failed", "unknown"] as const)("shows typed %s result and exact reason", (status) => {
+    const result = commandResult(status);
+    const out = text(panel({ phase: "result", operation: "open", result }));
+    expect(out).toContain(`OPEN ${status.toUpperCase()}`);
+    expect(out).toContain(result.reason);
+    expect(out).toContain("Selected (UTC) 12:00:01.000");
+    expect(out).toContain("ACT-TERM (UTC)");
+    if (status === "unknown") expect(out).toContain("It is not retried");
+    if (status === "completed") expect(out).toContain("IOA 1001: OPEN");
   });
 
-  it("renders a failed command", () => {
-    const out = result("failed");
-    expect(out).toContain("OPEN FAILED");
-    expect(out).toContain("Execute not sent");
-    expect(out).toContain("link lost before the execute was sent");
+  it("renders step and mode feedback without treating it as a double point", () => {
+    const result: CommandResult = { ...commandResult("completed"), point: "oltc-1-step", operation: "raise", feedback: { ioa: 1301, value: { value: 2, transient: false }, at: "2026-10-09T12:00:01.600Z" } };
+    expect(text(panel({ phase: "result", operation: "raise", result }, CONTROL_PANELS[3]))).toContain("IOA 1301: 2");
+    const mode: CommandResult = { ...result, point: "oltc-1-mode", operation: "auto", feedback: { ioa: 1303, value: true, at: "2026-10-09T12:00:01.600Z" } };
+    expect(text(panel({ phase: "result", operation: "auto", result: mode }, CONTROL_PANELS[4]))).toContain("IOA 1303: AUTO");
   });
 
-  it("renders an unknown outcome", () => {
-    const out = result("unknown");
-    expect(out).toContain("OPEN UNKNOWN");
-    expect(out).toMatch(/Execute \? TIMEOUT/);
-    expect(out).toContain("It is not retried");
-  });
-
-  it("renders a refused request", () => {
-    const out = text(panel({ phase: "error", operation: "close", message: commandErrorText(new ApiError(409, "busy")) }));
-    expect(out).toContain("CLOSE NOT DONE");
-    expect(out).toContain("Another command is still in progress");
-  });
-
-  it("asks before select-before-operate and disables control without a started link", () => {
-    expect(text(panel({ phase: "armed", operation: "close" }))).toContain("Select then execute CLOSE on the feeder breaker?");
-    const down = panel({ phase: "idle" }, "connecting");
-    expect(down.match(/disabled=""/g)).toHaveLength(2);
-    expect(text(down)).toContain("commands cannot be sent");
+  it("disables selection and execute on link loss, stale/unknown feedback, or busy", () => {
+    const position = FEEDER_STATE.points[0];
+    for (const patch of [{ linkState: "connecting" as const }, { position: undefined }, { disabled: true }, { position: { ...position, quality: { ...position.quality, iv: true } } }]) {
+      expect(panel({ phase: "idle" }, CONTROL_PANELS[0], patch).match(/disabled=""/g)).toHaveLength(2);
+      expect(panel({ phase: "armed", operation: "close" }, CONTROL_PANELS[0], patch)).toContain('disabled=""');
+    }
     expect(panel({ phase: "idle" })).not.toContain('disabled=""');
+  });
+
+  it("does not invent a typed failure for an ambiguous HTTP error", () => {
+    const message = commandErrorText(new ApiError(504, "CC timeout"));
+    const out = text(panel({ phase: "error", operation: "close", message }));
+    expect(out).toContain("outcome is not known");
+    expect(out).not.toContain("FAILED");
   });
 });
 
-describe("physical feeder", () => {
-  it("shares the operator screen without control buttons or audience labels", () => {
-    const html = screen({ physicalFeeder: <PhysicalFeederScreen field={TRUTH} stateError={null} audit={AUDIT} auditError={null} operator={STALE_STATE} /> });
+describe("separate field plane", () => {
+  const physical = (stateError: unknown = null, auditError: unknown = null) => <PhysicalFeederScreen field={TRUTH} stateError={stateError} audit={AUDIT} auditError={auditError} operator={STALE_STATE} />;
+  it("shows four devices and the process without controls or CC enrichment", () => {
+    const html = screen({ state: STALE_STATE, physicalFeeder: physical() });
     const out = text(html);
-    expect(out).toContain("Live physical feeder state via OpenDSS");
+    for (const label of ["breaker-1 device state", "rmu-1 device state", "rmu-2 device state", "oltc-1 device state", "Solver output", "Fault section S1", "Completed / target tap 1 / 2", "Field vs control centre", "breaker-1 position OPEN CLOSED ⚠ STALE"]) expect(out).toContain(label);
     expect(out).toContain("control centre never reads these values");
-    expect(out).toContain("Field vs control centre");
-    expect(out).toContain("Device audit");
-    expect(out).toContain("Breaker position OPEN CLOSED ⚠ STALE");
-    expect(out).not.toMatch(/truth/i);
+    expect(out).toContain("0/4 good");
     expect(html).not.toContain("Inject fault</button>");
-    expect(html).not.toContain("Reset device</button>");
-    expect(html).not.toContain("Cut control-centre session</button>");
   });
 
-  it("keeps field errors separate from operator cache and audit errors visible", () => {
-    const html = screen({ physicalFeeder: <PhysicalFeederScreen field={TRUTH} stateError={new Error("device offline")} audit={AUDIT} auditError={new Error("audit offline")} operator={FRESH_STATE} /> });
-    const out = text(html);
-    expect(out).toContain("4/4 good");
+  it("keeps field and audit failures separate from CC availability", () => {
+    const out = text(screen({ physicalFeeder: physical(new Error("device offline"), new Error("audit offline")) }));
+    expect(out).toContain("31/31 good");
     expect(out).toContain("Physical feeder unavailable: device offline Showing the last answer.");
     expect(out).toContain("Audit unavailable: audit offline Showing the last answer.");
   });
 
-  it("waits for the field separately while the range starts", () => {
-    const out = text(renderToStaticMarkup(<PhysicalFeederScreen field={undefined} stateError={new RangeNotReadyError("starting")} audit={undefined} auditError={null} operator={undefined} />));
-    expect(out).toContain("Physical feeder state shows once the range is ready.");
-    expect(out).not.toContain("Physical feeder unavailable");
-  });
-  it("shows device truth and solver output", () => {
-    const out = text(renderToStaticMarkup(<FieldCards field={TRUTH} />));
-    expect(out).toMatch(/Position OPEN/);
-    expect(out).toMatch(/Protection tripped YES/);
-    expect(out).toMatch(/Breaker in model OPEN/);
-    expect(out).toMatch(/Device revision \/ generation 5 \/ 3141592/);
+  it("renders invalid measurements as retained and unknowns without zero substitution", () => {
+    const field = structuredClone(TRUTH);
+    field.devices["rmu-1"].measurements = { ...field.devices["rmu-1"].measurements, valid: false, current_a: null };
+    field.process.devices["rmu-1"].delivered = false;
+    const out = text(render(<FieldCards field={field} />));
+    expect(out).toContain("INVALID · last values, not current");
+    expect(out).toContain("Current unknown");
+    expect(out).toContain("FAILED · solved rev");
   });
 
-  it("contrasts truth with the stale operator view", () => {
-    const out = text(renderToStaticMarkup(<OperatorContrast field={TRUTH} operator={STALE_STATE} />));
-    expect(out).toContain("Breaker position OPEN CLOSED ⚠ STALE");
-    expect(out).toContain("Protection trip TRIPPED NORMAL ⚠ STALE");
+  it("contrasts all devices without substituting field values into unknown CC cells", () => {
+    expect(text(render(<OperatorContrast field={TRUTH} operator={undefined} />))).toContain("oltc-1 tap 1 unknown · UNKNOWN");
   });
 
-  it("shows the device audit newest first", () => {
-    const out = text(renderToStaticMarkup(<AuditTable audit={AUDIT} />));
+  it("shows the breaker audit newest first", () => {
+    const out = text(render(<AuditTable audit={AUDIT} />));
     expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
-    expect(out).toContain("local_protection_trip accepted local-protection · field · protection closed → open");
-    expect(out).toContain("revision 5 · solve 113 · 0 A");
+    expect(out).toContain("closed → open");
     expect(out).toContain("close rejected modbus · station · 10.30.30.20:41000 lockout");
   });
 });
 
 describe("ControlCentreMiniStatus", () => {
-  it("summarises the control centre in the exercise runner", () => {
-    expect(text(renderToStaticMarkup(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 good");
-    const out = text(renderToStaticMarkup(<ControlCentreMiniStatus state={STALE_STATE} waiting={false} />));
-    expect(out).toContain("CONNECTING");
-    expect(out).toContain("CLOSED ⚠ STALE");
+  it("preserves the runner summary", () => {
+    expect(text(render(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 good");
+    expect(text(render(<ControlCentreMiniStatus state={STALE_STATE} waiting={false} />))).toContain("CLOSED ⚠ STALE");
   });
 });

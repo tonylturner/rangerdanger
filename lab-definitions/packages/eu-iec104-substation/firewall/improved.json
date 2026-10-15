@@ -46,6 +46,11 @@
       "name": "lan4",
       "zone": "lan4",
       "access": {}
+    },
+    {
+      "name": "lan5",
+      "zone": "lan5",
+      "access": {}
     }
   ],
   "zones": [
@@ -59,11 +64,11 @@
     },
     {
       "name": "lan1",
-      "description": "Station Zone - IEC104 RTU and GPS clock"
+      "description": "Station Zone - IEC104 RTU, OpenPLC and GPS clock"
     },
     {
       "name": "lan2",
-      "description": "Feeder Field Zone - Modbus breaker endpoint"
+      "description": "Feeder Field Zone - breaker, RMUs and OLTC Modbus endpoints"
     },
     {
       "name": "lan3",
@@ -72,6 +77,10 @@
     {
       "name": "lan4",
       "description": "Control Centre Zone - IEC104 client"
+    },
+    {
+      "name": "lan5",
+      "description": "Operations DMZ - read-only historian"
     }
   ],
   "routing": {},
@@ -112,7 +121,7 @@
       },
       {
         "id": "rtu-to-feeder-modbus",
-        "description": "Allow only the RTU to poll the feeder breaker over Modbus TCP",
+        "description": "Allow the named RTU to poll and control the breaker, RMUs and OLTC over Modbus TCP",
         "sourceZones": [
           "lan1"
         ],
@@ -123,12 +132,107 @@
           "10.30.30.20/32"
         ],
         "destinations": [
-          "10.40.40.20/32"
+          "10.40.40.20/32",
+          "10.40.40.21/32",
+          "10.40.40.22/32",
+          "10.40.40.23/32"
         ],
         "protocols": [
           {
             "name": "tcp",
             "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "plc-to-oltc-modbus",
+        "description": "Allow only the named PLC to regulate the OLTC over Modbus TCP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.30/32"
+        ],
+        "destinations": [
+          "10.40.40.23/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "control-centre-to-historian-ingest",
+        "description": "Allow only the named CC to push historian snapshots",
+        "sourceZones": [
+          "lan4"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "sources": [
+          "10.60.60.20/32"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "enterprise-to-historian-read",
+        "description": "Allow enterprise read-only historian access",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "sources": [
+          "10.10.10.0/24"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      {
+        "id": "engineering-to-plc-web",
+        "description": "Allow engineering maintenance of the OpenPLC web UI",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "sources": [
+          "10.20.20.20/32"
+        ],
+        "destinations": [
+          "10.30.30.30/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
           }
         ],
         "action": "ALLOW"
@@ -142,7 +246,8 @@
           "lan1",
           "lan2",
           "lan3",
-          "lan4"
+          "lan4",
+          "lan5"
         ],
         "destZones": [
           "lan1"
@@ -165,7 +270,8 @@
           "lan1",
           "lan2",
           "lan3",
-          "lan4"
+          "lan4",
+          "lan5"
         ],
         "destZones": [
           "lan2"

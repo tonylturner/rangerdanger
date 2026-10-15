@@ -15,6 +15,7 @@ import {
   MonitorCog,
   Cpu,
   ToggleRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { zoneColors } from "../lib/zone-colors";
 
@@ -142,10 +143,12 @@ const nodeTypeIcons: Record<string, IconComponent> = {
   gps_clock: LucideClock,
 
   // EU IEC 104 package: control centre (operator station), RTU and
-  // the breaker it telecontrols
+  // its field switches and transformer tap changer
   control_centre: LucideMonitorCog,
   iec104_rtu: LucideCpu,
   feeder_breaker: LucideToggleRight,
+  rmu: LucideToggleRight,
+  oltc: ({ size, color }) => <SlidersHorizontal size={size} color={color} />,
 
   // Default
   default: LucideServer,

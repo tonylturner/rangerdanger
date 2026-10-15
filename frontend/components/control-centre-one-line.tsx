@@ -1,140 +1,80 @@
 "use client";
 
 import type { OperatorPoint } from "../lib/operator-api";
-import { formatPointValue, pointCondition, type PointCondition } from "../lib/operator-format";
+import { formatPointValue, pointCondition, qualityFlags } from "../lib/operator-format";
 
-// One-line of the EU feeder as the control centre sees it: 20 kV
-// infeed, the feeder breaker, the line and the flat ~1 MW load. Every
-// state drawn here comes from the CC's point cache. When a point is
-// stale the diagram keeps its last value and marks it, so a cut link
-// never reads as an open breaker or a dead feeder.
-
-type Reading = { text: string; condition: PointCondition };
-
-function reading(points: OperatorPoint[], id: string): Reading {
-  const point = points.find((p) => p.id === id);
-  if (!point) return { text: "not reported", condition: "never" };
-  return { text: formatPointValue(id, point.value), condition: pointCondition(point) };
+// Every symbol is independently observed. No field/process input is accepted.
+export function observedReading(points: OperatorPoint[], id: string, unavailable = false) {
+  const p = points.find((point) => point.id === id);
+  const condition = !p || p.value === null ? "unknown" : unavailable ? "stale" : pointCondition(p);
+  const flags = p ? qualityFlags(p.quality) : [];
+  const transient = typeof p?.value === "object" && p.value !== null && p.value.transient;
+  const shortText = `${p ? formatPointValue(id, p.value) : "unknown"} · ${condition.toUpperCase()}${flags.length ? ` · ${flags.join(" ")}` : ""}`;
+  const text = `${shortText}${p?.stale_reason ? ` · ${p.stale_reason}` : ""}${unavailable ? " · CC API unavailable" : ""}`;
+  return { value: p?.value, condition, text, shortText, transient };
 }
 
-function suffix(condition: PointCondition): string {
-  if (condition === "stale") return " ⚠ STALE";
-  if (condition === "never") return " (no data)";
-  return "";
-}
-
-const AMBER = "#f59e0b";
-const LIVE = "#38bdf8";
-const DEAD = "#475569";
-
-export function ControlCentreOneLine({ points }: { points: OperatorPoint[] }) {
-  const position = reading(points, "feeder-breaker-position");
-  const trip = reading(points, "feeder-protection-trip");
-  const current = reading(points, "feeder-current");
-  const voltage = reading(points, "feeder-voltage");
-
-  const positionPoint = points.find((p) => p.id === "feeder-breaker-position");
-  const closed = positionPoint?.value === "closed";
-  const open = positionPoint?.value === "open";
-  const positionStale = position.condition !== "good";
-  const tripped = points.find((p) => p.id === "feeder-protection-trip")?.value === true;
-
-  // Line colour only claims what the CC knows: live when a good report
-  // says closed, de-energised when a good report says open, otherwise
-  // an amber dashed "unknown" line.
-  const lineColour = positionStale ? AMBER : closed ? LIVE : DEAD;
-  const lineDash = positionStale ? "6 5" : undefined;
-
-  return (
-    <figure className="space-y-2">
-      <svg
-        viewBox="0 0 560 190"
-        role="img"
-        aria-label={`Feeder one-line: breaker ${position.text}${suffix(position.condition)}`}
-        className="w-full"
-      >
-        <defs>
-          <pattern id="cc-stale-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="4" height="8" fill={AMBER} fillOpacity="0.35" />
-          </pattern>
-        </defs>
-
-        {/* Infeed */}
-        <circle cx="40" cy="80" r="20" fill="none" stroke={LIVE} strokeWidth="2" />
-        <path d="M28 80 q6 -10 12 0 t12 0" fill="none" stroke={LIVE} strokeWidth="2" />
-        <text x="40" y="122" textAnchor="middle" className="fill-slate-400 text-[10px]">20 kV grid</text>
-        <text x="40" y="136" textAnchor="middle" className="fill-slate-600 text-[9px]">50 Hz infeed</text>
-
-        {/* Busbar */}
-        <line x1="60" y1="80" x2="110" y2="80" stroke={LIVE} strokeWidth="3" />
-        <line x1="110" y1="45" x2="110" y2="115" stroke={LIVE} strokeWidth="5" />
-        <text x="110" y="36" textAnchor="middle" className="fill-slate-500 text-[9px]">20 kV BUS</text>
-        <line x1="110" y1="80" x2="196" y2="80" stroke={LIVE} strokeWidth="3" />
-
-        {/* Breaker */}
-        <rect
-          x="196"
-          y="62"
-          width="36"
-          height="36"
-          rx="3"
-          fill={closed ? (positionStale ? "url(#cc-stale-hatch)" : LIVE) : "#0f172a"}
-          stroke={positionStale ? AMBER : closed ? LIVE : "#cbd5e1"}
-          strokeWidth="2.5"
-          strokeDasharray={positionStale ? "5 3" : undefined}
-        />
-        {open && <line x1="200" y1="94" x2="228" y2="66" stroke={positionStale ? AMBER : "#cbd5e1"} strokeWidth="2.5" />}
-        {!closed && !open && (
-          <text x="214" y="85" textAnchor="middle" className="fill-amber-300 text-[16px] font-bold">?</text>
-        )}
-        <text x="214" y="50" textAnchor="middle" className="fill-slate-400 text-[10px]">Feeder breaker</text>
-        <text
-          x="214"
-          y="116"
-          textAnchor="middle"
-          className={`text-[11px] font-bold ${positionStale ? "fill-amber-300" : "fill-slate-100"}`}
-        >
-          {position.text}
-        </text>
-        {positionStale && (
-          <text x="214" y="130" textAnchor="middle" className="fill-amber-400 text-[9px] font-bold">
-            ⚠ STALE · last known
-          </text>
-        )}
-        {tripped && (
-          <text x="214" y="146" textAnchor="middle" className="fill-red-400 text-[9px] font-bold">
-            PROTECTION TRIP{suffix(trip.condition)}
-          </text>
-        )}
-
-        {/* Feeder line */}
-        <line x1="232" y1="80" x2="470" y2="80" stroke={lineColour} strokeWidth="3" strokeDasharray={lineDash} />
-        <text x="350" y="60" textAnchor="middle" className={`text-[11px] font-bold ${current.condition === "good" ? "fill-slate-100" : "fill-amber-300"}`}>
-          I {current.text}
-          {suffix(current.condition)}
-        </text>
-        <text x="350" y="104" textAnchor="middle" className={`text-[11px] font-bold ${voltage.condition === "good" ? "fill-slate-100" : "fill-amber-300"}`}>
-          U {voltage.text}
-          {suffix(voltage.condition)}
-        </text>
-
-        {/* Load */}
-        <line x1="470" y1="80" x2="470" y2="112" stroke={lineColour} strokeWidth="3" strokeDasharray={lineDash} />
-        <path d="M456 112 L484 112 L470 134 Z" fill="none" stroke={lineColour} strokeWidth="2.5" />
-        <text x="470" y="152" textAnchor="middle" className="fill-slate-400 text-[10px]">Feeder load</text>
-        <text x="470" y="166" textAnchor="middle" className="fill-slate-600 text-[9px]">flat ~1 MW, PF 1.0</text>
+export function ControlCentreOneLine({ points, unavailable = false }: { points: OperatorPoint[]; unavailable?: boolean }) {
+  const read = (id: string) => observedReading(points, id, unavailable);
+  const voltage = (id: string) => {
+    const r = read(id);
+    return r.condition !== "good" || typeof r.value !== "number" ? { color: "#fbbf24", dash: "6 5", state: "UNKNOWN" }
+      : r.value > 0 ? { color: "#38bdf8", dash: undefined, state: "LIVE" } : { color: "#94a3b8", dash: undefined, state: "DEAD" };
+  };
+  const section = (x1: number, y1: number, x2: number, y2: number, id: string) => {
+    const v = voltage(id);
+    return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={v.color} strokeWidth="3" strokeDasharray={v.dash} />;
+  };
+  const switchSymbol = (x: number, y: number, label: string, id: string) => {
+    const r = read(id);
+    const known = r.value === "open" || r.value === "closed";
+    return <g aria-label={`${label}: ${r.text}`}>
+      <title>{label}: {r.text}</title>
+      <rect x={x - 16} y={y - 16} width="32" height="32" fill="#0f172a" stroke={r.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeWidth="2" strokeDasharray={r.condition !== "good" ? "5 3" : undefined} />
+      {known ? <line x1={x - 11} y1={y + 10} x2={x + 11} y2={r.value === "closed" ? y - 10 : y + 10} stroke="#e2e8f0" strokeWidth="3" /> : <text x={x} y={y + 5} textAnchor="middle" fill="#fbbf24">?</text>}
+      <text x={x} y={y - 25} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label}</text>
+      <text x={x} y={y + 35} textAnchor="middle" fill={r.condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="11">{r.shortText}</text>
+    </g>;
+  };
+  const busLabel = (x: number, y: number, label: string, id: string) => <g aria-label={`${label}: ${read(id).text}`}>
+    <text x={x} y={y} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label} · {voltage(id).state}</text>
+    <text x={x} y={y + 18} textAnchor="middle" fill={voltage(id).color} fontSize="11">{read(id).shortText}</text>
+  </g>;
+  const tap = read("oltc-1-tap");
+  return <figure className="space-y-3">
+    <div className="overflow-x-auto">
+      <svg viewBox="0 0 1060 410" role="img" aria-label="CC-observed CIGRE-derived teaching feeder" className="w-full min-w-[850px]">
+        <text x="80" y="35" textAnchor="middle" fill="#cbd5e1" fontSize="13">110 kV source · UNOBSERVED</text>
+        <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />
+        <g aria-label={`T1 OLTC: ${tap.text}`}>
+          <circle cx="80" cy="90" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
+          <circle cx="80" cy="113" r="20" fill="none" stroke="#cbd5e1" />
+          <text x="125" y="88" fill="#e2e8f0" fontSize="13">T1 110/20 kV · OLTC</text>
+          <text x="125" y="108" fill={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="11">Tap {tap.shortText}</text>
+          <text x="125" y="128" fill="#cbd5e1" fontSize="11">{read("oltc-1-auto").shortText}</text>
+        </g>
+        {section(80, 133, 80, 325, "oltc-1-bus-kv")}
+        {section(80, 190, 310, 190, "oltc-1-bus-kv")}
+        {switchSymbol(310, 190, "CB1", "feeder-breaker-position")}
+        {section(326, 190, 570, 190, "feeder-voltage")}
+        {busLabel(440, 245, "S1 residential", "feeder-voltage")}
+        {switchSymbol(570, 190, "RMU1 · NC", "rmu-1-position")}
+        {section(586, 190, 850, 190, "rmu-1-section-kv")}
+        {busLabel(710, 245, "S2 commercial", "rmu-1-section-kv")}
+        {switchSymbol(850, 190, "RMU2 tie · NO", "rmu-2-position")}
+        {section(866, 190, 1000, 190, "rmu-2-source-kv")}
+        {section(1000, 190, 1000, 325, "rmu-2-source-kv")}
+        <line x1="80" y1="325" x2="305" y2="325" stroke="#94a3b8" strokeWidth="3" strokeDasharray="6 5" />
+        <rect x="305" y="309" width="32" height="32" fill="#0f172a" stroke="#94a3b8" strokeDasharray="5 3" />
+        <text x="321" y="331" textAnchor="middle" fill="#cbd5e1">?</text>
+        <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">F2 head · UNOBSERVED</text>
+        {section(337, 325, 1000, 325, "rmu-2-source-kv")}
+        {busLabel(710, 365, "S3 industrial", "rmu-2-source-kv")}
       </svg>
-      <figcaption className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500">
-        <span>
-          <span className="font-bold text-sky-400">━</span> live (good report, closed)
-        </span>
-        <span>
-          <span className="font-bold text-slate-500">━</span> de-energised (good report, open)
-        </span>
-        <span>
-          <span className="font-bold text-amber-400">╍</span> unknown: last report stale
-        </span>
-      </figcaption>
-    </figure>
-  );
+    </div>
+    <figcaption className="text-xs text-slate-400">Blue: observed voltage &gt; 0 kV. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Tap TRANSIENT means motion; the displayed tap is the last completed step. F2 has no telemetry.</figcaption>
+    <dl className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
+      {["oltc-1-bus-kv", "feeder-protection-trip", "rmu-1-remote", "rmu-1-earth", "rmu-1-fault-passage", "rmu-2-remote", "rmu-2-earth", "rmu-2-fault-passage", "oltc-1-remote", "oltc-1-blocked", "oltc-1-at-lower", "oltc-1-at-upper", "plc-1-running", "plc-1-input-valid", "plc-1-setpoint-kv", "plc-1-deadband-pct", "plc-1-delay-s"].map((id) => <div key={id}><dt className="text-slate-400">{id}</dt><dd>{read(id).text}</dd></div>)}
+    </dl>
+  </figure>;
 }

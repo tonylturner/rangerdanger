@@ -5,7 +5,7 @@ import { nodeZone } from "./observed-flows";
 export const zones = [
   "enterprise_net", "vendor_net", "ot_ops_net", "field_net",
   // EU IEC 104 package zones
-  "station_net", "control_centre_net",
+  "station_net", "control_centre_net", "ops_dmz_net", "lan5",
   // Legacy zone names
   "wan", "dmz", "ot_control", "ot_safety", "it_workstations",
   "it_net", "dmz_net", "ot_control_net", "ot_safety_net"
@@ -20,6 +20,7 @@ export const PORT_PROTOCOL: Record<string, string> = {
   "2404": "IEC 104",
   "1881": "FUXA",
   "8080": "HTTP",
+  "8081": "HTTP ingest",
   "8443": "HTTPS",
   "80": "HTTP",
   "443": "HTTPS",
@@ -100,6 +101,9 @@ export const ZONE_HUMAN_NAME: Record<string, string> = {
   field_net: "Field Devices",
   station_net: "Station",
   control_centre_net: "Control Centre",
+  ops_dmz_net: "Operations DMZ",
+  lan4: "Control Centre",
+  lan5: "Operations DMZ",
   wan: "Enterprise",
   dmz: "Vendor / DMZ",
   lan1: "OT Ops",

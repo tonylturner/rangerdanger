@@ -94,6 +94,7 @@ export function buildStyledGraph(
     const zoneOrder = [
       "enterprise_net", "wan", "it_net",
       "vendor_net", "dmz", "dmz_net",
+      "ops_dmz_net", "lan5",
       "control_centre_net", "lan4",
       "ot_ops_net", "station_net", "lan1", "ot_control", "ot_control_net",
       "field_net", "lan2", "ot_safety", "ot_safety_net",

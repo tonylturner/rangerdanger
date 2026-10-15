@@ -131,3 +131,30 @@ describe("buildStyledGraph", () => {
     expect(result.nodes.find((n) => n.id === "fw-1")?.data.health).toBe("ok");
   });
 });
+
+
+describe("increment-4 map inventory", () => {
+  function graph(): LabGraph {
+    const g = structuredClone(euFixture) as LabGraph;
+    g.networks.push({ id: "ops_dmz_net", name: "Operations DMZ", zone: "lan5", subnet: "10.70.70.0/24" });
+    const nodes = [
+      ["historian-1", "historian", "ops_dmz_net", "10.70.70.40"],
+      ["rmu-1", "rmu", "field_net", "10.40.40.21"],
+      ["rmu-2", "rmu", "field_net", "10.40.40.22"],
+      ["oltc-1", "oltc", "field_net", "10.40.40.23"],
+      ["plc-1", "openplc", "station_net", "10.30.30.30"],
+    ];
+    g.nodes.push(...nodes.map(([id, type, zone, ip]) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, zone, ip, networks: [zone] } })));
+    return g;
+  }
+  it.each([false, true])("renders lan5 and every new node, Purdue=%s", (iec62443) => {
+    const g = graph();
+    const result = buildStyledGraph(g, [], { policyDim: true, traffic: false, iec62443 });
+    for (const id of ["rmu-1", "rmu-2", "oltc-1", "plc-1", "historian-1"]) expect(result.nodes.find((n) => n.id === id)?.data.nodeType).toBe(g.nodes.find((n) => n.id === id)!.type);
+    expect(result.nodes.find((n) => n.id === "zone-boundary-ops_dmz_net")?.data.label).toBe("Operations DMZ");
+    expect(result.edges.find((e) => e.id === "fw-to-ops_dmz_net")?.data.zoneMeta.role).toBe("lan5");
+    const dmz = result.nodes.find((n) => n.id === "zone-boundary-ops_dmz_net")!;
+    const cc = result.nodes.find((n) => n.id === "zone-boundary-control_centre_net")!;
+    expect(iec62443 ? dmz.position.y : dmz.position.x).toBeLessThan(iec62443 ? cc.position.y : cc.position.x);
+  });
+});

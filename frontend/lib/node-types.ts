@@ -4,6 +4,8 @@
 export const NODE_TYPE_LABELS: Record<string, string> = {
   control_centre: "Control centre (IEC 104 controlling station)",
   iec104_rtu: "IEC 104 RTU (controlled station)",
+  rmu: "RMU (motor-operated load-break switch)",
+  oltc: "OLTC (transformer tap changer)",
   feeder_breaker: "Feeder breaker (Modbus field device)",
 };
 

@@ -1,10 +1,4 @@
-// Typed clients for the EU control-centre, field and firewall
-// session routes. Shapes follow the increment-3 contract: the control
-// centre (CC) state, commands and journal (§6) as the backend wraps
-// them (§7.2), the feeder-breaker device state and audit (§4) and the
-// solver output (§5). Timestamps are RFC3339 strings; null means "not
-// known", never a default.
-
+// EU increment-4 wire contracts. Null is unknown, never a default.
 import { request } from "./api";
 
 // ── Control centre (GET /api/operator/*) ─────────────────────────
@@ -39,11 +33,12 @@ export type PointQuality = {
   ov: boolean | null;
 };
 
-export type StaleReason = "link_lost" | "device_unreachable" | "measurement_invalid" | "never_received";
+export type StaleReason = "link_lost" | "device_unreachable" | "measurement_invalid" | "never_received" | "heartbeat";
 export type DoublePointValue = "intermediate" | "open" | "closed" | "indeterminate";
 // Double points carry their state name, single points a bool, floats a
 // number; null only when the CC has never received the point.
-export type PointValue = DoublePointValue | boolean | number | null;
+export type StepValue = { value: number; transient: boolean };
+export type PointValue = DoublePointValue | boolean | number | StepValue | null;
 
 export type OperatorPoint = {
   id: string;
@@ -62,7 +57,9 @@ export type OperatorPoint = {
 };
 
 export type OperatorState = {
-  schema: number;
+  schema: 2;
+  snapshot_seq: number;
+  rendered_at: string;
   cache_epoch: string;
   link: ControlCentreLink;
   points: OperatorPoint[];
@@ -70,36 +67,38 @@ export type OperatorState = {
   range_generation: number;
 };
 
-export type CommandOperation = "open" | "close";
+export type CommandOperation = "open" | "close" | "lower" | "raise" | "auto" | "manual";
 export type CommandStatus = "completed" | "rejected" | "failed" | "unknown";
-export type CommandPhaseStatus = "confirmed" | "negative" | "timeout" | null;
-export type FeedbackStatus = "matched" | "mismatched" | "missing";
-
-// id is the CC's "cmd-<n>", counted per CC boot.
 export type CommandResult = {
   id: string;
-  status: CommandStatus;
-  select: { status: CommandPhaseStatus; at: string | null };
-  execute: { status: CommandPhaseStatus; at: string | null; terminated_at: string | null };
-  // The feedback point is a double point; value is null when missing.
-  feedback: { status: FeedbackStatus; value: DoublePointValue | null; received_at: string | null };
-  error: string | null;
+  point: string;
+  operation: CommandOperation;
+  result: CommandStatus;
+  reason: string;
+  selected_at: string | null;
+  executed_at: string | null;
+  con_at: string | null;
+  term_at: string | null;
+  feedback: { ioa: number; value: PointValue; at: string } | null;
 };
 
-// The one command point of the slice (points.json `commands`).
-export const BREAKER_COMMAND_POINT = "feeder-breaker-command";
+export type OperatorCommand = { point: string; operation: CommandOperation };
 
-// Synchronous: the CC answers after the whole select/execute/feedback
-// sequence. 400/409/503 from the CC arrive as an ApiError.
-export async function sendOperatorCommand(operation: CommandOperation) {
-  return request<CommandResult>("/operator/commands", {
-    method: "POST",
-    body: JSON.stringify({ point: BREAKER_COMMAND_POINT, operation }),
+// One request performs wire select/execute. Never retry an ambiguous write.
+export async function sendOperatorCommand(command: OperatorCommand) {
+  const result = await request<CommandResult>("/operator/commands", {
+    method: "POST", body: JSON.stringify(command),
   });
+  if (!["completed", "rejected", "failed", "unknown"].includes(result.result) || typeof result.reason !== "string") {
+    throw new Error("Expected increment-4 command result; command outcome is unknown");
+  }
+  return result;
 }
 
 export async function getOperatorState() {
-  return request<OperatorState>("/operator/state");
+  const state = await request<OperatorState>("/operator/state");
+  if (state.schema !== 2) throw new Error("Expected CC state schema 2");
+  return state;
 }
 
 // Why the CC journals a link_down. lib60870 reports no close cause, so
@@ -130,9 +129,13 @@ export async function getOperatorJournal() {
 // ── Physical feeder state (GET /api/field/*) ─────────────────────
 
 export type DeviceMeasurements = {
+  valid: boolean;
   current_a: number | null;
   voltage_kv_ll: number | null;
-  valid: boolean;
+  source_kv_ll: number | null;
+  section_live: boolean | null;
+  source_live: boolean | null;
+  fault_current: boolean | null;
   solver_epoch: string | null;
   solve_seq: number | null;
   solved_at: string | null;
@@ -140,45 +143,59 @@ export type DeviceMeasurements = {
 };
 
 export type BreakerPosition = "open" | "closed";
-
-// GET /api/state of the device; fault and reset answer with it too.
-export type DeviceState = {
-  schema: number;
+type DeviceCommon = {
+  schema: 2;
   device_id: string;
   generation: number;
   revision: number;
-  position: BreakerPosition;
-  remote_enabled: boolean;
-  lockout: boolean;
-  fault_active: boolean;
-  protection_tripped: boolean;
   event_seq: number;
   changed_at: string;
+  remote_enabled: boolean;
   measurements: DeviceMeasurements;
 };
+export type BreakerState = DeviceCommon & {
+  kind: "breaker";
+  position: BreakerPosition;
+  lockout: boolean;
+  protection_tripped: boolean;
+};
+export type RmuState = DeviceCommon & {
+  kind: "rmu";
+  position: BreakerPosition;
+  earth_closed: boolean;
+  fault_passage: boolean;
+};
+export type OltcState = DeviceCommon & {
+  kind: "oltc";
+  tap: number;
+  target_tap: number;
+  moving: boolean;
+  auto: boolean;
+  blocked: boolean;
+  armed: boolean;
+  plc_request_result: string;
+  heartbeat: number;
+};
+export type DeviceState = BreakerState | RmuState | OltcState;
 
 export type ProcessElectrical = {
-  schema: number;
+  schema: 2;
   profile_id: string;
-  frequency_hz: number;
-  primary_kv: number;
-  breaker: BreakerPosition;
-  source_voltage_kv_ll: number;
-  load_voltage_kv_ll: number;
-  current_a: number;
-  load_kw: number;
-  energized: boolean;
-  converged: boolean;
   solver_epoch: string;
   solve_seq: number;
   solved_at: string;
-  truth_revision: number;
-  truth_generation: number;
   truth_stale: boolean;
+  fault_section: "none" | "S1" | "S2";
+  f2_tripped: boolean;
+  load_multiplier: number;
+  source_pu: number;
+  tap: number;
+  buses: Record<string, { kv: number | null; live: boolean | null }>;
+  devices: Record<string, { delivered: boolean; solved_revision: number; revision: number }>;
 };
 
 export type FieldState = {
-  device: DeviceState;
+  devices: Record<string, DeviceState>;
   process: ProcessElectrical;
 };
 
@@ -205,7 +222,11 @@ export type DeviceAudit = {
 };
 
 export async function getFieldState() {
-  return request<FieldState>("/field/state");
+  const state = await request<FieldState>("/field/state");
+  if (state.process.schema !== 2 || !state.devices || Object.values(state.devices).some((d) => d.schema !== 2)) {
+    throw new Error("Expected field and process schema 2");
+  }
+  return state;
 }
 
 export async function getFieldAudit() {

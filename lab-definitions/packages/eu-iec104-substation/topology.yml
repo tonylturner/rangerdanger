@@ -2,7 +2,8 @@ id: telecontrol-segmentation
 name: European Feeder Telecontrol Segmentation
 description: >
   A 20 kV feeder uses IEC 60870-5-104 between the control centre and RTU,
-  Modbus TCP between the RTU and feeder breaker, and an OpenDSS truth model.
+  Modbus TCP to the breaker, RMUs and OLTC, OpenPLC voltage regulation,
+  a read-only historian in the Operations DMZ, and an OpenDSS truth model.
   Students validate source- and port-based segmentation without mistaking
   transport policy for command-level filtering.
 
@@ -25,19 +26,25 @@ networks:
     name: Station Zone
     subnet: 10.30.30.0/24
     zone: lan1
-    description: IEC104 RTU and station clock
+    description: IEC104 RTU, OpenPLC voltage controller and station clock
 
   - id: field_net
     name: Field Device Zone
     subnet: 10.40.40.0/24
     zone: lan2
-    description: Feeder breaker Modbus endpoint
+    description: Breaker, two RMUs and OLTC Modbus endpoints
 
   - id: control_centre_net
     name: Control Centre Zone
     subnet: 10.60.60.0/24
     zone: lan4
     description: IEC104 control-centre client
+
+  - id: ops_dmz_net
+    name: Operations DMZ
+    subnet: 10.70.70.0/24
+    zone: lan5
+    description: Read-only historian, fed by control-centre snapshots
 
 nodes:
   - id: fw-1
@@ -50,6 +57,7 @@ nodes:
       - station_net
       - field_net
       - control_centre_net
+      - ops_dmz_net
     ip: 10.10.10.2
 
   - id: kali-1
@@ -108,6 +116,46 @@ nodes:
       - field_net
     ip: 10.40.40.20
 
+  - id: rmu-1
+    type: rmu
+    name: RMU 1 (normally closed)
+    container: rangerdanger-rmu-1
+    networks:
+      - field_net
+    ip: 10.40.40.21
+
+  - id: rmu-2
+    type: rmu
+    name: RMU 2 (normally open tie)
+    container: rangerdanger-rmu-2
+    networks:
+      - field_net
+    ip: 10.40.40.22
+
+  - id: oltc-1
+    type: oltc
+    name: Transformer OLTC
+    container: rangerdanger-oltc-1
+    networks:
+      - field_net
+    ip: 10.40.40.23
+
+  - id: plc-1
+    type: openplc
+    name: OpenPLC Voltage Controller
+    container: rangerdanger-openplc
+    networks:
+      - station_net
+    ip: 10.30.30.30
+
+  - id: historian-1
+    type: historian_sim
+    name: Read-only Historian
+    container: rangerdanger-historian
+    networks:
+      - ops_dmz_net
+    ip: 10.70.70.40
+
 scenarios: []
 
 # Package-owned teaching flows; liveness keys are opaque to consumers.
@@ -145,6 +193,71 @@ flows:
     category: scenario
     liveness_key: attacker-rtu
 
+  - id: rtu-rmu-1
+    source: rtu-1
+    target: rmu-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-rmu-1
+  - id: rtu-rmu-2
+    source: rtu-1
+    target: rmu-2
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-rmu-2
+  - id: rtu-oltc-1
+    source: rtu-1
+    target: oltc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-oltc-1
+  - id: rtu-plc-1
+    source: rtu-1
+    target: plc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-plc-1
+  - id: plc-oltc
+    source: plc-1
+    target: oltc-1
+    protocol: Modbus
+    port: 502
+    cadence: ~100ms
+    category: baseline
+    liveness_key: plc-oltc
+  - id: cc-historian
+    source: cc-1
+    target: historian-1
+    protocol: HTTP
+    port: 8081
+    cadence: ~1s
+    category: baseline
+    liveness_key: cc-historian
+  - id: enterprise-historian
+    source: kali-1
+    target: historian-1
+    protocol: HTTP
+    port: 8080
+    cadence: manual
+    category: scenario
+    liveness_key: enterprise-historian
+  - id: engineering-plc
+    source: eng-ws-1
+    target: plc-1
+    protocol: HTTP
+    port: 8080
+    cadence: manual
+    category: scenario
+    liveness_key: engineering-plc
+
 liveness:
   cc-rtu:
     provider: operator-link
@@ -156,3 +269,24 @@ liveness:
   attacker-rtu:
     provider: session-presence
     transport: tcp
+  # No application-freshness provider exists for PLC master I/O or historian HTTP.
+  rtu-rmu-1:
+    provider: operator-device
+    points: ["rmu-1-position", "rmu-1-fault-passage"]
+  rtu-rmu-2:
+    provider: operator-device
+    points: ["rmu-2-position", "rmu-2-fault-passage"]
+  rtu-oltc-1:
+    provider: operator-device
+    points: ["oltc-1-tap", "oltc-1-auto"]
+  rtu-plc-1:
+    provider: operator-device
+    points: ["plc-1-running", "plc-1-input-valid"]
+  plc-oltc:
+    provider: unobserved
+  cc-historian:
+    provider: unobserved
+  enterprise-historian:
+    provider: unobserved
+  engineering-plc:
+    provider: unobserved

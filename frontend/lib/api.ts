@@ -24,8 +24,8 @@ async function errorBody(res: Response): Promise<unknown> {
 
 function errorDetail(body: unknown): string {
   if (typeof body !== "object" || body === null) return "";
-  const { error } = body as { error?: unknown };
-  return typeof error === "string" ? error : "";
+  const { error, reason } = body as { error?: unknown; reason?: unknown };
+  return typeof error === "string" ? error : typeof reason === "string" ? reason : "";
 }
 
 // Every API helper goes through here (lib/operator-api.ts too), so a
