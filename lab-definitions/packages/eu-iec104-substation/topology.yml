@@ -109,3 +109,50 @@ nodes:
     ip: 10.40.40.20
 
 scenarios: []
+
+# Package-owned teaching flows; liveness keys are opaque to consumers.
+flows:
+  - id: cc-rtu
+    source: cc-1
+    target: rtu-1
+    protocol: IEC104
+    port: 2404
+    cadence: persistent
+    category: baseline
+    liveness_key: cc-rtu
+  - id: rtu-breaker
+    source: rtu-1
+    target: breaker-1
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-breaker
+  - id: station-clock
+    source: rtu-1
+    target: gps-1
+    protocol: HTTP
+    port: 8080
+    cadence: ~1s
+    category: baseline
+    liveness_key: station-clock
+  - id: attacker-rtu
+    source: kali-1
+    target: rtu-1
+    protocol: IEC104
+    port: 2404
+    cadence: manual
+    category: scenario
+    liveness_key: attacker-rtu
+
+liveness:
+  cc-rtu:
+    provider: operator-link
+  rtu-breaker:
+    provider: operator-device
+    points: ["feeder-breaker-position", "feeder-protection-trip"]
+  station-clock:
+    provider: unobserved
+  attacker-rtu:
+    provider: session-presence
+    transport: tcp

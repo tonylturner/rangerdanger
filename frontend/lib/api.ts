@@ -76,7 +76,37 @@ export type GraphNode = {
 };
 
 export type GraphEdge = { id: string; source: string; target: string; label?: string };
-export type LabGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
+export type TopologyFlow = {
+  id: string;
+  source: string;
+  target: string;
+  protocol: string;
+  port: number;
+  cadence: string;
+  category: "baseline" | "scenario";
+  liveness_key: string;
+};
+export type LivenessBinding =
+  | { provider: "workshop-supervisor" | "traffic-generator" | "operator-link" | "unobserved" }
+  | { provider: "workshop-device"; device: string }
+  | { provider: "operator-device"; points: string[] }
+  | { provider: "session-presence"; transport: "tcp" | "udp" };
+export type TopologyNetwork = {
+  id: string;
+  name: string;
+  zone?: string;
+  subnet?: string;
+  cidr?: string;
+  description?: string;
+};
+export type LabGraph = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  flows: TopologyFlow[];
+  liveness: Record<string, LivenessBinding>;
+  networks: TopologyNetwork[];
+  operations: { traffic_generation: boolean };
+};
 
 export type DecisionRole = {
   name: string;

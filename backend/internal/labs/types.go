@@ -2,12 +2,14 @@ package labs
 
 // LabYAML mirrors the YAML schema for a package's topology template.
 type LabYAML struct {
-	ID             string        `yaml:"id"`
-	Name           string        `yaml:"name"`
-	Description    string        `yaml:"description"`
-	FirewallConfig string        `yaml:"firewall_config"` // path relative to the topology file's directory
-	Networks       []NetworkYAML `yaml:"networks"`
-	Nodes          []NodeYAML    `yaml:"nodes"`
+	ID             string                     `yaml:"id"`
+	Name           string                     `yaml:"name"`
+	Description    string                     `yaml:"description"`
+	FirewallConfig string                     `yaml:"firewall_config"` // path relative to the topology file's directory
+	Networks       []NetworkYAML              `yaml:"networks"`
+	Nodes          []NodeYAML                 `yaml:"nodes"`
+	Flows          []TopologyFlow             `yaml:"flows"`
+	Liveness       map[string]LivenessBinding `yaml:"liveness"`
 	// Scenarios is accepted only as an empty list. A package's scenarios
 	// directory is its only curriculum source; inline scenarios are a load
 	// error so a topology cannot smuggle exercises past package ownership.

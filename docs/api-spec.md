@@ -64,12 +64,31 @@ The workshop endpoints operate on the serving range, with nodes from the topolog
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/workshop/graph` | Current topology as a graph (nodes + edges); zones and per-network `interface_ips` come from the manifest |
+| `GET` | `/workshop/graph` | Serving generation's topology: `nodes`, `edges`, package-owned `flows`, `liveness`, `networks`, and `operations.traffic_generation`; zones and per-network `interface_ips` come from the manifest |
 | `GET` | `/workshop/status` | Status of all workshop nodes |
 | `GET` | `/workshop/nodes/:nodeId/terminal` | WebSocket terminal to a node (see Terminals) |
 | `POST` | `/workshop/nodes/:nodeId/exec` | Run a one-shot command on a node. Body: `{"command": "...", "timeout_sec": 30}`. The first token of `command` must be in the backend allowlist: `nmap, mbpoll, dnp3poll, dnp3cmd, curl, tshark, tcpdump, nc, ping, traceroute, wget, cat, ls, ip, ss, netstat` - anything else returns `403 {"error":"command not allowed"}`. On success returns `{"stdout", "stderr", "exit_code", "duration_ms"}`. |
 | `POST` | `/workshop/reset` | Reset substation state (clear lockouts, restore voltage, re-enable reclose, etc.) |
 | `POST` | `/workshop/test-suite` | Run all exercise validators programmatically |
+
+The graph's `flows` entries have `id`, `source`, `target` (node IDs),
+`protocol` (display label), `port`, `cadence`, `category` (`baseline` or
+`scenario`) and `liveness_key`. `liveness` is a package-local binding map:
+`provider` is `workshop-supervisor`, `workshop-device` (with `device`),
+`traffic-generator`, `operator-link`, `operator-device` (with `points` IDs),
+`session-presence` (with `transport: tcp|udp`) or `unobserved`. Session evidence
+matches the original source/destination addresses, transport and destination
+port of the flow, not port alone. `networks` contains the topology's network
+IDs, names, subnets and containd `zone` mappings. Operation availability comes
+from the serving package's workshop recipe. Arrays and maps are empty rather
+than null when the package declares no inventory. No default flow set is
+substituted.
+
+These are configured conversations, not packet counters. A consumer may
+report active, idle, down or unknown. CC link state establishes IEC104 link
+liveness; received status-point quality can only *infer* downstream device
+polling. Unknown clock polling is not a failed clock. Session presence does not
+prove application success or authorization under the current policy.
 
 ## Scenarios (exercises)
 

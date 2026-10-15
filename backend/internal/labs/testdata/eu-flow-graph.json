@@ -1,0 +1,238 @@
+{
+  "nodes": [
+    {
+      "id": "fw-1",
+      "type": "containd_ngfw",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Containd Firewall",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net",
+          "vendor_net",
+          "station_net",
+          "field_net",
+          "control_centre_net"
+        ],
+        "ip": "10.10.10.2"
+      }
+    },
+    {
+      "id": "kali-1",
+      "type": "kali_pentest",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Kali Attacker",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net"
+        ],
+        "ip": "10.10.10.50"
+      }
+    },
+    {
+      "id": "vendor-jump-1",
+      "type": "vendor_jumpbox",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Vendor Jump Box",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "ip": "10.20.20.10"
+      }
+    },
+    {
+      "id": "eng-ws-1",
+      "type": "eng_workstation",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Engineering Workstation",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "ip": "10.20.20.20"
+      }
+    },
+    {
+      "id": "gps-1",
+      "type": "gps_sim",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Station GPS Clock",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "ip": "10.30.30.50"
+      }
+    },
+    {
+      "id": "rtu-1",
+      "type": "iec104_rtu",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "IEC104 Remote Terminal Unit",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "ip": "10.30.30.20"
+      }
+    },
+    {
+      "id": "cc-1",
+      "type": "control_centre",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Control Centre",
+        "zone": "control_centre_net",
+        "networks": [
+          "control_centre_net"
+        ],
+        "ip": "10.60.60.20"
+      }
+    },
+    {
+      "id": "breaker-1",
+      "type": "feeder_breaker",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Feeder Breaker",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "ip": "10.40.40.20"
+      }
+    }
+  ],
+  "edges": [],
+  "flows": [
+    {
+      "id": "cc-rtu",
+      "source": "cc-1",
+      "target": "rtu-1",
+      "protocol": "IEC104",
+      "port": 2404,
+      "cadence": "persistent",
+      "category": "baseline",
+      "liveness_key": "cc-rtu"
+    },
+    {
+      "id": "rtu-breaker",
+      "source": "rtu-1",
+      "target": "breaker-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-breaker"
+    },
+    {
+      "id": "station-clock",
+      "source": "rtu-1",
+      "target": "gps-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "~1s",
+      "category": "baseline",
+      "liveness_key": "station-clock"
+    },
+    {
+      "id": "attacker-rtu",
+      "source": "kali-1",
+      "target": "rtu-1",
+      "protocol": "IEC104",
+      "port": 2404,
+      "cadence": "manual",
+      "category": "scenario",
+      "liveness_key": "attacker-rtu"
+    }
+  ],
+  "liveness": {
+    "cc-rtu": {
+      "provider": "operator-link"
+    },
+    "rtu-breaker": {
+      "provider": "operator-device",
+      "points": [
+        "feeder-breaker-position",
+        "feeder-protection-trip"
+      ]
+    },
+    "station-clock": {
+      "provider": "unobserved"
+    },
+    "attacker-rtu": {
+      "provider": "session-presence",
+      "transport": "tcp"
+    }
+  },
+  "networks": [
+    {
+      "id": "enterprise_net",
+      "name": "Enterprise Zone",
+      "subnet": "10.10.10.0/24",
+      "zone": "wan",
+      "description": "Enterprise attacker workstation and untrusted ingress"
+    },
+    {
+      "id": "vendor_net",
+      "name": "Vendor / Engineering Zone",
+      "subnet": "10.20.20.0/24",
+      "zone": "dmz",
+      "description": "Vendor access and engineering maintenance"
+    },
+    {
+      "id": "station_net",
+      "name": "Station Zone",
+      "subnet": "10.30.30.0/24",
+      "zone": "lan1",
+      "description": "IEC104 RTU and station clock"
+    },
+    {
+      "id": "field_net",
+      "name": "Field Device Zone",
+      "subnet": "10.40.40.0/24",
+      "zone": "lan2",
+      "description": "Feeder breaker Modbus endpoint"
+    },
+    {
+      "id": "control_centre_net",
+      "name": "Control Centre Zone",
+      "subnet": "10.60.60.0/24",
+      "zone": "lan4",
+      "description": "IEC104 control-centre client"
+    }
+  ],
+  "operations": {
+    "traffic_generation": false
+  }
+}

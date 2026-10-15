@@ -23,7 +23,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
 
-	var nodes []graphNode
+	nodes := []graphNode{}
 	for idx, zone := range zoneOrder {
 		nodes = append(nodes, graphNode{
 			ID:   "zone-" + zone,
@@ -41,7 +41,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		})
 	}
 
-	var edges []graphEdge
+	edges := []graphEdge{}
 
 	for _, n := range topology.Nodes {
 		zone := ""
@@ -91,7 +91,23 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"nodes": nodes, "edges": edges})
+	flows := topology.Flows
+	if flows == nil {
+		flows = []labs.TopologyFlow{}
+	}
+	bindings := topology.Liveness
+	if bindings == nil {
+		bindings = map[string]labs.LivenessBinding{}
+	}
+	networks := topology.Networks
+	if networks == nil {
+		networks = []labs.NetworkYAML{}
+	}
+	recipe, _ := recipeFor(gen)
+	c.JSON(http.StatusOK, gin.H{
+		"nodes": nodes, "edges": edges, "flows": flows, "liveness": bindings, "networks": networks,
+		"operations": gin.H{"traffic_generation": recipe != nil && len(recipe.traffic) > 0},
+	})
 }
 
 // handleGetWorkshopStatus returns the status of the workshop environment:

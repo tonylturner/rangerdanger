@@ -1,7 +1,11 @@
+import type { LabGraph } from "./api";
+import euFixture from "../../backend/internal/labs/testdata/eu-flow-graph.json";
+import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { describe, expect, it } from "vitest";
 import {
   deriveNodeHealth,
   getFlowBlockReason,
+  getZonePolicyInfo,
   humanizeSummary,
 } from "./network-console-data";
 
@@ -20,6 +24,11 @@ describe("humanizeSummary", () => {
 });
 
 describe("getFlowBlockReason", () => {
+  const graph: LabGraph = {
+    nodes: [ ["eng-ws-1", "vendor_net"], ["relay-1", "field_net"] ].map(([id, zone]) => ({ id, type: "host", position: { x: 0, y: 0 }, data: { label: id, zone, networks: [zone] } })),
+    edges: [], flows: [], liveness: {}, operations: { traffic_generation: true },
+    networks: [{ id: "vendor_net", name: "Vendor", zone: "dmz" }, { id: "field_net", name: "Field", zone: "lan2" }],
+  };
   const summaries = [
     {
       source_zone: "dmz",
@@ -31,7 +40,7 @@ describe("getFlowBlockReason", () => {
   ];
 
   it("returns the matching denial reason for a blocked flow", () => {
-    expect(getFlowBlockReason("eng-ws-1", "relay-1", summaries)).toBe(
+    expect(getFlowBlockReason("eng-ws-1", "relay-1", summaries, graph)).toBe(
       "WEAK: vendor to field access",
     );
   });
@@ -40,8 +49,24 @@ describe("getFlowBlockReason", () => {
     expect(
       getFlowBlockReason("eng-ws-1", "relay-1", [
         { ...summaries[0], action: "ALLOW" },
-      ]),
+      ], graph),
     ).toBeNull();
+  });
+
+  it("uses real EU zone mappings without treating MIXED as non-RTAC denial", () => {
+    const eu = euFixture as LabGraph;
+    const rules = [{ source_zone: "lan4", dest_zone: "lan1", summary: "2404", rule_details: ["CC /32 only"], action: "MIXED" as const }];
+    expect(getFlowBlockReason("cc-1", "rtu-1", rules, eu)).toBeNull();
+    expect(getFlowBlockReason("cc-1", "rtu-1", [{ ...rules[0], action: "DENY" }], eu)).toBe("CC /32 only");
+    expect(getFlowBlockReason("rtu-1", "gps-1", rules, eu)).toBeNull();
+    expect(getZonePolicyInfo("station_net", rules, eu.networks)).toMatchObject({ action: "MIXED", label: "MIXED · source-restricted" });
+  });
+
+  it("retains the established US source-pin overlay", () => {
+    const us = usFixture as LabGraph;
+    const rules = [{ source_zone: "lan1", dest_zone: "lan2", summary: "502", rule_details: ["RTAC source pin"], action: "MIXED" as const }];
+    expect(getFlowBlockReason("rtac-1", "relay-1", rules, us)).toBeNull();
+    expect(getFlowBlockReason("historian-1", "relay-1", rules, us)).toContain("only RTAC");
   });
 });
 

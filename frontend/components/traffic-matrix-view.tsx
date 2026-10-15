@@ -1,59 +1,35 @@
 "use client";
 
-// Traffic Matrix view rendered inside the Network Map's left drawer.
-//
-// Shares its data source with the canvas Traffic view: both consume
-// the same OBSERVED_FLOWS table and the same resolveLiveness() helper
-// so the matrix and the map are guaranteed to be consistent. The
-// matrix is "what flows the lab is configured to produce" with each
-// row stamped active/idle/down by live runtime telemetry from
-// /workshop/status (RTAC online + device_comms) and /traffic/status
-// (scenario generator state).
-//
-// The Generate Traffic button calls the same /api/traffic/generate
-// backend endpoint that students invoke from the lab terminals - the
-// backend handler `docker exec`s real curl commands inside eng-ws and
-// vendor-jump, so flows produced here are identical to flows produced
-// by hand. Nothing in this drawer reaches around containd or invents
-// its own protocol path.
+// The matrix receives the same package flow context used by the canvas.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Activity, ArrowRight, Download, Router, Square, Zap } from "lucide-react";
 import {
   getPcapDownloadUrl,
   getPcapStatus,
-  getTrafficStatus,
   startPcapCapture,
   startTrafficGeneration,
   stopPcapCapture,
 } from "../lib/api";
-import { useWorkshopStatus } from "../lib/live-queries";
-import {
-  OBSERVED_FLOWS,
-  resolveLiveness,
-  isCrossZone,
-  nodeZone,
-  nodeIp,
-  type FlowStatus,
-  type ObservedFlow,
-} from "../lib/observed-flows";
+import { aggregateFlows, nodeZone, nodeIp, type FlowStatus, type FlowContext } from "../lib/observed-flows";
+import { humanZoneName } from "../lib/network-console-data";
 
 // ── Style maps ──────────────────────────────────────────────────────
 
 const ZONE_TEXT: Record<string, string> = {
-  enterprise: "text-red-400",
-  vendor: "text-purple-400",
-  ot_ops: "text-orange-400",
-  field: "text-green-400",
+  enterprise_net: "text-red-400",
+  vendor_net: "text-purple-400",
+  ot_ops_net: "text-orange-400",
+  field_net: "text-green-400",
 };
 
 const ZONE_DOT: Record<string, string> = {
-  enterprise: "bg-red-500",
-  vendor: "bg-purple-500",
-  ot_ops: "bg-orange-500",
-  field: "bg-green-500",
+  enterprise_net: "bg-red-500",
+  vendor_net: "bg-purple-500",
+  ot_ops_net: "bg-orange-500",
+  field_net: "bg-green-500",
 };
 
 const PROTO_BADGE: Record<string, string> = {
@@ -69,93 +45,17 @@ function protoBadgeClass(p: string): string {
   return PROTO_BADGE[p] || "bg-slate-800/40 text-slate-300 border-slate-700/50";
 }
 
-// Format an ISO timestamp as a compact, defensible UTC string. The
-// backend/ref is ISO so we can still feed it to tools later; this is
-// purely a display helper. We also prepend a short relative marker
-// when the stamp is recent so the student can gauge freshness at a
-// glance without doing arithmetic on the wall-clock time.
-function formatLastSeen(iso: string | undefined): string | null {
-  if (!iso) return null;
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return iso;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const d = new Date(ms);
-  const abs = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
-
-  const diff = Math.max(0, Date.now() - ms);
-  if (diff < 300_000) {
-    const rel =
-      diff < 1500 ? "now"
-      : diff < 60_000 ? `${Math.round(diff / 1000)}s ago`
-      : `${Math.round(diff / 60_000)}m ago`;
-    return `${rel} · ${abs}`;
-  }
-  return abs;
-}
-
 const STATUS_COLOR: Record<FlowStatus, { dot: string; text: string; label: string }> = {
+  unknown: { dot: "bg-amber-500", text: "text-amber-400", label: "unknown" },
   active: { dot: "bg-cyan-400", text: "text-cyan-400", label: "active" },
   idle:   { dot: "bg-slate-600", text: "text-slate-500", label: "idle" },
   down:   { dot: "bg-red-500", text: "text-red-400", label: "down" },
 };
 
-// ── Aggregation ─────────────────────────────────────────────────────
-
-type Row = {
-  source: string;
-  target: string;
-  protocols: ObservedFlow[];
-  status: FlowStatus;
-  category: ObservedFlow["category"];
-  crossZone: boolean;
-};
-
-function aggregate(
-  flows: ObservedFlow[],
-  deviceComms: Record<string, boolean> | undefined,
-  rtacOnline: boolean,
-  trafficStatus: ReturnType<typeof getTrafficStatus> extends Promise<infer T> ? T | undefined : undefined,
-): Row[] {
-  const groups = new Map<string, Row>();
-  for (const f of flows) {
-    const key = `${f.source}->${f.target}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        source: f.source,
-        target: f.target,
-        protocols: [],
-        status: "idle",
-        category: f.category,
-        crossZone: isCrossZone(f.source, f.target),
-      });
-    }
-    groups.get(key)!.protocols.push(f);
-  }
-  // Compute aggregated status per pair: active if any constituent is
-  // active; down if all are down; otherwise idle.
-  for (const row of groups.values()) {
-    const statuses = row.protocols.map((f) =>
-      resolveLiveness(f, deviceComms, rtacOnline, trafficStatus),
-    );
-    row.status = statuses.includes("active")
-      ? "active"
-      : statuses.every((s) => s === "down")
-      ? "down"
-      : "idle";
-  }
-  // Sort: active first, then idle, then down; cross-zone above
-  // intra-zone within each tier so the security-relevant rows float up.
-  const order: Record<FlowStatus, number> = { active: 0, idle: 1, down: 2 };
-  return Array.from(groups.values()).sort((a, b) => {
-    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
-    if (a.crossZone !== b.crossZone) return a.crossZone ? -1 : 1;
-    return a.source.localeCompare(b.source);
-  });
-}
-
 // ── Component ───────────────────────────────────────────────────────
 
 export function TrafficMatrixView({
+  context,
   canvasEdgesOn,
   onToggleCanvasEdges,
   filter,
@@ -163,6 +63,7 @@ export function TrafficMatrixView({
   highlightedPair,
   onHighlightPair,
 }: {
+  context?: FlowContext;
   canvasEdgesOn?: boolean;
   onToggleCanvasEdges?: () => void;
   filter?: { zone: string; crossZoneOnly: boolean };
@@ -188,80 +89,42 @@ export function TrafficMatrixView({
     onFilterChange?.({ zone: filterZone, crossZoneOnly: v });
   };
 
-  // Same React Query keys as the rest of the app so we share cache
-  // and so invalidation from this drawer (after Generate Traffic)
-  // refreshes the canvas Traffic edges in the same render cycle.
-  const { data: workshopStatus } = useWorkshopStatus(5000);
-  const { data: trafficStatus } = useQuery({
-    queryKey: ["traffic-status"],
-    queryFn: getTrafficStatus,
-    refetchInterval: 3000,
-  });
   const { data: pcapStatus } = useQuery({
-    queryKey: ["pcap-status"],
-    queryFn: getPcapStatus,
-    refetchInterval: 2000,
+    queryKey: ["pcap-status"], queryFn: getPcapStatus, refetchInterval: 2000, enabled: !!context,
   });
-
-  const allRows = useMemo(
-    () => aggregate(OBSERVED_FLOWS, workshopStatus?.device_comms, workshopStatus?.rtac_online ?? false, trafficStatus),
-    [workshopStatus, trafficStatus],
-  );
-
-  // Apply filter UI to the aggregated rows. The summary stats below
-  // still reflect the unfiltered totals so the user can see what's
-  // being hidden.
-  const rows = useMemo(() => {
-    return allRows.filter((r) => {
-      if (crossZoneOnly && !r.crossZone) return false;
-      if (filterZone !== "all") {
-        const sZone = nodeZone(r.source);
-        const tZone = nodeZone(r.target);
-        if (sZone !== filterZone && tZone !== filterZone) return false;
-      }
-      return true;
-    });
-  }, [allRows, crossZoneOnly, filterZone]);
-
-  // Track per-pair last-seen-active timestamps. We use a ref so the
-  // map persists across renders without itself triggering renders;
-  // each poll cycle (driven by the React Query refetch interval)
-  // updates entries for any pair that's currently active. Tooltips
-  // read the ref at hover time and get the latest stamp.
-  const lastSeenRef = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    const now = new Date().toISOString();
-    for (const r of rows) {
-      if (r.status === "active") {
-        lastSeenRef.current.set(`${r.source}->${r.target}`, now);
-      }
-    }
-  }, [rows]);
+  const canGenerate = context?.graph.operations.traffic_generation === true;
+  const usPresentation = context?.graph.networks.some((n) => n.id === "ot_ops_net");
+  const hasOperator = Object.values(context?.graph.liveness ?? {}).some((b) => b.provider === "operator-link");
+  const allRows = useMemo(() => context ? aggregateFlows(context) : [], [context]);
+  const rows = useMemo(() => context ? aggregateFlows(context, { zone: filterZone, crossZoneOnly }) : [], [context, filterZone, crossZoneOnly]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Summary chips reflect the unfiltered totals so a student can see
   // what the filter is hiding.
   const summary = useMemo(() => {
-    let active = 0, idle = 0, down = 0, cross = 0;
+    let active = 0, idle = 0, down = 0, unknown = 0, cross = 0;
     for (const r of allRows) {
       if (r.status === "active") active++;
       else if (r.status === "down") down++;
+      else if (r.status === "unknown") unknown++;
       else idle++;
       if (r.crossZone) cross++;
     }
-    return { total: allRows.length, active, idle, down, cross };
+    return { total: allRows.length, active, idle, down, unknown, cross };
   }, [allRows]);
 
-  const generating = trafficStatus?.generating ?? false;
+  const generating = canGenerate && (context?.traffic?.generating ?? false);
   const capturing = pcapStatus?.capturing ?? false;
   const pcapFiles = pcapStatus?.files ?? [];
   const pcapReady = (pcapStatus?.file_ready ?? false) && !capturing;
 
   const handleGenerate = async () => {
     try {
+      setActionError(null);
       await startTrafficGeneration(captureDuration);
       queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
     } catch (err) {
-      console.error("startTrafficGeneration failed:", err);
+      setActionError(err instanceof Error ? err.message : "Traffic generation failed");
     }
   };
 
@@ -271,14 +134,15 @@ export function TrafficMatrixView({
   // from terminals.
   const handleGenerateAndCapture = async () => {
     try {
+      setActionError(null);
       await Promise.all([
-        startTrafficGeneration(captureDuration),
+        ...(canGenerate ? [startTrafficGeneration(captureDuration)] : []),
         startPcapCapture(captureDuration),
       ]);
       queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
       queryClient.invalidateQueries({ queryKey: ["pcap-status"] });
     } catch (err) {
-      console.error("Generate + capture failed:", err);
+      setActionError(err instanceof Error ? err.message : "Capture failed");
     }
   };
 
@@ -287,7 +151,7 @@ export function TrafficMatrixView({
       await stopPcapCapture();
       queryClient.invalidateQueries({ queryKey: ["pcap-status"] });
     } catch (err) {
-      console.error("stopPcapCapture failed:", err);
+      setActionError(err instanceof Error ? err.message : "Stop capture failed");
     }
   };
 
@@ -300,7 +164,9 @@ export function TrafficMatrixView({
             Traffic Matrix
           </div>
           <div className="mt-0.5 text-[11px] leading-snug text-slate-400">
-            Configured host-to-host flows for this lab. Liveness reflects RTAC device comms and the scenario traffic generator.
+            {canGenerate ? "Configured host-to-host flows for this lab. Liveness reflects RTAC device comms and the scenario traffic generator."
+              : hasOperator ? "Autonomous baseline and manual exercise traffic. CC link and point quality infer liveness; sessions show transport presence only."
+              : "Configured host-to-host flows for this package. Liveness reflects its declared observation providers."}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -324,6 +190,7 @@ export function TrafficMatrixView({
               </TooltipContent>
             </Tooltip>
           )}
+          {canGenerate && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -339,13 +206,16 @@ export function TrafficMatrixView({
               {generating ? "Generating…" : "Generate Traffic"}
             </TooltipContent>
           </Tooltip>
+          )}
         </div>
       </div>
+
+      {hasOperator && <p className="text-[11px] text-slate-400">The process/truth plane is intentionally outside the segmentation map.</p>}
 
       {/* ── Capture & Generate controls ─────────────────────────── */}
       <div className="space-y-1.5 rounded border border-slate-800 bg-slate-900/40 p-2">
         <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-          Generate & Capture
+          {canGenerate ? "Generate & Capture" : "Capture PCAP"}
         </div>
         <div className="flex items-center gap-1.5">
           <label className="text-[10px] text-slate-500">Duration:</label>
@@ -366,8 +236,8 @@ export function TrafficMatrixView({
               disabled={generating}
               className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-700/60 bg-cyan-950/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Zap className="h-3 w-3" fill="currentColor" />
-              Generate + PCAP
+              {canGenerate ? <Zap className="h-3 w-3" fill="currentColor" /> : <Activity className="h-3 w-3" />}
+              {canGenerate ? "Generate + PCAP" : "Capture PCAP"}
             </button>
           ) : (
             <button
@@ -380,13 +250,15 @@ export function TrafficMatrixView({
           )}
         </div>
 
+        {hasOperator && <p className="text-[10px] text-slate-400">Station-clock HTTP is unobserved and outside the IEC104/Modbus firewall capture filter.</p>}
+
         {/* Live activity strip */}
         {(generating || capturing) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
             {generating && (
               <span className="flex items-center gap-1 text-cyan-300">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
-                Generating · {trafficStatus?.flows_generated ?? 0} flows
+                Generating · {context?.traffic?.flows_generated ?? 0} flows
               </span>
             )}
             {capturing && (
@@ -431,6 +303,8 @@ export function TrafficMatrixView({
         )}
       </div>
 
+      {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
+
       {/* ── Filters ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-1.5">
         <select
@@ -439,10 +313,7 @@ export function TrafficMatrixView({
           className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200"
         >
           <option value="all">All zones</option>
-          <option value="enterprise">Enterprise</option>
-          <option value="vendor">Vendor / DMZ</option>
-          <option value="ot_ops">OT Ops</option>
-          <option value="field">Field</option>
+          {context?.graph.networks.map((n) => <option key={n.id} value={n.id}>{usPresentation ? (n.id === "field_net" ? "Field" : humanZoneName(n.id)) : n.name}</option>)}
         </select>
         <button
           onClick={() => setCrossZoneOnly(!crossZoneOnly)}
@@ -479,6 +350,7 @@ export function TrafficMatrixView({
           </>
         )}
         <span className="text-slate-700">·</span>
+        {summary.unknown > 0 && <span className="text-amber-400">Unknown: {summary.unknown}</span>}
         <span className="text-slate-500">Cross-zone:</span>
         <span className="font-bold text-amber-400">{summary.cross}</span>
       </div>
@@ -488,8 +360,8 @@ export function TrafficMatrixView({
       <div className="max-h-[60vh] space-y-1.5 overflow-y-auto">
         {rows.map((r) => {
           const statusStyle = STATUS_COLOR[r.status];
-          const sZone = nodeZone(r.source);
-          const tZone = nodeZone(r.target);
+          const sZone = nodeZone(r.source, context!.graph);
+          const tZone = nodeZone(r.target, context!.graph);
           const pairKey = `${r.source}->${r.target}`;
           const isHighlighted = highlightedPair === pairKey;
           return (
@@ -520,7 +392,7 @@ export function TrafficMatrixView({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {nodeIp(r.source) || "unknown IP"}
+                      {nodeIp(r.source, context!.graph) || "unknown IP"}
                     </TooltipContent>
                   </Tooltip>
                   <ArrowRight className="h-3 w-3 shrink-0 text-slate-200" strokeWidth={2.5} />
@@ -534,7 +406,7 @@ export function TrafficMatrixView({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {nodeIp(r.target) || "unknown IP"}
+                      {nodeIp(r.target, context!.graph) || "unknown IP"}
                     </TooltipContent>
                   </Tooltip>
                 </div>
@@ -564,18 +436,9 @@ export function TrafficMatrixView({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      {(() => {
-                        const seen = formatLastSeen(
-                          lastSeenRef.current.get(`${r.source}->${r.target}`),
-                        );
-                        if (r.status === "active") {
-                          return seen ? `Last seen: ${seen}` : "Last seen: now";
-                        }
-                        if (r.status === "down") {
-                          return seen ? `Down · last seen ${seen}` : "Down · never seen";
-                        }
-                        return seen ? `Idle · last seen ${seen}` : "Idle · never seen";
-                      })()}
+                      {r.protocols.map((f) => context?.observations[f.id]).map((o, i) => (
+                        <div key={i}>{o?.evidence}: {o?.reason}</div>
+                      ))}
                     </TooltipContent>
                   </Tooltip>
                 </div>

@@ -254,6 +254,10 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 		return Package{}, "", fmt.Errorf("topology %s: inline scenarios are not supported; put each scenario in the package's scenarios directory", filepath.Base(topologyPath))
 	}
 
+	if err := ValidateTopologyFlows(&def); err != nil {
+		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)
+	}
+
 	firewallConfigPath, err := resolveFirewallConfig(definitionsDir, filepath.Dir(topologyPath), def.FirewallConfig)
 	if err != nil {
 		return Package{}, "", fmt.Errorf("topology %s: %w", filepath.Base(topologyPath), err)

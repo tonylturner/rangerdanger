@@ -256,11 +256,12 @@ function TrafficEdge({
   const labelY = centerY;
 
   const label = data?.label || "";
-  const status: "active" | "idle" | "down" = data?.status || "idle";
+  const status: "active" | "idle" | "down" | "unknown" = data?.status || "idle";
   const tooltipLines: string[] = data?.tooltipLines || [];
 
   const isActive = status === "active";
   const isDown = status === "down";
+  const isUnknown = status === "unknown";
   const isScenario = data?.category === "scenario";
   const highlighted = data?.highlighted === true;
   const dimmedByHighlight = data?.dimmedByHighlight === true;
@@ -280,12 +281,12 @@ function TrafficEdge({
     ? "#ffffff"
     : isActive
     ? activeColor
-    : isDown ? "#64748b" : "#64748b";
+    : isUnknown ? "#d97706" : "#64748b";
   const labelColor = highlighted
     ? "#ffffff"
     : isActive
     ? (isScenario ? "#fbbf24" : "#67e8f9")
-    : "#94a3b8";
+    : isUnknown ? "#fbbf24" : "#94a3b8";
   const extraGlow = highlighted
     ? `drop-shadow(0 0 10px ${activeColor}) drop-shadow(0 0 20px ${activeColor}88)`
     : undefined;
@@ -426,7 +427,7 @@ function TrafficEdge({
       <MapTooltip visible={tip.visible} x={tip.x} y={tip.y}>
         <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-400">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: stroke }} />
-          Observed flow · {status}
+          Configured flow · {status}
         </div>
         {tooltipLines.map((l, i) => (
           <div key={i} className="text-slate-200">{l}</div>

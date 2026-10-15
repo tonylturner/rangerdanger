@@ -17,7 +17,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getWorkshopGraph,
   getFirewallRules,
-  getTrafficStatus,
 } from "../lib/api";
 import { Button } from "./ui/button";
 import { NodeTerminal } from "./node-terminal";
@@ -25,7 +24,7 @@ import { SharedTerminalPanel, useTerminals } from "./terminal-context";
 import { nodeTypes } from "./topology-nodes";
 import { zoneColors } from "../lib/zone-colors";
 import { nodeTypeLabel } from "../lib/node-types";
-import { nodeZone } from "../lib/observed-flows";
+import { useNetworkFlowContext } from "../lib/network-flow-queries";
 import { ViewMode, humanZoneName } from "../lib/network-console-data";
 import { edgeTypes } from "./network-edges";
 import { isRangeNotReady } from "../lib/range";
@@ -99,7 +98,7 @@ export function NetworkConsole() {
   });
 
   // Validate workshop environment on render
-  const { data: workshopStatus, error: workshopStatusError } = useWorkshopStatus(10000);
+  const { data: workshopStatus, error: workshopStatusError } = useWorkshopStatus(activeDrawer === "traffic" ? 5000 : 10000);
 
   // Pulse Rook briefly whenever the firewall config changes. Initial
   // load is skipped via the ref so we don't pulse on first paint.
@@ -123,14 +122,7 @@ export function NetworkConsole() {
     staleTime: 2000,
   });
 
-  // Traffic generator state - only polled when the Traffic view is on
-  // so we don't waste cycles in the default policy view.
-  const { data: trafficStatus } = useQuery({
-    queryKey: ["traffic-status"],
-    queryFn: getTrafficStatus,
-    refetchInterval: viewMode.traffic ? 3000 : false,
-    enabled: viewMode.traffic,
-  });
+  const flowContext = useNetworkFlowContext(graph, workshopStatus);
 
   const { nodes: layoutNodes, edges } = useStyledGraph(
     graph,
@@ -138,7 +130,7 @@ export function NetworkConsole() {
     viewMode,
     workshopStatus?.device_comms,
     workshopStatus?.rtac_online,
-    trafficStatus,
+    flowContext,
     workshopStatus?.firewall_online,
     trafficFilter,
     highlightedTrafficPair,
@@ -388,6 +380,7 @@ export function NetworkConsole() {
         </ReactFlow>
         {viewMode.policyDim && (
           <LeftDrawerMenu
+            flowContext={flowContext}
             active={activeDrawer}
             onChange={setActiveDrawer}
             trafficEdgesOn={viewMode.traffic}
@@ -498,6 +491,7 @@ export function NetworkConsole() {
             </div>
 
             <ActiveFlowsPanel
+              graph={graph}
               nodeId={inspectorNode.id}
               nodeZone={inspectorNode.data?.zone}
               ruleSummaries={firewallRulesData?.summaries}

@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import type { ZoneRuleSummary } from "../lib/api";
+import type { LabGraph, ZoneRuleSummary } from "../lib/api";
+import type { FlowContext } from "../lib/observed-flows";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
-import { isHardened, policyWording, type PolicyWording } from "../lib/policy-wording";
+import { CUSTOM_POLICY, isHardened, policyWording, type PolicyWording } from "../lib/policy-wording";
 import {
   INTRA_ZONE_FLOWS,
   ViewMode,
-  containdZoneToNetwork,
   humanizeSummary,
   humanZoneName,
 } from "../lib/network-console-data";
@@ -76,7 +76,9 @@ const US_MENU_WORDING: Record<string, PolicyWording> = {
 
 // The badge text: the US package's two words, else the active name.
 function policyBadgeText(activeConfig: string | undefined, usWording: boolean): string {
-  if (usWording) return isHardened(activeConfig) ? "Hardened" : "Weak baseline";
+  if (activeConfig === CUSTOM_POLICY) return "Custom policy";
+  if (usWording && activeConfig === "improved") return "Hardened";
+  if (usWording && activeConfig === "weak") return "Weak baseline";
   return activeConfig || "—";
 }
 
@@ -229,6 +231,7 @@ const DRAWER_META: Record<
 const DRAWER_ORDER: DrawerKey[] = ["segmentation", "traffic"];
 
 export function LeftDrawerMenu({
+  flowContext,
   active,
   onChange,
   trafficEdgesOn,
@@ -238,6 +241,7 @@ export function LeftDrawerMenu({
   highlightedTrafficPair,
   onHighlightTrafficPair,
 }: {
+  flowContext?: FlowContext;
   active: DrawerKey | null;
   onChange: (id: DrawerKey | null) => void;
   trafficEdgesOn: boolean;
@@ -254,6 +258,7 @@ export function LeftDrawerMenu({
     if (active === "traffic") {
       return (
         <TrafficMatrixView
+          context={flowContext}
           canvasEdgesOn={trafficEdgesOn}
           onToggleCanvasEdges={onToggleTrafficEdges}
           filter={trafficFilter}
@@ -410,11 +415,13 @@ export function ViewModeToolbar({
 // IP. We say so explicitly so students don't think a per-node ACL is
 // being shown.
 export function ActiveFlowsPanel({
+  graph,
   nodeId,
   nodeZone,
   ruleSummaries,
   multiHomedZones,
 }: {
+  graph?: LabGraph;
   nodeId: string;
   nodeZone?: string;
   ruleSummaries?: ZoneRuleSummary[];
@@ -426,9 +433,7 @@ export function ActiveFlowsPanel({
   // selected node's perspective.
   const { outbound, inbound } = useMemo(() => {
     if (!ruleSummaries || !nodeZone) return { outbound: [], inbound: [] };
-    const containdZones = Object.entries(containdZoneToNetwork)
-      .filter(([_, networks]) => networks.includes(nodeZone))
-      .map(([cz]) => cz);
+    const containdZones = graph?.networks.filter((n) => n.id === nodeZone).map((n) => n.zone) ?? [];
     const out: ZoneRuleSummary[] = [];
     const inb: ZoneRuleSummary[] = [];
     ruleSummaries.forEach((r) => {
@@ -439,7 +444,7 @@ export function ActiveFlowsPanel({
       else if (isDst && !isSrc) inb.push(r);
     });
     return { outbound: out, inbound: inb };
-  }, [ruleSummaries, nodeZone]);
+  }, [ruleSummaries, nodeZone, graph]);
 
   // Intra-zone flows that name this node as source or target.
   const intraFlows = useMemo(() => {

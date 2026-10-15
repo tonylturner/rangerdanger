@@ -43,8 +43,8 @@ export const OPERATOR_KEY = ["operator"] as const;
 export const INSTRUCTOR_KEY = ["instructor"] as const;
 export const SESSIONS_KEY = ["firewall-sessions"] as const;
 
-export function useOperatorState(intervalMs: number) {
-  return useQuery({ queryKey: [...OPERATOR_KEY, "state"], queryFn: getOperatorState, refetchInterval: intervalMs });
+export function useOperatorState(intervalMs: number, enabled = true) {
+  return useQuery({ queryKey: [...OPERATOR_KEY, "state"], queryFn: getOperatorState, refetchInterval: intervalMs, enabled });
 }
 
 export function useOperatorJournal(intervalMs: number) {

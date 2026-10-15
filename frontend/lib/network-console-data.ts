@@ -1,4 +1,4 @@
-import type { ZoneRuleSummary } from "./api";
+import type { LabGraph, TopologyNetwork, ZoneRuleSummary } from "./api";
 import { nodeZone } from "./observed-flows";
 
 // All supported zone names
@@ -98,6 +98,8 @@ export const ZONE_HUMAN_NAME: Record<string, string> = {
   vendor_net: "Vendor / DMZ",
   ot_ops_net: "OT Ops",
   field_net: "Field Devices",
+  station_net: "Station",
+  control_centre_net: "Control Centre",
   wan: "Enterprise",
   dmz: "Vendor / DMZ",
   lan1: "OT Ops",
@@ -108,26 +110,6 @@ export const ZONE_HUMAN_NAME: Record<string, string> = {
 export function humanZoneName(z: string): string {
   return ZONE_HUMAN_NAME[z] || z;
 }
-// Map containd zone names to our network names
-export const containdZoneToNetwork: Record<string, string[]> = {
-  wan: ["enterprise_net"],
-  dmz: ["vendor_net"],
-  lan1: ["ot_ops_net"],
-  lan2: ["field_net"],
-};
-
-// Reverse map: our network names → containd zone name
-export const networkToContaindZone: Record<string, string> = {
-  enterprise_net: "wan",
-  enterprise: "wan",
-  vendor_net: "dmz",
-  vendor: "dmz",
-  ot_ops_net: "lan1",
-  ot_ops: "lan1",
-  field_net: "lan2",
-  field: "lan2",
-};
-
 // Check whether a specific host-to-host flow is blocked by the live
 // firewall rules. Maps the source/target to containd zone names and
 // looks up the matching rule summary. For MIXED zone pairs (like
@@ -138,11 +120,12 @@ export function getFlowBlockReason(
   sourceNodeId: string,
   targetNodeId: string,
   ruleSummaries: ZoneRuleSummary[] | undefined,
+  graph: LabGraph,
 ): string | null {
   if (!ruleSummaries || ruleSummaries.length === 0) return null;
 
-  const srcZone = networkToContaindZone[nodeZone(sourceNodeId)];
-  const dstZone = networkToContaindZone[nodeZone(targetNodeId)];
+  const srcZone = graph.networks.find((n) => n.id === nodeZone(sourceNodeId, graph))?.zone;
+  const dstZone = graph.networks.find((n) => n.id === nodeZone(targetNodeId, graph))?.zone;
   if (!srcZone || !dstZone) return null;
   if (srcZone === dstZone) return null;
 
@@ -155,7 +138,7 @@ export function getFlowBlockReason(
     const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: DENY`;
     return detail;
   }
-  if (rule.action === "MIXED" && sourceNodeId !== "rtac-1") {
+  if (rule.action === "MIXED" && graph.networks.some((n) => n.id === "ot_ops_net") && sourceNodeId !== "rtac-1") {
     const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: source not authorized`;
     return `${detail} (only RTAC is source-pinned)`;
   }
@@ -219,7 +202,8 @@ export type Permissiveness = "allowed" | "over" | "blocked" | "unknown";
 
 export function getZonePolicyInfo(
   zone: string,
-  ruleSummaries?: ZoneRuleSummary[],
+  ruleSummaries: ZoneRuleSummary[] | undefined,
+  networks: TopologyNetwork[],
 ): {
   label: string;
   details: string[];
@@ -236,9 +220,7 @@ export function getZonePolicyInfo(
   }
 
   // Find rules that apply to this zone (as destination from firewall)
-  const containdZones = Object.entries(containdZoneToNetwork)
-    .filter(([_, networks]) => networks.includes(zone))
-    .map(([cz]) => cz);
+  const containdZones = networks.filter((n) => n.id === zone).map((n) => n.zone);
 
   const relevantRules = ruleSummaries.filter(
     (r) => containdZones.includes(r.dest_zone) || r.dest_zone === "any",
@@ -256,7 +238,7 @@ export function getZonePolicyInfo(
   // Aggregate action
   const hasAllow = relevantRules.some((r) => r.action === "ALLOW");
   const hasDeny = relevantRules.some((r) => r.action === "DENY");
-  const action = hasAllow && hasDeny ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
+  const action = relevantRules.some((r) => r.action === "MIXED") || (hasAllow && hasDeny) ? "MIXED" : hasDeny ? "DENY" : "ALLOW";
 
   // Detect over-permissive: any allow rule whose detail starts with
   // "WEAK:" - that's the lab definition's convention for "this rule
@@ -292,7 +274,7 @@ export function getZonePolicyInfo(
   if (action === "DENY") {
     label = "BLOCKED";
   } else if (action === "MIXED") {
-    label = protos.length > 0 ? `MIXED · ${protos.slice(0, 2).join(" / ")}` : "MIXED";
+    label = protos.length > 0 ? `MIXED · ${protos.slice(0, 2).join(" / ")}` : "MIXED · source-restricted";
   } else if (protos.length === 0) {
     label = "ALLOW";
   } else if (protos.length === 1) {
