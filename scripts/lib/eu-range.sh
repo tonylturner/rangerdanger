@@ -31,9 +31,9 @@ eu_log_response() {
 }
 
 eu_api_get() {
-  local path="$1"
+  local path="$1" budget="${2:-2}"
   API_BODY=""
-  HTTP_STATUS=$(curl -sS --max-time 2 -o "$TMP_DIR/api-get.json" \
+  HTTP_STATUS=$(curl -sS --max-time "$budget" -o "$TMP_DIR/api-get.json" \
     -w '%{http_code}' "$API$path" 2>"$TMP_DIR/curl.err") || {
     printf 'GET %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
     return 1
@@ -127,7 +127,7 @@ eu_assert_device_state_response() {
 # Resolve authored step IDs from the served curriculum; execution stays index-based.
 # Never retry an execution: a second POST is a second physical operation.
 eu_execute_step() {
-  local step="$1" label="$2" index scenario="iec104-telecontrol-boundary"
+  local step="$1" label="$2" index scenario="${3:-iec104-telecontrol-boundary}"
   if ! eu_api_get "/api/scenarios/$scenario"; then
     fail "$label cannot read the active scenario"
     return 1

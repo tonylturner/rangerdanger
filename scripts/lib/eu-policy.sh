@@ -300,7 +300,8 @@ print(len(hits))
 
 eu_validate_scenario() {
   local expected="$1" body
-  if ! eu_api_get "/api/scenarios/$SCENARIO_ID/validate"; then
+  # Lab 2 performs several real endpoint reads during collection.
+  if ! eu_api_get "/api/scenarios/$SCENARIO_ID/validate" 30; then
     fail "scenario validator returned no parseable HTTP 200 response"
     return 1
   fi
