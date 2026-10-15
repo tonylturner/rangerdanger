@@ -74,7 +74,7 @@ eu_lab_probe_matrix() {
 }
 
 eu_lab2_walk() {
-  local policy since until
+  local policy since until connection_seq
   eu_lab_step 0 || return
   eu_lab_baseline_exports || return
   eu_lab_step 1 || return
@@ -109,7 +109,17 @@ eu_lab2_walk() {
   eu_lab_probe_matrix || return
   eu_lab_step 5 || return
   since=$(eu_utc)
+  eu_get_operator || return
+  connection_seq=$(printf '%s' "$API_BODY" | jq -er '.link.connection_seq') || return
+  # A tuple deletion under an ALLOW need not interrupt the TCP endpoints.
+  # Follow the authored temporary deny/cut/recover sequence to earn link_up.
+  eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$TMP_DIR/lab2-no-cc.json" || return
+  eu_apply_custom "$TMP_DIR/lab2-no-cc.json" "lab2 proof-window CC interruption" || return
   eu_lab_step 6 || return
+  eu_wait_for_operator 'all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' 15 "lab2 proof-window link loss" || return
+  eu_apply_named improved || return
+  eu_wait_for_operator ".link.connection_seq > $connection_seq and .link.state == \"started\"
+    and .link.gi.state == \"complete\" and all(.points[]; good)" 20 "lab2 new proof-window connection and GI" || return
   eu_lab_baseline_exports || return
   eu_lab_step 7 || return
   eu_lab_tap 1 40 || return
@@ -155,10 +165,14 @@ eu_lab3_walk() {
   eu_lab_cc rmu-2-command close || return
   eu_lab_step 7 || return
   eu_lab_vendor 10.40.40.22 1 || return
+  eu_wait_for_operator 'point("rmu-2-position").value == "open"
+    and point("rmu-2-section-kv").value < 0.1 and all(.points[]; good)' 10 "vendor-open tie has fresh dead-section measurements" || return
   eu_lab_cc rmu-2-command close || return
   eu_lab_step 8 || return
   eu_lab_vendor 10.40.40.22 1 1 || return
   eu_lab_cc rmu-2-command open || return
+  eu_wait_for_operator 'point("rmu-2-position").value == "open"
+    and point("rmu-2-section-kv").value < 0.1 and all(.points[]; good)' 10 "CC-open tie has fresh dead-section measurements" || return
   eu_lab_cc rmu-2-command close || return
   eu_lab_step 9
 }

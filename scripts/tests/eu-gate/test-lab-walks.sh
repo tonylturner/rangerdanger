@@ -107,6 +107,7 @@ eu_lab_cc() { CALLS="$CALLS CC:$1:$2"; }
 eu_lab_exec() { CALLS="$CALLS exec:$1"; }
 eu_lab_vendor() { CALLS="$CALLS vendor:$1:$2:${3:-0}"; }
 eu_lab_tap() { CALLS="$CALLS tap:$1"; }
+eu_wait_for_operator() { CALLS="$CALLS WAIT:$3"; }
 eu_make_custom_policy() { CALLS="$CALLS derive-restriction"; }
 eu_apply_custom() { CALLS="$CALLS restrict"; }
 eu_apply_named() { CALLS="$CALLS policy:$1"; }
@@ -119,6 +120,14 @@ t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execu
 t_expect_out "PREDICT RMU1 open loses S2 only" "load-loss predictions precede switching"
 t_expect_eq "$(printf '%s' "$CALLS" | grep -o 'vendor:10.40.40.22:1:[01]' | tr '\n' ' ')" \
   "vendor:10.40.40.22:1:0 vendor:10.40.40.22:1:1 " "lab 3 retests identical vendor payload with different expected transport result"
+case "$CALLS" in
+  *vendor:10.40.40.22:1:0*"WAIT:vendor-open tie has fresh dead-section measurements"*"CC:rmu-2-command:close"*) t_ok "vendor-open restoration waits for solved dead-section observations" ;;
+  *) t_not_ok "vendor-open restoration raced fresh voltage measurements: $CALLS" ;;
+esac
+case "$CALLS" in
+  *vendor:10.40.40.22:1:1*"CC:rmu-2-command:open"*"WAIT:CC-open tie has fresh dead-section measurements"*"CC:rmu-2-command:close"*) t_ok "allowed-path retest waits for dead-section observations before reclosing" ;;
+  *) t_not_ok "allowed-path retest raced fresh voltage measurements: $CALLS" ;;
+esac
 STEPS="" CALLS=""
 t_run eu_lab4_walk
 t_expect_eq "$T_STATUS" 0 "stubbed lab 4 completes all operations"
@@ -130,6 +139,7 @@ esac
 t_expect_eq "$(printf '%s' "$CALLS" | grep -o 'vendor:10.40.40.23:1:[01]' | tr '\n' ' ')" \
   "vendor:10.40.40.23:1:0 vendor:10.40.40.23:1:1 " "lab 4 retests identical vendor payload"
 eu_api_get() { API_BODY='{"file_ready":true}'; }
+eu_get_operator() { API_BODY='{"link":{"connection_seq":7}}'; }
 eu_api_post() { HTTP_STATUS=200; }
 eu_firewall_config() { cat "$PACKAGE/firewall/improved.json"; }
 curl() {
@@ -143,6 +153,10 @@ STEPS="" CALLS=""
 t_run eu_lab2_walk
 t_expect_eq "$T_STATUS" 0 "stubbed lab 2 completes positive/negative proof and rollback"
 t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execute 5:execute 6:execute 7:execute 8:execute 9:execute" "lab 2 visits all ten steps and reapplies improved after rollback"
+case "$CALLS" in
+  *derive-restriction*restrict*"WAIT:lab2 proof-window link loss"*policy:improved*"WAIT:lab2 new proof-window connection and GI"*) t_ok "lab 2 proves link loss then restores improved and earns a new GI" ;;
+  *) t_not_ok "lab 2 did not earn a fresh connection attempt: $CALLS" ;;
+esac
 eu_firewall_config() { printf '{"firewall":{"rules":[]}}'; }
 STEPS=""
 t_run eu_lab2_walk

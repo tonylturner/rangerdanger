@@ -243,9 +243,14 @@ steps:
     expected_config: hardened
     node: cc-1
     description: |
-      With the final policy active, execute the exact CC→RTU session cut.
-      The allowed CC reconnects and completes GI. Record that link_up's UTC
-      timestamp and connection_seq: this is the validator's attempt start.
+      Begin a new connection, not just another periodic GI. In containd
+      make a temporary copy of improved without the CC→RTU TCP/2404 allow.
+      Apply and verify that restrictive policy, then execute this step's
+      exact CC→RTU session cut. Wait for CC link_lost and IV+NT. A tuple
+      deletion with the allow still active need not interrupt the endpoints.
+      Restore improved, then require a higher connection_seq, completed GI
+      and fresh GOOD observations. Record the new link_up's UTC timestamp
+      and connection_seq: this is the validator's attempt start.
       Its window ends at validation collection, at most ten minutes later.
       If you reconnect again, repeat steps 8–9 in the NEW window.
 

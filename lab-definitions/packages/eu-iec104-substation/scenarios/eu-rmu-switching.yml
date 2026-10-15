@@ -257,8 +257,12 @@ steps:
       authorised by the switching order; network reachability does not
       make a vendor write an authorised operation.
 
+      Before restoring, wait for fresh GOOD CC measurements showing RMU2
+      open and its S2 section voltage below 0.1 kV. Position feedback can
+      arrive before the next solved voltage; closing against the old live
+      measurement can correctly be refused as live_live or no_measurement.
       Restore **close RMU2 through the CC**, wait for fresh completion and
-      S2 voltage, then end the vendor client. The next step repeats the
+      restored S2 voltage, then end the vendor client. The next step repeats the
       exact same vendor write against the improved boundary.
 
       :::decision id=rmu-vendor-authorised options=REACHABLE_NOT_AUTHORISED,AUTHORISED_BY_SESSION,IEC104_FILTERED correct=REACHABLE_NOT_AUTHORISED
@@ -287,7 +291,8 @@ steps:
       source/destination and the matching firewall event matter.
 
       Positive-test the permitted path too. Through the CC open RMU2,
-      observe S2 lose supply, then close it and observe restoration.
+      wait for fresh GOOD measurements showing S2 below 0.1 kV, then close
+      it and observe restoration. Do not close against pre-open voltages.
       The source-pinned RTU still has Modbus access. This is an L4 source
       boundary, not a filter that understands a switching instruction.
 
