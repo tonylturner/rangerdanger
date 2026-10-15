@@ -6,6 +6,38 @@ import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { aggregateFlows, createFlowContext } from "./observed-flows";
 
 describe("buildStyledGraph", () => {
+  it.each([euFixture, usFixture])("derives tooltip metadata only from the graph for $networks.0.name", (fixture) => {
+    const graph: LabGraph = structuredClone(fixture) as LabGraph;
+    const firewall = graph.nodes.find((n) => n.type === "containd_ngfw")!;
+    // Deliberately differ from the package defaults to catch stale tables.
+    firewall.data.interface_ips = Object.fromEntries(graph.networks.map((n, i) => [n.id, `192.0.2.${i + 1}`]));
+    graph.networks = graph.networks.map((n) => ({
+      ...n, name: `Current ${n.name}`, subnet: "192.0.2.0/24", zone: `role-${n.id}`, description: `Topology description for ${n.id}`,
+    }));
+    for (const iec62443 of [false, true]) {
+      const result = buildStyledGraph(graph, [], { traffic: false, policyDim: true, iec62443 });
+      for (const edge of result.edges) {
+        const network = graph.networks.find((n) => edge.id === `fw-to-${n.id}`)!;
+        expect(edge.data.zoneMeta).toEqual({
+          label: network.name, role: network.zone, subnet: network.subnet,
+          fwIp: firewall.data.interface_ips[network.id], description: network.description,
+        });
+      }
+    }
+  });
+
+  it("does not invent missing interface metadata", () => {
+    const graph = structuredClone(euFixture) as LabGraph;
+    const network = graph.networks.find((n) => n.id === "station_net")!;
+    delete network.subnet;
+    network.cidr = "192.0.2.0/24";
+    delete network.description;
+    delete network.zone;
+    expect(buildStyledGraph(graph).edges.find((e) => e.id === "fw-to-station_net")?.data.zoneMeta).toEqual({
+      label: network.name, role: "—", subnet: network.cidr, fwIp: "—", description: "",
+    });
+  });
+
   it("builds the current default layout for one firewall zone", () => {
     const graph: LabGraph = {
       nodes: [
@@ -34,6 +66,7 @@ describe("buildStyledGraph", () => {
     expect(result.nodes).toHaveLength(4);
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0].id).toBe("fw-to-field_net");
+    expect(result.edges[0].data.zoneMeta).toBeUndefined();
   });
 
   it.each([false, true])("draws every EU node and the same filtered pairs in layout Purdue=%s", (iec62443) => {
@@ -58,6 +91,8 @@ describe("buildStyledGraph", () => {
     const result = buildStyledGraph(graph, [], { traffic: true, policyDim: true, iec62443 }, undefined, undefined, context);
     expect(result.edges.find((e) => e.target === "gps-1")?.data.status).toBe("unknown");
     expect(result.edges.filter((e) => e.type === "trafficEdge")).toHaveLength(4);
+    expect(result.edges.find((e) => e.target === "gps-1")?.data.sameZone).toBe(true);
+    expect(result.edges.find((e) => e.source === "cc-1" && e.target === "rtu-1")?.data.sameZone).toBe(false);
   });
 
   it.each([false, true])("keeps the US pairs, labels and node health in layout Purdue=%s", (iec62443) => {
@@ -70,6 +105,8 @@ describe("buildStyledGraph", () => {
     const traffic = result.edges.filter((e) => e.type === "trafficEdge");
     expect(traffic).toHaveLength(19);
     expect(traffic.find((e) => e.source === "rtac-1" && e.target === "relay-1")?.data).toMatchObject({ status: "active", label: "Modbus + DNP3" });
+    expect(traffic.find((e) => e.source === "rtac-1" && e.target === "relay-1")?.data.sameZone).toBe(false);
+    expect(traffic.find((e) => e.source === "historian-1" && e.target === "rtac-1")?.data.sameZone).toBe(true);
     expect(result.nodes.find((n) => n.id === "relay-1")?.data.health).toBe("ok");
     expect(result.nodes.find((n) => n.id === "rtac-1")?.data.health).toBe("ok");
     expect(result.nodes.find((n) => n.id === "fw-1")?.data.health).toBe("ok");

@@ -41,7 +41,7 @@ function MapTooltip({
 
 // Custom edge component with tooltip for firewall policy details. The
 // label uses a pill background so it stays readable on the dark canvas
-// and an action-aware leading icon (✓ allow / ✕ deny / ⚠ mixed) so the
+// and a state-aware leading icon (✓ allow / ✕ deny / ⚠ mixed / ? unknown) so the
 // student can scan policy state without reading the label.
 function PolicyEdge({
   id,
@@ -76,13 +76,14 @@ function PolicyEdge({
 
   const label = data?.label || "";
   const color = data?.color || "#64748b";
-  const action = data?.action || "ALLOW";
+  const action = data?.action || "UNKNOWN";
   const details = data?.details || [];
   const dimmed = data?.dimmed === true;
 
-  const actionIcon = action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
+  const unknown = data?.permissiveness === "unknown" || action === "UNKNOWN";
+  const actionIcon = unknown ? "?" : action === "DENY" ? "\u2715" : action === "MIXED" ? "\u26A0" : "\u2713";
   const iconColor =
-    action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
+    unknown ? "#94a3b8" : action === "DENY" ? "#ef4444" : action === "MIXED" ? "#f59e0b" : "#22c55e";
 
   const labelWidth = Math.max(78, label.length * 6 + 28);
   const dimOpacity = dimmed ? 0.45 : 1;
@@ -91,7 +92,6 @@ function PolicyEdge({
   const zoneMeta = data?.zoneMeta as
     | {
         label: string;
-        iface: string;
         role: string;
         subnet: string;
         fwIp: string;
@@ -172,9 +172,9 @@ function PolicyEdge({
               {zoneMeta.label} Interface
             </div>
             <div className="mb-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-              <span className="text-slate-500">Iface</span>
+              <span className="text-slate-500">Zone</span>
               <span className="font-mono text-slate-200">
-                {zoneMeta.iface} <span className="text-slate-500">({zoneMeta.role})</span>
+                {zoneMeta.role}
               </span>
               <span className="text-slate-500">Subnet</span>
               <span className="font-mono text-slate-200">{zoneMeta.subnet}</span>
@@ -189,7 +189,7 @@ function PolicyEdge({
         {details.length > 0 && (
           <>
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Active Rules ({details.length})
+              Inbound Rules ({details.length})
             </div>
             <ul className="space-y-1">
               {details.slice(0, 8).map((detail: string, i: number) => {
@@ -252,9 +252,6 @@ function TrafficEdge({
     targetPosition,
     curvature: 0.4,
   });
-  const labelX = centerX;
-  const labelY = centerY;
-
   const label = data?.label || "";
   const status: "active" | "idle" | "down" | "unknown" = data?.status || "idle";
   const tooltipLines: string[] = data?.tooltipLines || [];
@@ -295,6 +292,20 @@ function TrafficEdge({
 
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
+  // Same-zone peers share a column (or a row in the band layout).
+  // Their midpoint can be inside a host's name/IP block. Put the pill
+  // outside both endpoints' host envelopes instead; cross-zone labels
+  // retain the midpoint in the open space between zones.
+  // Host wrappers are 120px wide with 56px icons. The extra 12px
+  // separates the pill from that envelope, including for long labels.
+  const sameZone = data?.sameZone === true;
+  const vertical = Math.abs(dy) >= Math.abs(dx);
+  const labelX = sameZone && vertical
+    ? Math.max(sourceX, targetX) + 60 + 12 + labelWidth / 2
+    : centerX;
+  const labelY = sameZone && !vertical
+    ? Math.min(sourceY, targetY) - 56 - 12 - 11
+    : centerY;
   const edgeLen = Math.max(1, Math.sqrt(dx * dx + dy * dy));
   const ux = dx / edgeLen;
   const uy = dy / edgeLen;
@@ -305,11 +316,6 @@ function TrafficEdge({
   const triY = targetY - uy * 6;
   const xMarkX = targetX - ux * 22;
   const xMarkY = targetY - uy * 22;
-
-  // Labels sit at the bezier midpoint - no perpendicular offset.
-  // The natural curve of the bezier + the vertical stagger of
-  // nodes within each zone column creates a clean vertical column
-  // of labels between zones.
 
   const arrowSize = 8;
   const arrowAngle = Math.atan2(dy, dx);

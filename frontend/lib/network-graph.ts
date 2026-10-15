@@ -1,13 +1,12 @@
 import type { Edge, Node } from "reactflow";
 import type { GraphNode as ApiGraphNode, LabGraph, ZoneRuleSummary } from "./api";
-import { aggregateFlows, type FlowContext, type FlowFilter } from "./observed-flows";
+import { aggregateFlows, nodeZone, type FlowContext, type FlowFilter } from "./observed-flows";
 import {
   ViewMode,
   deriveNodeHealth,
   getFlowBlockReason,
   getZonePolicyInfo,
   zones,
-  ZONE_INTERFACE_META,
 } from "./network-console-data";
 import { zoneColors } from "./zone-colors";
 
@@ -544,10 +543,12 @@ function trafficEdges(context: FlowContext, nodes: Node[], rules: ZoneRuleSummar
     const label = protocols.length <= 3 ? protocols.join(" + ") : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
     const blockReason = policyOn ? getFlowBlockReason(r.source, r.target, rules, context.graph) : null;
     const dimmed = !!highlight && highlight !== key;
+    const sourceZone = nodeZone(r.source, context.graph);
+    const sameZone = sourceZone !== "unknown" && sourceZone === nodeZone(r.target, context.graph);
     return {
       id: `traffic-${key}`, source: r.source, target: r.target, type: "trafficEdge",
       animated: r.status === "active" && !dimmed && !blockReason,
-      data: { label, status: r.status, category: r.category, highlighted: highlight === key,
+      data: { label, status: r.status, category: r.category, sameZone, highlighted: highlight === key,
         dimmedByHighlight: dimmed, blockedByFirewall: blockReason !== null, blockReason,
         tooltipLines: [`${r.source} → ${r.target}`,
           ...r.protocols.map((f) => `${f.protocol} on tcp/${f.port} · ${f.cadence}`),
@@ -559,10 +560,9 @@ function trafficEdges(context: FlowContext, nodes: Node[], rules: ZoneRuleSummar
 }
 
 function zoneInterfaceMeta(graph: LabGraph, zone: string) {
-  if (graph.networks.some((n) => n.id === "ot_ops_net")) return ZONE_INTERFACE_META[zone];
   const network = graph.networks.find((n) => n.id === zone);
   if (!network) return undefined;
   const firewall = graph.nodes.find((n) => n.type === "containd_ngfw" || n.type === "opnsense_external");
-  return { label: network.name, iface: "—", role: network.zone ?? "—", subnet: network.subnet ?? network.cidr ?? "—",
+  return { label: network.name, role: network.zone ?? "—", subnet: network.subnet ?? network.cidr ?? "—",
     fwIp: firewall?.data.interface_ips?.[zone] ?? "—", description: network.description ?? "" };
 }

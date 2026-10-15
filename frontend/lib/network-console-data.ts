@@ -145,56 +145,6 @@ export function getFlowBlockReason(
   return null;
 }
 
-// Per-zone interface metadata for the firewall→zone tooltip. Pulled
-// from the lab's docker-compose layout: containd binds one interface
-// per zone, and each interface is the default gateway for its subnet.
-// Surfacing this in the tooltip lets students answer "which side of
-// the firewall am I looking at?" without leaving the network map.
-export const ZONE_INTERFACE_META: Record<
-  string,
-  {
-    label: string;       // human zone name
-    iface: string;       // containd interface name (ethN)
-    role: string;        // containd zone label (wan/dmz/lan1/lan2)
-    subnet: string;      // CIDR
-    fwIp: string;        // firewall's interface IP in this zone
-    description: string; // one-line teaching hint
-  }
-> = {
-  enterprise_net: {
-    label: "Enterprise",
-    iface: "eth0",
-    role: "wan",
-    subnet: "10.10.10.0/24",
-    fwIp: "10.10.10.2",
-    description: "Corporate IT zone. Hosts: corp-ws, kali (attacker).",
-  },
-  vendor_net: {
-    label: "Vendor / DMZ",
-    iface: "eth1",
-    role: "dmz",
-    subnet: "10.20.20.0/24",
-    fwIp: "10.20.20.2",
-    description: "Vendor remote-access DMZ. Hosts: vendor-jump, eng-ws.",
-  },
-  ot_ops_net: {
-    label: "OT Operations",
-    iface: "eth2",
-    role: "lan1",
-    subnet: "10.30.30.0/24",
-    fwIp: "10.30.30.2",
-    description: "Supervisory control plane. Hosts: rtac, fuxa-hmi, openplc, historian, gps.",
-  },
-  field_net: {
-    label: "Field Devices",
-    iface: "eth3",
-    role: "lan2",
-    subnet: "10.40.40.0/24",
-    fwIp: "10.40.40.2",
-    description: "Protective devices. Hosts: relay, recloser, regulator, capbank.",
-  },
-};
-
 // Build policy info for a zone from the live containd rules. The label
 // favors protocol names over raw port numbers - students don't need to
 // know that 502 is Modbus, they need to know "Modbus is allowed."
@@ -214,7 +164,7 @@ export function getZonePolicyInfo(
     return {
       label: "No policy data",
       details: [],
-      action: "ALLOW",
+      action: "UNKNOWN",
       permissiveness: "unknown",
     };
   }
@@ -228,9 +178,9 @@ export function getZonePolicyInfo(
 
   if (relevantRules.length === 0) {
     return {
-      label: "No matching rules",
+      label: "No inbound rules",
       details: [],
-      action: "ALLOW",
+      action: "UNKNOWN",
       permissiveness: "unknown",
     };
   }

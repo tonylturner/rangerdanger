@@ -1,4 +1,4 @@
-import type { LabGraph } from "./api";
+import type { LabGraph, ZoneRuleSummary } from "./api";
 import euFixture from "../../backend/internal/labs/testdata/eu-flow-graph.json";
 import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,40 @@ describe("humanizeSummary", () => {
 
   it("returns an empty list for a blank summary", () => {
     expect(humanizeSummary("  ")).toEqual([]);
+  });
+});
+
+describe("getZonePolicyInfo", () => {
+  const graph = euFixture as LabGraph;
+  const rules: ZoneRuleSummary[] = [
+    { source_zone: "wan", dest_zone: "lan1", summary: "2404", rule_details: ["WEAK: enterprise to station"], action: "ALLOW" },
+    { source_zone: "dmz", dest_zone: "lan1", summary: "2404", rule_details: ["WEAK: vendor to station"], action: "ALLOW" },
+    { source_zone: "lan4", dest_zone: "lan1", summary: "2404", rule_details: ["WEAK: control centre to station"], action: "ALLOW" },
+  ];
+
+  it.each([undefined, []])("does not claim an allow without policy data (%s)", (summaries) => {
+    expect(getZonePolicyInfo("enterprise_net", summaries, graph.networks)).toEqual({
+      label: "No policy data", action: "UNKNOWN", permissiveness: "unknown", details: [],
+    });
+  });
+
+  it.each(["enterprise_net", "vendor_net", "control_centre_net"])("distinguishes inbound coverage from outgoing allows for %s", (zone) => {
+    expect(getZonePolicyInfo(zone, rules, graph.networks)).toEqual({
+      label: "No inbound rules", action: "UNKNOWN", permissiveness: "unknown", details: [],
+    });
+  });
+
+  it("includes all inbound rules without including outgoing rules", () => {
+    const info = getZonePolicyInfo("station_net", rules, graph.networks);
+    expect(info).toMatchObject({ label: "IEC 104", action: "ALLOW", permissiveness: "over" });
+    expect(info.details).toHaveLength(3);
+  });
+
+  it.each(["ALLOW", "DENY", "MIXED"] as const)("retains %s and wildcard destinations", (action) => {
+    expect(getZonePolicyInfo("enterprise_net", [{ ...rules[0], dest_zone: "any", action }], graph.networks)).toMatchObject({
+      action,
+      permissiveness: action === "DENY" ? "blocked" : "over",
+    });
   });
 });
 
