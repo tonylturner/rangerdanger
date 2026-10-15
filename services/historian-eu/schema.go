@@ -208,16 +208,17 @@ func validPoint(v any) bool {
 	if (m["source_time"] == nil) != (m["source_time_invalid"] == nil) {
 		return false
 	}
-	if m["asdu"] == "M_ME_NC_1" {
+	// Both measured floats and step positions carry QDS, which includes OV.
+	if m["asdu"] == "M_ME_NC_1" || m["asdu"] == "M_ST_TB_1" {
 		if !boolean(q["ov"]) {
 			return false
 		}
-		return nullable(finite)(m["value"])
-	}
-	if q["ov"] != nil {
+	} else if q["ov"] != nil {
 		return false
 	}
 	switch m["asdu"] {
+	case "M_ME_NC_1":
+		return nullable(finite)(m["value"])
 	case "M_DP_TB_1":
 		return nullable(enum("intermediate", "open", "closed", "indeterminate"))(m["value"])
 	case "M_SP_TB_1":
