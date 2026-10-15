@@ -47,6 +47,7 @@ describe("buildStyledGraph", () => {
 
   it("does not invent missing interface metadata", () => {
     const graph = structuredClone(euFixture) as LabGraph;
+    delete graph.nodes.find((n) => n.type === "containd_ngfw")!.data.interface_ips;
     const network = graph.networks.find((n) => n.id === "station_net")!;
     delete network.subnet;
     network.cidr = "192.0.2.0/24";
@@ -98,7 +99,7 @@ describe("buildStyledGraph", () => {
       { zone: "control_centre_net", crossZoneOnly: true },
     ]) {
       const result = buildStyledGraph(graph, [], { traffic: true, policyDim: true, iec62443 }, undefined, undefined, context, true, filter);
-      expect(result.nodes.filter((n) => n.type === "host").map((n) => n.id).sort()).toEqual(graph.nodes.filter((n) => n.id !== "fw-1").map((n) => n.id).sort());
+      expect(result.nodes.filter((n) => n.type === "host").map((n) => n.id).sort()).toEqual(graph.nodes.filter((n) => n.id !== "fw-1" && n.type !== "zone").map((n) => n.id).sort());
       expect(result.edges.filter((e) => e.type === "trafficEdge").map((e) => `${e.source}->${e.target}`)).toEqual(
         aggregateFlows(context, filter).map((r) => `${r.source}->${r.target}`),
       );
@@ -109,7 +110,7 @@ describe("buildStyledGraph", () => {
     }
     const result = buildStyledGraph(graph, [], { traffic: true, policyDim: true, iec62443 }, undefined, undefined, context);
     expect(result.edges.find((e) => e.target === "gps-1")?.data.status).toBe("unknown");
-    expect(result.edges.filter((e) => e.type === "trafficEdge")).toHaveLength(4);
+    expect(result.edges.filter((e) => e.type === "trafficEdge")).toHaveLength(12);
     expect(result.edges.find((e) => e.target === "gps-1")?.data.sameZone).toBe(true);
     expect(result.edges.find((e) => e.source === "cc-1" && e.target === "rtu-1")?.data.sameZone).toBe(false);
   });
@@ -135,17 +136,7 @@ describe("buildStyledGraph", () => {
 
 describe("increment-4 map inventory", () => {
   function graph(): LabGraph {
-    const g = structuredClone(euFixture) as LabGraph;
-    g.networks.push({ id: "ops_dmz_net", name: "Operations DMZ", zone: "lan5", subnet: "10.70.70.0/24" });
-    const nodes = [
-      ["historian-1", "historian", "ops_dmz_net", "10.70.70.40"],
-      ["rmu-1", "rmu", "field_net", "10.40.40.21"],
-      ["rmu-2", "rmu", "field_net", "10.40.40.22"],
-      ["oltc-1", "oltc", "field_net", "10.40.40.23"],
-      ["plc-1", "openplc", "station_net", "10.30.30.30"],
-    ];
-    g.nodes.push(...nodes.map(([id, type, zone, ip]) => ({ id, type, position: { x: 0, y: 0 }, data: { label: id, zone, ip, networks: [zone] } })));
-    return g;
+    return structuredClone(euFixture) as LabGraph;
   }
   it.each([false, true])("renders lan5 and every new node, Purdue=%s", (iec62443) => {
     const g = graph();

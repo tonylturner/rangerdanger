@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"flag"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +13,8 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
+
+var updateEUFlowGraph = flag.Bool("update-eu-flow-graph", false, "regenerate the EU frontend graph fixture from the served package")
 
 func TestWorkshopFlowsServingGeneration(t *testing.T) {
 	for _, gen := range []*lifecycle.Generation{usGeneration(nil), euGeneration(t, nil, nil)} {
@@ -44,7 +48,17 @@ func TestWorkshopFlowsServingGeneration(t *testing.T) {
 			if gen.Package.ID == usPackageID {
 				fixtureName = "us-flow-graph.json"
 			}
-			data, err := os.ReadFile(filepath.Join("..", "labs", "testdata", fixtureName))
+			fixturePath := filepath.Join("..", "labs", "testdata", fixtureName)
+			if *updateEUFlowGraph && gen.Package.ID == euPackageID {
+				var formatted bytes.Buffer
+				if err := json.Indent(&formatted, rec.Body.Bytes(), "", "  "); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(fixturePath, []byte(formatted.String()+"\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			data, err := os.ReadFile(fixturePath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -59,6 +73,9 @@ func TestWorkshopFlowsServingGeneration(t *testing.T) {
 			}
 			if !reflect.DeepEqual(body.Flows, fixture.Flows) || !reflect.DeepEqual(body.Liveness, fixture.Liveness) || !reflect.DeepEqual(body.Networks, fixture.Networks) {
 				t.Fatal("frontend fixture diverges from the served package inventory")
+			}
+			if gen.Package.ID == euPackageID && len(body.Nodes) != len(fixture.Nodes) {
+				t.Fatalf("fixture has %d nodes; serving generation has %d", len(fixture.Nodes), len(body.Nodes))
 			}
 			for _, want := range fixture.Nodes {
 				found := false

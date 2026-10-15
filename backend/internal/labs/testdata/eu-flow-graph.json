@@ -1,139 +1,84 @@
 {
-  "nodes": [
+  "edges": [
     {
-      "id": "fw-1",
-      "type": "containd_ngfw",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Containd Firewall",
-        "zone": "enterprise_net",
-        "networks": [
-          "enterprise_net",
-          "vendor_net",
-          "station_net",
-          "field_net",
-          "control_centre_net"
-        ],
-        "ip": "10.10.10.2"
-      }
+      "id": "edge-enterprise_net-fw-1",
+      "source": "zone-enterprise_net",
+      "target": "fw-1",
+      "label": "enterprise_net"
     },
     {
-      "id": "kali-1",
-      "type": "kali_pentest",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Kali Attacker",
-        "zone": "enterprise_net",
-        "networks": [
-          "enterprise_net"
-        ],
-        "ip": "10.10.10.50"
-      }
+      "id": "edge-enterprise_net-kali-1",
+      "source": "zone-enterprise_net",
+      "target": "kali-1",
+      "label": "enterprise_net"
     },
     {
-      "id": "vendor-jump-1",
-      "type": "vendor_jumpbox",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Vendor Jump Box",
-        "zone": "vendor_net",
-        "networks": [
-          "vendor_net"
-        ],
-        "ip": "10.20.20.10"
-      }
+      "id": "edge-vendor_net-vendor-jump-1",
+      "source": "zone-vendor_net",
+      "target": "vendor-jump-1",
+      "label": "vendor_net"
     },
     {
-      "id": "eng-ws-1",
-      "type": "eng_workstation",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Engineering Workstation",
-        "zone": "vendor_net",
-        "networks": [
-          "vendor_net"
-        ],
-        "ip": "10.20.20.20"
-      }
+      "id": "edge-vendor_net-eng-ws-1",
+      "source": "zone-vendor_net",
+      "target": "eng-ws-1",
+      "label": "vendor_net"
     },
     {
-      "id": "gps-1",
-      "type": "gps_sim",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Station GPS Clock",
-        "zone": "station_net",
-        "networks": [
-          "station_net"
-        ],
-        "ip": "10.30.30.50"
-      }
+      "id": "edge-station_net-gps-1",
+      "source": "zone-station_net",
+      "target": "gps-1",
+      "label": "station_net"
     },
     {
-      "id": "rtu-1",
-      "type": "iec104_rtu",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "IEC104 Remote Terminal Unit",
-        "zone": "station_net",
-        "networks": [
-          "station_net"
-        ],
-        "ip": "10.30.30.20"
-      }
+      "id": "edge-station_net-rtu-1",
+      "source": "zone-station_net",
+      "target": "rtu-1",
+      "label": "station_net"
     },
     {
-      "id": "cc-1",
-      "type": "control_centre",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Control Centre",
-        "zone": "control_centre_net",
-        "networks": [
-          "control_centre_net"
-        ],
-        "ip": "10.60.60.20"
-      }
+      "id": "edge-control_centre_net-cc-1",
+      "source": "zone-control_centre_net",
+      "target": "cc-1",
+      "label": "control_centre_net"
     },
     {
-      "id": "breaker-1",
-      "type": "feeder_breaker",
-      "position": {
-        "x": 0,
-        "y": 0
-      },
-      "data": {
-        "label": "Feeder Breaker",
-        "zone": "field_net",
-        "networks": [
-          "field_net"
-        ],
-        "ip": "10.40.40.20"
-      }
+      "id": "edge-field_net-breaker-1",
+      "source": "zone-field_net",
+      "target": "breaker-1",
+      "label": "field_net"
+    },
+    {
+      "id": "edge-field_net-rmu-1",
+      "source": "zone-field_net",
+      "target": "rmu-1",
+      "label": "field_net"
+    },
+    {
+      "id": "edge-field_net-rmu-2",
+      "source": "zone-field_net",
+      "target": "rmu-2",
+      "label": "field_net"
+    },
+    {
+      "id": "edge-field_net-oltc-1",
+      "source": "zone-field_net",
+      "target": "oltc-1",
+      "label": "field_net"
+    },
+    {
+      "id": "edge-station_net-plc-1",
+      "source": "zone-station_net",
+      "target": "plc-1",
+      "label": "station_net"
+    },
+    {
+      "id": "edge-ops_dmz_net-historian-1",
+      "source": "zone-ops_dmz_net",
+      "target": "historian-1",
+      "label": "ops_dmz_net"
     }
   ],
-  "edges": [],
   "flows": [
     {
       "id": "cc-rtu",
@@ -174,11 +119,107 @@
       "cadence": "manual",
       "category": "scenario",
       "liveness_key": "attacker-rtu"
+    },
+    {
+      "id": "rtu-rmu-1",
+      "source": "rtu-1",
+      "target": "rmu-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-rmu-1"
+    },
+    {
+      "id": "rtu-rmu-2",
+      "source": "rtu-1",
+      "target": "rmu-2",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-rmu-2"
+    },
+    {
+      "id": "rtu-oltc-1",
+      "source": "rtu-1",
+      "target": "oltc-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-oltc-1"
+    },
+    {
+      "id": "rtu-plc-1",
+      "source": "rtu-1",
+      "target": "plc-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-plc-1"
+    },
+    {
+      "id": "plc-oltc",
+      "source": "plc-1",
+      "target": "oltc-1",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~100ms",
+      "category": "baseline",
+      "liveness_key": "plc-oltc"
+    },
+    {
+      "id": "cc-historian",
+      "source": "cc-1",
+      "target": "historian-1",
+      "protocol": "HTTP",
+      "port": 8081,
+      "cadence": "~1s",
+      "category": "baseline",
+      "liveness_key": "cc-historian"
+    },
+    {
+      "id": "enterprise-historian",
+      "source": "kali-1",
+      "target": "historian-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "manual",
+      "category": "scenario",
+      "liveness_key": "enterprise-historian"
+    },
+    {
+      "id": "engineering-plc",
+      "source": "eng-ws-1",
+      "target": "plc-1",
+      "protocol": "HTTP",
+      "port": 8080,
+      "cadence": "manual",
+      "category": "scenario",
+      "liveness_key": "engineering-plc"
     }
   ],
   "liveness": {
+    "attacker-rtu": {
+      "provider": "session-presence",
+      "transport": "tcp"
+    },
+    "cc-historian": {
+      "provider": "unobserved"
+    },
     "cc-rtu": {
       "provider": "operator-link"
+    },
+    "engineering-plc": {
+      "provider": "unobserved"
+    },
+    "enterprise-historian": {
+      "provider": "unobserved"
+    },
+    "plc-oltc": {
+      "provider": "unobserved"
     },
     "rtu-breaker": {
       "provider": "operator-device",
@@ -187,12 +228,36 @@
         "feeder-protection-trip"
       ]
     },
+    "rtu-oltc-1": {
+      "provider": "operator-device",
+      "points": [
+        "oltc-1-tap",
+        "oltc-1-auto"
+      ]
+    },
+    "rtu-plc-1": {
+      "provider": "operator-device",
+      "points": [
+        "plc-1-running",
+        "plc-1-input-valid"
+      ]
+    },
+    "rtu-rmu-1": {
+      "provider": "operator-device",
+      "points": [
+        "rmu-1-position",
+        "rmu-1-fault-passage"
+      ]
+    },
+    "rtu-rmu-2": {
+      "provider": "operator-device",
+      "points": [
+        "rmu-2-position",
+        "rmu-2-fault-passage"
+      ]
+    },
     "station-clock": {
       "provider": "unobserved"
-    },
-    "attacker-rtu": {
-      "provider": "session-presence",
-      "transport": "tcp"
     }
   },
   "networks": [
@@ -215,14 +280,14 @@
       "name": "Station Zone",
       "subnet": "10.30.30.0/24",
       "zone": "lan1",
-      "description": "IEC104 RTU and station clock"
+      "description": "IEC104 RTU, OpenPLC voltage controller and station clock"
     },
     {
       "id": "field_net",
       "name": "Field Device Zone",
       "subnet": "10.40.40.0/24",
       "zone": "lan2",
-      "description": "Feeder breaker Modbus endpoint"
+      "description": "Breaker, two RMUs and OLTC Modbus endpoints"
     },
     {
       "id": "control_centre_net",
@@ -230,6 +295,386 @@
       "subnet": "10.60.60.0/24",
       "zone": "lan4",
       "description": "IEC104 control-centre client"
+    },
+    {
+      "id": "ops_dmz_net",
+      "name": "Operations DMZ",
+      "subnet": "10.70.70.0/24",
+      "zone": "lan5",
+      "description": "Read-only historian, fed by control-centre snapshots"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "zone-enterprise_net",
+      "type": "zone",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "ENTERPRISE_NET",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "zone-vendor_net",
+      "type": "zone",
+      "position": {
+        "x": 260,
+        "y": 0
+      },
+      "data": {
+        "label": "VENDOR_NET",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "zone-station_net",
+      "type": "zone",
+      "position": {
+        "x": 520,
+        "y": 0
+      },
+      "data": {
+        "label": "STATION_NET",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "zone-field_net",
+      "type": "zone",
+      "position": {
+        "x": 780,
+        "y": 0
+      },
+      "data": {
+        "label": "FIELD_NET",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "zone-control_centre_net",
+      "type": "zone",
+      "position": {
+        "x": 1040,
+        "y": 0
+      },
+      "data": {
+        "label": "CONTROL_CENTRE_NET",
+        "zone": "control_centre_net",
+        "networks": [
+          "control_centre_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "zone-ops_dmz_net",
+      "type": "zone",
+      "position": {
+        "x": 1300,
+        "y": 0
+      },
+      "data": {
+        "label": "OPS_DMZ_NET",
+        "zone": "ops_dmz_net",
+        "networks": [
+          "ops_dmz_net"
+        ],
+        "status": "zone"
+      }
+    },
+    {
+      "id": "fw-1",
+      "type": "containd_ngfw",
+      "position": {
+        "x": 0,
+        "y": 160
+      },
+      "data": {
+        "label": "Containd Firewall",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net",
+          "vendor_net",
+          "station_net",
+          "field_net",
+          "control_centre_net",
+          "ops_dmz_net"
+        ],
+        "status": "running",
+        "ip": "10.10.10.2",
+        "interface_ips": {
+          "control_centre_net": "10.60.60.2",
+          "enterprise_net": "10.10.10.2",
+          "field_net": "10.40.40.2",
+          "ops_dmz_net": "10.70.70.2",
+          "station_net": "10.30.30.2",
+          "vendor_net": "10.20.20.2"
+        },
+        "ui_path": "/apps/firewall/",
+        "external_ui_url": "/containd/"
+      }
+    },
+    {
+      "id": "kali-1",
+      "type": "kali_pentest",
+      "position": {
+        "x": 0,
+        "y": 330
+      },
+      "data": {
+        "label": "Kali Attacker",
+        "zone": "enterprise_net",
+        "networks": [
+          "enterprise_net"
+        ],
+        "status": "running",
+        "ip": "10.10.10.50",
+        "interface_ips": {
+          "enterprise_net": "10.10.10.50"
+        }
+      }
+    },
+    {
+      "id": "vendor-jump-1",
+      "type": "vendor_jumpbox",
+      "position": {
+        "x": 260,
+        "y": 160
+      },
+      "data": {
+        "label": "Vendor Jump Box",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "status": "running",
+        "ip": "10.20.20.10",
+        "interface_ips": {
+          "vendor_net": "10.20.20.10"
+        },
+        "ui_path": "/apps/vendor-jump/"
+      }
+    },
+    {
+      "id": "eng-ws-1",
+      "type": "eng_workstation",
+      "position": {
+        "x": 260,
+        "y": 330
+      },
+      "data": {
+        "label": "Engineering Workstation",
+        "zone": "vendor_net",
+        "networks": [
+          "vendor_net"
+        ],
+        "status": "running",
+        "ip": "10.20.20.20",
+        "interface_ips": {
+          "vendor_net": "10.20.20.20"
+        },
+        "ui_path": "/apps/eng-ws/"
+      }
+    },
+    {
+      "id": "gps-1",
+      "type": "gps_sim",
+      "position": {
+        "x": 520,
+        "y": 160
+      },
+      "data": {
+        "label": "Station GPS Clock",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "status": "running",
+        "ip": "10.30.30.50",
+        "interface_ips": {
+          "station_net": "10.30.30.50"
+        }
+      }
+    },
+    {
+      "id": "rtu-1",
+      "type": "iec104_rtu",
+      "position": {
+        "x": 520,
+        "y": 330
+      },
+      "data": {
+        "label": "IEC104 Remote Terminal Unit",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "status": "running",
+        "ip": "10.30.30.20",
+        "interface_ips": {
+          "station_net": "10.30.30.20"
+        }
+      }
+    },
+    {
+      "id": "cc-1",
+      "type": "control_centre",
+      "position": {
+        "x": 1040,
+        "y": 160
+      },
+      "data": {
+        "label": "Control Centre",
+        "zone": "control_centre_net",
+        "networks": [
+          "control_centre_net"
+        ],
+        "status": "running",
+        "ip": "10.60.60.20",
+        "interface_ips": {
+          "control_centre_net": "10.60.60.20"
+        }
+      }
+    },
+    {
+      "id": "breaker-1",
+      "type": "feeder_breaker",
+      "position": {
+        "x": 780,
+        "y": 160
+      },
+      "data": {
+        "label": "Feeder Breaker",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "running",
+        "ip": "10.40.40.20",
+        "interface_ips": {
+          "field_net": "10.40.40.20"
+        }
+      }
+    },
+    {
+      "id": "rmu-1",
+      "type": "rmu",
+      "position": {
+        "x": 780,
+        "y": 330
+      },
+      "data": {
+        "label": "RMU 1 (normally closed)",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "running",
+        "ip": "10.40.40.21",
+        "interface_ips": {
+          "field_net": "10.40.40.21"
+        }
+      }
+    },
+    {
+      "id": "rmu-2",
+      "type": "rmu",
+      "position": {
+        "x": 780,
+        "y": 500
+      },
+      "data": {
+        "label": "RMU 2 (normally open tie)",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "running",
+        "ip": "10.40.40.22",
+        "interface_ips": {
+          "field_net": "10.40.40.22"
+        }
+      }
+    },
+    {
+      "id": "oltc-1",
+      "type": "oltc",
+      "position": {
+        "x": 780,
+        "y": 670
+      },
+      "data": {
+        "label": "Transformer OLTC",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "running",
+        "ip": "10.40.40.23",
+        "interface_ips": {
+          "field_net": "10.40.40.23"
+        }
+      }
+    },
+    {
+      "id": "plc-1",
+      "type": "openplc",
+      "position": {
+        "x": 520,
+        "y": 500
+      },
+      "data": {
+        "label": "OpenPLC Voltage Controller",
+        "zone": "station_net",
+        "networks": [
+          "station_net"
+        ],
+        "status": "running",
+        "ip": "10.30.30.30",
+        "interface_ips": {
+          "station_net": "10.30.30.30"
+        },
+        "ui_path": "/apps/openplc/"
+      }
+    },
+    {
+      "id": "historian-1",
+      "type": "historian_sim",
+      "position": {
+        "x": 1300,
+        "y": 160
+      },
+      "data": {
+        "label": "Read-only Historian",
+        "zone": "ops_dmz_net",
+        "networks": [
+          "ops_dmz_net"
+        ],
+        "status": "running",
+        "ip": "10.70.70.40",
+        "interface_ips": {
+          "ops_dmz_net": "10.70.70.40"
+        }
+      }
     }
   ],
   "operations": {

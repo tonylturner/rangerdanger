@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/db"
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
@@ -94,13 +97,13 @@ func TestFirewallCompareEU(t *testing.T) {
 	for _, diff := range got.Diffs {
 		byPair[diff.ZonePair] = diff
 	}
-	for _, pair := range []string{"Control Centre → Station", "Station → Field"} {
+	for _, pair := range []string{"Control Centre → Station", "Station → Field", "Vendor → Station"} {
 		diff := byPair[pair]
 		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "MIXED" {
 			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / MIXED", pair, diff.WeakAction, diff.ImprovedAction)
 		}
 	}
-	for _, pair := range []string{"Enterprise → Station", "Vendor → Station"} {
+	for _, pair := range []string{"Enterprise → Station"} {
 		diff := byPair[pair]
 		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "DENY" {
 			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / DENY", pair, diff.WeakAction, diff.ImprovedAction)
@@ -119,6 +122,48 @@ func TestFirewallCompareEU(t *testing.T) {
 		if !strings.Contains(diff.WeakRule, "implicit default-deny") {
 			t.Errorf("%s weak rule = %q; want the implicit default-deny distinction", pair, diff.WeakRule)
 		}
+	}
+
+	// MIXED must mean exactly the §8 engineering maintenance exception,
+	// not an accidental broad vendor allow hidden behind a deny rule.
+	data, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "improved.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var policy struct {
+		Firewall struct {
+			DefaultAction string `json:"defaultAction"`
+			Rules         []struct {
+				containd.FirewallRule
+				Destinations []string `json:"destinations"`
+			} `json:"rules"`
+		} `json:"firewall"`
+	}
+	if err := json.Unmarshal(data, &policy); err != nil {
+		t.Fatal(err)
+	}
+	matchesZone := func(zones []string, zone string) bool {
+		return len(zones) == 0 || slices.Contains(zones, zone) || slices.Contains(zones, "any")
+	}
+	allows := 0
+	for _, rule := range policy.Firewall.Rules {
+		if rule.Action != "ALLOW" || !matchesZone(rule.SourceZones, "dmz") || !matchesZone(rule.DestZones, "lan1") {
+			continue
+		}
+		allows++
+		if !reflect.DeepEqual(rule.SourceZones, []string{"dmz"}) ||
+			!reflect.DeepEqual(rule.DestZones, []string{"lan1"}) ||
+			!reflect.DeepEqual(rule.Sources, []string{"10.20.20.20/32"}) ||
+			!reflect.DeepEqual(rule.Destinations, []string{"10.30.30.30/32"}) ||
+			!reflect.DeepEqual(rule.Protocols, []containd.Protocol{{Name: "tcp", Port: "8080"}}) {
+			t.Errorf("unexpected Vendor → Station allow: %+v", rule)
+		}
+		if !strings.Contains(byPair["Vendor → Station"].ImprovedRule, rule.Description) {
+			t.Errorf("comparison omits engineering maintenance rule: %+v", byPair["Vendor → Station"])
+		}
+	}
+	if allows != 1 || policy.Firewall.DefaultAction != "DENY" {
+		t.Errorf("Vendor → Station allows = %d, default = %s; want one pinned exception and default DENY", allows, policy.Firewall.DefaultAction)
 	}
 }
 

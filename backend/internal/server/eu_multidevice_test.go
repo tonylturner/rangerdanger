@@ -17,33 +17,25 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-// multiDeviceGeneration supplies increment-4 endpoints without editing the
-// package manifest owned by the platform lane. Paths identify the upstream
-// that received each operation, even if the manifest is reordered.
+// multiDeviceGeneration redirects every declared endpoint to the test server.
+// Paths identify the upstream even if the manifest is reordered or gains services.
 func multiDeviceGeneration(t *testing.T, base string) *lifecycle.Generation {
 	t.Helper()
 	gen := euGeneration(t, nil, nil)
 	for i := range gen.Manifest.Services {
 		service := &gen.Manifest.Services[i]
-		switch service.Node {
-		case "breaker-1", "gps-1":
-			service.Endpoints = map[string]string{manifest.EndpointSim: base + "/" + service.Node}
+		path := service.Node
+		if path == "" {
+			path = service.Key
 		}
 		for _, role := range service.Roles {
 			if role == manifest.RoleProcessSolver {
-				service.Endpoints = map[string]string{"api": base + "/process"}
+				path = "process"
 			}
 		}
-	}
-	for _, node := range []string{"rmu-1", "rmu-2", "oltc-1", "historian-1"} {
-		role, endpoint := manifest.RoleFieldDevice, manifest.EndpointSim
-		if node == "historian-1" {
-			role, endpoint = manifest.RoleHistorian, "api"
+		for endpoint := range service.Endpoints {
+			service.Endpoints[endpoint] = base + "/" + path
 		}
-		gen.Manifest.Services = append(gen.Manifest.Services, manifest.Service{
-			Key: node, Node: node, Roles: []manifest.Role{role},
-			Endpoints: map[string]string{endpoint: base + "/" + node},
-		})
 	}
 	return gen
 }

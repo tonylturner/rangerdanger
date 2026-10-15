@@ -1,8 +1,10 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,17 +24,19 @@ var euStartedAt = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 
 // euGeneration is a generation of the real EU package. endpoints replaces
 // the base URL of every endpoint of a service, by service key, with a test
-// server; client is the firewall API.
+// server; unspecified endpoints are closed loopback addresses so newly shipped
+// services can never cause a test to contact the real range. client is the firewall API.
 func euGeneration(t *testing.T, client *containd.Client, endpoints map[string]string) *lifecycle.Generation {
 	t.Helper()
 	man, err := manifest.Load(repoRoot(), euPackageID)
 	if err != nil {
 		t.Fatal(err)
 	}
+	offline := closedURL(t)
 	for i, svc := range man.Services {
 		base, ok := endpoints[svc.Key]
 		if !ok {
-			continue
+			base = offline
 		}
 		replaced := map[string]string{}
 		for name := range svc.Endpoints {
@@ -45,6 +49,45 @@ func euGeneration(t *testing.T, client *containd.Client, endpoints map[string]st
 		t.Fatal(err)
 	}
 	return lifecycle.NewGeneration(7, pkg, man, client, euStartedAt)
+}
+
+func TestEUFixtureEndpoints(t *testing.T) {
+	shipped, err := manifest.Load(repoRoot(), euPackageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, upstream := newUpstreamStub(t, nil)
+	for _, name := range []string{"offline", "override", "multi-device"} {
+		t.Run(name, func(t *testing.T) {
+			gen := euGeneration(t, nil, nil)
+			if name == "override" {
+				gen = euGeneration(t, nil, map[string]string{"control_centre": upstream.URL})
+			} else if name == "multi-device" {
+				gen = multiDeviceGeneration(t, upstream.URL)
+			}
+			if len(gen.Manifest.Services) != len(shipped.Services) {
+				t.Fatal("fixture must redirect the manifest, not append duplicate services")
+			}
+			for i, service := range gen.Manifest.Services {
+				if service.Key != shipped.Services[i].Key || len(service.Endpoints) != len(shipped.Services[i].Endpoints) {
+					t.Fatalf("fixture changed shipped service %s", service.Key)
+				}
+				for endpoint := range shipped.Services[i].Endpoints {
+					base := service.Endpoints[endpoint]
+					parsed, err := url.Parse(base)
+					if err != nil || !net.ParseIP(parsed.Hostname()).IsLoopback() {
+						t.Fatalf("%s %s is not a loopback endpoint: %q", service.Key, endpoint, base)
+					}
+					if name == "multi-device" && !strings.HasPrefix(base, upstream.URL+"/") {
+						t.Errorf("%s %s escaped the test upstream: %s", service.Key, endpoint, base)
+					}
+					if name == "override" && service.Key == "control_centre" && base != upstream.URL {
+						t.Errorf("explicit endpoint override = %s; want %s", base, upstream.URL)
+					}
+				}
+			}
+		})
+	}
 }
 
 // rangeServer is a server whose ready range is gen, with activeConfig set.
