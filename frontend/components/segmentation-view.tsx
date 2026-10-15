@@ -5,11 +5,8 @@
 // Network Map can render the exact same panel as a collapsible overlay
 // without duplicating the apply logic.
 //
-// The component manages its own state (active config, comparison) and
-// only depends on React Query for cross-component cache invalidation
-// when the user applies a new config - that lets the network map's
-// edge labels and the header policy badge update immediately when the
-// firewall flips between the package's policies.
+// Active policy and package comparison use React Query so the range
+// lifecycle clears them when one package is replaced by another.
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,19 +15,22 @@ import {
   getActiveFirewallConfig,
   getFirewallComparison,
   type NetworkEvent,
-  type PolicyComparison,
 } from "../lib/api";
 import { FIREWALL_ACTIVE_KEY, useSubstationNetworkEvents } from "../lib/live-queries";
-import { usePackagePolicies } from "../lib/operator-queries";
+import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
   HARDENED_POLICY,
   isHardened,
+  activePolicyWording,
   policyWording,
   type PackagePolicies,
   type PolicyWording,
 } from "../lib/policy-wording";
 import { errorMessage } from "../lib/utils";
+import { EU_OPERATOR_VIEW, isView } from "../lib/operator-view";
+
+export const FIREWALL_COMPARISON_KEY = ["firewall-comparison"] as const;
 
 // The policies are the active package's (package.yml `policies`). The
 // US package keeps its own wording; any other package's policies show
@@ -50,10 +50,20 @@ const US_PILL_WORDING: Record<string, PolicyWording> = {
   weak: { label: "Weak", description: "" },
   improved: { label: "Hardened", description: "" },
 };
+const EU_DRAWER_WORDING: Record<string, PolicyWording> = {
+  weak: {
+    label: "weak",
+    description:
+      "Enterprise, vendor, and Control Centre sources can reach the RTU over IEC 104; any station-zone host can reach the feeder breaker over Modbus TCP.",
+  },
+  improved: {
+    label: "improved",
+    description:
+      "Only the Control Centre (10.60.60.20/32) can reach the RTU (10.30.30.20/32) over TCP/2404, and only the RTU (10.30.30.20/32) can reach the feeder breaker (10.40.40.20/32) over TCP/502.",
+  },
+};
 
-// The columns of PolicyComparison.diffs per policy. /firewall/compare
-// exists only for a package whose recipe has a comparison table (US),
-// and compares exactly these two policies.
+// The columns of PolicyComparison.diffs per named policy pair.
 type ComparisonFields = {
   actionField: "weak_action" | "improved_action";
   ruleField: "weak_rule" | "improved_rule";
@@ -70,10 +80,12 @@ type PolicyMeta = PolicyWording & {
   toneInactive: string;
 };
 
-function policyMetas(policies: PackagePolicies): PolicyMeta[] {
+function policyMetas(policies: PackagePolicies, euWording: boolean): PolicyMeta[] {
   return policies.names.map((id) => ({
     id,
-    ...policyWording(id, policies, US_DRAWER_WORDING),
+    ...(euWording
+      ? EU_DRAWER_WORDING[id] ?? { label: id, description: "" }
+      : policyWording(id, policies, US_DRAWER_WORDING)),
     pill: policyWording(id, policies, US_PILL_WORDING).label,
     toneActive: isHardened(id)
       ? "border-green-700/60 bg-green-950/15 text-green-400"
@@ -84,26 +96,23 @@ function policyMetas(policies: PackagePolicies): PolicyMeta[] {
   }));
 }
 
-// The meta of the active policy. A policy the package does not declare
-// (custom) shows by its name; the US drawer has always shown its default
-// policy there instead, and keeps doing so.
-function activePolicyMeta(metas: PolicyMeta[], activeConfig: string | null, usWording: boolean): PolicyMeta | undefined {
+// The active config may be custom, not one of the named comparison
+// columns. Never substitute the baseline's metadata for it.
+function activePolicyMeta(
+  metas: PolicyMeta[],
+  activeConfig: string | null,
+  policies: PackagePolicies,
+): PolicyMeta | undefined {
   const declared = metas.find((p) => p.id === activeConfig);
-  if (declared || usWording || !activeConfig) return declared ?? metas[0];
-  return { id: activeConfig, label: activeConfig, description: "", pill: activeConfig, toneActive: "", toneInactive: "" };
+  if (declared || !activeConfig) return declared ?? metas[0];
+  const wording = activePolicyWording(activeConfig, policies, US_DRAWER_WORDING);
+  return { id: activeConfig, ...wording, pill: wording.label, toneActive: "", toneInactive: "" };
 }
-
-// The comparison request: loading, loaded, not offered by the package
-// (404), or failed with the backend's cause.
-type ComparisonState =
-  | { kind: "loading" }
-  | { kind: "ready"; comparison: PolicyComparison }
-  | { kind: "absent" }
-  | { kind: "failed"; message: string };
 
 export function SegmentationView({ compact = false }: { compact?: boolean }) {
   const packagePolicies = usePackagePolicies();
-  const [comparisonState, setComparisonState] = useState<ComparisonState>({ kind: "loading" });
+  const operatorView = useOperatorView();
+  const euWording = isView(operatorView, EU_OPERATOR_VIEW);
   const apply = useApplyPolicy();
   const applying = apply.isPending;
   // Which policy the evaluation panel is previewing. Defaults to
@@ -126,19 +135,15 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
     staleTime: 2000,
   });
   const activeConfig = activeData?.active_config ?? null;
-  const policies = useMemo(() => (packagePolicies ? policyMetas(packagePolicies) : []), [packagePolicies]);
-
-  useEffect(() => {
-    getFirewallComparison()
-      .then((comparison) => setComparisonState({ kind: "ready", comparison }))
-      .catch((error: unknown) =>
-        setComparisonState(
-          error instanceof ApiError && error.status === 404
-            ? { kind: "absent" }
-            : { kind: "failed", message: errorMessage(error) },
-        ),
-      );
-  }, []);
+  const policies = useMemo(
+    () => (packagePolicies ? policyMetas(packagePolicies, euWording) : []),
+    [packagePolicies, euWording],
+  );
+  const comparisonQuery = useQuery({
+    queryKey: FIREWALL_COMPARISON_KEY,
+    queryFn: getFirewallComparison,
+    retry: false,
+  });
 
   useEffect(() => {
     if (!userPickedPolicy && policies.some((p) => p.id === activeConfig)) {
@@ -169,51 +174,53 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // and tags whether it differs from what's currently active - that
   // tag drives the "would change if applied" highlight.
   const selectedMeta = policies.find((p) => p.id === selectedPolicyId) ?? policies[0];
-  const activeMeta = activePolicyMeta(policies, activeConfig, packagePolicies?.usWording ?? false);
-  const comparison = comparisonState.kind === "ready" ? comparisonState.comparison : null;
+  const activeMeta = packagePolicies ? activePolicyMeta(policies, activeConfig, packagePolicies) : undefined;
+  const comparison = comparisonQuery.data;
   const selectedFields = selectedMeta ? COMPARISON_FIELDS[selectedMeta.id] : undefined;
   const activeFields = activeMeta ? COMPARISON_FIELDS[activeMeta.id] : undefined;
   const evaluation = useMemo(() => {
-    if (!comparison || !selectedFields || !activeFields) return [];
+    if (!comparison || !selectedFields) return [];
     return comparison.diffs.map((d) => {
       const action = d[selectedFields.actionField];
       const rule = d[selectedFields.ruleField];
-      const activeAction = d[activeFields.actionField];
-      const differsFromActive = action !== activeAction;
-      return { zonePair: d.zone_pair, action, rule, activeAction, differsFromActive };
+      const activeAction = activeFields ? d[activeFields.actionField] : undefined;
+      const differsFromActive = activeAction !== undefined && action !== activeAction;
+      return { zonePair: d.zone_pair, action, rule, differsFromActive };
     });
   }, [comparison, selectedFields, activeFields]);
   const changeCount = evaluation.filter((r) => r.differsFromActive).length;
 
-  if (comparisonState.kind === "loading" || !packagePolicies || !selectedMeta || !activeMeta) {
+  if (!packagePolicies || !selectedMeta || !activeMeta) {
     return (
       <div className="py-6 text-center text-sm text-slate-500">
-        Loading policy comparison…
+        Loading policy controls…
       </div>
     );
   }
 
   const isSelectedActive = selectedMeta.id === activeConfig;
   const activeHardened = isHardened(activeConfig);
+  const activeTone = activeHardened
+    ? "border-green-700/60 bg-green-950/15 text-green-400"
+    : activeConfig === "weak"
+    ? "border-red-700/60 bg-red-950/15 text-red-400"
+    : "border-slate-700 bg-slate-900/50 text-slate-300";
+  const activeTextTone = activeHardened
+    ? "text-green-400"
+    : activeConfig === "weak"
+    ? "text-red-400"
+    : "text-slate-300";
+  const comparisonUnsupported =
+    comparisonQuery.error instanceof ApiError && comparisonQuery.error.status === 404;
 
   return (
     <div className="space-y-3">
       {/* Active policy banner */}
-      <div
-        className={`rounded-lg border p-2.5 ${
-          activeHardened
-            ? "border-green-700/60 bg-green-950/15"
-            : "border-red-700/60 bg-red-950/15"
-        }`}
-      >
+      <div className={`rounded-lg border p-2.5 ${activeTone}`}>
         <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
           containd NGFW · Active Policy
         </div>
-        <div
-          className={`mt-0.5 text-sm font-bold ${
-            activeHardened ? "text-green-400" : "text-red-400"
-          }`}
-        >
+        <div className={`mt-0.5 text-sm font-bold ${activeTextTone}`}>
           {activeMeta.label}
         </div>
         {!compact && activeMeta.description && (
@@ -286,50 +293,70 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           Rows that differ from the currently-active policy get a
           "would change" tag so the user can see what applying the
           selected policy would actually do. */}
-      {!compact && comparisonState.kind === "failed" && (
-        <div className="text-[10px] leading-snug text-red-400">
-          Policy comparison unavailable: {comparisonState.message}
-        </div>
-      )}
-      {!compact && comparison && selectedFields && activeFields && (
+      {!compact && (
         <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-              Evaluation · {selectedMeta.label}
-            </div>
-            {!isSelectedActive && (
-              <span className="rounded bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
-                {changeCount} change{changeCount === 1 ? "" : "s"} vs active
-              </span>
-            )}
+          <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            Named policy comparison
           </div>
-          <div className="space-y-1.5">
-            {evaluation.map((r, i) => (
-              <div
-                key={i}
-                className={`rounded border p-2 text-[11px] ${
-                  r.differsFromActive
-                    ? "border-amber-900/40 bg-amber-950/10"
-                    : "border-slate-800/60 bg-slate-900/30"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-300">{r.zonePair}</span>
-                  <div className="flex items-center gap-1.5">
-                    <ActionChip action={r.action} />
-                    {r.differsFromActive && (
-                      <span className="text-[9px] font-bold uppercase text-amber-400">
-                        → would change
-                      </span>
-                    )}
-                  </div>
+          <div className="mb-2 text-[10px] leading-snug text-slate-600">
+            Named-policy preview is separate from live sessions and firewall enforcement.
+          </div>
+          {comparisonQuery.isPending && (
+            <div className="text-[10px] leading-snug text-slate-500">
+              Loading named policy comparison…
+            </div>
+          )}
+          {comparisonUnsupported && (
+            <div className="text-[10px] leading-snug text-slate-500">
+              Named policy comparison is not available for this package.
+            </div>
+          )}
+          {comparisonQuery.isError && !comparisonUnsupported && (
+            <div className="text-[10px] leading-snug text-red-400">
+              Policy comparison unavailable: {errorMessage(comparisonQuery.error)}
+            </div>
+          )}
+          {comparison && selectedFields && (
+            <>
+              <div className="mb-1.5 flex items-center justify-between">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  Preview · {selectedMeta.label}
                 </div>
-                {r.rule && (
-                  <div className="mt-1 text-[10px] leading-snug text-slate-500">{r.rule}</div>
+                {activeFields && !isSelectedActive && (
+                  <span className="rounded bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
+                    {changeCount} change{changeCount === 1 ? "" : "s"} vs active
+                  </span>
                 )}
               </div>
-            ))}
-          </div>
+              <div className="space-y-1.5">
+                {evaluation.map((r, i) => (
+                  <div
+                    key={i}
+                    className={`rounded border p-2 text-[11px] ${
+                      r.differsFromActive
+                        ? "border-amber-900/40 bg-amber-950/10"
+                        : "border-slate-800/60 bg-slate-900/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-slate-300">{r.zonePair}</span>
+                      <div className="flex items-center gap-1.5">
+                        <ActionChip action={r.action} />
+                        {r.differsFromActive && (
+                          <span className="text-[9px] font-bold uppercase text-amber-400">
+                            → would change
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {r.rule && (
+                      <div className="mt-1 text-[10px] leading-snug text-slate-500">{r.rule}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

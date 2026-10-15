@@ -95,6 +95,8 @@ var usRecipe = &packageRecipe{
 // usCompare is the US policy comparison: every cross-zone relationship in
 // both directions, plus the OT intra-zone pairs.
 var usCompare = &compareSpec{
+	weakPolicy:     "weak",
+	improvedPolicy: "improved",
 	// Every entry here is rendered as a row in the Segmentation drawer
 	// even if neither policy has an explicit rule — the implicit
 	// default-deny is the pedagogical point of the panel (per the Lab 1.3

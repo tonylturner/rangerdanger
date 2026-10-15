@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { EU_PACKAGE, US_PACKAGE } from "./operator-fixtures.test-util";
-import { isHardened, matchesExpected, packagePolicies, policyWording } from "./policy-wording";
+import {
+  activePolicyWording,
+  isHardened,
+  matchesExpected,
+  packagePolicies,
+  policyWording,
+  US_WORKSHOP_POLICY_WORDING,
+} from "./policy-wording";
 
 const US_TABLE = { weak: { label: "Weak Baseline", description: "US text" } };
 
@@ -22,6 +29,30 @@ describe("policyWording", () => {
 
   it("falls back to the name for a US policy the table does not know", () => {
     expect(policyWording("audit", packagePolicies(US_PACKAGE), US_TABLE)).toEqual({ label: "audit", description: "" });
+  });
+});
+
+describe("activePolicyWording", () => {
+  it("uses exact US wording and consistently labels a custom policy", () => {
+    expect(activePolicyWording("weak", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
+      label: "Weak Baseline",
+      description: "",
+    });
+    expect(activePolicyWording("custom", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
+      label: "Custom policy",
+      description: "",
+    });
+  });
+
+  it("preserves declared names outside the US and for unknown configurations", () => {
+    expect(activePolicyWording("improved", packagePolicies(EU_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
+      label: "improved",
+      description: "",
+    });
+    expect(activePolicyWording("audit", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
+      label: "audit",
+      description: "",
+    });
   });
 });
 

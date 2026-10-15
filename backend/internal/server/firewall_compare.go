@@ -36,20 +36,20 @@ type PolicyComparison struct {
 	Summary        string           `json:"summary"`
 }
 
-// handleFirewallCompare returns a structured comparison of weak vs improved
-// firewall configs, for packages whose recipe has a comparison table.
+// handleFirewallCompare returns a structured comparison of the two named
+// policies in a package's comparison recipe.
 func (s *Server) handleFirewallCompare(c *gin.Context) {
 	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.compare != nil })
 	if !ok {
 		return
 	}
 	pkg := rangeOf(c).Package
-	weakPath, err := s.policyPath(pkg, "weak")
+	weakPath, err := s.policyPath(pkg, recipe.compare.weakPolicy)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	improvedPath, err := s.policyPath(pkg, "improved")
+	improvedPath, err := s.policyPath(pkg, recipe.compare.improvedPolicy)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -57,13 +57,13 @@ func (s *Server) handleFirewallCompare(c *gin.Context) {
 
 	weakRules, err := loadFirewallRules(weakPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load weak config: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load " + recipe.compare.weakPolicy + " config: " + err.Error()})
 		return
 	}
 
 	improvedRules, err := loadFirewallRules(improvedPath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load improved config: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load " + recipe.compare.improvedPolicy + " config: " + err.Error()})
 		return
 	}
 

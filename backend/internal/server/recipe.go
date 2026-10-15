@@ -92,8 +92,9 @@ type zonePair struct{ src, dst string }
 // compareSpec is the policy comparison's rows, in order, and the labels of
 // their zones.
 type compareSpec struct {
-	pairs  []zonePair
-	labels map[string]string
+	weakPolicy, improvedPolicy string
+	pairs                      []zonePair
+	labels                     map[string]string
 }
 
 // label names a zone pair for people; unknown zones keep their name.

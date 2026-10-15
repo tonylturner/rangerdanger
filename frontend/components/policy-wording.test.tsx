@@ -9,6 +9,8 @@ import { packagePolicies } from "../lib/policy-wording";
 import { EuDashboard } from "./eu-overview";
 import { PolicyBadge } from "./network-drawers";
 import { PolicyStatusBanner } from "./policy-status-banner";
+import { UsDashboard } from "./us-dashboard";
+import { UsWorkshopStatus } from "./us-workshop-status";
 
 function text(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -99,5 +101,33 @@ describe("EuDashboard firewall card", () => {
     const out = renderWith(EU_PACKAGE, <EuDashboard title="EU" />, status);
     expect(out).toContain("Firewall Policy improved");
     expect(out).not.toMatch(US_TEXT);
+  });
+});
+
+describe("US firewall status wording", () => {
+  const status: WorkshopStatus = {
+    workshop_id: "us",
+    workshop_name: "US",
+    firewall_online: true,
+    firewall_config: "custom",
+    scenario_count: 1,
+  };
+
+  it("names a custom policy instead of calling it the weak baseline", () => {
+    const dashboard = renderWith(US_PACKAGE, <UsDashboard />, status);
+    const workshop = renderWith(US_PACKAGE, <UsWorkshopStatus />, status);
+    expect(dashboard).toContain("Firewall Policy Custom policy");
+    expect(workshop).toContain("Custom policy");
+    expect(dashboard).not.toContain("Weak Baseline");
+    expect(workshop).not.toContain("Weak Baseline");
+  });
+
+  it("keeps exact weak and improved labels", () => {
+    expect(
+      renderWith(US_PACKAGE, <UsDashboard />, { ...status, firewall_config: "weak" }),
+    ).toContain("Firewall Policy Weak Baseline");
+    expect(
+      renderWith(US_PACKAGE, <UsDashboard />, { ...status, firewall_config: "improved" }),
+    ).toContain("Firewall Policy Hardened");
   });
 });

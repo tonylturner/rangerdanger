@@ -3,12 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { getSubstationHealth } from "../lib/api";
 import { useWorkshopStatus } from "../lib/live-queries";
+import { usePackagePolicies } from "../lib/operator-queries";
+import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 import { WorkshopStatusCard } from "./overview-cards";
 
 // The US package's workshop status: RTAC and field-device health.
 export function UsWorkshopStatus() {
   const { data: ws, error: wsError } = useWorkshopStatus(5000);
+  const policies = usePackagePolicies();
 
   const { data: health } = useQuery({
     queryKey: ["substation-health"],
@@ -22,6 +25,9 @@ export function UsWorkshopStatus() {
 
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
   const onlineCount = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
+  const firewallPolicy = ws?.firewall_config
+    ? activePolicyWording(ws.firewall_config, policies, US_WORKSHOP_POLICY_WORDING).label
+    : "Weak Baseline";
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-10">
@@ -41,7 +47,7 @@ export function UsWorkshopStatus() {
             <WorkshopStatusCard
               label="containd NGFW"
               status={waiting ? "waiting" : ws?.firewall_online ? "online" : "offline"}
-              detail={ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
+              detail={firewallPolicy}
             />
             <WorkshopStatusCard
               label="RTAC Controller"

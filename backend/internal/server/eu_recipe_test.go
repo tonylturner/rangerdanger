@@ -35,7 +35,7 @@ func TestEUCanaryResolvesFromTheManifest(t *testing.T) {
 }
 
 // TestEURecipeUnsupportedRoutes answers 404 for the US-built report,
-// traffic generator, test suite and policy comparison.
+// traffic generator and test suite.
 func TestEURecipeUnsupportedRoutes(t *testing.T) {
 	s := rangeServer(euGeneration(t, containd.NewClient(closedURL(t)), nil), "weak")
 	s.orchestrator = &orchestrator.Orchestrator{}
@@ -46,13 +46,87 @@ func TestEURecipeUnsupportedRoutes(t *testing.T) {
 		{http.MethodPost, "/api/firewall/validation-report", s.handleValidationReport},
 		{http.MethodPost, "/api/traffic/generate", s.handleTrafficGenerate},
 		{http.MethodPost, "/api/workshop/test-suite", s.handleWorkshopTestSuite},
-		{http.MethodGet, "/api/firewall/compare", s.handleFirewallCompare},
 	}
 	for _, route := range routes {
 		rec := callRoute(s, route.handler, route.method, route.path, route.path, "")
 		if rec.Code != http.StatusNotFound || rec.Body.String() != `{"error":"not supported by this package"}` {
 			t.Errorf("%s %s on EU = %d %s", route.method, route.path, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestFirewallCompareEU(t *testing.T) {
+	s := rangeServer(euGeneration(t, containd.NewClient(closedURL(t)), nil), "weak")
+	rec := callRoute(s, s.handleFirewallCompare, http.MethodGet, "/api/firewall/compare", "/api/firewall/compare", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/firewall/compare on EU = %d %s; want 200", rec.Code, rec.Body)
+	}
+
+	var got PolicyComparison
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.WeakConfig != "weak.json" || got.ImprovedConfig != "improved.json" {
+		t.Errorf("comparison policies = %q / %q; want EU package weak.json / improved.json", got.WeakConfig, got.ImprovedConfig)
+	}
+	wantPairs := []string{
+		"Control Centre → Station",
+		"Station → Field",
+		"Enterprise → Station",
+		"Vendor → Station",
+		"Enterprise → Field",
+		"Vendor → Field",
+		"Control Centre → Field",
+		"Field → Station",
+	}
+	if len(got.Diffs) != len(wantPairs) {
+		t.Fatalf("comparison rows = %d; want %d: %+v", len(got.Diffs), len(wantPairs), got.Diffs)
+	}
+	for i, want := range wantPairs {
+		if got.Diffs[i].ZonePair != want {
+			t.Errorf("comparison row %d = %q; want %q", i, got.Diffs[i].ZonePair, want)
+		}
+	}
+
+	byPair := make(map[string]PolicyRuleDiff, len(got.Diffs))
+	for _, diff := range got.Diffs {
+		byPair[diff.ZonePair] = diff
+	}
+	for _, pair := range []string{"Control Centre → Station", "Station → Field"} {
+		diff := byPair[pair]
+		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "MIXED" {
+			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / MIXED", pair, diff.WeakAction, diff.ImprovedAction)
+		}
+	}
+	for _, pair := range []string{"Enterprise → Station", "Vendor → Station"} {
+		diff := byPair[pair]
+		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "DENY" {
+			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / DENY", pair, diff.WeakAction, diff.ImprovedAction)
+		}
+	}
+	for _, pair := range []string{
+		"Enterprise → Field",
+		"Vendor → Field",
+		"Control Centre → Field",
+		"Field → Station",
+	} {
+		diff := byPair[pair]
+		if diff.WeakAction != "DENY" || diff.ImprovedAction != "DENY" {
+			t.Errorf("%s actions = weak %q / improved %q; want DENY / DENY", pair, diff.WeakAction, diff.ImprovedAction)
+		}
+		if !strings.Contains(diff.WeakRule, "implicit default-deny") {
+			t.Errorf("%s weak rule = %q; want the implicit default-deny distinction", pair, diff.WeakRule)
+		}
+	}
+}
+
+func TestFirewallCompareRequiresDeclaredPolicies(t *testing.T) {
+	gen := euGeneration(t, containd.NewClient(closedURL(t)), nil)
+	delete(gen.Package.Policies, euRecipe.compare.weakPolicy)
+	s := rangeServer(gen, "weak")
+	rec := callRoute(s, s.handleFirewallCompare, http.MethodGet, "/api/firewall/compare", "/api/firewall/compare", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "config must be one of") {
+		t.Errorf("compare with undeclared recipe policy = %d %s; want 404", rec.Code, rec.Body)
 	}
 }
 

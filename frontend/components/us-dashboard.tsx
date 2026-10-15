@@ -3,11 +3,14 @@
 import { MetricsOverview } from "./metrics-overview";
 import { DashboardStatusCard, QuickLink } from "./overview-cards";
 import { useWorkshopStatus } from "../lib/live-queries";
+import { usePackagePolicies } from "../lib/operator-queries";
+import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
 
 // The US package's overview: RTAC, field devices, feeder metrics.
 export function UsDashboard() {
   const { data: ws, error: wsError } = useWorkshopStatus(5000);
+  const policies = usePackagePolicies();
 
   // While the range is being replaced nothing is offline, it is not
   // there yet; the cards stay neutral and the range banner says why.
@@ -17,6 +20,9 @@ export function UsDashboard() {
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
   const devicesOk = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
   const scenarioCount = ws?.scenario_count ?? 0;
+  const firewallPolicy = ws?.firewall_config
+    ? activePolicyWording(ws.firewall_config, policies, US_WORKSHOP_POLICY_WORDING).label
+    : "Weak Baseline";
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
@@ -45,7 +51,7 @@ export function UsDashboard() {
         />
         <DashboardStatusCard
           label="Firewall Policy"
-          value={waiting ? "WAITING" : ws?.firewall_config === "improved" ? "Hardened" : "Weak Baseline"}
+          value={waiting ? "WAITING" : firewallPolicy}
           ok={waiting ? undefined : ws?.firewall_config === "improved"}
         />
         <DashboardStatusCard

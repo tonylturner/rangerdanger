@@ -28,6 +28,11 @@ export function packagePolicies(pkg: PackageSummary): PackagePolicies {
 
 export type PolicyWording = { label: string; description: string };
 
+export const US_WORKSHOP_POLICY_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak Baseline", description: "" },
+  improved: { label: "Hardened", description: "" },
+};
+
 // The wording of one policy: the US table's entry for the US package,
 // otherwise the declared name and no description.
 export function policyWording(
@@ -37,6 +42,18 @@ export function policyWording(
 ): PolicyWording {
   const us = policies.usWording ? usTable[name] : undefined;
   return us ?? { label: name, description: "" };
+}
+
+// The active custom config is not a named policy. Keep its display
+// distinct from both the US baseline and package-declared policy names.
+export function activePolicyWording(
+  name: string,
+  policies: PackagePolicies | undefined,
+  usTable: Record<string, PolicyWording>,
+): PolicyWording {
+  if (name === CUSTOM_POLICY) return { label: "Custom policy", description: "" };
+  if (!policies) return { label: name, description: "" };
+  return policyWording(name, policies, usTable);
 }
 
 export function isHardened(activeConfig: string | null | undefined): boolean {
