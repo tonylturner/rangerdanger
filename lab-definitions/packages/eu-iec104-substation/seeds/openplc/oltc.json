@@ -1,0 +1,22 @@
+{
+  "dev_name": "oltc-1",
+  "dev_type": "TCP",
+  "slave_id": 1,
+  "com_port": "",
+  "baud_rate": 115200,
+  "parity": "N",
+  "data_bits": 8,
+  "stop_bits": 1,
+  "ip_address": "10.40.40.23",
+  "ip_port": 502,
+  "di_start": 0,
+  "di_size": 0,
+  "coil_start": 0,
+  "coil_size": 0,
+  "ir_start": 0,
+  "ir_size": 15,
+  "hr_read_start": 0,
+  "hr_read_size": 0,
+  "hr_write_start": 1,
+  "hr_write_size": 1
+}
