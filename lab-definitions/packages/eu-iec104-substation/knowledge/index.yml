@@ -71,9 +71,9 @@
           "file": "tool-iec104-tshark.md"
         },
         {
-          "id": "eu-milestone-a-boundary",
-          "title": "Milestone A restricts sources and ports, not commands",
-          "file": "eu-milestone-a-boundary.md"
+          "id": "eu-port-source-boundary",
+          "title": "Port- and source-based rules",
+          "file": "eu-port-source-boundary.md"
         },
         {
           "id": "eu-established-sessions",

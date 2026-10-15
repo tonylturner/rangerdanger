@@ -9,9 +9,9 @@ description: |
   60870-5-104, through the RTU, and over Modbus TCP to the feeder breaker.
   Then constrain those conduits to their named sources and ports.
 
-  **Milestone A is port/source segmentation, not command filtering.** The
-  improved policy limits who can open an IEC104 session and which RTU may
-  poll Modbus; it does not inspect or selectively block IEC104 command types.
+  **The rules are port- and source-based.** Command-aware IEC 104 filtering
+  is not part of this lab. The improved policy limits who can open an IEC104
+  session and which RTU may poll Modbus. It does not filter IEC104 commands.
   The allowed Control Centre can still issue both open and close commands.
 
   **Out-of-band limit:** the Control Centre shares `mgmt_net` with the breaker
@@ -100,7 +100,7 @@ steps:
       attempts to those control ports are logged and denied. An established
       Kali flow may continue until its conntrack entry is removed.
 
-      Read: [Milestone A boundary](/knowledge#eu-milestone-a-boundary).
+      Read: [Port- and source-based rules](/knowledge#eu-port-source-boundary).
     action:
       type: firewall
       config: improved
