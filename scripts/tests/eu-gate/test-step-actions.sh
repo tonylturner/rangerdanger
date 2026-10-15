@@ -59,4 +59,22 @@ t_run eu_execute_step local-trip "ambiguous step"
 t_expect_fails 1 "ambiguous authored IDs fail before execution"
 t_expect_eq "$POSTS" "$before" "an ambiguous step does not execute"
 
+# Increment-4 management requests carry the frozen vocabulary and numeric value.
+eu_management() {
+  # shellcheck disable=SC2034 # consumed by the sourced action helper
+  HTTP_STATUS=200
+  API_BODY='{"schema":2}'
+  POST_PATH="$1 $2 $3"
+  ACTION_BODY="$4"
+}
+t_run eu_action process set_load 3.0
+t_expect_fails 0 "a process action accepts its explicit management acknowledgement"
+t_expect_eq "$POST_PATH" "process POST /api/process/actions" "process actions use their single cutover endpoint"
+t_run jq -e '.action == "set_load" and .value == 3' <<<"$ACTION_BODY"
+t_expect_eq "$T_STATUS" 0 "set_load value is a JSON number"
+t_run eu_action rmu-1 set_local
+t_expect_eq "$POST_PATH" "rmu-1 POST /api/sim/actions" "device actions use sim actions"
+t_run jq -e '.action == "set_local" and (has("value") | not)' <<<"$ACTION_BODY"
+t_expect_eq "$T_STATUS" 0 "device actions never send a value"
+
 t_finish

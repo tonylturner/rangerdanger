@@ -1,0 +1,96 @@
+{
+  "point": "feeder-current",
+  "segments": [
+    {
+      "cache_epoch": "8ac2cdad2dcdc605",
+      "samples": [
+        {
+          "snapshot_seq": 3374,
+          "value": 61.382793,
+          "quality": {
+            "iv": false,
+            "nt": false,
+            "sb": false,
+            "bl": false,
+            "ov": false
+          },
+          "stale_reason": null,
+          "source_time": null,
+          "source_time_invalid": null,
+          "cc_received_at": "2026-10-15T21:37:21.924263877Z",
+          "ingested_at": "2026-10-15T21:37:22.424937085Z"
+        },
+        {
+          "snapshot_seq": 3375,
+          "value": 61.382793,
+          "quality": {
+            "iv": false,
+            "nt": false,
+            "sb": false,
+            "bl": false,
+            "ov": false
+          },
+          "stale_reason": null,
+          "source_time": null,
+          "source_time_invalid": null,
+          "cc_received_at": "2026-10-15T21:37:22.519102877Z",
+          "ingested_at": "2026-10-15T21:37:23.431962627Z"
+        },
+        {
+          "snapshot_seq": 3376,
+          "value": 61.382793,
+          "quality": {
+            "iv": false,
+            "nt": false,
+            "sb": false,
+            "bl": false,
+            "ov": false
+          },
+          "stale_reason": null,
+          "source_time": null,
+          "source_time_invalid": null,
+          "cc_received_at": "2026-10-15T21:37:22.519102877Z",
+          "ingested_at": "2026-10-15T21:37:29.63648688Z"
+        },
+        {
+          "snapshot_seq": 3377,
+          "value": 61.382626,
+          "quality": {
+            "iv": false,
+            "nt": false,
+            "sb": false,
+            "bl": false,
+            "ov": false
+          },
+          "stale_reason": null,
+          "source_time": null,
+          "source_time_invalid": null,
+          "cc_received_at": "2026-10-15T21:37:30.635911214Z",
+          "ingested_at": "2026-10-15T21:37:30.638221714Z"
+        },
+        {
+          "snapshot_seq": 3378,
+          "value": 61.382793,
+          "quality": {
+            "iv": false,
+            "nt": false,
+            "sb": false,
+            "bl": false,
+            "ov": false
+          },
+          "stale_reason": null,
+          "source_time": null,
+          "source_time_invalid": null,
+          "cc_received_at": "2026-10-15T21:37:31.636430465Z",
+          "ingested_at": "2026-10-15T21:37:31.64027259Z"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "from": "2026-10-15T21:37:23.431962627Z",
+      "to": "2026-10-15T21:37:29.63648688Z"
+    }
+  ]
+}

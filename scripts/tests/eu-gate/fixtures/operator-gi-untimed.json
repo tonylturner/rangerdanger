@@ -1,8 +1,583 @@
-{"schema":1,"cache_epoch":"3b9f6c0e2a5d4e71","package_id":"eu-iec104-substation","range_generation":3,
- "link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-09T21:01:55.120Z","last_rx_at":"2026-10-09T21:02:10.410Z","connection_seq":1,
-         "gi":{"state":"complete","started_at":"2026-10-09T21:01:55.131Z","completed_at":"2026-10-09T21:01:55.180Z"}},
- "points":[
-  {"id":"feeder-breaker-position","ioa":1001,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.170Z","cot":20},
-  {"id":"feeder-protection-trip","ioa":1002,"asdu":"M_SP_TB_1","value":false,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.171Z","cot":20},
-  {"id":"feeder-current","ioa":2001,"asdu":"M_ME_NC_1","value":28.87,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.172Z","cot":20},
-  {"id":"feeder-voltage","ioa":2002,"asdu":"M_ME_NC_1","value":19.93,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T21:01:55.173Z","cot":20}]}
+{
+  "schema": 2,
+  "cache_epoch": "3b9f6c0e2a5d4e71",
+  "package_id": "eu-iec104-substation",
+  "range_generation": 3,
+  "link": {
+    "state": "started",
+    "peer": "10.30.30.20:2404",
+    "since": "2026-10-09T21:01:55.120Z",
+    "last_rx_at": "2026-10-09T21:02:10.410Z",
+    "connection_seq": 1,
+    "gi": {
+      "state": "complete",
+      "started_at": "2026-10-09T21:01:55.131Z",
+      "completed_at": "2026-10-09T21:01:55.180Z"
+    }
+  },
+  "points": [
+    {
+      "id": "feeder-breaker-position",
+      "ioa": 1001,
+      "asdu": "M_DP_TB_1",
+      "value": "closed",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.170Z",
+      "cot": 20
+    },
+    {
+      "id": "feeder-protection-trip",
+      "ioa": 1002,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.171Z",
+      "cot": 20
+    },
+    {
+      "id": "feeder-current",
+      "ioa": 2001,
+      "asdu": "M_ME_NC_1",
+      "value": 28.87,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20
+    },
+    {
+      "id": "feeder-voltage",
+      "ioa": 2002,
+      "asdu": "M_ME_NC_1",
+      "value": 19.93,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.173Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-position",
+      "ioa": 1101,
+      "asdu": "M_DP_TB_1",
+      "value": "closed",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.174Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-remote",
+      "ioa": 1102,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.175Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-earth",
+      "ioa": 1103,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.176Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-fault-passage",
+      "ioa": 1104,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.177Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-current",
+      "ioa": 2101,
+      "asdu": "M_ME_NC_1",
+      "value": 18.745045,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.178Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-section-kv",
+      "ioa": 2102,
+      "asdu": "M_ME_NC_1",
+      "value": 19.590002,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.179Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-1-source-kv",
+      "ioa": 2103,
+      "asdu": "M_ME_NC_1",
+      "value": 19.705875,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.180Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-position",
+      "ioa": 1201,
+      "asdu": "M_DP_TB_1",
+      "value": "open",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.181Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-remote",
+      "ioa": 1202,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.182Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-earth",
+      "ioa": 1203,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.183Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-fault-passage",
+      "ioa": 1204,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.184Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-current",
+      "ioa": 2201,
+      "asdu": "M_ME_NC_1",
+      "value": 1.1462468e-08,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.185Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-section-kv",
+      "ioa": 2202,
+      "asdu": "M_ME_NC_1",
+      "value": 19.590002,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.186Z",
+      "cot": 20
+    },
+    {
+      "id": "rmu-2-source-kv",
+      "ioa": 2203,
+      "asdu": "M_ME_NC_1",
+      "value": 19.853579,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.187Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-tap",
+      "ioa": 1301,
+      "asdu": "M_ST_TB_1",
+      "value": {
+        "value": 0,
+        "transient": false
+      },
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.188Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-remote",
+      "ioa": 1302,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.189Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-auto",
+      "ioa": 1303,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.190Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-at-lower",
+      "ioa": 1304,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.191Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-at-upper",
+      "ioa": 1305,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.192Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-blocked",
+      "ioa": 1306,
+      "asdu": "M_SP_TB_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.193Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-bus-kv",
+      "ioa": 2301,
+      "asdu": "M_ME_NC_1",
+      "value": 19.913464,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.194Z",
+      "cot": 20
+    },
+    {
+      "id": "oltc-1-current",
+      "ioa": 2302,
+      "asdu": "M_ME_NC_1",
+      "value": 72.334,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.195Z",
+      "cot": 20
+    },
+    {
+      "id": "plc-1-running",
+      "ioa": 1401,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.196Z",
+      "cot": 20
+    },
+    {
+      "id": "plc-1-input-valid",
+      "ioa": 1402,
+      "asdu": "M_SP_TB_1",
+      "value": true,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.197Z",
+      "cot": 20
+    },
+    {
+      "id": "plc-1-setpoint-kv",
+      "ioa": 2401,
+      "asdu": "M_ME_NC_1",
+      "value": 20,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.198Z",
+      "cot": 20
+    },
+    {
+      "id": "plc-1-deadband-pct",
+      "ioa": 2402,
+      "asdu": "M_ME_NC_1",
+      "value": 1,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.199Z",
+      "cot": 20
+    },
+    {
+      "id": "plc-1-delay-s",
+      "ioa": 2403,
+      "asdu": "M_ME_NC_1",
+      "value": 0,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.200Z",
+      "cot": 20
+    }
+  ],
+  "snapshot_seq": 1,
+  "rendered_at": "2026-10-09T21:02:10.500Z"
+}

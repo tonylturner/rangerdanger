@@ -3,7 +3,7 @@
 Usage: python3 -I make_iec104_pcap.py OUT FRAME [FRAME ...]
 
 FRAME is SRC>DST=ASDU[;ASDU...]; each ASDU (one APDU in the same TCP
-segment) is TYPE/COT/CA/IOA/ELEMENT, the element byte written as hex. The
+segment) is TYPE/COT/CA/IOA/ELEMENT, the element bytes written as hex. The
 destination port is 2404 unless the frame starts with "reply:", which makes
 2404 the source port.
 """
@@ -16,7 +16,7 @@ import sys
 def apdu(spec, send_seq):
     type_id, cot, ca, ioa, element = spec.split("/")
     asdu = struct.pack("<BBBBH", int(type_id), 1, int(cot), 0, int(ca))
-    asdu += int(ioa).to_bytes(3, "little") + bytes([int(element, 16)])
+    asdu += int(ioa).to_bytes(3, "little") + bytes.fromhex(element)
     control = struct.pack("<HH", send_seq << 1, 0)
     body = control + asdu
     return bytes([0x68, len(body)]) + body
