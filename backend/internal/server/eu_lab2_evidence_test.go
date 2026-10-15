@@ -1,0 +1,194 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd"
+)
+
+func passingConduits(t *testing.T) conduitEvidence {
+	t.Helper()
+	ev := conduitEvidence{
+		rangeStart: at("12:00:00"), collectedAt: at("12:05:00"),
+		state: decodeFixture[conduitState](t, `{"schema":2,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
+		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":6,"entries":[
+   {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"link_up","detail":{"connection_seq":2}},
+   {"seq":2,"at":"2026-10-09T12:01:01Z","kind":"gi_complete","detail":{"connection_seq":2}}]}`),
+		audit: decodeFixture[conduitAudit](t, `{"generation":42,"entries":[
+   {"seq":1,"at":"2026-10-09T12:02:00Z","operation":"plc_request","result":"accepted","before":{"tap":0},"after":{"revision":2,"tap":0,"target_tap":1,"moving":true},"context":{"peer":"10.30.30.30:12345","protocol":"modbus"}},
+   {"seq":2,"at":"2026-10-09T12:02:02Z","operation":"motion_complete","result":"accepted","after":{"revision":3,"tap":1,"target_tap":1,"moving":false}},
+   {"seq":3,"at":"2026-10-09T12:02:03Z","operation":"first_solve","result":"accepted","detail":{"revision":3}}]}`),
+		device: &deviceTruth{Schema: 2, Generation: 42}, plcIP: "10.30.30.30",
+		history: decodeFixture[conduitHistory](t, `{"point":"oltc-1-tap","segments":[{"cache_epoch":"cc-2","samples":[
+   {"snapshot_seq":100,"value":{"value":1,"transient":false},"cc_received_at":"2026-10-09T12:04:57Z","ingested_at":"2026-10-09T12:04:58Z"},
+   {"snapshot_seq":101,"value":{"value":1,"transient":false},"cc_received_at":"2026-10-09T12:04:58Z","ingested_at":"2026-10-09T12:04:59Z"}]}]}`),
+		clock:     checkPass("RTU station-clock HTTP operation", "GET"),
+		reads:     []ValidationCheck{checkPass("Enterprise historian read", "GET"), checkPass("Named engineering PLC maintenance GET", "GET")},
+		readStart: at("12:04:58"), readEnd: at("12:04:59"),
+	}
+	for _, ioa := range conduitIOAs {
+		value := json.RawMessage(`true`)
+		switch {
+		case ioa == 1001 || ioa == 1101:
+			value = json.RawMessage(`"closed"`)
+		case ioa == 1201:
+			value = json.RawMessage(`"open"`)
+		case ioa == 1301:
+			value = json.RawMessage(`{"value":1,"transient":false}`)
+		case ioa >= 2000:
+			value = json.RawMessage(`20.0`)
+		}
+		point := conduitPoint{ccPoint: ccPoint{ID: fmt.Sprint(ioa), Value: value, ReceivedAt: at("12:04:59")}, IOA: ioa}
+		ev.state.Points = append(ev.state.Points, point)
+	}
+
+	gen := euGeneration(t, nil, nil)
+	var err error
+	ev.denies, err = conduitDenyMatrix(gen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range ev.denies {
+		ev.events = append(ev.events, containd.Event{Kind: "firewall.rule.hit", Timestamp: at("12:04:00"), Source: row.source, Dest: row.dest, DstPort: row.port, Transport: "tcp", Attributes: map[string]any{"action": "DENY"}})
+	}
+	return ev
+}
+
+func TestConduitsEvidence(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*conduitEvidence)
+		failing []int
+	}{
+		{"complete proof", func(*conduitEvidence) {}, nil},
+		{"schema one", func(ev *conduitEvidence) { ev.state.Schema = 1 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"epoch mismatch", func(ev *conduitEvidence) { ev.state.CacheEpoch = "other" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"CC disconnected", func(ev *conduitEvidence) { ev.state.Link.State = "disconnected" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"CC unavailable", func(ev *conduitEvidence) { ev.state = nil; ev.stateErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"journal unavailable", func(ev *conduitEvidence) { ev.journal = nil; ev.journalErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"journal truncated", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"no GI", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[:1] }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"old connection GI", func(ev *conduitEvidence) { n := uint64(1); ev.journal.Entries[1].Detail.ConnectionSeq = &n }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"pre-generation connection", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:30") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"expired attempt", func(ev *conduitEvidence) { ev.collectedAt = at("12:12:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"future GI", func(ev *conduitEvidence) { ev.journal.Entries[1].At = at("12:06:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"missing point", func(ev *conduitEvidence) { ev.state.Points = ev.state.Points[1:] }, []int{1}},
+		{"duplicate point", func(ev *conduitEvidence) { ev.state.Points = append(ev.state.Points, ev.state.Points[0]) }, []int{1}},
+		{"stale quality", func(ev *conduitEvidence) { ev.state.Points[0].Quality.NT = true }, []int{1}},
+		{"null is not zero", func(ev *conduitEvidence) { ev.state.Points[0].Value = json.RawMessage(`null`) }, []int{1}},
+		{"old receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:04:56") }, []int{1}},
+		{"pre-attempt receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:00:59") }, []int{1}},
+		{"future receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:05:01") }, []int{1}},
+		{"audit unavailable", func(ev *conduitEvidence) { ev.audit = nil; ev.auditErr = errors.New("unavailable") }, []int{2}},
+		{"device unavailable", func(ev *conduitEvidence) { ev.device = nil; ev.deviceErr = errors.New("unavailable") }, []int{2}},
+		{"OLTC restarted", func(ev *conduitEvidence) { ev.device.Generation++ }, []int{2}},
+		{"old OLTC schema", func(ev *conduitEvidence) { ev.device.Schema = 1 }, []int{2}},
+		{"PLC no longer running", func(ev *conduitEvidence) {
+			for i := range ev.state.Points {
+				if ev.state.Points[i].IOA == 1401 {
+					ev.state.Points[i].Value = json.RawMessage(`false`)
+				}
+			}
+		}, []int{2}},
+		{"OLTC no longer auto", func(ev *conduitEvidence) {
+			for i := range ev.state.Points {
+				if ev.state.Points[i].IOA == 1303 {
+					ev.state.Points[i].Value = json.RawMessage(`false`)
+				}
+			}
+		}, []int{2}},
+		{"wrong PLC peer", func(ev *conduitEvidence) { ev.audit.Entries[0].Context.Peer = "10.30.30.20:12345" }, []int{2}},
+		{"wrong protocol", func(ev *conduitEvidence) { ev.audit.Entries[0].Context.Protocol = "lab" }, []int{2}},
+		{"ignored PLC write", func(ev *conduitEvidence) { ev.audit.Entries[0].Result = "ignored" }, []int{2}},
+		{"pre-attempt PLC write", func(ev *conduitEvidence) { ev.audit.Entries[0].At = at("12:00:59") }, []int{2}},
+		{"non-adjacent target", func(ev *conduitEvidence) { ev.audit.Entries[0].After.TargetTap = 2 }, []int{2}},
+		{"no completed motion", func(ev *conduitEvidence) { ev.audit.Entries[1].Operation = "other" }, []int{2}},
+		{"wrong completed tap", func(ev *conduitEvidence) { ev.audit.Entries[1].After.Tap = 0 }, []int{2}},
+		{"wrong solved revision", func(ev *conduitEvidence) { ev.audit.Entries[2].Detail = json.RawMessage(`{"revision":2}`) }, []int{2}},
+		{"future solved revision", func(ev *conduitEvidence) { ev.audit.Entries[2].At = at("12:05:01") }, []int{2}},
+		{"solve before completion", func(ev *conduitEvidence) { ev.audit.Entries[2].At = at("12:02:01") }, []int{2}},
+		{"history unavailable", func(ev *conduitEvidence) { ev.history = nil; ev.historyErr = errors.New("unavailable") }, []int{3}},
+		{"history wrong epoch", func(ev *conduitEvidence) { ev.history.Segments[0].CacheEpoch = "old" }, []int{3}},
+		{"history old observation", func(ev *conduitEvidence) {
+			ts := at("12:00:59")
+			for i := range ev.history.Segments[0].Samples {
+				ev.history.Segments[0].Samples[i].CCReceivedAt = &ts
+			}
+		}, []int{3}},
+		{"history null value", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[0].Value = json.RawMessage(`null`) }, []int{3}},
+		{"history stalled snapshot", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].SnapshotSeq = 100 }, []int{3}},
+		{"history old ingest", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].IngestedAt = at("12:04:56") }, []int{3}},
+		{"history future ingest", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].IngestedAt = at("12:05:01") }, []int{3}},
+		{"clock unavailable", func(ev *conduitEvidence) {
+			ev.clock = checkFail("RTU station-clock HTTP operation", "missing evidence: unavailable")
+		}, []int{4}},
+		{"events unavailable", func(ev *conduitEvidence) { ev.eventsErr = errors.New("unavailable") }, []int{5}},
+		{"missing one deny", func(ev *conduitEvidence) { ev.events = ev.events[1:] }, []int{5}},
+		{"old deny", func(ev *conduitEvidence) { ev.events[0].Timestamp = at("12:00:59") }, []int{5}},
+		{"future deny", func(ev *conduitEvidence) { ev.events[0].Timestamp = at("12:05:01") }, []int{5}},
+		{"allow is not deny", func(ev *conduitEvidence) { ev.events[0].Attributes["action"] = "ALLOW" }, []int{5}},
+		{"UDP not TCP", func(ev *conduitEvidence) { ev.events[0].Transport = "udp" }, []int{5}},
+		{"source identity missing", func(ev *conduitEvidence) { ev.identityErr = errors.New("missing PLC") }, []int{2, 5}},
+		{"GET before reconnect", func(ev *conduitEvidence) { ev.readStart = at("12:00:59") }, []int{4, 6, 7}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := passingConduits(t)
+			tt.mutate(&ev)
+			checks := evaluateConduits(ev)
+			if len(checks) != 8 {
+				t.Fatalf("checks=%d", len(checks))
+			}
+			want := map[int]bool{}
+			for _, i := range tt.failing {
+				want[i] = true
+			}
+			for i, check := range checks {
+				if (check.Status != "pass") != want[i] {
+					t.Errorf("check %d %s = %s: %s", i, check.Name, check.Status, check.Detail)
+				}
+				if check.Status != "pass" && !strings.HasPrefix(check.Detail, "missing evidence: ") {
+					t.Errorf("missing evidence not explicit: %+v", check)
+				}
+			}
+		})
+	}
+}
+
+func TestConduitsDenyMatrix(t *testing.T) {
+	ev := passingConduits(t)
+	if len(ev.denies) != 20 {
+		t.Fatalf("deny pairs=%d, want20", len(ev.denies))
+	}
+	// In particular, vendor and engineering are different hosts, not a dmz
+	// aggregate that could certify an overbroad maintenance allow.
+	for _, source := range []string{"10.10.10.50", "10.20.20.10", "10.20.20.20"} {
+		for _, dest := range []string{"10.40.40.20", "10.40.40.21", "10.40.40.22", "10.40.40.23"} {
+			found := false
+			for _, row := range ev.denies {
+				found = found || (row.source == source && row.dest == dest && row.port == 502)
+			}
+			if !found {
+				t.Errorf("missing %s→%s:502", source, dest)
+			}
+		}
+	}
+}
+
+func TestConduitsPeriodicGIDoesNotRestartAttempt(t *testing.T) {
+	ev := passingConduits(t)
+	entry := ev.journal.Entries[1]
+	entry.Seq = 6
+	entry.At = ev.collectedAt.Add(-time.Second)
+	ev.journal.Entries = append(ev.journal.Entries, entry)
+	for _, check := range evaluateConduits(ev) {
+		if check.Status != "pass" {
+			t.Errorf("periodic GI invalidated proof: %+v", check)
+		}
+	}
+}
