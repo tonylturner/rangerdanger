@@ -298,6 +298,11 @@ class ReleaseImagePlanTests(PlannerFixture):
                 {"rangerdanger-kali"},
             ),
             (
+                "services/iec104/build-iec104cmd.sh",
+                "changed IEC 104 CLI build recipe\n",
+                {"rangerdanger-kali"},
+            ),
+            (
                 "services/opendss-sim/eu_app.py",
                 "changed EU solver\n",
                 {"rangerdanger-opendss-sim"},

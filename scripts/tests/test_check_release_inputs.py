@@ -29,10 +29,13 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         ("file", "services/iec104/LICENSE"),
         ("file", "services/iec104/README.md"),
     }
+    kali_iec104_sources = iec104_sources | {
+        ("file", "services/iec104/build-iec104cmd.sh"),
+    }
     return {
         "rangerdanger-backend": {("dir", "backend")},
         "rangerdanger-frontend": {("dir", "frontend")},
-        "rangerdanger-kali": {("dir", "dnp3go")} | iec104_sources,
+        "rangerdanger-kali": {("dir", "dnp3go")} | kali_iec104_sources,
         "rangerdanger-vendor-jump": {
             ("dir", "dnp3go"),
             ("file", "scripts/vendor-jump-services.sh"),

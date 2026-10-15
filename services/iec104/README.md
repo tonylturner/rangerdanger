@@ -45,9 +45,9 @@ cJSON (MIT) is GPLv3-compatible and is used by the strict point-map loader
 so the Kali static build needs only lib60870.
 
 GPL compliance for released images: the image ships the corresponding source
-for every binary — the pinned lib60870 and cJSON tarballs and these sources
-live under `/usr/share/src`, and the licences under
-`/usr/share/licenses/iec104`.
+for every binary — the pinned lib60870 and cJSON tarballs, these sources and
+the `iec104cmd` build script live under `/usr/share/src`, and the licences
+under `/usr/share/licenses/iec104`.
 
 ## Point map (contract §3.1)
 
