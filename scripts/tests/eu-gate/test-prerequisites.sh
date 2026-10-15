@@ -21,6 +21,7 @@ docker() {
 eu_wait_for_operator() {
   printf 'waited for operator: %s\n' "$3"
 }
+eu_command() { pass "intentional no_measurement rejection (stub)"; }
 eu_apply_named() {
   pass "$1 applied (stub)"
 }

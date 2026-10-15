@@ -1,3 +1,50 @@
-{"device":{"schema":1,"device_id":"feeder-breaker","generation":42,"revision":9,"position":"closed","remote_enabled":true,"lockout":false,"fault_active":false,"protection_tripped":false,"event_seq":5,"changed_at":"2026-10-09T21:02:08.002Z",
-           "measurements":{"current_a":28.88,"voltage_kv_ll":19.93,"valid":true,"solver_epoch":"9d1c2f4e","solve_seq":23,"solved_at":"2026-10-09T21:02:09.010Z","received_at":"2026-10-09T21:02:09.020Z"}},
- "process":{"schema":1,"profile_id":"eu-feeder-20kv","frequency_hz":50,"primary_kv":20,"breaker":"closed","source_voltage_kv_ll":20.0,"load_voltage_kv_ll":19.93,"current_a":28.88,"load_kw":997.2,"energized":true,"converged":true,"solver_epoch":"9d1c2f4e","solve_seq":23,"solved_at":"2026-10-09T21:02:09.010Z","truth_revision":9,"truth_generation":42,"truth_stale":false}}
+{
+  "process": {
+    "schema": 2,
+    "profile_id": "eu-cigre-mv-teaching",
+    "solve_seq": 23,
+    "truth_stale": false,
+    "devices": {
+      "feeder-breaker": {
+        "delivered": true,
+        "solved_revision": 9,
+        "revision": 9
+      }
+    },
+    "buses": {
+      "s1": {
+        "live": true,
+        "kv": 19.93
+      }
+    },
+    "fault_section": "none"
+  },
+  "devices": {
+    "breaker-1": {
+      "schema": 2,
+      "device_id": "feeder-breaker",
+      "generation": 42,
+      "revision": 9,
+      "position": "closed",
+      "remote_enabled": true,
+      "lockout": false,
+      "protection_tripped": false,
+      "event_seq": 5,
+      "changed_at": "2026-10-09T21:02:08.002Z",
+      "measurements": {
+        "current_a": 28.88,
+        "voltage_kv_ll": 19.93,
+        "valid": true,
+        "solver_epoch": "9d1c2f4e",
+        "solve_seq": 23,
+        "solved_at": "2026-10-09T21:02:09.010Z",
+        "received_at": "2026-10-09T21:02:09.020Z",
+        "source_kv_ll": 20.0,
+        "section_live": true,
+        "source_live": true,
+        "fault_current": false
+      },
+      "kind": "breaker"
+    }
+  }
+}

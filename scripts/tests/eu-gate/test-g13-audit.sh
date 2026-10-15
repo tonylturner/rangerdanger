@@ -36,7 +36,7 @@ check "$(edit '.oldest_seq = 23')"
 t_expect_fails 1 "entries lost to the ring after the cursor fail"
 check "$(edit '.entries += [{"seq":26,"operation":"first_solve","before":{"revision":9},"after":{"revision":9},"detail":{"revision":9}}]')"
 t_expect_fails 1 "a first_solve of the baseline revision after the cursor fails"
-check "$(edit '.entries |= map(select(.operation != "fault" or .after.revision != 11))')"
+check "$(edit '.entries |= map(select(.operation != "reset" or .after.revision != 11))')"
 t_expect_fails 1 "a mutation missing from the audit fails"
 t_run eu_check_g13_audit "$AUDIT" 42 9 20 "[10]"
 t_expect_fails 1 "an audited truth change the gate did not make fails"
@@ -64,6 +64,7 @@ eu_wait_for_field() {
   WAIT_BODY=$(cat "$T_FIXTURES/field-baseline.json")
 }
 eu_device_step() {
+  [ "$1" != clear-fault ] || return 0
   REVISION=$((REVISION + 1))
   printf 'mutation %s revision %s\n' "$1" "$REVISION" >>"$CALLS"
   API_BODY="{\"revision\":$REVISION}"
@@ -83,7 +84,7 @@ t_run grep -E '^(mutation|wait|docker (pause|unpause)|operator .link.state != )'
 t_expect_eq "$T_OUT" "docker pause
 mutation local-trip revision 10
 wait G13 solver first_solve of device revision 10 while RTU paused
-mutation clear-fault revision 11
+mutation restore-device revision 11
 wait G13 solver first_solve of device revision 11 while RTU paused
 operator .link.state != \"started\" 
 docker unpause" "each mutation awaits its first_solve, then the CC link loss, all while the RTU is paused"
