@@ -24,6 +24,10 @@ and increment `rejected_count`. At most 31 points are accepted per snapshot.
 An accepted ingest returns 200 `{"accepted":true}`. Unknown routes return
 404; wrong methods on known routes return 405 (including HEAD and OPTIONS).
 These route/method errors do not increment the body-rejection counter.
+All API errors return `{"error":"<message>"}` with
+`Content-Type: application/json` and `Cache-Control: no-store`, preserving
+their HTTP status for proxies. HEAD responses carry the same headers but no
+body, as required by HTTP.
 
 ## Read API
 
