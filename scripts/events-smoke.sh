@@ -371,12 +371,21 @@ else
   # re-blocked under the hardened FC1-only policy - and could re-add a
   # block_flows entry or be dropped outright, leaving the lab dirty. So drop
   # back to the weak baseline FIRST (no DNP3 FC allowlist -> the close is
-  # allowed), restore the relay, THEN flush block_flows last so nothing the
-  # restore touched is left blocked. Ending on weak also matches the lab
-  # default that gate 1 moved away from.
+  # allowed), then flush block_flows: a policy apply does not clear it, so
+  # the gate's RTAC->relay block would drop the close. Restore the relay last.
+  # Ending on weak also matches the lab default that gate 1 moved away from.
   apply_policy weak || true
-  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
   docker exec rangerdanger-firewall sh -c "nft flush set inet containd block_flows" >/dev/null 2>&1 || true
+  docker exec rangerdanger-rtac-sim dnp3cmd 10.40.40.20:20000 -a 1 crob 0 close >/dev/null 2>&1 || true
+  # Cleanup check, reported only on failure so the gate count stays 10: a
+  # breaker left open de-energizes the feeder for every later gate.
+  breaker=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    breaker=$(curl -fsS --max-time 5 "$API/api/substation/state" 2>/dev/null | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["devices"]["relay"]["breaker_closed"]).lower())' 2>/dev/null)
+    [ "$breaker" = "true" ] && break
+    sleep 1
+  done
+  [ "$breaker" = "true" ] || err "cleanup: relay breaker still open after the DNP3 close (breaker_closed=${breaker:-unknown})"
 fi
 
 # ─────────────────────────────────────────────────────────────────────
