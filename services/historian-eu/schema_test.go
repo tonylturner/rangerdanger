@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +31,7 @@ const fixture = `{
      "stale_reason":null,"source_time":null,"source_time_invalid":null,
      "received_at":"2026-10-15T10:00:00Z","cot":3},
     {"id":"oltc-1-tap","ioa":1301,"asdu":"M_ST_TB_1","value":{"value":-3,"transient":true},
-     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},
+     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},
      "stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":true,
      "received_at":"2026-10-15T10:00:00Z","cot":3}
   ]
@@ -84,6 +86,7 @@ func TestSchemaValid(t *testing.T) {
 		}},
 		{"step-lower-limit", func(m map[string]any) { pointMap(m, 3)["value"].(map[string]any)["value"] = -64 }},
 		{"step-upper-limit", func(m map[string]any) { pointMap(m, 3)["value"].(map[string]any)["value"] = 63 }},
+		{"step-overflow", func(m map[string]any) { pointMap(m, 3)["quality"].(map[string]any)["ov"] = true }},
 		{"heartbeat", func(m map[string]any) { pointMap(m, 1)["stale_reason"] = "heartbeat" }},
 		{"no-points", func(m map[string]any) { m["points"] = []any{} }},
 		{"null-link-times", func(m map[string]any) {
@@ -158,7 +161,9 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 		{"null-iv", func(m map[string]any) { pointMap(m, 0)["quality"].(map[string]any)["iv"] = nil }},
 		{"numeric-nt", func(m map[string]any) { pointMap(m, 0)["quality"].(map[string]any)["nt"] = 1 }},
 		{"float-ov-null", func(m map[string]any) { pointMap(m, 2)["quality"].(map[string]any)["ov"] = nil }},
+		{"step-ov-null", func(m map[string]any) { pointMap(m, 3)["quality"].(map[string]any)["ov"] = nil }},
 		{"dp-ov-bool", func(m map[string]any) { pointMap(m, 0)["quality"].(map[string]any)["ov"] = false }},
+		{"sp-ov-bool", func(m map[string]any) { pointMap(m, 1)["quality"].(map[string]any)["ov"] = false }},
 		{"unknown-stale", func(m map[string]any) { pointMap(m, 0)["stale_reason"] = "bad" }},
 		{"bad-source", func(m map[string]any) { pointMap(m, 0)["source_time"] = "bad" }},
 		{"missing-source-invalid", func(m map[string]any) { pointMap(m, 0)["source_time_invalid"] = nil }},
@@ -236,4 +241,34 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) { reject(t, body) })
 	}
+}
+
+func TestCapturedCCStateIngest(t *testing.T) {
+	// Preserve the live CC body byte-for-byte, including step QDS overflow.
+	body, err := os.ReadFile("testdata/cc-state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newStore(testClock)
+	w := httptest.NewRecorder()
+	s.ingestHandler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/ingest", bytes.NewReader(body)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("captured CC state rejected: %d %s", w.Code, w.Body)
+	}
+	if h := s.health(); h.IngestCount != 1 || h.RejectedCount != 0 {
+		t.Fatalf("captured ingest counters: %+v", h)
+	}
+	points := s.points()
+	if len(points) != 31 {
+		t.Fatalf("stored %d points, want all 31 captured points", len(points))
+	}
+	for _, p := range points {
+		if p.ID == "oltc-1-tap" {
+			if p.Last.Quality.OV == nil || *p.Last.Quality.OV {
+				t.Fatalf("step OV=false not preserved: %+v", p.Last.Quality)
+			}
+			return
+		}
+	}
+	t.Fatal("captured step point missing")
 }
