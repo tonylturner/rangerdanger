@@ -144,8 +144,11 @@ retain the socket peer; sim actions use protocol `lab`.
 Modbus TCP uses unit 1, zero-based addresses, high-word-first f32/u32.
 FC3 reads holding, FC4 reads input, FC6 writes one holding register. Switch
 HR0 is 1 open / 2 close. Close needs valid measurements and refuses live-live;
-RMU open refuses valid fault current. Rejections use exception 04 and audit
-peer/reason. Breaker IR1 bit 2 is measured fault current, not owned fault state.
+RMU open also needs valid measurements and refuses valid fault current. This
+includes the invalid interval between an FPI latch and the re-solve. Breaker
+open remains allowed in remote even without valid measurements. Rejections use
+exception 04 and audit peer/reason. Breaker IR1 bit 2 is measured fault current,
+not owned fault state.
 
 OLTC HR0 is 1 lower / 2 raise (remote/manual); HR2 is 1 manual / 2 auto
 (remote only, also allowed during motion). HR1 is the PLC absolute request:

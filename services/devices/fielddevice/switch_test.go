@@ -22,11 +22,13 @@ func TestSwitchRefusals(t *testing.T) {
 		{"rmu local close", RMU, 2, func(t *testing.T, m *Model) { action(t, m, "set_local") }, "not_remote"},
 		{"rmu local open", RMU, 1, func(t *testing.T, m *Model) { action(t, m, "set_local") }, "not_remote"},
 		{"rmu earth", RMU, 2, func(t *testing.T, m *Model) {
+			measure(t, m, nil)
 			write(t, m, 0, 1)
 			measure(t, m, func(i *MeasurementInput) { i.SectionLive = false })
 			action(t, m, "earth_close")
 		}, "earth_closed"},
 		{"rmu unknown", RMU, 2, nil, "no_measurement"},
+		{"rmu unknown open", RMU, 1, nil, "no_measurement"},
 		{"rmu live-live", RMU, 2, func(t *testing.T, m *Model) { measure(t, m, func(i *MeasurementInput) { i.SourceLive = true }) }, "live_live"},
 		{"rmu fault-current", RMU, 1, func(t *testing.T, m *Model) {
 			measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
@@ -57,6 +59,7 @@ func TestSwitchSuccessAndNoOp(t *testing.T) {
 	for _, kind := range []Kind{Breaker, RMU} {
 		t.Run(string(kind), func(t *testing.T) {
 			m, _ := newTestModel(t, kind)
+			measure(t, m, nil)
 			write(t, m, 0, 1)
 			measure(t, m, nil)
 			write(t, m, 0, 2)
@@ -67,6 +70,85 @@ func TestSwitchSuccessAndNoOp(t *testing.T) {
 			before := m.Truth()
 			if r := write(t, m, 0, 2); r.Changed || m.Truth() != before {
 				t.Fatal("no-op changed truth")
+			}
+		})
+	}
+}
+
+func TestRMUOpenAfterFPILatch(t *testing.T) {
+	m, _ := newTestModel(t, RMU)
+	latched := measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+	if !latched.FaultPassage || latched.Measurements.Valid || latched.Position != PositionClosed {
+		t.Fatalf("FPI did not latch and invalidate measurements: %+v", latched)
+	}
+	for _, tt := range []struct {
+		name         string
+		deliver      bool
+		faultCurrent bool
+		reason       string
+	}{
+		{"immediate open after latch", false, false, "no_measurement"},
+		{"valid fault current", true, true, "fault_current"},
+		{"valid without fault current", true, false, ""},
+	} {
+		if !t.Run(tt.name, func(t *testing.T) {
+			if tt.deliver {
+				measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = tt.faultCurrent })
+			}
+			before := m.Truth()
+			_, cursor, _ := m.AuditAfter(0)
+			result := m.WriteHolding(context.Background(), 0, 1, testActor)
+			wantAccepted := tt.reason == ""
+			if result.Accepted != wantAccepted || result.Reason != tt.reason || result.Changed != wantAccepted {
+				t.Fatalf("open result=%+v, want refusal=%q", result, tt.reason)
+			}
+			after := m.Truth()
+			if wantAccepted {
+				if after.Position != PositionOpen || after.Revision != before.Revision+1 || !after.FaultPassage {
+					t.Fatalf("open did not preserve FPI and change position: %+v", after)
+				}
+			} else if after != before {
+				t.Fatal("refused open changed truth")
+			}
+			entries, _, _ := m.AuditAfter(*cursor)
+			wantResult := "rejected"
+			if wantAccepted {
+				wantResult = "accepted"
+			}
+			if len(entries) != 1 || entries[0].Operation != "open" ||
+				entries[0].Result != wantResult || entries[0].Detail != tt.reason ||
+				entries[0].Context != testActor {
+				t.Fatalf("open audit lost outcome/reason/peer: %+v", entries)
+			}
+		}) {
+			return // Later rows depend on the preceding refusal leaving the way closed.
+		}
+	}
+}
+
+func TestBreakerOpenDoesNotRequireMeasurements(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		setup func(*testing.T, *Model, *fakeClock)
+	}{
+		{"unknown", func(t *testing.T, m *Model, c *fakeClock) {}},
+		{"protection-invalidated", func(t *testing.T, m *Model, c *fakeClock) {
+			measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+		}},
+		{"expired", func(t *testing.T, m *Model, c *fakeClock) {
+			measure(t, m, nil)
+			c.advance(MeasurementValidity)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, c := newTestModel(t, Breaker)
+			tt.setup(t, m, c)
+			if m.Snapshot().Measurements.Valid {
+				t.Fatal("test requires invalid measurements")
+			}
+			write(t, m, 0, 1)
+			if m.Truth().Position != PositionOpen {
+				t.Fatal("remote breaker open failed")
 			}
 		})
 	}
@@ -135,6 +217,7 @@ func TestEarthCloseRefusalsAndActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m, _ := newTestModel(t, RMU)
 			if tt.open {
+				measure(t, m, nil)
 				write(t, m, 0, 1)
 			}
 			if tt.known {
@@ -147,6 +230,7 @@ func TestEarthCloseRefusalsAndActions(t *testing.T) {
 		})
 	}
 	m, _ := newTestModel(t, RMU)
+	measure(t, m, nil)
 	write(t, m, 0, 1)
 	measure(t, m, func(i *MeasurementInput) { i.SectionLive = false })
 	if !action(t, m, "earth_close").EarthClosed || action(t, m, "earth_open").EarthClosed {

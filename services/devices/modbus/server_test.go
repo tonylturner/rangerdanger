@@ -141,12 +141,20 @@ func TestFC3AndFC6ReadbackAndPeer(t *testing.T) {
 	for _, kind := range []fielddevice.Kind{fielddevice.Breaker, fielddevice.RMU} {
 		t.Run(string(kind), func(t *testing.T) {
 			model, server := newModelServer(t, kind)
+			if kind == fielddevice.RMU {
+				apply(t, model, false)
+			}
+			_, latest, _ := model.AuditAfter(0)
+			var cursor uint64
+			if latest != nil {
+				cursor = *latest
+			}
 			request := pdu(functionWriteSingle, 0, 1)
 			if r := server.HandlePDU(request, "10.30.30.20:43001"); !bytes.Equal(r, request) {
 				t.Fatalf("write=%v", r)
 			}
 			assertRegisters(t, registers(t, server.HandlePDU(pdu(functionReadHolding, 0, 1), "")), []uint16{1})
-			entries, _, _ := model.AuditAfter(0)
+			entries, _, _ := model.AuditAfter(cursor)
 			if len(entries) != 1 || entries[0].Context.Protocol != "modbus" || entries[0].Context.Peer != "10.30.30.20:43001" || entries[0].Context.Zone != "station" {
 				t.Fatalf("audit=%+v", entries)
 			}

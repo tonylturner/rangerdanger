@@ -46,8 +46,13 @@ func (m *Model) WriteHolding(ctx context.Context, address, value uint16, actor A
 		if *m.measurements.SourceLive && *m.measurements.SectionLive {
 			return reject("live_live")
 		}
-	} else if m.truth.Kind == RMU && m.measurements.Valid && *m.measurements.FaultCurrent {
-		return reject("fault_current")
+	} else if m.truth.Kind == RMU {
+		if !m.measurements.Valid {
+			return reject("no_measurement")
+		}
+		if *m.measurements.FaultCurrent {
+			return reject("fault_current")
+		}
 	}
 	if m.truth.Position == target {
 		m.recordLocked(operation, "accepted", "no_op", before, actor)
