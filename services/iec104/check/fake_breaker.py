@@ -45,6 +45,9 @@ write_delay = {"ms": 0}
 # (GET /delay-next-read-after-write?ms=N), letting the CLI check stop the RTU
 # after ACT-CON but before its ACT-TERM.
 read_delay = {"ms": 0, "pending": False}
+# Lifetime transport/poll evidence; device resets must not erase reconnects.
+stats = {"connections": 0, "read_replies": 0, "read_exceptions": 0}
+read_exception = {"pending": False}
 
 
 def input_registers():
@@ -106,6 +109,7 @@ def reset():
         )
         write_delay["ms"] = 0
         read_delay.update(ms=0, pending=False)
+        read_exception["pending"] = False
 
 
 def handle_pdu(pdu):
@@ -118,6 +122,10 @@ def handle_pdu(pdu):
         addr, count = struct.unpack(">HH", pdu[1:5])
         if fc == 0x04:
             with lock:
+                if read_exception["pending"]:
+                    read_exception["pending"] = False
+                    stats["read_exceptions"] += 1
+                    return bytes([fc | 0x80, 4])
                 delay = read_delay["ms"] if read_delay["pending"] else 0
                 if delay:
                     read_delay["pending"] = False
@@ -130,6 +138,8 @@ def handle_pdu(pdu):
         if addr + count > len(regs) or count < 1:
             return bytes([fc | 0x80, 2])
         body = b"".join(struct.pack(">H", regs[addr + i]) for i in range(count))
+        with lock:
+            stats["read_replies"] += 1
         return bytes([fc, len(body)]) + body
     if fc == 0x06:  # write single holding
         if len(pdu) != 5:
@@ -158,6 +168,8 @@ def serve_modbus(host, port):
     srv.listen(8)
     while True:
         conn, _ = srv.accept()
+        with lock:
+            stats["connections"] += 1
         threading.Thread(target=modbus_conn, args=(conn,), daemon=True).start()
 
 
@@ -212,8 +224,11 @@ class Control(http.server.BaseHTTPRequestHandler):
                     ms=int(q.get("ms", ["0"])[0]),
                     pending=False,
                 )
+        elif u.path == "/exception-next-read":
+            with lock:
+                read_exception["pending"] = True
         with lock:
-            snap = dict(state)
+            snap = dict(state, **stats)
         body = (str(snap) + "\n").encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))

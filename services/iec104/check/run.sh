@@ -68,6 +68,13 @@ fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
 cli() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" "$@" 2>>"$OUT/cli.err"; }
 # breaker/gps control via busybox wget in the iec104 image
 ctl() { docker run --rm --network "$NET" "$IMG" wget -qO- "$1" >/dev/null 2>&1 || true; }
+# Read the fake breaker's HTTP state without opening a Modbus connection.
+brk_stat() {
+  docker exec "$BRK" python3 -I -c '
+import ast, sys, urllib.request
+with urllib.request.urlopen("http://127.0.0.1:8081/", timeout=2) as r:
+    print(ast.literal_eval(r.read().decode())[sys.argv[1]])' "$1"
+}
 # a 2s monitor snapshot; its JSONL GI reflects current quality
 snap() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 2 2>/dev/null; }
 
@@ -179,11 +186,22 @@ cli dc 3001 open -sbo >/dev/null 2>&1   # open first so close is a real transiti
 sleep 1
 ctl "http://$BRK_IP:8081/fault?active=1"   # lockout + fault + local trip
 sleep 1
+connections_before=$(brk_stat connections)
+reads_before=$(brk_stat read_replies)
 cli dc 3001 close -sbo >"$OUT/cmd-interlock.log" 2>&1; ilrc=$?
 if [ "$ilrc" != 0 ] && grep -q "execute REJECTED (negative)" "$OUT/cmd-interlock.log"; then
   pass "close under lockout rejected with negative ACT-CON (exception 04 path)"
 else
   fail "interlock negative ACT-CON not observed (cmd-interlock.log)"
+fi
+sleep 1  # allow subsequent polling (and a reconnect on regressed code)
+connections_after=$(brk_stat connections)
+reads_after=$(brk_stat read_replies)
+if [ "$connections_before" -gt 0 ] && [ "$connections_after" = "$connections_before" ] \
+  && [ "$reads_after" -gt "$reads_before" ]; then
+  pass "interlock exception kept the Modbus TCP session; polling continued (connections=$connections_after)"
+else
+  fail "interlock exception reconnected or stopped polling (connections=$connections_before->$connections_after, reads=$reads_before->$reads_after)"
 fi
 if mon_has '"type":30,"cot":3,"ioa":1002,"value":true'; then
   pass "local protection trip reported spontaneously (M_SP_TB_1 COT 3)"
@@ -192,6 +210,26 @@ else
 fi
 ctl "http://$BRK_IP:8081/reset"
 sleep 2
+
+# ---- 4b. a poll exception is a valid reply, not a broken transport -----
+log "check 4b: poll exception keeps the Modbus TCP session"
+connections_before=$(brk_stat connections)
+reads_before=$(brk_stat read_replies)
+exceptions_before=$(brk_stat read_exceptions)
+ctl "http://$BRK_IP:8081/exception-next-read"
+sleep 1
+snap >"$OUT/gi-poll-exception.jsonl"
+connections_after=$(brk_stat connections)
+reads_after=$(brk_stat read_replies)
+exceptions_after=$(brk_stat read_exceptions)
+if [ "$connections_before" -gt 0 ] && [ "$connections_after" = "$connections_before" ] \
+  && [ "$exceptions_after" -eq "$((exceptions_before + 1))" ] \
+  && [ "$reads_after" -gt "$reads_before" ] \
+  && grep -q '"ioa":1001,.*"value":"closed","quality":"GOOD"' "$OUT/gi-poll-exception.jsonl"; then
+  pass "poll exception kept the Modbus TCP session; GOOD polling resumed (connections=$connections_after)"
+else
+  fail "poll exception reconnected or did not recover (connections=$connections_before->$connections_after, exceptions=$exceptions_before->$exceptions_after, reads=$reads_before->$reads_after)"
+fi
 
 # ---- 5. measurements_valid=0 -> IV on floats only ---------------------
 log "check 5: measurement invalid -> IV on floats only"

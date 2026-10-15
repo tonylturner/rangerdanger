@@ -191,7 +191,7 @@ rtu_write_command(int d)
 
     int exc = 0;
     MbStatus st = mb_write_single(&drt->mb, c->address, (uint16_t)val, &exc, dev->timeout_ms);
-    if (st != MB_OK) mb_close(&drt->mb);
+    if (st == MB_TIMEOUT || st == MB_IO_ERROR) mb_close(&drt->mb);
     pthread_mutex_lock(&rtu.lock);
     IMasterConnection conn = rtu_conn_for_peer(p->peer);
     if (st == MB_OK) {

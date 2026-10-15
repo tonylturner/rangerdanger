@@ -63,7 +63,7 @@ poll_device(int devIdx)
     MbStatus st = (dev->poll_table == PM_TABLE_INPUT ? mb_read_input : mb_read_holding)(
         &drt->mb, dev->poll_start, dev->poll_count, regs, &exc, dev->timeout_ms);
     if (st != MB_OK) {
-        mb_close(&drt->mb);
+        if (st == MB_TIMEOUT || st == MB_IO_ERROR) mb_close(&drt->mb);
         return st;
     }
 
