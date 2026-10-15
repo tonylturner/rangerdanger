@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -103,19 +102,6 @@ func roleTeachingIP(gen *lifecycle.Generation, role manifest.Role) (string, erro
 		return "", fmt.Errorf("service %s has %d teaching addresses, want 1", svc.Key, len(ips))
 	}
 	return ips[0], nil
-}
-
-// fetchJSON GETs url, which must answer a JSON object of shape T.
-func fetchJSON[T any](ctx context.Context, service, url string) (*T, error) {
-	body, err := fetchUpstreamObject(ctx, service, url)
-	if err != nil {
-		return nil, err
-	}
-	var out T
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("%s: decode %s: %w", service, url, err)
-	}
-	return &out, nil
 }
 
 func init() {

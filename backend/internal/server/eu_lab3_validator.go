@@ -46,7 +46,7 @@ func euLab3Restoration(ev euLab3Evidence) bool {
 	}
 	for _, trip := range breaker.Entries {
 		if trip.Operation != "local_protection_trip" || trip.Result != "accepted" ||
-			trip.Context.Protocol != "local-protection" || !euLab3Within(trip.At, ev.start, ev.end) {
+			trip.Context.Protocol != "local-protection" || !insideEvidenceWindow(trip.At, ev.start, ev.end) {
 			continue
 		}
 		// Restrict both command windows to this trip, and require isolation

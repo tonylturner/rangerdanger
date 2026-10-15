@@ -11,8 +11,8 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-// These evidence types intentionally do not extend lab 1's breaker-only
-// view. At integration the curriculum lanes can consolidate their readers.
+// Lab 3 reads switch/tap snapshots without extending lab 1's breaker-only
+// observation subset. Both views use the shared EU journal/audit readers.
 type euLab3Snapshot struct {
 	Generation   uint32 `json:"generation"`
 	Revision     uint64 `json:"revision"`
@@ -24,24 +24,8 @@ type euLab3Snapshot struct {
 	Auto         bool   `json:"auto"`
 }
 
-type euLab3AuditEntry struct {
-	Seq       uint64          `json:"seq"`
-	At        time.Time       `json:"at"`
-	Operation string          `json:"operation"`
-	Result    string          `json:"result"`
-	Detail    json.RawMessage `json:"detail"`
-	Before    euLab3Snapshot  `json:"before"`
-	After     euLab3Snapshot  `json:"after"`
-	Context   struct {
-		Protocol string `json:"protocol"`
-		Peer     string `json:"peer"`
-	} `json:"context"`
-}
-
-type euLab3Audit struct {
-	Generation uint32             `json:"generation"`
-	Entries    []euLab3AuditEntry `json:"entries"`
-}
+type euLab3AuditEntry = euAuditEntry[euLab3Snapshot, euLab3Snapshot, peerAuditContext]
+type euLab3Audit = euAudit[euLab3AuditEntry]
 
 type euLab3Command struct {
 	Point      string    `json:"point"`
@@ -58,17 +42,8 @@ type euLab3Command struct {
 	} `json:"feedback"`
 }
 
-type euLab3Journal struct {
-	CacheEpoch string               `json:"cache_epoch"`
-	Entries    []euLab3JournalEntry `json:"entries"`
-}
-
-type euLab3JournalEntry struct {
-	Seq    uint64          `json:"seq"`
-	At     time.Time       `json:"at"`
-	Kind   string          `json:"kind"`
-	Detail json.RawMessage `json:"detail"`
-}
+type euLab3Journal = euJournal[json.RawMessage]
+type euLab3JournalEntry = euJournalEntry[json.RawMessage]
 
 type euLab3Evidence struct {
 	start, end time.Time
@@ -77,10 +52,6 @@ type euLab3Evidence struct {
 	audits     map[string]*euLab3Audit
 	events     []containd.Event
 	err        error
-}
-
-func euLab3Within(at, start, end time.Time) bool {
-	return !at.IsZero() && !at.Before(start) && !at.After(end)
 }
 
 // collectEULab3 reads only observation surfaces. A missing upstream or
@@ -134,7 +105,7 @@ func collectEULab3(ctx context.Context, gen *lifecycle.Generation, devices ...st
 		ev.audits[id] = audit
 		for _, entry := range audit.Entries {
 			if entry.Operation == "reset" && entry.Result == "accepted" && entry.Context.Protocol == "lab" &&
-				euLab3Within(entry.At, ev.start, ev.end) {
+				insideEvidenceWindow(entry.At, ev.start, ev.end) {
 				ev.start = entry.At
 			}
 		}
@@ -151,15 +122,15 @@ func (ev euLab3Evidence) commands() []euLab3Command {
 		return commands
 	}
 	for _, entry := range ev.journal.Entries {
-		if entry.Kind != "command" || !euLab3Within(entry.At, ev.start, ev.end) {
+		if entry.Kind != "command" || !insideEvidenceWindow(entry.At, ev.start, ev.end) {
 			continue
 		}
 		var cmd euLab3Command
 		if json.Unmarshal(entry.Detail, &cmd) != nil {
 			continue
 		}
-		if !euLab3Within(cmd.SelectedAt, ev.start, entry.At) ||
-			!euLab3Within(cmd.ExecutedAt, cmd.SelectedAt, entry.At) {
+		if !insideEvidenceWindow(cmd.SelectedAt, ev.start, entry.At) ||
+			!insideEvidenceWindow(cmd.ExecutedAt, cmd.SelectedAt, entry.At) {
 			continue
 		}
 		commands = append(commands, cmd)
@@ -188,12 +159,12 @@ func (ev euLab3Evidence) commandAudit(device, point, operation, result, reason s
 func (ev euLab3Evidence) matchesCommand(audit *euLab3Audit, cmd euLab3Command, reason string, ioa int) bool {
 	result, operation := cmd.Result, cmd.Operation
 	end := cmd.ConAt
-	if !euLab3Within(end, cmd.ExecutedAt, ev.end) {
+	if !insideEvidenceWindow(end, cmd.ExecutedAt, ev.end) {
 		return false
 	}
 	if result == "completed" {
-		if !euLab3Within(cmd.TermAt, end, ev.end) || cmd.Feedback == nil ||
-			cmd.Feedback.IOA != ioa || !euLab3Within(cmd.Feedback.At, end, cmd.TermAt) {
+		if !insideEvidenceWindow(cmd.TermAt, end, ev.end) || cmd.Feedback == nil ||
+			cmd.Feedback.IOA != ioa || !insideEvidenceWindow(cmd.Feedback.At, end, cmd.TermAt) {
 			return false
 		}
 		var value string
@@ -203,7 +174,7 @@ func (ev euLab3Evidence) matchesCommand(audit *euLab3Audit, cmd euLab3Command, r
 	}
 	for _, entry := range audit.Entries {
 		peer, _, _ := net.SplitHostPort(entry.Context.Peer)
-		if entry.Context.Protocol != "modbus" || !euLab3Within(entry.At, cmd.ExecutedAt, end) ||
+		if entry.Context.Protocol != "modbus" || !insideEvidenceWindow(entry.At, cmd.ExecutedAt, end) ||
 			peer != "10.30.30.20" || entry.Operation != operation {
 			continue
 		}
@@ -232,7 +203,7 @@ func (ev euLab3Evidence) vendorPair(device, destination, operation string) bool 
 		peer, _, err := net.SplitHostPort(entry.Context.Peer)
 		if err != nil || peer != "10.20.20.10" || entry.Context.Protocol != "modbus" ||
 			entry.Operation != operation || entry.Result != "accepted" ||
-			!euLab3Within(entry.At, ev.start, ev.end) {
+			!insideEvidenceWindow(entry.At, ev.start, ev.end) {
 			continue
 		}
 		for _, event := range ev.events {
