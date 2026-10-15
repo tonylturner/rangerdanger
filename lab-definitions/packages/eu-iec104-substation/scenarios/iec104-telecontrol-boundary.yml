@@ -6,26 +6,14 @@ estimated_minutes: 35
 validator: eu-iec104-telecontrol
 description: |
   You are the station engineer reviewing a feeder's remote-control boundary.
-  Follow CC → RTU → breaker, observe select-before-operate (SBO), then take
-  the CC off-line without disabling local protection. Your deliverable is
-  a timestamped boundary assurance record, not a screenshot of green icons.
-
-  This exercise grades only breaker IOAs **1001, 1002, 2001 and 2002**;
-  the RMUs, OLTC and PLC belong to the next labs. The RTU may return their
-  points too: filter, do not assume the whole station has only four points.
-  IEC 104 timestamps are RTU observation times, not device SOE timestamps.
-
-  Rules are source/port based, **not command authorisation**. An allowed
-  CC can still open and close. The portal's physical feeder panel reads
-  separate management APIs; it never supplies the CC's observed cache.
-  Management and process networks are workshop infrastructure, not student
-  conduits. This is an intended boundary, not proven isolation: CC shares
-  management with the sim/solver APIs, and vendor-jump and eng-ws also
-  have management interfaces. Do not use those APIs as an observation
-  shortcut or claim this lab proves management isolation.
-  Carry your findings into Design and Prove the Station Conduits.
-  Read [Architecture](#eu-telecontrol-architecture) and
-  [Evidence lifecycle](#eu-evidence-lifecycle).
+  Follow a command from the CC through the RTU to the breaker. Observe
+  select-before-operate (SBO), then restrict access to the named sources.
+  Compare an established session with a new connection attempt. Take the
+  CC off-line without disabling local protection. Compare its stale cache
+  with the physical feeder state, then restore the telecontrol path.
+  Keep a timestamped record of commands, observations, policy changes and
+  recovery evidence. Export this record before reset. Carry your findings
+  into Design and Prove the Station Conduits.
 nodes: [cc-1, rtu-1, kali-1, fw-1, breaker-1]
 tags: [iec104, telecontrol, firewall, process-truth]
 steps:
@@ -39,6 +27,23 @@ steps:
       Record UTC start time and CC cache epoch. Map CC 10.60.60.20 (lan4)
       → RTU 10.30.30.20 (lan1), TCP/2404; RTU → breaker 10.40.40.20
       (lan2), TCP/502. Label each address, trust boundary and protocol.
+
+      This exercise grades only breaker IOAs **1001, 1002, 2001 and 2002**.
+      The RMUs, OLTC and PLC belong to the next labs. The RTU may return
+      their points too. Filter for the four breaker IOAs; do not assume
+      the whole station has only four points. IEC 104 timestamps are RTU
+      observation times, not device SOE timestamps.
+
+      Rules are source/port based, **not command authorisation**. An allowed
+      CC can still open and close. The portal's physical feeder panel reads
+      separate management APIs; it never supplies the CC's observed cache.
+      Management and process networks are workshop infrastructure, not
+      student conduits. The CC, vendor-jump and eng-ws share the management
+      network with the sim/solver APIs. Do not use those APIs as an
+      observation shortcut. This lab does not prove management isolation.
+
+      Read [Architecture](#eu-telecontrol-architecture) and
+      [Evidence lifecycle](#eu-evidence-lifecycle).
 
           iec104cmd 10.30.30.20 monitor --json --hold 2
           iec104cmd 10.30.30.20 gi --json
