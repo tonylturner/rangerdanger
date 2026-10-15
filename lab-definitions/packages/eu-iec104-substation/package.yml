@@ -3,6 +3,7 @@ id: eu-iec104-substation
 title: "European feeder telecontrol (IEC104)"
 revision: 1
 topology: topology.yml
+knowledge: knowledge/index.yml
 scenarios: scenarios
 capabilities: [policy.containd, protocol.iec104, process.truth]
 policies:

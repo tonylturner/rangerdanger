@@ -134,6 +134,7 @@ func (s *Server) registerRoutes() {
 		api.GET("/range", s.handleGetRange)
 		api.POST("/range", s.handlePostRange)
 		api.GET("/packages", s.handleListPackages)
+		api.GET("/knowledge", s.handleKnowledge)
 
 		admin := api.Group("/admin")
 		admin.POST("/seed", s.handleSeedDefinitions)

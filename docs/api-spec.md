@@ -15,6 +15,27 @@ All endpoints return JSON unless otherwise noted. Most request and response bodi
 | `GET` | `/health` | Liveness probe. Returns `{"status": "ok"}` |
 | `GET` | `/build` | Build metadata for this binary. Returns `{"version", "commit", "date"}`. Values are injected at build time via ldflags (see `backend/internal/version`); for an unstamped local build they're `"dev"` / `"none"` / `"unknown"`. Note: this is **not** at `/version` because the nginx proxy reserves `/api/version` for FUXA's own HMI version endpoint. |
 
+## Package knowledge
+
+`GET /knowledge` is catalog-only and remains available without a healthy range.
+It returns the active package's validated snapshot, never another package's content:
+
+```json
+{"package_id":"eu-iec104-substation","revision":1,"sections":[
+  {"id":"telecontrol","heading":"IEC104 Telecontrol","description":"...",
+   "icon":"radio","accent":"violet","articles":[
+     {"id":"iec104-wire-model","title":"IEC104 frames","body":"Markdown body"}
+   ]}
+]}
+```
+
+Section and article order is authored order. File paths are not exposed. With no
+loaded active package, the response is `409 {"error":"no active knowledge package"}`.
+Loading or reseeding rejects invalid assets and same-package article references
+before replacing the catalog; a failed reseed preserves the previous snapshot.
+The browser keys this response by package ID and curriculum revision and checks
+both before display. `/knowledge#article-id` links resolve within that package.
+
 ## Admin
 
 | Method | Path | Description |

@@ -73,6 +73,7 @@ type PackageYAML struct {
 	Revision     int      `yaml:"revision"`
 	Topology     string   `yaml:"topology"`  // relative to package.yml
 	Scenarios    string   `yaml:"scenarios"` // directory, relative to package.yml
+	Knowledge    string   `yaml:"knowledge"` // required knowledge index, relative to package.yml
 	Capabilities []string `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
 	// ("weak", "improved") to policy files relative to package.yml.
@@ -100,6 +101,7 @@ type Package struct {
 	// ICSRules is ICSRulesAllowed or ICSRulesForbidden, never empty.
 	ICSRules  string
 	Scenarios []ScenarioYAML
+	Knowledge []KnowledgeSection
 }
 
 // PolicyName returns the name of the policy whose file is exactly path
@@ -279,6 +281,9 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 	}
 	if _, ok := pkg.PolicyName(firewallConfigPath); !ok {
 		return Package{}, "", fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)
+	}
+	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, manifest.Scenarios); err != nil {
+		return Package{}, "", fmt.Errorf("knowledge: %w", err)
 	}
 	return pkg, manifest.Scenarios, nil
 }

@@ -40,11 +40,14 @@ steps:
       that Kali can establish a station session and request a General
       Interrogation:
 
-          iec104cmd 10.30.30.20 gi --json
+          iec104cmd 10.30.30.20 monitor --json --hold 2
 
+      Use `iec104cmd 10.30.30.20 gi --json` as the completion check.
       Compare the four RTU points with the Control Centre view at
       [/substation](/substation). The IEC104 timestamps are the RTU's
       observation times, not device-provided SOE times.
+
+      Read: [Architecture](/knowledge#eu-telecontrol-architecture), [Wire model](/knowledge#iec104-wire-model), [GI and quality](/knowledge#iec104-gi-cot-quality), [CLI](/knowledge#tool-iec104cmd).
     action:
       type: probe
       outcome: reachable
@@ -66,6 +69,8 @@ steps:
       A source/port policy is not command authorization: while the CC→RTU
       conduit is allowed, both open and close are still valid operations.
 
+      Read: [SBO commands](/knowledge#iec104-sbo-commands), [Operator APIs](/knowledge#eu-rtu-control-centre-apis).
+
   - id: expose-weak
     title: "Expose and observe the weak boundary"
     expected_config: weak
@@ -79,6 +84,8 @@ steps:
 
       The weak policy permits TCP/2404 from wan, dmz, and lan4 into lan1,
       and permits TCP/502 from lan1 into lan2.
+
+      Read: [CLI](/knowledge#tool-iec104cmd), [Packet evidence](/knowledge#tool-iec104-tshark).
     action:
       type: firewall
       config: weak
@@ -92,6 +99,8 @@ steps:
       that RTU to the breaker `10.40.40.20/32` on TCP/502. Other connection
       attempts to those control ports are logged and denied. An established
       Kali flow may continue until its conntrack entry is removed.
+
+      Read: [Milestone A boundary](/knowledge#eu-milestone-a-boundary).
     action:
       type: firewall
       config: improved
@@ -108,6 +117,8 @@ steps:
           iec104cmd 10.30.30.20 gi --json
 
       The deny is based on the endpoint and port, not the command payload.
+
+      Read: [Conntrack and temporal evidence](/knowledge#eu-established-sessions).
     action:
       type: probe
       outcome: blocked
@@ -131,6 +142,8 @@ steps:
       A deny alone does not sever an already established flow. Do not kill
       the session before applying and verifying the restrictive policy.
 
+      Read: [Conntrack and temporal evidence](/knowledge#eu-established-sessions).
+
   - id: stale-view
     title: "Read the stale operator cache"
     expected_config: hardened
@@ -141,6 +154,8 @@ steps:
       receipt times, marks the points `link_lost` and IV+NT, and reports a
       disconnected link. It must not replace stale data with zero or read
       the instructor/device HTTP endpoints to refresh its cache.
+
+      Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
 
   - id: local-trip
     title: "Trip local protection while the CC is isolated"
@@ -153,6 +168,8 @@ steps:
       through `process_net`. The operator cache stays unchanged and stale.
       Clear the fault and activate it once more to observe the latched trip.
 
+      Read: [Local protection](/knowledge#eu-feeder-breaker-protection).
+
   - id: restore
     title: "Restore the named control paths"
     expected_config: hardened
@@ -161,6 +178,8 @@ steps:
       and RTU→breaker paths. The Control Centre reconnects, performs a new
       GI, and refreshes all four points from the RTU. The trip remains
       latched until an instructor reset.
+
+      Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
     action:
       type: firewall
       config: improved
@@ -175,3 +194,5 @@ steps:
       corresponding solver result, and the final good operator values.
       The evidence is bounded by boot identity and journal sequence; a
       missing or truncated journal is a failure, not a pass.
+
+      Read: [Packet evidence](/knowledge#tool-iec104-tshark), [Temporal/session evidence](/knowledge#eu-established-sessions).

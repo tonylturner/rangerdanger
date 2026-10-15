@@ -25,6 +25,44 @@ Backend loads them at startup - restart `backend` after changes. Any
 error in any package (an unknown field, a bad step, an unknown
 validator) stops the backend from starting, so check the backend log.
 
+## Package knowledge
+
+Every `package.yml` requires `knowledge: knowledge/index.yml`. The index is
+strict YAML (JSON syntax is also valid YAML) with ordered `sections`:
+
+```yaml
+sections:
+  - id: telecontrol
+    heading: IEC104 Telecontrol
+    description: Background for this package
+    icon: radio
+    accent: violet
+    articles:
+      - id: iec104-wire-model
+        title: IEC104 frames and addresses
+        file: iec104-wire-model.md
+```
+
+The Markdown file contains the body only, preserved byte-for-byte. Its path is
+relative to the package's `knowledge/` directory. Files must be nonempty regular
+files; absolute paths, `..`, backslashes and symlinks escaping the knowledge
+subtree or package are rejected, including index escapes. No shared or platform
+fallback corpus exists. Unknown YAML fields and duplicate section/article IDs
+are errors. IDs are lowercase hyphenated slugs, unique within their own package.
+Headings, article titles and article lists must not be empty. Optional icons are
+`zap`, `shield`, `radio`, `wrench`, `layers`, `target`, `book`; optional accents are
+`sky`, `emerald`, `violet`, `amber`, `slate`, `rose`.
+
+Use inline `[article](#article-id)` links within bodies and
+`[reading](/knowledge#article-id)` in scenario descriptions. Both forms are
+validated against the owning package, not the union of every package's articles.
+Keep stable article IDs for deep links. Knowledge bodies support `:::tip`,
+`:::note`, `:::warning` and `:::caution` fences, with an optional title and
+a closing `:::`. Scenario-only interactive fences are not knowledge widgets. Bump the package revision when publishing curriculum
+changes, including knowledge, so reader state and cache identity stay scoped.
+Restart or reseed the backend after editing: requests serve the validated catalog
+snapshot, not arbitrary files. A failed load or reseed publishes no new content.
+
 ## Top-level shape
 
 ```yaml

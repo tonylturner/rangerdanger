@@ -1,0 +1,261 @@
+[
+  {
+    "heading": "Substation Equipment & Operations",
+    "description": "What the devices are, what they do electrically, and how the lab simulates them. Start here if you have not seen a distribution substation up close before.",
+    "icon": "zap",
+    "accent": "sky",
+    "articles": [
+      {
+        "id": "distribution-substation",
+        "title": "What is a Distribution Substation?",
+        "sha256": "dae026d13d1ce7e75d850cbc1f3a719a09766397c4f6d9f8bb4d6fb9f4cbae7b"
+      },
+      {
+        "id": "rtac",
+        "title": "RTAC (Real-Time Automation Controller)",
+        "sha256": "d89dccec407ec76c948fcb79c843c7bb809b91242fb4e8d4039032af29634f86"
+      },
+      {
+        "id": "protective-relays",
+        "title": "Protective Relays",
+        "sha256": "a6fb569e4f9d0c7f7a6ccc5a7706c901ec84dfd8a8a056e24fbaaea194ff6e21"
+      },
+      {
+        "id": "reclosers",
+        "title": "Reclosers",
+        "sha256": "21874d4ffbe73f7340c950dbccacf0e245a78a8aa3febd79139d72223298a521"
+      },
+      {
+        "id": "voltage-regulators",
+        "title": "Voltage Regulators",
+        "sha256": "ee8a162bb8ab7ce243400c099c54dbdb6ff5bf9c34780ec855b760ff32e27e77"
+      },
+      {
+        "id": "capacitor-banks",
+        "title": "Capacitor Banks",
+        "sha256": "b26cfa75db57367321bb0a28a6b7685232eefa5d77694a6b607b2fa36ee4c7a9"
+      },
+      {
+        "id": "substation-physics",
+        "title": "Distribution Feeder Physics for Tech Workers",
+        "sha256": "21b1f983daec235810b4a1678f6e221f54366aa2443fbdbd825eefcd19326384"
+      },
+      {
+        "id": "hmi-scada-fuxa",
+        "title": "HMI, SCADA, and the Lab's Substation Panel",
+        "sha256": "88725ed82db525693c3734bf3136acb411dd4019bc37b015c5bba27cadcf7129"
+      },
+      {
+        "id": "plc-ladder-openplc",
+        "title": "PLCs, Ladder Logic, and What OpenPLC Does",
+        "sha256": "86eab0ad58d19451cd6f7343c4f19c5a412fedf8a0aa3b4eeebc9b42c5bc9712"
+      },
+      {
+        "id": "power-factor-reactive-power",
+        "title": "Power Factor and Reactive Power",
+        "sha256": "3d40ea354f96b967f57e2615d3127621067ee21335a732a7d3e01d61dcacb388"
+      }
+    ],
+    "id": "equipment"
+  },
+  {
+    "heading": "Network Segmentation Concepts",
+    "description": "Zones, conduits, defense in depth, ICS DPI, NERC CIP, IEC 62443. The conceptual framework the labs are built around.",
+    "icon": "shield",
+    "accent": "emerald",
+    "articles": [
+      {
+        "id": "ot-segmentation-overview",
+        "title": "OT Network Segmentation Overview",
+        "sha256": "9451c6d98c77c3089af788f7582458e2cb798b5d5e5838fbc19adb3cc18eef0d"
+      },
+      {
+        "id": "segmentation-approaches",
+        "title": "Segmentation Approaches and Technologies",
+        "sha256": "bae06f40a845bdbe8adc85febbba499b6bd82dc27fd2c6c7bf70cf00b43e65a0"
+      },
+      {
+        "id": "purdue-model",
+        "title": "Purdue Model Levels (L0–L5)",
+        "sha256": "dcdfe032a9414e9ce2a8a1b619c7aa94d917dd36be0e4d197b0547a3353fc853"
+      },
+      {
+        "id": "iec-62443-zones-conduits",
+        "title": "IEC 62443 Zones and Conduits",
+        "sha256": "42658615c3184dcad1e04ff5f00df3a682ba1e0c23e490f94ec84c6eba3f0616"
+      },
+      {
+        "id": "iec-62443-security-levels",
+        "title": "IEC 62443 Security Levels Explained",
+        "sha256": "16f12189b45ea60ded66ae671386cd5441126027db7be77698b5e59aa1d5550b"
+      },
+      {
+        "id": "nerc-cip-segmentation",
+        "title": "NERC CIP and Segmentation",
+        "sha256": "707a993b9371b2a3ae9d2fcfeeb14eef246c9437ed87237b8e7735e1db0f0472"
+      },
+      {
+        "id": "esp-eap-erc",
+        "title": "ESP, EAP, and ERC Explained",
+        "sha256": "e60ce6e710c261f086ab23a1cc0ed193ddd32813ea29afabda21acec30e6376f"
+      },
+      {
+        "id": "ics-dpi",
+        "title": "What is ICS DPI? (and how containd does it)",
+        "sha256": "aa45fb82d698df8b6fab005858d1d626d1991429e4d696c3d1a56c78c065e44d"
+      },
+      {
+        "id": "default-deny",
+        "title": "Default-Deny: Implicit vs Explicit Across Firewalls",
+        "sha256": "1e181d37102b6d80d8b741184fa51e2c9ca43b077c99dde52d5b1852a39cffbf"
+      },
+      {
+        "id": "vendor-remote-access",
+        "title": "Vendor Remote Access Patterns",
+        "sha256": "a3a9b0467245f405ee58f113db7aac9427d281b277f00b497781b31c2f735f51"
+      }
+    ],
+    "id": "segmentation"
+  },
+  {
+    "heading": "Protocols & Communication",
+    "description": "Modbus, DNP3, IEC 61850, OPC UA, NTP. What they do, what they look like on the wire, and how the lab exercises them.",
+    "icon": "radio",
+    "accent": "violet",
+    "articles": [
+      {
+        "id": "modbus-tcp",
+        "title": "Modbus TCP in Substations",
+        "sha256": "6d5a61cd4388b57a28e51041a7794dbd0fb22351ff433796a5dda393932cc22c"
+      },
+      {
+        "id": "dnp3",
+        "title": "DNP3 in Substations",
+        "sha256": "ec250370d09bcba8680fbd846c7189a1face6d6c196e0831eec4735e7ac6cf85"
+      },
+      {
+        "id": "ntp-ot",
+        "title": "NTP in OT Networks",
+        "sha256": "201bec51f7deb04f15f21a1e1afd04acd59aab16933d3bd09b641dc885726dcd"
+      },
+      {
+        "id": "iec-61850-goose",
+        "title": "IEC 61850 and GOOSE (Why the Lab Doesn't Simulate Them)",
+        "sha256": "3005a20f0ab7e7194858849f724c4527a0dd17fd878935da1218e431615de618"
+      },
+      {
+        "id": "opc-ua",
+        "title": "OPC UA Basics",
+        "sha256": "ea04e54edb47e6b85809dae9f3e55e8a5c836128f409c85ce55dbf7ae497d4f0"
+      }
+    ],
+    "id": "protocols"
+  },
+  {
+    "heading": "Command References & Lab Tools",
+    "description": "Quick references for the CLI tools the exercises use: mbpoll, dnp3poll, dnp3cmd, tshark, tcpdump, curl, nmap.",
+    "icon": "wrench",
+    "accent": "amber",
+    "articles": [
+      {
+        "id": "tool-mbpoll",
+        "title": "mbpoll - Modbus TCP Command-Line Tool",
+        "sha256": "ea5b0863954ef5cd57858d01b536a185902f7afa2633e050f050439edfc0727d"
+      },
+      {
+        "id": "tool-dnp3",
+        "title": "dnp3poll & dnp3cmd - DNP3 Tools",
+        "sha256": "6dcd6233e5408e9cb35259a2476d7f6273f98f74caa1031c8fce893934de2cb3"
+      },
+      {
+        "id": "tool-tshark",
+        "title": "tshark - Network Protocol Analysis",
+        "sha256": "41f9dd317a9c2ce1405f6d8bacf4b285f38824551d8b89caf10b425a039eb7ab"
+      },
+      {
+        "id": "tool-tcpdump",
+        "title": "tcpdump - Packet Capture",
+        "sha256": "a9ddc2e9e34745d56948a61f02cd473eda140f0fec26635148359045632cdcce"
+      },
+      {
+        "id": "tool-curl",
+        "title": "curl - HTTP REST API Interaction",
+        "sha256": "50a6870826c404f9f6a6287e89303474eb52951c2fc1747958e19244ee757216"
+      },
+      {
+        "id": "tool-nmap",
+        "title": "nmap - Port Scanning & Reconnaissance",
+        "sha256": "4c040d63d33460ffc931758e7cbd2924a654a04c01566154a838b59ce16dcc4e"
+      }
+    ],
+    "id": "tools"
+  },
+  {
+    "heading": "Lab Internals",
+    "description": "How the lab is wired together: architecture, weak vs hardened policy, the plan-coverage pipeline, the Live DPI Events strip, and how containd enforces policy at the kernel.",
+    "icon": "layers",
+    "accent": "slate",
+    "articles": [
+      {
+        "id": "lab-architecture",
+        "title": "The RangerDanger Lab Architecture",
+        "sha256": "4cbc78341e0a65fa1ed45babeac3942d84a7ce964e2da19a1aa5a6e1adb6db1b"
+      },
+      {
+        "id": "weak-vs-hardened",
+        "title": "Weak vs Hardened Firewall Policy",
+        "sha256": "64ed27bee78d4ba253ecc9a805bd5a78d5002e7788934c06929eb1a006b13886"
+      },
+      {
+        "id": "traffic-matrix",
+        "title": "Understanding the Traffic Matrix",
+        "sha256": "1f8a38e12756fc6d671ee1fa1ffb2c722748fb3796b024d0db8efa5f9aed087e"
+      },
+      {
+        "id": "plan-coverage-pipeline",
+        "title": "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
+        "sha256": "7e3e8d02e6d6e2bb13250a73cdcfb853382cdb35ee79d04082d89e064bd7f099"
+      },
+      {
+        "id": "live-dpi-events-strip",
+        "title": "Reading the Live DPI Events Strip",
+        "sha256": "ae9409503c52491fa35114647b9e5429fea442eddf0cc4dacfdf2089da098efb"
+      },
+      {
+        "id": "how-containd-enforces-policy",
+        "title": "How containd Enforces Policy (Kernel-Level View)",
+        "sha256": "33ca310fbc8329c19fe729b761f0d8ce0462937baee8cb071ae24700677121f9"
+      }
+    ],
+    "id": "internals"
+  },
+  {
+    "heading": "ICS Threats & Operational Practice",
+    "description": "Real ICS incidents, the OT kill chain, living off the land, change management, and what outages actually cost. Why this matters beyond the lab.",
+    "icon": "target",
+    "accent": "rose",
+    "articles": [
+      {
+        "id": "ot-kill-chain",
+        "title": "The OT Kill Chain (Mitre ATT&CK for ICS + Real Incidents)",
+        "sha256": "eb4e72e7ea834058446facd3e4f751051fe44cccad0aecc8d4c1bf161733a67e"
+      },
+      {
+        "id": "living-off-the-land-ot",
+        "title": "Living off the Land in OT",
+        "sha256": "a50a14228e334ace20ae23d7c85fd3ca4d9c960555544f2e621b52f7378e5213"
+      },
+      {
+        "id": "change-management-firewall-rules",
+        "title": "Change Management for Substation Firewall Rules",
+        "sha256": "3fdfc520d473d9aa5b1961ffe0b3dbf6bd28d38c1df719cf766b6d0e0487ee38"
+      },
+      {
+        "id": "outage-costs-saidi-saifi",
+        "title": "What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)",
+        "sha256": "8315ef6dfee79dd34fb99945e74f4f70142d1e656cd2b48fe268c071569f4e77"
+      }
+    ],
+    "id": "threats"
+  }
+]

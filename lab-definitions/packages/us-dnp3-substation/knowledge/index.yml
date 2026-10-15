@@ -1,0 +1,263 @@
+{
+  "sections": [
+    {
+      "heading": "Substation Equipment & Operations",
+      "description": "What the devices are, what they do electrically, and how the lab simulates them. Start here if you have not seen a distribution substation up close before.",
+      "icon": "zap",
+      "accent": "sky",
+      "articles": [
+        {
+          "id": "distribution-substation",
+          "title": "What is a Distribution Substation?",
+          "file": "distribution-substation.md"
+        },
+        {
+          "id": "rtac",
+          "title": "RTAC (Real-Time Automation Controller)",
+          "file": "rtac.md"
+        },
+        {
+          "id": "protective-relays",
+          "title": "Protective Relays",
+          "file": "protective-relays.md"
+        },
+        {
+          "id": "reclosers",
+          "title": "Reclosers",
+          "file": "reclosers.md"
+        },
+        {
+          "id": "voltage-regulators",
+          "title": "Voltage Regulators",
+          "file": "voltage-regulators.md"
+        },
+        {
+          "id": "capacitor-banks",
+          "title": "Capacitor Banks",
+          "file": "capacitor-banks.md"
+        },
+        {
+          "id": "substation-physics",
+          "title": "Distribution Feeder Physics for Tech Workers",
+          "file": "substation-physics.md"
+        },
+        {
+          "id": "hmi-scada-fuxa",
+          "title": "HMI, SCADA, and the Lab's Substation Panel",
+          "file": "hmi-scada-fuxa.md"
+        },
+        {
+          "id": "plc-ladder-openplc",
+          "title": "PLCs, Ladder Logic, and What OpenPLC Does",
+          "file": "plc-ladder-openplc.md"
+        },
+        {
+          "id": "power-factor-reactive-power",
+          "title": "Power Factor and Reactive Power",
+          "file": "power-factor-reactive-power.md"
+        }
+      ],
+      "id": "equipment"
+    },
+    {
+      "heading": "Network Segmentation Concepts",
+      "description": "Zones, conduits, defense in depth, ICS DPI, NERC CIP, IEC 62443. The conceptual framework the labs are built around.",
+      "icon": "shield",
+      "accent": "emerald",
+      "articles": [
+        {
+          "id": "ot-segmentation-overview",
+          "title": "OT Network Segmentation Overview",
+          "file": "ot-segmentation-overview.md"
+        },
+        {
+          "id": "segmentation-approaches",
+          "title": "Segmentation Approaches and Technologies",
+          "file": "segmentation-approaches.md"
+        },
+        {
+          "id": "purdue-model",
+          "title": "Purdue Model Levels (L0–L5)",
+          "file": "purdue-model.md"
+        },
+        {
+          "id": "iec-62443-zones-conduits",
+          "title": "IEC 62443 Zones and Conduits",
+          "file": "iec-62443-zones-conduits.md"
+        },
+        {
+          "id": "iec-62443-security-levels",
+          "title": "IEC 62443 Security Levels Explained",
+          "file": "iec-62443-security-levels.md"
+        },
+        {
+          "id": "nerc-cip-segmentation",
+          "title": "NERC CIP and Segmentation",
+          "file": "nerc-cip-segmentation.md"
+        },
+        {
+          "id": "esp-eap-erc",
+          "title": "ESP, EAP, and ERC Explained",
+          "file": "esp-eap-erc.md"
+        },
+        {
+          "id": "ics-dpi",
+          "title": "What is ICS DPI? (and how containd does it)",
+          "file": "ics-dpi.md"
+        },
+        {
+          "id": "default-deny",
+          "title": "Default-Deny: Implicit vs Explicit Across Firewalls",
+          "file": "default-deny.md"
+        },
+        {
+          "id": "vendor-remote-access",
+          "title": "Vendor Remote Access Patterns",
+          "file": "vendor-remote-access.md"
+        }
+      ],
+      "id": "segmentation"
+    },
+    {
+      "heading": "Protocols & Communication",
+      "description": "Modbus, DNP3, IEC 61850, OPC UA, NTP. What they do, what they look like on the wire, and how the lab exercises them.",
+      "icon": "radio",
+      "accent": "violet",
+      "articles": [
+        {
+          "id": "modbus-tcp",
+          "title": "Modbus TCP in Substations",
+          "file": "modbus-tcp.md"
+        },
+        {
+          "id": "dnp3",
+          "title": "DNP3 in Substations",
+          "file": "dnp3.md"
+        },
+        {
+          "id": "ntp-ot",
+          "title": "NTP in OT Networks",
+          "file": "ntp-ot.md"
+        },
+        {
+          "id": "iec-61850-goose",
+          "title": "IEC 61850 and GOOSE (Why the Lab Doesn't Simulate Them)",
+          "file": "iec-61850-goose.md"
+        },
+        {
+          "id": "opc-ua",
+          "title": "OPC UA Basics",
+          "file": "opc-ua.md"
+        }
+      ],
+      "id": "protocols"
+    },
+    {
+      "heading": "Command References & Lab Tools",
+      "description": "Quick references for the CLI tools the exercises use: mbpoll, dnp3poll, dnp3cmd, tshark, tcpdump, curl, nmap.",
+      "icon": "wrench",
+      "accent": "amber",
+      "articles": [
+        {
+          "id": "tool-mbpoll",
+          "title": "mbpoll - Modbus TCP Command-Line Tool",
+          "file": "tool-mbpoll.md"
+        },
+        {
+          "id": "tool-dnp3",
+          "title": "dnp3poll & dnp3cmd - DNP3 Tools",
+          "file": "tool-dnp3.md"
+        },
+        {
+          "id": "tool-tshark",
+          "title": "tshark - Network Protocol Analysis",
+          "file": "tool-tshark.md"
+        },
+        {
+          "id": "tool-tcpdump",
+          "title": "tcpdump - Packet Capture",
+          "file": "tool-tcpdump.md"
+        },
+        {
+          "id": "tool-curl",
+          "title": "curl - HTTP REST API Interaction",
+          "file": "tool-curl.md"
+        },
+        {
+          "id": "tool-nmap",
+          "title": "nmap - Port Scanning & Reconnaissance",
+          "file": "tool-nmap.md"
+        }
+      ],
+      "id": "tools"
+    },
+    {
+      "heading": "Lab Internals",
+      "description": "How the lab is wired together: architecture, weak vs hardened policy, the plan-coverage pipeline, the Live DPI Events strip, and how containd enforces policy at the kernel.",
+      "icon": "layers",
+      "accent": "slate",
+      "articles": [
+        {
+          "id": "lab-architecture",
+          "title": "The RangerDanger Lab Architecture",
+          "file": "lab-architecture.md"
+        },
+        {
+          "id": "weak-vs-hardened",
+          "title": "Weak vs Hardened Firewall Policy",
+          "file": "weak-vs-hardened.md"
+        },
+        {
+          "id": "traffic-matrix",
+          "title": "Understanding the Traffic Matrix",
+          "file": "traffic-matrix.md"
+        },
+        {
+          "id": "plan-coverage-pipeline",
+          "title": "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
+          "file": "plan-coverage-pipeline.md"
+        },
+        {
+          "id": "live-dpi-events-strip",
+          "title": "Reading the Live DPI Events Strip",
+          "file": "live-dpi-events-strip.md"
+        },
+        {
+          "id": "how-containd-enforces-policy",
+          "title": "How containd Enforces Policy (Kernel-Level View)",
+          "file": "how-containd-enforces-policy.md"
+        }
+      ],
+      "id": "internals"
+    },
+    {
+      "heading": "ICS Threats & Operational Practice",
+      "description": "Real ICS incidents, the OT kill chain, living off the land, change management, and what outages actually cost. Why this matters beyond the lab.",
+      "icon": "target",
+      "accent": "rose",
+      "articles": [
+        {
+          "id": "ot-kill-chain",
+          "title": "The OT Kill Chain (Mitre ATT&CK for ICS + Real Incidents)",
+          "file": "ot-kill-chain.md"
+        },
+        {
+          "id": "living-off-the-land-ot",
+          "title": "Living off the Land in OT",
+          "file": "living-off-the-land-ot.md"
+        },
+        {
+          "id": "change-management-firewall-rules",
+          "title": "Change Management for Substation Firewall Rules",
+          "file": "change-management-firewall-rules.md"
+        },
+        {
+          "id": "outage-costs-saidi-saifi",
+          "title": "What Outages Cost (SAIDI, SAIFI, and the Customer-Service Tile)",
+          "file": "outage-costs-saidi-saifi.md"
+        }
+      ],
+      "id": "threats"
+    }
+  ]
+}

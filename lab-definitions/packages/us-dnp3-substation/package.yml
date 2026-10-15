@@ -7,6 +7,7 @@ title: "US distribution substation (DNP3)"
 # Browser progress is keyed by it.
 revision: 1
 topology: ../../substation-segmentation.yml
+knowledge: knowledge/index.yml
 scenarios: ../../scenarios
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 # Named policies the firewall buttons and lab actions apply, relative to

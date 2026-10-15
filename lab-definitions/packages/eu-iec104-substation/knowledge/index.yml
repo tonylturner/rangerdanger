@@ -1,0 +1,86 @@
+{
+  "sections": [
+    {
+      "id": "telecontrol",
+      "heading": "IEC104 Telecontrol",
+      "description": "The implemented wire model, control path and observation quality.",
+      "icon": "radio",
+      "accent": "violet",
+      "articles": [
+        {
+          "id": "eu-telecontrol-architecture",
+          "title": "Two hops: operator observation and physical truth",
+          "file": "eu-telecontrol-architecture.md"
+        },
+        {
+          "id": "iec104-wire-model",
+          "title": "IEC104 frames, addresses and the implemented point map",
+          "file": "iec104-wire-model.md"
+        },
+        {
+          "id": "iec104-gi-cot-quality",
+          "title": "GI, causes of transmission and stale data",
+          "file": "iec104-gi-cot-quality.md"
+        },
+        {
+          "id": "iec104-sbo-commands",
+          "title": "Select-before-operate is sequencing, not authorization",
+          "file": "iec104-sbo-commands.md"
+        },
+        {
+          "id": "eu-rtu-control-centre-apis",
+          "title": "Control Centre APIs and the separate instructor plane",
+          "file": "eu-rtu-control-centre-apis.md"
+        }
+      ]
+    },
+    {
+      "id": "process",
+      "heading": "Device Truth & Station Time",
+      "description": "Local protection and the provenance of timestamps.",
+      "icon": "zap",
+      "accent": "amber",
+      "articles": [
+        {
+          "id": "eu-feeder-breaker-protection",
+          "title": "Local protection survives loss of SCADA",
+          "file": "eu-feeder-breaker-protection.md"
+        },
+        {
+          "id": "eu-station-clock",
+          "title": "Station time records observation provenance",
+          "file": "eu-station-clock.md"
+        }
+      ]
+    },
+    {
+      "id": "evidence",
+      "heading": "Tools & Boundary Evidence",
+      "description": "Collect evidence without confusing decoding with enforcement.",
+      "icon": "shield",
+      "accent": "emerald",
+      "articles": [
+        {
+          "id": "tool-iec104cmd",
+          "title": "iec104cmd recipes and evidence limits",
+          "file": "tool-iec104cmd.md"
+        },
+        {
+          "id": "tool-iec104-tshark",
+          "title": "Decode IEC104 evidence with tshark",
+          "file": "tool-iec104-tshark.md"
+        },
+        {
+          "id": "eu-milestone-a-boundary",
+          "title": "Milestone A restricts sources and ports, not commands",
+          "file": "eu-milestone-a-boundary.md"
+        },
+        {
+          "id": "eu-established-sessions",
+          "title": "Conntrack and temporal proof of an outage",
+          "file": "eu-established-sessions.md"
+        }
+      ]
+    }
+  ]
+}

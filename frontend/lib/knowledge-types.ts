@@ -14,6 +14,7 @@ export type IconName =
   | "book";
 
 export interface Section {
+  id: string;
   heading: string;
   description?: string;
   icon?: IconName;
@@ -29,5 +30,12 @@ export interface SearchHit {
 
 export type View =
   | { kind: "landing" }
+  | { kind: "unknown"; id: string }
   | { kind: "category"; section: Section }
   | { kind: "article"; section: Section; article: Article };
+
+export interface Knowledge {
+  package_id: string;
+  revision: number;
+  sections: Section[];
+}

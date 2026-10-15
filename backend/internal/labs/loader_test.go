@@ -86,6 +86,7 @@ title: "Package ` + id + `"
 revision: 3
 topology: topology.yml
 scenarios: scenarios
+knowledge: knowledge/index.yml
 capabilities: [process.electrical]
 policies:
   weak: firewall/weak.json
@@ -100,6 +101,15 @@ func writePackage(t *testing.T, definitions, id, topologyID string, scenarios ma
 	t.Helper()
 	dir := filepath.Join(definitions, "packages", id)
 	writeDefinition(t, filepath.Join(dir, "package.yml"), packageYAML(id))
+	writeDefinition(t, filepath.Join(dir, "knowledge", "index.yml"), `sections:
+  - id: basics
+    heading: Basics
+    articles:
+      - id: baseline
+        title: Baseline
+        file: baseline.md
+`)
+	writeDefinition(t, filepath.Join(dir, "knowledge", "baseline.md"), "Baseline knowledge.")
 	writeDefinition(t, filepath.Join(dir, "topology.yml"), strings.Replace(validTopologyYAML, "id: substation", "id: "+topologyID, 1))
 	writeDefinition(t, filepath.Join(dir, "firewall", "weak.json"), "{}")
 	if err := os.MkdirAll(filepath.Join(dir, "scenarios"), 0o755); err != nil {

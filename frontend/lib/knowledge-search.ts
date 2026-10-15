@@ -1,3 +1,5 @@
+import type { SearchHit, Section } from "./knowledge-types";
+
 export function stripMarkdownForExcerpt(md: string): string {
   // Strip code fences, headings, link syntax, emphasis markers, bullet markers,
   // and HTML for a clean snippet - first paragraph only.
@@ -24,4 +26,15 @@ export function buildSnippet(body: string, q: string): string {
   const end = Math.min(body.length, i + q.length + 120);
   const slice = body.slice(start, end).replace(/\s+/g, " ").trim();
   return (start > 0 ? "… " : "") + slice + (end < body.length ? " …" : "");
+}
+
+// Search only the supplied package snapshot, preserving its authored order.
+export function searchKnowledge(sections: Section[], query: string): SearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return sections.flatMap((section) => section.articles.flatMap((article) => {
+    const inBody = article.body.toLowerCase().includes(q);
+    if (!inBody && !article.title.toLowerCase().includes(q)) return [];
+    return [{ article, section, snippet: inBody ? buildSnippet(article.body, q) : stripMarkdownForExcerpt(article.body).slice(0, 180) }];
+  }));
 }
