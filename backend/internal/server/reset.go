@@ -52,8 +52,8 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Detail:  result.Detail,
 		})
 	}
-	if recipe.resetSim {
-		actions = append(actions, resetSimDevice(ctx, gen))
+	if recipe.resetTruth != nil {
+		actions = append(actions, recipe.resetTruth(ctx, gen, recipe)...)
 	}
 
 	// Clear PCAP captures so validators reflect fresh state
@@ -100,8 +100,10 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		})
 	}
 
-	// Wait for state propagation
-	time.Sleep(500 * time.Millisecond)
+	// The truth reset already waits for acknowledged measurement delivery.
+	if recipe.resetTruth == nil {
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	// Check overall success
 	allSuccess := true
@@ -112,7 +114,11 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	status := http.StatusOK
+	if recipe.resetTruth != nil && !allSuccess {
+		status = http.StatusBadGateway
+	}
+	c.JSON(status, gin.H{
 		"success": allSuccess,
 		"actions": actions,
 	})

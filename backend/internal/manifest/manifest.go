@@ -183,8 +183,8 @@ func (m *Manifest) ServiceByNode(node string) (Service, bool) {
 	return Service{}, false
 }
 
-// EndpointSim names the out-of-band sim API of the one field
-// device that has it (EU feeder breaker). Validate allows one per manifest.
+// EndpointSim names a service’s out-of-band simulation API. Many services
+// may declare it; callers must resolve the intended node explicitly.
 const EndpointSim = "sim"
 
 // ServiceWithEndpoint returns the first service that declares the named

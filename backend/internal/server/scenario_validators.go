@@ -29,58 +29,18 @@ func (v scenarioValidator) needs(capability string) bool {
 	return slices.Contains(v.capabilities, capability)
 }
 
-// scenarioValidators maps each `validator:` key a scenario YAML may declare
-// to its implementation. The loader rejects a key missing here, or one whose
-// capabilities the scenario's package does not declare.
-var scenarioValidators = map[string]scenarioValidator{
-	"us-baseline-assessment": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityCaptureFirewall},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return s.validateBaselineAssessment(ctx, in.gen, in.state, in.audit, in.activeConfig)
-		},
-	},
-	"us-segmentation-requirements": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateSegmentationRequirements(in.state, in.audit, in.activeConfig)
-		},
-	},
-	"us-remediation-planning": {
-		capabilities: []string{labs.CapabilityProcessElectrical},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateRemediationPlanning(in.state, in.activeConfig)
-		},
-	},
-	"us-firewall-implementation": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateFirewallImplementation(in.state, in.audit, in.activeConfig)
-		},
-	},
-	"us-hardening-configurations": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateHardeningConfigurations(in.state, in.audit, in.activeConfig)
-		},
-	},
-	"us-vendor-rdp-compromise": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateVendorRDPCompromise(in.state, in.audit, in.activeConfig)
-		},
-	},
-	"eu-iec104-telecontrol": {
-		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return s.validateTelecontrol(ctx, in.gen, in.activeConfig)
-		},
-	},
-	"us-validation-evidence": {
-		capabilities: []string{labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		run: func(_ context.Context, _ *Server, in validatorInput) []ValidationCheck {
-			return validateValidationEvidence(in.state, in.audit, in.activeConfig)
-		},
-	},
+// scenarioValidators is populated by the files that implement validators.
+// Registration happens only at startup; request handlers only read it.
+var scenarioValidators = map[string]scenarioValidator{}
+
+func registerScenarioValidator(key string, validator scenarioValidator) {
+	if key == "" || validator.run == nil {
+		panic("invalid scenario validator registration: " + key)
+	}
+	if _, exists := scenarioValidators[key]; exists {
+		panic("duplicate scenario validator: " + key)
+	}
+	scenarioValidators[key] = validator
 }
 
 // ValidatorRequirements reports every registered validator key and the

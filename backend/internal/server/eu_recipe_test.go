@@ -78,6 +78,8 @@ func TestFirewallCompareEU(t *testing.T) {
 		"Vendor → Field",
 		"Control Centre → Field",
 		"Field → Station",
+		"Control Centre → Operations DMZ",
+		"Enterprise → Operations DMZ",
 	}
 	if len(got.Diffs) != len(wantPairs) {
 		t.Fatalf("comparison rows = %d; want %d: %+v", len(got.Diffs), len(wantPairs), got.Diffs)
@@ -143,31 +145,6 @@ func TestFirewallRulesFallbackIsUSOnly(t *testing.T) {
 	rec = callRoute(eu, eu.handleGetFirewallRules, http.MethodGet, "/api/firewall/rules", "/api/firewall/rules", "")
 	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), "summaries") {
 		t.Errorf("EU rules with containd down = %d %s, want 502", rec.Code, rec.Body)
-	}
-}
-
-// TestEUWorkshopReset applies the default policy and resets the breaker
-// through its sim API; no RTAC command is sent.
-func TestEUWorkshopReset(t *testing.T) {
-	fw, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	device, dev := newUpstreamStub(t, map[string]stubResponse{
-		"POST /api/sim/reset": {http.StatusOK, deviceStateFixture},
-	})
-	s := rangeServer(euGeneration(t, containd.NewClient(fw.URL), map[string]string{"feeder_breaker": dev.URL}), "improved")
-	s.orchestrator = &orchestrator.Orchestrator{}
-	rec := callRoute(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", "/api/workshop/reset", "")
-	want := `{"actions":[` +
-		`{"action":"Apply weak firewall baseline","success":true,"detail":"weak config applied"},` +
-		`{"action":"Reset the sim device to its initial state","success":true,"detail":"device reset"}` +
-		`],"success":true}`
-	if rec.Code != http.StatusOK || rec.Body.String() != want {
-		t.Errorf("POST reset = %d %s\nwant %s", rec.Code, rec.Body, want)
-	}
-	if counters.commitCount != 1 || s.activeConfig != "weak" {
-		t.Errorf("commits = %d, active = %q; want the weak policy applied", counters.commitCount, s.activeConfig)
-	}
-	if !reflect.DeepEqual(device.requests, []string{"POST /api/sim/reset"}) || device.bodies[0] != `{}` {
-		t.Errorf("device requests = %q %q", device.requests, device.bodies)
 	}
 }
 
@@ -253,7 +230,7 @@ func TestFirewallStepLabelsFollowTheRecipe(t *testing.T) {
 	fw, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
 	eu := rangeServer(euGeneration(t, containd.NewClient(fw.URL), nil), "weak")
 	got := eu.executeFirewallAction(t.Context(), eu.rng.(*fakeRange).gen, "improved")
-	if !got.Success || got.Detail != "containd policy set to improved (control centre to RTU IEC 104, RTU to breaker Modbus only)" {
+	if !got.Success || got.Detail != "containd policy set to improved (source-pinned IEC 104 and Modbus control, PLC maintenance and historian conduits)" {
 		t.Errorf("EU firewall step = %+v", got)
 	}
 	us := rangeServer(usGeneration(containd.NewClient(fw.URL)), "weak")

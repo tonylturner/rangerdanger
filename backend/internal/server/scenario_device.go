@@ -2,11 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
-	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 // executeCommand dispatches exclusively through the active package's recipe.
@@ -25,31 +26,65 @@ func (s *Server) executeCommand(ctx context.Context, gen *lifecycle.Generation, 
 // or an operator protocol. The device attributes these actions to "lab".
 func (s *Server) executeSimCommand(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe, device, command, source string, value *float64) StepActionResult {
 	result := StepActionResult{Action: device + "/" + command}
-	service, url, ok := gen.Manifest.ServiceWithEndpoint(manifest.EndpointSim)
-	if !ok || recipe.simDevices[device] == "" || service.Node != recipe.simDevices[device] {
-		result.Detail = "no simulation control endpoint for device " + device
+	if source != "" {
+		result.Detail = "simulation actions do not accept a source override"
 		return result
 	}
-	if source != "" || value != nil {
-		result.Detail = "simulation actions do not accept a source override or value"
-		return result
-	}
-	path, body := "", ""
-	switch command {
-	case "inject_fault":
-		path, body = "/api/sim/fault", `{"active":true}`
-	case "clear_fault":
-		path, body = "/api/sim/fault", `{"active":false}`
-	case "reset":
-		path, body = "/api/sim/reset", `{}`
-	default:
-		result.Detail = "unknown simulation command " + command
-		return result
-	}
-	_, err := postSimAction(ctx, url, path, []byte(body))
+	_, err := executeTruthAction(ctx, gen, recipe, device, command, value)
 	result.Success = err == nil
-	result.Detail = boolDetail(err == nil, "Device simulation action completed", errStr(err))
+	result.Detail = boolDetail(err == nil, "Simulation action completed", errStr(err))
 	return result
+}
+
+// executeTruthAction sends a lab action once, without any protocol fallback.
+func executeTruthAction(ctx context.Context, gen *lifecycle.Generation, recipe *packageRecipe, device, command string, value *float64) (json.RawMessage, error) {
+	if err := labs.ValidateTruthCommand(device, command, value); err != nil {
+		return nil, err
+	}
+	var url, path string
+	var ok bool
+	if device == "process" {
+		url, ok = solverURL(gen)
+		path = "/api/process/actions"
+	} else {
+		url, ok = nodeSimURL(gen, recipe.simDevices[device])
+		path = "/api/sim/actions"
+	}
+	if !ok {
+		return nil, fmt.Errorf("no simulation control endpoint for %s", device)
+	}
+	if device == "gps" {
+		body, err := json.Marshal(struct {
+			Command string   `json:"command"`
+			Value   *float64 `json:"value,omitempty"`
+			Source  string   `json:"source"`
+		}{command, value, "lab"})
+		if err != nil {
+			return nil, err
+		}
+		answer, err := postStateAction(ctx, device, url, "/api/command", body)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Result string `json:"result"`
+		}
+		if err := json.Unmarshal(answer, &result); err != nil {
+			return nil, err
+		}
+		if result.Result != "executed" {
+			return nil, fmt.Errorf("gps command did not execute: %s", answer)
+		}
+		return answer, nil
+	}
+	body, err := json.Marshal(struct {
+		Action string   `json:"action"`
+		Value  *float64 `json:"value,omitempty"`
+	}{command, value})
+	if err != nil {
+		return nil, err
+	}
+	return postStateAction(ctx, device, url, path, body)
 }
 
 type sessionCutSpec struct {

@@ -27,8 +27,9 @@ const (
 	positionPoint = "feeder-breaker-position"
 )
 
-// telecontrolPoints are the four monitored points of the EU points map
-// (lab-definitions/packages/eu-iec104-substation/protocols/points.json).
+// telecontrolPoints is deliberately only the lab-1 breaker subset
+// (IOAs 1001, 1002, 2001, 2002). RMU, OLTC and PLC quality does not
+// change the evidence required by this exercise.
 var telecontrolPoints = []string{positionPoint, "feeder-protection-trip", "feeder-current", "feeder-voltage"}
 
 // telecontrolEvidence is everything the validator reads. Each source keeps

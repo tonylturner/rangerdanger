@@ -2,6 +2,7 @@ package labs
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"sort"
 	"strings"
@@ -18,15 +19,24 @@ var vocabularyActionTypes = map[string]bool{"command": true, "sequence": true, "
 // actionVocabulary is the device-command and check-key vocabulary a
 // capability brings to command, sequence and check actions.
 type actionVocabulary struct {
-	commands  map[string][]string
-	checkKeys map[string]bool
+	commands      map[string][]string
+	checkKeys     map[string]bool
+	valueCommands map[string]bool
 }
 
 // capabilityVocabularies lists the action vocabulary each capability adds.
 // Packages use their process capability to declare device operations.
 var capabilityVocabularies = map[string]actionVocabulary{
 	CapabilityProcessTruth: {
-		commands: map[string][]string{"breaker": {"inject_fault", "clear_fault", "reset"}},
+		commands: map[string][]string{
+			"breaker": {"reset_lockout", "reset"},
+			"rmu-1":   {"set_local", "set_remote", "earth_close", "earth_open", "reset_fault_passage", "reset"},
+			"rmu-2":   {"set_local", "set_remote", "earth_close", "earth_open", "reset_fault_passage", "reset"},
+			"oltc-1":  {"set_local", "set_remote", "block", "unblock", "reset"},
+			"process": {"fault_s1", "fault_s2", "clear_fault", "reset_f2", "set_load", "set_source", "reset"},
+			"gps":     {"set_offset", "reset_offset"},
+		},
+		valueCommands: map[string]bool{"set_load": true, "set_source": true, "set_offset": true},
 	},
 	CapabilityProcessElectrical: {
 		// commands mirrors the device case tables in the services' sim
@@ -245,13 +255,13 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 
 	switch action.Type {
 	case "command":
-		validateCommand(vocabulary.commands, action.Device, action.Command, "", add)
+		vocabulary.validateCommand(action.Device, action.Command, action.Value, "", add)
 	case "sequence":
 		if len(action.Commands) == 0 {
 			add("sequence must contain at least one command")
 		}
 		for index, command := range action.Commands {
-			validateCommand(vocabulary.commands, command.Device, command.Command, fmt.Sprintf("commands[%d] ", index), add)
+			vocabulary.validateCommand(command.Device, command.Command, command.Value, fmt.Sprintf("commands[%d] ", index), add)
 		}
 	case "firewall":
 		if !names.has(action.Config) {
@@ -315,6 +325,40 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 		}
 	case "decision":
 		validateDecision(action, add)
+	}
+}
+
+// ValidateTruthCommand checks the process.truth command wire, including values.
+// Executors use the same vocabulary as the curriculum loader.
+func ValidateTruthCommand(device, command string, value *float64) error {
+	var problems []string
+	vocabulary := capabilityVocabularies[CapabilityProcessTruth]
+	vocabulary.validateCommand(device, command, value, "", func(problem string) { problems = append(problems, problem) })
+	if len(problems) > 0 {
+		return fmt.Errorf("%s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func (v actionVocabulary) validateCommand(device, command string, value *float64, prefix string, add func(string)) {
+	validateCommand(v.commands, device, command, prefix, add)
+	if v.valueCommands == nil {
+		return
+	}
+	required := v.valueCommands[command]
+	if required != (value != nil) {
+		add(prefix + "value is required exactly for set_load, set_source and set_offset")
+		return
+	}
+	if value == nil {
+		return
+	}
+	if math.IsNaN(*value) || math.IsInf(*value, 0) {
+		add(prefix + "value must be finite")
+	} else if command == "set_load" && (*value < 0.2 || *value > 3.0) {
+		add(prefix + "set_load value must be 0.2…3.0")
+	} else if command == "set_source" && (*value < 0.90 || *value > 1.10) {
+		add(prefix + "set_source value must be 0.90…1.10")
 	}
 }
 

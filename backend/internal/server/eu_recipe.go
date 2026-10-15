@@ -3,15 +3,15 @@ package server
 // euPackageID is the package the EU recipe belongs to.
 const euPackageID = "eu-iec104-substation"
 
-// euRecipe is the EU IEC 104 telecontrol package. Its reset is the breaker's
-// sim reset; its canary is Kali's IEC 104 connect to the RTU. It has
+// euRecipe is the EU IEC 104 telecontrol package. Its reset restores process
+// and device truth; its canary is Kali's IEC 104 connect to the RTU. It has
 // no validation report, traffic generator, or test suite. Its comparison
 // covers only the cross-zone relationships in its package policies.
 var euRecipe = &packageRecipe{
-	simDevices:      map[string]string{"breaker": "breaker-1"},
+	simDevices:      map[string]string{"breaker": "breaker-1", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
 	commandExecutor: (*Server).executeSimCommand,
 	sessionCuts:     map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
-	resetSim:        true,
+	resetTruth:      resetEUTruth,
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
 		allowUnder: "weak", denyUnder: "improved"},
 	captureFilter: "tcp port 2404 or tcp port 502",
@@ -27,9 +27,12 @@ var euRecipe = &packageRecipe{
 			{"dmz", "lan2"},  // Vendor → Field
 			{"lan4", "lan2"}, // Control Centre → Field
 			{"lan2", "lan1"}, // Field → Station
+			{"lan4", "lan5"}, // Control Centre → Operations DMZ
+			{"wan", "lan5"},  // Enterprise → Operations DMZ
 		},
 		labels: map[string]string{
 			"lan4": "Control Centre",
+			"lan5": "Operations DMZ",
 			"lan1": "Station",
 			"lan2": "Field",
 			"wan":  "Enterprise",
@@ -38,6 +41,6 @@ var euRecipe = &packageRecipe{
 	},
 	policyLabels: map[string]string{
 		"weak":     "weak baseline",
-		"improved": "improved (control centre to RTU IEC 104, RTU to breaker Modbus only)",
+		"improved": "improved (source-pinned IEC 104 and Modbus control, PLC maintenance and historian conduits)",
 	},
 }

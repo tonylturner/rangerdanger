@@ -492,7 +492,7 @@ func TestValidateEURoles(t *testing.T) {
 
 // TestValidateSingleHolders rejects a second holder of the roles the
 // backend resolves to one service, and a sim endpoint that is
-// ambiguous or outside a field device.
+// outside a field device. Multiple field sims are allowed.
 func TestValidateSingleHolders(t *testing.T) {
 	root := fixturePath(t, fixtureRoot)
 	service := func(key, ip string, role Role, endpoints map[string]string) Service {
@@ -513,8 +513,6 @@ func TestValidateSingleHolders(t *testing.T) {
 			`role "control-centre" is held by cc_a, cc_b`},
 		{"two process solvers", []Service{service("dss_a", "10.99.99.31", RoleProcessSolver, nil), service("dss_b", "10.99.99.32", RoleProcessSolver, nil)},
 			`role "process-solver" is held by dss_a, dss_b`},
-		{"two sim endpoints", []Service{service("brk_a", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")), service("brk_b", "10.99.99.32", RoleFieldDevice, sim("10.99.99.32"))},
-			"sim endpoint is declared by brk_a, brk_b"},
 		{"sim outside a field device", []Service{service("cc", "10.99.99.31", RoleControlCentre, sim("10.99.99.31"))},
 			`service "cc" has a sim endpoint but not the field-device role`},
 	}
@@ -535,9 +533,9 @@ func TestValidateSingleHolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")))
+	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")), service("rmu", "10.99.99.32", RoleFieldDevice, sim("10.99.99.32")))
 	if err := Validate(m, root); err != nil {
-		t.Fatalf("Validate one sim endpoint: %v", err)
+		t.Fatalf("Validate many sim endpoints: %v", err)
 	}
 	if svc, url, ok := m.ServiceWithEndpoint(EndpointSim); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
 		t.Errorf("ServiceWithEndpoint = %+v %q %v", svc, url, ok)

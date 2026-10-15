@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
@@ -42,7 +43,7 @@ func (s *Server) collectTelecontrolEvidence(ctx context.Context, gen *lifecycle.
 		ev.ccStateErr = fmt.Errorf("package %s has no control centre", gen.Package.ID)
 		ev.journalErr = ev.ccStateErr
 	}
-	if device, ok := simURL(gen); ok {
+	if device, ok := nodeSimURL(gen, "breaker-1"); ok {
 		ev.audit, ev.auditErr = fetchJSON[deviceAudit](ctx, simService, device+"/api/audit?after=0")
 		ev.device, ev.deviceErr = fetchJSON[deviceTruth](ctx, simService, device+"/api/state")
 	} else {
@@ -113,4 +114,13 @@ func fetchJSON[T any](ctx context.Context, service, url string) (*T, error) {
 		return nil, fmt.Errorf("%s: decode %s: %w", service, url, err)
 	}
 	return &out, nil
+}
+
+func init() {
+	registerScenarioValidator("eu-iec104-telecontrol", scenarioValidator{
+		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
+			return s.validateTelecontrol(ctx, in.gen, in.activeConfig)
+		},
+	})
 }

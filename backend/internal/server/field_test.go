@@ -6,10 +6,10 @@ import (
 )
 
 // deviceStateFixture is the feeder breaker's GET /api/state (§4).
-const deviceStateFixture = `{"schema":1,"device_id":"feeder-breaker","generation":3735928559,"revision":4,"position":"open","remote_enabled":true,"lockout":true,"fault_active":true,"protection_tripped":true,"event_seq":4,"changed_at":"2026-10-09T12:03:00Z","measurements":{"current_a":0,"voltage_kv_ll":0,"valid":true,"solver_epoch":"e1","solve_seq":200,"solved_at":"2026-10-09T12:03:01Z","received_at":"2026-10-09T12:03:01Z"}}`
+const deviceStateFixture = `{"schema":2,"device_id":"feeder-breaker","kind":"breaker","generation":3735928559,"revision":4,"position":"open","remote_enabled":true,"lockout":true,"protection_tripped":true,"event_seq":4,"changed_at":"2026-10-15T12:03:00Z","measurements":{"current_a":0,"voltage_kv_ll":0,"source_kv_ll":20,"section_live":false,"source_live":true,"fault_current":false,"valid":true,"solver_epoch":"e1","solve_seq":200,"solved_at":"2026-10-15T12:03:01Z","received_at":"2026-10-15T12:03:01Z"}}`
 
-// electricalFixture is the solver's GET /api/electrical in EU mode (§5).
-const electricalFixture = `{"schema":1,"profile_id":"eu-feeder-20kv","frequency_hz":50,"primary_kv":20,"breaker":"open","source_voltage_kv_ll":20,"load_voltage_kv_ll":0,"current_a":0,"load_kw":0,"energized":false,"converged":true,"solver_epoch":"e1","solve_seq":200,"solved_at":"2026-10-09T12:03:01Z","truth_revision":4,"truth_generation":3735928559,"truth_stale":false}`
+// electricalFixture is the solver's schema-2 electrical state.
+const electricalFixture = `{"schema":2,"profile_id":"eu-cigre-mv-teaching","solver_epoch":"e1","solve_seq":200,"solved_at":"2026-10-15T12:03:01Z","truth_stale":false,"fault_section":"none","f2_tripped":false,"load_multiplier":1.0,"source_pu":1.0,"tap":0,"buses":{"bus20":{"kv":20.02,"live":true},"s1":{"kv":0,"live":false},"s2":{"kv":0,"live":false},"s3":{"kv":19.97,"live":true}},"devices":{"feeder-breaker":{"delivered":true,"solved_revision":4,"revision":4}}}`
 
 func simServer(t *testing.T, device, solver map[string]stubResponse) (*Server, *upstreamStub) {
 	deviceStub, dev := newUpstreamStub(t, device)
@@ -27,11 +27,11 @@ func TestFieldState(t *testing.T) {
 		code           int
 		want           string
 	}{
-		{"both", deviceOK, solverOK, http.StatusOK, `{"device":` + deviceStateFixture + `,"process":` + electricalFixture + `}`},
+		{"both", deviceOK, solverOK, http.StatusOK, `{"devices":{"breaker-1":` + deviceStateFixture + `},"process":` + electricalFixture + `}`},
 		{"solver has no truth yet", deviceOK, map[string]stubResponse{"GET /api/electrical": {http.StatusServiceUnavailable, `{"error":"no_truth"}`}},
 			http.StatusBadGateway, `{"error":"process solver returned 503: {\"error\":\"no_truth\"}"}`},
 		{"device fails", map[string]stubResponse{"GET /api/state": {http.StatusInternalServerError, `boom`}}, solverOK,
-			http.StatusBadGateway, `{"error":"sim device returned 500: boom"}`},
+			http.StatusBadGateway, `{"error":"breaker-1 returned 500: boom"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
