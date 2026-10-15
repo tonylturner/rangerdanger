@@ -4,9 +4,9 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
-**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
 
-**Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe; only `us-dnp3-substation` has one, and other packages answer `404 {"error":"package <id> has no workshop recipe"}`.
+**Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe. `us-dnp3-substation` and `eu-iec104-substation` have one; other packages answer `404 {"error":"package <id> has no workshop recipe"}`. A recipe that lacks an operation answers `404 {"error":"not supported by this package"}`.
 
 ## Health and build info
 
@@ -154,6 +154,18 @@ Proxied reads from the RTAC and control commands to individual field devices.
 | `GET` | `/substation/network-events` | Network event log |
 | `POST` | `/substation/command/:device` | Send a command to a field device. Body: `{"command": "set_tap", "value": -16, "source": "operator"}` |
 | `POST` | `/substation/lab-control` | Proxy a Load Simulator override (`active`, `general_load_pct`, `critical_load_pct`, `power_factor`) and optional audit entry (`audit_command`, `audit_target`, `audit_detail`, `source`) to RTAC `/api/lab-control`. |
+
+## Control centre and field
+
+For packages whose manifest has a control centre and a field device simulator (`eu-iec104-substation`). Other packages answer `404 {"error":"not supported by this package"}`. These are read routes plus the operator command relay; the student changes field process state only through scenario step actions.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/operator/state` | Control-centre state with `package_id` and `range_generation` added |
+| `POST` | `/operator/commands` | Relay one command to the control centre. The CC runs select, execute and feedback; the backend sends it once and never retries. A CC refusal keeps its status. |
+| `GET` | `/operator/journal?after=<seq>` | Control-centre command journal after a sequence number |
+| `GET` | `/field/state` | `{"device", "process"}`: the field device state and the solver's electrical result. Fails when either upstream fails. |
+| `GET` | `/field/audit?after=<seq>` | Field device audit after a sequence number |
 
 ## Firewall
 
