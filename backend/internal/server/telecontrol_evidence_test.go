@@ -28,7 +28,7 @@ const (
 	 {"seq":10,"at":"2026-10-09T12:05:01Z","kind":"gi_complete","detail":{"connection_seq":2,"points_good":4}},
 	 {"seq":11,"at":"2026-10-09T12:06:00Z","kind":"command","detail":{"id":"9","point":"feeder-breaker-command","operation":"close","status":"rejected"}},
 	 {"seq":12,"at":"2026-10-09T12:06:01Z","kind":"point_good","detail":{"point":"feeder-current","value":0}}]}`
-	passCCState = `{"schema":1,"cache_epoch":"c0ffee01","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-09T12:05:00Z","last_rx_at":"2026-10-09T12:06:01Z","connection_seq":2,"gi":{"state":"complete","started_at":"2026-10-09T12:05:00.1Z","completed_at":"2026-10-09T12:05:01Z"}},"points":[
+	passCCState = `{"schema":2,"cache_epoch":"c0ffee01","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-09T12:05:00Z","last_rx_at":"2026-10-09T12:06:01Z","connection_seq":2,"gi":{"state":"complete","started_at":"2026-10-09T12:05:00.1Z","completed_at":"2026-10-09T12:05:01Z"}},"points":[
 	 {"id":"feeder-breaker-position","ioa":1001,"asdu":"M_DP_TB_1","value":"open","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-09T12:03:00Z","source_time_invalid":false,"received_at":"2026-10-09T12:05:00.5Z","cot":20},
 	 {"id":"feeder-protection-trip","ioa":1002,"asdu":"M_SP_TB_1","value":true,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-09T12:03:00Z","source_time_invalid":false,"received_at":"2026-10-09T12:05:00.5Z","cot":20},
 	 {"id":"feeder-current","ioa":2001,"asdu":"M_ME_NC_1","value":0,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T12:05:00.5Z","cot":20},
@@ -38,7 +38,7 @@ const (
 	 {"seq":2,"at":"2026-10-09T12:03:00Z","operation":"local_protection_trip","result":"accepted","before":{"revision":3},"after":{"revision":4},"context":{"peer":"protection","protocol":"local-protection","zone":"field"},"detail":{"cause":"fault_active"}},
 	 {"seq":3,"at":"2026-10-09T12:03:01Z","operation":"first_solve","result":"accepted","before":{"revision":4},"after":{"revision":4},"context":{"peer":"10.50.50.20:50000","protocol":"process","zone":"process"},"detail":{"revision":4,"solver_epoch":"e1","solve_seq":181,"solved_at":"2026-10-09T12:03:01Z","current_a":0}},
 	 {"seq":4,"at":"2026-10-09T12:03:01Z","operation":"measurements_valid","result":"accepted","before":{"revision":4},"after":{"revision":4},"context":{"peer":"10.50.50.20:50000","protocol":"process","zone":"process"}}]}`
-	passDevice = `{"schema":1,"device_id":"feeder-breaker","generation":3735928559,"revision":4,"position":"open","remote_enabled":true,"lockout":true,"fault_active":true,"protection_tripped":true,"event_seq":4,"changed_at":"2026-10-09T12:03:00Z","measurements":{"current_a":0,"voltage_kv_ll":0,"valid":true,"solver_epoch":"e1","solve_seq":300,"solved_at":"2026-10-09T12:06:00Z","received_at":"2026-10-09T12:06:00Z"}}`
+	passDevice = `{"schema":2,"device_id":"feeder-breaker","kind":"breaker","generation":3735928559,"revision":4,"position":"open","remote_enabled":true,"lockout":true,"protection_tripped":true,"event_seq":4,"changed_at":"2026-10-09T12:03:00Z","measurements":{"current_a":0,"voltage_kv_ll":0,"valid":true,"solver_epoch":"e1","solve_seq":300,"solved_at":"2026-10-09T12:06:00Z","received_at":"2026-10-09T12:06:00Z"}}`
 	passEvents = `[
 	 {"id":90,"kind":"firewall.rule.hit","attributes":{"ruleId":"deny-unauthorized-iec104","action":"DENY","via":"nflog","proto":"tcp","port":"2404"},"timestamp":"2026-10-09T12:01:00Z","srcIp":"10.10.10.50","dstIp":"10.30.30.20","srcPort":51000,"dstPort":2404,"transport":"tcp"},
 	 {"id":91,"kind":"firewall.rule.hit","attributes":{"ruleId":"control-centre-to-rtu-iec104","action":"ALLOW","via":"nflog"},"timestamp":"2026-10-09T12:00:30Z","srcIp":"10.60.60.20","dstIp":"10.30.30.20","srcPort":40000,"dstPort":2404,"transport":"tcp"}]`
@@ -58,6 +58,7 @@ func passingEvidence(t *testing.T) telecontrolEvidence {
 	return telecontrolEvidence{
 		activePolicy: "improved",
 		rangeStart:   euStartedAt,
+		collectedAt:  at("12:06:02"),
 		rtuIP:        "10.30.30.20",
 		ccIP:         "10.60.60.20",
 		events:       *decodeFixture[[]containd.Event](t, passEvents),
@@ -127,12 +128,12 @@ func TestEvaluateTelecontrol(t *testing.T) {
 	}{
 		{"passing sequence", func(*telecontrolEvidence) {}, "", ""},
 
-		{"weak policy active", func(ev *telecontrolEvidence) { ev.activePolicy = "weak" }, checkPolicy, `the active policy is "weak"`},
-		{"custom policy active", func(ev *telecontrolEvidence) { ev.activePolicy = "custom" }, checkPolicy, `the active policy is "custom"`},
+		{"weak policy active", func(ev *telecontrolEvidence) { ev.activePolicy = "weak" }, checkDeny, `the active policy is "weak"`},
+		{"custom policy active", func(ev *telecontrolEvidence) { ev.activePolicy = "custom" }, checkDeny, `the active policy is "custom"`},
 		{"running firewall differs from the improved file", func(ev *telecontrolEvidence) {
 			ev.policyErr = errors.New("running firewall hash a, policy file hash b")
 		},
-			checkPolicy, "not the improved policy file"},
+			checkDeny, "not the improved policy file"},
 
 		{"no deny", func(ev *telecontrolEvidence) { ev.events = ev.events[1:] }, checkDeny, "no firewall.rule.hit DENY to 10.30.30.20:2404"},
 		{"deny before the range started", func(ev *telecontrolEvidence) { ev.events[0].Timestamp = at("11:59:59") }, checkDeny, "since the range started"},
@@ -195,8 +196,8 @@ func TestEvaluateTelecontrol(t *testing.T) {
 			ev := passingEvidence(t)
 			test.mutate(&ev)
 			checks := evaluateTelecontrol(ev)
-			if len(checks) != 5 {
-				t.Fatalf("checks = %d, want 5", len(checks))
+			if len(checks) != 4 {
+				t.Fatalf("checks = %d, want 4", len(checks))
 			}
 			failing := map[string]ValidationCheck{}
 			for _, check := range checks {
@@ -224,8 +225,8 @@ func TestEvaluateTelecontrol(t *testing.T) {
 			}
 			want := 1
 			if test.check == checkOutage {
-				// Without an outage window the trip has nowhere to be placed.
-				want = 2
+				// Without an outage window, neither trip nor recovery can be proved.
+				want = 3
 				if trip := failing[checkTrip]; !strings.Contains(trip.Detail, "no control-centre outage window") {
 					t.Errorf("trip check = %+v, want it to name the missing window", trip)
 				}
@@ -257,6 +258,11 @@ func TestEvaluateTelecontrolPicksTheOutageWithTheTrip(t *testing.T) {
 	extra[2].Detail.ConnectionSeq = &three
 	extra[3].Detail.ConnectionSeq = &three
 	ev.journal.Entries = append(ev.journal.Entries, extra...)
+	ev.journal.LatestSeq = 16
+	ev.collectedAt = at("12:13:00")
+	for i := range ev.ccState.Points {
+		ev.ccState.Points[i].ReceivedAt = at("12:12:02")
+	}
 	auditEntryAt(&ev, "local_protection_trip").At = at("12:11:00")
 	auditEntryAt(&ev, "first_solve").At = at("12:11:01")
 	for _, check := range evaluateTelecontrol(ev) {
@@ -280,5 +286,34 @@ func TestTelecontrolIgnoresNonBreakerPointQuality(t *testing.T) {
 		if check.Status != "pass" {
 			t.Errorf("%s: %s", check.Name, check.Detail)
 		}
+	}
+}
+
+func TestTelecontrolAttemptBounds(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		mutate func(*telecontrolEvidence)
+		check  func(telecontrolEvidence) ValidationCheck
+	}{
+		{"future deny", func(ev *telecontrolEvidence) { ev.events[0].Timestamp = ev.collectedAt.Add(time.Second) }, denyCheck},
+		{"unknown deny source", func(ev *telecontrolEvidence) { ev.events[0].Source = "" }, denyCheck},
+		{"UDP event is not IEC TCP", func(ev *telecontrolEvidence) { ev.events[0].Transport = "udp" }, denyCheck},
+		{"pre-boot outage", func(ev *telecontrolEvidence) { ev.rangeStart = at("12:02:30") }, func(ev telecontrolEvidence) ValidationCheck { _, c := outageCheck(ev); return c }},
+		{"future recovery", func(ev *telecontrolEvidence) { journalEntryAt(ev, 10).At = ev.collectedAt.Add(time.Second) }, func(ev telecontrolEvidence) ValidationCheck { _, c := outageCheck(ev); return c }},
+		{"nonchronological stale", func(ev *telecontrolEvidence) { journalEntryAt(ev, 5).At = at("12:01:00") }, func(ev telecontrolEvidence) ValidationCheck { _, c := outageCheck(ev); return c }},
+		{"old CC schema", func(ev *telecontrolEvidence) { ev.ccState.Schema = 1 }, func(ev telecontrolEvidence) ValidationCheck { _, c := outageCheck(ev); return c }},
+		{"old device schema", func(ev *telecontrolEvidence) { ev.device.Schema = 1 }, func(ev telecontrolEvidence) ValidationCheck { w, _ := outageCheck(ev); return tripCheck(ev, w) }},
+		{"cached pre-recovery value", func(ev *telecontrolEvidence) { pointAt(ev, positionPoint).ReceivedAt = at("12:04:59") }, func(ev telecontrolEvidence) ValidationCheck { w, _ := outageCheck(ev); return operatorCheck(ev, w) }},
+		{"future operator value", func(ev *telecontrolEvidence) { pointAt(ev, positionPoint).ReceivedAt = ev.collectedAt.Add(time.Second) }, func(ev telecontrolEvidence) ValidationCheck { w, _ := outageCheck(ev); return operatorCheck(ev, w) }},
+		{"null measurement is not zero", func(ev *telecontrolEvidence) { pointAt(ev, "feeder-current").Value = json.RawMessage(`null`) }, func(ev telecontrolEvidence) ValidationCheck { w, _ := outageCheck(ev); return operatorCheck(ev, w) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := passingEvidence(t)
+			tt.mutate(&ev)
+			check := tt.check(ev)
+			if check.Status != "fail" || !strings.HasPrefix(check.Detail, "missing evidence: ") {
+				t.Fatalf("out-of-window or absent evidence passed: %+v", check)
+			}
+		})
 	}
 }

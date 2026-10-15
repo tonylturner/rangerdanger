@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
@@ -50,6 +51,7 @@ func (s *Server) collectTelecontrolEvidence(ctx context.Context, gen *lifecycle.
 		ev.deviceErr = fmt.Errorf("package %s has no sim device", gen.Package.ID)
 		ev.auditErr = ev.deviceErr
 	}
+	ev.collectedAt = time.Now().UTC()
 	return ev
 }
 

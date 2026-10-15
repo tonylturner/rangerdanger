@@ -1,234 +1,262 @@
 id: iec104-telecontrol-boundary
 order: "1.0"
-name: "IEC104 Telecontrol Boundary"
-summary: "Observe the IEC104 control path, tighten its network boundary, and distinguish a stale operator cache from physical truth."
-estimated_minutes: 25
+name: "IEC 104 Telecontrol Boundary"
+summary: "Trace a breaker command, constrain the telecontrol boundary, and prove that stale observation is not physical truth."
+estimated_minutes: 35
 validator: eu-iec104-telecontrol
 description: |
-  Follow one command and telemetry path from the Control Centre, over IEC
-  60870-5-104, through the RTU, and over Modbus TCP to the feeder breaker.
-  Then constrain those conduits to their named sources and ports.
+  You are the station engineer reviewing a feeder's remote-control boundary.
+  Follow CC → RTU → breaker, observe select-before-operate (SBO), then take
+  the CC off-line without disabling local protection. Your deliverable is
+  a timestamped boundary assurance record, not a screenshot of green icons.
 
-  **The rules are port- and source-based.** Command-aware IEC 104 filtering
-  is not part of this lab. The improved policy limits who can open an IEC104
-  session and which RTU may poll Modbus. It does not filter IEC104 commands.
-  The allowed Control Centre can still issue both open and close commands.
+  This exercise grades only breaker IOAs **1001, 1002, 2001 and 2002**;
+  the RMUs, OLTC and PLC belong to the next labs. The RTU may return their
+  points too: filter, do not assume the whole station has only four points.
+  IEC 104 timestamps are RTU observation times, not device SOE timestamps.
 
-  **Out-of-band limit:** the Control Centre shares `mgmt_net` with the breaker
-  simulation API and the OpenDSS solver. Nothing structurally prevents an HTTP
-  read from those management endpoints. This workshop gate proves behaviorally
-  that the Control Centre learns process state through IEC104 rather than by
-  reading those endpoints. The physical feeder section on `/substation`
-  is a separate portal read, not an input to the Control Centre.
-nodes:
-  - cc-1
-  - rtu-1
-  - kali-1
-  - fw-1
-  - breaker-1
-tags:
-  - iec104
-  - telecontrol
-  - firewall
-  - process-truth
+  Rules are source/port based, **not command authorisation**. An allowed
+  CC can still open and close. The portal's physical feeder panel reads
+  separate management APIs; it never supplies the CC's observed cache.
+  Management and process networks are workshop infrastructure, not student
+  conduits. This is an intended boundary, not proven isolation: CC shares
+  management with the sim/solver APIs, and vendor-jump and eng-ws also
+  have management interfaces. Do not use those APIs as an observation
+  shortcut or claim this lab proves management isolation.
+  Carry your findings into Design and Prove the Station Conduits.
+  Read [Architecture](#eu-telecontrol-architecture) and
+  [Evidence lifecycle](#eu-evidence-lifecycle).
+nodes: [cc-1, rtu-1, kali-1, fw-1, breaker-1]
+tags: [iec104, telecontrol, firewall, process-truth]
 steps:
   - id: observe-baseline
-    title: "Observe the control-centre baseline"
+    title: "Map the boundary and capture a baseline"
     expected_config: weak
     node: kali-1
     description: |
-      The weak baseline exposes TCP/2404 from the enterprise zone. Confirm
-      that Kali can establish a station session and request a General
-      Interrogation:
+      Start on the weak policy with a healthy, closed breaker. If this is
+      not your starting state, use Reset Lab before gathering evidence.
+      Record UTC start time and CC cache epoch. Map CC 10.60.60.20 (lan4)
+      → RTU 10.30.30.20 (lan1), TCP/2404; RTU → breaker 10.40.40.20
+      (lan2), TCP/502. Label each address, trust boundary and protocol.
 
           iec104cmd 10.30.30.20 monitor --json --hold 2
+          iec104cmd 10.30.30.20 gi --json
 
-      Use `iec104cmd 10.30.30.20 gi --json` as the completion check.
-      Compare the four RTU points with the Control Centre view at
-      [/substation](/substation). The IEC104 timestamps are the RTU's
-      observation times, not device-provided SOE times.
+      Save the completed GI and compare the four breaker IOAs with
+      [/substation](/substation). Keep quality and receipt times alongside
+      values. Capture at fw-1's shell with
+      `tcpdump -ni any -w /data/captures/lab1.pcap 'tcp port 2404 or tcp port 502'`.
+      Stop it with Ctrl-C after the command exercise; copy/export the PCAP.
 
-      Read: [Architecture](/knowledge#eu-telecontrol-architecture), [Wire model](/knowledge#iec104-wire-model), [GI and quality](/knowledge#iec104-gi-cot-quality), [CLI](/knowledge#tool-iec104cmd).
+      :::decision id=baseline-reachable options=CONFIRMED,NOT_OBSERVED
+      Can an enterprise host request station data without a CC identity?
+      :::
+      :::hint Evidence, not just a socket
+      A completed GI with COT 20 objects and activation termination proves
+      a protocol operation. An open TCP port alone does not.
+      :::
+      Read [GI and quality](#iec104-gi-cot-quality), [CLI](#tool-iec104cmd)
+      and [Packet evidence](#tool-iec104-tshark).
     action:
       type: probe
       outcome: reachable
       targets:
-        - host: 10.30.30.20
-          port: 2404
-          note: "Kali IEC104 session to the RTU"
+        - {host: 10.30.30.20, port: 2404, note: "Kali to RTU; follow with a real GI"}
 
   - id: operate-breaker
-    title: "Operate the feeder breaker"
+    title: "Follow a command across both protocols"
     expected_config: weak
     node: cc-1
     description: |
-      From the Control Centre view, issue an **open** command and then a
-      **close** command. Each operation uses select-before-operate, waits
-      for activation termination, and requires matching IEC104 feedback.
-      Confirm that the operator value follows the device and process view.
+      Predict which feeder loads lose supply when CB1 opens. Through the
+      CC controls on /substation issue open, then close, waiting for each
+      result before the next. Record command id, selected/executed times,
+      ACT-CON, matching feedback and ACT-TERM. Decode Type 46 select and
+      execute in the capture; correlate with the RTU's Modbus FC6 to HR0.
+      Confirm operator observation, device position and solved feeder
+      response separately. A write acknowledgement alone is not completion.
 
-      A source/port policy is not command authorization: while the CC→RTU
-      conduit is allowed, both open and close are still valid operations.
-
-      Read: [SBO commands](/knowledge#iec104-sbo-commands), [Operator APIs](/knowledge#eu-rtu-control-centre-apis).
+      :::decision id=port-is-authority options=NO,YES
+      Does permitting TCP/2404 distinguish an authorised open from an
+      unauthorised close issued by that same allowed host?
+      :::
+      :::hint Unknown is not failed
+      Missing ACT-CON, termination or feedback leaves an ambiguous outcome.
+      Do not retry blindly: read the observed state before another operation.
+      :::
+      Read [SBO commands](#iec104-sbo-commands) and
+      [Control authority](#eu-control-authority).
 
   - id: expose-weak
-    title: "Expose and observe the weak boundary"
+    title: "Retain a foreign session before the change"
     expected_config: weak
     node: kali-1
     description: |
-      Keep a long-lived Kali session open while the weak policy is active.
-      In one terminal start the monitor and leave it running; use another
-      terminal for later checks:
+      Apply weak with this step, then leave this monitor in one terminal:
 
           iec104cmd 10.30.30.20 monitor --json --hold 180 --gi-every 2
 
-      The weak policy permits TCP/2404 from wan, dmz, and lan4 into lan1,
-      and permits TCP/502 from lan1 into lan2.
+      Record its source port and start time from conntrack at the firewall.
+      Use a second Kali terminal for new attempts. Predict what will happen
+      to the old flow when you replace the policy. If 180 seconds expires,
+      repeat this step before applying improved; do not call an expired
+      session proof that policy killed it.
 
-      Read: [CLI](/knowledge#tool-iec104cmd), [Packet evidence](/knowledge#tool-iec104-tshark).
-    action:
-      type: firewall
-      config: weak
+      :::decision id=existing-flow options=SURVIVES,DISCONNECTS
+      Will a new deny necessarily sever an already established connection?
+      :::
+      :::hint Mark two attempts
+      Distinct source ports distinguish the retained session from a fresh
+      attempt. Save the tuple as well as the policy-change timestamp.
+      :::
+      Read [Established sessions](#eu-established-sessions).
+    action: {type: firewall, config: weak}
 
   - id: apply-improved
-    title: "Apply source- and port-restricted rules"
-    expected_config: hardened
-    description: |
-      Apply the improved policy. It allows only the Control Centre
-      `10.60.60.20/32` to the RTU `10.30.30.20/32` on TCP/2404 and only
-      that RTU to the breaker `10.40.40.20/32` on TCP/502. Other connection
-      attempts to those control ports are logged and denied. An established
-      Kali flow may continue until its conntrack entry is removed.
-
-      Read: [Port- and source-based rules](/knowledge#eu-port-source-boundary).
-    action:
-      type: firewall
-      config: improved
-
-  - id: established-session
-    title: "Compare a new attempt with the established session"
+    title: "Source-pin the boundary and compare old with new"
     expected_config: hardened
     node: kali-1
     description: |
-      The Kali monitor started under the weak policy should continue to
-      receive IEC104 ASDUs for the existing session. A new session is
-      denied:
+      Apply improved. Find the named-source allows CC 10.60.60.20/32 →
+      RTU 10.30.30.20/32 TCP/2404 and RTU → breaker TCP/502, followed
+      by logged denies for other sources. Later labs use additional allows;
+      do not delete them merely because lab 1 examines only the breaker.
 
-          iec104cmd 10.30.30.20 gi --json
+      While the old Kali monitor still receives ASDUs, run a NEW
+      `iec104cmd 10.30.30.20 gi --json`. Save its failure and the matching
+      firewall DENY with source, destination, port and UTC time. Recheck
+      the CC still receives good points. If the old monitor expired, repeat
+      the weak-to-improved experiment; do not weaken the acceptance rule.
 
-      The deny is based on the endpoint and port, not the command payload.
-
-      Read: [Conntrack and temporal evidence](/knowledge#eu-established-sessions).
-    action:
-      type: probe
-      outcome: blocked
-      targets:
-        - host: 10.30.30.20
-          port: 2404
-          note: "New Kali session after the improved policy is applied"
+      :::decision id=source-boundary options=CONFIRMED,NOT_OBSERVED
+      Is the new foreign attempt denied while the named CC still operates?
+      :::
+      :::hint This is not DPI
+      Both old and new sessions carry IEC 104. The difference is source
+      identity and conntrack state, not inspection of an open/close payload.
+      :::
+      Read [Port/source boundaries](#eu-port-source-boundary).
+    action: {type: firewall, config: improved}
 
   - id: cut-session
-    title: "Cut an established control-centre session"
+    title: "Isolate the CC and interpret its stale cache"
     expected_config: hardened
     node: cc-1
     description: |
-      To demonstrate a true CC outage, make a temporary copy of the improved
-      policy in containd and remove its Control Centre-to-RTU allow. Apply
-      that restrictive policy, verify it is active, then run this step
-      to cut the control-centre session. The action removes the exact
-      conntrack tuple only when exactly one complete session matches; it does not
-      send a TCP reset. The next packet is new and is denied by policy.
+      Export improved for rollback. In containd make a temporary restrictive
+      copy removing only the CC→RTU allow, apply it and read back the
+      running rules. Only THEN execute this step. It removes the exact
+      CC→RTU conntrack tuple when exactly one complete session matches;
+      it sends no TCP reset. The next packet must face the new deny.
 
-      A deny alone does not sever an already established flow. Do not kill
-      the session before applying and verifying the restrictive policy.
+      Wait for link_down and point_stale in the CC journal. Compare the
+      last cached position, source time and received_at with the physical
+      panel on /substation. IV+NT/link_lost means untrusted age, not open,
+      not closed and not zero. Keep both views in your evidence record.
 
-      Read: [Conntrack and temporal evidence](/knowledge#eu-established-sessions).
-    action:
-      type: session-cut
-      flow: cc-rtu
-
-  - id: stale-view
-    title: "Read the stale operator cache"
-    expected_config: hardened
-    node: cc-1
-    description: |
-      While the CC conduit is denied, open [/substation](/substation).
-      The Control Centre retains each last value and its observation and
-      receipt times, marks the points `link_lost` and IV+NT, and reports a
-      disconnected link. It must not replace stale data with zero or read
-      the simulation/device HTTP endpoints to refresh its cache.
-
-      Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
+      :::decision id=stale-is-zero options=NO,YES
+      May an operator treat the stale current as a fresh zero measurement?
+      :::
+      :::hint Separate the clocks
+      Source time belongs to RTU observation; receipt time belongs to CC
+      delivery. Neither is the time of your screenshot.
+      :::
+      Read [GI/quality](#iec104-gi-cot-quality) and
+      [Observation versus truth](#eu-rtu-control-centre-apis).
+    action: {type: session-cut, flow: cc-rtu}
 
   - id: local-trip
-    title: "Trip local protection while the CC is isolated"
+    title: "Prove autonomous protection during the outage"
     expected_config: hardened
     node: breaker-1
     description: |
-      Run this step to inject a fault. Read the separate physical feeder
-      section on [/substation](/substation). The local protection
-      opens the breaker and latches lockout and trip state even though the
-      Control Centre cannot reach the RTU. OpenDSS follows the device truth
-      through `process_net`. The operator cache stays unchanged and stale.
-      The following step clears the fault without unlatching protection.
-      You can run this fault step again to observe the latched trip.
+      Confirm the breaker is closed and the CC points are stale before
+      executing this step. It injects a process-owned S1 fault. Observe
+      CB1 open, protection trip and lockout in the separate physical panel,
+      with the solved feeder losing supply while the CC cache stays stale.
+      Record the local_protection_trip audit revision and its first_solve
+      acknowledgement between link_down and the eventual recovery GI.
 
-      Read: [Local protection](/knowledge#eu-feeder-breaker-protection).
-    action:
-      type: command
-      device: process
-      command: fault_s1
+      :::decision id=local-protection options=INDEPENDENT,CC_DEPENDENT
+      Does severing telecontrol prevent this local protective trip?
+      :::
+      :::hint Do not repair observation with truth
+      A correct physical panel does not mean the CC learned the trip.
+      Only renewed IEC 104 reception can establish that.
+      :::
+      Read [Breaker protection](#eu-feeder-breaker-protection) and
+      [Outage consequences](#eu-outage-voltage-consequences).
+    action: {type: command, device: process, command: fault_s1}
 
   - id: clear-fault
-    title: "Clear the local fault"
+    title: "Clear the fault without claiming restoration"
     expected_config: hardened
     node: breaker-1
     description: |
-      Run this step to clear the fault. The breaker stays open, tripped and
-      locked out. Compare physical feeder state with the stale Control
-      Centre on [/substation](/substation); clearing a fault cannot refresh
-      a disconnected IEC 104 cache.
-    action:
-      type: command
-      device: process
-      command: clear_fault
+      Execute process clear_fault. The fault disappears, but CB1 remains
+      open, locked out and tripped; the disconnected CC is still stale.
+      Record all three facts separately. Do not reset CB1 yet: the final
+      comparison needs its tripped state, and resetting loses that evidence.
+
+      :::decision id=fault-clear-restores options=NO,YES
+      Is clearing the initiating fault sufficient to restore feeder service?
+      :::
+      :::hint Latched means latched
+      Removing a cause is not the same operation as acknowledging lockout
+      or closing a switch. Reserve restoration until after evidence export.
+      :::
+    action: {type: command, device: process, command: clear_fault}
 
   - id: restore
-    title: "Restore the named control paths"
+    title: "Recover only the named telecontrol path"
     expected_config: hardened
     description: |
-      Restore the improved policy, which restores only the approved CC→RTU
-      and RTU→breaker paths. The Control Centre reconnects, performs a new
-      GI, and refreshes all four points from the RTU. The trip remains
-      latched until the restore-device step or **Reset Lab**.
+      Restore improved with this step. Wait for a later connection_seq,
+      link_up and gi_complete in the SAME CC cache epoch. Verify the four
+      breaker points are GOOD and the observed open position agrees with
+      the independently read device. Protection stays latched. A CC restart
+      discards the journal; if that happened, repeat the exercise rather
+      than join unrelated boot identities.
 
-      Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
-    action:
-      type: firewall
-      config: improved
+      :::decision id=recovery-evidence options=GI_AND_FRESH_VALUES,TCP_ONLY
+      What demonstrates restored operator visibility rather than a socket?
+      :::
+      :::hint Bound the narrative
+      Order link_down → stale → local trip → first_solve → reconnect → GI.
+      Missing entries or a truncated ring leave missing evidence, not a pass.
+      :::
+      Read [Evidence lifecycle](#eu-evidence-lifecycle).
+    action: {type: firewall, config: improved}
 
   - id: evidence
-    title: "Review the temporal evidence"
+    title: "Export findings for the conduit design"
     expected_config: hardened
     description: |
-      Run the scenario validator after the improved policy is active. It
-      checks the logged deny, CC link-down and stale-point journal entries,
-      the later reconnect and GI, the device's local-protection audit and
-      corresponding solver result, and the final good operator values.
-      The evidence is bounded by boot identity and journal sequence; a
-      missing or truncated journal is a failure, not a pass.
+      Run Validate now, before resetting. Export the result, PCAP, CC state
+      and journal, breaker audit, policy diff and firewall deny. Include
+      UTC bounds, cache epoch, device generation and revision, source tuples
+      and the four IOAs. Explain port access versus command authority,
+      established versus new sessions, and stale observation versus truth.
 
-      Read: [Packet evidence](/knowledge#tool-iec104-tshark), [Temporal/session evidence](/knowledge#eu-established-sessions).
+      Your eight decisions are the handover to lab 2. For each, record the
+      measured result and uncertainty in Notes; an unobserved result is a
+      follow-up task, not a guessed success. Propose which other station
+      conduits need the same named-source treatment and which cannot be
+      enforced at this firewall. This validator does not grade RMU/OLTC/PLC
+      point quality or prove management-plane isolation.
+      Read [Acceptance handover](#eu-acceptance-handover).
 
   - id: restore-device
-    title: "Restore the feeder device"
+    title: "Return the feeder to a safe starting state"
+    node: breaker-1
     description: |
-      After reviewing the temporal evidence, run this step to restore the
-      initially closed breaker, with no fault, trip or lockout. Observe
-      physical feeder state and the Control Centre on [/substation](/substation).
-      **Reset Lab** also restores the device and the weak firewall baseline.
-    action:
-      type: command
-      device: breaker
-      command: reset
+      Having exported evidence and cleared the process fault, execute this
+      breaker reset. Confirm closed, no lockout, no trip and fresh CC
+      observation. If the process fault was not cleared, protection will
+      trip again: stop and correct the cause. Reset Lab is a broader reset
+      and returns weak policy; it does not clear historian retention.
+      Leave improved active for handover, or explicitly record any return
+      to weak. Lab 2 begins a new bounded evidence attempt.
+      Read [Reset acceptance](#eu-reset-acceptance).
+    action: {type: command, device: breaker, command: reset}
