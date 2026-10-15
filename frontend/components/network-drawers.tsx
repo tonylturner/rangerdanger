@@ -5,7 +5,13 @@ import type { LabGraph, ZoneRuleSummary } from "../lib/api";
 import type { FlowContext } from "../lib/observed-flows";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
-import { CUSTOM_POLICY, isHardened, policyWording, type PolicyWording } from "../lib/policy-wording";
+import {
+  activePolicyWording,
+  isHardened,
+  policyWording,
+  type PackagePolicies,
+  type PolicyWording,
+} from "../lib/policy-wording";
 import {
   INTRA_ZONE_FLOWS,
   ViewMode,
@@ -74,12 +80,15 @@ const US_MENU_WORDING: Record<string, PolicyWording> = {
   improved: { label: "Hardened", description: "Deny-default, RTAC-only field access" },
 };
 
-// The badge text: the US package's two words, else the active name.
-function policyBadgeText(activeConfig: string | undefined, usWording: boolean): string {
-  if (activeConfig === CUSTOM_POLICY) return "Custom policy";
-  if (usWording && activeConfig === "improved") return "Hardened";
-  if (usWording && activeConfig === "weak") return "Weak baseline";
-  return activeConfig || "—";
+// The badge's short US words; other packages show the active name.
+const US_BADGE_WORDING: Record<string, PolicyWording> = {
+  weak: { label: "Weak baseline", description: "" },
+  improved: { label: "Hardened", description: "" },
+};
+
+function policyBadgeText(activeConfig: string | undefined, policies: PackagePolicies): string {
+  if (!activeConfig) return "—";
+  return activePolicyWording(activeConfig, policies, US_BADGE_WORDING).label;
 }
 
 // Policy badge + quick-switch dropdown in the header. Styled as a
@@ -133,7 +142,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="h-4 w-4"
           />
         )}
-        <span>Firewall · {policyBadgeText(activeConfig, packagePolicies.usWording)}</span>
+        <span>Firewall · {policyBadgeText(activeConfig, packagePolicies)}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 

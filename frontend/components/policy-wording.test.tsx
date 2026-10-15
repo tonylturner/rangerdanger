@@ -79,7 +79,8 @@ describe("PolicyBadge", () => {
     expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · Hardened");
     expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="weak" />)).toBe("Firewall · Weak baseline");
     expect(renderWith(EU_PACKAGE, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · improved");
-    expect(renderWith(EU_PACKAGE, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · custom");
+    expect(renderWith(EU_PACKAGE, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · Custom policy");
+    expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="custom" />)).toBe("Firewall · Custom policy");
   });
 
   it("waits for the package", () => {
