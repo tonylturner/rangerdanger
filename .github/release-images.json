@@ -59,7 +59,11 @@
       "platforms": ["linux/amd64", "linux/arm64"],
       "always_build": false,
       "inputs": [
-        {"kind": "dir", "path": "dnp3go"}
+        {"kind": "dir", "path": "dnp3go"},
+        {"kind": "dir", "path": "services/iec104/src"},
+        {"kind": "file", "path": "services/iec104/LICENSE"},
+        {"kind": "file", "path": "services/iec104/README.md"},
+        {"kind": "file", "path": "services/iec104/build-iec104cmd.sh"}
       ]
     },
     {

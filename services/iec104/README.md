@@ -126,8 +126,10 @@ successful one-shot, **2** on connect failure, **3** on link loss during a
 monitor hold. The gate uses `monitor` to hold a session across a policy apply
 and a conntrack kill.
 
-`iec104cmd` also ships as a fully static (musl) binary inside the Kali image,
-built in `Dockerfile.kali`'s own stage (not copied from the iec104 image).
+`iec104cmd` also ships as a fully static (musl) binary inside Kali and the
+shared engineering-workstation images, built in each Dockerfile's pinned
+stage (not copied from the iec104 image). Both images include the lib60870
+tarball, CLI sources, build script, licence and this README.
 
 ## iec104-cc
 

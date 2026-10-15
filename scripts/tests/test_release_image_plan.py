@@ -295,12 +295,22 @@ class ReleaseImagePlanTests(PlannerFixture):
             (
                 "services/iec104/src/common.c",
                 "changed IEC 104 source\n",
-                {"rangerdanger-kali"},
+                {"rangerdanger-kali", "rangerdanger-eng-ws"},
             ),
             (
                 "services/iec104/build-iec104cmd.sh",
                 "changed IEC 104 CLI build recipe\n",
-                {"rangerdanger-kali"},
+                {"rangerdanger-kali", "rangerdanger-eng-ws"},
+            ),
+            (
+                "services/iec104/LICENSE",
+                "changed IEC 104 license\n",
+                {"rangerdanger-kali", "rangerdanger-eng-ws"},
+            ),
+            (
+                "services/iec104/README.md",
+                "changed IEC 104 readme\n",
+                {"rangerdanger-kali", "rangerdanger-eng-ws"},
             ),
             (
                 "services/opendss-sim/eu_app.py",
