@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { FRESH_POINTS, STALE_STATE, TRUTH, commandResult } from "./operator-fixtures.test-util";
+import { FRESH_POINTS, STALE_STATE, commandResult } from "./operator-fixtures.test-util";
 import {
   commandErrorText,
   commandOutcome,
   controlCentreHealth,
   controlCentreLinkText,
-  deviceStateSummary,
   formatAge,
   formatPointValue,
   formatUtcTime,
@@ -151,11 +150,5 @@ describe("workshop status control centre", () => {
     expect(controlCentreHealth({ link: "disconnected", gi: "none" })).toBe("offline");
     expect(controlCentreHealth({ link: null, gi: null })).toBe("offline");
     expect(controlCentreHealth(undefined)).toBe("offline");
-  });
-});
-
-describe("instructor", () => {
-  it("summarises the device state a fault or reset answered with", () => {
-    expect(deviceStateSummary(TRUTH.device)).toBe("breaker OPEN, fault YES, lockout YES, protection tripped YES, revision 5");
   });
 });

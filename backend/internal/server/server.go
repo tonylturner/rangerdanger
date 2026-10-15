@@ -186,7 +186,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		sub.GET("/network-events", s.handleSubstationNetworkEvents)
 	}
 
-	// Control centre (operator view) and instructor truth, for packages
+	// Control centre and physical field readings, for packages
 	// whose manifest has those services.
 	operator := rng.Group("/operator")
 	{
@@ -194,12 +194,10 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		operator.POST("/commands", s.handleOperatorCommand)
 		operator.GET("/journal", s.handleOperatorJournal)
 	}
-	instructor := rng.Group("/instructor")
+	field := rng.Group("/field")
 	{
-		instructor.GET("/state", s.handleInstructorState)
-		instructor.GET("/audit", s.handleInstructorAudit)
-		instructor.POST("/fault", s.handleInstructorFault)
-		instructor.POST("/reset", s.handleInstructorReset)
+		field.GET("/state", s.handleFieldState)
+		field.GET("/audit", s.handleFieldAudit)
 	}
 
 	// PCAP capture endpoints (containd API with tcpdump fallback)

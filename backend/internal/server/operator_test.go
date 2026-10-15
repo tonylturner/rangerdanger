@@ -105,10 +105,10 @@ func TestOperatorJournal(t *testing.T) {
 	}
 }
 
-// TestOperatorAndInstructorRoutesNeedTheirServices answers 404 on a
-// package whose manifest has no control centre, instructor device or
+// TestOperatorAndSimRoutesNeedTheirServices answers 404 on a
+// package whose manifest has no control centre, sim device or
 // process solver API (the US package).
-func TestOperatorAndInstructorRoutesNeedTheirServices(t *testing.T) {
+func TestOperatorAndSimRoutesNeedTheirServices(t *testing.T) {
 	s := rangeServer(usGeneration(nil), "weak")
 	routes := []struct {
 		method, path, body string
@@ -117,10 +117,8 @@ func TestOperatorAndInstructorRoutesNeedTheirServices(t *testing.T) {
 		{http.MethodGet, "/api/operator/state", "", s.handleOperatorState},
 		{http.MethodPost, "/api/operator/commands", `{"point":"feeder-breaker-command","operation":"open"}`, s.handleOperatorCommand},
 		{http.MethodGet, "/api/operator/journal", "", s.handleOperatorJournal},
-		{http.MethodGet, "/api/instructor/state", "", s.handleInstructorState},
-		{http.MethodGet, "/api/instructor/audit", "", s.handleInstructorAudit},
-		{http.MethodPost, "/api/instructor/fault", `{"active":true}`, s.handleInstructorFault},
-		{http.MethodPost, "/api/instructor/reset", `{}`, s.handleInstructorReset},
+		{http.MethodGet, "/api/field/state", "", s.handleFieldState},
+		{http.MethodGet, "/api/field/audit", "", s.handleFieldAudit},
 	}
 	// The routes are registered on the range router as well.
 	routed := routedServer(t)

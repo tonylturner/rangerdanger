@@ -30,7 +30,8 @@ var resetDeviceCommands = []deviceCommand{
 }
 
 var usRecipe = &packageRecipe{
-	resetCommands: resetDeviceCommands,
+	commandExecutor: (*Server).executeRTACCommand,
+	resetCommands:   resetDeviceCommands,
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtac-1", network: "ot_ops_net", port: 502,
 		allowUnder: "weak", denyUnder: "improved"},
 	testSuite:    true,

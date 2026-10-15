@@ -42,11 +42,11 @@ func (s *Server) collectTelecontrolEvidence(ctx context.Context, gen *lifecycle.
 		ev.ccStateErr = fmt.Errorf("package %s has no control centre", gen.Package.ID)
 		ev.journalErr = ev.ccStateErr
 	}
-	if device, ok := instructorURL(gen); ok {
-		ev.audit, ev.auditErr = fetchJSON[deviceAudit](ctx, instructorService, device+"/api/audit?after=0")
-		ev.device, ev.deviceErr = fetchJSON[deviceTruth](ctx, instructorService, device+"/api/state")
+	if device, ok := simURL(gen); ok {
+		ev.audit, ev.auditErr = fetchJSON[deviceAudit](ctx, simService, device+"/api/audit?after=0")
+		ev.device, ev.deviceErr = fetchJSON[deviceTruth](ctx, simService, device+"/api/state")
 	} else {
-		ev.deviceErr = fmt.Errorf("package %s has no instructor device", gen.Package.ID)
+		ev.deviceErr = fmt.Errorf("package %s has no sim device", gen.Package.ID)
 		ev.auditErr = ev.deviceErr
 	}
 	return ev

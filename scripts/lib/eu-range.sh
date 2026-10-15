@@ -118,15 +118,46 @@ eu_assert_device_state_response() {
     return 1
   fi
 }
-# eu_instructor_action PATH BODY LABEL: one instructor fault/reset whose answer
-# must be the device /api/state shape (left in API_BODY).
-eu_instructor_action() {
-  if ! eu_api_post "$1" "$2"; then
-    fail "$3 returned no parseable response"
+# Resolve authored step IDs from the served curriculum; execution stays index-based.
+# Never retry an execution: a second POST is a second physical operation.
+eu_execute_step() {
+  local step="$1" label="$2" index scenario="iec104-telecontrol-boundary"
+  if ! eu_api_get "/api/scenarios/$scenario"; then
+    fail "$label cannot read the active scenario"
     return 1
   fi
-  eu_assert_device_state_response "$3"
+  index=$(printf '%s' "$API_BODY" | jq -er --arg step "$step" '
+    .steps | fromjson | to_entries | map(select(.value.id == $step))
+    | if length == 1 and .[0].value.action != null then .[0].key
+      else error("step must name exactly one executable action") end') || {
+    fail "$label cannot resolve executable step $step"
+    return 1
+  }
+  if ! eu_api_post "/api/scenarios/$scenario/steps/$index/execute" '{}'; then
+    fail "$label returned no parseable execution result"
+    return 1
+  fi
+  if [ "$HTTP_STATUS" != "200" ] || ! printf '%s' "$API_BODY" | jq -e '
+    .success == true and .action_type != "manual"
+    and (.results | type == "array" and length > 0 and all(.[]; .success == true))
+  ' >/dev/null 2>&1; then
+    fail "$label step execution failed: HTTP $HTTP_STATUS $API_BODY"
+    return 1
+  fi
+  pass "$label executed through scenario step $step"
 }
+
+# Preserve the physical readback assertions after a successful student action.
+eu_device_step() {
+  eu_execute_step "$1" "$2" || return 1
+  if ! eu_get_field; then
+    fail "$2 field readback unavailable"
+    return 1
+  fi
+  API_BODY=$(printf '%s' "$API_BODY" | jq -c '.device') || return 1
+  eu_assert_device_state_response "$2"
+}
+
 eu_check_tools() {
   local tool missing=0
   for tool in curl jq python3 docker tshark; do
@@ -471,11 +502,11 @@ eu_wait_for_operator() {
   fi
   eu_assert_operator_shape "$WAIT_BODY" "$3"
 }
-eu_wait_for_instructor() {
-  eu_wait_for_state "/api/instructor/state" "$1" "$2" "$3"
+eu_wait_for_field() {
+  eu_wait_for_state "/api/field/state" "$1" "$2" "$3"
 }
-eu_get_instructor() {
-  eu_api_get "/api/instructor/state"
+eu_get_field() {
+  eu_api_get "/api/field/state"
 }
 eu_get_operator() {
   if ! eu_api_get "/api/operator/state"; then
@@ -498,7 +529,7 @@ eu_get_point_snapshot() {
   '
 }
 
-# eu_baseline_mismatches OPERATOR INSTRUCTOR: one line per disagreement between
+# eu_baseline_mismatches OPERATOR FIELD: one line per disagreement between
 # the operator view, device truth and solver; no output means a GOOD baseline.
 # GI (COT 20) reports are untimed (contract §3.2), so a status point's time tag
 # must fit its COT; whether a timed tag is synchronised is G2's check.
@@ -537,7 +568,7 @@ eu_baseline_mismatches() {
   '
 }
 
-# eu_wait_for_baseline LABEL BUDGET: poll operator and instructor state until
+# eu_wait_for_baseline LABEL BUDGET: poll operator and field state until
 # eu_baseline_mismatches is empty; on timeout print every mismatch and both
 # last snapshots (BASELINE_OPERATOR, BASELINE_TRUTH).
 eu_wait_for_baseline() {
@@ -552,12 +583,12 @@ eu_wait_for_baseline() {
       mismatches="operator state unavailable: $(cat "$TMP_DIR/baseline.err")"
     else
       BASELINE_OPERATOR="$API_BODY"
-      if ! eu_api_get "/api/instructor/state" 2>"$TMP_DIR/baseline.err"; then
-        mismatches="instructor state unavailable: $(cat "$TMP_DIR/baseline.err")"
+      if ! eu_api_get "/api/field/state" 2>"$TMP_DIR/baseline.err"; then
+        mismatches="field state unavailable: $(cat "$TMP_DIR/baseline.err")"
       else
         BASELINE_TRUTH="$API_BODY"
         mismatches=$(eu_baseline_mismatches "$BASELINE_OPERATOR" "$BASELINE_TRUTH" 2>&1) \
-          || mismatches="cannot compare operator and instructor state: $mismatches"
+          || mismatches="cannot compare operator and field state: $mismatches"
       fi
     fi
     if [ -z "$mismatches" ]; then
@@ -572,7 +603,7 @@ eu_wait_for_baseline() {
   done
   fail "$label did not converge within ${budget}s"
   printf '%s\n' "$mismatches" | sed 's/^/  mismatch: /' >&2
-  printf '  operator snapshot: %s\n  instructor snapshot: %s\n' "${BASELINE_OPERATOR:-none}" "${BASELINE_TRUTH:-none}" >&2
+  printf '  operator snapshot: %s\n  field snapshot: %s\n' "${BASELINE_OPERATOR:-none}" "${BASELINE_TRUTH:-none}" >&2
   return 1
 }
 eu_wait_command() {
@@ -819,22 +850,22 @@ eu_cleanup() {
       fail "cleanup could not restore weak policy"
       weak_reset=1
     fi
-    eu_instructor_action /api/instructor/reset '{}' "cleanup instructor reset" || weak_reset=1
-    if [ "$weak_reset" -eq 0 ] && eu_get_instructor; then
+    eu_device_step restore-device "cleanup device reset" || weak_reset=1
+    if [ "$weak_reset" -eq 0 ] && eu_get_field; then
       if printf '%s' "$API_BODY" | jq -e \
         '.device.position == "closed" and .device.lockout == false and .device.fault_active == false and .device.protection_tripped == false' \
         >/dev/null 2>&1; then
-        pass "cleanup instructor reset readback is the initial breaker truth"
+        pass "cleanup device reset readback is the initial breaker truth"
       else
-        fail "cleanup instructor reset did not restore initial truth: $API_BODY"
+        fail "cleanup device reset did not restore initial truth: $API_BODY"
         weak_reset=1
       fi
     elif [ "$weak_reset" -eq 0 ]; then
-      fail "cleanup could not read back instructor reset truth"
+      fail "cleanup could not read back device reset truth"
       weak_reset=1
     fi
     if [ "$weak_reset" -eq 0 ]; then
-      pass "cleanup ended on weak policy + instructor reset"
+      pass "cleanup ended on weak policy + device reset"
     fi
   fi
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then

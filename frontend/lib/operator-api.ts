@@ -1,4 +1,4 @@
-// Typed clients for the EU control-centre, instructor and firewall
+// Typed clients for the EU control-centre, field and firewall
 // session routes. Shapes follow the increment-3 contract: the control
 // centre (CC) state, commands and journal (§6) as the backend wraps
 // them (§7.2), the feeder-breaker device state and audit (§4) and the
@@ -22,7 +22,7 @@ export type ControlCentreLink = {
   state: LinkState;
   // The RTU, "<ip>:<port>". lib60870 cannot report the CC's own end of
   // the session, so the firewall session list is the only source of the
-  // CC's ephemeral port (lib/firewall-sessions.ts).
+  // CC's ephemeral port.
   peer: string;
   since: string | null;
   last_rx_at: string | null;
@@ -127,7 +127,7 @@ export async function getOperatorJournal() {
   return request<OperatorJournal>("/operator/journal?after=0");
 }
 
-// ── Instructor truth (GET /api/instructor/*) ─────────────────────
+// ── Physical feeder state (GET /api/field/*) ─────────────────────
 
 export type DeviceMeasurements = {
   current_a: number | null;
@@ -177,7 +177,7 @@ export type ProcessElectrical = {
   truth_stale: boolean;
 };
 
-export type InstructorState = {
+export type FieldState = {
   device: DeviceState;
   process: ProcessElectrical;
 };
@@ -204,23 +204,12 @@ export type DeviceAudit = {
   oldest_seq: number | null;
 };
 
-export async function getInstructorState() {
-  return request<InstructorState>("/instructor/state");
+export async function getFieldState() {
+  return request<FieldState>("/field/state");
 }
 
-export async function getInstructorAudit() {
-  return request<DeviceAudit>("/instructor/audit?after=0");
-}
-
-export async function setInstructorFault(active: boolean) {
-  return request<DeviceState>("/instructor/fault", {
-    method: "POST",
-    body: JSON.stringify({ active }),
-  });
-}
-
-export async function resetInstructorDevice() {
-  return request<DeviceState>("/instructor/reset", { method: "POST", body: "{}" });
+export async function getFieldAudit() {
+  return request<DeviceAudit>("/field/audit?after=0");
 }
 
 // ── Firewall sessions (GET /api/firewall/sessions) ───────────────
@@ -241,30 +230,3 @@ export type FirewallSessionList = {
   sessions: FirewallSession[];
   count: number;
 };
-
-// The original-direction tuple containd deletes. Zero ports are not
-// wildcards, so a kill always names both.
-export type SessionTuple = {
-  proto: string;
-  src: string;
-  dst: string;
-  sport: number;
-  dport: number;
-};
-
-export type SessionFilter = { dport: number; src?: string; dst?: string };
-
-export async function getFirewallSessions(filter: SessionFilter) {
-  const query = new URLSearchParams({ dport: String(filter.dport) });
-  if (filter.src !== undefined) query.set("src", filter.src);
-  if (filter.dst !== undefined) query.set("dst", filter.dst);
-  return request<FirewallSessionList>(`/firewall/sessions?${query.toString()}`);
-}
-
-// 404 when containd has no such entry.
-export async function killFirewallSession(tuple: SessionTuple) {
-  return request<{ status: string }>("/firewall/sessions/kill", {
-    method: "POST",
-    body: JSON.stringify(tuple),
-  });
-}

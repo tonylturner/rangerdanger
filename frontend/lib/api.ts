@@ -123,11 +123,12 @@ export type DecisionAction = {
 };
 
 export type StepAction = {
-  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe";
+  type: "command" | "check" | "firewall" | "sequence" | "manual" | "decision" | "probe" | "session-cut";
   device?: string;
   command?: string;
   source?: string;
   value?: number;
+  flow?: string;
   config?: string;
   expect?: Record<string, unknown>;
   outcome?: "reachable" | "blocked";

@@ -336,7 +336,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 		euIDs[index] = step.ID
 	}
 	wantEU := []string{"observe-baseline", "operate-breaker", "expose-weak", "apply-improved", "established-session",
-		"cut-session", "stale-view", "local-trip", "restore", "evidence"}
+		"cut-session", "stale-view", "local-trip", "clear-fault", "restore", "evidence", "restore-device"}
 	if !reflect.DeepEqual(euIDs, wantEU) {
 		t.Errorf("EU step ids = %v, want %v", euIDs, wantEU)
 	}

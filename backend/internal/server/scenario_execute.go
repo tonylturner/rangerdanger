@@ -105,6 +105,9 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 		checkResults := s.executeCheck(ctx, gen, step.Action.Expect)
 		results = append(results, checkResults...)
 
+	case "session-cut":
+		results = append(results, s.executeSessionCut(ctx, gen, step.Action.Flow))
+
 	case "probe":
 		results = s.executeProbe(ctx, gen, step)
 
@@ -134,10 +137,10 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 	})
 }
 
-// executeCommand sends a command to a field device via RTAC.
+// executeRTACCommand sends a command to a US field device via RTAC.
 // When the improved firewall config is active, it enforces source authorization:
 // only the RTAC and operator sources can reach field devices.
-func (s *Server) executeCommand(ctx context.Context, gen *lifecycle.Generation, device, command, source string, value *float64) StepActionResult {
+func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generation, _ *packageRecipe, device, command, source string, value *float64) StepActionResult {
 	// Check if the source is authorized under the current firewall policy.
 	// In "improved" mode, only RTAC (10.30.30.20) and "operator" can send
 	// commands to field devices — all other sources are blocked by containd.

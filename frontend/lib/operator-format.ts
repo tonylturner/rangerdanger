@@ -8,7 +8,6 @@ import type {
   CommandPhaseStatus,
   CommandResult,
   ControlCentreLink,
-  DeviceState,
   LinkDownReason,
   OperatorPoint,
   PointQuality,
@@ -284,20 +283,6 @@ export function journalTone(kind: string, detail: Record<string, unknown>): Tone
 // The journal's sequence range; both bounds are null while it is empty.
 export function journalRangeText(oldest: number | null, latest: number | null): string {
   return oldest === null || latest === null ? "empty" : `seq ${oldest}–${latest}`;
-}
-
-// ── Instructor ───────────────────────────────────────────────────
-
-// The device state a fault or reset answered with.
-export function deviceStateSummary(state: DeviceState): string {
-  const yes = (value: boolean) => (value ? "YES" : "no");
-  return [
-    `breaker ${state.position.toUpperCase()}`,
-    `fault ${yes(state.fault_active)}`,
-    `lockout ${yes(state.lockout)}`,
-    `protection tripped ${yes(state.protection_tripped)}`,
-    `revision ${state.revision}`,
-  ].join(", ");
 }
 
 // ── Summary ──────────────────────────────────────────────────────

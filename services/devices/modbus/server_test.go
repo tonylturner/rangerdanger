@@ -162,7 +162,7 @@ func TestFC6ModelInterlockUsesException04(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := model.InjectFault(context.Background(), true, feederbreaker.AuditContext{Peer: "instructor", Protocol: "instructor", Zone: "mgmt"}); err != nil {
+	if _, err := model.InjectFault(context.Background(), true, feederbreaker.AuditContext{Peer: "lab", Protocol: "lab", Zone: "mgmt"}); err != nil {
 		t.Fatal(err)
 	}
 	zones, err := feederbreaker.ParseZones("field=10.40.40.0/24")

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useOperatorView } from "../lib/operator-queries";
-import { EU_OPERATOR_VIEW, isView, operatorNavLabel, type OperatorViewResolution } from "../lib/operator-view";
+import { operatorNavLabel, type OperatorViewResolution } from "../lib/operator-view";
 import { RangeControl } from "./range-control";
 
 type NavLink = { href: string; label: string };
 
-// The operator screen's label and the instructor link follow the active
+// The operator screen's label follows the active
 // package's operator view (lib/operator-view.ts).
 export function navLinksFor(resolution: OperatorViewResolution): NavLink[] {
   const links = [
@@ -19,7 +19,6 @@ export function navLinksFor(resolution: OperatorViewResolution): NavLink[] {
     { href: "/labs", label: "Workshop Status" },
     { href: "/knowledge", label: "Knowledge" },
   ];
-  if (isView(resolution, EU_OPERATOR_VIEW)) links.push({ href: "/instructor", label: "Instructor Truth" });
   return links;
 }
 

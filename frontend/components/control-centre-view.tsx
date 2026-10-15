@@ -18,6 +18,7 @@ import { BreakerCommandPanel } from "./control-centre-command";
 import { ControlCentreJournal } from "./control-centre-journal";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { PointTable, STALE_HATCH } from "./control-centre-points";
+import { PhysicalFeeder } from "./physical-feeder";
 
 const POLL_MS = 2000;
 
@@ -81,12 +82,14 @@ export function ControlCentreScreen({
   stateUpdatedAt,
   journal,
   now,
+  physicalFeeder,
 }: {
   state: OperatorState | undefined;
   stateError: unknown;
   stateUpdatedAt: number;
   journal: OperatorJournal | undefined;
   now: number;
+  physicalFeeder?: ReactNode;
 }) {
   const waiting = !state && isRangeNotReady(stateError);
   const apiDown = stateError !== null && stateError !== undefined && !isRangeNotReady(stateError);
@@ -155,6 +158,7 @@ export function ControlCentreScreen({
           </p>
         </>
       )}
+      {physicalFeeder}
     </main>
   );
 }
@@ -171,6 +175,7 @@ export function ControlCentreView() {
       stateUpdatedAt={stateQuery.dataUpdatedAt}
       journal={journal}
       now={now}
+      physicalFeeder={<PhysicalFeeder operator={stateQuery.data} />}
     />
   );
 }

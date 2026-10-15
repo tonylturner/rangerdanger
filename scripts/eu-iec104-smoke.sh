@@ -4,7 +4,7 @@
 # Usage: scripts/eu-iec104-smoke.sh [--dry-run|--list]
 # This script is intentionally destructive while running: it changes the
 # active policy, breaker truth, and pauses range services. It always restores
-# the weak policy + instructor reset and unpauses services it paused. A failed
+# the weak policy + device reset and unpauses services it paused. A failed
 # run first keeps its evidence in EU_GATE_EVIDENCE_DIR (default
 # build/deploy-test/eu-evidence/<UTC timestamp>/). Sourcing this file only
 # defines the gates; scripts/tests/eu-gate/ runs them against stubs.
@@ -119,8 +119,8 @@ EU IEC104 gate plan (no Docker or backend access):
   G11 Remove RTU-to-breaker allow; exact Modbus kill; stale/reset/recover
   G12 OpenDSS pause yields measurement_invalid only; unpause recovers (needs G11)
   G13 RTU pause, fault on/off each awaiting its first_solve, CC link loss, new connection + GI, audit
-  G14 Instructor reset recovers the chain; apply weak
-  EXIT Keep evidence on failure; restore weak + instructor reset; unpause services paused by this run
+  G14 Device reset recovers the chain; apply weak
+  EXIT Keep evidence on failure; restore weak + device reset; unpause services paused by this run
 PLAN
 }
 
@@ -256,7 +256,7 @@ eu_gate_G0() {
   check_listener "$CC" "10.99.99.21:8080" "Control-centre HTTP API"
   check_listener "$BREAKER" "$BREAKER_IP:502" "Feeder-breaker Modbus"
   check_listener "$BREAKER" "10.50.50.30:8080" "Feeder-breaker process truth API" 2
-  check_listener "$BREAKER" "10.99.99.22:8080" "Feeder-breaker instructor API" 2
+  check_listener "$BREAKER" "10.99.99.22:8080" "Feeder-breaker sim API" 2
   # The contract keeps the existing GPS image (§2): its shared HTTP server binds :8080.
   check_listener "$GPS" "*:8080" "GPS station-clock API (existing wildcard bind)"
   check_listener "$OPENDSS" "0.0.0.0:8080" "OpenDSS process/mgmt API"
@@ -288,19 +288,19 @@ eu_gate_G0() {
 
 eu_gate_G1() {
   local first_seq next_seq
-  eu_instructor_action /api/instructor/reset '{}' "G1 instructor baseline reset" || true
+  eu_device_step restore-device "G1 sim baseline reset" || true
   # The reset always bumps the device revision; the solver and the RTU's next
   # Modbus poll follow asynchronously, so poll until every view agrees.
   if eu_wait_for_baseline "G1 GOOD baseline" 30; then
     pass "G1 link started, GI complete, four GOOD points; operator = truth = solver generation/revision"
   fi
   if [ -z "$BASELINE_TRUTH" ]; then
-    fail "G1 instructor truth/process state is unavailable or unparsable"
+    fail "G1 physical state/process state is unavailable or unparsable"
     return
   fi
   first_seq=$(printf '%s' "$BASELINE_TRUTH" | jq -r '.process.solve_seq // empty')
   sleep 2
-  if eu_get_instructor; then
+  if eu_get_field; then
     next_seq=$(printf '%s' "$API_BODY" | jq -r '.process.solve_seq // empty')
     if [[ "$first_seq" =~ ^[0-9]+$ ]] && [[ "$next_seq" =~ ^[0-9]+$ ]] \
       && [ "$next_seq" -gt "$first_seq" ]; then
@@ -309,7 +309,7 @@ eu_gate_G1() {
       fail "G1 solve_seq did not advance ($first_seq -> $next_seq)"
     fi
   else
-    fail "G1 second instructor state read was unavailable"
+    fail "G1 second field state read was unavailable"
   fi
 }
 
@@ -337,7 +337,7 @@ eu_gate_G2() {
     g2_gps_unpaused=1
   fi
   if [ "$g2_gps_unpaused" -eq 1 ]; then
-    eu_wait_for_instructor '.process.truth_revision == .device.revision' 10 "G2 solver after GPS resumes" || true
+    eu_wait_for_field '.process.truth_revision == .device.revision' 10 "G2 solver after GPS resumes" || true
   fi
   sleep 2
   eu_wait_command close completed || true
@@ -374,17 +374,17 @@ eu_gate_G3() {
   fi
 
   if eu_wait_command open completed; then
-    eu_wait_for_instructor '.device.position == "open" and .process.breaker == "open" and .process.current_a < 0.1 and .process.truth_revision == .device.revision' 10 "G3 open truth/solver" || true
+    eu_wait_for_field '.device.position == "open" and .process.breaker == "open" and .process.current_a < 0.1 and .process.truth_revision == .device.revision' 10 "G3 open truth/solver" || true
     eu_wait_for_operator 'point("feeder-breaker-position").value == "open"' 10 "G3 open operator feedback" || true
   fi
   if eu_wait_command close completed; then
-    eu_wait_for_instructor '.device.position == "closed" and .process.breaker == "closed" and (.process.current_a - 28.9 | fabs) <= 1.5 and .process.truth_revision == .device.revision' 10 "G3 close truth/solver" || true
+    eu_wait_for_field '.device.position == "closed" and .process.breaker == "closed" and (.process.current_a - 28.9 | fabs) <= 1.5 and .process.truth_revision == .device.revision' 10 "G3 close truth/solver" || true
     eu_wait_for_operator 'point("feeder-breaker-position").value == "closed"' 10 "G3 close operator feedback" || true
   fi
   if eu_wait_command open completed; then
     eu_wait_for_operator 'point("feeder-breaker-position").value == "open"' 10 "G3 second open feedback" || true
   fi
-  if eu_get_instructor; then
+  if eu_get_field; then
     before_noop_revision=$(printf '%s' "$API_BODY" | jq -r '.device.revision // empty')
   else
     before_noop_revision=""
@@ -393,7 +393,7 @@ eu_gate_G3() {
   if eu_wait_command open completed; then
     eu_assert_jq "$COMMAND_BODY" '.feedback.status == "matched" and .feedback.value == "open" and .feedback.received_at != null' "G3 no-op open completed with matched COT 11 feedback"
   fi
-  if eu_get_instructor; then
+  if eu_get_field; then
     after_noop_revision=$(printf '%s' "$API_BODY" | jq -r '.device.revision // empty')
     if [ -n "$before_noop_revision" ] && [ "$after_noop_revision" = "$before_noop_revision" ]; then
       pass "G3 no-op command did not change device truth revision"
@@ -403,10 +403,10 @@ eu_gate_G3() {
   else
     fail "G3 post-no-op truth read unavailable"
   fi
-  eu_instructor_action /api/instructor/fault '{"active":true}' "G3 instructor local fault" || true
-  eu_wait_for_instructor '.device.lockout == true and .device.protection_tripped == true' 10 "G3 local lockout" || true
+  eu_device_step local-trip "G3 sim local fault" || true
+  eu_wait_for_field '.device.lockout == true and .device.protection_tripped == true' 10 "G3 local lockout" || true
   eu_wait_command close rejected || true
-  eu_instructor_action /api/instructor/reset '{}' "G3 instructor reset" || true
+  eu_device_step restore-device "G3 device reset" || true
   eu_stop_capture || true
   if [ -n "$CAPTURE_PID" ]; then
     if docker cp "$FW:$CAPTURE_PATH" "$TMP_DIR/eu-iec104-gate.pcap" >/dev/null 2>"$TMP_DIR/docker-cp.err"; then
@@ -533,7 +533,7 @@ eu_g6_cut_monitor_session() {
 }
 
 eu_gate_G7() {
-  local before_g7 g7_policy cc_tuple g7_kill_started_ms
+  local before_g7 g7_policy g7_kill_started_ms
   g7_loss_verified=0
   if ! eu_get_operator; then
     fail "G7 operator state unavailable before restrictive policy"
@@ -558,12 +558,11 @@ eu_gate_G7() {
     fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
     return
   fi
-  cc_tuple="$SESSION_TUPLE"
   pass "G7 exact established CC tuple exists before kill"
   g7_kill_started_ms=$(eu_now_ms) || g7_kill_started_ms=""
   if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
     fail "G7 cannot establish monotonic timeout before conntrack kill"
-  elif eu_kill_tuple "$cc_tuple" && eu_wait_for_operator \
+  elif eu_execute_step cut-session "G7 CC session cut" && eu_wait_for_operator \
     '.link.state != "started" and all_stale("link_lost")' \
     30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
     g7_loss_verified=1
@@ -572,7 +571,7 @@ eu_gate_G7() {
 }
 
 eu_gate_G8() {
-  local g8_before g8_epoch g8_points active g8_truth g8_operator current_points current_epoch g8_seq1 g8_seq2
+  local fault_step g8_before g8_epoch g8_points active g8_truth g8_operator current_points current_epoch g8_seq1 g8_seq2
   if [ "$g7_loss_verified" -ne 1 ]; then
     fail "G8 cannot test cache isolation without the verified G7 CC disconnect"
     return
@@ -589,14 +588,15 @@ eu_gate_G8() {
     fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
   fi
   for active in true false true; do
-    eu_instructor_action /api/instructor/fault "{\"active\":$active}" "G8 instructor fault active=$active" || true
+    if [ "$active" = true ]; then fault_step=local-trip; else fault_step=clear-fault; fi
+    eu_device_step "$fault_step" "G8 sim fault active=$active" || true
     if [ "$active" = "true" ]; then
-      eu_wait_for_instructor '.device.position == "open" and .device.lockout == true and .device.protection_tripped == true and .process.breaker == "open" and .process.current_a < 0.1 and .process.truth_revision == .device.revision' 10 "G8 local protection and open solver" || true
+      eu_wait_for_field '.device.position == "open" and .device.lockout == true and .device.protection_tripped == true and .process.breaker == "open" and .process.current_a < 0.1 and .process.truth_revision == .device.revision' 10 "G8 local protection and open solver" || true
     else
-      eu_wait_for_instructor '.process.truth_revision == .device.revision' 10 "G8 solver after fault cleared" || true
+      eu_wait_for_field '.process.truth_revision == .device.revision' 10 "G8 solver after fault cleared" || true
     fi
-    if ! eu_get_instructor; then
-      fail "G8 instructor truth/solver response unavailable during fault active=$active"
+    if ! eu_get_field; then
+      fail "G8 physical state/solver response unavailable during fault active=$active"
       continue
     fi
     g8_truth="$API_BODY"
@@ -619,16 +619,16 @@ eu_gate_G8() {
       fail "G8 operator route did not report the expected disconnected CC while fault active=$active"
     fi
     if [ "$active" = "true" ]; then
-      eu_assert_jq "$g8_truth" '.device.position == "open" and .device.lockout == true and .device.protection_tripped == true and .process.breaker == "open" and .process.current_a < 0.1' "G8 instructor truth and independent solver show open/tripped"
+      eu_assert_jq "$g8_truth" '.device.position == "open" and .device.lockout == true and .device.protection_tripped == true and .process.breaker == "open" and .process.current_a < 0.1' "G8 physical state and independent solver show open/tripped"
     fi
   done
-  if ! eu_get_instructor; then
+  if ! eu_get_field; then
     fail "G8 solver state response failed"
     return
   fi
   g8_seq1=$(printf '%s' "$API_BODY" | jq -r '.process.solve_seq // empty')
   sleep 2
-  if ! eu_get_instructor; then
+  if ! eu_get_field; then
     fail "G8 second solver state response failed"
     return
   fi
@@ -655,8 +655,8 @@ eu_gate_G9() {
     30 "G9 CC reconnect/GI and four GOOD points"; then
     pass "G9 restored IEC104 observations after GI"
   fi
-  if ! eu_get_instructor; then
-    fail "G9 instructor truth unavailable after reconnect"
+  if ! eu_get_field; then
+    fail "G9 physical state unavailable after reconnect"
     return
   fi
   g9_truth="$API_BODY"
@@ -666,7 +666,7 @@ eu_gate_G9() {
       point("feeder-breaker-position").value == $truth.device.position
       and point("feeder-protection-trip").value == $truth.device.protection_tripped
       and $truth.device.position == "open" and $truth.device.protection_tripped == true
-    ' "G9 restored operator state equals open/tripped instructor truth"
+    ' "G9 restored operator state equals open/tripped physical state"
   else
     fail "G9 operator state unavailable after reconnect"
   fi
@@ -725,13 +725,13 @@ eu_gate_G11() {
     fail "G11 operator state unavailable after stale transition"
   fi
   g11_before_reset=""
-  if eu_get_instructor; then
+  if eu_get_field; then
     g11_before_reset="$API_BODY"
   else
-    fail "G11 instructor truth unavailable before reset"
+    fail "G11 physical state unavailable before reset"
   fi
-  eu_instructor_action /api/instructor/reset '{}' "G11 instructor reset changes truth" || true
-  if eu_get_instructor; then
+  eu_device_step restore-device "G11 device reset changes truth" || true
+  if eu_get_field; then
     g11_truth="$API_BODY"
     if eu_get_operator; then
       g11_after_reset="$API_BODY"
@@ -739,19 +739,19 @@ eu_gate_G11() {
       if [ -n "$g11_stale_points" ] && [ -n "$g11_after_reset_points" ] \
         && [ "$g11_after_reset_points" = "$g11_stale_points" ] \
         && [ "$(printf '%s' "$g11_after_reset" | jq -r '.cache_epoch // empty')" = "$g11_stale_epoch" ]; then
-        pass "G11 instructor reset changed truth without changing cached values/times/epoch"
+        pass "G11 device reset changed truth without changing cached values/times/epoch"
       else
-        fail "G11 operator cache changed during out-of-band instructor reset"
+        fail "G11 operator cache changed during out-of-band device reset"
       fi
       # shellcheck disable=SC2016
       eu_assert_jq_truth "$g11_truth" "${g11_before_reset:-null}" \
         '.device.position == "closed" and .device.protection_tripped == false and .device.revision != $truth.device.revision' \
-        "G11 instructor reset changed breaker truth"
+        "G11 device reset changed breaker truth"
     else
-      fail "G11 operator state unavailable after instructor reset"
+      fail "G11 operator state unavailable after device reset"
     fi
   else
-    fail "G11 instructor truth unavailable after reset"
+    fail "G11 physical state unavailable after reset"
   fi
   eu_apply_named improved || return
   if [ "$g11_loss_verified" -ne 1 ]; then
@@ -761,8 +761,8 @@ eu_gate_G11() {
     g11_loss_verified=2
     pass "G11 four observations GOOD after restored Modbus conduit"
   fi
-  if ! eu_get_instructor; then
-    fail "G11 instructor state read after restore failed"
+  if ! eu_get_field; then
+    fail "G11 field state read after restore failed"
     return
   fi
   reset_truth="$API_BODY"
@@ -862,7 +862,7 @@ eu_check_g13_audit() {
 }
 
 eu_gate_G13() {
-  local connection_seq generation baseline cursor revisions="[]" active revision audit
+  local connection_seq generation baseline cursor revisions="[]" active revision audit fault_step
   # Settle first: the CC on a GI-complete link, and the solver's accepted solve of
   # the current revision, so its first_solve precedes the audit cursor.
   if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
@@ -873,11 +873,11 @@ eu_gate_G13() {
     fail "G13 CC connection_seq is missing or not a number: $WAIT_BODY"
     return
   }
-  eu_wait_for_instructor '.process.truth_revision == .device.revision
+  eu_wait_for_field '.process.truth_revision == .device.revision
     and .process.truth_generation == .device.generation' 10 "G13 solver agrees with the device" || return
   generation=$(printf '%s' "$WAIT_BODY" | jq -er '.device.generation | numbers') || generation=""
   baseline=$(printf '%s' "$WAIT_BODY" | jq -er '.device.revision | numbers') || baseline=""
-  if ! eu_api_get "/api/instructor/audit?after=0"; then
+  if ! eu_api_get "/api/field/audit?after=0"; then
     fail "G13 device audit cursor unavailable or unparsable"
     return
   fi
@@ -896,14 +896,15 @@ eu_gate_G13() {
   # Each truth change must be solved before the next one replaces it: the solver
   # polls current truth and cannot solve a superseded revision.
   for active in true false; do
-    eu_instructor_action /api/instructor/fault "{\"active\":$active}" \
+    if [ "$active" = true ]; then fault_step=local-trip; else fault_step=clear-fault; fi
+    eu_device_step "$fault_step" \
       "G13 fault active=$active while RTU paused" || break
     revision=$(printf '%s' "$API_BODY" | jq -er '.revision | numbers') || {
       fail "G13 fault active=$active answered no numeric revision"
       break
     }
     revisions=$(printf '%s' "$revisions" | jq -c --argjson revision "$revision" '. + [$revision]')
-    eu_wait_for_state "/api/instructor/audit?after=$cursor" \
+    eu_wait_for_state "/api/field/audit?after=$cursor" \
       ".generation == $generation and any(.entries[]; .operation == \"first_solve\" and .detail.revision == $revision)" \
       10 "G13 solver first_solve of device revision $revision while RTU paused" || break
   done
@@ -916,7 +917,7 @@ eu_gate_G13() {
     and .link.gi.state == \"complete\" and all_good" 30 "G13 CC recovery by a new connection and GI"; then
     pass "G13 CC recovered through a new IEC104 connection (connection_seq > $connection_seq) and a completed GI"
   fi
-  if ! eu_api_get "/api/instructor/audit?after=$cursor"; then
+  if ! eu_api_get "/api/field/audit?after=$cursor"; then
     fail "G13 post-fault device audit response is unavailable or unparsable"
     return
   fi
@@ -928,8 +929,8 @@ eu_gate_G13() {
 }
 
 eu_gate_G14() {
-  eu_instructor_action /api/instructor/reset '{}' "G14 instructor reset" || true
-  eu_wait_for_instructor '.device.position == "closed" and .device.protection_tripped == false and .process.truth_revision == .device.revision' 15 "G14 reset truth and process recovery" || true
+  eu_device_step restore-device "G14 device reset" || true
+  eu_wait_for_field '.device.position == "closed" and .device.protection_tripped == false and .process.truth_revision == .device.revision' 15 "G14 reset truth and process recovery" || true
   if eu_wait_for_operator '
     .link.state == "started" and .link.gi.state == "complete" and all_good
     and point("feeder-breaker-position").value == "closed"

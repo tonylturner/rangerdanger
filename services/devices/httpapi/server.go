@@ -46,13 +46,13 @@ func (s *Server) ProcessHandler() http.Handler {
 	return mux
 }
 
-func (s *Server) InstructorHandler() http.Handler {
+func (s *Server) SimHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/audit", s.handleAudit)
-	mux.HandleFunc("POST /api/instructor/fault", s.handleFault)
-	mux.HandleFunc("POST /api/instructor/reset", s.handleReset)
+	mux.HandleFunc("POST /api/sim/fault", s.handleFault)
+	mux.HandleFunc("POST /api/sim/reset", s.handleReset)
 	return mux
 }
 
@@ -134,7 +134,7 @@ func (s *Server) handleFault(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "active is required", http.StatusBadRequest)
 		return
 	}
-	snapshot, err := s.model.InjectFault(r.Context(), *request.Active, s.context(r, "instructor"))
+	snapshot, err := s.model.InjectFault(r.Context(), *request.Active, s.context(r, "lab"))
 	if err != nil {
 		http.Error(w, "fault request failed", http.StatusInternalServerError)
 		return
@@ -148,7 +148,7 @@ func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reset body must be an empty object", http.StatusBadRequest)
 		return
 	}
-	snapshot, err := s.model.Reset(r.Context(), s.context(r, "instructor"))
+	snapshot, err := s.model.Reset(r.Context(), s.context(r, "lab"))
 	if err != nil {
 		http.Error(w, "reset request failed", http.StatusInternalServerError)
 		return

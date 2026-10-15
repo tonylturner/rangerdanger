@@ -60,12 +60,12 @@ eu_wait_for_operator() {
   printf '\n' >>"$CALLS"
   WAIT_BODY=$(cat "$T_FIXTURES/operator-gi-untimed.json")
 }
-eu_wait_for_instructor() {
-  WAIT_BODY=$(cat "$T_FIXTURES/instructor-baseline.json")
+eu_wait_for_field() {
+  WAIT_BODY=$(cat "$T_FIXTURES/field-baseline.json")
 }
-eu_instructor_action() {
+eu_device_step() {
   REVISION=$((REVISION + 1))
-  printf 'mutation %s revision %s\n' "$2" "$REVISION" >>"$CALLS"
+  printf 'mutation %s revision %s\n' "$1" "$REVISION" >>"$CALLS"
   API_BODY="{\"revision\":$REVISION}"
 }
 eu_wait_for_state() {
@@ -75,15 +75,15 @@ eu_api_get() {
   # shellcheck disable=SC2034 # read by the sourced gate helpers
   HTTP_STATUS=200
   API_BODY="$AUDIT"
-  [ "$1" != "/api/instructor/audit?after=0" ] || API_BODY='{"generation":42,"entries":[],"latest_seq":20,"oldest_seq":1}'
+  [ "$1" != "/api/field/audit?after=0" ] || API_BODY='{"generation":42,"entries":[],"latest_seq":20,"oldest_seq":1}'
 }
 t_run eu_gate_G13
 t_expect_fails 0 "the G13 flow passes against an audit with both first_solve entries"
 t_run grep -E '^(mutation|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
 t_expect_eq "$T_OUT" "docker pause
-mutation {\"active\":true} revision 10
+mutation local-trip revision 10
 wait G13 solver first_solve of device revision 10 while RTU paused
-mutation {\"active\":false} revision 11
+mutation clear-fault revision 11
 wait G13 solver first_solve of device revision 11 while RTU paused
 operator .link.state != \"started\" 
 docker unpause" "each mutation awaits its first_solve, then the CC link loss, all while the RTU is paused"

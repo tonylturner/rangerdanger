@@ -1,28 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getFirewallSessions } from "./operator-api";
+import { getFieldAudit, getFieldState } from "./operator-api";
+import { AUDIT, TRUTH } from "./operator-fixtures.test-util";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+afterEach(() => vi.unstubAllGlobals());
 
-describe("getFirewallSessions", () => {
-  it("serializes the destination filter with the other tuple filters", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ sessions: [], count: 0 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+describe("physical feeder reads", () => {
+  it.each([
+    ["/field/state", getFieldState, TRUTH],
+    ["/field/audit?after=0", getFieldAudit, AUDIT],
+  ] as const)("reads %s without a mutation", async (path, read, answer) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
     vi.stubGlobal("fetch", fetchMock);
-
-    await expect(getFirewallSessions({
-      dport: 2404,
-      src: "10.60.60.20",
-      dst: "10.30.30.20",
-    })).resolves.toEqual({ sessions: [], count: 0 });
-
-    expect(String(fetchMock.mock.calls[0][0])).toMatch(
-      /\/firewall\/sessions\?dport=2404&src=10\.60\.60\.20&dst=10\.30\.30\.20$/,
-    );
+    await expect(read()).resolves.toEqual(answer);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(new RegExp(path.replace("?", "\\?") + "$"));
+    expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
   });
 });

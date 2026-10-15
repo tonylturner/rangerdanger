@@ -76,13 +76,13 @@ func TestRemoteAndCloseInterlocks(t *testing.T) {
 	model.remoteEnabled = true
 	model.mu.Unlock()
 
-	if _, err := model.InjectFault(context.Background(), true, AuditContext{Peer: "instructor", Protocol: "instructor", Zone: "mgmt"}); err != nil {
+	if _, err := model.InjectFault(context.Background(), true, AuditContext{Peer: "lab", Protocol: "lab", Zone: "mgmt"}); err != nil {
 		t.Fatal(err)
 	}
 	if result := model.Command(context.Background(), CommandClose, testActor); result.Accepted || result.Reason != "lockout" {
 		t.Fatalf("close under fault lockout = %+v", result)
 	}
-	_, _ = model.ClearFault(context.Background(), AuditContext{Peer: "instructor", Protocol: "instructor", Zone: "mgmt"})
+	_, _ = model.ClearFault(context.Background(), AuditContext{Peer: "lab", Protocol: "lab", Zone: "mgmt"})
 	if result := model.Command(context.Background(), CommandClose, testActor); result.Accepted || result.Reason != "lockout" {
 		t.Fatalf("close after fault clear = %+v", result)
 	}
@@ -101,7 +101,7 @@ func TestLocalProtectionLatchClearAndReset(t *testing.T) {
 	model.remoteEnabled = false
 	model.mu.Unlock()
 
-	faultContext := AuditContext{Peer: "10.99.99.22:1234", Protocol: "instructor", Zone: "mgmt"}
+	faultContext := AuditContext{Peer: "10.99.99.22:1234", Protocol: "lab", Zone: "mgmt"}
 	tripped, err := model.InjectFault(context.Background(), true, faultContext)
 	if err != nil {
 		t.Fatalf("fault injection: %v", err)

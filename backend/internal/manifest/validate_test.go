@@ -474,7 +474,7 @@ func TestValidateEURoles(t *testing.T) {
 			Endpoints:  map[string]string{"api": "http://10.99.99.21:8080"}},
 		Service{Key: "feeder_breaker", Container: "fixture-breaker", Roles: []Role{RoleFieldDevice},
 			Interfaces: []Interface{{Network: "mgmt_net", IPv4: "10.99.99.22"}},
-			Endpoints:  map[string]string{"instructor": "http://10.99.99.22:8080"}},
+			Endpoints:  map[string]string{"sim": "http://10.99.99.22:8080"}},
 	)
 	if err := Validate(m, root); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -482,8 +482,8 @@ func TestValidateEURoles(t *testing.T) {
 	if url, ok := m.Endpoint(RoleControlCentre, "api"); !ok || url != "http://10.99.99.21:8080" {
 		t.Errorf("control-centre api = %q, %v", url, ok)
 	}
-	if url, ok := m.Endpoint(RoleFieldDevice, "instructor"); !ok || url != "http://10.99.99.22:8080" {
-		t.Errorf("field-device instructor = %q, %v", url, ok)
+	if url, ok := m.Endpoint(RoleFieldDevice, "sim"); !ok || url != "http://10.99.99.22:8080" {
+		t.Errorf("field-device sim = %q, %v", url, ok)
 	}
 	if svc, ok := m.ServiceByRole(RoleRTU); !ok || svc.Container != "fixture-rtu" {
 		t.Errorf("rtu service = %+v, %v", svc, ok)
@@ -491,7 +491,7 @@ func TestValidateEURoles(t *testing.T) {
 }
 
 // TestValidateSingleHolders rejects a second holder of the roles the
-// backend resolves to one service, and an instructor endpoint that is
+// backend resolves to one service, and a sim endpoint that is
 // ambiguous or outside a field device.
 func TestValidateSingleHolders(t *testing.T) {
 	root := fixturePath(t, fixtureRoot)
@@ -499,8 +499,8 @@ func TestValidateSingleHolders(t *testing.T) {
 		return Service{Key: key, Container: "fixture-" + key, Roles: []Role{role},
 			Interfaces: []Interface{{Network: "mgmt_net", IPv4: ip}}, Endpoints: endpoints}
 	}
-	instructor := func(ip string) map[string]string {
-		return map[string]string{EndpointInstructor: "http://" + ip + ":8080"}
+	sim := func(ip string) map[string]string {
+		return map[string]string{EndpointSim: "http://" + ip + ":8080"}
 	}
 	cases := []struct {
 		name  string
@@ -513,10 +513,10 @@ func TestValidateSingleHolders(t *testing.T) {
 			`role "control-centre" is held by cc_a, cc_b`},
 		{"two process solvers", []Service{service("dss_a", "10.99.99.31", RoleProcessSolver, nil), service("dss_b", "10.99.99.32", RoleProcessSolver, nil)},
 			`role "process-solver" is held by dss_a, dss_b`},
-		{"two instructor endpoints", []Service{service("brk_a", "10.99.99.31", RoleFieldDevice, instructor("10.99.99.31")), service("brk_b", "10.99.99.32", RoleFieldDevice, instructor("10.99.99.32"))},
-			"instructor endpoint is declared by brk_a, brk_b"},
-		{"instructor outside a field device", []Service{service("cc", "10.99.99.31", RoleControlCentre, instructor("10.99.99.31"))},
-			`service "cc" has an instructor endpoint but not the field-device role`},
+		{"two sim endpoints", []Service{service("brk_a", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")), service("brk_b", "10.99.99.32", RoleFieldDevice, sim("10.99.99.32"))},
+			"sim endpoint is declared by brk_a, brk_b"},
+		{"sim outside a field device", []Service{service("cc", "10.99.99.31", RoleControlCentre, sim("10.99.99.31"))},
+			`service "cc" has a sim endpoint but not the field-device role`},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -535,11 +535,11 @@ func TestValidateSingleHolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, instructor("10.99.99.31")))
+	m.Services = append(m.Services, service("breaker", "10.99.99.31", RoleFieldDevice, sim("10.99.99.31")))
 	if err := Validate(m, root); err != nil {
-		t.Fatalf("Validate one instructor endpoint: %v", err)
+		t.Fatalf("Validate one sim endpoint: %v", err)
 	}
-	if svc, url, ok := m.ServiceWithEndpoint(EndpointInstructor); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
+	if svc, url, ok := m.ServiceWithEndpoint(EndpointSim); !ok || svc.Key != "breaker" || url != "http://10.99.99.31:8080" {
 		t.Errorf("ServiceWithEndpoint = %+v %q %v", svc, url, ok)
 	}
 }

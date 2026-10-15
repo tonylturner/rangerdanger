@@ -21,7 +21,7 @@ write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 `source: rtac-sim`).
 
 The EU `feeder-breaker-sim` is separate: it owns breaker truth, serves
-Modbus plus process/instructor HTTP APIs, and does not expose DNP3.
+Modbus plus process/sim HTTP APIs, and does not expose DNP3.
 
 ## Services
 
@@ -32,7 +32,7 @@ Modbus plus process/instructor HTTP APIs, and does not expose DNP3.
 | `regulator-sim` | 3  | Load tap changer, ±16 tap range, voltage regulation |
 | `capbank-sim`   | 4  | Switched capacitor bank, lockout-after-N-operations |
 | `rtac-sim`      | 10 | Supervisory controller. Polls field devices via DNP3 master and HTTP; exposes aggregated state. Read-only DNP3 outstation. |
-| `feeder-breaker-sim` | - | EU feeder breaker truth owner. Modbus TCP field interface and separate process / instructor HTTP listeners. |
+| `feeder-breaker-sim` | - | EU feeder breaker truth owner. Modbus TCP field interface and separate process / sim HTTP listeners. |
 | `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
 | `gps-sim`       | -  | GPS/IRIG-B time source; sends synthetic NTP client packets to configured targets. Not an NTP server. |
 | `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |

@@ -1,4 +1,4 @@
-// Answers of the EU control-centre, instructor and firewall-session
+// Answers of the EU control-centre, field and firewall-session
 // routes in the shapes the backend and the services really send
 // (services/iec104/src/cc_*.c, services/devices, backend/internal/server),
 // shared by the operator tests.
@@ -9,7 +9,7 @@ import type {
   DeviceAudit,
   DeviceState,
   FirewallSessionList,
-  InstructorState,
+  FieldState,
   OperatorJournal,
   OperatorPoint,
   OperatorState,
@@ -172,7 +172,7 @@ export function commandResult(status: CommandResult["status"]): CommandResult {
   }
 }
 
-export const TRUTH: InstructorState = {
+export const TRUTH: FieldState = {
   device: {
     schema: 1,
     device_id: "feeder-breaker",
@@ -227,7 +227,7 @@ const CLOSED_DEVICE: DeviceState = {
   changed_at: "2026-10-09T11:50:00.000Z",
 };
 
-const INSTRUCTOR = { peer: "10.99.99.3:51234", protocol: "instructor", zone: "mgmt" };
+const LAB = { peer: "10.99.99.3:51234", protocol: "lab", zone: "mgmt" };
 
 export const AUDIT: DeviceAudit = {
   generation: 3141592,
@@ -241,7 +241,7 @@ export const AUDIT: DeviceAudit = {
       result: "accepted",
       before: CLOSED_DEVICE,
       after: TRUTH.device,
-      context: INSTRUCTOR,
+      context: LAB,
     },
     {
       seq: 2,

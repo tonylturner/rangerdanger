@@ -11,7 +11,6 @@ import {
   JOURNAL,
   EMPTY_JOURNAL,
   NOW,
-  SESSIONS,
   STALE_STATE,
   TRUTH,
   commandResult,
@@ -19,8 +18,7 @@ import {
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreScreen } from "./control-centre-view";
-import { SessionControls, SessionsTable } from "./instructor-sessions";
-import { AuditTable, OperatorContrast, TruthCards } from "./instructor-view";
+import { AuditTable, OperatorContrast, FieldCards, PhysicalFeederScreen } from "./physical-feeder";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 
 function text(html: string): string {
@@ -180,44 +178,46 @@ describe("CommandPanelView", () => {
   });
 });
 
-describe("instructor truth", () => {
+describe("physical feeder", () => {
+  it("shares the operator screen without control buttons or audience labels", () => {
+    const html = screen({ physicalFeeder: <PhysicalFeederScreen field={TRUTH} stateError={null} audit={AUDIT} auditError={null} operator={STALE_STATE} /> });
+    const out = text(html);
+    expect(out).toContain("Live physical feeder state via OpenDSS");
+    expect(out).toContain("control centre never reads these values");
+    expect(out).toContain("Field vs control centre");
+    expect(out).toContain("Device audit");
+    expect(out).toContain("Breaker position OPEN CLOSED ⚠ STALE");
+    expect(out).not.toMatch(/truth/i);
+    expect(html).not.toContain("Inject fault</button>");
+    expect(html).not.toContain("Reset device</button>");
+    expect(html).not.toContain("Cut control-centre session</button>");
+  });
+
+  it("keeps field errors separate from operator cache and audit errors visible", () => {
+    const html = screen({ physicalFeeder: <PhysicalFeederScreen field={TRUTH} stateError={new Error("device offline")} audit={AUDIT} auditError={new Error("audit offline")} operator={FRESH_STATE} /> });
+    const out = text(html);
+    expect(out).toContain("4/4 good");
+    expect(out).toContain("Physical feeder unavailable: device offline Showing the last answer.");
+    expect(out).toContain("Audit unavailable: audit offline Showing the last answer.");
+  });
+
+  it("waits for the field separately while the range starts", () => {
+    const out = text(renderToStaticMarkup(<PhysicalFeederScreen field={undefined} stateError={new RangeNotReadyError("starting")} audit={undefined} auditError={null} operator={undefined} />));
+    expect(out).toContain("Physical feeder state shows once the range is ready.");
+    expect(out).not.toContain("Physical feeder unavailable");
+  });
   it("shows device truth and solver output", () => {
-    const out = text(renderToStaticMarkup(<TruthCards truth={TRUTH} />));
+    const out = text(renderToStaticMarkup(<FieldCards field={TRUTH} />));
     expect(out).toMatch(/Position OPEN/);
     expect(out).toMatch(/Protection tripped YES/);
     expect(out).toMatch(/Breaker in model OPEN/);
-    expect(out).toMatch(/Truth revision \/ generation 5 \/ 3141592/);
+    expect(out).toMatch(/Device revision \/ generation 5 \/ 3141592/);
   });
 
   it("contrasts truth with the stale operator view", () => {
-    const out = text(renderToStaticMarkup(<OperatorContrast truth={TRUTH} operator={STALE_STATE} />));
+    const out = text(renderToStaticMarkup(<OperatorContrast field={TRUTH} operator={STALE_STATE} />));
     expect(out).toContain("Breaker position OPEN CLOSED ⚠ STALE");
     expect(out).toContain("Protection trip TRIPPED NORMAL ⚠ STALE");
-  });
-
-  it("lists 2404 sessions, marks the control centre's and offers a kill per row", () => {
-    const html = renderToStaticMarkup(<SessionsTable sessions={SESSIONS.sessions} pending={false} onKill={() => {}} />);
-    const out = text(html);
-    expect(out).toContain("tcp 10.60.60.20:40312 → 10.30.30.20:2404 CONTROL CENTRE ESTABLISHED 431999 s");
-    expect(out).toContain("tcp 10.10.10.50:51000 → 10.30.30.20:2404 ESTABLISHED 431980 s");
-    expect(out.match(/CONTROL CENTRE/g)).toHaveLength(1);
-    expect(out.match(/Kill/g)).toHaveLength(2);
-  });
-
-  it("cannot kill a listed session without both ports", () => {
-    const partial = { ...SESSIONS.sessions[1], sport: null, state: null };
-    const html = renderToStaticMarkup(<SessionsTable sessions={[partial]} pending={false} onKill={() => {}} />);
-    expect(text(html)).toContain("tcp 10.10.10.50:? → 10.30.30.20:2404 —");
-    expect(html.match(/disabled=""/g)).toHaveLength(1);
-  });
-
-  it("previews the control centre's session the cut would delete", () => {
-    expect(text(render(<SessionControls sessions={SESSIONS.sessions} sessionsError={null} />))).toContain(
-      "Cut control-centre session tcp 10.60.60.20:40312 → 10.30.30.20:2404",
-    );
-    expect(text(render(<SessionControls sessions={[SESSIONS.sessions[1]]} sessionsError={null} />))).toContain(
-      "containd lists no tcp 10.60.60.20 → 10.30.30.20:2404 session.",
-    );
   });
 
   it("shows the device audit newest first", () => {

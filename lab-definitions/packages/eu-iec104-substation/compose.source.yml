@@ -277,7 +277,7 @@ services:
     - DEVICE_ID=feeder-breaker
     - DEVICE_MODBUS_LISTEN=10.40.40.20:502
     - DEVICE_PROCESS_LISTEN=10.50.50.30:8080
-    - DEVICE_INSTRUCTOR_LISTEN=10.99.99.22:8080
+    - DEVICE_SIM_LISTEN=10.99.99.22:8080
     - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
     command:
     - sh

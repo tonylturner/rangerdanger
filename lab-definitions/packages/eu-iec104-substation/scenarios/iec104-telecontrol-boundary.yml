@@ -15,10 +15,11 @@ description: |
   The allowed Control Centre can still issue both open and close commands.
 
   **Out-of-band limit:** the Control Centre shares `mgmt_net` with the breaker
-  instructor API and the OpenDSS solver. Nothing structurally prevents an HTTP
+  simulation API and the OpenDSS solver. Nothing structurally prevents an HTTP
   read from those management endpoints. This workshop gate proves behaviorally
   that the Control Centre learns process state through IEC104 rather than by
-  reading those endpoints.
+  reading those endpoints. The physical feeder section on `/substation`
+  is a separate portal read, not an input to the Control Centre.
 nodes:
   - cc-1
   - rtu-1
@@ -134,15 +135,18 @@ steps:
     description: |
       To demonstrate a true CC outage, make a temporary copy of the improved
       policy in containd and remove its Control Centre-to-RTU allow. Apply
-      that restrictive policy, verify it is active, then open the
-      [Instructor truth page](/instructor) and use **Cut control-centre
-      session**. The button removes the exact conntrack tuple; it does not
+      that restrictive policy, verify it is active, then run this step
+      to cut the control-centre session. The action removes the exact
+      conntrack tuple only when exactly one complete session matches; it does not
       send a TCP reset. The next packet is new and is denied by policy.
 
       A deny alone does not sever an already established flow. Do not kill
       the session before applying and verifying the restrictive policy.
 
       Read: [Conntrack and temporal evidence](/knowledge#eu-established-sessions).
+    action:
+      type: session-cut
+      flow: cc-rtu
 
   - id: stale-view
     title: "Read the stale operator cache"
@@ -153,7 +157,7 @@ steps:
       The Control Centre retains each last value and its observation and
       receipt times, marks the points `link_lost` and IV+NT, and reports a
       disconnected link. It must not replace stale data with zero or read
-      the instructor/device HTTP endpoints to refresh its cache.
+      the simulation/device HTTP endpoints to refresh its cache.
 
       Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
 
@@ -162,13 +166,33 @@ steps:
     expected_config: hardened
     node: breaker-1
     description: |
-      On [/instructor](/instructor), activate a fault. The local protection
+      Run this step to inject a fault. Read the separate physical feeder
+      section on [/substation](/substation). The local protection
       opens the breaker and latches lockout and trip state even though the
       Control Centre cannot reach the RTU. OpenDSS follows the device truth
       through `process_net`. The operator cache stays unchanged and stale.
-      Clear the fault and activate it once more to observe the latched trip.
+      The following step clears the fault without unlatching protection.
+      You can run this fault step again to observe the latched trip.
 
       Read: [Local protection](/knowledge#eu-feeder-breaker-protection).
+    action:
+      type: command
+      device: breaker
+      command: inject_fault
+
+  - id: clear-fault
+    title: "Clear the local fault"
+    expected_config: hardened
+    node: breaker-1
+    description: |
+      Run this step to clear the fault. The breaker stays open, tripped and
+      locked out. Compare physical feeder state with the stale Control
+      Centre on [/substation](/substation); clearing a fault cannot refresh
+      a disconnected IEC 104 cache.
+    action:
+      type: command
+      device: breaker
+      command: clear_fault
 
   - id: restore
     title: "Restore the named control paths"
@@ -177,7 +201,7 @@ steps:
       Restore the improved policy, which restores only the approved CC→RTU
       and RTU→breaker paths. The Control Centre reconnects, performs a new
       GI, and refreshes all four points from the RTU. The trip remains
-      latched until an instructor reset.
+      latched until the restore-device step or **Reset Lab**.
 
       Read: [GI and quality](/knowledge#iec104-gi-cot-quality).
     action:
@@ -196,3 +220,15 @@ steps:
       missing or truncated journal is a failure, not a pass.
 
       Read: [Packet evidence](/knowledge#tool-iec104-tshark), [Temporal/session evidence](/knowledge#eu-established-sessions).
+
+  - id: restore-device
+    title: "Restore the feeder device"
+    description: |
+      After reviewing the temporal evidence, run this step to restore the
+      initially closed breaker, with no fault, trip or lockout. Observe
+      physical feeder state and the Control Centre on [/substation](/substation).
+      **Reset Lab** also restores the device and the weak firewall baseline.
+    action:
+      type: command
+      device: breaker
+      command: reset

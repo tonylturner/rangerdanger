@@ -8,7 +8,7 @@ import (
 )
 
 var validActionTypes = map[string]struct{}{
-	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {},
+	"command": {}, "sequence": {}, "firewall": {}, "check": {}, "decision": {}, "probe": {}, "session-cut": {},
 }
 
 // vocabularyActionTypes are the action types checked against a
@@ -23,9 +23,11 @@ type actionVocabulary struct {
 }
 
 // capabilityVocabularies lists the action vocabulary each capability adds.
-// Only process.electrical has one today; a package without it cannot use
-// command, sequence or check actions.
+// Packages use their process capability to declare device operations.
 var capabilityVocabularies = map[string]actionVocabulary{
+	CapabilityProcessTruth: {
+		commands: map[string][]string{"breaker": {"inject_fault", "clear_fault", "reset"}},
+	},
 	CapabilityProcessElectrical: {
 		// commands mirrors the device case tables in the services' sim
 		// main.go files. Keep it here so validation does not depend on
@@ -196,6 +198,18 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 			}
 			if step.Action != nil {
 				validateAction(*step.Action, step.Node, nodeIDs, vocabulary, names, stepAdd)
+				if step.Action.Type == "session-cut" {
+					if !declared[CapabilityPolicyContaind] {
+						stepAdd("session-cut requires policy.containd")
+					}
+					found := false
+					for _, flow := range def.Flows {
+						found = found || flow.ID == step.Action.Flow
+					}
+					if !found {
+						stepAdd(fmt.Sprintf("unknown session-cut flow %q", step.Action.Flow))
+					}
+				}
 			}
 		}
 	}

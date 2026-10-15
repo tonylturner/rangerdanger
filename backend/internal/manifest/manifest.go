@@ -72,7 +72,7 @@ const (
 	RoleHMIPoller     Role = "hmi-poller"     // HMI data poller
 	RoleHistorian     Role = "historian"      // process historian
 	RoleTimeSource    Role = "time-source"    // GPS clock
-	RoleFieldDevice   Role = "field-device"   // relay, recloser, ..., feeder breaker; EU breaker endpoints: instructor
+	RoleFieldDevice   Role = "field-device"   // relay, recloser, ..., feeder breaker; EU breaker endpoints: sim
 	RoleProcessSolver Role = "process-solver" // OpenDSS truth plane; EU endpoints: api
 	RoleAttacker      Role = "attacker"       // Kali
 	RoleJumpHost      Role = "jump-host"      // vendor jump box
@@ -183,9 +183,9 @@ func (m *Manifest) ServiceByNode(node string) (Service, bool) {
 	return Service{}, false
 }
 
-// EndpointInstructor names the out-of-band instructor API of the one field
+// EndpointSim names the out-of-band sim API of the one field
 // device that has it (EU feeder breaker). Validate allows one per manifest.
-const EndpointInstructor = "instructor"
+const EndpointSim = "sim"
 
 // ServiceWithEndpoint returns the first service that declares the named
 // endpoint, and the endpoint.

@@ -52,8 +52,8 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Detail:  result.Detail,
 		})
 	}
-	if recipe.resetInstructor {
-		actions = append(actions, resetInstructorDevice(ctx, gen))
+	if recipe.resetSim {
+		actions = append(actions, resetSimDevice(ctx, gen))
 	}
 
 	// Clear PCAP captures so validators reflect fresh state

@@ -4,11 +4,14 @@ package server
 const euPackageID = "eu-iec104-substation"
 
 // euRecipe is the EU IEC 104 telecontrol package. Its reset is the breaker's
-// instructor reset; its canary is Kali's IEC 104 connect to the RTU. It has
+// sim reset; its canary is Kali's IEC 104 connect to the RTU. It has
 // no validation report, traffic generator, or test suite. Its comparison
 // covers only the cross-zone relationships in its package policies.
 var euRecipe = &packageRecipe{
-	resetInstructor: true,
+	simDevices:      map[string]string{"breaker": "breaker-1"},
+	commandExecutor: (*Server).executeSimCommand,
+	sessionCuts:     map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
+	resetSim:        true,
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
 		allowUnder: "weak", denyUnder: "improved"},
 	captureFilter: "tcp port 2404 or tcp port 502",

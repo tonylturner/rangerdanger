@@ -17,7 +17,7 @@ import (
 )
 
 // Helpers for the range services the backend calls over mgmt_net by
-// manifest endpoint (control centre, instructor device, process solver):
+// manifest endpoint (control centre, sim device, process solver):
 // bounded requests, the "not supported" answer for a package without the
 // service, and the mapping of upstream failures to 502/504.
 
@@ -35,7 +35,7 @@ const upstreamReadTimeout = 5 * time.Second
 // maxUpstreamBody bounds what the backend reads from a range service.
 const maxUpstreamBody = 4 << 20
 
-// maxRouteRequestBody bounds request bodies of the operator, instructor and
+// maxRouteRequestBody bounds request bodies of the operator, sim and
 // session routes.
 const maxRouteRequestBody = 4 << 10
 

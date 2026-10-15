@@ -1,7 +1,7 @@
 "use client";
 
 // React Query reads for the active package (operator view, policies),
-// the EU control centre and the instructor truth page. Every key here
+// the EU control centre and physical feeder panel. Every key here
 // is range-scoped (lib/range.ts), so a range change drops them like
 // any other query.
 
@@ -9,15 +9,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getActivePackage } from "./api";
 import {
-  getFirewallSessions,
-  getInstructorAudit,
-  getInstructorState,
+  getFieldAudit,
+  getFieldState,
   getOperatorJournal,
   getOperatorState,
-  killFirewallSession,
-  resetInstructorDevice,
   sendOperatorCommand,
-  setInstructorFault,
 } from "./operator-api";
 import { resolveOperatorView, type OperatorViewResolution } from "./operator-view";
 import { packagePolicies, type PackagePolicies } from "./policy-wording";
@@ -40,7 +36,7 @@ export function usePackagePolicies(): PackagePolicies | undefined {
 }
 
 export const OPERATOR_KEY = ["operator"] as const;
-export const INSTRUCTOR_KEY = ["instructor"] as const;
+export const FIELD_KEY = ["field"] as const;
 export const SESSIONS_KEY = ["firewall-sessions"] as const;
 
 export function useOperatorState(intervalMs: number, enabled = true) {
@@ -61,45 +57,12 @@ export function useOperatorCommand() {
   });
 }
 
-export function useInstructorState(intervalMs: number) {
-  return useQuery({ queryKey: [...INSTRUCTOR_KEY, "state"], queryFn: getInstructorState, refetchInterval: intervalMs });
+export function useFieldState(intervalMs: number) {
+  return useQuery({ queryKey: [...FIELD_KEY, "state"], queryFn: getFieldState, refetchInterval: intervalMs });
 }
 
-export function useInstructorAudit(intervalMs: number) {
-  return useQuery({ queryKey: [...INSTRUCTOR_KEY, "audit"], queryFn: getInstructorAudit, refetchInterval: intervalMs });
-}
-
-export function useFirewallSessions(dport: number, intervalMs: number) {
-  return useQuery({
-    queryKey: [...SESSIONS_KEY, dport],
-    queryFn: () => getFirewallSessions({ dport }),
-    refetchInterval: intervalMs,
-  });
-}
-
-function useRefreshAfter() {
-  const queryClient = useQueryClient();
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: INSTRUCTOR_KEY }),
-      queryClient.invalidateQueries({ queryKey: OPERATOR_KEY }),
-      queryClient.invalidateQueries({ queryKey: SESSIONS_KEY }),
-    ]);
-}
-
-export function useInstructorFault() {
-  const refresh = useRefreshAfter();
-  return useMutation({ mutationFn: setInstructorFault, retry: false, onSettled: refresh });
-}
-
-export function useInstructorReset() {
-  const refresh = useRefreshAfter();
-  return useMutation({ mutationFn: resetInstructorDevice, retry: false, onSettled: refresh });
-}
-
-export function useSessionKill() {
-  const refresh = useRefreshAfter();
-  return useMutation({ mutationFn: killFirewallSession, retry: false, onSettled: refresh });
+export function useFieldAudit(intervalMs: number) {
+  return useQuery({ queryKey: [...FIELD_KEY, "audit"], queryFn: getFieldAudit, refetchInterval: intervalMs });
 }
 
 // Wall-clock time, ticking, for sample ages.

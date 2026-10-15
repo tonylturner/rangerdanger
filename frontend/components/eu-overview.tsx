@@ -133,7 +133,7 @@ export function EuWorkshopStatus({ title }: { title: string }) {
           <h2 className="mb-3 text-sm font-bold text-white">Workshop Resources</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             <QuickLink href="/exercises" title="Start Exercises" desc="Guided telecontrol boundary scenario" color="sky" />
-            <QuickLink href="/instructor" title="Instructor Truth" desc="Device and solver truth, fault injection, session cut" color="orange" />
+            <QuickLink href="/substation" title="Control Centre" desc="IEC 104 controls and live physical feeder state" color="orange" />
             <QuickLink href="/console" title="Network Map" desc="Interactive topology with node inspector" color="purple" />
           </div>
         </div>

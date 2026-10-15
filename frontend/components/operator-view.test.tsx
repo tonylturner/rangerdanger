@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DashboardPage from "../app/page";
-import InstructorPage from "../app/instructor/page";
 import WorkshopPage from "../app/labs/page";
 import SubstationPage from "../app/substation/page";
 import type { PackageSummary } from "../lib/api";
@@ -79,26 +78,17 @@ describe("overview and workshop status dispatch", () => {
   });
 
   it("refuses an unknown view on every dispatched page", () => {
-    for (const page of [<DashboardPage key="d" />, <WorkshopPage key="w" />, <InstructorPage key="i" />]) {
+    for (const page of [<DashboardPage key="d" />, <WorkshopPage key="w" />]) {
       expect(renderWith(UNKNOWN, page)).toContain("Operator view unavailable");
     }
   });
 });
 
-describe("/instructor", () => {
-  it("is the out-of-band truth page for EU only", () => {
-    expect(renderWith(EU_PACKAGE, <InstructorPage />)).toContain("Instructor truth — out of band");
-    const us = renderWith(US_PACKAGE, <InstructorPage />);
-    expect(us).toContain("has no instructor truth page");
-    expect(us).not.toContain("out of band");
-  });
-});
-
 describe("navLinksFor", () => {
-  it("labels the EU operator screen Control Centre and adds the instructor link", () => {
+  it("labels the EU operator screen Control Centre without a separate audience page", () => {
     const eu = navLinksFor(resolveOperatorView(EU_PACKAGE, null));
     expect(eu.find((l) => l.href === "/substation")?.label).toBe("Control Centre");
-    expect(eu.map((l) => l.href)).toContain("/instructor");
+    expect(eu.map((l) => l.href)).toEqual(["/", "/exercises", "/substation", "/console", "/labs", "/knowledge"]);
   });
 
   it("keeps the US sidebar as it was", () => {

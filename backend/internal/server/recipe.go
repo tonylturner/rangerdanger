@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -20,12 +21,19 @@ import (
 // operation with 404 "not supported by this package". Named policies are
 // package data (package.yml `policies`), not recipe code.
 type packageRecipe struct {
+	// simDevices binds the simulation vocabulary to authored topology nodes.
+	simDevices map[string]string
+	// commandExecutor is the package's device-control transport. It never
+	// falls back to another package's devices.
+	commandExecutor func(*Server, context.Context, *lifecycle.Generation, *packageRecipe, string, string, string, *float64) StepActionResult
+	// sessionCuts binds named topology flows to their wire networks.
+	sessionCuts map[string]sessionCutSpec
 	// resetCommands are RTAC device commands the reset replays.
 	resetCommands []deviceCommand
-	// resetInstructor makes the reset restore the instructor device
-	// (the service with an instructor endpoint) through its reset.
-	resetInstructor bool
-	canary          canaryProbe
+	// resetSim makes the reset restore the sim device
+	// (the service with a sim endpoint) through its reset.
+	resetSim bool
+	canary   canaryProbe
 	// captureFilter is the tcpdump filter of /api/pcap/start; empty
 	// captures everything.
 	captureFilter string

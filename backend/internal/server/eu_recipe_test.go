@@ -147,18 +147,18 @@ func TestFirewallRulesFallbackIsUSOnly(t *testing.T) {
 }
 
 // TestEUWorkshopReset applies the default policy and resets the breaker
-// through its instructor API; no RTAC command is sent.
+// through its sim API; no RTAC command is sent.
 func TestEUWorkshopReset(t *testing.T) {
 	fw, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
 	device, dev := newUpstreamStub(t, map[string]stubResponse{
-		"POST /api/instructor/reset": {http.StatusOK, deviceStateFixture},
+		"POST /api/sim/reset": {http.StatusOK, deviceStateFixture},
 	})
 	s := rangeServer(euGeneration(t, containd.NewClient(fw.URL), map[string]string{"feeder_breaker": dev.URL}), "improved")
 	s.orchestrator = &orchestrator.Orchestrator{}
 	rec := callRoute(s, s.handleWorkshopReset, http.MethodPost, "/api/workshop/reset", "/api/workshop/reset", "")
 	want := `{"actions":[` +
 		`{"action":"Apply weak firewall baseline","success":true,"detail":"weak config applied"},` +
-		`{"action":"Reset the instructor device to its initial state","success":true,"detail":"device reset"}` +
+		`{"action":"Reset the sim device to its initial state","success":true,"detail":"device reset"}` +
 		`],"success":true}`
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("POST reset = %d %s\nwant %s", rec.Code, rec.Body, want)
@@ -166,7 +166,7 @@ func TestEUWorkshopReset(t *testing.T) {
 	if counters.commitCount != 1 || s.activeConfig != "weak" {
 		t.Errorf("commits = %d, active = %q; want the weak policy applied", counters.commitCount, s.activeConfig)
 	}
-	if !reflect.DeepEqual(device.requests, []string{"POST /api/instructor/reset"}) || device.bodies[0] != `{}` {
+	if !reflect.DeepEqual(device.requests, []string{"POST /api/sim/reset"}) || device.bodies[0] != `{}` {
 		t.Errorf("device requests = %q %q", device.requests, device.bodies)
 	}
 }

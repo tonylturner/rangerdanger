@@ -46,18 +46,18 @@ func TestListenerSeparationAndHealthShape(t *testing.T) {
 	_, api := newTestAPI(t)
 	processHealth := perform(api.ProcessHandler(), http.MethodGet, "/api/health", "", "10.50.50.20:44321")
 	if processHealth.Code != http.StatusNotFound {
-		t.Fatalf("process listener exposed instructor health: %d", processHealth.Code)
+		t.Fatalf("process listener exposed sim health: %d", processHealth.Code)
 	}
-	instructorTruth := perform(api.InstructorHandler(), http.MethodGet, "/api/truth", "", "10.99.99.22:44321")
-	if instructorTruth.Code != http.StatusNotFound {
-		t.Fatalf("instructor listener exposed process truth route: %d", instructorTruth.Code)
+	simTruth := perform(api.SimHandler(), http.MethodGet, "/api/truth", "", "10.99.99.22:44321")
+	if simTruth.Code != http.StatusNotFound {
+		t.Fatalf("sim listener exposed process truth route: %d", simTruth.Code)
 	}
-	operatorCommand := perform(api.InstructorHandler(), http.MethodPost, "/api/command", `{}`, "10.99.99.22:44321")
+	operatorCommand := perform(api.SimHandler(), http.MethodPost, "/api/command", `{}`, "10.99.99.22:44321")
 	if operatorCommand.Code != http.StatusNotFound {
-		t.Fatalf("instructor listener exposed a command endpoint: %d", operatorCommand.Code)
+		t.Fatalf("sim listener exposed a command endpoint: %d", operatorCommand.Code)
 	}
 
-	health := perform(api.InstructorHandler(), http.MethodGet, "/api/health", "", "10.99.99.10:44321")
+	health := perform(api.SimHandler(), http.MethodGet, "/api/health", "", "10.99.99.10:44321")
 	if health.Code != http.StatusOK {
 		t.Fatalf("health status = %d: %s", health.Code, health.Body)
 	}
@@ -140,7 +140,7 @@ func TestMeasurementsHTTPAcceptanceReplayStaleAndValidation(t *testing.T) {
 		t.Fatalf("unknown-only field status=%d body=%s", unknownOnly.Code, unknownOnly.Body)
 	}
 
-	state := perform(api.InstructorHandler(), http.MethodGet, "/api/state", "", "10.99.99.22:43123")
+	state := perform(api.SimHandler(), http.MethodGet, "/api/state", "", "10.99.99.22:43123")
 	var stateBody map[string]any
 	if err := json.Unmarshal(state.Body.Bytes(), &stateBody); err != nil {
 		t.Fatal(err)
@@ -153,16 +153,16 @@ func TestMeasurementsHTTPAcceptanceReplayStaleAndValidation(t *testing.T) {
 
 func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 	model, api := newTestAPI(t)
-	instructor := api.InstructorHandler()
-	missingActive := perform(instructor, http.MethodPost, "/api/instructor/fault", `{}`, "10.99.99.22:54321")
+	sim := api.SimHandler()
+	missingActive := perform(sim, http.MethodPost, "/api/sim/fault", `{}`, "10.99.99.22:54321")
 	if missingActive.Code != http.StatusBadRequest {
 		t.Fatalf("missing active status=%d", missingActive.Code)
 	}
-	unknown := perform(instructor, http.MethodPost, "/api/instructor/fault", `{"active":true,"extra":1}`, "10.99.99.22:54321")
+	unknown := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true,"extra":1}`, "10.99.99.22:54321")
 	if unknown.Code != http.StatusBadRequest {
 		t.Fatalf("unknown fault field status=%d", unknown.Code)
 	}
-	fault := perform(instructor, http.MethodPost, "/api/instructor/fault", `{"active":true}`, "10.99.99.22:54321")
+	fault := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true}`, "10.99.99.22:54321")
 	if fault.Code != http.StatusOK || !snapshotResponseMatches(t, fault, model.Snapshot()) {
 		t.Fatalf("fault status=%d body=%s", fault.Code, fault.Body)
 	}
@@ -170,29 +170,29 @@ func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 	if truth.Position != feederbreaker.PositionOpen || !truth.Lockout || !truth.FaultActive || !truth.ProtectionTripped {
 		t.Fatalf("fault state = %+v", truth)
 	}
-	noOpFault := perform(instructor, http.MethodPost, "/api/instructor/fault", `{"active":true}`, "10.99.99.22:54321")
+	noOpFault := perform(sim, http.MethodPost, "/api/sim/fault", `{"active":true}`, "10.99.99.22:54321")
 	if noOpFault.Code != http.StatusOK || !snapshotResponseMatches(t, noOpFault, model.Snapshot()) {
 		t.Fatalf("no-op fault status=%d body=%s", noOpFault.Code, noOpFault.Body)
 	}
-	resetNull := perform(instructor, http.MethodPost, "/api/instructor/reset", `null`, "10.99.99.22:54321")
+	resetNull := perform(sim, http.MethodPost, "/api/sim/reset", `null`, "10.99.99.22:54321")
 	if resetNull.Code != http.StatusBadRequest {
 		t.Fatalf("null reset body status=%d", resetNull.Code)
 	}
-	resetUnknown := perform(instructor, http.MethodPost, "/api/instructor/reset", `{"extra":1}`, "10.99.99.22:54321")
+	resetUnknown := perform(sim, http.MethodPost, "/api/sim/reset", `{"extra":1}`, "10.99.99.22:54321")
 	if resetUnknown.Code != http.StatusBadRequest {
 		t.Fatalf("unknown reset field status=%d", resetUnknown.Code)
 	}
-	reset := perform(instructor, http.MethodPost, "/api/instructor/reset", `{}`, "10.99.99.22:54321")
+	reset := perform(sim, http.MethodPost, "/api/sim/reset", `{}`, "10.99.99.22:54321")
 	if reset.Code != http.StatusOK || !snapshotResponseMatches(t, reset, model.Snapshot()) ||
 		model.Truth().Position != feederbreaker.PositionClosed {
 		t.Fatalf("reset status=%d body=%s truth=%+v", reset.Code, reset.Body, model.Truth())
 	}
 
-	badAfter := perform(instructor, http.MethodGet, "/api/audit?after=nope", "", "10.99.99.22:54321")
+	badAfter := perform(sim, http.MethodGet, "/api/audit?after=nope", "", "10.99.99.22:54321")
 	if badAfter.Code != http.StatusBadRequest {
 		t.Fatalf("bad audit cursor status=%d", badAfter.Code)
 	}
-	audit := perform(instructor, http.MethodGet, "/api/audit?after=0", "", "10.99.99.22:54321")
+	audit := perform(sim, http.MethodGet, "/api/audit?after=0", "", "10.99.99.22:54321")
 	var auditBody struct {
 		Generation uint32                     `json:"generation"`
 		Entries    []feederbreaker.AuditEntry `json:"entries"`
@@ -206,10 +206,20 @@ func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 		t.Fatalf("audit body = %+v status=%d", auditBody, audit.Code)
 	}
 	foundTrip := false
+	foundLab := false
 	for _, entry := range auditBody.Entries {
+		if entry.Operation == "fault" || entry.Operation == "reset" {
+			if entry.Context.Protocol != "lab" || entry.Context.Peer != "10.99.99.22:54321" {
+				t.Fatalf("simulation action lost lab actor/peer: %+v", entry.Context)
+			}
+			foundLab = true
+		}
 		if entry.Operation == "local_protection_trip" {
 			foundTrip = entry.Context.Protocol == "local-protection" && entry.Context.Zone == "field"
 		}
+	}
+	if !foundLab {
+		t.Fatal("missing lab simulation actions")
 	}
 	if !foundTrip {
 		t.Fatalf("local protection context missing from audit: %+v", auditBody.Entries)

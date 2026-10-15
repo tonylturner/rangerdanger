@@ -34,7 +34,7 @@ const (
 	 {"id":"feeder-current","ioa":2001,"asdu":"M_ME_NC_1","value":0,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T12:05:00.5Z","cot":20},
 	 {"id":"feeder-voltage","ioa":2002,"asdu":"M_ME_NC_1","value":0,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-09T12:05:00.5Z","cot":20}]}`
 	passAudit = `{"generation":3735928559,"latest_seq":4,"oldest_seq":1,"entries":[
-	 {"seq":1,"at":"2026-10-09T12:03:00Z","operation":"fault","result":"accepted","before":{"revision":3},"after":{"revision":4},"context":{"peer":"10.99.99.3:41000","protocol":"instructor","zone":"mgmt"}},
+	 {"seq":1,"at":"2026-10-09T12:03:00Z","operation":"fault","result":"accepted","before":{"revision":3},"after":{"revision":4},"context":{"peer":"10.99.99.3:41000","protocol":"lab","zone":"mgmt"}},
 	 {"seq":2,"at":"2026-10-09T12:03:00Z","operation":"local_protection_trip","result":"accepted","before":{"revision":3},"after":{"revision":4},"context":{"peer":"protection","protocol":"local-protection","zone":"field"},"detail":{"cause":"fault_active"}},
 	 {"seq":3,"at":"2026-10-09T12:03:01Z","operation":"first_solve","result":"accepted","before":{"revision":4},"after":{"revision":4},"context":{"peer":"10.50.50.20:50000","protocol":"process","zone":"process"},"detail":{"revision":4,"solver_epoch":"e1","solve_seq":181,"solved_at":"2026-10-09T12:03:01Z","current_a":0}},
 	 {"seq":4,"at":"2026-10-09T12:03:01Z","operation":"measurements_valid","result":"accepted","before":{"revision":4},"after":{"revision":4},"context":{"peer":"10.50.50.20:50000","protocol":"process","zone":"process"}}]}`
@@ -158,7 +158,7 @@ func TestEvaluateTelecontrol(t *testing.T) {
 		{"device restarted: generation changed", func(ev *telecontrolEvidence) { ev.device.Generation = 1 }, checkTrip, "device generation changed"},
 		{"no trip", func(ev *telecontrolEvidence) { auditEntryAt(ev, "local_protection_trip").Operation = "fault" }, checkTrip, "no local-protection trip"},
 		{"trip not by local protection", func(ev *telecontrolEvidence) {
-			auditEntryAt(ev, "local_protection_trip").Context.Protocol = "instructor"
+			auditEntryAt(ev, "local_protection_trip").Context.Protocol = "lab"
 		}, checkTrip, "no local-protection trip"},
 		{"trip before the link went down", func(ev *telecontrolEvidence) {
 			auditEntryAt(ev, "local_protection_trip").At = at("12:01:59")
@@ -173,7 +173,7 @@ func TestEvaluateTelecontrol(t *testing.T) {
 			auditEntryAt(ev, "first_solve").Detail = json.RawMessage(`{"revision":3}`)
 		}, checkTrip, "no first_solve"},
 		{"no first solve", func(ev *telecontrolEvidence) { auditEntryAt(ev, "first_solve").Operation = "measurements" }, checkTrip, "no first_solve"},
-		{"audit unavailable", func(ev *telecontrolEvidence) { ev.auditErr = errors.New("instructor device unreachable") }, checkTrip, "device audit unavailable"},
+		{"audit unavailable", func(ev *telecontrolEvidence) { ev.auditErr = errors.New("sim device unreachable") }, checkTrip, "device audit unavailable"},
 
 		{"position point stale now", func(ev *telecontrolEvidence) {
 			p := pointAt(ev, positionPoint)
@@ -188,7 +188,7 @@ func TestEvaluateTelecontrol(t *testing.T) {
 		}, checkOperator, "feeder-voltage is not GOOD (OV)"},
 		{"point missing", func(ev *telecontrolEvidence) { ev.ccState.Points = ev.ccState.Points[:3] }, checkOperator, "feeder-voltage is missing"},
 		{"position differs from the device", func(ev *telecontrolEvidence) { ev.device.Position = "closed" }, checkOperator, `the operator's breaker position "open" differs from the device's "closed"`},
-		{"device state unavailable", func(ev *telecontrolEvidence) { ev.deviceErr = errors.New("instructor device unreachable") }, "", "device state unavailable"},
+		{"device state unavailable", func(ev *telecontrolEvidence) { ev.deviceErr = errors.New("sim device unreachable") }, "", "device state unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

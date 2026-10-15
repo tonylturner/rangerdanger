@@ -9,7 +9,7 @@
       "articles": [
         {
           "id": "eu-telecontrol-architecture",
-          "title": "Two hops: operator observation and physical truth",
+          "title": "Two hops: operator observation and physical feeder state",
           "file": "eu-telecontrol-architecture.md"
         },
         {
@@ -29,14 +29,14 @@
         },
         {
           "id": "eu-rtu-control-centre-apis",
-          "title": "Control Centre APIs and the separate instructor plane",
+          "title": "Control Centre APIs and the simulation control plane",
           "file": "eu-rtu-control-centre-apis.md"
         }
       ]
     },
     {
       "id": "process",
-      "heading": "Device Truth & Station Time",
+      "heading": "Physical Device & Station Time",
       "description": "Local protection and the provenance of timestamps.",
       "icon": "zap",
       "accent": "amber",
