@@ -254,53 +254,55 @@ type buildAPDU func(funcCode, seq uint8) []byte
 //   - Select-Before-Operate: Select (FC 0x03) then Operate (FC 0x04), each
 //     with its own response; the Operate response carries the final status.
 func runControl(endpoint string, outAddr, masterAddr uint16, mode controlMode, build buildAPDU) string {
-	conn, err := net.DialTimeout("tcp", endpoint, 3*time.Second)
+	var response string
+	err := dnp3go.WithMasterConnection(endpoint, 3*time.Second, func(conn net.Conn) error {
+		switch mode {
+		case modeDirectNoAck:
+			if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCDirectOperateNoAck, 0)); err != nil {
+				return fmt.Errorf("write: %w", err)
+			}
+			// No reply is expected for FC 0x06.
+			response = "SENT (no acknowledgement requested)"
+
+		case modeSelectOperate:
+			// Select (FC 0x03), app sequence 0.
+			if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCSelect, 0)); err != nil {
+				return fmt.Errorf("select write: %w", err)
+			}
+			selStatus, err := readControlStatus(conn)
+			if err != nil {
+				return fmt.Errorf("select: %w", err)
+			}
+			if selStatus != statusSuccess {
+				response = fmt.Sprintf("SELECT %s", statusText(selStatus))
+				return nil
+			}
+			// Operate (FC 0x04), app sequence 1.
+			if err := writeAPDU(conn, outAddr, masterAddr, 1, build(dnp3go.FCOperate, 1)); err != nil {
+				return fmt.Errorf("operate write: %w", err)
+			}
+			opStatus, err := readControlStatus(conn)
+			if err != nil {
+				return fmt.Errorf("operate: %w", err)
+			}
+			response = statusText(opStatus)
+
+		default: // modeDirectOperate
+			if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCDirectOperate, 0)); err != nil {
+				return fmt.Errorf("write: %w", err)
+			}
+			status, err := readControlStatus(conn)
+			if err != nil {
+				return err
+			}
+			response = statusText(status)
+		}
+		return nil
+	})
 	if err != nil {
 		return fmt.Sprintf("FAILED: %v", err)
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
-
-	switch mode {
-	case modeDirectNoAck:
-		if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCDirectOperateNoAck, 0)); err != nil {
-			return fmt.Sprintf("FAILED: write: %v", err)
-		}
-		// No reply is expected for FC 0x06.
-		return "SENT (no acknowledgement requested)"
-
-	case modeSelectOperate:
-		// Select (FC 0x03), app sequence 0.
-		if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCSelect, 0)); err != nil {
-			return fmt.Sprintf("FAILED: select write: %v", err)
-		}
-		selStatus, err := readControlStatus(conn)
-		if err != nil {
-			return fmt.Sprintf("FAILED: select: %v", err)
-		}
-		if selStatus != statusSuccess {
-			return fmt.Sprintf("SELECT %s", statusText(selStatus))
-		}
-		// Operate (FC 0x04), app sequence 1.
-		if err := writeAPDU(conn, outAddr, masterAddr, 1, build(dnp3go.FCOperate, 1)); err != nil {
-			return fmt.Sprintf("FAILED: operate write: %v", err)
-		}
-		opStatus, err := readControlStatus(conn)
-		if err != nil {
-			return fmt.Sprintf("FAILED: operate: %v", err)
-		}
-		return statusText(opStatus)
-
-	default: // modeDirectOperate
-		if err := writeAPDU(conn, outAddr, masterAddr, 0, build(dnp3go.FCDirectOperate, 0)); err != nil {
-			return fmt.Sprintf("FAILED: write: %v", err)
-		}
-		status, err := readControlStatus(conn)
-		if err != nil {
-			return fmt.Sprintf("FAILED: %v", err)
-		}
-		return statusText(status)
-	}
+	return response
 }
 
 // writeAPDU wraps an APDU in transport+link layers and sends it.
