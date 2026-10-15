@@ -8,8 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v0.1.35] - 2026-10-15
 
-Host-side setup script fixes plus four frontend dependency bumps. Only
-the frontend image is rebuilt; the backend, simulator and workstation
+Host-side setup script fixes plus four frontend dependency bumps. The
+frontend image is rebuilt for the new dependencies, and the backend is
+rebuilt from unchanged source because every release does that (its
+version, commit and date are linked into the binary); the other 14
 images are promoted unchanged from v0.1.34. No lab, exercise, topology,
 or firewall policy changes, so a lab installed from v0.1.34 and one
 installed from v0.1.35 behave the same.
