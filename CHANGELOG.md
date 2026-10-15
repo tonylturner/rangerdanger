@@ -6,9 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Host-side setup script fixes only: no image, kernel, or lab content
-changes, so `setup.sh --version v0.1.34` and `setup.ps1 -Version v0.1.34`
-still install the v0.1.34 release unchanged.
+## [v0.1.35] - 2026-10-15
+
+Host-side setup script fixes plus four frontend dependency bumps. Only
+the frontend image is rebuilt; the backend, simulator and workstation
+images are promoted unchanged from v0.1.34. No lab, exercise, topology,
+or firewall policy changes, so a lab installed from v0.1.34 and one
+installed from v0.1.35 behave the same.
+
+### Changed
+
+- **Frontend dependencies.** `marked` 18.0.14 -> 18.1.0 (used only by
+  the exercise PDF export; on-screen lab text renders through
+  `marked-react`'s own `marked` 17.0.6, unchanged), `@radix-ui/react-tooltip`
+  1.2.16 -> 1.4.0, `@radix-ui/react-slot` 1.3.3 -> 1.5.0, and the
+  build-time `postcss` 8.5.28 -> 8.5.29. All 135 markdown blocks in the
+  lab YAMLs lex and render identically under the old and new `marked`.
 
 ### Fixed
 
@@ -2828,7 +2841,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.34...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.35...HEAD
+[v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
 [v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
 [v0.1.32]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.32
