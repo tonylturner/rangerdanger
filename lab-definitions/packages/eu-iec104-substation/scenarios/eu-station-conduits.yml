@@ -5,28 +5,15 @@ summary: "Turn the boundary findings into a budgeted station-wide design, implem
 estimated_minutes: 50
 validator: eu-station-conduits
 description: |
-  Lab 1 proved why a port rule is not command authority, why conntrack
-  matters and why stale observation is not physical truth. Now act as a
-  small DSO change team: inventory the whole station, agree its required
-  flows, price the work and prove the measured result. Your acceptance
-  pack must include positive operations AND negative lateral-movement tests.
-
-  The improved policy is a reference answer, not the only possible design.
-  The validator measures operations rather than requiring its exact hash.
-  It does not certify your written risk assessment, resource allocation,
-  rollback or every possible source: retain those in the acceptance record.
-  **Acceptance limit:** vendor-jump and eng-ws also have management
-  interfaces in this package. Denying teaching-plane Modbus does not prove
-  they cannot reach field simulation/control APIs over management. Do not
-  claim complete vendor isolation; that infrastructure issue needs separate
-  resolution before an unrestricted acceptance sign-off.
-  **Evidence prerequisite:** inspect the improved policy's explicit logged
-  IEC 104, Modbus, historian-ingest and PLC-web denies. Match fresh
-  attempts to their rule-hit events; a default-drop timeout alone is
-  missing evidence, not a successful negative test.
-  Read [Zone/conduit design](#eu-zone-conduit-design),
-  [IEC 62443 risk design](#eu-iec62443-risk-design) and
-  [Change resource plan](#eu-change-resource-plan).
+  Act as a small distribution-system operator change team. Carry lab 1's
+  boundary findings into a station-wide conduit design. Inventory the
+  assets and zones, capture the required operational flows, and agree
+  which named sources need each connection. Build a resource plan within
+  the available labour budget, then implement and test your design. Prove
+  that legitimate station operations still work and that fresh attempts
+  at lateral movement are denied. Rehearse rollback and compare the
+  measured results with your plan. Deliver a timestamped acceptance record
+  covering the evidence, remaining gaps, assigned owners and next actions.
 nodes: [fw-1, kali-1, vendor-jump-1, eng-ws-1, cc-1, rtu-1, breaker-1, rmu-1, rmu-2, oltc-1, plc-1, historian-1, gps-1]
 tags: [segmentation, design, iec104, modbus, historian, acceptance]
 steps:
@@ -37,6 +24,11 @@ steps:
       no fault and load/source 1.0; Reset Lab also applies weak. Never reset
       another team's shared attempt. Record UTC start, CC cache epoch and
       the owner of this change. Mark unobserved lab-1 findings for follow-up.
+
+      The improved policy is a reference answer, not the only possible design.
+      The validator measures operations rather than requiring its exact hash.
+      It does not certify your written risk assessment, resource allocation,
+      rollback or every possible source: retain those in the acceptance record.
 
       :::findings-panel from=iec104-telecontrol-boundary title="Boundary findings to carry forward"
       baseline-reachable: Enterprise can interrogate under weak
@@ -63,8 +55,12 @@ steps:
       holds platform APIs and sim endpoints; the solver is 10.99.99.23:8080
       and also sits on process_net with field devices. Process_net is not
       a student route, but vendor-jump (.60) and eng-ws (.61) are also on
-      mgmt_net. This contradicts the intended non-student management boundary:
-      record it as an unresolved acceptance blocker, not a firewall success.
+      mgmt_net. **Acceptance limit:** denying teaching-plane Modbus does not
+      prove these hosts cannot reach field simulation/control APIs over
+      management. This contradicts the intended non-student management
+      boundary: record it as an unresolved acceptance blocker, not a firewall
+      success. Do not claim complete vendor isolation; resolve this
+      infrastructure issue before an unrestricted acceptance sign-off.
       Do not access sim/solver APIs from these hosts or change infrastructure
       to hide the gap. No PLC/historian field interface or forwarding exists.
       Inventory all interfaces, not just the icon's displayed address.
@@ -72,7 +68,10 @@ steps:
       A second interface is a separate path even when the topology icon
       shows only one address. Put the management gap on the diagram.
       :::
-      Read [Node map](#eu-range-node-map) and [Feeder](#eu-mv-feeder).
+      Read [Zone/conduit design](#eu-zone-conduit-design),
+      [IEC 62443 risk design](#eu-iec62443-risk-design),
+      [Change resource plan](#eu-change-resource-plan),
+      [Node map](#eu-range-node-map) and [Feeder](#eu-mv-feeder).
 
   - id: capture-operational-flows
     title: "Capture operations before choosing the rules"
@@ -217,9 +216,9 @@ steps:
       CC→RTU 2404; RTU→all four field endpoints 502; PLC→OLTC 502;
       CC→historian 8081; enterprise→historian 8080; eng-ws→PLC UI 8080.
       Find logged foreign denies and confirm no lan5→OT allows.
-      Check the evidence prerequisite above: default DROP alone does not
-      produce a firewall.rule.hit DENY for the HTTP paths. If explicit logged HTTP
-      denies are absent, stop the guided acceptance on that gap and record
+      Default DROP alone does not produce a firewall.rule.hit DENY for the
+      HTTP paths. If explicit logged HTTP denies are absent, stop the guided
+      acceptance on that gap and record
       the policy-owner follow-up; do not treat an unexplained timeout as
       proof or claim the supplied policy earns a full pass.
 
