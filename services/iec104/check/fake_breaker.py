@@ -41,6 +41,10 @@ state = {
 # FC6 answer delay in ms (GET /delay?ms=N), so the CC harness can hold a
 # command in flight; reset() clears it.
 write_delay = {"ms": 0}
+# Delay the first input read after an accepted FC6
+# (GET /delay-next-read-after-write?ms=N), letting the CLI check stop the RTU
+# after ACT-CON but before its ACT-TERM.
+read_delay = {"ms": 0, "pending": False}
 
 
 def input_registers():
@@ -101,6 +105,7 @@ def reset():
             measurements_valid=True,
         )
         write_delay["ms"] = 0
+        read_delay.update(ms=0, pending=False)
 
 
 def handle_pdu(pdu):
@@ -112,6 +117,13 @@ def handle_pdu(pdu):
             return bytes([fc | 0x80, 3])
         addr, count = struct.unpack(">HH", pdu[1:5])
         if fc == 0x04:
+            with lock:
+                delay = read_delay["ms"] if read_delay["pending"] else 0
+                if delay:
+                    read_delay["pending"] = False
+            if delay:
+                print("delayed FC4 read started", flush=True)
+                time.sleep(delay / 1000.0)
             regs = input_registers()
         else:
             regs = [state["position"]]
@@ -132,6 +144,9 @@ def handle_pdu(pdu):
         exc = write_holding(value)
         if exc is not None:
             return bytes([fc | 0x80, exc])
+        with lock:
+            if read_delay["ms"] > 0:
+                read_delay["pending"] = True
         return pdu  # echo
     return bytes([fc | 0x80, 1])  # illegal function
 
@@ -191,6 +206,12 @@ class Control(http.server.BaseHTTPRequestHandler):
         elif u.path == "/delay":
             with lock:
                 write_delay["ms"] = int(q.get("ms", ["0"])[0])
+        elif u.path == "/delay-next-read-after-write":
+            with lock:
+                read_delay.update(
+                    ms=int(q.get("ms", ["0"])[0]),
+                    pending=False,
+                )
         with lock:
             snap = dict(state)
         body = (str(snap) + "\n").encode()

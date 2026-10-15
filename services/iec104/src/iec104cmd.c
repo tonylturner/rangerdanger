@@ -13,7 +13,8 @@
  * interrogation, held when the hold elapses, and link_down if the link drops
  * first. The gate uses it to hold a session across a policy apply and a
  * conntrack kill. Exit codes (contract §6): 0 after held / a successful
- * one-shot, 2 on connect failure, 3 on link loss during a monitor hold.
+ * one-shot, 1 on one-shot failure (including missing command ACT-TERM), 2
+ * on connect failure, 3 on link loss during a monitor hold.
  *
  * Every one-shot operation also accepts --json: it prints a single result
  * object. In --json mode the human log is routed to stderr so stdout is a
@@ -211,8 +212,11 @@ run_select_execute(RdClient* c, TypeID type, int ca, InformationObject (*make)(i
     if (r.negative)
         return false;
 
-    if (rd_client_wait_response(c, &cursor, type, RD_COT_TERMINATION, timeoutMs, &r))
-        rd_log("execute terminated (ACT-TERM)");
+    if (!rd_client_wait_response(c, &cursor, type, RD_COT_TERMINATION, timeoutMs, &r)) {
+        rd_log("no execute termination (ACT-TERM)");
+        return false;
+    }
+    rd_log("execute terminated (ACT-TERM)");
     return true;
 }
 

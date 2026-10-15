@@ -47,11 +47,12 @@ CC_HTTP_IP=172.28.105.21
 # a second CC aimed at a port nothing listens on (connect_failed, never_received)
 CC2_IP=172.28.104.31
 CC2_HTTP_IP=172.28.105.22
-RTU=$PREFIX-rtu BRK=$PREFIX-brk GPS=$PREFIX-gps MON=$PREFIX-mon CC=$PREFIX-cc CC2=$PREFIX-cc2 PROBE=$PREFIX-probe
+RTU=$PREFIX-rtu BRK=$PREFIX-brk GPS=$PREFIX-gps MON=$PREFIX-mon NOACTTERM=$PREFIX-no-actterm \
+  CC=$PREFIX-cc CC2=$PREFIX-cc2 PROBE=$PREFIX-probe
 FAILED=0
 
 cleanup() {
-  docker rm -f "$MON" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
+  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
   docker network rm "$NET" "$MGMT" >/dev/null 2>&1 || true
 }
 trap 'cleanup; docker image rm "$IMG" >/dev/null 2>&1 || true' EXIT
@@ -224,12 +225,50 @@ sleep 3
 # shellcheck source=services/iec104/check/cc_checks.sh
 . "$HERE/cc_checks.sh"
 
-# ---- 8. monitor exit 3 when the RTU is killed -------------------------
-log "check 8: monitor exits 3 on link loss"
-docker rm -f "$MON" >/dev/null 2>&1 || true
+# ---- 8. missing ACT-TERM fails; monitor exits 3 on link loss -----------
+log "check 8: missing ACT-TERM fails and monitor exits 3 on link loss"
+docker rm -f "$MON" "$CC" "$CC2" "$PROBE" "$RTU" >/dev/null 2>&1 || true
+sed 's/"timeout_ms":1000/"timeout_ms":10000/' "$HERE/points.test.json" >"$OUT/points.noactterm.json"
+docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" \
+  -v "$OUT/points.noactterm.json:/etc/points.json:ro" "$IMG" \
+  iec104-rtu --config /etc/points.json --bind "$RTU_IP" --port 2404 >/dev/null
+for _ in $(seq 1 20); do
+  docker logs "$RTU" 2>&1 | grep -q "listening" && break
+  sleep 1
+done
+sleep 2
+ctl "http://$BRK_IP:8081/reset"
 docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 60 >/dev/null
 sleep 3
-docker kill "$RTU" >/dev/null
+ctl "http://$BRK_IP:8081/delay-next-read-after-write?ms=15000"
+docker run -d --name "$NOACTTERM" --network "$NET" "$IMG" \
+  iec104cmd "$RTU_IP" --json dc 3001 open -sbo >/dev/null
+delay_started=0
+for _ in $(seq 1 30); do
+  if docker logs "$BRK" 2>&1 | grep -q 'delayed FC4 read started'; then
+    delay_started=1
+    break
+  fi
+  sleep 0.1
+done
+if [ "$delay_started" = 1 ]; then
+  actcon_seen=0
+  for _ in $(seq 1 30); do
+    if docker logs "$NOACTTERM" 2>&1 | grep -q 'execute confirmed'; then
+      actcon_seen=1
+      break
+    fi
+    sleep 0.1
+  done
+  if [ "$actcon_seen" != 1 ]; then
+    fail "command did not receive positive ACT-CON before feedback was delayed"
+  fi
+  docker kill "$RTU" >/dev/null
+else
+  actcon_seen=0
+  fail "fake breaker did not delay the post-ACT-CON feedback read"
+  docker kill "$RTU" >/dev/null
+fi
 for _ in $(seq 1 30); do
   st="$(docker inspect -f '{{.State.Status}}' "$MON" 2>/dev/null || echo gone)"
   [ "$st" = exited ] && break
@@ -241,6 +280,20 @@ if [ "$monrc" = 3 ] && grep -q '"event":"link_down"' "$OUT/mon-linkdown.jsonl"; 
   pass "monitor emitted link_down and exited 3 after the RTU was killed"
 else
   fail "monitor exit code=$monrc (expected 3) (mon-linkdown.jsonl)"
+fi
+for _ in $(seq 1 30); do
+  st="$(docker inspect -f '{{.State.Status}}' "$NOACTTERM" 2>/dev/null || echo gone)"
+  [ "$st" = exited ] && break
+  sleep 1
+done
+noacttermrc="$(docker inspect -f '{{.State.ExitCode}}' "$NOACTTERM" 2>/dev/null || echo X)"
+docker logs "$NOACTTERM" >"$OUT/cmd-no-actterm.jsonl" 2>&1
+if [ "$delay_started" = 1 ] && [ "$actcon_seen" = 1 ] && [ "$noacttermrc" = 1 ] \
+  && grep -q 'no execute termination (ACT-TERM)' "$OUT/cmd-no-actterm.jsonl" \
+  && grep -q '"event":"result".*"op":"dc".*"status":"failed"' "$OUT/cmd-no-actterm.jsonl"; then
+  pass "command without ACT-TERM emitted failed JSON and exited 1"
+else
+  fail "command without ACT-TERM exited $noacttermrc or lacked failure evidence (cmd-no-actterm.jsonl)"
 fi
 
 echo; cat "$OUT/results.log"

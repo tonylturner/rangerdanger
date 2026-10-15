@@ -122,9 +122,10 @@ runs GI, then prints one object per line — `connected`, an `asdu` per received
 monitoring object, `gi_complete` after each GI, `held` when the hold elapses,
 and `link_down` if the link drops first. `--gi-every S` sends a periodic GI
 (application traffic for the gate). Exit codes: **0** after `held` or a
-successful one-shot, **2** on connect failure, **3** on link loss during a
-monitor hold. The gate uses `monitor` to hold a session across a policy apply
-and a conntrack kill.
+successful one-shot (a command requires ACT-TERM), **1** when a one-shot
+fails or an execute ACT-TERM does not arrive, **2** on connect failure, **3**
+on link loss during a monitor hold. The gate uses `monitor` to hold a session
+across a policy apply and a conntrack kill.
 
 `iec104cmd` also ships as a fully static (musl) binary inside Kali and the
 shared engineering-workstation images, built in each Dockerfile's pinned
