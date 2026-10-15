@@ -47,6 +47,21 @@ CALLS="$TMP_DIR/g13-calls.log"
 : >"$CALLS"
 REVISION=9
 RTU_STATE=false
+RESET_DONE=false
+RESET_FAIL=false
+FIELD_FAIL=false
+FIELD_PREDICATE=""
+eu_apply_named() {
+  printf 'policy %s\n' "$1" >>"$CALLS"
+}
+eu_reset_all() {
+  printf 'reset\n' >>"$CALLS"
+  if [ "$RESET_FAIL" = true ]; then
+    fail "reset failed (stub)"
+    return 1
+  fi
+  RESET_DONE=true
+}
 docker() {
   printf 'docker %s\n' "$1" >>"$CALLS"
   case "$1" in
@@ -61,9 +76,19 @@ eu_wait_for_operator() {
   WAIT_BODY=$(cat "$T_FIXTURES/operator-gi-untimed.json")
 }
 eu_wait_for_field() {
+  printf 'field\n' >>"$CALLS"
+  FIELD_PREDICATE="$1"
   WAIT_BODY=$(cat "$T_FIXTURES/field-baseline.json")
+  if [ "$FIELD_FAIL" = true ] || ! printf '%s' "$WAIT_BODY" | jq -e "$1" >/dev/null; then
+    fail "reset truth not settled (stub)"
+    return 1
+  fi
 }
 eu_device_step() {
+  if [ "$1" = local-trip ] && [ "$RESET_DONE" != true ]; then
+    fail "local-trip without reset"
+    return 1
+  fi
   [ "$1" != clear-fault ] || return 0
   REVISION=$((REVISION + 1))
   printf 'mutation %s revision %s\n' "$1" "$REVISION" >>"$CALLS"
@@ -73,6 +98,7 @@ eu_wait_for_state() {
   printf 'wait %s\n' "$4" >>"$CALLS"
 }
 eu_api_get() {
+  printf 'audit\n' >>"$CALLS"
   # shellcheck disable=SC2034 # read by the sourced gate helpers
   HTTP_STATUS=200
   API_BODY="$AUDIT"
@@ -80,15 +106,45 @@ eu_api_get() {
 }
 t_run eu_gate_G13
 t_expect_fails 0 "the G13 flow passes against an audit with both first_solve entries"
-t_run grep -E '^(mutation|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
-t_expect_eq "$T_OUT" "docker pause
+t_run grep -E '^(policy|reset|field|audit|mutation|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
+t_expect_eq "$T_OUT" "policy improved
+reset
+field
+audit
+docker pause
 mutation local-trip revision 10
 wait G13 solver first_solve of device revision 10 while RTU paused
 mutation restore-device revision 11
 wait G13 solver first_solve of device revision 11 while RTU paused
 operator .link.state != \"started\" 
-docker unpause" "each mutation awaits its first_solve, then the CC link loss, all while the RTU is paused"
+docker unpause
+audit" "reset and solver agreement precede the cursor and pause; each mutation awaits its first_solve"
 t_run grep -c 'connection_seq > 1 ' "$CALLS"
 t_expect_eq "$T_OUT" 1 "recovery requires a connection_seq newer than the pre-outage link"
+precondition_matches() {
+  jq "$1" "$T_FIXTURES/field-baseline.json" | jq -e "$FIELD_PREDICATE"
+}
+for mutation in '.devices["breaker-1"].position = "open"' \
+  '.devices["breaker-1"].protection_tripped = true' \
+  '.process.devices["feeder-breaker"].solved_revision = -1'; do
+  t_run precondition_matches "$mutation"
+  t_expect_eq "$T_STATUS" 1 "G13 rejects an unsettled precondition: $mutation"
+done
+
+: >"$CALLS"
+RESET_DONE=false
+RESET_FAIL=true
+t_run eu_gate_G13
+t_expect_fails 1 "G13 aborts if its own reset fails"
+t_expect_eq "$(cat "$CALLS")" "policy improved
+reset" "a failed reset cannot reach the audit cursor, RTU pause or local-trip"
+
+: >"$CALLS"
+RESET_FAIL=false
+FIELD_FAIL=true
+t_run eu_gate_G13
+t_expect_fails 1 "G13 aborts if reset truth and solver have not converged"
+t_run grep -Ec '^(audit|docker|mutation)' "$CALLS"
+t_expect_eq "$T_OUT" 0 "unsettled reset cannot reach the audit cursor, pause or trip"
 
 t_finish

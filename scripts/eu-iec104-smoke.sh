@@ -123,7 +123,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G9  Restore improved; CC reconnect/GI and truth converge (needs G7)
   G10 EU validator PASS
   G11 Remove RTU-to-breaker allow; exact Modbus kill; stale/reset/recover
-  G12 OpenDSS pause yields measurement_invalid only; unpause recovers (needs G11)
+  G12 OpenDSS pause yields measurement_invalid only; unpause recovers
   G13 RTU pause, process fault/breaker reset each awaiting its first_solve, CC link loss, new connection + GI, audit
   G15 RMU switching, local/earth/live-live interlocks, S1 restore and S2 FPI
   G16 OLTC manual/auto, load raise, source limit and negative settle
@@ -684,6 +684,10 @@ eu_gate_G11() {
   local g11_policy g11_tuple g11_loss_started_ms stale_ms g11_before_reset g11_stale g11_stale_points \
     g11_stale_epoch g11_truth g11_after_reset g11_after_reset_points reset_truth poll_since poll_until
   g11_loss_verified=0
+  # Earlier gates may have left a restrictive policy or tripped device behind.
+  eu_apply_named improved || return
+  eu_reset_all || return
+  eu_wait_for_baseline "G11 GOOD baseline before Modbus loss" 30 || return
   g11_policy="$TMP_DIR/improved-without-rtu-modbus.json"
   eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$RTU_IP" "$BREAKER_IP" 502 "$g11_policy" || return
   if eu_policy_has_no_ephemeral_allow "$g11_policy"; then
@@ -791,10 +795,10 @@ eu_gate_G11() {
 
 eu_gate_G12() {
   local g12_pause_started_ms g12_measurement_loss_seen=0
-  if [ "$g11_loss_verified" -ne 2 ]; then
-    fail "G12 cannot test measurement loss without G11's verified Modbus loss and GOOD recovery"
-    return
-  fi
+  # This outage needs a healthy chain, not a successful G11 outage/recovery.
+  eu_apply_named improved || return
+  eu_reset_all || return
+  eu_wait_for_baseline "G12 GOOD baseline before measurement loss" 30 || return
   g12_pause_started_ms=$(eu_now_ms) || g12_pause_started_ms=""
   if ! [[ "$g12_pause_started_ms" =~ ^[0-9]+$ ]]; then
     fail "G12 cannot establish monotonic timeout before pausing OpenDSS"
@@ -826,8 +830,11 @@ eu_gate_G12() {
 
 eu_gate_G13() {
   local connection_seq generation baseline cursor revisions="[]" active revision audit fault_step
-  # Settle first: the CC on a GI-complete link, and the solver's accepted solve of
-  # the current revision, so its first_solve precedes the audit cursor.
+  # Own the initial truth even if a previous gate aborted while tripped or
+  # restrictive. The next local-trip must change the device revision.
+  eu_apply_named improved || return
+  eu_reset_all || return
+  # Settle the CC and the reset revision before taking the audit cursor.
   if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
     30 "G13 CC baseline before the RTU outage"; then
     return
@@ -836,7 +843,8 @@ eu_gate_G13() {
     fail "G13 CC connection_seq is missing or not a number: $WAIT_BODY"
     return
   }
-  eu_wait_for_field '.process.devices["feeder-breaker"].delivered == true and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision
+  eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false
+    and .process.devices["feeder-breaker"].delivered == true and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision
     and .process.truth_stale == false' 10 "G13 solver agrees with the device" || return
   generation=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].generation | numbers') || generation=""
   baseline=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].revision | numbers') || baseline=""
