@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { EdgeLabelRenderer, EdgeProps, getBezierPath } from "reactflow";
+import { TRAFFIC_LABEL_HEIGHT, trafficLabelWidth } from "../lib/network-graph";
 
 // Portal-based tooltip rendered in document.body. Tooltips inside SVG
 // foreignObjects inherit opacity, transform, and clipping from their
@@ -288,24 +289,12 @@ function TrafficEdge({
     ? `drop-shadow(0 0 10px ${activeColor}) drop-shadow(0 0 20px ${activeColor}88)`
     : undefined;
   const overrideOpacity = dimmedByHighlight ? 0.2 : undefined;
-  const labelWidth = Math.max(56, label.length * 6 + 16);
-
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
-  // Same-zone peers share a column (or a row in the band layout).
-  // Their midpoint can be inside a host's name/IP block. Put the pill
-  // outside both endpoints' host envelopes instead; cross-zone labels
-  // retain the midpoint in the open space between zones.
-  // Host wrappers are 120px wide with 56px icons. The extra 12px
-  // separates the pill from that envelope, including for long labels.
-  const sameZone = data?.sameZone === true;
-  const vertical = Math.abs(dy) >= Math.abs(dx);
-  const labelX = sameZone && vertical
-    ? Math.max(sourceX, targetX) + 60 + 12 + labelWidth / 2
-    : centerX;
-  const labelY = sameZone && !vertical
-    ? Math.min(sourceY, targetY) - 56 - 12 - 11
-    : centerY;
+  // The graph planner reserves inter-host lanes and packs every pill
+  // together. Keep its offset relative to the live path when dragging.
+  const labelX = centerX + data.labelOffset.x;
+  const labelY = centerY + data.labelOffset.y;
   const edgeLen = Math.max(1, Math.sqrt(dx * dx + dy * dy));
   const ux = dx / edgeLen;
   const uy = dy / edgeLen;
@@ -383,8 +372,10 @@ function TrafficEdge({
           onMouseLeave={() => setTip((t) => ({ ...t, visible: false }))}
         >
           <div
-            className="cursor-help whitespace-nowrap rounded-full border px-2 py-0.5 text-center text-[9px] font-semibold"
+            className="flex cursor-help items-center justify-center whitespace-nowrap rounded-full border text-center text-[9px] font-semibold"
             style={{
+              width: trafficLabelWidth(label),
+              height: TRAFFIC_LABEL_HEIGHT,
               backgroundColor: '#0f172a',
               borderColor: `${stroke}cc`,
               color: labelColor,

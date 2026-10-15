@@ -1,4 +1,4 @@
-import type { Edge, Node } from "reactflow";
+import { getBezierPath, Position, type Edge, type Node } from "reactflow";
 import type { GraphNode as ApiGraphNode, LabGraph, ZoneRuleSummary } from "./api";
 import { aggregateFlows, nodeZone, type FlowContext, type FlowFilter } from "./observed-flows";
 import {
@@ -9,6 +9,40 @@ import {
   zones,
 } from "./network-console-data";
 import { zoneColors } from "./zone-colors";
+
+// Reserve the entire host envelope, including a three-line name and IP.
+const HOST_ENVELOPE = { width: 120, height: 130 };
+export const TRAFFIC_LABEL_HEIGHT = 20;
+const LABEL_GAP = 8;
+
+export function trafficLabelWidth(label: string): number {
+  return Math.max(56, label.length * 6 + 18);
+}
+
+function flowLabel(protocols: { protocol: string }[]): string {
+  const names = [...new Set(protocols.map((f) => f.protocol))];
+  return names.length <= 3 ? names.join(" + ") : `${names.slice(0, 2).join(" + ")} +${names.length - 2}`;
+}
+
+function sameZoneGaps(graph: LabGraph) {
+  const gaps = new Map<string, { key: string; slot: number }>();
+  const counts = new Map<string, number>();
+  let maxWidth = 0;
+  // Inventory order, not liveness or the current filter, owns label lanes.
+  for (const pair of aggregateFlows({ graph, observations: {} }).sort((a, b) =>
+    `${a.source}->${a.target}`.localeCompare(`${b.source}->${b.target}`))) {
+    const zone = nodeZone(pair.source, graph);
+    if (zone === "unknown" || zone !== nodeZone(pair.target, graph)) continue;
+    const hosts = graph.nodes.filter((n) => n.data.zone === zone && n.type !== "containd_ngfw" && n.type !== "opnsense_external" && n.type !== "zone");
+    const first = Math.min(hosts.findIndex((n) => n.id === pair.source), hosts.findIndex((n) => n.id === pair.target));
+    const key = hosts[first].id;
+    const slot = counts.get(key) ?? 0;
+    gaps.set(`${pair.source}->${pair.target}`, { key, slot });
+    counts.set(key, slot + 1);
+    maxWidth = Math.max(maxWidth, trafficLabelWidth(flowLabel(pair.protocols)));
+  }
+  return { gaps, count: Math.max(0, ...counts.values()), maxWidth };
+}
 
 export function buildStyledGraph(
   graph?: LabGraph,
@@ -31,7 +65,10 @@ export function buildStyledGraph(
 
     // Layout configuration
     const ZONE_SPACING_X = 240;
-    const NODE_SPACING_Y = 130;
+    const sameZone = sameZoneGaps(graph);
+    const NODE_SPACING_Y = sameZone.count
+      ? HOST_ENVELOPE.height + LABEL_GAP + sameZone.count * (TRAFFIC_LABEL_HEIGHT + LABEL_GAP)
+      : 130;
     const FIREWALL_Y = 50;
     // Pushed down from 220 to give the firewall icon, its label,
     // and the zone boundary headers room to breathe vertically.
@@ -88,12 +125,13 @@ export function buildStyledGraph(
       // which fails the SL 3 target set by OT Operations. In the
       // hardened config it's SL 3 (deny-default, DPI, source-pin).
 
-      const BAND_WIDTH = 700;
-      const BAND_HEIGHT = 180;
+      const NODE_SPACING_X = Math.max(130, HOST_ENVELOPE.width + LABEL_GAP + sameZone.count * (sameZone.maxWidth + LABEL_GAP));
+      const BAND_WIDTH = Math.max(700, 60 + HOST_ENVELOPE.width +
+        (Math.max(...Object.values(nodesByZone).map((hosts) => hosts.length)) - 1) * NODE_SPACING_X);
+      const BAND_HEIGHT = 200;
       const BAND_GAP = 30;
       const BAND_START_X = -400;
       const NODE_START_X_OFFSET = 30;
-      const NODE_SPACING_X = 130;
       const FW_X = BAND_START_X + BAND_WIDTH + 120; // firewall to the right of bands
 
       // IEC 62443 Security Level assignments for each zone.
@@ -282,7 +320,7 @@ export function buildStyledGraph(
       }
 
       if (viewMode.traffic && flowContext) {
-        styledEdges.push(...trafficEdges(flowContext, styledNodes, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
+        styledEdges.push(...trafficEdges(flowContext, styledNodes, styledEdges, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
       }
 
       return { nodes: styledNodes, edges: styledEdges };
@@ -528,19 +566,54 @@ export function buildStyledGraph(
     // hosts at low opacity.)
 
     if (viewMode.traffic && flowContext) {
-      styledEdges.push(...trafficEdges(flowContext, styledNodes, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
+      styledEdges.push(...trafficEdges(flowContext, styledNodes, styledEdges, ruleSummaries, viewMode.policyDim, trafficFilter, highlightedTrafficPair));
     }
 
     return { nodes: styledNodes, edges: styledEdges };
 }
 
-function trafficEdges(context: FlowContext, nodes: Node[], rules: ZoneRuleSummary[] | undefined,
+type Box = { x: number; y: number; width: number; height: number };
+
+function intersects(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width + LABEL_GAP && a.x + a.width + LABEL_GAP > b.x &&
+    a.y < b.y + b.height + LABEL_GAP && a.y + a.height + LABEL_GAP > b.y;
+}
+
+function handles(source: Node, target: Node) {
+  const band = source.data.verticalOnly === true;
+  return {
+    sourceX: source.position.x + (band ? 60 : 88),
+    sourceY: source.position.y + (band ? 56 : 28),
+    targetX: target.position.x + (band ? 60 : 32),
+    targetY: target.position.y + (band ? 0 : 28),
+    sourcePosition: band ? Position.Bottom : Position.Right,
+    targetPosition: band ? Position.Top : Position.Left,
+  };
+}
+
+function trafficEdges(context: FlowContext, nodes: Node[], policyEdges: Edge[], rules: ZoneRuleSummary[] | undefined,
   policyOn: boolean, filter?: FlowFilter, highlight?: string | null): Edge[] {
   const present = new Set(nodes.map((n) => n.id));
-  return aggregateFlows(context, filter).filter((r) => present.has(r.source) && present.has(r.target)).map((r) => {
+  const inventory = sameZoneGaps(context.graph);
+  const occupied: Box[] = nodes.filter((n) => n.type === "host").map((n) => ({
+    ...n.position, ...HOST_ENVELOPE,
+  }));
+  // Policy pills are in the SVG layer but occupy the same canvas.
+  for (const edge of policyEdges) {
+    if (!edge.data.label) continue;
+    const source = nodes.find((n) => n.id === edge.source)!;
+    const target = nodes.find((n) => n.id === edge.target)!;
+    const band = source.type === "zone";
+    const sx = source.position.x + (band ? 0 : 80);
+    const sy = source.position.y + (band ? 0 : 88);
+    const tx = target.position.x + (band ? 36 : 0);
+    const ty = target.position.y + (band ? 44 : 0);
+    const width = Math.max(78, edge.data.label.length * 6 + 28);
+    occupied.push({ x: sx + (tx - sx) * 0.6 - width / 2, y: sy + (ty - sy) * 0.6 - 11, width, height: 22 });
+  }
+  const edges = aggregateFlows(context).filter((r) => present.has(r.source) && present.has(r.target)).map((r): Edge => {
     const key = `${r.source}->${r.target}`;
-    const protocols = [...new Set(r.protocols.map((f) => f.protocol))];
-    const label = protocols.length <= 3 ? protocols.join(" + ") : `${protocols.slice(0, 2).join(" + ")} +${protocols.length - 2}`;
+    const label = flowLabel(r.protocols);
     const blockReason = policyOn ? getFlowBlockReason(r.source, r.target, rules, context.graph) : null;
     const dimmed = !!highlight && highlight !== key;
     const sourceZone = nodeZone(r.source, context.graph);
@@ -557,6 +630,40 @@ function trafficEdges(context: FlowContext, nodes: Node[], rules: ZoneRuleSummar
       },
     };
   });
+
+  // Place same-zone labels first in their reserved inter-host lanes.
+  // Cross-zone labels then take the nearest free vertical interval to
+  // their Bezier midpoint, clearing ALL hosts and previously placed pills.
+  for (const edge of [...edges].sort((a, b) =>
+    Number(b.data.sameZone) - Number(a.data.sameZone) || a.id.localeCompare(b.id))) {
+    const source = nodes.find((n) => n.id === edge.source)!;
+    const target = nodes.find((n) => n.id === edge.target)!;
+    const [, cx, cy] = getBezierPath({ ...handles(source, target), curvature: 0.4 });
+    const width = trafficLabelWidth(edge.data.label);
+    let x = cx - width / 2;
+    let y = cy - TRAFFIC_LABEL_HEIGHT / 2;
+    const lane = inventory.gaps.get(`${edge.source}->${edge.target}`);
+    if (lane) {
+      const upper = nodes.find((n) => n.id === lane.key)!;
+      if (source.data.verticalOnly) {
+        x = upper.position.x + HOST_ENVELOPE.width + LABEL_GAP + lane.slot * (inventory.maxWidth + LABEL_GAP);
+        y = upper.position.y + 28 - TRAFFIC_LABEL_HEIGHT / 2;
+      } else {
+        x = upper.position.x + HOST_ENVELOPE.width / 2 - width / 2;
+        y = upper.position.y + HOST_ENVELOPE.height + LABEL_GAP + lane.slot * (TRAFFIC_LABEL_HEIGHT + LABEL_GAP);
+      }
+    } else {
+      const candidates = [y, ...occupied.flatMap((box) => [
+        box.y - LABEL_GAP - TRAFFIC_LABEL_HEIGHT, box.y + box.height + LABEL_GAP,
+      ])].sort((a, b) => Math.abs(a - y) - Math.abs(b - y) || a - b);
+      y = candidates.find((candidate) => !occupied.some((box) =>
+        intersects({ x, y: candidate, width, height: TRAFFIC_LABEL_HEIGHT }, box)))!;
+    }
+    occupied.push({ x, y, width, height: TRAFFIC_LABEL_HEIGHT });
+    edge.data.labelOffset = { x: x + width / 2 - cx, y: y + TRAFFIC_LABEL_HEIGHT / 2 - cy };
+  }
+  const visible = new Set(aggregateFlows(context, filter).map((r) => `${r.source}->${r.target}`));
+  return edges.filter((edge) => visible.has(`${edge.source}->${edge.target}`));
 }
 
 function zoneInterfaceMeta(graph: LabGraph, zone: string) {

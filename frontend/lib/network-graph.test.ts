@@ -6,6 +6,25 @@ import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { aggregateFlows, createFlowContext } from "./observed-flows";
 
 describe("buildStyledGraph", () => {
+  it.each([euFixture, usFixture])("keeps label lanes stable across traffic filters for $networks.0.name", (fixture) => {
+    const graph = fixture as LabGraph;
+    const context = createFlowContext(graph, {});
+    for (const iec62443 of [false, true]) {
+      const view = { traffic: true, policyDim: true, iec62443 };
+      const all = buildStyledGraph(graph, [], view, undefined, undefined, context);
+      for (const filter of [
+        { zone: "all", crossZoneOnly: true },
+        { zone: graph.nodes.find((n) => n.id === graph.flows[0].source)!.data.zone, crossZoneOnly: false },
+      ]) {
+        const filtered = buildStyledGraph(graph, [], view, undefined, undefined, context, undefined, filter);
+        expect(filtered.nodes).toEqual(all.nodes);
+        for (const edge of filtered.edges.filter((e) => e.type === "trafficEdge")) {
+          expect(edge.data.labelOffset).toEqual(all.edges.find((e) => e.id === edge.id)!.data.labelOffset);
+        }
+      }
+    }
+  });
+
   it.each([euFixture, usFixture])("derives tooltip metadata only from the graph for $networks.0.name", (fixture) => {
     const graph: LabGraph = structuredClone(fixture) as LabGraph;
     const firewall = graph.nodes.find((n) => n.type === "containd_ngfw")!;
