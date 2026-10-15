@@ -1,18 +1,36 @@
-The RTU speaks IEC104 northbound and Modbus FC4 telemetry / FC6 commands southbound. It does not provide an operator REST API.
+An API's role matters as much as its route name. An operator command, a read-only physical-state export and a simulation action can all use HTTP while representing completely different authority. Keep these surfaces separate when collecting evidence: otherwise a convenient management read can conceal the very telecontrol outage the exercise is meant to demonstrate.
 
-The native Control Centre exposes:
+### Native CC and portal operator routes
 
-- GET `/api/health`
-- GET `/api/state`
-- GET `/api/journal?after=N`
-- POST `/api/commands` with `{"point":"feeder-breaker-command","operation":"open"}`
+The RTU offers IEC 104 northbound and Modbus acquisition/control southbound. It has no operator REST API. The native CC management listener is `10.99.99.21:8080` and serves:
 
-The portal proxies `/api/operator/state`, `/api/operator/journal` and `/api/operator/commands`. Backend state adds `package_id` and `range_generation`.
+- `GET /api/health` for link/observation health and historian publishing status.
+- `GET /api/state` for schema-2 observed state.
+- `GET /api/journal?after=N` for bounded link, point-quality and command evidence.
+- `POST /api/commands` for one operator command.
 
-Bad command input returns 400. A command already in flight returns 409. A link that is not started returns 503. A command-result status alone does not prove that the breaker moved. Check matching feedback and state evidence. The journal is a 500-entry ring. Use its `cache_epoch` and sequence bounds to check for missing entries. A truncated journal cannot prove a complete history.
+The portal proxies state, journal and commands as `/api/operator/state`, `/api/operator/journal` and `/api/operator/commands`. State adds `package_id` and `range_generation`; these identify the backend range generation and do not replace the CC's `cache_epoch`.
 
-The portal's read-only `/api/field/state` and `/api/field/audit?after=N` expose device state, solver output and device audit in the physical feeder section of `/substation`. They are not inputs to the CC.
+A command body contains exactly point and operation, for example `{"point":"rmu-1-command","operation":"open"}`. Breaker/RMU operations are open/close, OLTC step lower/raise, OLTC mode auto/manual. An operation incompatible with the command kind returns 400. A command already in flight or stale/invalid feedback returns 409; a link not started returns 503. A returned command result still needs the [SBO interpretation](#iec104-sbo-commands), not merely an HTTP-success check.
 
-Simulation control is executed through `POST /api/scenarios/iec104-telecontrol-boundary/steps/:stepIdx/execute`. The authored `local-trip`, `clear-fault` and `restore-device` steps use the EU recipe's breaker commands `inject_fault`, `clear_fault` and `reset`. The backend calls the breaker's management-network simulation endpoint (`POST /api/sim/fault` or `/api/sim/reset`), never US/RTAC control paths. Device audit records these actions as `lab`, retaining the real peer and zone. Reset Lab also resets the breaker.
+### Read-only physical and historian exports
 
-The `cut-session` step freshly reads containd's sessions for package flow `cc-rtu` and deletes its exact original-direction tuple only when one complete match exists. No match, ambiguity, missing ports or an unavailable inventory means nothing is killed. Apply and verify a policy denying that conduit first: deleting conntrack sends no TCP reset and an allowed next packet can recreate the flow.
+`GET /api/field/state` returns `devices` keyed by node id plus `process`. The breaker key is `breaker-1`, although its device id is `feeder-breaker`; GPS also appears because it declares a simulation endpoint. Any failing upstream makes the aggregate fail with 502 naming the upstream, rather than synthesising a partial “healthy” state.
+
+`GET /api/field/audit?after=N` currently proxies the **breaker** audit only. It is not a combined audit for RMUs, OLTC and GPS. Those devices' own management APIs provide their separate audits when accessed through an authorised maintenance context.
+
+`GET /api/historian/points` and `/api/historian/history?…` relay the historian's management read API. They do not expose ingestion or write-back. A successful portal read is not proof of the enterprise-to-DMZ conduit.
+
+### Lab actions are not another operator channel
+
+Authored steps execute through `POST /api/scenarios/:id/steps/:stepIdx/execute`. The backend resolves the package recipe, device and allowed action. Field devices receive `POST /api/sim/actions` with an action name; process fault/load/source actions go to `/api/process/actions`; GPS offset actions use its existing `/api/command`.
+
+The UI has no instructor control plane to bypass these authored steps. Reset Lab uses the ordered [reset contract](#eu-reset-acceptance). Lab actions change simulated conditions; they do not prove an operator's IEC 104 command path works.
+
+### Evidence and limits
+
+Save the CC journal cursor before an attempt, then export after it. The journal holds 500 entries; check `cache_epoch`, `oldest_seq` and `latest_seq` before claiming completeness. `snapshot_seq` advances on every state render, so polling an API can itself create sequence gaps in historian snapshots.
+
+The range is a local training environment, not an authenticated production control API. Separate authority by purpose even where management reachability is shared. Never use field or solver truth to populate missing CC observations, and never automatically retry an ambiguous command.
+
+Implementation: backend `operator.go`, `field.go`, `historian.go`, `eu_recipe.go`; `services/iec104/src/cc_api.c` and `cc_state.c`.
