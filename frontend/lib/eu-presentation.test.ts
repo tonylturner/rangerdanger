@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NODE_LABELS } from "./exercise-nodes";
-import { humanizeSummary, zones } from "./network-console-data";
+import { humanZoneName, humanizeSummary, zones } from "./network-console-data";
 import { nodeTypeLabel } from "./node-types";
 import { zoneColors } from "./zone-colors";
 
@@ -15,6 +15,11 @@ describe("EU presentation vocabulary", () => {
     expect(zoneColors.station_net).toEqual(zoneColors.lan1);
     expect(zones).toContain("station_net");
     expect(zones).toContain("control_centre_net");
+    expect(zones).toContain("ops_dmz_net");
+    expect(zones).toContain("lan5");
+    expect(zoneColors.lan5).toEqual(zoneColors.ops_dmz_net);
+    expect(humanZoneName("lan5")).toBe("Operations DMZ");
+    expect(humanizeSummary("8081")).toEqual(["HTTP ingest"]);
   });
 
   it("names the EU node types and nodes", () => {
@@ -25,5 +30,11 @@ describe("EU presentation vocabulary", () => {
     expect(NODE_LABELS["cc-1"]).toBe("Control Centre");
     expect(NODE_LABELS["rtu-1"]).toBe("IEC 104 RTU");
     expect(NODE_LABELS["breaker-1"]).toBe("Feeder Breaker");
+    expect(nodeTypeLabel("rmu")).toMatch(/RMU/);
+    expect(nodeTypeLabel("oltc")).toMatch(/OLTC/);
+    expect(NODE_LABELS["rmu-1"]).toContain("Sectionaliser");
+    expect(NODE_LABELS["rmu-2"]).toContain("Tie");
+    expect(NODE_LABELS["oltc-1"]).toBe("T1 OLTC");
+    expect(NODE_LABELS["plc-1"]).toBe("OpenPLC");
   });
 });

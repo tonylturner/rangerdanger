@@ -14,11 +14,12 @@ import {
 import { useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
-import { BreakerCommandPanel } from "./control-centre-command";
+import { SupervisoryControls } from "./control-centre-command";
 import { ControlCentreJournal } from "./control-centre-journal";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { PointTable, STALE_HATCH } from "./control-centre-points";
 import { PhysicalFeeder } from "./physical-feeder";
+import { HistorianTrend } from "./historian-trend";
 
 const POLL_MS = 2000;
 
@@ -92,7 +93,8 @@ export function ControlCentreScreen({
   physicalFeeder?: ReactNode;
 }) {
   const waiting = !state && isRangeNotReady(stateError);
-  const apiDown = stateError !== null && stateError !== undefined && !isRangeNotReady(stateError);
+  const unavailable = stateError !== null && stateError !== undefined;
+  const apiDown = unavailable && !isRangeNotReady(stateError);
   const summary = state ? telemetrySummary(state.points) : null;
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-10">
@@ -114,6 +116,10 @@ export function ControlCentreScreen({
         </div>
       )}
 
+      {state && isRangeNotReady(stateError) && (
+        <p role="alert" className="text-xs text-amber-300">Range not ready. Showing the last CC answer; controls are disabled.</p>
+      )}
+
       {waiting && (
         <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
           The control centre shows once the range is ready.
@@ -129,17 +135,12 @@ export function ControlCentreScreen({
       {state && summary && (
         <>
           <LinkStrip link={state.link} now={now} />
-          <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
-            <Panel title="Feeder one-line">
-              <ControlCentreOneLine points={state.points} />
-            </Panel>
-            <Panel title="Supervisory control">
-              <BreakerCommandPanel
-                linkState={state.link.state}
-                position={state.points.find((p) => p.id === "feeder-breaker-position")}
-              />
-            </Panel>
-          </div>
+          <Panel title="Feeder one-line">
+            <ControlCentreOneLine points={state.points} unavailable={unavailable} />
+          </Panel>
+          <Panel title="Supervisory control">
+            <SupervisoryControls key={state.cache_epoch} linkState={state.link.state} points={state.points} unavailable={unavailable} />
+          </Panel>
           <Panel
             title="Monitored points"
             aside={
@@ -154,10 +155,11 @@ export function ControlCentreScreen({
             <ControlCentreJournal journal={journal} />
           </Panel>
           <p className="text-[10px] text-slate-600">
-            cache epoch {state.cache_epoch} · range generation {state.range_generation} · package {state.package_id}
+            snapshot {state.snapshot_seq} · rendered {formatUtcTime(state.rendered_at)} UTC · cache epoch {state.cache_epoch} · range generation {state.range_generation} · package {state.package_id}
           </p>
         </>
       )}
+      <HistorianTrend />
       {physicalFeeder}
     </main>
   );

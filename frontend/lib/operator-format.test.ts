@@ -27,6 +27,9 @@ describe("point condition and value", () => {
     expect(formatPointValue("feeder-current", 28.93)).toBe("28.9 A");
     expect(formatPointValue("feeder-voltage", 19.94)).toBe("19.94 kV");
     expect(formatPointValue("other", true)).toBe("ON");
+    expect(formatPointValue("oltc-1-tap", { value: -2, transient: true })).toBe("-2 · TRANSIENT");
+    expect(formatPointValue("oltc-1-auto", false)).toBe("MANUAL");
+    expect(formatPointValue("oltc-1-auto", true)).toBe("AUTO");
   });
 
   it("keeps the last value of a stale point, never zero", () => {
@@ -57,6 +60,7 @@ describe("point condition and value", () => {
     expect(staleReasonText("measurement_invalid")).toMatch(/invalid/);
     expect(staleReasonText("never_received")).toBe("Never received");
     expect(staleReasonText(null)).toBe("");
+    expect(staleReasonText("heartbeat")).toBe("PLC heartbeat stopped");
   });
 
   it("summarises telemetry", () => {
@@ -83,17 +87,14 @@ describe("times", () => {
 describe("commands", () => {
   it("names every command status", () => {
     expect(commandOutcome(commandResult("completed"))).toMatchObject({ tone: "ok", title: "COMPLETED" });
-    expect(commandOutcome(commandResult("completed")).explanation).toContain("OPEN");
-    expect(commandOutcome(commandResult("rejected"))).toMatchObject({ tone: "bad", title: "REJECTED" });
-    expect(commandOutcome(commandResult("rejected")).explanation).toContain("execute");
-    expect(commandOutcome({ ...commandResult("rejected"), select: { status: "negative", at: null } }).explanation).toContain("select");
-    expect(commandOutcome(commandResult("failed"))).toMatchObject({ tone: "bad", title: "FAILED" });
-    expect(commandOutcome(commandResult("failed")).explanation).toContain("select got no confirmation");
+    expect(commandOutcome(commandResult("completed")).explanation).toBe("fresh feedback matched");
+    expect(commandOutcome(commandResult("rejected"))).toMatchObject({ tone: "bad", title: "REJECTED", explanation: "execute rejected (negative ACT-CON)" });
+    expect(commandOutcome(commandResult("failed"))).toMatchObject({ tone: "bad", title: "FAILED", explanation: "feedback timeout (negative ACT-TERM)" });
     expect(commandOutcome(commandResult("unknown"))).toMatchObject({ tone: "warn", title: "UNKNOWN" });
   });
 
   it("explains a command the control centre refused", () => {
-    expect(commandErrorText(new ApiError(409, "command in flight"))).toMatch(/still in progress: command in flight/);
+    expect(commandErrorText(new ApiError(409, "command in flight"))).toMatch(/refused the command: command in flight/);
     expect(commandErrorText(new ApiError(503, "link not started"))).toMatch(/no started link.*Nothing was sent/);
     expect(commandErrorText(new ApiError(400, ""))).toMatch(/malformed/);
     expect(commandErrorText(new ApiError(504, ""))).toMatch(/outcome is not known/);
@@ -114,15 +115,9 @@ describe("journalSummary", () => {
     expect(journalSummary("point_good", { point: "feeder-breaker-position", value: "open" })).toBe("Feeder breaker position good: OPEN");
     expect(
       journalSummary("command", {
-        id: "c1",
-        point: "feeder-breaker-command",
-        operation: "open",
-        status: "completed",
-        select: { status: "confirmed" },
-        execute: { status: "confirmed" },
-        feedback: { status: "matched" },
+        id: "c1", point: "feeder-breaker-command", operation: "open", result: "completed", reason: "fresh feedback matched",
       }),
-    ).toBe("Command OPEN COMPLETED (select confirmed, execute confirmed, feedback matched)");
+    ).toBe('Command feeder-breaker-command OPEN: {"id":"c1","point":"feeder-breaker-command","operation":"open","result":"completed","reason":"fresh feedback matched"}');
     expect(journalSummary("new_kind", { a: 1 })).toBe('new_kind {"a":1}');
   });
 

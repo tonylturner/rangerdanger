@@ -5,7 +5,6 @@
 
 import { ApiError, type WorkshopControlCentre } from "./api";
 import type {
-  CommandPhaseStatus,
   CommandResult,
   ControlCentreLink,
   LinkDownReason,
@@ -34,7 +33,29 @@ export const POINT_META: Record<string, PointMeta> = {
   "feeder-protection-trip": { label: "Protection trip", states: ["NORMAL", "TRIPPED"] },
   "feeder-current": { label: "Feeder current", unit: "A", digits: 1 },
   "feeder-voltage": { label: "Feeder voltage (L-L)", unit: "kV", digits: 2 },
+  "oltc-1-tap": { label: "T1 completed tap", digits: 0 },
+  "oltc-1-auto": { label: "OLTC mode", states: ["MANUAL", "AUTO"] },
+  "oltc-1-bus-kv": { label: "20 kV bus", unit: "kV", digits: 2 },
+  "oltc-1-current": { label: "T1 current", unit: "A", digits: 1 },
+  "oltc-1-remote": { label: "OLTC authority", states: ["LOCAL", "REMOTE"] },
+  "oltc-1-at-lower": { label: "OLTC lower limit", states: ["CLEAR", "AT LIMIT"] },
+  "oltc-1-at-upper": { label: "OLTC upper limit", states: ["CLEAR", "AT LIMIT"] },
+  "oltc-1-blocked": { label: "OLTC blocked", states: ["CLEAR", "BLOCKED"] },
+  "plc-1-running": { label: "OpenPLC running", states: ["STOPPED", "RUNNING"] },
+  "plc-1-input-valid": { label: "OpenPLC input", states: ["INVALID", "VALID"] },
+  "plc-1-setpoint-kv": { label: "OpenPLC setpoint", unit: "kV", digits: 2 },
+  "plc-1-deadband-pct": { label: "OpenPLC deadband", unit: "%", digits: 1 },
+  "plc-1-delay-s": { label: "OpenPLC delay remaining", unit: "s", digits: 0 },
 };
+
+for (const id of ["rmu-1", "rmu-2"]) {
+  POINT_META[`${id}-position`] = { label: `${id.toUpperCase()} position` };
+  POINT_META[`${id}-remote`] = { label: `${id.toUpperCase()} authority`, states: ["LOCAL", "REMOTE"] };
+  POINT_META[`${id}-earth`] = { label: `${id.toUpperCase()} earth switch`, states: ["OPEN", "CLOSED"] };
+  POINT_META[`${id}-fault-passage`] = { label: `${id.toUpperCase()} fault passage`, states: ["CLEAR", "LATCHED"] };
+  POINT_META[`${id}-current`] = { label: `${id.toUpperCase()} current`, unit: "A", digits: 1 };
+  for (const side of ["section", "source"]) POINT_META[`${id}-${side}-kv`] = { label: `${id.toUpperCase()} ${side}`, unit: "kV", digits: 2 };
+}
 
 export function pointLabel(id: string): string {
   return POINT_META[id]?.label ?? id;
@@ -64,9 +85,10 @@ export function qualityFlags(quality: PointQuality): string[] {
 
 export const STALE_REASON_TEXT: Record<StaleReason, string> = {
   link_lost: "IEC 104 link to the RTU lost",
-  device_unreachable: "RTU cannot reach the breaker (Modbus)",
-  measurement_invalid: "Breaker reports measurements invalid",
+  device_unreachable: "RTU cannot reach the device (Modbus)",
+  measurement_invalid: "Device reports measurements invalid",
   never_received: "Never received",
+  heartbeat: "PLC heartbeat stopped",
 };
 
 export function staleReasonText(reason: StaleReason | null): string {
@@ -78,6 +100,7 @@ export function staleReasonText(reason: StaleReason | null): string {
 // replaces it. Only a point never received has no value.
 export function formatPointValue(id: string, value: PointValue): string {
   if (value === null) return "not received";
+  if (typeof value === "object") return `${value.value}${value.transient ? " · TRANSIENT" : ""}`;
   const meta = POINT_META[id];
   if (typeof value === "string") return value.toUpperCase();
   if (typeof value === "boolean") {
@@ -151,48 +174,12 @@ export type Tone = "ok" | "bad" | "warn";
 
 export type CommandOutcome = { tone: Tone; title: string; explanation: string };
 
-export function commandOutcome(result: CommandResult): CommandOutcome {
-  switch (result.status) {
-    case "completed":
-      return {
-        tone: "ok",
-        title: "COMPLETED",
-        explanation: `Select and execute confirmed; the RTU reported the breaker ${formatPointValue("feeder-breaker-position", result.feedback.value)} (COT 11).`,
-      };
-    case "rejected": {
-      const phase = result.select.status === "negative" ? "select" : "execute";
-      return {
-        tone: "bad",
-        title: "REJECTED",
-        explanation: `The RTU answered the ${phase} with a negative confirmation. The breaker was not operated.`,
-      };
-    }
-    case "failed":
-      return {
-        tone: "bad",
-        title: "FAILED",
-        explanation:
-          "Execute was never sent: the link was lost or the select got no confirmation. The breaker was not commanded.",
-      };
-    case "unknown":
-      return {
-        tone: "warn",
-        title: "UNKNOWN",
-        explanation:
-          "Execute was sent but the outcome is not proven (no confirmation, or no matching COT 11 feedback). It is not retried; check the breaker position.",
-      };
-  }
-}
-
-export function phaseStatusText(status: CommandPhaseStatus): string {
-  return status === null ? "not sent" : status.toUpperCase();
-}
-
-export function phaseTone(status: CommandPhaseStatus | "matched" | "mismatched" | "missing"): Tone | null {
-  if (status === "confirmed" || status === "matched") return "ok";
-  if (status === "negative" || status === "mismatched") return "bad";
-  if (status === "timeout" || status === "missing") return "warn";
-  return null;
+export function commandOutcome(command: CommandResult): CommandOutcome {
+  return {
+    tone: command.result === "completed" ? "ok" : command.result === "unknown" ? "warn" : "bad",
+    title: command.result.toUpperCase(),
+    explanation: command.reason,
+  };
 }
 
 // A command the CC refused to start, or a request that never reached it.
@@ -206,7 +193,7 @@ export function commandErrorText(error: unknown): string {
       case 404:
         return `The active package has no control centre${detail}.`;
       case 409:
-        return `Another command is still in progress${detail}. Nothing was sent.`;
+        return `Control centre refused the command${detail}. Nothing was sent.`;
       case 503:
         return `The control centre has no started link to the RTU${detail}. Nothing was sent.`;
       default:
@@ -224,17 +211,10 @@ function str(detail: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-function nestedStatus(detail: Record<string, unknown>, key: string): string {
-  const value = detail[key];
-  if (typeof value !== "object" || value === null) return "—";
-  const status = (value as { status?: unknown }).status;
-  return typeof status === "string" ? status : "—";
-}
-
 function journalValue(detail: Record<string, unknown>): string {
   const point = typeof detail.point === "string" ? detail.point : "";
   const value = detail.value;
-  const valid = value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number";
+  const valid = value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number" || (typeof value === "object" && value !== null && "value" in value && "transient" in value);
   return valid ? formatPointValue(point, value as PointValue) : "—";
 }
 
@@ -267,16 +247,17 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
     case "point_good":
       return `${pointLabel(str(detail, "point"))} good: ${journalValue(detail)}`;
     case "command":
-      return `Command ${str(detail, "operation").toUpperCase()} ${str(detail, "status").toUpperCase()} (select ${nestedStatus(detail, "select")}, execute ${nestedStatus(detail, "execute")}, feedback ${nestedStatus(detail, "feedback")})`;
+      // The contract freezes POST results, not journal command details.
+      // Preserve the complete record instead of inventing phase semantics.
+      return `Command ${str(detail, "point")} ${str(detail, "operation").toUpperCase()}: ${JSON.stringify(detail)}`;
     default:
       return `${kind} ${JSON.stringify(detail)}`;
   }
 }
 
-export function journalTone(kind: string, detail: Record<string, unknown>): Tone | null {
+export function journalTone(kind: string): Tone | null {
   if (kind === "link_down" || kind === "point_stale") return "warn";
   if (kind === "link_up" || kind === "gi_complete" || kind === "point_good") return "ok";
-  if (kind === "command") return detail.status === "completed" ? "ok" : detail.status === "unknown" ? "warn" : "bad";
   return null;
 }
 

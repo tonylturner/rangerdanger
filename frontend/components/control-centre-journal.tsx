@@ -28,9 +28,9 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
       ) : (
         <ol className="max-h-80 space-y-0.5 overflow-y-auto font-mono text-[11px]">
           {entries.map((entry) => {
-            const tone = journalTone(entry.kind, entry.detail);
+            const tone = journalTone(entry.kind);
             return (
-              <li key={entry.seq} className="flex items-start gap-2 border-t border-slate-800/50 py-1">
+              <li key={entry.seq} className="flex min-w-0 items-start gap-2 border-t border-slate-800/50 py-1">
                 <span className="w-10 shrink-0 text-right text-slate-600">{entry.seq}</span>
                 <span className="w-24 shrink-0 text-slate-500">{formatUtcTime(entry.at)}</span>
                 <span
@@ -40,7 +40,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
                 >
                   {entry.kind}
                 </span>
-                <span className="text-slate-300">{journalSummary(entry.kind, entry.detail)}</span>
+                <span className="min-w-0 break-words text-slate-300">{journalSummary(entry.kind, entry.detail)}</span>
               </li>
             );
           })}

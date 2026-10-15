@@ -7,7 +7,9 @@ import type { PackageSummary } from "./api";
 import type {
   CommandResult,
   DeviceAudit,
-  DeviceState,
+  BreakerState,
+  RmuState,
+  OltcState,
   FirewallSessionList,
   FieldState,
   OperatorJournal,
@@ -90,7 +92,9 @@ export const FRESH_POINTS: OperatorPoint[] = [
 ];
 
 export const FRESH_STATE: OperatorState = {
-  schema: 1,
+  schema: 2,
+  snapshot_seq: 120,
+  rendered_at: "2026-10-09T12:00:29.900Z",
   cache_epoch: "a1b2c3d4",
   link: {
     state: "started",
@@ -136,140 +140,91 @@ export const JOURNAL: OperatorJournal = {
 // The CC before its first connect attempt settles.
 export const EMPTY_JOURNAL: OperatorJournal = { cache_epoch: "a1b2c3d4", oldest_seq: null, latest_seq: null, entries: [] };
 
-export function commandResult(status: CommandResult["status"]): CommandResult {
-  const base: CommandResult = {
-    id: "cmd-17",
-    status,
-    select: { status: "confirmed", at: "2026-10-09T12:00:01.000Z" },
-    execute: { status: "confirmed", at: "2026-10-09T12:00:01.100Z", terminated_at: "2026-10-09T12:00:01.700Z" },
-    feedback: { status: "matched", value: "open", received_at: "2026-10-09T12:00:01.600Z" },
-    error: null,
+export function commandResult(result: CommandResult["result"]): CommandResult {
+  return {
+    id: "cmd-17", point: "feeder-breaker-command", operation: "open", result,
+    reason: { completed: "fresh feedback matched", rejected: "execute rejected (negative ACT-CON)", failed: "feedback timeout (negative ACT-TERM)", unknown: "no ACT-CON within the command budget" }[result],
+    selected_at: "2026-10-09T12:00:01.000Z",
+    executed_at: "2026-10-09T12:00:01.100Z",
+    con_at: result === "unknown" ? null : "2026-10-09T12:00:01.200Z",
+    term_at: result === "completed" || result === "failed" ? "2026-10-09T12:00:01.700Z" : null,
+    feedback: result === "completed" ? { ioa: 1001, value: "open", at: "2026-10-09T12:00:01.600Z" } : null,
   };
-  switch (status) {
-    case "completed":
-      return base;
-    case "rejected":
-      return {
-        ...base,
-        execute: { status: "negative", at: "2026-10-09T12:00:01.100Z", terminated_at: null },
-        feedback: { status: "missing", value: null, received_at: null },
-        error: "execute rejected (negative ACT-CON)",
-      };
-    case "failed":
-      return {
-        ...base,
-        execute: { status: null, at: null, terminated_at: null },
-        feedback: { status: "missing", value: null, received_at: null },
-        error: "link lost before the execute was sent",
-      };
-    case "unknown":
-      return {
-        ...base,
-        execute: { status: "timeout", at: "2026-10-09T12:00:01.100Z", terminated_at: null },
-        feedback: { status: "missing", value: null, received_at: null },
-        error: "no execute confirmation within the command budget",
-      };
-  }
 }
 
+export const BREAKER: BreakerState = {
+  schema: 2, kind: "breaker", device_id: "feeder-breaker", generation: 3141592, revision: 5,
+  position: "open", remote_enabled: true, lockout: true, protection_tripped: true,
+  event_seq: 9, changed_at: "2026-10-09T12:00:12.000Z",
+  measurements: {
+    current_a: 0, voltage_kv_ll: 0, source_kv_ll: 20, section_live: false, source_live: true, fault_current: false,
+    valid: true, solver_epoch: "e1", solve_seq: 140,
+    solved_at: "2026-10-09T12:00:29.500Z", received_at: "2026-10-09T12:00:29.510Z",
+  },
+};
+export const RMU1: RmuState = {
+  schema: 2, kind: "rmu", device_id: "rmu-1", generation: 1, revision: 3, event_seq: 31,
+  changed_at: BREAKER.changed_at, remote_enabled: true, position: "closed", earth_closed: false, fault_passage: true,
+  measurements: { ...BREAKER.measurements, source_kv_ll: 0 },
+};
+export const OLTC: OltcState = {
+  schema: 2, kind: "oltc", device_id: "oltc-1", generation: 1, revision: 7, event_seq: 17,
+  changed_at: BREAKER.changed_at, remote_enabled: true, tap: 1, target_tap: 2, moving: true,
+  auto: false, blocked: false, armed: false, plc_request_result: "not_auto", heartbeat: 200,
+  measurements: { ...BREAKER.measurements, voltage_kv_ll: 20.02, source_kv_ll: 110, section_live: true, source_live: true },
+};
 export const TRUTH: FieldState = {
-  device: {
-    schema: 1,
-    device_id: "feeder-breaker",
-    generation: 3141592,
-    revision: 5,
-    position: "open",
-    remote_enabled: true,
-    lockout: true,
-    fault_active: true,
-    protection_tripped: true,
-    event_seq: 9,
-    changed_at: "2026-10-09T12:00:12.000Z",
-    measurements: {
-      current_a: 0.0,
-      voltage_kv_ll: 0.0,
-      valid: true,
-      solver_epoch: "e1",
-      solve_seq: 140,
-      solved_at: "2026-10-09T12:00:29.500Z",
-      received_at: "2026-10-09T12:00:29.510Z",
-    },
+  devices: {
+    "breaker-1": BREAKER, "rmu-1": RMU1,
+    "rmu-2": { ...RMU1, device_id: "rmu-2", position: "open", fault_passage: false, measurements: { ...RMU1.measurements, source_kv_ll: 19.97, source_live: true } },
+    "oltc-1": OLTC,
   },
   process: {
-    schema: 1,
-    profile_id: "eu-feeder-20kv",
-    frequency_hz: 50,
-    primary_kv: 20,
-    breaker: "open",
-    source_voltage_kv_ll: 20.0,
-    load_voltage_kv_ll: 0.0,
-    current_a: 0.0,
-    load_kw: 0,
-    energized: false,
-    converged: true,
-    solver_epoch: "e1",
-    solve_seq: 140,
-    solved_at: "2026-10-09T12:00:29.500Z",
-    truth_revision: 5,
-    truth_generation: 3141592,
-    truth_stale: false,
+    schema: 2, profile_id: "eu-cigre-mv-teaching", solver_epoch: "e1", solve_seq: 140,
+    solved_at: "2026-10-09T12:00:29.500Z", truth_stale: false, fault_section: "S1", f2_tripped: false,
+    load_multiplier: 1, source_pu: 1, tap: 1,
+    buses: { bus20: { kv: 20.02, live: true }, s1: { kv: 0, live: false }, s2: { kv: 0, live: false }, s3: { kv: 19.97, live: true } },
+    devices: Object.fromEntries([["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, revision: Number(revision), solved_revision: Number(revision) }])),
   },
 };
 
-const CLOSED_DEVICE: DeviceState = {
-  ...TRUTH.device,
-  revision: 4,
-  position: "closed",
-  lockout: false,
-  fault_active: false,
-  protection_tripped: false,
-  event_seq: 8,
+const CLOSED_DEVICE: BreakerState = {
+  ...BREAKER, revision: 4, position: "closed", lockout: false, protection_tripped: false, event_seq: 8,
   changed_at: "2026-10-09T11:50:00.000Z",
 };
-
-const LAB = { peer: "10.99.99.3:51234", protocol: "lab", zone: "mgmt" };
 
 export const AUDIT: DeviceAudit = {
   generation: 3141592,
   oldest_seq: 1,
-  latest_seq: 4,
+  latest_seq: 3,
   entries: [
     {
       seq: 1,
       at: "2026-10-09T12:00:12.000Z",
-      operation: "fault",
-      result: "accepted",
-      before: CLOSED_DEVICE,
-      after: TRUTH.device,
-      context: LAB,
-    },
-    {
-      seq: 2,
-      at: "2026-10-09T12:00:12.000Z",
       operation: "local_protection_trip",
       result: "accepted",
       before: CLOSED_DEVICE,
-      after: TRUTH.device,
+      after: BREAKER,
       context: { peer: "protection", protocol: "local-protection", zone: "field" },
-      detail: { cause: "fault_active" },
+      detail: { cause: "fault_current" },
     },
     {
-      seq: 3,
+      seq: 2,
       at: "2026-10-09T12:00:12.900Z",
       operation: "first_solve",
       result: "accepted",
-      before: TRUTH.device,
-      after: TRUTH.device,
+      before: BREAKER,
+      after: BREAKER,
       context: { peer: "10.50.50.20:40112", protocol: "process", zone: "process" },
       detail: { revision: 5, solver_epoch: "e1", solve_seq: 113, solved_at: "2026-10-09T12:00:12.800Z", current_a: 0 },
     },
     {
-      seq: 4,
+      seq: 3,
       at: "2026-10-09T12:00:13.500Z",
       operation: "close",
       result: "rejected",
-      before: TRUTH.device,
-      after: TRUTH.device,
+      before: BREAKER,
+      after: BREAKER,
       context: { peer: "10.30.30.20:41000", protocol: "modbus", zone: "station" },
       detail: "lockout",
     },
@@ -283,4 +238,43 @@ export const SESSIONS: FirewallSessionList = {
     { proto: "tcp", src: "10.60.60.20", dst: "10.30.30.20", sport: 40312, dport: 2404, state: "ESTABLISHED", timeout: 431999 },
     { proto: "tcp", src: "10.10.10.50", dst: "10.30.30.20", sport: 51000, dport: 2404, state: "ESTABLISHED", timeout: 431980 },
   ],
+};
+
+// Full schema-2 snapshot: all 31 monitored points in contract §5.
+const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
+  ["rmu-1-position", 1101, "closed", "M_DP_TB_1"],
+  ["rmu-1-remote", 1102, true, "M_SP_TB_1"],
+  ["rmu-1-earth", 1103, false, "M_SP_TB_1"],
+  ["rmu-1-fault-passage", 1104, false, "M_SP_TB_1"],
+  ["rmu-1-current", 2101, 41.2, "M_ME_NC_1"],
+  ["rmu-1-section-kv", 2102, 19.9, "M_ME_NC_1"],
+  ["rmu-1-source-kv", 2103, 19.95, "M_ME_NC_1"],
+  ["rmu-2-position", 1201, "open", "M_DP_TB_1"],
+  ["rmu-2-remote", 1202, true, "M_SP_TB_1"],
+  ["rmu-2-earth", 1203, false, "M_SP_TB_1"],
+  ["rmu-2-fault-passage", 1204, false, "M_SP_TB_1"],
+  ["rmu-2-current", 2201, 0, "M_ME_NC_1"],
+  ["rmu-2-section-kv", 2202, 19.9, "M_ME_NC_1"],
+  ["rmu-2-source-kv", 2203, 19.97, "M_ME_NC_1"],
+  ["oltc-1-tap", 1301, { value: 0, transient: false }, "M_ST_TB_1"],
+  ["oltc-1-remote", 1302, true, "M_SP_TB_1"],
+  ["oltc-1-auto", 1303, true, "M_SP_TB_1"],
+  ["oltc-1-at-lower", 1304, false, "M_SP_TB_1"],
+  ["oltc-1-at-upper", 1305, false, "M_SP_TB_1"],
+  ["oltc-1-blocked", 1306, false, "M_SP_TB_1"],
+  ["oltc-1-bus-kv", 2301, 20.02, "M_ME_NC_1"],
+  ["oltc-1-current", 2302, 100, "M_ME_NC_1"],
+  ["plc-1-running", 1401, true, "M_SP_TB_1"],
+  ["plc-1-input-valid", 1402, true, "M_SP_TB_1"],
+  ["plc-1-setpoint-kv", 2401, 20, "M_ME_NC_1"],
+  ["plc-1-deadband-pct", 2402, 1, "M_ME_NC_1"],
+  ["plc-1-delay-s", 2403, 0, "M_ME_NC_1"],
+];
+export const FEEDER_STATE: OperatorState = {
+  ...FRESH_STATE,
+  points: [...FRESH_POINTS, ...EXTRA_POINTS.map(([id, ioa, value, asdu]) => ({
+    ...FRESH_POINTS[0], id, ioa, value, asdu,
+    quality: asdu === "M_ME_NC_1" ? GOOD_MEASUREMENT : GOOD,
+    received_at: "2026-10-09T12:00:29.900Z",
+  }))],
 };

@@ -34,6 +34,10 @@ export const NODE_LABELS: Record<string, string> = {
   "cc-1":              "Control Centre",
   "rtu-1":             "IEC 104 RTU",
   "breaker-1":         "Feeder Breaker",
+  "rmu-1":             "RMU1 Sectionaliser",
+  "rmu-2":             "RMU2 Tie",
+  "oltc-1":            "T1 OLTC",
+  "plc-1":             "OpenPLC",
 };
 
 // Nodes that have a web UI accessible via iframe

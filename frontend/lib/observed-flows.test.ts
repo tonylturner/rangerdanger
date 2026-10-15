@@ -14,7 +14,7 @@ const workshop: WorkshopStatus = {
 };
 function operator(): OperatorState {
   return {
-    schema: 1, cache_epoch: "cc-boot", package_id: "eu-iec104-substation", range_generation: 7,
+    schema: 2, snapshot_seq: 1, rendered_at: new Date(now).toISOString(), cache_epoch: "cc-boot", package_id: "eu-iec104-substation", range_generation: 7,
     link: { state: "started", peer: "10.30.30.20:2404", since: null, last_rx_at: null, connection_seq: 1,
       gi: { state: "complete", started_at: null, completed_at: null } },
     points: ["feeder-breaker-position", "feeder-protection-trip"].map((id) => ({
