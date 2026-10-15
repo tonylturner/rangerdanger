@@ -1,10 +1,9 @@
 {
   "schema": 2,
-  "status": "blocked",
-  "candidate_only": true,
+  "status": "passed",
   "engine": "0.9.4",
-  "circuit": "reference-candidate.dss",
-  "circuit_selected_by_profile": false,
+  "circuit": "feeder.dss",
+  "circuit_selected_by_profile": true,
   "nominal_load_kw": 2340.85,
   "band_kv": [
     19.8,
@@ -12,11 +11,12 @@
   ],
   "checks": {
     "nominal_within_half_percent": true,
+    "nominal_in_plc_deadband": true,
     "positive_tap_raises_voltage": true,
-    "double_load_initially_out_of_band": false,
-    "double_load_returns_in_at_most_three_steps": false,
-    "low_source_reaches_plus_eight_out_of_band": true,
-    "high_source_reaches_minus_eight_out_of_band": false
+    "triple_load_initially_out_of_band": true,
+    "triple_load_returns_in_at_most_three_steps": true,
+    "low_source_reaches_plus_eight_below_band": true,
+    "high_source_settles_at_negative_tap_in_band": true
   },
   "nominal": {
     "tap": 0,
@@ -35,18 +35,18 @@
       "in_band": true
     }
   },
-  "double_load": [
+  "triple_load": [
     {
       "tap": 0,
-      "bus20_kv": 19.80224868,
+      "bus20_kv": 19.68483441,
+      "in_band": false
+    },
+    {
+      "tap": 1,
+      "bus20_kv": 19.92818774,
       "in_band": true
     }
   ],
-  "double_load_forced_plus_one": {
-    "tap": 1,
-    "bus20_kv": 20.05046184,
-    "in_band": true
-  },
   "source_0_90": [
     {
       "tap": 0,
@@ -136,10 +136,6 @@
       "in_band": true
     }
   ],
-  "source_1_10_forced_minus_eight": {
-    "tap": -8,
-    "bus20_kv": 19.72919095,
-    "in_band": false
-  },
-  "scope": "Converged static OpenDSS solves; not PLC timing or protocol evidence. No physics tuning after the failed operating-point preflight."
+  "source_1_10_settle_tap": -7,
+  "scope": "Converged static OpenDSS solves; not PLC timing or protocol evidence. Contract v3; no physics tuning to meet acceptance values."
 }

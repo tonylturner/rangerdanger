@@ -2,77 +2,65 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 from eu_profile import ProfileError, load_profile
-
-SERVICE_DIR = Path(__file__).resolve().parents[1]
-REPO_ROOT = SERVICE_DIR.parents[1]
-PROCESS_DIR = REPO_ROOT / "lab-definitions/packages/eu-iec104-substation/process"
+from eu_support import PROCESS_DIR, SERVICE_DIR, profile_file
 
 
-def local_profile(tmp_path: Path) -> Path:
-    profile = json.loads((PROCESS_DIR / "profile.json").read_text(encoding="utf-8"))
-    profile["circuit_file"] = str(PROCESS_DIR / "feeder.dss")
-    path = tmp_path / "profile.json"
-    path.write_text(json.dumps(profile), encoding="utf-8")
-    return path
+def test_package_profile_freezes_schema_devices_and_endpoints(tmp_path):
+    config = json.loads((PROCESS_DIR / 'profile.json').read_text())
+    assert config['schema'] == 2
+    assert config['circuit_file'] == '/profiles/feeder.dss'
+    assert [(d['id'], d['kind'], d['truth_url']) for d in config['devices']] == [
+        ('feeder-breaker', 'breaker', 'http://10.50.50.30:8080'),
+        ('rmu-1', 'rmu', 'http://10.50.50.31:8080'),
+        ('rmu-2', 'rmu', 'http://10.50.50.32:8080'),
+        ('oltc-1', 'oltc', 'http://10.50.50.33:8080'),
+    ]
+    result = load_profile(profile_file(tmp_path))
+    assert (result.frequency_hz, result.hv_kv, result.mv_kv) == (50, 110, 20)
+    assert len(result.elements) == 8
+    assert not (PROCESS_DIR / 'reference-candidate.dss').exists()
 
 
-def test_package_profile_freezes_elements_and_electrical_case(tmp_path: Path) -> None:
-    package_profile = json.loads(
-        (PROCESS_DIR / "profile.json").read_text(encoding="utf-8")
-    )
-    assert package_profile == {
-        "schema": 1,
-        "id": "eu-feeder-20kv",
-        "frequency_hz": 50,
-        "primary_kv": 20,
-        "circuit_file": "/profiles/feeder.dss",
-        "load_kw": 1000,
-        "load_pf": 1.0,
-        "elements": {
-            "breaker": "Line.Breaker",
-            "load": "Load.FeederLoad",
-            "load_bus": "loadbus",
-        },
-        "device": {
-            "id": "feeder-breaker",
-            "truth_url": "http://10.50.50.30:8080",
-        },
-        "solve_interval_ms": 1000,
-        "request_timeout_ms": 500,
-        "truth_stale_after_ms": 3000,
-    }
-
-    profile = load_profile(local_profile(tmp_path))
-    assert profile.circuit_file.name == "feeder.dss"
-    assert profile.frequency_hz == 50
-    assert profile.primary_kv == 20
+def test_image_copies_every_eu_runtime_module():
+    dockerfile = (SERVICE_DIR / 'Dockerfile').read_text()
+    for module in SERVICE_DIR.glob('eu_*.py'):
+        assert f'services/opendss-sim/{module.name}' in dockerfile
 
 
-def test_invalid_profile_fails_service_import(tmp_path: Path) -> None:
-    invalid_profile = tmp_path / "invalid.json"
-    invalid_profile.write_text('{"schema": 1}', encoding="utf-8")
-    environment = os.environ.copy()
-    environment["OPENDSS_PROFILE"] = str(invalid_profile)
-    result = subprocess.run(
-        [sys.executable, "-c", "import main"],
-        cwd=SERVICE_DIR,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+@pytest.mark.parametrize('mutation', [
+    lambda c: c.update(schema=1), lambda c: c.update(schema=2.0),
+    lambda c: c.update(primary_kv=20), lambda c: c.update(frequency_hz=60),
+    lambda c: c.update(devices=c['devices'][:3]),
+    lambda c: c['devices'][1].update(kind='breaker'),
+    lambda c: c['devices'][1].update(id='feeder-breaker', kind='breaker'),
+    lambda c: c['devices'][1].update(truth_url='https://host:8080'),
+    lambda c: c['devices'][1].update(truth_url='http://host:8080/api/truth'),
+    lambda c: c['devices'][1].update(truth_url='http://user@host:8080'),
+    lambda c: c['devices'][1].update(truth_url='http://host:99999'),
+    lambda c: c['elements'].update(f2='Line.Missing; Solve'),
+    lambda c: c['elements'].update(f2=c['elements']['rmu-1']),
+    lambda c: c.update(solve_interval_ms=999),
+    lambda c: c.update(request_timeout_ms=1000),
+    lambda c: c.update(truth_stale_after_ms=2000),
+    lambda c: c.update(circuit_file='/does-not-exist.dss'),
+])
+def test_invalid_profiles_rejected(tmp_path, mutation):
+    path = profile_file(tmp_path)
+    config = json.loads(path.read_text())
+    mutation(config)
+    path.write_text(json.dumps(config))
+    with pytest.raises(ProfileError):
+        load_profile(path)
+
+
+def test_invalid_profile_fails_service_import(tmp_path):
+    path = tmp_path / 'invalid.json'
+    path.write_text('{"schema":1}')
+    environment = dict(os.environ, OPENDSS_PROFILE=str(path))
+    result = subprocess.run([sys.executable, '-c', 'import main'], cwd=SERVICE_DIR,
+                            env=environment, capture_output=True, text=True)
     assert result.returncode != 0
-    assert "profile fields mismatch" in result.stderr
-
-
-def test_profile_rejects_missing_circuit_file(tmp_path: Path) -> None:
-    profile_path = local_profile(tmp_path)
-    profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    profile["circuit_file"] = str(tmp_path / "missing.dss")
-    profile_path.write_text(json.dumps(profile), encoding="utf-8")
-    with pytest.raises(ProfileError, match="does not exist"):
-        load_profile(profile_path)
+    assert 'profile fields mismatch' in result.stderr

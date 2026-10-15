@@ -1,12 +1,15 @@
-# CIGRE-derived teaching feeder: blocked operating-point preflight
+# CIGRE-derived teaching feeder
 
-`reference-candidate.dss` is an **inactive candidate**, not the CIGRE benchmark.
-`reference_probe.py` performs converged static OpenDSS solves and prints the
-observed cases. It exits **1** when the operating-point requirements fail.
-`reference-cases.json` records those failures, not successful acceptance proofs.
-The active `profile.json`, `feeder.dss` and process service remain unchanged.
+`feeder.dss` is the active EU circuit: a CIGRE-derived teaching feeder, **not
+the CIGRE benchmark**. `profile.json` is schema 2; no schema-1 compatibility
+path is supported. Complete BSD-3 notices are retained in `NOTICE.txt`.
 
-Run with the service's Python requirements installed in a disposable venv:
+`reference_probe.py` runs independent static OpenDSS solves against that same
+circuit and prints the measured operating cases in `reference-cases.json`.
+It exits nonzero if any contract-v3 operating-point requirement fails.
+These are physical operating-point proofs, not PLC timing or wire evidence.
+
+Run with the service's pinned Python requirements in a disposable venv:
 
 ```sh
 python lab-definitions/packages/eu-iec104-substation/process/reference_probe.py
@@ -47,34 +50,60 @@ limits. This intentionally follows the requested 1.25% steps rather than
 the upstream extraction's 0.625% secondary OLTC steps. No gains, voltage
 offsets, clipped voltages or tap-dependent loads are used.
 
-## Why implementation stopped
+## Operating-point evidence (contract v3)
 
-Measured with opendssdirect.py 0.9.4; all 23 sampled solves converged:
+Measured with opendssdirect.py 0.9.4; all 22 sampled solves converged:
 
 | Case | Completed tap | Bus20 kV | Observation |
 | --- | ---: | ---: | --- |
-| Nominal, 2.34085 MW nameplate | 0 | 19.91346435 | Within ±0.5% |
+| Nominal, 2.34085 MW nameplate | 0 | 19.91346435 | Within ±0.5%, no PLC demand |
 | Nominal, one raise | +1 | 20.16281407 | Correct polarity |
 | Nominal, one lower | −1 | 19.66412128 | Correct polarity |
-| Load multiplier 2.0 | 0 | 19.80224868 | Still inside ±1%; no PLC demand |
-| Load multiplier 2.0, forced raise | +1 | 20.05046184 | Diagnostic only, not automatic recovery |
+| Load multiplier 3.0 | 0 | 19.68483441 | Below the 19.8–20.2 kV band |
+| Load multiplier 3.0, one raise | +1 | 19.92818774 | Back inside the band |
 | Source 0.90, final demand | +8 | 19.69326520 | Low and at upper limit |
-| Source 1.10, final demand | −7 | 20.00359757 | In band before lower limit |
-| Source 1.10, forced lower limit | −8 | 19.72919095 | Below band; PLC would request a raise |
+| Source 1.10, final demand | −7 | 20.00359757 | In band at a negative tap |
 
-At source 1.10 the deadband controller stops at **−7**, already inside
-19.8–20.2 kV. Forcing another lower step is not the specified controller.
-Even without load, 1.10 × (1 − 7 × 0.0125) = **1.00375 p.u.**:
-an ordinary downstream LV-winding tap has already compensated the disturbance.
-Changing to an HV-winding reciprocal convention is not a fix for both ends:
-0.90 / (1 − 8 × 0.0125) = 1.00 p.u. before losses.
+These are evidence, never tuning targets. Load multiplier 2.0 remained inside
+the band in the initial preflight; the acceptance case is now 3.0. At source
+1.10 the controller stops at −7: 1.10 × (1 − 7 × 0.0125) is already 1.00375
+p.u. before losses. The feeder's impedances, loads and power factors have not
+been changed to alter those outcomes.
 
-The selected unscaled load subset also leaves doubled load just **inside**
-the ±1% band. That failure is specific to this candidate, not a proof that
-every possible honest load subset fails. The numerical probe has not been
-used to tune impedances, loads or power factors to the requested outcomes.
+## Schema-2 runtime and deployment
 
-The source-limit requirement needs a product/contract decision (for example,
-a larger source excursion or narrower tap authority), followed by a fresh
-operating-point review. This candidate must not be selected in deployment
-until that decision and the schema-2 process implementation are complete.
+Keep `OPENDSS_PROFILE=/profiles/profile.json` and the existing read-only mount
+of this entire directory at `/profiles`. The process requires HTTP reachability
+to all four origins in `devices` (10.50.50.30–33:8080); those entries are
+`{id, kind, truth_url}`, where truth_url is the origin, not `/api/truth`.
+The profile maps the HV/MV buses, switching elements, transformer and faults.
+The application image copies all `eu_*.py` runtime modules. No US service or
+legacy US feeder path changes.
+
+The process control routes stay on the existing solver API, port 8080:
+`GET /api/electrical`, `POST /api/process/actions`, `GET /api/health`.
+Before the first complete truth vector the electrical result has null sampled
+values and `truth_stale=true`; it never assumes a switch position. Actions
+are serialized with ticks, validated before mutation, and trigger a fresh tick.
+On truth loss, sampled bus values and their solve timestamp remain last-known.
+
+Each tick reads all truths concurrently, solves once and delivers all four
+measurements concurrently. Each device's delivery result is independent.
+A stale-truth conflict, a newer acknowledged revision or an F2 trip uses the
+single immediate correction budget: reread every truth and solve again.
+A further change during that correction is settled on the next tick, not a
+third solve. Health remains degraded while a correction is pending. F2's
+latched state is process truth; bus values are samples at `solved_at` and can
+precede the resulting trip, just like a device's protection-changing ack.
+Measurements expire at the devices after 3 s; delivery success is not a claim
+that previously sampled measurements stay valid indefinitely.
+
+Faults are three-phase shunts of 1 micro-ohm per phase (finite numerical
+representation of a bolted fault). Fault-current flags follow all simple
+closed source-to-fault paths; DSS still computes the actual meshed voltages
+and currents if a ring closes. A closed earth switch on either RMU's live
+S2 side defensively enables the S2 fault. The F2 head latches open on fault
+passage and remains open until `reset_f2` or process `reset`. Resetting a
+connected fault trips it again. Opening F2 does **not** forcibly zero S3:
+S3 can still be energised through a healthy closed ring. It is dead in the
+specified fault-isolation/back-feed case when no alternate supply remains.

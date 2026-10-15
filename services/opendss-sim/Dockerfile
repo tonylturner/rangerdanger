@@ -15,7 +15,8 @@ COPY services/opendss-sim/main.py services/opendss-sim/circuit.py \
     services/opendss-sim/models.py services/opendss-sim/runtime_state.py \
     services/opendss-sim/time_utils.py services/opendss-sim/eu_profile.py \
     services/opendss-sim/eu_circuit.py services/opendss-sim/eu_truth_loop.py \
-    services/opendss-sim/eu_app.py ./
+    services/opendss-sim/eu_app.py services/opendss-sim/eu_wire.py \
+    services/opendss-sim/eu_controls.py services/opendss-sim/eu_state.py ./
 COPY services/opendss-sim/dss/ ./dss/
 
 # Copy gateway script

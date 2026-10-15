@@ -7,8 +7,10 @@ from contextlib import asynccontextmanager
 
 from eu_circuit import EUFeederSolver
 from eu_profile import load_profile
-from eu_truth_loop import EUProcessState, TruthSolveLoop
-from fastapi import FastAPI
+from eu_controls import ActionError
+from eu_state import EUProcessState
+from eu_truth_loop import TruthSolveLoop
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("opendss-sim.eu")
@@ -18,7 +20,7 @@ def create_eu_app(profile_path: str) -> FastAPI:
     """Load the configured profile and build an independent EU-only app."""
     profile = load_profile(profile_path)
     solver = EUFeederSolver(profile)
-    state = EUProcessState(profile.truth_stale_after_ms)
+    state = EUProcessState(profile)
     solve_loop = TruthSolveLoop(profile, solver, state=state)
 
     @asynccontextmanager
@@ -35,7 +37,7 @@ def create_eu_app(profile_path: str) -> FastAPI:
 
     app = FastAPI(
         title="OpenDSS EU Process",
-        description="Autonomous feeder solver driven by feeder-breaker process truth",
+        description="Autonomous CIGRE-derived feeder driven by four schema-2 device truths",
         lifespan=lifespan,
     )
     app.state.eu_profile = profile
@@ -53,10 +55,16 @@ def create_eu_app(profile_path: str) -> FastAPI:
 
     @app.get("/api/electrical")
     def get_electrical() -> JSONResponse:
-        result = state.electrical()
-        if result is None:
-            return JSONResponse(content={"error": "no_truth"}, status_code=503)
-        result["truth_stale"] = state.truth_stale()
+        return JSONResponse(content=state.electrical())
+
+    @app.post("/api/process/actions")
+    async def process_action(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+            result = await solve_loop.action(body)
+        except (ActionError, ValueError) as error:
+            reason = str(error) if isinstance(error, ActionError) else "invalid_json"
+            return JSONResponse(content={"reason": reason}, status_code=400)
         return JSONResponse(content=result)
 
     @app.get("/api/health")
