@@ -33,7 +33,7 @@ func (s *Server) proxyHistorian(c *gin.Context, path string, array bool) {
 		upstreamFailed(c, fmt.Errorf("historian unreachable: %w", err))
 		return
 	}
-	if status == http.StatusBadRequest {
+	if status == http.StatusBadRequest || status == http.StatusNotFound {
 		// The historian owns point and time-window validation.
 		result, err := jsonObject("historian", body)
 		if err != nil {
