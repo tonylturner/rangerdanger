@@ -16,19 +16,23 @@ func writeJSON(w http.ResponseWriter, code int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+func writeError(w http.ResponseWriter, code int, message string) {
+	writeJSON(w, code, map[string]string{"error": message})
+}
+
 func method(w http.ResponseWriter, r *http.Request, allowed string) bool {
 	if r.Method == allowed {
 		return true
 	}
 	w.Header().Set("Allow", allowed)
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	return false
 }
 
 func (s *store) ingestHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/ingest" {
-			http.NotFound(w, r)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		if !method(w, r, http.MethodPost) {
@@ -37,13 +41,13 @@ func (s *store) ingestHandler() http.Handler {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
 			s.reject()
-			http.Error(w, "invalid ingest body", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid ingest body")
 			return
 		}
 		state, err := decodeState(body)
 		if err != nil {
 			s.reject()
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		s.append(state)
@@ -56,7 +60,7 @@ func (s *store) readHandler() http.Handler {
 		switch r.URL.Path {
 		case "/api/points", "/api/history", "/api/health":
 		default:
-			http.NotFound(w, r)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		if !method(w, r, http.MethodGet) {
@@ -78,18 +82,18 @@ func (s *store) serveHistory(w http.ResponseWriter, r *http.Request) {
 	id := q.Get("point")
 	valid := len(q) == 3 && len(q["point"]) == 1 && len(q["since"]) == 1 && len(q["until"]) == 1
 	if err != nil || !valid || !text(63)(id) || !stamp(q.Get("since")) || !stamp(q.Get("until")) {
-		http.Error(w, "point, since and until are required exactly once (UTC RFC 3339)", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "point, since and until are required exactly once (UTC RFC 3339)")
 		return
 	}
 	since, _ := time.Parse(time.RFC3339Nano, q.Get("since"))
 	until, _ := time.Parse(time.RFC3339Nano, q.Get("until"))
 	if until.Before(since) {
-		http.Error(w, "until precedes since", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "until precedes since")
 		return
 	}
 	result, found := s.history(id, since, until)
 	if !found {
-		http.NotFound(w, r)
+		writeError(w, http.StatusNotFound, "point not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
