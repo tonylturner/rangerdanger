@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tturner/rangerdanger/services/devices/feederbreaker"
+	"github.com/tturner/rangerdanger/services/devices/fielddevice"
 	"github.com/tturner/rangerdanger/services/devices/httpapi"
 	"github.com/tturner/rangerdanger/services/devices/modbus"
 )
@@ -20,11 +20,13 @@ import (
 const defaultZones = "field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24"
 
 type config struct {
+	kind          fielddevice.Kind
+	normal        fielddevice.Position
 	deviceID      string
 	modbusListen  string
 	processListen string
 	simListen     string
-	zones         *feederbreaker.ZoneMap
+	zones         *fielddevice.ZoneMap
 }
 
 func main() {
@@ -36,13 +38,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("generate device generation: %v", err)
 	}
-	model, err := feederbreaker.NewModel(feederbreaker.Config{
+	model, err := fielddevice.NewModel(fielddevice.Config{
+		Kind: cfg.kind, RMUNormal: cfg.normal,
 		DeviceID:   cfg.deviceID,
 		Generation: generation,
-		LocalContext: feederbreaker.AuditContext{
+		LocalContext: fielddevice.AuditContext{
 			Peer: "protection", Protocol: "local-protection", Zone: cfg.zones.Name("field"),
 		},
-		ProcessContext: feederbreaker.AuditContext{
+		ProcessContext: fielddevice.AuditContext{
 			Peer: "measurement-validity", Protocol: "process", Zone: cfg.zones.Name("process"),
 		},
 	})
@@ -76,7 +79,7 @@ func main() {
 	go func() { errorsFromServers <- processServer.Serve(processListener) }()
 	go func() { errorsFromServers <- simServer.Serve(simListener) }()
 
-	log.Printf("feeder-breaker-sim %q generation=%d modbus=%s process=%s sim=%s",
+	log.Printf("field-device-sim %q generation=%d modbus=%s process=%s sim=%s",
 		cfg.deviceID, generation, cfg.modbusListen, cfg.processListen, cfg.simListen)
 	err = <-errorsFromServers
 	_ = processServer.Close()
@@ -89,7 +92,15 @@ func main() {
 }
 
 func loadConfig() (config, error) {
-	deviceID := envOrDefault("DEVICE_ID", "feeder-breaker")
+	kind := fielddevice.Kind(os.Getenv("DEVICE_KIND"))
+	if kind != fielddevice.Breaker && kind != fielddevice.RMU && kind != fielddevice.OLTC {
+		return config{}, errors.New("DEVICE_KIND must be breaker, rmu or oltc")
+	}
+	normal := fielddevice.Position(os.Getenv("DEVICE_RMU_NORMAL"))
+	if kind == fielddevice.RMU && normal != fielddevice.PositionClosed && normal != fielddevice.PositionOpen {
+		return config{}, errors.New("DEVICE_RMU_NORMAL must be closed or open")
+	}
+	deviceID := os.Getenv("DEVICE_ID")
 	if strings.TrimSpace(deviceID) == "" {
 		return config{}, errors.New("DEVICE_ID must not be empty")
 	}
@@ -105,11 +116,12 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
-	zones, err := feederbreaker.ParseZones(envOrDefault("DEVICE_ZONES", defaultZones))
+	zones, err := fielddevice.ParseZones(envOrDefault("DEVICE_ZONES", defaultZones))
 	if err != nil {
 		return config{}, err
 	}
 	return config{
+		kind: kind, normal: normal,
 		deviceID:      deviceID,
 		modbusListen:  modbusListen,
 		processListen: processListen,
@@ -133,7 +145,7 @@ func randomGeneration() (uint32, error) {
 	return binary.BigEndian.Uint32(value[:]), nil
 }
 
-func monitorMeasurementValidity(model *feederbreaker.Model) {
+func monitorMeasurementValidity(model *fielddevice.Model) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for range ticker.C {

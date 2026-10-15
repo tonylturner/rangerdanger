@@ -20,8 +20,9 @@ the same instant, and the audit log records the source of every
 write so exercises can attribute attacks (`source: 10.10.10.50` vs.
 `source: rtac-sim`).
 
-The EU `feeder-breaker-sim` is separate: it owns breaker truth, serves
-Modbus plus process/sim HTTP APIs, and does not expose DNP3.
+The EU `field-device-sim` is separate: one binary owns breaker, RMU or OLTC
+truth, serves Modbus plus separate process/sim HTTP APIs, and does not
+expose DNP3.
 
 ## Services
 
@@ -32,7 +33,7 @@ Modbus plus process/sim HTTP APIs, and does not expose DNP3.
 | `regulator-sim` | 3  | Load tap changer, ±16 tap range, voltage regulation |
 | `capbank-sim`   | 4  | Switched capacitor bank, lockout-after-N-operations |
 | `rtac-sim`      | 10 | Supervisory controller. Polls field devices via DNP3 master and HTTP; exposes aggregated state. Read-only DNP3 outstation. |
-| `feeder-breaker-sim` | - | EU feeder breaker truth owner. Modbus TCP field interface and separate process / sim HTTP listeners. |
+| `field-device-sim` | - | EU breaker, RMU or OLTC truth owner. Modbus TCP field interface and separate process / sim HTTP listeners. |
 | `historian-sim` | -  | Time-series collector polling the RTAC. HTTP-only. |
 | `gps-sim`       | -  | GPS/IRIG-B time source; sends synthetic NTP client packets to configured targets. Not an NTP server. |
 | `opendss-sim`   | -  | Feeder physics engine (Python, OpenDSS). Calculates energization and voltage from the device states. HTTP-only. |
@@ -52,7 +53,7 @@ stale and `ok` after a good solve.
 ## Local development
 
 The Go simulators (relay/recloser/regulator/capbank/historian/gps/
-rtac/feeder-breaker) share a single module (`services/go.mod`) and a multi-stage
+rtac/field-device) share a single module (`services/go.mod`) and a multi-stage
 Dockerfile (`services/Dockerfile`). It has a common module/dependency
 stage, a shared-code builder, a DNP3-enabled builder for relay,
 recloser, regulator, capbank, and RTAC, then one `<target>-builder`
@@ -65,8 +66,8 @@ existing tools and management-init script). `opendss-sim` is
 Python/FastAPI and builds from its own
 `services/opendss-sim/Dockerfile`.
 
-The EU `feeder-breaker-sim` builder copies the in-tree `devices/`
-packages and builds `./devices/cmd/feeder-breaker-sim` from
+The EU `field-device-sim` builder copies the in-tree `devices/`
+packages and builds `./devices/cmd/field-device-sim` from
 `sim-builder`.
 
 ```sh
@@ -88,6 +89,83 @@ outstation). `rtac-sim` runs both client and outstation roles
 (`dnp3.go`, `dnp3_poll.go`, `modbus.go`, `modbus_poll.go`). Shared
 primitives (audit log, command source detection, JSON helpers) live
 in `services/shared/`.
+
+## EU field devices
+
+Build with `go -C services build ./devices/cmd/field-device-sim` (or the
+`field-device-sim` Dockerfile target). The old binary and schema 1 are gone.
+`devices/fielddevice` is the shared audit, revision, measurement and action
+core; HTTP and Modbus are adapters over that same mutex-protected model.
+
+Required environment:
+
+| Variable | Values |
+|----------|--------|
+| `DEVICE_KIND` | `breaker`, `rmu`, `oltc` |
+| `DEVICE_ID` | `feeder-breaker` for breaker; `rmu-1` / `rmu-2` for RMU; `oltc-1` for OLTC |
+| `DEVICE_RMU_NORMAL` | Required for RMU: `closed` (rmu-1) or `open` (rmu-2) |
+
+The breaker retains node id `breaker-1` but device id `feeder-breaker`.
+New devices use the same node/device id. Configure all three explicit-IPv4
+listeners per container; unchanged defaults are only suitable for the breaker:
+
+| Variable | Default | rmu-1 | rmu-2 | oltc-1 |
+|----------|---------|-------|-------|--------|
+| `DEVICE_MODBUS_LISTEN` | `10.40.40.20:502` | `10.40.40.21:502` | `10.40.40.22:502` | `10.40.40.23:502` |
+| `DEVICE_PROCESS_LISTEN` | `10.50.50.30:8080` | `10.50.50.31:8080` | `10.50.50.32:8080` | `10.50.50.33:8080` |
+| `DEVICE_SIM_LISTEN` | `10.99.99.22:8080` | `10.99.99.24:8080` | `10.99.99.25:8080` | `10.99.99.26:8080` |
+
+`DEVICE_ZONES` is a comma-separated `name=IPv4-CIDR` map for audit attribution;
+it defaults to `field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24`.
+Unknown peers remain `unknown`; attribution is not authorization.
+
+The process listener exposes only `GET /api/truth` and `POST /api/measurements`.
+Both use schema 2. Measurements carry identity, generation, solved revision,
+solver epoch/sequence/UTC time, `current_a`, `voltage_kv_ll`, `source_kv_ll`,
+`section_live`, `source_live` and `fault_current`. A successful delivery returns
+`{accepted:true, solved_revision, revision}`: protection/FPI can change the
+revision during receipt. Stale truth and replay return 409; invalid input
+returns 400. Measurements expire after 3 seconds, and any truth revision
+immediately invalidates them. Last known values remain visible, not fresh zeros.
+
+The sim listener exposes `GET /api/state`, `/api/health`, `/api/audit?after=N`
+and `POST /api/sim/actions` with exactly `{"action":"<name>"}`. Audit contexts
+retain the socket peer; sim actions use protocol `lab`.
+
+- Breaker: `reset_lockout`, `reset`. Faults belong to the process, not the
+  device. Measurement fault current trips a closed breaker and latches lockout.
+- RMU: `set_local`, `set_remote`, `earth_close`, `earth_open`,
+  `reset_fault_passage`, `reset`. Earth close needs an open way and a valid,
+  dead section. Fault passage latches on receipt of fault current.
+- OLTC: `set_local`, `set_remote`, `block`, `unblock`, `reset`.
+- Reset bypasses interlocks, restores initial truth and invalidates measurements.
+  Old `/api/sim/fault` and `/api/sim/reset` routes do not exist.
+
+Modbus TCP uses unit 1, zero-based addresses, high-word-first f32/u32.
+FC3 reads holding, FC4 reads input, FC6 writes one holding register. Switch
+HR0 is 1 open / 2 close. Close needs valid measurements and refuses live-live;
+RMU open refuses valid fault current. Rejections use exception 04 and audit
+peer/reason. Breaker IR1 bit 2 is measured fault current, not owned fault state.
+
+OLTC HR0 is 1 lower / 2 raise (remote/manual); HR2 is 1 manual / 2 auto
+(remote only, also allowed during motion). HR1 is the PLC absolute request:
+0 clears/arms, or `100 + target` for targets -8 through +8. FC16 is supported
+**only for quantity 1 at HR1**. Well-formed HR1 requests always acknowledge;
+IR13 reports none/accepted/not_remote/not_auto/moving/not_adjacent/limit/
+blocked/unarmed/not_energized (0 through 9). No-op writes are not audited;
+ignored writes are audited only when their reason changes. Entering
+remote/auto and reset disarm HR1 until a new zero is written. Motion takes
+2 seconds on a non-blocking timer; completed tap remains unchanged until it
+finishes. Reset cancels motion. FC3 returns HR0=0, HR1=last request, HR2=mode.
+IR14 is a wrapping 250 ms heartbeat, independent of process delivery.
+
+Targeted checks:
+
+```sh
+go -C services test -race -count=1 ./devices/...
+go -C services vet ./devices/...
+gofmt -l services/devices
+```
 
 ## Adding a new sim
 

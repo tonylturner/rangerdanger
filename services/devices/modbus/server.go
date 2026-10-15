@@ -6,19 +6,19 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"math"
 	"net"
 	"time"
 
-	"github.com/tturner/rangerdanger/services/devices/feederbreaker"
+	"github.com/tturner/rangerdanger/services/devices/fielddevice"
 )
 
 const (
 	UnitID = 1
 
-	functionReadHolding = 0x03
-	functionReadInput   = 0x04
-	functionWriteSingle = 0x06
+	functionReadHolding   = 0x03
+	functionReadInput     = 0x04
+	functionWriteSingle   = 0x06
+	functionWriteMultiple = 0x10
 
 	exceptionIllegalFunction = 0x01
 	exceptionIllegalAddress  = 0x02
@@ -27,16 +27,16 @@ const (
 )
 
 type device interface {
-	Snapshot() feederbreaker.Snapshot
-	Command(context.Context, feederbreaker.Command, feederbreaker.AuditContext) feederbreaker.CommandResult
+	Snapshot() fielddevice.Snapshot
+	WriteHolding(context.Context, uint16, uint16, fielddevice.AuditContext) fielddevice.CommandResult
 }
 
 type Server struct {
 	model device
-	zones *feederbreaker.ZoneMap
+	zones *fielddevice.ZoneMap
 }
 
-func New(model device, zones *feederbreaker.ZoneMap) *Server {
+func New(model device, zones *fielddevice.ZoneMap) *Server {
 	return &Server{model: model, zones: zones}
 }
 
@@ -98,6 +98,8 @@ func (s *Server) HandlePDU(pdu []byte, peer string) []byte {
 		return s.readInput(pdu)
 	case functionWriteSingle:
 		return s.writeSingle(pdu, peer)
+	case functionWriteMultiple:
+		return s.writeMultiple(pdu, peer)
 	default:
 		return exception(function, exceptionIllegalFunction)
 	}
@@ -109,112 +111,85 @@ func (s *Server) readHolding(pdu []byte) []byte {
 	}
 	address := binary.BigEndian.Uint16(pdu[1:3])
 	quantity := binary.BigEndian.Uint16(pdu[3:5])
-	if quantity == 0 || quantity > 125 || address != 0 || quantity != 1 {
+	snapshot := s.model.Snapshot()
+	position, _ := positionRegister(snapshot.Position)
+	registers := []uint16{position}
+	if snapshot.Kind == fielddevice.OLTC {
+		mode := uint16(1)
+		if snapshot.Auto {
+			mode = 2
+		}
+		registers = []uint16{0, snapshot.LastRequest, mode}
+	}
+	end := uint32(address) + uint32(quantity)
+	if quantity == 0 || quantity > 125 || end > uint32(len(registers)) {
 		return exception(functionReadHolding, exceptionIllegalAddress)
 	}
-	snapshot := s.model.Snapshot()
-	position, ok := positionRegister(snapshot.Position)
-	if !ok {
-		position = 3
-	}
-	return registerResponse(functionReadHolding, []uint16{position})
+	return registerResponse(functionReadHolding, registers[int(address):int(end)])
 }
-
 func (s *Server) readInput(pdu []byte) []byte {
 	if len(pdu) != 5 {
 		return exception(functionReadInput, exceptionIllegalValue)
 	}
 	address := binary.BigEndian.Uint16(pdu[1:3])
 	quantity := binary.BigEndian.Uint16(pdu[3:5])
+	registers := inputRegisters(s.model.Snapshot())
 	end := uint32(address) + uint32(quantity)
-	if quantity == 0 || quantity > 125 || end > 11 {
+	if quantity == 0 || quantity > 125 || end > uint32(len(registers)) {
 		return exception(functionReadInput, exceptionIllegalAddress)
 	}
-	snapshot := s.model.Snapshot()
-	registers := inputRegisters(snapshot)
 	return registerResponse(functionReadInput, registers[int(address):int(end)])
 }
-
 func (s *Server) writeSingle(pdu []byte, peer string) []byte {
 	if len(pdu) != 5 {
 		return exception(functionWriteSingle, exceptionIllegalValue)
 	}
 	address := binary.BigEndian.Uint16(pdu[1:3])
 	value := binary.BigEndian.Uint16(pdu[3:5])
-	if address != 0 {
-		return exception(functionWriteSingle, exceptionIllegalAddress)
+	if code := s.write(address, value, peer); code != 0 {
+		return exception(functionWriteSingle, code)
 	}
-	var command feederbreaker.Command
-	switch value {
-	case 1:
-		command = feederbreaker.CommandOpen
-	case 2:
-		command = feederbreaker.CommandClose
-	default:
-		return exception(functionWriteSingle, exceptionIllegalValue)
+	return append([]byte(nil), pdu...)
+}
+func (s *Server) writeMultiple(pdu []byte, peer string) []byte {
+	// Only the OLTC PLC request wire permits FC16, and only one HR1.
+	if len(pdu) < 6 {
+		return exception(functionWriteMultiple, exceptionIllegalValue)
 	}
-	result := s.model.Command(context.Background(), command, s.zones.Context(peer, "modbus"))
+	quantity := binary.BigEndian.Uint16(pdu[3:5])
+	if quantity != 1 || pdu[5] != 2 || len(pdu) != 8 {
+		return exception(functionWriteMultiple, exceptionIllegalValue)
+	}
+	address := binary.BigEndian.Uint16(pdu[1:3])
+	if address != 1 || s.model.Snapshot().Kind != fielddevice.OLTC {
+		return exception(functionWriteMultiple, exceptionIllegalAddress)
+	}
+	value := binary.BigEndian.Uint16(pdu[6:8])
+	if code := s.write(address, value, peer); code != 0 {
+		return exception(functionWriteMultiple, code)
+	}
+	return append([]byte(nil), pdu[:5]...)
+}
+func (s *Server) write(address, value uint16, peer string) byte {
+	result := s.model.WriteHolding(context.Background(), address, value, s.zones.Context(peer, "modbus"))
+	if result.Exception != 0 {
+		return result.Exception
+	}
 	if !result.Accepted {
-		return exception(functionWriteSingle, exceptionDeviceFailure)
+		return exceptionDeviceFailure
 	}
-	response := make([]byte, len(pdu))
-	copy(response, pdu)
-	return response
+	return 0
 }
 
-func inputRegisters(snapshot feederbreaker.Snapshot) []uint16 {
-	registers := make([]uint16, 11)
-	position, ok := positionRegister(snapshot.Position)
-	if !ok {
-		position = 3
-	}
-	registers[0] = position
-	var flags uint16
-	if snapshot.RemoteEnabled {
-		flags |= 1 << 0
-	}
-	if snapshot.Lockout {
-		flags |= 1 << 1
-	}
-	if snapshot.FaultActive {
-		flags |= 1 << 2
-	}
-	if snapshot.ProtectionTripped {
-		flags |= 1 << 3
-	}
-	registers[1] = flags
-	if snapshot.Measurements.Valid {
-		registers[2] = 1
-	}
-	if snapshot.Measurements.CurrentA != nil {
-		putFloat32(registers[3:5], *snapshot.Measurements.CurrentA)
-	}
-	if snapshot.Measurements.VoltageKV != nil {
-		putFloat32(registers[5:7], *snapshot.Measurements.VoltageKV)
-	}
-	putUint32(registers[7:9], uint32(snapshot.EventSeq))
-	putUint32(registers[9:11], snapshot.Generation)
-	return registers
-}
-
-func positionRegister(position feederbreaker.Position) (uint16, bool) {
+func positionRegister(position fielddevice.Position) (uint16, bool) {
 	switch position {
-	case feederbreaker.PositionOpen:
+	case fielddevice.PositionOpen:
 		return 1, true
-	case feederbreaker.PositionClosed:
+	case fielddevice.PositionClosed:
 		return 2, true
 	default:
 		return 3, false
 	}
-}
-
-func putFloat32(registers []uint16, value float64) {
-	putUint32(registers, math.Float32bits(float32(value)))
-}
-
-func putUint32(registers []uint16, value uint32) {
-	registers[0] = uint16(value >> 16)
-	registers[1] = uint16(value)
 }
 
 func registerResponse(function byte, registers []uint16) []byte {

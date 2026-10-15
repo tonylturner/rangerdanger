@@ -14,28 +14,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tturner/rangerdanger/services/devices/feederbreaker"
+	"github.com/tturner/rangerdanger/services/devices/fielddevice"
 )
 
 const maxRequestBody = 1 << 20
 
 type device interface {
-	Snapshot() feederbreaker.Snapshot
-	Truth() feederbreaker.Truth
-	ApplyMeasurements(context.Context, feederbreaker.MeasurementInput, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
-	InjectFault(context.Context, bool, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
-	Reset(context.Context, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
+	Snapshot() fielddevice.Snapshot
+	Truth() fielddevice.Truth
+	ApplyMeasurements(context.Context, fielddevice.MeasurementInput, fielddevice.AuditContext) (fielddevice.Snapshot, error)
+	Action(context.Context, string, fielddevice.AuditContext) (fielddevice.Snapshot, error)
 	MeasurementStatus() (bool, *int64)
-	AuditAfter(uint64) ([]feederbreaker.AuditEntry, *uint64, *uint64)
+	AuditAfter(uint64) ([]fielddevice.AuditEntry, *uint64, *uint64)
 	Generation() uint32
 }
 
 type Server struct {
 	model device
-	zones *feederbreaker.ZoneMap
+	zones *fielddevice.ZoneMap
 }
 
-func New(model device, zones *feederbreaker.ZoneMap) *Server {
+func New(model device, zones *fielddevice.ZoneMap) *Server {
 	return &Server{model: model, zones: zones}
 }
 
@@ -51,8 +50,7 @@ func (s *Server) SimHandler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/audit", s.handleAudit)
-	mux.HandleFunc("POST /api/sim/fault", s.handleFault)
-	mux.HandleFunc("POST /api/sim/reset", s.handleReset)
+	mux.HandleFunc("POST /api/sim/actions", s.handleAction)
 	return mux
 }
 
@@ -61,37 +59,34 @@ func (s *Server) handleTruth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMeasurements(w http.ResponseWriter, r *http.Request) {
-	var input feederbreaker.MeasurementInput
+	var input fielddevice.MeasurementInput
 	complete, err := decodeRequired(r, &input,
 		"schema", "device_id", "generation", "revision", "solver_epoch",
-		"solve_seq", "solved_at", "current_a", "voltage_kv_ll")
-	if err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if !complete {
-		http.Error(w, "all measurement fields are required and non-null", http.StatusUnprocessableEntity)
+		"solve_seq", "solved_at", "current_a", "voltage_kv_ll",
+		"source_kv_ll", "section_live", "source_live", "fault_current")
+	if err != nil || !complete {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"accepted": false, "reason": "invalid"})
 		return
 	}
 	snapshot, err := s.model.ApplyMeasurements(r.Context(), input, s.context(r, "process"))
 	if err != nil {
-		var measurementErr feederbreaker.MeasurementError
+		var measurementErr fielddevice.MeasurementError
 		if errors.As(err, &measurementErr) {
 			switch measurementErr {
-			case feederbreaker.MeasurementStaleTruth, feederbreaker.MeasurementReplay:
+			case fielddevice.MeasurementStaleTruth, fielddevice.MeasurementReplay:
 				writeJSONStatus(w, http.StatusConflict, map[string]any{
 					"accepted": false,
 					"reason":   string(measurementErr),
 				})
 			default:
-				writeJSONStatus(w, http.StatusUnprocessableEntity, map[string]any{"error": "invalid measurements"})
+				writeJSONStatus(w, http.StatusBadRequest, map[string]any{"accepted": false, "reason": "invalid"})
 			}
 			return
 		}
 		http.Error(w, "measurement request failed", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"accepted": true, "revision": snapshot.Revision})
+	writeJSON(w, map[string]any{"accepted": true, "solved_revision": input.Revision, "revision": snapshot.Revision})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -126,47 +121,35 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleFault(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Active *bool `json:"active"`
+		Action string `json:"action"`
 	}
-	if err := decodeStrict(r, &request); err != nil || request.Active == nil {
-		http.Error(w, "active is required", http.StatusBadRequest)
+	complete, err := decodeRequired(r, &request, "action")
+	if err != nil || !complete || request.Action == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"reason": "invalid"})
 		return
 	}
-	snapshot, err := s.model.InjectFault(r.Context(), *request.Active, s.context(r, "lab"))
+	snapshot, err := s.model.Action(r.Context(), request.Action, s.context(r, "lab"))
 	if err != nil {
-		http.Error(w, "fault request failed", http.StatusInternalServerError)
+		var actionErr fielddevice.ActionError
+		if errors.As(err, &actionErr) {
+			code := http.StatusConflict
+			if actionErr == fielddevice.ActionUnknown {
+				code = http.StatusBadRequest
+			}
+			writeJSONStatus(w, code, map[string]any{"reason": string(actionErr)})
+			return
+		}
+		http.Error(w, "action failed", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, snapshot)
 }
 
-func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) {
-	var request struct{}
-	if err := decodeStrict(r, &request); err != nil {
-		http.Error(w, "reset body must be an empty object", http.StatusBadRequest)
-		return
-	}
-	snapshot, err := s.model.Reset(r.Context(), s.context(r, "lab"))
-	if err != nil {
-		http.Error(w, "reset request failed", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, snapshot)
-}
-
-func (s *Server) context(r *http.Request, protocol string) feederbreaker.AuditContext {
+func (s *Server) context(r *http.Request, protocol string) fielddevice.AuditContext {
 	peer := r.RemoteAddr
 	return s.zones.Context(peer, protocol)
-}
-
-func decodeStrict(r *http.Request, value any) error {
-	body, err := readObjectBody(r)
-	if err != nil {
-		return err
-	}
-	return decodeBodyStrict(body, value)
 }
 
 func decodeRequired(r *http.Request, value any, required ...string) (bool, error) {
