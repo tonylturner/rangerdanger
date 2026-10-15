@@ -36,6 +36,11 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 		return
 	}
 	var actions []resetAction
+	// Truth-backed packages define their ordered reset, including delivery
+	// confirmation, before the shared firewall/capture housekeeping.
+	if recipe.resetTruth != nil {
+		actions = append(actions, recipe.resetTruth(ctx, gen, recipe)...)
+	}
 
 	// 1. Apply the default firewall policy
 	_, err = s.applyFirewallConfigInternal(ctx, gen, policy)
@@ -54,10 +59,6 @@ func (s *Server) handleWorkshopReset(c *gin.Context) {
 			Detail:  result.Detail,
 		})
 	}
-	if recipe.resetTruth != nil {
-		actions = append(actions, recipe.resetTruth(ctx, gen, recipe)...)
-	}
-
 	// Clear PCAP captures so validators reflect fresh state
 	s.pcapMu.Lock()
 	s.pcap.FileReady = false

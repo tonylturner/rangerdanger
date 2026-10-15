@@ -106,6 +106,11 @@ func TestEUWorkshopReset(t *testing.T) {
 			if rec.Code != wantCode || result.Success != (failed == "") || len(result.Actions) != 8 {
 				t.Fatalf("reset = %d %s", rec.Code, rec.Body)
 			}
+			if result.Actions[0].Action != "process/reset" ||
+				result.Actions[6].Action != "Wait for post-reset measurement delivery" ||
+				result.Actions[7].Action != "Apply weak firewall baseline" {
+				t.Fatalf("ordered truth reset must precede housekeeping: %s", rec.Body)
+			}
 			if counters.commitCount != 1 || s.activeConfig != "weak" {
 				t.Errorf("baseline commits = %d, active = %s", counters.commitCount, s.activeConfig)
 			}
