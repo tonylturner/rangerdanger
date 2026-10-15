@@ -49,7 +49,7 @@ for every binary — the pinned lib60870 and cJSON tarballs, these sources and
 the `iec104cmd` build script live under `/usr/share/src`, and the licences
 under `/usr/share/licenses/iec104`.
 
-## Point map (contract §3.1)
+## Point map (schema 2)
 
 The RTU and control centre are driven by a JSON point map authored per
 package at `lab-definitions/packages/<id>/protocols/points.json` and mounted
@@ -61,9 +61,15 @@ offending key, rather than booting on a half-understood configuration.
 The map declares the common address, APCI timers, the SBO select timeout and
 reconnect interval, the station-clock poll (`clock`), the Modbus devices, the
 monitored points and the commands. Each point names its device, register
-table/address and format (`dp`, `bit` or `f32`); each command names its
+table/address and format (`dp`, `bit`, `f32`, `u16`, `i16`, or `step`); each command names its
 Modbus write target and the monitored point that provides its feedback. See
-`check/points.test.json` for a complete example.
+`check/points.test.json` for a complete example. Schema 1 is rejected.
+Each device declares a bounded `poll: {table, start, count}`; sources,
+measurement-valid bits, transient bits and optional heartbeat addresses must
+be inside that block. `u16`/`i16` optionally scale into a float. `step` reads
+a signed tap plus a `transient: {address, bit}`; values outside −64…63 are
+invalid, never wrapped into the 7-bit VTI. Feedback must have the command's
+expected kind and belong to its device.
 
 ## iec104-rtu
 
@@ -71,34 +77,43 @@ Modbus write target and the monitored point that provides its feedback. See
 iec104-rtu --config /etc/rangerdanger/points.json --bind 10.30.30.20 --port 2404
 ```
 
-Behaviour (contract §3.2):
+Behaviour:
 
-- **Modbus southbound.** Polls each device's input block (FC4) every
-  `poll_ms`; executes commands as a single-register write (FC6), never
+- **Modbus southbound.** Polls each device's declared input (FC4) or holding
+  (FC3) block every `poll_ms`, using one independent I/O worker per device.
+  Socket connects are capped at 250 ms and reconnects back off up to
+  `reconnect_interval_ms`; no device shares a serial polling queue. The main
+  command state machine never waits for Modbus or motion. It executes commands as a single-register write (FC6), never
   retried. The in-tree Modbus master is `src/modbus.{c,h}`.
 - **Quality per point, per cause.** No successful poll within
   `stale_after_ms` → `IV`+`NT` (device unreachable). A `measurement:true`
   point while the device's valid bit is 0 → `IV` (floats only). A point is
-  GOOD only when no cause applies.
+  GOOD only when no cause applies. A frozen device heartbeat makes all of
+  its points IV after the heartbeat's `stale_after_ms`; PLC IV alone is
+  rendered as `stale_reason: heartbeat`.
 - **Spontaneous reporting (COT 3).** Every quality change is reported with
   the last value, regardless of deadband; the float deadband suppresses only
   value-only float changes. Status events use the timed type
-  (`M_DP_TB_1` / `M_SP_TB_1`) with a CP56Time2a tag; floats use `M_ME_NC_1`.
+  (`M_DP_TB_1` / `M_SP_TB_1` / `M_ST_TB_1`) with a CP56Time2a tag; floats use `M_ME_NC_1`.
 - **Station clock.** A background thread polls gps-sim over HTTP
   (`src/stationclock.{c,h}`); station time is the last GPS `reported_time`
   advanced monotonically. CP56Time2a carries the invalid (IV) bit whenever
   the clock is not synced (GPS stale, or `sync_status` not in
   `synced_status`).
 - **General interrogation (COT 20).** Returns the monitored points in the
-  untimed types (`M_DP_NA_1` / `M_SP_NA_1` / `M_ME_NC_1`) with current
+  untimed types (`M_DP_NA_1` / `M_SP_NA_1` / `M_ST_NA_1` / `M_ME_NC_1`) with current
   quality, then ACT-TERM. Before the first poll a point answers GI as IV+NT.
-- **Commands (SBO per peer).** Select expires after `select_timeout_ms`;
-  execute must match the selected value and peer. On execute the RTU writes
-  the register: a positive echo → positive ACT-CON, then it reads the
-  feedback register back and sends a COT 11 feedback report followed by
-  ACT-TERM; a Modbus exception (e.g. 04 interlock) or timeout → negative
-  ACT-CON. A command to the current position is a no-op that still produces a
-  COT 11 feedback report. Every command phase is logged to stdout.
+- **Commands (SBO per peer).** `C_DC_NA_1`, `C_RC_NA_1`, and
+  `C_SC_NA_1`, qualifier 0 only. Select expires after `select_timeout_ms`;
+  execute must match its type, value and peer. A fresh good post-select
+  poll is required before one FC6 is written, without retry. An exception
+  produces negative ACT-CON; a lost echo produces **no ACT-CON**, logged
+  `unknown`. A positive echo produces positive ACT-CON. Only a new good
+  post-write poll can complete: DP equals the command, mode equals SCS, or
+  completed tap equals start ±1 with transient false. The RTU sends COT 11
+  on that feedback IOA **before** positive ACT-TERM. Feedback budget is 5 s
+  for steps and device `timeout_ms` otherwise. Expiry sends negative
+  ACT-TERM without COT 11. Other commands are rejected as busy throughout.
 
 ## iec104cmd
 
@@ -108,6 +123,7 @@ iec104cmd HOST[:PORT] [-oa N] [-ca N] [--json] <operation>
   gi                            station general interrogation
   stopstart                     STOPDT then STARTDT on the open link
   dc <ioa> <open|close> [-sbo]  double command C_DC_NA_1
+  rc <ioa> <lower|raise> [-sbo] regulating-step command C_RC_NA_1
   sc <ioa> <on|off>     [-sbo]  single command C_SC_NA_1
   monitor --hold S [--gi-every S]   hold a session, stream received ASDUs
 ```
@@ -136,10 +152,19 @@ tarball, CLI sources, build script, licence and this README.
 
 ```
 iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20 \
-          --target 10.30.30.20:2404 --http 10.99.99.21:8080
+          --target 10.30.30.20:2404 --http 10.99.99.21:8080 \
+          --historian-url http://10.70.70.40:8081/api/ingest --historian-bind 10.60.60.20
 ```
 
-The control centre is the trusted operator path (contract §6). It learns
+Both historian flags are optional as a pair; an invalid URL/source bind is
+fatal. There are no new environment variables. The container still requires
+`GATEWAY=10.60.60.2` for its existing gateway entrypoint. The publisher opens
+no listener: one schema-2 snapshot POST each second, one in flight, a 500 ms
+**total** socket deadline, no retries or backlog, and a dedicated worker
+that never holds the IEC104 I/O lock. `/api/health.historian` exposes
+`{last_ok_at, failures}`.
+
+The control centre is the trusted operator path. It learns
 plant state **only through IEC 104**; the portal reads it through the HTTP
 API, which the backend proxies verbatim (`/api/operator/*`).
 
@@ -147,7 +172,10 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   is fatal) to `--target`, sends STARTDT and a station GI after every
   connect, holds the session, and reconnects `reconnect_interval_ms` after
   it ends. APCI timers (`t0`–`t3`, `k`, `w`) come from the point map.
-  `connection_seq` counts TCP connections to the RTU.
+  `connection_seq` counts TCP connections to the RTU. It refreshes
+  unchanged observations with a real GI at most every 1 s (or half the
+  smallest stale threshold), so freshness checks do not depend on plant
+  movement. GIs never manufacture values or bypass RTU quality.
 - **Per-point cache.** Value, quality (IV/NT/SB/BL/OV), RTU observation
   time (CP56Time2a; `null` for untimed ASDUs, so floats and GI answers carry
   none), receipt time and COT. The RTU's quality maps to `stale_reason`:
@@ -155,14 +183,17 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   loss every point keeps its value and times and goes IV+NT `link_lost`; it
   is GOOD again only when a fresh report for it arrives on the new session.
   Never-received points have `value: null`, `stale_reason: never_received`.
-- **Commands.** Select-before-execute `C_DC_NA_1`, one at a time, at most
-  10 s, never retried. `completed` needs a positive select and execute
-  ACT-CON, ACT-TERM, and a COT 11 feedback report of the feedback point
-  after the execute ACT-CON with the commanded value; `rejected` is a
-  negative select or execute; `failed` means the execute was never sent
-  (link lost first, or no select confirmation); `unknown` means the execute
-  was sent and the outcome is ambiguous (no ACT-CON or ACT-TERM, link lost,
-  or feedback missing or not the commanded value).
+- **Commands.** Typed `open|close`, `lower|raise`, and `auto|manual`
+  operations, select-before-execute, one at a time, at most 10 s, never
+  retried. Feedback IV, NT, or older than the device stale threshold is
+  refused with 409 **before select**. `completed` needs positive ACT-CON,
+  positive ACT-TERM, and intervening good matching COT 11 feedback;
+  `rejected` means negative ACT-CON; `failed` means negative ACT-TERM;
+  missing confirmations, termination or matching feedback mean `unknown`.
+  Results (also journaled) have exactly `{id, point, operation, result,
+  reason, selected_at, executed_at, con_at, term_at, feedback}`; absent
+  times are null. Feedback is null or `{ioa, value, at}`. Step values are
+  `{value: int, transient: bool}`, never flattened into a float.
 - **Journal.** A ring of 500 entries (`link_up`, `link_down`, `gi_started`,
   `gi_complete`, `point_stale`, `point_good`, `command`) tagged with the
   random per-boot `cache_epoch`. `link_down.reason`: `t1_timeout` (nothing
@@ -173,9 +204,9 @@ API, which the backend proxies verbatim (`/api/operator/*`).
 
 | Endpoint | Answer |
 |---|---|
-| `GET /api/health` | `{"status":"ok","link":"disconnected\|connecting\|started"}` |
-| `GET /api/state` | `schema`, `cache_epoch`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
-| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close"}` → 200 command result; 409 while a command is in flight; 503 when the link is not started; 400 on bad input |
+| `GET /api/health` | `status`, `link`, `historian: {last_ok_at, failures}` |
+| `GET /api/state` | `schema: 2`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
+| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight or feedback is stale; 503 when the link is not started; 400 on bad input |
 | `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
 
 The HTTP server is in-tree (`src/cc_http.c`): HTTP/1.0 and 1.1, GET and
@@ -216,7 +247,7 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   floats, GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on
   link loss.
 - Control centre (`check/cc_checks.sh`, every assertion through its HTTP
-  API via `check/ccprobe.py`): GI and the four points GOOD; open, close and
+  API via `check/ccprobe.py`): GI and the 31 points GOOD; open, close and
   no-op → `completed` with matched feedback; interlock → `rejected`; 409,
   503 and every 4xx/5xx input case; `measurement_invalid` and
   `device_unreachable` with the link started; RTU paused → `t1_timeout`,
@@ -225,7 +256,16 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   one `connect_failed` and `never_received` points; fatal binds; SIGTERM
   exit 0; journal ordering and detail shapes.
 
-Everything it creates (containers, networks, the image) is removed on exit.
+Increment 4 adds strict schema/format/block/feedback rejection cases, real
+FC3 PLC reads, RMU and OLTC FC6 writes in the attempt window, moving and
+settled step decoding, all three SBO types, qualifier/type/busy rejections,
+negative ACT-TERM with no feedback, lost-echo unknown with no retry, VTI
+range invalidity, heartbeat staleness, historian source binding/timeouts,
+and a real packet DROP to one device while every healthy peer's actual
+poll gaps remain ≤ `poll_ms + 250 ms`. `check/Dockerfile` adds Python and
+iptables only to the throwaway test image; service images do not gain them.
+
+Everything it creates (containers, networks, images) is removed on exit.
 Needs docker only.
 
 ## Reference captures
@@ -248,6 +288,7 @@ src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, GI, reconnect, send
 src/cc_command.{c,h}   CC select-before-execute state machine
 src/cc_http.{c,h}      CC minimal HTTP/1.1 server
 src/cc_api.{c,h}       CC HTTP routes
+src/cc_historian.{c,h} bounded snapshot publisher
 src/iec104cmd.c        iec104cmd: one-shot ops and the monitor session
 Dockerfile             image carrying all three programs
 entrypoint.sh          set-gateway.sh then exec the selected program

@@ -16,6 +16,7 @@
 #ifndef RD_IEC104_CC_LINK_H
 #define RD_IEC104_CC_LINK_H
 
+#include "pointmap.h"
 #include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -34,9 +35,9 @@ void cc_link_run(volatile sig_atomic_t* stop);
 void cc_link_shutdown(void);
 
 /*
- * Sends C_DC_NA_1 (COT 6) with the select or execute bit, only while the
+ * Sends the configured C_DC/C_RC/C_SC_NA_1 (COT 6) with the select or execute bit, only while the
  * link is started on connection connSeq. False if it was not sent.
  */
-bool cc_link_send_double_command(int ioa, int dcs, bool select, int connSeq);
+bool cc_link_send_command(const PmCommand* cmd, int dcs, bool select, int connSeq);
 
 #endif

@@ -49,6 +49,7 @@ usage(void)
             "  gi                            station general interrogation\n"
             "  stopstart                     STOPDT then STARTDT on the open link\n"
             "  dc <ioa> <open|close>         double command C_DC_NA_1\n"
+            "  rc <ioa> <lower|raise>        regulating step C_RC_NA_1\n"
             "  sc <ioa> <on|off>             single command C_SC_NA_1\n"
             "  monitor --hold SECONDS [--gi-every SECONDS]\n"
             "                                hold a session, stream received ASDUs\n"
@@ -136,6 +137,19 @@ emit_asdu_events(CS101_ASDU asdu)
                      rd_cp56_str(SinglePointWithCP56Time2a_getTimestamp(sp), ts, sizeof(ts)));
             break;
         }
+        case M_ST_NA_1:
+        case M_ST_TB_1: {
+            snprintf(value, sizeof(value), "{\"value\":%d,\"transient\":%s}",
+                StepPositionInformation_getValue((StepPositionInformation)io),
+                StepPositionInformation_isTransient((StepPositionInformation)io) ? "true" : "false");
+            rd_quality_str(StepPositionInformation_getQuality((StepPositionInformation)io), quality, sizeof(quality));
+            if (type == M_ST_TB_1) {
+                char ts[48];
+                snprintf(timeField, sizeof(timeField), "\"%s\"", rd_cp56_str(
+                    StepPositionWithCP56Time2a_getTimestamp((StepPositionWithCP56Time2a)io), ts, sizeof(ts)));
+            }
+            break;
+        }
         case M_ME_NC_1:
             snprintf(value, sizeof(value), "%.3f", (double)MeasuredValueShort_getValue((MeasuredValueShort)io));
             rd_quality_str(MeasuredValueShort_getQuality((MeasuredValueShort)io), quality, sizeof(quality));
@@ -216,14 +230,20 @@ run_select_execute(RdClient* c, TypeID type, int ca, InformationObject (*make)(i
         rd_log("no execute termination (ACT-TERM)");
         return false;
     }
-    rd_log("execute terminated (ACT-TERM)");
-    return true;
+    rd_log("execute terminated (ACT-TERM) negative=%d", r.negative);
+    return !r.negative;
 }
 
 static InformationObject
 make_double(int ioa, int val, bool select)
 {
     return (InformationObject)DoubleCommand_create(NULL, ioa, val, select, 0);
+}
+
+static InformationObject
+make_step(int ioa, int val, bool select)
+{
+    return (InformationObject)StepCommand_create(NULL, ioa, val, select, 0);
 }
 
 static InformationObject
@@ -319,6 +339,12 @@ main(int argc, char** argv)
 
     RdClientOptions opt = {0};
     opt.oa = 1;
+    /* Match the station defaults: t2 must be strictly below the RTU's t1,
+     * including after a GI with fewer than w outstanding final reports. */
+    opt.t0 = 10;
+    opt.t1 = 10;
+    opt.t2 = 5;
+    opt.t3 = 5;
     int ca = 1;
     int timeoutMs = 10000;
     int holdS = -1, giEveryS = 0;
@@ -424,6 +450,15 @@ main(int argc, char** argv)
         rc = ok ? EXIT_OK : EXIT_FAIL;
         if (jsonMode)
             emit_result("dc", ok);
+    } else if (strcmp(op, "rc") == 0 && nWords == 3) {
+        long ioa;
+        if (!rd_parse_int(words[1], 0, 0xffffff, &ioa)) usage();
+        int val = !strcmp(words[2], "lower") ? 1 : !strcmp(words[2], "raise") ? 2 : -1;
+        if (val < 0) usage();
+        if (mismatch) cmd.execVal = val == 1 ? 2 : 1;
+        bool ok = run_select_execute(&client, C_RC_NA_1, ca, make_step, (int)ioa, val, &cmd, timeoutMs);
+        rc = ok ? EXIT_OK : EXIT_FAIL;
+        if (jsonMode) emit_result("rc", ok);
     } else if (strcmp(op, "sc") == 0 && nWords == 3) {
         long ioa;
         if (!rd_parse_int(words[1], 0, 0xffffff, &ioa))

@@ -6,7 +6,7 @@
  * iec104-rtu: the substation RTU / gateway, an IEC 104 controlled station
  * (server) built on lib60870-C. Unlike the increment-2b spike, this RTU has
  * no fake physics: every value comes from a real Modbus TCP poll of the
- * feeder breaker, every time tag comes from the GPS-fed station clock, and
+ * configured field devices, every time tag comes from the GPS-fed station clock, and
  * every command is executed as a Modbus write whose readback produces the
  * COT 11 feedback report. The point set, CA, timers and command mapping are
  * loaded from the package point map (contract §3.1); nothing is hard-coded.
@@ -15,10 +15,10 @@
  *   - lib60870's own receive threads call interrogation_handler,
  *     asdu_handler and connection_event_handler.
  *   - the station clock polls gps-sim on its own thread (stationclock.c).
- *   - the main loop owns the Modbus socket: it polls the device, applies
- *     quality rules, reports spontaneous changes, and executes commands.
- *     Modbus I/O happens with rtu.lock released; shared state and all ASDU
- *     sends happen under rtu.lock.
+ *   - independent device workers own their Modbus sockets and publish poll
+ *     snapshots/write outcomes under rtu.lock. The main loop drives command
+ *     phases, quality and reporting without waiting for network I/O or motion.
+ *     Shared state and ASDU sends happen under rtu.lock.
  *
  * Quality and reporting rules are contract §3.2:
  *   - device_unreachable (no successful poll within stale_after_ms) -> IV+NT.
@@ -55,6 +55,9 @@ typedef struct {
     float f;
     bool deviceUnreachable;
     bool measurementInvalid;
+    bool valueInvalid, heartbeatStale;
+    int step, repStep;
+    bool transient, repTransient;
 
     QualityDescriptor repQuality;
     DoublePointValue repDp;
@@ -65,10 +68,13 @@ typedef struct {
 typedef struct {
     MbMaster mb;
     uint64_t lastOkMono; /* monotonic ms of the last successful poll; 0 = never */
-    uint64_t lastTryMono;
-    uint64_t lastConnectTryMono;
+    uint64_t lastPollStart;
     bool unreachable;
-    int regCount; /* number of input registers to read in one FC4 */
+    uint64_t pollSeq;
+    uint64_t heartbeatChanged;
+    uint16_t heartbeat;
+    pthread_t thread;
+    int index;
 } DeviceRT;
 
 /* Command responses are addressed by peer via conn_for_peer, not a stored handle. */
@@ -79,6 +85,7 @@ typedef struct {
     int dcs;
     int qu;
     uint64_t deadlineMono;
+    uint64_t pollSeq, selectedMono;
 } Selection;
 
 typedef struct {
@@ -87,6 +94,9 @@ typedef struct {
     char peer[PEER_LEN];
     int dcs;
     CS101_ASDU command;
+    enum { CMD_START, CMD_WRITE, CMD_WRITING, CMD_FEEDBACK } phase;
+    uint64_t afterPoll, afterMono, deadline;
+    int expected;
 } PendingExecute;
 
 typedef struct {
@@ -163,7 +173,7 @@ point_quality(const PointRT* rt, const PmPoint* p)
     QualityDescriptor q = IEC60870_QUALITY_GOOD;
     if (rt->deviceUnreachable)
         q = (QualityDescriptor)(q | IEC60870_QUALITY_INVALID | IEC60870_QUALITY_NON_TOPICAL);
-    if (p->measurement && rt->measurementInvalid)
+    if (rt->valueInvalid || rt->heartbeatStale || (p->measurement && rt->measurementInvalid))
         q = (QualityDescriptor)(q | IEC60870_QUALITY_INVALID);
     return q;
 }
@@ -179,6 +189,8 @@ build_untimed(const PmPoint* p, const PointRT* rt, QualityDescriptor q)
         return (InformationObject)DoublePointInformation_create(NULL, p->ioa, rt->dp, q);
     case PM_KIND_SINGLE_POINT:
         return (InformationObject)SinglePointInformation_create(NULL, p->ioa, rt->sp, q);
+    case PM_KIND_STEP_POSITION:
+        return (InformationObject)StepPositionInformation_create(NULL, p->ioa, rt->step, rt->transient, q);
     case PM_KIND_FLOAT:
         return (InformationObject)MeasuredValueShort_create(NULL, p->ioa, rt->f, q);
     default:
@@ -197,6 +209,9 @@ build_spontaneous(const PmPoint* p, const PointRT* rt, QualityDescriptor q, stru
     case PM_KIND_SINGLE_POINT:
         fill_cp56(t);
         return (InformationObject)SinglePointWithCP56Time2a_create(NULL, p->ioa, rt->sp, q, t);
+    case PM_KIND_STEP_POSITION:
+        fill_cp56(t);
+        return (InformationObject)StepPositionWithCP56Time2a_create(NULL, p->ioa, rt->step, rt->transient, q, t);
     case PM_KIND_FLOAT:
         return (InformationObject)MeasuredValueShort_create(NULL, p->ioa, rt->f, q);
     default:
@@ -243,38 +258,48 @@ report_point(int idx, CS101_CauseOfTransmission cot)
     rt->repDp = rt->dp;
     rt->repSp = rt->sp;
     rt->repF = rt->f;
+    rt->repStep = rt->step;
+    rt->repTransient = rt->transient;
 }
 
 /* ---- Modbus polling -------------------------------------------------- */
 
 /* Extract one point's value from an input-register snapshot. */
 static void
-apply_point(int idx, const uint16_t* regs, int regCount)
+apply_point(int idx, const uint16_t* regs)
 {
     const PmPoint* p = &rtu.pm->points[idx];
     PointRT* rt = &rtu.points[idx];
-    if (p->table != PM_TABLE_INPUT)
-        return;
+    /* The loader proves the entire source is in this block. */
+    int addr = p->address - rtu.pm->devices[p->device_index].poll_start;
+    rt->valueInvalid = false;
     switch (p->format) {
-    case PM_FMT_DP:
-        if (p->address < regCount) {
-            int v = regs[p->address] & 0x3;
-            rt->dp = (DoublePointValue)v;
-        }
-        break;
-    case PM_FMT_BIT:
-        if (p->address < regCount)
-            rt->sp = ((regs[p->address] >> p->bit) & 1) != 0;
-        break;
+    case PM_FMT_DP: rt->dp = (DoublePointValue)(regs[addr] & 3); break;
+    case PM_FMT_BIT: rt->sp = ((regs[addr] >> p->bit) & 1) != 0; break;
     case PM_FMT_F32:
-        if (p->address + 1 < regCount)
-            rt->f = mb_regs_to_f32(regs[p->address], regs[p->address + 1]);
+        rt->f = mb_regs_to_f32(regs[addr], regs[addr+1]);
+        rt->valueInvalid = !isfinite(rt->f);
+        if (rt->valueInvalid) rt->f = rt->repF;
         break;
+    case PM_FMT_U16: rt->f = (float)(regs[addr] * p->scale); break;
+    case PM_FMT_I16: rt->f = (float)((int16_t)regs[addr] * p->scale); break;
+    case PM_FMT_STEP: {
+        int value = (int16_t)regs[addr];
+        rt->valueInvalid = value < -64 || value > 63;
+        if (!rt->valueInvalid) rt->step = value;
+        rt->transient = ((regs[p->transient_address - rtu.pm->devices[p->device_index].poll_start] >>
+                          p->transient_bit) & 1) != 0;
+        break;
+    }
+    }
+    if (p->kind == PM_KIND_FLOAT && !isfinite(rt->f)) {
+        rt->valueInvalid = true;
+        rt->f = rt->repF;
     }
 }
 
 /*
- * Reads one device's input block (FC4) and applies it to that device's
+ * Reads one device's configured block (FC3/FC4) and applies it to that device's
  * points under the lock. Returns the Modbus status. On MB_OK it also sets
  * measurement_invalid from the device valid bit and records the poll time.
  */
@@ -286,23 +311,33 @@ poll_device(int devIdx)
     uint16_t regs[128];
     int exc = 0;
 
-    MbStatus st = mb_read_input(&drt->mb, 0, drt->regCount, regs, &exc, dev->timeout_ms);
+    uint64_t started = mono_ms();
+    MbStatus st = (dev->poll_table == PM_TABLE_INPUT ? mb_read_input : mb_read_holding)(
+        &drt->mb, dev->poll_start, dev->poll_count, regs, &exc, dev->timeout_ms);
     if (st != MB_OK) {
-        if (st == MB_IO_ERROR)
-            mb_close(&drt->mb);
+        mb_close(&drt->mb);
         return st;
     }
 
     pthread_mutex_lock(&rtu.lock);
     drt->lastOkMono = mono_ms();
+    drt->pollSeq++;
+    drt->lastPollStart = started;
+    if (dev->has_heartbeat) {
+        uint16_t hb = regs[dev->heartbeat_address - dev->poll_start];
+        if (drt->heartbeatChanged == 0 || hb != drt->heartbeat) {
+            drt->heartbeat = hb;
+            drt->heartbeatChanged = drt->lastOkMono;
+        }
+    }
     bool mvValid = true;
-    if (dev->has_measurements_valid && dev->mv_address < drt->regCount)
-        mvValid = ((regs[dev->mv_address] >> dev->mv_bit) & 1) != 0;
+    if (dev->has_measurements_valid)
+        mvValid = ((regs[dev->mv_address - dev->poll_start] >> dev->mv_bit) & 1) != 0;
 
     for (int i = 0; i < rtu.pm->n_points; i++) {
         if (rtu.pm->points[i].device_index != devIdx)
             continue;
-        apply_point(i, regs, drt->regCount);
+        apply_point(i, regs);
         if (rtu.pm->points[i].measurement)
             rtu.points[i].measurementInvalid = !mvValid;
     }
@@ -324,7 +359,11 @@ evaluate_and_report(void)
     for (int i = 0; i < rtu.pm->n_points; i++) {
         const PmPoint* p = &rtu.pm->points[i];
         PointRT* rt = &rtu.points[i];
-        rt->deviceUnreachable = rtu.devices[p->device_index].unreachable;
+        DeviceRT* drt = &rtu.devices[p->device_index];
+        const PmDevice* dev = &rtu.pm->devices[p->device_index];
+        rt->deviceUnreachable = drt->unreachable;
+        rt->heartbeatStale = dev->has_heartbeat && (drt->heartbeatChanged == 0 ||
+            now - drt->heartbeatChanged >= (uint64_t)dev->heartbeat_stale_ms);
 
         QualityDescriptor newQ = point_quality(rt, p);
         bool qChanged = newQ != rt->repQuality;
@@ -336,6 +375,9 @@ evaluate_and_report(void)
             break;
         case PM_KIND_SINGLE_POINT:
             report = qChanged || rt->sp != rt->repSp;
+            break;
+        case PM_KIND_STEP_POSITION:
+            report = qChanged || rt->step != rt->repStep || rt->transient != rt->repTransient;
             break;
         case PM_KIND_FLOAT:
             if (qChanged)
@@ -375,12 +417,10 @@ reply_negative(IMasterConnection conn, CS101_ASDU asdu, CS101_CauseOfTransmissio
 
 /* Caller holds rtu.lock. Validates SBO; a valid execute is queued, not confirmed yet. */
 static void
-handle_double_command(IMasterConnection conn, const char* peerStr, CS101_ASDU asdu, int cmdIndex, DoubleCommand dc)
+handle_command(IMasterConnection conn, const char* peerStr, CS101_ASDU asdu, int cmdIndex, int dcs, int qu, bool select)
 {
     const PmCommand* c = &rtu.pm->commands[cmdIndex];
     CS101_CauseOfTransmission cot = CS101_ASDU_getCOT(asdu);
-    int dcs = DoubleCommand_getState(dc);
-    int qu = DoubleCommand_getQU(dc);
     uint64_t now = mono_ms();
 
     if (rtu.sel.active && now >= rtu.sel.deadlineMono)
@@ -399,14 +439,14 @@ handle_double_command(IMasterConnection conn, const char* peerStr, CS101_ASDU as
         return;
     }
 
-    if (dcs != IEC60870_DOUBLE_POINT_OFF && dcs != IEC60870_DOUBLE_POINT_ON) {
-        rd_log("command ioa=%d peer=%s phase=%s result=rejected reason=\"DCS 0/3 not permitted\"", c->ioa, peerStr,
-               DoubleCommand_isSelect(dc) ? "select" : "execute");
+    if (qu != 0 || (c->kind != PM_KIND_SINGLE_COMMAND && dcs != 1 && dcs != 2)) {
+        rd_log("command ioa=%d peer=%s phase=%s result=rejected reason=\"invalid state or qualifier\"", c->ioa, peerStr,
+               select ? "select" : "execute");
         reply_negative(conn, asdu, CS101_COT_ACTIVATION_CON);
         return;
     }
 
-    if (DoubleCommand_isSelect(dc)) {
+    if (select) {
         if (!c->sbo) {
             rd_log("command ioa=%d peer=%s phase=select result=rejected reason=\"not an SBO command\"", c->ioa,
                    peerStr);
@@ -429,6 +469,8 @@ handle_double_command(IMasterConnection conn, const char* peerStr, CS101_ASDU as
         rtu.sel.dcs = dcs;
         rtu.sel.qu = qu;
         rtu.sel.deadlineMono = now + (uint64_t)rtu.pm->select_timeout_ms;
+        rtu.sel.pollSeq = rtu.devices[c->device_index].pollSeq;
+        rtu.sel.selectedMono = now;
         rd_log("command ioa=%d peer=%s phase=select result=accepted dcs=%d", c->ioa, peerStr, dcs);
         IMasterConnection_sendACT_CON(conn, asdu, false);
         return;
@@ -453,84 +495,109 @@ handle_double_command(IMasterConnection conn, const char* peerStr, CS101_ASDU as
         return;
     }
 
+    uint64_t afterPoll = rtu.sel.pollSeq, afterMono = rtu.sel.selectedMono;
     clear_selection("executed");
     rtu.pend.active = true;
     rtu.pend.cmdIndex = cmdIndex;
     snprintf(rtu.pend.peer, PEER_LEN, "%s", peerStr);
     rtu.pend.dcs = dcs;
+    rtu.pend.phase = CMD_START;
+    rtu.pend.afterPoll = afterPoll;
+    rtu.pend.afterMono = afterMono;
+    rtu.pend.deadline = now + (uint64_t)rtu.pm->devices[c->device_index].timeout_ms;
     rtu.pend.command = CS101_ASDU_clone(asdu, NULL);
     rd_log("command ioa=%d peer=%s phase=execute result=accepted dcs=%d", c->ioa, peerStr, dcs);
 }
 
-/*
- * Executes a queued command: FC6 write, deferred ACT-CON from the write
- * result, readback of the feedback point, COT 11 feedback report, ACT-TERM.
- * Never retries the write. Modbus I/O runs with rtu.lock released.
- */
+/* Caller holds. A single owner retains the slot until a terminal outcome. */
 static void
-execute_command(const PendingExecute* p)
+finish_command(const char* result)
 {
+    PendingExecute* p = &rtu.pend;
+    rd_log("command ioa=%d peer=%s phase=execute result=%s", rtu.pm->commands[p->cmdIndex].ioa, p->peer, result);
+    CS101_ASDU_destroy(p->command);
+    *p = (PendingExecute){0};
+}
+
+/* Main-loop state machine: never performs network I/O or waits for motion. */
+static void
+advance_command(void)
+{
+    PendingExecute* p = &rtu.pend;
+    if (!p->active) return;
     const PmCommand* c = &rtu.pm->commands[p->cmdIndex];
-    int devIdx = c->device_index;
-    const PmDevice* dev = &rtu.pm->devices[devIdx];
-    DeviceRT* drt = &rtu.devices[devIdx];
+    const PmPoint* fb = &rtu.pm->points[c->feedback_index];
+    const PmDevice* dev = &rtu.pm->devices[c->device_index];
+    DeviceRT* drt = &rtu.devices[c->device_index];
+    PointRT* value = &rtu.points[c->feedback_index];
+    IMasterConnection conn = conn_for_peer(p->peer);
+    bool fresh = drt->pollSeq > p->afterPoll && drt->lastPollStart > p->afterMono && drt->lastOkMono &&
+        mono_ms() - drt->lastOkMono < (uint64_t)dev->stale_after_ms && point_quality(value, fb) == 0;
+    if ((p->phase == CMD_START || p->phase == CMD_WRITE) && mono_ms() >= p->deadline) {
+        if (conn) IMasterConnection_sendACT_CON(conn, p->command, true);
+        finish_command("rejected");
+    } else if (p->phase == CMD_START && fresh) {
+        p->expected = c->kind == PM_KIND_REGULATING_STEP ? value->step + (p->dcs == 1 ? -1 : 1) : p->dcs;
+        if (c->kind == PM_KIND_REGULATING_STEP && value->transient) {
+            if (conn) IMasterConnection_sendACT_CON(conn, p->command, true);
+            finish_command("rejected");
+        } else p->phase = CMD_WRITE;
+    } else if (p->phase == CMD_FEEDBACK) {
+        /* Deadline wins over even freshly matching feedback received too late. */
+        if (mono_ms() >= p->deadline) {
+            if (conn) reply_negative(conn, p->command, CS101_COT_ACTIVATION_TERMINATION);
+            finish_command("failed");
+        } else if (fresh && (c->kind == PM_KIND_DOUBLE_COMMAND ? (int)value->dp == p->expected :
+                   c->kind == PM_KIND_SINGLE_COMMAND ? (int)value->sp == p->expected :
+                   value->step == p->expected && !value->transient)) {
+            report_point(c->feedback_index, CS101_COT_RETURN_INFO_REMOTE);
+            if (conn) IMasterConnection_sendACT_TERM(conn, p->command);
+            finish_command("completed");
+        }
+    }
+}
 
-    if (!mb_is_connected(&drt->mb))
-        mb_connect(&drt->mb, dev->host, dev->port, dev->timeout_ms);
-
-    int exc = 0;
-    MbStatus st = mb_write_single(&drt->mb, c->address, (uint16_t)p->dcs, &exc, dev->timeout_ms);
-    rd_log("command ioa=%d peer=%s phase=write result=%s exc=%d", c->ioa, p->peer,
-           st == MB_OK ? "ok" : (st == MB_EXCEPTION ? "exception" : (st == MB_TIMEOUT ? "timeout" : "io_error")), exc);
-
-    /*
-     * Command responses go to the commanding peer's *started* connection,
-     * resolved from the connection list under the lock — the same object
-     * broadcast() uses. Sending to the IMasterConnection captured in the ASDU
-     * callback does not reach the client from the main-loop thread.
-     */
-    if (st != MB_OK) {
-        if (st == MB_IO_ERROR)
-            mb_close(&drt->mb);
-        pthread_mutex_lock(&rtu.lock);
-        IMasterConnection conn = conn_for_peer(p->peer);
-        if (conn)
-            IMasterConnection_sendACT_CON(conn, p->command, true);
+/* Only the target device's worker may take CMD_WRITE. Never retry an FC6. */
+static void
+write_command(int d)
+{
+    pthread_mutex_lock(&rtu.lock);
+    PendingExecute* p = &rtu.pend;
+    if (!p->active || p->phase != CMD_WRITE || rtu.pm->commands[p->cmdIndex].device_index != d) {
         pthread_mutex_unlock(&rtu.lock);
-        rd_log("command ioa=%d peer=%s phase=execute result=%s", c->ioa, p->peer,
-               st == MB_EXCEPTION ? "rejected" : "failed");
         return;
     }
+    if (mono_ms() >= p->deadline) {
+        IMasterConnection conn = conn_for_peer(p->peer);
+        if (conn) IMasterConnection_sendACT_CON(conn, p->command, true);
+        finish_command("rejected");
+        pthread_mutex_unlock(&rtu.lock);
+        return;
+    }
+    p->phase = CMD_WRITING;
+    const PmCommand* c = &rtu.pm->commands[p->cmdIndex];
+    const PmDevice* dev = &rtu.pm->devices[d];
+    DeviceRT* drt = &rtu.devices[d];
+    int val = c->kind == PM_KIND_SINGLE_COMMAND ? (p->dcs ? 2 : 1) : p->dcs;
+    pthread_mutex_unlock(&rtu.lock);
 
-    /* positive ACT-CON once the write echoed */
+    int exc = 0;
+    MbStatus st = mb_write_single(&drt->mb, c->address, (uint16_t)val, &exc, dev->timeout_ms);
+    if (st != MB_OK) mb_close(&drt->mb);
     pthread_mutex_lock(&rtu.lock);
     IMasterConnection conn = conn_for_peer(p->peer);
-    if (conn)
-        IMasterConnection_sendACT_CON(conn, p->command, false);
-    pthread_mutex_unlock(&rtu.lock);
-
-    /* readback until the feedback point matches the commanded value or the device timeout passes */
-    uint64_t deadline = mono_ms() + (uint64_t)dev->timeout_ms;
-    int fb = c->feedback_index;
-    for (;;) {
-        poll_device(devIdx);
-        pthread_mutex_lock(&rtu.lock);
-        bool matched = rtu.points[fb].dp == (DoublePointValue)p->dcs;
-        pthread_mutex_unlock(&rtu.lock);
-        if (matched || mono_ms() >= deadline)
-            break;
-        Thread_sleep(20);
+    if (st == MB_OK) {
+        if (conn) IMasterConnection_sendACT_CON(conn, p->command, false);
+        p->phase = CMD_FEEDBACK;
+        p->afterPoll = drt->pollSeq;
+        p->afterMono = mono_ms();
+        p->deadline = mono_ms() + (c->kind == PM_KIND_REGULATING_STEP ? 5000u : (uint64_t)dev->timeout_ms);
+    } else {
+        /* A lost echo is ambiguous even when the socket has closed. */
+        if (st == MB_EXCEPTION && conn) IMasterConnection_sendACT_CON(conn, p->command, true);
+        finish_command(st == MB_EXCEPTION ? "rejected" : "unknown");
     }
-
-    /* feedback report (COT 11) for the feedback point, then ACT-TERM */
-    pthread_mutex_lock(&rtu.lock);
-    report_point(fb, CS101_COT_RETURN_INFO_REMOTE);
-    conn = conn_for_peer(p->peer);
-    if (conn)
-        IMasterConnection_sendACT_TERM(conn, p->command);
-    DoublePointValue fbv = rtu.points[fb].dp;
     pthread_mutex_unlock(&rtu.lock);
-    rd_log("command ioa=%d peer=%s phase=execute result=completed feedback=%s", c->ioa, p->peer, rd_dpi_str(fbv));
 }
 
 /* ---- lib60870 handlers ----------------------------------------------- */
@@ -581,7 +648,8 @@ static bool
 asdu_handler(void* param, IMasterConnection conn, CS101_ASDU asdu)
 {
     (void)param;
-    if (CS101_ASDU_getTypeID(asdu) != C_DC_NA_1)
+    TypeID type = CS101_ASDU_getTypeID(asdu);
+    if (type != C_DC_NA_1 && type != C_RC_NA_1 && type != C_SC_NA_1)
         return false; /* lib60870 answers COT 44, unknown type */
 
     rd_log_asdu("rx", asdu);
@@ -612,7 +680,18 @@ asdu_handler(void* param, IMasterConnection conn, CS101_ASDU asdu)
     peer(conn, peerStr, sizeof(peerStr));
 
     pthread_mutex_lock(&rtu.lock);
-    handle_double_command(conn, peerStr, asdu, cmdIndex, (DoubleCommand)io);
+    TypeID expected = c->kind == PM_KIND_DOUBLE_COMMAND ? C_DC_NA_1 :
+                      c->kind == PM_KIND_REGULATING_STEP ? C_RC_NA_1 : C_SC_NA_1;
+    if (type != expected || CS101_ASDU_isTest(asdu)) reply_negative(conn, asdu, CS101_COT_ACTIVATION_CON);
+    else {
+        int value = type == C_DC_NA_1 ? (int)DoubleCommand_getState((DoubleCommand)io) :
+                    type == C_RC_NA_1 ? (int)StepCommand_getState((StepCommand)io) : SingleCommand_getState((SingleCommand)io);
+        int qu = type == C_DC_NA_1 ? DoubleCommand_getQU((DoubleCommand)io) :
+                 type == C_RC_NA_1 ? StepCommand_getQU((StepCommand)io) : SingleCommand_getQU((SingleCommand)io);
+        bool select = type == C_DC_NA_1 ? DoubleCommand_isSelect((DoubleCommand)io) :
+                      type == C_RC_NA_1 ? StepCommand_isSelect((StepCommand)io) : SingleCommand_isSelect((SingleCommand)io);
+        handle_command(conn, peerStr, asdu, cmdIndex, value, qu, select);
+    }
     pthread_mutex_unlock(&rtu.lock);
 
     InformationObject_destroy(io);
@@ -703,60 +782,51 @@ apply_connection_events(void)
 
 /* ---- main loop ------------------------------------------------------- */
 
-static void
-ensure_modbus(void)
+/* Independent I/O owners: even a DROPped TCP connect/read cannot starve a peer.
+ * Connects have a 250 ms total socket budget; failed connections back off. */
+static void*
+device_worker(void* arg)
 {
-    uint64_t now = mono_ms();
-    for (int d = 0; d < rtu.pm->n_devices; d++) {
-        const PmDevice* dev = &rtu.pm->devices[d];
-        DeviceRT* drt = &rtu.devices[d];
-        if (mb_is_connected(&drt->mb))
-            continue;
-        if (drt->lastConnectTryMono != 0 && (now - drt->lastConnectTryMono) < (uint64_t)dev->timeout_ms)
-            continue;
-        drt->lastConnectTryMono = now;
-        mb_connect(&drt->mb, dev->host, dev->port, dev->timeout_ms);
+    DeviceRT* drt = arg;
+    int d = drt->index;
+    const PmDevice* dev = &rtu.pm->devices[d];
+    uint64_t nextPoll = 0, nextConnect = 0;
+    int initialBackoff = rtu.pm->reconnect_interval_ms < 250 ? rtu.pm->reconnect_interval_ms : 250;
+    int backoff = initialBackoff;
+    while (!stopRequested) {
+        uint64_t now = mono_ms();
+        if (!mb_is_connected(&drt->mb) && now >= nextConnect) {
+            MbStatus st = MB_OK;
+            if (!drt->mb.addresses) st = mb_resolve(&drt->mb, dev->host, dev->port);
+            if (st == MB_OK) st = mb_connect(&drt->mb, 250);
+            if (st == MB_OK) backoff = initialBackoff;
+            else {
+                nextConnect = mono_ms() + (uint64_t)backoff;
+                backoff = backoff < rtu.pm->reconnect_interval_ms / 2 ? backoff * 2 : rtu.pm->reconnect_interval_ms;
+            }
+        }
+        if (mb_is_connected(&drt->mb)) {
+            write_command(d);
+            if (mono_ms() >= nextPoll) {
+                uint64_t start = mono_ms();
+                if (poll_device(d) != MB_OK) nextConnect = mono_ms() + (uint64_t)backoff;
+                nextPoll = start + (uint64_t)dev->poll_ms;
+            }
+        }
+        Thread_sleep(10);
     }
+    mb_destroy(&drt->mb);
+    return NULL;
 }
 
 static void
 tick(void)
 {
-    /* 1. connection events, selection expiry, take ownership of any pending command */
-    PendingExecute p = {0};
     pthread_mutex_lock(&rtu.lock);
     apply_connection_events();
-    if (rtu.sel.active && mono_ms() >= rtu.sel.deadlineMono)
-        clear_selection("select timeout elapsed");
-    if (rtu.pend.active) {
-        p = rtu.pend;
-        rtu.pend = (PendingExecute){0};
-    }
-    pthread_mutex_unlock(&rtu.lock);
-
-    /* 2. execute a queued command (blocking Modbus I/O without the lock) */
-    if (p.active) {
-        execute_command(&p);
-        if (p.command)
-            CS101_ASDU_destroy(p.command);
-    }
-
-    /* 3. poll the devices that are due */
-    ensure_modbus();
-    uint64_t now = mono_ms();
-    for (int d = 0; d < rtu.pm->n_devices; d++) {
-        const PmDevice* dev = &rtu.pm->devices[d];
-        DeviceRT* drt = &rtu.devices[d];
-        if (drt->lastTryMono != 0 && (now - drt->lastTryMono) < (uint64_t)dev->poll_ms)
-            continue;
-        drt->lastTryMono = now;
-        if (mb_is_connected(&drt->mb))
-            poll_device(d);
-    }
-
-    /* 4. report changed points (value changes from the poll, quality changes from staleness) */
-    pthread_mutex_lock(&rtu.lock);
+    if (rtu.sel.active && mono_ms() >= rtu.sel.deadlineMono) clear_selection("select timeout elapsed");
     evaluate_and_report();
+    advance_command();
     pthread_mutex_unlock(&rtu.lock);
 }
 
@@ -819,20 +889,7 @@ main(int argc, char** argv)
     for (int d = 0; d < pm->n_devices; d++) {
         DeviceRT* drt = &rtu.devices[d];
         mb_init(&drt->mb, pm->devices[d].unit);
-        int maxReg = 0;
-        for (int i = 0; i < pm->n_points; i++) {
-            const PmPoint* pt = &pm->points[i];
-            if (pt->device_index != d || pt->table != PM_TABLE_INPUT)
-                continue;
-            int top = pt->address + (pt->format == PM_FMT_F32 ? 1 : 0);
-            if (top > maxReg)
-                maxReg = top;
-        }
-        if (pm->devices[d].has_measurements_valid && pm->devices[d].mv_address > maxReg)
-            maxReg = pm->devices[d].mv_address;
-        drt->regCount = maxReg + 1;
-        if (drt->regCount > 125)
-            drt->regCount = 125;
+        drt->index = d;
     }
 
     sc_init(&rtu.clock, pm);
@@ -873,6 +930,17 @@ main(int argc, char** argv)
         return 1;
     }
 
+    signal(SIGPIPE, SIG_IGN);
+    for (int d = 0; d < pm->n_devices; d++) {
+        if (pthread_create(&rtu.devices[d].thread, NULL, device_worker, &rtu.devices[d]) != 0) {
+            rd_log("cannot start device worker %d", d);
+            stopRequested = 1;
+            for (int j = 0; j < d; j++) pthread_join(rtu.devices[j].thread, NULL);
+            CS104_Slave_stop(rtu.slave);
+            sc_stop(&rtu.clock);
+            return 1;
+        }
+    }
     rd_log("listening %s:%ld ca=%d points=%d devices=%d select-timeout=%dms", bind, port, pm->ca, pm->n_points,
            pm->n_devices, pm->select_timeout_ms);
 
@@ -882,11 +950,10 @@ main(int argc, char** argv)
     }
 
     rd_log("stopping");
+    for (int d = 0; d < pm->n_devices; d++) pthread_join(rtu.devices[d].thread, NULL);
     CS104_Slave_stop(rtu.slave);
     CS104_Slave_destroy(rtu.slave);
     sc_stop(&rtu.clock);
-    for (int d = 0; d < pm->n_devices; d++)
-        mb_close(&rtu.devices[d].mb);
     pointmap_free(pm);
     return 0;
 }

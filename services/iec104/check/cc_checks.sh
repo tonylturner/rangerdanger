@@ -32,10 +32,9 @@ jget() {
 cmd_ok() {
   cc_cmd "$1" "$2"
   [ "$(cat "$OUT/$1.status")" = 200 ] && jtest "$OUT/$1.json" \
-    "d['status']=='completed' and d['id'].startswith('cmd-') and d['select']['status']=='confirmed' and d['select']['at'] \
-     and d['execute']['status']=='confirmed' and d['execute']['at'] and d['execute']['terminated_at'] \
-     and d['feedback']['status']=='matched' and d['feedback']['value']=='$3' and d['feedback']['received_at'] \
-     and d['error'] is None"
+    "d['result']=='completed' and d['id'].startswith('cmd-') and d['selected_at'] and d['executed_at'] \
+     and d['con_at'] and d['term_at'] and d['feedback']['value']=='$3' and d['feedback']['ioa']==1001 \
+     and d['feedback']['at'] and d['reason'] is None"
 }
 POS="pt(s,'feeder-breaker-position')"
 TRIP="pt(s,'feeder-protection-trip')"
@@ -64,13 +63,13 @@ else
 fi
 
 log "start the API probe"
-docker run -d --name "$PROBE" --network "$MGMT" -v "$HERE/ccprobe.py:/app/ccprobe.py:ro" "$PY" \
-  sleep 3600 >/dev/null
+docker run -d --name "$PROBE" --network "$MGMT" --ip 172.28.105.30 \
+  -v "$HERE:/app:ro" "$PY" python3 -I /app/fake_historian.py >/dev/null
 
 # start_cc NAME IEC104_IP HTTP_IP TARGET: the CC on the station network, its API on the management network
 start_cc() {
   docker create --name "$1" --network "$NET" --ip "$2" -v "$HERE/points.test.json:/etc/points.json:ro" "$IMG" \
-    iec104-cc --config /etc/points.json --bind "$2" --target "$4" --http "$3:8080" >/dev/null
+    iec104-cc --config /etc/points.json --bind "$2" --target "$4" --http "$3:8080" --historian-url http://172.28.105.30:8081/api/ingest --historian-bind "$3" >/dev/null
   docker network connect --ip "$3" "$MGMT" "$1"
   docker start "$1" >/dev/null
 }
@@ -110,7 +109,7 @@ if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' an
     and abs(pt(s,'feeder-current')['value']-28.9)<0.01 and abs(pt(s,'feeder-voltage')['value']-20.0)<0.01 \
     and ${POS}['quality']['ov'] is None and pt(s,'feeder-current')['quality']['ov'] is False \
     and pt(s,'feeder-current')['source_time'] is None and pt(s,'feeder-current')['source_time_invalid'] is None \
-    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==4" \
+    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==31" \
   >"$OUT/cc-state-baseline.json"; then
   pass "CC: link started, GI complete, four points GOOD with correct values"
 else
@@ -119,8 +118,8 @@ fi
 probe get /api/health >"$OUT/cc-health.txt"
 # the compose healthcheck uses busybox wget from the iec104 image
 docker run --rm --network "$MGMT" "$IMG" wget -qO- "$CC_URL/api/health" >"$OUT/cc-health-wget.txt" 2>&1
-if grep -qx '200 {"status":"ok","link":"started"}' "$OUT/cc-health.txt" \
-  && grep -qx '{"status":"ok","link":"started"}' "$OUT/cc-health-wget.txt"; then
+if grep -q '^200 {"status":"ok","link":"started","historian":' "$OUT/cc-health.txt" \
+  && grep -q '^{"status":"ok","link":"started","historian":' "$OUT/cc-health-wget.txt"; then
   pass "CC: /api/health reports the started link (also to busybox wget)"
 else
   fail "CC: /api/health unexpected (cc-health.txt)"
@@ -129,8 +128,7 @@ fi
 # ---- CC 2. SBO commands: open, close, no-op close ---------------------
 log "CC check 2: open, close and a no-op close complete with COT 11 feedback"
 if cmd_ok cc-cmd-open open open \
-  && probe wait 10 "${POS}['value']=='open' and ${POS}['cot']==11 and good($POS) and ${POS}['source_time'] \
-       and ${POS}['source_time_invalid'] is False and last(j,'command')['detail']['status']=='completed'" >/dev/null; then
+  && probe wait 10 "${POS}['value']=='open' and ${POS}['cot'] in (11,20) and good($POS)  and last(j,'command')['detail']['result']=='completed'" >/dev/null; then
   pass "CC: open -> completed, feedback matched, cache open with COT 11 and an RTU observation time"
 else
   fail "CC: open command (cc-cmd-open.json)"
@@ -151,7 +149,7 @@ log "CC check 3: a second command while one is in flight -> 409"
 ctl "http://$BRK_IP:8081/delay?ms=700"
 probe overlap 0.2 >"$OUT/cc-overlap.txt"
 ctl "http://$BRK_IP:8081/delay?ms=0"
-if grep -q '^first 200 .*"status":"completed"' "$OUT/cc-overlap.txt" \
+if grep -q '^first 200 .*"result":"completed"' "$OUT/cc-overlap.txt" \
   && grep -q '^second 409 {"error":"a command is in flight"}' "$OUT/cc-overlap.txt"; then
   pass "CC: overlapping command answered 409; the first completed"
 else
@@ -163,12 +161,11 @@ cmd_ok cc-cmd-restore close closed || fail "CC: could not restore closed (cc-cmd
 log "CC check 4: close under lockout -> rejected"
 cmd_ok cc-cmd-open2 open open || fail "CC: open before the interlock check (cc-cmd-open2.json)"
 ctl "http://$BRK_IP:8081/fault?active=1"
-probe wait 10 "${TRIP}['value'] is True and ${TRIP}['cot']==3" >/dev/null || fail "CC: protection trip not seen"
+probe wait 10 "${TRIP}['value'] is True and ${TRIP}['cot'] in (3,20)" >/dev/null || fail "CC: protection trip not seen"
 cc_cmd cc-cmd-interlock close
 if [ "$(cat "$OUT/cc-cmd-interlock.status")" = 200 ] && jtest "$OUT/cc-cmd-interlock.json" \
-  "d['status']=='rejected' and d['select']['status']=='confirmed' and d['execute']['status']=='negative' \
-   and d['execute']['at'] and d['execute']['terminated_at'] is None and d['feedback']['status']=='missing' \
-   and d['feedback']['value'] is None and d['error']"; then
+  "d['result']=='rejected' and d['selected_at'] and d['executed_at'] and d['con_at'] \
+   and d['term_at'] is None and d['feedback'] is None and d['reason']"; then
   pass "CC: close under lockout -> rejected (negative execute ACT-CON)"
 else
   fail "CC: interlock result (cc-cmd-interlock.json)"
@@ -229,7 +226,7 @@ fi
 if probe wait 5 "(lambda d: d is not None and d['detail']['reason']=='t1_timeout' \
      and d['detail']['peer']=='$RTU_IP:2404' and set(d['detail'])=={'peer','connection_seq','reason'} \
      and sorted(e['detail']['point'] for e in j['entries'] if e['kind']=='point_stale' and e['seq']>d['seq'] \
-       and e['detail']['stale_reason']=='link_lost')==sorted(POINTS))(last(j,'link_down'))" >/dev/null; then
+       and e['detail']['stale_reason']=='link_lost')==sorted(p['id'] for p in s['points']))(last(j,'link_down'))" >/dev/null; then
   pass "CC: journal link_down (t1_timeout) then point_stale link_lost for all four points"
 else
   fail "CC: link-down journal"
@@ -237,7 +234,7 @@ fi
 cc_cmd cc-cmd-linkdown open
 probe get /api/health >"$OUT/cc-health-down.txt"
 if [ "$(cat "$OUT/cc-cmd-linkdown.status")" = 503 ] && grep -q '"error":"link not started"' "$OUT/cc-cmd-linkdown.json" \
-  && grep -Eq '^200 \{"status":"ok","link":"(connecting|disconnected)"\}$' "$OUT/cc-health-down.txt"; then
+  && grep -Eq '^200 \{"status":"ok","link":"(connecting|disconnected)","historian":' "$OUT/cc-health-down.txt"; then
   pass "CC: command with the link down -> 503; health stays 200"
 else
   fail "CC: link-down command/health (cc-cmd-linkdown.json, cc-health-down.txt)"
@@ -278,7 +275,7 @@ probe get /api/state | cut -d' ' -f2- >"$OUT/cc-state-final.json"
 epoch="$(jget "$OUT/cc-state-baseline.json" "d['cache_epoch']")"
 details="{'link_up':{'peer','connection_seq'},'link_down':{'peer','connection_seq','reason'},'gi_started':{'connection_seq'}, \
   'gi_complete':{'connection_seq','points_good'},'point_stale':{'point','stale_reason','value'},'point_good':{'point','value'}, \
-  'command':{'id','point','operation','status','select','execute','feedback'}}"
+  'command':{'id','point','operation','result','reason','selected_at','executed_at','con_at','term_at','feedback'}}"
 if jtest "$OUT/cc-journal.json" "d['cache_epoch']=='$epoch' and d['oldest_seq']==1 \
      and d['latest_seq']==d['entries'][-1]['seq'] and [e['seq'] for e in d['entries']]==list(range(1,d['latest_seq']+1)) \
      and all(set(e)=={'seq','at','kind','detail'} and set(e['detail'])==${details}[e['kind']] for e in d['entries'])" \

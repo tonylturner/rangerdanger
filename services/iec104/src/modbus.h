@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * A minimal, in-tree Modbus TCP master, enough for the RTU's southbound
- * link to the feeder breaker: read input registers (FC4) and write a
+ * links: read holding/input registers (FC3/FC4) and write a
  * single holding register (FC6). No external Modbus library, so the GPLv3
  * image carries no extra dependency. Big-endian on the wire, as Modbus
  * requires. One request/response per call; the caller owns timing and
@@ -23,7 +23,9 @@ typedef enum {
     MB_EXCEPTION     /* the slave returned a Modbus exception; see exceptionCode */
 } MbStatus;
 
+struct addrinfo;
 typedef struct {
+    struct addrinfo* addresses;
     int fd;          /* -1 when not connected */
     uint16_t txid;   /* next MBAP transaction id */
     int unit;
@@ -32,16 +34,20 @@ typedef struct {
 /* Initialises to the disconnected state; call mb_connect before use. */
 void mb_init(MbMaster* m, int unit);
 
-/* Opens a TCP connection to host:port with a connect timeout. */
-MbStatus mb_connect(MbMaster* m, const char* host, int port, int timeoutMs);
+/* Resolve on the owning worker, separately from the bounded socket connect.
+ * DNS cannot delay another device, and reconnect never invokes the resolver. */
+MbStatus mb_resolve(MbMaster* m, const char* host, int port);
+MbStatus mb_connect(MbMaster* m, int timeoutMs);
+void mb_destroy(MbMaster* m);
 
 void mb_close(MbMaster* m);
 bool mb_is_connected(const MbMaster* m);
 
 /*
- * FC4: read `count` input registers starting at `addr` into out[0..count).
+ * FC3/FC4: read `count` holding/input registers starting at `addr` into out[0..count).
  * On MB_EXCEPTION, *exceptionCode holds the slave's exception code.
  */
+MbStatus mb_read_holding(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs);
 MbStatus mb_read_input(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs);
 
 /*

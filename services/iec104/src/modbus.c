@@ -26,6 +26,7 @@ void
 mb_init(MbMaster* m, int unit)
 {
     m->fd = -1;
+    m->addresses = NULL;
     m->txid = 0;
     m->unit = unit;
 }
@@ -52,35 +53,48 @@ now_ms(void)
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)(ts.tv_nsec / 1000000);
 }
 
-/* Blocking connect with a deadline, so a dropped field link cannot hang the poll loop. */
-MbStatus
-mb_connect(MbMaster* m, const char* host, int port, int timeoutMs)
+void
+mb_destroy(MbMaster* m)
 {
     mb_close(m);
+    if (m->addresses) freeaddrinfo(m->addresses);
+    m->addresses = NULL;
+}
 
+MbStatus
+mb_resolve(MbMaster* m, const char* host, int port)
+{
     char portStr[8];
     snprintf(portStr, sizeof(portStr), "%d", port);
-    struct addrinfo hints = {0};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo* res = NULL;
-    if (getaddrinfo(host, portStr, &hints, &res) != 0 || !res)
-        return MB_IO_ERROR;
+    struct addrinfo hints = {.ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM};
+    return getaddrinfo(host, portStr, &hints, &m->addresses) == 0 && m->addresses ? MB_OK : MB_IO_ERROR;
+}
 
+/* All candidate addresses share one total socket-connect deadline. */
+MbStatus
+mb_connect(MbMaster* m, int timeoutMs)
+{
+    mb_close(m);
     MbStatus st = MB_IO_ERROR;
-    for (struct addrinfo* ai = res; ai; ai = ai->ai_next) {
+    uint64_t deadline = now_ms() + (uint64_t)timeoutMs;
+    for (struct addrinfo* ai = m->addresses; ai; ai = ai->ai_next) {
+        if (now_ms() >= deadline) return MB_TIMEOUT;
         int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd < 0)
             continue;
         int flags = fcntl(fd, F_GETFL, 0);
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+            close(fd);
+            continue;
+        }
 
         int rc = connect(fd, ai->ai_addr, ai->ai_addrlen);
         if (rc == 0) {
             /* connected immediately */
         } else if (errno == EINPROGRESS) {
             struct pollfd pfd = {fd, POLLOUT, 0};
-            if (poll(&pfd, 1, timeoutMs) <= 0) {
+            uint64_t now = now_ms();
+            if (now >= deadline || poll(&pfd, 1, (int)(deadline - now)) <= 0) {
                 close(fd);
                 st = MB_TIMEOUT;
                 continue;
@@ -95,14 +109,13 @@ mb_connect(MbMaster* m, const char* host, int port, int timeoutMs)
             close(fd);
             continue;
         }
-        fcntl(fd, F_SETFL, flags);
+        /* Keep O_NONBLOCK: readiness does not promise a full send/recv. */
         int one = 1;
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
         m->fd = fd;
         st = MB_OK;
         break;
     }
-    freeaddrinfo(res);
     return st;
 }
 
@@ -111,7 +124,8 @@ send_all(int fd, const uint8_t* buf, size_t len, uint64_t deadline)
 {
     size_t sent = 0;
     while (sent < len) {
-        int budget = (int)(deadline - now_ms());
+        uint64_t now = now_ms();
+        int budget = now < deadline ? (int)(deadline - now) : 0;
         if (budget <= 0)
             return false;
         struct pollfd pfd = {fd, POLLOUT, 0};
@@ -133,7 +147,8 @@ recv_exact(int fd, uint8_t* buf, size_t len, uint64_t deadline)
 {
     size_t got = 0;
     while (got < len) {
-        int budget = (int)(deadline - now_ms());
+        uint64_t now = now_ms();
+        int budget = now < deadline ? (int)(deadline - now) : 0;
         if (budget <= 0)
             return false;
         struct pollfd pfd = {fd, POLLIN, 0};
@@ -197,15 +212,15 @@ transact(MbMaster* m, const uint8_t* pdu, size_t pduLen, uint8_t* respPdu, size_
     return MB_OK;
 }
 
-MbStatus
-mb_read_input(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs)
+static MbStatus
+read_registers(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs, uint8_t fc)
 {
     if (exceptionCode)
         *exceptionCode = 0;
     if (count < 1 || count > 125)
         return MB_IO_ERROR;
 
-    uint8_t pdu[5] = {0x04, (uint8_t)(addr >> 8), (uint8_t)(addr & 0xff), (uint8_t)(count >> 8),
+    uint8_t pdu[5] = {fc, (uint8_t)(addr >> 8), (uint8_t)(addr & 0xff), (uint8_t)(count >> 8),
                       (uint8_t)(count & 0xff)};
     uint8_t resp[MAX_PDU];
     size_t rlen = 0;
@@ -213,12 +228,12 @@ mb_read_input(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCod
     if (st != MB_OK)
         return st;
 
-    if (rlen >= 2 && resp[0] == (0x04 | 0x80)) {
+    if (rlen >= 2 && resp[0] == (fc | 0x80)) {
         if (exceptionCode)
             *exceptionCode = resp[1];
         return MB_EXCEPTION;
     }
-    if (rlen < 2 || resp[0] != 0x04)
+    if (rlen < 2 || resp[0] != fc)
         return MB_IO_ERROR;
     uint8_t byteCount = resp[1];
     if (byteCount != count * 2 || rlen != (size_t)(2 + byteCount))
@@ -226,6 +241,18 @@ mb_read_input(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCod
     for (int i = 0; i < count; i++)
         out[i] = (uint16_t)((resp[2 + i * 2] << 8) | resp[2 + i * 2 + 1]);
     return MB_OK;
+}
+
+MbStatus
+mb_read_input(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs)
+{
+    return read_registers(m, addr, count, out, exceptionCode, timeoutMs, 4);
+}
+
+MbStatus
+mb_read_holding(MbMaster* m, int addr, int count, uint16_t* out, int* exceptionCode, int timeoutMs)
+{
+    return read_registers(m, addr, count, out, exceptionCode, timeoutMs, 3);
 }
 
 MbStatus

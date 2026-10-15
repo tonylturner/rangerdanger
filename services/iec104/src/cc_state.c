@@ -142,6 +142,7 @@ static const char*
 stale_name(CcStale s)
 {
     switch (s) {
+    case CC_STALE_HEARTBEAT: return "heartbeat";
     case CC_STALE_NEVER:
         return "never_received";
     case CC_STALE_LINK:
@@ -217,6 +218,12 @@ cc_point_value_json(int index)
         return cJSON_CreateString(cc_dp_name(p->dp));
     case PM_KIND_SINGLE_POINT:
         return cJSON_CreateBool(p->sp);
+    case PM_KIND_STEP_POSITION: {
+        cJSON* v = cJSON_CreateObject();
+        cJSON_AddNumberToObject(v, "value", p->step);
+        cJSON_AddBoolToObject(v, "transient", p->transient);
+        return v;
+    }
     case PM_KIND_FLOAT:
         return float_json(p->f);
     default:
@@ -296,6 +303,7 @@ kind_accepts(PmKind kind, TypeID type)
         return type == M_DP_NA_1 || type == M_DP_TB_1;
     case PM_KIND_SINGLE_POINT:
         return type == M_SP_NA_1 || type == M_SP_TB_1;
+    case PM_KIND_STEP_POSITION: return type == M_ST_NA_1 || type == M_ST_TB_1;
     case PM_KIND_FLOAT:
         return type == M_ME_NC_1 || type == M_ME_TF_1;
     default:
@@ -308,11 +316,16 @@ static void
 track_feedback(int index, int cot)
 {
     CcTracker* t = &cc.tracker;
-    if (!t->active || t->phase != CC_PHASE_EXECUTE || t->executeCon != CC_CON_POSITIVE || t->feedback ||
+    if (!t->active || cc_mono_ms() >= t->deadlineMono || t->phase != CC_PHASE_EXECUTE || t->executeCon != CC_CON_POSITIVE || t->feedback ||
         index != t->feedbackIndex || cot != CS101_COT_RETURN_INFO_REMOTE)
         return;
+    const CcPoint* p = &cc.points[index];
+    if (p->iv || p->nt || p->sb || p->bl || p->ov || p->transient) return;
+    int actual = cc.pm->points[index].kind == PM_KIND_DOUBLE_POINT ? p->dp :
+                 cc.pm->points[index].kind == PM_KIND_SINGLE_POINT ? (int)p->sp : p->step;
+    if (actual != t->expected) return;
     t->feedback = true;
-    t->feedbackDp = cc.points[index].dp;
+    t->feedbackValue = cc_point_value_json(index);
     snprintf(t->feedbackAt, CC_STAMP_LEN, "%s", cc.points[index].receivedAt);
 }
 
@@ -334,6 +347,8 @@ cc_on_report(const CcReport* r, int cot)
     p->dp = r->dp;
     p->sp = r->sp;
     p->f = r->f;
+    p->step = r->step;
+    p->transient = r->transient;
     p->iv = (r->q & IEC60870_QUALITY_INVALID) != 0;
     p->nt = (r->q & IEC60870_QUALITY_NON_TOPICAL) != 0;
     p->sb = (r->q & IEC60870_QUALITY_SUBSTITUTED) != 0;
@@ -347,10 +362,11 @@ cc_on_report(const CcReport* r, int cot)
         p->sourceTimeInvalid = false;
     }
     cc_stamp_now(p->receivedAt);
+    p->receivedMono = cc_mono_ms();
     p->cot = cot;
 
     /* The RTU encodes the cause: IV+NT = device unreachable, IV only = measurement invalid. */
-    p->stale = p->nt ? CC_STALE_DEVICE : (p->iv ? CC_STALE_MEASUREMENT : CC_STALE_NONE);
+    p->stale = p->iv && !p->nt && cc.pm->devices[pp->device_index].has_heartbeat ? CC_STALE_HEARTBEAT : p->nt ? CC_STALE_DEVICE : (p->iv ? CC_STALE_MEASUREMENT : CC_STALE_NONE);
     if (p->stale != before)
         journal_point(index);
 
@@ -398,10 +414,11 @@ cc_on_command_response(int ioa, bool select, int cot, bool negative)
     pthread_mutex_lock(&cc.lock);
     CcTracker* t = &cc.tracker;
     bool used = false;
-    if (t->active && ioa == t->ioa) {
+    if (t->active && cc_mono_ms() < t->deadlineMono && ioa == t->ioa) {
         if (cot == CS101_COT_ACTIVATION_TERMINATION) {
             if (!select && t->phase == CC_PHASE_EXECUTE && t->executeCon == CC_CON_POSITIVE && !t->terminated) {
                 t->terminated = true;
+                t->termNegative = negative;
                 cc_stamp_now(t->terminatedAt);
                 used = true;
             }
@@ -532,6 +549,9 @@ cc_render_health(void)
     cJSON_AddStringToObject(o, "status", "ok");
     pthread_mutex_lock(&cc.lock);
     cJSON_AddStringToObject(o, "link", link_name(cc.link.state));
+    cJSON* h = cJSON_AddObjectToObject(o, "historian");
+    add_str_or_null(h, "last_ok_at", cc.historianLastOk);
+    cJSON_AddNumberToObject(h, "failures", (double)cc.historianFailures);
     pthread_mutex_unlock(&cc.lock);
     return o;
 }
@@ -552,7 +572,7 @@ point_json(int index)
     cJSON_AddBoolToObject(q, "nt", p->nt);
     cJSON_AddBoolToObject(q, "sb", p->sb);
     cJSON_AddBoolToObject(q, "bl", p->bl);
-    if (pp->kind == PM_KIND_FLOAT)
+    if (pp->kind == PM_KIND_FLOAT || pp->kind == PM_KIND_STEP_POSITION)
         cJSON_AddBoolToObject(q, "ov", p->ov);
     else
         cJSON_AddNullToObject(q, "ov");
@@ -576,7 +596,13 @@ cc_render_state(void)
 {
     cJSON* o = cJSON_CreateObject();
     pthread_mutex_lock(&cc.lock);
-    cJSON_AddNumberToObject(o, "schema", 1);
+    cJSON_AddNumberToObject(o, "schema", 2);
+    char seq[32];
+    snprintf(seq, sizeof(seq), "%llu", (unsigned long long)++cc.snapshotSeq);
+    cJSON_AddRawToObject(o, "snapshot_seq", seq);
+    char renderedAt[CC_STAMP_LEN];
+    cc_stamp_now(renderedAt);
+    cJSON_AddStringToObject(o, "rendered_at", renderedAt);
     cJSON_AddStringToObject(o, "cache_epoch", cc.epoch);
 
     cJSON* l = cJSON_AddObjectToObject(o, "link");

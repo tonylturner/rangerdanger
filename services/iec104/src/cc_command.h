@@ -19,10 +19,10 @@
 #define CC_COMMAND_BUDGET_MS 10000
 
 /*
- * Runs the command at cc.pm->commands[cmdIndex] towards open or closed.
+ * Runs the typed operation at cc.pm->commands[cmdIndex] with its wire value.
  * Returns the HTTP status (200 with the command result; 409 while another
- * command is in flight; 503 when the link is not started) and sets *body.
+ * command is in flight or feedback is stale; 503 when the link is not started) and sets *body.
  */
-int cc_command_run(int cmdIndex, bool closeBreaker, cJSON** body);
+int cc_command_run(int cmdIndex, int value, const char* operation, cJSON** body);
 
 #endif
