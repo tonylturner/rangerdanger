@@ -82,6 +82,13 @@ decode_report(TypeID type, InformationObject io, CcReport* r)
         if (type == M_SP_TB_1)
             t = SinglePointWithCP56Time2a_getTimestamp((SinglePointWithCP56Time2a)io);
         break;
+    case M_ST_NA_1:
+    case M_ST_TB_1:
+        r->step = StepPositionInformation_getValue((StepPositionInformation)io);
+        r->transient = StepPositionInformation_isTransient((StepPositionInformation)io);
+        r->q = StepPositionInformation_getQuality((StepPositionInformation)io);
+        if (type == M_ST_TB_1) t = StepPositionWithCP56Time2a_getTimestamp((StepPositionWithCP56Time2a)io);
+        break;
     case M_ME_NC_1:
     case M_ME_TF_1:
         r->f = MeasuredValueShort_getValue((MeasuredValueShort)io);
@@ -119,11 +126,12 @@ on_asdu(void* param, int address, CS101_ASDU asdu)
         cc_on_gi_response(cot, negative);
         return true;
     }
-    if (type == C_DC_NA_1) {
+    if (type == C_DC_NA_1 || type == C_RC_NA_1 || type == C_SC_NA_1) {
         InformationObject io = CS101_ASDU_getElement(asdu, 0);
         if (io) {
             int ioa = InformationObject_getObjectAddress(io);
-            bool select = DoubleCommand_isSelect((DoubleCommand)io);
+            bool select = type == C_DC_NA_1 ? DoubleCommand_isSelect((DoubleCommand)io) :
+                type == C_RC_NA_1 ? StepCommand_isSelect((StepCommand)io) : SingleCommand_isSelect((SingleCommand)io);
             InformationObject_destroy(io);
             cc_on_command_response(ioa, select, cot, negative);
         }
@@ -344,8 +352,31 @@ run_session(volatile sig_atomic_t* stop)
         return;
     }
 
-    while (!*stop && !wait_for(ended, 1000, stop))
-        ;
+    uint64_t refreshMs = 1000;
+    for (int i = 0; i < pm->n_devices; i++) {
+        uint64_t half = (uint64_t)pm->devices[i].stale_after_ms / 2;
+        if (half < refreshMs) refreshMs = half;
+    }
+    uint64_t lastGi = cc_mono_ms();
+    while (!*stop && !wait_for(ended, refreshMs, stop)) {
+        if (cc_mono_ms() - lastGi >= refreshMs) {
+            pthread_mutex_lock(&cc.lock);
+            bool refresh = cc.link.gi == CC_GI_COMPLETE;
+            bool failed = cc.link.giFailed || (cc.link.gi == CC_GI_RUNNING && cc_mono_ms() - lastGi >= 2 * t1Ms);
+            pthread_mutex_unlock(&cc.lock);
+            if (failed) {
+                close_session("io_error");
+                return;
+            }
+            if (refresh) {
+                cc_gi_begin();
+                pthread_mutex_lock(&ioLock);
+                CS104_Connection_sendInterrogationCommand(con, CS101_COT_ACTIVATION, pm->ca, IEC60870_QOI_STATION);
+                pthread_mutex_unlock(&ioLock);
+                lastGi = cc_mono_ms();
+            }
+        }
+    }
     if (!*stop)
         close_session(NULL);
 }
@@ -374,14 +405,19 @@ cc_link_shutdown(void)
 }
 
 bool
-cc_link_send_double_command(int ioa, int dcs, bool select, int connSeq)
+cc_link_send_command(const PmCommand* cmd, int dcs, bool select, int connSeq)
 {
     pthread_mutex_lock(&ioLock);
     pthread_mutex_lock(&cc.lock);
-    bool ok = con && cc.link.state == CC_LINK_STARTED && cc.link.connectionSeq == connSeq;
+    bool ok = con && cc.link.state == CC_LINK_STARTED && cc.link.connectionSeq == connSeq &&
+        cc_mono_ms() < cc.tracker.deadlineMono;
     pthread_mutex_unlock(&cc.lock);
     if (ok) {
-        InformationObject io = (InformationObject)DoubleCommand_create(NULL, ioa, dcs, select, 0);
+        InformationObject io = cmd->kind == PM_KIND_DOUBLE_COMMAND ?
+            (InformationObject)DoubleCommand_create(NULL, cmd->ioa, dcs, select, 0) :
+            cmd->kind == PM_KIND_REGULATING_STEP ?
+            (InformationObject)StepCommand_create(NULL, cmd->ioa, dcs, select, 0) :
+            (InformationObject)SingleCommand_create(NULL, cmd->ioa, dcs != 0, select, 0);
         ok = CS104_Connection_sendProcessCommandEx(con, CS101_COT_ACTIVATION, cc.pm->ca, io);
         InformationObject_destroy(io);
     }

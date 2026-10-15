@@ -31,7 +31,7 @@
 #define CC_PEER_LEN 64
 #define CC_EPOCH_LEN 17 /* 16 hex digits + NUL */
 
-typedef enum { CC_STALE_NONE, CC_STALE_NEVER, CC_STALE_LINK, CC_STALE_DEVICE, CC_STALE_MEASUREMENT } CcStale;
+typedef enum { CC_STALE_NONE, CC_STALE_NEVER, CC_STALE_LINK, CC_STALE_DEVICE, CC_STALE_MEASUREMENT, CC_STALE_HEARTBEAT } CcStale;
 
 typedef enum { CC_LINK_DISCONNECTED, CC_LINK_CONNECTING, CC_LINK_STARTED } CcLinkState;
 
@@ -40,6 +40,9 @@ typedef enum { CC_GI_NONE, CC_GI_RUNNING, CC_GI_COMPLETE } CcGiState;
 /* Cached state of one monitored point. */
 typedef struct {
     bool hasValue;
+    uint64_t receivedMono;
+    int step;
+    bool transient;
     int dp; /* double point value (DPI 0-3) */
     bool sp;
     float f;
@@ -58,6 +61,8 @@ typedef struct {
     int dp;
     bool sp;
     float f;
+    int step;
+    bool transient;
     QualityDescriptor q;
     bool timed;
     uint64_t timeMs;
@@ -73,6 +78,10 @@ typedef enum { CC_CON_NONE, CC_CON_POSITIVE, CC_CON_NEGATIVE } CcCon;
 typedef struct {
     bool active;
     int ioa;
+    int expected;
+    uint64_t deadlineMono;
+    bool termNegative;
+    char selectedAt[CC_STAMP_LEN], executedAt[CC_STAMP_LEN];
     int feedbackIndex;
     int connSeq;
     CcPhase phase;
@@ -83,7 +92,7 @@ typedef struct {
     bool terminated;
     char terminatedAt[CC_STAMP_LEN];
     bool feedback;
-    int feedbackDp;
+    cJSON* feedbackValue;
     char feedbackAt[CC_STAMP_LEN];
 } CcTracker;
 
@@ -128,7 +137,9 @@ typedef struct {
     CcPoint points[PM_MAX_POINTS];
     CcLink link;
     CcTracker tracker;
-    uint64_t commandSeq;
+    uint64_t commandSeq, snapshotSeq;
+    char historianLastOk[CC_STAMP_LEN];
+    uint64_t historianFailures;
 
     CcJournalEntry journal[CC_JOURNAL_SIZE];
     uint64_t journalNext; /* seq of the next entry; entries 1..journalNext-1 were written */

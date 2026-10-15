@@ -5,6 +5,7 @@
  */
 #include "pointmap.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,6 +60,9 @@ only_keys(PmErr* e, const cJSON* obj, const char* where, const char* const* allo
                 break;
             }
         }
+        for (const cJSON* prev = obj->child; prev != c; prev = prev->next)
+            if (strcmp(prev->string, c->string) == 0)
+                return fail(e, "%s: duplicate key %s", where, c->string);
         if (!ok)
             return fail(e, "%s: unknown key \"%s\"", where, c->string);
     }
@@ -80,7 +84,7 @@ get_int(PmErr* e, const cJSON* obj, const char* where, const char* key, long min
     const cJSON* v = required(e, obj, where, key);
     if (!v)
         return false;
-    if (!cJSON_IsNumber(v) || v->valuedouble != (double)(long)v->valuedouble)
+    if (!cJSON_IsNumber(v) || !isfinite(v->valuedouble) || v->valuedouble < min || v->valuedouble > max || floor(v->valuedouble) != v->valuedouble)
         return fail(e, "%s: \"%s\" must be an integer", where, key);
     long n = (long)v->valuedouble;
     if (n < min || n > max)
@@ -107,7 +111,7 @@ get_double(PmErr* e, const cJSON* obj, const char* where, const char* key, doubl
     const cJSON* v = required(e, obj, where, key);
     if (!v)
         return false;
-    if (!cJSON_IsNumber(v))
+    if (!cJSON_IsNumber(v) || !isfinite(v->valuedouble))
         return fail(e, "%s: \"%s\" must be a number", where, key);
     *out = v->valuedouble;
     return true;
@@ -200,7 +204,7 @@ static bool
 parse_device(PmErr* e, const cJSON* d, PmDevice* dev)
 {
     static const char* const keys[] = {"id",   "host",      "port",           "unit",          "poll_ms",
-                                        "timeout_ms", "stale_after_ms", "measurements_valid", NULL};
+                                        "timeout_ms", "stale_after_ms", "measurements_valid", "poll", "heartbeat", NULL};
     if (!cJSON_IsObject(d))
         return fail(e, "devices: each entry must be an object");
     if (!only_keys(e, d, "device", keys))
@@ -214,6 +218,25 @@ parse_device(PmErr* e, const cJSON* d, PmDevice* dev)
         !get_int(e, d, "device", "stale_after_ms", 10, 600000, &dev->stale_after_ms))
         return false;
 
+    const cJSON* poll = required(e, d, "device", "poll");
+    static const char* const pk[] = {"table", "start", "count", NULL};
+    if (!poll || !cJSON_IsObject(poll) || !only_keys(e, poll, "poll", pk) ||
+        !get_table(e, poll, "poll", &dev->poll_table) ||
+        !get_int(e, poll, "poll", "start", 0, 65535, &dev->poll_start) ||
+        !get_int(e, poll, "poll", "count", 1, 125, &dev->poll_count))
+        return fail(e, "device %s: invalid poll block", dev->id);
+    if (dev->poll_start + dev->poll_count > 65536)
+        return fail(e, "device %s: poll block overflow", dev->id);
+    const cJSON* hb = cJSON_GetObjectItemCaseSensitive(d, "heartbeat");
+    if (hb) {
+        static const char* const hk[] = {"address", "stale_after_ms", NULL};
+        if (!cJSON_IsObject(hb) || !only_keys(e, hb, "heartbeat", hk) ||
+            !get_int(e, hb, "heartbeat", "address", dev->poll_start,
+                     dev->poll_start + dev->poll_count - 1, &dev->heartbeat_address) ||
+            !get_int(e, hb, "heartbeat", "stale_after_ms", 10, 600000, &dev->heartbeat_stale_ms))
+            return false;
+        dev->has_heartbeat = true;
+    }
     const cJSON* mv = cJSON_GetObjectItemCaseSensitive(d, "measurements_valid");
     if (mv) {
         static const char* const mvkeys[] = {"table", "address", "bit", NULL};
@@ -225,6 +248,9 @@ parse_device(PmErr* e, const cJSON* d, PmDevice* dev)
             !get_int(e, mv, "measurements_valid", "address", 0, 65535, &dev->mv_address) ||
             !get_int(e, mv, "measurements_valid", "bit", 0, 15, &dev->mv_bit))
             return false;
+        if (dev->mv_table != dev->poll_table || dev->mv_address < dev->poll_start ||
+            dev->mv_address >= dev->poll_start + dev->poll_count)
+            return fail(e, "device %s: measurements_valid outside poll block", dev->id);
         dev->has_measurements_valid = true;
     }
     return true;
@@ -245,6 +271,9 @@ check_asdu(PmErr* e, const char* where, PmKind kind, const char* asdu)
     case PM_KIND_FLOAT:
         want = "M_ME_NC_1";
         break;
+    case PM_KIND_STEP_POSITION: want = "M_ST_TB_1"; break;
+    case PM_KIND_REGULATING_STEP: want = "C_RC_NA_1"; break;
+    case PM_KIND_SINGLE_COMMAND: want = "C_SC_NA_1"; break;
     case PM_KIND_DOUBLE_COMMAND:
         want = "C_DC_NA_1";
         break;
@@ -266,6 +295,12 @@ parse_kind(PmErr* e, const cJSON* obj, const char* where, bool command, PmKind* 
         *out = PM_KIND_SINGLE_POINT;
     else if (!command && strcmp(s, "float") == 0)
         *out = PM_KIND_FLOAT;
+    else if (!command && strcmp(s, "step-position") == 0)
+        *out = PM_KIND_STEP_POSITION;
+    else if (command && strcmp(s, "regulating-step") == 0)
+        *out = PM_KIND_REGULATING_STEP;
+    else if (command && strcmp(s, "single-command") == 0)
+        *out = PM_KIND_SINGLE_COMMAND;
     else if (command && strcmp(s, "double-command") == 0)
         *out = PM_KIND_DOUBLE_COMMAND;
     else
@@ -278,7 +313,7 @@ parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
 {
     static const char* const keys[] = {"id",   "ioa",         "kind", "asdu", "unit",
                                         "deadband", "measurement", "source", NULL};
-    static const char* const srckeys[] = {"device", "table", "address", "format", "bit", NULL};
+    static const char* const srckeys[] = {"device", "table", "address", "format", "bit", "scale", "transient", NULL};
 
     if (!cJSON_IsObject(p))
         return fail(e, "points: each entry must be an object");
@@ -340,8 +375,24 @@ parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
         pt->format = PM_FMT_BIT;
     else if (strcmp(fmt, "f32") == 0)
         pt->format = PM_FMT_F32;
-    else
-        return fail(e, "point %s: source.format must be dp, bit or f32", pt->id);
+    else if (strcmp(fmt, "u16") == 0) pt->format = PM_FMT_U16;
+    else if (strcmp(fmt, "i16") == 0) pt->format = PM_FMT_I16;
+    else if (strcmp(fmt, "step") == 0) pt->format = PM_FMT_STEP;
+    else return fail(e, "point %s: unknown source.format", pt->id);
+    pt->scale = 1;
+    if (cJSON_GetObjectItemCaseSensitive(src, "scale")) {
+        if ((pt->format != PM_FMT_U16 && pt->format != PM_FMT_I16) ||
+            !get_double(e, src, "source", "scale", &pt->scale))
+            return fail(e, "point %s: scale requires u16/i16", pt->id);
+    }
+    const cJSON* tr = cJSON_GetObjectItemCaseSensitive(src, "transient");
+    if (pt->format == PM_FMT_STEP) {
+        static const char* const tk[] = {"address", "bit", NULL};
+        if (!tr || !cJSON_IsObject(tr) || !only_keys(e, tr, "transient", tk) ||
+            !get_int(e, tr, "transient", "address", 0, 65535, &pt->transient_address) ||
+            !get_int(e, tr, "transient", "bit", 0, 15, &pt->transient_bit))
+            return fail(e, "point %s: step requires transient address/bit", pt->id);
+    } else if (tr) return fail(e, "point %s: transient requires step", pt->id);
 
     if (pt->format == PM_FMT_BIT) {
         if (!get_int(e, src, "source", "bit", 0, 15, &pt->bit))
@@ -353,7 +404,8 @@ parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
     /* kind/format agreement keeps the wire type and the register reading consistent. */
     if ((pt->kind == PM_KIND_DOUBLE_POINT && pt->format != PM_FMT_DP) ||
         (pt->kind == PM_KIND_SINGLE_POINT && pt->format != PM_FMT_BIT) ||
-        (pt->kind == PM_KIND_FLOAT && pt->format != PM_FMT_F32))
+        (pt->kind == PM_KIND_STEP_POSITION && pt->format != PM_FMT_STEP) ||
+        (pt->kind == PM_KIND_FLOAT && pt->format != PM_FMT_F32 && pt->format != PM_FMT_U16 && pt->format != PM_FMT_I16))
         return fail(e, "point %s: kind and source.format disagree", pt->id);
 
     return true;
@@ -407,7 +459,8 @@ pointmap_load(const char* path, char* err, size_t errLen)
     fclose(f);
     text[got] = '\0';
 
-    cJSON* root = cJSON_Parse(text);
+    cJSON* root = got == (size_t)size && !memchr(text, 0, got) ?
+        cJSON_ParseWithLengthOpts(text, got + 1, NULL, true) : NULL;
     free(text);
     if (!root) {
         fail(&e, "%s: invalid JSON", path);
@@ -426,7 +479,7 @@ pointmap_load(const char* path, char* err, size_t errLen)
                                             "commands", NULL};
 
     bool ok = cJSON_IsObject(root) && only_keys(&e, root, "root", rootkeys) &&
-              get_int(&e, root, "root", "schema", 1, 1, &pm->schema) &&
+              get_int(&e, root, "root", "schema", 2, 2, &pm->schema) &&
               get_int(&e, root, "root", "ca", 1, 65535, &pm->ca) && parse_timers(&e, root, pm) &&
               get_int(&e, root, "root", "select_timeout_ms", 1, 600000, &pm->select_timeout_ms) &&
               get_int(&e, root, "root", "reconnect_interval_ms", 1, 600000, &pm->reconnect_interval_ms) &&
@@ -478,6 +531,15 @@ pointmap_load(const char* path, char* err, size_t errLen)
                 if (pt->device_index < 0) {
                     ok = fail(&e, "point %s: source.device \"%s\" is not a defined device", pt->id,
                               devItem->valuestring);
+                    break;
+                }
+                const PmDevice* dev = &pm->devices[pt->device_index];
+                int end = pt->address + (pt->format == PM_FMT_F32 ? 2 : 1);
+                if (pt->table != dev->poll_table || pt->address < dev->poll_start ||
+                    end > dev->poll_start + dev->poll_count ||
+                    (pt->format == PM_FMT_STEP && (pt->transient_address < dev->poll_start ||
+                     pt->transient_address >= dev->poll_start + dev->poll_count))) {
+                    ok = fail(&e, "point %s: source outside poll block", pt->id);
                     break;
                 }
                 if (find_point(pm, pt->id) >= 0) {
@@ -548,12 +610,33 @@ pointmap_load(const char* path, char* err, size_t errLen)
                                   cmd->feedback_id);
                         break;
                     }
+                    PmKind expected = cmd->kind == PM_KIND_DOUBLE_COMMAND ? PM_KIND_DOUBLE_POINT :
+                        cmd->kind == PM_KIND_REGULATING_STEP ? PM_KIND_STEP_POSITION : PM_KIND_SINGLE_POINT;
+                    if (cmd->table != PM_TABLE_HOLDING || !cmd->sbo ||
+                        pm->points[cmd->feedback_index].kind != expected ||
+                        pm->points[cmd->feedback_index].device_index != cmd->device_index) {
+                        ok = fail(&e, "command %s: requires holding/SBO and same-device typed feedback", cmd->id);
+                        break;
+                    }
                     pm->n_commands++;
                 }
             }
         }
     }
 
+    for (int i = 0; ok && i < pm->n_devices; i++)
+        for (int j = 0; j < i; j++)
+            if (!strcmp(pm->devices[i].id, pm->devices[j].id))
+                ok = fail(&e, "duplicate device id");
+    for (int i = 0; ok && i < pm->n_points + pm->n_commands; i++) {
+        int ioa = i < pm->n_points ? pm->points[i].ioa : pm->commands[i-pm->n_points].ioa;
+        const char* id = i < pm->n_points ? pm->points[i].id : pm->commands[i-pm->n_points].id;
+        for (int j = 0; j < i; j++) {
+            int prev = j < pm->n_points ? pm->points[j].ioa : pm->commands[j-pm->n_points].ioa;
+            const char* pid = j < pm->n_points ? pm->points[j].id : pm->commands[j-pm->n_points].id;
+            if (ioa == prev || !strcmp(id, pid)) ok = fail(&e, "duplicate IOA or id: %s", id);
+        }
+    }
     cJSON_Delete(root);
     if (!ok) {
         free(pm);

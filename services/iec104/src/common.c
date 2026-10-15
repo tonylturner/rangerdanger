@@ -164,6 +164,16 @@ describe_io(TypeID type, InformationObject io, char* buf, size_t len)
                  rd_quality_str(MeasuredValueShort_getQuality(mv), q, sizeof(q)));
         break;
     }
+    case M_ST_NA_1:
+    case M_ST_TB_1:
+        snprintf(buf, len, "value=%d transient=%d q=%s", StepPositionInformation_getValue((StepPositionInformation)io),
+            StepPositionInformation_isTransient((StepPositionInformation)io),
+            rd_quality_str(StepPositionInformation_getQuality((StepPositionInformation)io), q, sizeof(q)));
+        break;
+    case C_RC_NA_1:
+        snprintf(buf, len, "rcs=%d qu=%d se=%s", StepCommand_getState((StepCommand)io),
+            StepCommand_getQU((StepCommand)io), StepCommand_isSelect((StepCommand)io) ? "SELECT" : "EXECUTE");
+        break;
     case C_DC_NA_1: {
         DoubleCommand dc = (DoubleCommand)io;
         snprintf(buf, len, "dcs=%d(%s) qu=%d se=%s", DoubleCommand_getState(dc),

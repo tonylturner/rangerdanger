@@ -58,7 +58,7 @@ RUN set -eux; \
     cc $CFLAGS -o /out/iec104-rtu \
         src/rtu.c src/common.c src/pointmap.c src/modbus.c src/stationclock.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104-cc \
-        src/cc.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c \
+        src/cc.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c src/cc_historian.c \
         src/common.c src/pointmap.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104cmd  src/iec104cmd.c src/common.c src/client.c $LIBS
 

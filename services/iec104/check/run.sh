@@ -31,6 +31,7 @@ ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
 PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check}"
 OUT="${1:-$ROOT/build/$PREFIX}"
 
+BASEIMG=$PREFIX-iec104-base:test
 IMG=$PREFIX-iec104:test
 PY=python:3.12-alpine
 # station network: RTU, breaker, GPS and the CC's IEC 104 side (IPs match points.test.json)
@@ -49,13 +50,16 @@ CC2_IP=172.28.104.31
 CC2_HTTP_IP=172.28.105.22
 RTU=$PREFIX-rtu BRK=$PREFIX-brk GPS=$PREFIX-gps MON=$PREFIX-mon NOACTTERM=$PREFIX-no-actterm \
   CC=$PREFIX-cc CC2=$PREFIX-cc2 PROBE=$PREFIX-probe
+RMU1=$PREFIX-rmu1 RMU2=$PREFIX-rmu2 OLTC=$PREFIX-oltc PLC=$PREFIX-plc
 FAILED=0
+if [[ ! "$PREFIX" =~ ^rd[a-z0-9-]+$ ]]; then echo "invalid check prefix" >&2; exit 2; fi
+case "$OUT" in "$ROOT"/build/*) ;; *) echo "output must be under $ROOT/build" >&2; exit 2 ;; esac
 
 cleanup() {
-  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" >/dev/null 2>&1 || true
+  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" "$RMU1" "$RMU2" "$OLTC" "$PLC" >/dev/null 2>&1 || true
   docker network rm "$NET" "$MGMT" >/dev/null 2>&1 || true
 }
-trap 'cleanup; docker image rm "$IMG" >/dev/null 2>&1 || true' EXIT
+trap 'cleanup; docker image rm "$IMG" "$BASEIMG" >/dev/null 2>&1 || true' EXIT
 log()  { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$OUT/timeline.log"; }
 pass() { printf 'PASS  %s\n' "$*" | tee -a "$OUT/results.log"; }
 fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
@@ -70,7 +74,9 @@ snap() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --j
 rm -rf "$OUT"; mkdir -p "$OUT"; cleanup
 
 log "build the iec104 image"
-docker build -q -f "$SVC/Dockerfile" -t "$IMG" "$ROOT" >/dev/null
+docker build -q -f "$SVC/Dockerfile" -t "$BASEIMG" "$ROOT" >/dev/null || exit 1
+docker build -q -f "$HERE/Dockerfile" --build-arg "BASE_IMAGE=$BASEIMG" -t "$IMG" "$HERE" >/dev/null || exit 1
+docker run --rm --network none -v "$HERE:/check:ro" --entrypoint python3 "$IMG" -I /check/loader_checks.py || exit 1
 docker image inspect "$PY" >/dev/null 2>&1 || docker pull -q "$PY" >/dev/null
 
 # ---- 0. strict point-map loader (no network needed) -------------------
@@ -94,14 +100,25 @@ docker run -d --name "$BRK" --network "$NET" --ip "$BRK_IP" \
   -v "$HERE/fake_breaker.py:/app/fake_breaker.py:ro" "$PY" python3 -I /app/fake_breaker.py >/dev/null
 sleep 2
 
+for device in rmu-1 rmu-2 oltc plc; do
+  case "$device" in
+    rmu-1) name=$RMU1; ip=172.28.104.21 ;;
+    rmu-2) name=$RMU2; ip=172.28.104.22 ;;
+    oltc) name=$OLTC; ip=172.28.104.23 ;;
+    plc) name=$PLC; ip=172.28.104.24 ;;
+  esac
+  docker run -d --name "$name" --network "$NET" --ip "$ip" -e "KIND=$device" \
+    -v "$HERE/fake_device.py:/app/fake_device.py:ro" "$PY" python3 -I /app/fake_device.py >/dev/null || exit 1
+done
+
 log "start RTU"
-docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" \
+docker run -d --cap-add NET_ADMIN --name "$RTU" --network "$NET" --ip "$RTU_IP" \
   -v "$HERE/points.test.json:/etc/points.json:ro" "$IMG" \
   iec104-rtu --config /etc/points.json --bind "$RTU_IP" --port 2404 >/dev/null
 
 # wait for the RTU to listen and complete a first poll
 for _ in $(seq 1 20); do
-  docker logs "$RTU" 2>&1 | grep -q "listening" && break
+  docker logs "$RTU" 2>&1 | grep "listening" >/dev/null && break
   sleep 1
 done
 sleep 3  # let the first poll clear device_unreachable
@@ -112,7 +129,7 @@ docker run -d --name "$MON" --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor 
 sleep 2
 mon() { docker logs "$MON" 2>/dev/null; }
 # wait up to ~10s for a pattern to appear in the monitor's broadcast stream
-mon_has() { local _; for _ in $(seq 1 20); do mon | grep -q "$1" && return 0; sleep 0.5; done; return 1; }
+mon_has() { local _; for _ in $(seq 1 20); do mon | grep "$1" >/dev/null && return 0; sleep 0.5; done; return 1; }
 
 # ---- 1. GI values + quality (all GOOD) --------------------------------
 log "check 1: GI values and quality"
@@ -224,16 +241,17 @@ sleep 3
 # ---- control centre checks (need the RTU running) ----------------------
 # shellcheck source=services/iec104/check/cc_checks.sh
 . "$HERE/cc_checks.sh"
+. "$HERE/inc4_checks.sh"
 
 # ---- 8. missing ACT-TERM fails; monitor exits 3 on link loss -----------
 log "check 8: missing ACT-TERM fails and monitor exits 3 on link loss"
 docker rm -f "$MON" "$CC" "$CC2" "$PROBE" "$RTU" >/dev/null 2>&1 || true
-sed 's/"timeout_ms":1000/"timeout_ms":10000/' "$HERE/points.test.json" >"$OUT/points.noactterm.json"
-docker run -d --name "$RTU" --network "$NET" --ip "$RTU_IP" \
+sed 's/"timeout_ms":[[:space:]]*1000/"timeout_ms":10000/g' "$HERE/points.test.json" >"$OUT/points.noactterm.json"
+docker run -d --cap-add NET_ADMIN --name "$RTU" --network "$NET" --ip "$RTU_IP" \
   -v "$OUT/points.noactterm.json:/etc/points.json:ro" "$IMG" \
   iec104-rtu --config /etc/points.json --bind "$RTU_IP" --port 2404 >/dev/null
 for _ in $(seq 1 20); do
-  docker logs "$RTU" 2>&1 | grep -q "listening" && break
+  docker logs "$RTU" 2>&1 | grep "listening" >/dev/null && break
   sleep 1
 done
 sleep 2
@@ -245,7 +263,7 @@ docker run -d --name "$NOACTTERM" --network "$NET" "$IMG" \
   iec104cmd "$RTU_IP" --json dc 3001 open -sbo >/dev/null
 delay_started=0
 for _ in $(seq 1 30); do
-  if docker logs "$BRK" 2>&1 | grep -q 'delayed FC4 read started'; then
+  if docker logs "$BRK" 2>&1 | grep 'delayed FC4 read started' >/dev/null; then
     delay_started=1
     break
   fi
@@ -254,7 +272,7 @@ done
 if [ "$delay_started" = 1 ]; then
   actcon_seen=0
   for _ in $(seq 1 30); do
-    if docker logs "$NOACTTERM" 2>&1 | grep -q 'execute confirmed'; then
+    if docker logs "$NOACTTERM" 2>&1 | grep 'execute confirmed' >/dev/null; then
       actcon_seen=1
       break
     fi

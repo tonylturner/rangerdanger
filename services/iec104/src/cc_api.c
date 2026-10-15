@@ -107,12 +107,22 @@ route_commands(const CcHttpRequest* req, CcHttpResponse* resp)
         if (cmdIndex < 0)
             snprintf(msg, sizeof(msg), "unknown command point \"%.64s\"", point->valuestring);
     }
-    bool closeBreaker = false;
+    int value = -1;
+    char op[16] = "";
     if (!msg[0]) {
-        if (strcmp(operation->valuestring, "close") == 0)
-            closeBreaker = true;
-        else if (strcmp(operation->valuestring, "open") != 0)
-            snprintf(msg, sizeof(msg), "\"operation\" must be \"open\" or \"close\"");
+        PmKind kind = cc.pm->commands[cmdIndex].kind;
+        snprintf(op, sizeof(op), "%s", operation->valuestring);
+        if (kind == PM_KIND_DOUBLE_COMMAND) {
+            if (!strcmp(op, "open")) value = 1;
+            if (!strcmp(op, "close")) value = 2;
+        } else if (kind == PM_KIND_REGULATING_STEP) {
+            if (!strcmp(op, "lower")) value = 1;
+            if (!strcmp(op, "raise")) value = 2;
+        } else if (kind == PM_KIND_SINGLE_COMMAND) {
+            if (!strcmp(op, "manual")) value = 0;
+            if (!strcmp(op, "auto")) value = 1;
+        }
+        if (value < 0) snprintf(msg, sizeof(msg), "operation does not fit command kind");
     }
     cJSON_Delete(root);
     if (msg[0]) {
@@ -121,7 +131,7 @@ route_commands(const CcHttpRequest* req, CcHttpResponse* resp)
     }
 
     cJSON* body = NULL;
-    int status = cc_command_run(cmdIndex, closeBreaker, &body);
+    int status = cc_command_run(cmdIndex, value, op, &body);
     respond_json(resp, status, body);
 }
 

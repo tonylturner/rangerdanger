@@ -5,7 +5,7 @@
  *
  * pointmap: the shared, strict loader for the package point map
  * (lab-definitions/packages/<id>/protocols/points.json, schema in the
- * increment-3 contract §3.1). The RTU drives its Modbus client, GI and
+ * schema-2 contract). The RTU drives its Modbus client, GI and
  * command handling from it; the control centre reuses the same structs so
  * both stations agree on IOAs, CA, timers and quality rules without a
  * second copy of the schema.
@@ -38,10 +38,16 @@ typedef enum { PM_TABLE_INPUT, PM_TABLE_HOLDING } PmTable;
 typedef enum {
     PM_FMT_DP,  /* register holds a double-point code: 0 intermediate, 1 open, 2 closed, 3 indeterminate */
     PM_FMT_BIT, /* one bit of the register, selected by `bit` */
+    PM_FMT_U16, /* one unsigned register, optionally scaled into a float */
+    PM_FMT_I16, /* one signed register, optionally scaled into a float */
+    PM_FMT_STEP, /* signed VTI plus a separate transient bit */
     PM_FMT_F32  /* two registers, IEEE-754 float, high word first */
 } PmFormat;
 
-typedef enum { PM_KIND_DOUBLE_POINT, PM_KIND_SINGLE_POINT, PM_KIND_FLOAT, PM_KIND_DOUBLE_COMMAND } PmKind;
+typedef enum {
+    PM_KIND_DOUBLE_POINT, PM_KIND_SINGLE_POINT, PM_KIND_FLOAT,
+    PM_KIND_DOUBLE_COMMAND, PM_KIND_STEP_POSITION, PM_KIND_REGULATING_STEP, PM_KIND_SINGLE_COMMAND
+} PmKind;
 
 typedef struct {
     char id[PM_ID_LEN];
@@ -51,6 +57,10 @@ typedef struct {
     int poll_ms;
     int timeout_ms;
     int stale_after_ms;
+    PmTable poll_table;
+    int poll_start, poll_count;
+    bool has_heartbeat;
+    int heartbeat_address, heartbeat_stale_ms;
     bool has_measurements_valid;
     PmTable mv_table;
     int mv_address;
@@ -72,6 +82,8 @@ typedef struct {
     int address;
     PmFormat format;
     int bit; /* for PM_FMT_BIT */
+    double scale;
+    int transient_address, transient_bit;
 } PmPoint;
 
 typedef struct {

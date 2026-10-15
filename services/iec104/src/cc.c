@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "cc_api.h"
+#include "cc_historian.h"
 #include "cc_http.h"
 #include "cc_link.h"
 #include "cc_state.h"
@@ -46,6 +47,7 @@ static void
 usage(void)
 {
     fprintf(stderr, "Usage: iec104-cc --config PATH --bind ADDR --target HOST[:PORT] --http ADDR:PORT\n"
+                    "                 [--historian-url URL --historian-bind ADDR]\n"
                     "\n"
                     "IEC 104 controlling station. Holds one session to the RTU at --target from the\n"
                     "local address --bind, caches the monitored points of the point map at --config,\n"
@@ -53,23 +55,6 @@ usage(void)
     exit(2);
 }
 
-/* The CC drives every command as select-before-execute and correlates double-point feedback. */
-static bool
-check_commands(const PointMap* pm, char* err, size_t errLen)
-{
-    for (int i = 0; i < pm->n_commands; i++) {
-        const PmCommand* c = &pm->commands[i];
-        if (c->kind != PM_KIND_DOUBLE_COMMAND || !c->sbo) {
-            snprintf(err, errLen, "command %s: the control centre supports only SBO double commands", c->id);
-            return false;
-        }
-        if (pm->points[c->feedback_index].kind != PM_KIND_DOUBLE_POINT) {
-            snprintf(err, errLen, "command %s: feedback point %s must be a double point", c->id, c->feedback_id);
-            return false;
-        }
-    }
-    return true;
-}
 
 int
 main(int argc, char** argv)
@@ -78,6 +63,7 @@ main(int argc, char** argv)
     const char* bindAddr = NULL;
     const char* target = NULL;
     const char* http = NULL;
+    const char *historianUrl = NULL, *historianBind = NULL;
 
     for (int i = 1; i < argc; i++) {
         const char* a = argv[i];
@@ -90,6 +76,8 @@ main(int argc, char** argv)
             bindAddr = v;
         else if (strcmp(a, "--target") == 0)
             target = v;
+        else if (strcmp(a, "--historian-url") == 0) historianUrl = v;
+        else if (strcmp(a, "--historian-bind") == 0) historianBind = v;
         else if (strcmp(a, "--http") == 0)
             http = v;
         else
@@ -116,16 +104,12 @@ main(int argc, char** argv)
         rd_log("config error: %s", err);
         return 1;
     }
-    if (!check_commands(pm, err, sizeof(err))) {
-        rd_log("config error: %s", err);
-        pointmap_free(pm);
-        return 1;
-    }
 
     char peer[CC_PEER_LEN];
     snprintf(peer, sizeof(peer), "%s:%d", host, port);
     if (!cc_state_init(pm, peer, err, sizeof(err)) || !cc_link_init(host, port, bindAddr, err, sizeof(err)) ||
-        !cc_http_start(httpHost, httpPort, cc_api_handle, err, sizeof(err))) {
+        !cc_http_start(httpHost, httpPort, cc_api_handle, err, sizeof(err)) ||
+        !cc_historian_start(historianUrl, historianBind, &stopRequested, err, sizeof(err))) {
         rd_log("fatal: %s", err);
         pointmap_free(pm);
         return 1;
@@ -143,6 +127,7 @@ main(int argc, char** argv)
     cc_link_run(&stopRequested);
 
     rd_log("stopping");
+    cc_historian_stop();
     cc_link_shutdown();
     return 0;
 }
