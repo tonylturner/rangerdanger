@@ -1,0 +1,369 @@
+id: eu-oltc-plc-historian
+order: "4.0"
+name: "OpenPLC Tap Control, Historian and Time"
+summary: "Observe real tap regulation, test manual authority and source pinning, and distinguish historian gaps and station time from process truth."
+estimated_minutes: 55
+validator: eu-oltc-plc-historian
+description: |
+  Close the four-lab investigation with measured voltage-control and
+  evidence-integrity tests. The PLC controls the OLTC over Modbus; the RTU
+  reports tap, mode and PLC status over IEC 104. The CC pushes observations
+  to the Operations DMZ historian. None of those observations is a
+  substitute for the separate process view.
+
+  Positive tap raises the 20 kV bus. The band is 20.0 kV ±1%, the
+  continuous out-of-band delay is 10 s and each mechanical step takes
+  2 s. Do not tune feeder parameters to force an expected answer.
+nodes: [plc-1, oltc-1, cc-1, rtu-1, historian-1, gps-1, vendor-jump-1, fw-1]
+tags: [openplc, oltc, modbus, historian, time, evidence]
+steps:
+  - id: verify-seeded-loop
+    title: "Verify the seed, mappings and quiescent loop"
+    expected_config: weak
+    node: cc-1
+    description: |
+      Save lab 3's record, then use **Reset Lab** once. Wait for the reset
+      acceptance and fresh GI. Confirm no fault, radial switches, load 1.0,
+      source 1.00, tap 0, remote/auto and valid bus measurements. At nominal
+      the 20 kV bus should be within ±0.5%; the PLC should not hunt.
+      Record your measured baseline instead of rounding it to 20.000 kV.
+
+      From the engineering workstation open the seeded OpenPLC web UI
+      through its portal link. Verify the loaded ST program and slave
+      mapping against [Tap logic](#eu-openplc-tap-logic): FC4 IR0…14 from
+      `10.40.40.23:502` into `%IW100…`, and HR1 request from `%QW100`.
+      The image startup verifies the loaded seed and records its sha256;
+      retain that identity with your evidence. Do not edit/recompile the
+      program during this exercise.
+
+      From the PLC terminal, read the startup's recorded identity:
+
+          cat /var/lib/openplc-eu-seed.sha256
+
+      In the CC view, inspect PLC running/input-valid, 20.0 kV setpoint,
+      1.0% deadband and delay. Its status is FC3 HR1024…1029, not the
+      field device's FC4 block. The changing heartbeat at 1029 distinguishes
+      a running scan from a plausible but frozen status. Confirm the
+      historian trend receives timestamped CC observations.
+
+      Read: [OLTC](#eu-primary-oltc), [Tap logic](#eu-openplc-tap-logic),
+      [Step telemetry](#eu-iec104-step-telemetry),
+      [Historian](#eu-historian), [Node map](#eu-range-node-map).
+
+  - id: step-load-outside-band
+    title: "Step load to 3.0 and measure the voltage error"
+    node: cc-1
+    description: |
+      Start recording the CC bus-kV and tap trend before running the action.
+      It sets the load multiplier to **3.0**. Note action time separately
+      from source and receipt times. Observe bus voltage leave the
+      19.8…20.2 kV band before the PLC responds. Compare with the separately
+      labelled process voltage, but never copy that value into a missing
+      or stale CC sample.
+
+      Predict the tap direction and write it down immediately. Positive
+      tap raises the solved bus voltage by the transformer's 1.25% step.
+      There should be no instantaneous tap jump when load changes: the
+      PLC must see valid, energised, remote/auto, unblocked input for the
+      continuous out-of-band interval.
+
+      :::decision id=oltc-load-direction options=RAISE,LOWER,HOLD_FOREVER correct=RAISE
+      Which direction should the PLC request after the load depresses bus voltage?
+      :::
+
+      :::hint Why 3.0 rather than 2.0?
+      The measured feeder stays inside band at load 2.0 (about 19.80 kV).
+      The frozen acceptance case uses 3.0. Report a failed operating
+      point rather than changing line parameters or claiming unseen error.
+      :::
+
+      Read: [Voltage regulation](#eu-voltage-regulation),
+      [Reference cases](#eu-process-reference-cases).
+    action: {type: command, device: process, command: set_load, value: 3.0}
+
+  - id: observe-delay-and-single-step
+    title: "Measure the deadband, delay and one completed step"
+    node: cc-1
+    description: |
+      Watch the continuously out-of-band interval, the PLC delay remaining
+      and the last demand. Record at least one adjacent request/completion
+      pair: tap starts at N, target is N+1, moving becomes true, and the
+      completed tap remains N until approximately 2 s of motion finishes.
+      IEC 104 M_ST carries both completed value and transient flag.
+
+      At load 3.0, no more than three steps should return the bus inside
+      the band. Count actual steps and measured settling time. While the
+      bus is inside band, observe that another 10 s does not cause a new
+      demand. Continuous error is required; the delay restarts when the
+      demand disappears, control is inhibited, or the previous step settles.
+
+      The PLC HR1 request is an absolute adjacent target encoded as
+      `100 + completed ± 1`, held until completion or inhibition, then
+      zero. It is not a stream of repeated raise pulses. Save the OLTC
+      device audit showing PLC peer `10.30.30.30` and `motion_complete`,
+      alongside the CC trend.
+
+      :::decision id=oltc-motion-value options=OLD_VALUE_TRANSIENT,TARGET_IMMEDIATELY,ZERO_UNTIL_DONE correct=OLD_VALUE_TRANSIENT
+      What should completed-tap telemetry show during mechanical motion?
+      :::
+
+      :::hint Observe rather than poll one screenshot
+      Export a time interval covering pre-error, delay, moving and settled.
+      A final in-band voltage alone cannot prove delay or adjacent control.
+      :::
+
+      Read: [Tap logic](#eu-openplc-tap-logic),
+      [Step telemetry](#eu-iec104-step-telemetry), [Exports](#eu-tool-curl-exports).
+
+  - id: low-source-upper-limit
+    title: "Reach +8 with a 0.90 p.u. source"
+    node: cc-1
+    description: |
+      Run the action sequence: restore load 1.0, then set source **0.90**.
+      Keep remote/auto enabled. Allow enough time for repeated 10 s delays
+      and 2 s motions; this limit test can take several minutes. Keep the
+      time series running and observe each adjacent raise.
+
+      The expected result is completed tap **+8** with bus voltage still
+      below the lower band. Record the measured voltage and upper-limit
+      indication (1305). Wait another delay interval and confirm no step
+      beyond +8. This is saturation, not proof of a dead PLC.
+
+      If input-valid falls or the PLC heartbeat freezes, stop and diagnose
+      those first; an inhibited loop and a genuinely saturated loop need
+      different corrective actions. Do not alter the ST setpoint to make
+      the test pass.
+
+      :::decision id=oltc-saturation options=LIMIT_WITH_RESIDUAL_ERROR,PLC_FAILED,ERROR_MUST_BE_ZERO correct=LIMIT_WITH_RESIDUAL_ERROR
+      How do you describe +8 with fresh input and voltage still below band?
+      :::
+
+      :::hint Preserve the adjacent step into +8
+      The validator looks for a real PLC request and its completed motion,
+      not just an at-upper bit already true when the lab began.
+      :::
+
+      Read: [OLTC limits](#eu-primary-oltc),
+      [Operating-point proofs](#eu-process-reference-cases).
+    action:
+      type: sequence
+      commands:
+        - {device: process, command: set_load, value: 1.0}
+        - {device: process, command: set_source, value: 0.90}
+
+  - id: high-source-measured-settle
+    title: "Set source 1.10 and record the actual negative settle tap"
+    node: cc-1
+    description: |
+      Run the action to set source **1.10** with load still 1.0.
+      Watch the PLC lower one adjacent step at a time. From +8 it has many
+      steps to travel; budget several minutes, retain the last part of the
+      trend and do not mistake the long journey for a stuck controller.
+
+      The measured reference case settles near **−7 at 20.00 kV**. It does
+      **not** reach the lower limit −8: at −7 the voltage is already in
+      band. Record your actual settle tap and bus voltage. A claim that
+      both source extremes drive opposite limits contradicts the model.
+      The next step tests the lower hard limit explicitly in manual mode.
+
+      :::decision id=oltc-high-source options=SETTLE_IN_BAND_BEFORE_MINUS8,MUST_REACH_MINUS8,RAISE_TO_PLUS8 correct=SETTLE_IN_BAND_BEFORE_MINUS8
+      Why can the PLC stop at −7 with source 1.10?
+      :::
+
+      :::hint An acceptance value is not a tuning target
+      Compare the measured result to reference cases. If it differs,
+      preserve source, load, mode, quality and times before investigating.
+      Do not scale the feeder or overwrite evidence with the expected tap.
+      :::
+
+      Read: [Reference cases](#eu-process-reference-cases),
+      [Voltage consequences](#eu-outage-voltage-consequences).
+    action: {type: command, device: process, command: set_source, value: 1.10}
+
+  - id: manual-limit-and-auto-handover
+    title: "Test manual lower limit, then hand back to auto"
+    node: cc-1
+    description: |
+      Run the action to restore source 1.00. After the loop settles, use
+      the CC mode panel to select/execute **manual** (C_SC 3302, SCS 0).
+      Require completed feedback at 1303=false. Remote authority and
+      manual mode are separate: leave remote enabled.
+
+      Use CC regulating-step **lower** commands, one completed step at a
+      time, until −8; then attempt one more lower. Expect a rejected
+      `limit` audit and no motion. Observe the lower-limit point (1304).
+      A successful inward **raise** from −8 proves the limit is directional,
+      not a blanket inhibit. Record the voltage consequence and do not
+      leave the station at its depressed manual setting.
+
+      Hand back with **auto** (C_SC 3302, SCS 1), requiring 1303=true.
+      The device rearms only after a zero PLC request, so an old held
+      target cannot cause a surprise step on takeover. Let auto restore
+      the band, then select **manual** again for the controlled vendor test.
+      Save command results, audit peer, tap and quality for each handover.
+
+      :::decision id=oltc-manual-authority options=REMOTE_AND_MANUAL,LOCAL_ONLY,AUTO_ONLY correct=REMOTE_AND_MANUAL
+      What authority and mode permit a remote CC regulating-step command?
+      :::
+
+      :::hint Wire check
+      C_SC switches mode; C_RC 3301 raises/lowers the tap. Neither is the
+      PLC HR1 automatic request. ACT-CON without feedback is insufficient.
+      :::
+
+      Read: [SBO](#iec104-sbo-commands), [Authority](#eu-control-authority),
+      [Step telemetry](#eu-iec104-step-telemetry).
+    action: {type: command, device: process, command: set_source, value: 1.00}
+
+  - id: vendor-tap-write-weak
+    title: "Make an unauthorised tap write under weak"
+    expected_config: weak
+    node: vendor-jump-1
+    description: |
+      Confirm remote/manual, idle, unblocked, energised and a tap well
+      inside the limits. Record the starting tap. Run the action to apply
+      weak, then from the vendor-jump terminal issue **one lower** through
+      direct Modbus HR0, not the PLC request HR1:
+
+          mbpoll -m tcp -a 1 -0 -r 0 -t 4 -1 -o 3 10.40.40.23 1
+
+      Wait for the 2 s motion and fresh CC telemetry. The OLTC audit should
+      show `manual_step`, accepted, peer `10.20.20.10`. The bus changes
+      even though the vendor was not an authorised switching operator.
+      If the device instead refuses `not_manual`, resolve the baseline;
+      do not claim a network denial.
+
+      Save the command transcript. Restore the starting tap using one CC
+      **raise**, then wait for completion and close the vendor client.
+      Preserve manual mode for the exact retest under source pinning.
+
+      :::decision id=oltc-vendor-weak options=SOURCE_BOUNDARY_MISSING,PLC_WROTE_IT,AUTHORISED_BY_TCP correct=SOURCE_BOUNDARY_MISSING
+      What failed when a vendor-origin manual tap operation reached the actuator?
+      :::
+
+      :::hint Keep the write path explicit
+      HR0 value 1 lowers, 2 raises; HR2 selects mode. FC16 quantity one is
+      supported. Do not write arbitrary registers or an absolute tap value.
+      :::
+
+      Read: [mbpoll](#eu-tool-mbpoll), [Trusted-host misuse](#eu-trusted-host-misuse).
+    action: {type: firewall, config: weak}
+
+  - id: source-pin-and-cc-outage
+    title: "Prove source pinning, then compare a CC outage with history"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      First apply **improved** using the policy control. Retest the exact
+      vendor HR0 lower command on a fresh connection. Keep its failed
+      output and matching firewall TCP/502 deny. Confirm no vendor audit
+      acceptance or tap movement. Positive-test one CC lower and raise,
+      then return to auto and verify the PLC still regulates. Improved
+      allows both named RTU and PLC sources to OLTC; it does not inspect
+      the semantics of their writes.
+
+      Next record the historian and CC journal before an outage. In
+      containd make a temporary copy of improved without the CC→RTU
+      TCP/2404 allow. Apply and verify that restrictive policy, **then run
+      this step's session-cut action**. It removes only the unique CC/RTU
+      conntrack tuple. Applying a deny alone does not kill an established
+      session. The action is for the outage, not the earlier Modbus retest.
+
+      Wait for CC `link_lost` and IV+NT. Compare historian bus-kV samples
+      with the CC outage: the CC feed normally continues with stale marked
+      last values. If ingest stops, history has a gap after >3 s, not
+      manufactured zeros. Query an interval containing before/during/after,
+      using the portal historian trend or read API. Restore improved and
+      wait for link-up, a new GI and fresh observations. Do not reset CC.
+
+      :::decision id=oltc-outage-history options=STALE_OR_GAP,ZERO_LOAD_CONFIRMED,FIELD_TRUTH_BACKFILL correct=STALE_OR_GAP
+      What may the historian honestly show during loss of CC visibility?
+      :::
+
+      :::hint Two positive controls
+      Prove allowed CC/PLC operations after the source deny. After the
+      outage, prove recovery with a later GI on a new connection, not an
+      old green value. A 1 Hz snapshot historian is not an SOE archive.
+      :::
+
+      Read: [Historian](#eu-historian), [Sessions](#eu-established-sessions),
+      [Policy comparison](#eu-policy-comparison), [Exports](#eu-tool-curl-exports).
+    action: {type: session-cut, flow: cc-rtu}
+
+  - id: shift-station-time
+    title: "Shift station time and separate the three clocks"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      Ensure improved is restored and CC observations are fresh before
+      running this action. It shifts station GPS time by **+120 s**.
+      Leave it shifted for at least 15 s so the RTU clock synchronises.
+      Then use the CC to command manual and back to auto, retaining each
+      completed result and waiting at least 2 s between operations.
+      These mode transitions generate timestamped M_SP_TB_1 observations
+      of `oltc-1-auto`; leave time for the historian to sample each.
+      Record source time, CC receipt time and historian ingest time from
+      the same mode samples. Bus-kV M_ME_NC_1 is untimed and cannot prove
+      a station-clock shift.
+
+      Station source timestamps should lead real receipt/ingest time by
+      roughly two minutes; receipt and ingest clocks do not shift with GPS.
+      Keep the CC epoch and sample sequence. Do not sort the event story
+      solely by shifted source time, and do not invent an electrical
+      transition to explain a clock step. The next step restores time.
+
+      :::decision id=oltc-clock-order options=RECEIPT_AND_SEQUENCE,SOURCE_TIME_ONLY,VALUE_ZERO correct=RECEIPT_AND_SEQUENCE
+      Which evidence preserves observation order across a station clock correction?
+      :::
+
+      :::hint A timestamp is not SOE provenance
+      The RTU timestamps its observations, not device-supplied SOE events.
+      Keep source-time validity and quality with each value. Never compare
+      a source timestamp to a different sample's receipt timestamp.
+      :::
+
+      Read: [Station clock](#eu-station-clock), [GI/quality](#iec104-gi-cot-quality),
+      [Evidence lifecycle](#eu-evidence-lifecycle).
+    action: {type: command, device: gps, command: set_offset, value: 120}
+
+  - id: restore-time-and-four-lab-pack
+    title: "Restore time and hand over the four-lab evidence pack"
+    expected_config: hardened
+    node: cc-1
+    description: |
+      Run the action to restore station offset to zero. Allow at least
+      15 s for synchronisation, then command manual and back to auto through
+      the CC again, waiting at least 2 s per completed operation. Confirm
+      source/receipt offset returns near zero while epoch and observation
+      order remain explainable. Keep both shifted and restored samples;
+      a normal current clock alone is not proof of the exercise.
+
+      Run the scenario validator before any reset. It checks PLC-source
+      adjacent motion including the step into +8, ordered manual/auto
+      IEC 104 mode operations, vendor write/later source deny, historian
+      uncertainty correlated with CC outage/recovery, and shifted/restored
+      timestamps on fresh timestamped mode observations. Your trend/transcripts additionally
+      prove deadband, continuous delay, the −7 settle, lower-limit refusal,
+      denied command intent and seed identity; these are not inferred from
+      a final state or a firewall SYN log.
+
+      Hand over one indexed pack covering **all four labs**:
+
+      | Lab | Required evidence and acceptance claim |
+      |---|---|
+      | 1 Boundary | CC/RTU/breaker path, SBO, foreign-source deny, established-session cut, stale view and independent local protection |
+      | 2 Conduits | Asset/zone inventory, required flows, resource-bounded design, named-source rules, positive/negative tests and rollback |
+      | 3 Switching | Predicted/actual load loss, authority/interlock refusals, fault/FPI interpretation, ordered isolation/restoration and vendor comparison |
+      | 4 Control/time | Seed identity, load/delay/motion trend, both limit tests with honest 1.10 settle, mode handovers, historian outage and clock restoration |
+
+      Include running policy identity, CC epoch, device generations,
+      terminal transcripts, source/receipt/ingest times, unresolved unknowns
+      and the owner of each residual risk. Distinguish measured facts from
+      predictions. Final acceptance: load 1.0/source 1.00, fault-free radial
+      topology, remote/auto, in-band voltage, fresh CC/PLC, historian feeding,
+      clock restored and improved active. Do not reset until the pack is
+      saved; if reset is required, it returns weak and needs reacceptance.
+
+      Read: [Acceptance](#eu-acceptance-handover), [Exports](#eu-tool-curl-exports),
+      [DSO context](#eu-dso-regulatory-context), [BDEW context](#eu-bdew-security-context).
+    action: {type: command, device: gps, command: reset_offset}
