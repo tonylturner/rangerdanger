@@ -41,10 +41,11 @@ steps:
       breaker. S3 energisation is observed through RMU2 source voltage
       (IOA 2203). Never label an unobserved F2 position as CC-confirmed.
 
-      From the CC terminal, retain the starting journal and state:
+      From the CC terminal, retain the starting journal and state with
+      BusyBox wget (this image does not include curl):
 
-          curl -fsS http://10.99.99.21:8080/api/state > /tmp/rmu-before.json
-          curl -fsS 'http://10.99.99.21:8080/api/journal?after=0' > /tmp/rmu-journal-before.json
+          wget -qO- http://10.99.99.21:8080/api/state > /tmp/rmu-before.json
+          wget -qO- 'http://10.99.99.21:8080/api/journal?after=0' > /tmp/rmu-journal-before.json
 
       Read: [Feeder](#eu-mv-feeder), [RMUs](#eu-rmu-switchgear),
       [Node map](#eu-range-node-map), [Reset acceptance](#eu-reset-acceptance).
@@ -94,8 +95,8 @@ steps:
 
       A CC API alternative, from the CC terminal, is:
 
-          curl -fsS -H 'Content-Type: application/json' \
-            -d '{"point":"rmu-1-command","operation":"open"}' \
+          wget -qO- --header 'Content-Type: application/json' \
+            --post-data '{"point":"rmu-1-command","operation":"open"}' \
             http://10.99.99.21:8080/api/commands
 
       Change the point to `rmu-2-command` for the tie, and the operation to

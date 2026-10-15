@@ -20,11 +20,10 @@ description: |
   they cannot reach field simulation/control APIs over management. Do not
   claim complete vendor isolation; that infrastructure issue needs separate
   resolution before an unrestricted acceptance sign-off.
-  **Evidence prerequisite:** the shipped improved policy logs IEC 104 and
-  Modbus denies, but currently drops unauthorised historian-ingest and
-  PLC-web traffic by default without rule-hit logging. The policy owner
-  must add explicit logged HTTP denies before the guided path can satisfy
-  all validation checks. Keep this as missing evidence, not a false pass.
+  **Evidence prerequisite:** inspect the improved policy's explicit logged
+  IEC 104, Modbus, historian-ingest and PLC-web denies. Match fresh
+  attempts to their rule-hit events; a default-drop timeout alone is
+  missing evidence, not a successful negative test.
   Read [Zone/conduit design](#eu-zone-conduit-design),
   [IEC 62443 risk design](#eu-iec62443-risk-design) and
   [Change resource plan](#eu-change-resource-plan).
@@ -218,8 +217,8 @@ steps:
       CC→RTU 2404; RTU→all four field endpoints 502; PLC→OLTC 502;
       CC→historian 8081; enterprise→historian 8080; eng-ws→PLC UI 8080.
       Find logged foreign denies and confirm no lan5→OT allows.
-      Check the evidence prerequisite above: default DROP does not produce
-      a firewall.rule.hit DENY for the HTTP paths. If explicit logged HTTP
+      Check the evidence prerequisite above: default DROP alone does not
+      produce a firewall.rule.hit DENY for the HTTP paths. If explicit logged HTTP
       denies are absent, stop the guided acceptance on that gap and record
       the policy-owner follow-up; do not treat an unexplained timeout as
       proof or claim the supplied policy earns a full pass.
