@@ -234,6 +234,9 @@
         {"kind": "file", "path": "services/opendss-sim/eu_circuit.py"},
         {"kind": "file", "path": "services/opendss-sim/eu_profile.py"},
         {"kind": "file", "path": "services/opendss-sim/eu_truth_loop.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_wire.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_controls.py"},
+        {"kind": "file", "path": "services/opendss-sim/eu_state.py"},
         {"kind": "dir", "path": "services/opendss-sim/dss"},
         {"kind": "file", "path": "scripts/set-gateway.sh"}
       ]

@@ -2,7 +2,7 @@
 FROM tuttas/openplc_v3:latest@sha256:94fb9e8387340af716211454664980dc0e97924067712cf573a1e467c3a37722
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        iproute2 python3 sqlite3 \
+        curl iproute2 python3 sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY lab-definitions/packages/eu-iec104-substation/seeds/openplc/ /opt/openplc-eu/
