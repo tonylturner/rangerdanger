@@ -97,7 +97,7 @@ func TestFirewallCompareEU(t *testing.T) {
 	for _, diff := range got.Diffs {
 		byPair[diff.ZonePair] = diff
 	}
-	for _, pair := range []string{"Control Centre → Station", "Station → Field", "Vendor → Station"} {
+	for _, pair := range []string{"Control Centre → Station", "Station → Field", "Vendor → Station", "Control Centre → Operations DMZ", "Enterprise → Operations DMZ"} {
 		diff := byPair[pair]
 		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "MIXED" {
 			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / MIXED", pair, diff.WeakAction, diff.ImprovedAction)

@@ -96,6 +96,22 @@ describe("getFlowBlockReason", () => {
     expect(getZonePolicyInfo("station_net", rules, eu.networks)).toMatchObject({ action: "MIXED", label: "MIXED · source-restricted" });
   });
 
+  it("keeps authorised EU HTTP flows distinct from logged zone-pair denies", () => {
+    const eu = euFixture as LabGraph;
+    const rules: ZoneRuleSummary[] = [
+      { source_zone: "lan4", dest_zone: "lan5", summary: "8081", rule_details: ["CC ingest allow; other ingest sources denied and logged"], action: "MIXED" },
+      { source_zone: "wan", dest_zone: "lan5", summary: "8080, 8081", rule_details: ["Enterprise read allow; ingest denied and logged"], action: "MIXED" },
+      { source_zone: "dmz", dest_zone: "lan1", summary: "2404, 8080", rule_details: ["Engineering PLC web allow; other web sources denied and logged"], action: "MIXED" },
+    ];
+    for (const id of ["cc-historian", "enterprise-historian", "engineering-plc"]) {
+      const flow = eu.flows.find((flow) => flow.id === id)!;
+      expect(getFlowBlockReason(flow.source, flow.target, rules, eu)).toBeNull();
+    }
+    expect(getZonePolicyInfo("ops_dmz_net", rules, eu.networks)).toMatchObject({
+      action: "MIXED", permissiveness: "allowed",
+    });
+  });
+
   it("retains the established US source-pin overlay", () => {
     const us = usFixture as LabGraph;
     const rules = [{ source_zone: "lan1", dest_zone: "lan2", summary: "502", rule_details: ["RTAC source pin"], action: "MIXED" as const }];
