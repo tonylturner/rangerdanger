@@ -56,9 +56,22 @@ describe("package flow liveness", () => {
     expect(createFlowContext(graph, { workshop }).observations[graph.flows[0].id].status).toBe("active");
   });
 
-  it("shows the three EU baseline legs and manual scenario with honest unknowns", () => {
+  it("shows every EU flow with honest unknowns for unobserved or missing telemetry", () => {
     const context = createFlowContext(eu, { operator: operator(), sessions: { sessions: [], count: 0 } });
-    expect(Object.values(context.observations).map((o) => o.status)).toEqual(["active", "active", "unknown", "idle"]);
+    expect(Object.fromEntries(Object.entries(context.observations).map(([id, o]) => [id, o.status]))).toEqual({
+      "cc-rtu": "active",
+      "rtu-breaker": "active",
+      "station-clock": "unknown",
+      "attacker-rtu": "idle",
+      "rtu-rmu-1": "unknown",
+      "rtu-rmu-2": "unknown",
+      "rtu-oltc-1": "unknown",
+      "rtu-plc-1": "unknown",
+      "plc-oltc": "unknown",
+      "cc-historian": "unknown",
+      "enterprise-historian": "unknown",
+      "engineering-plc": "unknown",
+    });
     expect(context.observations["rtu-breaker"].evidence).toContain("inferred");
     expect(nodeZone("gps-1", eu)).toBe("station_net");
     expect(aggregateFlows(context).find((r) => r.target === "gps-1")?.crossZone).toBe(false);
@@ -129,8 +142,8 @@ describe("package flow liveness", () => {
 
   it("shares filtering and pair status precedence, with no fallback on empty inventory", () => {
     const context = createFlowContext(eu, {});
-    expect(aggregateFlows(context, { zone: "all", crossZoneOnly: true })).toHaveLength(3);
-    expect(aggregateFlows(context, { zone: "control_centre_net", crossZoneOnly: false })).toHaveLength(1);
+    expect(aggregateFlows(context, { zone: "all", crossZoneOnly: true })).toHaveLength(10);
+    expect(aggregateFlows(context, { zone: "control_centre_net", crossZoneOnly: false })).toHaveLength(2);
     expect(aggregateFlows(createFlowContext({ ...eu, flows: [] }, {}))).toEqual([]);
     const f = { ...eu.flows[0], id: "second", port: 502 };
     const multi = createFlowContext({ ...eu, flows: [eu.flows[0], f] }, {});

@@ -133,12 +133,34 @@ func TestTopologyFlowsShippedInventory(t *testing.T) {
 				{"rtu-breaker", "rtu-1", "breaker-1", "Modbus", 502, "~500ms", "baseline", "rtu-breaker"},
 				{"station-clock", "rtu-1", "gps-1", "HTTP", 8080, "~1s", "baseline", "station-clock"},
 				{"attacker-rtu", "kali-1", "rtu-1", "IEC104", 2404, "manual", "scenario", "attacker-rtu"},
+				{"rtu-rmu-1", "rtu-1", "rmu-1", "Modbus", 502, "~500ms", "baseline", "rtu-rmu-1"},
+				{"rtu-rmu-2", "rtu-1", "rmu-2", "Modbus", 502, "~500ms", "baseline", "rtu-rmu-2"},
+				{"rtu-oltc-1", "rtu-1", "oltc-1", "Modbus", 502, "~500ms", "baseline", "rtu-oltc-1"},
+				{"rtu-plc-1", "rtu-1", "plc-1", "Modbus", 502, "~500ms", "baseline", "rtu-plc-1"},
+				{"plc-oltc", "plc-1", "oltc-1", "Modbus", 502, "~100ms", "baseline", "plc-oltc"},
+				{"cc-historian", "cc-1", "historian-1", "HTTP", 8081, "~1s", "baseline", "cc-historian"},
+				{"enterprise-historian", "kali-1", "historian-1", "HTTP", 8080, "manual", "scenario", "enterprise-historian"},
+				{"engineering-plc", "eng-ws-1", "plc-1", "HTTP", 8080, "manual", "scenario", "engineering-plc"},
 			}
 			if !reflect.DeepEqual(pkg.Template.Flows, want) {
 				t.Fatalf("EU flows = %+v", pkg.Template.Flows)
 			}
-			if got := pkg.Template.Liveness["rtu-breaker"].Points; !reflect.DeepEqual(got, []string{"feeder-breaker-position", "feeder-protection-trip"}) {
-				t.Fatalf("status point binding = %v", got)
+			wantLiveness := map[string]LivenessBinding{
+				"cc-rtu":               {Provider: "operator-link"},
+				"rtu-breaker":          {Provider: "operator-device", Points: []string{"feeder-breaker-position", "feeder-protection-trip"}},
+				"station-clock":        {Provider: "unobserved"},
+				"attacker-rtu":         {Provider: "session-presence", Transport: "tcp"},
+				"rtu-rmu-1":            {Provider: "operator-device", Points: []string{"rmu-1-position", "rmu-1-fault-passage"}},
+				"rtu-rmu-2":            {Provider: "operator-device", Points: []string{"rmu-2-position", "rmu-2-fault-passage"}},
+				"rtu-oltc-1":           {Provider: "operator-device", Points: []string{"oltc-1-tap", "oltc-1-auto"}},
+				"rtu-plc-1":            {Provider: "operator-device", Points: []string{"plc-1-running", "plc-1-input-valid"}},
+				"plc-oltc":             {Provider: "unobserved"},
+				"cc-historian":         {Provider: "unobserved"},
+				"enterprise-historian": {Provider: "unobserved"},
+				"engineering-plc":      {Provider: "unobserved"},
+			}
+			if !reflect.DeepEqual(pkg.Template.Liveness, wantLiveness) {
+				t.Fatalf("EU liveness = %+v; want %+v", pkg.Template.Liveness, wantLiveness)
 			}
 		})
 	}
