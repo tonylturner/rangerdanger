@@ -59,11 +59,7 @@ func TestKnowledgeActivePackageWithoutHealthyRange(t *testing.T) {
 		for _, section := range got.Sections {
 			count += len(section.Articles)
 		}
-		wantCount := 41
-		if id == euPackageID {
-			wantCount = 11
-		}
-		if count != wantCount {
+		if count != 41 {
 			t.Fatalf("%s articles = %d", id, count)
 		}
 	}
