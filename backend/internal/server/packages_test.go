@@ -324,23 +324,85 @@ func TestShippedPackagesLoad(t *testing.T) {
 	if err := database.Where("package_id = ?", euPackageID).Find(&euScenarios).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(euScenarios) != 1 || euScenarios[0].ID != "iec104-telecontrol-boundary" || euScenarios[0].Validator != "eu-iec104-telecontrol" {
-		t.Fatalf("EU scenarios = %+v, want iec104-telecontrol-boundary with validator eu-iec104-telecontrol", euScenarios)
+	wantEU := map[string]struct {
+		order     string
+		validator string
+		steps     []string
+	}{
+		"iec104-telecontrol-boundary": {"1.0", "eu-iec104-telecontrol", []string{
+			"observe-baseline",
+			"operate-breaker",
+			"expose-weak",
+			"apply-improved",
+			"cut-session",
+			"local-trip",
+			"clear-fault",
+			"restore",
+			"evidence",
+			"restore-device",
+		}},
+		"eu-station-conduits": {"2.0", "eu-station-conduits", []string{
+			"inventory-and-findings",
+			"capture-operational-flows",
+			"probe-three-footholds",
+			"decide-data-and-time-conduits",
+			"budget-the-change",
+			"implement-and-rehearse-rollback",
+			"start-proof-window",
+			"prove-plc-and-historian",
+			"prove-denies-and-maintenance",
+			"compare-plan-and-outcome",
+		}},
+		"eu-rmu-switching": {"3.0", "eu-rmu-switching", []string{
+			"energised-baseline",
+			"predict-load-loss",
+			"operate-and-distinguish-rmus",
+			"local-authority-refusal",
+			"refuse-paralleling-close",
+			"inject-s1-and-read-fpi",
+			"isolate-and-backfeed",
+			"vendor-open-under-weak",
+			"vendor-open-under-improved",
+			"switching-assurance-record",
+		}},
+		"eu-oltc-plc-historian": {"4.0", "eu-oltc-plc-historian", []string{
+			"verify-seeded-loop",
+			"step-load-outside-band",
+			"observe-delay-and-single-step",
+			"low-source-upper-limit",
+			"high-source-measured-settle",
+			"manual-limit-and-auto-handover",
+			"vendor-tap-write-weak",
+			"source-pin-and-cc-outage",
+			"shift-station-time",
+			"restore-time-and-four-lab-pack",
+		}},
 	}
-	var euSteps []labs.ScenarioStep
-	if err := json.Unmarshal([]byte(euScenarios[0].Steps), &euSteps); err != nil {
-		t.Fatal(err)
+	if len(euScenarios) != len(wantEU) {
+		t.Fatalf("EU scenarios = %d, want %d", len(euScenarios), len(wantEU))
 	}
-	euIDs := make([]string, len(euSteps))
-	for index, step := range euSteps {
-		euIDs[index] = step.ID
+	for _, scenario := range euScenarios {
+		expected, ok := wantEU[scenario.ID]
+		if !ok {
+			t.Errorf("unexpected EU scenario %q", scenario.ID)
+			continue
+		}
+		used[scenario.Validator] = true
+		if scenario.Order != expected.order || scenario.Validator != expected.validator {
+			t.Errorf("%s = (order %q, validator %q), want (%q, %q)", scenario.ID, scenario.Order, scenario.Validator, expected.order, expected.validator)
+		}
+		var steps []labs.ScenarioStep
+		if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
+			t.Fatalf("%s steps: %v", scenario.ID, err)
+		}
+		ids := make([]string, len(steps))
+		for index, step := range steps {
+			ids[index] = step.ID
+		}
+		if !reflect.DeepEqual(ids, expected.steps) {
+			t.Errorf("%s step ids = %v, want %v", scenario.ID, ids, expected.steps)
+		}
 	}
-	wantEU := []string{"observe-baseline", "operate-breaker", "expose-weak", "apply-improved", "established-session",
-		"cut-session", "stale-view", "local-trip", "clear-fault", "restore", "evidence", "restore-device"}
-	if !reflect.DeepEqual(euIDs, wantEU) {
-		t.Errorf("EU step ids = %v, want %v", euIDs, wantEU)
-	}
-	used[euScenarios[0].Validator] = true
 
 	for key := range scenarioValidators {
 		if !used[key] {

@@ -14,7 +14,7 @@ var euRecipe = &packageRecipe{
 	resetTruth:      resetEUTruth,
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
 		allowUnder: "weak", denyUnder: "improved"},
-	captureFilter: "tcp port 2404 or tcp port 502",
+	captureFilter: "tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081",
 	compare: &compareSpec{
 		weakPolicy:     "weak",
 		improvedPolicy: "improved",

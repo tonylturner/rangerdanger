@@ -79,23 +79,13 @@ type ccPoint struct {
 	ReceivedAt  time.Time `json:"received_at"`
 }
 
-// ccJournal is the CC's GET /api/journal.
+// Lab 1 decodes only the journal detail needed for outage evidence.
 type ccJournal struct {
-	CacheEpoch string         `json:"cache_epoch"`
-	Entries    []journalEntry `json:"entries"`
-	LatestSeq  uint64         `json:"latest_seq"`
-	OldestSeq  uint64         `json:"oldest_seq"`
+	euJournal[journalDetail]
+	LatestSeq uint64 `json:"latest_seq"`
+	OldestSeq uint64 `json:"oldest_seq"`
 }
-
-type journalEntry struct {
-	Seq    uint64    `json:"seq"`
-	At     time.Time `json:"at"`
-	Kind   string    `json:"kind"`
-	Detail struct {
-		ConnectionSeq *uint64 `json:"connection_seq"`
-		Point         string  `json:"point"`
-	} `json:"detail"`
-}
+type journalEntry = euJournalEntry[journalDetail]
 
 // deviceTruth is the part of the device's GET /api/state the validator reads.
 type deviceTruth struct {
@@ -104,44 +94,15 @@ type deviceTruth struct {
 	Position   string `json:"position"`
 }
 
-// deviceAudit is the device's GET /api/audit.
-type deviceAudit struct {
-	Generation uint32       `json:"generation"`
-	Entries    []auditEntry `json:"entries"`
-}
+type deviceAudit = euAudit[auditEntry]
+type auditEntry = euAuditEntry[json.RawMessage, revisionSnapshot, auditContext]
 
-type auditEntry struct {
-	Seq       uint64    `json:"seq"`
-	At        time.Time `json:"at"`
-	Operation string    `json:"operation"`
-	Result    string    `json:"result"`
-	After     struct {
-		Revision uint64 `json:"revision"`
-	} `json:"after"`
-	Context struct {
-		Protocol string `json:"protocol"`
-	} `json:"context"`
-	Detail json.RawMessage `json:"detail"`
-}
-
-// outageWindow is one CC outage in the journal: the link_down L, the stale
-// position point after it, and the GI G that completed on a later
-// connection.
-type outageWindow struct {
-	down, stale, up, gi journalEntry
-}
-
-func (w outageWindow) String() string {
-	return fmt.Sprintf("link_down seq %d at %s to gi_complete seq %d at %s",
-		w.down.Seq, w.down.At.Format(time.RFC3339Nano), w.gi.Seq, w.gi.At.Format(time.RFC3339Nano))
+type revisionSnapshot struct {
+	Revision uint64 `json:"revision"`
 }
 
 func checkPass(name, detail string) ValidationCheck { return ValidationCheck{name, "pass", detail} }
 func checkFail(name, detail string) ValidationCheck { return ValidationCheck{name, "fail", detail} }
-
-func insideEvidenceWindow(at, start, end time.Time) bool {
-	return !at.IsZero() && !at.Before(start) && !at.After(end)
-}
 
 const (
 	checkDeny     = "Source-pinned boundary and logged foreign IEC 104 denial"
@@ -204,7 +165,7 @@ func outageCheck(ev telecontrolEvidence) ([]outageWindow, ValidationCheck) {
 		if down.Kind != "link_down" || down.Detail.ConnectionSeq == nil {
 			continue
 		}
-		window, missing := outageAfter(down, entries[i+1:])
+		window, missing := outageAfter(down, entries[i+1:], positionPoint)
 		if missing != "" {
 			if len(windows) == 0 {
 				progress = fmt.Sprintf("link_down seq %d has %s", down.Seq, missing)
@@ -231,45 +192,6 @@ func outageCheck(ev telecontrolEvidence) ([]outageWindow, ValidationCheck) {
 	}
 	return []outageWindow{latest}, checkPass(checkOutage, fmt.Sprintf("%s: %s went stale, connection %d came up and completed its GI",
 		latest, positionPoint, *latest.gi.Detail.ConnectionSeq))
-}
-
-// outageAfter completes the window that starts at down from the entries
-// after it, or names what is missing: the position point going stale, then
-// the first GI completed on a later connection, whose link_up lies between
-// down and that GI.
-func outageAfter(down journalEntry, later []journalEntry) (outageWindow, string) {
-	window := outageWindow{down: down}
-	staleAt := -1
-	for i, entry := range later {
-		if entry.Kind == "point_stale" && entry.Detail.Point == positionPoint {
-			window.stale, staleAt = entry, i
-			break
-		}
-	}
-	if staleAt < 0 {
-		return window, "no point_stale for " + positionPoint + " after it"
-	}
-	giAt := -1
-	for i, entry := range later[staleAt+1:] {
-		if entry.Kind == "gi_complete" && laterConnection(entry, down) {
-			window.gi, giAt = entry, staleAt+1+i
-			break
-		}
-	}
-	if giAt < 0 {
-		return window, "no later gi_complete on a connection with a greater connection_seq"
-	}
-	for _, entry := range later[:giAt] {
-		if entry.Kind == "link_up" && entry.Detail.ConnectionSeq != nil && *entry.Detail.ConnectionSeq == *window.gi.Detail.ConnectionSeq {
-			window.up = entry
-			return window, ""
-		}
-	}
-	return window, fmt.Sprintf("no link_up for connection %d before its gi_complete", *window.gi.Detail.ConnectionSeq)
-}
-
-func laterConnection(entry, down journalEntry) bool {
-	return entry.Detail.ConnectionSeq != nil && *entry.Detail.ConnectionSeq > *down.Detail.ConnectionSeq
 }
 
 // tripCheck needs a local protection trip T inside an outage window

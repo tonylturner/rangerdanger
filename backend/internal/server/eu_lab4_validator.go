@@ -95,7 +95,7 @@ func euLab4Motion(ev euLab3Evidence, upper bool) bool {
 		peer, _, _ := net.SplitHostPort(request.Context.Peer)
 		if request.Operation != "plc_request" || request.Result != "accepted" ||
 			request.Context.Protocol != "modbus" || peer != "10.30.30.30" ||
-			!euLab3Within(request.At, ev.start, ev.end) ||
+			!insideEvidenceWindow(request.At, ev.start, ev.end) ||
 			!request.After.Moving || !request.Before.Auto ||
 			absEULab4(request.After.TargetTap-request.Before.Tap) != 1 {
 			continue
@@ -131,9 +131,9 @@ func euLab4Handover(ev euLab3Evidence) bool {
 		found := false
 		for _, cmd := range ev.commands() {
 			if cmd.Point != "oltc-1-mode" || cmd.Operation != operation || cmd.Result != "completed" ||
-				!euLab3Within(cmd.ConAt, cmd.ExecutedAt, ev.end) ||
-				!euLab3Within(cmd.TermAt, cmd.ConAt, ev.end) || cmd.Feedback == nil ||
-				cmd.Feedback.IOA != 1303 || !euLab3Within(cmd.Feedback.At, cmd.ConAt, cmd.TermAt) ||
+				!insideEvidenceWindow(cmd.ConAt, cmd.ExecutedAt, ev.end) ||
+				!insideEvidenceWindow(cmd.TermAt, cmd.ConAt, ev.end) || cmd.Feedback == nil ||
+				cmd.Feedback.IOA != 1303 || !insideEvidenceWindow(cmd.Feedback.At, cmd.ConAt, cmd.TermAt) ||
 				(operation == "auto" && !cmd.SelectedAt.After(manualEnd)) {
 				continue
 			}
@@ -145,7 +145,7 @@ func euLab4Handover(ev euLab3Evidence) bool {
 				peer, _, _ := net.SplitHostPort(entry.Context.Peer)
 				if entry.Operation == "mode" && entry.Result == "accepted" && entry.Context.Protocol == "modbus" &&
 					peer == "10.30.30.20" &&
-					euLab3Within(entry.At, cmd.ExecutedAt, cmd.ConAt) &&
+					insideEvidenceWindow(entry.At, cmd.ExecutedAt, cmd.ConAt) &&
 					entry.Before.Auto != entry.After.Auto && entry.After.Auto == value {
 					found = true
 					if operation == "manual" {
@@ -171,73 +171,35 @@ func euLab4Outage(ev euLab3Evidence, history *euLab4History) bool {
 	}
 	// Match link identity, stale point and later GI, not just a disconnected
 	// final status. The voltage remains an observation, never field truth.
-	for _, down := range ev.journal.Entries {
-		if down.Kind != "link_down" || !euLab3Within(down.At, ev.start, ev.end) {
-			continue
-		}
-		var downDetail struct {
-			ConnectionSeq *uint64 `json:"connection_seq"`
-		}
-		if json.Unmarshal(down.Detail, &downDetail) != nil || downDetail.ConnectionSeq == nil {
-			continue
-		}
-		var staleAt, upAt time.Time
-		var upSeq uint64
-		for _, entry := range ev.journal.Entries {
-			if entry.Seq <= down.Seq || !euLab3Within(entry.At, down.At, ev.end) {
+	for window := range euRetainedOutages(ev.journal.Entries, "oltc-1-bus-kv", ev.start, ev.end) {
+		retained := false
+		for _, segment := range history.Segments {
+			if segment.CacheEpoch != ev.epoch {
 				continue
 			}
-			var detail struct {
-				ConnectionSeq *uint64 `json:"connection_seq"`
-				Point         string  `json:"point"`
-			}
-			if json.Unmarshal(entry.Detail, &detail) != nil {
-				continue
-			}
-			switch entry.Kind {
-			case "point_stale":
-				if detail.Point == "oltc-1-bus-kv" {
-					staleAt = entry.At
-				}
-			case "link_up":
-				if detail.ConnectionSeq != nil && *detail.ConnectionSeq > *downDetail.ConnectionSeq {
-					upAt, upSeq = entry.At, *detail.ConnectionSeq
-				}
-			case "gi_complete":
-				if staleAt.IsZero() || upAt.IsZero() || !upAt.After(staleAt) ||
-					detail.ConnectionSeq == nil || *detail.ConnectionSeq != upSeq {
+			for _, sample := range segment.Samples {
+				var kv float64
+				if !insideEvidenceWindow(sample.IngestedAt, window.stale.At, window.up.At) || !sample.IngestedAt.Before(window.up.At) {
 					continue
 				}
-				retained := false
-				for _, segment := range history.Segments {
-					if segment.CacheEpoch != ev.epoch {
-						continue
-					}
-					for _, sample := range segment.Samples {
-						var kv float64
-						if !euLab3Within(sample.IngestedAt, staleAt, upAt) || !sample.IngestedAt.Before(upAt) {
-							continue
-						}
-						// This exercise starts with a live bus. Every retained
-						// outage sample must preserve uncertainty and its
-						// nonzero value, not just one convenient sample.
-						if !sample.Quality.IV || !sample.Quality.NT || sample.StaleReason == nil ||
-							*sample.StaleReason != "link_lost" || string(sample.Value) == "null" ||
-							json.Unmarshal(sample.Value, &kv) != nil || kv <= 0 {
-							return false
-						}
-						retained = true
-					}
+				// This exercise starts with a live bus. Every retained
+				// outage sample must preserve uncertainty and its
+				// nonzero value, not just one convenient sample.
+				if !sample.Quality.IV || !sample.Quality.NT || sample.StaleReason == nil ||
+					*sample.StaleReason != "link_lost" || string(sample.Value) == "null" ||
+					json.Unmarshal(sample.Value, &kv) != nil || kv <= 0 {
+					return false
 				}
-				if retained {
-					return true
-				}
-				for _, gap := range history.Gaps {
-					if euLab3Within(gap.From, down.At, entry.At) && euLab3Within(gap.To, gap.From, entry.At) &&
-						gap.To.Sub(gap.From) > 3*time.Second {
-						return true
-					}
-				}
+				retained = true
+			}
+		}
+		if retained {
+			return true
+		}
+		for _, gap := range history.Gaps {
+			if insideEvidenceWindow(gap.From, window.down.At, window.gi.At) && insideEvidenceWindow(gap.To, gap.From, window.gi.At) &&
+				gap.To.Sub(gap.From) > 3*time.Second {
+				return true
 			}
 		}
 	}
@@ -258,8 +220,8 @@ func euLab4Clock(ev euLab3Evidence, history *euLab4History) bool {
 			if sample.Quality.IV || sample.Quality.NT || sample.StaleReason != nil ||
 				sample.SourceTime == nil || sample.CCReceivedAt == nil ||
 				sample.SourceTimeInvalid == nil || *sample.SourceTimeInvalid ||
-				!euLab3Within(sample.IngestedAt, ev.start, ev.end) ||
-				!euLab3Within(*sample.CCReceivedAt, ev.start, sample.IngestedAt) ||
+				!insideEvidenceWindow(sample.IngestedAt, ev.start, ev.end) ||
+				!insideEvidenceWindow(*sample.CCReceivedAt, ev.start, sample.IngestedAt) ||
 				sample.IngestedAt.Sub(*sample.CCReceivedAt) > 3*time.Second {
 				continue
 			}

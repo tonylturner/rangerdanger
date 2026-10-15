@@ -238,6 +238,60 @@
         "action": "ALLOW"
       },
       {
+        "id": "deny-unauthorized-historian-ingest",
+        "description": "Deny and log other sources attempting historian snapshot ingest on TCP/8081",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan5"
+        ],
+        "destinations": [
+          "10.70.70.40/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8081"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      {
+        "id": "deny-unauthorized-plc-web",
+        "description": "Deny and log other sources attempting OpenPLC web maintenance on TCP/8080",
+        "sourceZones": [
+          "wan",
+          "dmz",
+          "lan1",
+          "lan2",
+          "lan3",
+          "lan4",
+          "lan5"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "destinations": [
+          "10.30.30.30/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "DENY",
+        "log": true
+      },
+      {
         "id": "deny-unauthorized-iec104",
         "description": "Deny and log other sources attempting to reach IEC104 on TCP/2404",
         "sourceZones": [

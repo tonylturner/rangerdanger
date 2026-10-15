@@ -18,8 +18,16 @@ func TestValidatorRegistrations(t *testing.T) {
 		"us-vendor-rdp-compromise":     {labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		"us-validation-evidence":       {labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		"eu-iec104-telecontrol":        {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-station-conduits":          {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-rmu-switching":             {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-oltc-plc-historian":        {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
 	}
 	requirements := ValidatorRequirements()
+	for key := range requirements {
+		if _, ok := expected[key]; !ok {
+			t.Errorf("unexpected registered validator %q", key)
+		}
+	}
 	for key, want := range expected {
 		if !slices.Equal(requirements[key], want) || scenarioValidators[key].run == nil {
 			t.Errorf("registration %s = %v; want %v", key, requirements[key], want)

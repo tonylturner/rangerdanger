@@ -166,7 +166,7 @@
         },
         {
           "id": "eu-tool-mbpoll",
-          "title": "Read field devices with mbpoll",
+          "title": "mbpoll reads and boundary limits",
           "file": "eu-tool-mbpoll.md"
         },
         {
@@ -244,7 +244,7 @@
         },
         {
           "id": "eu-bdew-security-context",
-          "title": "BDEW whitepaper security requirements",
+          "title": "BDEW/OE/VSE whitepaper security context",
           "file": "eu-bdew-security-context.md"
         },
         {
