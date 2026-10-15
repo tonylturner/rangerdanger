@@ -81,7 +81,7 @@ func TestTelecontrolValidatorFailsOnMissingSources(t *testing.T) {
 		overrides     map[string]map[string]stubResponse
 		failing       []string
 	}{
-		{"weak policy running", "weak.json", nil, []string{checkPolicy}},
+		{"weak policy running", "weak.json", nil, []string{checkDeny}},
 		{"control centre down", "improved.json", map[string]map[string]stubResponse{"control_centre": {
 			"GET /api/state":           {http.StatusServiceUnavailable, `{}`},
 			"GET /api/journal?after=0": {http.StatusServiceUnavailable, `{}`},
