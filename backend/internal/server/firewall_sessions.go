@@ -28,7 +28,7 @@ type sessionList struct {
 }
 
 // handleFirewallSessions lists the firewall's conntrack entries, optionally
-// only those with ?dport= and ?src=.
+// only those with ?dport=, ?src= and ?dst=.
 func (s *Server) handleFirewallSessions(c *gin.Context) {
 	var dport *int
 	if raw, ok := c.GetQuery("dport"); ok {
@@ -44,6 +44,11 @@ func (s *Server) handleFirewallSessions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "src must be an IPv4 address"})
 		return
 	}
+	dst, filterDst := c.GetQuery("dst")
+	if filterDst && !isIPv4(dst) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dst must be an IPv4 address"})
+		return
+	}
 
 	all, err := rangeOf(c).Containd().ListSessions(c.Request.Context(), sessionListLimit)
 	if err != nil {
@@ -56,6 +61,9 @@ func (s *Server) handleFirewallSessions(c *gin.Context) {
 			continue
 		}
 		if filterSrc && session.Src != src {
+			continue
+		}
+		if filterDst && session.Dst != dst {
 			continue
 		}
 		sessions = append(sessions, session)

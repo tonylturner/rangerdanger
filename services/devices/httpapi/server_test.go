@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -162,12 +163,16 @@ func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 		t.Fatalf("unknown fault field status=%d", unknown.Code)
 	}
 	fault := perform(instructor, http.MethodPost, "/api/instructor/fault", `{"active":true}`, "10.99.99.22:54321")
-	if fault.Code != http.StatusOK {
+	if fault.Code != http.StatusOK || !snapshotResponseMatches(t, fault, model.Snapshot()) {
 		t.Fatalf("fault status=%d body=%s", fault.Code, fault.Body)
 	}
 	truth := model.Truth()
 	if truth.Position != feederbreaker.PositionOpen || !truth.Lockout || !truth.FaultActive || !truth.ProtectionTripped {
 		t.Fatalf("fault state = %+v", truth)
+	}
+	noOpFault := perform(instructor, http.MethodPost, "/api/instructor/fault", `{"active":true}`, "10.99.99.22:54321")
+	if noOpFault.Code != http.StatusOK || !snapshotResponseMatches(t, noOpFault, model.Snapshot()) {
+		t.Fatalf("no-op fault status=%d body=%s", noOpFault.Code, noOpFault.Body)
 	}
 	resetNull := perform(instructor, http.MethodPost, "/api/instructor/reset", `null`, "10.99.99.22:54321")
 	if resetNull.Code != http.StatusBadRequest {
@@ -178,7 +183,8 @@ func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 		t.Fatalf("unknown reset field status=%d", resetUnknown.Code)
 	}
 	reset := perform(instructor, http.MethodPost, "/api/instructor/reset", `{}`, "10.99.99.22:54321")
-	if reset.Code != http.StatusOK || model.Truth().Position != feederbreaker.PositionClosed {
+	if reset.Code != http.StatusOK || !snapshotResponseMatches(t, reset, model.Snapshot()) ||
+		model.Truth().Position != feederbreaker.PositionClosed {
 		t.Fatalf("reset status=%d body=%s truth=%+v", reset.Code, reset.Body, model.Truth())
 	}
 
@@ -208,6 +214,36 @@ func TestFaultResetAuditRoutesAndStrictBodies(t *testing.T) {
 	if !foundTrip {
 		t.Fatalf("local protection context missing from audit: %+v", auditBody.Entries)
 	}
+}
+
+func snapshotResponseMatches(t *testing.T, response *httptest.ResponseRecorder, want feederbreaker.Snapshot) bool {
+	t.Helper()
+	var got feederbreaker.Snapshot
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Errorf("response is not a state snapshot: %v", err)
+		return false
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("snapshot response = %+v, want %+v", got, want)
+		return false
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Errorf("decode snapshot response: %v", err)
+		return false
+	}
+	var measurements map[string]json.RawMessage
+	if err := json.Unmarshal(body["measurements"], &measurements); err != nil {
+		t.Errorf("decode measurements: %v", err)
+		return false
+	}
+	for _, field := range []string{"current_a", "voltage_kv_ll", "valid", "solver_epoch", "solve_seq", "solved_at", "received_at"} {
+		if _, ok := measurements[field]; !ok {
+			t.Errorf("snapshot response lacks measurements.%s", field)
+			return false
+		}
+	}
+	return true
 }
 
 func TestListenAddressRequiresExplicitIPv4(t *testing.T) {

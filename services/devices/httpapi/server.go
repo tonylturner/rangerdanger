@@ -23,8 +23,8 @@ type device interface {
 	Snapshot() feederbreaker.Snapshot
 	Truth() feederbreaker.Truth
 	ApplyMeasurements(context.Context, feederbreaker.MeasurementInput, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
-	InjectFault(context.Context, bool, feederbreaker.AuditContext) (feederbreaker.CommandResult, error)
-	Reset(context.Context, feederbreaker.AuditContext) error
+	InjectFault(context.Context, bool, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
+	Reset(context.Context, feederbreaker.AuditContext) (feederbreaker.Snapshot, error)
 	MeasurementStatus() (bool, *int64)
 	AuditAfter(uint64) ([]feederbreaker.AuditEntry, *uint64, *uint64)
 	Generation() uint32
@@ -134,12 +134,12 @@ func (s *Server) handleFault(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "active is required", http.StatusBadRequest)
 		return
 	}
-	result, err := s.model.InjectFault(r.Context(), *request.Active, s.context(r, "instructor"))
+	snapshot, err := s.model.InjectFault(r.Context(), *request.Active, s.context(r, "instructor"))
 	if err != nil {
 		http.Error(w, "fault request failed", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"accepted": result.Accepted})
+	writeJSON(w, snapshot)
 }
 
 func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) {
@@ -148,11 +148,12 @@ func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reset body must be an empty object", http.StatusBadRequest)
 		return
 	}
-	if err := s.model.Reset(r.Context(), s.context(r, "instructor")); err != nil {
+	snapshot, err := s.model.Reset(r.Context(), s.context(r, "instructor"))
+	if err != nil {
 		http.Error(w, "reset request failed", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"accepted": true})
+	writeJSON(w, snapshot)
 }
 
 func (s *Server) context(r *http.Request, protocol string) feederbreaker.AuditContext {

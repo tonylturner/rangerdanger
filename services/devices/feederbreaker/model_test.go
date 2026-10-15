@@ -102,11 +102,10 @@ func TestLocalProtectionLatchClearAndReset(t *testing.T) {
 	model.mu.Unlock()
 
 	faultContext := AuditContext{Peer: "10.99.99.22:1234", Protocol: "instructor", Zone: "mgmt"}
-	result, err := model.InjectFault(context.Background(), true, faultContext)
-	if err != nil || !result.Accepted {
-		t.Fatalf("fault injection result=%+v err=%v", result, err)
+	tripped, err := model.InjectFault(context.Background(), true, faultContext)
+	if err != nil {
+		t.Fatalf("fault injection: %v", err)
 	}
-	tripped := model.Snapshot()
 	if tripped.Position != PositionOpen || !tripped.FaultActive || !tripped.Lockout || !tripped.ProtectionTripped || tripped.RemoteEnabled {
 		t.Fatalf("fault did not trip and latch locally: %+v", tripped.Truth)
 	}
@@ -116,25 +115,33 @@ func TestLocalProtectionLatchClearAndReset(t *testing.T) {
 		t.Fatalf("local-protection audit missing or misattributed: %+v", entries)
 	}
 
-	if _, err := model.ClearFault(context.Background(), faultContext); err != nil {
+	noOp, err := model.InjectFault(context.Background(), true, faultContext)
+	if err != nil || noOp.Truth != tripped.Truth {
+		t.Fatalf("no-op fault snapshot=%+v want %+v, err=%v", noOp, tripped, err)
+	}
+
+	cleared, err := model.ClearFault(context.Background(), faultContext)
+	if err != nil {
 		t.Fatal(err)
 	}
-	cleared := model.Snapshot()
 	if cleared.Position != PositionOpen || cleared.FaultActive || !cleared.Lockout || !cleared.ProtectionTripped {
 		t.Fatalf("clearing fault changed the latch or reclosed: %+v", cleared.Truth)
 	}
 
 	beforeResetRevision := cleared.Revision
-	if err := model.Reset(context.Background(), faultContext); err != nil {
+	reset, err := model.Reset(context.Background(), faultContext)
+	if err != nil {
 		t.Fatal(err)
 	}
-	reset := model.Snapshot()
 	if reset.Position != PositionClosed || !reset.RemoteEnabled || reset.Lockout || reset.FaultActive ||
 		reset.ProtectionTripped || reset.Revision != beforeResetRevision+1 {
 		t.Fatalf("reset did not restore initial truth and bump revision: %+v", reset.Truth)
 	}
 	if reset.EventSeq != cleared.EventSeq+1 {
 		t.Fatalf("reset event sequence = %d, want %d", reset.EventSeq, cleared.EventSeq+1)
+	}
+	if got := model.Snapshot(); got.Truth != reset.Truth {
+		t.Fatalf("reset returned %+v, model now has %+v", reset.Truth, got.Truth)
 	}
 }
 

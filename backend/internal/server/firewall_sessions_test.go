@@ -30,19 +30,31 @@ func TestFirewallSessionsList(t *testing.T) {
 			`{"proto":"tcp","src":"10.10.10.50","dst":"10.30.30.20","sport":51000,"dport":2404,"state":"ESTABLISHED","timeout":431990}],"count":2}`},
 		{"dport and src", "?dport=2404&src=10.60.60.20", http.StatusOK, `{"sessions":[` +
 			`{"proto":"tcp","src":"10.60.60.20","dst":"10.30.30.20","sport":40312,"dport":2404,"state":"ESTABLISHED","timeout":431999}],"count":1}`},
+		{"dst only", "?dst=10.30.30.20", http.StatusOK, `{"sessions":[` +
+			`{"proto":"tcp","src":"10.60.60.20","dst":"10.30.30.20","sport":40312,"dport":2404,"state":"ESTABLISHED","timeout":431999},` +
+			`{"proto":"tcp","src":"10.10.10.50","dst":"10.30.30.20","sport":51000,"dport":2404,"state":"ESTABLISHED","timeout":431990},` +
+			`{"proto":"icmp","src":"10.10.10.50","dst":"10.30.30.20","sport":null,"dport":null,"state":null,"timeout":29}],"count":3}`},
+		{"src dst and dport", "?dport=2404&src=10.60.60.20&dst=10.30.30.20", http.StatusOK, `{"sessions":[` +
+			`{"proto":"tcp","src":"10.60.60.20","dst":"10.30.30.20","sport":40312,"dport":2404,"state":"ESTABLISHED","timeout":431999}],"count":1}`},
 		{"no match", "?dport=20000", http.StatusOK, `{"sessions":[],"count":0}`},
 		{"bad dport", "?dport=0", http.StatusBadRequest, `{"error":"dport must be a port number 1-65535"}`},
 		{"bad src", "?src=10.60.60", http.StatusBadRequest, `{"error":"src must be an IPv4 address"}`},
+		{"empty dst", "?dst=", http.StatusBadRequest, `{"error":"dst must be an IPv4 address"}`},
+		{"bad dst", "?dst=10.30.30.500", http.StatusBadRequest, `{"error":"dst must be an IPv4 address"}`},
+		{"IPv6 dst", "?dst=2001:db8::1", http.StatusBadRequest, `{"error":"dst must be an IPv4 address"}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, fw := newUpstreamStub(t, map[string]stubResponse{
+			stub, fw := newUpstreamStub(t, map[string]stubResponse{
 				"GET /api/v1/conntrack?limit=5000": {http.StatusOK, conntrackFixture},
 			})
 			s := rangeServer(usGeneration(containd.NewClient(fw.URL)), "weak")
 			rec := callRoute(s, s.handleFirewallSessions, http.MethodGet, "/api/firewall/sessions", "/api/firewall/sessions"+test.query, "")
 			if rec.Code != test.code || rec.Body.String() != test.want {
 				t.Errorf("GET sessions%s = %d %s\nwant %d %s", test.query, rec.Code, rec.Body, test.code, test.want)
+			}
+			if test.code == http.StatusBadRequest && len(stub.requests) != 0 {
+				t.Errorf("invalid filter reached containd: %q", stub.requests)
 			}
 		})
 	}

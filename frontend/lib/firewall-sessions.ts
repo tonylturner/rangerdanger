@@ -70,7 +70,7 @@ export class SessionLookupError extends Error {
 // Reads the CC's sessions fresh from containd and returns the one tuple
 // to kill. Throws SessionLookupError unless exactly one matches.
 export async function findControlCentreSession(): Promise<SessionTuple> {
-  const list = await getFirewallSessions({ dport: IEC104_PORT, src: CONTROL_CENTRE_IP });
+  const list = await getFirewallSessions({ dport: IEC104_PORT, src: CONTROL_CENTRE_IP, dst: RTU_IP });
   const match = matchControlCentreSession(list.sessions);
   if (match.kind !== "one") throw new SessionLookupError(match);
   return match.tuple;

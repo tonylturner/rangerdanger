@@ -57,11 +57,13 @@ describe("firewall session tuples", () => {
 });
 
 describe("findControlCentreSession", () => {
-  it("asks containd for the control centre's tcp/2404 sessions and returns the one tuple", async () => {
+  it("asks containd for the control centre's exact tcp/2404 tuple and returns it", async () => {
     const fetchMock = vi.fn().mockResolvedValue(answer([CC]));
     vi.stubGlobal("fetch", fetchMock);
     await expect(findControlCentreSession()).resolves.toEqual(CC_TUPLE);
-    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/firewall\/sessions\?dport=2404&src=10\.60\.60\.20$/);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(
+      /\/firewall\/sessions\?dport=2404&src=10\.60\.60\.20&dst=10\.30\.30\.20$/,
+    );
   });
 
   it("refuses zero or several matches and says nothing was killed", async () => {

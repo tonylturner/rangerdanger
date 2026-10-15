@@ -120,8 +120,7 @@ func (s *Server) handleInstructorReset(c *gin.Context) {
 	s.instructorAction(c, device, "/api/instructor/reset", []byte(`{}`))
 }
 
-// instructorAction posts one instructor action and answers the device's
-// state after it.
+// instructorAction posts one instructor action and answers its state body.
 func (s *Server) instructorAction(c *gin.Context, device, path string, body []byte) {
 	state, err := postInstructorAction(c.Request.Context(), device, path, body)
 	if err != nil {
@@ -131,9 +130,8 @@ func (s *Server) instructorAction(c *gin.Context, device, path string, body []by
 	c.Data(http.StatusOK, "application/json; charset=utf-8", state)
 }
 
-// postInstructorAction posts an instructor action, then reads the device
-// state. The device acknowledges an action without its state, so the
-// state is read after it.
+// postInstructorAction posts one instructor action and requires the device
+// to return its state rather than an action acknowledgement.
 func postInstructorAction(ctx context.Context, device, path string, body []byte) (json.RawMessage, error) {
 	status, answer, err := callUpstream(ctx, http.MethodPost, device+path, body, upstreamReadTimeout)
 	if err != nil {
@@ -142,7 +140,18 @@ func postInstructorAction(ctx context.Context, device, path string, body []byte)
 	if status != http.StatusOK {
 		return nil, &upstreamError{service: instructorService, status: status, body: answer}
 	}
-	return fetchUpstreamObject(ctx, instructorService, device+"/api/state")
+	state, err := jsonObject(instructorService, answer)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(state, &fields); err != nil {
+		return nil, err
+	}
+	if _, acknowledgement := fields["accepted"]; acknowledgement {
+		return nil, fmt.Errorf("%s returned an action acknowledgement instead of state", instructorService)
+	}
+	return state, nil
 }
 
 // resetInstructorDevice is the workshop reset's step for the instructor

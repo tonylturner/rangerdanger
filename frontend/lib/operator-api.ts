@@ -252,11 +252,12 @@ export type SessionTuple = {
   dport: number;
 };
 
-export type SessionFilter = { dport: number; src?: string };
+export type SessionFilter = { dport: number; src?: string; dst?: string };
 
 export async function getFirewallSessions(filter: SessionFilter) {
   const query = new URLSearchParams({ dport: String(filter.dport) });
   if (filter.src !== undefined) query.set("src", filter.src);
+  if (filter.dst !== undefined) query.set("dst", filter.dst);
   return request<FirewallSessionList>(`/firewall/sessions?${query.toString()}`);
 }
 

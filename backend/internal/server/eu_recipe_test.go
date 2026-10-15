@@ -77,8 +77,7 @@ func TestFirewallRulesFallbackIsUSOnly(t *testing.T) {
 func TestEUWorkshopReset(t *testing.T) {
 	fw, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
 	device, dev := newUpstreamStub(t, map[string]stubResponse{
-		"POST /api/instructor/reset": {http.StatusOK, `{"accepted":true}`},
-		"GET /api/state":             {http.StatusOK, deviceStateFixture},
+		"POST /api/instructor/reset": {http.StatusOK, deviceStateFixture},
 	})
 	s := rangeServer(euGeneration(t, containd.NewClient(fw.URL), map[string]string{"feeder_breaker": dev.URL}), "improved")
 	s.orchestrator = &orchestrator.Orchestrator{}
@@ -93,7 +92,7 @@ func TestEUWorkshopReset(t *testing.T) {
 	if counters.commitCount != 1 || s.activeConfig != "weak" {
 		t.Errorf("commits = %d, active = %q; want the weak policy applied", counters.commitCount, s.activeConfig)
 	}
-	if !reflect.DeepEqual(device.requests, []string{"POST /api/instructor/reset", "GET /api/state"}) || device.bodies[0] != `{}` {
+	if !reflect.DeepEqual(device.requests, []string{"POST /api/instructor/reset"}) || device.bodies[0] != `{}` {
 		t.Errorf("device requests = %q %q", device.requests, device.bodies)
 	}
 }

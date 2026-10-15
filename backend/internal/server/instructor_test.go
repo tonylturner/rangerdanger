@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -61,9 +62,15 @@ func TestInstructorActions(t *testing.T) {
 		code             int
 		want             string
 	}{
-		{"fault on", "/api/instructor/fault", `{"active":true}`, &stubResponse{http.StatusOK, `{"accepted":true}`}, `{"active":true}`, http.StatusOK, deviceStateFixture},
-		{"fault off", "/api/instructor/fault", `{"active":false}`, &stubResponse{http.StatusOK, `{"accepted":true}`}, `{"active":false}`, http.StatusOK, deviceStateFixture},
-		{"reset", "/api/instructor/reset", `{}`, &stubResponse{http.StatusOK, `{"accepted":true}`}, `{}`, http.StatusOK, deviceStateFixture},
+		{"fault on", "/api/instructor/fault", `{"active":true}`, &stubResponse{http.StatusOK, deviceStateFixture}, `{"active":true}`, http.StatusOK, deviceStateFixture},
+		{"fault off", "/api/instructor/fault", `{"active":false}`, &stubResponse{http.StatusOK, deviceStateFixture}, `{"active":false}`, http.StatusOK, deviceStateFixture},
+		{"reset", "/api/instructor/reset", `{}`, &stubResponse{http.StatusOK, deviceStateFixture}, `{}`, http.StatusOK, deviceStateFixture},
+		{"acknowledgement is not state", "/api/instructor/reset", `{}`, &stubResponse{http.StatusOK, `{"accepted":true}`}, `{}`,
+			http.StatusBadGateway, `{"error":"instructor device returned an action acknowledgement instead of state"}`},
+		{"non-object body", "/api/instructor/reset", `{}`, &stubResponse{http.StatusOK, `[]`}, `{}`,
+			http.StatusBadGateway, `{"error":"instructor device returned a body that is not a JSON object"}`},
+		{"malformed body", "/api/instructor/reset", `{}`, &stubResponse{http.StatusOK, `{"schema":`}, `{}`,
+			http.StatusBadGateway, `{"error":"instructor device returned a body that is not a JSON object"}`},
 		{"device refuses", "/api/instructor/reset", `{}`, &stubResponse{http.StatusInternalServerError, "reset request failed\n"}, `{}`,
 			http.StatusBadGateway, `{"error":"instructor device returned 500: reset request failed"}`},
 		{"fault without active", "/api/instructor/fault", `{}`, nil, "", http.StatusBadRequest, `{"error":"active is required"}`},
@@ -72,7 +79,7 @@ func TestInstructorActions(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			routes := map[string]stubResponse{"GET /api/state": {http.StatusOK, deviceStateFixture}}
+			routes := map[string]stubResponse{}
 			if test.upstream != nil {
 				routes["POST "+test.path] = *test.upstream
 			}
@@ -91,7 +98,10 @@ func TestInstructorActions(t *testing.T) {
 				}
 				return
 			}
-			if len(device.bodies) == 0 || device.bodies[0] != test.wantSent {
+			if !reflect.DeepEqual(device.requests, []string{"POST " + test.path}) {
+				t.Errorf("device requests = %q, want exactly one POST", device.requests)
+			}
+			if len(device.bodies) != 1 || device.bodies[0] != test.wantSent {
 				t.Errorf("device received %q, want %s", device.bodies, test.wantSent)
 			}
 		})

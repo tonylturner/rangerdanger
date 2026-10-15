@@ -244,9 +244,9 @@ func (m *Model) Command(ctx context.Context, command Command, actor AuditContext
 	return CommandResult{Accepted: true, Changed: true}
 }
 
-func (m *Model) InjectFault(ctx context.Context, active bool, actor AuditContext) (CommandResult, error) {
+func (m *Model) InjectFault(ctx context.Context, active bool, actor AuditContext) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
-		return CommandResult{Reason: err.Error()}, err
+		return Snapshot{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -257,7 +257,7 @@ func (m *Model) InjectFault(ctx context.Context, active bool, actor AuditContext
 			At: m.now().UTC(), Operation: "fault", Result: "accepted",
 			Before: before, After: before, Context: actor, Detail: "no_op",
 		})
-		return CommandResult{Accepted: true}, nil
+		return before, nil
 	}
 
 	m.faultActive = active
@@ -276,16 +276,16 @@ func (m *Model) InjectFault(ctx context.Context, active bool, actor AuditContext
 			Detail: map[string]any{"cause": "fault_active"},
 		})
 	}
-	return CommandResult{Accepted: true, Changed: true}, nil
+	return after, nil
 }
 
-func (m *Model) ClearFault(ctx context.Context, actor AuditContext) (CommandResult, error) {
+func (m *Model) ClearFault(ctx context.Context, actor AuditContext) (Snapshot, error) {
 	return m.InjectFault(ctx, false, actor)
 }
 
-func (m *Model) Reset(ctx context.Context, actor AuditContext) error {
+func (m *Model) Reset(ctx context.Context, actor AuditContext) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return Snapshot{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -300,7 +300,7 @@ func (m *Model) Reset(ctx context.Context, actor AuditContext) error {
 	m.truthChangedLocked(m.now())
 	after := m.snapshotLocked()
 	m.audit.Add(AuditEntry{At: after.ChangedAt, Operation: "reset", Result: "accepted", Before: before, After: after, Context: actor})
-	return nil
+	return after, nil
 }
 
 func (m *Model) ApplyMeasurements(ctx context.Context, input MeasurementInput, actor AuditContext) (Snapshot, error) {
