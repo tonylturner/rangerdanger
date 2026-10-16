@@ -33,6 +33,7 @@ services:
       # because no nft filter table is built. Setting CONTAIND_ENFORCE_ENABLED=1
       # explicitly is required for the lab to actually forward traffic.
       - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
+      - CONTAIND_ENGINE_ADDR=127.0.0.1:8081
       - CONTAIND_CONFIG_DB=/data/config.db
       # CONTAIND_CAPTURE_IFACES intentionally unset. containd's PCAP
       # path resolves the env value as a literal kernel interface name

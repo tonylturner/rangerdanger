@@ -14,6 +14,14 @@ class ManagementProbes(unittest.TestCase):
     def setUp(self):
         self.manifest = json.loads((ROOT / 'lab-definitions/packages/eu-iec104-substation/manifest.json').read_text())
 
+    def test_engine_loopback_in_both_package_models(self):
+        for package in ("eu-iec104-substation", "us-dnp3-substation"):
+            for mode in ("source", "release"):
+                model = (ROOT / f"lab-definitions/packages/{package}/compose.{mode}.yml").read_text()
+                firewall = model.split("  firewall:", 1)[1].split("  kali:", 1)[0]
+                self.assertEqual(firewall.count("CONTAIND_ENGINE_ADDR=127.0.0.1:8081"), 1)
+                self.assertIn("CONTAIND_ENGINE_URL=http://127.0.0.1:8081", firewall)
+
     def test_policy_matrix(self):
         for service in self.manifest['services']:
             for policy in ('weak', 'improved'):
