@@ -1,24 +1,6 @@
-// requirement-coverage.ts — bridge between Lab 1.3 and Lab 1.4.
-//
-// Lab 1.3 captures five "design requirements" via :::decision blocks
-// (BLOCK / BLOCK and LOG / RESTRICT / ALLOW). Lab 1.4 lets the
-// student pick a slate of remediation actions under a labor budget.
-// This module maps between them so 1.4 can:
-//
-//   - render the student's stated requirements as context at the top
-//     of the decision panel (read-only — they're a constraint, not
-//     a new input)
-//   - tag each 1.4 action with which 1.3 requirement it implements
-//     (so students can see why a specific action is in the catalog)
-//   - compute coverage at the bottom: for each non-ALLOW requirement,
-//     is at least one implementing action selected? if not, show
-//     the gap explicitly
-//
-// 1.4 actions that don't map to any 1.3 requirement (e.g.
-// rtac-architecture-review, tighten-firewall-objects, positive-
-// validation, improve-logging-as-standalone) stay in the catalog —
-// they're "operational hygiene" beyond what the design spec requires
-// and the labor budget still constrains their selection.
+// Package-owned requirements connect saved design verdicts to planning actions.
+// The binding supplies labels, verdict-to-action mappings and effect semantics;
+// coverage reports full, partial or missing implementation without editing picks.
 
 import type { CurriculumBinding } from "./api";
 import { decisionName, readCurriculum, type CurriculumScope } from "./curriculum-storage";
@@ -29,14 +11,7 @@ export type Requirement = {
   verdict: string;       // BLOCK / BLOCK and LOG / RESTRICT / ALLOW / "" if unset
 };
 
-// One 1.3 requirement → the 1.4 actions that implement it, keyed
-// by verdict. ALLOW deliberately has no implementing actions
-// (because the design said "permit" — student may still choose
-// hygiene actions, but they don't satisfy a requirement). Verdicts
-// not listed (e.g. RESTRICT for enterprise-to-field, which doesn't
-// make engineering sense) fall through to "no mapped actions" —
-// the requirement is then marked "uncertain" in coverage rather
-// than gap, since the verdict itself is unusual.
+// Read decisions from the requirements-role scenario in the active package.
 function readVerdict(scope: CurriculumScope, decisionId: string): string {
   const scenario = scope.curriculum?.roles.requirements;
   return scenario ? readCurriculum(scope, decisionName(scenario, decisionId)) ?? "" : "";
@@ -51,9 +26,7 @@ export function readRequirements(scope: CurriculumScope): Requirement[] {
   }));
 }
 
-// What 1.3 requirement(s) does this 1.4 action satisfy, given the
-// student's stated verdicts? Returns an empty list if the action
-// is in the "operational hygiene" bucket (no design-driven need).
+// Find requirements mapped to this action for the student's saved verdicts.
 export function actionImplements(actionId: string, requirements: Requirement[], curriculum?: CurriculumBinding): Requirement[] {
   const out: Requirement[] = [];
   for (const req of requirements) {
@@ -126,19 +99,8 @@ export function summariseCoverage(items: CoverageItem[]): {
   return out;
 }
 
-// ─── Resourcing readiness (Option B — observational) ───────────────────
-//
-// Lab 1.3's resourcing-reality-check step captures four readiness
-// answers (OT engineering capacity, firewall admin skills, vendor
-// change windows, risk-acceptance authority). They live under the
-// same `decision:segmentation-requirements:*` curriculum storage names.
-//
-// Lab 1.4 reads them and renders per-action overlays: actions that
-// depend on a resource the student marked as constrained get a
-// "warn" or "blocked" flag with a tooltip explaining the dependency.
-// Actions still selectable — this is observational, not enforcing.
-// Issue #27 tracks the dynamic-budget version (Option C) where
-// readiness answers actually shrink the labor budget.
+// Readiness answers and action overlays are defined by the active binding.
+// Flags are observational: they do not change the budget or prevent selection.
 
 export type ReadinessKey = string;
 
@@ -165,13 +127,7 @@ export type ReadinessFlag = {
   message: string;
 };
 
-// readinessFlagsForAction inspects the four readiness answers and
-// returns the set of overlays that should attach to a given 1.4
-// action. "blocked" means the action is dependent on a precondition
-// the student says doesn't exist yet (e.g. vendor change window not
-// even discussed). "warn" means the action is harder than the labor
-// budget alone would suggest. Both are visible — neither stops the
-// student from selecting the action.
+// Match package-authored overlays against the student's readiness answers.
 export function readinessFlagsForAction(
   actionId: string,
   readiness: ReadinessAnswer[],

@@ -1,10 +1,4 @@
-// Maps exercise scenario IDs to the container node IDs involved.
-// Node IDs must match the topology in substation-segmentation.yml.
-
-export type ExerciseNodeInfo = {
-  primary: string;
-  others: string[];
-};
+// Resolve exercise nodes from scenario metadata or the active package binding.
 
 import type { CurriculumBinding } from "./api";
 

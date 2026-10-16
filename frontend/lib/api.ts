@@ -657,9 +657,9 @@ export type CurriculumBinding = {
   teams: DecisionRole[];
   catalog: DecisionAction[];
   impact: Record<string, { defends: string[]; note: string }>;
-  baselineRules: import("./remediation-to-rules").FirewallRule[];
-  enterpriseToVendorRule: import("./remediation-to-rules").FirewallRule | null;
-  groups: Record<string, { title: string; description: string; rules: import("./remediation-to-rules").FirewallRule[]; omittedRules?: import("./remediation-to-rules").FirewallRule[]; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
+  baselineRules: FirewallRule[];
+  enterpriseToVendorRule: FirewallRule | null;
+  groups: Record<string, { title: string; description: string; rules: FirewallRule[]; omittedRules?: FirewallRule[]; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
   planningOnly: string[];
   policy: { rule: CurriculumPolicyRule; when?: string; unless?: string; logging?: boolean; semantic?: string; predicate?: CurriculumPredicate }[];
   phases: Record<string, string>;
@@ -675,6 +675,19 @@ export type CurriculumBinding = {
   dpiForbiddenNotice: { title: string; description: string };
   legacyDisplayMutation: boolean;
   legacyEffects: boolean;
+};
+
+// Display rules are part of the curriculum DTO, not a compiler dependency.
+export type FirewallRule = {
+  id: string;
+  source: string;
+  destination: string;
+  proto: string;
+  port: string;
+  action: "ALLOW" | "DENY";
+  purpose: string;
+  log?: boolean;
+  ics?: CurriculumPredicate;
 };
 
 export type CurriculumPredicate = {

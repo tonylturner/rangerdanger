@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
-import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
+import type { DecisionAction, DecisionRole } from "../lib/api";
 import { actionEffectLabel, saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
@@ -19,7 +19,6 @@ import {
 
 type DecisionPanelProps = {
   exerciseId: string;
-  action: StepAction;
 };
 
 // Effort split model: each required role consumes effort / roles.length hours.
