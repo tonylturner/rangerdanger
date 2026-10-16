@@ -1,10 +1,10 @@
 # Architecture Overview
 
-RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - six virtual networks (four firewalled zones plus management and physics), a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
+RangerDanger is a containerized substation cyber range. It runs entirely inside Docker - a package-specific teaching topology plus management, physics and isolated desktop delivery bridges, a deep-packet-inspection firewall at the center, custom Go simulators for field devices, and a Next.js web application for orchestration and exercise delivery.
 
 ## Network topology
 
-The substation is modeled as four firewalled zones plus one non-firewalled physics network and one out-of-band management network. The containd NGFW is multi-homed across all four firewalled zones and acts as the default gateway for each, forcing all inter-zone traffic through deep-packet inspection and policy enforcement.
+The US substation is modeled as four firewalled teaching zones plus one non-firewalled physics network and one out-of-band management network. The containd NGFW is multi-homed across the teaching zones and acts as their default gateway, forcing teaching inter-zone traffic through deep-packet inspection and policy enforcement. The inventory below describes US; EU uses station/process instead of OT-Ops/physics and adds Control Centre and Operations DMZ teaching zones. Each package's manifest defines its full attachment set. Desktop delivery bridges, described below, are outside the teaching topology.
 
 | Zone | Subnet | containd zone | Purpose |
 |------|--------|---------------|---------|
@@ -25,10 +25,10 @@ This compensating control is why the hardened `substation-improved.json` source-
 
 | Node | Container | Zone(s) | IP | Role |
 |------|-----------|---------|-----|------|
-| Corporate workstation | `corp_ws` | enterprise | 10.10.10.10 | Generic IT workstation |
+| Corporate workstation | `corp_ws` | enterprise + desk_corp | 10.10.10.10 | Generic IT workstation |
 | Kali attacker | `kali` | enterprise | 10.10.10.50 | Offense tooling: nmap, mbpoll, dnp3poll, dnp3cmd, pymodbus |
-| Vendor jump box | `vendor_jump` | vendor | 10.20.20.10 | Vendor remote access |
-| Engineering workstation | `eng_workstation` | vendor | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
+| Vendor jump box | `vendor_jump` | vendor + desk_vendor | 10.20.20.10 | Vendor remote access |
+| Engineering workstation | `eng_workstation` | vendor + desk_eng | 10.20.20.20 | Ubuntu MATE desktop with Wireshark, tshark, mbpoll, dnp3 tools |
 | FUXA HMI | `fuxa_hmi` | ot_ops | 10.30.30.10 | Operator HMI (SCADA) |
 | RTAC | `rtac_sim` | ot_ops + field + physics + mgmt | 10.30.30.20 (also 10.40.40.10 on field_net pinned via the OT-Ops firewall, 10.50.50.10 on physics_net for OpenDSS polling, 10.99.99.20 on mgmt_net so the backend can reach it) | Supervisory controller / protocol broker |
 | OpenPLC | `openplc` | ot_ops | 10.30.30.30 | Substation automation PLC (Modbus client of the RTAC) |
@@ -42,9 +42,34 @@ This compensating control is why the hardened `substation-improved.json` source-
 | Firewall | `firewall` | all (incl. mgmt) | .2 on each zone | containd NGFW |
 | Backend | `backend` | mgmt | 10.99.99.10 | RangerDanger API |
 | Frontend | `frontend` | mgmt | 10.99.99.11 | Next.js UI |
-| Proxy | `proxy` | mgmt | 10.99.99.3 | Nginx reverse proxy to all node UIs |
+| Proxy | `proxy` | mgmt + all delivery bridges | 10.99.99.3 | Nginx reverse proxy to all node UIs |
 
-The platform services (backend, frontend, proxy) live on `mgmt_net` (10.99.99.0/24) only. User-facing lab nodes that expose UIs (corp_ws, vendor_jump, eng_workstation, fuxa_hmi, openplc) get a `mgmt_net` leg in addition to their lab zone so the proxy can reach them; `rtac_sim` likewise gets a mgmt leg (10.99.99.20) so the backend can reach it at `http://10.99.99.20:8080`. The firewall (containd) sits on every zone.
+Backend and frontend attach only to `mgmt_net` (10.99.99.0/24).
+The proxy retains its management leg and also attaches to three internal,
+platform-owned delivery bridges. Each desktop keeps its teaching-zone leg
+and replaces its management leg with exactly one delivery leg:
+
+| Compose key / Engine name | CIDR | Gateway | Proxy | Desktop (US / EU) |
+|---|---|---|---|---|
+| `desk_corp_net` / `rangerdanger_desk_corp` | 10.98.1.0/28 | 10.98.1.1 | 10.98.1.2 | 10.98.1.3: corp_ws / unused |
+| `desk_vendor_net` / `rangerdanger_desk_vendor` | 10.98.2.0/28 | 10.98.2.1 | 10.98.2.2 | 10.98.2.3: vendor_jump / vendor_jump |
+| `desk_eng_net` / `rangerdanger_desk_eng` | 10.98.3.0/28 | 10.98.3.1 | 10.98.3.2 | 10.98.3.3: eng_workstation / eng_workstation |
+
+Delivery bridges have no containd zone, no backend endpoint and no host
+egress (`internal: true`). `set-gateway.sh` still installs the desktop's
+zone-firewall default route; the connected delivery route carries replies
+to the proxy. nginx resolves the unchanged desktop service names over
+these bridges and forwards HTTP/WebSocket connections as before. Its
+persistent server rejects socket peers in `10.98.0.0/16` with 403 before
+location selection (including redirects); forwarding headers cannot grant
+access. A desktop may answer the proxy, not call through it to management.
+
+FUXA and OpenPLC retain their management legs for UI delivery. The RTAC,
+containd, simulator, solver, historian and GPS management attachments are
+unchanged. Kali remains enterprise-only. Removing a desktop's management
+NIC does not by itself prove a deny: traffic can still follow its zone
+firewall default, so acceptance probes must cover management destinations
+under both weak and improved policies as well as permitted teaching flows.
 
 ### Platform and range
 
@@ -55,7 +80,7 @@ The lab runs as two Compose projects:
 | `rangerdanger-platform` | backend, frontend, proxy | `docker-compose.yml` (source) or `docker-compose.release.yml` (release) | `setup.sh` / `scripts/dev-up.sh` on the host; never stopped by a range switch |
 | `rangerdanger` (the range) | everything else in the tables above | `lab-definitions/packages/<id>/compose.{source,release}.yml` | the backend only, through `POST /api/range` |
 
-The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`); range files declare it external. The other five networks belong to the range and keep their `rangerdanger_<key>` names. One range runs at a time; switching packages (the UI toggle) stops the old range, starts the new one, installs its proxy routes (`nginx.routes.conf`) and imports its default firewall policy. Each package's `manifest.json` names which container plays which role and the endpoints the backend calls. `setup.sh` writes `RANGERDANGER_ROOT` (the install directory) to `.env`; every Compose call uses it as the project directory, and the backend mounts it read-only at the same path so the range's relative binds resolve to host paths. Teardown is by Compose project label only (`scripts/dev-down.sh`): the range with `down -v --remove-orphans`, which removes only its image-declared anonymous volumes because range models have no named volumes, and the platform without `-v`. The API is in [`api-spec.md`](api-spec.md).
+The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`) and all three delivery bridges; range files declare the platform networks they use as external. Teaching and physics/process networks belong to the range and keep their `rangerdanger_<key>` names. Delivery networks persist across range switches, including the corporate bridge when EU is active. One range runs at a time; switching packages (the UI toggle) stops the old range, starts the new one, installs its proxy routes (`nginx.routes.conf`) and imports its default firewall policy. Each package's `manifest.json` names which container plays which role and the endpoints the backend calls. `setup.sh` writes `RANGERDANGER_ROOT` (the install directory) to `.env`; every Compose call uses it as the project directory, and the backend mounts it read-only at the same path so the range's relative binds resolve to host paths. Teardown is by Compose project label only (`scripts/dev-down.sh`): the range with `down -v --remove-orphans`, which removes only its image-declared anonymous volumes because range models have no named volumes, and the platform without `-v`. The API is in [`api-spec.md`](api-spec.md).
 
 ## Services
 

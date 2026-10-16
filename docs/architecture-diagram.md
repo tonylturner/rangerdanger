@@ -10,15 +10,9 @@ protocols, OpenDSS physics) see [`architecture.md`](architecture.md).
 For the codebase layout (Go packages, frontend libs) see
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-The SVGs below are pre-rendered from the mermaid source so the
-diagrams render in any markdown viewer (GitHub, VS Code, mkdocs,
-PDF export). The source blocks are kept in collapsed `<details>` so
-edits stay diff-friendly. To regenerate:
-
-```sh
-npx --yes @mermaid-js/mermaid-cli -t dark -b transparent \
-  -i source.mmd -o docs/images/diagram-name.svg
-```
+The Compose and network diagrams render directly from Mermaid source (for
+example on GitHub), avoiding a second, stale copy of the network boundary.
+The request-flow diagram retains its pre-rendered SVG and collapsed source.
 
 ---
 
@@ -39,18 +33,13 @@ proxy routes and the default policy) and serves range routes only once
 the range is ready, so nothing in the platform depends on a range
 service.
 
-![Compose stack diagram](images/docker-compose-stack.svg)
-
-<details>
-<summary>Mermaid source</summary>
-
 ```mermaid
 flowchart TB
     classDef built fill:#0c4a6e,stroke:#7dd3fc,color:#e0f2fe
     classDef pulled fill:#581c87,stroke:#c084fc,color:#f3e8ff
     classDef platform fill:#14532d,stroke:#86efac,color:#dcfce7
 
-    subgraph Platform["Platform: rangerdanger-platform (mgmt_net only)"]
+    subgraph Platform["Platform: rangerdanger-platform (mgmt + proxy delivery)"]
         proxy["proxy<br/>nginx:1.27-alpine"]
         backend["backend<br/>build · Dockerfile.backend"]
         frontend["frontend<br/>build · Dockerfile.frontend"]
@@ -123,8 +112,6 @@ flowchart TB
     class proxy,backend,frontend platform
 ```
 
-</details>
-
 **16 first-party images** built from this repo (one Dockerfile each
 for backend, frontend, kali, vendor-jump, eng-ws, corp-ws, openplc, fuxa-hmi; one
 multi-target `services/Dockerfile` producing 7 sim images; one
@@ -141,15 +128,11 @@ and `alpine:3.21`
 
 ## Docker network wiring
 
-Six bridge networks. Four are firewalled by containd (the four ICS
-zones), one is the out-of-band management plane, and one is the
-non-firewalled physics carrier. Every service that crosses zones must
-transit `firewall`; intra-zone traffic stays on the bridge.
-
-![Docker network wiring diagram](images/docker-network-wiring.svg)
-
-<details>
-<summary>Mermaid source</summary>
+The US package has six teaching/control bridge networks plus three
+platform-owned internal delivery bridges. Four teaching zones are firewalled
+by containd; management is out of band and physics is not firewalled. Teaching
+inter-zone traffic must transit `firewall`; intra-zone traffic stays on the
+bridge.
 
 ```mermaid
 flowchart LR
@@ -165,9 +148,6 @@ flowchart LR
         frontend
         proxy
         m_fw[firewall]
-        m_corp[corp_ws]
-        m_vj[vendor_jump]
-        m_ews[eng_workstation]
         m_fuxa[fuxa_hmi]
         m_plc[openplc]
         m_rtac[rtac_sim]
@@ -208,6 +188,16 @@ flowchart LR
         p_rtac[rtac_sim · multi-homed]
     end
 
+    subgraph DC["desk_corp_net · 10.98.1.0/28 · internal"]
+        dc_proxy[proxy · .2] --> dc_corp[corp_ws · .3]
+    end
+    subgraph DV["desk_vendor_net · 10.98.2.0/28 · internal"]
+        dv_proxy[proxy · .2] --> dv_vendor[vendor_jump · .3]
+    end
+    subgraph DE["desk_eng_net · 10.98.3.0/28 · internal"]
+        de_proxy[proxy · .2] --> de_eng[eng_workstation · .3]
+    end
+
     class Mgmt zoneMgt
     class Ent zoneEnt
     class Vendor zoneVen
@@ -215,8 +205,6 @@ flowchart LR
     class FieldNet zoneFld
     class Phys zonePhy
 ```
-
-</details>
 
 **`firewall` is multi-homed across all four ICS zones plus mgmt** -
 five Docker network attachments total. Containd autobinds the policy's
@@ -231,15 +219,19 @@ the kernel-level compensating control that keeps RTAC → field traffic
 visible to containd's policy + capture pipeline. See
 [`architecture.md` § Multi-homed RTAC](architecture.md#multi-homed-rtac-with-kernel-pinned-routing).
 
-**Every browser-accessible UI container also attaches to `mgmt_net`**
-so the nginx proxy can reach it out-of-band without crossing the data
-plane. `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`, and
-`openplc` all have a mgmt leg in addition to their lab zone (the full
-set of `mgmt_net` members is: `firewall`, `backend`, `frontend`,
-`proxy`, `corp_ws`, `vendor_jump`, `eng_workstation`, `fuxa_hmi`,
-`rtac_sim`, `openplc`). `kali` is intentionally not on `mgmt_net` -
-it lives only on `enterprise_net` so attack traffic has to cross the
-firewall like any other enterprise host.
+**Student desktops do not attach to `mgmt_net`.** The proxy reaches
+`corp_ws`, `vendor_jump` and `eng_workstation` on their separate internal
+delivery bridges (gateway `.1`, proxy `.2`, desktop `.3`). These bridges
+have no containd zone or backend endpoint; nginx returns 403 for every
+request from delivery peers, including app redirects. WebSocket delivery
+uses the unchanged service-name upstreams. EU uses vendor and engineering
+bridges only; the corporate bridge persists unused on the platform.
+
+FUXA, OpenPLC and RTAC keep their management legs. Other package-specific
+simulator/solver control-plane legs also stay unchanged. Kali remains
+enterprise-only. Desktops retain their zone-firewall default routes, so
+management isolation must be probed under weak and improved policy; portal
+rendering alone is not evidence of segmentation.
 
 ---
 

@@ -50,9 +50,19 @@ capabilities: [process.electrical, policy.containd, audit.device-control, captur
   installation root as `RANGERDANGER_ROOT` and `--project-directory`;
   relative bind and build paths in the package files resolve from the
   installation root, not from the package directory.
-- The platform owns `rangerdanger_mgmt_net`. Range Compose files reference it
-  as an external network so switching a range does not remove the platform's
-  management network. The other package networks belong to the range.
+- Deployment manifests use schema **2**: `platform` means platform ownership,
+  not management identity. Exactly one platform network is management
+  (`rangerdanger_mgmt_net`); backend endpoints must use that service's own
+  management IP. `delivery: true` marks the fixed platform-owned desktop
+  bridges. They have no zone and their nodes have no endpoints or management
+  leg. Each permits only its designated desktop plus the platform proxy.
+- The platform owns `rangerdanger_mgmt_net` and `rangerdanger_desk_corp`,
+  `rangerdanger_desk_vendor`, `rangerdanger_desk_eng`. Range Compose files
+  reference the ones they use as external; switches never remove them.
+  All other package networks belong to the range. Delivery bridges are
+  internal, use `10.98.1.0/28`, `10.98.2.0/28`, `10.98.3.0/28` respectively,
+  with gateway `.1`, proxy `.2`, desktop `.3`. They are not teaching zones.
+  nginx denies delivery source `10.98.0.0/16` for every location.
 - Offline installation uses the release Compose files with `--pull never`
   after loading the staged images; there is no separate offline overlay.
 - Paths inside a topology (`firewall_config`) resolve from the

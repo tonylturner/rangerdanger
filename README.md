@@ -153,7 +153,7 @@ Most OT segmentation labs hand students a PDF workbook, a Wireshark capture, and
 
 ## Architecture at a glance
 
-A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. Five network zones plus a management plane; all cross-zone traffic transits the containd firewall, including RTAC-to-field, kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
+A Next.js dashboard fronts a Go + Gin backend that orchestrates Docker containers, talks to containd over REST, and runs the scenario validators. Field-device simulators implement Modbus TCP + DNP3 TCP + REST against shared state, with OpenDSS providing feeder physics. The US package has four teaching zones plus management and physics; isolated platform-owned bridges deliver the student desktops without a management NIC. Teaching inter-zone traffic transits the containd firewall; the US RTAC-to-field path is kernel-pinned via `rtac-harden.sh` so the multi-homed RTAC can't bypass policy.
 
 ```mermaid
 flowchart LR
@@ -165,7 +165,7 @@ flowchart LR
         Frontend["Frontend<br/>Next.js 15"]
     end
 
-    subgraph FW["containd NGFW · multi-homed across all 4 zones"]
+    subgraph FW["containd NGFW · all 4 teaching zones + mgmt"]
         Containd["Web UI · SSH · ICS DPI<br/>nft engine"]
     end
 
@@ -200,6 +200,9 @@ flowchart LR
     Proxy --> Backend
     Proxy --> Frontend
     Proxy -. iframe .-> Containd
+    Proxy -. desk_corp_net · 10.98.1.0/28 .-> CorpWS
+    Proxy -. desk_vendor_net · 10.98.2.0/28 .-> VJump
+    Proxy -. desk_eng_net · 10.98.3.0/28 .-> EngWS
 
     Backend -. Docker SDK .-> Mgmt
     Backend -. JWT REST .-> Containd
