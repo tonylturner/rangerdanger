@@ -7,13 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
@@ -206,47 +204,29 @@ func TestEULab3CollectorFailsClosed(t *testing.T) {
 	}
 }
 
-func TestEULab3And4ShippedCurriculum(t *testing.T) {
-	for _, key := range []string{"eu-rmu-switching", "eu-oltc-plc-historian"} {
-		want := []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth}
-		if !slices.Equal(ValidatorRequirements()[key], want) || scenarioValidators[key].run == nil {
-			t.Fatalf("registration %s = %v", key, ValidatorRequirements()[key])
+func TestEULab3And4Knowledge(t *testing.T) {
+	// Operational deep dives moved out of the seven-slot lesson sequence.
+	for file, concepts := range map[string][]string{
+		"eu-switching-deep-dive.md":  {"not_remote", "live_live", "fault passage", "isolation", "back-feed"},
+		"eu-regulation-deep-dive.md": {"19.8", "10 s", "2 s", "+8", "−7", "zero", "manual", "auto"},
+	} {
+		data, err := os.ReadFile(filepath.Join(repoRoot(), "lab-definitions", "packages", euPackageID, "knowledge", file))
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	found := map[string]bool{}
-	for _, pkg := range catalog.Packages {
-		for _, scenario := range pkg.Scenarios {
-			if scenario.ID != "eu-rmu-switching" && scenario.ID != "eu-oltc-plc-historian" {
-				continue
-			}
-			found[scenario.ID] = true
-			if scenario.Validator != scenario.ID || len(scenario.Steps) != 10 {
-				t.Errorf("%s validator/steps: %s/%d", scenario.ID, scenario.Validator, len(scenario.Steps))
-			}
-			decisions, hints := 0, 0
-			for _, step := range scenario.Steps {
-				decisions += strings.Count(step.Description, ":::decision ")
-				hints += strings.Count(step.Description, ":::hint ")
-				if len(strings.Fields(step.Description)) < 90 {
-					t.Errorf("%s/%s lacks operational depth", scenario.ID, step.ID)
-				}
-			}
-			if decisions != 8 || hints < 8 {
-				t.Errorf("%s decisions/hints = %d/%d", scenario.ID, decisions, hints)
+		if strings.Count(string(data), "#### ") != 8 {
+			t.Errorf("%s lost its eight investigation questions", file)
+		}
+		for _, concept := range concepts {
+			if !strings.Contains(string(data), concept) {
+				t.Errorf("%s lost %s", file, concept)
 			}
 		}
-	}
-	if len(found) != 2 {
-		t.Fatalf("found scenarios %v", found)
 	}
 }
 
-// All endpoints, including unexpected ones, are loopback-only. The handler
-// rejects writes so validator tests cannot quietly perform lab actions.
+// All endpoints are loopback-only; the handler rejects writes so collection
+// tests cannot quietly perform lab actions.
 func euLab3TestRange(t *testing.T, ev euLab3Evidence, history, clock *euLab4History) (*Server, *lifecycle.Generation) {
 	t.Helper()
 	policy, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "improved.json"))
@@ -317,10 +297,10 @@ func euLab3TestRange(t *testing.T, ev euLab3Evidence, history, clock *euLab4Hist
 	return rangeServer(gen, "improved"), gen
 }
 
-func TestEULab3RegisteredValidatorReadsManifest(t *testing.T) {
+func TestEULab3EvidenceCollectorReadsManifest(t *testing.T) {
 	ev := euLab3TestEvidence(t)
 	s, gen := euLab3TestRange(t, ev, nil, nil)
-	euLab3AssertPass(t, scenarioValidators["eu-rmu-switching"].run(t.Context(), s, validatorInput{gen: gen, activeConfig: "improved"}))
+	euLab3AssertPass(t, evaluateEULab3(collectEULab3(t.Context(), gen, "rmu-1", "rmu-2", "breaker-1"), s.runningPolicyIs(t.Context(), gen, "improved") == nil))
 }
 
 func TestEULab3ResetStartsNewAttempt(t *testing.T) {

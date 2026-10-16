@@ -1,4 +1,4 @@
-id: iec104-telecontrol-boundary
+id: eu-baseline-assessment
 name: Telecontrol boundary
 summary: Test fixture
 description: Probe and firewall actions only.

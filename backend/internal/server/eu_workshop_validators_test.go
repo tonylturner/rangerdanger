@@ -79,8 +79,8 @@ func TestEUWorkshopValidators(t *testing.T) {
 		t.Run(slot, func(t *testing.T) {
 			ev := passingEUWorkshop(t, slot)
 			assertEUChecks(t, slot, ev, true)
-			if _, exists := scenarioValidators[slot]; exists {
-				t.Fatal("Phase 1 registered a future validator")
+			if validator, exists := scenarioValidators[slot]; !exists || validator.run == nil {
+				t.Fatal("missing workshop validator")
 			}
 			for _, mutation := range []struct {
 				name  string

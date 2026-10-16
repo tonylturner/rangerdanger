@@ -52,3 +52,11 @@ func ValidatorRequirements() labs.ValidatorRequirements {
 	}
 	return requirements
 }
+
+func init() {
+	registerScenarioValidator("eu-baseline-assessment", euBaselineValidator)
+	registerScenarioValidator("eu-firewall-implementation", euImplementationValidator)
+	registerScenarioValidator("eu-hardening-configurations", euHardeningValidator)
+	registerScenarioValidator("eu-vendor-rdp-compromise", euVendorValidator)
+	registerScenarioValidator("eu-validation-evidence", euValidationValidator)
+}

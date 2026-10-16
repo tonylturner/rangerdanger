@@ -217,6 +217,26 @@
           "id": "eu-process-reference-cases",
           "title": "Process reference cases",
           "file": "eu-process-reference-cases.md"
+        },
+        {
+          "id": "eu-telecontrol-deep-dive",
+          "title": "Telecontrol, stale observation and local protection",
+          "file": "eu-telecontrol-deep-dive.md"
+        },
+        {
+          "id": "eu-conduit-deep-dive",
+          "title": "Station conduit assurance and maintenance boundaries",
+          "file": "eu-conduit-deep-dive.md"
+        },
+        {
+          "id": "eu-switching-deep-dive",
+          "title": "Optional RMU switching and restoration investigation",
+          "file": "eu-switching-deep-dive.md"
+        },
+        {
+          "id": "eu-regulation-deep-dive",
+          "title": "Optional PLC regulation, historian and clock investigation",
+          "file": "eu-regulation-deep-dive.md"
         }
       ]
     },

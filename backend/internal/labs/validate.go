@@ -324,8 +324,6 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 				add(prefix + fmt.Sprintf("unknown source node %q", source))
 			}
 		}
-	case "decision":
-		validateDecision(action, add)
 	}
 }
 
@@ -387,40 +385,24 @@ func validateCommand(vocabulary map[string][]string, device, command, prefix str
 	add(fmt.Sprintf("%sunknown command %q for device %q", prefix, command, device))
 }
 
-func validateDecision(action StepAction, add func(string)) {
-	if action.BudgetHours <= 0 {
-		add("decision budget_hours must be greater than zero")
-	}
-	roleNames := make(map[string]bool, len(action.Roles))
-	hasCapacity := false
-	for _, role := range action.Roles {
-		roleNames[role.Name] = true
-		if role.CapacityHours > 0 {
-			hasCapacity = true
-		}
-	}
-	if !hasCapacity {
-		add("decision must have at least one role with capacity_hours greater than zero")
-	}
-	if len(action.Actions) == 0 {
-		add("decision must have at least one action")
-	}
-
-	seenActionIDs := make(map[string]bool, len(action.Actions))
-	for _, decisionAction := range action.Actions {
-		if decisionAction.ID == "" {
-			add("decision action id must not be empty")
-		} else if seenActionIDs[decisionAction.ID] {
-			add(fmt.Sprintf("duplicate decision action id %q", decisionAction.ID))
-		}
-		seenActionIDs[decisionAction.ID] = true
-		if decisionAction.EffortHours <= 0 {
-			add(fmt.Sprintf("decision action %q effort_hours must be greater than zero", decisionAction.ID))
-		}
-		for _, roleName := range decisionAction.Roles {
-			if !roleNames[roleName] {
-				add(fmt.Sprintf("decision action %q references unknown role %q", decisionAction.ID, roleName))
+// validateDecision binds each decision action to the package's canonical planner.
+// Catalog values and references are validated by validateCurriculum, never by
+// an inline step copy. Packages without a planner cannot offer a decision action.
+func validateDecision(pkg Package) error {
+	count := 0
+	for _, scenario := range pkg.Scenarios {
+		for i, step := range scenario.Steps {
+			if step.Action == nil || step.Action.Type != "decision" {
+				continue
 			}
+			if pkg.Curriculum == nil || scenario.ID != pkg.Curriculum.Roles["planning"] {
+				return validationIssue{scenario.ID, i, step.Title, "decision must belong to the package curriculum role planning"}
+			}
+			count++
 		}
 	}
+	if pkg.Curriculum != nil && count != 1 {
+		return fmt.Errorf("curriculum: planning role must contain exactly one decision action, got %d", count)
+	}
+	return nil
 }

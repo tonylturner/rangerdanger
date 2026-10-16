@@ -1,0 +1,163 @@
+id: eu-vendor-rdp-compromise
+order: 2.3-bonus
+name: Vendor Remote Access Compromise (Bonus)
+summary: Prove enterprise remote-access exposure, pivot from the vendor terminal, then retest both hops independently.
+estimated_minutes: 12
+validator: eu-vendor-rdp-compromise
+description: Walk the same two-hop vendor compromise as the US workshop. Prove RDP/VNC reachability from enterprise,
+  represent the compromised foothold in the vendor terminal and issue the prescribed Modbus write. Restore service,
+  harden and independently test the first and second hop without requiring a graphical desktop.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- vendor
+- remote-access
+- segmentation
+- bonus
+steps:
+- id: confirm-the-lateral-path-is-open
+  title: Confirm the lateral path is open
+  expected_config: weak
+  node: kali-1
+  description: |
+    Optional bonus, weak active. From **Kali** prove the first hop:
+
+        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+
+    Record reachability on RDP and VNC. This TCP probe runs headless; an allowed remote-access path is the exposure, not proof of a successful login. The next step represents the credential compromise from the vendor's network position.
+
+    :::hint Two hops
+    Enterprise→vendor remote access and vendor→field control are independent boundaries. Either can break the chain; test each separately.
+    :::
+  action:
+    type: probe
+    outcome: reachable
+    targets:
+    - host: 10.20.20.10
+      port: 3389
+      note: RDP to vendor jump
+    - host: 10.20.20.10
+      port: 5900
+      note: VNC to vendor jump
+- id: pivot-via-rdp-or-vnc
+  title: Pivot via RDP (or VNC)
+  expected_config: weak
+  node: vendor-jump-1
+  description: |
+    The graphical client line is **illustrative only**, not a required runnable command:
+
+        xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger +clipboard /cert:ignore
+
+    :::hint Headless mode (no GUI on Kali)
+    Use the **vendor-jump-1 terminal tab** provided by the app to represent the compromised vendor foothold. Do not open a GUI or add SSH/port 22. The preceding TCP probe proves the first hop; this terminal supplies the vendor network position for the second hop.
+    :::
+
+    A valid vendor account is not authority to operate every field device. Keep the first-hop result and source attribution separate from the physical outcome.
+- id: use-the-vendor-foothold-to-attack-field-devices
+  title: Use the vendor foothold to attack field devices
+  expected_config: weak
+  node: vendor-jump-1
+  description: |
+    From the **vendor-jump-1 terminal tab**, not Kali, issue the prescribed FC6 RMU1 OPEN (HR0 value 1):
+
+        mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
+
+    Observe the section outage and device audit. The Modbus peer must be **10.20.20.10**, not Kali 10.10.10.50 or RTU 10.30.30.20. The command has been laundered through the vendor foothold. Do not infer source from the user who clicked the terminal.
+
+    :::decision id=vendor-attack-hmi-impact options="SECTION_OUTAGE,FEEDER_OUTAGE,NO_ALARM" correct=SECTION_OUTAGE
+    What was the operational consequence?
+    :::
+    :::decision id=vendor-source-attribution options="ATTACKER_IP,VENDOR_JUMP_IP,RTU_IP" correct=VENDOR_JUMP_IP
+    Which source appears in the device audit?
+    :::
+
+    :::hint Same teaching activity, real wire write
+    This is a manual command step. No out-of-band simulator attack substitutes for the packet from the vendor source.
+    :::
+- id: restore-service
+  title: Restore service
+  expected_config: weak
+  description: |
+    Use the restoration sequence below to return RMU1 closed and RMU2 open after preserving evidence. Confirm breaker closed, supply present and the normal radial topology. This lab reset of devices is not an operating switching order.
+
+    :::hint Safe handover
+    Do not close the tie onto a live parallel feed. Normal baseline is RMU1 closed, RMU2 open. Ordinary remote operations still enforce authority and interlocks; reset is only workshop restoration.
+    :::
+  action:
+    type: sequence
+    commands:
+    - device: rmu-2
+      command: reset
+    - device: rmu-1
+      command: reset
+- id: apply-hardened-policy
+  title: Apply hardened policy
+  description: |
+    Apply Hardened or your funded policy. The reference closes **enterprise→vendor RDP/3389 and VNC/5900** and **vendor→field Modbus/502**. Either boundary breaks the chain. The engineering exception remains named eng-ws→PLC web only, not vendor field control.
+
+    :::plan-coverage title="Your plan vs the vendor chain"
+    :::
+
+    :::hint Check the compiled policy
+    The six operational conduits must survive. A deferred vendor field closure can leave hop two open in a generated plan even though the reference closes it. Organizational broker work is planning-only, not a deployed login control.
+    :::
+  action:
+    type: firewall
+    config: improved
+- id: re-attempt-the-pivot
+  title: Re-attempt the pivot
+  expected_config: hardened
+  node: kali-1
+  description: |
+    Retest each hop independently. From **Kali**:
+
+        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+
+    Both ports should time out / be filtered. No graphical client is required.
+
+    From the still-available **vendor-jump-1 terminal tab**, repeat the identical field write:
+
+        mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
+
+    It should time out independently of hop one. Confirm RMU1 remains closed, RMU2 open and supply unchanged; record both source tuples and results.
+
+    :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK" correct=NORMAL_OPS
+    What did the feeder show after retest?
+    :::
+    :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER" correct=EITHER_LAYER
+    Which layer can independently break this chain?
+    :::
+
+    :::hint Attribution survives the story
+    The second probe is vendor-originated even when enterprise cannot reach the vendor host. The app terminal is an intentional teaching foothold, not proof that the perimeter login still works.
+    :::
+  action:
+    type: check
+    expect:
+      firewall_config: improved
+      rmu_normal: true
+      supply_present: true
+- id: validate
+  title: Validate
+  expected_config: hardened
+  description: |
+    Run Validate with hardened active, both hops denied and RMU/OLTC state restored. The strict active matrix must prove each hop; a screenshot of a rule is not enough. Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
+
+    :::hint Residual risk
+    Neither L4 boundary proves vendor identity security. Record MFA, just-in-time approval and session recording as organizational follow-up, not as infrastructure deployed by this exercise.
+    :::
+  action:
+    type: check
+    expect:
+      firewall_config: improved
+      breaker_closed: true
+      rmu_normal: true
+      oltc_auto: true
+      supply_present: true

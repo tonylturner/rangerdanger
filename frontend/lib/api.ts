@@ -134,10 +134,6 @@ export type StepAction = {
   outcome?: "reachable" | "blocked";
   targets?: { from?: string; host: string; port: number; note?: string }[];
   commands?: { device: string; command: string; source?: string; value?: number }[];
-  // Decision action fields (type === "decision")
-  budget_hours?: number;
-  roles?: DecisionRole[];
-  actions?: DecisionAction[];
 };
 
 // id is the authored, stable step identifier (unique in its scenario).

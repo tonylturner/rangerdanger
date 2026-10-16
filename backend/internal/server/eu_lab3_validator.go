@@ -1,25 +1,5 @@
 package server
 
-import (
-	"context"
-
-	"github.com/tturner/rangerdanger/backend/internal/labs"
-)
-
-func init() {
-	registerScenarioValidator("eu-rmu-switching", scenarioValidator{
-		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			ev := collectEULab3(ctx, in.gen, "rmu-1", "rmu-2", "breaker-1")
-			if ev.err != nil {
-				return []ValidationCheck{checkFail("RMU evidence available", ev.err.Error())}
-			}
-			policyOK := in.activeConfig == "improved" && s.runningPolicyIs(ctx, in.gen, "improved") == nil
-			return evaluateEULab3(ev, policyOK)
-		},
-	})
-}
-
 func evaluateEULab3(ev euLab3Evidence, policyOK bool) []ValidationCheck {
 	if ev.err != nil {
 		return []ValidationCheck{checkFail("RMU evidence available", ev.err.Error())}

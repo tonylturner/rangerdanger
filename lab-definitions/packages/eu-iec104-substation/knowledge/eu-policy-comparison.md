@@ -10,7 +10,10 @@ Both package policies have default DENY. The weak baseline nevertheless permits 
 - Every Control Centre-zone source can push toward Operations DMZ TCP/8081.
 - Enterprise, Vendor/Engineering and Control Centre zones can read Operations DMZ TCP/8080.
 
-These rules are broad in source and destination, not an unrestricted any-port network. The weak field TCP/502 allows carry both reads and writes; they do not filter Modbus function codes. A reachable device still applies authority and interlocks before accepting a write. Labs 2–4 use the foreign Modbus exposure for baseline reads and prescribed vendor writes, then deny those new connections under improved. Describe the actual rule rather than using “flat network” as a substitute for its meaning.
+- Enterprise can reach vendor-jump 10.20.20.10 on RDP/3389 and VNC/5900.
+- The vendor zone can reach Station web TCP/8080; improved reduces this to named eng-ws→PLC.
+
+These rules are broad in source and destination, not an unrestricted any-port network. The weak field TCP/502 allows carry both reads and writes; they do not filter Modbus function codes. A reachable device still applies authority and interlocks before accepting a write. The seven-slot implementation and bonus labs use the foreign Modbus exposure for baseline reads and prescribed vendor writes, then deny those new connections under improved. Describe the actual rule rather than using “flat network” as a substitute for its meaning.
 
 ### Firewall management is a separate boundary
 
@@ -45,7 +48,7 @@ There is no permitted initiating path from `lan5` back toward an OT zone. Respon
 
 After applying a change, establish fresh named CC operation, healthy southbound observations, PLC control and historian feed/read behaviour. Then attempt disallowed access from the actual enterprise or other test source. Preserve policy identity, source/destination tuple, times, capture or log evidence and service result. A backend management read cannot prove an enterprise rule, and a TCP handshake cannot prove successful IEC 104 command completion.
 
-Existing sessions complicate temporal proof. Applying a deny does not itself prove an established connection stopped carrying traffic. Follow [established-session evidence](#eu-established-sessions) and use the authored session-cut step where required; do not delete unrelated conntrack entries.
+Existing sessions complicate temporal proof. Applying a deny does not itself prove an established connection stopped carrying traffic. Follow [established-session evidence](#eu-established-sessions) and use the exact session API recipe only in the optional outage investigation; do not delete unrelated conntrack entries.
 
 ### Limits of the control
 

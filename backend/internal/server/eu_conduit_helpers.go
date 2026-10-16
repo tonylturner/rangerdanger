@@ -10,19 +10,9 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
-
-func init() {
-	registerScenarioValidator("eu-station-conduits", scenarioValidator{
-		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return evaluateConduits(s.collectConduits(ctx, in.gen))
-		},
-	})
-}
 
 func (s *Server) collectConduits(ctx context.Context, gen *lifecycle.Generation) conduitEvidence {
 	ev := conduitEvidence{rangeStart: gen.StartedAt}

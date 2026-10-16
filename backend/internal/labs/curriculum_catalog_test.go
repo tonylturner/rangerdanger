@@ -60,8 +60,7 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 			if err := validateCurriculum(pkg); err != nil {
 				t.Fatalf("valid fixture: %v", err)
 			}
-			// The inline planning copy stays valid. Only the canonical sibling
-			// is mutated, serialized and loaded, with one independent defect.
+			// Mutate only the canonical sibling, serialize and load one independent defect.
 			tc.change(pkg.Curriculum)
 			data, err := yaml.Marshal(pkg.Curriculum)
 			if err != nil {

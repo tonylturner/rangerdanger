@@ -37,22 +37,18 @@ func TestEUCanaryResolvesFromTheManifest(t *testing.T) {
 	}
 }
 
-// Only the suite remains unsupported until the content cutover.
-func TestEURecipeUnsupportedRoutes(t *testing.T) {
+// EU now uses the same suite route; verify capability dispatch without a live range.
+func TestEURecipeSuiteRoute(t *testing.T) {
 	s := rangeServer(euGeneration(t, containd.NewClient(closedURL(t)), nil), "weak")
-	s.orchestrator = &orchestrator.Orchestrator{}
-	routes := []struct {
-		method, path string
-		handler      gin.HandlerFunc
-	}{
-
-		{http.MethodPost, "/api/workshop/test-suite", s.handleWorkshopTestSuite},
+	database, err := db.Connect(filepath.Join(t.TempDir(), "suite.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, route := range routes {
-		rec := callRoute(s, route.handler, route.method, route.path, route.path, "")
-		if rec.Code != http.StatusNotFound || rec.Body.String() != `{"error":"not supported by this package"}` {
-			t.Errorf("%s %s on EU = %d %s", route.method, route.path, rec.Code, rec.Body)
-		}
+	s.db = database
+	rec := callRoute(s, s.handleWorkshopTestSuite, http.MethodPost, "/api/workshop/test-suite", "/api/workshop/test-suite", "")
+	var result testSuiteResult
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &result) != nil || result.TotalTests != 0 {
+		t.Fatalf("suite dispatch=%d %s", rec.Code, rec.Body)
 	}
 }
 
@@ -351,7 +347,7 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 			t.Fatalf("%s=%d %s", route.path, rec.Code, rec.Body)
 		}
 	}
-	if euRecipe.testSuite {
-		t.Fatal("Phase 1 enabled the EU suite")
+	if !euRecipe.testSuite {
+		t.Fatal("EU authored checks require the suite")
 	}
 }

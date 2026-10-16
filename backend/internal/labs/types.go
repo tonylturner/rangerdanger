@@ -81,12 +81,6 @@ type StepAction struct {
 	Outcome  string          `yaml:"outcome,omitempty" json:"outcome,omitempty"`   // for type=probe
 	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
-
-	// Decision-action fields (for type=decision). Describes a constrained
-	// remediation selection exercise with a labor budget and per-role capacity.
-	BudgetHours int              `yaml:"budget_hours,omitempty" json:"budget_hours,omitempty"`
-	Roles       []DecisionRole   `yaml:"roles,omitempty" json:"roles,omitempty"`
-	Actions     []DecisionAction `yaml:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // ProbeTarget identifies a TCP destination and optional source override.

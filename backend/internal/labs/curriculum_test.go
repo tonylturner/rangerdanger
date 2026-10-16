@@ -113,7 +113,7 @@ func TestCurriculumReferences(t *testing.T) {
 		{"step", func(c *Curriculum) { c.DynamicSteps["translated-title"] = "rules" }, "unknown implementation step"},
 		{"decision", func(c *Curriculum) { c.Requirements["foreign"] = CurriculumRequirement{Impl: map[string][]string{}} }, "unknown requirement decision"},
 		{"readiness", func(c *Curriculum) { c.Readiness[0].ID = "foreign" }, "unknown readiness decision"},
-		{"catalog", func(c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown planning action"},
+		{"catalog", func(c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown action"},
 		{"coverage action", func(c *Curriculum) { r := c.Requirements["enterprise-to-field"]; r.Impl["BLOCK"] = []string{"foreign"} }, "unknown action"},
 		{"impact scenario", func(c *Curriculum) { c.Impact["modbus-dpi"] = CurriculumImpact{Defends: []string{"foreign"}} }, "unknown scenario"},
 		{"policy action", func(c *Curriculum) { c.Policy[0].When = "foreign" }, "unknown action"},
@@ -190,5 +190,17 @@ func TestCurriculumUSExtraction(t *testing.T) {
 	}
 	if strings.Contains(string(wire), "${") {
 		t.Fatal("unresolved topology facts in DTO")
+	}
+}
+
+func TestCurriculumRejectsRetiredInlineCatalog(t *testing.T) {
+	for _, field := range []string{"budget_hours: 500", "roles: []", "actions: []"} {
+		t.Run(field, func(t *testing.T) {
+			var scenario ScenarioYAML
+			err := decodeStrict([]byte("steps:\n  - action:\n      type: decision\n      "+field+"\n"), &scenario)
+			if err == nil || !strings.Contains(err.Error(), "not found in type labs.StepAction") {
+				t.Fatalf("retired inline field accepted: %v", err)
+			}
+		})
 	}
 }

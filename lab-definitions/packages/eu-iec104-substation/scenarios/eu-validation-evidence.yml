@@ -1,0 +1,115 @@
+id: eu-validation-evidence
+order: '2.4'
+name: Testing & Validation
+summary: Generate the EU positive/negative matrix and PCAP report, confirm continuity and reflect on deferred risk.
+estimated_minutes: 6
+validator: eu-validation-evidence
+description: Validate the policy actually running, not the intended design. Generate a change-board report, inspect
+  authorized and unauthorized results, confirm the feeder still operates and explain residual risk. The report is
+  bounded evidence, not proof of every possible attack or regulatory compliance.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- validation
+- testing
+- pcap
+- evidence
+- defense
+steps:
+- id: confirm-hardened-config-is-active
+  title: Confirm hardened config is active
+  expected_config: hardened
+  description: |
+    Confirm a green hardened/custom policy banner; reapply the intended policy if mismatched. You are validating an existing change, not authoring a new one.
+
+    :::findings-panel from=eu-segmentation-requirements title="Your committed design"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::hint Running, not candidate
+    In containd inspect running configuration and its identity. Six operational conduits must remain. No ICS keys or semantic enforcement are claimed in this phase.
+    :::
+  action:
+    type: check
+    expect:
+      firewall_config: improved
+- id: generate-the-validation-report
+  title: Generate the validation report
+  expected_config: hardened
+  description: |
+    Generate against the policy you actually have active:
+
+    :::validation-report
+    :::
+
+    Read every row: a failed positive blocks operations; a failed negative leaves exposure. Positives cover all six required intents. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
+
+    Inspect PCAP source analysis: RTU **and PLC→OLTC** are legitimate field sources. RTU↔PLC/GPS stays invisible at the firewall. A SYN captured on ingress does not prove a completed control operation.
+
+    In [/substation](/substation), confirm breaker closed, normal RMUs, OLTC auto, supply present and fresh GOOD CC observations. Report PASS plus operational continuity is the two-sided change-board case.
+
+    :::decision id=pos-test-ops-intact options="NORMAL_OPS,DEGRADED,ALARMS_PRESENT" correct=NORMAL_OPS
+    Are operations intact after validation?
+    :::
+    :::decision id=neg-test-no-impact options="UNCHANGED,DEGRADED,UNCLEAR" correct=UNCHANGED
+    Were unauthorized flows denied without changing service?
+    :::
+
+    :::hint Advanced: verify by hand
+    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require fresh CC GI and real telemetry, PLC heartbeat and advancing historian samples, not sockets alone. Repeat negatives from the named terminal tabs. At fw-1 capture with tcpdump -i any using ports 2404/502/8080/8081 and export the running policy through containd. Preserve UTC windows with the PCAP.
+    :::
+
+    :::hint Optional historian-gap evidence
+    [Historian uncertainty](/knowledge#eu-historian) explains link-loss stale samples and archive gaps. This sidebar is optional, not a mandatory outage exercise or report prerequisite.
+    :::
+  action:
+    type: check
+    expect:
+      firewall_config: improved
+      breaker_closed: true
+      supply_present: true
+      cc_link_fresh: true
+- id: reflection-what-did-your-plan-close
+  title: Reflection - what did your plan close?
+  description: |
+    Review the complete evidence chain, including what passive capture missed.
+
+    :::findings-panel from=eu-baseline-assessment title="Passive findings"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::findings-panel from=eu-baseline-assessment title="Latent exposure"
+    latent-exposure-confirmed: Active reachability beyond capture
+    :::
+
+    :::findings-panel from=eu-segmentation-requirements title="Committed design"
+    enterprise-to-field: Enterprise/vendor → field on Modbus/502
+    enterprise-to-station: Enterprise → station RTU on IEC 104/2404
+    vendor-to-station: Vendor DMZ → station engineering access
+    non-rtu-to-field: Non-RTU hosts → field (except PLC→OLTC)
+    unauth-control: Unauthorized IEC 104 commands / Modbus writes
+    :::
+
+    :::plan-coverage title="Selected actions vs committed design"
+    :::
+
+    In Notes answer: which findings did your plan close, which remain deferred and why, which role constrained it, and what would you fund next quarter? Map every residual to operational consequence, owner, acceptance authority and retest. What endpoint or station architecture control addresses same-subnet blind spots?
+
+    :::hint Honest handover
+    DPI remains planned, not enforceable in this range yet. In the planned design breaker switching is local-only; that reduces remote restoration flexibility. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.
+    :::

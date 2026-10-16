@@ -1,0 +1,134 @@
+id: eu-hardening-configurations
+order: '2.3'
+name: Protocol-Hardened Configurations
+summary: Unauthorized IEC 104 SBO breaker OPEN, loss of supply, restoration and identical retest under source pinning.
+estimated_minutes: 10
+validator: eu-hardening-configurations
+description: Stress-test the EU telecontrol boundary with an unauthorized breaker command from Kali. Observe loss
+  of supply, restore the feeder, harden and repeat the identical wire command. L4 source pinning is live; IEC 104
+  command inspection is a planned second layer, not enforced in this phase.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- dpi
+- segmentation
+- hardening
+- modbus
+steps:
+- id: verify-normal-operations
+  title: Verify normal operations
+  expected_config: weak
+  node: cc-1
+  description: |
+    Under weak policy confirm breaker closed, RMU1 closed/RMU2 open, OLTC remote/auto and supply present. Compare fresh CC observations with separate physical feeder truth in [/substation](/substation). The nominal loop targets 20.0 kV ±1%, not a US low-voltage band.
+
+    :::hint Do not repair stale data with truth
+    GI and good quality establish operator visibility. A physical panel can remain correct while the CC is stale. Record both before the attack.
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      cc_link_fresh: true
+      rmu_normal: true
+      oltc_auto: true
+- id: attack-iec104-breaker-open
+  title: Attack — unauthorized IEC 104 breaker OPEN
+  expected_config: weak
+  node: kali-1
+  description: |
+    From the **Kali terminal** (10.10.10.50), issue the prescribed unauthorized SBO C_DC (type 46) breaker OPEN at IOA 3001:
+
+        iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+
+    This is a **manual wire command**, not a simulator action button. Observe the loss of supply in the physical feeder and fresh CC breaker feedback after the poll/solve interval. Record ACT-CON/ACT-TERM and source; a command acknowledgement alone is not physical outcome. There is no auto-reclose model.
+
+    :::decision id=attack-hmi-impact options="LOSS_OF_SUPPLY,LOW_VOLTAGE_ALARM,NO_ALARM" correct=LOSS_OF_SUPPLY
+    What did the feeder show?
+    :::
+
+    :::hint SBO is not authorization
+    Weak allows enterprise→RTU:2404. Select/execute sequencing does not authenticate Kali. [SBO and command evidence](/knowledge#iec104-sbo-commands).
+    :::
+- id: restore-the-substation
+  title: Restore the substation
+  expected_config: weak
+  description: |
+    Restore with the breaker reset below after exporting the attack evidence. This is a lab restoration action, not the attack and not proof of a safe operating switching order. Confirm closed breaker, supply restored and fresh CC observations before changing policy.
+
+    :::hint Preserve causality
+    Keep command source, audit revision and solved outcome before restoration. Do not reset after hardening: Reset Lab reapplies weak and invalidates your hardened evidence window.
+    :::
+  action:
+    type: sequence
+    commands:
+    - device: breaker
+      command: reset
+- id: apply-the-hardened-policy
+  title: Apply the hardened policy
+  description: |
+    Apply your hardened boundary before retesting.
+
+    :::guided
+    Use Apply Hardened for the reference, or Apply Your Plan to test your funded changes.
+    :::
+
+    :::technical
+    Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
+    :::
+
+    L4 source pinning is the **live** layer. Planned IEC 104 DPI will deny breaker IOA 3001 even on the CC session, while allowing monitoring/system reads, RMU IOAs 3101/3201 and OLTC IOAs 3301/3302 plus confirmations. Breaker switching becomes local-only: a deliberate operational cost. That second layer is **not enforced until Phase 4**; do not claim the current CC breaker command is denied.
+
+    :::plan-coverage title="Your plan vs the attack"
+    :::
+
+    :::hint Two independent layers, one live today
+    Closing foreign reachability stops Kali now. Semantic inspection would still constrain breaker control if an allowed session were misused. Selecting DPI in the planner does not enable it.
+    :::
+  action:
+    type: firewall
+    config: improved
+- id: re-test-the-attack-under-the-hardened-policy
+  title: Re-test the attack under the hardened policy
+  expected_config: hardened
+  node: kali-1
+  description: |
+    From **Kali**, repeat the identical wire command:
+
+        iec104cmd 10.30.30.20 dc 3001 open -sbo --json
+
+    Expect connection timeout at the L4 source pin; breaker stays closed and supply remains present. Confirm physical truth and fresh CC observation rather than interpreting CLI failure alone as no actuation.
+
+    :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK" correct=NORMAL_OPS
+    What did the feeder show after retest?
+    :::
+    :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=EITHER_LAYER
+    In the completed two-layer design, which layer could independently stop this attack?
+    :::
+
+    :::hint Planned Phase 4 proof, NOT a live test yet
+    After DPI is verified, the authorized-CC breaker OPEN test must show no actuation, session reset and GI recovery; a permitted RMU or OLTC command must still work. Until then only L4 is demonstrated here. Do not run the CC breaker denial test and pretend it is enforced.
+    :::
+- id: validate
+  title: Validate
+  expected_config: hardened
+  description: |
+    Run Validate with hardened active. It requires restored breaker/supply, a post-hardening foreign-source denied attempt and no foreign breaker operation since hardening. The validator uses active strict probes and bounded audit evidence; missing evidence is not a pass.
+
+    :::hint What this certifies
+    This phase proves the live source boundary, not future DPI. Keep the operational cost and semantic residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
+    :::
+  action:
+    type: check
+    expect:
+      breaker_closed: true
+      supply_present: true
+      firewall_config: improved
