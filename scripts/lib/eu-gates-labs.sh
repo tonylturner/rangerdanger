@@ -16,6 +16,21 @@ eu_lab_exec() {
   fi
 }
 
+eu_lab_exec_denied() {
+  local node="$1" command="$2" timeout="${3:-25}" body
+  printf 'RUN %s: %s\n' "$node" "$command"
+  body=$(jq -nc --arg command "$command" --argjson timeout "$timeout" \
+    '{command:$command,timeout_sec:$timeout}') || return
+  eu_api_post "/api/workshop/nodes/$node/exec" "$body" || return
+  printf 'RESULT %s\n' "$API_BODY"
+  if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e '
+    (.stdout | type == "string") and (.stderr | type == "string")
+    and (.exit_code | type == "number" and . != 0)' >/dev/null; then
+    fail "$node student command expected denial (nonzero exit): HTTP $HTTP_STATUS $API_BODY"
+    return 1
+  fi
+}
+
 eu_lab_cc() {
   local point="$1" operation="$2" expected="${3:-completed}" result
   eu_wait_for_operator '.link.state == "started" and all(.points[]; good)' \
@@ -188,7 +203,7 @@ eu_lab_hardening_walk() {
   eu_lab_step "$scenario" apply-the-hardened-policy || return
   eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
-  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' 1 || return
+  eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
   eu_assert_unchanged_breaker "$revision" "student hardened IEC104 retest" || return
   eu_lab_step "$scenario" validate
 }
@@ -213,7 +228,7 @@ eu_lab_hardening_prepare() {
   local scenario="$1" revision
   eu_lab_wait_good_cc || return
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
-  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' 1 || return
+  eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
   eu_assert_unchanged_breaker "$revision" "post-hardening IEC104 retest" || return
   eu_lab_step "$scenario" validate
 }
@@ -263,7 +278,7 @@ eu_lab_vendor() {
 }
 
 eu_lab_vendor_walk() {
-  local scenario="$1" before after
+  local scenario="$1" before_seq
   eu_lab_step "$scenario" confirm-the-lateral-path-is-open || return
   eu_lab_nmap_vendor open || return
   eu_lab_step "$scenario" pivot-via-rdp-or-vnc || return
@@ -279,17 +294,27 @@ eu_lab_vendor_walk() {
     and .process.truth_stale == false' 15 "student vendor lab device restore" || return
   eu_lab_step "$scenario" apply-hardened-policy || return
   eu_lab_nmap_vendor filtered || return
-  before=$(eu_get_field && printf '%s' "$API_BODY" | jq -ec \
-    '[.devices["rmu-1"].revision,.devices["rmu-2"].revision]') || return
+  eu_management rmu-1 GET '/api/audit?after=0' || return
+  before_seq=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || {
+    fail "vendor FC6 retest cannot establish an RMU audit cursor"
+    return 1
+  }
   eu_lab_vendor 10.40.40.21 1 1 || return
-  after=$(eu_get_field && printf '%s' "$API_BODY" | jq -ec \
-    '[.devices["rmu-1"].revision,.devices["rmu-2"].revision]') || return
-  if [ "$before" != "$after" ] || ! printf '%s' "$API_BODY" | jq -e \
-    '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"' >/dev/null; then
-    fail "vendor-originated retest changed the restored RMU state"
+  eu_management rmu-1 GET "/api/audit?after=$before_seq" || return
+  if ! printf '%s' "$API_BODY" | jq -e --argjson cursor "$before_seq" '
+    [.entries[] | select(.seq > $cursor and .result == "accepted"
+      and (.context.peer | startswith("10.20.20.10:")))] | length == 0
+  ' >/dev/null; then
+    fail "vendor-originated retest produced an accepted vendor-attributed RMU audit entry"
     return 1
   fi
-  pass "vendor-originated retest left both RMU revisions unchanged"
+  eu_get_field || return
+  if ! printf '%s' "$API_BODY" | jq -e \
+    '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"' >/dev/null; then
+    fail "vendor-originated retest changed the restored RMU positions"
+    return 1
+  fi
+  pass "vendor-originated retest was denied with no accepted vendor write; RMU positions held"
   eu_lab_step "$scenario" re-attempt-the-pivot || return
   eu_lab_step "$scenario" validate
 }
