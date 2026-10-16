@@ -26,6 +26,21 @@ const ALL_HARDENED: RemediationPlan = {
   savedAt: "2026-05-07T00:00:00Z",
 };
 
+describe("buildContaindConfig management safety", () => {
+  it("preserves lan3 access and leaves NIC discovery to containd", () => {
+    const config = buildContaindConfig(buildDynamicPlan(ALL_HARDENED)) as {
+      interfaces: { name: string; zone: string; access: object; device?: string }[];
+      zones: { name: string }[];
+    };
+    expect(config.interfaces.filter((iface) => iface.name === "lan3")).toEqual([
+      { name: "lan3", zone: "lan3", access: { mgmt: true, http: true, https: true, ssh: true } },
+    ]);
+    expect(config.zones).toContainEqual({ name: "lan3", description: "RangerDanger management control plane" });
+    expect(config.interfaces.every((iface) => !("device" in iface))).toBe(true);
+    expect(config.interfaces.map((iface) => iface.name)).toEqual(["wan", "dmz", "lan1", "lan2", "lan3"]);
+  });
+});
+
 describe("buildDynamicPlan", () => {
   it("flags no-plan when input is null", () => {
     const plan = buildDynamicPlan(null);
