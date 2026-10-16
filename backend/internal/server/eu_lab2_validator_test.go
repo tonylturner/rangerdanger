@@ -96,7 +96,7 @@ func TestEULab2To4DescriptionsPlainText(t *testing.T) {
 				}
 				first := scenario.Steps[0].Description
 				for _, text := range []string{
-					"**Acceptance limit:**", "mgmt_net", "unrestricted acceptance sign-off",
+					"**Full vendor-isolation check:**", "mgmt_net", "10.98.2.2", "10.98.3.2",
 					"(#eu-zone-conduit-design)", "(#eu-iec62443-risk-design)", "(#eu-change-resource-plan)",
 				} {
 					if !strings.Contains(first, text) {
@@ -182,6 +182,12 @@ func TestConduitsCollector(t *testing.T) {
 			s := rangeServer(gen, "custom") // Alternative reviewed policy designs are allowed.
 			sources := map[string]bool{}
 			s.execInContainer = func(_ context.Context, container string, cmd []string, budget int) (string, string, int, error) {
+				if len(cmd) == 4 && cmd[2] == isolationHTTP {
+					if missing == "exec" {
+						return "", "", -1, errors.New("exec unavailable")
+					}
+					return passingIsolation(t, cmd, container), "", 0, nil
+				}
 				if container == "rangerdanger-iec104-rtu" {
 					if len(cmd) != 7 || cmd[0] != "wget" || cmd[6] != "http://10.30.30.50:8080/api/state" {
 						t.Fatalf("clock command=%q", cmd)

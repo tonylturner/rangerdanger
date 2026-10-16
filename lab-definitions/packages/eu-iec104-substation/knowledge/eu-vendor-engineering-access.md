@@ -20,7 +20,11 @@ This is a residual trusted-host risk, not evidence that the improved policy clai
 
 The platform's `/apps/openplc/` proxy reaches the PLC through management at `10.99.99.30:8080`. Engineering's direct path uses station `10.30.30.30:8080`. Opening the embedded app in the portal does not prove the engineering conduit works; it exercises a different path.
 
-Likewise, the in-browser engineering and vendor desktops use management-facing infrastructure. Do not use successful portal rendering as the acceptance test for routed workstation-to-station traffic.
+The in-browser engineering and vendor desktops instead use separate platform-owned internal delivery bridges: `desk_eng_net` (`10.98.3.0/28`) and `desk_vendor_net` (`10.98.2.0/28`). Only the proxy (`.2`) and the designated desktop (`.3`) share each bridge. Neither desktop attaches to `mgmt_net`; their default routes still point to containd on the vendor zone. Delivery is not a containd zone.
+
+For full vendor isolation, run Lab 2's unbound HTTP probes from **both** desktops. Every declared `10.99.99.x` management host must be unreachable, including platform, containd and simulator/solver APIs. The local delivery proxy at `10.98.2.2:8080` or `10.98.3.2:8080` must return **403**, including portal, API, containd, apps and redirects. Missing tools, broken exec and a dead proxy are failures, not proof of isolation. Repeat under weak and the accepted policy; record the results alongside the teaching-plane deny matrix and the permitted engineering PLC GET. Do not mutate simulator state to test access.
+
+Separately verify that portal desktop rendering and WebSocket input remain connected. Successful rendering proves delivery, not routed workstation-to-station access. The validator tests named hosts and ports, not every possible protocol or an engineer's downstream authority after authorized PLC access.
 
 ### Plan the work and its closure
 
