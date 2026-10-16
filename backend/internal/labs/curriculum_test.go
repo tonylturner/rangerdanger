@@ -77,8 +77,12 @@ func TestCurriculumStrictDecode(t *testing.T) {
 		{"unknown field", string(raw) + "\nsurprise: true\n", "field surprise"},
 		{"extra document", string(raw) + "\n---\nschema: 1\n", "exactly one"},
 		{"unknown nested field", strings.Replace(string(raw), "capacity_hours: 120", "capacity_hours: 120\n    surprise: true", 1), "field surprise"},
+		{"duplicate field", string(raw) + "\nschema: 1\n", "already defined"},
+		{"duplicate nested field", strings.Replace(string(raw), "capacity_hours: 120", "capacity_hours: 120\n    capacity_hours: 120", 1), "already defined"},
 		{"unknown topology node", strings.ReplaceAll(string(raw), "${ip:cc-1}", "${ip:missing}"), "unknown topology reference"},
 		{"unknown topology network", strings.ReplaceAll(string(raw), "${zone:field_net}", "${zone:missing}"), "unknown topology reference"},
+		{"malformed topology reference", strings.ReplaceAll(string(raw), "${ip:cc-1}", "${ips:cc-1}"), "invalid topology reference"},
+		{"reserved interpolation in prose", strings.Replace(string(raw), "noPlan: |+", "noPlan: |+\n  Literal ${ prose", 1), "invalid topology reference"},
 		{"unsupported schema", strings.Replace(string(raw), "schema: 1", "schema: 2", 1), "schema must be 1"},
 	}
 	for _, tc := range cases {
