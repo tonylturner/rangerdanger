@@ -2,7 +2,7 @@
 
 ### Read a device's input block
 
-All four field devices use TCP/502 and unit 1. Addresses in the package point map are zero-based. From Kali, these are **negative boundary probes**, expected to fail under both supplied policies:
+All four field devices use TCP/502 and unit 1. Addresses in the package point map are zero-based. From Kali, these reads should succeed under weak as the **teaching exposure**, then fail on new connections under improved:
 
 ```sh
 mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 11 -1 10.40.40.20
@@ -13,7 +13,7 @@ mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 15 -1 10.40.40.23
 
 `-t 3` selects input registers (FC4); it does not mean function code 3. `-0` makes the starting reference zero-based, `-r 0` selects IR0, `-c` selects the register count and `-1` makes one poll rather than a continuous loop. The addresses identify breaker, RMU1, RMU2 and OLTC respectively.
 
-Weak policy permits station-to-field Modbus, not enterprise- or vendor-to-field Modbus. Improved policy narrows that station access to the RTU and the PLC's OLTC conduit. Do not expect switching from improved to weak to make these Kali reads succeed. Do not add a diagnostic allow, move a container or impersonate a controller to obtain output.
+Weak policy permits station-to-field Modbus and direct enterprise- and vendor-to-field TCP/502 through `weak-foreign-field-modbus`. This includes Kali, vendor-jump and eng-ws. Improved policy removes that foreign access and narrows station access to the RTU and the PLC's OLTC conduit. Close baseline clients and match fresh denied attempts to logged `deny-unauthorized-modbus` events under improved, recording source, destination and attempt times. Do not add a diagnostic allow, move a container or impersonate a controller to obtain output.
 
 Do not translate these into 30001/40001 display notation and then feed that notation back as an offset. An off-by-one read can produce plausible but entirely wrong evidence.
 
@@ -31,13 +31,13 @@ Current and kV fields are two-register IEEE float32 values, high word first. Eve
 mbpoll -m tcp -a 1 -p 502 -t 4 -0 -r 1024 -c 6 -1 10.30.30.30
 ```
 
-This is an FC3 holding-register read request, also expected to be denied from Kali under both reference policies. The block contains runtime flags, setpoint volts, deadband in tenths of a percent, delay remaining, last demand and heartbeat.
+This is an FC3 holding-register read request, expected to be denied from Kali under both reference policies. The field teaching exposure does not permit TCP/502 into the station zone. The block contains runtime flags, setpoint volts, deadband in tenths of a percent, delay remaining, last demand and heartbeat.
 
 The RTU reads this block from the station subnet. That legitimate same-subnet exchange is not proof of a routed firewall rule.
 
 ### Know what a successful read proves
 
-There is no successful direct student-host Modbus read recipe under these reference policies. Use the lab's legitimate RTU observations and field/process exports to interpret the map without weakening the boundary. A timeout alone needs matching policy/network evidence; an unexpected response is a boundary finding to investigate, not the intended success.
+Successful direct field reads from student hosts are expected under weak, not improved. They demonstrate the teaching exposure, not authorized control. Compare the words with legitimate RTU observations and field/process exports to interpret the map. A timeout alone needs matching policy/network evidence; a successful new foreign field connection under improved is a boundary finding to investigate, not the intended success.
 
 Where a legitimate read is observed, its response does not prove the CC received fresh IEC 104 telemetry, that the PLC is executing correctly, or that a prior command caused the current state. Compare changing heartbeats rather than treating “running” as sufficient.
 

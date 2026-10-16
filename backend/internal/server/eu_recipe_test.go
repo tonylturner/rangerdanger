@@ -112,6 +112,16 @@ func TestFirewallCompareEU(t *testing.T) {
 	for _, pair := range []string{
 		"Enterprise → Field",
 		"Vendor → Field",
+	} {
+		diff := byPair[pair]
+		if diff.WeakAction != "ALLOW" || diff.ImprovedAction != "DENY" {
+			t.Errorf("%s actions = weak %q / improved %q; want ALLOW / DENY", pair, diff.WeakAction, diff.ImprovedAction)
+		}
+		if diff.WeakRule != "WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should be blocked)" {
+			t.Errorf("%s weak rule = %q; want the direct Modbus teaching exposure", pair, diff.WeakRule)
+		}
+	}
+	for _, pair := range []string{
 		"Control Centre → Field",
 		"Field → Station",
 	} {

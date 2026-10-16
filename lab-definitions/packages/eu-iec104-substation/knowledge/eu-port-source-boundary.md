@@ -2,7 +2,7 @@ The EU reference policies answer a network question: which source may open a con
 
 ### What the weak policy exposes
 
-The weak policy permits TCP/2404 from enterprise (`wan`), vendor/engineering (`dmz`) and the Control Centre (`lan4`) into the station zone (`lan1`). Any station-zone node may also reach field Modbus; enterprise and vendor do not get a direct TCP/502 allow. A workstation with the right IEC 104 client can nevertheless become another telecontrol master rather than merely observing the legitimate master.
+The weak policy permits TCP/2404 from enterprise (`wan`), vendor/engineering (`dmz`) and the Control Centre (`lan4`) into the station zone (`lan1`). Any station-zone node may also reach field Modbus. Enterprise and vendor/engineering, including Kali, vendor-jump and eng-ws, get direct field TCP/502 access through `weak-foreign-field-modbus`, the intentional teaching exposure. A workstation can attempt field reads and writes directly, or use the right IEC 104 client to become another telecontrol master rather than merely observing the legitimate master.
 
 This is an intentional teaching baseline, not an approved production design. Do not copy it to another environment or interpret a working feed at boot as evidence of least privilege.
 

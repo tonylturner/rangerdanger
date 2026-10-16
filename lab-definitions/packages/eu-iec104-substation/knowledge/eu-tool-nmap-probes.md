@@ -28,11 +28,11 @@ The expected new-connection matrix from Kali is:
 | Destination | Weak | Improved |
 |---|---|---|
 | RTU TCP/2404 | Allowed | Denied |
-| OLTC TCP/502 | Denied | Denied |
+| OLTC TCP/502 | Allowed | Denied |
 | Historian TCP/8080 | Allowed | Allowed |
 | Historian TCP/8081 | Denied | Denied |
 
-“Denied” describes policy intent, not a guarantee of the scanner's exact display wording. In particular, weak policy's broad Modbus permission is station-to-field, not enterprise-to-field. The lab must not invent a successful Kali Modbus baseline to make the comparison look more dramatic.
+“Denied” describes policy intent, not a guarantee of the scanner's exact display wording. Weak policy deliberately allows enterprise and vendor/engineering TCP/502 to field devices through `weak-foreign-field-modbus`, as well as station-to-field Modbus. Kali's successful baseline is the teaching exposure. Under improved, match fresh foreign Modbus attempts to logged `deny-unauthorized-modbus` events using source, destination and attempt times; do not add diagnostic allows or impersonate a controller.
 
 These are different assertions. Do not report “historian isolated” if only 8081 was tested, or “field protected” after probing a single service without identifying the tested scope.
 
@@ -46,7 +46,7 @@ Keep filtered results in the output; `--open` would hide precisely the negative 
 
 ### Pair reachability with real operations
 
-After a weak-policy RTU probe, use a bounded [GI check](#tool-iec104cmd). After an allowed historian probe, perform the GET in [curl exports](#eu-tool-curl-exports). To show improved policy preserved operations, inspect fresh CC telemetry and the PLC/OLTC loop through the lab workflow; Kali cannot stand in for those authorized sources.
+After a weak-policy RTU probe, use a bounded [GI check](#tool-iec104cmd). After a weak-policy field probe, use a read-only [mbpoll check](#eu-tool-mbpoll). After an allowed historian probe, perform the GET in [curl exports](#eu-tool-curl-exports). To show improved policy preserved operations, inspect fresh CC telemetry and the PLC/OLTC loop through the lab workflow; Kali cannot stand in for those authorized sources.
 
 Also distinguish a new scan connection from a monitor established before the policy change. Conntrack may preserve the latter. The [session article](#eu-established-sessions) explains why their outcomes can legitimately differ.
 

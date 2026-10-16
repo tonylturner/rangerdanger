@@ -6,10 +6,11 @@ Both package policies have default DENY. The weak baseline nevertheless permits 
 
 - Enterprise, Vendor/Engineering and Control Centre zones can initiate TCP/2404 toward Station.
 - Every Station source can reach Field TCP/502.
+- Enterprise and Vendor/Engineering sources, including Kali, vendor-jump and eng-ws, can reach Field TCP/502 through `weak-foreign-field-modbus`, the intentional teaching exposure.
 - Every Control Centre-zone source can push toward Operations DMZ TCP/8081.
 - Enterprise, Vendor/Engineering and Control Centre zones can read Operations DMZ TCP/8080.
 
-These rules are broad in source and destination, not an unrestricted any-port network. For example, weak is not a promise that enterprise can directly write every field device. Describe the actual rule rather than using “flat network” as a substitute for its meaning.
+These rules are broad in source and destination, not an unrestricted any-port network. The weak field TCP/502 allows carry both reads and writes; they do not filter Modbus function codes. A reachable device still applies authority and interlocks before accepting a write. Labs 2–4 use the foreign Modbus exposure for baseline reads and prescribed vendor writes, then deny those new connections under improved. Describe the actual rule rather than using “flat network” as a substitute for its meaning.
 
 ### What improved pins
 
