@@ -69,8 +69,8 @@ services:
     networks:
       enterprise_net:
         ipv4_address: 10.10.10.10
-      mgmt_net:
-        ipv4_address: 10.99.99.70
+      desk_corp_net:
+        ipv4_address: 10.98.1.3
     shm_size: "1gb"
     mem_limit: 2g
     restart: unless-stopped
@@ -116,8 +116,8 @@ services:
     networks:
       vendor_net:
         ipv4_address: 10.20.20.10
-      mgmt_net:
-        ipv4_address: 10.99.99.60
+      desk_vendor_net:
+        ipv4_address: 10.98.2.3
     shm_size: "1gb"
     mem_limit: 2g
     restart: unless-stopped
@@ -143,8 +143,8 @@ services:
     networks:
       vendor_net:
         ipv4_address: 10.20.20.20
-      mgmt_net:
-        ipv4_address: 10.99.99.61
+      desk_eng_net:
+        ipv4_address: 10.98.3.3
     shm_size: "1gb"
     mem_limit: 2g
     restart: unless-stopped
@@ -464,3 +464,12 @@ networks:
       config:
         - subnet: 10.50.50.0/24
           gateway: 10.50.50.1
+  desk_corp_net:
+    external: true
+    name: rangerdanger_desk_corp
+  desk_vendor_net:
+    external: true
+    name: rangerdanger_desk_vendor
+  desk_eng_net:
+    external: true
+    name: rangerdanger_desk_eng

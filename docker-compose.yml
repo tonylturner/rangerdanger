@@ -57,6 +57,12 @@ services:
     networks:
       mgmt_net:
         ipv4_address: 10.99.99.3
+      desk_corp_net:
+        ipv4_address: 10.98.1.2
+      desk_vendor_net:
+        ipv4_address: 10.98.2.2
+      desk_eng_net:
+        ipv4_address: 10.98.3.2
     restart: unless-stopped
 
 networks:
@@ -67,3 +73,27 @@ networks:
       config:
         - subnet: 10.99.99.0/24
           gateway: 10.99.99.1
+  desk_corp_net:
+    name: rangerdanger_desk_corp
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.98.1.0/28
+          gateway: 10.98.1.1
+  desk_vendor_net:
+    name: rangerdanger_desk_vendor
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.98.2.0/28
+          gateway: 10.98.2.1
+  desk_eng_net:
+    name: rangerdanger_desk_eng
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.98.3.0/28
+          gateway: 10.98.3.1

@@ -33,7 +33,7 @@ func Validate(m *Manifest, root string) error {
 	}
 	networks := make(map[string]Network, len(m.Networks))
 	networkNames := make(map[string]string, len(m.Networks))
-	platformCount := 0
+	managementCount := 0
 	for _, network := range m.Networks {
 		if network.Key == "" {
 			problems = append(problems, "network key is empty")
@@ -50,11 +50,13 @@ func Validate(m *Manifest, root string) error {
 			networkNames[network.Name] = network.Key
 		}
 		if network.Platform {
-			platformCount++
-			if network.Name != "rangerdanger_mgmt_net" {
-				problems = append(problems, fmt.Sprintf("platform network %q must be named rangerdanger_mgmt_net", network.Key))
+			if network.Name == "rangerdanger_mgmt_net" && !network.Delivery {
+				managementCount++
+			} else if !network.Delivery {
+				problems = append(problems, fmt.Sprintf("non-delivery platform network %q must be named rangerdanger_mgmt_net", network.Key))
 			}
 		}
+		problems = append(problems, checkDeliveryNetwork(network)...)
 		if _, _, err := parseIPv4Subnet(network.Subnet); err != nil {
 			problems = append(problems, fmt.Sprintf("network %q has invalid IPv4 subnet %q", network.Key, network.Subnet))
 		}
@@ -65,8 +67,8 @@ func Validate(m *Manifest, root string) error {
 			problems = append(problems, fmt.Sprintf("network %q gateway %q is outside subnet %q", network.Key, network.Gateway, network.Subnet))
 		}
 	}
-	if platformCount != 1 {
-		problems = append(problems, fmt.Sprintf("manifest must declare exactly one platform network, got %d", platformCount))
+	if managementCount != 1 {
+		problems = append(problems, fmt.Sprintf("manifest must declare exactly one management platform network, got %d", managementCount))
 	}
 
 	services := make(map[string]Service, len(m.Services))
@@ -74,6 +76,7 @@ func Validate(m *Manifest, root string) error {
 	nodes := make(map[string]string, len(m.Services))
 	ips := make(map[string]string)
 	mgmtIPs := make(map[string]string, len(m.Services))
+	deliveryUsers := make(map[string]int)
 	for _, service := range m.Services {
 		if service.Key == "" {
 			problems = append(problems, "service key is empty")
@@ -134,9 +137,36 @@ func Validate(m *Manifest, root string) error {
 			} else {
 				ips[iface.IPv4] = service.Key
 			}
-			if network.Platform {
+			if network.Platform && !network.Delivery && network.Name == "rangerdanger_mgmt_net" {
 				mgmtIPs[service.Key] = iface.IPv4
 			}
+			if network.Delivery {
+				deliveryUsers[network.Key]++
+				if iface.IPv4 != deliveryDesktops[network.Key].desktopIP {
+					problems = append(problems, fmt.Sprintf("delivery node %q must use its reserved desktop IP", service.Key))
+				}
+				if service.Key != deliveryDesktops[network.Key].service || service.Node == "" {
+					problems = append(problems, fmt.Sprintf("delivery network %q only permits its designated desktop node", network.Key))
+				}
+				if len(service.Endpoints) != 0 {
+					problems = append(problems, fmt.Sprintf("delivery node %q must not declare endpoints", service.Key))
+				}
+			}
+		}
+		for _, iface := range service.Interfaces {
+			if networks[iface.Network].Delivery && mgmtIPs[service.Key] != "" {
+				problems = append(problems, fmt.Sprintf("delivery node %q must not attach to management", service.Key))
+			}
+		}
+		for key, desktop := range deliveryDesktops {
+			if service.Key == desktop.service && !seenInterfaces[key] {
+				problems = append(problems, fmt.Sprintf("desktop %q must attach to delivery network %q", service.Key, key))
+			}
+		}
+	}
+	for key, count := range deliveryUsers {
+		if count > 1 {
+			problems = append(problems, fmt.Sprintf("delivery network %q has %d range nodes; at most one is allowed", key, count))
 		}
 	}
 
@@ -215,7 +245,7 @@ func checkSingleHolders(services []Service) []string {
 }
 
 // CheckPlatform verifies that the platform Compose model owns the declared
-// management network and does not assign an address used by the range.
+// platform networks and does not assign an address used by the range.
 func CheckPlatform(m *Manifest, platformNormalized []byte) error {
 	if m == nil {
 		return fmt.Errorf("manifest is nil")
@@ -227,18 +257,23 @@ func CheckPlatform(m *Manifest, platformNormalized []byte) error {
 	if model.ProjectName != PlatformProject {
 		return fmt.Errorf("platform Compose project is %q, want %q", model.ProjectName, PlatformProject)
 	}
-	var platform *Network
-	for index := range m.Networks {
-		if m.Networks[index].Platform {
-			if platform != nil {
-				return fmt.Errorf("manifest declares multiple platform networks")
-			}
-			platform = &m.Networks[index]
+	count := 0
+	for _, platform := range m.Networks {
+		if !platform.Platform {
+			continue
+		}
+		count++
+		if err := checkPlatformNetwork(m, model, platform); err != nil {
+			return err
 		}
 	}
-	if platform == nil {
+	if count == 0 {
 		return fmt.Errorf("manifest has no platform network")
 	}
+	return nil
+}
+
+func checkPlatformNetwork(m *Manifest, model composeModel, platform Network) error {
 	composeNetwork, exists := model.Networks[platform.Key]
 	if !exists {
 		return fmt.Errorf("platform Compose is missing network %q", platform.Key)
@@ -248,6 +283,9 @@ func CheckPlatform(m *Manifest, platformNormalized []byte) error {
 	}
 	if composeNetwork.External {
 		return fmt.Errorf("platform network %q must be owned by the platform project", platform.Key)
+	}
+	if platform.Delivery && !composeNetwork.Internal {
+		return fmt.Errorf("delivery network %q must be internal", platform.Key)
 	}
 	subnet, gateway, hasIPAM := networkIPAM(composeNetwork)
 	if !hasIPAM || subnet != platform.Subnet || gateway != platform.Gateway {
@@ -262,6 +300,11 @@ func CheckPlatform(m *Manifest, platformNormalized []byte) error {
 		}
 	}
 	for serviceKey, service := range model.Services {
+		if platform.Delivery {
+			if _, attached := service.Networks[platform.Key]; attached && serviceKey != "proxy" {
+				return fmt.Errorf("delivery network %q only permits the platform proxy", platform.Key)
+			}
+		}
 		for networkKey, attachment := range service.Networks {
 			if networkKey != platform.Key || attachment.IPv4 == "" {
 				continue
@@ -269,6 +312,12 @@ func CheckPlatform(m *Manifest, platformNormalized []byte) error {
 			if owner, collision := rangeIPs[attachment.IPv4]; collision {
 				return fmt.Errorf("platform service %q IP %q collides with range service %q", serviceKey, attachment.IPv4, owner)
 			}
+		}
+	}
+	if platform.Delivery {
+		proxy, ok := model.Services["proxy"]
+		if !ok || proxy.Networks[platform.Key].IPv4 != deliveryDesktops[platform.Key].proxyIP {
+			return fmt.Errorf("delivery network %q must attach the proxy at its reserved IP", platform.Key)
 		}
 	}
 	return nil
@@ -708,6 +757,7 @@ type composeVolume struct {
 type composeNetwork struct {
 	Name     string       `json:"name"`
 	External bool         `json:"external"`
+	Internal bool         `json:"internal"`
 	IPAM     *composeIPAM `json:"ipam"`
 }
 

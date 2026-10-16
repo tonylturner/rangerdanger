@@ -32,7 +32,7 @@ import (
 )
 
 // Schema is the manifest schema version this backend reads.
-const Schema = 1
+const Schema = 2
 
 // RangeProject is the Compose project name of every range. One range runs
 // at a time; the platform runs as PlatformProject.
@@ -102,9 +102,12 @@ type Network struct {
 	Name    string `json:"name"`    // Engine network name
 	Subnet  string `json:"subnet"`  // IPv4 CIDR
 	Gateway string `json:"gateway"` // IPv4
-	// Platform marks the management network. The platform project owns it;
-	// the range references it as external. Exactly one network sets it.
+	// Platform marks ownership, not management identity. The range references
+	// these networks as external; exactly one is rangerdanger_mgmt_net.
 	Platform bool `json:"platform,omitempty"`
+	// Delivery identifies a platform-owned, proxy-only desktop bridge.
+	// It has no teaching zone or backend endpoints.
+	Delivery bool `json:"delivery,omitempty"`
 	// Zone is the topology network id this network teaches, or empty for
 	// networks outside the teaching topology (management, physics).
 	Zone string `json:"zone,omitempty"`
