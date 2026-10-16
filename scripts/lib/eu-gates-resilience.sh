@@ -66,7 +66,7 @@ eu_gate_G11() {
     fail "G11 physical state unavailable before reset"
   fi
   eu_action_step process clear_fault "G11 device reset changes truth clear process fault" || true
-  eu_action_step breaker reset "G11 device reset changes truth" || true
+  eu_action_step breaker-1 reset "G11 device reset changes truth" || true
   if eu_get_field; then
     g11_truth="$API_BODY"
     if eu_get_operator; then
@@ -193,7 +193,7 @@ eu_gate_G13() {
       eu_action_step process fault_s1 "G13 fault active=$active while RTU paused" || break
     else
       eu_action_step process clear_fault "G13 clear process fault" || break
-      eu_action_step breaker reset "G13 fault active=$active while RTU paused" || break
+      eu_action_step breaker-1 reset "G13 fault active=$active while RTU paused" || break
     fi
     revision=$(printf '%s' "$API_BODY" | jq -er '.revision | numbers') || {
       fail "G13 fault active=$active answered no numeric revision"

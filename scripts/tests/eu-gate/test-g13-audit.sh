@@ -92,7 +92,7 @@ eu_action_step() {
     return 1
   fi
   case "$node:$action" in
-    process:fault_s1|breaker:reset) REVISION=$((REVISION + 1)) ;;
+    process:fault_s1|breaker-1:reset) REVISION=$((REVISION + 1)) ;;
   esac
   printf 'action %s %s revision %s\n' "$node" "$action" "$REVISION" >>"$CALLS"
   API_BODY="{\"revision\":$REVISION}"
@@ -119,7 +119,7 @@ docker pause
 action process fault_s1 revision 10
 wait G13 solver first_solve of device revision 10 while RTU paused
 action process clear_fault revision 10
-action breaker reset revision 11
+action breaker-1 reset revision 11
 wait G13 solver first_solve of device revision 11 while RTU paused
 operator .link.state != \"started\" 
 docker unpause

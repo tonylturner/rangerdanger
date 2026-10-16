@@ -165,7 +165,7 @@ eu_gate_G8() {
   for active in true false true; do
     if [ "$active" = true ]; then
       eu_action_step process clear_fault "G8 clear before trip" || return
-      eu_action_step breaker reset "G8 reclose before trip" || return
+      eu_action_step breaker-1 reset "G8 reclose before trip" || return
       eu_wait_for_field '.devices["breaker-1"].measurements.valid == true' 10 "G8 reclose solved" || return
       eu_action_step process fault_s1 "G8 sim fault active=$active" || true
     else
