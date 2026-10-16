@@ -4,6 +4,15 @@
 control-centre observations. It never polls the CC, field devices or solver,
 never sends commands, and is not a sequence-of-events (SOE) archive.
 
+The CC pushes a schema-2 snapshot every second and for each applied timed
+report. Timed snapshots are rendered before a following untimed GI can clear
+the cached source timestamp or its invalid-time flag. A 16-snapshot pending
+FIFO drops the oldest on overflow; CC health counts these as
+`historian.dropped_snapshots`. One HTTP push runs at a time with a 500 ms
+total timeout. Failed pushes are dropped, never replayed, and HTTP work never
+blocks the IEC 104 link. This preserves timed observations during a healthy
+feed, not complete SOE delivery.
+
 ## Listeners
 
 | Environment variable | Default | Surface |

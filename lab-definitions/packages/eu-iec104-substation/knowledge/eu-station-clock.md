@@ -20,7 +20,7 @@ Before an authored offset step, export CC state, record its `cache_epoch`, and s
 
 After changing the offset, trigger or observe a status transition so there is a new timed report to inspect. Compare `source_time` with CC `received_at` and the audit/process times. Merely reading an unchanged point can show its old source timestamp. A GI may replace a timed cached report with an untimed observation, so it cannot prove that the altered source clock was used for a timed event.
 
-The [historian](#eu-historian) preserves source-time validity and CC receipt time separately from ingestion time. Its query bounds use ingestion time, which remains the right window selector when source time has been shifted.
+The [historian](#eu-historian) preserves source-time validity and CC receipt time separately from ingestion time. The CC also captures a snapshot for each applied timed report before a following GI can clear its cached tag, in addition to its one-second cadence. Check history for that snapshot rather than relying on the current cache; overflow or failed ingestion can still lose it. Query bounds use ingestion time, which remains the right window selector when source time has been shifted.
 
 ### Limits
 

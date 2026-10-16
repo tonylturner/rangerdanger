@@ -283,7 +283,7 @@ steps:
       :::hint Two positive controls
       Prove allowed CC/PLC operations after the source deny. After the
       outage, prove recovery with a later GI on a new connection, not an
-      old green value. A 1 Hz snapshot historian is not an SOE archive.
+      old green value. Cadence and timed-report snapshots are not an SOE archive.
       :::
 
       Read: [Historian](#eu-historian), [Sessions](#eu-established-sessions),
@@ -301,7 +301,9 @@ steps:
       Then use the CC to command manual and back to auto, retaining each
       completed result and waiting at least 2 s between operations.
       These mode transitions generate timestamped M_SP_TB_1 observations
-      of `oltc-1-auto`; leave time for the historian to sample each.
+      of `oltc-1-auto`. The CC captures each timed report for the historian
+      before GI can clear its cached tag, alongside one-second snapshots.
+      Confirm both mode samples arrived; failed pushes are not replayed.
       Record source time, CC receipt time and historian ingest time from
       the same mode samples. Bus-kV M_ME_NC_1 is untimed and cannot prove
       a station-clock shift.

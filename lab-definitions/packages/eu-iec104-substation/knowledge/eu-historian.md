@@ -2,7 +2,7 @@ A historian preserves observations for later analysis. That does not make it an 
 
 ### Push into an operations DMZ
 
-The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall zone `lan5`. The CC pushes its schema-2 state once per second to `POST /api/ingest` on TCP/8081, binding its source to `10.60.60.20`. Pushes have a 500 ms total timeout, one in flight, with failures dropped and no backlog. Historian failure must not block IEC 104 processing.
+The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall zone `lan5`. The CC pushes its schema-2 state once per second and for every applied timed report to `POST /api/ingest` on TCP/8081, binding its source to `10.60.60.20`. A timed snapshot is rendered before a following untimed GI can clear its source tag. Pushes have a 500 ms total timeout and one in flight. A bounded queue holds at most 16 pending snapshots; overflow drops the oldest and increments CC health's `historian.dropped_snapshots`. Failed pushes are dropped, never replayed. Historian failure must not block IEC 104 processing.
 
 Read listeners are separate: `10.70.70.40:8080` and management `10.99.99.40:8080`. They expose GET points, history and health only; neither serves ingestion. The historian never polls the CC, field devices or process, never sends a command, and has no write-back path into OT.
 
@@ -24,6 +24,6 @@ The portal relays `GET /api/historian/points` and `/api/historian/history` throu
 
 ### Limits
 
-This is not an SOE archive. One-second snapshots can miss intermediate changes, and failed pushes are not replayed. Sequence jumps can also reflect other CC state renders, not necessarily lost ingestion. A healthy feed does not certify point quality or source-clock accuracy. Preserve epoch boundaries, nulls, stale flags and gaps in exports; a smoothed line alone cannot establish event ordering, command causality or a complete operational history.
+This is not an SOE archive. Cadence snapshots can miss intermediate untimed changes; timed snapshots can be lost on queue overflow or failed pushes and are not replayed. Sequence jumps can also reflect other CC state renders, not necessarily lost ingestion. A healthy feed does not certify point quality or source-clock accuracy. Preserve epoch boundaries, nulls, stale flags and gaps in exports; a smoothed line alone cannot establish event ordering, command causality or a complete operational history.
 
 Implementation: `services/historian-eu/store.go`, `schema.go`, `http.go`; `services/iec104/src/cc_historian.c`.

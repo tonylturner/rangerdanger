@@ -159,10 +159,13 @@ iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20 \
 Both historian flags are optional as a pair; an invalid URL/source bind is
 fatal. There are no new environment variables. The container still requires
 `GATEWAY=10.60.60.2` for its existing gateway entrypoint. The publisher opens
-no listener: one schema-2 snapshot POST each second, one in flight, a 500 ms
-**total** socket deadline, no retries or backlog, and a dedicated worker
-that never holds the IEC104 I/O lock. `/api/health.historian` exposes
-`{last_ok_at, failures}`.
+no listener: one schema-2 snapshot POST each second and for every applied
+timed report, captured before a following untimed GI can clear its source tag.
+A 16-snapshot FIFO drops the oldest on overflow. One dedicated worker handles
+serialization and HTTP, with one push in flight, a 500 ms **total** socket
+deadline and no retry. `/api/health.historian` exposes
+`{last_ok_at, failures, dropped_snapshots}`. Pending snapshots are not durable
+and failed pushes are never replayed; this is not an SOE archive.
 
 The control centre is the trusted operator path. It learns
 plant state **only through IEC 104**; the portal reads it through the HTTP
@@ -204,7 +207,7 @@ API, which the backend proxies verbatim (`/api/operator/*`).
 
 | Endpoint | Answer |
 |---|---|
-| `GET /api/health` | `status`, `link`, `historian: {last_ok_at, failures}` |
+| `GET /api/health` | `status`, `link`, `historian: {last_ok_at, failures, dropped_snapshots}` |
 | `GET /api/state` | `schema: 2`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
 | `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight or feedback is stale; 503 when the link is not started; 400 on bad input |
 | `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
@@ -261,6 +264,8 @@ FC3 PLC reads, RMU and OLTC FC6 writes in the attempt window, moving and
 settled step decoding, all three SBO types, qualifier/type/busy rejections,
 negative ACT-TERM with no feedback, lost-echo unknown with no retry, VTI
 range invalidity, heartbeat staleness, historian source binding/timeouts,
+timed DP/SP/step snapshots surviving immediate untimed GI (both CP56 validity
+states), bounded oldest-drop overflow with ordered HTTP pushes,
 and a real packet DROP to one device while every healthy peer's actual
 poll gaps remain ≤ `poll_ms + 250 ms`. `check/Dockerfile` adds Python and
 iptables only to the throwaway test image; service images do not gain them.
