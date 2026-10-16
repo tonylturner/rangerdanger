@@ -119,6 +119,13 @@ else
   err "/api/build"
 fi
 
+note "probe embedded containd UI and session"
+if python3 "$ROOT_DIR/scripts/lib/containd-ui-probe.py" "$API"; then
+  ok "/containd/ bundle and authenticated API session"
+else
+  err "/containd/ bundle or authenticated API session"
+fi
+
 # --- lab inventory ----------------------------------------------------------
 note "validate lab inventory"
 inv_json=$(curl -fsS "$API/api/scenarios") \

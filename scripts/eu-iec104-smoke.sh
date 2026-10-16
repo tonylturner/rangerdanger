@@ -160,7 +160,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G20 Lab 2 student walk: initial FAIL, station conduits, all checks PASS, weak + reset
   G21 Lab 3 student walk: initial FAIL, RMU switching, all checks PASS, weak + reset
   G22 Lab 4 student walk: initial FAIL, tap/PLC/history/time, all checks PASS, weak + reset
-  G23 Weak/improved management INPUT isolation, loopback-only engine, backend apply/reset/events/flows
+  G23 Embedded containd bundle/session, weak/improved management INPUT isolation, loopback-only engine, backend apply/reset/events/flows
   G14 Device reset recovers the chain; apply weak
   EXIT Keep evidence on failure; restore weak + device reset; unpause services paused by this run
 PLAN

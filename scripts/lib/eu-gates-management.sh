@@ -2,6 +2,12 @@
 # EU INPUT-plane isolation, separate from US firewall-smoke expectations.
 eu_gate_G23() {
   local policy
+  if python3 "$SCRIPT_DIR/lib/containd-ui-probe.py" "$API"; then
+    pass "G23 embedded containd bundle and authenticated session"
+  else
+    fail "G23 embedded containd bundle or authenticated session"
+    return 1
+  fi
   for policy in weak improved; do
     eu_apply_named "$policy" || return
     if python3 "$SCRIPT_DIR/lib/eu-management-probes.py" "$PACKAGE/manifest.json" "$policy" \
