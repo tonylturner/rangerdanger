@@ -20,7 +20,7 @@ The RTU obtains a fresh good completed start value after select. For completion 
 
 Record the starting tap, auto state and voltage from `GET /api/operator/state`. In a controlled manual exercise, save the command result and journal cursor, request one step and inspect monitor output for transient onset followed by settled position. Compare the physical device revision and post-motion process solve separately. See [station time](#eu-station-clock) when comparing source and receipt timestamps.
 
-The [historian](#eu-historian) stores the step object unchanged. Its one-second snapshots may miss an intermediate state, so absence of a transient sample in a trend is not proof that there was no motion. Use protocol capture and device audit when the precise sequence matters.
+The [historian](#eu-historian) stores the step object unchanged. Each timed step report gets its own snapshot, but a failed or dropped push is never replayed, so absence of a transient sample in a trend is not proof that there was no motion. Use protocol capture and device audit when the precise sequence matters.
 
 ### Limits
 

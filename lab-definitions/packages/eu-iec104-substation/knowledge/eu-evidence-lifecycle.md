@@ -8,7 +8,7 @@ The CC journal is a 500-entry ring for link, quality and command evidence. Use i
 
 Process state carries `solver_epoch`, `solve_seq`, solved time, truth-stale status and per-device delivery revisions. It explains the electrical solve, not what the CC received. Device truth revision changes identify state changes within that device; they are not globally ordered event ids across all services.
 
-The [historian](#eu-historian) preserves one-second CC snapshots in a bounded in-memory ring of 7201 snapshots. Source, CC receipt and ingestion times remain distinct. Epoch segments and ingest gaps explain discontinuities, but a feed can continuously archive invalid observations.
+The [historian](#eu-historian) preserves CC snapshots (one per second plus one per timed report) in a bounded in-memory ring of 7201 snapshots. Source, CC receipt and ingestion times remain distinct. Epoch segments and ingest gaps explain discontinuities, but a feed can continuously archive invalid observations.
 
 ### Capture before changing conditions
 

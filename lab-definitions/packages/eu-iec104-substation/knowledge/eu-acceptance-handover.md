@@ -33,7 +33,7 @@ Command outcomes must retain `unknown` when acknowledgements or feedback are mis
 
 After the exercise, restore the agreed policy and operating configuration. Verify fault state, F2 latch, RMU positions, earth/local state, OLTC mode/tap, PLC validity and CC freshness. Reset Lab is a prescribed recovery operation, not proof that the preceding switching order was correct.
 
-The historian is not cleared by Reset Lab. New CC cache epochs create separate archive segments, so preserve that distinction when reviewing a trend after reset. Its one-second snapshots do not establish sequence-of-events completeness.
+The historian is not cleared by Reset Lab. New CC cache epochs create separate archive segments, so preserve that distinction when reviewing a trend after reset. Its snapshots do not establish sequence-of-events completeness.
 
 ### Accept residual risk explicitly
 

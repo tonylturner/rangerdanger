@@ -39,7 +39,7 @@ curl --fail --silent --show-error --max-time 10 --get \
   -o historian-window.json
 ```
 
-All three query parameters are required exactly once. Preserve segments, gaps, quality and timestamps; do not flatten missing data to zero. One-second snapshots are not a complete sequence-of-events archive.
+All three query parameters are required exactly once. Preserve segments, gaps, quality and timestamps; do not flatten missing data to zero. Historian snapshots are not a complete sequence-of-events archive.
 
 To test the enterprise read conduit rather than the management proxy, run from Kali, whose image explicitly installs curl:
 

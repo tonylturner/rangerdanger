@@ -24,6 +24,6 @@ Improved policy removes enterprise/vendor initiation of new IEC 104 sessions. It
 
 Do not transfer historical IOAs into this package. A common address identifies the addressed station or sector, while an IOA identifies a point within that context. Mandiant's worked IOA 1104 command example is not this range's IOA 1104, which represents RMU1 fault-passage telemetry. Identical numbers across independent point maps do not identify the same function.
 
-Defensive evidence should distinguish a new master connection, an unusual command pattern, a protocol rejection and a real device operation. Monitor endpoint/configuration changes as well as network traffic. The historian's one-second snapshots help explain observation history but cannot guarantee complete event capture.
+Defensive evidence should distinguish a new master connection, an unusual command pattern, a protocol rejection and a real device operation. Monitor endpoint/configuration changes as well as network traffic. The historian's snapshots help explain observation history but cannot guarantee complete event capture.
 
 Keep attack discussion within the labs' existing exercises. Do not enumerate unknown control IOAs, reproduce wipers or kill communications processes. Use [trusted-host misuse](#eu-trusted-host-misuse) to discuss residual risk and [acceptance/handover](#eu-acceptance-handover) to record recovery evidence.
