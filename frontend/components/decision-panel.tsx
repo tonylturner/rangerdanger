@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
 import type { StepAction, DecisionAction, DecisionRole } from "../lib/api";
-import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import { actionEffectLabel, saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   readRequirements,
@@ -29,12 +29,13 @@ function hoursPerRole(action: DecisionAction): number {
   return Math.round(action.effort_hours / action.roles.length);
 }
 
-export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
-  const budgetHours = action.budget_hours ?? 500;
-  const roles: DecisionRole[] = useMemo(() => action.roles ?? [], [action.roles]);
-  const catalog: DecisionAction[] = useMemo(() => action.actions ?? [], [action.actions]);
-
+export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
   const scope = useCurriculumScope();
+  const binding = scope.curriculum;
+  const budgetHours = binding?.budgetHours ?? 0;
+  const roles: DecisionRole[] = useMemo(() => binding?.teams ?? [], [binding?.teams]);
+  const catalog: DecisionAction[] = useMemo(() => binding?.catalog ?? [], [binding?.catalog]);
+
   // Load any previously saved plan for this exercise
   const [selected, setSelected] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -99,7 +100,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   const overRoles = roles.filter((r) => roleUsage[r.name] > r.capacity_hours);
 
   // Per-requirement coverage (computed against current selection)
-  const coverage = useMemo(() => computeCoverage(requirements, selected), [requirements, selected]);
+  const coverage = useMemo(() => computeCoverage(requirements, selected, binding), [requirements, selected, binding]);
   const coverageSummary = useMemo(() => summariseCoverage(coverage), [coverage]);
   const hasAnyVerdict = requirements.some((r) => r.verdict !== "");
 
@@ -108,6 +109,8 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
   // catalog. Compact-by-default; click to expand the per-requirement
   // detail rows.
   const [coverageOpen, setCoverageOpen] = useState(false);
+
+  if (!binding) return null;
 
   return (
     <div className="mt-3 space-y-4">
@@ -136,7 +139,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
           </div>
           <div className="mt-2 text-[10px] text-slate-500 italic">
             These are read-only - change them in the <Link
-              href="/exercises/segmentation-requirements"
+              href={`/exercises/${binding?.roles.requirements}`}
               className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
             >Segmentation Requirements</Link> exercise.
           </div>
@@ -245,8 +248,8 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
         {catalog.map((a) => {
           const isSelected = selected.has(a.id);
           const perRole = hoursPerRole(a);
-          const implements_ = actionImplements(a.id, requirements);
-          const readinessFlags = readinessFlagsForAction(a.id, readiness);
+          const implements_ = actionImplements(a.id, requirements, binding);
+          const readinessFlags = readinessFlagsForAction(a.id, readiness, binding);
           const hasBlocked = readinessFlags.some((f) => f.severity === "blocked");
           return (
             <button
@@ -276,6 +279,7 @@ export function DecisionPanel({ exerciseId, action }: DecisionPanelProps) {
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
+                    {actionEffectLabel(binding, a.id) && ` — ${actionEffectLabel(binding, a.id)}`}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.roles.map((role) => (

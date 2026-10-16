@@ -1,0 +1,38 @@
+topology: ../../../../../lab-definitions/packages/eu-iec104-substation/topology.yml
+ics_rules: forbidden
+curriculum:
+  file: curriculum.yml
+  roles:
+    baseline: eu-baseline-assessment
+    requirements: eu-segmentation-requirements
+    planning: eu-remediation-planning
+    implementation: eu-firewall-implementation
+    hardening: eu-hardening-configurations
+    vendor: eu-vendor-rdp-compromise
+    validation: eu-validation-evidence
+  activities:
+    eu-baseline-assessment:
+      policyActions: false
+      hideBanner: true
+    eu-segmentation-requirements:
+      policyActions: false
+      hideBanner: true
+    eu-remediation-planning:
+      policyActions: false
+      hideBanner: true
+    eu-firewall-implementation:
+      policyActions: true
+      hideBanner: true
+    eu-hardening-configurations:
+      policyActions: true
+      hideBanner: false
+    eu-vendor-rdp-compromise:
+      policyActions: true
+      hideBanner: false
+    eu-validation-evidence:
+      policyActions: true
+      hideBanner: false
+  dynamicSteps:
+    implement-rules: rules
+    test-positive: positive
+    test-negative: negative

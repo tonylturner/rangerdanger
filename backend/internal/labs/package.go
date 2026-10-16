@@ -67,14 +67,15 @@ type ValidatorRequirements map[string][]string
 
 // PackageYAML mirrors lab-definitions/packages/<id>/package.yml.
 type PackageYAML struct {
-	Schema       int      `yaml:"schema"`
-	ID           string   `yaml:"id"`
-	Title        string   `yaml:"title"`
-	Revision     int      `yaml:"revision"`
-	Topology     string   `yaml:"topology"`  // relative to package.yml
-	Scenarios    string   `yaml:"scenarios"` // directory, relative to package.yml
-	Knowledge    string   `yaml:"knowledge"` // required knowledge index, relative to package.yml
-	Capabilities []string `yaml:"capabilities"`
+	Curriculum   *CurriculumBinding `yaml:"curriculum"`
+	Schema       int                `yaml:"schema"`
+	ID           string             `yaml:"id"`
+	Title        string             `yaml:"title"`
+	Revision     int                `yaml:"revision"`
+	Topology     string             `yaml:"topology"`  // relative to package.yml
+	Scenarios    string             `yaml:"scenarios"` // directory, relative to package.yml
+	Knowledge    string             `yaml:"knowledge"` // required knowledge index, relative to package.yml
+	Capabilities []string           `yaml:"capabilities"`
 	// Policies maps the names the firewall buttons and actions apply
 	// ("weak", "improved") to policy files relative to package.yml.
 	Policies     map[string]string `yaml:"policies"`
@@ -85,6 +86,7 @@ type PackageYAML struct {
 
 // Package is one fully parsed and validated curriculum package.
 type Package struct {
+	Curriculum   *Curriculum
 	ID           string
 	Title        string
 	Revision     int
@@ -215,6 +217,9 @@ func (l *Loader) loadPackage(manifestPath string) (Package, error) {
 	if err := ValidateLab(&pkg.Template, pkg.Scenarios, pkg.Capabilities, pkg.Policies, l.Validators); err != nil {
 		return Package{}, err
 	}
+	if err := validateCurriculum(pkg); err != nil {
+		return Package{}, err
+	}
 	return pkg, nil
 }
 
@@ -284,6 +289,9 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 	}
 	if pkg.Knowledge, err = loadKnowledge(packageDir, manifest.Knowledge, manifest.Scenarios); err != nil {
 		return Package{}, "", fmt.Errorf("knowledge: %w", err)
+	}
+	if pkg.Curriculum, err = loadCurriculum(packageDir, manifest.Curriculum, pkg); err != nil {
+		return Package{}, "", fmt.Errorf("curriculum: %w", err)
 	}
 	return pkg, manifest.Scenarios, nil
 }

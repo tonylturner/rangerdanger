@@ -39,10 +39,8 @@ import {
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   injectDynamicContent,
-  PHASE3_TITLES,
-  titleMatches,
 } from "../lib/scenario-runner-logic";
-import { type ActionSummary, type DynamicExercisePlan } from "../lib/remediation-to-rules";
+import { curriculumForPlan, type ActionSummary, type DynamicExercisePlan } from "../lib/remediation-to-rules";
 import { ValidationReportPanel } from "./validation-report-panel";
 
 // CommandBlock renders a single command line with copy + (optional)
@@ -331,7 +329,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
     const requirements = readRequirements(scope);
     const plan = loadRemediationPlan(scope);
     const selected = new Set(plan?.selectedActionIds ?? []);
-    const coverage = computeCoverage(requirements, selected);
+    const coverage = computeCoverage(requirements, selected, scope.curriculum);
     const summary = summariseCoverage(coverage);
     setSnapshot({
       hasPlan: !!plan && plan.selectedActionIds.length > 0,
@@ -340,11 +338,13 @@ export function PlanCoveragePanel({ title }: { title: string }) {
     });
   }, [scope]);
 
+  if (!scope.curriculum) return null;
+
   if (!snapshot.hasPlan && snapshot.coverage.length === 0) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-500 italic">
         No remediation plan recorded yet. Visit <Link
-          href="/exercises/remediation-planning"
+          href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 (Remediation Planning)</Link> to select actions and your plan coverage will appear here.
       </div>
@@ -424,7 +424,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
         Read-only snapshot of your <Link
-          href="/exercises/remediation-planning"
+          href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 plan</Link>. Edit selections there to update.
       </div>
@@ -588,6 +588,8 @@ export function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) 
   const [showUnselected, setShowUnselected] = useState(false);
 
   if (!plan.hasRemediationPlan) return null;
+  const binding = curriculumForPlan(plan);
+  const dpiNotice = binding.icsRules === "forbidden" ? binding.dpiForbiddenNotice : binding.dpiNotice;
 
   return (
     <div className="space-y-3">
@@ -602,7 +604,7 @@ export function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) 
         </div>
         {plan.includeDpi && (
           <div className="mt-3 rounded border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
-            <span className="font-bold">ICS DPI enabled</span> - containd will filter by Modbus/DNP3 function code, not just port number
+            <span className="font-bold">{dpiNotice.title}</span>{dpiNotice.description}
           </div>
         )}
         {plan.enableLogging && (
@@ -673,6 +675,7 @@ export function DescriptionSegments({
   scenarioId,
   currentStep,
   stepTitle,
+  stepId,
   stepDescription,
   dynamicPlan,
   exerciseNodes,
@@ -685,6 +688,7 @@ export function DescriptionSegments({
   scenarioId: string;
   currentStep: number;
   stepTitle: string;
+  stepId: string;
   stepDescription: string;
   dynamicPlan: DynamicExercisePlan | null;
   exerciseNodes: string[];
@@ -694,14 +698,15 @@ export function DescriptionSegments({
   handleGenerateTraffic: (durationSec?: number) => Promise<void>;
   generatingTraffic: boolean;
 }) {
+  const scope = useCurriculumScope();
   const scenario = { id: scenarioId };
   const step = { title: stepTitle, description: stepDescription };
   return (
     <>
             {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
-              const effectiveDesc = scenario.id === "firewall-implementation" && dynamicPlan
-                ? injectDynamicContent(step.description, step.title, dynamicPlan)
+              const effectiveDesc = scenario.id === scope.curriculum?.roles.implementation && dynamicPlan
+                ? injectDynamicContent(step.description, stepId, dynamicPlan)
                 : step.description;
               const segments = splitDescription(effectiveDesc);
               let bodyCmdIdx = 0;

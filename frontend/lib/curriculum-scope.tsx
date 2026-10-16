@@ -25,16 +25,16 @@ export function useActiveCurriculum(): {
   };
 }
 
-export function scopeOf(pkg: Pick<PackageSummary, "id" | "revision">): CurriculumScope {
-  return { packageId: pkg.id, revision: pkg.revision };
+export function scopeOf(pkg: Pick<PackageSummary, "id" | "revision" | "curriculum">): CurriculumScope {
+  return { packageId: pkg.id, revision: pkg.revision, curriculum: pkg.curriculum };
 }
 
 const CurriculumScopeContext = createContext<CurriculumScope | null>(null);
 
 // Provides the storage scope to everything rendered inside an exercise.
 export function CurriculumScopeProvider({ pkg, children }: { pkg: PackageSummary; children: ReactNode }) {
-  const { id, revision } = pkg;
-  const scope = useMemo(() => scopeOf({ id, revision }), [id, revision]);
+  const { id, revision, curriculum } = pkg;
+  const scope = useMemo(() => scopeOf({ id, revision, curriculum }), [id, revision, curriculum]);
   return <CurriculumScopeContext.Provider value={scope}>{children}</CurriculumScopeContext.Provider>;
 }
 

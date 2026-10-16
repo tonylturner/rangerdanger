@@ -20,7 +20,7 @@ import {
   type StepExecutionResult,
 } from "../lib/api";
 import { PolicyStatusBanner } from "./policy-status-banner";
-import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS, EXERCISE_NODE_MAP } from "../lib/exercise-nodes";
+import { getExerciseNodes, inferNodeFromDescription, NODE_LABELS } from "../lib/exercise-nodes";
 import { Terminal as TerminalIcon, FileText, ArrowLeft, RotateCcw, Eraser, X } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
@@ -40,13 +40,10 @@ import { useCurriculumScope } from "../lib/curriculum-scope";
 import { isRangeNotReady, logLineFor } from "../lib/range";
 import { useActiveFirewall, useRefreshLive, useSubstationAudit, useSubstationState } from "../lib/live-queries";
 import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
-import { isView, US_OPERATOR_VIEW, usFeederPolling } from "../lib/operator-view";
+import { usFeederPolling } from "../lib/operator-view";
 import { RunnerOperatorStatus } from "./runner-operator-status";
 import {
-  POLICY_ACTION_SCENARIOS,
   showsValidateButton,
-  PHASE3_TITLES,
-  titleMatches,
   deviceLabel,
   isSegmentationStep,
   isBaselineStep,
@@ -81,9 +78,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // their own operator status (RunnerOperatorStatus).
   const operatorView = useOperatorView();
   const usFeeder = usFeederPolling(operatorView);
-  // The remediation plan is the US curriculum's Lab 1.4; no other
-  // package has one to point at.
-  const usCurriculum = isView(operatorView, US_OPERATOR_VIEW);
+  // Planning surfaces are opt-in package curriculum metadata.
+  const binding = scope.curriculum;
+  const hasPolicyActions = !!binding?.activities[scenario.id]?.policyActions;
   const stateQuery = useSubstationState(3000, usFeeder);
   const state = stateQuery.data ?? null;
   // No feeder while the range is being replaced; the status cards wait
@@ -111,7 +108,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const auditEntries = useSubstationAudit(3000, usFeeder).data?.entries;
   const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
   const refreshLive = useRefreshLive();
-  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes);
+  const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, binding);
   // Load the saved Lab 1.4 remediation plan on every firewall lab,
   // not just firewall-implementation. The plan drives the side-
   // panel Apply Your Plan button on Lab 2.3 / 2.3-bonus / 2.4 too,
@@ -121,15 +118,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   // firewall-implementation - only that lab actually uses the
   // plan to rewrite step descriptions.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    POLICY_ACTION_SCENARIOS.includes(scenario.id) ? loadDynamicPlan(scope) : null
+    hasPolicyActions ? loadDynamicPlan(scope) : null
   );
   useEffect(() => {
-    if (!POLICY_ACTION_SCENARIOS.includes(scenario.id)) return;
+    if (!hasPolicyActions) return;
     setDynamicPlan(loadDynamicPlan(scope));
     const onFocus = () => setDynamicPlan(loadDynamicPlan(scope));
     document.addEventListener("visibilitychange", onFocus);
     return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [scope, scenario.id]);
+  }, [scope, scenario.id, hasPolicyActions]);
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
@@ -178,8 +175,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const handleAutoRun = async (cmd: string, runId: string, stepDesc: string) => {
     const step = scenario.steps[currentStep];
     const nodeId = step?.node
-      || inferNodeFromDescription(stepDesc)
-      || (EXERCISE_NODE_MAP[scenario.id]?.primary)
+      || inferNodeFromDescription(stepDesc, binding)
+      || (binding?.nodeMap[scenario.id]?.primary)
       || exerciseNodes[0];
 
     if (!nodeId) {
@@ -347,7 +344,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const progress = completedStepIds.size / scenario.steps.length;
   const hasAction = !!step?.action;
   const stepDone = step !== undefined && completedStepIds.has(step.id);
-  const showValidate = showsValidateButton(scenario);
+  const showValidate = showsValidateButton(scenario, binding);
 
   // Operational assessments
   const bkrClosed = elec?.breaker_closed ?? false;
@@ -454,7 +451,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       </div>
 
       {/* ── Remediation Plan Banner (shown on later exercises) ── */}
-      {!showSummary && usCurriculum && <RemediationPlanBanner currentExerciseId={scenario.id} />}
+      {!showSummary && binding && <RemediationPlanBanner currentExerciseId={scenario.id} />}
 
       {/* ── Summary View ──────────────────────────────────────── */}
       {showSummary && (
@@ -536,8 +533,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 picker on 2.2 step 1), show which path the student is on
                 and let them switch inline without hunting for the side
                 panel. */}
-            {POLICY_ACTION_SCENARIOS.includes(scenario.id) &&
-              !(scenario.id === "firewall-implementation" && currentStep === 0) && (
+            {hasPolicyActions &&
+              !(scenario.id === binding?.roles.implementation && currentStep === 0) && (
               <div className="mb-3 flex items-center gap-2 text-[10px]">
                 <span className="font-medium uppercase tracking-wider text-slate-500">
                   Track
@@ -564,8 +561,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </div>
             )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
-            {scenario.id === "firewall-implementation" && dynamicPlan?.hasRemediationPlan &&
-              step && titleMatches(step.title, PHASE3_TITLES) && (
+            {scenario.id === binding?.roles.implementation && dynamicPlan?.hasRemediationPlan &&
+              step && binding?.dynamicSteps[step.id] === "rules" && (
               <div className="mb-3">
                 <RemediationPlanSummary plan={dynamicPlan} />
               </div>
@@ -575,6 +572,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 scenarioId={scenario.id}
                 currentStep={currentStep}
                 stepTitle={step.title}
+                stepId={step.id}
                 stepDescription={step.description}
                 dynamicPlan={dynamicPlan}
                 exerciseNodes={exerciseNodes}
@@ -673,7 +671,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   exercising scenarios (2.2 / 2.3 / 2.3-bonus / 2.4),
                   hidden in the planning labs (1.2 / 1.3 / 1.4) since
                   their steps don't actually drive policy state. */}
-              {POLICY_ACTION_SCENARIOS.includes(scenario.id) && (
+              {hasPolicyActions && (
                 <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-[9px] font-medium uppercase tracking-wider text-slate-500">

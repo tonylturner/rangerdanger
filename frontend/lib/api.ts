@@ -193,6 +193,7 @@ export async function listScenarios() {
 // policies are the package.yml policy names /firewall/apply accepts,
 // the package's default first (lib/policy-wording.ts).
 export type PackageSummary = {
+  curriculum?: CurriculumBinding;
   id: string;
   title: string;
   revision: number;
@@ -636,3 +637,69 @@ export type ResetResult = {
 export async function resetWorkshop() {
   return request<ResetResult>("/workshop/reset", { method: "POST" });
 }
+
+// The backend strictly decodes the package sibling file and resolves topology
+// references before publishing this model. Missing binding means no planner.
+export type CurriculumBinding = {
+  schema: 1;
+  roles: Record<string, string>;
+  activities: Record<string, { policyActions: boolean; hideBanner: boolean; validate?: boolean }>;
+  dynamicSteps: Record<string, "rules" | "positive" | "negative">;
+  icsRules: "allowed" | "forbidden";
+  requirementOrder: string[];
+  groupOrder: string[];
+  impactOrder: string[];
+  loggingPrefixes: string[];
+  requirements: Record<string, { label: string; impl: Record<string, string[]> }>;
+  readiness: { id: string; label: string; good: string }[];
+  readinessFlags: { actions: string[]; severity: "warn" | "blocked"; source: string; sourceLabel: string; verdict: string; message: string }[];
+  budgetHours: number;
+  teams: DecisionRole[];
+  catalog: DecisionAction[];
+  impact: Record<string, { defends: string[]; note: string }>;
+  baselineRules: import("./remediation-to-rules").FirewallRule[];
+  enterpriseToVendorRule: import("./remediation-to-rules").FirewallRule | null;
+  groups: Record<string, { title: string; description: string; rules: import("./remediation-to-rules").FirewallRule[]; omittedRules?: import("./remediation-to-rules").FirewallRule[]; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
+  planningOnly: string[];
+  policy: { rule: CurriculumPolicyRule; when?: string; unless?: string; logging?: boolean; semantic?: string; predicate?: CurriculumPredicate }[];
+  phases: Record<string, string>;
+  noPlan: string;
+  tests: { kind: "positive" | "negative"; when?: string; text: string }[];
+  negativeEmpty: string;
+  flags: { logging: string; objects: string; validation: string; dpi: string[] };
+  nodeMap: Record<string, { primary: string; others: string[] }>;
+  nodeInference: { node: string; ip: string; pattern: string }[];
+  interfaces: { name: string; zone: string; access: Record<string, boolean> }[];
+  zones: { name: string; description: string }[];
+  dpiNotice: { title: string; description: string };
+  dpiForbiddenNotice: { title: string; description: string };
+  legacyDisplayMutation: boolean;
+  legacyEffects: boolean;
+};
+
+export type CurriculumPredicate = {
+  protocol?: string;
+  functionCodes?: number[];
+  functionCode?: number[];
+  note?: string;
+  readOnly?: boolean;
+  typeIds?: number[];
+  classes?: string[];
+  direction?: string;
+  ca?: number;
+  ioa?: { start: number; end: number }[];
+  mode?: string;
+};
+export type CurriculumPolicyRule = {
+  id: string;
+  description: string;
+  sourceZones?: string[];
+  destZones?: string[];
+  sources?: string[];
+  destinations?: string[];
+  protocols?: { name: string; port: string }[];
+  state?: string[];
+  ics?: CurriculumPredicate;
+  action: "ALLOW" | "DENY";
+  log?: boolean;
+};

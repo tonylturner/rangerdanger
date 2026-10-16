@@ -15,7 +15,9 @@
 // to a real `:::decision id=`, so renaming a decision id without
 // moving its readers fails that test.
 
-export type CurriculumScope = { packageId: string; revision: number };
+import type { CurriculumBinding } from "./api";
+
+export type CurriculumScope = { packageId: string; revision: number; curriculum?: CurriculumBinding };
 
 export function curriculumKey(scope: CurriculumScope, name: string): string {
   return `rd:${scope.packageId}:${scope.revision}:${name}`;

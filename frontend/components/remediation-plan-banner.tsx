@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
-import { loadRemediationPlan, ACTION_IMPACT, type RemediationPlan } from "../lib/remediation-plan";
+import { actionEffectLabel, loadRemediationPlan, type RemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 
 type RemediationPlanBannerProps = {
@@ -27,12 +27,10 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
     setPlan(loadRemediationPlan(scope));
   }, [scope, currentExerciseId]);
 
-  // Hide on exercises where the banner isn't meaningful
-  if (currentExerciseId === "baseline-assessment") return null;
-  if (currentExerciseId === "remediation-planning") return null;
-  if (currentExerciseId === "segmentation-requirements") return null;
-  if (currentExerciseId === "firewall-implementation") return null;
+  const binding = scope.curriculum;
+  if (!binding || binding.activities[currentExerciseId]?.hideBanner) return null;
 
+  // Hide on exercises where the banner isn't meaningful
   if (!plan || plan.selectedActionIds.length === 0) {
     return (
       <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-4 py-3">
@@ -54,13 +52,12 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
   // the current exercise (per ACTION_IMPACT mapping).
   const relevantSelected: { id: string; note: string }[] = [];
   const relevantMissed: { id: string; note: string }[] = [];
-  for (const [actionId, impact] of Object.entries(ACTION_IMPACT)) {
+  for (const actionId of binding.impactOrder) {
+    const impact = binding.impact[actionId];
     if (!impact.defends.includes(currentExerciseId)) continue;
-    if (plan.selectedActionIds.includes(actionId)) {
-      relevantSelected.push({ id: actionId, note: impact.note });
-    } else {
-      relevantMissed.push({ id: actionId, note: impact.note });
-    }
+    const label = actionEffectLabel(binding, actionId);
+    const item = { id: actionId, note: impact.note + (label ? ` — ${label}` : "") };
+    (plan.selectedActionIds.includes(actionId) ? relevantSelected : relevantMissed).push(item);
   }
 
   const hasRelevance = relevantSelected.length > 0 || relevantMissed.length > 0;
@@ -88,7 +85,7 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
               }`}
             >
               {relevantSelected.length > 0
-                ? `${relevantSelected.length} defense${relevantSelected.length === 1 ? "" : "s"} active`
+                ? `${relevantSelected.length} ${binding.legacyEffects ? `defense${relevantSelected.length === 1 ? "" : "s"} active` : "actions planned"}`
                 : "no defenses for this attack"}
             </div>
           )}
@@ -101,7 +98,7 @@ export function RemediationPlanBanner({ currentExerciseId }: RemediationPlanBann
           {relevantSelected.length > 0 && (
             <div>
               <div className="text-[9px] font-bold uppercase tracking-wider text-green-600 mb-1">
-                Active defenses for this exercise
+                {binding.legacyEffects ? "Active defenses for this exercise" : "Planned actions for this exercise"}
               </div>
               <ul className="space-y-1">
                 {relevantSelected.map((r) => (
