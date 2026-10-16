@@ -29,7 +29,7 @@ function render(graph: LabGraph, filter = { zone: "all", crossZoneOnly: false })
 }
 
 describe("TrafficMatrixView", () => {
-  it("renders EU's real pairs, unknown GPS, capture-only controls and package filters", () => {
+  it("renders EU's real pairs, unknown GPS, generate+capture controls and package filters", () => {
     const out = render(euFixture as LabGraph);
     expect(out).toContain("cc-1");
     expect(out).toContain("rtu-1");
@@ -38,8 +38,11 @@ describe("TrafficMatrixView", () => {
     expect(out).toContain("kali-1");
     expect(out).not.toContain("rtac-1");
     expect(out).not.toContain("relay-1");
-    expect(out).toContain("Capture PCAP");
-    expect(out).not.toContain("Generate");
+    // The EU workshop drives scenario traffic in lab 1.2, same as US, so the
+    // generator controls are present (traffic_generation is true).
+    expect(out).toContain('aria-label="Generate Traffic"');
+    expect(out).toContain("Generate + PCAP");
+    expect(out).toContain("scenario traffic generator");
     expect(out).toContain("unknown");
     expect(out).toContain('value="control_centre_net"');
     expect(out).toContain('value="station_net"');
@@ -86,18 +89,23 @@ describe("TrafficMatrixView", () => {
     expect(out).not.toContain(">rtac-1<");
   });
 
-  it("disables generator and US supervisor polls for EU; enables only declared providers", () => {
+  it("mounts each poller from its own declared trigger: generator by operation, operator and sessions by provider", () => {
     function ReadContext({ graph }: { graph: LabGraph }) {
       useNetworkFlowContext(graph, undefined);
       return null;
     }
     for (const graph of [euFixture as LabGraph, usFixture as LabGraph]) {
+      const providers = Object.values(graph.liveness ?? {}).map((b) => b.provider);
+      const hasOperator = providers.some((p) => p === "operator-link" || p === "operator-device");
+      const hasSessions = providers.includes("session-presence");
       const client = new QueryClient();
       renderToStaticMarkup(<QueryClientProvider client={client}><ReadContext graph={graph} /></QueryClientProvider>);
       const queries = client.getQueryCache();
+      // The generator poll follows the package operation; the operator and
+      // session polls follow the declared liveness providers, independently.
       expect(queries.find({ queryKey: ["traffic-status"] })?.options).toMatchObject({ enabled: graph.operations.traffic_generation });
-      expect(queries.find({ queryKey: ["operator", "state"] })?.options).toMatchObject({ enabled: !graph.operations.traffic_generation });
-      expect(queries.find({ queryKey: ["firewall-sessions", "all"] })?.options).toMatchObject({ enabled: !graph.operations.traffic_generation });
+      expect(queries.find({ queryKey: ["operator", "state"] })?.options).toMatchObject({ enabled: hasOperator });
+      expect(queries.find({ queryKey: ["firewall-sessions", "all"] })?.options).toMatchObject({ enabled: hasSessions });
       client.clear();
     }
   });
@@ -111,10 +119,10 @@ describe("TrafficMatrixView", () => {
     client.clear();
   });
 
-  it("rejects stale/failed session polls and never reuses a cached US generator in EU", () => {
+  it("rejects stale/failed session polls while keeping the EU scenario generator", () => {
     function ReadContext() {
       const context = useNetworkFlowContext(euFixture as LabGraph, undefined)!;
-      return <span>{context.observations["attacker-rtu"].status}/{context.observations["rtu-breaker"].status}/{String(context.traffic)}</span>;
+      return <span>{context.observations["attacker-rtu"].status}/{context.observations["rtu-breaker"].status}/{context.traffic ? "gen" : "none"}</span>;
     }
     // SSR creates a new observer for each snapshot. Keep it from replacing
     // the fixture's in-flight retry state with a new mount-time fetch.
@@ -125,14 +133,14 @@ describe("TrafficMatrixView", () => {
     client.setQueryData(["operator", "state"], FRESH_STATE);
     client.setQueryData(sessionKey, sessionList);
     const renderContext = () => renderToStaticMarkup(<QueryClientProvider client={client}><ReadContext /></QueryClientProvider>);
-    expect(renderContext()).toContain("active/active/undefined");
+    expect(renderContext()).toContain("active/active/gen");
     client.setQueryData(sessionKey, sessionList, { updatedAt: Date.now() - 16_000 });
-    expect(renderContext()).toContain("unknown/active/undefined");
+    expect(renderContext()).toContain("unknown/active/gen");
     client.setQueryData(sessionKey, sessionList);
     client.getQueryCache().find({ queryKey: sessionKey })!.setState({ fetchFailureCount: 1, fetchStatus: "fetching" });
-    expect(renderContext()).toContain("unknown/active/undefined");
+    expect(renderContext()).toContain("unknown/active/gen");
     client.getQueryCache().find({ queryKey: sessionKey })!.setState({ status: "error", error: new Error("upstream unavailable") });
-    expect(renderContext()).toContain("unknown/active/undefined");
+    expect(renderContext()).toContain("unknown/active/gen");
     client.clear();
   });
 });
