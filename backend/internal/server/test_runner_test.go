@@ -47,7 +47,7 @@ func TestEvaluateTestStep(t *testing.T) {
 		{
 			name:           "expected containd block passes",
 			action:         &labs.StepAction{Type: "command", Device: "relay", Command: "close"},
-			commandResults: []StepActionResult{{Detail: "BLOCKED by containd — source denied"}},
+			commandResults: []StepActionResult{{Blocked: true, Detail: "BLOCKED by containd — source denied"}},
 			wantPassed:     true,
 			wantDetail:     "BLOCKED by containd — source denied (expected — hardened policy is working)",
 		},
@@ -221,5 +221,37 @@ func TestAggregateResetProblems(t *testing.T) {
 				t.Errorf("failed reset has no phase prefix: %q", resetDetail)
 			}
 		})
+	}
+}
+
+func TestExpectedBlocksAreStructured(t *testing.T) {
+	for _, tc := range []struct {
+		result StepActionResult
+		passed bool
+	}{
+		{StepActionResult{Blocked: true, Detail: "policy refusal with new wording"}, true},
+		{StepActionResult{Detail: "BLOCKED by containd — diagnostic only"}, false},
+		{StepActionResult{Detail: "missing executable"}, false},
+	} {
+		got := evaluateTestStep(0, labs.ScenarioStep{Action: &labs.StepAction{Type: "command"}}, stepExecutors{command: func(string, string, string, *float64) StepActionResult { return tc.result }})
+		if got.Passed != tc.passed {
+			t.Fatalf("result=%+v got=%+v", tc.result, got)
+		}
+	}
+}
+
+func TestSuiteSessionCuts(t *testing.T) {
+	for _, success := range []bool{true, false} {
+		calls := 0
+		got := evaluateTestStep(0, labs.ScenarioStep{Action: &labs.StepAction{Type: "session-cut", Flow: "cc-rtu"}}, stepExecutors{sessionCut: func(flow string) StepActionResult {
+			calls++
+			if flow != "cc-rtu" {
+				t.Fatal(flow)
+			}
+			return StepActionResult{Success: success, Detail: "session-cut result"}
+		}})
+		if calls != 1 || got.Passed != success || got.Detail != "session-cut result" {
+			t.Fatalf("%+v calls=%d", got, calls)
+		}
 	}
 }

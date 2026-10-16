@@ -132,11 +132,11 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	// Start a short PCAP at the firewall covering the field zone, so the
 	// report can show which sources actually reached field devices.
 	ts := time.Now().UTC().Format("20060102T150405Z")
-	pcapPath := "/data/captures/validation-" + ts + ".pcap"
-	pcapHostPath := "data/firewall/captures/validation-" + ts + ".pcap"
+	pcapPath := recipe.report.captureDir + "/validation-" + ts + ".pcap"
+	pcapHostPath := recipe.report.hostCaptureDir + "/validation-" + ts + ".pcap"
 	pcapCmd := fmt.Sprintf(
-		"mkdir -p /data/captures; timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>&1",
-		validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "))
+		"mkdir -p %s; timeout %d tcpdump -i any -w %s 'host %s' >/dev/null 2>&1",
+		recipe.report.captureDir, validationPcapDurationSec, pcapPath, strings.Join(captureHosts, " or host "))
 	pcapOK := s.execDetached(ctx, cli, firewall, []string{"sh", "-c", pcapCmd}) == nil
 	pcapStart := time.Now()
 	time.Sleep(1 * time.Second) // let tcpdump open the file
@@ -152,13 +152,13 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
+			verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec, recipe.report.strictProbes)
 			// Authorized flows can momentarily lose a race to container /
 			// routing warmup; retry once so a transient hiccup doesn't read
 			// as a policy failure. Never retry unauthorized - a real leak
 			// must surface, not be masked by a lucky second attempt.
 			if p.Category == "authorized" && verdict != p.Expected {
-				verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
+				verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec, recipe.report.strictProbes)
 			}
 			rows[i] = validationRow{
 				validationProbe: p, Actual: verdict, DurationMs: ms,
@@ -182,7 +182,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	authPass, authTotal := tally.authPass, tally.authTotal
 	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
 	skipped, result := tally.skipped, tally.pass
-	md := renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
+	md := recipe.renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
 		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -204,7 +204,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 // probeTCP opens a TCP connection from src to dst:port and classifies the
 // result as allow (reached) / deny (dropped) by exit code + duration -
 // same heuristic as scripts/firewall-smoke.sh and validation-report.sh.
-func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int) (string, int) {
+func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int, strict bool) (string, int) {
 	cmd := []string{"sh", "-c", fmt.Sprintf(
 		`if command -v bash >/dev/null 2>&1; then timeout %d bash -c "exec 3<>/dev/tcp/%s/%s"; else timeout %d nc -w %d %s %s </dev/null; fi`,
 		timeoutSec, dst, port, timeoutSec, timeoutSec, dst, port)}
@@ -214,18 +214,25 @@ func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, por
 	if err != nil {
 		return "skipped", ms
 	}
+	return classifyReportProbe(rc, ms, strict), ms
+}
+
+func classifyReportProbe(rc, ms int, strict bool) string {
 	switch {
 	case rc == 0:
-		return "allow", ms
+		return "allow"
 	case rc == 124 || rc == 143:
-		return "deny", ms
+		return "deny"
 	case rc == 1:
 		if ms < 500 {
-			return "allow", ms
+			return "allow"
 		}
-		return "deny", ms
+		return "deny"
 	default:
-		return "deny", ms
+		if strict {
+			return "skipped"
+		}
+		return "deny"
 	}
 }
 
@@ -280,7 +287,7 @@ func (s *Server) execDetached(ctx context.Context, cli *client.Client, container
 	return cli.ContainerExecStart(ctx, execID.ID, container.ExecStartOptions{Detach: true})
 }
 
-func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
+func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK bool, pcapSummary string,
 	rows []validationRow, authPass, authTotal, unauthPass, unauthTotal, skipped int, result bool) string {
 
 	policyLabel := map[string]string{
@@ -294,7 +301,7 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	var b strings.Builder
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	fmt.Fprintf(&b, "# Substation Segmentation - Validation Report\n\n")
+	fmt.Fprintf(&b, "# %s\n\n", recipe.report.title)
 	fmt.Fprintf(&b, "| Field | Value |\n|---|---|\n")
 	fmt.Fprintf(&b, "| **Generated** | %s |\n", now)
 	fmt.Fprintf(&b, "| **Policy** | %s (source: `%s`, sha256:%s) |\n", policyLabel, source, hash)
@@ -311,7 +318,7 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 	}
 	b.WriteString("\n")
 	if result {
-		fmt.Fprintf(&b, "**Result: PASS** - every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.\n\n")
+		b.WriteString(recipe.report.passText + "\n\n")
 	} else if skipped > 0 {
 		fmt.Fprintf(&b, "**Result: FAIL** - %d probe(s) could not run (source container missing, renamed, or stopped - shown as ⊘ below), so the validation matrix did not fully execute. A report cannot claim PASS unless every probe ran. Bring the full lab stack up and re-run. Inspect any ✗ rows for genuine policy mismatches as well.\n\n", skipped)
 	} else {
@@ -343,13 +350,14 @@ func renderValidationMarkdown(active, source, hash, pcapHostPath string, pcapOK 
 
 	if pcapOK {
 		fmt.Fprintf(&b, "## PCAP source analysis\n\n")
-		fmt.Fprintf(&b, "Sources whose traffic the firewall forwarded toward the field zone (`10.40.40.0/24`) during the capture window:\n\n```\n%s\n```\n\n", pcapSummary)
-		fmt.Fprintf(&b, "Under a hardened policy only the RTAC (`10.30.30.20`) and the GPS/NTP server (`10.30.30.50`) should appear. Any other source IP indicates a missing rule or a leaky deny.\n\n")
+		fmt.Fprintf(&b, "%s\n\n```\n%s\n```\n\n", recipe.report.captureIntro, pcapSummary)
+		b.WriteString(recipe.report.captureLimits + "\n\n")
 	}
 
 	fmt.Fprintf(&b, "## Methodology\n\n")
 	fmt.Fprintf(&b, "- **allow** = the source container's TCP SYN reached the destination (connect succeeded, or a fast RST came back). **deny** = the SYN was dropped (timeout at the probe budget).\n")
 	fmt.Fprintf(&b, "- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) - the same primitive as `scripts/firewall-smoke.sh`.\n")
 	fmt.Fprintf(&b, "- This report validates the **currently active** policy; it does not apply or change any policy.\n")
+	b.WriteString(recipe.report.limits)
 	return b.String()
 }

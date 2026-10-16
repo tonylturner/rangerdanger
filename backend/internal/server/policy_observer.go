@@ -71,6 +71,7 @@ func (s *Server) policyObserverLoop(ctx context.Context, gen *lifecycle.Generati
 // unit test can step it deterministically. An observation that lands after
 // its generation stopped is dropped.
 func (s *Server) observePolicyOnce(ctx context.Context, gen *lifecycle.Generation) {
+	observedSince := time.Now().UTC()
 	hash, err := gen.Containd().GetFirewallHash(ctx)
 	if err != nil {
 		// Containd may be restarting / unreachable. The next tick
@@ -78,12 +79,12 @@ func (s *Server) observePolicyOnce(ctx context.Context, gen *lifecycle.Generatio
 		// failure, so this stays silent.
 		return
 	}
-	gen.Commit(func() { s.classifyObservedPolicy(hash) })
+	gen.Commit(func() { s.classifyObservedPolicy(hash, observedSince) })
 }
 
 // classifyObservedPolicy compares containd's running hash with the last
 // backend apply and relabels the policy as a manual commit on divergence.
-func (s *Server) classifyObservedPolicy(hash string) {
+func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	s.activeConfigMu.Lock()
 	defer s.activeConfigMu.Unlock()
 
@@ -103,10 +104,12 @@ func (s *Server) classifyObservedPolicy(hash string) {
 	// looks "different from empty".
 	if s.lastAppliedHash == "" {
 		s.lastAppliedHash = hash
+		s.policyObservedAt = observedSince
 		return
 	}
 
 	if hash == s.lastAppliedHash {
+		s.policyObservedAt = observedSince
 		return
 	}
 
@@ -116,6 +119,9 @@ func (s *Server) classifyObservedPolicy(hash string) {
 	s.activeConfig = "custom"
 	s.policySource = "manual-custom"
 	s.lastAppliedHash = hash
+	s.policyEvidenceSince = s.policyObservedAt
+	s.policyChangedAt = time.Now().UTC()
+	s.policyObservedAt = s.policyChangedAt
 	// Don't touch lastAppliedAt — leaving it as-is so a subsequent
 	// backend apply still wins the grace check correctly.
 	log.Printf("policy-observer: detected manual containd commit (was %q, now custom/manual-custom)", prev)
@@ -146,4 +152,7 @@ func (s *Server) recordApplyLocked(configBytes []byte) {
 	}
 	s.lastAppliedHash = h
 	s.lastAppliedAt = time.Now()
+	s.policyChangedAt = s.lastAppliedAt
+	s.policyEvidenceSince = s.lastAppliedAt
+	s.policyObservedAt = s.lastAppliedAt
 }

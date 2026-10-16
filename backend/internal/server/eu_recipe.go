@@ -4,14 +4,23 @@ package server
 const euPackageID = "eu-iec104-substation"
 
 // euRecipe is the EU IEC 104 telecontrol package. Its reset restores process
-// and device truth; its canary is Kali's IEC 104 connect to the RTU. It has
-// no validation report, traffic generator, or test suite. Its comparison
+// and device truth; its canary is Kali's IEC 104 connect to the RTU. Its comparison
 // covers only the cross-zone relationships in its package policies.
 var euRecipe = &packageRecipe{
-	simDevices:      map[string]string{"breaker": "breaker-1", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
-	commandExecutor: (*Server).executeSimCommand,
-	sessionCuts:     map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
-	resetTruth:      resetEUTruth,
+	simDevices:        map[string]string{"breaker": "breaker-1", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
+	commandExecutor:   (*Server).executeSimCommand,
+	sessionCuts:       map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},
+	resetTruth:        resetEUTruth,
+	check:             (*Server).executeEUCheck,
+	report:            euReport,
+	validation:        euValidationMatrix(),
+	validationCapture: captureSpec{nodes: []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"}, network: "field_net"},
+	traffic: []trafficTarget{
+		{"eng-ws-1", "plc-1", "station_net", "curl -sf --max-time 3 http://%s:8080/login > /dev/null", "eng-ws→PLC maintenance GET"},
+		{"kali-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "enterprise→historian read"},
+		{"vendor-jump-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "vendor→historian read (weak)"},
+		{"cc-1", "cc-1", "control_centre_net", "wget -q -O /dev/null -T 3 http://%s:8080/api/journal", "CC local journal read (not a firewall flow)"},
+	},
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
 		allowUnder: "weak", denyUnder: "improved"},
 	captureFilter: "tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081",

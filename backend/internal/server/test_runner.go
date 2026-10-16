@@ -261,9 +261,10 @@ func (s *Server) handleWorkshopTestSuite(c *gin.Context) {
 					command: func(device, command, source string, value *float64) StepActionResult {
 						return s.executeCommand(ctx, gen, device, command, source, value)
 					},
-					firewall: func(name string) StepActionResult { return s.executeFirewallAction(ctx, gen, name) },
-					check:    func(expect map[string]any) []StepActionResult { return s.executeCheck(ctx, gen, expect) },
-					probe:    func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, gen, step) },
+					firewall:   func(name string) StepActionResult { return s.executeFirewallAction(ctx, gen, name) },
+					check:      func(expect map[string]any) []StepActionResult { return s.executeCheck(ctx, gen, expect) },
+					probe:      func(step labs.ScenarioStep) []StepActionResult { return s.executeProbe(ctx, gen, step) },
+					sessionCut: func(flow string) StepActionResult { return s.executeSessionCut(ctx, gen, flow) },
 					sequencePause: func() {
 						sleepCtx(ctx, 300*time.Millisecond)
 					},
@@ -362,6 +363,14 @@ func (s *Server) resetLabState(ctx context.Context, gen *lifecycle.Generation, r
 	} else {
 		for _, warning := range warnings {
 			problems = append(problems, "firewall apply warning: "+warning)
+		}
+	}
+
+	if recipe.resetTruth != nil {
+		for _, action := range recipe.resetTruth(ctx, gen, recipe) {
+			if !action.Success {
+				problems = append(problems, action.Action+": "+action.Detail)
+			}
 		}
 	}
 

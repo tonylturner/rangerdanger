@@ -23,6 +23,7 @@ import (
 type packageRecipe struct {
 	// simDevices binds the simulation vocabulary to authored topology nodes.
 	simDevices map[string]string
+	check      func(*Server, context.Context, *lifecycle.Generation, map[string]any) []StepActionResult
 	// commandExecutor is the package's device-control transport. It never
 	// falls back to another package's devices.
 	commandExecutor func(*Server, context.Context, *lifecycle.Generation, *packageRecipe, string, string, string, *float64) StepActionResult
@@ -42,6 +43,7 @@ type packageRecipe struct {
 	// validationCapture names the devices the validation report's PCAP
 	// watches, and the network they sit on.
 	validationCapture captureSpec
+	report            reportSpec
 	// traffic is the traffic generator's flows; nil when it has none.
 	traffic []trafficTarget
 	// testSuite marks a package whose scenarios /workshop/test-suite runs.

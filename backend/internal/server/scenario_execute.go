@@ -31,6 +31,7 @@ type StepExecutionResult struct {
 type StepActionResult struct {
 	Action   string   `json:"action"`
 	Success  bool     `json:"success"`
+	Blocked  bool     `json:"-"`
 	Detail   string   `json:"detail"`
 	Impact   string   `json:"impact,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -153,6 +154,7 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 		return StepActionResult{
 			Action:  fmt.Sprintf("%s/%s from %s", device, command, source),
 			Success: false,
+			Blocked: true,
 			Detail:  fmt.Sprintf("BLOCKED by containd — %s not authorized to reach field devices", source),
 			Impact:  fmt.Sprintf("containd NGFW blocked %s→%s traffic [%s zone denied]", source, device, zone),
 		}
@@ -263,6 +265,17 @@ func (s *Server) executeFirewallAction(ctx context.Context, gen *lifecycle.Gener
 
 // executeCheck validates current substation state against expectations.
 func (s *Server) executeCheck(ctx context.Context, gen *lifecycle.Generation, expect map[string]any) []StepActionResult {
+	recipe, err := recipeFor(gen)
+	if err != nil {
+		return []StepActionResult{{Action: "Check", Detail: err.Error()}}
+	}
+	if recipe.check == nil {
+		return []StepActionResult{{Action: "Check", Detail: "checks not supported by this package"}}
+	}
+	return recipe.check(s, ctx, gen, expect)
+}
+
+func (s *Server) executeUSCheck(ctx context.Context, gen *lifecycle.Generation, expect map[string]any) []StepActionResult {
 	var results []StepActionResult
 
 	state, err := s.fetchRTACState(ctx, gen)

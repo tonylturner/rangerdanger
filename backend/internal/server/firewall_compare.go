@@ -203,6 +203,7 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 		return nil, err
 	}
 
+	applyStarted := time.Now().UTC()
 	warnings, err := gen.Containd().ImportConfig(ctx, data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply config to containd: %w", err)
@@ -222,6 +223,7 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 		s.activeConfig = configName
 		s.policySource = source
 		s.recordApplyLocked(data)
+		s.policyEvidenceSince = applyStarted
 		s.activeConfigMu.Unlock()
 	}) {
 		return nil, errRangeStopped
@@ -278,6 +280,7 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		return
 	}
 
+	applyStarted := time.Now().UTC()
 	warnings, err := gen.Containd().ImportConfig(c.Request.Context(), data)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
@@ -295,6 +298,7 @@ func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
 		s.activeConfig = "custom"
 		s.policySource = "plan-custom"
 		s.recordApplyLocked(data)
+		s.policyEvidenceSince = applyStarted
 		s.activeConfigMu.Unlock()
 	}) {
 		rangeUnavailable(c)
