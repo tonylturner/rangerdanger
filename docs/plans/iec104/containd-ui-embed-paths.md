@@ -1,4 +1,4 @@
-# containd: route every UI request through the embed API base
+# containd: route every UI request and redirect through the embed base
 
 This is a handoff spec for agents working on the containd `iec104` branch. It is self-contained.
 RangerDanger does not change containd itself.
@@ -21,11 +21,17 @@ RangerDanger does not change containd itself.
 2. `C:ui/components/Console.tsx:30-36` builds the CLI websocket as
    `${proto}://${window.location.host}/api/v1/cli/ws` without `API_BASE`.
 
-Embedded under `/containd/`, both go to the embedder's root `/api/...` and fail.
+3. `C:ui/app/login/page.tsx:73` and `:149` send the user to `/` after login when there is no `next`
+   parameter. Embedded, that is the embedder's root page, not the containd dashboard. (V, live: opening
+   `/containd/login` directly and logging in lands on the RangerDanger portal. Opening `/containd/` first
+   works, because the redirect carries `next=/containd/`.)
+
+Embedded under `/containd/`, paths 1 and 2 go to the embedder's root `/api/...` and fail.
 
 ## P (containd)
-1. Build both through the same base as every other call (`apiURL(...)`, or an exported `API_BASE` for the
-   websocket path after the host).
+1. Build paths 1 and 2 through the same base as every other call (`apiURL(...)`, or an exported `API_BASE`
+   for the websocket path after the host). For path 3, fall back to the UI's own root (the embed base plus
+   `/`), not the origin root.
 2. Add a UI test that loads with `location.pathname = "/containd/..."` and asserts:
    - the pcap download href is `/containd/api/v1/pcap/download/<name>`;
    - the websocket URL is `ws(s)://<host>/containd/api/v1/cli/ws`.
