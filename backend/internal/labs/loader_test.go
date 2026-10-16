@@ -111,7 +111,7 @@ func writePackage(t *testing.T, definitions, id, topologyID string, scenarios ma
 `)
 	writeDefinition(t, filepath.Join(dir, "knowledge", "baseline.md"), "Baseline knowledge.")
 	writeDefinition(t, filepath.Join(dir, "topology.yml"), strings.Replace(validTopologyYAML, "id: substation", "id: "+topologyID, 1))
-	writeDefinition(t, filepath.Join(dir, "firewall", "weak.json"), "{}")
+	writeDefinition(t, filepath.Join(dir, "firewall", "weak.json"), `{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)
 	if err := os.MkdirAll(filepath.Join(dir, "scenarios"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -474,10 +474,10 @@ func TestLoadRejectsInvalidPackages(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			definitions := t.TempDir()
 			dir := writePackage(t, definitions, "alpha", "substation", map[string]string{"baseline.yml": validScenarioYAML})
-			writeDefinition(t, filepath.Join(definitions, "..", "outside.json"), "{}")
+			writeDefinition(t, filepath.Join(definitions, "..", "outside.json"), `{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)
 			writeDefinition(t, filepath.Join(definitions, "..", "outside.yml"), validTopologyYAML)
-			writeDefinition(t, filepath.Join(dir, "firewall", "improved.json"), "{}")
-			writeDefinition(t, filepath.Join(dir, "firewall", "strict.json"), "{}")
+			writeDefinition(t, filepath.Join(dir, "firewall", "improved.json"), `{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)
+			writeDefinition(t, filepath.Join(dir, "firewall", "strict.json"), `{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)
 			path := filepath.Join(dir, test.file)
 			data, err := os.ReadFile(path)
 			if err != nil {

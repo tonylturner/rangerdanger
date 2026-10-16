@@ -3,10 +3,12 @@ package containd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -40,7 +42,7 @@ func TestImportConfigSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	configJSON := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
+	configJSON := []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"defaultAction":"DENY","rules":[]}}`)
 	client := newTestClient(srv.URL)
 	_, err := client.ImportConfig(context.Background(), configJSON)
 	if err != nil {
@@ -96,7 +98,7 @@ func TestImportConfigSurfacesCommitWarnings(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	warnings, err := client.ImportConfig(context.Background(), []byte(`{"firewall":{"rules":[]}}`))
+	warnings, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -118,7 +120,7 @@ func TestImportConfigNoWarningsHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	warnings, err := newTestClient(srv.URL).ImportConfig(context.Background(), []byte(`{"firewall":{"rules":[]}}`))
+	warnings, err := newTestClient(srv.URL).ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +203,7 @@ func TestImportConfigLegacyFallback(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	if _, err := client.ImportConfig(context.Background(), []byte(`{}`)); err != nil {
+	if _, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !sawImport {
@@ -218,7 +220,7 @@ func TestImportConfigFailure(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig(context.Background(), []byte(`{}`))
+	_, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -238,8 +240,47 @@ func TestImportConfigAuth403(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	_, err := client.ImportConfig(context.Background(), []byte(`{}`))
+	_, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
 	if err == nil {
 		t.Fatal("expected error for 403 response")
+	}
+}
+
+func TestImportRejectsUnsafeBeforeAnyRequest(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1) }))
+	defer srv.Close()
+	for _, data := range []string{`{}`, `{"interfaces":[{"name":"lan3","zone":"lan3","access":{"mgmt":false}}]}`} {
+		if _, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(data)); err == nil {
+			t.Fatal("accepted unsafe policy")
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("unsafe imports sent %d requests", requests.Load())
+	}
+}
+
+func TestImportFallbackOnlyMissingCandidate(t *testing.T) {
+	for _, phase := range []string{"candidate", "commit"} {
+		for _, code := range []int{400, 401, 403, 404, 405, 409, 422, 500, 503} {
+			t.Run(fmt.Sprintf("%s/%d", phase, code), func(t *testing.T) {
+				var legacy atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if strings.HasSuffix(r.URL.Path, "/import") {
+						legacy.Add(1)
+						return
+					}
+					if strings.HasSuffix(r.URL.Path, "/"+phase) {
+						w.WriteHeader(code)
+					}
+				}))
+				defer srv.Close()
+				_, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
+				fallback := phase == "candidate" && (code == 404 || code == 405)
+				if (err == nil) != fallback || (legacy.Load() == 1) != fallback {
+					t.Fatalf("err=%v, legacy=%d", err, legacy.Load())
+				}
+			})
+		}
 	}
 }

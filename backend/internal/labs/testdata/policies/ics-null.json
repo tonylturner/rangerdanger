@@ -1,1 +1,1 @@
-{"firewall": {"rules": [{"id": "any-to-rtu", "action": "ALLOW", "ics": null}]}}
+{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall": {"rules": [{"id": "any-to-rtu", "action": "ALLOW", "ics": null}]}}

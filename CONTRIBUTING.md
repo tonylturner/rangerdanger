@@ -159,12 +159,25 @@ The lab's teaching value depends on the topology being exactly as
 documented. Treat the following as frozen; a PR that changes any of
 them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
 
-- Six Docker networks with fixed subnets and static IPs:
+- The US teaching/control topology has six networks with fixed IPAM:
   `mgmt_net` 10.99.99.0/24, `enterprise_net` 10.10.10.0/24,
   `vendor_net` 10.20.20.0/24, `ot_ops_net` 10.30.30.0/24,
   `field_net` 10.40.40.0/24, `physics_net` 10.50.50.0/24. Node IPs are
   listed in [`docs/architecture.md`](docs/architecture.md) and
-  referenced by absolute IP inside lab YAML commands.
+  referenced by absolute IP inside lab YAML commands. EU adds Control Centre
+  (10.60.60.0/24) and Operations DMZ (10.70.70.0/24) and uses station/process
+  in place of OT-Ops/physics; the package manifests are authoritative.
+- The platform also owns three internal desktop delivery bridges:
+  `desk_corp_net` 10.98.1.0/28, `desk_vendor_net` 10.98.2.0/28,
+  `desk_eng_net` 10.98.3.0/28 (Engine names `rangerdanger_desk_corp`,
+  `rangerdanger_desk_vendor`, `rangerdanger_desk_eng`). Each has gateway `.1`,
+  proxy `.2` and at most one desktop `.3`. Desktops have no management leg;
+  the proxy keeps management plus all three delivery legs. Range models
+  reference delivery networks externally; no runtime network connect.
+  They have no containd zone, host egress or backend endpoint. nginx denies
+  delivery peers (`10.98.0.0/16`) before all locations, including redirects.
+  Verify portal HTTP/WebSocket delivery and management isolation under weak
+  and improved policies in both packages after any network change.
 - The `firewall` container (containd) is multi-homed as `.2` on every
   zone and is the only path between zones. The Go sims (via their
   `services/Dockerfile` CMD), `kali`, `corp_ws`, `vendor_jump`,

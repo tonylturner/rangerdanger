@@ -54,19 +54,31 @@ steps:
       (policy lan3) and process 10.50.50.0/24 to your diagram. Management
       holds platform APIs and sim endpoints; the solver is 10.99.99.23:8080
       and also sits on process_net with field devices. Process_net is not
-      a student route, but vendor-jump (.60) and eng-ws (.61) are also on
-      mgmt_net. **Acceptance limit:** denying teaching-plane Modbus does not
-      prove these hosts cannot reach field simulation/control APIs over
-      management. This contradicts the intended non-student management
-      boundary: record it as an unresolved acceptance blocker, not a firewall
-      success. Do not claim complete vendor isolation; resolve this
-      infrastructure issue before an unrestricted acceptance sign-off.
-      Do not access sim/solver APIs from these hosts or change infrastructure
-      to hide the gap. No PLC/historian field interface or forwarding exists.
-      Inventory all interfaces, not just the icon's displayed address.
+      a student route. Vendor-jump and eng-ws have no mgmt_net attachment:
+      each shares a separate internal delivery bridge only with the proxy.
+      These bridges are not containd zones and grant no management access.
+      **Full vendor-isolation check:** from both desktops, run the validator's
+      unbound HTTP probes against every declared management host (including
+      backend, containd and sim/solver APIs), not just teaching-plane Modbus.
+      Under weak, any zone host can open containd admin UI (8080/8443) and
+      SSH (2222), even at 10.99.99.2: record this exposure as a finding.
+      The accepted policy must turn off mgmt/http/https/ssh on every teaching
+      interface while keeping lan3 management enabled for RangerDanger.
+      All management connections must fail under the accepted policy; other
+      management hosts must be unreachable under weak too. The firewall
+      engine API on 8081 must be unreachable from every zone host and both
+      desktops under BOTH policies. The connected delivery proxy
+      (10.98.2.2 for vendor-jump, 10.98.3.2 for eng-ws, TCP/8080) must return
+      HTTP 403 for portal, API, containd, apps and redirects, while desktops
+      still load through the portal with working WebSocket sessions.
+      Record this check under weak and your accepted policy. Never mutate
+      simulator state as a reachability test. No PLC/historian field interface
+      or forwarding exists. Inventory all interfaces, not just the icon's
+      displayed address.
       :::hint Draw the boundary you actually have
       A second interface is a separate path even when the topology icon
-      shows only one address. Put the management gap on the diagram.
+      shows only one address. Draw each delivery bridge as proxy-to-desktop,
+      not as a management or teaching conduit. Test the whole network boundary.
       :::
       Read [Zone/conduit design](#eu-zone-conduit-design),
       [IEC 62443 risk design](#eu-iec62443-risk-design),
@@ -310,8 +322,9 @@ steps:
       vendor-jump→PLC:8080 denied. Save source IP, port, destination and UTC
       bounds. A pre-change deny or timeout without its event is insufficient.
       Established flows from baseline may persist; stop them and test new
-      connections. Do not count vendor-jump's management interface as a
-      teaching path; bind to 10.20.20.10 if a tool chooses the wrong source.
+      connections. Neither desktop has a management interface. Repeat the
+      unbound management probes from both desktops, including containd
+      10.99.99.2 as a hard deny check, not an exempt observation.
 
       From eng-ws open `http://10.30.30.30:8080/`: retrieve the seeded PLC
       UI without modifying the program. Confirm it works only from the
@@ -328,8 +341,8 @@ steps:
       Inspect rule order and the absence of lan5 egress too. The validator
       cannot grade your ownership/expiry or prove an untested route closed.
       Its field denies concern 10.40.40.0/24 Modbus, NOT the separate
-      management sim APIs. The management attachment remains a blocker to
-      an unqualified claim that the vendor cannot control field equipment.
+      management sim APIs. The separate management isolation checks must
+      pass too; a teaching-plane deny alone cannot establish vendor isolation.
       :::
       Read [Vendor engineering access](#eu-vendor-engineering-access) and
       [Port/source boundaries](#eu-port-source-boundary).

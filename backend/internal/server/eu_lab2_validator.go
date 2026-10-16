@@ -32,6 +32,8 @@ func (s *Server) collectConduits(ctx context.Context, gen *lifecycle.Generation)
 	ev.reads = []ValidationCheck{
 		s.conduitRead(ctx, gen, "kali-1", "enterprise_net", "historian-1", "ops_dmz_net", "/api/points", "Enterprise historian read"),
 		s.conduitRead(ctx, gen, "eng-ws-1", "vendor_net", "plc-1", "station_net", "/login", "Named engineering PLC maintenance GET"),
+		s.conduitIsolation(ctx, gen, "vendor-jump-1"),
+		s.conduitIsolation(ctx, gen, "eng-ws-1"),
 	}
 	ev.clock = s.conduitClockRead(ctx, gen)
 	ev.readEnd = time.Now().UTC()

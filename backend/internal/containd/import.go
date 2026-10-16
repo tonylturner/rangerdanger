@@ -3,12 +3,17 @@ package containd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
+
+var errCandidateEndpointMissing = errors.New("candidate endpoint missing")
 
 // ImportConfig sends a full JSON config to containd using the candidate/commit flow.
 // Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
@@ -30,6 +35,9 @@ import (
 // student sees "config committed but X didn't apply" instead of a green
 // 200 hiding broken enforcement.
 func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string, error) {
+	if err := labs.CheckManagementSafety(configJSON); err != nil {
+		return nil, err
+	}
 	patched, err := ensureEnforcementOn(configJSON)
 	if err != nil {
 		return nil, fmt.Errorf("ensure enforcement on: %w", err)
@@ -39,7 +47,9 @@ func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string,
 	if warnings, err := c.importViaCandidate(ctx, patched); err == nil {
 		return warnings, nil
 	} else {
-		// Fall back to legacy import endpoint
+		if !errors.Is(err, errCandidateEndpointMissing) {
+			return nil, err
+		}
 		log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
 		return c.importLegacy(ctx, patched)
 	}
@@ -97,8 +107,8 @@ func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]s
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("candidate endpoint not available (404)")
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		return nil, fmt.Errorf("%w (%d)", errCandidateEndpointMissing, resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)

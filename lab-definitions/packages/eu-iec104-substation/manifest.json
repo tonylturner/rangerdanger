@@ -1,7 +1,23 @@
 {
-  "schema": 1,
+  "schema": 2,
   "package": "eu-iec104-substation",
   "networks": [
+    {
+      "key": "desk_vendor_net",
+      "name": "rangerdanger_desk_vendor",
+      "subnet": "10.98.2.0/28",
+      "gateway": "10.98.2.1",
+      "platform": true,
+      "delivery": true
+    },
+    {
+      "key": "desk_eng_net",
+      "name": "rangerdanger_desk_eng",
+      "subnet": "10.98.3.0/28",
+      "gateway": "10.98.3.1",
+      "platform": true,
+      "delivery": true
+    },
     {
       "key": "mgmt_net",
       "name": "rangerdanger_mgmt_net",
@@ -127,8 +143,8 @@
           "ipv4": "10.20.20.10"
         },
         {
-          "network": "mgmt_net",
-          "ipv4": "10.99.99.60"
+          "network": "desk_vendor_net",
+          "ipv4": "10.98.2.3"
         }
       ]
     },
@@ -145,8 +161,8 @@
           "ipv4": "10.20.20.20"
         },
         {
-          "network": "mgmt_net",
-          "ipv4": "10.99.99.61"
+          "network": "desk_eng_net",
+          "ipv4": "10.98.3.3"
         }
       ]
     },

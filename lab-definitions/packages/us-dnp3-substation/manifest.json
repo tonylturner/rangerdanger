@@ -1,7 +1,31 @@
 {
-  "schema": 1,
+  "schema": 2,
   "package": "us-dnp3-substation",
   "networks": [
+    {
+      "key": "desk_corp_net",
+      "name": "rangerdanger_desk_corp",
+      "subnet": "10.98.1.0/28",
+      "gateway": "10.98.1.1",
+      "platform": true,
+      "delivery": true
+    },
+    {
+      "key": "desk_vendor_net",
+      "name": "rangerdanger_desk_vendor",
+      "subnet": "10.98.2.0/28",
+      "gateway": "10.98.2.1",
+      "platform": true,
+      "delivery": true
+    },
+    {
+      "key": "desk_eng_net",
+      "name": "rangerdanger_desk_eng",
+      "subnet": "10.98.3.0/28",
+      "gateway": "10.98.3.1",
+      "platform": true,
+      "delivery": true
+    },
     {
       "key": "mgmt_net",
       "name": "rangerdanger_mgmt_net",
@@ -66,7 +90,7 @@
       "roles": ["corporate-ws"],
       "interfaces": [
         {"network": "enterprise_net", "ipv4": "10.10.10.10"},
-        {"network": "mgmt_net", "ipv4": "10.99.99.70"}
+        {"network": "desk_corp_net", "ipv4": "10.98.1.3"}
       ]
     },
     {
@@ -85,7 +109,7 @@
       "roles": ["jump-host"],
       "interfaces": [
         {"network": "vendor_net", "ipv4": "10.20.20.10"},
-        {"network": "mgmt_net", "ipv4": "10.99.99.60"}
+        {"network": "desk_vendor_net", "ipv4": "10.98.2.3"}
       ]
     },
     {
@@ -95,7 +119,7 @@
       "roles": ["engineering-ws"],
       "interfaces": [
         {"network": "vendor_net", "ipv4": "10.20.20.20"},
-        {"network": "mgmt_net", "ipv4": "10.99.99.61"}
+        {"network": "desk_eng_net", "ipv4": "10.98.3.3"}
       ]
     },
     {

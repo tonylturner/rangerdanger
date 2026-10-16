@@ -396,6 +396,16 @@ mkdir -p "$ROOT_DIR/data/proxy-routes"
 # under the old project's labels. Take the old project down first (by
 # label; the range project has the same name and nothing else may run
 # under it). Any owner other than these two is someone else's network.
+# Delivery bridges never belonged to the pre-split range. Refuse foreign
+# ownership before any migration/teardown; Compose otherwise reuses them.
+for DELIVERY_NET in rangerdanger_desk_corp rangerdanger_desk_vendor rangerdanger_desk_eng; do
+    if docker network inspect "$DELIVERY_NET" >/dev/null 2>&1; then
+        DELIVERY_OWNER=$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$DELIVERY_NET")
+        [ "$DELIVERY_OWNER" = "$PLATFORM_PROJECT" ] \
+            || die "Network $DELIVERY_NET exists but belongs to '${DELIVERY_OWNER:-no Compose project}', not $PLATFORM_PROJECT.
+  Stop its owner or remove the unused network, then re-run. No network was removed."
+    fi
+done
 MGMT_OWNER=""
 if docker network inspect "$MGMT_NET" >/dev/null 2>&1; then
     MGMT_OWNER=$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$MGMT_NET")

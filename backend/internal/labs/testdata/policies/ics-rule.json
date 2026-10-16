@@ -1,4 +1,4 @@
-{
+{"interfaces":[{"name":"lan3","zone":"lan3"}],
   "firewall": {
     "defaultAction": "DENY",
     "rules": [

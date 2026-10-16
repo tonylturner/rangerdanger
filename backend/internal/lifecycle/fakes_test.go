@@ -324,7 +324,7 @@ func (h *harness) addPackage(id string) {
 	for _, mode := range []manifest.Mode{manifest.ModeSource, manifest.ModeRelease} {
 		mustWrite(h.t, filepath.Join(dir, manifest.ComposeFile(mode)), []byte("name: rangerdanger\n"))
 	}
-	mustWrite(h.t, filepath.Join(h.defs, "firewall", id+".json"), []byte(`{"firewall":{"rules":[]}}`))
+	mustWrite(h.t, filepath.Join(h.defs, "firewall", id+".json"), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[]}}`))
 	h.catalog.Packages = append(h.catalog.Packages, labs.Package{ID: id, Revision: 3, FirewallConfigPath: "firewall/" + id + ".json",
 		Template: labs.LabYAML{
 			ID:       "tpl-" + id,

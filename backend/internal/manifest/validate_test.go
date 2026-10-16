@@ -92,7 +92,7 @@ func TestValidateHasSpecificFailures(t *testing.T) {
 		{"duplicate-node.json", `share node "fw-1"`},
 		{"duplicate-ip.json", `IP "10.40.40.2" is shared`},
 		{"unknown-role.json", `unknown role "unknown"`},
-		{"missing-platform-network.json", "exactly one platform network"},
+		{"missing-platform-network.json", "exactly one management platform network"},
 		{"wrong-platform-name.json", "must be named rangerdanger_mgmt_net"},
 		{"unknown-interface-network.json", `undeclared network "missing_net"`},
 		{"ip-outside-subnet.json", "is outside network"},

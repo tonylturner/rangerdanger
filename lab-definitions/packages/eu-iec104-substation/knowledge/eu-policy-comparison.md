@@ -12,6 +12,20 @@ Both package policies have default DENY. The weak baseline nevertheless permits 
 
 These rules are broad in source and destination, not an unrestricted any-port network. The weak field TCP/502 allows carry both reads and writes; they do not filter Modbus function codes. A reachable device still applies authority and interlocks before accepting a write. Labs 2–4 use the foreign Modbus exposure for baseline reads and prescribed vendor writes, then deny those new connections under improved. Describe the actual rule rather than using “flat network” as a substitute for its meaning.
 
+### Firewall management is a separate boundary
+
+Under weak, any zone host can open containd's admin UI (TCP/8080 and
+8443) and SSH (TCP/2222) on the firewall's addresses, including
+`10.99.99.2`. Record this as a Lab 2 finding, not successful isolation.
+The accepted policy disables `mgmt`, `http`, `https` and `ssh` on wan,
+dmz, lan1, lan2, lan4 and lan5. This is INPUT-plane access, not a
+FORWARD allow/deny rule. Management stays enabled on lan3 for
+RangerDanger backend and proxy operations. Neither desktop has a lan3 leg.
+
+The internal engine API on TCP/8081 binds only to loopback under both
+policies; no zone host or desktop should reach it. Do not confuse it with
+the historian ingest listener on `10.70.70.40:8081`.
+
 ### What improved pins
 
 The improved policy permits the following named exchanges:

@@ -1,1 +1,1 @@
-{"ics": {"enabled": false}, "firewall": {"rules": []}}
+{"interfaces":[{"name":"lan3","zone":"lan3"}],"ics": {"enabled": false}, "firewall": {"rules": []}}

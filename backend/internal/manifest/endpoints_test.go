@@ -34,7 +34,7 @@ func TestLoadServiceEndpoints(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			body := `{"schema":1,"package":"valid","services":` + test.services + `}`
+			body := `{"schema":2,"package":"valid","services":` + test.services + `}`
 			if err := os.WriteFile(filepath.Join(dir, FileName), []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}

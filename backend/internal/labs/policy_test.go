@@ -1,6 +1,7 @@
 package labs
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -186,5 +187,64 @@ func TestReadDefinitionNeedsNoValidators(t *testing.T) {
 	writeDefinition(t, filepath.Join(dir, "firewall", "weak.json"), string(readPolicyFixture(t, "ics-null.json")))
 	if _, err := ReadDefinition(definitions, filepath.Join(dir, "package.yml")); err == nil || !strings.Contains(err.Error(), `weak.json: key "ics" at /firewall/rules/0/ics`) {
 		t.Errorf("ReadDefinition() = %v, want the default policy's ics key", err)
+	}
+}
+
+func TestManagementSafety(t *testing.T) {
+	const safe = `{"interfaces":[{"name":"lan3","zone":"lan3"}]}`
+	tests := []struct{ name, patch, field string }{
+		{"missing", `{"interfaces":[]}`, "interfaces/lan3"},
+		{"duplicate", `{"interfaces":[{"name":"lan3","zone":"lan3"},{"name":"lan3","zone":"lan3"}]}`, "interfaces/1/name"},
+		{"wrong zone", `{"interfaces":[{"name":"lan3","zone":"wan"}]}`, "interfaces/0/zone"},
+		{"other lan3", `{"interfaces":[{"name":"lan3","zone":"lan3"},{"name":"wan","zone":"lan3"}]}`, "interfaces/1/zone"},
+		{"http disabled", `{"system":{"mgmt":{"enableHTTP":false}}}`, "system/mgmt/enableHTTP"},
+		{"http redirects API reads", `{"system":{"mgmt":{"redirectHTTPToHTTPS":true}}}`, "system/mgmt/redirectHTTPToHTTPS"},
+		{"legacy listener", `{"system":{"mgmt":{"listenAddr":":9080"}}}`, "system/mgmt/listenAddr"},
+		{"loopback listener", `{"system":{"mgmt":{"httpListenAddr":"127.0.0.1:8080"}}}`, "system/mgmt/httpListenAddr"},
+		{"routes", `{"routing":{"routes":[{"dst":"10.99.99.10/32","iface":"wan"}]}}`, "routing/routes"},
+		{"rules", `{"routing":{"rules":[{"src":"10.99.99.2/32","table":5}]}}`, "routing/rules"},
+		{"gateways", `{"routing":{"gateways":[{"address":"10.99.99.1"}]}}`, "routing/gateways"},
+		{"nat egress", `{"firewall":{"nat":{"enabled":true,"egressZone":"lan3","sourceZones":["wan"]}}}`, "firewall/nat/egressZone"},
+		{"nat defaults", `{"firewall":{"nat":{"enabled":true}}}`, "firewall/nat/sourceZones"},
+		{"nat sources", `{"firewall":{"nat":{"enabled":true,"sourceZones":["lan3"]}}}`, "firewall/nat/sourceZones"},
+		{"forward management", `{"firewall":{"nat":{"portForwards":[{"enabled":true,"ingressZone":"wan","listenPort":8080}]}}}`, "firewall/nat/portForwards/0"},
+		{"forward lan3", `{"firewall":{"nat":{"portForwards":[{"enabled":true,"ingressZone":"lan3","listenPort":80}]}}}`, "firewall/nat/portForwards/0"},
+		{"proxy", `{"services":{"proxy":{"forward":{"enabled":true}}}}`, "services/proxy"},
+		{"vpn", `{"services":{"vpn":{"wireguard":{"enabled":true}}}}`, "services/vpn"},
+	}
+	for _, flag := range []string{"mgmt", "http", "https", "ssh"} {
+		tests = append(tests, struct{ name, patch, field string }{flag, `{"interfaces":[{"name":"lan3","zone":"lan3","access":{"` + flag + `":false}}]}`, "interfaces/0/access/" + flag})
+	}
+	for _, field := range []string{"device", "addresses", "addressMode", "gateway", "type", "parent", "members", "vlanId"} {
+		value := `"eth0"`
+		if field == "addresses" || field == "members" {
+			value = `["eth0"]`
+		}
+		if field == "vlanId" {
+			value = `3`
+		}
+		tests = append(tests, struct{ name, patch, field string }{field, `{"interfaces":[{"name":"lan3","zone":"lan3","` + field + `":` + value + `}]}`, "interfaces/0/" + field})
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var doc, patch map[string]any
+			json.Unmarshal([]byte(safe), &doc)
+			json.Unmarshal([]byte(test.patch), &patch)
+			for k, v := range patch {
+				doc[k] = v
+			}
+			data, _ := json.Marshal(doc)
+			for _, check := range []func([]byte) error{CheckManagementSafety, func(data []byte) error { return LintPolicy("test", data, ICSRulesAllowed) }} {
+				err := check(data)
+				if err == nil || !strings.Contains(err.Error(), test.field) || !strings.Contains(err.Error(), "RangerDanger keeps containd management on lan3") {
+					t.Fatalf("error=%v, want field %s and management explanation", err, test.field)
+				}
+			}
+		})
+	}
+	for _, data := range []string{safe, `{"interfaces":[{"name":"lan3","zone":"lan3","access":{"mgmt":true,"http":true,"https":true,"ssh":true}}],"firewall":{"nat":{"enabled":true,"egressZone":"wan","sourceZones":["dmz"],"portForwards":[{"enabled":true,"ingressZone":"wan","listenPort":80}]}}}`} {
+		if err := CheckManagementSafety([]byte(data)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
