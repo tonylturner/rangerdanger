@@ -181,7 +181,7 @@ eu_run_gate() {
 eu_gate_main() {
   local gate
   case "${1:-}" in
-    --dry-run | --list)
+    --dry-run|--list)
       if [ "$#" -ne 1 ]; then
         echo "usage: $0 [--dry-run|--list]" >&2
         exit 2

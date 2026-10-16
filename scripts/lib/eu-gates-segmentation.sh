@@ -68,8 +68,8 @@ eu_g6_cut_monitor_session() {
   fi
   asdus_before=$MONITOR_ASDUS
   eu_apply_named improved || return 1
-  if ! eu_monitor_read || [ "$MONITOR_LINES" -eq 0 ] ||
-    ! printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
+  if ! eu_monitor_read || [ "$MONITOR_LINES" -eq 0 ] \
+    || ! printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
       [.[] | select(.event == "connected")] as $connected
       | ($connected | length) == 1
         and $connected[0].local == null and $connected[0].peer == $peer
@@ -77,8 +77,8 @@ eu_g6_cut_monitor_session() {
     fail "G6 monitor must emit exactly one connected event with local=null and peer=$RTU_IP:2404"
     return 1
   fi
-  if ! eu_read_sessions 2404 10.10.10.50 ||
-    ! eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
+  if ! eu_read_sessions 2404 10.10.10.50 \
+    || ! eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
     fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple"
     return 1
   fi
@@ -102,8 +102,9 @@ eu_g6_cut_monitor_session() {
     fail "G6 could not timestamp conntrack kill"
     return 1
   fi
-  eu_kill_tuple "$kali_tuple" && eu_monitor_finish 3 30 "$kill_started_ms" &&
-    eu_monitor_no_asdu_after "$kill_epoch"
+  eu_kill_tuple "$kali_tuple" \
+    && eu_monitor_finish 3 30 "$kill_started_ms" \
+    && eu_monitor_no_asdu_after "$kill_epoch"
 }
 
 eu_gate_G7() {
@@ -127,8 +128,8 @@ eu_gate_G7() {
   fi
   eu_apply_custom "$g7_policy" "G7 improved minus CC allow" || return
   eu_check_nft_chain G7-custom || true
-  if ! eu_read_sessions 2404 "$CC_IP" ||
-    ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
+  if ! eu_read_sessions 2404 "$CC_IP" \
+    || ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
     fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
     return
   fi
@@ -157,8 +158,8 @@ eu_gate_G8() {
   g8_before="$API_BODY"
   g8_epoch=$(printf '%s' "$g8_before" | jq -r '.cache_epoch // empty')
   g8_points=$(eu_get_point_snapshot "$g8_before") || g8_points=""
-  if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] ||
-    ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
+  if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] \
+    || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
     fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
   fi
   for active in true false true; do
@@ -187,8 +188,8 @@ eu_gate_G8() {
     g8_operator="$API_BODY"
     current_points=$(eu_get_point_snapshot "$g8_operator") || current_points=""
     current_epoch=$(printf '%s' "$g8_operator" | jq -r '.cache_epoch // empty')
-    if [ -n "$g8_points" ] && [ -n "$current_points" ] &&
-      [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
+    if [ -n "$g8_points" ] && [ -n "$current_points" ] \
+      && [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
       pass "G8 operator values/received_at/source_time and cache_epoch unchanged with fault active=$active"
     else
       fail "G8 operator cache changed while CC path denied with fault active=$active"
@@ -213,8 +214,8 @@ eu_gate_G8() {
     return
   fi
   g8_seq2=$(printf '%s' "$API_BODY" | jq -r '.process.solve_seq // empty')
-  if [[ "$g8_seq1" =~ ^[0-9]+$ ]] && [[ "$g8_seq2" =~ ^[0-9]+$ ]] &&
-    [ "$g8_seq2" -gt "$g8_seq1" ]; then
+  if [[ "$g8_seq1" =~ ^[0-9]+$ ]] && [[ "$g8_seq2" =~ ^[0-9]+$ ]] \
+    && [ "$g8_seq2" -gt "$g8_seq1" ]; then
     pass "G8 solver solve_seq advances independently while operator cache remains stale"
   else
     fail "G8 solver solve_seq failed to advance ($g8_seq1 -> $g8_seq2)"

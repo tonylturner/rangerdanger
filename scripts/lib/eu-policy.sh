@@ -22,9 +22,9 @@ eu_firewall_config() {
   output=$(docker exec "$FW" curl -sS -w '\n%{http_code}' \
     -H "Authorization: Bearer $FW_TOKEN" \
     http://127.0.0.1:8080/api/v1/config 2>"$TMP_DIR/fw-curl.err") || {
-    printf 'containd running config read failed: %s\n' "$(cat "$TMP_DIR/fw-curl.err")" >&2
-    return 1
-  }
+      printf 'containd running config read failed: %s\n' "$(cat "$TMP_DIR/fw-curl.err")" >&2
+      return 1
+    }
   status="${output##*$'\n'}"
   output="${output%$'\n'*}"
   if [ "$status" != "200" ]; then
@@ -33,9 +33,9 @@ eu_firewall_config() {
   fi
   printf '%s' "$output" | jq -e 'type == "object" and (.firewall.rules | type == "array")' \
     >/dev/null 2>&1 || {
-    printf 'containd running config was empty or unparsable: %s\n' "$output" >&2
-    return 1
-  }
+      printf 'containd running config was empty or unparsable: %s\n' "$output" >&2
+      return 1
+    }
   printf '%s' "$output"
 }
 eu_policy_has_no_ephemeral_allow() {
@@ -231,9 +231,9 @@ eu_fresh_deny_event() {
     events=$(docker exec "$FW" curl -sS -w '\n%{http_code}' \
       -H "Authorization: Bearer $FW_TOKEN" \
       'http://127.0.0.1:8080/api/v1/events?limit=500' 2>"$TMP_DIR/events.err") || {
-      fail "containd event response failed: $(cat "$TMP_DIR/events.err")"
-      return 1
-    }
+        fail "containd event response failed: $(cat "$TMP_DIR/events.err")"
+        return 1
+      }
     status="${events##*$'\n'}"
     events="${events%$'\n'*}"
     if [ "$status" != "200" ]; then
@@ -316,13 +316,13 @@ eu_validate_scenario() {
     fail "scenario validator outcome did not equal $expected: $body"
     return 1
   fi
-  if [ "$expected" = "PASS" ] && ! printf '%s' "$body" |
-    jq -e 'all(.checks[]; .status == "pass")' >/dev/null 2>&1; then
+  if [ "$expected" = "PASS" ] && ! printf '%s' "$body" \
+    | jq -e 'all(.checks[]; .status == "pass")' >/dev/null 2>&1; then
     fail "scenario validator outcome PASS contained a non-pass check: $body"
     return 1
   fi
-  if [ "$expected" = "FAIL" ] && ! printf '%s' "$body" |
-    jq -e 'any(.checks[]; .status == "fail")' >/dev/null 2>&1; then
+  if [ "$expected" = "FAIL" ] && ! printf '%s' "$body" \
+    | jq -e 'any(.checks[]; .status == "fail")' >/dev/null 2>&1; then
     fail "scenario validator outcome FAIL contained no failed evidence check: $body"
     return 1
   fi

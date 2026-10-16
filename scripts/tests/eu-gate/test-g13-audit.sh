@@ -92,7 +92,7 @@ eu_action_step() {
     return 1
   fi
   case "$node:$action" in
-    process:fault_s1 | breaker:reset) REVISION=$((REVISION + 1)) ;;
+    process:fault_s1|breaker:reset) REVISION=$((REVISION + 1)) ;;
   esac
   printf 'action %s %s revision %s\n' "$node" "$action" "$REVISION" >>"$CALLS"
   API_BODY="{\"revision\":$REVISION}"

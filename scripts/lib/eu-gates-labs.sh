@@ -48,7 +48,7 @@ eu_lab_step() {
     | if length == 1 then .[0].key else error("step ID must resolve exactly once") end') || return
   printf 'WALK %s %s (step index %s): %s\n' "$scenario" "$step_id" "$index" "$title"
   case "$type" in
-    manual | decision) return 0 ;;
+    manual|decision) return 0 ;;
     *) eu_execute_step "$step_id" "$scenario step $step_id" "$scenario" ;;
   esac
 }
@@ -86,13 +86,16 @@ eu_lab_wait_capture() {
 # separates PASS evidence from the earlier weak-policy FAIL attempt.
 eu_lab_gate() {
   local scenario="$1" walk="$2" policy="$3" prepare="$4" result=0
-  if ! eu_reset_all || ! eu_apply_named weak ||
-    ! eu_validate_scenario FAIL "$scenario" ||
-    ! "$walk" "$scenario"; then
+  if ! eu_reset_all \
+    || ! eu_apply_named weak \
+    || ! eu_validate_scenario FAIL "$scenario" \
+    || ! "$walk" "$scenario"; then
     result=1
   else
-    if ! eu_reset_all || ! eu_apply_named "$policy" || ! "$prepare" "$scenario" ||
-      ! eu_validate_scenario PASS "$scenario"; then
+    if ! eu_reset_all \
+      || ! eu_apply_named "$policy" \
+      || ! "$prepare" "$scenario" \
+      || ! eu_validate_scenario PASS "$scenario"; then
       result=1
     fi
   fi
