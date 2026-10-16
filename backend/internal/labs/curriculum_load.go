@@ -166,9 +166,15 @@ func validateCurriculum(pkg Package) error {
 		}
 	}
 	decisions := curriculumDecisionOptions(scenarios[c.Roles["requirements"]])
-	for id := range c.Requirements {
-		if _, ok := decisions[id]; !ok {
+	for id, requirement := range c.Requirements {
+		options, ok := decisions[id]
+		if !ok {
 			return fail("unknown requirement decision %s", id)
+		}
+		for verdict := range requirement.Impl {
+			if !options[verdict] {
+				return fail("requirement %s impl verdict %q is not a decision option", id, verdict)
+			}
 		}
 	}
 	readiness := map[string]bool{}

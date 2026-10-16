@@ -25,6 +25,15 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 		{"zero effort", func(c *Curriculum) { c.Catalog[0].EffortHours = 0 }, "effort_hours must be greater than zero"},
 		{"negative effort", func(c *Curriculum) { c.Catalog[0].EffortHours = -1 }, "effort_hours must be greater than zero"},
 		{"unknown role", func(c *Curriculum) { c.Catalog[0].Roles[0] = "foreign" }, "references unknown team"},
+		{"undeclared default impl verdict", func(c *Curriculum) {
+			c.Requirements["enterprise-to-field"].Impl["LOG"] = []string{"improve-logging"}
+		}, "requirement enterprise-to-field impl verdict \"LOG\" is not a decision option"},
+		{"undeclared explicit impl verdict", func(c *Curriculum) {
+			c.Requirements["unauth-control"].Impl["DENY"] = []string{"improve-logging"}
+		}, "requirement unauth-control impl verdict \"DENY\" is not a decision option"},
+		{"empty impl verdict", func(c *Curriculum) {
+			c.Requirements["enterprise-to-field"].Impl[""] = []string{"improve-logging"}
+		}, "requirement enterprise-to-field impl verdict \"\" is not a decision option"},
 		{"unknown readiness good", func(c *Curriculum) { c.Readiness[0].Good = "foreign" }, "good verdict \"foreign\" is not a decision option"},
 		{"empty readiness good", func(c *Curriculum) { c.Readiness[0].Good = "" }, "good verdict \"\" is not a decision option"},
 		{"unknown flag verdict", func(c *Curriculum) { c.ReadinessFlags[0].Verdict = "foreign" }, "verdict \"foreign\" is not a decision option"},
@@ -68,6 +77,43 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 				t.Fatalf("error = %v, want %s", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestCurriculumDeclaredOptionsOverrideDefaults(t *testing.T) {
+	pkg, binding := curriculumExample(t)
+	var options map[string]bool
+	for i := range pkg.Scenarios {
+		if pkg.Scenarios[i].ID == binding.Roles["requirements"] {
+			step := &pkg.Scenarios[i].Steps[0]
+			step.Description = strings.Replace(step.Description,
+				":::decision id=enterprise-to-field\n",
+				":::decision id=enterprise-to-field options=\"BLOCK,BLOCK and LOG,ALLOW\"\n", 1)
+			options = curriculumDecisionOptions(pkg.Scenarios[i])["enterprise-to-field"]
+		}
+	}
+	if len(options) != 3 || options["RESTRICT"] {
+		t.Fatalf("fixture must explicitly exclude default RESTRICT: %v", options)
+	}
+	if err := validateCurriculum(pkg); err != nil {
+		t.Fatalf("valid explicit-options fixture: %v", err)
+	}
+	// Only this mapping is invalid: the action exists, and RESTRICT is a
+	// default option but not an option declared by this particular decision.
+	pkg.Curriculum.Requirements["enterprise-to-field"].Impl["RESTRICT"] = []string{"block-enterprise-to-field"}
+	data, err := yaml.Marshal(pkg.Curriculum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeDefinition(t, filepath.Join(dir, binding.File), string(data))
+	pkg.Curriculum, err = loadCurriculum(dir, binding, pkg)
+	if err == nil {
+		err = validateCurriculum(pkg)
+	}
+	want := `requirement enterprise-to-field impl verdict "RESTRICT" is not a decision option`
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want %s", err, want)
 	}
 }
 
