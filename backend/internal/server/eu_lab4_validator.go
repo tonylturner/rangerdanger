@@ -1,15 +1,10 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"net"
-	"net/url"
 	"time"
-
-	"github.com/tturner/rangerdanger/backend/internal/labs"
-	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 type euLab4Sample struct {
@@ -36,34 +31,6 @@ type euLab4History struct {
 		From time.Time `json:"from"`
 		To   time.Time `json:"to"`
 	} `json:"gaps"`
-}
-
-func init() {
-	registerScenarioValidator("eu-oltc-plc-historian", scenarioValidator{
-		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			ev := collectEULab3(ctx, in.gen, "oltc-1")
-			if ev.err != nil {
-				return []ValidationCheck{checkFail("OLTC evidence available", ev.err.Error())}
-			}
-			historian, ok := in.gen.Manifest.Endpoint(manifest.RoleHistorian, "api")
-			if !ok {
-				return []ValidationCheck{checkFail("Historian evidence available", "no historian read API")}
-			}
-			query := url.Values{"point": {"oltc-1-bus-kv"}, "since": {ev.start.Format(time.RFC3339Nano)}, "until": {ev.end.Format(time.RFC3339Nano)}}
-			history, err := fetchJSON[euLab4History](ctx, "historian", historian+"/api/history?"+query.Encode())
-			if err != nil {
-				return []ValidationCheck{checkFail("Historian evidence available", err.Error())}
-			}
-			query.Set("point", "oltc-1-auto")
-			clockHistory, err := fetchJSON[euLab4History](ctx, "historian", historian+"/api/history?"+query.Encode())
-			if err != nil {
-				return []ValidationCheck{checkFail("Clock evidence available", err.Error())}
-			}
-			policyOK := in.activeConfig == "improved" && s.runningPolicyIs(ctx, in.gen, "improved") == nil
-			return evaluateEULab4(ev, history, clockHistory, policyOK)
-		},
-	})
 }
 
 func evaluateEULab4(ev euLab3Evidence, history, clockHistory *euLab4History, policyOK bool) []ValidationCheck {

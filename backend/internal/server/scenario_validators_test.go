@@ -17,10 +17,11 @@ func TestValidatorRegistrations(t *testing.T) {
 		"us-hardening-configurations":  {labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind, labs.CapabilityAuditDeviceControl},
 		"us-vendor-rdp-compromise":     {labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
 		"us-validation-evidence":       {labs.CapabilityProcessElectrical, labs.CapabilityPolicyContaind},
-		"eu-iec104-telecontrol":        {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		"eu-station-conduits":          {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		"eu-rmu-switching":             {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		"eu-oltc-plc-historian":        {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-baseline-assessment":       {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-firewall-implementation":   {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-hardening-configurations":  {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-vendor-rdp-compromise":     {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
+		"eu-validation-evidence":       {labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
 	}
 	requirements := ValidatorRequirements()
 	for key := range requirements {
@@ -46,7 +47,7 @@ func TestValidatorRegistrationRejectsInvalid(t *testing.T) {
 		name, key string
 		validator scenarioValidator
 	}{
-		{"duplicate", "eu-iec104-telecontrol", scenarioValidator{run: run}},
+		{"duplicate", "eu-baseline-assessment", scenarioValidator{run: run}},
 		{"empty", "", scenarioValidator{run: run}},
 		{"missing implementation", "invalid", scenarioValidator{}},
 	} {

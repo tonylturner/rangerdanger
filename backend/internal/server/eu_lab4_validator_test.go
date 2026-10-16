@@ -2,7 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"net/url"
 	"testing"
+	"time"
+
+	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 func euLab4TestHistory(t *testing.T, point string, samples []map[string]any) *euLab4History {
@@ -74,10 +78,25 @@ func TestEULab4ValidatorPass(t *testing.T) {
 	euLab3AssertPass(t, evaluateEULab4(ev, history, clock, true))
 }
 
-func TestEULab4RegisteredValidatorReadsManifest(t *testing.T) {
+func TestEULab4EvidenceCollectorReadsManifest(t *testing.T) {
 	ev, history, clock := euLab4TestEvidence(t)
 	s, gen := euLab3TestRange(t, ev, history, clock)
-	euLab3AssertPass(t, scenarioValidators["eu-oltc-plc-historian"].run(t.Context(), s, validatorInput{gen: gen, activeConfig: "improved"}))
+	collected := collectEULab3(t.Context(), gen, "oltc-1")
+	endpoint, ok := gen.Manifest.Endpoint(manifest.RoleHistorian, "api")
+	if !ok {
+		t.Fatal("no historian")
+	}
+	query := url.Values{"point": {"oltc-1-bus-kv"}, "since": {collected.start.Format(time.RFC3339Nano)}, "until": {collected.end.Format(time.RFC3339Nano)}}
+	gotHistory, err := fetchJSON[euLab4History](t.Context(), "historian", endpoint+"/api/history?"+query.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	query.Set("point", "oltc-1-auto")
+	gotClock, err := fetchJSON[euLab4History](t.Context(), "historian", endpoint+"/api/history?"+query.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	euLab3AssertPass(t, evaluateEULab4(collected, gotHistory, gotClock, s.runningPolicyIs(t.Context(), gen, "improved") == nil))
 }
 
 func TestEULab4MotionRequiresActualPLCCompletion(t *testing.T) {

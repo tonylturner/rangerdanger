@@ -175,7 +175,7 @@ func TestReadDefinitionNeedsNoValidators(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeDefinition(t, scenario, string(data)+"validator: eu-iec104-telecontrol\n")
+	writeDefinition(t, scenario, string(data)+"validator: eu-baseline-assessment\n")
 	pkg, err := ReadDefinition(definitions, filepath.Join(dir, "package.yml"))
 	if err != nil {
 		t.Fatalf("ReadDefinition() = %v", err)

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -19,98 +19,57 @@ import (
 
 func TestConduitsRegistration(t *testing.T) {
 	want := []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth}
-	if !slices.Equal(ValidatorRequirements()["eu-station-conduits"], want) || scenarioValidators["eu-station-conduits"].run == nil {
+	if !slices.Equal(ValidatorRequirements()["eu-firewall-implementation"], want) || scenarioValidators["eu-firewall-implementation"].run == nil {
 		t.Fatal("missing conduit registration or wrong capability contract")
 	}
 }
 
+// Canonical content now mirrors the workshop. Evidence primitives below keep
+// their original strict collection and rejection tests independently of slots.
 func TestConduitsShippedCurriculum(t *testing.T) {
 	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string][]string{
-		"iec104-telecontrol-boundary": {"observe-baseline", "operate-breaker", "expose-weak", "apply-improved", "cut-session", "local-trip", "clear-fault", "restore", "evidence", "restore-device"},
-		"eu-station-conduits":         {"inventory-and-findings", "capture-operational-flows", "probe-three-footholds", "decide-data-and-time-conduits", "budget-the-change", "implement-and-rehearse-rollback", "start-proof-window", "prove-plc-and-historian", "prove-denies-and-maintenance", "compare-plan-and-outcome"},
-	}
-	found := map[string]bool{}
 	for _, pkg := range catalog.Packages {
+		if pkg.ID != euPackageID {
+			continue
+		}
+		if pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 || len(pkg.Scenarios) != 7 {
+			t.Fatal("incomplete EU curriculum")
+		}
 		for _, scenario := range pkg.Scenarios {
-			ids, ok := want[scenario.ID]
-			if !ok {
-				continue
+			if strings.Contains(scenario.Description, "Evidence prerequisite") {
+				t.Errorf("%s kept an obsolete prerequisite", scenario.ID)
 			}
-			found[scenario.ID] = true
-			var got []string
-			decisions, hints := 0, 0
 			for _, step := range scenario.Steps {
-				got = append(got, step.ID)
-				decisions += strings.Count(step.Description, ":::decision ")
-				hints += strings.Count(step.Description, ":::hint ")
+				if !strings.Contains(step.Description, ":::hint ") {
+					t.Errorf("%s/%s lacks teaching guidance", scenario.ID, step.ID)
+				}
 			}
-			if !reflect.DeepEqual(got, ids) {
-				t.Errorf("%s steps=%v want%v", scenario.ID, got, ids)
-			}
-			if hints < 8 {
-				t.Errorf("%s hints=%d want at least8", scenario.ID, hints)
-			}
-			if decisions != 8 {
-				t.Errorf("%s decisions=%d want8", scenario.ID, decisions)
+			if strings.ContainsAny(scenario.Description, "*_`[]<>#") || strings.Contains(scenario.Description, ":::") {
+				t.Errorf("%s has Markdown in plain mission", scenario.ID)
 			}
 		}
-	}
-	if len(found) != 2 {
-		t.Fatalf("shipped scenarios=%v", found)
-	}
-}
-
-func TestEULab2To4DescriptionsPlainText(t *testing.T) {
-	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]bool{
-		"eu-station-conduits":   false,
-		"eu-rmu-switching":      false,
-		"eu-oltc-plc-historian": false,
-	}
-	for _, pkg := range catalog.Packages {
-		for _, scenario := range pkg.Scenarios {
-			if _, ok := want[scenario.ID]; !ok {
-				continue
+		for _, file := range []string{"eu-conduit-deep-dive.md", "eu-telecontrol-deep-dive.md"} {
+			data, err := os.ReadFile(filepath.Join(repoRoot(), "lab-definitions", "packages", euPackageID, "knowledge", file))
+			if err != nil {
+				t.Fatal(err)
 			}
-			want[scenario.ID] = true
-			t.Run(scenario.ID, func(t *testing.T) {
-				// The runner's header is a plain paragraph; only steps render Markdown.
-				if strings.ContainsAny(scenario.Description, "*_`[]<>#") || strings.Contains(scenario.Description, ":::") {
-					t.Error("scenario description contains Markdown in a plain-text surface")
-				}
-				if scenario.ID != "eu-station-conduits" {
-					return
-				}
-				if words := len(strings.Fields(scenario.Description)); words < 80 || words > 110 {
-					t.Errorf("mission description has %d words, want 80–110", words)
-				}
-				if strings.Contains(scenario.Description, "Evidence prerequisite") {
-					t.Error("obsolete evidence prerequisite remains in the mission")
-				}
-				first := scenario.Steps[0].Description
-				for _, text := range []string{
-					"**Full vendor-isolation check:**", "mgmt_net", "10.98.2.2", "10.98.3.2",
-					"(#eu-zone-conduit-design)", "(#eu-iec62443-risk-design)", "(#eu-change-resource-plan)",
-				} {
-					if !strings.Contains(first, text) {
-						t.Errorf("step 1 lost %q", text)
+			if strings.Count(string(data), "#### ") != 8 {
+				t.Errorf("%s lost its eight investigation questions", file)
+			}
+			if file == "eu-conduit-deep-dive.md" {
+				for _, text := range []string{"**Full vendor-isolation check:**", "mgmt_net", "10.98.2.2", "10.98.3.2", "(#eu-zone-conduit-design)", "(#eu-iec62443-risk-design)", "(#eu-change-resource-plan)"} {
+					if !strings.Contains(string(data), text) {
+						t.Errorf("salvaged knowledge lost %q", text)
 					}
 				}
-			})
+			}
 		}
+		return
 	}
-	for id, found := range want {
-		if !found {
-			t.Errorf("missing scenario %s", id)
-		}
-	}
+	t.Fatal("missing EU package")
 }
 
 // Refresh fixed fixtures to now, without relying on the real range or Docker.
@@ -224,7 +183,7 @@ func TestConduitsCollector(t *testing.T) {
 				data, _ := json.Marshal(map[string]any{"status": 200, "body": body})
 				return string(data), "", 0, nil
 			}
-			checks := scenarioValidators["eu-station-conduits"].run(t.Context(), s, validatorInput{gen: gen, activeConfig: "custom"})
+			checks := evaluateConduits(s.collectConduits(t.Context(), gen))
 			failed := false
 			for _, check := range checks {
 				if check.Status != "pass" {

@@ -57,7 +57,7 @@ func telecontrolRange(t *testing.T, runningPolicy string, overrides map[string]m
 // through the manifest's endpoints and the generation's start.
 func TestTelecontrolValidatorCollectsFromTheManifest(t *testing.T) {
 	s, gen, stubs := telecontrolRange(t, "improved.json", nil)
-	checks := scenarioValidators["eu-iec104-telecontrol"].run(t.Context(), s, validatorInput{gen: gen, activeConfig: "improved"})
+	checks := evaluateTelecontrol(s.collectTelecontrolEvidence(t.Context(), gen, "improved"))
 	for _, check := range checks {
 		if check.Status != "pass" {
 			t.Errorf("%s: %s %s", check.Name, check.Status, check.Detail)
@@ -96,7 +96,7 @@ func TestTelecontrolValidatorFailsOnMissingSources(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			s, gen, _ := telecontrolRange(t, test.runningPolicy, test.overrides)
-			checks := s.validateTelecontrol(t.Context(), gen, "improved")
+			checks := evaluateTelecontrol(s.collectTelecontrolEvidence(t.Context(), gen, "improved"))
 			failing := map[string]bool{}
 			for _, check := range checks {
 				if check.Status != "pass" {

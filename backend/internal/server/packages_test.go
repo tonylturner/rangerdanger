@@ -226,6 +226,18 @@ func TestShippedPackagesLoad(t *testing.T) {
 	for _, pkg := range catalog.Packages {
 		if pkg.ID == euPackageID {
 			euListed = true
+			if pkg.Revision != 3 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
+				t.Fatal("EU revision / curriculum binding missing")
+			}
+			for role, id := range pkg.Curriculum.Roles {
+				found := false
+				for _, scenario := range pkg.Scenarios {
+					found = found || scenario.ID == id
+				}
+				if !found || !strings.HasPrefix(id, "eu-") {
+					t.Errorf("EU role %s has nonlocal scenario %s", role, id)
+				}
+			}
 			if names := policyNames(pkg); !reflect.DeepEqual(names, []string{"weak", "improved"}) {
 				t.Errorf("EU listed policies = %v, want [weak improved]", names)
 			}
@@ -329,54 +341,13 @@ func TestShippedPackagesLoad(t *testing.T) {
 		validator string
 		steps     []string
 	}{
-		"iec104-telecontrol-boundary": {"1.0", "eu-iec104-telecontrol", []string{
-			"observe-baseline",
-			"operate-breaker",
-			"expose-weak",
-			"apply-improved",
-			"cut-session",
-			"local-trip",
-			"clear-fault",
-			"restore",
-			"evidence",
-			"restore-device",
-		}},
-		"eu-station-conduits": {"2.0", "eu-station-conduits", []string{
-			"inventory-and-findings",
-			"capture-operational-flows",
-			"probe-three-footholds",
-			"decide-data-and-time-conduits",
-			"budget-the-change",
-			"implement-and-rehearse-rollback",
-			"start-proof-window",
-			"prove-plc-and-historian",
-			"prove-denies-and-maintenance",
-			"compare-plan-and-outcome",
-		}},
-		"eu-rmu-switching": {"3.0", "eu-rmu-switching", []string{
-			"energised-baseline",
-			"predict-load-loss",
-			"operate-and-distinguish-rmus",
-			"local-authority-refusal",
-			"refuse-paralleling-close",
-			"inject-s1-and-read-fpi",
-			"isolate-and-backfeed",
-			"vendor-open-under-weak",
-			"vendor-open-under-improved",
-			"switching-assurance-record",
-		}},
-		"eu-oltc-plc-historian": {"4.0", "eu-oltc-plc-historian", []string{
-			"verify-seeded-loop",
-			"step-load-outside-band",
-			"observe-delay-and-single-step",
-			"low-source-upper-limit",
-			"high-source-measured-settle",
-			"manual-limit-and-auto-handover",
-			"vendor-tap-write-weak",
-			"source-pin-and-cc-outage",
-			"shift-station-time",
-			"restore-time-and-four-lab-pack",
-		}},
+		"eu-baseline-assessment":       {"1.2", "eu-baseline-assessment", []string{"walk-the-topology-and-inspect-the-crossings", "generate-scenario-traffic", "capture-traffic-at-the-firewall", "analyze-cross-zone-flows", "critical-conduits-what-must-flow", "findings-what-you-observed", "probe-for-latent-exposure", "transition-decide-what-to-fix-first"}},
+		"eu-firewall-implementation":   {"2.2", "eu-firewall-implementation", []string{"exercise-overview", "verify-access-to-containd", "phase-1-verify-current-access-under-the-weak-baseline", "phase-2-remove-broad-trust-and-establish-default-deny", "implement-rules", "phase-4-enable-logging-and-visibility", "test-positive", "test-negative", "export-your-policy"}},
+		"eu-hardening-configurations":  {"2.3", "eu-hardening-configurations", []string{"verify-normal-operations", "attack-iec104-breaker-open", "restore-the-substation", "apply-the-hardened-policy", "re-test-the-attack-under-the-hardened-policy", "validate"}},
+		"eu-remediation-planning":      {"1.4", "", []string{"review-the-findings-you-captured", "understand-the-team-budget", "choose-your-remediation-plan", "reflect-what-are-you-accepting"}},
+		"eu-segmentation-requirements": {"1.3", "", []string{"translate-findings-into-design-requirements", "resourcing-reality-check", "define-success-criteria-for-segmentation"}},
+		"eu-validation-evidence":       {"2.4", "eu-validation-evidence", []string{"confirm-hardened-config-is-active", "generate-the-validation-report", "reflection-what-did-your-plan-close"}},
+		"eu-vendor-rdp-compromise":     {"2.3-bonus", "eu-vendor-rdp-compromise", []string{"confirm-the-lateral-path-is-open", "pivot-via-rdp-or-vnc", "use-the-vendor-foothold-to-attack-field-devices", "restore-service", "apply-hardened-policy", "re-attempt-the-pivot", "validate"}},
 	}
 	if len(euScenarios) != len(wantEU) {
 		t.Fatalf("EU scenarios = %d, want %d", len(euScenarios), len(wantEU))
@@ -436,5 +407,76 @@ func TestPackageCurriculumDTO(t *testing.T) {
 		if !strings.Contains(string(got[1].Curriculum), want) {
 			t.Fatalf("curriculum missing %s: %s", want, got[1].Curriculum)
 		}
+	}
+}
+
+// Every US break point has exactly one EU counterpart, in the same order.
+func TestEUWorkshopStepParity(t *testing.T) {
+	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := map[string]labs.ScenarioYAML{}
+	for _, pkg := range catalog.Packages {
+		for _, sc := range pkg.Scenarios {
+			all[sc.ID] = sc
+		}
+	}
+	for _, id := range []string{"baseline-assessment", "segmentation-requirements", "remediation-planning", "firewall-implementation", "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"} {
+		t.Run(id, func(t *testing.T) {
+			us, eu := all[id], all["eu-"+id]
+			if eu.Order != us.Order || len(eu.Steps) != len(us.Steps) {
+				t.Fatalf("break points differ: %s/%d vs %s/%d", us.Order, len(us.Steps), eu.Order, len(eu.Steps))
+			}
+			usDecisions, euDecisions := 0, 0
+			for _, step := range us.Steps {
+				usDecisions += strings.Count(step.Description, ":::decision ")
+			}
+			for _, step := range eu.Steps {
+				euDecisions += strings.Count(step.Description, ":::decision ")
+			}
+			if usDecisions != euDecisions {
+				t.Errorf("decision activity count changed: US %d EU %d", usDecisions, euDecisions)
+			}
+			for _, directive := range []string{":::generate-traffic-button", ":::track-picker", ":::validation-report"} {
+				before, after := 0, 0
+				for _, step := range us.Steps {
+					before += strings.Count(step.Description, directive)
+				}
+				for _, step := range eu.Steps {
+					after += strings.Count(step.Description, directive)
+				}
+				if before != after {
+					t.Errorf("functional activity %s changed: US %d EU %d", directive, before, after)
+				}
+			}
+
+			renames := map[string]string{"phase-3-create-minimal-required-rules": "implement-rules", "phase-5-validate-allowed-traffic": "test-positive", "phase-6-validate-blocked-traffic": "test-negative", "attack-dnp3-direct-operate-injection-against-the-recloser": "attack-iec104-breaker-open"}
+			for i, before := range us.Steps {
+				after := eu.Steps[i]
+				wantID := before.ID
+				if renamed, ok := renames[wantID]; ok {
+					wantID = renamed
+				}
+				if after.ID != wantID {
+					t.Errorf("step %d = %s want %s", i, after.ID, wantID)
+				}
+				for _, fence := range []string{":::guided", ":::technical"} {
+					if strings.Contains(before.Description, fence) != strings.Contains(after.Description, fence) {
+						t.Errorf("%s lost %s split", after.ID, fence)
+					}
+				}
+				manualWire := id == "hardening-configurations" && (i == 1 || i == 4) || id == "vendor-rdp-compromise" && i == 2
+				if manualWire {
+					if after.Action != nil {
+						t.Errorf("%s wire operation is not manual", after.ID)
+					}
+					continue
+				}
+				if (before.Action == nil) != (after.Action == nil) || before.Action != nil && before.Action.Type != after.Action.Type {
+					t.Errorf("%s changed activity type", after.ID)
+				}
+			}
+		})
 	}
 }

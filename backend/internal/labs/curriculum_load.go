@@ -100,6 +100,9 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 
 func validateCurriculum(pkg Package) error {
 	c := pkg.Curriculum
+	if err := validateDecision(pkg); err != nil {
+		return err
+	}
 	if c == nil {
 		return nil
 	}
@@ -188,14 +191,6 @@ func validateCurriculum(pkg Package) error {
 		}
 		readiness[r.ID] = true
 	}
-	authored := map[string]bool{}
-	for _, step := range scenarios[c.Roles["planning"]].Steps {
-		if step.Action != nil && step.Action.Type == "decision" {
-			for _, a := range step.Action.Actions {
-				authored[a.ID] = true
-			}
-		}
-	}
 	actions := map[string]bool{}
 	for _, a := range c.Catalog {
 		if a.ID == "" {
@@ -211,9 +206,6 @@ func validateCurriculum(pkg Package) error {
 			if !teams[role] {
 				return fail("catalog action %s references unknown team %q", a.ID, role)
 			}
-		}
-		if !authored[a.ID] {
-			return fail("catalog references unknown planning action %s", a.ID)
 		}
 		actions[a.ID] = true
 	}

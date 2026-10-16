@@ -27,12 +27,28 @@ func seedEUScenario(t *testing.T, s *Server) []labs.ScenarioStep {
 		t.Fatal(err)
 	}
 	s.db, s.catalog = database, catalog
-	scenario, err := s.findActiveScenario("iec104-telecontrol-boundary")
+	scenario, err := s.findActiveScenario("eu-hardening-configurations")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var steps []labs.ScenarioStep
 	if err := json.Unmarshal([]byte(scenario.Steps), &steps); err != nil {
+		t.Fatal(err)
+	}
+	// Primitive executor fixtures remain independent of the retired lesson.
+	// The canonical hardening scenario now has a manual wire attack and a
+	// restoration sequence; outage/session-cut deep dives live in knowledge.
+	steps = append(steps,
+		labs.ScenarioStep{ID: "local-trip", Title: "Fault fixture", Action: &labs.StepAction{Type: "command", Device: "process", Command: "fault_s1"}},
+		labs.ScenarioStep{ID: "clear-fault", Title: "Clear fixture", Action: &labs.StepAction{Type: "command", Device: "process", Command: "clear_fault"}},
+		labs.ScenarioStep{ID: "restore-device", Title: "Reset fixture", Action: &labs.StepAction{Type: "command", Device: "breaker", Command: "reset"}},
+		labs.ScenarioStep{ID: "cut-session", Title: "Session fixture", Action: &labs.StepAction{Type: "session-cut", Flow: "cc-rtu"}},
+	)
+	data, err := json.Marshal(steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Model(&models.Scenario{}).Where("id = ?", scenario.ID).Update("steps", string(data)).Error; err != nil {
 		t.Fatal(err)
 	}
 	return steps
@@ -46,7 +62,7 @@ func executeAuthoredStep(t *testing.T, s *Server, steps []labs.ScenarioStep, id 
 		}
 		rec := callRoute(s, s.handleExecuteStep, http.MethodPost,
 			"/api/scenarios/:id/steps/:stepIdx/execute",
-			"/api/scenarios/iec104-telecontrol-boundary/steps/"+strconv.Itoa(index)+"/execute", "")
+			"/api/scenarios/eu-hardening-configurations/steps/"+strconv.Itoa(index)+"/execute", "")
 		var result StepExecutionResult
 		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &result) != nil {
 			t.Fatalf("execute %s = %d %s", id, rec.Code, rec.Body)
@@ -57,7 +73,7 @@ func executeAuthoredStep(t *testing.T, s *Server, steps []labs.ScenarioStep, id 
 	return StepExecutionResult{}
 }
 
-func TestEUAuthoredDeviceSteps(t *testing.T) {
+func TestEUDevicePrimitiveSteps(t *testing.T) {
 	stub, device := newUpstreamStub(t, map[string]stubResponse{
 		"POST /api/process/actions": {http.StatusOK, electricalFixture},
 		"POST /api/sim/actions":     {http.StatusOK, deviceStateFixture},
@@ -105,7 +121,7 @@ func TestEUDeviceDispatchRefusesInvalidActions(t *testing.T) {
 	}
 }
 
-func TestEUAuthoredSessionCut(t *testing.T) {
+func TestEUSessionCutPrimitive(t *testing.T) {
 	cc := `{"proto":"tcp","src":"10.60.60.20","dst":"10.30.30.20","sport":"40312","dport":"2404"}`
 	tests := []struct {
 		name, inventory string
@@ -150,7 +166,7 @@ func TestEUAuthoredSessionCut(t *testing.T) {
 func TestStepActionsArePackageScoped(t *testing.T) {
 	s := rangeServer(euGeneration(t, nil, nil), "weak")
 	steps := seedEUScenario(t, s)
-	if err := s.db.Model(&models.Scenario{}).Where("id = ?", "iec104-telecontrol-boundary").Update("package_id", usPackageID).Error; err != nil {
+	if err := s.db.Model(&models.Scenario{}).Where("id = ?", "eu-hardening-configurations").Update("package_id", usPackageID).Error; err != nil {
 		t.Fatal(err)
 	}
 	for index, step := range steps {
@@ -158,9 +174,18 @@ func TestStepActionsArePackageScoped(t *testing.T) {
 			continue
 		}
 		rec := callRoute(s, s.handleExecuteStep, http.MethodPost, "/api/scenarios/:id/steps/:stepIdx/execute",
-			"/api/scenarios/iec104-telecontrol-boundary/steps/"+strconv.Itoa(index)+"/execute", "")
+			"/api/scenarios/eu-hardening-configurations/steps/"+strconv.Itoa(index)+"/execute", "")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("cross-package execution = %d %s", rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestEUAuthoredRestorationStep(t *testing.T) {
+	stub, device := newUpstreamStub(t, map[string]stubResponse{"POST /api/sim/actions": {http.StatusOK, deviceStateFixture}})
+	s := rangeServer(euGeneration(t, nil, map[string]string{"feeder_breaker": device.URL}), "weak")
+	result := executeAuthoredStep(t, s, seedEUScenario(t, s), "restore-the-substation")
+	if !result.Success || result.ActionType != "sequence" || !reflect.DeepEqual(stub.bodies, []string{`{"action":"reset"}`}) {
+		t.Fatalf("restoration=%+v bodies=%q", result, stub.bodies)
 	}
 }

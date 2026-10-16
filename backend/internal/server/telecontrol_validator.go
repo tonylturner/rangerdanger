@@ -6,19 +6,13 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-// Evidence collection of the eu-iec104-telecontrol validator. Every
+// Telecontrol outage and protection evidence collection. Every
 // address and URL comes from the generation's manifest; every source is
 // read once and keeps its own error.
-
-// validateTelecontrol collects the evidence and evaluates it.
-func (s *Server) validateTelecontrol(ctx context.Context, gen *lifecycle.Generation, activePolicy string) []ValidationCheck {
-	return evaluateTelecontrol(s.collectTelecontrolEvidence(ctx, gen, activePolicy))
-}
 
 func (s *Server) collectTelecontrolEvidence(ctx context.Context, gen *lifecycle.Generation, activePolicy string) telecontrolEvidence {
 	ev := telecontrolEvidence{activePolicy: activePolicy, rangeStart: gen.StartedAt}
@@ -102,13 +96,4 @@ func roleTeachingIP(gen *lifecycle.Generation, role manifest.Role) (string, erro
 		return "", fmt.Errorf("service %s has %d teaching addresses, want 1", svc.Key, len(ips))
 	}
 	return ips[0], nil
-}
-
-func init() {
-	registerScenarioValidator("eu-iec104-telecontrol", scenarioValidator{
-		capabilities: []string{labs.CapabilityPolicyContaind, labs.CapabilityProtocolIEC104, labs.CapabilityProcessTruth},
-		run: func(ctx context.Context, s *Server, in validatorInput) []ValidationCheck {
-			return s.validateTelecontrol(ctx, in.gen, in.activeConfig)
-		},
-	})
 }

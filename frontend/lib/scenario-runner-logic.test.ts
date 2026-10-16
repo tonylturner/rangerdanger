@@ -1,4 +1,4 @@
-import { US_CURRICULUM } from "./curriculum-storage.test-util";
+import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
 import { describe, expect, it } from "vitest";
 import { buildDynamicPlan } from "./remediation-to-rules";
 import {
@@ -62,8 +62,18 @@ describe("scenario runner logic", () => {
     expect(showsValidateButton({ ...us, id: "firewall-implementation" }, US_CURRICULUM)).toBe(true);
     // A US planning lab with a validator stays hidden.
     expect(showsValidateButton({ ...us, id: "baseline-assessment" }, US_CURRICULUM)).toBe(false);
-    const eu = { package_id: "eu-iec104-substation", id: "iec104-telecontrol-boundary" };
-    expect(showsValidateButton({ ...eu, validator: "eu-iec104-telecontrol" })).toBe(true);
+    const eu = { package_id: "eu-iec104-substation", id: "eu-hardening-configurations" };
+    expect(showsValidateButton({ ...eu, validator: "eu-hardening-configurations" })).toBe(true);
     expect(showsValidateButton({ ...eu, validator: "" })).toBe(false);
+  });
+});
+
+describe("shipped EU curriculum visibility", () => {
+  it("exposes exactly the five validators and neither planning slot", () => {
+    const eu = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
+    for (const [role, id] of Object.entries(eu.roles)) {
+      const validates = role !== "requirements" && role !== "planning";
+      expect(showsValidateButton({ package_id: "eu-iec104-substation", id, validator: validates ? id : "" }, eu)).toBe(validates);
+    }
   });
 });

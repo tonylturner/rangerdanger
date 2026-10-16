@@ -26,7 +26,10 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const SCENARIOS_DIR = resolve(__dirname, "..", "..", "lab-definitions", "scenarios");
+const SCENARIOS_DIRS = [
+  resolve(__dirname, "..", "..", "lab-definitions", "scenarios"),
+  resolve(__dirname, "..", "..", "lab-definitions", "packages", "eu-iec104-substation", "scenarios"),
+];
 
 type ScenarioFile = {
   file: string;
@@ -40,7 +43,7 @@ type ScenarioFile = {
   defaultFromRefs: Array<{ sourceScenario: string; sourceId: string }>;
 };
 
-function readScenarios(): ScenarioFile[] {
+function readScenarios(SCENARIOS_DIR: string): ScenarioFile[] {
   if (!existsSync(SCENARIOS_DIR)) return [];
   const out: ScenarioFile[] = [];
   for (const file of readdirSync(SCENARIOS_DIR)) {
@@ -74,7 +77,7 @@ function readScenarios(): ScenarioFile[] {
 
       // :::decision id=<X> [default-from=<Y>:<Z>]
       const decisionMatch = trimmed.match(
-        /^:::decision\b(.*)$/
+        /^\s*:::decision\b(.*)$/
       );
       if (decisionMatch) {
         const attrs = decisionMatch[1] ?? "";
@@ -121,14 +124,14 @@ function readScenarios(): ScenarioFile[] {
   return out;
 }
 
-const SCENARIOS = readScenarios();
+const SCENARIOS = SCENARIOS_DIRS.flatMap(readScenarios);
 const BY_ID = new Map(SCENARIOS.map((s) => [s.id, s]));
 
 describe("scenario decision-graph contract", () => {
   it("loads at least the seven workshop scenarios", () => {
     // Sanity guard — if the directory layout moves, this test
     // would silently pass with zero scenarios. Pin the floor.
-    expect(SCENARIOS.length).toBeGreaterThanOrEqual(7);
+    for (const dir of SCENARIOS_DIRS) expect(readScenarios(dir)).toHaveLength(7);
   });
 
   it("every scenario file declares an id at the top", () => {
@@ -185,7 +188,7 @@ describe("scenario decision-graph contract", () => {
     const dups: string[] = [];
     for (const s of SCENARIOS) {
       const seen = new Map<string, number>();
-      for (const m of s.raw.matchAll(/^:::decision\b[^\n]*\bid=([A-Za-z0-9_-]+)/gm)) {
+      for (const m of s.raw.matchAll(/^\s*:::decision\b[^\n]*\bid=([A-Za-z0-9_-]+)/gm)) {
         seen.set(m[1], (seen.get(m[1]) ?? 0) + 1);
       }
       for (const [id, n] of seen) {

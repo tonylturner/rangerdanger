@@ -1,0 +1,231 @@
+id: eu-firewall-implementation
+order: '2.2'
+name: Firewall Policy Implementation
+summary: Implement default deny and six pinned conduits; test allowed and denied flows, then export.
+estimated_minutes: 12
+validator: eu-firewall-implementation
+description: Implement the station design without losing supply or operator visibility. Guided learners can apply
+  the reference or their plan; Advanced learners author rules in containd. Test both operational continuity and
+  denied reachability before exporting the running policy.
+nodes:
+- kali-1
+- eng-ws-1
+- fw-1
+- cc-1
+- rtu-1
+- vendor-jump-1
+tags:
+- iec104
+- eu-substation
+- segmentation
+- firewall
+- defense
+- containd
+steps:
+- id: exercise-overview
+  title: Exercise overview
+  expected_config: weak
+  description: |+
+    This lab turns your design and funded plan into an enforceable boundary. Work in order: prove weak access, remove broad trust, preserve six minimal conduits, enable visibility, test both directions and export. Keep rollback available.
+
+    :::hint Two tracks, one acceptance bar
+    Guided uses policy buttons. Advanced authors the policy. Both must preserve operations and close the sampled attack paths; a custom policy is accepted by outcome, not its name.
+    :::
+
+    :::track-picker
+    :::
+
+    :::findings-panel from=eu-baseline-assessment title="Your baseline findings"
+    enterprise-to-field: Enterprise/vendor → field Modbus
+    enterprise-to-station: Enterprise → station IEC 104
+    vendor-to-station: Vendor → station engineering access
+    non-rtu-to-field: Non-RTU → field except PLC→OLTC
+    unauth-control: Unauthorized IEC 104 / Modbus control
+    :::
+
+    :::findings-panel from=eu-segmentation-requirements title="Your design verdicts"
+    enterprise-to-field: Enterprise/vendor → field Modbus
+    enterprise-to-station: Enterprise → station IEC 104
+    vendor-to-station: Vendor → station engineering access
+    non-rtu-to-field: Non-RTU → field except PLC→OLTC
+    unauth-control: Unauthorized IEC 104 / Modbus control
+    :::
+
+- id: verify-access-to-containd
+  title: Verify access to containd
+  expected_config: weak
+  description: |
+    Open containd through its portal link (local HTTP 9080); lab credentials are containd / containd. Alternatively use **fw-1**, enter `containd cli`, then `show running-config`. Retain weak as rollback before edits.
+
+    :::hint Do not move management
+    Management is out of band. Do not add teaching-to-management allows, routing exceptions or new host ports to make a test pass.
+    :::
+- id: phase-1-verify-current-access-under-the-weak-baseline
+  title: Phase 1 - Verify current access under the weak baseline
+  expected_config: weak
+  node: kali-1
+  description: |
+    From **Kali** prove weak access before changing policy:
+
+        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+
+    Use the eng-ws and vendor-jump terminal tabs to probe field TCP/502 too. Record actual sources; successful access now is the exposure you must remove, not authorized control.
+
+    :::hint Fresh attempts
+    Start new connections for each comparison. A retained established connection is not a new-policy test. [Conntrack](/knowledge#eu-established-sessions).
+    :::
+  action:
+    type: probe
+    outcome: reachable
+    targets:
+    - host: 10.30.30.20
+      port: 2404
+    - host: 10.40.40.20
+      port: 502
+    - host: 10.40.40.23
+      port: 502
+      from: eng-ws-1
+    - host: 10.40.40.21
+      port: 502
+      from: vendor-jump-1
+- id: phase-2-remove-broad-trust-and-establish-default-deny
+  title: Phase 2 - Remove broad trust and establish default-deny
+  expected_config: weak
+  description: |
+    Remove broad trust and use default **DENY** for cross-zone traffic. Do not drop the legitimate allows first and strand operations.
+
+    :::guided
+    Use Apply Hardened for the reference, or Apply Your Plan for your funded subset in the next step. Inspect which deferred exposures remain before claiming success.
+    :::
+
+    :::technical
+    In containd Policy & Rules, replace broad wan/dmz→station/field allows with named-source rules. Keep infrastructure/management intact. Stage six operational intents before committing default deny. Retain an exported rollback and test the committed configuration, not just candidate rules.
+    :::
+
+    :::hint Order matters
+    Pinned allows must precede any broad deny. A permissive rule above your pin defeats the boundary.
+    :::
+- id: implement-rules
+  title: Phase 3 - Create minimal required rules
+  description: |
+    Create the minimal operational rules:
+
+    | Required conduit | Pin | Port |
+    |---|---|---|
+    | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
+    | RTU→field | 10.30.30.20→10.40.40.20…23 | TCP/502 |
+    | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
+    | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
+    | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
+    | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
+
+    :::guided
+    Apply Hardened to load the reference, or Apply Your Plan to exercise funded controls and discover residual gaps. Review the generated table, not just a green banner.
+    :::
+
+    :::technical
+    Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. Commit, then read back running configuration.
+    :::
+
+    :::hint No semantic enforcement claim
+    Keep ICS rules absent. IEC 104 DPI is the planned second layer: deny breaker IOA 3001 even from CC, allow monitoring/system reads and RMU/OLTC commands. It is not enforced in this phase.
+    :::
+  action:
+    type: firewall
+    config: improved
+- id: phase-4-enable-logging-and-visibility
+  title: Phase 4 - Enable logging and visibility
+  expected_config: hardened
+  description: |
+    Enable per-rule logging where useful, preserve PCAP and note UTC change time. Use containd events to correlate observed tuples with rules. Logged denies are optional corroboration, not the only way to prove a default-deny drop.
+
+    :::hint A timeout is a specific result
+    Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
+    :::
+- id: test-positive
+  title: Phase 5 - Validate allowed traffic
+  expected_config: hardened
+  description: |
+    Prove all six required operational intents, not merely open sockets. In the CC view require a fresh GI, GOOD non-null points and advancing receipt times. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request/motion after the policy change. If nominal regulation is quiescent, use the controlled CC manual→auto loop check in the package test instructions below; wait for completed feedback before each command. Check CC historian ingest and advancing archive samples separately from reader access.
+
+    From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
+
+        curl -fsS --max-time 3 http://10.70.70.40:8080/api/points
+
+        curl -fsS --max-time 3 http://10.30.30.30:8080/login
+
+    :::hint Continuity is a hard constraint
+    Breaker closed, supply present, RMU1 closed/RMU2 open, OLTC remote/auto and fresh operator observations must survive. The validator collects operational evidence, including same-subnet endpoint checks; same-subnet success is not firewall enforcement.
+    :::
+  action:
+    type: probe
+    outcome: reachable
+    targets:
+    - host: 10.30.30.20
+      port: 2404
+      from: cc-1
+    - host: 10.40.40.20
+      port: 502
+      from: rtu-1
+    - host: 10.40.40.23
+      port: 502
+      from: plc-1
+    - host: 10.70.70.40
+      port: 8081
+      from: cc-1
+    - host: 10.70.70.40
+      port: 8080
+      from: kali-1
+    - host: 10.30.30.30
+      port: 8080
+      from: eng-ws-1
+- id: test-negative
+  title: Phase 6 - Validate blocked traffic
+  expected_config: hardened
+  node: kali-1
+  description: |
+    Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Each should time out under the reference. The validator uses the same negative matrix as the report.
+
+    From **Kali**:
+
+        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+
+    :::hint Diagnose a gap honestly
+    A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.
+    :::
+  action:
+    type: probe
+    outcome: blocked
+    targets:
+    - host: 10.30.30.20
+      port: 2404
+    - host: 10.40.40.20
+      port: 502
+    - host: 10.40.40.21
+      port: 502
+      from: vendor-jump-1
+    - host: 10.40.40.23
+      port: 502
+      from: eng-ws-1
+    - host: 10.30.30.30
+      port: 8080
+    - host: 10.20.20.10
+      port: 3389
+    - host: 10.20.20.10
+      port: 5900
+- id: export-your-policy
+  title: Export your policy
+  expected_config: hardened
+  description: |
+    Export the running configuration from containd's configuration UI, or in **fw-1**'s `containd cli` use `export config`. Retain policy identity, UTC bounds, positive/negative results and PCAP. Run Validate while your evidence is fresh.
+
+    :::hint Next break point
+    Keep the hardened policy and rollback. Lab 2.3 will restore weak deliberately to demonstrate unauthorized wire control, then restore service and repeat under hardened. A policy file alone is not acceptance evidence.
+    :::
+  action:
+    type: check
+    expect:
+      firewall_config: improved

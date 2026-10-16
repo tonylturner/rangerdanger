@@ -7,6 +7,7 @@ const euPackageID = "eu-iec104-substation"
 // and device truth; its canary is Kali's IEC 104 connect to the RTU. Its comparison
 // covers only the cross-zone relationships in its package policies.
 var euRecipe = &packageRecipe{
+	testSuite:         true,
 	simDevices:        map[string]string{"breaker": "breaker-1", "rmu-1": "rmu-1", "rmu-2": "rmu-2", "oltc-1": "oltc-1", "gps": "gps-1"},
 	commandExecutor:   (*Server).executeSimCommand,
 	sessionCuts:       map[string]sessionCutSpec{"cc-rtu": {sourceNetwork: "control_centre_net", targetNetwork: "station_net", transport: "tcp"}},

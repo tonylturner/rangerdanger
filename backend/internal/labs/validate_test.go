@@ -131,14 +131,6 @@ func TestValidateLabRejectsRuntimeVocabularyViolations(t *testing.T) {
 			problem: `commands[0] unknown command "explode" for device "relay"`,
 		},
 		{
-			name: "decision role mismatch",
-			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
-				scenario.Steps[0].Action = validDecision()
-				scenario.Steps[0].Action.Actions[0].Roles = []string{"Missing role"}
-			},
-			problem: `decision action "plan" references unknown role "Missing role"`,
-		},
-		{
 			name: "unknown validator",
 			mutate: func(_ *LabYAML, scenario *ScenarioYAML) {
 				scenario.Validator = "no-such-validator"
@@ -242,44 +234,58 @@ func TestValidateLabAggregatesProblemsWithStepContext(t *testing.T) {
 	}
 }
 
-func TestValidateLabRejectsInvalidDecisionFields(t *testing.T) {
-	def, scenario := validatorFixture()
-	decision := validDecision()
-	decision.BudgetHours = 0
-	decision.Roles[0].CapacityHours = 0
-	decision.Actions[0].ID = ""
-	decision.Actions[0].EffortHours = 0
-	decision.Actions = append(decision.Actions,
-		DecisionAction{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}},
-		DecisionAction{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}},
-	)
-	scenario.Steps[0].Action = decision
-	err := validateElectrical(def, scenario)
-	if err == nil {
-		t.Fatal("ValidateLab() error = nil, want decision validation failure")
+func TestValidateDecisionCanonical(t *testing.T) {
+	cases := []struct {
+		name   string
+		change func(*Curriculum)
+		want   string
+	}{
+		{"budget", func(c *Curriculum) { c.BudgetHours = 0 }, "budget, teams and catalog"},
+		{"capacity", func(c *Curriculum) {
+			for i := range c.Teams {
+				c.Teams[i].CapacityHours = 0
+			}
+		}, "capacity_hours must be greater than zero"},
+		{"empty id", func(c *Curriculum) { c.Catalog[0].ID = "" }, "action id must not be empty"},
+		{"effort", func(c *Curriculum) { c.Catalog[0].EffortHours = 0 }, "effort_hours must be greater than zero"},
+		{"duplicate id", func(c *Curriculum) { c.Catalog[1].ID = c.Catalog[0].ID }, "duplicate catalog action"},
+		{"unknown role", func(c *Curriculum) { c.Catalog[0].Roles = []string{"Missing role"} }, "references unknown team"},
+		{"no actions", func(c *Curriculum) { c.Catalog = nil }, "budget, teams and catalog"},
 	}
-	for _, want := range []string{
-		"decision budget_hours must be greater than zero",
-		"decision must have at least one role with capacity_hours greater than zero",
-		"decision action id must not be empty",
-		"decision action \"\" effort_hours must be greater than zero",
-		`duplicate decision action id "plan"`,
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("decision error %q does not contain %q", err, want)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pkg, _ := curriculumExample(t)
+			tc.change(pkg.Curriculum)
+			if err := validateCurriculum(pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error=%v want %s", err, tc.want)
+			}
+		})
 	}
 }
 
-func TestValidateLabRejectsDecisionWithoutActions(t *testing.T) {
-	def, scenario := validatorFixture()
-	scenario.Steps[0].Action = &StepAction{
-		Type: "decision", BudgetHours: 40,
-		Roles: []DecisionRole{{Name: "Operator", CapacityHours: 8}},
-	}
-	err := validateElectrical(def, scenario)
-	if err == nil || !strings.Contains(err.Error(), "decision must have at least one action") {
-		t.Fatalf("ValidateLab() error = %v, want missing decision actions", err)
+func TestValidateDecisionBinding(t *testing.T) {
+	for _, defect := range []string{"absent", "wrong role", "missing step", "duplicate step"} {
+		t.Run(defect, func(t *testing.T) {
+			pkg, _ := curriculumExample(t)
+			for i := range pkg.Scenarios {
+				if pkg.Scenarios[i].ID == pkg.Curriculum.Roles["planning"] {
+					switch defect {
+					case "wrong role":
+						pkg.Curriculum.Roles["planning"] = pkg.Curriculum.Roles["baseline"]
+					case "missing step":
+						pkg.Scenarios[i].Steps = nil
+					case "duplicate step":
+						pkg.Scenarios[i].Steps = append(pkg.Scenarios[i].Steps, pkg.Scenarios[i].Steps[0])
+					}
+				}
+			}
+			if defect == "absent" {
+				pkg.Curriculum = nil
+			}
+			if err := validateCurriculum(pkg); err == nil {
+				t.Fatal("accepted unbound decision")
+			}
+		})
 	}
 }
 
@@ -320,14 +326,6 @@ func TestValidateProbe(t *testing.T) {
 	scenario.Steps[0].Action.Targets[0].From = "fw-1"
 	if err := validateElectrical(def, scenario); err != nil {
 		t.Fatalf("override-only probe rejected: %v", err)
-	}
-}
-
-func validDecision() *StepAction {
-	return &StepAction{
-		Type: "decision", BudgetHours: 40,
-		Roles:   []DecisionRole{{Name: "Operator", CapacityHours: 8}},
-		Actions: []DecisionAction{{ID: "plan", EffortHours: 2, Roles: []string{"Operator"}}},
 	}
 }
 

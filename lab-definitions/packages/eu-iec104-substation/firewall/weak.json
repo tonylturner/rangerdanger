@@ -184,6 +184,49 @@
           }
         ],
         "action": "ALLOW"
+      },
+      {
+        "id": "weak-enterprise-vendor-remote",
+        "description": "Workshop weak exposure",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "dmz"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "3389"
+          },
+          {
+            "name": "tcp",
+            "port": "5900"
+          }
+        ],
+        "action": "ALLOW",
+        "log": true,
+        "destinations": [
+          "10.20.20.10/32"
+        ]
+      },
+      {
+        "id": "weak-vendor-station-web",
+        "description": "Workshop weak exposure",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "action": "ALLOW",
+        "log": true
       }
     ],
     "nat": {

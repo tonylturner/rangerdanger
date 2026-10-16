@@ -10,7 +10,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
-// Evaluation of the eu-iec104-telecontrol validator: pure functions over
+// Evaluation of the telecontrol outage evidence: pure functions over
 // the evidence telecontrol_validator.go collects. The validator passes only
 // on real, temporally ordered evidence that the student ran the stale-view
 // exercise: a logged deny of a foreign IEC 104 session, a control-centre

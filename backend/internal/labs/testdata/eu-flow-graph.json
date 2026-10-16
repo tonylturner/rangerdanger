@@ -678,6 +678,6 @@
     }
   ],
   "operations": {
-    "traffic_generation": false
+    "traffic_generation": true
   }
 }
