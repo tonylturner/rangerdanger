@@ -14,6 +14,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#define SNAPSHOT_QUEUE_SIZE 16
+
 static struct {
     pthread_t thread;
     bool running;
@@ -21,7 +23,36 @@ static struct {
     struct sockaddr_in target, local;
     char host[128], path[256];
     int port;
+    /* All queue access and enabled are protected by cc.lock. The worker alone
+     * performs serialization and HTTP; no network work runs on the link. */
+    bool enabled;
+    cJSON* pending[SNAPSHOT_QUEUE_SIZE];
+    size_t head, count;
 } publisher;
+
+/* Caller holds cc.lock. Render now, not after waking the worker: even an
+ * immediately following untimed report must not erase this report's tag. */
+static void
+enqueue_snapshot(void)
+{
+    if (!publisher.enabled) return;
+    cJSON* state = cc_render_state_locked();
+    if (publisher.count == SNAPSHOT_QUEUE_SIZE) {
+        cJSON_Delete(publisher.pending[publisher.head]);
+        publisher.head = (publisher.head + 1) % SNAPSHOT_QUEUE_SIZE;
+        publisher.count--;
+        cc.historianDropped++;
+    }
+    publisher.pending[(publisher.head + publisher.count) % SNAPSHOT_QUEUE_SIZE] = state;
+    publisher.count++;
+    pthread_cond_broadcast(&cc.cond);
+}
+
+void
+cc_historian_on_timed_report(void)
+{
+    enqueue_snapshot();
+}
 
 static bool
 ready(int fd, short events, uint64_t deadline)
@@ -90,12 +121,22 @@ run(void* unused)
     (void)unused;
     uint64_t next = cc_mono_ms();
     while (!*publisher.stop) {
-        if (cc_mono_ms() < next) {
-            usleep(10000);
+        pthread_mutex_lock(&cc.lock);
+        if (cc_mono_ms() >= next) {
+            /* Cadence renders join the same FIFO so their sequence cannot
+             * overtake already-rendered timed snapshots. */
+            enqueue_snapshot();
+            next = cc_mono_ms() + 1000;
+        }
+        if (!publisher.count) {
+            cc_wait_until(next);
+            pthread_mutex_unlock(&cc.lock);
             continue;
         }
-        next = cc_mono_ms() + 1000;
-        cJSON* state = cc_render_state();
+        cJSON* state = publisher.pending[publisher.head];
+        publisher.head = (publisher.head + 1) % SNAPSHOT_QUEUE_SIZE;
+        publisher.count--;
+        pthread_mutex_unlock(&cc.lock);
         char* body = cJSON_PrintUnformatted(state);
         cJSON_Delete(state);
         bool ok = body && push(body);
@@ -138,7 +179,15 @@ cc_historian_start(const char* url, const char* bindAddr, volatile sig_atomic_t*
     close(fd);
     if (rc) goto invalid;
     publisher.stop = stop;
-    if (pthread_create(&publisher.thread, NULL, run, NULL) != 0) goto invalid;
+    pthread_mutex_lock(&cc.lock);
+    publisher.enabled = true;
+    pthread_mutex_unlock(&cc.lock);
+    if (pthread_create(&publisher.thread, NULL, run, NULL) != 0) {
+        pthread_mutex_lock(&cc.lock);
+        publisher.enabled = false;
+        pthread_mutex_unlock(&cc.lock);
+        goto invalid;
+    }
     publisher.running = true;
     return true;
 invalid:
@@ -149,5 +198,18 @@ invalid:
 void
 cc_historian_stop(void)
 {
-    if (publisher.running) pthread_join(publisher.thread, NULL);
+    if (!publisher.running) return;
+    pthread_mutex_lock(&cc.lock);
+    publisher.enabled = false;
+    pthread_cond_broadcast(&cc.cond);
+    pthread_mutex_unlock(&cc.lock);
+    pthread_join(publisher.thread, NULL);
+    pthread_mutex_lock(&cc.lock);
+    while (publisher.count) {
+        cJSON_Delete(publisher.pending[publisher.head]);
+        publisher.head = (publisher.head + 1) % SNAPSHOT_QUEUE_SIZE;
+        publisher.count--;
+    }
+    pthread_mutex_unlock(&cc.lock);
+    publisher.running = false;
 }

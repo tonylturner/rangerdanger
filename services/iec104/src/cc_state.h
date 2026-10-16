@@ -139,7 +139,7 @@ typedef struct {
     CcTracker tracker;
     uint64_t commandSeq, snapshotSeq;
     char historianLastOk[CC_STAMP_LEN];
-    uint64_t historianFailures;
+    uint64_t historianFailures, historianDropped;
 
     CcJournalEntry journal[CC_JOURNAL_SIZE];
     uint64_t journalNext; /* seq of the next entry; entries 1..journalNext-1 were written */
@@ -184,6 +184,8 @@ void cc_gi_begin(void);
 
 cJSON* cc_render_health(void);
 cJSON* cc_render_state(void);
+/* Caller holds. Also increments snapshot_seq once per render. */
+cJSON* cc_render_state_locked(void);
 cJSON* cc_render_journal(uint64_t after);
 
 #endif

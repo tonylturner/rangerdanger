@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "cc_state.h"
+#include "cc_historian.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -371,6 +372,7 @@ cc_on_report(const CcReport* r, int cot)
         journal_point(index);
 
     track_feedback(index, cot);
+    if (r->timed) cc_historian_on_timed_report();
     pthread_cond_broadcast(&cc.cond);
     pthread_mutex_unlock(&cc.lock);
 }
@@ -552,6 +554,7 @@ cc_render_health(void)
     cJSON* h = cJSON_AddObjectToObject(o, "historian");
     add_str_or_null(h, "last_ok_at", cc.historianLastOk);
     cJSON_AddNumberToObject(h, "failures", (double)cc.historianFailures);
+    cJSON_AddNumberToObject(h, "dropped_snapshots", (double)cc.historianDropped);
     pthread_mutex_unlock(&cc.lock);
     return o;
 }
@@ -594,8 +597,16 @@ point_json(int index)
 cJSON*
 cc_render_state(void)
 {
-    cJSON* o = cJSON_CreateObject();
     pthread_mutex_lock(&cc.lock);
+    cJSON* o = cc_render_state_locked();
+    pthread_mutex_unlock(&cc.lock);
+    return o;
+}
+
+cJSON*
+cc_render_state_locked(void)
+{
+    cJSON* o = cJSON_CreateObject();
     cJSON_AddNumberToObject(o, "schema", 2);
     char seq[32];
     snprintf(seq, sizeof(seq), "%llu", (unsigned long long)++cc.snapshotSeq);
@@ -619,7 +630,6 @@ cc_render_state(void)
     cJSON* pts = cJSON_AddArrayToObject(o, "points");
     for (int i = 0; i < cc.pm->n_points; i++)
         cJSON_AddItemToArray(pts, point_json(i));
-    pthread_mutex_unlock(&cc.lock);
     return o;
 }
 

@@ -47,3 +47,14 @@ if grep -q '"type":32,"cot":3,"ioa":1301,.*"transient":true.*"quality":"GOOD"' "
 else
   fail "iec104cmd timed step decoding"
 fi
+
+log "timed historian push: immediate untimed GI and bounded overflow"
+docker exec "$PROBE" python3 /app/timed_push.py >"$OUT/timed-push.log" 2>&1 &
+timed_probe_pid=$!
+start_cc "$CC2" "$CC2_IP" "$CC2_HTTP_IP" "172.28.104.40:2404"
+if wait "$timed_probe_pid"; then
+  pass "timed historian snapshots survive immediate GI; bounded oldest-drop overflow"
+else
+  fail "timed historian snapshots (timed-push.log)"
+fi
+docker rm -f "$CC2" >/dev/null
