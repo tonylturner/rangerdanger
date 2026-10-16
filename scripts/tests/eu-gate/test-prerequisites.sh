@@ -4,8 +4,6 @@
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-EPHEMERAL_LOW=32768
-EPHEMERAL_HIGH=60999
 DOCKER_LOG="$TMP_DIR/docker-calls.log"
 OPENDSS_STATE=false
 : >"$DOCKER_LOG"
@@ -66,6 +64,7 @@ t_run gate G11
 t_expect_fails 1 "G11 fails when its own baseline cannot converge"
 t_expect_no_out "custom" "G11 does not restrict Modbus without its baseline"
 
+# shellcheck disable=SC2034 # read by eu_gate_G8 and eu_gate_G9
 g7_loss_verified=0
 t_run gate G8
 t_expect_fails 1 "G8 fails without the verified G7 disconnect"

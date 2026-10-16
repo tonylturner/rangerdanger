@@ -49,12 +49,11 @@ POLLS=0
 LAGGING=$(edit_truth '.devices["breaker-1"].revision = 10')
 CAUGHT_UP=$(edit_truth '.devices["breaker-1"].revision = 10 | .process.devices["feeder-breaker"].solved_revision = 10')
 eu_api_get() {
-  # shellcheck disable=SC2034 # read by the sourced gate helpers
-  HTTP_STATUS=200
   case "$1" in
     /api/operator/state) API_BODY="$OPERATOR" ;;
     /api/field/state)
       POLLS=$((POLLS + 1))
+      # shellcheck disable=SC2034 # read by eu_wait_for_baseline
       if [ "$POLLS" -lt 3 ]; then API_BODY="$LAGGING"; else API_BODY="$CAUGHT_UP"; fi
       ;;
     *) return 1 ;;

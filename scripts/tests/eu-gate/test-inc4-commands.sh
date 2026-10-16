@@ -22,6 +22,7 @@ eu_api_post() {
   POSTS=$((POSTS + 1))
   # shellcheck disable=SC2034 # consumed by sourced gate code
   HTTP_STATUS=200
+  # shellcheck disable=SC2034 # read by eu_command
   API_BODY=$(jq -cn --arg at "$(eu_utc)" '{id:"cmd-1",point:"rmu-1-command",operation:"open",result:"completed",reason:null,
     selected_at:$at,executed_at:$at,con_at:$at,term_at:$at,feedback:{ioa:1101,value:"open",at:$at}}' | jq -c "$RESULT_EDIT")
 }

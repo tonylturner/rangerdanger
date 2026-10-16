@@ -26,6 +26,7 @@ eu_api_get() {
   [ "$index" -lt "${#QUEUE[@]}" ] || index=$((${#QUEUE[@]} - 1))
   # shellcheck disable=SC2034 # read by the sourced gate helpers
   HTTP_STATUS=200
+  # shellcheck disable=SC2034 # read by eu_read_sessions
   API_BODY="${QUEUE[$index]}"
   case "$1" in "/api/firewall/sessions?dport=2404&src=$KALI_IP") ;; *) return 1 ;; esac
 }

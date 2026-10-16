@@ -32,6 +32,7 @@ eu_utc() { printf '2026-10-15T12:00:00Z\n'; }
 eu_api_post() {
   # shellcheck disable=SC2034 # read by sourced reset helper
   HTTP_STATUS=200
+  # shellcheck disable=SC2034 # read by eu_reset_all
   API_BODY='{"actions":[{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true},{"success":true}]}'
 }
 OPERATOR=$(jq -c '(.points[].received_at) = "2026-10-15T12:00:01Z"' "$T_FIXTURES/operator-gi-untimed.json")

@@ -5,6 +5,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 AUDIT='{"generation":42,"oldest_seq":1,"latest_seq":21,"entries":[{"seq":21,"operation":"plc_request","result":"accepted","context":{"protocol":"modbus","peer":"10.30.30.30:1234"}}]}'
 EDIT='.'
+# shellcheck disable=SC2034 # read by eu_plc_requests
 eu_management() { API_BODY=$(printf '%s' "$AUDIT" | jq -c "$EDIT"); }
 t_run eu_plc_requests 20 1 42
 t_expect_fails 0 "one new accepted PLC write proves the automatic step"
