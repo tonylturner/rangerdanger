@@ -99,3 +99,24 @@ describe("Apply Your Plan — every 1.4 combination yields an applicable config"
     ).toBeUndefined();
   });
 });
+
+// Captured before package binding: includes the historical shared-rule logging
+// mutation, compiler quirks, coverage and all three rendered dynamic phases.
+import { createHash } from "node:crypto";
+import { computeCoverage } from "./requirement-coverage";
+import { injectDynamicContent } from "./scenario-runner-logic";
+
+it("preserves the pre-binding US golden across all 256 plans", () => {
+  const outputs = COMBOS.map((ids) => {
+    const plan = buildDynamicPlan({ exerciseId: "remediation-planning", selectedActionIds: ids, savedAt: "" });
+    return JSON.stringify({
+      plan,
+      config: buildContaindConfig(plan),
+      coverage: ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW", "LOG", ""].map((verdict) =>
+        computeCoverage(["enterprise-to-field", "enterprise-to-ot", "vendor-to-ot", "non-rtac-to-field", "unauth-modbus-writes"].map((id) => ({ id, label: id, verdict })), new Set(ids))),
+      phases: ["Phase 3", "Phase 5", "Phase 6"].map((title) => injectDynamicContent("original", title, plan)),
+    });
+  });
+  expect(outputs).toHaveLength(256);
+  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"7c619c89bdb3ce220789876ce315a72b32d818bde12bf8a478cd795e3c3918a1"`);
+});
