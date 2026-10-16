@@ -46,8 +46,6 @@ requirements:
         - modbus-dpi
         - dnp3-dpi
         - improve-logging
-      LOG:
-        - improve-logging
 readiness:
   - id: ot-eng-availability
     label: OT engineering capacity

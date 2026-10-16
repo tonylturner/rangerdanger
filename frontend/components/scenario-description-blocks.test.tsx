@@ -16,7 +16,7 @@ function render(binding?: CurriculumBinding) {
   return renderToStaticMarkup(
     <CurriculumScopeProvider pkg={pkg}>
       <TooltipProvider>
-        <DecisionPanel exerciseId={binding?.roles.planning ?? "unbound"} action={{ type: "decision" }} />
+        <DecisionPanel exerciseId={binding?.roles.planning ?? "unbound"} />
         <PlanCoveragePanel title="Coverage" />
         <RemediationPlanBanner currentExerciseId={binding?.roles.hardening ?? "unbound"} />
       </TooltipProvider>

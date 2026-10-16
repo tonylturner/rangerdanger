@@ -2,12 +2,10 @@ import {
   renderRuleTable,
   positiveValidationTests,
   negativeValidationTests,
+  curriculumForPlan,
   type DynamicExercisePlan,
 } from "./remediation-to-rules";
-import type { Scenario } from "./api";
-
-import type { CurriculumBinding } from "./api";
-import { curriculumForPlan } from "./remediation-to-rules";
+import type { CurriculumBinding, Scenario } from "./api";
 
 export function showsValidateButton(scenario: Pick<Scenario, "id" | "package_id" | "validator">, curriculum?: CurriculumBinding): boolean {
   return scenario.validator !== "" && (curriculum?.activities[scenario.id]?.validate ?? true);

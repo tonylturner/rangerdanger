@@ -109,14 +109,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const recentAudit = useMemo(() => (auditEntries ?? []).slice(-5), [auditEntries]);
   const refreshLive = useRefreshLive();
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, binding);
-  // Load the saved Lab 1.4 remediation plan on every firewall lab,
-  // not just firewall-implementation. The plan drives the side-
-  // panel Apply Your Plan button on Lab 2.3 / 2.3-bonus / 2.4 too,
-  // so leaving it null on those labs left the button stuck in the
-  // disabled-with-tooltip state even when a plan existed (Codex
-  // review on #74). The injectDynamicContent path stays scoped to
-  // firewall-implementation - only that lab actually uses the
-  // plan to rewrite step descriptions.
+  // Every activity opting into policy actions loads the saved package plan.
+  // Dynamic step text is narrower: only the binding's dynamicSteps are rewritten.
   const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
     hasPolicyActions ? loadDynamicPlan(scope) : null
   );
@@ -619,7 +613,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
 
             {/* Decision panel - only for steps with action.type === "decision" */}
             {step?.action?.type === "decision" && (
-              <DecisionPanel exerciseId={scenario.id} action={step.action} />
+              <DecisionPanel exerciseId={scenario.id} />
             )}
 
             {/* Shared notes - persists across all steps */}

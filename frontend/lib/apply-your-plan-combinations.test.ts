@@ -103,21 +103,26 @@ describe("Apply Your Plan — every 1.4 combination yields an applicable config"
 
 // Captured before package binding: includes the historical shared-rule logging
 // mutation, compiler quirks, coverage and all three rendered dynamic phases.
+// Authorized dead-data cutover: remove only unselectable LOG-verdict rows.
+// Every new row was byte-compared with the old golden minus those rows.
 import { createHash } from "node:crypto";
 import { computeCoverage } from "./requirement-coverage";
 import { injectDynamicContent } from "./scenario-runner-logic";
+import { DECISION_DEFAULT_OPTIONS } from "./scenario-description";
 
-it("preserves the pre-binding US golden across all 256 plans", () => {
+it("preserves the reachable pre-binding US golden across all 256 plans", () => {
+  const verdicts = ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW", ""];
+  expect(verdicts).toEqual([...DECISION_DEFAULT_OPTIONS, ""]);
   const outputs = COMBOS.map((ids) => {
     const plan = buildDynamicPlan({ exerciseId: "remediation-planning", selectedActionIds: ids, savedAt: "" }, US_CURRICULUM);
     return JSON.stringify({
       plan,
       config: buildContaindConfig(plan),
-      coverage: ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW", "LOG", ""].map((verdict) =>
+      coverage: verdicts.map((verdict) =>
         computeCoverage(["enterprise-to-field", "enterprise-to-ot", "vendor-to-ot", "non-rtac-to-field", "unauth-modbus-writes"].map((id) => ({ id, label: id, verdict })), new Set(ids), US_CURRICULUM)),
       phases: ["phase-3-create-minimal-required-rules", "phase-5-validate-allowed-traffic", "phase-6-validate-blocked-traffic"].map((title) => injectDynamicContent("original", title, plan)),
     });
   });
   expect(outputs).toHaveLength(256);
-  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"7c619c89bdb3ce220789876ce315a72b32d818bde12bf8a478cd795e3c3918a1"`);
+  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"d498587803c3d307dbb27f2699d18c02d6b5f6255a868877d2db2686607200ec"`);
 });

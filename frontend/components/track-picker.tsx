@@ -10,8 +10,8 @@ import { Wrench, Hand, Check } from "lucide-react";
 // side-panel buttons in scenario-runner.tsx.
 //
 // Force-pick is enforced separately in scenario-runner.tsx by
-// gating the Next button on track !== null when scenario is
-// firewall-implementation + step index 0.
+// gating the Next button on track !== null in the implementation-role
+// scenario at step index 0.
 
 type Card = {
   value: Exclude<FirewallTrack, null>;

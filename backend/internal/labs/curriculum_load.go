@@ -11,7 +11,8 @@ import (
 )
 
 var curriculumReference = regexp.MustCompile(`\$\{(ip|subnet|zone):([a-z0-9_-]+)\}`)
-var curriculumDecision = regexp.MustCompile(`:::decision\s+id=([a-z0-9-]+)`)
+var curriculumDecision = regexp.MustCompile(`(?m)^[\t ]*:::decision[ \t]+([^\r\n]+)$`)
+var curriculumDecisionAttribute = regexp.MustCompile(`\b(id|options)=("([^"]+)"|(\S+))`)
 
 func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curriculum, error) {
 	if binding == nil {
@@ -24,13 +25,10 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	if err != nil {
 		return nil, err
 	}
-	var strict Curriculum
-	if err := decodeStrict(data, &strict); err != nil {
-		return nil, err
-	}
 	// Resolve only scalar values. This avoids corrupting YAML quoting in prose.
+	// Parse exactly one document here; the resolved model is strictly typed below.
 	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil {
+	if err := decodeStrict(data, &document); err != nil {
 		return nil, err
 	}
 	facts := map[string]string{}
@@ -70,6 +68,8 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 				return fmt.Errorf("unknown topology reference %s", missing)
 			}
 			if strings.Contains(n.Value, "${") {
+				// "${" is reserved for topology interpolation throughout authored
+				// strings, including prose. Reject typos rather than publish them.
 				return fmt.Errorf("invalid topology reference in %q", n.Value)
 			}
 		}
@@ -111,6 +111,16 @@ func validateCurriculum(pkg Package) error {
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
 		return fail("budget, teams and catalog must not be empty")
 	}
+	if err := validateCurriculumCollections(c); err != nil {
+		return err
+	}
+	teams := map[string]bool{}
+	for _, team := range c.Teams {
+		if team.CapacityHours <= 0 {
+			return fail("team %q capacity_hours must be greater than zero", team.Name)
+		}
+		teams[team.Name] = true
+	}
 	scenarios := map[string]ScenarioYAML{}
 	for _, s := range pkg.Scenarios {
 		scenarios[s.ID] = s
@@ -139,6 +149,11 @@ func validateCurriculum(pkg Package) error {
 	for _, step := range scenarios[c.Roles["implementation"]].Steps {
 		steps[step.ID] = true
 	}
+	for phase := range c.Phases {
+		if phase != "rules" && phase != "positive" && phase != "negative" {
+			return fail("unknown phase template %s", phase)
+		}
+	}
 	for id, phase := range c.DynamicSteps {
 		if !steps[id] {
 			return fail("dynamicSteps references unknown implementation step %s", id)
@@ -150,21 +165,26 @@ func validateCurriculum(pkg Package) error {
 			return fail("missing phase template %s", phase)
 		}
 	}
-	decisions := map[string]bool{}
-	for _, step := range scenarios[c.Roles["requirements"]].Steps {
-		for _, m := range curriculumDecision.FindAllStringSubmatch(step.Description, -1) {
-			decisions[m[1]] = true
-		}
-	}
-	for id := range c.Requirements {
-		if !decisions[id] {
+	decisions := curriculumDecisionOptions(scenarios[c.Roles["requirements"]])
+	for id, requirement := range c.Requirements {
+		options, ok := decisions[id]
+		if !ok {
 			return fail("unknown requirement decision %s", id)
+		}
+		for verdict := range requirement.Impl {
+			if !options[verdict] {
+				return fail("requirement %s impl verdict %q is not a decision option", id, verdict)
+			}
 		}
 	}
 	readiness := map[string]bool{}
 	for _, r := range c.Readiness {
-		if !decisions[r.ID] {
+		options, ok := decisions[r.ID]
+		if !ok {
 			return fail("unknown readiness decision %s", r.ID)
+		}
+		if !options[r.Good] {
+			return fail("readiness %s good verdict %q is not a decision option", r.ID, r.Good)
 		}
 		readiness[r.ID] = true
 	}
@@ -178,11 +198,22 @@ func validateCurriculum(pkg Package) error {
 	}
 	actions := map[string]bool{}
 	for _, a := range c.Catalog {
-		if !authored[a.ID] {
-			return fail("catalog references unknown planning action %s", a.ID)
+		if a.ID == "" {
+			return fail("catalog action id must not be empty")
 		}
 		if actions[a.ID] {
 			return fail("duplicate catalog action %s", a.ID)
+		}
+		if a.EffortHours <= 0 {
+			return fail("catalog action %s effort_hours must be greater than zero", a.ID)
+		}
+		for _, role := range a.Roles {
+			if !teams[role] {
+				return fail("catalog action %s references unknown team %q", a.ID, role)
+			}
+		}
+		if !authored[a.ID] {
+			return fail("catalog references unknown planning action %s", a.ID)
 		}
 		actions[a.ID] = true
 	}
@@ -204,6 +235,9 @@ func validateCurriculum(pkg Package) error {
 	for _, f := range c.ReadinessFlags {
 		if !readiness[f.Source] {
 			return fail("unknown readiness source %s", f.Source)
+		}
+		if !decisions[f.Source][f.Verdict] {
+			return fail("readiness flag %s verdict %q is not a decision option", f.Source, f.Verdict)
 		}
 		if f.Severity != "warn" && f.Severity != "blocked" {
 			return fail("unknown readiness severity %s", f.Severity)
@@ -239,6 +273,17 @@ func validateCurriculum(pkg Package) error {
 		}
 		if (g.Effect == "conceptual" || g.Effect == "logging") && len(g.Rules) > 0 {
 			return fail("%s action %s cannot emit rules", g.Effect, id)
+		}
+		if g.Effect == "semantic" {
+			hasPolicy := false
+			for _, entry := range c.Policy {
+				if entry.Semantic == id && entry.Predicate != nil || entry.When == id && entry.Rule.ICS != nil {
+					hasPolicy = true
+				}
+			}
+			if !hasPolicy {
+				return fail("semantic action %s must declare a policy predicate", id)
+			}
 		}
 		if !c.LegacyEffects && (g.Effect == "closes" || g.Effect == "restricts") {
 			omitted := false
@@ -336,6 +381,84 @@ func validateCurriculum(pkg Package) error {
 			if id != "" && !nodes[id] {
 				return fail("unknown exercise node %s", id)
 			}
+		}
+	}
+	return nil
+}
+
+// Match the renderer's decision attributes, including quoted values and its
+// default verdict vocabulary when options is absent. Attribute order is free.
+func curriculumDecisionOptions(scenario ScenarioYAML) map[string]map[string]bool {
+	decisions := map[string]map[string]bool{}
+	for _, step := range scenario.Steps {
+		for _, match := range curriculumDecision.FindAllStringSubmatch(step.Description, -1) {
+			attrs := map[string]string{}
+			for _, attr := range curriculumDecisionAttribute.FindAllStringSubmatch(match[1], -1) {
+				if _, exists := attrs[attr[1]]; !exists {
+					value := attr[3]
+					if value == "" {
+						value = attr[4]
+					}
+					attrs[attr[1]] = strings.TrimSpace(value)
+				}
+			}
+			raw := attrs["options"]
+			if raw == "" {
+				raw = "BLOCK,BLOCK and LOG,RESTRICT,ALLOW"
+			}
+			options := map[string]bool{}
+			for _, value := range strings.Split(raw, ",") {
+				if value = strings.TrimSpace(value); value != "" {
+					options[value] = true
+				}
+			}
+			decisions[attrs["id"]] = options
+		}
+	}
+	return decisions
+}
+
+// Required nested collections follow the same wire contract as the top-level
+// collections. Empty maps/lists are valid; omitted or null values are not.
+// Optional collections (tags, omittedRules and policy/predicate selectors) keep
+// their documented omission semantics.
+func validateCurriculumCollections(c *Curriculum) error {
+	missing := func(path string) error {
+		return fmt.Errorf("curriculum: %s must be an explicit mapping or list, not null or omitted", path)
+	}
+	for id, req := range c.Requirements {
+		if req.Impl == nil {
+			return missing("requirements." + id + ".impl")
+		}
+		for verdict, actions := range req.Impl {
+			if actions == nil {
+				return missing("requirements." + id + ".impl." + verdict)
+			}
+		}
+	}
+	for id, group := range c.Groups {
+		if group.Rules == nil {
+			return missing("groups." + id + ".rules")
+		}
+	}
+	for i, flag := range c.ReadinessFlags {
+		if flag.Actions == nil {
+			return missing(fmt.Sprintf("readinessFlags[%d].actions", i))
+		}
+	}
+	for id, impact := range c.Impact {
+		if impact.Defends == nil {
+			return missing("impact." + id + ".defends")
+		}
+	}
+	for id, nodes := range c.NodeMap {
+		if nodes.Others == nil {
+			return missing("nodeMap." + id + ".others")
+		}
+	}
+	for i, action := range c.Catalog {
+		if action.Roles == nil {
+			return missing(fmt.Sprintf("catalog[%d].roles", i))
 		}
 	}
 	return nil

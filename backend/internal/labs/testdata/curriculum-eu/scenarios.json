@@ -8,7 +8,7 @@
     "steps": [
       {
         "id": "decisions",
-        "description": ":::decision id=enterprise-to-field\n:::decision id=enterprise-to-station\n:::decision id=vendor-to-station\n:::decision id=non-rtu-to-field\n:::decision id=unauth-control\n:::decision id=ot-eng-availability\n:::decision id=fw-admin-skills\n:::decision id=vendor-change-window\n:::decision id=risk-acceptance-authority"
+        "description": ":::decision id=enterprise-to-field\n:::decision id=enterprise-to-station\n:::decision id=vendor-to-station\n:::decision id=non-rtu-to-field\n:::decision id=unauth-control options=\"BLOCK,BLOCK and LOG,RESTRICT,ALLOW,LOG\"\n:::decision id=ot-eng-availability options=AVAILABLE,STRETCHED,UNAVAILABLE\n:::decision id=fw-admin-skills options=IN_HOUSE,VENDOR_LED,GAP\n:::decision id=vendor-change-window options=SECURED,NEGOTIATING,NOT_DISCUSSED\n:::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR,DISPUTED"
       }
     ]
   },

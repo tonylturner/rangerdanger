@@ -1,19 +1,7 @@
 // Package-owned planning and policy compiler. No binding means no planner.
 import { actionEffectLabel, loadRemediationPlan, type RemediationPlan } from "./remediation-plan";
 import type { CurriculumScope } from "./curriculum-storage";
-import type { CurriculumBinding, CurriculumPolicyRule, CurriculumPredicate } from "./api";
-
-export type FirewallRule = {
-  id: string;
-  source: string;
-  destination: string;
-  proto: string;
-  port: string;
-  action: "ALLOW" | "DENY";
-  purpose: string;
-  log?: boolean;
-  ics?: CurriculumPredicate;
-};
+import type { CurriculumBinding, CurriculumPolicyRule, FirewallRule } from "./api";
 
 export type RuleGroup = {
   remediationId: string;
