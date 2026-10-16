@@ -20,8 +20,8 @@ eu_gate_G11() {
   eu_apply_custom "$g11_policy" "G11 improved minus RTU-to-breaker allow" || return
   eu_check_nft_chain G11-custom || true
   eu_get_operator || fail "G11 cannot snapshot operator points before Modbus loss"
-  if ! eu_read_sessions 502 "$RTU_IP" \
-    || ! eu_session_tuple "$SESSION_BODY" "$RTU_IP" "$BREAKER_IP" 502; then
+  if ! eu_read_sessions 502 "$RTU_IP" ||
+    ! eu_session_tuple "$SESSION_BODY" "$RTU_IP" "$BREAKER_IP" 502; then
     fail "G11 session lookup did not yield exactly one RTU-to-breaker tuple"
     return
   fi
@@ -52,8 +52,8 @@ eu_gate_G11() {
     g11_stale="$API_BODY"
     g11_stale_points=$(eu_get_point_snapshot "$g11_stale" | jq -c 'map({id,value})') || g11_stale_points=""
     g11_stale_epoch=$(printf '%s' "$g11_stale" | jq -r '.cache_epoch // empty')
-    if [ -z "$g11_stale_epoch" ] || [ -z "$g11_stale_points" ] \
-      || ! printf '%s' "$g11_stale" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
+    if [ -z "$g11_stale_epoch" ] || [ -z "$g11_stale_points" ] ||
+      ! printf '%s' "$g11_stale" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
       fail "G11 stale operator cache lacks its epoch or four expected points"
     fi
   else
@@ -65,16 +65,16 @@ eu_gate_G11() {
   else
     fail "G11 physical state unavailable before reset"
   fi
-  eu_device_step clear-fault "G11 device reset changes truth clear process fault" || true
-  eu_device_step restore-device "G11 device reset changes truth" || true
+  eu_action_step process clear_fault "G11 device reset changes truth clear process fault" || true
+  eu_action_step breaker reset "G11 device reset changes truth" || true
   if eu_get_field; then
     g11_truth="$API_BODY"
     if eu_get_operator; then
       g11_after_reset="$API_BODY"
       g11_after_reset_points=$(eu_get_point_snapshot "$g11_after_reset" | jq -c 'map({id,value})') || g11_after_reset_points=""
-      if [ -n "$g11_stale_points" ] && [ -n "$g11_after_reset_points" ] \
-        && [ "$g11_after_reset_points" = "$g11_stale_points" ] \
-        && [ "$(printf '%s' "$g11_after_reset" | jq -r '.cache_epoch // empty')" = "$g11_stale_epoch" ]; then
+      if [ -n "$g11_stale_points" ] && [ -n "$g11_after_reset_points" ] &&
+        [ "$g11_after_reset_points" = "$g11_stale_points" ] &&
+        [ "$(printf '%s' "$g11_after_reset" | jq -r '.cache_epoch // empty')" = "$g11_stale_epoch" ]; then
         if printf '%s' "$g11_after_reset" | jq -e "$EU_JQ_DEFS all_stale(\"device_unreachable\")" >/dev/null; then
           pass "G11 reset truth cannot change stale cached values/epoch (received_at may advance on real stale GI)"
         else fail "G11 reset unexpectedly made dropped breaker points good"; fi
@@ -151,9 +151,9 @@ eu_gate_G12() {
 }
 
 eu_gate_G13() {
-  local connection_seq generation baseline cursor revisions="[]" active revision audit fault_step
+  local connection_seq generation baseline cursor revisions="[]" active revision audit
   # Own the initial truth even if a previous gate aborted while tripped or
-  # restrictive. The next local-trip must change the device revision.
+  # restrictive. The next direct fault action must change the device revision.
   eu_apply_named improved || return
   eu_reset_all || return
   # Settle the CC and the reset revision before taking the audit cursor.
@@ -189,12 +189,12 @@ eu_gate_G13() {
   # Each truth change must be solved before the next one replaces it: the solver
   # polls current truth and cannot solve a superseded revision.
   for active in true false; do
-    if [ "$active" = true ]; then fault_step=local-trip; else
-      eu_device_step clear-fault "G13 clear process fault" || break
-      fault_step=restore-device
+    if [ "$active" = true ]; then
+      eu_action_step process fault_s1 "G13 fault active=$active while RTU paused" || break
+    else
+      eu_action_step process clear_fault "G13 clear process fault" || break
+      eu_action_step breaker reset "G13 fault active=$active while RTU paused" || break
     fi
-    eu_device_step "$fault_step" \
-      "G13 fault active=$active while RTU paused" || break
     revision=$(printf '%s' "$API_BODY" | jq -er '.revision | numbers') || {
       fail "G13 fault active=$active answered no numeric revision"
       break

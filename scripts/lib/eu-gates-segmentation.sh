@@ -28,7 +28,7 @@ eu_gate_G5() {
   else
     fail "G5 CC state unavailable"
   fi
-  eu_validate_scenario FAIL || true
+  # G5 proves physical denial only; validator slots are exercised by lab walks.
 }
 
 eu_gate_G6() {
@@ -68,8 +68,8 @@ eu_g6_cut_monitor_session() {
   fi
   asdus_before=$MONITOR_ASDUS
   eu_apply_named improved || return 1
-  if ! eu_monitor_read || [ "$MONITOR_LINES" -eq 0 ] \
-    || ! printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
+  if ! eu_monitor_read || [ "$MONITOR_LINES" -eq 0 ] ||
+    ! printf '%s\n' "$MONITOR_BODY" | jq -s -e --arg peer "$RTU_IP:2404" '
       [.[] | select(.event == "connected")] as $connected
       | ($connected | length) == 1
         and $connected[0].local == null and $connected[0].peer == $peer
@@ -77,8 +77,8 @@ eu_g6_cut_monitor_session() {
     fail "G6 monitor must emit exactly one connected event with local=null and peer=$RTU_IP:2404"
     return 1
   fi
-  if ! eu_read_sessions 2404 10.10.10.50 \
-    || ! eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
+  if ! eu_read_sessions 2404 10.10.10.50 ||
+    ! eu_session_tuple "$SESSION_BODY" 10.10.10.50 "$RTU_IP" 2404; then
     fail "G6 session lookup did not yield exactly one Kali-to-RTU tuple"
     return 1
   fi
@@ -102,8 +102,8 @@ eu_g6_cut_monitor_session() {
     fail "G6 could not timestamp conntrack kill"
     return 1
   fi
-  eu_kill_tuple "$kali_tuple" && eu_monitor_finish 3 30 "$kill_started_ms" \
-    && eu_monitor_no_asdu_after "$kill_epoch"
+  eu_kill_tuple "$kali_tuple" && eu_monitor_finish 3 30 "$kill_started_ms" &&
+    eu_monitor_no_asdu_after "$kill_epoch"
 }
 
 eu_gate_G7() {
@@ -127,8 +127,8 @@ eu_gate_G7() {
   fi
   eu_apply_custom "$g7_policy" "G7 improved minus CC allow" || return
   eu_check_nft_chain G7-custom || true
-  if ! eu_read_sessions 2404 "$CC_IP" \
-    || ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
+  if ! eu_read_sessions 2404 "$CC_IP" ||
+    ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then
     fail "G7 session lookup did not yield exactly one CC-to-RTU tuple"
     return
   fi
@@ -136,7 +136,7 @@ eu_gate_G7() {
   g7_kill_started_ms=$(eu_now_ms) || g7_kill_started_ms=""
   if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
     fail "G7 cannot establish monotonic timeout before conntrack kill"
-  elif eu_execute_step cut-session "G7 CC session cut" && eu_wait_for_operator \
+  elif eu_kill_tuple "$SESSION_TUPLE" && eu_wait_for_operator \
     '.link.state != "started" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' \
     30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
     g7_loss_verified=1
@@ -145,7 +145,7 @@ eu_gate_G7() {
 }
 
 eu_gate_G8() {
-  local fault_step g8_before g8_epoch g8_points active g8_truth g8_operator current_points current_epoch g8_seq1 g8_seq2
+  local g8_before g8_epoch g8_points active g8_truth g8_operator current_points current_epoch g8_seq1 g8_seq2
   if [ "$g7_loss_verified" -ne 1 ]; then
     fail "G8 cannot test cache isolation without the verified G7 CC disconnect"
     return
@@ -157,18 +157,19 @@ eu_gate_G8() {
   g8_before="$API_BODY"
   g8_epoch=$(printf '%s' "$g8_before" | jq -r '.cache_epoch // empty')
   g8_points=$(eu_get_point_snapshot "$g8_before") || g8_points=""
-  if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] \
-    || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
+  if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] ||
+    ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
     fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
   fi
   for active in true false true; do
-    if [ "$active" = true ]; then fault_step=local-trip; else fault_step=clear-fault; fi
     if [ "$active" = true ]; then
-      eu_device_step clear-fault "G8 clear before trip" || return
-      eu_device_step restore-device "G8 reclose before trip" || return
+      eu_action_step process clear_fault "G8 clear before trip" || return
+      eu_action_step breaker reset "G8 reclose before trip" || return
       eu_wait_for_field '.devices["breaker-1"].measurements.valid == true' 10 "G8 reclose solved" || return
+      eu_action_step process fault_s1 "G8 sim fault active=$active" || true
+    else
+      eu_action_step process clear_fault "G8 sim fault active=$active" || true
     fi
-    eu_device_step "$fault_step" "G8 sim fault active=$active" || true
     if [ "$active" = "true" ]; then
       eu_wait_for_field '.devices["breaker-1"].position == "open" and .devices["breaker-1"].lockout == true and .devices["breaker-1"].protection_tripped == true and .process.buses.s1.live == false and .devices["breaker-1"].measurements.current_a < 0.1 and .process.devices["feeder-breaker"].delivered == true and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' 10 "G8 local protection and open solver" || true
     else
@@ -186,8 +187,8 @@ eu_gate_G8() {
     g8_operator="$API_BODY"
     current_points=$(eu_get_point_snapshot "$g8_operator") || current_points=""
     current_epoch=$(printf '%s' "$g8_operator" | jq -r '.cache_epoch // empty')
-    if [ -n "$g8_points" ] && [ -n "$current_points" ] \
-      && [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
+    if [ -n "$g8_points" ] && [ -n "$current_points" ] &&
+      [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
       pass "G8 operator values/received_at/source_time and cache_epoch unchanged with fault active=$active"
     else
       fail "G8 operator cache changed while CC path denied with fault active=$active"
@@ -212,8 +213,8 @@ eu_gate_G8() {
     return
   fi
   g8_seq2=$(printf '%s' "$API_BODY" | jq -r '.process.solve_seq // empty')
-  if [[ "$g8_seq1" =~ ^[0-9]+$ ]] && [[ "$g8_seq2" =~ ^[0-9]+$ ]] \
-    && [ "$g8_seq2" -gt "$g8_seq1" ]; then
+  if [[ "$g8_seq1" =~ ^[0-9]+$ ]] && [[ "$g8_seq2" =~ ^[0-9]+$ ]] &&
+    [ "$g8_seq2" -gt "$g8_seq1" ]; then
     pass "G8 solver solve_seq advances independently while operator cache remains stale"
   else
     fail "G8 solver solve_seq failed to advance ($g8_seq1 -> $g8_seq2)"
@@ -252,5 +253,7 @@ eu_gate_G9() {
 }
 
 eu_gate_G10() {
-  eu_validate_scenario PASS || true
+  eu_reset_all || return
+  eu_apply_named improved || return
+  eu_validate_scenario PASS eu-validation-evidence
 }

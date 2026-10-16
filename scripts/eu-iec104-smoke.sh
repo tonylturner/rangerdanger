@@ -15,8 +15,6 @@ API="${RANGERDANGER_API:-http://localhost:8088}"
 # shellcheck disable=SC2034
 JWT_SECRET="${CONTAIND_JWT_SECRET:-rangerdanger-dev}"
 PACKAGE_ID="eu-iec104-substation"
-# shellcheck disable=SC2034
-SCENARIO_ID="iec104-telecontrol-boundary"
 RTU_IP="10.30.30.20"
 CC_IP="10.60.60.20"
 BREAKER_IP="10.40.40.20"
@@ -143,12 +141,12 @@ EU IEC104 gate plan (no Docker or backend access):
   G2  GPS pause/unpause and timed source_time_invalid transitions
   G3  Open/close/no-op/lockout, both-hop capture, TypeID 46 select/execute and Modbus FC6 decode
   G4  Kali GI succeeds under weak
-  G5  Improved Kali connect fails; fresh DENY; CC stays started; validator FAIL
+  G5  Improved Kali connect fails; fresh DENY; CC stays started (physical denial only)
   G6  Earlier Kali conntrack rows drain; established Kali monitor survives improved, exact tuple kill, exits 3, no later ASDUs, reconnect fails
   G7  Remove CC allow; read back; kill exact tuple; CC points link_lost
   G8  Fault/trip changes truth and solver while CC cache stays unchanged (needs G7)
   G9  Restore improved; CC reconnect/GI and truth converge (needs G7)
-  G10 EU validator PASS
+  G10 Reset to closed-breaker + supply state, then eu-validation-evidence validator PASS
   G11 Remove RTU-to-breaker allow; exact Modbus kill; stale/reset/recover
   G12 OpenDSS pause yields measurement_invalid only; unpause recovers
   G13 RTU pause, process fault/breaker reset each awaiting its first_solve, CC link loss, new connection + GI, audit
@@ -157,10 +155,14 @@ EU IEC104 gate plan (no Docker or backend access):
   G17 Real PLC scan-thread freeze; responsive Modbus, heartbeat stale and recovery
   G18 Historian CC outage gap, schema-2 snapshots and ingest isolation
   G19 Improved denies Kali solver and historian ingest
-  G20 Lab 2 student walk: initial FAIL, station conduits, all checks PASS, weak + reset
-  G21 Lab 3 student walk: initial FAIL, RMU switching, all checks PASS, weak + reset
-  G22 Lab 4 student walk: initial FAIL, tap/PLC/history/time, all checks PASS, weak + reset
+  G20 eu-baseline-assessment validator: weak baseline, traffic capture and student walk
+  G21 eu-firewall-implementation validator: weak-to-improved conduit and policy walk
+  G22 eu-hardening-configurations validator: IEC104 wire attack, restore, harden and retest
   G23 Embedded containd bundle/session, weak/improved management INPUT isolation, loopback-only engine, backend apply/reset/events/flows
+  G24 eu-vendor-rdp-compromise validator: enterprise-to-vendor and vendor-to-field walk
+  G25 eu-validation-evidence validator: hardened report and continuity walk
+  G26 eu-segmentation-requirements served decisions and package-bound catalog
+  G27 eu-remediation-planning served decision step and package-bound catalog
   G14 Device reset recovers the chain; apply weak
   EXIT Keep evidence on failure; restore weak + device reset; unpause services paused by this run
 PLAN
@@ -179,7 +181,7 @@ eu_run_gate() {
 eu_gate_main() {
   local gate
   case "${1:-}" in
-    --dry-run|--list)
+    --dry-run | --list)
       if [ "$#" -ne 1 ]; then
         echo "usage: $0 [--dry-run|--list]" >&2
         exit 2
@@ -195,7 +197,7 @@ eu_gate_main() {
       ;;
   esac
   eu_gate_preflight
-  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G15 G16 G17 G18 G19 G20 G21 G22 G23 G14; do
+  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27 G14; do
     eu_run_gate "$gate"
   done
   exit 0

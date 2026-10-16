@@ -37,6 +37,37 @@ scenarios: ../../scenarios                    # directory of <slug>.yml; the onl
 capabilities: [process.electrical, policy.containd, audit.device-control, capture.firewall]
 ```
 
+The EU package binds an additional `curriculum.yml` through `package.yml`:
+its `curriculum.roles` names the seven exercises, and the curriculum file
+owns the package-level budget, teams, action catalog, requirements and
+readiness mappings. In particular, `eu-segmentation-requirements.yml`
+holds the design/readiness prompt fences while
+`eu-remediation-planning.yml` has a single `action.type: decision` step;
+neither embeds a second labor/action catalog. The package binding is
+defined by [`backend/internal/labs/package.go`](../backend/internal/labs/package.go#L68-L78),
+and the active package's curriculum is included by
+[`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26).
+
+- `packages/eu-iec104-substation/curriculum.yml` is bound by
+  `packages/eu-iec104-substation/package.yml`; its `roles` map design,
+  planning, implementation and validator roles to their served EU
+  exercises. The loader validates required roles and decision options
+  against the requirements exercise
+  ([`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L131-L139),
+  [`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L171-L191)).
+
+The EU package serves these seven scenario files:
+
+| Exercise | Scenario ID | Validator |
+|---|---|---|
+| Baseline traffic analysis | `eu-baseline-assessment` | `eu-baseline-assessment` |
+| Segmentation requirements | `eu-segmentation-requirements` | — |
+| Remediation planning | `eu-remediation-planning` | — |
+| Firewall policy implementation | `eu-firewall-implementation` | `eu-firewall-implementation` |
+| Protocol-hardened configurations | `eu-hardening-configurations` | `eu-hardening-configurations` |
+| Vendor remote-access compromise | `eu-vendor-rdp-compromise` | `eu-vendor-rdp-compromise` |
+| Testing and validation evidence | `eu-validation-evidence` | `eu-validation-evidence` |
+
 - Every file (package, topology, scenario) is decoded strictly: an
   unknown field is a load error.
 - `manifest.json` is the package's deployment contract. Its service keys,

@@ -1,11 +1,12 @@
 # shellcheck shell=bash
-# Student-route curriculum walks. No sim action or field truth supplies CC data.
-# Each gate resets its own baseline and restores it even after an aborted walk.
+# Student-route walks for the five served EU validator slots and two planning slots.
+# Loaded by eu-iec104-smoke.sh; sourcing only defines helpers and gates.
 
 eu_lab_exec() {
-  local node="$1" command="$2" expected="${3:-0}" body
+  local node="$1" command="$2" expected="${3:-0}" timeout="${4:-25}" body
   printf 'RUN %s: %s\n' "$node" "$command"
-  body=$(jq -nc --arg command "$command" '{command:$command,timeout_sec:25}') || return
+  body=$(jq -nc --arg command "$command" --argjson timeout "$timeout" \
+    '{command:$command,timeout_sec:$timeout}') || return
   eu_api_post "/api/workshop/nodes/$node/exec" "$body" || return
   printf 'RESULT %s\n' "$API_BODY"
   if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e --argjson code "$expected" \
@@ -17,7 +18,8 @@ eu_lab_exec() {
 
 eu_lab_cc() {
   local point="$1" operation="$2" expected="${3:-completed}" result
-  eu_wait_for_operator '.link.state == "started" and all(.points[]; good)' 15 "student command fresh feedback" || return
+  eu_wait_for_operator '.link.state == "started" and all(.points[]; good)' \
+    15 "student command fresh feedback" || return
   eu_lab_exec cc-1 "wget -qO- --header 'Content-Type: application/json' --post-data '{\"point\":\"$point\",\"operation\":\"$operation\"}' http://10.99.99.21:8080/api/commands" || return
   result=$(printf '%s' "$API_BODY" | jq -er '.stdout') || return
   if ! printf '%s' "$result" | jq -e --arg point "$point" --arg op "$operation" --arg result "$expected" \
@@ -28,231 +30,345 @@ eu_lab_cc() {
   pass "student CC $point $operation $expected"
 }
 
-# Log every visited step, including observational/planning steps. Execute each
-# authored mutation once, except when the caller explicitly defers an action.
+# Resolve every step by the ID authored in its served scenario. The API's
+# executor accepts an array index, so derive it from the current response.
 eu_lab_step() {
-  local index="$1" mode="${2:-execute}" step id type
-  eu_api_get "/api/scenarios/$SCENARIO_ID" || return
-  step=$(printf '%s' "$API_BODY" | jq -ec --argjson index "$index" \
-    '.steps | fromjson | if length == 10 then .[$index] else error("expected ten steps") end') || return
-  id=$(printf '%s' "$step" | jq -er '.id') || return
-  printf 'WALK %s step %d %s: %s\n' "$SCENARIO_ID" "$((index + 1))" "$id" "$(printf '%s' "$step" | jq -r '.title')"
+  local scenario="$1" step_id="$2" step type index title
+  eu_api_get "/api/scenarios/$scenario" || return
+  step=$(printf '%s' "$API_BODY" | jq -ce --arg id "$step_id" '
+    .steps | fromjson | map(select(.id == $id))
+    | if length == 1 then .[0] else error("step ID must resolve exactly once") end') || {
+    fail "$scenario cannot resolve authored step $step_id"
+    return 1
+  }
   type=$(printf '%s' "$step" | jq -r '.action.type // "manual"') || return
-  case "$type:$mode" in
-    manual:*|decision:*|*:defer) return 0 ;;
-    *) eu_execute_step "$id" "$SCENARIO_ID step $((index + 1))" "$SCENARIO_ID" ;;
+  title=$(printf '%s' "$step" | jq -r '.title // .id') || return
+  index=$(printf '%s' "$API_BODY" | jq -er --arg id "$step_id" '
+    .steps | fromjson | to_entries | map(select(.value.id == $id))
+    | if length == 1 then .[0].key else error("step ID must resolve exactly once") end') || return
+  printf 'WALK %s %s (step index %s): %s\n' "$scenario" "$step_id" "$index" "$title"
+  case "$type" in
+    manual | decision) return 0 ;;
+    *) eu_execute_step "$step_id" "$scenario step $step_id" "$scenario" ;;
   esac
 }
 
-eu_lab_tap() {
-  local tap="$1" budget="$2"
-  eu_wait_for_operator "point(\"oltc-1-tap\").value == {value:$tap,transient:false}
-    and all(.points[]; good)" "$budget" "student observed settled tap $tap" || return
-  pass "student observed settled tap $tap with GOOD full-station quality"
-}
-
-eu_lab_vendor() {
-  local ip="$1" value="$2" expected="${3:-0}"
-  eu_lab_exec vendor-jump-1 "mbpoll -m tcp -a 1 -0 -r 0 -t 4 -1 -o 3 $ip $value" "$expected"
-}
-
-eu_lab_baseline_exports() {
-  eu_lab_exec cc-1 'wget -qO- http://10.99.99.21:8080/api/state' || return
-  eu_lab_exec cc-1 "wget -qO- 'http://10.99.99.21:8080/api/journal?after=0'"
-}
-
-eu_lab_probe_matrix() {
-  local node
-  for node in kali-1 vendor-jump-1 eng-ws-1; do
-    eu_lab_exec "$node" 'nmap -Pn -sT -p 502 10.40.40.20-23' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT -p 2404 10.30.30.20' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT -p 8080 10.30.30.30' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT -p 8080,8081 10.70.70.40' || return
-  done
-  eu_lab_exec kali-1 'mbpoll -m tcp -a 1 -0 -r 0 -c 3 -t 3 -1 10.40.40.21' || return
-  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 gi --json'
-}
-
-eu_lab2_walk() {
-  local policy since until connection_seq
-  eu_lab_step 0 || return
-  eu_lab_baseline_exports || return
-  eu_lab_step 1 || return
-  eu_api_post /api/pcap/start '{"duration_sec":15,"name":"eu-lab2"}' || return
-  [ "$HTTP_STATUS" = 200 ] || return 1
-  sleep 16
-  eu_api_get /api/pcap/status || return
-  if ! printf '%s' "$API_BODY" | jq -e '.file_ready == true' >/dev/null; then
-    fail "lab2 portal capture not ready: $API_BODY"; return 1
-  fi
-  curl -fsS --max-time 15 "$API/api/pcap/download" -o "$TMP_DIR/lab2.pcap" || return
-  [ -s "$TMP_DIR/lab2.pcap" ] || return 1
-  pass "lab2 portal fifteen-second PCAP downloaded"
-  eu_lab_step 2 || return
-  eu_lab_probe_matrix || return
-  eu_lab_step 3 || return
-  eu_lab_step 4 || return
-  printf 'PLAN core 60h plus endpoint authority review 20h; 40h per role; same-subnet redesign deferred\n'
-  eu_lab_step 5 || return
-  # The curriculum explicitly requires stopping here if the supplied policy
-  # lacks logged HTTP denies. Do not turn a default-drop timeout into evidence.
-  policy=$(eu_firewall_config) || return
-  if ! printf '%s' "$policy" | jq -e '
-    [.. | objects | select(.action? == "DENY" and .log? == true)
-      | .protocols[]? | select(.name == "tcp") | .port | tostring] as $ports
-    | ($ports | index("8080")) != null and ($ports | index("8081")) != null' >/dev/null; then
-    fail "lab 2 step 6 hold: supplied policy lacks explicit logged HTTP denies; policy files are outside this lane"
-    return 1
-  fi
-  # Roll back, prove the restored baseline, then reapply the reviewed policy.
-  eu_apply_named weak || return
-  eu_lab_probe_matrix || return
-  eu_lab_step 5 || return
-  since=$(eu_utc)
-  eu_get_operator || return
-  connection_seq=$(printf '%s' "$API_BODY" | jq -er '.link.connection_seq') || return
-  # A tuple deletion under an ALLOW need not interrupt the TCP endpoints.
-  # Follow the authored temporary deny/cut/recover sequence to earn link_up.
-  eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$TMP_DIR/lab2-no-cc.json" || return
-  eu_apply_custom "$TMP_DIR/lab2-no-cc.json" "lab2 proof-window CC interruption" || return
-  eu_lab_step 6 || return
-  eu_wait_for_operator 'all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' 15 "lab2 proof-window link loss" || return
-  eu_apply_named improved || return
-  eu_wait_for_operator ".link.connection_seq > $connection_seq and .link.state == \"started\"
-    and .link.gi.state == \"complete\" and all(.points[]; good)" 20 "lab2 new proof-window connection and GI" || return
-  eu_lab_baseline_exports || return
-  eu_lab_step 7 || return
-  eu_lab_tap 1 40 || return
-  eu_lab_exec kali-1 'curl -fsS http://10.70.70.40:8080/api/points' || return
-  until=$(eu_utc)
-  eu_lab_exec kali-1 "curl -fsS 'http://10.70.70.40:8080/api/history?point=oltc-1-tap&since=$since&until=$until'" || return
-  eu_lab_step 8 || return
-  # Port probes (rather than Modbus reads) generate the negative matrix.
-  local node
-  for node in kali-1 vendor-jump-1 eng-ws-1; do
-    eu_lab_exec "$node" 'nmap -Pn -sT --max-retries 0 --host-timeout 20s -p 502 10.40.40.20-23' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT --max-retries 0 --host-timeout 20s -p 2404 10.30.30.20' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT --max-retries 0 --host-timeout 20s -p 8080 10.30.30.30' || return
-    eu_lab_exec "$node" 'nmap -Pn -sT --max-retries 0 --host-timeout 20s -p 8081 10.70.70.40' || return
-  done
-  eu_lab_exec eng-ws-1 'curl -fsS http://10.30.30.30:8080/' || return
-  eu_lab_step 9
-}
-
-eu_lab3_walk() {
-  eu_lab_step 0 || return
-  eu_lab_baseline_exports || return
-  eu_lab_step 1 || return
-  printf 'PREDICT RMU1 open loses S2 only; live-live tie close refused; tie open after transfer loses S2 only\n'
-  eu_lab_step 2 || return
-  eu_lab_cc rmu-1-command open || return
-  eu_wait_for_operator 'point("rmu-1-section-kv").value < 0.1 and point("rmu-2-source-kv").value > 18' 10 "RMU1 open S2 dead S3 live" || return
-  eu_lab_cc rmu-2-command close || return
-  eu_wait_for_operator 'point("rmu-2-section-kv").value > 18' 10 "S2 restored from F2" || return
-  eu_lab_cc rmu-2-command open || return
-  eu_lab_cc rmu-1-command close || return
-  eu_lab_step 3 || return
-  eu_lab_cc rmu-1-command open rejected || return
-  eu_lab_step 4 || return
-  eu_lab_cc rmu-2-command close rejected || return
-  eu_lab_step 5 || return
-  eu_wait_for_operator 'point("feeder-protection-trip").value == true
-    and point("rmu-1-fault-passage").value == false
-    and point("rmu-1-source-kv").value < 0.1
-    and all(.points[]; good)' 15 "S1 trip and clear downstream FPI" || return
-  eu_lab_step 6 || return
-  eu_lab_cc rmu-1-command open || return
-  eu_lab_cc rmu-2-command close || return
-  eu_lab_step 7 || return
-  eu_lab_vendor 10.40.40.22 1 || return
-  eu_wait_for_operator 'point("rmu-2-position").value == "open"
-    and point("rmu-2-section-kv").value < 0.1 and all(.points[]; good)' 10 "vendor-open tie has fresh dead-section measurements" || return
-  eu_lab_cc rmu-2-command close || return
-  eu_lab_step 8 || return
-  eu_lab_vendor 10.40.40.22 1 1 || return
-  eu_lab_cc rmu-2-command open || return
-  eu_wait_for_operator 'point("rmu-2-position").value == "open"
-    and point("rmu-2-section-kv").value < 0.1 and all(.points[]; good)' 10 "CC-open tie has fresh dead-section measurements" || return
-  eu_lab_cc rmu-2-command close || return
-  eu_lab_step 9
-}
-
-eu_lab4_clock_modes() {
-  # The authored hold is needed for GPS polling, not a substitute for a check.
-  sleep 15
-  eu_lab_cc oltc-1-mode manual || return
-  sleep 2
-  eu_lab_cc oltc-1-mode auto || return
-  sleep 2
-}
-
-eu_lab4_walk() {
-  local since until
-  since=$(eu_utc)
-  eu_lab_step 0 || return
-  eu_lab_exec plc-1 'cat /var/lib/openplc-eu-seed.sha256' || return
-  eu_lab_baseline_exports || return
-  eu_lab_step 1 || return
-  eu_lab_step 2 || return
-  eu_lab_tap 1 40 || return
-  sleep 12
-  eu_lab_tap 1 5 || return
-  eu_lab_step 3 || return
-  eu_lab_tap 8 130 || return
-  sleep 12
-  eu_lab_tap 8 5 || return
-  eu_lab_step 4 || return
-  eu_lab_tap -7 240 || return
-  eu_lab_step 5 || return
-  eu_lab_tap 0 130 || return
-  eu_lab_cc oltc-1-mode manual || return
-  for _ in 1 2 3 4 5 6 7 8; do eu_lab_cc oltc-1-step lower || return; done
-  eu_lab_cc oltc-1-step lower rejected || return
-  eu_lab_cc oltc-1-step raise || return
-  eu_lab_cc oltc-1-mode auto || return
-  eu_lab_tap 0 130 || return
-  eu_lab_cc oltc-1-mode manual || return
-  eu_lab_step 6 || return
-  eu_lab_vendor 10.40.40.23 1 || return
-  eu_lab_tap -1 10 || return
-  eu_lab_cc oltc-1-step raise || return
-  eu_lab_step 7 defer || return
-  eu_apply_named improved || return
-  eu_lab_vendor 10.40.40.23 1 1 || return
-  eu_lab_cc oltc-1-step lower || return
-  eu_lab_cc oltc-1-step raise || return
-  eu_lab_cc oltc-1-mode auto || return
-  eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$TMP_DIR/lab4-no-cc.json" || return
-  eu_apply_custom "$TMP_DIR/lab4-no-cc.json" "lab4 CC outage" || return
-  eu_execute_step source-pin-and-cc-outage "lab4 outage session cut" "$SCENARIO_ID" || return
-  eu_wait_for_operator 'all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' 15 "lab4 CC outage stale" || return
-  sleep 5
-  eu_apply_named improved || return
-  eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all(.points[]; good)' 20 "lab4 recovery GI" || return
-  until=$(eu_utc)
-  # The authored portal trend uses this read proxy; improved does not grant
-  # the CC teaching host the enterprise historian-read conduit.
-  eu_api_get "/api/historian/history?point=oltc-1-bus-kv&since=$since&until=$until" || return
-  eu_lab_step 8 || return
-  eu_lab4_clock_modes || return
-  eu_lab_step 9 || return
-  eu_lab4_clock_modes
-}
-
-eu_lab_gate() {
-  local SCENARIO_ID="$1" walk="$2" result=0
-  eu_apply_named weak && eu_reset_all && eu_validate_scenario FAIL && "$walk" && eu_validate_scenario PASS || result=1
-  # Keep the validator result in the API log before clearing physical evidence.
-  if [ "$result" -ne 0 ]; then
-    if eu_api_get "/api/scenarios/$SCENARIO_ID/validate" 30; then
-      printf 'STOPPED %s validator: %s\n' "$SCENARIO_ID" "$API_BODY"
+eu_lab_wait_traffic_quiescent() {
+  local label="$1" attempt
+  for ((attempt = 0; attempt < 35; attempt++)); do
+    eu_api_get /api/traffic/status || return
+    if printf '%s' "$API_BODY" | jq -e '.generating == false' >/dev/null; then
+      return 0
     fi
+    sleep 1
+  done
+  fail "$label scenario traffic did not finish within 35s"
+  return 1
+}
+
+eu_lab_wait_capture() {
+  local label="$1"
+  eu_lab_wait_traffic_quiescent "$label" || return
+  eu_api_post /api/traffic/generate '{"duration_sec":30}' || return
+  [ "$HTTP_STATUS" = 200 ] || {
+    fail "$label scenario traffic did not start: HTTP $HTTP_STATUS $API_BODY"
+    return 1
+  }
+  # Capture from fw-1 as the scenario directs. The bounded run leaves time for
+  # the asynchronous traffic recipe while staying inside the exec/API budget.
+  eu_lab_exec fw-1 "tcpdump -i any -nn 'not host 127.0.0.1' -G 12 -W 1 -w /data/captures/baseline.pcap" 0 25 || return
+  eu_lab_wait_traffic_quiescent "$label capture" || return
+  eu_lab_exec fw-1 'ls -lh /data/captures/baseline.pcap' || return
+  pass "$label student traffic and firewall capture completed"
+}
+
+# Every curriculum validator observes a fresh reset pre-state. A second reset
+# separates PASS evidence from the earlier weak-policy FAIL attempt.
+eu_lab_gate() {
+  local scenario="$1" walk="$2" policy="$3" prepare="$4" result=0
+  if ! eu_reset_all || ! eu_apply_named weak ||
+    ! eu_validate_scenario FAIL "$scenario" ||
+    ! "$walk" "$scenario"; then
+    result=1
+  else
+    if ! eu_reset_all || ! eu_apply_named "$policy" || ! "$prepare" "$scenario" ||
+      ! eu_validate_scenario PASS "$scenario"; then
+      result=1
+    fi
+  fi
+  if [ "$result" -ne 0 ] && eu_api_get "/api/scenarios/$scenario/validate" 30; then
+    printf 'STOPPED %s validator: %s\n' "$scenario" "$API_BODY"
   fi
   eu_apply_named weak || result=1
   eu_reset_all || result=1
   return "$result"
 }
 
-eu_gate_G20() { eu_lab_gate eu-station-conduits eu_lab2_walk; }
-eu_gate_G21() { eu_lab_gate eu-rmu-switching eu_lab3_walk; }
-eu_gate_G22() { eu_lab_gate eu-oltc-plc-historian eu_lab4_walk; }
+eu_lab_baseline_capture_analysis() {
+  local scenario="$1"
+  eu_lab_step "$scenario" generate-scenario-traffic || return
+  eu_lab_wait_capture "$scenario" || return
+  eu_lab_step "$scenario" capture-traffic-at-the-firewall || return
+  eu_lab_step "$scenario" analyze-cross-zone-flows || return
+  eu_lab_exec eng-ws-1 'ls -lh /home/abc/pcaps/baseline.pcap' || return
+  eu_lab_exec eng-ws-1 'tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip' || return
+  eu_lab_exec eng-ws-1 'tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,"tcp.port==2404","tcp.port==502","tcp.port==8080","tcp.port==8081"' || return
+  eu_lab_exec eng-ws-1 "tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.20.20.0/24 and ip.dst==10.30.30.0/24'" || return
+  eu_lab_exec eng-ws-1 "tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.10.10.0/24 and (ip.dst==10.30.30.0/24 or ip.dst==10.40.40.0/24)'"
+}
+
+eu_lab_baseline_walk() {
+  local scenario="$1"
+  eu_lab_step "$scenario" walk-the-topology-and-inspect-the-crossings || return
+  eu_lab_baseline_capture_analysis "$scenario" || return
+  eu_lab_step "$scenario" critical-conduits-what-must-flow || return
+  eu_lab_step "$scenario" findings-what-you-observed || return
+  eu_lab_step "$scenario" probe-for-latent-exposure || return
+  eu_lab_exec kali-1 'nmap -p 2404 10.30.30.20 --max-retries 1 -T4' || return
+  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 gi --json' || return
+  eu_lab_exec kali-1 'nmap -p 502 10.40.40.20 --max-retries 1 -T4' || return
+  eu_lab_exec kali-1 'mbpoll -m tcp -a 1 -t 3 -0 -r 0 -c 11 -1 10.40.40.20' || return
+  eu_lab_step "$scenario" transition-decide-what-to-fix-first
+}
+
+eu_lab_baseline_prepare() {
+  eu_lab_baseline_capture_analysis "$1"
+}
+
+eu_lab_wait_good_cc() {
+  eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
+    30 "student route current CC GI and GOOD observations"
+}
+
+eu_lab_positive_conduits() {
+  eu_lab_exec kali-1 'curl -fsS --max-time 3 http://10.70.70.40:8080/api/points' || return
+  eu_lab_exec eng-ws-1 'curl -fsS --max-time 3 http://10.30.30.30:8080/login' || return
+  eu_lab_cc oltc-1-mode manual || return
+  eu_lab_cc oltc-1-step lower || return
+  eu_lab_cc oltc-1-mode auto || return
+  eu_lab_wait_good_cc
+}
+
+eu_lab_implementation_walk() {
+  local scenario="$1"
+  eu_lab_step "$scenario" exercise-overview || return
+  eu_lab_step "$scenario" verify-access-to-containd || return
+  eu_lab_step "$scenario" phase-1-verify-current-access-under-the-weak-baseline || return
+  eu_lab_step "$scenario" phase-2-remove-broad-trust-and-establish-default-deny || return
+  eu_lab_step "$scenario" implement-rules || return
+  eu_lab_step "$scenario" phase-4-enable-logging-and-visibility || return
+  eu_lab_step "$scenario" test-positive || return
+  eu_lab_positive_conduits || return
+  eu_lab_step "$scenario" test-negative || return
+  eu_lab_step "$scenario" export-your-policy
+}
+
+eu_lab_implementation_prepare() {
+  eu_lab_step "$1" test-positive || return
+  eu_lab_positive_conduits
+}
+
+eu_lab_hardening_walk() {
+  local scenario="$1" revision
+  eu_lab_step "$scenario" verify-normal-operations || return
+  eu_lab_step "$scenario" attack-iec104-breaker-open || return
+  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
+  eu_wait_for_field '.devices["breaker-1"].position == "open" and .devices["breaker-1"].protection_tripped == true
+    and .process.buses.s1.live == false' 15 "student IEC104 attack opens and trips the breaker" || return
+  eu_lab_step "$scenario" restore-the-substation || return
+  eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false
+    and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
+    15 "student breaker restore and process solve" || return
+  eu_lab_step "$scenario" apply-the-hardened-policy || return
+  eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return
+  revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
+  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' 1 || return
+  eu_assert_unchanged_breaker "$revision" "student hardened IEC104 retest" || return
+  eu_lab_step "$scenario" validate
+}
+
+eu_assert_unchanged_breaker() {
+  local revision="$1" label="$2" current
+  eu_get_field || return
+  current=$(printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"] |
+    select(.position == "closed" and .protection_tripped == false) | .revision') || {
+    fail "$label changed the breaker or returned no revision"
+    return 1
+  }
+  if [ "$current" = "$revision" ]; then
+    pass "$label left breaker revision $revision unchanged"
+  else
+    fail "$label changed breaker revision $revision -> $current"
+    return 1
+  fi
+}
+
+eu_lab_hardening_prepare() {
+  local scenario="$1" revision
+  eu_lab_wait_good_cc || return
+  revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
+  eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' 1 || return
+  eu_assert_unchanged_breaker "$revision" "post-hardening IEC104 retest" || return
+  eu_lab_step "$scenario" validate
+}
+
+eu_lab_nmap_vendor() {
+  local expected="$1"
+  eu_lab_exec kali-1 'nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4' || return
+  if ! printf '%s' "$API_BODY" | jq -e --arg expected "$expected" '
+    .stdout as $out
+    | if $expected == "open" then
+        ($out | contains("3389/tcp open")) and ($out | contains("5900/tcp open"))
+      else
+        ($out | contains("3389/tcp filtered")) and ($out | contains("5900/tcp filtered"))
+      end
+  ' >/dev/null; then
+    fail "vendor path nmap expected both RDP/VNC ports $expected: $API_BODY"
+    return 1
+  fi
+  pass "enterprise-to-vendor RDP/VNC ports are $expected"
+}
+
+# The FC6 write runs from the served vendor-jump foothold; read-only audit
+# evidence proves the accepted request's source without substituting sim truth.
+eu_lab_vendor() {
+  local target="$1" value="$2" expected_exit="${3:-0}" before_seq
+  if [ "$expected_exit" = 0 ]; then
+    eu_management rmu-1 GET '/api/audit?after=0' || return
+    before_seq=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || {
+      fail "vendor FC6 cannot establish an RMU audit cursor"
+      return 1
+    }
+  fi
+  eu_lab_exec vendor-jump-1 \
+    "mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 $target $value" "$expected_exit" || return
+  if [ "$expected_exit" = 0 ]; then
+    eu_management rmu-1 GET "/api/audit?after=$before_seq" || return
+    if ! printf '%s' "$API_BODY" | jq -e --argjson cursor "$before_seq" '
+      [.entries[] | select(.seq > $cursor and .operation == "open" and .result == "accepted"
+        and .after.position == "open" and .context.protocol == "modbus"
+        and (.context.peer | startswith("10.20.20.10:")))] | length == 1
+    ' >/dev/null; then
+      fail "vendor FC6 did not produce an accepted, source-attributed RMU1 OPEN audit entry"
+      return 1
+    fi
+    pass "vendor FC6 RMU1 OPEN is attributed to vendor-jump 10.20.20.10"
+  fi
+}
+
+eu_lab_vendor_walk() {
+  local scenario="$1" before after
+  eu_lab_step "$scenario" confirm-the-lateral-path-is-open || return
+  eu_lab_nmap_vendor open || return
+  eu_lab_step "$scenario" pivot-via-rdp-or-vnc || return
+  eu_lab_step "$scenario" use-the-vendor-foothold-to-attack-field-devices || return
+  eu_lab_vendor 10.40.40.21 1 || return
+  eu_get_field || return
+  if ! printf '%s' "$API_BODY" | jq -e '.devices["rmu-1"].position == "open"' >/dev/null; then
+    fail "vendor-originated FC6 did not open RMU1"
+    return 1
+  fi
+  eu_lab_step "$scenario" restore-service || return
+  eu_wait_for_field '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"
+    and .process.truth_stale == false' 15 "student vendor lab device restore" || return
+  eu_lab_step "$scenario" apply-hardened-policy || return
+  eu_lab_nmap_vendor filtered || return
+  before=$(eu_get_field && printf '%s' "$API_BODY" | jq -ec \
+    '[.devices["rmu-1"].revision,.devices["rmu-2"].revision]') || return
+  eu_lab_vendor 10.40.40.21 1 1 || return
+  after=$(eu_get_field && printf '%s' "$API_BODY" | jq -ec \
+    '[.devices["rmu-1"].revision,.devices["rmu-2"].revision]') || return
+  if [ "$before" != "$after" ] || ! printf '%s' "$API_BODY" | jq -e \
+    '.devices["rmu-1"].position == "closed" and .devices["rmu-2"].position == "open"' >/dev/null; then
+    fail "vendor-originated retest changed the restored RMU state"
+    return 1
+  fi
+  pass "vendor-originated retest left both RMU revisions unchanged"
+  eu_lab_step "$scenario" re-attempt-the-pivot || return
+  eu_lab_step "$scenario" validate
+}
+
+eu_lab_vendor_prepare() {
+  eu_lab_step "$1" validate
+}
+
+eu_lab_validation_walk() {
+  local scenario="$1"
+  eu_apply_named improved || return
+  eu_lab_step "$scenario" confirm-hardened-config-is-active || return
+  eu_lab_step "$scenario" generate-the-validation-report || return
+  eu_api_post /api/firewall/validation-report '{}' || return
+  if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e \
+    '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null; then
+    fail "student validation report did not prove the full matrix: HTTP $HTTP_STATUS $API_BODY"
+    return 1
+  fi
+  pass "student validation report is PASS with no skipped probes"
+  eu_lab_step "$scenario" reflection-what-did-your-plan-close
+}
+
+eu_lab_validation_prepare() {
+  eu_lab_wait_good_cc
+}
+
+eu_curriculum_slot() {
+  local role="$1" scenario="$2" expected_decisions="$3" packages scenario_body description
+  eu_api_get /api/packages || return
+  packages="$API_BODY"
+  if ! printf '%s' "$packages" | jq -e --arg scenario "$scenario" --arg role "$role" '
+    [.[] | select(.id == "eu-iec104-substation" and .active == true)] as $active
+    | ($active | length) == 1
+      and $active[0].curriculum.roles[$role] == $scenario
+      and ($active[0].curriculum.catalog | type == "array" and length > 0)
+      and $active[0].curriculum.budgetHours == 500
+      and ($active[0].curriculum.teams | length) == 4
+  ' >/dev/null; then
+    fail "$scenario is not bound to a served EU decision catalog role"
+    return 1
+  fi
+  eu_api_get "/api/scenarios/$scenario" || return
+  scenario_body="$API_BODY"
+  description=$(printf '%s' "$scenario_body" | jq -er '
+    [.steps | fromjson[] | .description // ""] | join("\n")') || return
+  if [ "$expected_decisions" = planning ]; then
+    if ! printf '%s' "$scenario_body" | jq -e '
+      ([.steps | fromjson[] | select(.action.type == "decision")] | length) == 1
+    ' >/dev/null; then
+      fail "$scenario does not serve its one curriculum-backed decision step"
+      return 1
+    fi
+  elif ! jq -ne --arg description "$description" --argjson ids "$expected_decisions" '
+    all($ids[]; . as $id | $description | contains(":::decision id=" + $id))
+  ' >/dev/null; then
+    fail "$scenario does not serve its package-bound decision prompts"
+    return 1
+  fi
+  pass "$scenario is served with its bound decision catalog"
+}
+
+eu_lab_validation_slot() {
+  eu_curriculum_slot planning eu-remediation-planning planning
+}
+
+eu_gate_G20() {
+  eu_lab_gate eu-baseline-assessment eu_lab_baseline_walk weak eu_lab_baseline_prepare
+}
+eu_gate_G21() {
+  eu_lab_gate eu-firewall-implementation eu_lab_implementation_walk improved eu_lab_implementation_prepare
+}
+eu_gate_G22() {
+  eu_lab_gate eu-hardening-configurations eu_lab_hardening_walk improved eu_lab_hardening_prepare
+}
+eu_gate_G24() {
+  eu_lab_gate eu-vendor-rdp-compromise eu_lab_vendor_walk improved eu_lab_vendor_prepare
+}
+eu_gate_G25() {
+  eu_lab_gate eu-validation-evidence eu_lab_validation_walk improved eu_lab_validation_prepare
+}
+eu_gate_G26() {
+  eu_curriculum_slot requirements eu-segmentation-requirements \
+    '["current-policy-allowable","hardened-changes-rough-count","enterprise-to-field","enterprise-to-station","vendor-to-station","non-rtu-to-field","unauth-control","ot-eng-availability","fw-admin-skills","vendor-change-window","risk-acceptance-authority"]'
+}
+eu_gate_G27() {
+  eu_lab_validation_slot
+}

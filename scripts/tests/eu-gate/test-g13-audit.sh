@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329 # test stubs are called indirectly by sourced gates
 # G13: the audit generation is compared as a number, and an empty or
 # first_solve-less selection fails instead of passing vacuously.
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -84,14 +85,16 @@ eu_wait_for_field() {
     return 1
   fi
 }
-eu_device_step() {
-  if [ "$1" = local-trip ] && [ "$RESET_DONE" != true ]; then
-    fail "local-trip without reset"
+eu_action_step() {
+  local node="$1" action="$2"
+  if [ "$node:$action" = process:fault_s1 ] && [ "$RESET_DONE" != true ]; then
+    fail "process fault action without reset"
     return 1
   fi
-  [ "$1" != clear-fault ] || return 0
-  REVISION=$((REVISION + 1))
-  printf 'mutation %s revision %s\n' "$1" "$REVISION" >>"$CALLS"
+  case "$node:$action" in
+    process:fault_s1 | breaker:reset) REVISION=$((REVISION + 1)) ;;
+  esac
+  printf 'action %s %s revision %s\n' "$node" "$action" "$REVISION" >>"$CALLS"
   API_BODY="{\"revision\":$REVISION}"
 }
 eu_wait_for_state() {
@@ -102,19 +105,21 @@ eu_api_get() {
   # shellcheck disable=SC2034 # read by the sourced gate helpers
   HTTP_STATUS=200
   API_BODY="$AUDIT"
+  # shellcheck disable=SC2034 # consumed by eu_check_g13_audit
   [ "$1" != "/api/field/audit?after=0" ] || API_BODY='{"generation":42,"entries":[],"latest_seq":20,"oldest_seq":1}'
 }
 t_run eu_gate_G13
 t_expect_fails 0 "the G13 flow passes against an audit with both first_solve entries"
-t_run grep -E '^(policy|reset|field|audit|mutation|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
+t_run grep -E '^(policy|reset|field|audit|action|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
 t_expect_eq "$T_OUT" "policy improved
 reset
 field
 audit
 docker pause
-mutation local-trip revision 10
+action process fault_s1 revision 10
 wait G13 solver first_solve of device revision 10 while RTU paused
-mutation restore-device revision 11
+action process clear_fault revision 10
+action breaker reset revision 11
 wait G13 solver first_solve of device revision 11 while RTU paused
 operator .link.state != \"started\" 
 docker unpause
@@ -137,14 +142,14 @@ RESET_FAIL=true
 t_run eu_gate_G13
 t_expect_fails 1 "G13 aborts if its own reset fails"
 t_expect_eq "$(cat "$CALLS")" "policy improved
-reset" "a failed reset cannot reach the audit cursor, RTU pause or local-trip"
+reset" "a failed reset cannot reach the audit cursor, RTU pause or direct driver"
 
 : >"$CALLS"
 RESET_FAIL=false
 FIELD_FAIL=true
 t_run eu_gate_G13
 t_expect_fails 1 "G13 aborts if reset truth and solver have not converged"
-t_run grep -Ec '^(audit|docker|mutation)' "$CALLS"
+t_run grep -Ec '^(audit|docker|action)' "$CALLS"
 t_expect_eq "$T_OUT" 0 "unsettled reset cannot reach the audit cursor, pause or trip"
 
 t_finish

@@ -58,9 +58,9 @@ eu_api_post() {
   HTTP_STATUS=$(curl -sS --max-time 30 -o "$TMP_DIR/api-response.json" \
     -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
     -d "$body" "$API$path" 2>"$TMP_DIR/curl.err") || {
-      printf 'POST %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
-      return 1
-    }
+    printf 'POST %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
+    return 1
+  }
   API_BODY=$(cat "$TMP_DIR/api-response.json")
   eu_log_response POST "$path"
   printf '%s' "$API_BODY" | jq -e 'type == "object" or type == "array"' >/dev/null 2>&1 || {
@@ -89,8 +89,8 @@ eu_assert_jq_truth() {
 }
 eu_assert_device_state_response() {
   local label="$1"
-  if [ "$HTTP_STATUS" = "200" ] \
-    && printf '%s' "$API_BODY" | jq -e '
+  if [ "$HTTP_STATUS" = "200" ] &&
+    printf '%s' "$API_BODY" | jq -e '
       type == "object"
       and .schema == 2 and .kind == "breaker" and .device_id == "feeder-breaker"
       and (.generation | type == "number" and . >= 0)
@@ -127,7 +127,11 @@ eu_assert_device_state_response() {
 # Resolve authored step IDs from the served curriculum; execution stays index-based.
 # Never retry an execution: a second POST is a second physical operation.
 eu_execute_step() {
-  local step="$1" label="$2" index scenario="${3:-iec104-telecontrol-boundary}"
+  local step="$1" label="$2" index scenario="${3:-}"
+  if [ -z "$scenario" ]; then
+    fail "$label requires an explicit served scenario"
+    return 1
+  fi
   if ! eu_api_get "/api/scenarios/$scenario"; then
     fail "$label cannot read the active scenario"
     return 1
@@ -155,13 +159,30 @@ eu_execute_step() {
 
 # Preserve the physical readback assertions after a successful student action.
 eu_device_step() {
-  eu_execute_step "$1" "$2" || return 1
+  if [ -z "${3:-}" ]; then
+    fail "$2 requires an explicit served scenario"
+    return 1
+  fi
+  eu_execute_step "$1" "$2" "$3" || return 1
   if ! eu_get_field; then
     fail "$2 field readback unavailable"
     return 1
   fi
   API_BODY=$(printf '%s' "$API_BODY" | jq -c '.devices["breaker-1"]') || return 1
   eu_assert_device_state_response "$2"
+}
+
+# Physical gates use the range action endpoint without a curriculum step,
+# while preserving the same breaker truth readback as eu_device_step.
+eu_action_step() {
+  local node="$1" action="$2" label="$3" value="${4:-}"
+  eu_action "$node" "$action" "$value" || return 1
+  if ! eu_get_field; then
+    fail "$label field readback unavailable"
+    return 1
+  fi
+  API_BODY=$(printf '%s' "$API_BODY" | jq -c '.devices["breaker-1"]') || return 1
+  eu_assert_device_state_response "$label"
 }
 
 eu_wait_for_state() {
@@ -181,8 +202,8 @@ eu_wait_for_state() {
       fail "$label cannot read monotonic clock"
       return 1
     fi
-    if [ "$((now_ms - start_ms))" -le "$((budget * 1000))" ] \
-      && printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
+    if [ "$((now_ms - start_ms))" -le "$((budget * 1000))" ] &&
+      printf '%s' "$WAIT_BODY" | jq -e "$EU_JQ_DEFS $expression" >/dev/null 2>&1; then
       return 0
     fi
     if [ "$((now_ms - start_ms))" -ge "$((budget * 1000))" ]; then
@@ -310,8 +331,8 @@ eu_wait_for_baseline() {
         mismatches="field state unavailable: $(cat "$TMP_DIR/baseline.err")"
       else
         BASELINE_TRUTH="$API_BODY"
-        mismatches=$(eu_baseline_mismatches "$BASELINE_OPERATOR" "$BASELINE_TRUTH" 2>&1) \
-          || mismatches="cannot compare operator and field state: $mismatches"
+        mismatches=$(eu_baseline_mismatches "$BASELINE_OPERATOR" "$BASELINE_TRUTH" 2>&1) ||
+          mismatches="cannot compare operator and field state: $mismatches"
       fi
     fi
     if [ -z "$mismatches" ]; then
@@ -340,16 +361,21 @@ eu_management() {
   case "$node" in
     breaker-1) ip=10.99.99.22 ;; rmu-1) ip=10.99.99.24 ;;
     rmu-2) ip=10.99.99.25 ;; oltc-1) ip=10.99.99.26 ;;
-    process) ip=10.99.99.23 ;; *) fail "unknown management node $node"; return 1 ;;
+    process) ip=10.99.99.23 ;; *)
+      fail "unknown management node $node"
+      return 1
+      ;;
   esac
   output=$(docker exec "$FW" curl -sS --max-time 5 -w '\n%{http_code}' \
     -X "$method" -H 'Content-Type: application/json' -d "$body" "http://$ip:8080$path") || {
-    fail "$node $method $path transport failed"; return 1;
+    fail "$node $method $path transport failed"
+    return 1
   }
   HTTP_STATUS="${output##*$'\n'}" API_BODY="${output%$'\n'*}"
   eu_log_response "$method" "$node$path"
   printf '%s' "$API_BODY" | jq -e 'type == "object"' >/dev/null || {
-    fail "$node $path non-JSON HTTP $HTTP_STATUS: $API_BODY"; return 1;
+    fail "$node $path non-JSON HTTP $HTTP_STATUS: $API_BODY"
+    return 1
   }
 }
 eu_action() {
@@ -359,7 +385,8 @@ eu_action() {
   state_touched=1
   eu_management "$node" POST "$path" "{\"action\":\"$action\"${value:+,\"value\":$value}}" || return
   if [ "$HTTP_STATUS" != 200 ]; then
-    fail "$node $action HTTP $HTTP_STATUS: $API_BODY"; return 1
+    fail "$node $action HTTP $HTTP_STATUS: $API_BODY"
+    return 1
   fi
   pass "$node $action acknowledged"
 }
@@ -371,7 +398,8 @@ eu_reset_all() {
   eu_api_post /api/workshop/reset '{}' || return
   if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$API_BODY" | jq -e \
     '.actions | length >= 7 and all(.[]; .success == true)' >/dev/null; then
-    fail "EU reset failed: HTTP $HTTP_STATUS $API_BODY"; return 1
+    fail "EU reset failed: HTTP $HTTP_STATUS $API_BODY"
+    return 1
   fi
   eu_wait_for_operator ".link.state == \"started\" and all(.points[];
     good and (.received_at | epoch) >= (\"$started\" | epoch))" 30 "reset fresh CC recovery"
@@ -382,12 +410,30 @@ eu_reset_all() {
 eu_command() {
   local point="$1" operation="$2" expected="$3" reason="${4:-}" node audit_op cursor generation response started ended feedback_id feedback_ioa target
   case "$point" in
-    feeder-breaker-command) node=breaker-1; audit_op="$operation" ;;
-    rmu-1-command) node=rmu-1; audit_op="$operation" ;;
-    rmu-2-command) node=rmu-2; audit_op="$operation" ;;
-    oltc-1-step) node=oltc-1; audit_op=manual_step ;;
-    oltc-1-mode) node=oltc-1; audit_op=mode ;;
-    *) fail "unknown command $point"; return 1 ;;
+    feeder-breaker-command)
+      node=breaker-1
+      audit_op="$operation"
+      ;;
+    rmu-1-command)
+      node=rmu-1
+      audit_op="$operation"
+      ;;
+    rmu-2-command)
+      node=rmu-2
+      audit_op="$operation"
+      ;;
+    oltc-1-step)
+      node=oltc-1
+      audit_op=manual_step
+      ;;
+    oltc-1-mode)
+      node=oltc-1
+      audit_op=mode
+      ;;
+    *)
+      fail "unknown command $point"
+      return 1
+      ;;
   esac
   # Intentional invalid-measurement rejection must not wait the fault away.
   if [ "$reason" != no_measurement ]; then eu_wait_valid_device "$node" || return; fi
@@ -409,7 +455,8 @@ eu_command() {
   response="$API_BODY" COMMAND_BODY="$API_BODY"
   ended=$(eu_utc)
   if [ "$HTTP_STATUS" != 200 ] || ! eu_command_result "$response" "$point" "$operation" "$expected" "$started" "$ended" "$feedback_ioa" "$target"; then
-    fail "$point $operation expected $expected in attempt window: HTTP $HTTP_STATUS $response"; return 1
+    fail "$point $operation expected $expected in attempt window: HTTP $HTTP_STATUS $response"
+    return 1
   fi
   eu_management "$node" GET "/api/audit?after=$cursor" || return
   if ! printf '%s' "$API_BODY" | jq -e --argjson gen "$generation" --argjson cursor "$cursor" \
@@ -420,7 +467,8 @@ eu_command() {
       and .context.protocol == "modbus" and (.context.peer | startswith("10.30.30.20:")))] | length == 1
       and all(.[]; .result == (if $expected == "completed" then "accepted" else "rejected" end)
         and ($reason == "" or .detail == $reason)))' >/dev/null; then
-    fail "$point $operation lacks one fresh RTU Modbus audit ($reason): $API_BODY"; return 1
+    fail "$point $operation lacks one fresh RTU Modbus audit ($reason): $API_BODY"
+    return 1
   fi
   pass "$point $operation $expected: fresh IEC104 confirmations/feedback and RTU Modbus audit${reason:+ ($reason)}"
 }
@@ -435,7 +483,10 @@ eu_wait_valid_device() {
     eu_management "$node" GET /api/state || return
     if [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.schema == 2 and .measurements.valid == true' >/dev/null; then return 0; fi
     now=$(eu_now_ms)
-    if [ "$((now - start))" -ge 10000 ]; then fail "$node no valid pre-command solve: $API_BODY"; return 1; fi
+    if [ "$((now - start))" -ge 10000 ]; then
+      fail "$node no valid pre-command solve: $API_BODY"
+      return 1
+    fi
     sleep 0.1
   done
 }

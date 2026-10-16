@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Student command route, fail-closed validators, independent baselines/cleanup.
-# shellcheck disable=SC2329 # stubs invoked indirectly by sourced walk helpers
+# shellcheck disable=SC2329 # test stubs are called indirectly by sourced helpers
+# Served-scenario walks, exact authored IDs, validators and package curriculum.
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# The weak teaching exposure is deliberate; improved must still log and deny
-# identical foreign-source Modbus probes (the live walks prove enforcement).
 t_run jq -e '
   .firewall.defaultAction == "DENY" and
   ([.firewall.rules[] | select(.id == "weak-foreign-field-modbus")] |
@@ -31,7 +29,8 @@ STATUS=200
 eu_api_post() {
   CALLS="$CALLS POST:$1"
   POST_BODY="$2"
-  HTTP_STATUS="$STATUS" API_BODY="$RESPONSE"
+  HTTP_STATUS="$STATUS"
+  API_BODY="$RESPONSE"
 }
 t_run eu_lab_exec vendor-jump-1 'mbpoll -m tcp target'
 t_expect_eq "$T_STATUS" 0 "successful student command executes"
@@ -44,8 +43,8 @@ for RESPONSE in '{"exit_code":127,"stdout":"","stderr":"missing tool"}' \
   t_expect_fails 1 "nonzero or missing exit status cannot pass"
 done
 RESPONSE='{"exit_code":1,"stdout":"","stderr":"Connection timed out"}'
-t_run eu_lab_vendor 10.40.40.22 1 1
-t_expect_fails 0 "the denied retest expects mbpoll failure without retrying"
+t_run eu_lab_exec vendor-jump-1 'mbpoll target' 1
+t_expect_eq "$T_STATUS" 0 "the denied retest expects mbpoll failure without retrying"
 
 eu_wait_for_operator() { :; }
 RESPONSE=$(jq -nc '{exit_code:0,stderr:"",stdout:({point:"rmu-1-command",operation:"open",result:"completed"}|tojson)}')
@@ -56,110 +55,147 @@ RESPONSE=$(jq -nc '{exit_code:0,stderr:"",stdout:({point:"rmu-1-command",operati
 t_run eu_lab_cc rmu-1-command open
 t_expect_fails 1 "HTTP success cannot hide unknown command outcome"
 
-SCENARIO_ID=eu-rmu-switching
+# The served scenario has a non-fixed number of steps. The gate resolves the
+# authored ID and then uses the current array index expected by the API.
+CALLS=""
+SCENARIO_STEPS='[{"id":"first","title":"First","action":{"type":"command"}},{"id":"middle","title":"Middle"},{"id":"target-action","title":"Target","action":{"type":"probe"}}]'
 eu_api_get() {
   CALLS="$CALLS GET:$1"
   HTTP_STATUS=200
-  API_BODY=$(jq -nc '{steps:([range(0;10)|{id:("step-"+tostring),title:"test",action:{type:"command"}}]|tojson)}')
+  API_BODY=$(jq -nc --argjson steps "$SCENARIO_STEPS" '{steps:($steps|tojson)}')
 }
 eu_execute_step() { CALLS="$CALLS EXEC:$1:$3"; }
+t_run eu_lab_step served-workshop target-action
+t_expect_eq "$T_STATUS" 0 "authored action step resolves and executes"
+t_expect_eq "$CALLS" " GET:/api/scenarios/served-workshop EXEC:target-action:served-workshop" "step ID resolves independently of count and position"
+t_expect_out "step index 2" "the resolved current API index is reported"
 CALLS=""
-t_run eu_lab_step 3
-t_expect_eq "$CALLS" " GET:/api/scenarios/eu-rmu-switching EXEC:step-3:eu-rmu-switching" "step resolves the current lab, not lab 1"
-CALLS=""
-t_run eu_lab_step 7 defer
-t_expect_eq "$CALLS" " GET:/api/scenarios/eu-rmu-switching" "outage step action waits until restrictive policy is active"
+t_run eu_lab_step served-workshop middle
+t_expect_eq "$T_STATUS" 0 "manual steps are served without an executor action"
+t_expect_eq "$CALLS" " GET:/api/scenarios/served-workshop" "manual step is not executed"
+SCENARIO_STEPS='[{"id":"duplicate","action":{"type":"command"}},{"id":"duplicate","action":{"type":"command"}}]'
+t_run eu_lab_step served-workshop duplicate
+t_expect_eq "$T_STATUS" 1 "duplicate authored IDs fail closed"
+t_expect_fails 1 "ambiguous steps are reported"
 
-eu_apply_named() { CALLS="$CALLS policy:$1"; }
+# Every validator attempt is preceded by a reset, and PASS has its own reset
+# and policy state rather than inheriting the failed weak-policy pre-state.
+CALLS=""
 eu_reset_all() { CALLS="$CALLS reset"; }
-eu_validate_scenario() { CALLS="$CALLS validate:$SCENARIO_ID:$1"; }
-walk_ok() { CALLS="$CALLS walk"; }
-walk_bad() { CALLS="$CALLS walk-failed"; return 1; }
+eu_apply_named() { CALLS="$CALLS policy:$1"; }
+eu_validate_scenario() { CALLS="$CALLS validate:$1:$2"; }
+walk_ok() { CALLS="$CALLS walk:$1"; }
+prepare_ok() { CALLS="$CALLS prepare:$1"; }
+t_run eu_lab_gate eu-firewall-implementation walk_ok improved prepare_ok
+t_expect_eq "$T_STATUS" 0 "complete validator walk succeeds"
+t_expect_eq "$CALLS" \
+  " reset policy:weak validate:FAIL:eu-firewall-implementation walk:eu-firewall-implementation reset policy:improved prepare:eu-firewall-implementation validate:PASS:eu-firewall-implementation policy:weak reset" \
+  "FAIL and PASS checks each use the named slot after their own reset"
 CALLS=""
-t_run eu_lab_gate eu-rmu-switching walk_ok
-t_expect_eq "$T_STATUS" 0 "complete walk succeeds"
-t_expect_eq "$CALLS" " policy:weak reset validate:eu-rmu-switching:FAIL walk validate:eu-rmu-switching:PASS policy:weak reset" "every gate owns FAIL baseline, PASS validation and restoration"
-CALLS=""
-t_run eu_lab_gate eu-oltc-plc-historian walk_bad
-t_expect_eq "$T_STATUS" 1 "incomplete walk fails"
-t_expect_eq "$CALLS" " policy:weak reset validate:eu-oltc-plc-historian:FAIL walk-failed GET:/api/scenarios/eu-oltc-plc-historian/validate policy:weak reset" "failed walk keeps validation evidence and restores weak and devices, never claims PASS"
-t_expect_eq "$SCENARIO_ID" eu-rmu-switching "scenario selection is local to the gate"
+walk_bad() {
+  CALLS="$CALLS walk-failed:$1"
+  return 1
+}
+eu_api_get() {
+  CALLS="$CALLS GET:$1"
+  HTTP_STATUS=200
+  API_BODY='{"outcome":"FAIL"}'
+}
+t_run eu_lab_gate eu-vendor-rdp-compromise walk_bad improved prepare_ok
+t_expect_eq "$T_STATUS" 1 "incomplete student walk fails"
+t_expect_eq "$CALLS" \
+  " reset policy:weak validate:FAIL:eu-vendor-rdp-compromise walk-failed:eu-vendor-rdp-compromise GET:/api/scenarios/eu-vendor-rdp-compromise/validate policy:weak reset" \
+  "failed walk keeps evidence and restores weak policy and reset without claiming PASS"
 
-# Restore the real validator to test every-check PASS, not only the outcome.
+# The validation-evidence scenario starts hardened; its student check/report
+# walk must not run under the weak FAIL pre-state.
+CALLS=""
+eu_apply_named() { CALLS="$CALLS policy:$1"; }
+eu_lab_step() { CALLS="$CALLS step:$2"; }
+eu_api_post() {
+  CALLS="$CALLS POST:$1"
+  HTTP_STATUS=200
+  API_BODY='{"summary":{"result":"PASS","skipped":0}}'
+}
+t_run eu_lab_validation_walk eu-validation-evidence
+t_expect_eq "$T_STATUS" 0 "validation evidence walk establishes its hardened pre-state"
+t_expect_eq "$CALLS" \
+  " policy:improved step:confirm-hardened-config-is-active step:generate-the-validation-report POST:/api/firewall/validation-report step:reflection-what-did-your-plan-close" \
+  "hardened policy is active before the served checks and report"
+
+# Package curriculum binding supplies the action catalog; scenario prompts
+# remain authored decisions, rather than duplicating catalog definitions.
+REQ_DESCRIPTION=$(printf '%s\n' \
+  ':::decision id=current-policy-allowable options=MOSTLY_ALLOW,MOSTLY_DENY' \
+  ':::decision id=hardened-changes-rough-count options=FEW_CHANGES,ABOUT_HALF' \
+  ':::decision id=enterprise-to-field options=BLOCK,BLOCK and LOG correct=BLOCK' \
+  ':::decision id=enterprise-to-station options=BLOCK,BLOCK and LOG correct=BLOCK' \
+  ':::decision id=vendor-to-station options=BLOCK,BLOCK and LOG correct=BLOCK' \
+  ':::decision id=non-rtu-to-field options=BLOCK,BLOCK and LOG correct=BLOCK' \
+  ':::decision id=unauth-control options=BLOCK,BLOCK and LOG correct=BLOCK' \
+  ':::decision id=ot-eng-availability options=AVAILABLE,STRETCHED correct=AVAILABLE' \
+  ':::decision id=fw-admin-skills options=IN_HOUSE,GAP correct=IN_HOUSE' \
+  ':::decision id=vendor-change-window options=SECURED,NEGOTIATING correct=SECURED' \
+  ':::decision id=risk-acceptance-authority options=CLEAR,UNCLEAR correct=CLEAR')
+REQ_STEPS=$(jq -nc --arg description "$REQ_DESCRIPTION" '[{description:$description}]')
+PLAN_STEPS='[{"description":"Plan","action":{"type":"decision"}}]'
+eu_api_get() {
+  HTTP_STATUS=200
+  case "$1" in
+    /api/packages)
+      API_BODY='[{"id":"eu-iec104-substation","active":true,"curriculum":{"budgetHours":500,"teams":[{},{},{},{}],"catalog":[{}],"roles":{"requirements":"eu-segmentation-requirements","planning":"eu-remediation-planning"}}}]'
+      ;;
+    /api/scenarios/eu-segmentation-requirements)
+      API_BODY=$(jq -nc --argjson steps "$REQ_STEPS" '{steps:($steps|tojson)}')
+      ;;
+    /api/scenarios/eu-remediation-planning)
+      API_BODY=$(jq -nc --argjson steps "$PLAN_STEPS" '{steps:($steps|tojson)}')
+      ;;
+    *) return 1 ;;
+  esac
+}
+t_run eu_curriculum_slot requirements eu-segmentation-requirements \
+  '["enterprise-to-field","enterprise-to-station","vendor-to-station","non-rtu-to-field","unauth-control","ot-eng-availability","fw-admin-skills","vendor-change-window","risk-acceptance-authority","current-policy-allowable","hardened-changes-rough-count"]'
+t_expect_eq "$T_STATUS" 0 "requirements gate checks every served decision and package catalog binding"
+t_run eu_lab_validation_slot
+t_expect_eq "$T_STATUS" 0 "planning gate checks its single served decision action and catalog binding"
+
+# A vendor-path FC6 audit check proves the physical peer, not the user who
+# opened the browser terminal. Keep the pass message explicit about both.
+eu_management() {
+  HTTP_STATUS=200
+  if [ "$3" = "/api/audit?after=0" ]; then
+    API_BODY='{"latest_seq":7,"entries":[]}'
+  else
+    API_BODY='{"latest_seq":8,"entries":[{"seq":8,"operation":"open","result":"accepted","after":{"position":"open"},"context":{"protocol":"modbus","peer":"10.20.20.10:41322"}}]}'
+  fi
+}
+eu_lab_exec() { API_BODY='{"stdout":"1 register written"}'; }
+t_run eu_lab_vendor 10.40.40.21 1
+t_expect_eq "$T_STATUS" 0 "vendor FC6 requires a fresh accepted device audit"
+t_expect_out "vendor FC6 RMU1 OPEN is attributed to vendor-jump 10.20.20.10" \
+  "success text names the RMU operation and actual vendor-jump peer"
+
+# The validator API has no implicit current scenario.
 # shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
 . "$T_REPO/scripts/lib/eu-policy.sh"
 VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"},{"status":"fail"}]}'
-eu_api_get() { API_BODY="$VALIDATION"; }
-t_run eu_validate_scenario PASS
+eu_api_get() {
+  CALLS="$CALLS GET:$1"
+  API_BODY="$VALIDATION"
+  printf '%s\n' "$1"
+}
+t_run eu_validate_scenario PASS eu-validation-evidence
 t_expect_fails 1 "a PASS outcome with a failed check fails closed"
 VALIDATION='{"outcome":"PASS","checks":[]}'
-t_run eu_validate_scenario PASS
+t_run eu_validate_scenario PASS eu-validation-evidence
 t_expect_fails 1 "empty checks cannot pass"
 VALIDATION='{"outcome":"PASS","checks":[{"status":"pass"}]}'
+t_run eu_validate_scenario PASS eu-validation-evidence
+t_expect_fails 0 "every check passing is accepted for the named scenario"
+t_expect_out "/api/scenarios/eu-validation-evidence/validate" \
+  "validator GET targets the explicitly named served scenario"
 t_run eu_validate_scenario PASS
-t_expect_fails 0 "every check passing is accepted"
+t_expect_fails 1 "validator rejects an omitted scenario"
 
-# Exercise complete lab-3/4 orchestration without range traffic or sleeps.
-STEPS=""
-eu_lab_step() { STEPS="$STEPS $1:${2:-execute}"; }
-eu_lab_baseline_exports() { :; }
-eu_lab_cc() { CALLS="$CALLS CC:$1:$2"; }
-eu_lab_exec() { CALLS="$CALLS exec:$1"; }
-eu_lab_vendor() { CALLS="$CALLS vendor:$1:$2:${3:-0}"; }
-eu_lab_tap() { CALLS="$CALLS tap:$1"; }
-eu_wait_for_operator() { CALLS="$CALLS WAIT:$3"; }
-eu_make_custom_policy() { CALLS="$CALLS derive-restriction"; }
-eu_apply_custom() { CALLS="$CALLS restrict"; }
-eu_apply_named() { CALLS="$CALLS policy:$1"; }
-eu_api_get() { :; }
-sleep() { :; }
-CALLS=""
-t_run eu_lab3_walk
-t_expect_eq "$T_STATUS" 0 "stubbed lab 3 completes all operations"
-t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execute 6:execute 7:execute 8:execute 9:execute" "lab 3 visits all ten steps in authored order"
-t_expect_out "PREDICT RMU1 open loses S2 only" "load-loss predictions precede switching"
-t_expect_eq "$(printf '%s' "$CALLS" | grep -o 'vendor:10.40.40.22:1:[01]' | tr '\n' ' ')" \
-  "vendor:10.40.40.22:1:0 vendor:10.40.40.22:1:1 " "lab 3 retests identical vendor payload with different expected transport result"
-case "$CALLS" in
-  *vendor:10.40.40.22:1:0*"WAIT:vendor-open tie has fresh dead-section measurements"*"CC:rmu-2-command:close"*) t_ok "vendor-open restoration waits for solved dead-section observations" ;;
-  *) t_not_ok "vendor-open restoration raced fresh voltage measurements: $CALLS" ;;
-esac
-case "$CALLS" in
-  *vendor:10.40.40.22:1:1*"CC:rmu-2-command:open"*"WAIT:CC-open tie has fresh dead-section measurements"*"CC:rmu-2-command:close"*) t_ok "allowed-path retest waits for dead-section observations before reclosing" ;;
-  *) t_not_ok "allowed-path retest raced fresh voltage measurements: $CALLS" ;;
-esac
-STEPS="" CALLS=""
-t_run eu_lab4_walk
-t_expect_eq "$T_STATUS" 0 "stubbed lab 4 completes all operations"
-t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execute 6:execute 7:defer 8:execute 9:execute" "lab 4 visits all ten steps and defers the outage cut"
-case "$CALLS" in
-  *derive-restriction*restrict*EXEC:source-pin-and-cc-outage*) t_ok "restrictive policy precedes the outage session cut" ;;
-  *) t_not_ok "outage must apply restrictive policy before session cut: $CALLS" ;;
-esac
-t_expect_eq "$(printf '%s' "$CALLS" | grep -o 'vendor:10.40.40.23:1:[01]' | tr '\n' ' ')" \
-  "vendor:10.40.40.23:1:0 vendor:10.40.40.23:1:1 " "lab 4 retests identical vendor payload"
-eu_api_get() { API_BODY='{"file_ready":true}'; }
-eu_get_operator() { API_BODY='{"link":{"connection_seq":7}}'; }
-eu_api_post() { HTTP_STATUS=200; }
-eu_firewall_config() { cat "$PACKAGE/firewall/improved.json"; }
-curl() {
-  while [ "$#" -gt 0 ]; do
-    if [ "$1" = -o ]; then printf 'stub PCAP' >"$2"; return; fi
-    shift
-  done
-  return 1
-}
-STEPS="" CALLS=""
-t_run eu_lab2_walk
-t_expect_eq "$T_STATUS" 0 "stubbed lab 2 completes positive/negative proof and rollback"
-t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execute 5:execute 6:execute 7:execute 8:execute 9:execute" "lab 2 visits all ten steps and reapplies improved after rollback"
-case "$CALLS" in
-  *derive-restriction*restrict*"WAIT:lab2 proof-window link loss"*policy:improved*"WAIT:lab2 new proof-window connection and GI"*) t_ok "lab 2 proves link loss then restores improved and earns a new GI" ;;
-  *) t_not_ok "lab 2 did not earn a fresh connection attempt: $CALLS" ;;
-esac
-eu_firewall_config() { printf '{"firewall":{"rules":[]}}'; }
-STEPS=""
-t_run eu_lab2_walk
-t_expect_fails 1 "missing explicit logged HTTP denies stops at the curriculum hold point"
-t_expect_eq "$STEPS" " 0:execute 1:execute 2:execute 3:execute 4:execute 5:execute" "a blocked lab never manufactures subsequent proof"
 t_finish

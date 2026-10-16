@@ -50,7 +50,7 @@ The range is the one Compose project (`rangerdanger`) that runs the active packa
 |--------|------|-------------|
 | `GET` | `/range` | Lifecycle status, `200` with the status body below. |
 | `POST` | `/range` | Start a switch to a package. Body `{"package":"<id>"}`; the body or the field may be omitted, which restarts the active package. Returns `202` with the status body (phase `preflight`). `409 {"error","phase"}` while a switch or the startup reconcile runs; `400 {"error"}` for an unknown package or a malformed body (unknown fields are rejected). Poll `GET /range` until `ready` or `failed`. |
-| `GET` | `/packages` | Curriculum packages: `[{"id","title","revision","active"}]`. `active` marks the range's recorded package, or `RANGERDANGER_PACKAGE` before any range was started. Scenario, workshop and seed routes serve the same package. |
+| `GET` | `/packages` | Package summaries: `[{"id","title","revision","active","operator_view","policies","curriculum"?}]`. `active` marks the range's recorded package, or `RANGERDANGER_PACKAGE` before any range was started. `curriculum` is optional and, when present, includes that package's planning model and binding (including `roles`, `budgetHours`, `teams` and `catalog`). Scenario, workshop and seed routes serve the same package. The response fields are defined in [`packages.go`](../backend/internal/server/packages.go#L14-L26) and populated from the active catalog at [`packages.go`](../backend/internal/server/packages.go#L82-L101). |
 
 Status body:
 
@@ -116,12 +116,20 @@ prove application success or authorization under the current policy.
 ## Scenarios (exercises)
 
 Exercises are stored internally as "scenarios" for historical reasons - the user-facing term is "exercise".
+Scenario rows belong to the active package, and their `steps` field is a
+JSON-encoded ordered array with stable authored step IDs
+([`models.go`](../backend/internal/models/models.go#L7-L23)).
+The IDs are curriculum identities; step execution remains index-based,
+so automation should look up the ID in the served array before posting.
+The API applies the supplied index to that same active-package scenario
+([`scenarios.go`](../backend/internal/server/scenarios.go#L11-L30),
+[`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L45-L80)).
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/scenarios` | List the active package's exercises |
 | `GET` | `/scenarios/:id` | Get exercise detail with steps |
-| `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute an automated action for a single step (e.g., inject_fault, apply firewall config) |
+| `POST` | `/scenarios/:id/steps/:stepIdx/execute` | Execute the action at zero-based `stepIdx` in the served scenario's ordered `steps` array. The route takes an array index, not a step ID; callers that start from an authored ID must resolve its current index from `GET /scenarios/:id`. The response includes `step_index`, `step_title`, `action_type`, `success`, `results` and `timestamp` (see [`scenario_execute.go`](../backend/internal/server/scenario_execute.go#L20-L38)). |
 | `GET` | `/scenarios/:id/validate` | Run all validators for the exercise. Returns `{"scenario_id", "outcome", "checks": [...], "timestamp"}` |
 
 ### Validation response

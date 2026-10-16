@@ -77,11 +77,11 @@ eu_gate_G3() {
     fail "G3 post-no-op truth read unavailable"
   fi
   eu_wait_command close completed || true
-  eu_device_step local-trip "G3 sim local fault" || true
+  eu_action_step process fault_s1 "G3 sim local fault" || true
   eu_wait_for_field '.devices["breaker-1"].lockout == true and .devices["breaker-1"].protection_tripped == true' 10 "G3 local lockout" || true
   eu_wait_command close rejected || true
-  eu_device_step clear-fault "G3 device reset clear process fault" || true
-  eu_device_step restore-device "G3 device reset" || true
+  eu_action_step process clear_fault "G3 device reset clear process fault" || true
+  eu_action_step breaker reset "G3 device reset" || true
   eu_stop_capture || true
   if [ -n "$CAPTURE_PID" ]; then
     if docker cp "$FW:$CAPTURE_PATH" "$TMP_DIR/eu-iec104-gate.pcap" >/dev/null 2>"$TMP_DIR/docker-cp.err"; then

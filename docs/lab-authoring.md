@@ -25,6 +25,31 @@ Backend loads them at startup - restart `backend` after changes. Any
 error in any package (an unknown field, a bad step, an unknown
 validator) stops the backend from starting, so check the backend log.
 
+## Package-owned decision catalog
+
+Inline decision prompts belong in a step's description as
+`:::decision` fences. A labor-planning step does not carry its own
+catalog, team capacities or budget. Mark that step with
+`action: {type: decision}`; the panel reads the budget, teams and action
+catalog from the active package's `curriculum.yml`.
+
+The EU package binds that file and its exercise roles in
+`lab-definitions/packages/eu-iec104-substation/package.yml`; its
+`curriculum.yml` owns the 500-hour budget, four teams and shared action
+catalog for the requirements and planning exercises. The requirements
+exercise supplies the design/readiness decision prompts, and the
+planning exercise has one decision step. This keeps options and
+catalog mappings package-scoped instead of duplicating catalogs in
+individual scenario files. The binding is declared by
+[`backend/internal/labs/package.go`](../backend/internal/labs/package.go#L68-L78),
+loaded and validated against requirement prompts by
+[`backend/internal/labs/curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L17-L24)
+and [`curriculum_load.go`](../backend/internal/labs/curriculum_load.go#L101-L110),
+served on `GET /api/packages` by
+[`backend/internal/server/packages.go`](../backend/internal/server/packages.go#L14-L26),
+and consumed by the frontend
+[`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36).
+
 ## Package knowledge
 
 Every `package.yml` requires `knowledge: knowledge/index.yml`. The index is
@@ -279,28 +304,22 @@ Some steps have a structured action that renders a custom UI
 component instead of (or in addition to) the description prose.
 
 ```yaml
-- title: "Choose your remediation plan"
+- id: choose-your-remediation-plan
+  title: "Choose your remediation plan"
   description: ...
   action:
     type: decision
-    budget_hours: 500
-    roles:
-      - { name: OT Engineer, capacity_hours: 120 }
-      - { name: Firewall Admin, capacity_hours: 140 }
-    actions:
-      - id: block-enterprise-to-field
-        title: "Block enterprise → field direct access"
-        why: |
-          Closes the DNP3 command injection attack surface.
-        effort_hours: 40
-        roles: [Firewall Admin, Security Analyst]
-        tags: [enterprise-field]
-      ...
 ```
 
 Supported `type` values:
 
-- `decision` - labor-budgeted action picker (Lab 1.4 pattern). Renders the [`DecisionPanel`](../frontend/components/decision-panel.tsx) component with budget meters, per-role utilization, and per-action requirement / readiness overlays.
+- `decision` - labor-budgeted action picker. This is only a marker on
+  the planning step; it has no inline fields. The
+  [`scenario-runner`](../frontend/components/scenario-runner.tsx#L614-L617)
+  renders [`DecisionPanel`](../frontend/components/decision-panel.tsx#L31-L36),
+  which reads `budgetHours`, `teams` and `catalog` from the active
+  package curriculum. The catalog actions, effort, roles, requirements
+  and readiness mappings belong in that package's `curriculum.yml`.
 - `check` - a state-check action with `expect: {key: value}` against the substation API. Used to confirm "the lab is in known-good state" between phases.
 - `probe` - TCP reachability check from `step.node` (or a per-target `from` topology node). Set `outcome: reachable|blocked` and one or more `targets` with IPv4 `host`, TCP `port` (1–65535), and optional `note`. Every target must match the outcome. Fast connection refusal counts as reachable; a timeout counts as blocked; any other exit status is a probe error and fails the target. UDP is not supported.
 - `command`, `firewall`, `sequence` - older patterns for auto-running specific commands. Most labs now prefer command blocks in the description body for the copy/Run affordance. New labs should default to description blocks. A manual step has no `action`; `type: manual` is invalid.

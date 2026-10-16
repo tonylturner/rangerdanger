@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The EU IEC-104 workshop now ships as seven package-owned exercises.**
+  Its baseline, design, planning, implementation, hardening, vendor-compromise
+  and validation exercises are served from the EU package rather than
+  retired inline lab content.
+- **Decision prompts use the active package's curriculum catalog.** The
+  EU planning exercises share package-owned budget, team and action data;
+  the US workshop's visible planning behavior is unchanged.
 - **The platform and the range are separate Compose projects.** The
   portal (backend, frontend, proxy) runs as `rangerdanger-platform` from
   `docker-compose.yml` (source) or `docker-compose.release.yml`; the
