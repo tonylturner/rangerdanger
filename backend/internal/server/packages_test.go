@@ -410,3 +410,31 @@ func TestShippedPackagesLoad(t *testing.T) {
 		}
 	}
 }
+
+func TestPackageCurriculumDTO(t *testing.T) {
+	s := routedServer(t)
+	catalog := s.currentCatalog()
+	catalog.Packages[1].Curriculum = &labs.Curriculum{
+		Schema: 1, ICSRules: labs.ICSRulesForbidden,
+		CurriculumBinding: labs.CurriculumBinding{Roles: map[string]string{"planning": "package-planner"}, DynamicSteps: map[string]string{"stable-step": "rules"}},
+	}
+	rec := serve(s, http.MethodGet, "/api/packages")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET packages: %d %s", rec.Code, rec.Body)
+	}
+	var got []struct {
+		ID         string          `json:"id"`
+		Curriculum json.RawMessage `json:"curriculum"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || len(got[0].Curriculum) != 0 {
+		t.Fatalf("unbound package gained curriculum: %s", rec.Body)
+	}
+	for _, want := range []string{`"planning":"package-planner"`, `"stable-step":"rules"`, `"icsRules":"forbidden"`} {
+		if !strings.Contains(string(got[1].Curriculum), want) {
+			t.Fatalf("curriculum missing %s: %s", want, got[1].Curriculum)
+		}
+	}
+}

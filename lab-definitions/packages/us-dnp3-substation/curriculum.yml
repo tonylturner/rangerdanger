@@ -1,0 +1,970 @@
+schema: 1
+requirements:
+  enterprise-to-field:
+    label: Enterprise → Field on Modbus/DNP3
+    impl:
+      BLOCK:
+        - block-enterprise-to-field
+      BLOCK and LOG:
+        - block-enterprise-to-field
+        - improve-logging
+  enterprise-to-ot:
+    label: Enterprise → OT Operations on ICS ports
+    impl:
+      BLOCK:
+        - block-enterprise-to-ot
+      BLOCK and LOG:
+        - block-enterprise-to-ot
+        - improve-logging
+  vendor-to-ot:
+    label: Vendor DMZ → OT Operations on Modbus/HMI control
+    impl:
+      BLOCK:
+        - restrict-vendor-to-ot
+        - block-vendor-to-field
+      BLOCK and LOG:
+        - restrict-vendor-to-ot
+        - block-vendor-to-field
+        - improve-logging
+      RESTRICT:
+        - restrict-vendor-to-ot
+  non-rtac-to-field:
+    label: Non-RTAC OT hosts → Field devices
+    impl:
+      BLOCK:
+        - pin-rtac-to-field
+      BLOCK and LOG:
+        - pin-rtac-to-field
+        - improve-logging
+  unauth-modbus-writes:
+    label: Unauthorized Modbus writes / DNP3 Direct Operate
+    impl:
+      BLOCK:
+        - modbus-dpi
+        - dnp3-dpi
+      BLOCK and LOG:
+        - modbus-dpi
+        - dnp3-dpi
+        - improve-logging
+      LOG:
+        - improve-logging
+readiness:
+  - id: ot-eng-availability
+    label: OT engineering capacity
+    good: AVAILABLE
+  - id: fw-admin-skills
+    label: Firewall admin skills
+    good: IN_HOUSE
+  - id: vendor-change-window
+    label: Vendor change windows
+    good: SECURED
+  - id: risk-acceptance-authority
+    label: Risk-acceptance authority
+    good: CLEAR
+readinessFlags:
+  - actions:
+      - restrict-vendor-to-ot
+      - block-vendor-to-field
+      - pin-rtac-to-field
+      - modbus-dpi
+      - dnp3-dpi
+      - rtac-architecture-review
+      - positive-validation
+    severity: warn
+    source: ot-eng-availability
+    sourceLabel: OT engineering capacity
+    verdict: STRETCHED
+    message: OT Engineer marked STRETCHED — expect this to take longer than the budget shows.
+  - actions:
+      - restrict-vendor-to-ot
+      - block-vendor-to-field
+      - pin-rtac-to-field
+      - modbus-dpi
+      - dnp3-dpi
+      - rtac-architecture-review
+      - positive-validation
+    severity: blocked
+    source: ot-eng-availability
+    sourceLabel: OT engineering capacity
+    verdict: UNAVAILABLE
+    message: OT Engineer marked UNAVAILABLE — this action can't ship without OT review.
+  - actions:
+      - modbus-dpi
+      - dnp3-dpi
+    severity: warn
+    source: fw-admin-skills
+    sourceLabel: Firewall admin skills
+    verdict: VENDOR_LED
+    message: Firewall admin skills are vendor-led — DPI tuning will need vendor cycles, not just internal time.
+  - actions:
+      - block-enterprise-to-field
+      - block-enterprise-to-ot
+      - restrict-vendor-to-ot
+      - block-vendor-to-field
+      - pin-rtac-to-field
+      - tighten-firewall-objects
+    severity: warn
+    source: fw-admin-skills
+    sourceLabel: Firewall admin skills
+    verdict: GAP
+    message: Firewall admin skills marked GAP — basic policy work needs hiring or training to land cleanly.
+  - actions:
+      - modbus-dpi
+      - dnp3-dpi
+    severity: blocked
+    source: fw-admin-skills
+    sourceLabel: Firewall admin skills
+    verdict: GAP
+    message: Firewall admin skills marked GAP — DPI tuning can't ship without hiring or training first.
+  - actions:
+      - restrict-vendor-to-ot
+      - block-vendor-to-field
+    severity: warn
+    source: vendor-change-window
+    sourceLabel: Vendor change windows
+    verdict: NEGOTIATING
+    message: Vendor change window NEGOTIATING — schedule slip is likely.
+  - actions:
+      - restrict-vendor-to-ot
+      - block-vendor-to-field
+    severity: blocked
+    source: vendor-change-window
+    sourceLabel: Vendor change windows
+    verdict: NOT_DISCUSSED
+    message: Vendor change window NOT_DISCUSSED — this action can't ship until that conversation happens.
+  - actions:
+      - block-enterprise-to-field
+      - block-enterprise-to-ot
+      - block-vendor-to-field
+      - pin-rtac-to-field
+    severity: warn
+    source: risk-acceptance-authority
+    sourceLabel: Risk-acceptance authority
+    verdict: UNCLEAR
+    message: Risk-acceptance authority UNCLEAR — get the signoff path nailed down before applying this rule.
+  - actions:
+      - block-enterprise-to-field
+      - block-enterprise-to-ot
+      - block-vendor-to-field
+      - pin-rtac-to-field
+    severity: blocked
+    source: risk-acceptance-authority
+    sourceLabel: Risk-acceptance authority
+    verdict: DISPUTED
+    message: Risk-acceptance authority DISPUTED — denying production flows without a clear signoff path is unsafe.
+budgetHours: 500
+teams:
+  - name: OT Engineer
+    capacity_hours: 120
+  - name: Firewall Admin
+    capacity_hours: 140
+  - name: Network Engineer
+    capacity_hours: 120
+  - name: Security Analyst
+    capacity_hours: 120
+catalog:
+  - id: block-enterprise-to-field
+    title: Block enterprise → field direct access
+    why: |
+      Removes the Modbus 502, DNP3 20000, and HTTP 8080 paths from the corporate IT zone straight to relays and reclosers. Closes the DNP3 command injection attack surface stress-tested in the Protocol-Hardened Configurations exercise.
+    effort_hours: 40
+    roles:
+      - Firewall Admin
+      - Security Analyst
+    tags:
+      - enterprise-field
+  - id: block-enterprise-to-ot
+    title: Block enterprise → OT Operations ICS ports
+    why: |
+      Removes enterprise access to HMI, RTAC, and OpenPLC on Modbus, DNP3, HMI web, and management HTTP. Blocks the Modbus override staging path that assumes an enterprise foothold.
+    effort_hours: 30
+    roles:
+      - Firewall Admin
+      - Security Analyst
+    tags:
+      - enterprise-ot
+  - id: restrict-vendor-to-ot
+    title: Restrict vendor → OT to SSH/HTTPS only
+    why: |
+      Vendor remote access should be monitoring and administration via encrypted management protocols, not direct Modbus or HMI web. Reduces the blast radius of a compromised vendor credential and closes the Vendor Remote Access Compromise pivot path.
+    effort_hours: 50
+    roles:
+      - Firewall Admin
+      - Network Engineer
+      - OT Engineer
+    tags:
+      - vendor
+  - id: block-vendor-to-field
+    title: Block vendor → field devices entirely
+    why: |
+      There is no legitimate reason for the vendor DMZ to reach field devices directly. The engineering workstation should drive field work through the RTAC or via OT Ops, not via bare Modbus or DNP3 from the vendor zone.
+    effort_hours: 30
+    roles:
+      - Firewall Admin
+      - OT Engineer
+    tags:
+      - vendor
+      - vendor-field
+  - id: pin-rtac-to-field
+    title: Pin field-device access to RTAC source IP
+    why: |
+      Restricts OT Ops → field rules to source ${ip:rtac-1} only (the RTAC's OT Ops interface, which is the wire-visible source after RTAC host-level hardening), so a compromised OpenPLC or historian cannot reach relays directly even from inside OT Ops. Closes the Modbus-override lateral path, hardened in the Protocol-Hardened Configurations exercise.
+    effort_hours: 40
+    roles:
+      - Firewall Admin
+      - OT Engineer
+    tags:
+      - ot-lateral
+  - id: modbus-dpi
+    title: Apply Modbus ICS DPI - limit function codes
+    why: |
+      Configure containd to filter Modbus by function code. Allow reads (FC1–4) broadly; restrict writes (FC5/6) to the RTAC only. Turns the firewall from an L4 port filter into a protocol-aware control. Blocks unauthorized writes even from otherwise- allowed sources.
+    effort_hours: 70
+    roles:
+      - Firewall Admin
+      - OT Engineer
+      - Security Analyst
+    tags:
+      - dpi
+      - modbus
+  - id: dnp3-dpi
+    title: Apply DNP3 ICS DPI - restrict Direct Operate
+    why: |
+      Configure containd to recognize DNP3 and block Direct Operate (FC05 and the No-Ack variant FC06) at the protocol layer - the RTAC's master only ever sends read/integrity polls (FC01), so a DNP3 control write is illegitimate from any source. Reads stay available for monitoring. Closes the DNP3 command injection attack path.
+    effort_hours: 80
+    roles:
+      - Firewall Admin
+      - OT Engineer
+      - Security Analyst
+    tags:
+      - dpi
+      - dnp3
+  - id: improve-logging
+    title: Improve firewall logging and PCAP retention
+    why: |
+      Enable per-rule logging, keep rolling PCAPs on cross-zone interfaces, and forward events to syslog. Without this, post-incident review of attempted attacks is blind.
+    effort_hours: 50
+    roles:
+      - Firewall Admin
+      - Security Analyst
+    tags:
+      - visibility
+  - id: rtac-architecture-review
+    title: Validate and document RTAC hardening
+    why: |
+      The RTAC is multi-homed across OT Ops and Field for realism but is hardened at the host level so its application traffic to field devices is forced through the firewall. Validate that the hardening is in place (ip_forward=0, FORWARD DROP, policy routing for field subnet via OT Ops firewall), document it as a compensating control for auditors, and add a periodic check to detect drift. Defense in depth for the intra-zone flows the firewall still cannot see.
+    effort_hours: 30
+    roles:
+      - OT Engineer
+      - Security Analyst
+    tags:
+      - architecture
+      - defense-in-depth
+  - id: tighten-firewall-objects
+    title: Tighten firewall object hygiene
+    why: |
+      Replace broad /24 matches with host objects for RTAC, HMI, historian, GPS. Name and document each rule. Reduces drift and makes the next audit defensible.
+    effort_hours: 40
+    roles:
+      - Firewall Admin
+      - Network Engineer
+    tags:
+      - hygiene
+  - id: positive-validation
+    title: Post-change positive/negative validation
+    why: |
+      Build a test plan that verifies legitimate flows still work and illegitimate flows are blocked, with captured PCAP evidence. Required for acceptance of the change and for the Testing & Validation exercise.
+    effort_hours: 60
+    roles:
+      - Security Analyst
+      - OT Engineer
+    tags:
+      - validation
+  - id: ids-deployment
+    title: Deploy IDS sensors with ICS rule packs on OT zones
+    why: |
+      Add Snort/Suricata or Zeek sensors on the OT Ops and Field interfaces with industrial protocol rule packs. The firewall blocks; the IDS detects anomalies the firewall doesn't deny - unusual scan patterns, malformed Modbus frames, DNP3 sequence anomalies. Pairs with the Testing & Validation exercise: an IDS alert chain is a stronger evidence package than firewall logs alone. Different team and timeline than the firewall work itself.
+    effort_hours: 80
+    roles:
+      - Security Analyst
+      - Network Engineer
+    tags:
+      - detection
+      - ids
+  - id: ot-asset-inventory
+    title: Build OT asset inventory + change baseline
+    why: |
+      Enumerate every device on OT Ops and Field - MAC, software version, exposed services, ownership, last-patched date. Without an inventory, change management is by hope: you cannot detect when an unknown device appears, when firmware drifts, or when a vendor swaps a relay during a maintenance window. Foundation work that pays off across every later defense, but its cost-to-attribute is hard to defend in a tight quarter.
+    effort_hours: 100
+    roles:
+      - Security Analyst
+      - OT Engineer
+      - Network Engineer
+    tags:
+      - foundation
+      - inventory
+  - id: vendor-zta-broker
+    title: Replace vendor VPN with ZTNA / PAM broker
+    why: |
+      Stand up a Privileged Access Management broker (BeyondTrust, CyberArk, Cyolo) or a Zero-Trust Network Access path (Zscaler, Tailscale) for vendor support sessions. Just-in-time access, MFA, full session recording, per-action audit trail. Closes more of the Vendor Remote Access Compromise kill chain than restrict-vendor-to-ot alone, because the vendor's path is closed by default and opens only for scheduled windows under identity. Heaviest organizational change in this list - requires vendor contract amendments.
+    effort_hours: 150
+    roles:
+      - Network Engineer
+      - Firewall Admin
+      - Security Analyst
+    tags:
+      - vendor
+      - modernization
+      - identity
+impact:
+  block-enterprise-to-field:
+    defends:
+      - hardening-configurations
+    note: Blocks enterprise → field — closes the DNP3 command-injection path demonstrated in Lab 2.3
+  block-enterprise-to-ot:
+    defends:
+      - hardening-configurations
+    note: Blocks enterprise → OT Ops — removes the staging foothold for the Modbus override demonstrated in Lab 2.3
+  restrict-vendor-to-ot:
+    defends:
+      - vendor-rdp-compromise
+    note: Restricts vendor → OT to encrypted management protocols — narrows the vendor pivot lane in Lab 2.3-bonus
+  block-vendor-to-field:
+    defends:
+      - vendor-rdp-compromise
+    note: Blocks vendor → field entirely — closes the second hop of the vendor RDP/VNC kill chain in Lab 2.3-bonus
+  pin-rtac-to-field:
+    defends:
+      - hardening-configurations
+    note: Pins field access to the RTAC source IP — prevents the lateral Modbus override demonstrated in Lab 2.3
+  modbus-dpi:
+    defends:
+      - hardening-configurations
+    note: Protocol-aware Modbus filter — blocks unauthorized writes at the function-code level (Lab 2.3 DPI lesson)
+  dnp3-dpi:
+    defends:
+      - hardening-configurations
+    note: Protocol-aware DNP3 filter — blocks Direct Operate from non-RTAC sources (Lab 2.3 DPI lesson)
+  positive-validation:
+    defends:
+      - validation-evidence
+    note: Pre-planned validation testing - produces the evidence package for Lab 2.4
+  ids-deployment:
+    defends:
+      - validation-evidence
+    note: IDS sensors with ICS rule packs - adds detection alongside the firewall's prevent layer; the alert chain becomes part of the Lab 2.4 evidence package
+  ot-asset-inventory:
+    defends:
+      - validation-evidence
+    note: OT asset inventory + baseline - anchors the Lab 2.4 change-board package on a known-good device list; without it, post-change drift goes undetected
+  vendor-zta-broker:
+    defends:
+      - vendor-rdp-compromise
+    note: ZTNA/PAM broker for vendor access - closes more of the Lab 2.3-bonus kill chain than restrict-vendor-to-ot alone (no always-on path, identity-bound sessions, full audit)
+baselineRules:
+  - id: rtac-to-field-modbus
+    source: ${ip:rtac-1}
+    destination: ${subnet:field_net}
+    proto: TCP
+    port: '502'
+    action: ALLOW
+    purpose: RTAC Modbus polling to field devices
+  - id: rtac-to-field-dnp3
+    source: ${ip:rtac-1}
+    destination: ${subnet:field_net}
+    proto: TCP
+    port: '20000'
+    action: ALLOW
+    purpose: RTAC DNP3 polling to field devices
+  - id: rtac-to-field-http
+    source: ${ip:rtac-1}
+    destination: ${subnet:field_net}
+    proto: TCP
+    port: '8080'
+    action: ALLOW
+    purpose: RTAC HTTP API to field devices
+  - id: gps-to-field-ntp
+    source: ${ip:gps-1}
+    destination: ${subnet:field_net}
+    proto: UDP
+    port: '123'
+    action: ALLOW
+    purpose: GPS NTP time sync to field devices
+enterpriseToVendorRule:
+  id: enterprise-to-vendor
+  source: ${subnet:enterprise_net}
+  destination: ${subnet:vendor_net}
+  proto: TCP
+  port: 22, 80, 443
+  action: ALLOW
+  purpose: Enterprise to vendor management (SSH/HTTP/HTTPS)
+groups:
+  block-enterprise-to-field:
+    title: Block enterprise → field direct access
+    description: Remove the paths from the corporate IT zone straight to field relays and reclosers.
+    rules:
+      - id: deny-enterprise-to-field
+        source: ${subnet:enterprise_net}
+        destination: ${subnet:field_net}
+        proto: TCP
+        port: 502, 20000, 8080
+        action: DENY
+        purpose: Block enterprise direct Modbus/DNP3/HTTP to field devices
+        log: true
+    effect: closes
+  block-enterprise-to-ot:
+    title: Block enterprise → OT Operations ICS ports
+    description: Remove enterprise access to HMI, RTAC, and OpenPLC on ICS and management ports.
+    rules:
+      - id: deny-enterprise-to-ot
+        source: ${subnet:enterprise_net}
+        destination: ${subnet:ot_ops_net}
+        proto: TCP
+        port: 502, 20000, 8080, 1881
+        action: DENY
+        purpose: Block enterprise ICS/HMI access to OT Operations
+        log: true
+    effect: closes
+  restrict-vendor-to-ot:
+    title: Restrict vendor → OT to SSH/HTTPS only
+    description: Vendor remote access limited to encrypted management protocols. No direct Modbus or HMI web.
+    rules:
+      - id: vendor-to-ot-restricted
+        source: ${subnet:vendor_net}
+        destination: ${subnet:ot_ops_net}
+        proto: TCP
+        port: 22, 443
+        action: ALLOW
+        purpose: Vendor management access (SSH/HTTPS only)
+    effect: restricts
+  block-vendor-to-field:
+    title: Block vendor → field devices entirely
+    description: No legitimate reason for the vendor DMZ to reach field devices directly.
+    rules:
+      - id: deny-vendor-to-field
+        source: ${subnet:vendor_net}
+        destination: ${subnet:field_net}
+        proto: TCP
+        port: 502, 20000, 8080
+        action: DENY
+        purpose: Block vendor direct access to field devices
+        log: true
+    effect: closes
+  pin-rtac-to-field:
+    title: Pin field-device access to RTAC source IP
+    description: Only the RTAC (${ip:rtac-1}) can reach field devices from OT Ops. The RTAC ALLOW rules above this DENY take priority (first-match), so RTAC traffic passes while all other OT Ops hosts are blocked.
+    rules:
+      - id: deny-ot-to-field-non-rtac
+        source: ${subnet:ot_ops_net}
+        destination: ${subnet:field_net}
+        proto: TCP
+        port: 502, 20000, 8080
+        action: DENY
+        purpose: Block non-RTAC OT hosts from field (RTAC ALLOW rules above take priority)
+        log: true
+    effect: restricts
+  modbus-dpi:
+    title: Modbus ICS DPI — limit function codes
+    description: Configure containd to filter Modbus by function code. Allow reads (FC1–4) broadly; restrict writes (FC5/6) to the RTAC only.
+    rules:
+      - id: rtac-modbus-dpi
+        source: ${ip:rtac-1}
+        destination: ${subnet:field_net}
+        proto: TCP
+        port: '502'
+        action: ALLOW
+        purpose: 'RTAC Modbus with DPI: FC1-6 (read + write)'
+        ics:
+          protocol: modbus
+          functionCodes:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+            - 6
+          note: Full read/write for supervisory control
+    effect: semantic
+  dnp3-dpi:
+    title: DNP3 ICS DPI — restrict Direct Operate
+    description: Configure containd to recognize DNP3 and block Direct Operate from non-RTAC sources. Reads and integrity polls stay available.
+    rules:
+      - id: rtac-dnp3-dpi
+        source: ${ip:rtac-1}
+        destination: ${subnet:field_net}
+        proto: TCP
+        port: '20000'
+        action: ALLOW
+        purpose: 'RTAC DNP3 with DPI: all application functions'
+        ics:
+          protocol: dnp3
+          note: Full DNP3 access including Direct Operate (FC05)
+    effect: semantic
+  improve-logging:
+    title: Enable firewall logging and PCAP retention
+    description: Enable per-rule logging on all deny actions and critical allow rules. Without this, post-incident review is blind.
+    rules: []
+    effect: logging
+  tighten-firewall-objects:
+    title: Tighten firewall object hygiene
+    description: Replace broad /24 matches with /32 host objects for RTAC and GPS. Name and document each rule.
+    rules: []
+    effect: restricts
+  positive-validation:
+    title: Post-change positive/negative validation
+    description: Build a test plan that verifies legitimate flows still work and illegitimate flows are blocked.
+    rules: []
+    effect: conceptual
+  rtac-architecture-review:
+    title: Validate and document RTAC hardening
+    description: Verify RTAC host-level hardening (ip_forward=0, FORWARD DROP, policy routing). Document as a compensating control.
+    rules: []
+    effect: conceptual
+policy:
+  - rule:
+      id: allow-mgmt-ui
+      description: Allow management UI/API access
+      protocols:
+        - name: tcp
+          port: '8080'
+      ics: {}
+      action: ALLOW
+  - rule:
+      id: enterprise-to-vendor
+      description: 'Enterprise to Vendor: SSH, HTTP/S'
+      sourceZones:
+        - ${zone:enterprise_net}
+      destZones:
+        - ${zone:vendor_net}
+      protocols:
+        - name: tcp
+          port: '22'
+        - name: tcp
+          port: '80'
+        - name: tcp
+          port: '443'
+      ics: {}
+      action: ALLOW
+  - rule:
+      id: deny-enterprise-to-ot
+      description: 'BLOCK: Enterprise cannot reach OT Operations'
+      sourceZones:
+        - ${zone:enterprise_net}
+      destZones:
+        - ${zone:ot_ops_net}
+      protocols:
+        - name: tcp
+          port: '8080'
+        - name: tcp
+          port: '1881'
+        - name: tcp
+          port: '502'
+        - name: tcp
+          port: '20000'
+      ics: {}
+      action: DENY
+    when: block-enterprise-to-ot
+    logging: true
+  - rule:
+      id: deny-enterprise-to-field
+      description: 'BLOCK: Enterprise cannot reach Field Devices'
+      sourceZones:
+        - ${zone:enterprise_net}
+      destZones:
+        - ${zone:field_net}
+      protocols:
+        - name: tcp
+          port: '8080'
+        - name: tcp
+          port: '502'
+        - name: tcp
+          port: '20000'
+      ics: {}
+      action: DENY
+    when: block-enterprise-to-field
+    logging: true
+  - rule:
+      id: vendor-to-ot-restricted
+      description: 'Vendor to OT: SSH and HTTPS only'
+      sourceZones:
+        - ${zone:vendor_net}
+      destZones:
+        - ${zone:ot_ops_net}
+      protocols:
+        - name: tcp
+          port: '443'
+        - name: tcp
+          port: '22'
+      ics: {}
+      action: ALLOW
+    when: restrict-vendor-to-ot
+  - rule:
+      id: deny-vendor-to-field
+      description: 'BLOCK: Vendor cannot reach Field Devices'
+      sourceZones:
+        - ${zone:vendor_net}
+      destZones:
+        - ${zone:field_net}
+      protocols:
+        - name: tcp
+          port: '8080'
+        - name: tcp
+          port: '502'
+        - name: tcp
+          port: '20000'
+      ics: {}
+      action: DENY
+    when: block-vendor-to-field
+    logging: true
+  - rule:
+      id: rtac-to-field-modbus
+      description: 'RTAC to Field: Modbus TCP'
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:field_net}
+      sources:
+        - ${ip:rtac-1}/32
+      protocols:
+        - name: tcp
+          port: '502'
+      action: ALLOW
+      ics: {}
+    logging: true
+    semantic: modbus-dpi
+    predicate:
+      protocol: modbus
+      functionCode:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+  - rule:
+      id: rtac-to-field-dnp3
+      description: 'RTAC to Field: DNP3 TCP'
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:field_net}
+      sources:
+        - ${ip:rtac-1}/32
+      protocols:
+        - name: tcp
+          port: '20000'
+      action: ALLOW
+      ics: {}
+    logging: true
+    semantic: dnp3-dpi
+    predicate:
+      protocol: dnp3
+  - rule:
+      id: rtac-to-field-http
+      description: 'RTAC to Field: HTTP API'
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:field_net}
+      sources:
+        - ${ip:rtac-1}/32
+      protocols:
+        - name: tcp
+          port: '8080'
+      ics: {}
+      action: ALLOW
+    logging: true
+  - rule:
+      id: deny-ot-to-field-non-rtac
+      description: 'BLOCK: OT Ops to Field deny-all (RTAC ALLOW rules above take first-match priority)'
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:field_net}
+      protocols:
+        - name: tcp
+          port: '8080'
+        - name: tcp
+          port: '502'
+        - name: tcp
+          port: '20000'
+      ics: {}
+      action: DENY
+    when: pin-rtac-to-field
+    logging: true
+  - rule:
+      id: ot-intrazone
+      description: OT Operations internal traffic
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:ot_ops_net}
+      protocols:
+        - name: tcp
+          port: '8080'
+        - name: tcp
+          port: '1881'
+        - name: tcp
+          port: '502'
+        - name: tcp
+          port: '20000'
+        - name: udp
+          port: '123'
+      ics: {}
+      action: ALLOW
+  - rule:
+      id: gps-to-field-ntp
+      description: 'GPS to Field: NTP time sync'
+      sourceZones:
+        - ${zone:ot_ops_net}
+      destZones:
+        - ${zone:field_net}
+      sources:
+        - ${ip:gps-1}/32
+      protocols:
+        - name: udp
+          port: '123'
+      ics: {}
+      action: ALLOW
+  - rule:
+      id: allow-return-traffic
+      description: Allow established return traffic
+      state:
+        - ESTABLISHED
+        - RELATED
+      ics: {}
+      action: ALLOW
+phases:
+  rules: |-
+    The six rules below are the contract for what cross-zone
+    traffic the substation must allow. Everything else stays denied.
+
+    {{noPlan}}:::guided
+    Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
+    reference, or **Apply Your Plan** to push the policy built from
+    your Lab 1.4 picks. Then walk the rule table below and confirm
+    each row is present in containd's web UI
+    ([http://localhost:9080](http://localhost:9080)) or via
+    `show running-config` in the CLI. Understanding *what* is in
+    the policy matters as much as *how* it gets there.
+    :::
+
+    :::technical
+    Author these rules in containd directly - your choice of the web
+    UI or the appliance CLI. The banner above will switch to
+    "Your custom policy" once your commit lands. The JSON schema and
+    CLI walkthrough are in the hints below.
+    :::
+
+    ### Firewall Rules to Implement
+
+    {{ruleTable}}
+
+    > **Critical:** RTAC rules are source-pinned to `${ip:rtac-1}`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
+
+    :::hint Creating rules via the containd CLI
+    The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the `fw-1` terminal, type `containd cli` to enter the appliance shell, then:
+
+        export config > /tmp/policy.json
+        shell                   # drop to bash
+        vi /tmp/policy.json     # edit the firewall.rules array to add each rule above
+        exit                    # back to containd CLI
+        import config /tmp/policy.json
+        show diff               # confirm what will change
+        commit
+
+    Each rule object in `firewall.rules` looks like:
+
+        {
+          "id": "rtac-to-field-modbus",
+          "description": "RTAC Modbus polling to field devices",
+          "sourceZones": ["${zone:ot_ops_net}"],
+          "destZones": ["${zone:field_net}"],
+          "sources": ["${ip:rtac-1}/32"],
+          "protocols": [{"name": "tcp", "port": "502"}],
+          "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
+          "action": "ALLOW",
+          "log": true
+        }
+
+    Tip: `commit confirmed 60` commits with auto-rollback after 60 seconds unless you type `confirm` - useful when pushing rules and you don't want to lock yourself out.
+    :::
+  positive: |-
+    Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
+
+    **Positive validation commands (based on your plan):**
+
+    {{tests}}
+
+    If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
+  negative: |-
+    Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
+
+    **Negative validation commands (based on your plan):**
+
+    {{tests}}
+
+    After each failed attempt, check the containd event log to confirm the deny was logged. From the `fw-1` terminal, type `containd cli`, then:
+
+        show audit
+
+    …and look for the most recent deny entries. If you don't see your test attempts, logging isn't enabled on the deny rules.
+
+    If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.
+tests:
+  - kind: positive
+    text: |-
+      **RTAC → field Modbus** (should succeed) — from rtac-1:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 ${ip:relay-1}
+
+      Or verify via the RTAC API:
+
+          curl -s http://${ip:rtac-1}:8080/api/state | python3 -m json.tool
+  - kind: positive
+    text: |-
+      **HMI → RTAC** intra-zone (should still work):
+
+          curl -sf http://${ip:hmi-1}:1881 --connect-timeout 3
+  - kind: positive
+    when: restrict-vendor-to-ot
+    text: |-
+      **Vendor → OT SSH** (should succeed):
+
+          ssh -o ConnectTimeout=3 eng@${ip:rtac-1} echo ok
+  - kind: negative
+    when: block-enterprise-to-field
+    text: |-
+      **Enterprise → field Modbus** (should be BLOCKED) — from kali-1:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:relay-1}
+  - kind: negative
+    when: block-enterprise-to-field
+    text: |-
+      **Enterprise → field DNP3** (should be BLOCKED) — from kali-1:
+
+          dnp3poll ${ip:relay-1}:20000 -a 1 -t 3
+  - kind: negative
+    when: block-enterprise-to-ot
+    text: |-
+      **Enterprise → OT Modbus** (should be BLOCKED) — from kali-1:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:rtac-1}
+  - kind: negative
+    when: block-vendor-to-field
+    text: |-
+      **Vendor → field Modbus** (should be BLOCKED) — from eng-ws-1:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:capbank-1}
+  - kind: negative
+    when: block-vendor-to-field
+    text: |-
+      **Vendor → field HTTP** (should be BLOCKED) — from eng-ws-1:
+
+          curl -sf --connect-timeout 3 http://${ip:regulator-1}:8080/api/state
+  - kind: negative
+    when: pin-rtac-to-field
+    text: |-
+      **Non-RTAC OT host → field** (should be BLOCKED) — from historian-1 or openplc-1:
+
+          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:relay-1}
+negativeEmpty: Your plan did not include cross-zone deny rules, so there are no negative tests to run — all cross-zone traffic is still permitted under the weak baseline. Consider whether that residual risk is acceptable.
+flags:
+  logging: improve-logging
+  objects: tighten-firewall-objects
+  validation: positive-validation
+  dpi:
+    - modbus-dpi
+    - dnp3-dpi
+nodeMap:
+  baseline-assessment:
+    primary: fw-1
+    others:
+      - eng-ws-1
+      - kali-1
+  segmentation-requirements:
+    primary: ''
+    others: []
+  remediation-planning:
+    primary: ''
+    others: []
+  firewall-implementation:
+    primary: fw-1
+    others:
+      - kali-1
+      - eng-ws-1
+  hardening-configurations:
+    primary: kali-1
+    others: []
+  vendor-rdp-compromise:
+    primary: kali-1
+    others:
+      - vendor-jump-1
+  validation-evidence:
+    primary: kali-1
+    others:
+      - vendor-jump-1
+      - eng-ws-1
+nodeInference:
+  - node: kali-1
+    ip: ${ip:kali-1}
+    pattern: \bkali\b
+  - node: vendor-jump-1
+    ip: ${ip:vendor-jump-1}
+    pattern: \bvendor.?jump\b
+  - node: eng-ws-1
+    ip: ${ip:eng-ws-1}
+    pattern: \bengineering.?workstation\b
+  - node: openplc-1
+    ip: ${ip:openplc-1}
+    pattern: \bopenplc\b
+  - node: rtac-1
+    ip: ${ip:rtac-1}
+    pattern: \brtac\b
+noPlan: |+
+  You have not completed a remediation plan yet. The rules below are the minimum baseline - RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/{{planRole}}) exercise to build a plan that drives additional rules.
+
+legacyDisplayMutation: true
+legacyEffects: true
+planningOnly:
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker
+requirementOrder:
+  - enterprise-to-field
+  - enterprise-to-ot
+  - vendor-to-ot
+  - non-rtac-to-field
+  - unauth-modbus-writes
+groupOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-ot
+  - restrict-vendor-to-ot
+  - block-vendor-to-field
+  - pin-rtac-to-field
+  - modbus-dpi
+  - dnp3-dpi
+  - improve-logging
+  - tighten-firewall-objects
+  - positive-validation
+  - rtac-architecture-review
+impactOrder:
+  - block-enterprise-to-field
+  - block-enterprise-to-ot
+  - restrict-vendor-to-ot
+  - block-vendor-to-field
+  - pin-rtac-to-field
+  - modbus-dpi
+  - dnp3-dpi
+  - positive-validation
+  - ids-deployment
+  - ot-asset-inventory
+  - vendor-zta-broker
+loggingPrefixes:
+  - rtac-
+dpiNotice:
+  title: ICS DPI enabled
+  description: ' - containd will filter by Modbus/DNP3 function code, not just port number'
+dpiForbiddenNotice:
+  title: ICS DPI planned
+  description: ', not enforceable in this range yet'

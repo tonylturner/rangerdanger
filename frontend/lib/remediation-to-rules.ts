@@ -1,8 +1,7 @@
-// Maps remediation action IDs from Exercise 2 to concrete containd firewall
-// rules for Exercise 3. The student's plan drives which rules they must build.
-
-import { loadRemediationPlan, type RemediationPlan } from "./remediation-plan";
+// Package-owned planning and policy compiler. No binding means no planner.
+import { actionEffectLabel, loadRemediationPlan, type RemediationPlan } from "./remediation-plan";
 import type { CurriculumScope } from "./curriculum-storage";
+import type { CurriculumBinding, CurriculumPolicyRule, CurriculumPredicate } from "./api";
 
 export type FirewallRule = {
   id: string;
@@ -13,7 +12,7 @@ export type FirewallRule = {
   action: "ALLOW" | "DENY";
   purpose: string;
   log?: boolean;
-  ics?: { protocol: string; functionCodes?: number[]; note?: string };
+  ics?: CurriculumPredicate;
 };
 
 export type RuleGroup = {
@@ -21,211 +20,6 @@ export type RuleGroup = {
   title: string;
   description: string;
   rules: FirewallRule[];
-};
-
-// Always present regardless of plan — operations must work.
-const BASELINE_RULES: FirewallRule[] = [
-  {
-    id: "rtac-to-field-modbus",
-    source: "10.30.30.20",
-    destination: "10.40.40.0/24",
-    proto: "TCP",
-    port: "502",
-    action: "ALLOW",
-    purpose: "RTAC Modbus polling to field devices",
-  },
-  {
-    id: "rtac-to-field-dnp3",
-    source: "10.30.30.20",
-    destination: "10.40.40.0/24",
-    proto: "TCP",
-    port: "20000",
-    action: "ALLOW",
-    purpose: "RTAC DNP3 polling to field devices",
-  },
-  {
-    id: "rtac-to-field-http",
-    source: "10.30.30.20",
-    destination: "10.40.40.0/24",
-    proto: "TCP",
-    port: "8080",
-    action: "ALLOW",
-    purpose: "RTAC HTTP API to field devices",
-  },
-  {
-    id: "gps-to-field-ntp",
-    source: "10.30.30.50",
-    destination: "10.40.40.0/24",
-    proto: "UDP",
-    port: "123",
-    action: "ALLOW",
-    purpose: "GPS NTP time sync to field devices",
-  },
-];
-
-// Each remediation action produces a group of firewall rules.
-const REMEDIATION_RULE_MAP: Record<string, Omit<RuleGroup, "remediationId">> = {
-  "block-enterprise-to-field": {
-    title: "Block enterprise → field direct access",
-    description:
-      "Remove the paths from the corporate IT zone straight to field relays and reclosers.",
-    rules: [
-      {
-        id: "deny-enterprise-to-field",
-        source: "10.10.10.0/24",
-        destination: "10.40.40.0/24",
-        proto: "TCP",
-        port: "502, 20000, 8080",
-        action: "DENY",
-        purpose: "Block enterprise direct Modbus/DNP3/HTTP to field devices",
-        log: true,
-      },
-    ],
-  },
-  "block-enterprise-to-ot": {
-    title: "Block enterprise → OT Operations ICS ports",
-    description:
-      "Remove enterprise access to HMI, RTAC, and OpenPLC on ICS and management ports.",
-    rules: [
-      {
-        id: "deny-enterprise-to-ot",
-        source: "10.10.10.0/24",
-        destination: "10.30.30.0/24",
-        proto: "TCP",
-        port: "502, 20000, 8080, 1881",
-        action: "DENY",
-        purpose: "Block enterprise ICS/HMI access to OT Operations",
-        log: true,
-      },
-    ],
-  },
-  "restrict-vendor-to-ot": {
-    title: "Restrict vendor → OT to SSH/HTTPS only",
-    description:
-      "Vendor remote access limited to encrypted management protocols. No direct Modbus or HMI web.",
-    rules: [
-      {
-        id: "vendor-to-ot-restricted",
-        source: "10.20.20.0/24",
-        destination: "10.30.30.0/24",
-        proto: "TCP",
-        port: "22, 443",
-        action: "ALLOW",
-        purpose: "Vendor management access (SSH/HTTPS only)",
-      },
-    ],
-  },
-  "block-vendor-to-field": {
-    title: "Block vendor → field devices entirely",
-    description:
-      "No legitimate reason for the vendor DMZ to reach field devices directly.",
-    rules: [
-      {
-        id: "deny-vendor-to-field",
-        source: "10.20.20.0/24",
-        destination: "10.40.40.0/24",
-        proto: "TCP",
-        port: "502, 20000, 8080",
-        action: "DENY",
-        purpose: "Block vendor direct access to field devices",
-        log: true,
-      },
-    ],
-  },
-  "pin-rtac-to-field": {
-    title: "Pin field-device access to RTAC source IP",
-    description:
-      "Only the RTAC (10.30.30.20) can reach field devices from OT Ops. The RTAC ALLOW rules above this DENY take priority (first-match), so RTAC traffic passes while all other OT Ops hosts are blocked.",
-    rules: [
-      {
-        id: "deny-ot-to-field-non-rtac",
-        source: "10.30.30.0/24",
-        destination: "10.40.40.0/24",
-        proto: "TCP",
-        port: "502, 20000, 8080",
-        action: "DENY",
-        purpose: "Block non-RTAC OT hosts from field (RTAC ALLOW rules above take priority)",
-        log: true,
-      },
-    ],
-  },
-  "modbus-dpi": {
-    title: "Modbus ICS DPI — limit function codes",
-    description:
-      "Configure containd to filter Modbus by function code. Allow reads (FC1–4) broadly; restrict writes (FC5/6) to the RTAC only.",
-    rules: [
-      {
-        id: "rtac-modbus-dpi",
-        source: "10.30.30.20",
-        destination: "10.40.40.0/24",
-        proto: "TCP",
-        port: "502",
-        action: "ALLOW",
-        purpose: "RTAC Modbus with DPI: FC1-6 (read + write)",
-        ics: {
-          protocol: "modbus",
-          functionCodes: [1, 2, 3, 4, 5, 6],
-          note: "Full read/write for supervisory control",
-        },
-      },
-    ],
-  },
-  "dnp3-dpi": {
-    title: "DNP3 ICS DPI — restrict Direct Operate",
-    description:
-      "Configure containd to recognize DNP3 and block Direct Operate from non-RTAC sources. Reads and integrity polls stay available.",
-    rules: [
-      {
-        id: "rtac-dnp3-dpi",
-        source: "10.30.30.20",
-        destination: "10.40.40.0/24",
-        proto: "TCP",
-        port: "20000",
-        action: "ALLOW",
-        purpose: "RTAC DNP3 with DPI: all application functions",
-        ics: {
-          protocol: "dnp3",
-          note: "Full DNP3 access including Direct Operate (FC05)",
-        },
-      },
-    ],
-  },
-  "improve-logging": {
-    title: "Enable firewall logging and PCAP retention",
-    description:
-      "Enable per-rule logging on all deny actions and critical allow rules. Without this, post-incident review is blind.",
-    rules: [],
-  },
-  "tighten-firewall-objects": {
-    title: "Tighten firewall object hygiene",
-    description:
-      "Replace broad /24 matches with /32 host objects for RTAC and GPS. Name and document each rule.",
-    rules: [],
-  },
-  "positive-validation": {
-    title: "Post-change positive/negative validation",
-    description:
-      "Build a test plan that verifies legitimate flows still work and illegitimate flows are blocked.",
-    rules: [],
-  },
-  "rtac-architecture-review": {
-    title: "Validate and document RTAC hardening",
-    description:
-      "Verify RTAC host-level hardening (ip_forward=0, FORWARD DROP, policy routing). Document as a compensating control.",
-    rules: [],
-  },
-};
-
-// Enterprise → vendor management is always needed if the student selects
-// any vendor-zone remediation, but also reasonable as a baseline rule.
-const ENTERPRISE_TO_VENDOR_RULE: FirewallRule = {
-  id: "enterprise-to-vendor",
-  source: "10.10.10.0/24",
-  destination: "10.20.20.0/24",
-  proto: "TCP",
-  port: "22, 80, 443",
-  action: "ALLOW",
-  purpose: "Enterprise to vendor management (SSH/HTTP/HTTPS)",
 };
 
 export type ActionSummary = {
@@ -240,7 +34,7 @@ export type DynamicExercisePlan = {
   selectedActions: string[];
   baselineRules: FirewallRule[];
   remediationGroups: RuleGroup[];
-  enterpriseToVendorRule: FirewallRule;
+  enterpriseToVendorRule: FirewallRule | null;
   allRules: FirewallRule[];
   enableLogging: boolean;
   tightenObjects: boolean;
@@ -250,73 +44,65 @@ export type DynamicExercisePlan = {
   unselectedSummary: ActionSummary[];
 };
 
-export function buildDynamicPlan(plan: RemediationPlan | null): DynamicExercisePlan {
+// Keep binding provenance out of the serializable historical plan DTO.
+const bindings = new WeakMap<DynamicExercisePlan, CurriculumBinding>();
+export function curriculumForPlan(plan: DynamicExercisePlan): CurriculumBinding {
+  const binding = bindings.get(plan);
+  if (!binding) throw new Error("Dynamic plan has no curriculum binding");
+  return binding;
+}
+
+export function buildDynamicPlan(plan: RemediationPlan | null, curriculum: CurriculumBinding): DynamicExercisePlan {
   const selected = plan?.selectedActionIds ?? [];
   const hasRemediationPlan = plan !== null && selected.length > 0;
-
+  const allowed = (id: string) => curriculum.icsRules !== "forbidden" || curriculum.groups[id]?.effect !== "semantic";
   const groups: RuleGroup[] = [];
   for (const actionId of selected) {
-    const mapping = REMEDIATION_RULE_MAP[actionId];
-    if (mapping && mapping.rules.length > 0) {
-      groups.push({ remediationId: actionId, ...mapping });
+    const mapping = curriculum.groups[actionId];
+    if (mapping && mapping.rules.length > 0 && allowed(actionId)) {
+      // Do not leak effect metadata into the historical plan DTO.
+      groups.push({ remediationId: actionId, title: mapping.title, description: mapping.description, rules: mapping.rules });
     }
   }
-
-  const enableLogging = selected.includes("improve-logging");
-  const tightenObjects = selected.includes("tighten-firewall-objects");
-  const includeValidation = selected.includes("positive-validation");
-  const includeDpi =
-    selected.includes("modbus-dpi") || selected.includes("dnp3-dpi");
-
-  // Collect all rules in order: baseline → enterprise-to-vendor → remediation groups
-  const allRules: FirewallRule[] = [
-    ...BASELINE_RULES,
-    ENTERPRISE_TO_VENDOR_RULE,
-    ...groups.flatMap((g) => g.rules),
-  ];
-
-  // If logging is selected, mark all DENY rules and RTAC ALLOW rules with log: true
-  if (enableLogging) {
-    for (const rule of allRules) {
-      if (rule.action === "DENY" || rule.id.startsWith("rtac-")) {
-        rule.log = true;
+  if (!curriculum.legacyEffects) {
+    for (const id of curriculum.groupOrder) {
+      const group = curriculum.groups[id];
+      if (!selected.includes(id) && group.omittedRules?.length) {
+        groups.push({ remediationId: id, title: group.title, description: group.description, rules: group.omittedRules });
       }
     }
   }
-
-  return {
-    hasRemediationPlan,
-    selectedActions: selected,
-    baselineRules: BASELINE_RULES,
-    remediationGroups: groups,
-    enterpriseToVendorRule: ENTERPRISE_TO_VENDOR_RULE,
-    allRules,
-    enableLogging,
-    tightenObjects,
-    includeValidation,
-    includeDpi,
-    selectedSummary: selected.map((id) => {
-      const m = REMEDIATION_RULE_MAP[id];
-      return {
-        id,
-        title: m?.title ?? id,
-        description: m?.description ?? "",
-        hasRules: (m?.rules.length ?? 0) > 0,
-      };
-    }),
-    unselectedSummary: Object.entries(REMEDIATION_RULE_MAP)
-      .filter(([id]) => !selected.includes(id))
-      .map(([id, m]) => ({
-        id,
-        title: m.title,
-        description: m.description,
-        hasRules: m.rules.length > 0,
-      })),
+  const enableLogging = selected.includes(curriculum.flags.logging);
+  const baseline = curriculum.legacyDisplayMutation ? curriculum.baselineRules : structuredClone(curriculum.baselineRules);
+  let allRules = [...baseline, ...(curriculum.enterpriseToVendorRule ? [curriculum.enterpriseToVendorRule] : []), ...groups.flatMap((g) => g.rules)];
+  if (!curriculum.legacyDisplayMutation) allRules = structuredClone(allRules);
+  if (curriculum.icsRules === "forbidden") for (const rule of allRules) delete rule.ics;
+  if (enableLogging) for (const rule of allRules) {
+    if (rule.action === "DENY" || (curriculum.legacyDisplayMutation ? curriculum.loggingPrefixes.some((prefix) => rule.id.startsWith(prefix)) : rule.action === "ALLOW")) rule.log = true;
+  }
+  const summarise = (id: string): ActionSummary => {
+    const m = curriculum.groups[id];
+    const label = actionEffectLabel(curriculum, id);
+    return {
+      id, title: m?.title ?? id,
+      description: (m?.description ?? "") + (label ? ` — ${label}` : ""),
+      hasRules: allowed(id) && (m?.rules.length ?? 0) > 0,
+    };
   };
+  const result: DynamicExercisePlan = {
+    hasRemediationPlan, selectedActions: selected, baselineRules: baseline, remediationGroups: groups,
+    enterpriseToVendorRule: curriculum.enterpriseToVendorRule, allRules, enableLogging,
+    tightenObjects: selected.includes(curriculum.flags.objects), includeValidation: selected.includes(curriculum.flags.validation),
+    includeDpi: curriculum.flags.dpi.some((id) => selected.includes(id)),
+    selectedSummary: selected.map(summarise),
+    unselectedSummary: curriculum.groupOrder.filter((id) => !selected.includes(id)).map(summarise),
+  };
+  bindings.set(result, curriculum);
+  return result;
 }
 
-export function loadDynamicPlan(scope: CurriculumScope): DynamicExercisePlan {
-  return buildDynamicPlan(loadRemediationPlan(scope));
+export function loadDynamicPlan(scope: CurriculumScope): DynamicExercisePlan | null {
+  return scope.curriculum ? buildDynamicPlan(loadRemediationPlan(scope), scope.curriculum) : null;
 }
 
 // Generate the markdown rule table for Exercise 3 Phase 3.
@@ -337,271 +123,30 @@ export function renderRuleTable(plan: DynamicExercisePlan): string {
   ].join("\n");
 }
 
-// Build positive validation test commands based on what the plan allows.
-export function positiveValidationTests(plan: DynamicExercisePlan): string[] {
-  // Each entry is markdown: a bold label line, then the command indented
-  // 4 spaces so the scenario runner renders it as a run/copy command
-  // block. (Un-indented command lines would render as plain prose, and a
-  // leading "#" would render as a markdown heading.)
-  const tests = [
-    "**RTAC → field Modbus** (should succeed) — from rtac-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20\n\nOr verify via the RTAC API:\n\n    curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool",
-    "**HMI → RTAC** intra-zone (should still work):\n\n    curl -sf http://10.30.30.10:1881 --connect-timeout 3",
-  ];
-  if (plan.selectedActions.includes("restrict-vendor-to-ot")) {
-    tests.push(
-      "**Vendor → OT SSH** (should succeed):\n\n    ssh -o ConnectTimeout=3 eng@10.30.30.20 echo ok",
-    );
-  }
+function validationTests(plan: DynamicExercisePlan, kind: "positive" | "negative"): string[] {
+  const c = curriculumForPlan(plan);
+  const tests = c.tests.filter((t) => t.kind === kind && (!t.when || plan.selectedActions.includes(t.when))).map((t) => t.text);
+  if (!tests.length && kind === "negative") tests.push(c.negativeEmpty);
   return tests;
 }
+export function positiveValidationTests(plan: DynamicExercisePlan): string[] { return validationTests(plan, "positive"); }
+export function negativeValidationTests(plan: DynamicExercisePlan): string[] { return validationTests(plan, "negative"); }
 
-// Build negative validation test commands based on what the plan blocks.
-export function negativeValidationTests(plan: DynamicExercisePlan): string[] {
-  const tests: string[] = [];
-
-  if (plan.selectedActions.includes("block-enterprise-to-field")) {
-    tests.push(
-      "**Enterprise → field Modbus** (should be BLOCKED) — from kali-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20",
-    );
-    tests.push(
-      "**Enterprise → field DNP3** (should be BLOCKED) — from kali-1:\n\n    dnp3poll 10.40.40.20:20000 -a 1 -t 3",
-    );
-  }
-
-  if (plan.selectedActions.includes("block-enterprise-to-ot")) {
-    tests.push(
-      "**Enterprise → OT Modbus** (should be BLOCKED) — from kali-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.30.30.20",
-    );
-  }
-
-  if (plan.selectedActions.includes("block-vendor-to-field")) {
-    tests.push(
-      "**Vendor → field Modbus** (should be BLOCKED) — from eng-ws-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23",
-    );
-    tests.push(
-      "**Vendor → field HTTP** (should be BLOCKED) — from eng-ws-1:\n\n    curl -sf --connect-timeout 3 http://10.40.40.22:8080/api/state",
-    );
-  }
-
-  if (plan.selectedActions.includes("pin-rtac-to-field")) {
-    tests.push(
-      "**Non-RTAC OT host → field** (should be BLOCKED) — from historian-1 or openplc-1:\n\n    mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20",
-    );
-  }
-
-  if (tests.length === 0) {
-    tests.push(
-      "Your plan did not include cross-zone deny rules, so there are no negative tests to run — all cross-zone traffic is still permitted under the weak baseline. Consider whether that residual risk is acceptable.",
-    );
-  }
-
-  return tests;
-}
-
-// Generate a containd-compatible firewall config JSON from the student's plan.
-// Starts from the weak baseline structure and replaces rules.
 export function buildContaindConfig(plan: DynamicExercisePlan): object {
-  const rules: object[] = [
-    {
-      id: "allow-mgmt-ui",
-      description: "Allow management UI/API access",
-      protocols: [{ name: "tcp", port: "8080" }],
-      ics: {},
-      action: "ALLOW",
-    },
-    {
-      id: "enterprise-to-vendor",
-      description: "Enterprise to Vendor: SSH, HTTP/S",
-      sourceZones: ["wan"],
-      destZones: ["dmz"],
-      protocols: [
-        { name: "tcp", port: "22" },
-        { name: "tcp", port: "80" },
-        { name: "tcp", port: "443" },
-      ],
-      ics: {},
-      action: "ALLOW",
-    },
-  ];
-
-  const sel = new Set(plan.selectedActions);
-  const log = sel.has("improve-logging");
-
-  if (sel.has("block-enterprise-to-ot")) {
-    rules.push({
-      id: "deny-enterprise-to-ot",
-      description: "BLOCK: Enterprise cannot reach OT Operations",
-      sourceZones: ["wan"],
-      destZones: ["lan1"],
-      protocols: [
-        { name: "tcp", port: "8080" },
-        { name: "tcp", port: "1881" },
-        { name: "tcp", port: "502" },
-        { name: "tcp", port: "20000" },
-      ],
-      ics: {},
-      action: "DENY",
-      ...(log && { log: true }),
-    });
+  const curriculum = curriculumForPlan(plan);
+  const selected = new Set(plan.selectedActions);
+  const rules: CurriculumPolicyRule[] = [];
+  for (const entry of curriculum.policy) {
+    if (entry.when && !selected.has(entry.when) || entry.unless && selected.has(entry.unless)) continue;
+    if (entry.when && curriculum.groups[entry.when]?.effect === "semantic" && curriculum.icsRules === "forbidden") continue;
+    const rule = structuredClone(entry.rule);
+    const predicate = entry.semantic && selected.has(entry.semantic) ? entry.predicate : rule.ics;
+    if (entry.semantic) delete rule.ics;
+    if (entry.logging && selected.has(curriculum.flags.logging)) rule.log = true;
+    if (entry.semantic && curriculum.icsRules !== "forbidden") rule.ics = predicate;
+    if (curriculum.icsRules === "forbidden") delete rule.ics;
+    rules.push(rule);
   }
-
-  if (sel.has("block-enterprise-to-field")) {
-    rules.push({
-      id: "deny-enterprise-to-field",
-      description: "BLOCK: Enterprise cannot reach Field Devices",
-      sourceZones: ["wan"],
-      destZones: ["lan2"],
-      protocols: [
-        { name: "tcp", port: "8080" },
-        { name: "tcp", port: "502" },
-        { name: "tcp", port: "20000" },
-      ],
-      ics: {},
-      action: "DENY",
-      ...(log && { log: true }),
-    });
-  }
-
-  if (sel.has("restrict-vendor-to-ot")) {
-    rules.push({
-      id: "vendor-to-ot-restricted",
-      description: "Vendor to OT: SSH and HTTPS only",
-      sourceZones: ["dmz"],
-      destZones: ["lan1"],
-      protocols: [
-        { name: "tcp", port: "443" },
-        { name: "tcp", port: "22" },
-      ],
-      ics: {},
-      action: "ALLOW",
-    });
-  }
-
-  if (sel.has("block-vendor-to-field")) {
-    rules.push({
-      id: "deny-vendor-to-field",
-      description: "BLOCK: Vendor cannot reach Field Devices",
-      sourceZones: ["dmz"],
-      destZones: ["lan2"],
-      protocols: [
-        { name: "tcp", port: "8080" },
-        { name: "tcp", port: "502" },
-        { name: "tcp", port: "20000" },
-      ],
-      ics: {},
-      action: "DENY",
-      ...(log && { log: true }),
-    });
-  }
-
-  // RTAC → field rules (always present)
-  const rtacModbus: Record<string, unknown> = {
-    id: "rtac-to-field-modbus",
-    description: "RTAC to Field: Modbus TCP",
-    sourceZones: ["lan1"],
-    destZones: ["lan2"],
-    sources: ["10.30.30.20/32"],
-    protocols: [{ name: "tcp", port: "502" }],
-    action: "ALLOW",
-    ...(log && { log: true }),
-  };
-  if (sel.has("modbus-dpi")) {
-    rtacModbus.ics = {
-      // containd's ICS schema uses singular `functionCode` (see
-      // substation-improved.json + containd ui/lib/api.ts); emitting
-      // `functionCodes` here would be silently ignored, leaving the
-      // Modbus DPI rule unfiltered.
-      protocol: "modbus",
-      functionCode: [1, 2, 3, 4, 5, 6],
-    };
-  } else {
-    rtacModbus.ics = {};
-  }
-  rules.push(rtacModbus);
-
-  const rtacDnp3: Record<string, unknown> = {
-    id: "rtac-to-field-dnp3",
-    description: "RTAC to Field: DNP3 TCP",
-    sourceZones: ["lan1"],
-    destZones: ["lan2"],
-    sources: ["10.30.30.20/32"],
-    protocols: [{ name: "tcp", port: "20000" }],
-    action: "ALLOW",
-    ...(log && { log: true }),
-  };
-  if (sel.has("dnp3-dpi")) {
-    rtacDnp3.ics = { protocol: "dnp3" };
-  } else {
-    rtacDnp3.ics = {};
-  }
-  rules.push(rtacDnp3);
-
-  rules.push({
-    id: "rtac-to-field-http",
-    description: "RTAC to Field: HTTP API",
-    sourceZones: ["lan1"],
-    destZones: ["lan2"],
-    sources: ["10.30.30.20/32"],
-    protocols: [{ name: "tcp", port: "8080" }],
-    ics: {},
-    action: "ALLOW",
-    ...(log && { log: true }),
-  });
-
-  if (sel.has("pin-rtac-to-field")) {
-    rules.push({
-      id: "deny-ot-to-field-non-rtac",
-      description:
-        "BLOCK: OT Ops to Field deny-all (RTAC ALLOW rules above take first-match priority)",
-      sourceZones: ["lan1"],
-      destZones: ["lan2"],
-      protocols: [
-        { name: "tcp", port: "8080" },
-        { name: "tcp", port: "502" },
-        { name: "tcp", port: "20000" },
-      ],
-      ics: {},
-      action: "DENY",
-      ...(log && { log: true }),
-    });
-  }
-
-  // Intra-zone and infrastructure
-  rules.push(
-    {
-      id: "ot-intrazone",
-      description: "OT Operations internal traffic",
-      sourceZones: ["lan1"],
-      destZones: ["lan1"],
-      protocols: [
-        { name: "tcp", port: "8080" },
-        { name: "tcp", port: "1881" },
-        { name: "tcp", port: "502" },
-        { name: "tcp", port: "20000" },
-        { name: "udp", port: "123" },
-      ],
-      ics: {},
-      action: "ALLOW",
-    },
-    {
-      id: "gps-to-field-ntp",
-      description: "GPS to Field: NTP time sync",
-      sourceZones: ["lan1"],
-      destZones: ["lan2"],
-      sources: ["10.30.30.50/32"],
-      protocols: [{ name: "udp", port: "123" }],
-      ics: {},
-      action: "ALLOW",
-    },
-    {
-      id: "allow-return-traffic",
-      description: "Allow established return traffic",
-      state: ["ESTABLISHED", "RELATED"],
-      ics: {},
-      action: "ALLOW",
-    }
-  );
-
   return {
     schema_version: "0.1.0",
     system: {
@@ -617,24 +162,8 @@ export function buildContaindConfig(plan: DynamicExercisePlan): object {
       },
       ssh: {},
     },
-    interfaces: [
-      { name: "wan", zone: "wan", access: {} },
-      { name: "dmz", zone: "dmz", access: {} },
-      { name: "lan1", zone: "lan1", access: {} },
-      { name: "lan2", zone: "lan2", access: {} },
-      {
-        name: "lan3",
-        zone: "lan3",
-        access: { mgmt: true, http: true, https: true, ssh: true },
-      },
-    ],
-    zones: [
-      { name: "wan", description: "Enterprise Zone" },
-      { name: "dmz", description: "Vendor / Engineering Zone" },
-      { name: "lan1", description: "OT Operations Zone" },
-      { name: "lan2", description: "Field Device Zone" },
-      { name: "lan3", description: "RangerDanger management control plane" },
-    ],
+    interfaces: curriculum.interfaces,
+    zones: curriculum.zones,
     routing: {},
     dataplane: {},
     pcap: { filter: {} },

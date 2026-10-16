@@ -6,15 +6,7 @@ export type ExerciseNodeInfo = {
   others: string[];
 };
 
-export const EXERCISE_NODE_MAP: Record<string, ExerciseNodeInfo> = {
-  "baseline-assessment":       { primary: "fw-1",          others: ["eng-ws-1", "kali-1"] },
-  "segmentation-requirements": { primary: "",              others: [] },
-  "remediation-planning":      { primary: "",              others: [] },
-  "firewall-implementation":   { primary: "fw-1",          others: ["kali-1", "eng-ws-1"] },
-  "hardening-configurations":  { primary: "kali-1",        others: [] },
-  "vendor-rdp-compromise":     { primary: "kali-1",        others: ["vendor-jump-1"] },
-  "validation-evidence":       { primary: "kali-1",        others: ["vendor-jump-1", "eng-ws-1"] },
-};
+import type { CurriculumBinding } from "./api";
 
 export const NODE_LABELS: Record<string, string> = {
   "fw-1":              "Firewall",
@@ -49,21 +41,16 @@ export const NODE_UI_URLS: Record<string, string> = {
 };
 
 // Get all node IDs for an exercise, using scenario metadata or fallback map.
-export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[]): string[] {
+export function getExerciseNodes(scenarioId: string, scenarioNodes?: string[], curriculum?: CurriculumBinding): string[] {
   if (scenarioNodes && scenarioNodes.length > 0) {
     return scenarioNodes;
   }
-  const info = EXERCISE_NODE_MAP[scenarioId];
+  const info = curriculum?.nodeMap[scenarioId];
   if (!info || !info.primary) return [];
   return [info.primary, ...info.others];
 }
 
 // Infer which node a step's CLI commands should run on from description text.
-export function inferNodeFromDescription(desc: string): string | null {
-  if (desc.includes("10.10.10.50") || /\bkali\b/i.test(desc)) return "kali-1";
-  if (desc.includes("10.20.20.10") || /\bvendor.?jump\b/i.test(desc)) return "vendor-jump-1";
-  if (desc.includes("10.20.20.20") || /\bengineering.?workstation\b/i.test(desc)) return "eng-ws-1";
-  if (desc.includes("10.30.30.30") || /\bopenplc\b/i.test(desc)) return "openplc-1";
-  if (desc.includes("10.30.30.20") || /\brtac\b/i.test(desc)) return "rtac-1";
-  return null;
+export function inferNodeFromDescription(desc: string, curriculum?: CurriculumBinding): string | null {
+  return curriculum?.nodeInference.find((n) => desc.includes(n.ip) || new RegExp(n.pattern, "i").test(desc))?.node ?? null;
 }
