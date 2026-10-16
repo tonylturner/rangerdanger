@@ -326,6 +326,11 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 	if err != nil || len(traffic) != 3 {
 		t.Fatalf("traffic=%v err=%v", traffic, err)
 	}
+	for _, target := range euRecipe.traffic {
+		if target.fromNode == target.toNode {
+			t.Fatal("traffic generator includes a local loopback read")
+		}
+	}
 	for _, row := range traffic {
 		if strings.Contains(row.cmd, "POST") || strings.Contains(row.cmd, "mbpoll") {
 			t.Fatalf("generator must not invent write evidence: %+v", row)

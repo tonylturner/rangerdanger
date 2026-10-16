@@ -149,6 +149,9 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 				t.Fatalf("missing scope limit %q: %s", required, md)
 			}
 		}
+		if pcap && !strings.Contains(md, "pinned PLC-to-OLTC conduit crosses the firewall from station to field") {
+			t.Fatal(md)
+		}
 		for _, forbidden := range []string{"RTAC", "GPS/NTP", "every authorized flow works", "same-subnet"} {
 			if strings.Contains(md, forbidden) {
 				t.Fatalf("US/overbroad claim %q", forbidden)
@@ -160,10 +163,7 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 		t.Fatal(md)
 	}
 	for _, rc := range []int{-1, 2, 126, 127, 137} {
-		if classifyReportProbe(rc, 100, true) != "skipped" {
-			t.Fatalf("EU certified tool error %d as denial", rc)
-		}
-		if classifyReportProbe(rc, 100, false) != "deny" {
+		if classifyReportProbe(rc, 100) != "deny" {
 			t.Fatalf("legacy US probe classification changed for %d", rc)
 		}
 	}
@@ -171,8 +171,21 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 		rc, ms int
 		want   string
 	}{{0, 1, "allow"}, {1, 10, "allow"}, {1, 600, "deny"}, {124, 3000, "deny"}, {143, 3000, "deny"}} {
-		if got := classifyReportProbe(tc.rc, tc.ms, true); got != tc.want {
+		if got := classifyReportProbe(tc.rc, tc.ms); got != tc.want {
 			t.Fatalf("%+v got %s", tc, got)
 		}
+	}
+}
+
+func TestEUReportProbeErrorDetails(t *testing.T) {
+	rows := []validationRow{{validationProbe: validationProbe{SrcLabel: "Kali", Dst: "10.0.0.1", Port: "2404", Expected: "deny", Category: "unauthorized"}, Actual: "skipped", ProbeError: "tool not found"}}
+	md := euRecipe.renderValidationMarkdown("custom", "source", "hash", "path", false, "", rows, 0, 0, 0, 0, 1, false)
+	for _, required := range []string{"tool not found", "not denied", "do not establish why a connection failed"} {
+		if !strings.Contains(md, required) {
+			t.Fatal(md)
+		}
+	}
+	if strings.Contains(md, "positive evidence the segmentation is enforcing") {
+		t.Fatal(md)
 	}
 }

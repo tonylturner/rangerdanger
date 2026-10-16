@@ -208,10 +208,14 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 		"improved": "packages/p/firewall/b.json.improved",
 		"weak":     "packages/p/firewall/a.json",
 	}}
-	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"), time.Time{})
+	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.FixedZone("local", -5*60*60))
+	gen := lifecycle.NewGeneration(2, pkg, &manifest.Manifest{}, containd.NewClient("http://127.0.0.1:1"), start)
 	s.activateRange(gen)
 	s.activeConfigMu.RLock()
 	activeConfig, source, hash := s.activeConfig, s.policySource, s.lastAppliedHash
+	if !s.policyObservedAt.Equal(start) || s.policyObservedAt.Location() != time.UTC {
+		t.Error("activation policy timestamp is not UTC")
+	}
 	s.activeConfigMu.RUnlock()
 	if activeConfig != "strict" || source != "" || hash != "" {
 		t.Errorf("policy state = %q %q %q, want the package default and no apply", activeConfig, source, hash)

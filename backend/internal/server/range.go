@@ -71,7 +71,7 @@ func (s *Server) activateRange(gen *lifecycle.Generation) {
 	s.lastAppliedAt = time.Time{}
 	s.policyChangedAt = time.Time{}
 	s.policyEvidenceSince = time.Time{}
-	s.policyObservedAt = gen.StartedAt
+	s.policyObservedAt = gen.StartedAt.UTC()
 	s.activeConfigMu.Unlock()
 	s.pcapMu.Lock()
 	s.pcap = pcapState{}

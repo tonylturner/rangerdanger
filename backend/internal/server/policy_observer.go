@@ -120,7 +120,7 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	s.activeConfig = "custom"
 	s.policySource = "manual-custom"
 	s.lastAppliedHash = hash
-	s.policyEvidenceSince = s.policyObservedAt
+	s.policyEvidenceSince = s.policyObservedAt.UTC()
 	s.policyChangedAt = time.Now().UTC()
 	// A response can describe a snapshot taken at any point during the
 	// request. The next change must retain this request start, not its end.

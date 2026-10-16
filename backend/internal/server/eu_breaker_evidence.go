@@ -39,10 +39,15 @@ func (s *Server) euRTULog(ctx context.Context, gen *lifecycle.Generation) (strin
 		return "", err
 	}
 	defer stream.Close()
+	stop := context.AfterFunc(ctx, func() { _ = stream.Close() })
+	defer stop()
 	const limit = 8 << 20
 	raw, err := io.ReadAll(io.LimitReader(stream, limit+1))
 	if err != nil {
 		return "", err
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
 	}
 	if len(raw) > limit {
 		return "", fmt.Errorf("retained RTU log exceeds 8 MiB evidence limit")
@@ -97,7 +102,7 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 
 func euRTUPeers(log, ccIP string, start, end time.Time) error {
 	listening := false
-	pendingForeign := false
+	pendingForeign := ""
 	for _, line := range strings.Split(log, "\n") {
 		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "set-gateway:") {
 			continue
@@ -117,7 +122,7 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 			if at.After(start) {
 				return fmt.Errorf("RTU restarted after hardening")
 			}
-			listening, pendingForeign = true, false
+			listening, pendingForeign = true, ""
 		}
 		inWindow := insideEvidenceWindow(at, start, end)
 		if inWindow && fields[2] == "stopping" {
@@ -151,9 +156,15 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 		}
 		switch result {
 		case "accepted":
-			pendingForeign = foreign
+			if foreign {
+				pendingForeign = values["peer"]
+			}
 		case "completed", "unknown", "rejected", "failed":
-			pendingForeign = false
+			// A different master's rejected attempt or terminal record
+			// cannot close an outstanding foreign command's evidence gap.
+			if values["peer"] == pendingForeign {
+				pendingForeign = ""
+			}
 		default:
 			return fmt.Errorf("unknown RTU breaker execute result %q", result)
 		}
@@ -161,7 +172,7 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 	if !listening {
 		return fmt.Errorf("RTU listening marker not retained before hardening; cannot prove absence")
 	}
-	if pendingForeign {
+	if pendingForeign != "" {
 		return fmt.Errorf("foreign breaker execute straddles the hardening window without a terminal outcome")
 	}
 	return nil

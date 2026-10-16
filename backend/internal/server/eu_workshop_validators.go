@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -42,9 +42,9 @@ type euWorkshopEvidence struct {
 	processErr                                         error
 	devices                                            map[string]*euWorkshopDevice
 	deviceErrors                                       map[string]error
-	events                                             []containd.Event
-	eventsErr                                          error
-	denies                                             []conduitDeny
+	negative                                           []validationRow
+	negativeExpected                                   int
+	negativeErr                                        error
 	identityErr                                        error
 	conduits                                           conduitEvidence
 	breakerAudit                                       *euWorkshopBreakerAudit
@@ -55,6 +55,8 @@ type euWorkshopEvidence struct {
 }
 
 func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generation, slot string) euWorkshopEvidence {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
 	ev := euWorkshopEvidence{start: gen.StartedAt, devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{}}
 	s.activeConfigMu.RLock()
 	ev.policy, ev.policyAt, ev.hardeningSince = s.activeConfig, s.policyChangedAt, s.policyEvidenceSince
@@ -87,10 +89,22 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	if slot == "eu-baseline-assessment" {
 		ev.capture = s.checkPcapFileExists(ctx, gen)
 	}
+	// Negative probes precede telemetry collection, so a full matrix cannot
+	// make the subsequent three-second freshness checks stale.
+	if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" || slot == "eu-vendor-rdp-compromise" {
+		matrix, matrixErr := euResolveMatrix(gen, euRecipe.validation, slot)
+		ev.negativeErr = matrixErr
+		ev.negativeExpected = len(matrix)
+		if matrixErr == nil {
+			var cli *client.Client
+			if s.orchestrator != nil {
+				cli = s.orchestrator.DockerClient()
+			}
+			ev.negative = runEUProbeMatrix(ctx, matrix, func(ctx context.Context, p validationProbe) validationRow { return s.strictTCPProbe(ctx, cli, p) })
+		}
+	}
 	if slot == "eu-firewall-implementation" {
-		ev.conduits = s.collectConduits(ctx, gen)
-		ev.denies, ev.identityErr = euWorkshopDenies(gen, "")
-		ev.events, ev.eventsErr = ev.conduits.events, ev.conduits.eventsErr
+		ev.conduits = s.collectEUWorkshopConduits(ctx, gen)
 	} else {
 		nodes := []string{"breaker-1"}
 		if slot == "eu-vendor-rdp-compromise" || slot == "eu-validation-evidence" {
@@ -103,10 +117,6 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 		if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" {
 			ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
 		}
-	}
-	if slot == "eu-hardening-configurations" || slot == "eu-vendor-rdp-compromise" {
-		ev.denies, ev.identityErr = euWorkshopDenies(gen, slot)
-		ev.events, ev.eventsErr = gen.Containd().GetEvents(ctx, containd.MaxEventLimit, gen.StartedAt)
 	}
 	if slot == "eu-hardening-configurations" {
 		// Read both streams after this cutoff; later activity cannot sneak
@@ -141,39 +151,6 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	return ev
 }
 
-func euWorkshopDenies(gen *lifecycle.Generation, slot string) ([]conduitDeny, error) {
-	rows := []conduitDeny{}
-	for _, spec := range euRecipe.validation {
-		if spec.expected != "deny" {
-			continue
-		}
-		if slot == "eu-hardening-configurations" && !(spec.toNode == "rtu-1" && spec.fromNode == "kali-1") {
-			continue
-		}
-		if slot == "eu-vendor-rdp-compromise" && !(spec.toNode == "vendor-jump-1" || spec.fromNode == "vendor-jump-1" && spec.network == "field_net") {
-			continue
-		}
-		network := "vendor_net"
-		if spec.fromNode == "kali-1" {
-			network = "enterprise_net"
-		}
-		source, err := nodeIP(gen, spec.fromNode, network)
-		if err != nil {
-			return nil, err
-		}
-		dest, err := nodeIP(gen, spec.toNode, spec.network)
-		if err != nil {
-			return nil, err
-		}
-		port, err := strconv.Atoi(spec.port)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, conduitDeny{source, dest, port})
-	}
-	return rows, nil
-}
-
 func euWorkshopPolicy(ev euWorkshopEvidence, weak bool) ValidationCheck {
 	ok := ev.policyErr == nil && ev.policy == "weak"
 	detail := "running weak baseline"
@@ -206,42 +183,19 @@ func euWorkshopSupply(ev euWorkshopEvidence) ValidationCheck {
 	return checkPass("Feeder supply present", "fresh process solve ≤3 s: bus20/S1/S2/S3 live with positive voltage")
 }
 
-// Require the latest retained attempt per tuple, not any convenient historical
-// deny. This checks L4 refusal only: denied SYNs disclose no command payload.
-func euWorkshopNegative(ev euWorkshopEvidence, start time.Time) ValidationCheck {
-	const name = "Latest negative TCP matrix denied"
-	if start.IsZero() {
-		return checkFail(name, "missing current policy/connection attempt")
+// These active, connect-only observations are independent of policy logging
+// settings and historical CC connection windows. No SYN payload is decoded.
+func euWorkshopNegative(ev euWorkshopEvidence) ValidationCheck {
+	const name = "Active negative TCP matrix denied"
+	if ev.negativeErr != nil || ev.negativeExpected == 0 || len(ev.negative) != ev.negativeExpected {
+		return checkFail(name, fmt.Sprintf("incomplete negative probe matrix: %d/%d; %v", len(ev.negative), ev.negativeExpected, ev.negativeErr))
 	}
-	if start.Before(ev.now.Add(-conduitAttemptLimit)) {
-		start = ev.now.Add(-conduitAttemptLimit)
-	}
-	if ev.eventsErr != nil || ev.identityErr != nil || len(ev.denies) == 0 || !insideEvidenceWindow(start, ev.start, ev.now) {
-		return checkFail(name, fmt.Sprintf("missing window, events or matrix identities: %v; %v", ev.eventsErr, ev.identityErr))
-	}
-	for _, row := range ev.denies {
-		var latest *containd.Event
-		ambiguous := false
-		for i := range ev.events {
-			event := &ev.events[i]
-			if event.Kind != "firewall.rule.hit" || event.Transport != "tcp" || event.Source != row.source || event.Dest != row.dest || event.DstPort != row.port || !insideEvidenceWindow(event.Timestamp, start, ev.now) {
-				continue
-			}
-			action, _ := event.Attributes["action"].(string)
-			if latest == nil || event.Timestamp.After(latest.Timestamp) {
-				latest, ambiguous = event, false
-			} else if event.Timestamp.Equal(latest.Timestamp) {
-				previous, _ := latest.Attributes["action"].(string)
-				if action != previous {
-					ambiguous = true
-				}
-			}
-		}
-		if latest == nil || latest.Attributes["action"] != "DENY" || ambiguous {
-			return checkFail(name, fmt.Sprintf("no unambiguous latest TCP DENY within ten minutes for %s→%s:%d", row.source, row.dest, row.port))
+	for _, row := range ev.negative {
+		if row.Expected != "deny" || row.Actual != "deny" || !row.Pass || row.ProbeError != "" {
+			return checkFail(name, fmt.Sprintf("%s (%s)→%s:%s: %s; %s", row.SrcLabel, row.Src, row.Dst, row.Port, row.Actual, row.ProbeError))
 		}
 	}
-	return checkPass(name, fmt.Sprintf("latest retained attempts for all %d tuples are logged TCP DENY after policy change and within ten minutes; no denied payload decoded", len(ev.denies)))
+	return checkPass(name, fmt.Sprintf("all %d active TCP probes from real source containers were refused or timed out; no logged denies required, no decoded command or firewall-causation claim", len(ev.negative)))
 }
 
 func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
@@ -273,11 +227,11 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		if len(ev.conduits.reads) < 2 {
 			checks = append(checks, checkFail("Teaching-source HTTP conduits", "missing historian and PLC GET evidence"))
 		}
-		checks = append(checks, euWorkshopNegative(ev, start))
+		checks = append(checks, euWorkshopNegative(ev))
 	case "eu-hardening-configurations":
-		checks = append(checks, breaker(), euWorkshopSupply(ev), euWorkshopNegative(ev, ev.policyAt), euNoForeignBreaker(ev))
+		checks = append(checks, breaker(), euWorkshopSupply(ev), euWorkshopNegative(ev), euNoForeignBreaker(ev))
 	case "eu-vendor-rdp-compromise":
-		checks = append(checks, euWorkshopNegative(ev, ev.policyAt))
+		checks = append(checks, euWorkshopNegative(ev))
 		for _, node := range []string{"rmu-1", "rmu-2"} {
 			position := map[string]string{"rmu-1": "closed", "rmu-2": "open"}[node]
 			checks = append(checks, euWorkshopDeviceCheck(ev, node, node+" restored", func(d *euWorkshopDevice) bool { return d.Position == position }))

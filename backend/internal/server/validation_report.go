@@ -40,6 +40,7 @@ type validationRow struct {
 	Actual     string // "allow" | "deny" | "skipped"
 	DurationMs int
 	Pass       bool
+	ProbeError string
 }
 
 // validationTally is the aggregated result of a probe matrix run.
@@ -142,31 +143,38 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	time.Sleep(1 * time.Second) // let tcpdump open the file
 
 	// Run the probe matrix concurrently (independent containers; the PCAP
-	// captures all of it). Verdicts land well inside the PCAP window.
+	// is supporting evidence). The bounded EU matrix may outlast the short
+	// capture window; PCAP completeness is not part of its verdict.
 	rows := make([]validationRow, len(matrix))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8) // cap concurrent docker execs to limit contention
-	for i, p := range matrix {
-		wg.Add(1)
-		go func(i int, p validationProbe) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec, recipe.report.strictProbes)
-			// Authorized flows can momentarily lose a race to container /
-			// routing warmup; retry once so a transient hiccup doesn't read
-			// as a policy failure. Never retry unauthorized - a real leak
-			// must surface, not be masked by a lucky second attempt.
-			if p.Category == "authorized" && verdict != p.Expected {
-				verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec, recipe.report.strictProbes)
-			}
-			rows[i] = validationRow{
-				validationProbe: p, Actual: verdict, DurationMs: ms,
-				Pass: verdict == p.Expected,
-			}
-		}(i, p)
+	if recipe.report.strictProbes {
+		rows = runEUProbeMatrix(ctx, matrix, func(ctx context.Context, p validationProbe) validationRow {
+			return s.strictTCPProbe(ctx, cli, p)
+		})
+	} else {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 8) // cap concurrent docker execs to limit contention
+		for i, p := range matrix {
+			wg.Add(1)
+			go func(i int, p validationProbe) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
+				// Authorized flows can momentarily lose a race to container /
+				// routing warmup; retry once so a transient hiccup doesn't read
+				// as a policy failure. Never retry unauthorized - a real leak
+				// must surface, not be masked by a lucky second attempt.
+				if p.Category == "authorized" && verdict != p.Expected {
+					verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
+				}
+				rows[i] = validationRow{
+					validationProbe: p, Actual: verdict, DurationMs: ms,
+					Pass: verdict == p.Expected,
+				}
+			}(i, p)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
 	tally := tallyValidation(rows)
 
@@ -204,7 +212,7 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 // probeTCP opens a TCP connection from src to dst:port and classifies the
 // result as allow (reached) / deny (dropped) by exit code + duration -
 // same heuristic as scripts/firewall-smoke.sh and validation-report.sh.
-func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int, strict bool) (string, int) {
+func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int) (string, int) {
 	cmd := []string{"sh", "-c", fmt.Sprintf(
 		`if command -v bash >/dev/null 2>&1; then timeout %d bash -c "exec 3<>/dev/tcp/%s/%s"; else timeout %d nc -w %d %s %s </dev/null; fi`,
 		timeoutSec, dst, port, timeoutSec, timeoutSec, dst, port)}
@@ -214,10 +222,10 @@ func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, por
 	if err != nil {
 		return "skipped", ms
 	}
-	return classifyReportProbe(rc, ms, strict), ms
+	return classifyReportProbe(rc, ms), ms
 }
 
-func classifyReportProbe(rc, ms int, strict bool) string {
+func classifyReportProbe(rc, ms int) string {
 	switch {
 	case rc == 0:
 		return "allow"
@@ -229,9 +237,6 @@ func classifyReportProbe(rc, ms int, strict bool) string {
 		}
 		return "deny"
 	default:
-		if strict {
-			return "skipped"
-		}
 		return "deny"
 	}
 }
@@ -340,13 +345,17 @@ func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcap
 			} else if !r.Pass {
 				mark = "✗"
 			}
+			note := r.Note
+			if recipe.report.strictProbes && r.ProbeError != "" {
+				note += " — Untested: " + strings.NewReplacer("\n", " ", "|", "/").Replace(r.ProbeError)
+			}
 			fmt.Fprintf(&b, "| %d | %s %s | `%s` | %s | %s | %s | %dms | %s |\n",
-				n, mark, r.SrcLabel, r.Dst, r.Port, r.Expected, r.Actual, r.DurationMs, r.Note)
+				n, mark, r.SrcLabel, r.Dst, r.Port, r.Expected, r.Actual, r.DurationMs, note)
 		}
 		b.WriteString("\n")
 	}
 	writeTable("Authorized flow tests", "Flows the substation depends on; each must succeed under the active policy.", "authorized")
-	writeTable("Unauthorized flow tests", "Flows the policy must deny. Each blocked attempt is positive evidence the segmentation is enforcing.", "unauthorized")
+	writeTable("Unauthorized flow tests", recipe.report.unauthorizedIntro, "unauthorized")
 
 	if pcapOK {
 		fmt.Fprintf(&b, "## PCAP source analysis\n\n")
@@ -355,9 +364,7 @@ func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcap
 	}
 
 	fmt.Fprintf(&b, "## Methodology\n\n")
-	fmt.Fprintf(&b, "- **allow** = the source container's TCP SYN reached the destination (connect succeeded, or a fast RST came back). **deny** = the SYN was dropped (timeout at the probe budget).\n")
-	fmt.Fprintf(&b, "- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) - the same primitive as `scripts/firewall-smoke.sh`.\n")
-	fmt.Fprintf(&b, "- This report validates the **currently active** policy; it does not apply or change any policy.\n")
+	b.WriteString(recipe.report.methodology)
 	b.WriteString(recipe.report.limits)
 	return b.String()
 }
