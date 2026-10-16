@@ -17,40 +17,72 @@
     {
       "name": "wan",
       "zone": "wan",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     },
     {
       "name": "dmz",
       "zone": "dmz",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     },
     {
       "name": "lan1",
       "zone": "lan1",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     },
     {
       "name": "lan2",
       "zone": "lan2",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     },
     {
       "name": "lan3",
       "zone": "lan3",
       "access": {
         "mgmt": true,
+        "http": true,
+        "https": true,
         "ssh": true
       }
     },
     {
       "name": "lan4",
       "zone": "lan4",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     },
     {
       "name": "lan5",
       "zone": "lan5",
-      "access": {}
+      "access": {
+        "mgmt": false,
+        "http": false,
+        "https": false,
+        "ssh": false
+      }
     }
   ],
   "zones": [
