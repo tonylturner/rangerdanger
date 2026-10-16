@@ -176,8 +176,11 @@ eu_lab_hardening_walk() {
   eu_lab_step "$scenario" verify-normal-operations || return
   eu_lab_step "$scenario" attack-iec104-breaker-open || return
   eu_lab_exec kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
-  eu_wait_for_field '.devices["breaker-1"].position == "open" and .devices["breaker-1"].protection_tripped == true
-    and .process.buses.s1.live == false' 15 "student IEC104 attack opens and trips the breaker" || return
+  eu_wait_for_field '.devices["breaker-1"].position == "open"
+    and .process.buses.s1.live == false
+    and .process.devices["feeder-breaker"].delivered == true
+    and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
+    15 "student IEC104 attack opens the breaker and drops section supply" || return
   eu_lab_step "$scenario" restore-the-substation || return
   eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false
     and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
@@ -217,7 +220,7 @@ eu_lab_hardening_prepare() {
 
 eu_lab_nmap_vendor() {
   local expected="$1"
-  eu_lab_exec kali-1 'nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4' || return
+  eu_lab_exec kali-1 'nmap -Pn -p 3389,5900 10.20.20.10 --max-retries 1 -T4' || return
   if ! printf '%s' "$API_BODY" | jq -e --arg expected "$expected" '
     .stdout as $out
     | if $expected == "open" then
