@@ -19,7 +19,6 @@ var euRecipe = &packageRecipe{
 		{"eng-ws-1", "plc-1", "station_net", "curl -sf --max-time 3 http://%s:8080/login > /dev/null", "eng-ws→PLC maintenance GET"},
 		{"kali-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "enterprise→historian read"},
 		{"vendor-jump-1", "historian-1", "ops_dmz_net", "curl -sf --max-time 3 http://%s:8080/api/points > /dev/null", "vendor→historian read (weak)"},
-		{"cc-1", "cc-1", "control_centre_net", "wget -q -O /dev/null -T 3 http://%s:8080/api/journal", "CC local journal read (not a firewall flow)"},
 	},
 	canary: canaryProbe{fromNode: "kali-1", label: "kali", toNode: "rtu-1", network: "station_net", port: 2404,
 		allowUnder: "weak", denyUnder: "improved"},

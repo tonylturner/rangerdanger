@@ -162,6 +162,10 @@ func defaultPolicy(gen *lifecycle.Generation) (string, error) {
 // resolveValidation turns the recipe's matrix into probes against the
 // generation's containers and addresses.
 func (r *packageRecipe) resolveValidation(gen *lifecycle.Generation) ([]validationProbe, error) {
+	if r.report.strictProbes {
+		return euResolveMatrix(gen, r.validation, "")
+	}
+
 	probes := make([]validationProbe, 0, len(r.validation))
 	for _, spec := range r.validation {
 		from, err := nodeService(gen, spec.fromNode)

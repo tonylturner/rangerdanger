@@ -323,8 +323,13 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 		t.Fatalf("capture=%v %v %v", hosts, network, err)
 	}
 	traffic, err := euRecipe.resolveTraffic(gen)
-	if err != nil || len(traffic) != 4 {
+	if err != nil || len(traffic) != 3 {
 		t.Fatalf("traffic=%v err=%v", traffic, err)
+	}
+	for _, target := range euRecipe.traffic {
+		if target.fromNode == target.toNode {
+			t.Fatal("traffic generator includes a local loopback read")
+		}
 	}
 	for _, row := range traffic {
 		if strings.Contains(row.cmd, "POST") || strings.Contains(row.cmd, "mbpoll") {

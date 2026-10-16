@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -114,8 +115,42 @@ func euCC(ctx context.Context, gen *lifecycle.Generation) (*conduitState, *ccJou
 	if err != nil {
 		return nil, nil, err
 	}
-	state, err := fetchJSON[conduitState](ctx, controlCentreService, endpoint+"/api/state")
-	return state, journal, err
+	state, err := fetchJSON[euPresenceState](ctx, controlCentreService, endpoint+"/api/state")
+	if err != nil {
+		return nil, journal, err
+	}
+	return &state.conduitState, journal, nil
+}
+
+// Keep presence-aware decoding local to the new EU engines. Legacy validators
+// retain their wire types until the Phase 2 cutover.
+type euPresenceState struct{ conduitState }
+
+func (state *euPresenceState) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &state.conduitState); err != nil {
+		return err
+	}
+	var raw struct {
+		Points []struct {
+			IOA     int                        `json:"ioa"`
+			Quality map[string]json.RawMessage `json:"quality"`
+		} `json:"points"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, point := range raw.Points {
+		for _, key := range []string{"iv", "nt", "sb", "bl", "ov"} {
+			value, exists := point.Quality[key]
+			// OV is null on digital points, but a measured or step-position
+			// point requires a boolean overflow descriptor (cc_state.c).
+			digitalOV := key == "ov" && point.IOA < 2000 && point.IOA != 1301
+			if !exists || string(value) != "true" && string(value) != "false" && !(digitalOV && string(value) == "null") {
+				return fmt.Errorf("IOA %d missing or invalid quality.%s", point.IOA, key)
+			}
+		}
+	}
+	return nil
 }
 
 func euRMUNormal(one, two *euWorkshopDevice) bool {

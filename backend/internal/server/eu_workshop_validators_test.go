@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
 var euWorkshopSlots = []string{"eu-baseline-assessment", "eu-firewall-implementation", "eu-hardening-configurations", "eu-vendor-rdp-compromise", "eu-validation-evidence"}
@@ -24,6 +22,11 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		rtuLog:       "set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=31 devices=4 select-timeout=5000ms\n",
 		breakerAudit: decodeFixture[euWorkshopBreakerAudit](t, `{"generation":42,"oldest_seq":1,"latest_seq":2,"entries":[{"seq":1,"at":"2026-10-09T12:00:00Z","operation":"reset","result":"accepted","context":{"protocol":"lab"}},{"seq":2,"at":"2026-10-09T12:02:00Z","operation":"first_solve","result":"accepted"}]}`),
 	}
+	for i := range ev.cc.Points {
+		if ev.cc.Points[i].IOA >= 2000 || ev.cc.Points[i].IOA == 1301 {
+			ev.cc.Points[i].Quality.OV = new(bool)
+		}
+	}
 	for _, node := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"} {
 		id := node
 		if node == "breaker-1" {
@@ -38,18 +41,19 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 	if slot == euWorkshopSlots[0] {
 		ev.policy = "weak"
 	}
-	var err error
 	filter := slot
-	if slot == euWorkshopSlots[1] {
-		filter = ""
+	if slot == euWorkshopSlots[0] || slot == euWorkshopSlots[4] {
+		filter = euWorkshopSlots[1]
 	}
-	ev.denies, err = euWorkshopDenies(euGeneration(t, nil, nil), filter)
+	matrix, err := euResolveMatrix(euGeneration(t, nil, nil), euRecipe.validation, filter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, row := range ev.denies {
-		ev.events = append(ev.events, containd.Event{Kind: "firewall.rule.hit", Timestamp: at("12:04:00"), Source: row.source, Dest: row.dest, DstPort: row.port, Transport: "tcp", Attributes: map[string]any{"action": "DENY"}})
+	ev.negativeExpected = len(matrix)
+	for _, row := range matrix {
+		ev.negative = append(ev.negative, validationRow{validationProbe: row, Actual: "deny", Pass: true})
 	}
+
 	return ev
 }
 
@@ -131,21 +135,14 @@ func TestEUWorkshopFailures(t *testing.T) {
 		{"HTTP GET failure", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.conduits.reads[0].Status = "fail" }},
 		{"HTTP evidence missing", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.conduits.reads = nil }},
 		{"HTTP before attempt", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.conduits.readStart = at("12:00:00") }},
-		{"deny missing", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.events = ev.events[1:] }},
-		{"deny expired", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.now = at("12:15:00") }},
-		{"latest allow", euWorkshopSlots[1], func(ev *euWorkshopEvidence) {
-			e := ev.events[0]
-			e.Timestamp = at("12:04:30")
-			e.Attributes = map[string]any{"action": "ALLOW"}
-			ev.events = append(ev.events, e)
+		{"probe missing", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.negative = ev.negative[1:] }},
+		{"probe allowed", euWorkshopSlots[1], func(ev *euWorkshopEvidence) { ev.negative[0].Actual = "allow"; ev.negative[0].Pass = false }},
+		{"probe tool unavailable", euWorkshopSlots[2], func(ev *euWorkshopEvidence) {
+			ev.negative[0].Actual = "skipped"
+			ev.negative[0].ProbeError = "python/tool missing"
+			ev.negative[0].Pass = false
 		}},
-		{"same-time ambiguity", euWorkshopSlots[1], func(ev *euWorkshopEvidence) {
-			e := ev.events[0]
-			e.Attributes = map[string]any{"action": "ALLOW"}
-			ev.events = append(ev.events, e)
-		}},
-		{"events unavailable", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.eventsErr = errors.New("down") }},
-		{"deny before hardening", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.events[0].Timestamp = at("12:00:01") }},
+		{"matrix identity unavailable", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.negativeErr = errors.New("no source network") }},
 		{"foreign command", euWorkshopSlots[2], func(ev *euWorkshopEvidence) {
 			ev.rtuLog += "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:5000 phase=execute result=accepted dcs=1\n"
 		}},
@@ -160,7 +157,7 @@ func TestEUWorkshopFailures(t *testing.T) {
 			e.Context = peerAuditContext{Protocol: "modbus", Peer: "10.10.10.10:1234"}
 		}},
 		{"reset erases history", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.breakerAudit.Entries[1].Operation = "reset" }},
-		{"bonus first hop missing", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.events = ev.events[1:] }},
+		{"bonus first hop missing", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.negative = ev.negative[1:] }},
 		{"RMU not restored", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.devices["rmu-2"].Position = "closed" }},
 		{"OLTC local", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.devices["oltc-1"].Remote = new(bool) }},
 		{"OLTC unknown mode", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.devices["oltc-1"].Auto = nil }},
@@ -188,6 +185,12 @@ func TestEURTUPeerEvidence(t *testing.T) {
 		{"foreign completion across boundary", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
 		{"ambiguous foreign operation", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=unknown", false},
 		{"pending foreign across boundary", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted", false},
+		{"CC feedback timeout", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted\n2026-10-09T12:03:05Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=failed reason=feedback-timeout", true},
+		{"foreign feedback timeout", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=failed", false},
+		{"foreign failed before hardening", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:02Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=failed", true},
+		{"unknown terminal outcome", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=unexpected", false},
+		{"CC terminal cannot close foreign gap", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=rejected", false},
+		{"CC accept cannot close foreign gap", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted", false},
 		{"foreign refused", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=rejected", true},
 		{"bad peer", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=? phase=execute result=accepted", false},
 		{"RTU restart", "2026-10-09T12:03:00Z rtu listening 0.0.0.0:2404", false},
@@ -209,5 +212,20 @@ func TestEUValidatorScopeClaims(t *testing.T) {
 		if strings.Contains(check.Detail, "DPI") && !strings.Contains(check.Detail, "No DPI") {
 			t.Fatalf("overclaim: %+v", check)
 		}
+	}
+}
+
+func TestEUNegativeProbesDoNotUseConnectionWindow(t *testing.T) {
+	ev := passingEUWorkshop(t, euWorkshopSlots[1])
+	ev.conduits.journal.Entries = nil
+	ev.conduits.events = nil // no deny logs of any age
+	ev.policyAt = at("12:00:30")
+	if check := euWorkshopNegative(ev); check.Status != "pass" {
+		t.Fatal(check)
+	}
+	ev.negative[0].Actual = "allow"
+	ev.negative[0].Pass = false
+	if check := euWorkshopNegative(ev); check.Status != "fail" {
+		t.Fatal(check)
 	}
 }

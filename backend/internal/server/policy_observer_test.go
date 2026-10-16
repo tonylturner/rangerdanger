@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -220,5 +221,48 @@ func TestObserver_StoppedGenerationDropsObservation(t *testing.T) {
 	defer s.activeConfigMu.RUnlock()
 	if s.activeConfig != "weak" || s.lastAppliedHash != "deadbeef" {
 		t.Errorf("state = %q %q, want the stale observation dropped", s.activeConfig, s.lastAppliedHash)
+	}
+}
+
+// The first response is delayed while a second manual commit happens. Neither
+// response completion time can be the next observation's safe lower bound.
+func TestObserver_DelayedSuccessiveManualCommits(t *testing.T) {
+	requestStart := make(chan time.Time, 2)
+	release := make(chan struct{})
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		requestStart <- time.Now().UTC()
+		<-release
+		fmt.Fprintf(w, `{"firewall":{"defaultAction":"DENY","rules":[],"comment":"commit-%d"}}`, calls)
+	}))
+	defer ts.Close()
+	s := &Server{lastAppliedHash: "old", policyObservedAt: time.Now().Add(-time.Hour).UTC()}
+	gen := observedGeneration(ts.URL)
+	var previousRequest time.Time
+	for i := 0; i < 2; i++ {
+		before := time.Now().UTC()
+		done := make(chan struct{})
+		go func() { s.observePolicyOnce(t.Context(), gen); close(done) }()
+		handlerStart := <-requestStart
+		responseStart := time.Now().UTC()
+		release <- struct{}{}
+		<-done
+		if s.policyObservedAt.Before(before) || s.policyObservedAt.After(handlerStart) || s.policyChangedAt.Before(responseStart) {
+			t.Fatalf("request bound=%s upper=%s", s.policyObservedAt, s.policyChangedAt)
+		}
+		if i == 1 && !s.policyEvidenceSince.Equal(previousRequest) {
+			t.Fatal("lost first request's lower bound")
+		}
+		if s.policyObservedAt.Location() != time.UTC || s.policyChangedAt.Location() != time.UTC || s.policyEvidenceSince.Location() != time.UTC {
+			t.Fatal("non-UTC policy evidence")
+		}
+		previousRequest = s.policyObservedAt
+	}
+	s.recordApplyLocked([]byte(`{"defaultAction":"DENY","rules":[]}`))
+	for _, at := range []time.Time{s.lastAppliedAt, s.policyChangedAt, s.policyObservedAt, s.policyEvidenceSince} {
+		if at.Location() != time.UTC {
+			t.Fatal("non-UTC apply timestamp")
+		}
 	}
 }
