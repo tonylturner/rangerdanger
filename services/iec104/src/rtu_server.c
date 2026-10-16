@@ -301,7 +301,7 @@ connection_request_handler(void* param, const char* ip)
 
 /* Caller holds rtu.lock. */
 static void
-forget_connection(const char* peerStr)
+forget_started(const char* peerStr)
 {
     for (int i = 0; i < rtu.nStarted; i++) {
         if (strcmp(rtu.started[i].peer, peerStr) == 0) {
@@ -309,6 +309,13 @@ forget_connection(const char* peerStr)
             break;
         }
     }
+}
+
+/* Caller holds rtu.lock. */
+static void
+forget_connection(const char* peerStr)
+{
+    forget_started(peerStr);
     if (rtu.sel.active && strcmp(rtu.sel.peer, peerStr) == 0)
         rtu_clear_selection("selecting connection stopped");
 }
@@ -349,7 +356,9 @@ rtu_apply_connection_events(void)
     for (int i = 0; i < n; i++) {
         switch (events[i].event) {
         case CS104_CON_EVENT_ACTIVATED:
-            forget_connection(events[i].peer);
+            /* Events apply late: a select may already have arrived on this
+             * started connection, so STARTDT must not clear it. */
+            forget_started(events[i].peer);
             if (rtu.nStarted < MAX_CONNECTIONS) {
                 snprintf(rtu.started[rtu.nStarted].peer, PEER_LEN, "%s", events[i].peer);
                 rtu.started[rtu.nStarted].conn = events[i].conn;
