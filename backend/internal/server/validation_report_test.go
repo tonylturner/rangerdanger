@@ -149,11 +149,15 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 				t.Fatalf("missing scope limit %q: %s", required, md)
 			}
 		}
-		for _, forbidden := range []string{"RTAC", "GPS/NTP", "every authorized flow works"} {
+		for _, forbidden := range []string{"RTAC", "GPS/NTP", "every authorized flow works", "same-subnet"} {
 			if strings.Contains(md, forbidden) {
 				t.Fatalf("US/overbroad claim %q", forbidden)
 			}
 		}
+	}
+	md := euRecipe.renderValidationMarkdown("custom", "source", "hash", "path", false, "", nil, 0, 0, 0, 0, 1, false)
+	if !strings.Contains(md, "probe tool") || strings.Contains(md, "Bring the full lab stack up") {
+		t.Fatal(md)
 	}
 	for _, rc := range []int{-1, 2, 126, 127, 137} {
 		if classifyReportProbe(rc, 100, true) != "skipped" {

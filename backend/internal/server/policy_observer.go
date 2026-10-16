@@ -85,6 +85,7 @@ func (s *Server) observePolicyOnce(ctx context.Context, gen *lifecycle.Generatio
 // classifyObservedPolicy compares containd's running hash with the last
 // backend apply and relabels the policy as a manual commit on divergence.
 func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
+	observedSince = observedSince.UTC()
 	s.activeConfigMu.Lock()
 	defer s.activeConfigMu.Unlock()
 
@@ -121,7 +122,9 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	s.lastAppliedHash = hash
 	s.policyEvidenceSince = s.policyObservedAt
 	s.policyChangedAt = time.Now().UTC()
-	s.policyObservedAt = s.policyChangedAt
+	// A response can describe a snapshot taken at any point during the
+	// request. The next change must retain this request start, not its end.
+	s.policyObservedAt = observedSince
 	// Don't touch lastAppliedAt — leaving it as-is so a subsequent
 	// backend apply still wins the grace check correctly.
 	log.Printf("policy-observer: detected manual containd commit (was %q, now custom/manual-custom)", prev)
@@ -151,7 +154,7 @@ func (s *Server) recordApplyLocked(configBytes []byte) {
 		return
 	}
 	s.lastAppliedHash = h
-	s.lastAppliedAt = time.Now()
+	s.lastAppliedAt = time.Now().UTC()
 	s.policyChangedAt = s.lastAppliedAt
 	s.policyEvidenceSince = s.lastAppliedAt
 	s.policyObservedAt = s.lastAppliedAt

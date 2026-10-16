@@ -67,20 +67,22 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	}
 	// Verify weak/non-weak against the document, not a label. A failed
 	// comparison is missing evidence, never evidence of a custom policy.
-	weakPath, weakErr := s.policyPath(gen.Package, "weak")
-	if weakErr == nil {
-		var data []byte
-		data, weakErr = readPolicyJSONWithRetry(weakPath)
+	if ev.policyErr == nil {
+		weakPath, weakErr := s.policyPath(gen.Package, "weak")
 		if weakErr == nil {
-			var weakHash string
-			weakHash, weakErr = containd.FirewallHashFromBytes(data)
-			if weakErr == nil && ((ev.policy == "weak") != (hash == weakHash)) {
-				weakErr = fmt.Errorf("weak/non-weak policy identity mismatch")
+			var data []byte
+			data, weakErr = readPolicyJSONWithRetry(weakPath)
+			if weakErr == nil {
+				var weakHash string
+				weakHash, weakErr = containd.FirewallHashFromBytes(data)
+				if weakErr == nil && ((ev.policy == "weak") != (hash == weakHash)) {
+					weakErr = fmt.Errorf("weak/non-weak policy identity mismatch")
+				}
 			}
 		}
-	}
-	if weakErr != nil {
-		ev.policyErr = weakErr
+		if weakErr != nil {
+			ev.policyErr = weakErr
+		}
 	}
 	if slot == "eu-baseline-assessment" {
 		ev.capture = s.checkPcapFileExists(ctx, gen)
@@ -127,7 +129,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 		ev.rtuLog, ev.logErr = s.euRTULog(ctx, gen)
 	}
 	finalHash, finalErr := gen.Containd().GetFirewallHash(ctx)
-	if finalErr != nil || finalHash != hash {
+	if ev.policyErr == nil && (finalErr != nil || finalHash != hash) {
 		ev.policyErr = fmt.Errorf("running policy changed or became unavailable during collection: %v", finalErr)
 	}
 	ev.now = time.Now().UTC()

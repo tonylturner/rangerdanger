@@ -6,7 +6,7 @@ package server
 func euValidationMatrix() []validationProbeSpec {
 	rows := []validationProbeSpec{
 		{"cc-1", "control-centre", "rtu-1", "station_net", "2404", "allow", "CC IEC 104 to RTU", "authorized"},
-		{"plc-1", "PLC", "oltc-1", "field_net", "502", "allow", "PLC to OLTC (same subnet; not firewall enforcement)", "authorized"},
+		{"plc-1", "PLC", "oltc-1", "field_net", "502", "allow", "PLC to OLTC (pinned station-to-field conduit)", "authorized"},
 		{"cc-1", "control-centre", "historian-1", "ops_dmz_net", "8081", "allow", "CC historian ingest", "authorized"},
 		{"kali-1", "enterprise", "historian-1", "ops_dmz_net", "8080", "allow", "Enterprise historian read", "authorized"},
 		{"eng-ws-1", "engineering", "plc-1", "station_net", "8080", "allow", "Named engineering PLC maintenance", "authorized"},

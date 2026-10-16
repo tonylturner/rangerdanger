@@ -320,7 +320,7 @@ func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcap
 	if result {
 		b.WriteString(recipe.report.passText + "\n\n")
 	} else if skipped > 0 {
-		fmt.Fprintf(&b, "**Result: FAIL** - %d probe(s) could not run (source container missing, renamed, or stopped - shown as ⊘ below), so the validation matrix did not fully execute. A report cannot claim PASS unless every probe ran. Bring the full lab stack up and re-run. Inspect any ✗ rows for genuine policy mismatches as well.\n\n", skipped)
+		fmt.Fprintf(&b, recipe.report.skippedText+"\n\n", skipped)
 	} else {
 		fmt.Fprintf(&b, "**Result: FAIL** - one or more rows did not match the expected verdict. Inspect the ✗ rows below: an authorized flow that's blocked means a rule is too tight; an unauthorized flow that succeeds means a rule is too loose or missing.\n\n")
 	}

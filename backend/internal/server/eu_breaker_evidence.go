@@ -146,13 +146,13 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 		result := values["result"]
 		// An accepted command can straddle the policy change. Unknown is
 		// ambiguous actuation, not proof that no operation happened.
-		if inWindow && foreign && (result == "accepted" || result == "completed" || result == "unknown") {
-			return fmt.Errorf("non-CC IEC 104 breaker execute accepted, completed or ambiguous after hardening")
+		if inWindow && foreign && (result == "accepted" || result == "completed" || result == "unknown" || result == "failed") {
+			return fmt.Errorf("non-CC IEC 104 breaker execute accepted, completed, failed feedback or ambiguous after hardening")
 		}
 		switch result {
 		case "accepted":
 			pendingForeign = foreign
-		case "completed", "unknown", "rejected":
+		case "completed", "unknown", "rejected", "failed":
 			pendingForeign = false
 		default:
 			return fmt.Errorf("unknown RTU breaker execute result %q", result)

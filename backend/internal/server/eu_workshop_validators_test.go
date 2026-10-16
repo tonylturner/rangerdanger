@@ -24,6 +24,11 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		rtuLog:       "set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=31 devices=4 select-timeout=5000ms\n",
 		breakerAudit: decodeFixture[euWorkshopBreakerAudit](t, `{"generation":42,"oldest_seq":1,"latest_seq":2,"entries":[{"seq":1,"at":"2026-10-09T12:00:00Z","operation":"reset","result":"accepted","context":{"protocol":"lab"}},{"seq":2,"at":"2026-10-09T12:02:00Z","operation":"first_solve","result":"accepted"}]}`),
 	}
+	for i := range ev.cc.Points {
+		if ev.cc.Points[i].IOA >= 2000 || ev.cc.Points[i].IOA == 1301 {
+			ev.cc.Points[i].Quality.OV = new(bool)
+		}
+	}
 	for _, node := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"} {
 		id := node
 		if node == "breaker-1" {
@@ -188,6 +193,10 @@ func TestEURTUPeerEvidence(t *testing.T) {
 		{"foreign completion across boundary", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
 		{"ambiguous foreign operation", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=unknown", false},
 		{"pending foreign across boundary", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted", false},
+		{"CC feedback timeout", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted\n2026-10-09T12:03:05Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=failed reason=feedback-timeout", true},
+		{"foreign feedback timeout", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=failed", false},
+		{"foreign failed before hardening", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:02Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=failed", true},
+		{"unknown terminal outcome", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=unexpected", false},
 		{"foreign refused", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=rejected", true},
 		{"bad peer", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=? phase=execute result=accepted", false},
 		{"RTU restart", "2026-10-09T12:03:00Z rtu listening 0.0.0.0:2404", false},

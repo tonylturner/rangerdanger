@@ -323,7 +323,7 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 		t.Fatalf("capture=%v %v %v", hosts, network, err)
 	}
 	traffic, err := euRecipe.resolveTraffic(gen)
-	if err != nil || len(traffic) != 4 {
+	if err != nil || len(traffic) != 3 {
 		t.Fatalf("traffic=%v err=%v", traffic, err)
 	}
 	for _, row := range traffic {

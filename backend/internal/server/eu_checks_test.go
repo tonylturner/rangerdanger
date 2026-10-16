@@ -157,7 +157,7 @@ func TestEUCheckOnlyPolicyDoesNotFetchDevices(t *testing.T) {
 }
 
 func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {
-	for _, mode := range []string{"healthy", "unrecorded policy", "changed policy", "custom weak document"} {
+	for _, mode := range []string{"healthy", "unrecorded policy", "changed policy", "custom weak document", "hash transport error"} {
 		t.Run(mode, func(t *testing.T) {
 			ev := passingEUWorkshop(t, euWorkshopSlots[0])
 			policy, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "weak.json"))
@@ -177,6 +177,10 @@ func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {
 				switch r.URL.Path {
 				case "/api/v1/config":
 					configReads++
+					if mode == "hash transport error" && configReads == 1 {
+						http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
+						return
+					}
 					if mode == "changed policy" && configReads > 1 {
 						fmt.Fprint(w, `{"firewall":{"defaultAction":"ALLOW","rules":[]}}`)
 					} else {
@@ -220,7 +224,11 @@ func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {
 			if mode == "custom weak document" {
 				s.activeConfig = "custom"
 			}
-			checks := euBaselineValidator.run(t.Context(), s, validatorInput{gen: gen})
+			collected := s.collectEUWorkshop(t.Context(), gen, euWorkshopSlots[0])
+			if mode == "hash transport error" && (collected.policyErr == nil || !strings.Contains(collected.policyErr.Error(), "503") || strings.Contains(collected.policyErr.Error(), "identity mismatch")) {
+				t.Fatalf("lost transport error: %v", collected.policyErr)
+			}
+			checks := evaluateEUWorkshop(euWorkshopSlots[0], collected)
 			pass := true
 			for _, check := range checks {
 				pass = pass && check.Status == "pass"
@@ -229,5 +237,41 @@ func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {
 				t.Fatalf("checks=%+v configReads=%d", checks, configReads)
 			}
 		})
+	}
+}
+
+func TestEUCCQualityPresence(t *testing.T) {
+	for _, ioa := range []int{1001, 1301, 2001} {
+		for _, key := range []string{"quality", "iv", "nt", "sb", "bl", "ov"} {
+			for _, null := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%d/%s/null=%t", ioa, key, null), func(t *testing.T) {
+					q := map[string]any{"iv": false, "nt": false, "sb": false, "bl": false, "ov": false}
+					point := map[string]any{"ioa": ioa, "quality": q}
+					if key == "quality" {
+						delete(point, key)
+						if null {
+							point[key] = nil
+						}
+					} else {
+						delete(q, key)
+						if null {
+							q[key] = nil
+						}
+					}
+					data, _ := json.Marshal(map[string]any{"points": []any{point}})
+					var state euPresenceState
+					err := json.Unmarshal(data, &state)
+					legitimateDigitalOV := key == "ov" && null && ioa == 1001
+					if (err == nil) != legitimateDigitalOV {
+						t.Fatalf("err=%v data=%s", err, data)
+					}
+				})
+			}
+		}
+	}
+	data, _ := json.Marshal(passingEUWorkshop(t, euWorkshopSlots[0]).cc)
+	var state euPresenceState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
 	}
 }
