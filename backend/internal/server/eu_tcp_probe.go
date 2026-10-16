@@ -62,9 +62,13 @@ func classifyStrictTCP(stdout, stderr string, rc int, err error) (string, string
 	if rc == 0 {
 		return "allow", ""
 	}
-	// 124 is timeout(1)'s own budget, not a Docker/context timeout. Refused
-	// is denied per D1, not proof that the firewall caused the refusal.
-	if rc == 124 || rc == 1 && (strings.Contains(stderr, "Connection refused") || strings.Contains(stderr, "Connection timed out") || strings.Contains(stderr, "timed out")) {
+	// Containd drops rather than rejects: refusal proves the destination was
+	// reached, even without a listener. Only a connect timeout counts as deny.
+	if rc == 1 && strings.Contains(stderr, "Connection refused") {
+		return "allow", ""
+	}
+	// 124 is timeout(1)'s own budget, not a Docker/context timeout.
+	if rc == 124 || rc == 1 && (strings.Contains(stderr, "Connection timed out") || strings.Contains(stderr, "timed out")) {
 		return "deny", ""
 	}
 	return "skipped", fmt.Sprintf("probe tool exit %d: %s", rc, strings.TrimSpace(stderr+"\n"+stdout))

@@ -180,7 +180,7 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 func TestEUReportProbeErrorDetails(t *testing.T) {
 	rows := []validationRow{{validationProbe: validationProbe{SrcLabel: "Kali", Dst: "10.0.0.1", Port: "2404", Expected: "deny", Category: "unauthorized"}, Actual: "skipped", ProbeError: "tool not found"}}
 	md := euRecipe.renderValidationMarkdown("custom", "source", "hash", "path", false, "", rows, 0, 0, 0, 0, 1, false)
-	for _, required := range []string{"tool not found", "not denied", "do not establish why a connection failed"} {
+	for _, required := range []string{"tool not found", "not denied", "do not establish why a connection failed", "A refused connection is reached (allow)", "fails an unauthorized row"} {
 		if !strings.Contains(md, required) {
 			t.Fatal(md)
 		}

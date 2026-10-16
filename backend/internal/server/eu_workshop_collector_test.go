@@ -24,7 +24,7 @@ func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 		pass         bool
 	}{
 		{"custom default deny without logs", "", 124, true},
-		{"explicit refusal without logs", "Connection refused", 1, true},
+		{"explicit refusal is a leak without logs", "Connection refused", 1, false},
 		{"tool error fails honestly", "timeout: missing tool", 127, false},
 		{"open tuple fails", "", 0, false},
 	} {
@@ -88,6 +88,9 @@ func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 			}
 			if tc.rc == 127 && !strings.Contains(euWorkshopNegative(collected).Detail, "probe tool exit 127") {
 				t.Fatal("lost tool failure detail")
+			}
+			if tc.rc == 1 && (collected.negative[0].Actual != "allow" || euWorkshopNegative(collected).Status != "fail") {
+				t.Fatal("refusal certified as denial")
 			}
 		})
 	}

@@ -28,8 +28,8 @@ func TestEUStrictTCPClassification(t *testing.T) {
 		err                error
 	}{
 		{"connected", "", "allow", 0, nil},
-		{"bash refusal", "bash: connect: Connection refused", "deny", 1, nil},
-		{"busybox refusal", "nc: can't connect to remote host (10.0.0.1): Connection refused", "deny", 1, nil},
+		{"bash refusal", "bash: connect: Connection refused", "allow", 1, nil},
+		{"busybox refusal", "nc: can't connect to remote host (10.0.0.1): Connection refused", "allow", 1, nil},
 		{"busybox timeout", "nc: timed out", "deny", 1, nil},
 		{"connect timeout", "bash: connect: Connection timed out", "deny", 1, nil},
 		{"timeout budget", "", "deny", 124, nil},
@@ -117,7 +117,7 @@ func TestEUStrictTCPExecWireAndErrors(t *testing.T) {
 		rc                 int
 	}{
 		{"connect", "", "allow", 0},
-		{"refused", "Connection refused", "deny", 1},
+		{"refused vendor VNC is reached", "Connection refused", "allow", 1},
 		{"timeout", "", "deny", 124},
 		{"missing tool", "busybox: not found", "skipped", 127},
 	} {
@@ -125,13 +125,13 @@ func TestEUStrictTCPExecWireAndErrors(t *testing.T) {
 			calls := 0
 			cli, _ := euProbeDockerFixture(t, tc.rc, tc.stderr, false, func(source string, options container.ExecOptions) {
 				calls++
-				want := []string{"sh", "-c", euTCPCommand, "probe", "10.30.30.20", "2404"}
+				want := []string{"sh", "-c", euTCPCommand, "probe", "10.20.20.10", "5900"}
 				if source != "real-kali-container" || !reflect.DeepEqual(options.Cmd, want) {
 					t.Errorf("wrong probe source/command: %s %+v", source, options)
 				}
 			})
-			row := (&Server{}).strictTCPProbe(t.Context(), cli, validationProbe{Src: "real-kali-container", Dst: "10.30.30.20", Port: "2404", Expected: "deny"})
-			if calls != 1 || row.Actual != tc.want || row.Pass != (tc.want == "deny") || (row.ProbeError != "") != (tc.want == "skipped") {
+			row := (&Server{}).strictTCPProbe(t.Context(), cli, validationProbe{Src: "real-kali-container", Dst: "10.20.20.10", Port: "5900", Expected: "deny", Category: "unauthorized"})
+			if calls != 1 || row.Actual != tc.want || row.Pass != (tc.want == "deny") || (row.ProbeError != "") != (tc.want == "skipped") || tallyValidation([]validationRow{row}).pass != row.Pass {
 				t.Fatalf("calls=%d row=%+v", calls, row)
 			}
 		})

@@ -195,7 +195,7 @@ func euWorkshopNegative(ev euWorkshopEvidence) ValidationCheck {
 			return checkFail(name, fmt.Sprintf("%s (%s)→%s:%s: %s; %s", row.SrcLabel, row.Src, row.Dst, row.Port, row.Actual, row.ProbeError))
 		}
 	}
-	return checkPass(name, fmt.Sprintf("all %d active TCP probes from real source containers were refused or timed out; no logged denies required, no decoded command or firewall-causation claim", len(ev.negative)))
+	return checkPass(name, fmt.Sprintf("all %d active TCP probes from real source containers timed out; no logged denies required, no decoded command or firewall-causation claim", len(ev.negative)))
 }
 
 func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
