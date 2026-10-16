@@ -423,7 +423,8 @@ restriction**, not malformed wire.
 | 104, 106 | unknown | IEC 101 test and delay commands, not used in IEC 104. Header-only `unsupported`. |
 | anything else | unknown | Header-only `unsupported` event. Never read-only. |
 
-The first course uses only 3, 13, 31, 100 and 46. The other control
+Amended: the EU point map also needs monitor types 1, 5, 30 and 32;
+see `containd-iec104-monitor-types.md`. The other control
 layouts are decoded so that a student cannot bypass the classifier with
 a different command type; decoding does not authorize them.
 
