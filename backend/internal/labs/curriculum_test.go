@@ -107,7 +107,7 @@ func TestCurriculumReferences(t *testing.T) {
 		{"role", func(c *Curriculum) { c.Roles["planning"] = "remediation-planning" }, "role planning"},
 		{"activity", func(c *Curriculum) { c.Activities["foreign"] = CurriculumActivity{} }, "activity"},
 		{"step", func(c *Curriculum) { c.DynamicSteps["translated-title"] = "rules" }, "unknown implementation step"},
-		{"decision", func(c *Curriculum) { c.Requirements["foreign"] = CurriculumRequirement{} }, "unknown requirement decision"},
+		{"decision", func(c *Curriculum) { c.Requirements["foreign"] = CurriculumRequirement{Impl: map[string][]string{}} }, "unknown requirement decision"},
 		{"readiness", func(c *Curriculum) { c.Readiness[0].ID = "foreign" }, "unknown readiness decision"},
 		{"catalog", func(c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown planning action"},
 		{"coverage action", func(c *Curriculum) { r := c.Requirements["enterprise-to-field"]; r.Impl["BLOCK"] = []string{"foreign"} }, "unknown action"},

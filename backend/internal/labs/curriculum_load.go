@@ -111,6 +111,9 @@ func validateCurriculum(pkg Package) error {
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
 		return fail("budget, teams and catalog must not be empty")
 	}
+	if err := validateCurriculumCollections(c); err != nil {
+		return err
+	}
 	scenarios := map[string]ScenarioYAML{}
 	for _, s := range pkg.Scenarios {
 		scenarios[s.ID] = s
@@ -336,6 +339,52 @@ func validateCurriculum(pkg Package) error {
 			if id != "" && !nodes[id] {
 				return fail("unknown exercise node %s", id)
 			}
+		}
+	}
+	return nil
+}
+
+// Required nested collections follow the same wire contract as the top-level
+// collections. Empty maps/lists are valid; omitted or null values are not.
+// Optional collections (tags, omittedRules and policy/predicate selectors) keep
+// their documented omission semantics.
+func validateCurriculumCollections(c *Curriculum) error {
+	missing := func(path string) error {
+		return fmt.Errorf("curriculum: %s must be an explicit mapping or list, not null or omitted", path)
+	}
+	for id, req := range c.Requirements {
+		if req.Impl == nil {
+			return missing("requirements." + id + ".impl")
+		}
+		for verdict, actions := range req.Impl {
+			if actions == nil {
+				return missing("requirements." + id + ".impl." + verdict)
+			}
+		}
+	}
+	for id, group := range c.Groups {
+		if group.Rules == nil {
+			return missing("groups." + id + ".rules")
+		}
+	}
+	for i, flag := range c.ReadinessFlags {
+		if flag.Actions == nil {
+			return missing(fmt.Sprintf("readinessFlags[%d].actions", i))
+		}
+	}
+	for id, impact := range c.Impact {
+		if impact.Defends == nil {
+			return missing("impact." + id + ".defends")
+		}
+	}
+	for id, nodes := range c.NodeMap {
+		if nodes.Others == nil {
+			return missing("nodeMap." + id + ".others")
+		}
+	}
+	for i, action := range c.Catalog {
+		if action.Roles == nil {
+			return missing(fmt.Sprintf("catalog[%d].roles", i))
 		}
 	}
 	return nil
