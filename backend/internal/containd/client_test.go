@@ -176,7 +176,7 @@ func TestDoRequestWithBodySetsContentType(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	client.ImportConfig(context.Background(), []byte(`{}`))
+	client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
 }
 
 // --- helpers ---

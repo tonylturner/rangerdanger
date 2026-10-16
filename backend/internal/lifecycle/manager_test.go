@@ -543,3 +543,22 @@ func TestTeardownRemovesAndVerifiesVolumes(t *testing.T) {
 		t.Errorf("compose calls = %q: up ran after a failed teardown", got)
 	}
 }
+
+func TestUnsafeDefaultPolicyKeepsOldRangeServing(t *testing.T) {
+	h := newHarness(t)
+	m := h.ready(h.options(), "pkg-a")
+	mustWrite(t, filepath.Join(h.defs, "firewall", "pkg-b.json"), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3","access":{"mgmt":false}}]}`))
+	before := h.firewall.imports.Load()
+	st := h.switchTo(m, "pkg-b")
+	if st.Phase != PhaseReady || st.Package != "pkg-a" || !strings.Contains(st.Error, "RangerDanger keeps containd management on lan3") {
+		t.Fatalf("status=%+v", st)
+	}
+	if h.firewall.imports.Load() != before {
+		t.Fatal("unsafe seed reached containd")
+	}
+	for _, call := range h.compose.callLog() {
+		if strings.HasPrefix(call, "down") || strings.HasPrefix(call, "up") {
+			t.Fatalf("unsafe policy tore down range: %v", h.compose.callLog())
+		}
+	}
+}

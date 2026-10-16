@@ -93,6 +93,9 @@ func (m *Manager) preflight(ctx context.Context, pkg labs.Package) (plan, error)
 	if !json.Valid(p.policy) {
 		return plan{}, fmt.Errorf("default firewall policy %s is not valid JSON", pkg.FirewallConfigPath)
 	}
+	if err := labs.CheckManagementSafety(p.policy); err != nil {
+		return plan{}, fmt.Errorf("default firewall policy: %w", err)
+	}
 	return p, nil
 }
 

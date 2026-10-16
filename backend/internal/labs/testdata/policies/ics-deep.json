@@ -1,4 +1,4 @@
-{
+{"interfaces":[{"name":"lan3","zone":"lan3"}],
   "services": {"a/b": [[{"c~d": {"ics": []}}]]},
   "firewall": {"rules": [{"id": "dup", "ics": {}, "ics": null}]}
 }

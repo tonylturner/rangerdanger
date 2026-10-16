@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -205,9 +206,7 @@ func TestHandleFirewallApply_BadJSON(t *testing.T) {
 }
 
 func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
-	// Both endpoints fail — the legacy /import fallback also hits the
-	// fake which returns 200 above, so to make this fail end-to-end we
-	// stand up a fake whose /import path also errors.
+	// A candidate failure must propagate without a legacy import.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -234,7 +233,7 @@ func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
 // rules later but this layer's contract is "passes the validation
 // gate and forwards to containd."
 const minimalValidCustom = `{
-  "interfaces": [{"name":"wan","device":"eth0","zone":"wan"}],
+  "interfaces": [{"name":"lan3","zone":"lan3"}],
   "firewall":   {"rules": [{"id":"r1","action":"DENY"}]}
 }`
 
@@ -332,7 +331,7 @@ func TestHandleFirewallApplyCustom_ForbiddenICSNamesPointer(t *testing.T) {
 		fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
 		s := newTestServer(t, fake.URL)
 		forbidICS(s)
-		cfg := `{"interfaces":[{"name":"lan1"}],"firewall":{"rules":[{"id":"r1","action":"DENY"},{"id":"r2","ics":` + ics + `}]}}`
+		cfg := `{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[{"id":"r1","action":"DENY"},{"id":"r2","ics":` + ics + `}]}}`
 		rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
 
 		want := `custom policy: key "ics" at /firewall/rules/1/ics is forbidden (ics_rules: forbidden)`
@@ -385,5 +384,18 @@ func TestHandleFirewallApply_UsesPackagePolicies(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(&counters.candidateCount); n != 1 {
 		t.Errorf("containd imports = %d, want none for the rejected policy", n)
+	}
+}
+
+func TestHandleFirewallApplyCustom_RejectsManagementLockout(t *testing.T) {
+	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
+	s := newTestServer(t, fake.URL)
+	cfg := strings.Replace(minimalValidCustom, `"zone":"lan3"`, `"zone":"lan3","access":{"mgmt":false}`, 1)
+	rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(fmt.Sprint(body["error"]), "interfaces/0/access/mgmt") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+	}
+	if counters.candidateCount != 0 || counters.commitCount != 0 || counters.importCount != 0 {
+		t.Fatalf("unsafe policy mutated containd: %+v", counters)
 	}
 }
