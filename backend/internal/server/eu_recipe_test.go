@@ -37,8 +37,7 @@ func TestEUCanaryResolvesFromTheManifest(t *testing.T) {
 	}
 }
 
-// TestEURecipeUnsupportedRoutes answers 404 for the US-built report,
-// traffic generator and test suite.
+// Only the suite remains unsupported until the content cutover.
 func TestEURecipeUnsupportedRoutes(t *testing.T) {
 	s := rangeServer(euGeneration(t, containd.NewClient(closedURL(t)), nil), "weak")
 	s.orchestrator = &orchestrator.Orchestrator{}
@@ -46,8 +45,7 @@ func TestEURecipeUnsupportedRoutes(t *testing.T) {
 		method, path string
 		handler      gin.HandlerFunc
 	}{
-		{http.MethodPost, "/api/firewall/validation-report", s.handleValidationReport},
-		{http.MethodPost, "/api/traffic/generate", s.handleTrafficGenerate},
+
 		{http.MethodPost, "/api/workshop/test-suite", s.handleWorkshopTestSuite},
 	}
 	for _, route := range routes {
@@ -297,5 +295,58 @@ func TestFirewallStepLabelsFollowTheRecipe(t *testing.T) {
 		if got.Detail != "containd policy set to "+want {
 			t.Errorf("US firewall step %s = %+v", policy, got)
 		}
+	}
+}
+
+func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
+	gen := euGeneration(t, containd.NewClient(closedURL(t)), nil)
+	matrix, err := euRecipe.resolveValidation(gen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allows, denies := 0, 0
+	for _, row := range matrix {
+		if row.Expected == "allow" {
+			allows++
+		} else {
+			denies++
+		}
+		if strings.Contains(row.Note, "RTAC") || row.Port == "20000" {
+			t.Fatalf("US row leaked: %+v", row)
+		}
+	}
+	if allows != 9 || denies != 16 {
+		t.Fatalf("matrix=%d allow, %d deny", allows, denies)
+	}
+	hosts, network, err := euRecipe.resolveCapture(gen)
+	if err != nil || len(hosts) != 4 || strings.Join(network, ".") != "10.40.40" {
+		t.Fatalf("capture=%v %v %v", hosts, network, err)
+	}
+	traffic, err := euRecipe.resolveTraffic(gen)
+	if err != nil || len(traffic) != 4 {
+		t.Fatalf("traffic=%v err=%v", traffic, err)
+	}
+	for _, row := range traffic {
+		if strings.Contains(row.cmd, "POST") || strings.Contains(row.cmd, "mbpoll") {
+			t.Fatalf("generator must not invent write evidence: %+v", row)
+		}
+	}
+	s := rangeServer(gen, "weak")
+	s.orchestrator = &orchestrator.Orchestrator{}
+	for _, route := range []struct {
+		path    string
+		handler gin.HandlerFunc
+		code    int
+	}{
+		{"/api/firewall/validation-report", s.handleValidationReport, http.StatusBadGateway},
+		{"/api/traffic/generate", s.handleTrafficGenerate, http.StatusServiceUnavailable},
+	} {
+		rec := callRoute(s, route.handler, http.MethodPost, route.path, route.path, "")
+		if rec.Code != route.code || !strings.Contains(rec.Body.String(), "docker client not available") {
+			t.Fatalf("%s=%d %s", route.path, rec.Code, rec.Body)
+		}
+	}
+	if euRecipe.testSuite {
+		t.Fatal("Phase 1 enabled the EU suite")
 	}
 }

@@ -41,7 +41,7 @@ func TestWorkshopFlowsServingGeneration(t *testing.T) {
 				!reflect.DeepEqual(body.Networks, gen.Package.Template.Networks) {
 				t.Fatalf("graph inventory is not the serving generation: %s", rec.Body)
 			}
-			if body.Operations.TrafficGeneration != (gen.Package.ID == usPackageID) {
+			if !body.Operations.TrafficGeneration {
 				t.Fatalf("wrong generation availability: %s", rec.Body)
 			}
 			fixtureName := "eu-flow-graph.json"

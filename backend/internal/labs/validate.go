@@ -28,6 +28,7 @@ type actionVocabulary struct {
 // Packages use their process capability to declare device operations.
 var capabilityVocabularies = map[string]actionVocabulary{
 	CapabilityProcessTruth: {
+		checkKeys: map[string]bool{"breaker_closed": true, "supply_present": true, "cc_link_fresh": true, "rmu_normal": true, "oltc_auto": true, "firewall_config": true},
 		commands: map[string][]string{
 			"breaker": {"reset_lockout", "reset"},
 			"rmu-1":   {"set_local", "set_remote", "earth_close", "earth_open", "reset_fault_passage", "reset"},

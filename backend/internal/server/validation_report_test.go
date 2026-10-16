@@ -1,6 +1,12 @@
 package server
 
-import "testing"
+import (
+	"crypto/sha256"
+	"fmt"
+	"regexp"
+	"strings"
+	"testing"
+)
 
 // row is a small helper to build a validationRow for tally tests.
 func row(category, actual string, pass bool) validationRow {
@@ -103,5 +109,66 @@ func TestTallyValidation(t *testing.T) {
 				t.Errorf("pass: got %v want %v", got.pass, tc.wantPass)
 			}
 		})
+	}
+}
+
+// Hashes captured from the pre-refactor US renderer; only its clock is
+// normalized. All other bytes, including legacy prose, must remain identical.
+func TestUSValidationReportGolden(t *testing.T) {
+	rows := []validationRow{
+		{validationProbe: validationProbe{SrcLabel: "source", Dst: "10.0.0.1", Port: "502", Expected: "allow", Note: "positive", Category: "authorized"}, Actual: "allow", Pass: true, DurationMs: 1},
+		{validationProbe: validationProbe{SrcLabel: "attacker", Dst: "10.0.0.2", Port: "2404", Expected: "deny", Note: "negative", Category: "unauthorized"}, Actual: "deny", Pass: true, DurationMs: 3000},
+	}
+	for _, tc := range []struct {
+		active  string
+		pcap    bool
+		skipped int
+		pass    bool
+		hash    string
+	}{
+		{"custom", true, 0, true, "85bf35ba2aaa4fc8b118e9f4bb35c9f7a3cd4d260832536cc677396507e90fa3"},
+		{"improved", false, 0, true, "16fcece93aa91f3c49fda3dc28cb54bb918b7c99a5b708752fb3a9a152805286"},
+		{"weak", true, 0, false, "a2eeadf8569a8b633a4eeea08081998d2c508cb3d9abc626ac664de952889c6d"},
+		{"other", false, 1, false, "9cd1c319c095662334cbd8d68575b50be13164fb5698c0d0f5913961128bfd59"},
+	} {
+		t.Run(tc.active, func(t *testing.T) {
+			md := usRecipe.renderValidationMarkdown(tc.active, "source", "abc", "data/firewall/captures/validation-fixed.pcap", tc.pcap, "capture-sources", rows, 1, 1, 1, 1, tc.skipped, tc.pass)
+			md = regexp.MustCompile(`(?m)^\| \*\*Generated\*\* \| .* \|$`).ReplaceAllString(md, "| **Generated** | GENERATED |")
+			if got := fmt.Sprintf("%x", sha256.Sum256([]byte(md))); got != tc.hash {
+				t.Fatalf("US report changed (%s):\n%s", got, md)
+			}
+		})
+	}
+}
+
+func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
+	for _, pcap := range []bool{true, false} {
+		md := euRecipe.renderValidationMarkdown("custom", "plan-custom", "abc", "path", pcap, "sources", nil, 9, 9, 16, 16, 0, true)
+		for _, required := range []string{"TCP Reachability", "not certification", "PCAP completeness", "No DPI", "optional supporting evidence"} {
+			if !strings.Contains(md, required) {
+				t.Fatalf("missing scope limit %q: %s", required, md)
+			}
+		}
+		for _, forbidden := range []string{"RTAC", "GPS/NTP", "every authorized flow works"} {
+			if strings.Contains(md, forbidden) {
+				t.Fatalf("US/overbroad claim %q", forbidden)
+			}
+		}
+	}
+	for _, rc := range []int{-1, 2, 126, 127, 137} {
+		if classifyReportProbe(rc, 100, true) != "skipped" {
+			t.Fatalf("EU certified tool error %d as denial", rc)
+		}
+		if classifyReportProbe(rc, 100, false) != "deny" {
+			t.Fatalf("legacy US probe classification changed for %d", rc)
+		}
+	}
+	for _, tc := range []struct {
+		rc, ms int
+		want   string
+	}{{0, 1, "allow"}, {1, 10, "allow"}, {1, 600, "deny"}, {124, 3000, "deny"}, {143, 3000, "deny"}} {
+		if got := classifyReportProbe(tc.rc, tc.ms, true); got != tc.want {
+			t.Fatalf("%+v got %s", tc, got)
+		}
 	}
 }

@@ -433,3 +433,35 @@ func TestValidateLabChecksPolicyNamesAgainstThePackage(t *testing.T) {
 		})
 	}
 }
+
+func TestTruthCheckVocabulary(t *testing.T) {
+	for _, key := range []string{"breaker_closed", "supply_present", "cc_link_fresh", "rmu_normal", "oltc_auto", "firewall_config", "loads_energized", "typo"} {
+		for _, validType := range []bool{true, false} {
+			t.Run(key+"/"+map[bool]string{true: "typed", false: "wrong-type"}[validType], func(t *testing.T) {
+				def, scenario := validatorFixture()
+				var value any = true
+				if key == "firewall_config" {
+					value = "improved"
+				}
+				if !validType {
+					if key == "firewall_config" {
+						value = true
+					} else {
+						value = "true"
+					}
+				}
+				scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{key: value}}
+				err := ValidateLab(def, []ScenarioYAML{scenario}, []string{CapabilityProcessTruth}, usPolicies, nil)
+				want := validType && key != "loads_energized" && key != "typo"
+				if (err == nil) != want {
+					t.Fatalf("valid=%t err=%v", want, err)
+				}
+			})
+		}
+	}
+	def, scenario := validatorFixture()
+	scenario.Steps[0].Action = &StepAction{Type: "check", Expect: map[string]any{"supply_present": true}}
+	if err := validateElectrical(def, scenario); err == nil {
+		t.Fatal("EU-only key leaked into US vocabulary")
+	}
+}

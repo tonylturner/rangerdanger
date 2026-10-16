@@ -83,10 +83,18 @@ type Server struct {
 	// apply so a hash-in-flight race doesn't briefly flip to
 	// manual-custom on a normal button-driven apply.
 	lastAppliedAt time.Time
-	pcapMu        sync.Mutex
-	pcap          pcapState
-	trafficMu     sync.Mutex
-	traffic       trafficState
+	// policyChangedAt also advances on manual commits; validators use this
+	// conservative observation boundary, never the time of an earlier apply.
+	policyChangedAt time.Time
+	// A manual commit happened between the previous matching observation and
+	// discovery; backend commits between request start and response. Absence
+	// proofs use the lower bound, negative tests the upper bound.
+	policyEvidenceSince time.Time
+	policyObservedAt    time.Time
+	pcapMu              sync.Mutex
+	pcap                pcapState
+	trafficMu           sync.Mutex
+	traffic             trafficState
 }
 
 // New constructs a server with routes registered. catalog is the result of
