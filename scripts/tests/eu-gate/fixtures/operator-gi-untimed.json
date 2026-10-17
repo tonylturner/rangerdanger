@@ -12,14 +12,16 @@
     "gi": {
       "state": "complete",
       "started_at": "2026-10-09T21:01:55.131Z",
-      "completed_at": "2026-10-09T21:01:55.180Z"
+      "last_complete_at": "2026-10-09T21:01:55.210Z",
+      "trigger": "connect",
+      "next_due_at": "2026-10-09T21:16:55.131000Z"
     }
   },
   "points": [
     {
       "id": "feeder-breaker-position",
       "ioa": 1001,
-      "asdu": "M_DP_TB_1",
+      "asdu": "M_DP_NA_1",
       "value": "closed",
       "quality": {
         "iv": false,
@@ -32,12 +34,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.170Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "double-point",
+      "reporting": null
     },
     {
       "id": "feeder-protection-trip",
       "ioa": 1002,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -50,7 +54,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.171Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "feeder-current",
@@ -68,7 +74,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.172Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      }
     },
     {
       "id": "feeder-voltage",
@@ -86,12 +97,17 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.173Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "rmu-1-position",
       "ioa": 1101,
-      "asdu": "M_DP_TB_1",
+      "asdu": "M_DP_NA_1",
       "value": "closed",
       "quality": {
         "iv": false,
@@ -104,12 +120,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.174Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "double-point",
+      "reporting": null
     },
     {
       "id": "rmu-1-remote",
       "ioa": 1102,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -122,12 +140,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.175Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-1-earth",
       "ioa": 1103,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -140,12 +160,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.176Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-1-fault-passage",
       "ioa": 1104,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -158,7 +180,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.177Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-1-current",
@@ -176,7 +200,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.178Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      }
     },
     {
       "id": "rmu-1-section-kv",
@@ -194,7 +223,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.179Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "rmu-1-source-kv",
@@ -212,12 +246,17 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.180Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "rmu-2-position",
       "ioa": 1201,
-      "asdu": "M_DP_TB_1",
+      "asdu": "M_DP_NA_1",
       "value": "open",
       "quality": {
         "iv": false,
@@ -230,12 +269,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.181Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "double-point",
+      "reporting": null
     },
     {
       "id": "rmu-2-remote",
       "ioa": 1202,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -248,12 +289,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.182Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-2-earth",
       "ioa": 1203,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -266,12 +309,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.183Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-2-fault-passage",
       "ioa": 1204,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -284,7 +329,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.184Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "rmu-2-current",
@@ -302,7 +349,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.185Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      }
     },
     {
       "id": "rmu-2-section-kv",
@@ -320,7 +372,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.186Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "rmu-2-source-kv",
@@ -338,12 +395,17 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.187Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "oltc-1-tap",
       "ioa": 1301,
-      "asdu": "M_ST_TB_1",
+      "asdu": "M_ST_NA_1",
       "value": {
         "value": 0,
         "transient": false
@@ -359,12 +421,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.188Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "step-position",
+      "reporting": null
     },
     {
       "id": "oltc-1-remote",
       "ioa": 1302,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -377,12 +441,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.189Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "oltc-1-auto",
       "ioa": 1303,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -395,12 +461,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.190Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "oltc-1-at-lower",
       "ioa": 1304,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -413,12 +481,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.191Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "oltc-1-at-upper",
       "ioa": 1305,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -431,12 +501,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.192Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "oltc-1-blocked",
       "ioa": 1306,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": false,
       "quality": {
         "iv": false,
@@ -449,7 +521,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.193Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "oltc-1-bus-kv",
@@ -467,7 +541,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.194Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.1
+      }
     },
     {
       "id": "oltc-1-current",
@@ -485,12 +564,17 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.195Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      }
     },
     {
       "id": "plc-1-running",
       "ioa": 1401,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -503,12 +587,14 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.196Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "plc-1-input-valid",
       "ioa": 1402,
-      "asdu": "M_SP_TB_1",
+      "asdu": "M_SP_NA_1",
       "value": true,
       "quality": {
         "iv": false,
@@ -521,7 +607,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.197Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null
     },
     {
       "id": "plc-1-setpoint-kv",
@@ -539,7 +627,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.198Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 60000,
+        "deadband": 0
+      }
     },
     {
       "id": "plc-1-deadband-pct",
@@ -557,7 +650,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.199Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 60000,
+        "deadband": 0
+      }
     },
     {
       "id": "plc-1-delay-s",
@@ -575,7 +673,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-09T21:01:55.200Z",
-      "cot": 20
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 60000,
+        "deadband": 0
+      }
     }
   ],
   "snapshot_seq": 1,

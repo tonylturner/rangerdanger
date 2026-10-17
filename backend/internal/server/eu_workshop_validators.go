@@ -89,8 +89,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	if slot == "eu-baseline-assessment" {
 		ev.capture = s.checkPcapFileExists(ctx, gen)
 	}
-	// Negative probes precede telemetry collection, so a full matrix cannot
-	// make the subsequent three-second freshness checks stale.
+	// Collect current process truth after the negative probes.
 	if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" || slot == "eu-vendor-rdp-compromise" {
 		matrix, matrixErr := euResolveMatrix(gen, euRecipe.validation, slot)
 		ev.negativeErr = matrixErr
@@ -205,7 +204,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 	}
 	link := func() ValidationCheck {
 		if ev.ccErr != nil {
-			return checkFail("Fresh CC link, GI and station observations", ev.ccErr.Error())
+			return checkFail("CC link, GI and GOOD station observations", ev.ccErr.Error())
 		}
 		return euLink(ev.cc, ev.journal, ev.start, ev.now)
 	}
@@ -213,10 +212,11 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 	case "eu-baseline-assessment":
 		checks = append(checks, euLab3Check("Capture exists", ev.capture, "a capture file exists; contents and exercise completion are not certified"), link(), breaker(), euWorkshopSupply(ev))
 	case "eu-firewall-implementation":
-		start, window := conduitWindow(ev.conduits)
-		if !start.IsZero() && ev.policyAt.After(start) {
-			start = ev.policyAt
+		attempt := ev.conduits
+		if ev.policyAt.After(attempt.rangeStart) {
+			attempt.rangeStart = ev.policyAt
 		}
+		start, window := conduitWindow(attempt)
 		checks = append(checks, window, conduitPolls(ev.conduits, start), conduitPLC(ev.conduits, start), conduitFeed(ev.conduits, start))
 		for _, read := range ev.conduits.reads[:min(2, len(ev.conduits.reads))] {
 			if start.IsZero() || !insideEvidenceWindow(ev.conduits.readStart, start, ev.conduits.collectedAt) || !insideEvidenceWindow(ev.conduits.readEnd, ev.conduits.readStart, ev.conduits.collectedAt) {

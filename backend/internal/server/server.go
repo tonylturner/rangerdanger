@@ -200,6 +200,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 	{
 		operator.GET("/state", s.handleOperatorState)
 		operator.POST("/commands", s.handleOperatorCommand)
+		operator.POST("/gi", s.handleOperatorGI)
 		operator.GET("/journal", s.handleOperatorJournal)
 	}
 	field := rng.Group("/field")

@@ -183,14 +183,25 @@ func controlCentreLinkStatus(ctx context.Context, cc string) ccLinkStatus {
 		Link struct {
 			State *string `json:"state"`
 			GI    struct {
-				State *string `json:"state"`
+				State          *string `json:"state"`
+				LastCompleteAt *string `json:"last_complete_at"`
 			} `json:"gi"`
 		} `json:"link"`
 	}
 	if err := json.Unmarshal(body, &state); err != nil {
 		return ccLinkStatus{}
 	}
-	return ccLinkStatus{Link: state.Link.State, GI: state.Link.GI.State}
+	var integrity *string
+	if state.Link.GI.State != nil {
+		value := "none"
+		if state.Link.GI.LastCompleteAt != nil {
+			value = "complete"
+		} else if *state.Link.GI.State == "running" {
+			value = "running"
+		}
+		integrity = &value
+	}
+	return ccLinkStatus{Link: state.Link.State, GI: integrity}
 }
 
 // manifestZones is the teaching zones' network keys, in manifest order.

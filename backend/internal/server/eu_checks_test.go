@@ -117,9 +117,15 @@ func TestEUCheckDispatchAndMissingEvidence(t *testing.T) {
 	}
 }
 
-func TestEULinkDoesNotExpireHealthyConnections(t *testing.T) {
+func TestEULinkRequiresRecentGIWithoutExpiringConnection(t *testing.T) {
 	ev := passingEUWorkshop(t, euWorkshopSlots[0])
 	ev.now = ev.now.Add(time.Hour)
+	if got := euLink(ev.cc, ev.journal, ev.start, ev.now); got.Status != "fail" || !strings.Contains(got.Detail, "Interrogate station") {
+		t.Fatal(got)
+	}
+	for i := range ev.journal.Entries {
+		ev.journal.Entries[i].At = ev.journal.Entries[i].At.Add(time.Hour)
+	}
 	for i := range ev.cc.Points {
 		ev.cc.Points[i].ReceivedAt = ev.now.Add(-time.Second)
 	}
@@ -160,6 +166,9 @@ func TestEUWorkshopCollectorUsesLivePolicyAndEUOnlySources(t *testing.T) {
 	for _, mode := range []string{"healthy", "unrecorded policy", "changed policy", "custom weak document", "hash transport error"} {
 		t.Run(mode, func(t *testing.T) {
 			ev := passingEUWorkshop(t, euWorkshopSlots[0])
+			for i := range ev.journal.Entries {
+				ev.journal.Entries[i].At = time.Now().Add(-time.Second)
+			}
 			policy, err := os.ReadFile(filepath.Join(manifest.Dir(repoRoot(), euPackageID), "firewall", "weak.json"))
 			if err != nil {
 				t.Fatal(err)

@@ -4,6 +4,7 @@
 
 eu_fresh_points() {
   local predicate="$1" since="$2" budget="$3" label="$4"
+  eu_interrogate_since "$since" "$budget" "$label" || return
   eu_wait_for_operator "def point(\$id): [.points[] | select(.id == \$id and good
     and (.received_at | epoch) >= (\"$since\" | epoch))]
     | if length == 1 then .[0] else error(\"no fresh good observation\") end;

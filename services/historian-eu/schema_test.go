@@ -12,30 +12,7 @@ import (
 	"time"
 )
 
-const fixture = `{
-  "schema":2,"cache_epoch":"0123456789abcdef","snapshot_seq":1,"rendered_at":"2026-10-15T10:00:00Z",
-  "link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-15T09:59:00Z",
-    "last_rx_at":"2026-10-15T10:00:00Z","connection_seq":1,
-    "gi":{"state":"complete","started_at":"2026-10-15T09:59:01Z","completed_at":"2026-10-15T09:59:02Z"}},
-  "points":[
-    {"id":"rmu-1-position","ioa":1101,"asdu":"M_DP_TB_1","value":"closed",
-     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},
-     "stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":false,
-     "received_at":"2026-10-15T10:00:00.123Z","cot":3},
-    {"id":"oltc-1-auto","ioa":1303,"asdu":"M_SP_TB_1","value":true,
-     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},
-     "stale_reason":null,"source_time":null,"source_time_invalid":null,
-     "received_at":"2026-10-15T10:00:00Z","cot":20},
-    {"id":"oltc-1-bus-kv","ioa":2301,"asdu":"M_ME_NC_1","value":19.8,
-     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},
-     "stale_reason":null,"source_time":null,"source_time_invalid":null,
-     "received_at":"2026-10-15T10:00:00Z","cot":3},
-    {"id":"oltc-1-tap","ioa":1301,"asdu":"M_ST_TB_1","value":{"value":-3,"transient":true},
-     "quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},
-     "stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":true,
-     "received_at":"2026-10-15T10:00:00Z","cot":3}
-  ]
-}`
+const fixture = `{"schema":2,"cache_epoch":"0123456789abcdef","snapshot_seq":1,"rendered_at":"2026-10-15T10:00:00Z","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-15T09:59:00Z","last_rx_at":"2026-10-15T10:00:00Z","connection_seq":1,"gi":{"state":"complete","started_at":"2026-10-15T09:59:01Z","last_complete_at":"2026-10-15T09:59:02Z","trigger":"connect","next_due_at":"2026-10-15T10:14:01Z"}},"points":[{"id":"rmu-1-position","ioa":1101,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":false,"received_at":"2026-10-15T10:00:00.123Z","cot":3,"kind":"double-point","reporting":null},{"id":"oltc-1-auto","ioa":1303,"asdu":"M_SP_NA_1","value":true,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T09:59:01.5Z","cot":20,"kind":"single-point","reporting":null},{"id":"oltc-1-bus-kv","ioa":2301,"asdu":"M_ME_NC_1","value":19.8,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"float","reporting":{"cyclic_ms":10000,"deadband":0.1}},{"id":"oltc-1-tap","ioa":1301,"asdu":"M_ST_TB_1","value":{"value":-3,"transient":true},"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":true,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"step-position","reporting":null}]}`
 
 func fixtureMap(t *testing.T) map[string]any {
 	t.Helper()
@@ -74,10 +51,28 @@ func TestSchemaValid(t *testing.T) {
 		edit func(map[string]any)
 	}{
 		{"all-kinds", func(map[string]any) {}},
+		{"periodic GI running with integrity", func(m map[string]any) {
+			gi := m["link"].(map[string]any)["gi"].(map[string]any)
+			gi["state"], gi["trigger"] = "running", "periodic"
+			gi["started_at"] = "2026-10-15T10:14:01Z"
+			gi["next_due_at"] = "2026-10-15T10:29:01Z"
+		}},
+		{"watchdog NT", func(m map[string]any) {
+			pointMap(m, 2)["quality"].(map[string]any)["nt"] = true
+			pointMap(m, 2)["stale_reason"] = "not_updated"
+		}},
+		{"GI step", func(m map[string]any) {
+			p := pointMap(m, 3)
+			p["asdu"], p["cot"], p["source_time"], p["source_time_invalid"] = "M_ST_NA_1", 20, nil, nil
+		}},
+		{"GI double", func(m map[string]any) {
+			p := pointMap(m, 0)
+			p["asdu"], p["cot"], p["source_time"], p["source_time_invalid"] = "M_DP_NA_1", 20, nil, nil
+		}},
 		{"never-received", func(m map[string]any) {
 			for _, v := range m["points"].([]any) {
 				p := v.(map[string]any)
-				p["value"], p["received_at"], p["cot"] = nil, nil, nil
+				p["asdu"], p["value"], p["received_at"], p["cot"] = nil, nil, nil, nil
 				p["source_time"], p["source_time_invalid"] = nil, nil
 				p["stale_reason"] = "never_received"
 				p["quality"].(map[string]any)["iv"] = true
@@ -93,7 +88,7 @@ func TestSchemaValid(t *testing.T) {
 			l := m["link"].(map[string]any)
 			l["state"], l["since"], l["last_rx_at"] = "disconnected", nil, nil
 			gi := l["gi"].(map[string]any)
-			gi["state"], gi["started_at"], gi["completed_at"] = "none", nil, nil
+			gi["state"], gi["trigger"], gi["started_at"], gi["last_complete_at"], gi["next_due_at"] = "none", nil, nil, nil, nil
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -147,6 +142,17 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 		{"zero-ioa", func(m map[string]any) { pointMap(m, 0)["ioa"] = 0 }},
 		{"oversize-ioa", func(m map[string]any) { pointMap(m, 0)["ioa"] = 16777216 }},
 		{"fractional-ioa", func(m map[string]any) { pointMap(m, 0)["ioa"] = 1.1 }},
+		{"kind-enum", func(m map[string]any) { pointMap(m, 0)["kind"] = "status" }},
+		{"kind-asdu-mismatch", func(m map[string]any) { pointMap(m, 0)["asdu"] = "M_SP_NA_1" }},
+		{"float-reporting-null", func(m map[string]any) { pointMap(m, 2)["reporting"] = nil }},
+		{"status-reporting-object", func(m map[string]any) {
+			pointMap(m, 0)["reporting"] = map[string]any{"cyclic_ms": 10000, "deadband": 0.1}
+		}},
+		{"missing-deadband", func(m map[string]any) { delete(pointMap(m, 2)["reporting"].(map[string]any), "deadband") }},
+		{"negative-deadband", func(m map[string]any) { pointMap(m, 2)["reporting"].(map[string]any)["deadband"] = -1 }},
+		{"null-cyclic", func(m map[string]any) { pointMap(m, 2)["reporting"].(map[string]any)["cyclic_ms"] = nil }},
+		{"unknown-reporting", func(m map[string]any) { pointMap(m, 2)["reporting"].(map[string]any)["extra"] = 1 }},
+		{"gi-trigger", func(m map[string]any) { m["link"].(map[string]any)["gi"].(map[string]any)["trigger"] = "unknown" }},
 		{"asdu-enum", func(m map[string]any) { pointMap(m, 0)["asdu"] = "C_DC_NA_1" }},
 		{"wrong-dp-type", func(m map[string]any) { pointMap(m, 0)["value"] = 2 }},
 		{"wrong-dp-enum", func(m map[string]any) { pointMap(m, 0)["value"] = "on" }},
@@ -243,8 +249,8 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 	}
 }
 
-func TestCapturedCCStateIngest(t *testing.T) {
-	// Preserve the live CC body byte-for-byte, including step QDS overflow.
+func TestContractCCStateIngest(t *testing.T) {
+	// Contract fixture preserves step QDS overflow through ingest.
 	body, err := os.ReadFile("testdata/cc-state.json")
 	if err != nil {
 		t.Fatal(err)
@@ -253,14 +259,14 @@ func TestCapturedCCStateIngest(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.ingestHandler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/ingest", bytes.NewReader(body)))
 	if w.Code != http.StatusOK {
-		t.Fatalf("captured CC state rejected: %d %s", w.Code, w.Body)
+		t.Fatalf("contract CC state rejected: %d %s", w.Code, w.Body)
 	}
 	if h := s.health(); h.IngestCount != 1 || h.RejectedCount != 0 {
-		t.Fatalf("captured ingest counters: %+v", h)
+		t.Fatalf("contract ingest counters: %+v", h)
 	}
 	points := s.points()
 	if len(points) != 31 {
-		t.Fatalf("stored %d points, want all 31 captured points", len(points))
+		t.Fatalf("stored %d points, want all 31 contract points", len(points))
 	}
 	for _, p := range points {
 		if p.ID == "oltc-1-tap" {
@@ -270,5 +276,50 @@ func TestCapturedCCStateIngest(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("captured step point missing")
+	t.Fatal("contract step point missing")
+}
+
+func TestContractWorkedExamples(t *testing.T) {
+	for example := 1; example <= 6; example++ {
+		t.Run(fmt.Sprint(example), func(t *testing.T) {
+			m := fixtureMap(t)
+			link := m["link"].(map[string]any)
+			gi := link["gi"].(map[string]any)
+			// Example 2 is the common base: all GI receipts precede ACT-TERM.
+			for _, value := range m["points"].([]any) {
+				p := value.(map[string]any)
+				if p["kind"] != "float" {
+					p["asdu"] = strings.Replace(p["asdu"].(string), "_TB_", "_NA_", 1)
+				}
+				p["cot"], p["source_time"], p["source_time_invalid"] = 20, nil, nil
+				p["received_at"] = "2026-10-15T09:59:01.5Z"
+			}
+			switch example {
+			case 1, 5:
+				link["state"] = "disconnected"
+				gi["state"], gi["trigger"], gi["started_at"], gi["last_complete_at"], gi["next_due_at"] = "none", nil, nil, nil, nil
+				for _, value := range m["points"].([]any) {
+					p := value.(map[string]any)
+					p["quality"].(map[string]any)["iv"], p["quality"].(map[string]any)["nt"] = true, true
+					p["stale_reason"] = "link_lost"
+					if example == 1 {
+						p["stale_reason"], p["asdu"], p["value"], p["received_at"], p["cot"] = "never_received", nil, nil, nil, nil
+					}
+				}
+			case 3:
+				p := pointMap(m, 0)
+				p["asdu"], p["cot"], p["value"] = "M_DP_TB_1", 3, "open"
+				p["source_time"], p["source_time_invalid"], p["received_at"] = "2026-10-15T10:00:00Z", false, "2026-10-15T10:00:00.1Z"
+			case 4:
+				gi["state"], gi["trigger"], gi["started_at"] = "running", "periodic", "2026-10-15T10:14:01Z"
+				gi["next_due_at"] = "2026-10-15T10:29:01Z"
+			case 6:
+				p := pointMap(m, 2)
+				p["quality"].(map[string]any)["nt"], p["stale_reason"] = true, "not_updated"
+			}
+			if _, err := decodeState([]byte(encode(t, m))); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

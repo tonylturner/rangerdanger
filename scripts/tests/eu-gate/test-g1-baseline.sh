@@ -19,7 +19,7 @@ t_run eu_assert_operator_shape "$OPERATOR" "fixture"
 t_expect_fails 0 "untimed GI fixture has the operator-state shape"
 
 timed=$(edit_operator '(.points[] | select(.id == "feeder-breaker-position"))
-  |= (.cot = 3 | .source_time = "2026-10-09T21:02:00.000Z" | .source_time_invalid = true)')
+  |= (.asdu = "M_DP_TB_1" | .cot = 3 | .source_time = "2026-10-09T21:02:00.000Z" | .source_time_invalid = true)')
 t_run eu_baseline_mismatches "$timed" "$TRUTH"
 t_expect_eq "$T_OUT" "" "a timed spontaneous status report is accepted; synchronisation is G2's check"
 
@@ -42,8 +42,13 @@ t_run eu_baseline_mismatches "$(edit_operator '(.points[] | select(.id == "feede
   |= (.quality.iv = true | .stale_reason = "measurement_invalid")')" "$TRUTH"
 t_expect_out 'feeder-voltage not GOOD' "a point that is not GOOD is reported"
 t_run eu_baseline_mismatches "$(edit_operator '.link.gi.state = "running"')" "$TRUTH"
-t_expect_out 'GI state "running", expected complete' "an incomplete GI is reported"
+t_expect_eq "$T_OUT" "" "a later running GI preserves integrity"
+t_run eu_baseline_mismatches "$(edit_operator '.link.gi.last_complete_at = null')" "$TRUTH"
+t_expect_out 'GI integrity missing' "missing integrity is reported"
 
+# Isolate convergence from the separately tested GI barrier.
+eu_settle_for_gi() { :; }
+eu_interrogate_since() { :; }
 # Poll: the solver catches up with the reset revision on the third read.
 POLLS=0
 LAGGING=$(edit_truth '.devices["breaker-1"].revision = 10')

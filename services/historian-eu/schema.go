@@ -28,7 +28,8 @@ type quality struct {
 type point struct {
 	ID                string          `json:"id"`
 	IOA               uint32          `json:"ioa"`
-	ASDU              string          `json:"asdu"`
+	Kind              string          `json:"kind"`
+	ASDU              *string         `json:"asdu"`
 	Value             json.RawMessage `json:"value"`
 	Quality           quality         `json:"quality"`
 	StaleReason       *string         `json:"stale_reason"`
@@ -192,9 +193,17 @@ var stepRule = object(map[string]rule{
 
 var pointRule = object(map[string]rule{
 	"id": text(63), "ioa": integer(1, 16777215),
-	"asdu":  enum("M_DP_TB_1", "M_SP_TB_1", "M_ME_NC_1", "M_ST_TB_1"),
+	"kind": enum("single-point", "double-point", "step-position", "float"),
+	"asdu": nullable(enum("M_DP_NA_1", "M_DP_TB_1", "M_SP_NA_1", "M_SP_TB_1", "M_ST_NA_1", "M_ST_TB_1", "M_ME_NC_1")),
+	"reporting": nullable(object(map[string]rule{"cyclic_ms": integer(1000, 3600000), "deadband": func(v any) bool {
+		if !finite(v) {
+			return false
+		}
+		f, _ := v.(json.Number).Float64()
+		return f >= 0
+	}})),
 	"value": func(any) bool { return true }, "quality": qualityRule,
-	"stale_reason": nullable(enum("never_received", "link_lost", "device_unreachable", "measurement_invalid", "heartbeat")),
+	"stale_reason": nullable(enum("never_received", "link_lost", "device_unreachable", "measurement_invalid", "heartbeat", "not_updated")),
 	"source_time":  nullable(stamp), "source_time_invalid": nullable(boolean),
 	"received_at": nullable(stamp), "cot": nullable(integer(0, 63)),
 })
@@ -209,21 +218,33 @@ func validPoint(v any) bool {
 		return false
 	}
 	// Both measured floats and step positions carry QDS, which includes OV.
-	if m["asdu"] == "M_ME_NC_1" || m["asdu"] == "M_ST_TB_1" {
+	if m["kind"] == "float" || m["kind"] == "step-position" {
 		if !boolean(q["ov"]) {
 			return false
 		}
 	} else if q["ov"] != nil {
 		return false
 	}
-	switch m["asdu"] {
-	case "M_ME_NC_1":
+	if (m["kind"] == "float") != (m["reporting"] != nil) {
+		return false
+	}
+	legal := map[string]rule{
+		"single-point":  enum("M_SP_NA_1", "M_SP_TB_1"),
+		"double-point":  enum("M_DP_NA_1", "M_DP_TB_1"),
+		"step-position": enum("M_ST_NA_1", "M_ST_TB_1"),
+		"float":         enum("M_ME_NC_1"),
+	}
+	if !nullable(legal[m["kind"].(string)])(m["asdu"]) {
+		return false
+	}
+	switch m["kind"] {
+	case "float":
 		return nullable(finite)(m["value"])
-	case "M_DP_TB_1":
+	case "double-point":
 		return nullable(enum("intermediate", "open", "closed", "indeterminate"))(m["value"])
-	case "M_SP_TB_1":
+	case "single-point":
 		return nullable(boolean)(m["value"])
-	case "M_ST_TB_1":
+	case "step-position":
 		return nullable(stepRule)(m["value"])
 	}
 	return false
@@ -260,7 +281,8 @@ var stateRule = object(map[string]rule{
 		"since": nullable(stamp), "last_rx_at": nullable(stamp), "connection_seq": unsigned,
 		"gi": object(map[string]rule{
 			"state":      enum("none", "running", "complete"),
-			"started_at": nullable(stamp), "completed_at": nullable(stamp),
+			"trigger":    nullable(enum("connect", "periodic", "operator")),
+			"started_at": nullable(stamp), "last_complete_at": nullable(stamp), "next_due_at": nullable(stamp),
 		}),
 	}),
 	"points": validPoints,

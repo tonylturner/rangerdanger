@@ -236,3 +236,47 @@ func TestRejectedIngestDoesNotEndSilence(t *testing.T) {
 		t.Fatalf("rejection ended silence: %+v", h.Gaps)
 	}
 }
+
+func TestCatalogueReceivedTypeAndQuietStatus(t *testing.T) {
+	s := newStore(testClock)
+	boot := fixtureMap(t)
+	p := pointMap(boot, 0)
+	p["asdu"], p["value"], p["received_at"] = nil, nil, nil
+	state, err := decodeState([]byte(encode(t, boot)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.append(state)
+	catalogue := s.points()
+	for _, p := range catalogue {
+		if p.ID == "rmu-1-position" && (p.Kind != "double-point" || p.ASDU != nil) {
+			t.Fatalf("boot catalogue: %+v", p)
+		}
+	}
+	gi := fixtureMap(t)
+	p = pointMap(gi, 0)
+	p["asdu"], p["cot"], p["source_time"], p["source_time_invalid"] = "M_DP_NA_1", 20, nil, nil
+	p["received_at"] = "2026-10-15T09:59:01.5Z"
+	for seq := 2; seq <= 3; seq++ {
+		gi["snapshot_seq"] = seq
+		state, err = decodeState([]byte(encode(t, gi)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.append(state)
+	}
+	for _, p := range s.points() {
+		if p.ID == "rmu-1-position" && (p.Kind != "double-point" || p.ASDU == nil || *p.ASDU != "M_DP_NA_1" || *p.Last.CCReceivedAt != "2026-10-15T09:59:01.5Z" || p.Last.Quality.NT) {
+			t.Fatalf("GI catalogue: %+v", p)
+		}
+	}
+	h, found := s.history("rmu-1-position", testClock().Add(-time.Second), testClock().Add(time.Second))
+	if !found || len(h.Segments[0].Samples) != 3 {
+		t.Fatalf("history: %+v", h)
+	}
+	for _, sample := range h.Segments[0].Samples[1:] {
+		if sample.CCReceivedAt == nil || *sample.CCReceivedAt != "2026-10-15T09:59:01.5Z" {
+			t.Fatalf("receipt changed: %+v", sample)
+		}
+	}
+}

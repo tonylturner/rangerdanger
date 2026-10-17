@@ -94,7 +94,7 @@ type conduitEvidence struct {
 func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 	name := "Completed GI in this connection attempt"
 	fail := func(detail string) (time.Time, ValidationCheck) {
-		return time.Time{}, checkFail(name, "missing evidence: "+detail)
+		return time.Time{}, checkFail(name, "missing evidence: "+detail+"; press Interrogate station in the Control Centre and validate again")
 	}
 	if ev.stateErr != nil || ev.journalErr != nil || ev.state == nil || ev.journal == nil {
 		return fail(fmt.Sprintf("CC state/journal unavailable: %v; %v", ev.stateErr, ev.journalErr))
@@ -106,28 +106,29 @@ func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 	if cap.Before(ev.rangeStart) {
 		cap = ev.rangeStart
 	}
-	var anchor journalEntry
-	found := false
-	for _, entry := range ev.journal.Entries {
-		if entry.Kind != "gi_complete" || entry.Detail.ConnectionSeq == nil ||
-			*entry.Detail.ConnectionSeq != ev.state.Link.ConnectionSeq ||
-			entry.Seq < ev.journal.OldestSeq ||
-			!insideEvidenceWindow(entry.At, cap, ev.collectedAt) {
+	entries := append([]journalEntry(nil), ev.journal.Entries...)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Seq < entries[j].Seq })
+	var started *journalEntry
+	for i := range entries {
+		entry := &entries[i]
+		if entry.Detail.ConnectionSeq == nil || *entry.Detail.ConnectionSeq != ev.state.Link.ConnectionSeq ||
+			entry.Seq < ev.journal.OldestSeq || !insideEvidenceWindow(entry.At, cap, ev.collectedAt) {
 			continue
 		}
-		if !found || entry.Seq < anchor.Seq {
-			anchor = entry
-			found = true
+		switch entry.Kind {
+		case "gi_started":
+			started = entry
+		case "gi_complete":
+			if started != nil && started.Seq < entry.Seq && !entry.At.Before(started.At) {
+				return started.At, checkPass(name, fmt.Sprintf("CC epoch %s connection %d: GI seq %d → %d; receipts from %s; attempt ends %s", ev.state.CacheEpoch, ev.state.Link.ConnectionSeq, started.Seq, entry.Seq, started.At.Format(time.RFC3339Nano), ev.collectedAt.Format(time.RFC3339Nano)))
+			}
 		}
 	}
-	if !found {
-		return fail("no retained completed GI for the current connection within ten minutes; refresh the operator connection and repeat the loop")
-	}
-	return anchor.At, checkPass(name, fmt.Sprintf("CC epoch %s connection %d: completed GI seq %d at %s; attempt ends %s", ev.state.CacheEpoch, ev.state.Link.ConnectionSeq, anchor.Seq, anchor.At.Format(time.RFC3339Nano), ev.collectedAt.Format(time.RFC3339Nano)))
+	return fail("no retained matched GI start/completion for the current connection within ten minutes and after the attempt boundary")
 }
 
-// Each frozen IOA must be represented exactly once. This is independent of
-// lab 1's deliberately smaller breaker-only set.
+// Each frozen IOA must be represented exactly once, independently of the
+// smaller validator-specific point sets.
 var conduitIOAs = []int{1001, 1002, 2001, 2002, 1101, 1102, 1103, 1104, 2101, 2102, 2103, 1201, 1202, 1203, 1204, 2201, 2202, 2203, 1301, 1302, 1303, 1304, 1305, 1306, 2301, 2302, 1401, 1402, 2401, 2402, 2403}
 
 func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
@@ -137,7 +138,7 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 	}
 	seen := map[int]int{}
 	for _, point := range ev.state.Points {
-		if badQuality(point.ccPoint) == "" && len(point.Value) > 0 && string(point.Value) != "null" && insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) && ev.collectedAt.Sub(point.ReceivedAt) <= 3*time.Second {
+		if badQuality(point.ccPoint) == "" && len(point.Value) > 0 && string(point.Value) != "null" && insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) {
 			seen[point.IOA]++
 		}
 	}
@@ -148,9 +149,9 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 		}
 	}
 	if len(missing) != 0 {
-		return checkFail(name, fmt.Sprintf("missing evidence: IOAs %v need unique, non-null, GOOD observations received in this attempt and no older than 3 s", missing))
+		return checkFail(name, fmt.Sprintf("missing evidence: IOAs %v need unique, non-null, GOOD observations received at or after this attempt’s GI start", missing))
 	}
-	return checkPass(name, "all 31 breaker/RMU/OLTC/PLC IOAs freshly received over IEC 104; no field/process truth substituted")
+	return checkPass(name, "all 31 station IOAs received at or after the completed GI’s start over IEC 104; no field/process truth substituted")
 }
 
 func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {
@@ -168,7 +169,7 @@ func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {
 		enabled := false
 		for _, point := range ev.state.Points {
 			if point.IOA == ioa && string(point.Value) == "true" && badQuality(point.ccPoint) == "" &&
-				insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) && ev.collectedAt.Sub(point.ReceivedAt) <= 3*time.Second {
+				insideEvidenceWindow(point.ReceivedAt, start, ev.collectedAt) {
 				enabled = true
 			}
 		}
