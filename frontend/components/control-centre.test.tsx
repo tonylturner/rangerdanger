@@ -21,7 +21,7 @@ function render(node: ReactNode): string {
   return html;
 }
 function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) {
-  return render(<ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...props} />);
+  return render(<ControlCentreScreen initialTab="Points" state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...props} />);
 }
 
 describe("ControlCentreScreen schema 2", () => {
@@ -31,9 +31,9 @@ describe("ControlCentreScreen schema 2", () => {
     expect(FEEDER_STATE.points).toHaveLength(31);
     expect(out).toContain("31/31 good");
     expect(html.match(/data-condition="good"/g)).toHaveLength(31);
-    for (const label of ["STARTED", "COMPLETE", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · UNOBSERVED", "snapshot 120", "Historian"]) expect(out).toContain(label);
-    expect(out).toContain("Select RAISE");
-    expect(out).toContain("Select MANUAL");
+    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · UNOBSERVED", "snapshot 120", "Trends"]) expect(out).toContain(label);
+    expect(out).toContain("Confirm RAISE");
+    expect(out).toContain("Confirm MANUAL");
   });
 
   it("keeps last values on link loss, including age and reason", () => {
@@ -47,17 +47,17 @@ describe("ControlCentreScreen schema 2", () => {
     expect(html).toContain("CB1: CLOSED · STALE · IV NT · link_lost");
   });
 
-  it("disables every control when CC API fails and marks each observed symbol stale", () => {
+  it("disables every control when CC API fails and marks the entire cached snapshot without rewriting IEC flags", () => {
     const html = screen({ stateError: new ApiError(502, "control centre unreachable") });
     expect(text(html)).toContain("Showing the last answer");
-    expect(html).toContain("CB1: CLOSED · STALE · CC API unavailable");
-    expect(html.match(/disabled=""/g)).toHaveLength(10);
+    expect(html).toContain("CB1: CLOSED · GOOD · cached snapshot · CC API unavailable");
+    expect(html.match(/disabled=""/g)).toHaveLength(5);
   });
 
   it("does not command a cached range while a not-ready answer is being handled", () => {
     const html = screen({ stateError: new RangeNotReadyError("starting") });
-    expect(text(html)).toContain("Range not ready. Showing the last CC answer");
-    expect(html.match(/disabled=""/g)).toHaveLength(10);
+    expect(text(html)).toContain("Showing the last answer; controls disabled.");
+    expect(html.match(/disabled=""/g)).toHaveLength(5);
   });
 
   it("waits for a ready range", () => {
@@ -67,10 +67,10 @@ describe("ControlCentreScreen schema 2", () => {
   });
 
   it("shows journal newest first and preserves null empty bounds", () => {
-    const out = text(screen());
+    const out = text(screen({ initialTab: "Events" }));
     expect(out.indexOf("Feeder breaker position STALE")).toBeLessThan(out.indexOf("Link down #3"));
     expect(out).toContain("seq 1–4");
-    expect(text(screen({ journal: EMPTY_JOURNAL }))).toContain("No journal entries yet.");
+    expect(text(screen({ journal: EMPTY_JOURNAL, initialTab: "Events" }))).toContain("No journal entries yet.");
   });
 });
 
@@ -106,8 +106,8 @@ describe("CC one-line observation integrity", () => {
     expect(html).toContain("CB1: CLOSED · GOOD");
     expect(html).toContain("RMU1 · NC: CLOSED · STALE · IV NT · device_unreachable");
     expect(html).toContain("RMU2 tie · NO: not received · UNKNOWN");
-    expect(html).toContain("T1 OLTC: -3 · TRANSIENT · GOOD · SB");
-    expect(text(html)).toContain("IV · heartbeat");
+    expect(html).toContain("T1 OLTC: -3 · TRANSIENT · STALE · SB");
+    expect(observedReading(mixed, "plc-1-running").text).toContain("IV · heartbeat");
     expect(observedReading(mixed, "oltc-1-tap").transient).toBe(true);
   });
 });
@@ -121,9 +121,9 @@ describe("select-then-execute controls", () => {
     const idle = panel({ phase: "idle" }, definition);
     expect(text(idle)).not.toContain("Execute");
     for (const operation of definition.operations) {
-      expect(text(idle)).toContain(`Select ${operation.toUpperCase()}`);
+      expect(text(idle)).toContain(`Confirm ${operation.toUpperCase()}`);
       const armed = text(panel({ phase: "armed", operation }, definition));
-      expect(armed).toContain(`Select then execute ${operation.toUpperCase()}`);
+      expect(armed).toContain(`Local confirmation: ${operation.toUpperCase()}`);
       expect(armed).toContain(`Execute ${operation.toUpperCase()}`);
       expect(armed).toContain("Cancel");
     }
@@ -167,11 +167,11 @@ describe("select-then-execute controls", () => {
 describe("separate field plane", () => {
   const physical = (stateError: unknown = null, auditError: unknown = null) => <PhysicalFeederScreen field={TRUTH} stateError={stateError} audit={AUDIT} auditError={auditError} operator={STALE_STATE} />;
   it("shows four devices, the station clock and process without controls or CC enrichment", () => {
-    const html = screen({ state: STALE_STATE, physicalFeeder: physical() });
+    const html = screen({ view: "field-truth", state: STALE_STATE, physicalFeeder: physical() });
     const out = text(html);
     for (const label of ["breaker-1 device state", "rmu-1 device state", "rmu-2 device state", "oltc-1 device state", "Station clock (GPS) · truth", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Solver output", "Fault section S1", "Completed / target tap 1 / 2", "Field vs control centre", "breaker-1 position OPEN CLOSED ⚠ STALE"]) expect(out).toContain(label);
     expect(out).toContain("control centre never reads these values");
-    expect(out).toContain("0/4 good");
+    expect(out).not.toContain("Feeder schematic");
     expect(html).not.toContain("Inject fault</button>");
     expect(html).not.toContain("gps-1 device state");
     expect(text(render(<OperatorContrast field={TRUTH} operator={STALE_STATE} />))).not.toContain("clock");
@@ -194,8 +194,8 @@ describe("separate field plane", () => {
   });
 
   it("keeps field and audit failures separate from CC availability", () => {
-    const out = text(screen({ physicalFeeder: physical(new Error("device offline"), new Error("audit offline")) }));
-    expect(out).toContain("31/31 good");
+    const out = text(screen({ view: "field-truth", physicalFeeder: physical(new Error("device offline"), new Error("audit offline")) }));
+    expect(out).not.toContain("Control centre API unavailable");
     expect(out).toContain("Physical feeder unavailable: device offline Showing the last answer.");
     expect(out).toContain("Audit unavailable: audit offline Showing the last answer.");
   });

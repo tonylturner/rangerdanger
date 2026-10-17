@@ -45,7 +45,7 @@ export const POINT_META: Record<string, PointMeta> = {
   "plc-1-input-valid": { label: "OpenPLC input", states: ["INVALID", "VALID"] },
   "plc-1-setpoint-kv": { label: "OpenPLC setpoint", unit: "kV", digits: 2 },
   "plc-1-deadband-pct": { label: "OpenPLC deadband", unit: "%", digits: 1 },
-  "plc-1-delay-s": { label: "OpenPLC delay remaining", unit: "s", digits: 0 },
+  "plc-1-delay-s": { label: "OpenPLC configured delay", unit: "s", digits: 0 },
 };
 
 for (const id of ["rmu-1", "rmu-2"]) {
@@ -61,14 +61,14 @@ export function pointLabel(id: string): string {
   return POINT_META[id]?.label ?? id;
 }
 
-// good: last report on the current connection had IV and NT clear.
+// GOOD is the full IEC quality predicate: no flags and no stale reason.
 // stale: the CC keeps a value it can no longer vouch for.
 // never: nothing received since the CC booted.
 export type PointCondition = "good" | "stale" | "never";
 
 export function pointCondition(point: OperatorPoint): PointCondition {
   if (point.value === null) return "never";
-  if (point.quality.iv || point.quality.nt || point.stale_reason !== null) return "stale";
+  if (qualityFlags(point.quality).length > 0 || point.stale_reason !== null) return "stale";
   return "good";
 }
 
@@ -89,6 +89,7 @@ export const STALE_REASON_TEXT: Record<StaleReason, string> = {
   measurement_invalid: "Device reports measurements invalid",
   never_received: "Never received",
   heartbeat: "PLC heartbeat stopped",
+  not_updated: "Cyclic reporting watchdog expired",
 };
 
 export function staleReasonText(reason: StaleReason | null): string {
@@ -237,9 +238,11 @@ export function journalSummary(kind: string, detail: Record<string, unknown>): s
     case "link_down":
       return `Link down #${str(detail, "connection_seq")}: ${linkDownReasonText(str(detail, "reason"))}`;
     case "gi_started":
-      return `General interrogation started on link #${str(detail, "connection_seq")}`;
+      return `General interrogation (${str(detail, "trigger")}) started on link #${str(detail, "connection_seq")}`;
     case "gi_complete":
-      return `General interrogation complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points good`;
+      return `General interrogation (${str(detail, "trigger")}) complete on link #${str(detail, "connection_seq")}, ${str(detail, "points_good")} points good`;
+    case "status_event":
+      return `${pointLabel(str(detail, "id"))}: ${formatPointValue(str(detail, "id"), detail.value as PointValue)} · ${str(detail, "asdu")} COT ${str(detail, "cot")} · RTU ${detail.source_time ?? "untimed"}${detail.source_time_invalid ? " · time IV" : ""}`;
     case "point_stale": {
       const reason = typeof detail.stale_reason === "string" ? detail.stale_reason : null;
       return `${pointLabel(str(detail, "point"))} STALE (${staleReasonText(reason as StaleReason | null) || "—"}), keeps ${journalValue(detail)}`;

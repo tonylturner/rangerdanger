@@ -1,0 +1,140 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BOOT_STATE, EU_PACKAGE, FEEDER_STATE, JOURNAL, NOW, PERIODIC_GI_STATE, WATCHDOG_STATE, commandResult } from "../lib/operator-fixtures.test-util";
+import { ControlCentreScreen, InterrogateStation, LinkStrip, viewFromSearch } from "./control-centre-view";
+import { ControlCentreOneLine } from "./control-centre-one-line";
+import { resolveOperatorView } from "../lib/operator-view";
+import { ControlCentreMiniStatus, RunnerOperatorStatus } from "./runner-operator-status";
+import { HistoryPlot } from "./historian-trend";
+import { HISTORY } from "../lib/historian-fixtures.test-util";
+
+// Navigation is outside this node-environment interaction test.
+vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a> }));
+
+const mounted: ReactTestRenderer[] = [], clients: QueryClient[] = [];
+function mount(node: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+  let result!: ReactTestRenderer;
+  act(() => { result = create(<QueryClientProvider client={client}>{node}</QueryClientProvider>); });
+  mounted.push(result); return result;
+}
+function screen(patch: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) {
+  return <ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...patch} />;
+}
+function button(tree: ReactTestRenderer, text: string) {
+  return tree.root.findAllByType("button").find((b) => b.children.join("").includes(text))!;
+}
+const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+afterEach(() => { act(() => mounted.splice(0).forEach((r) => r.unmount())); clients.splice(0).forEach((c) => c.clear()); vi.unstubAllGlobals(); });
+
+describe("operator workstation interactions", () => {
+  it("selects every device by click, Enter or Space and defaults to T1", () => {
+    const tree = mount(screen());
+    expect(tree.root.findAll((n) => n.props["aria-label"] === "T1 faceplate")).toHaveLength(1);
+    const select = (id: string, key?: string) => {
+      const symbol = tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith(id))!;
+      act(() => key ? symbol.props.onKeyDown({ key, preventDefault: vi.fn() }) : symbol.props.onClick());
+    };
+    select("CB1", "Enter"); expect(output(tree)).toContain("CB1 faceplate");
+    select("RMU1", " "); expect(output(tree)).toContain("RMU1 faceplate");
+    select("RMU2"); expect(output(tree)).toContain("RMU2 faceplate");
+    select("T1"); expect(output(tree)).toContain("Configured delay only");
+  });
+  it("cancels local arming on device change; one POST does wire SBO; late result retains CB1 attribution", async () => {
+    let resolve!: (response: Response) => void;
+    const fetchMock = vi.fn().mockImplementation(() => new Promise<Response>((r) => { resolve = r; })); vi.stubGlobal("fetch", fetchMock);
+    const tree = mount(screen());
+    const select = (label: string) => act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith(label))!.props.onClick());
+    select("CB1"); act(() => button(tree, "Confirm OPEN").props.onClick());
+    expect(output(tree)).toContain("No RTU reservation"); expect(fetchMock).not.toHaveBeenCalled();
+    select("RMU1"); select("CB1"); expect(button(tree, "Execute OPEN")).toBeUndefined();
+    act(() => button(tree, "Confirm OPEN").props.onClick());
+    await act(async () => { button(tree, "Execute OPEN").props.onClick(); await settle(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ point: "feeder-breaker-command", operation: "open" });
+    select("T1"); expect(button(tree, "Confirm RAISE").props.disabled).toBe(true);
+    await act(async () => { resolve(new Response(JSON.stringify(commandResult("completed")))); await settle(); });
+    expect(output(tree)).toContain("CB1 feeder breaker"); expect(output(tree)).toContain("feeder-breaker-command");
+    expect(output(tree)).toContain("T1 faceplate"); expect(output(tree)).toContain("COMPLETED");
+  });
+  it("marks the runner's retained snapshot when its operator API fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("operator proxy offline")));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+    client.setQueryData(["operator", "state"], FEEDER_STATE);
+    let tree!: ReactTestRenderer;
+    await act(async () => {
+      tree = create(<QueryClientProvider client={client}><RunnerOperatorStatus resolution={resolveOperatorView(EU_PACKAGE, null)} /></QueryClientProvider>);
+      mounted.push(tree); await settle();
+    });
+    expect(output(tree)).toContain("Operator API unavailable");
+    expect(output(tree)).toContain("Cached snapshot");
+    expect(output(tree)).toContain("operator proxy offline");
+  });
+  it("keeps commands admitted and integrity true during a later GI, with no receipt-age rule", () => {
+    const state = structuredClone(PERIODIC_GI_STATE);
+    state.points.forEach((p) => { p.received_at = "2020-01-01T00:00:00Z"; });
+    const tree = mount(screen({ state }));
+    expect(button(tree, "Confirm RAISE").props.disabled).toBe(false);
+    expect(button(tree, "Interrogate station").props.disabled).toBe(true);
+    expect(renderToStaticMarkup(<LinkStrip link={state.link} now={NOW} />)).toContain("GI ok");
+    expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI ok");
+  });
+  it("opens bad-quality Points without turning an uncertain bus into a process alarm", () => {
+    const tree = mount(screen({ state: WATCHDOG_STATE }));
+    act(() => button(tree, "1 points with bad quality").props.onClick());
+    expect(tree.root.findByType("select").props.value).toBe("bad quality");
+    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(1);
+    expect(output(tree)).toContain("not_updated");
+    act(() => tree.root.findByType("select").props.onChange({ target: { value: "status" } }));
+    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(18);
+  });
+  it("marks the complete cached surface and shows journal failures, without rewriting GOOD", () => {
+    const state = structuredClone(FEEDER_STATE);
+    const tree = mount(screen({ state, stateError: new Error("proxy offline"), journalError: new Error("journal offline"), initialTab: "Points" }));
+    expect(output(tree).match(/Cached snapshot/g)).toHaveLength(4);
+    expect(output(tree)).toContain("1.0 s"); expect(output(tree)).toContain('"data-cached":true');
+    expect(button(tree, "Confirm RAISE").props.disabled).toBe(true);
+    expect(state).toEqual(FEEDER_STATE);
+    act(() => button(tree, "Events").props.onClick()); expect(output(tree)).toContain("Journal unavailable: "); expect(output(tree)).toContain("journal offline"); expect(output(tree)).toContain("cached events");
+  });
+  it("does not mount field truth in the CC view or the CC schematic in field truth", () => {
+    expect(output(mount(screen({ physicalFeeder: <div>FIELD-ONLY</div> })))).not.toContain("FIELD-ONLY");
+    const field = output(mount(screen({ view: "field-truth", physicalFeeder: <div>FIELD-ONLY</div> })));
+    expect(field).toContain("FIELD-ONLY"); expect(field).not.toContain("CC-observed CIGRE");
+    expect(viewFromSearch("?view=field-truth")).toBe("field-truth"); expect(viewFromSearch("?view=unknown")).toBe("control-centre");
+  });
+  it("shows received ASDU and reporting, and labels the trend band as current only", () => {
+    const tree = mount(screen({ initialTab: "Points" }));
+    expect(output(tree)).toContain("M_DP_TB_1"); expect(output(tree)).toContain("cyclic 10 s · deadband 0.1 kV");
+    expect(renderToStaticMarkup(<HistoryPlot history={HISTORY} band={{ setpoint: 20, low: 19.8, high: 20.2, bus: 20.02 }} />)).toContain("not historical setpoints");
+  });
+  it("keeps switch geometry and uncertainty distinct", () => {
+    const state = structuredClone(FEEDER_STATE);
+    state.points.find((p) => p.id === "rmu-1-position")!.value = "intermediate";
+    state.points.find((p) => p.id === "rmu-2-position")!.value = "indeterminate";
+    const html = renderToStaticMarkup(<ControlCentreOneLine points={state.points} />);
+    expect(html).toContain("½"); expect(html).toContain("×"); expect(html).toContain('fill="#cbd5e1"');
+    expect(renderToStaticMarkup(<ControlCentreOneLine points={BOOT_STATE.points} />)).toContain('fill="url(#cc-unknown)"');
+  });
+});
+
+describe("operator interrogation button", () => {
+  it.each([409, 503])("shows %s without retrying", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: status === 409 ? "interrogation already running" : "link not started" }), { status })); vi.stubGlobal("fetch", fetchMock);
+    const tree = mount(<InterrogateStation state={FEEDER_STATE} unavailable={false} />);
+    await act(async () => { button(tree, "Interrogate station").props.onClick(); await settle(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(output(tree)).toContain(String(status)); expect(output(tree)).toContain("No automatic retry");
+  });
+  it("disables on link loss or API failure and distinguishes accepted from completed", async () => {
+    expect(button(mount(<InterrogateStation state={BOOT_STATE} unavailable={false} />), "Interrogate station").props.disabled).toBe(true);
+    expect(button(mount(<InterrogateStation state={FEEDER_STATE} unavailable />), "Interrogate station").props.disabled).toBe(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ trigger: "operator", requested_at: "2026-10-09T12:00:30Z" }), { status: 202 })));
+    const tree = mount(<InterrogateStation state={FEEDER_STATE} unavailable={false} />);
+    await act(async () => { button(tree, "Interrogate station").props.onClick(); await settle(); });
+    expect(output(tree)).toContain("awaiting CC start"); expect(button(tree, "Interrogate station").props.disabled).toBe(true);
+  });
+});

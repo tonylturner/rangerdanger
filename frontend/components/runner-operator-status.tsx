@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import type { OperatorState } from "../lib/operator-api";
-import { GI_STATE_TEXT, LINK_STATE_TEXT, formatPointValue, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
-import { useOperatorState } from "../lib/operator-queries";
+import { LINK_STATE_TEXT, formatPointValue, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
+import { useNow, useOperatorState } from "../lib/operator-queries";
 import { EU_OPERATOR_VIEW, isView, operatorViewProblem, type OperatorViewResolution } from "../lib/operator-view";
+import { errorMessage } from "../lib/utils";
 import { isRangeNotReady } from "../lib/range";
 import { MiniStatus } from "./scenario-runner-widgets";
 
@@ -24,7 +25,7 @@ export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorSta
   return (
     <div className="grid grid-cols-2 gap-2">
       <MiniStatus label="IEC 104 Link" value={LINK_STATE_TEXT[state.link.state]} ok={state.link.state === "started"} />
-      <MiniStatus label="Interrogation" value={GI_STATE_TEXT[state.link.gi.state]} ok={state.link.gi.state === "complete"} />
+      <MiniStatus label="Interrogation" value={state.link.gi.last_complete_at !== null ? "GI ok" : state.link.gi.state.toUpperCase()} ok={state.link.gi.last_complete_at !== null} />
       <MiniStatus label="Telemetry" value={telemetryText(summary)} ok={summary.total > 0 && summary.good === summary.total} />
       <MiniStatus
         label="Breaker (as reported)"
@@ -37,6 +38,7 @@ export function ControlCentreMiniStatus({ state, waiting }: { state: OperatorSta
 
 function EuStatus() {
   const query = useOperatorState(3000);
+  const now = useNow(1000);
   return (
     <>
       <div className="flex items-baseline justify-between">
@@ -45,6 +47,7 @@ function EuStatus() {
           Open the Control Centre →
         </Link>
       </div>
+      {query.error && <p role="alert" className="text-xs text-amber-300">Operator API unavailable: {errorMessage(query.error)}. {query.data ? `Cached snapshot · ${Math.max(0, Math.floor((now - query.dataUpdatedAt) / 1000))} s since last API answer; not live.` : "No operator snapshot."}</p>}
       <ControlCentreMiniStatus state={query.data} waiting={!query.data && isRangeNotReady(query.error)} />
     </>
   );

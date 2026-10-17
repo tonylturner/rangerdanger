@@ -20,7 +20,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
     <div className="space-y-2">
       <div className="flex flex-wrap gap-x-4 text-[10px] text-slate-500">
         <span>{journalRangeText(journal.oldest_seq, journal.latest_seq)}</span>
-        <span>cache epoch {journal.cache_epoch}</span>
+        <span>cache epoch <span className="break-all">{journal.cache_epoch}</span></span>
         {journal.entries.length > SHOWN && <span>showing the latest {SHOWN}</span>}
       </div>
       {entries.length === 0 ? (
@@ -30,7 +30,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
           {entries.map((entry) => {
             const tone = journalTone(entry.kind);
             return (
-              <li key={entry.seq} className="flex min-w-0 items-start gap-2 border-t border-slate-800/50 py-1">
+              <li key={entry.seq} className="flex min-w-0 flex-wrap items-start gap-2 border-t border-slate-800/50 py-1">
                 <span className="w-10 shrink-0 text-right text-slate-600">{entry.seq}</span>
                 <span className="w-24 shrink-0 text-slate-500">{formatUtcTime(entry.at)}</span>
                 <span
@@ -40,7 +40,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
                 >
                   {entry.kind}
                 </span>
-                <span className="min-w-0 break-words text-slate-300">{journalSummary(entry.kind, entry.detail)}</span>
+                <span className="min-w-0 basis-full break-words text-slate-300 sm:basis-auto sm:flex-1">{journalSummary(entry.kind, entry.detail)}</span>
               </li>
             );
           })}

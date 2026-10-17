@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { CommandOperation, CommandResult, LinkState, OperatorPoint } from "../lib/operator-api";
+import { useEffect, useRef, useState } from "react";
+import type { CommandOperation, CommandResult, ControlCentreLink, LinkState, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText, commandOutcome, formatPointValue, formatUtcTime, pointCondition } from "../lib/operator-format";
+import { type DeviceId } from "../lib/operator-workstation";
 import { useOperatorCommand } from "../lib/operator-queries";
 
 export const CONTROL_PANELS = [
@@ -50,35 +51,37 @@ export function CommandPanelView({ linkState, position, state, onArm, onExecute,
   disabled?: boolean;
 }) {
   const condition = position ? pointCondition(position) : "never";
-  const ready = linkState === "started" && condition === "good" && !disabled;
+  const ready = linkState === "started" && !!position && position.value !== null && !position.quality.iv && !position.quality.nt && !disabled;
   const busy = state.phase === "pending";
   return <section aria-label={panel.label} className="space-y-2 border-t border-slate-800 pt-3">
     <h3 className="text-sm font-bold text-slate-200">{panel.label}</h3>
     <p className="text-xs text-slate-400">{panel.wire} · select-before-operate via RTU</p>
     <p className="text-xs text-slate-300">Reported: {position ? formatPointValue(position.id, position.value) : "unknown"} · {condition === "good" ? "GOOD" : condition === "stale" ? "STALE" : "UNKNOWN"}</p>
     {state.phase === "armed" ? <div className="space-y-2 rounded border border-sky-800 bg-sky-950/30 p-2">
-      <p className="text-xs text-sky-200">Select then execute {state.operation.toUpperCase()} on {panel.label}?</p>
-      <div className="flex gap-2">
+      <p className="text-xs text-sky-200">Local confirmation: {state.operation.toUpperCase()} on {panel.label}? No RTU reservation has been made.</p>
+      <div className="flex flex-wrap gap-2">
         <button className={BUTTON} disabled={!ready} onClick={() => onExecute(state.operation)}>Execute {state.operation.toUpperCase()}</button>
         <button className={BUTTON} onClick={onCancel}>Cancel</button>
       </div>
-    </div> : <div className="flex gap-2">{panel.operations.map((op) => <button key={op} className={BUTTON} disabled={!ready || busy} onClick={() => onArm(op)}>Select {op.toUpperCase()}…</button>)}</div>}
-    {!ready && <p className="text-xs text-amber-300">Commands require a started link and good feedback. The CC also checks freshness before select; commands cannot be sent while unavailable or busy.</p>}
+    </div> : <div className="flex flex-wrap gap-2">{panel.operations.map((op) => <button key={op} className={BUTTON} disabled={!ready || busy} onClick={() => onArm(op)}>Confirm {op.toUpperCase()}…</button>)}</div>}
+    {!ready && <p className="text-xs text-amber-300">Commands require a started link, completed integrity GI and feedback without IV/NT. The RTU checks interlocks; commands cannot be sent while unavailable or busy.</p>}
     {busy && <p role="status" className="text-xs text-slate-300">{state.operation.toUpperCase()}: select, execute and fresh feedback in progress…</p>}
     {state.phase === "result" && <CommandResultView result={state.result} />}
     {state.phase === "error" && <p role="alert" className="text-xs text-amber-300">{state.message}</p>}
   </section>;
 }
 
-// One operator request at a time across all panels, as on the RTU.
-export function SupervisoryControls({ linkState, points, unavailable }: { linkState: LinkState; points: OperatorPoint[]; unavailable: boolean }) {
+// Selection only arms the browser. Exactly one POST performs wire SBO.
+export function SupervisoryControls({ link, points, unavailable, selected }: { link: ControlCentreLink; points: OperatorPoint[]; unavailable: boolean; selected: DeviceId }) {
   const command = useOperatorCommand();
   const inFlight = useRef(false);
   const [active, setActive] = useState<string | null>(null);
   const [state, setState] = useState<CommandPanelState>({ phase: "idle" });
+  useEffect(() => { setState((s) => s.phase === "armed" ? { phase: "idle" } : s); }, [selected]);
+  const visible = CONTROL_PANELS.filter((p) => selected === "T1" ? p.point.startsWith("oltc-") : selected === "CB1" ? p.point.startsWith("feeder-") : p.point.startsWith(selected === "RMU1" ? "rmu-1-" : "rmu-2-"));
   const execute = (panel: ControlPanel, operation: CommandOperation) => {
     const feedback = points.find((p) => p.id === panel.feedback);
-    if (inFlight.current || unavailable || linkState !== "started" || !feedback || pointCondition(feedback) !== "good" || active !== panel.point || state.phase !== "armed" || state.operation !== operation) return;
+    if (inFlight.current || unavailable || link.state !== "started" || !link.gi.last_complete_at || !feedback || feedback.value === null || feedback.quality.iv || feedback.quality.nt || active !== panel.point || state.phase !== "armed" || state.operation !== operation) return;
     inFlight.current = true;
     setState({ phase: "pending", operation });
     command.mutate({ point: panel.point, operation }, {
@@ -87,10 +90,16 @@ export function SupervisoryControls({ linkState, points, unavailable }: { linkSt
       onSettled: () => { inFlight.current = false; },
     });
   };
-  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{CONTROL_PANELS.map((panel) => <CommandPanelView
-    key={panel.point} panel={panel} linkState={linkState} position={points.find((p) => p.id === panel.feedback)}
-    state={active === panel.point ? state : { phase: "idle" }} disabled={unavailable || state.phase === "pending"}
+  return <div className="space-y-3">{visible.map((panel) => <CommandPanelView
+    key={panel.point} panel={panel} linkState={link.state} position={points.find((p) => p.id === panel.feedback)}
+    state={active === panel.point && state.phase !== "result" && state.phase !== "error" ? state : { phase: "idle" }} disabled={unavailable || !link.gi.last_complete_at || state.phase === "pending"}
     onArm={(operation) => { setActive(panel.point); setState({ phase: "armed", operation }); }}
     onExecute={(operation) => execute(panel, operation)} onCancel={() => setState({ phase: "idle" })}
-  />)}</div>;
+  />)}
+    {state.phase === "pending" && <p role="status" className="text-xs text-slate-300">In flight: {active} · {state.operation}</p>}
+    {(state.phase === "result" || state.phase === "error") && <section aria-label="Last command outcome" className="space-y-2 break-words">
+      <h3 className="text-xs text-slate-300">Command outcome · {CONTROL_PANELS.find((p) => p.point === active)?.label}</h3>
+      {state.phase === "result" ? <CommandResultView result={state.result} /> : <p role="alert" className="text-xs text-amber-300">{state.message}</p>}
+    </section>}
+  </div>;
 }

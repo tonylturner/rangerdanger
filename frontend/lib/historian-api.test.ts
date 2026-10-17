@@ -15,7 +15,7 @@ describe("historian proxy", () => {
     expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
   });
   it("reads the historian point catalogue", async () => {
-    const points = [{ id: HISTORY.point, ioa: 2301, asdu: "M_ME_NC_1", last: historySample(1) }];
+    const points = [{ id: HISTORY.point, ioa: 2301, kind: "float", asdu: "M_ME_NC_1", last: historySample(1) }];
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(points)));
     vi.stubGlobal("fetch", fetchMock);
     await expect(getHistorianPoints()).resolves.toEqual(points);
@@ -34,7 +34,8 @@ describe("history integrity", () => {
   });
   it("does not draw unknown or moving tap samples as settled values", () => {
     for (const value of [null, "open", Infinity, NaN] as const) expect(numericSample(historySample(1, { value }))).toBeNull();
-    expect(numericSample(historySample(1, { value: 1, transient: true }))).toBeNull();
+    expect(numericSample(historySample(1, { value: { value: 1, transient: true } }))).toBeNull();
+    expect(numericSample(historySample(1, { value: { value: -2, transient: false } }))).toBe(-2);
     expect(numericSample(historySample(1, { value: 0 }))).toBe(0);
     expect(numericSample(historySample(1, { value: false }))).toBe(0);
   });

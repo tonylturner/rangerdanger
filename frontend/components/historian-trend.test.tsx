@@ -22,7 +22,7 @@ describe("historian trend", () => {
     expect(html).not.toContain("polyline");
   });
   it("shows completed tap separately from its transient flag", () => {
-    const history = { point: "oltc-1-tap", gaps: [], segments: [{ cache_epoch: "tap", samples: [historySample(1, { value: -2, transient: true })] }] };
+    const history = { point: "oltc-1-tap", gaps: [], segments: [{ cache_epoch: "tap", samples: [historySample(1, { value: { value: -2, transient: true } })] }] };
     expect(text(renderToStaticMarkup(<HistoryPlot history={history} />))).toContain("-2 · TRANSIENT");
   });
   it("handles empty history without infinities in SVG attributes", () => {

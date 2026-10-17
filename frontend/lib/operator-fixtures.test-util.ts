@@ -45,6 +45,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
   {
     id: "feeder-breaker-position",
     ioa: 1001,
+    kind: "double-point", reporting: null,
     asdu: "M_DP_TB_1",
     value: "closed",
     quality: GOOD,
@@ -57,7 +58,8 @@ export const FRESH_POINTS: OperatorPoint[] = [
   {
     id: "feeder-protection-trip",
     ioa: 1002,
-    asdu: "M_SP_TB_1",
+    kind: "single-point", reporting: null,
+    asdu: "M_SP_NA_1",
     value: false,
     quality: GOOD,
     stale_reason: null,
@@ -69,6 +71,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
   {
     id: "feeder-current",
     ioa: 2001,
+    kind: "float", reporting: { cyclic_ms: 10000, deadband: 2 },
     asdu: "M_ME_NC_1",
     value: 28.93,
     quality: GOOD_MEASUREMENT,
@@ -80,6 +83,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
   },
   {
     id: "feeder-voltage",
+    kind: "float", reporting: { cyclic_ms: 10000, deadband: 0.1 },
     ioa: 2002,
     asdu: "M_ME_NC_1",
     value: 19.94,
@@ -103,7 +107,7 @@ export const FRESH_STATE: OperatorState = {
     since: "2026-10-09T11:59:58.000Z",
     last_rx_at: "2026-10-09T12:00:29.900Z",
     connection_seq: 3,
-    gi: { state: "complete", started_at: "2026-10-09T11:59:58.100Z", completed_at: "2026-10-09T11:59:58.300Z" },
+    gi: { state: "complete", started_at: "2026-10-09T11:59:58.100Z", trigger: "connect", last_complete_at: "2026-10-09T11:59:58.300Z", next_due_at: "2026-10-09T12:14:58.100Z" },
   },
   points: FRESH_POINTS,
   package_id: "eu-iec104-substation",
@@ -117,7 +121,7 @@ export const STALE_STATE: OperatorState = {
     ...FRESH_STATE.link,
     state: "connecting",
     last_rx_at: "2026-10-09T12:00:09.900Z",
-    gi: { state: "none", started_at: null, completed_at: null },
+    gi: { state: "none", started_at: null, trigger: null, last_complete_at: null, next_due_at: null },
   },
   points: FRESH_POINTS.map((p) => ({
     ...p,
@@ -132,7 +136,7 @@ export const JOURNAL: OperatorJournal = {
   latest_seq: 4,
   entries: [
     { seq: 1, at: "2026-10-09T11:59:58.000Z", kind: "link_up", detail: { peer: "10.30.30.20:2404", connection_seq: 3 } },
-    { seq: 2, at: "2026-10-09T11:59:58.300Z", kind: "gi_complete", detail: { connection_seq: 3, points_good: 4 } },
+    { seq: 2, at: "2026-10-09T11:59:58.300Z", kind: "gi_complete", detail: { connection_seq: 3, points_good: 4, trigger: "connect" } },
     { seq: 3, at: "2026-10-09T12:00:10.000Z", kind: "link_down", detail: { peer: "10.30.30.20:2404", connection_seq: 3, reason: "t1_timeout" } },
     { seq: 4, at: "2026-10-09T12:00:10.000Z", kind: "point_stale", detail: { point: "feeder-breaker-position", stale_reason: "link_lost", value: "closed" } },
   ],
@@ -282,9 +286,42 @@ const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
 ];
 export const FEEDER_STATE: OperatorState = {
   ...FRESH_STATE,
-  points: [...FRESH_POINTS, ...EXTRA_POINTS.map(([id, ioa, value, asdu]) => ({
+  points: [...FRESH_POINTS, ...EXTRA_POINTS.map(([id, ioa, value, asdu]): OperatorPoint => ({
     ...FRESH_POINTS[0], id, ioa, value, asdu,
+    kind: asdu === "M_ME_NC_1" ? "float" : asdu === "M_ST_TB_1" ? "step-position" : asdu === "M_DP_TB_1" ? "double-point" : "single-point",
+    reporting: asdu === "M_ME_NC_1" ? { cyclic_ms: id.startsWith("plc-") ? 60000 : 10000, deadband: id.startsWith("plc-") ? 0 : id.endsWith("current") ? 2 : 0.1 } : null,
+    source_time: asdu === "M_ME_NC_1" ? null : FRESH_POINTS[0].source_time,
+    source_time_invalid: asdu === "M_ME_NC_1" ? null : false,
     quality: asdu === "M_ME_NC_1" ? GOOD_MEASUREMENT : GOOD,
     received_at: "2026-10-09T12:00:29.900Z",
   }))],
 };
+
+// Contract rev 2 §2: all six worked states, without compatibility fields.
+export const BOOT_STATE: OperatorState = {
+  ...FEEDER_STATE,
+  link: { ...FEEDER_STATE.link, state: "connecting", since: null, last_rx_at: null, gi: { state: "none", trigger: null, started_at: null, last_complete_at: null, next_due_at: null } },
+  points: FEEDER_STATE.points.map((p) => ({ ...p, asdu: null, value: null, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "never_received", cot: null, received_at: null, source_time: null, source_time_invalid: null })),
+};
+export const CONNECT_GI_STATE: OperatorState = {
+  ...FEEDER_STATE,
+  points: FEEDER_STATE.points.map((p) => ({ ...p, asdu: p.kind === "float" ? "M_ME_NC_1" : p.kind === "single-point" ? "M_SP_NA_1" : p.kind === "double-point" ? "M_DP_NA_1" : "M_ST_NA_1", cot: 20, received_at: "2026-10-09T11:59:58.200Z", source_time: null, source_time_invalid: null })),
+};
+export const BREAKER_EVENT_STATE: OperatorState = {
+  ...CONNECT_GI_STATE,
+  points: CONNECT_GI_STATE.points.map((p) => p.id === "feeder-breaker-position" ? { ...p, value: "open", asdu: "M_DP_TB_1", cot: 3, source_time: "2026-10-09T12:00:00.120Z", source_time_invalid: false, received_at: "2026-10-09T12:00:00.150Z" } : p),
+};
+export const PERIODIC_GI_STATE: OperatorState = {
+  ...BREAKER_EVENT_STATE,
+  link: { ...BREAKER_EVENT_STATE.link, gi: { ...BREAKER_EVENT_STATE.link.gi, state: "running", trigger: "periodic", started_at: "2026-10-09T12:14:58.100Z", next_due_at: "2026-10-09T12:29:58.100Z" } },
+};
+export const LOST_LINK_STATE: OperatorState = {
+  ...BREAKER_EVENT_STATE,
+  link: { ...BREAKER_EVENT_STATE.link, state: "disconnected", gi: { state: "none", trigger: null, started_at: null, last_complete_at: null, next_due_at: null } },
+  points: BREAKER_EVENT_STATE.points.map((p) => ({ ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "link_lost" })),
+};
+export const WATCHDOG_STATE: OperatorState = {
+  ...BREAKER_EVENT_STATE,
+  points: BREAKER_EVENT_STATE.points.map((p) => p.id === "oltc-1-bus-kv" ? { ...p, quality: { ...p.quality, nt: true }, stale_reason: "not_updated" } : p),
+};
+export const WORKED_STATES = [BOOT_STATE, CONNECT_GI_STATE, BREAKER_EVENT_STATE, PERIODIC_GI_STATE, LOST_LINK_STATE, WATCHDOG_STATE];

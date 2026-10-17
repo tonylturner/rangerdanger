@@ -12,15 +12,15 @@ const AUDIT_SHOWN = 50;
 function Row({ label, children, alert }: { label: string; children: ReactNode; alert?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-t border-slate-800/50 py-1 text-xs">
-      <span className="shrink-0 text-slate-400">{label}</span>
-      <span className={`min-w-0 break-words text-right font-mono ${alert ? "font-bold text-red-300" : "text-slate-200"}`}>{children}</span>
+      <span className="min-w-0 text-slate-400">{label}</span>
+      <span className={`min-w-0 [overflow-wrap:anywhere] text-right font-mono ${alert ? "font-bold text-red-300" : "text-slate-200"}`}>{children}</span>
     </div>
   );
 }
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+    <section className="min-w-0 rounded-xl border border-slate-800 bg-slate-950 p-4">
       <h2 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</h2>
       <p className="mb-2 text-[10px] text-slate-400">{subtitle}</p>
       {children}
@@ -123,7 +123,7 @@ export function AuditTable({ audit }: { audit: DeviceAudit }) {
   const entries = audit.entries.slice(-AUDIT_SHOWN).reverse();
   if (entries.length === 0) return <div className="text-sm text-slate-400">No device audit entries yet.</div>;
   return (
-    <div className="max-h-96 overflow-y-auto">
+    <div className="max-h-96 overflow-auto">
       <table className="w-full text-[11px]">
         <thead>
           <tr className="text-left text-[9px] uppercase tracking-wider text-slate-400">
@@ -186,9 +186,9 @@ export function PhysicalFeederScreen({ field, stateError, audit, auditError, ope
           <OperatorContrast field={field} operator={operator} />
         </Card>
       </> : <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "Physical feeder state shows once the range is ready." : "Waiting for physical feeder state…"}</p>}
-      <Card title="Device audit" subtitle={`${audit?.entries.at(-1)?.after.device_id ?? "Device"} · accepted and rejected actions with their source, newest first`}>
+      <Card title="Breaker audit" subtitle={`${audit?.entries.at(-1)?.after.device_id ?? "Device"} · accepted and rejected actions with their source, newest first`}>
         {auditError ? <p role="alert" className="text-xs text-red-300">Audit unavailable: {errorMessage(auditError)}{audit ? " Showing the last answer." : ""}</p> : null}
-        {audit ? <AuditTable audit={audit} /> : <p className="text-xs text-slate-400">Waiting for device audit…</p>}
+        {audit ? <AuditTable audit={audit} /> : <p className="text-xs text-slate-400">Waiting for breaker audit…</p>}
       </Card>
     </section>
   );
