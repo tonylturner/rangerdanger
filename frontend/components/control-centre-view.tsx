@@ -1,183 +1,108 @@
 "use client";
 
-import type { ReactNode } from "react";
-import type { ControlCentreLink, OperatorJournal, OperatorState } from "../lib/operator-api";
-import {
-  GI_STATE_TEXT,
-  LINK_STATE_TEXT,
-  ageMs,
-  formatAge,
-  formatUtcTime,
-  telemetrySummary,
-  telemetryText,
-} from "../lib/operator-format";
-import { useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
+import { useEffect, useState, type ReactNode } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { postOperatorGi, type ControlCentreLink, type OperatorJournal, type OperatorState } from "../lib/operator-api";
+import { LINK_STATE_TEXT, ageMs, formatAge, formatUtcTime, telemetrySummary, telemetryText } from "../lib/operator-format";
+import { OPERATOR_KEY, useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
+import { activeAlarms, type DeviceId } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
-import { SupervisoryControls } from "./control-centre-command";
-import { ControlCentreJournal } from "./control-centre-journal";
+import { DeviceFaceplate } from "./control-centre-faceplate";
 import { ControlCentreOneLine } from "./control-centre-one-line";
-import { PointTable, STALE_HATCH } from "./control-centre-points";
+import { STALE_HATCH } from "./control-centre-points";
 import { PhysicalFeeder } from "./physical-feeder";
-import { HistorianTrend } from "./historian-trend";
+import { ControlCentrePane, type PaneTab } from "./control-centre-pane";
 
-const POLL_MS = 2000;
-
-function Cell({ label, children, emphasis }: { label: string; children: ReactNode; emphasis?: boolean }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
-      <div className={`truncate font-mono ${emphasis ? "text-sm font-bold" : "text-[11px] text-slate-300"}`}>{children}</div>
-    </div>
-  );
+const BUTTON = "rounded border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+export type WorkstationView = "control-centre" | "field-truth";
+export function viewFromSearch(search: string): WorkstationView {
+  return new URLSearchParams(search).get("view") === "field-truth" ? "field-truth" : "control-centre";
 }
-
+function Cell({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="min-w-0"><dt className="text-xs text-slate-400">{label}</dt><dd className="break-words font-mono text-xs text-slate-100">{children}</dd></div>;
+}
 export function LinkStrip({ link, now }: { link: ControlCentreLink; now: number }) {
-  const started = link.state === "started";
-  const giDone = link.gi.state === "complete";
-  return (
-    <section
-      aria-label="IEC 104 link"
-      className={`rounded-xl border p-3 ${started ? "border-slate-800 bg-slate-900/70" : `border-amber-600 ${STALE_HATCH}`}`}
-    >
-      {!started && (
-        <div role="alert" className="mb-2 text-xs font-bold tracking-wide text-amber-300">
-          ⚠ IEC 104 LINK {LINK_STATE_TEXT[link.state]}: telemetry is stale. Every value below is the last one received.
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-        <Cell label="Link" emphasis>
-          <span className={started ? "text-green-400" : "text-amber-300"}>
-            {started ? "● " : "○ "}
-            {LINK_STATE_TEXT[link.state]}
-          </span>
-        </Cell>
-        <Cell label="General interrogation" emphasis>
-          <span className={giDone ? "text-green-400" : "text-amber-300"}>{GI_STATE_TEXT[link.gi.state]}</span>
-        </Cell>
-        <Cell label="RTU (peer)">{link.peer}</Cell>
-        <Cell label="Since (UTC)">{formatUtcTime(link.since)}</Cell>
-        <Cell label="Last receive">{link.last_rx_at === null ? "—" : `${formatAge(ageMs(link.last_rx_at, now))} ago`}</Cell>
-        <Cell label="Connection #">{link.connection_seq}</Cell>
-        <Cell label="GI complete (UTC)">{formatUtcTime(link.gi.completed_at)}</Cell>
-      </div>
-    </section>
-  );
+  const integrity = link.gi.last_complete_at !== null;
+  return <section aria-label="IEC 104 link" className={`rounded-lg border p-3 ${link.state === "started" ? "border-slate-700 bg-slate-900" : `border-dashed border-amber-600 ${STALE_HATCH}`}`}>
+    {link.state !== "started" && <p role="alert" className="mb-2 text-xs text-amber-300">IEC 104 LINK {LINK_STATE_TEXT[link.state]}: telemetry is stale; retained values are not current.</p>}
+    <dl className="flex flex-wrap gap-x-6 gap-y-3">
+      <Cell label="Link">{LINK_STATE_TEXT[link.state]}</Cell>
+      <Cell label="RTU peer">{link.peer}</Cell>
+      <Cell label="Since (UTC)">{formatUtcTime(link.since)}</Cell>
+      <Cell label="Last frame age">{formatAge(ageMs(link.last_rx_at, now))}</Cell>
+      <Cell label="Integrity">{integrity ? "GI ok" : "No completed GI"}</Cell>
+      <Cell label="GI last complete (UTC)">{formatUtcTime(link.gi.last_complete_at)}</Cell>
+      <Cell label="GI trigger / state">{link.gi.trigger ?? "—"} / {link.gi.state === "running" ? "RUNNING" : link.gi.state}</Cell>
+      <Cell label="GI next due (UTC)">{formatUtcTime(link.gi.next_due_at)}</Cell>
+    </dl>
+  </section>;
 }
-
-function Panel({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
-  return (
-    <section className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</h2>
-        {aside}
-      </div>
-      {children}
-    </section>
-  );
+export function InterrogateStation({ state, unavailable }: { state: OperatorState; unavailable: boolean }) {
+  const client = useQueryClient();
+  const gi = useMutation({ mutationFn: postOperatorGi, retry: false, onSettled: () => client.invalidateQueries({ queryKey: OPERATOR_KEY }) });
+  // Keep disabled while queued; state polling confirms that the CC sent it.
+  const queued = gi.isSuccess && (!state.link.gi.started_at || Date.parse(state.link.gi.started_at) < Date.parse(gi.data.requested_at));
+  return <div className="space-y-2">
+    <button className={BUTTON} disabled={unavailable || state.link.state !== "started" || state.link.gi.state === "running" || gi.isPending || queued} onClick={() => gi.mutate()}>Interrogate station</button>
+    {(gi.isPending || queued) && <p role="status" className="text-xs text-slate-300">Operator interrogation requested; awaiting CC start.</p>}
+    {gi.error && <p role="alert" className="text-xs text-amber-300">Interrogation refused or unavailable: {errorMessage(gi.error)}. No automatic retry.</p>}
+  </div>;
 }
-
-export function ControlCentreScreen({
-  state,
-  stateError,
-  stateUpdatedAt,
-  journal,
-  now,
-  physicalFeeder,
-}: {
-  state: OperatorState | undefined;
-  stateError: unknown;
-  stateUpdatedAt: number;
-  journal: OperatorJournal | undefined;
-  now: number;
-  physicalFeeder?: ReactNode;
+export function SnapshotMarker({ age }: { age: string | null }) {
+  return age === null ? null : <p role="status" className="mb-2 border border-dashed border-amber-600 p-2 text-xs text-amber-200">Cached snapshot · {age} since last API answer. All link states, values and IEC quality below are from that snapshot, not a live feed.</p>;
+}
+export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalFeeder, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms" }: {
+  state: OperatorState | undefined; stateError: unknown; stateUpdatedAt: number;
+  journal: OperatorJournal | undefined; journalError?: unknown; now: number; physicalFeeder?: ReactNode;
+  view?: WorkstationView; onViewChange?: (view: WorkstationView) => void; initialTab?: PaneTab;
 }) {
-  const waiting = !state && isRangeNotReady(stateError);
+  const [selected, setSelected] = useState<DeviceId>("T1");
   const unavailable = stateError !== null && stateError !== undefined;
-  const apiDown = unavailable && !isRangeNotReady(stateError);
+  const cachedAge = state && unavailable ? formatAge(Math.max(0, now - stateUpdatedAt)) : null;
   const summary = state ? telemetrySummary(state.points) : null;
-  return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-10">
-      <header>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">20 kV feeder — IEC 60870-5-104 telecontrol</p>
-        <h1 className="text-2xl font-bold text-white">Control Centre</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500">
-          What the control centre knows, learned only over IEC 104 from the RTU at 10.30.30.20:2404. When the link is
-          lost it keeps the last values and flags them stale (IV, NT) with the reason and their age.
-        </p>
-      </header>
-
-      {apiDown && (
-        <div role="alert" className="rounded-lg border border-red-800/70 bg-red-950/30 px-4 py-2 text-xs text-red-200">
-          <span className="font-bold text-red-400">Control centre API unavailable</span>: {errorMessage(stateError)}.{" "}
-          {state
-            ? `Showing the last answer, received ${formatUtcTime(new Date(stateUpdatedAt).toISOString())} UTC (${formatAge(now - stateUpdatedAt)} ago).`
-            : "Nothing received yet."}
+  const alarms = state ? activeAlarms(state) : [];
+  return <main className="mx-auto flex w-screen min-w-0 max-w-7xl md:w-[calc(100vw-12rem)] flex-col gap-4 px-3 py-6 sm:px-6">
+    <header>
+      <h1 className="text-2xl font-semibold text-white">{view === "control-centre" ? "Control Centre" : "Field truth"}</h1>
+      <p className="mt-1 max-w-3xl text-sm text-slate-400">20 kV teaching feeder · {view === "control-centre" ? "IEC 60870-5-104 observations only. Selected teaching reporting profile, not a universal European default." : "Direct device, station clock and solver observations, outside IEC 104."}</p>
+    </header>
+    <div role="group" aria-label="Observation view" className="flex flex-wrap gap-1 self-start rounded-lg border border-slate-700 p-1">
+      {([['control-centre', 'Control Centre'], ['field-truth', 'Field truth']] as const).map(([id, label]) => <button key={id} className={`${BUTTON} ${view === id ? "bg-slate-700" : "border-transparent"}`} aria-pressed={view === id} onClick={() => onViewChange(id)}>{label}</button>)}
+    </div>
+    {unavailable && <p role="alert" className="rounded-lg border border-amber-700 p-3 text-sm text-amber-200">{isRangeNotReady(stateError) ? "Range not ready" : "Control centre API unavailable"}: {errorMessage(stateError)}. {state ? "Showing the last answer; controls disabled." : "Nothing received yet."}</p>}
+    {view === "field-truth" ? <>{cachedAge !== null && <p role="status" className="text-xs text-amber-200">Field-vs-CC comparison uses a cached CC snapshot · {cachedAge} since last operator API answer. Field data is fetched independently.</p>}{physicalFeeder}</> : <>
+      <p className="text-xs text-slate-300">Portal API: {unavailable ? "unavailable" : state ? "available" : "waiting"} · {alarms.length} active alarms{cachedAge !== null ? " in cached snapshot" : ""}</p>
+      {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
+      {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
+        <div><SnapshotMarker age={cachedAge} /><LinkStrip link={state.link} now={now} /><div className="mt-3"><InterrogateStation state={state} unavailable={unavailable} /></div></div>
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
+            <h2 className="mb-3 text-sm font-semibold text-slate-200">Feeder schematic</h2><SnapshotMarker age={cachedAge} />
+            <ControlCentreOneLine points={state.points} unavailable={unavailable} selected={selected} onSelect={setSelected} />
+          </section>
+          <div className="min-w-0"><SnapshotMarker age={cachedAge} /><DeviceFaceplate key={state.cache_epoch} state={state} selected={selected} unavailable={unavailable} /></div>
         </div>
-      )}
-
-      {state && isRangeNotReady(stateError) && (
-        <p role="alert" className="text-xs text-amber-300">Range not ready. Showing the last CC answer; controls are disabled.</p>
-      )}
-
-      {waiting && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
-          The control centre shows once the range is ready.
-        </div>
-      )}
-
-      {!state && !waiting && !apiDown && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-400">
-          Loading the control centre…
-        </div>
-      )}
-
-      {state && summary && (
-        <>
-          <LinkStrip link={state.link} now={now} />
-          <Panel title="Feeder one-line">
-            <ControlCentreOneLine points={state.points} unavailable={unavailable} />
-          </Panel>
-          <Panel title="Supervisory control">
-            <SupervisoryControls key={state.cache_epoch} linkState={state.link.state} points={state.points} unavailable={unavailable} />
-          </Panel>
-          <Panel
-            title="Monitored points"
-            aside={
-              <span className={`font-mono text-[11px] ${summary.good === summary.total ? "text-slate-400" : "font-bold text-amber-300"}`}>
-                {telemetryText(summary)}
-              </span>
-            }
-          >
-            <PointTable points={state.points} now={now} />
-          </Panel>
-          <Panel title="Control centre journal">
-            <ControlCentreJournal journal={journal} />
-          </Panel>
-          <p className="text-[10px] text-slate-600">
-            snapshot {state.snapshot_seq} · rendered {formatUtcTime(state.rendered_at)} UTC · cache epoch {state.cache_epoch} · range generation {state.range_generation} · package {state.package_id}
-          </p>
-        </>
-      )}
-      <HistorianTrend />
-      {physicalFeeder}
-    </main>
-  );
+        <section aria-label="Operator records" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
+          <SnapshotMarker age={cachedAge} /><p className="mb-3 text-xs text-slate-400">{summary && telemetryText(summary)}</p>
+          <ControlCentrePane state={state} journal={journal} journalError={journalError} now={now} initialTab={initialTab} />
+        </section>
+        <details className="break-all text-xs text-slate-400"><summary>Snapshot identity</summary>snapshot {state.snapshot_seq} · rendered {state.rendered_at} · cache epoch {state.cache_epoch} · generation {state.range_generation} · package {state.package_id}</details>
+      </section>}
+    </>}
+  </main>;
 }
-
-// The EU package's operator screen.
 export function ControlCentreView() {
-  const stateQuery = useOperatorState(POLL_MS);
-  const journal = useOperatorJournal(3000).data;
-  const now = useNow(1000);
-  return (
-    <ControlCentreScreen
-      state={stateQuery.data}
-      stateError={stateQuery.error}
-      stateUpdatedAt={stateQuery.dataUpdatedAt}
-      journal={journal}
-      now={now}
-      physicalFeeder={<PhysicalFeeder operator={stateQuery.data} />}
-    />
-  );
+  const state = useOperatorState(2000), journal = useOperatorJournal(3000), now = useNow(1000);
+  const [view, setView] = useState<WorkstationView>("control-centre");
+  useEffect(() => {
+    const sync = () => setView(viewFromSearch(window.location.search));
+    sync(); window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  const changeView = (next: WorkstationView) => {
+    const url = new URL(window.location.href); url.searchParams.set("view", next);
+    window.history.pushState(null, "", url); setView(next);
+  };
+  return <ControlCentreScreen state={state.data} stateError={state.error} stateUpdatedAt={state.dataUpdatedAt} journal={journal.data} journalError={journal.error} now={now} view={view} onViewChange={changeView} physicalFeeder={view === "field-truth" ? <PhysicalFeeder operator={state.data} /> : null} />;
 }

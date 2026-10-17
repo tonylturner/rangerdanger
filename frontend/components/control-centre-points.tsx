@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { reportingText } from "../lib/operator-workstation";
 import type { OperatorPoint } from "../lib/operator-api";
 import {
   ageMs,
@@ -36,7 +37,7 @@ export function ConditionBadge({ condition }: { condition: PointCondition }) {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-green-800/60 bg-green-950/30 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-green-400">
+    <span className="inline-flex items-center gap-1 rounded border border-slate-600 bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-200">
       <span aria-hidden>✓</span>GOOD
     </span>
   );
@@ -59,13 +60,13 @@ function PointRow({ point, now }: { point: OperatorPoint; now: number }) {
     <tr
       data-condition={condition}
       className={`border-t border-slate-800/70 align-top ${
-        stale ? `border-l-4 border-l-amber-500 ${STALE_HATCH}` : "border-l-4 border-l-transparent"
+        stale ? `border-dashed ${STALE_HATCH}` : ""
       }`}
     >
       <td className="px-2 py-2">
         <div className="text-xs font-medium text-slate-200">{pointLabel(point.id)}</div>
         <div className="font-mono text-[10px] text-slate-500">
-          IOA {point.ioa} · {point.asdu}
+          IOA {point.ioa} · {point.asdu ?? "not received"}
         </div>
       </td>
       <td className="px-2 py-2">
@@ -82,6 +83,7 @@ function PointRow({ point, now }: { point: OperatorPoint; now: number }) {
         <ConditionBadge condition={condition} />
         <div className="mt-1 font-mono text-[10px] text-slate-400">{flags.length > 0 ? flags.join(" ") : "no flags"}</div>
       </td>
+      <td className="px-2 py-2 text-xs text-slate-300">{reportingText(point)}</td>
       <td className="px-2 py-2 text-[11px] text-slate-300">{staleReasonText(point.stale_reason) || "—"}</td>
       <td className="px-2 py-2 font-mono text-[11px] text-slate-300">
         {point.source_time === null ? <span className="text-slate-500">untimed</span> : formatUtcTime(point.source_time)}
@@ -113,10 +115,11 @@ export function PointTable({ points, now }: { points: OperatorPoint[]; now: numb
             <Th>Point</Th>
             <Th>Value</Th>
             <Th>Quality</Th>
+            <Th>Reporting</Th>
             <Th>Stale reason</Th>
             <Th>RTU time (UTC)</Th>
             <Th>Received (UTC)</Th>
-            <Th>Sample age</Th>
+            <Th>Receipt age (not status freshness)</Th>
             <Th>COT</Th>
           </tr>
         </thead>

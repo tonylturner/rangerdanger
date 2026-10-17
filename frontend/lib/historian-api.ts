@@ -1,12 +1,10 @@
 import { request } from "./api";
-import type { DoublePointValue, PointQuality, StaleReason } from "./operator-api";
+import type { PointKind, PointValue, PointQuality, StaleReason } from "./operator-api";
 
-// Historian samples store the scalar value and an optional VTI transient
-// bit separately (§7). They are CC snapshots, not field measurements.
+// Historian preserves the CC step object, including its transient bit.
 export type HistorySample = {
   snapshot_seq: number;
-  value: DoublePointValue | boolean | number | null;
-  transient?: boolean;
+  value: PointValue;
   quality: PointQuality;
   stale_reason: StaleReason | null;
   source_time: string | null;
@@ -14,7 +12,7 @@ export type HistorySample = {
   cc_received_at: string | null;
   ingested_at: string;
 };
-export type HistorianPoint = { id: string; ioa: number; asdu: string; last: HistorySample | null };
+export type HistorianPoint = { id: string; ioa: number; kind: PointKind; asdu: string | null; last: HistorySample | null };
 export type History = {
   point: string;
   segments: { cache_epoch: string; samples: HistorySample[] }[];
@@ -28,8 +26,9 @@ export function getHistorianHistory(point: string, since: string, until: string)
 
 export function numericSample(sample: HistorySample): number | null {
   const q = sample.quality;
-  if (sample.stale_reason !== null || q.iv || q.nt || q.sb || q.bl || q.ov || sample.transient) return null;
+  if (sample.stale_reason !== null || q.iv || q.nt || q.sb || q.bl || q.ov) return null;
   if (typeof sample.value === "number" && Number.isFinite(sample.value)) return sample.value;
+  if (typeof sample.value === "object" && sample.value !== null) return sample.value.transient || !Number.isFinite(sample.value.value) ? null : sample.value.value;
   if (typeof sample.value === "boolean") return sample.value ? 1 : 0;
   return null;
 }

@@ -125,3 +125,44 @@ it("does not accept the old command-result wire shape", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "old", status: "completed", select: {}, execute: {}, feedback: {} }))));
   await expect(sendOperatorCommand({ point: "rmu-1-command", operation: "open" })).rejects.toThrow("command outcome is unknown");
 });
+
+describe("rev 2 strict operator shape", () => {
+  it("accepts all six worked examples, preserving received type, values and flags", async () => {
+    const { getOperatorState } = await import("./operator-api");
+    const { WORKED_STATES } = await import("./operator-fixtures.test-util");
+    for (const state of WORKED_STATES) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(state))));
+      await expect(getOperatorState()).resolves.toEqual(state);
+    }
+  });
+  it("rejects unknown kinds, mismatched values / ASDUs, bad reporting and old GI", async () => {
+    const { getOperatorState } = await import("./operator-api");
+    const { FEEDER_STATE } = await import("./operator-fixtures.test-util");
+    const point = FEEDER_STATE.points[0], float = FEEDER_STATE.points.find((p) => p.kind === "float")!;
+    const answers = [
+      null, {}, { ...FEEDER_STATE, link: null }, { ...FEEDER_STATE, rendered_at: "yesterday" },
+      ...[{ kind: "status" }, { value: true }, { reporting: {} }, { quality: { ...point.quality, ov: false } }, { asdu: "M_SP_TB_1" }, { cot: "3" }, { stale_reason: ["not_updated"] }, { received_at: "not a time" }, { old_key: true }].map((patch) => ({ ...FEEDER_STATE, points: [{ ...point, ...patch }] })),
+      ...[{ reporting: null }, { reporting: { cyclic_ms: 0, deadband: 0.1 } }, { reporting: { cyclic_ms: 10000, deadband: null } }, { reporting: { cyclic_ms: 10000 } }, { reporting: { cyclic_ms: 10000, deadband: -1 } }, { reporting: { cyclic_ms: 10000, deadband: 0, extra: true } }, { value: { value: 1, transient: false } }].map((patch) => ({ ...FEEDER_STATE, points: [{ ...float, ...patch }] })),
+      ...[{ state: "complete", started_at: null, completed_at: null }, { ...FEEDER_STATE.link.gi, trigger: "unknown" }, { ...FEEDER_STATE.link.gi, state: ["running"] }, { ...FEEDER_STATE.link.gi, next_due_at: undefined }, { ...FEEDER_STATE.link.gi, last_complete_at: 0 }].map((gi) => ({ ...FEEDER_STATE, link: { ...FEEDER_STATE.link, gi } })),
+    ];
+    for (const answer of answers) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+      await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 2");
+    }
+  });
+  it("queues GI with a single bodyless POST and preserves refusal causes", async () => {
+    const { postOperatorGi } = await import("./operator-api");
+    const answer = { trigger: "operator", requested_at: "2026-10-09T12:00:00Z" };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(postOperatorGi()).resolves.toEqual(answer);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/operator\/gi$/);
+    for (const [status, error] of [[409, "interrogation already running"], [503, "link not started"]] as const) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error }), { status })));
+      await expect(postOperatorGi()).rejects.toMatchObject({ status, detail: error });
+    }
+  });
+});

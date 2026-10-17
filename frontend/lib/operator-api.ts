@@ -9,7 +9,9 @@ export type GiState = "none" | "running" | "complete";
 export type GeneralInterrogation = {
   state: GiState;
   started_at: string | null;
-  completed_at: string | null;
+  trigger: "connect" | "periodic" | "operator" | null;
+  last_complete_at: string | null;
+  next_due_at: string | null;
 };
 
 export type ControlCentreLink = {
@@ -33,17 +35,22 @@ export type PointQuality = {
   ov: boolean | null;
 };
 
-export type StaleReason = "link_lost" | "device_unreachable" | "measurement_invalid" | "never_received" | "heartbeat";
+export type StaleReason = "link_lost" | "device_unreachable" | "measurement_invalid" | "never_received" | "heartbeat" | "not_updated";
 export type DoublePointValue = "intermediate" | "open" | "closed" | "indeterminate";
 // Double points carry their state name, single points a bool, floats a
 // number; null only when the CC has never received the point.
 export type StepValue = { value: number; transient: boolean };
 export type PointValue = DoublePointValue | boolean | number | StepValue | null;
 
+export type PointKind = "single-point" | "double-point" | "step-position" | "float";
+export type Reporting = { cyclic_ms: number; deadband: number };
+
 export type OperatorPoint = {
   id: string;
   ioa: number;
-  asdu: string;
+  kind: PointKind;
+  asdu: string | null;
+  reporting: Reporting | null;
   value: PointValue;
   quality: PointQuality;
   stale_reason: StaleReason | null;
@@ -96,9 +103,18 @@ export async function sendOperatorCommand(command: OperatorCommand) {
 }
 
 export async function getOperatorState() {
-  const state = await request<OperatorState>("/operator/state");
-  if (state.schema !== 2) throw new Error("Expected CC state schema 2");
+  const state = await request<unknown>("/operator/state");
+  if (!validOperatorState(state)) throw new Error("Expected CC state schema 2 with valid IEC reporting and GI");
   return state;
+}
+
+// A request only queues GI. It does not claim ACT-TERM or integrity.
+export async function postOperatorGi() {
+  const answer = await request<{ trigger: "operator"; requested_at: string }>("/operator/gi", { method: "POST" });
+  if (!isObject(answer) || answer.trigger !== "operator" || !timestamp(answer.requested_at)) {
+    throw new Error("Expected accepted operator interrogation");
+  }
+  return answer;
 }
 
 // Why the CC journals a link_down. lib60870 reports no close cause, so
@@ -227,6 +243,55 @@ const timestamp = (value: unknown) => typeof value === "string" &&
 const nullable = (value: unknown, valid: (v: unknown) => boolean) => value === null || valid(value);
 const booleans = (value: Record<string, unknown>, keys: string[]) => keys.every((key) => typeof value[key] === "boolean");
 const strings = (value: Record<string, unknown>, keys: string[]) => keys.every((key) => typeof value[key] === "string");
+
+const exactKeys = (o: Record<string, unknown>, keys: string[]) =>
+  Object.keys(o).length === keys.length && keys.every((k) => Object.hasOwn(o, k));
+const ASDU_BY_KIND: Record<PointKind, string[]> = {
+  "single-point": ["M_SP_NA_1", "M_SP_TB_1"],
+  "double-point": ["M_DP_NA_1", "M_DP_TB_1"],
+  "step-position": ["M_ST_NA_1", "M_ST_TB_1"],
+  float: ["M_ME_NC_1"],
+};
+function validPoint(p: unknown): boolean {
+  if (!isObject(p) || !exactKeys(p, ["id", "ioa", "kind", "asdu", "value", "quality", "stale_reason", "source_time", "source_time_invalid", "received_at", "cot", "reporting"]) ||
+    typeof p.id !== "string" || !integer(p.ioa) || p.ioa < 1 || p.ioa > 16777215 ||
+    typeof p.kind !== "string" || !Object.hasOwn(ASDU_BY_KIND, p.kind)) return false;
+  const kind = p.kind as PointKind;
+  if (!nullable(p.asdu, (v) => typeof v === "string" && ASDU_BY_KIND[kind].includes(v)) ||
+    !["source_time", "received_at"].every((k) => nullable(p[k], timestamp)) ||
+    !nullable(p.source_time_invalid, (v) => typeof v === "boolean") ||
+    !nullable(p.cot, (v) => integer(v) && v >= 0 && v <= 63) ||
+    !nullable(p.stale_reason, (v) => typeof v === "string" && ["never_received", "link_lost", "device_unreachable", "heartbeat", "measurement_invalid", "not_updated"].includes(v))) return false;
+  const q = p.quality;
+  if (!isObject(q) || !exactKeys(q, ["iv", "nt", "sb", "bl", "ov"]) || !booleans(q, ["iv", "nt", "sb", "bl"]) ||
+    (kind === "float" ? typeof q.ov !== "boolean" : q.ov !== null)) return false;
+  const r = p.reporting;
+  if (kind === "float") {
+    if (!isObject(r) || !exactKeys(r, ["cyclic_ms", "deadband"]) || !integer(r.cyclic_ms) || r.cyclic_ms < 1000 || r.cyclic_ms > 3600000 || !finite(r.deadband) || r.deadband < 0) return false;
+  } else if (r !== null) return false;
+  if (p.value === null) return true;
+  switch (kind) {
+    case "single-point": return typeof p.value === "boolean";
+    case "double-point": return typeof p.value === "string" && ["intermediate", "open", "closed", "indeterminate"].includes(p.value);
+    case "float": return finite(p.value);
+    case "step-position": return isObject(p.value) && exactKeys(p.value, ["value", "transient"]) && integer(p.value.value) && p.value.value >= -64 && p.value.value <= 63 && typeof p.value.transient === "boolean";
+  }
+}
+export function validOperatorState(s: unknown): s is OperatorState {
+  if (!isObject(s) || !exactKeys(s, ["schema", "snapshot_seq", "rendered_at", "cache_epoch", "link", "points", "package_id", "range_generation"]) ||
+    s.schema !== 2 || !integer(s.snapshot_seq) || s.snapshot_seq < 0 || !timestamp(s.rendered_at) ||
+    !strings(s, ["cache_epoch", "package_id"]) || !integer(s.range_generation) || s.range_generation < 0 ||
+    !Array.isArray(s.points) || !s.points.every(validPoint)) return false;
+  const l = s.link;
+  if (!isObject(l) || !exactKeys(l, ["state", "peer", "since", "last_rx_at", "connection_seq", "gi"]) ||
+    typeof l.state !== "string" || !["disconnected", "connecting", "started"].includes(l.state) || typeof l.peer !== "string" ||
+    !integer(l.connection_seq) || l.connection_seq < 0 || !["since", "last_rx_at"].every((k) => nullable(l[k], timestamp))) return false;
+  const g = l.gi;
+  return isObject(g) && exactKeys(g, ["state", "trigger", "started_at", "last_complete_at", "next_due_at"]) &&
+    typeof g.state === "string" && ["none", "running", "complete"].includes(g.state) &&
+    nullable(g.trigger, (v) => typeof v === "string" && ["connect", "periodic", "operator"].includes(v)) &&
+    ["started_at", "last_complete_at", "next_due_at"].every((k) => nullable(g[k], timestamp));
+}
 
 function validDevice(value: unknown): boolean {
   if (!isObject(value) || value.schema !== 2 || !strings(value, ["device_id"]) ||
