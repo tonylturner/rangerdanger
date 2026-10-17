@@ -22,10 +22,10 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
     {values.length ? <svg viewBox="0 0 940 205" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="w-full">
       {band && <rect x="60" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
       <path d="M60 25 V175 H900" fill="none" stroke="#64748b" />
-      {history.gaps.map((gap, i) => <rect key={i} x={Math.max(60, x(gap.from))} y="25" width={Math.max(0, Math.min(900, x(gap.to)) - Math.max(60, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>Ingest gap {gap.from} to {gap.to}</title></rect>)}
+      {history.gaps.map((gap, i) => <rect key={i} x={Math.max(60, x(gap.from))} y="25" width={Math.max(0, Math.min(900, x(gap.to)) - Math.max(60, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
       {runs.map((run, i) => <g key={i} data-history-run="true">
         <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" />
-        {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="2" fill="#38bdf8"><title>{s.ingested_at}: {formatPointValue(history.point, s.value)}</title></circle>)}
+        {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="2" fill="#38bdf8"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value)}`}</title></circle>)}
       </g>)}
       <text x="55" y="40" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymax.toFixed(2)}</text>
       <text x="55" y="164" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymin.toFixed(2)}</text>
