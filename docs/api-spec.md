@@ -174,7 +174,7 @@ For packages whose manifest has a control centre and a field device simulator (`
 | `GET` | `/operator/state` | Control-centre state with `package_id` and `range_generation` added |
 | `POST` | `/operator/commands` | Relay one command to the control centre. The CC runs select, execute and feedback; the backend sends it once and never retries. A CC refusal keeps its status. |
 | `GET` | `/operator/journal?after=<seq>` | Control-centre command journal after a sequence number |
-| `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"process":<electrical state>}`. Includes every manifest `sim` endpoint, keyed by topology node ID. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
+| `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
 | `GET` | `/field/audit?after=<seq>` | Breaker (`breaker-1`) audit after a sequence number |
 
 ## Historian

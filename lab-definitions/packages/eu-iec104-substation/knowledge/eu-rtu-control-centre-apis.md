@@ -15,7 +15,7 @@ A command body contains exactly point and operation, for example `{"point":"rmu-
 
 ### Read-only physical and historian exports
 
-`GET /api/field/state` returns `devices` keyed by node id plus `process`. The breaker key is `breaker-1`, although its device id is `feeder-breaker`; GPS also appears because it declares a simulation endpoint. Any failing upstream makes the aggregate fail with 502 naming the upstream, rather than synthesising a partial “healthy” state.
+`GET /api/field/state` returns `devices` keyed by node id, a separate `clock` for the GPS time source, plus `process`. The breaker key is `breaker-1`, although its device id is `feeder-breaker`. GPS is not a feeder device, so it is reported under `clock`, not `devices`. Any failing upstream makes the aggregate fail with 502 naming the upstream, rather than synthesising a partial “healthy” state.
 
 `GET /api/field/audit?after=N` currently proxies the **breaker** audit only. It is not a combined audit for RMUs, OLTC and GPS. Those devices' own management APIs provide their separate audits when accessed through an authorised maintenance context.
 
