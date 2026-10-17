@@ -44,7 +44,7 @@ export function ControlCentreOneLine({ points, unavailable = false }: { points: 
   return <figure className="space-y-3">
     <div className="overflow-x-auto">
       <svg viewBox="0 0 1060 410" role="img" aria-label="CC-observed CIGRE-derived teaching feeder" className="w-full min-w-[850px]">
-        <text x="80" y="35" textAnchor="middle" fill="#cbd5e1" fontSize="13">110 kV source · UNOBSERVED</text>
+        <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">110 kV source · UNOBSERVED</text>
         <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />
         <g aria-label={`T1 OLTC: ${tap.text}`}>
           <circle cx="80" cy="90" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />

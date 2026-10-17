@@ -76,6 +76,14 @@ describe("ControlCentreScreen schema 2", () => {
 
 describe("CC one-line observation integrity", () => {
   const points = (id: string, patch: Partial<OperatorPoint>) => FEEDER_STATE.points.map((p) => p.id === id ? { ...p, ...patch } : p);
+  it("left-aligns the full 110 kV source label inside the SVG", () => {
+    const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
+    const label = html.match(/<text\b[^>]*>110 kV source · UNOBSERVED<\/text>/)?.[0];
+    expect(label).toBeDefined();
+    expect(label).toContain('x="16"');
+    expect(label).toContain('text-anchor="start"');
+  });
+
   it("does not infer section voltage from breaker or RMU position", () => {
     const p = points("feeder-breaker-position", { value: "open" });
     const out = text(render(<ControlCentreOneLine points={p} />));
