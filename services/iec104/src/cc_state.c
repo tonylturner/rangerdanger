@@ -381,9 +381,11 @@ static int
 points_good(void)
 {
     int n = 0;
-    for (int i = 0; i < cc.pm->n_points; i++)
-        if (cc.points[i].stale == CC_STALE_NONE)
+    for (int i = 0; i < cc.pm->n_points; i++) {
+        const CcPoint* p = &cc.points[i];
+        if (p->hasValue && p->stale == CC_STALE_NONE && !p->iv && !p->nt && !p->sb && !p->bl && !p->ov)
             n++;
+    }
     return n;
 }
 
