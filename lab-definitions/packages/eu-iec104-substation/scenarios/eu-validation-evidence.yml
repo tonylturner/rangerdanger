@@ -67,7 +67,7 @@ steps:
     :::
 
     :::hint Advanced: verify by hand
-    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require fresh CC GI and real telemetry, PLC heartbeat and advancing historian samples, not sockets alone. Repeat negatives from the named terminal tabs. At fw-1 capture with tcpdump -i any using ports 2404/502/8080/8081 and export the running policy through containd. Preserve UTC windows with the PCAP.
+    Use the six-conduit inventory from Lab 2.2. From Kali read historian /api/points; from eng-ws GET PLC /login. Require a completed current-connection GI inside the ten-minute attempt window and non-null GOOD CC points received since that GI start, PLC heartbeat and advancing historian samples, not sockets alone. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Quiet GOOD status need not have a recent receipt; floats have a cyclic-report watchdog. Repeat negatives from the named terminal tabs. At fw-1 capture with tcpdump -i any using ports 2404/502/8080/8081 and export the running policy through containd. Preserve UTC windows with the PCAP.
     :::
 
     :::hint Optional historian-gap evidence

@@ -10,7 +10,7 @@ iec104cmd 10.30.30.20 monitor --json --hold 2
 iec104cmd 10.30.30.20 monitor --json --hold 180 --gi-every 2
 ```
 
-The first command checks GI completion; it does not print a point inventory. The monitor sends an initial GI and emits received point events. The longer recipe holds one connection and repeats GI, making it useful for the [established-session comparison](#eu-established-sessions).
+The first command checks GI completion; it does not print a point inventory. The monitor sends an initial GI and emits received point events. The longer recipe holds one connection and repeats GI, making it useful for the [established-session comparison](#eu-established-sessions). Its explicit two-second GI is test-client traffic, not the legitimate CC’s selected teaching profile (GI on connect, every 15 minutes or operator request; spontaneous status and cyclic/deadband floats).
 
 `HOST[:PORT]` defaults to TCP/2404. Common address (`-ca`) and originator address (`-oa`) default to 1. These are protocol addressing fields, not authentication credentials.
 

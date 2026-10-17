@@ -4,7 +4,7 @@ Evidence has a lifetime. Live state is overwritten, bounded journals wrap, captu
 
 The CC state says what the operator observed through IEC 104. It includes `cache_epoch`, render `snapshot_seq`, `rendered_at`, point values, quality, source times and receipt times. A state render is not an equipment event. `snapshot_seq` increments for every render, including reads unrelated to historian publishing.
 
-The CC journal is a 500-entry ring for link, quality and command evidence. Use its epoch and oldest/latest sequence bounds to detect truncation. Field-device audits are separate 500-entry rings with device generation, entry sequences, before/after state and actor context. The portal `/api/field/audit` exposes only the breaker's audit; do not assume it includes every RMU or tap request.
+The CC journal is a 500-entry ring for link, GI, quality, status-change and command evidence. `gi_started`/`gi_complete` identify their connect/periodic/operator trigger. `status_event` records received COT 3/11 status value or transient changes, never floats; quality-only transitions are not status events. Use its epoch and oldest/latest sequence bounds to detect truncation. Field-device audits are separate 500-entry rings with device generation, entry sequences, before/after state and actor context. The portal `/api/field/audit` exposes only the breaker's audit; do not assume it includes every RMU or tap request.
 
 Process state carries `solver_epoch`, `solve_seq`, solved time, truth-stale status and per-device delivery revisions. It explains the electrical solve, not what the CC received. Device truth revision changes identify state changes within that device; they are not globally ordered event ids across all services.
 

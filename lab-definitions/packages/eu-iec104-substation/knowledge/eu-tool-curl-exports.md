@@ -21,7 +21,7 @@ The public operator routes are `/api/operator/*`, not `/api/iec104/*`. The CC's 
 
 ### Bound the attempt window
 
-Inspect `cache_epoch`, `snapshot_seq`, `rendered_at`, link/GI state, and each point's quality, `received_at` and `stale_reason`. Record the journal's `latest_seq` before the exercise. Afterwards, request `after=<that-number>` and retain the new oldest/latest bounds. Replace the number explicitly; do not assume every run starts at sequence 1.
+Inspect `cache_epoch`, `snapshot_seq`, `rendered_at`, link/GI state (`trigger`, `last_complete_at`, `next_due_at`), and each point’s `kind`, received `asdu`, `reporting`, quality, `received_at` and `stale_reason`. Quiet status receipt age is not an expiry rule; floats expose NT/`not_updated` after three cyclic periods. Record the journal's `latest_seq` before the exercise. Afterwards, request `after=<that-number>` and retain the new oldest/latest bounds. Replace the number explicitly; do not assume every run starts at sequence 1.
 
 An epoch change or an overwritten journal interval invalidates a simple before/after chronology. More snapshots do not guarantee fresh telemetry: rendering state increments snapshot sequence even when no new point arrived.
 

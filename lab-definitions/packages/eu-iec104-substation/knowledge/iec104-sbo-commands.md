@@ -29,7 +29,7 @@ Read the result's reason and nullable phase times. `unknown` can also describe a
 
 ### Observe one controlled attempt
 
-Save the CC journal cursor and starting feedback. Use the operator panel or [API](#eu-rtu-control-centre-apis) for one operation, then preserve the result id, selected/executed/confirmation/termination times and feedback object. Correlate them with the capture and physical audit. Do not infer causality solely from the final position: a no-op open may complete without movement, or a local trip may change position independently.
+Save the CC journal cursor and starting feedback. Use the **Control Centre** selected-device faceplate or [API](#eu-rtu-control-centre-apis) for one operation, then preserve the result id, selected/executed/confirmation/termination times and feedback object. Correlate them with the capture and physical audit. Do not infer causality solely from the final position: a no-op open may complete without movement, or a local trip may change position independently.
 
 ### Limits
 

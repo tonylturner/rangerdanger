@@ -2,7 +2,7 @@ A step-position indication represents discrete actuator progress. It contains a 
 
 ### The OLTC point
 
-`oltc-1-tap`, IOA 1301, is a step-position point. Its source is signed input register IR0, with transient taken from IR1 bit 2, the moving flag. The RTU sends M_ST_TB_1 spontaneously, including station observation time, and M_ST_NA_1 during GI. Both carry the position/transient semantics.
+`oltc-1-tap`, IOA 1301, is a step-position point. Its source is signed input register IR0, with transient taken from IR1 bit 2, the moving flag. The RTU sends M_ST_TB_1 spontaneously, including station observation time, and M_ST_NA_1 during GI. Both carry the position/transient semantics. Command-return COT 11 also uses timed M_ST_TB_1. The Points tab’s `asdu` is the last received type, so a GI can replace a timed type/tag with M_ST_NA_1 and no source time. Quiet step status does not age out.
 
 The native CC schema-2 value is an object such as `{"value":-3,"transient":true}`, or null if never received. A transient value of −3 means the completed tap is still −3 while movement is in progress; it does not mean the target is −3 or that the step has failed. Physical device state separately exposes `target_tap`.
 

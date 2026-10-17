@@ -8,6 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **EU Control Centre observations now follow a selected WEMAG/SvK-modelled
+  teaching profile, not an EU default.** GI runs on connect, every 15 minutes
+  or via Interrogate station; status is spontaneous and measurands use
+  cyclic/deadband reporting. Command admission and validators use GI
+  integrity and quality rather than quiet-status receipt age; floats have
+  a reporting watchdog. The operator GI relay, received-ASDU
+  provenance and status-event journal support separate Control Centre/Field
+  truth views with device controls and Alarms, Events, Points and Trends.
+  Validators, Network Map, exercises and knowledge now follow that evidence
+  model without weakening quality or command-completion checks.
+
 - **The EU IEC-104 workshop now ships as seven package-owned exercises.**
   Its baseline, design, planning, implementation, hardening, vendor-compromise
   and validation exercises are served from the EU package rather than

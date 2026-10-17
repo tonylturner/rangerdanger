@@ -50,12 +50,12 @@ export function createFlowContext(graph: LabGraph, inputs: FlowInputs, now = Dat
       case "operator-link":
         if (inputs.operator) {
           status = inputs.operator.link.state === "started" ? "active" : inputs.operator.link.state === "disconnected" ? "down" : "idle";
-          reason = `IEC104 ${inputs.operator.link.state}; GI ${inputs.operator.link.gi.state}`;
+          reason = `IEC104 ${inputs.operator.link.state}; GI ${inputs.operator.link.gi.state} (connect / 15 min / operator); spontaneous status, cyclic/deadband measurands`;
           evidence = "control-centre link";
         }
         break;
       case "operator-device": {
-        // Old point timestamps are legitimate: reporting is change/deadband driven.
+        // Quiet status does not age out; float reporting has an upstream watchdog.
         // Only a current upstream observation can support downstream inference.
         if (!inputs.operator || inputs.operator.link.state !== "started") {
           reason = "Downstream unknown without a current started CC link";

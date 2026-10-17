@@ -105,7 +105,7 @@ steps:
 
     1. New Kali→RTU:2404 and enterprise/vendor→field:502 connections time out under hardened policy.
     2. Vendor engineering access is named-source PLC web only; enterprise→vendor 3389/5900 is closed.
-    3. All six operational intents survive, with fresh GI, GOOD observations and healthy device/process state.
+    3. All six operational intents survive, with completed current-connection GI inside the attempt window, non-null GOOD observations received since its start and healthy device/process state. Quiet status does not age out; missing GI evidence calls for **Interrogate station**, not a forced reconnect.
     4. Unauthorized control is constrained by L4 today; semantic command restrictions remain a planned second layer. Do not certify DPI before it is live.
     5. Export policy, test results, UTC bounds and PCAP; name an owner for each deferred risk.
 

@@ -147,13 +147,13 @@ steps:
   title: Phase 5 - Validate allowed traffic
   expected_config: hardened
   description: |
-    Prove all six required operational intents, not merely open sockets. In the CC view require a fresh GI, GOOD non-null points and advancing receipt times. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
+    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and all 31 points non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
 
     :::hint Use your live operator connection
-    The validator anchors the proof on your current operator connection's general interrogation, not on a forced reconnect. A healthy link that is minutes old is valid evidence — do not cut a working session just to pass. Refresh the link with the [documented session procedure](/knowledge#eu-established-sessions) only if your connection predates your evidence window (older than ten minutes) or GI is not current.
+    The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. A healthy persistent link is valid — do not cut it just to pass. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
     :::
 
-    **Package test instructions — controlled regulation loop.** When nominal regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the operator panel or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
+    **Package test instructions — controlled regulation loop.** When nominal regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the **Control Centre** selected-device faceplate or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
 
     1. Select **manual**: command `oltc-1-mode` → `manual`. Verify the auto feedback (IOA 1303) clears before continuing.
     2. Request **one step** away from nominal: `oltc-1-step` → `lower` (or `raise`). Watch IOA 1301 go transient, then settle one tap away. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
