@@ -9,14 +9,17 @@ import { ControlCentreOneLine } from "./control-centre-one-line";
 import { resolveOperatorView } from "../lib/operator-view";
 import { ControlCentreMiniStatus, RunnerOperatorStatus } from "./runner-operator-status";
 import { HistoryPlot } from "./historian-trend";
+import { useOperatorState } from "../lib/operator-queries";
+import { retryQuery } from "../lib/query-retry";
+import liveState from "../lib/fixtures/operator-state-live.json";
 import { HISTORY } from "../lib/historian-fixtures.test-util";
 
 // Navigation is outside this node-environment interaction test.
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a> }));
 
 const mounted: ReactTestRenderer[] = [], clients: QueryClient[] = [];
-function mount(node: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+function mount(node: ReactNode, usePortalRetry = false) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: usePortalRetry ? retryQuery : false, retryDelay: 0 } } }); clients.push(client);
   let result!: ReactTestRenderer;
   act(() => { result = create(<QueryClientProvider client={client}>{node}</QueryClientProvider>); });
   mounted.push(result); return result;
@@ -30,6 +33,38 @@ function button(tree: ReactTestRenderer, text: string) {
 const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 afterEach(() => { act(() => mounted.splice(0).forEach((r) => r.unmount())); clients.splice(0).forEach((c) => c.clear()); vi.unstubAllGlobals(); });
+
+function OperatorStateScreenProbe() {
+  const query = useOperatorState(60_000);
+  return <ControlCentreScreen state={query.data} stateError={query.error} stateUpdatedAt={query.dataUpdatedAt} now={NOW} journal={JOURNAL} />;
+}
+
+describe("operator state failure visibility", () => {
+  it("shows schema failure as unavailable after the first response, without silent retries", async () => {
+    const malformed = structuredClone(liveState);
+    malformed.schema = 1;
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(malformed)));
+    vi.stubGlobal("fetch", fetchMock);
+    const tree = mount(<OperatorStateScreenProbe />, true);
+    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(output(tree)).toContain("Control centre API unavailable");
+    expect(output(tree)).toContain("Expected CC state schema 2");
+    expect(output(tree)).not.toContain("Loading the control centre");
+    expect(output(tree)).not.toContain("waiting");
+  });
+  it("retains network retries and renders the live-shaped snapshot after recovery", async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("network offline"))
+      .mockImplementation(async () => new Response(JSON.stringify(liveState)));
+    vi.stubGlobal("fetch", fetchMock);
+    const tree = mount(<OperatorStateScreenProbe />, true);
+    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(output(tree)).toContain("T1 faceplate");
+    expect(output(tree)).toContain("available");
+    expect(output(tree)).not.toContain("Loading the control centre");
+  });
+});
 
 describe("operator workstation interactions", () => {
   it("selects every device by click, Enter or Space and defaults to T1", () => {

@@ -39,6 +39,12 @@ describe("history integrity", () => {
     expect(numericSample(historySample(1, { value: 0 }))).toBe(0);
     expect(numericSample(historySample(1, { value: false }))).toBe(0);
   });
+  it("plots GOOD step QDS but breaks the line for step OV", () => {
+    const sample = historySample(1, { value: { value: 2, transient: false } });
+    expect(sample.quality.ov).toBe(false);
+    expect(numericSample(sample)).toBe(2);
+    expect(numericSample({ ...sample, quality: { ...sample.quality, ov: true } })).toBeNull();
+  });
   it("keeps station-clock skew and time-IV without reordering ingest time", () => {
     const last = historyRuns(HISTORY).at(-1)![0];
     expect(last.source_time_invalid).toBe(true);

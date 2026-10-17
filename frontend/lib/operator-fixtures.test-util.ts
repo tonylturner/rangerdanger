@@ -14,6 +14,8 @@ import type {
   FieldState,
   OperatorJournal,
   OperatorPoint,
+  IndicationQuality,
+  QdsQuality,
   OperatorState,
   StationClock,
 } from "./operator-api";
@@ -38,8 +40,8 @@ export const EU_PACKAGE: PackageSummary = {
 
 export const NOW = Date.parse("2026-10-09T12:00:30.000Z");
 
-const GOOD = { iv: false, nt: false, sb: false, bl: false, ov: null };
-const GOOD_MEASUREMENT = { ...GOOD, ov: false };
+const GOOD_INDICATION: IndicationQuality = { iv: false, nt: false, sb: false, bl: false, ov: null };
+const GOOD_QDS: QdsQuality = { ...GOOD_INDICATION, ov: false };
 
 export const FRESH_POINTS: OperatorPoint[] = [
   {
@@ -48,7 +50,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     kind: "double-point", reporting: null,
     asdu: "M_DP_TB_1",
     value: "closed",
-    quality: GOOD,
+    quality: GOOD_INDICATION,
     stale_reason: null,
     source_time: "2026-10-09T12:00:00.120Z",
     source_time_invalid: false,
@@ -61,7 +63,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     kind: "single-point", reporting: null,
     asdu: "M_SP_NA_1",
     value: false,
-    quality: GOOD,
+    quality: GOOD_INDICATION,
     stale_reason: null,
     source_time: null,
     source_time_invalid: null,
@@ -74,7 +76,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     kind: "float", reporting: { cyclic_ms: 10000, deadband: 2 },
     asdu: "M_ME_NC_1",
     value: 28.93,
-    quality: GOOD_MEASUREMENT,
+    quality: GOOD_QDS,
     stale_reason: null,
     source_time: null,
     source_time_invalid: null,
@@ -87,7 +89,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     ioa: 2002,
     asdu: "M_ME_NC_1",
     value: 19.94,
-    quality: GOOD_MEASUREMENT,
+    quality: GOOD_QDS,
     stale_reason: null,
     source_time: null,
     source_time_invalid: null,
@@ -292,7 +294,7 @@ export const FEEDER_STATE: OperatorState = {
     reporting: asdu === "M_ME_NC_1" ? { cyclic_ms: id.startsWith("plc-") ? 60000 : 10000, deadband: id.startsWith("plc-") ? 0 : id.endsWith("current") ? 2 : 0.1 } : null,
     source_time: asdu === "M_ME_NC_1" ? null : FRESH_POINTS[0].source_time,
     source_time_invalid: asdu === "M_ME_NC_1" ? null : false,
-    quality: asdu === "M_ME_NC_1" ? GOOD_MEASUREMENT : GOOD,
+    quality: asdu === "M_ME_NC_1" || asdu === "M_ST_TB_1" ? GOOD_QDS : GOOD_INDICATION,
     received_at: "2026-10-09T12:00:29.900Z",
   }))],
 };

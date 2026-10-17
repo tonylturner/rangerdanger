@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { FRESH_POINTS, STALE_STATE, commandResult } from "./operator-fixtures.test-util";
+import { FEEDER_STATE, FRESH_POINTS, STALE_STATE, commandResult } from "./operator-fixtures.test-util";
 import {
   commandErrorText,
   commandOutcome,
@@ -48,10 +48,21 @@ describe("point condition and value", () => {
     expect(formatPointValue(never.id, never.value)).toBe("not received");
   });
 
-  it("lists quality flags as text in IEC order and skips OV on status points", () => {
+  it("lists quality flags as text in IEC order and skips OV on single/double indications", () => {
     expect(qualityFlags({ iv: true, nt: true, sb: false, bl: true, ov: null })).toEqual(["IV", "NT", "BL"]);
     expect(qualityFlags({ iv: false, nt: false, sb: true, bl: false, ov: true })).toEqual(["SB", "OV"]);
     expect(qualityFlags(FRESH_POINTS[0].quality)).toEqual([]);
+  });
+
+  it("treats step QDS overflow as non-GOOD while retaining the completed tap", () => {
+    const tap = FEEDER_STATE.points.find((p) => p.kind === "step-position")!;
+    expect(tap.quality.ov).toBe(false);
+    expect(pointCondition(tap)).toBe("good");
+    expect(qualityFlags(tap.quality)).toEqual([]);
+    const overflow = { ...tap, quality: { ...tap.quality, ov: true } };
+    expect(pointCondition(overflow)).toBe("stale");
+    expect(qualityFlags(overflow.quality)).toEqual(["OV"]);
+    expect(formatPointValue(overflow.id, overflow.value)).toBe(formatPointValue(tap.id, tap.value));
   });
 
   it("explains every stale reason", () => {

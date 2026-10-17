@@ -72,7 +72,7 @@ export function pointCondition(point: OperatorPoint): PointCondition {
   return "good";
 }
 
-// Flags as text in IEC order; OV only exists for measurements.
+// Flags as text in IEC order; float measurements and step positions carry OV.
 export function qualityFlags(quality: PointQuality): string[] {
   const flags: string[] = [];
   if (quality.iv) flags.push("IV");

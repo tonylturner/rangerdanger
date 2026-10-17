@@ -166,3 +166,27 @@ describe("rev 2 strict operator shape", () => {
     }
   });
 });
+
+describe("step-position QDS regression", () => {
+  it("accepts the captured live GI payload without rewriting the tap's OV", async () => {
+    const { default: live } = await import("./fixtures/operator-state-live.json");
+    const { getOperatorState, validOperatorState } = await import("./operator-api");
+    expect(live.points.find((p) => p.id === "oltc-1-tap")).toMatchObject({
+      kind: "step-position", asdu: "M_ST_NA_1", quality: { ov: false }, value: { value: 0, transient: false },
+    });
+    expect(validOperatorState(live)).toBe(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(live))));
+    await expect(getOperatorState()).resolves.toEqual(live);
+  });
+  it.each(["M_ST_NA_1", "M_ST_TB_1"])("requires boolean OV on %s, including true overflow", async (asdu) => {
+    const { validOperatorState } = await import("./operator-api");
+    const { FEEDER_STATE } = await import("./operator-fixtures.test-util");
+    const tap = FEEDER_STATE.points.find((p) => p.kind === "step-position")!;
+    for (const ov of [false, true, null, undefined, 0, "false"]) {
+      expect(validOperatorState({ ...FEEDER_STATE, points: [{ ...tap, asdu, quality: { ...tap.quality, ov } }] })).toBe(typeof ov === "boolean");
+    }
+    for (const p of FEEDER_STATE.points.filter((p) => p.kind === "single-point" || p.kind === "double-point")) {
+      expect(validOperatorState({ ...FEEDER_STATE, points: [{ ...p, quality: { ...p.quality, ov: false } }] })).toBe(false);
+    }
+  });
+});

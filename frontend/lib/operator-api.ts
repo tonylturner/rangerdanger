@@ -26,7 +26,8 @@ export type ControlCentreLink = {
   gi: GeneralInterrogation;
 };
 
-// ov is null for status points (it only applies to measurements).
+// Float measurements and step positions carry QDS, including boolean OV.
+// Single/double indications do not carry OV and represent it as null.
 export type PointQuality = {
   iv: boolean;
   nt: boolean;
@@ -34,6 +35,9 @@ export type PointQuality = {
   bl: boolean;
   ov: boolean | null;
 };
+
+export type IndicationQuality = PointQuality & { ov: null };
+export type QdsQuality = PointQuality & { ov: boolean };
 
 export type StaleReason = "link_lost" | "device_unreachable" | "measurement_invalid" | "never_received" | "heartbeat" | "not_updated";
 export type DoublePointValue = "intermediate" | "open" | "closed" | "indeterminate";
@@ -102,9 +106,16 @@ export async function sendOperatorCommand(command: OperatorCommand) {
   return result;
 }
 
+export class OperatorStateSchemaError extends Error {
+  constructor() {
+    super("Expected CC state schema 2 with valid IEC reporting and GI");
+    this.name = "OperatorStateSchemaError";
+  }
+}
+
 export async function getOperatorState() {
   const state = await request<unknown>("/operator/state");
-  if (!validOperatorState(state)) throw new Error("Expected CC state schema 2 with valid IEC reporting and GI");
+  if (!validOperatorState(state)) throw new OperatorStateSchemaError();
   return state;
 }
 
@@ -264,7 +275,7 @@ function validPoint(p: unknown): boolean {
     !nullable(p.stale_reason, (v) => typeof v === "string" && ["never_received", "link_lost", "device_unreachable", "heartbeat", "measurement_invalid", "not_updated"].includes(v))) return false;
   const q = p.quality;
   if (!isObject(q) || !exactKeys(q, ["iv", "nt", "sb", "bl", "ov"]) || !booleans(q, ["iv", "nt", "sb", "bl"]) ||
-    (kind === "float" ? typeof q.ov !== "boolean" : q.ov !== null)) return false;
+    ((kind === "float" || kind === "step-position") ? typeof q.ov !== "boolean" : q.ov !== null)) return false;
   const r = p.reporting;
   if (kind === "float") {
     if (!isObject(r) || !exactKeys(r, ["cyclic_ms", "deadband"]) || !integer(r.cyclic_ms) || r.cyclic_ms < 1000 || r.cyclic_ms > 3600000 || !finite(r.deadband) || r.deadband < 0) return false;
