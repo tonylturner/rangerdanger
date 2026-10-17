@@ -31,6 +31,8 @@ CLOSED_VOLTAGE_KV = 20.0
 
 lock = threading.Lock()
 state = {
+    "current": CLOSED_CURRENT_A,
+    "voltage": CLOSED_VOLTAGE_KV,
     "position": 2,  # closed
     "remote_enabled": True,
     "lockout": False,
@@ -61,8 +63,8 @@ def input_registers():
         )
         mv = 1 if state["measurements_valid"] else 0
         closed = pos == 2
-        cur = CLOSED_CURRENT_A if closed else 0.0
-        volt = CLOSED_VOLTAGE_KV if closed else 0.0
+        cur = state["current"] if closed else 0.0
+        volt = state["voltage"] if closed else 0.0
     regs = [0] * 11
     regs[0] = pos
     regs[1] = bits
@@ -100,6 +102,8 @@ def apply_fault(active):
 def reset():
     with lock:
         state.update(
+            current=CLOSED_CURRENT_A,
+            voltage=CLOSED_VOLTAGE_KV,
             position=2,
             remote_enabled=True,
             lockout=False,
@@ -212,6 +216,11 @@ class Control(http.server.BaseHTTPRequestHandler):
             apply_fault(q.get("active", ["1"])[0] == "1")
         elif u.path == "/reset":
             reset()
+        elif u.path == "/analog":
+            with lock:
+                for key in ("current", "voltage"):
+                    if key in q:
+                        state[key] = float(q[key][0])
         elif u.path == "/mvalid":
             with lock:
                 state["measurements_valid"] = q.get("valid", ["1"])[0] == "1"

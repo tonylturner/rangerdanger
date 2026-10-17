@@ -57,6 +57,15 @@ cc_stamp_now(char out[CC_STAMP_LEN])
     format_stamp(ts.tv_sec, ts.tv_nsec, out);
 }
 
+void
+cc_stamp_after_ms(int ms, char out[CC_STAMP_LEN])
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    uint64_t total = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000 + (uint64_t)ms;
+    format_stamp((time_t)(total / 1000), (long)(total % 1000) * 1000000L, out);
+}
+
 static void
 stamp_from_ms(uint64_t ms, char out[CC_STAMP_LEN])
 {
@@ -143,6 +152,7 @@ static const char*
 stale_name(CcStale s)
 {
     switch (s) {
+    case CC_STALE_NOT_UPDATED: return "not_updated";
     case CC_STALE_HEARTBEAT: return "heartbeat";
     case CC_STALE_NEVER:
         return "never_received";
@@ -306,7 +316,7 @@ kind_accepts(PmKind kind, TypeID type)
         return type == M_SP_NA_1 || type == M_SP_TB_1;
     case PM_KIND_STEP_POSITION: return type == M_ST_NA_1 || type == M_ST_TB_1;
     case PM_KIND_FLOAT:
-        return type == M_ME_NC_1 || type == M_ME_TF_1;
+        return type == M_ME_NC_1;
     default:
         return false;
     }
@@ -343,6 +353,10 @@ cc_on_report(const CcReport* r, int cot)
     int index = (int)(pp - cc.pm->points);
     CcPoint* p = &cc.points[index];
     CcStale before = p->stale;
+    bool statusChanged = !p->hasValue ||
+        (pp->kind == PM_KIND_SINGLE_POINT && p->sp != r->sp) ||
+        (pp->kind == PM_KIND_DOUBLE_POINT && p->dp != r->dp) ||
+        (pp->kind == PM_KIND_STEP_POSITION && (p->step != r->step || p->transient != r->transient));
 
     p->hasValue = true;
     p->dp = r->dp;
@@ -365,12 +379,26 @@ cc_on_report(const CcReport* r, int cot)
     cc_stamp_now(p->receivedAt);
     p->receivedMono = cc_mono_ms();
     p->cot = cot;
+    p->asdu = r->type;
 
     /* The RTU encodes the cause: IV+NT = device unreachable, IV only = measurement invalid. */
     p->stale = p->iv && !p->nt && cc.pm->devices[pp->device_index].has_heartbeat ? CC_STALE_HEARTBEAT : p->nt ? CC_STALE_DEVICE : (p->iv ? CC_STALE_MEASUREMENT : CC_STALE_NONE);
     if (p->stale != before)
         journal_point(index);
 
+    if (pp->kind != PM_KIND_FLOAT && statusChanged &&
+        (cot == CS101_COT_SPONTANEOUS || cot == CS101_COT_RETURN_INFO_REMOTE)) {
+        cJSON* d = cJSON_CreateObject();
+        cJSON_AddStringToObject(d, "id", pp->id);
+        cJSON_AddNumberToObject(d, "ioa", pp->ioa);
+        cJSON_AddStringToObject(d, "asdu", TypeID_toString(r->type));
+        cJSON_AddNumberToObject(d, "cot", cot);
+        cJSON_AddItemToObject(d, "value", cc_point_value_json(index));
+        add_str_or_null(d, "source_time", p->sourceTime);
+        if (p->sourceTime[0]) cJSON_AddBoolToObject(d, "source_time_invalid", p->sourceTimeInvalid);
+        else cJSON_AddNullToObject(d, "source_time_invalid");
+        cc_journal_add("status_event", d);
+    }
     track_feedback(index, cot);
     if (r->timed) cc_historian_on_timed_report();
     pthread_cond_broadcast(&cc.cond);
@@ -404,6 +432,7 @@ cc_on_gi_response(int cot, bool negative)
         cJSON* d = cJSON_CreateObject();
         cJSON_AddNumberToObject(d, "connection_seq", cc.link.connectionSeq);
         cJSON_AddNumberToObject(d, "points_good", points_good());
+        cJSON_AddStringToObject(d, "trigger", cc.link.giTrigger);
         cc_journal_add("gi_complete", d);
     } else if (cot != CS101_COT_ACTIVATION_CON || negative) {
         cc.link.giFailed = true;
@@ -464,6 +493,7 @@ cc_on_started(void)
     cc.link.state = CC_LINK_STARTED;
     cc_stamp_now(cc.link.since);
     cc.link.downJournaled = false;
+    cc.link.giPending = "connect";
     cc_journal_add("link_up", link_detail());
     pthread_cond_broadcast(&cc.cond);
     pthread_mutex_unlock(&cc.lock);
@@ -510,6 +540,10 @@ cc_on_ended(void)
     cc.link.gi = CC_GI_NONE;
     cc.link.giStartedAt[0] = '\0';
     cc.link.giCompletedAt[0] = '\0';
+    cc.link.giTrigger = NULL;
+    cc.link.giPending = NULL;
+    cc.link.giNextAt[0] = '\0';
+    cc.link.giNextMono = 0;
     pthread_cond_broadcast(&cc.cond);
     pthread_mutex_unlock(&cc.lock);
 }
@@ -531,17 +565,20 @@ cc_link_begin_attempt(void)
 }
 
 void
-cc_gi_begin(void)
+cc_watchdog_locked(uint64_t now)
 {
-    pthread_mutex_lock(&cc.lock);
-    cc.link.gi = CC_GI_RUNNING;
-    cc.link.giFailed = false;
-    cc_stamp_now(cc.link.giStartedAt);
-    cc.link.giCompletedAt[0] = '\0';
-    cJSON* d = cJSON_CreateObject();
-    cJSON_AddNumberToObject(d, "connection_seq", cc.link.connectionSeq);
-    cc_journal_add("gi_started", d);
-    pthread_mutex_unlock(&cc.lock);
+    if (cc.link.state != CC_LINK_STARTED) return;
+    for (int i = 0; i < cc.pm->n_points; i++) {
+        CcPoint* p = &cc.points[i];
+        const PmPoint* pp = &cc.pm->points[i];
+        if (pp->kind == PM_KIND_FLOAT && p->hasValue && p->stale == CC_STALE_NONE &&
+            !p->iv && !p->nt && !p->sb && !p->bl && !p->ov &&
+            now - p->receivedMono > 3u * (uint64_t)pp->cyclic_ms) {
+            p->nt = true;
+            p->stale = CC_STALE_NOT_UPDATED;
+            journal_point(i);
+        }
+    }
 }
 
 /* ---- renderers ------------------------------------------------------- */
@@ -569,7 +606,16 @@ point_json(int index)
     cJSON* o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "id", pp->id);
     cJSON_AddNumberToObject(o, "ioa", pp->ioa);
-    cJSON_AddStringToObject(o, "asdu", pp->asdu);
+    const char* kind = pp->kind == PM_KIND_SINGLE_POINT ? "single-point" :
+        pp->kind == PM_KIND_DOUBLE_POINT ? "double-point" :
+        pp->kind == PM_KIND_STEP_POSITION ? "step-position" : "float";
+    cJSON_AddStringToObject(o, "kind", kind);
+    add_str_or_null(o, "asdu", p->asdu ? TypeID_toString(p->asdu) : NULL);
+    if (pp->kind == PM_KIND_FLOAT) {
+        cJSON* r = cJSON_AddObjectToObject(o, "reporting");
+        cJSON_AddNumberToObject(r, "cyclic_ms", pp->cyclic_ms);
+        cJSON_AddNumberToObject(r, "deadband", pp->deadband);
+    } else cJSON_AddNullToObject(o, "reporting");
     cJSON_AddItemToObject(o, "value", cc_point_value_json(index));
 
     cJSON* q = cJSON_AddObjectToObject(o, "quality");
@@ -627,7 +673,9 @@ cc_render_state_locked(void)
     cJSON* gi = cJSON_AddObjectToObject(l, "gi");
     cJSON_AddStringToObject(gi, "state", gi_name(cc.link.gi));
     add_str_or_null(gi, "started_at", cc.link.giStartedAt);
-    add_str_or_null(gi, "completed_at", cc.link.giCompletedAt);
+    add_str_or_null(gi, "trigger", cc.link.giTrigger);
+    add_str_or_null(gi, "last_complete_at", cc.link.giCompletedAt);
+    add_str_or_null(gi, "next_due_at", cc.link.state == CC_LINK_STARTED ? cc.link.giNextAt : NULL);
 
     cJSON* pts = cJSON_AddArrayToObject(o, "points");
     for (int i = 0; i < cc.pm->n_points; i++)

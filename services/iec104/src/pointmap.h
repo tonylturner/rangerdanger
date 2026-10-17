@@ -74,6 +74,7 @@ typedef struct {
     char asdu[PM_ASDU_LEN];
     bool measurement; /* measurement:true points go IV when the device valid bit is 0 */
     char unit[PM_UNIT_LEN];
+    int cyclic_ms; /* required for float points */
     double deadband; /* floats only: value-only changes smaller than this are suppressed */
     bool has_deadband;
 
@@ -111,6 +112,7 @@ typedef struct {
 
     int select_timeout_ms;
     int reconnect_interval_ms;
+    int gi_interval_ms;
 
     struct {
         char url[PM_URL_LEN];
