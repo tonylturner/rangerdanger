@@ -39,7 +39,7 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
       <g aria-label={`Earth switch: ${earth.text}`}><title>{`Earth switch: ${earth.text}`}</title>
         {earth.value === undefined || earth.value === null ? <text x={x} y="290" fill="#fbbf24" textAnchor="middle">?</text> : <path d={`M${x} 270 v8 m-10 14 h20 m-16 5 h12 m-9 5 h6 M${x} 278 l${earth.value === true ? "0 14" : "8 8"}`} stroke={earth.condition !== "good" || earth.value === true ? "#fbbf24" : "#cbd5e1"} strokeDasharray={earth.condition !== "good" ? "3 3" : undefined} fill="none" />}
       </g>
-      <g aria-label={`Fault passage: ${fault.text}`}><title>{`Fault passage: ${fault.text}`}</title><circle cx={x + 35} cy="282" r="8" fill={fault.condition !== "good" ? "url(#cc-unknown)" : fault.value === true ? "#fbbf24" : "none"} stroke={fault.condition !== "good" || fault.value === true ? "#fbbf24" : "#cbd5e1"} /><text x={x + 48} y="286" fill="#cbd5e1" fontSize="10">FPI</text></g>
+      <g aria-label={`Fault passage: ${fault.text}`}><title>{`Fault passage: ${fault.text}`}</title><circle cx={x + 35} cy="282" r="8" fill={fault.condition !== "good" ? "url(#cc-unknown)" : fault.value === true ? "#fbbf24" : "none"} stroke={fault.condition !== "good" || fault.value === true ? "#fbbf24" : "#cbd5e1"} /><text x={x + 48} y="286" fill="#cbd5e1" fontSize="11">FPI</text></g>
     </g>;
   };
   const switchSymbol = (x: number, y: number, label: string, id: string, device: DeviceId) => {
@@ -62,7 +62,7 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
   const tap = read("oltc-1-tap");
   return <figure className="min-w-0 space-y-3">
     <div className="max-w-full overflow-x-auto">
-      <svg viewBox="0 0 1060 410" role="group" aria-label="CC-observed CIGRE-derived teaching feeder" className="w-full min-w-[850px]">
+      <svg viewBox="0 0 1060 410" role="group" aria-label="CC-observed CIGRE-derived teaching feeder" className="w-full min-w-[850px] md:min-w-0">
         <defs><pattern id="cc-unknown" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8 L8 0" stroke="#fbbf24" strokeOpacity="0.5" /></pattern></defs>
         <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">110 kV source · UNOBSERVED</text>
         <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />

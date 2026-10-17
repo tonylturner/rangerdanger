@@ -76,7 +76,8 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
         <div><SnapshotMarker age={cachedAge} /><LinkStrip link={state.link} now={now} /><div className="mt-3"><InterrogateStation state={state} unavailable={unavailable} /></div></div>
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+        {/* Keep the full-width schematic at laptop sizes; the 300px faceplate fits alongside only on wider screens. */}
+        <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
           <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
             <h2 className="mb-3 text-sm font-semibold text-slate-200">Feeder schematic</h2><SnapshotMarker age={cachedAge} />
             <ControlCentreOneLine points={state.points} unavailable={unavailable} selected={selected} onSelect={setSelected} />

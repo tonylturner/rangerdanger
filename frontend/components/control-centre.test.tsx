@@ -74,6 +74,34 @@ describe("ControlCentreScreen schema 2", () => {
   });
 });
 
+describe("CC schematic layout", () => {
+  it("stacks until wide desktop and does not stretch the schematic to faceplate height", () => {
+    const html = screen();
+    expect(html).toContain("grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]");
+    expect(html).not.toContain("xl:grid-cols-[minmax(0,2fr)");
+  });
+
+  it.each([1280, 1440, 1536, 1920])("fits the SVG with at least 9px labels at %ipx", (viewport) => {
+    const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
+    expect(html).toContain('viewBox="0 0 1060 410"');
+    expect(html).toContain('class="w-full min-w-[850px] md:min-w-0"');
+    const fonts = [...html.matchAll(/font-size="(\d+)"/g)].map((m) => Number(m[1]));
+    // Match the shell's 12rem sidebar, max-w-7xl, px-6, gap-4 and
+    // the schematic panel's p-3 + border. This checks sizing arithmetic,
+    // not a browser layout measurement.
+    const content = Math.min(viewport - 192, 1280) - 48;
+    const svgWidth = content - (viewport >= 1536 ? 300 + 16 : 0) - 26;
+    expect(Math.min(...fonts) * svgWidth / 1060).toBeGreaterThanOrEqual(9);
+  });
+
+  it("contains phone overflow in the schematic's scroll box, not the page", () => {
+    const html = screen();
+    expect(html).toContain("w-screen min-w-0");
+    expect(html).toContain('<figure class="min-w-0 space-y-3"><div class="max-w-full overflow-x-auto">');
+    expect(html).toContain('class="w-full min-w-[850px] md:min-w-0"');
+  });
+});
+
 describe("CC one-line observation integrity", () => {
   const points = (id: string, patch: Partial<OperatorPoint>) => FEEDER_STATE.points.map((p) => p.id === id ? { ...p, ...patch } : p);
   it("left-aligns the full 110 kV source label inside the SVG", () => {
