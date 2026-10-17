@@ -196,8 +196,69 @@ export type ProcessElectrical = {
 
 export type FieldState = {
   devices: Record<string, DeviceState>;
+  // No time-source sim declared: null. A failed/malformed clock is an error.
+  clock: StationClock | null;
   process: ProcessElectrical;
 };
+
+// GPS /api/state is not a schema-2 feeder device.
+export type StationClock = {
+  actual_time: string;
+  reported_time: string;
+  sync_status: "locked" | "holdover" | "freerun";
+  time_offset_sec: number;
+  satellite_count: number;
+  holdover_started: string;
+  holdover_drift_ppm: number;
+  ntp_enabled: boolean;
+  ptp_enabled: boolean;
+  irig_b_output: boolean;
+  alarm: boolean;
+  comms_ok: boolean;
+  last_command_source: string;
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const integer = (value: unknown): value is number => finite(value) && Number.isInteger(value);
+const timestamp = (value: unknown) => typeof value === "string" &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+const nullable = (value: unknown, valid: (v: unknown) => boolean) => value === null || valid(value);
+const booleans = (value: Record<string, unknown>, keys: string[]) => keys.every((key) => typeof value[key] === "boolean");
+const strings = (value: Record<string, unknown>, keys: string[]) => keys.every((key) => typeof value[key] === "string");
+
+function validDevice(value: unknown): boolean {
+  if (!isObject(value) || value.schema !== 2 || !strings(value, ["device_id"]) ||
+    !["generation", "revision", "event_seq"].every((key) => integer(value[key]) && value[key] >= 0) ||
+    !timestamp(value.changed_at) || !booleans(value, ["remote_enabled"])) return false;
+  const m = value.measurements;
+  if (!isObject(m) || !booleans(m, ["valid"]) ||
+    !["current_a", "voltage_kv_ll", "source_kv_ll"].every((key) => nullable(m[key], finite)) ||
+    !["section_live", "source_live", "fault_current"].every((key) => nullable(m[key], (v) => typeof v === "boolean")) ||
+    !nullable(m.solver_epoch, (v) => typeof v === "string") || !nullable(m.solve_seq, integer) ||
+    !["solved_at", "received_at"].every((key) => nullable(m[key], timestamp))) return false;
+  switch (value.kind) {
+    case "breaker":
+      return (value.position === "open" || value.position === "closed") && booleans(value, ["lockout", "protection_tripped"]);
+    case "rmu":
+      return (value.position === "open" || value.position === "closed") && booleans(value, ["earth_closed", "fault_passage"]);
+    case "oltc":
+      return ["tap", "target_tap", "heartbeat"].every((key) => integer(value[key])) &&
+        booleans(value, ["moving", "auto", "blocked", "armed"]) && strings(value, ["plc_request_result"]);
+    default:
+      return false;
+  }
+}
+
+function validClock(value: unknown): boolean {
+  return isObject(value) && timestamp(value.actual_time) && timestamp(value.reported_time) &&
+    ["locked", "holdover", "freerun"].some((status) => status === value.sync_status) &&
+    finite(value.time_offset_sec) && integer(value.satellite_count) && value.satellite_count >= 0 &&
+    (value.holdover_started === "" || timestamp(value.holdover_started)) && finite(value.holdover_drift_ppm) &&
+    booleans(value, ["ntp_enabled", "ptp_enabled", "irig_b_output", "alarm", "comms_ok"]) &&
+    strings(value, ["last_command_source"]);
+}
 
 // before and after are full device snapshots. detail is absent, a
 // reason string ("no_op", "lockout", "stale_truth", ...) or an object
@@ -223,9 +284,11 @@ export type DeviceAudit = {
 
 export async function getFieldState() {
   const state = await request<FieldState>("/field/state");
-  if (state.process.schema !== 2 || !state.devices || Object.values(state.devices).some((d) => d.schema !== 2)) {
+  if (!isObject(state) || !isObject(state.process) || state.process.schema !== 2 || !isObject(state.devices) ||
+    Object.keys(state.devices).length === 0 || !Object.values(state.devices).every(validDevice)) {
     throw new Error("Expected field and process schema 2");
   }
+  if (state.clock !== null && !validClock(state.clock)) throw new Error("Expected station clock state or null");
   return state;
 }
 

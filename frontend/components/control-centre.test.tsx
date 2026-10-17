@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
 import type { CommandResult, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText } from "../lib/operator-format";
-import { AUDIT, FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, TRUTH, commandResult } from "../lib/operator-fixtures.test-util";
+import { AUDIT, CLOCK, FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, TRUTH, commandResult } from "../lib/operator-fixtures.test-util";
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreOneLine, observedReading } from "./control-centre-one-line";
@@ -158,13 +158,31 @@ describe("select-then-execute controls", () => {
 
 describe("separate field plane", () => {
   const physical = (stateError: unknown = null, auditError: unknown = null) => <PhysicalFeederScreen field={TRUTH} stateError={stateError} audit={AUDIT} auditError={auditError} operator={STALE_STATE} />;
-  it("shows four devices and the process without controls or CC enrichment", () => {
+  it("shows four devices, the station clock and process without controls or CC enrichment", () => {
     const html = screen({ state: STALE_STATE, physicalFeeder: physical() });
     const out = text(html);
-    for (const label of ["breaker-1 device state", "rmu-1 device state", "rmu-2 device state", "oltc-1 device state", "Solver output", "Fault section S1", "Completed / target tap 1 / 2", "Field vs control centre", "breaker-1 position OPEN CLOSED ⚠ STALE"]) expect(out).toContain(label);
+    for (const label of ["breaker-1 device state", "rmu-1 device state", "rmu-2 device state", "oltc-1 device state", "Station clock (GPS) · truth", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Solver output", "Fault section S1", "Completed / target tap 1 / 2", "Field vs control centre", "breaker-1 position OPEN CLOSED ⚠ STALE"]) expect(out).toContain(label);
     expect(out).toContain("control centre never reads these values");
     expect(out).toContain("0/4 good");
     expect(html).not.toContain("Inject fault</button>");
+    expect(html).not.toContain("gps-1 device state");
+    expect(text(render(<OperatorContrast field={TRUTH} operator={STALE_STATE} />))).not.toContain("clock");
+  });
+
+  it("renders the field cards and contrast when no clock is declared", () => {
+    const out = text(render(<PhysicalFeederScreen field={{ ...TRUTH, clock: null }} stateError={null} audit={AUDIT} auditError={null} operator={undefined} />));
+    expect(out).toContain("breaker-1 device state");
+    expect(out).toContain("Field vs control centre");
+    expect(out).not.toContain("Station clock");
+  });
+
+  it.each(["holdover", "freerun"] as const)("renders a %s clock without changing the CC", (sync_status) => {
+    const field = { ...TRUTH, clock: { ...CLOCK, sync_status, alarm: true, comms_ok: false, time_offset_sec: -30 } };
+    const html = render(<FieldCards field={field} />);
+    expect(text(html)).toContain(`Sync status ${sync_status.toUpperCase()}`);
+    expect(text(html)).toContain("Time offset -30.000 s");
+    expect(text(html)).toContain("Alarm / comms OK YES / no");
+    expect(text(screen())).toContain("31/31 good");
   });
 
   it("keeps field and audit failures separate from CC availability", () => {

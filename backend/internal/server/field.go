@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,6 +39,7 @@ func solverURL(gen *lifecycle.Generation) (string, bool) {
 // fieldState is GET /api/field/state.
 type fieldState struct {
 	Devices map[string]json.RawMessage `json:"devices"`
+	Clock   json.RawMessage            `json:"clock"`
 	Process json.RawMessage            `json:"process"`
 }
 
@@ -51,6 +53,7 @@ func (s *Server) handleFieldState(c *gin.Context) {
 		return
 	}
 	devices := map[string]json.RawMessage{}
+	var clock json.RawMessage // null only when no time-source sim is declared.
 	for _, service := range gen.Manifest.Services {
 		url, ok := service.Endpoints[manifest.EndpointSim]
 		if !ok {
@@ -60,12 +63,21 @@ func (s *Server) handleFieldState(c *gin.Context) {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "sim service " + service.Key + " has no node id"})
 			return
 		}
+		isClock := slices.Contains(service.Roles, manifest.RoleTimeSource)
+		if isClock && clock != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "multiple time-source sims declared"})
+			return
+		}
 		state, err := fetchUpstreamObject(c.Request.Context(), service.Node, url+"/api/state")
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
-		devices[service.Node] = state
+		if isClock {
+			clock = state
+		} else {
+			devices[service.Node] = state
+		}
 	}
 	if len(devices) == 0 {
 		notSupported(c)
@@ -76,7 +88,7 @@ func (s *Server) handleFieldState(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, fieldState{Devices: devices, Process: electrical})
+	c.JSON(http.StatusOK, fieldState{Devices: devices, Clock: clock, Process: electrical})
 }
 
 // handleFieldAudit is the device audit after ?after=.

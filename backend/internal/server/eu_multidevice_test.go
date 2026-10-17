@@ -162,20 +162,40 @@ func TestFieldStateEverySimNode(t *testing.T) {
 		"GET /process/api/electrical": {http.StatusOK, electricalFixture},
 	}
 	for _, node := range euRecipe.simDevices {
-		routes["GET /"+node+"/api/state"] = stubResponse{http.StatusOK, fmt.Sprintf(`{"node":%q}`, node)}
+		body := strings.Replace(deviceStateFixture, `"device_id":"feeder-breaker"`, fmt.Sprintf(`"device_id":%q`, node), 1)
+		if node == "gps-1" {
+			body = clockStateFixture
+		}
+		routes["GET /"+node+"/api/state"] = stubResponse{http.StatusOK, body}
 	}
 	stub, upstream := newUpstreamStub(t, routes)
-	s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
+	gen := multiDeviceGeneration(t, upstream.URL)
+	// Classification uses the role, not the GPS node name or service order.
+	for i := range gen.Manifest.Services {
+		if gen.Manifest.Services[i].Node == "gps-1" {
+			gen.Manifest.Services[i].Node = "station-clock"
+			gen.Manifest.Services[i].Endpoints[manifest.EndpointSim] = upstream.URL + "/station-clock"
+			routes["GET /station-clock/api/state"] = routes["GET /gps-1/api/state"]
+		}
+	}
+	for i, j := 0, len(gen.Manifest.Services)-1; i < j; i, j = i+1, j-1 {
+		gen.Manifest.Services[i], gen.Manifest.Services[j] = gen.Manifest.Services[j], gen.Manifest.Services[i]
+	}
+	s := rangeServer(gen, "weak")
 	rec := callRoute(s, s.handleFieldState, http.MethodGet, "/api/field/state", "/api/field/state", "")
 	var got fieldState
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
 		t.Fatalf("state = %d %s", rec.Code, rec.Body)
 	}
-	if len(got.Devices) != len(euRecipe.simDevices) || string(got.Process) != electricalFixture || len(stub.requests) != 6 {
+	if len(got.Devices) != 4 || string(got.Clock) != clockStateFixture || string(got.Process) != electricalFixture || len(stub.requests) != 6 {
 		t.Fatalf("not every upstream returned: %s, requests=%v", rec.Body, stub.requests)
 	}
 	for _, node := range euRecipe.simDevices {
-		if string(got.Devices[node]) != fmt.Sprintf(`{"node":%q}`, node) {
+		if node == "gps-1" {
+			continue
+		}
+		want := strings.Replace(deviceStateFixture, `"device_id":"feeder-breaker"`, fmt.Sprintf(`"device_id":%q`, node), 1)
+		if string(got.Devices[node]) != want {
 			t.Errorf("missing or miskeyed %s: %s", node, rec.Body)
 		}
 	}

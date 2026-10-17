@@ -15,6 +15,7 @@ import type {
   OperatorJournal,
   OperatorPoint,
   OperatorState,
+  StationClock,
 } from "./operator-api";
 
 export const US_PACKAGE: PackageSummary = {
@@ -173,7 +174,16 @@ export const OLTC: OltcState = {
   auto: false, blocked: false, armed: false, plc_request_result: "not_auto", heartbeat: 200,
   measurements: { ...BREAKER.measurements, voltage_kv_ll: 20.02, source_kv_ll: 110, section_live: true, source_live: true },
 };
+export const CLOCK: StationClock = {
+  actual_time: "2026-10-09T12:00:29.500Z",
+  reported_time: "2026-10-09T12:00:32.000Z",
+  sync_status: "locked", time_offset_sec: 2.5, satellite_count: 9,
+  holdover_started: "", holdover_drift_ppm: 0,
+  ntp_enabled: true, ptp_enabled: false, irig_b_output: true,
+  alarm: false, comms_ok: true, last_command_source: "lab",
+};
 export const TRUTH: FieldState = {
+  clock: CLOCK,
   devices: {
     "breaker-1": BREAKER, "rmu-1": RMU1,
     "rmu-2": { ...RMU1, device_id: "rmu-2", position: "open", fault_passage: false, measurements: { ...RMU1.measurements, source_kv_ll: 19.97, source_live: true } },

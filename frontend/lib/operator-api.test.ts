@@ -1,10 +1,69 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getFieldAudit, getFieldState } from "./operator-api";
-import { AUDIT, TRUTH } from "./operator-fixtures.test-util";
+import { AUDIT, BREAKER, CLOCK, TRUTH } from "./operator-fixtures.test-util";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("physical feeder reads", () => {
+  function respond(answer: unknown) {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+  }
+
+  it("accepts an explicitly absent station clock", async () => {
+    const answer = { ...TRUTH, clock: null };
+    respond(answer);
+    await expect(getFieldState()).resolves.toEqual(answer);
+  });
+
+  it.each(["locked", "holdover", "freerun"])("accepts GPS %s state without making it a feeder device", async (sync_status) => {
+    const answer = { ...TRUTH, clock: { ...CLOCK, sync_status, holdover_started: sync_status === "holdover" ? CLOCK.actual_time : "" } };
+    respond(answer);
+    const field = await getFieldState();
+    expect(Object.keys(field.devices)).toEqual(["breaker-1", "rmu-1", "rmu-2", "oltc-1"]);
+    expect(field.clock).toEqual(answer.clock);
+  });
+
+  it.each(Object.keys(CLOCK))("rejects a clock missing %s", async (key) => {
+    const clock: Record<string, unknown> = { ...CLOCK };
+    delete clock[key];
+    respond({ ...TRUTH, clock });
+    await expect(getFieldState()).rejects.toThrow("Expected station clock state or null");
+  });
+
+  it.each([
+    undefined, [], {}, "gps",
+    { ...CLOCK, sync_status: "unknown" },
+    { ...CLOCK, actual_time: "not a time" },
+    { ...CLOCK, reported_time: null },
+    { ...CLOCK, holdover_started: "bad" },
+    { ...CLOCK, time_offset_sec: "2.5" },
+    { ...CLOCK, satellite_count: -1 },
+    { ...CLOCK, satellite_count: 1.5 },
+    { ...CLOCK, holdover_drift_ppm: null },
+    { ...CLOCK, ntp_enabled: 1 },
+    { ...CLOCK, alarm: "false" },
+  ])("rejects a malformed clock rather than dropping it (%j)", async (clock) => {
+    respond({ ...TRUTH, clock });
+    await expect(getFieldState()).rejects.toThrow("Expected station clock state or null");
+  });
+
+  it.each([
+    null, [], {}, { ...BREAKER, schema: 1 }, { ...BREAKER, kind: "gps" },
+    { ...BREAKER, position: "unknown" }, { ...BREAKER, measurements: null },
+    { ...BREAKER, measurements: { ...BREAKER.measurements, current_a: "0" } },
+    { ...BREAKER, lockout: undefined }, CLOCK,
+  ])("rejects malformed and unknown devices, including GPS in devices (%j)", async (device) => {
+    respond({ ...TRUTH, devices: { ...TRUTH.devices, unexpected: device } });
+    await expect(getFieldState()).rejects.toThrow("Expected field and process schema 2");
+  });
+
+  it.each([null, [], {}, { ...TRUTH, devices: [] }, { ...TRUTH, devices: {} }, { ...TRUTH, process: null }])(
+    "rejects malformed aggregate containers (%j)", async (answer) => {
+      respond(answer);
+      await expect(getFieldState()).rejects.toThrow("Expected field and process schema 2");
+    },
+  );
+
   it.each([
     ["/field/state", getFieldState, TRUTH],
     ["/field/audit?after=0", getFieldAudit, AUDIT],

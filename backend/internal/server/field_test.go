@@ -15,6 +15,9 @@ const deviceStateFixture = `{"schema":2,"device_id":"feeder-breaker","kind":"bre
 // electricalFixture is the solver's schema-2 electrical state.
 const electricalFixture = `{"schema":2,"profile_id":"eu-cigre-mv-teaching","solver_epoch":"e1","solve_seq":200,"solved_at":"2026-10-15T12:03:01Z","truth_stale":false,"fault_section":"none","f2_tripped":false,"load_multiplier":1.0,"source_pu":1.0,"tap":0,"buses":{"bus20":{"kv":20.02,"live":true},"s1":{"kv":0,"live":false},"s2":{"kv":0,"live":false},"s3":{"kv":19.97,"live":true}},"devices":{"feeder-breaker":{"delivered":true,"solved_revision":4,"revision":4}}}`
 
+// GPS has its own unversioned contract, not the feeder device schema.
+const clockStateFixture = `{"actual_time":"2026-10-15T12:03:01Z","reported_time":"2026-10-15T12:03:03.5Z","sync_status":"locked","time_offset_sec":2.5,"satellite_count":9,"holdover_started":"","holdover_drift_ppm":0,"ntp_enabled":true,"ptp_enabled":false,"irig_b_output":true,"alarm":false,"comms_ok":true,"last_command_source":"lab"}`
+
 func simServer(t *testing.T, device, solver map[string]stubResponse) (*Server, *upstreamStub) {
 	routes := map[string]stubResponse{}
 	deviceStub, dev := newUpstreamStub(t, routes)
@@ -32,6 +35,8 @@ func simServer(t *testing.T, device, solver map[string]stubResponse) (*Server, *
 				for key, response := range device {
 					routes[strings.Replace(key, " /", " /breaker-1/", 1)] = response
 				}
+			} else if service.Node == "gps-1" {
+				routes["GET /gps-1/api/state"] = stubResponse{http.StatusOK, clockStateFixture}
 			} else {
 				routes["GET /"+service.Node+"/api/state"] = stubResponse{http.StatusOK, deviceStateFixture}
 			}
@@ -67,19 +72,78 @@ func TestFieldState(t *testing.T) {
 				count := 0
 				for _, service := range s.rng.(*fakeRange).gen.Manifest.Services {
 					if _, ok := service.Endpoints[manifest.EndpointSim]; ok {
+						if service.Node == "gps-1" {
+							continue
+						}
 						count++
 						if string(got.Devices[service.Node]) != deviceStateFixture {
 							t.Errorf("missing state for %s: %s", service.Node, rec.Body)
 						}
 					}
 				}
-				if len(got.Devices) != count || string(got.Process) != electricalFixture {
+				if len(got.Devices) != count || string(got.Clock) != clockStateFixture || string(got.Process) != electricalFixture {
 					t.Errorf("unexpected field state: %s", rec.Body)
 				}
 				return
 			}
 			if rec.Code != test.code || rec.Body.String() != test.want {
 				t.Errorf("GET field state = %d %s\nwant %d %s", rec.Code, rec.Body, test.code, test.want)
+			}
+		})
+	}
+}
+
+func TestFieldStateWithoutClock(t *testing.T) {
+	s, _ := simServer(t,
+		map[string]stubResponse{"GET /api/state": {http.StatusOK, deviceStateFixture}},
+		map[string]stubResponse{"GET /api/electrical": {http.StatusOK, electricalFixture}})
+	for i := range s.rng.(*fakeRange).gen.Manifest.Services {
+		service := &s.rng.(*fakeRange).gen.Manifest.Services[i]
+		if service.Node == "gps-1" {
+			delete(service.Endpoints, manifest.EndpointSim)
+		}
+	}
+	rec := callRoute(s, s.handleFieldState, http.MethodGet, "/api/field/state", "/api/field/state", "")
+	var got fieldState
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil ||
+		string(got.Clock) != "null" || len(got.Devices) != 4 {
+		t.Fatalf("state without clock = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestFieldStateUSNotSupported(t *testing.T) {
+	s := rangeServer(usGeneration(nil), "weak")
+	rec := callRoute(s, s.handleFieldState, http.MethodGet, "/api/field/state", "/api/field/state", "")
+	if rec.Code != http.StatusNotFound || rec.Body.String() != `{"error":"not supported by this package"}` {
+		t.Fatalf("US field state = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestFieldStateRejectsAmbiguousClock(t *testing.T) {
+	s, _ := simServer(t,
+		map[string]stubResponse{"GET /api/state": {http.StatusOK, deviceStateFixture}},
+		map[string]stubResponse{"GET /api/electrical": {http.StatusOK, electricalFixture}})
+	gen := s.rng.(*fakeRange).gen
+	gen.Manifest.Services = append(gen.Manifest.Services, manifest.Service{
+		Key: "other-clock", Node: "other-clock", Roles: []manifest.Role{manifest.RoleTimeSource},
+		Endpoints: map[string]string{manifest.EndpointSim: "http://unused.invalid"},
+	})
+	rec := callRoute(s, s.handleFieldState, http.MethodGet, "/api/field/state", "/api/field/state", "")
+	if rec.Code != http.StatusBadGateway || rec.Body.String() != `{"error":"multiple time-source sims declared"}` {
+		t.Fatalf("ambiguous clock = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestFieldStateRejectsMalformedClockObject(t *testing.T) {
+	for _, body := range []string{"null", "[]", `"clock"`, "invalid json"} {
+		t.Run(body, func(t *testing.T) {
+			_, upstream := newUpstreamStub(t, map[string]stubResponse{
+				"GET /gps-1/api/state": {http.StatusOK, body},
+			})
+			s := rangeServer(multiDeviceGeneration(t, upstream.URL), "weak")
+			rec := callRoute(s, s.handleFieldState, http.MethodGet, "/api/field/state", "/api/field/state", "")
+			if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "gps-1") {
+				t.Fatalf("malformed clock = %d %s", rec.Code, rec.Body)
 			}
 		})
 	}

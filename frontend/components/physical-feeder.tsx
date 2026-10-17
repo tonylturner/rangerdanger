@@ -32,7 +32,7 @@ const yesNo = (value: boolean | null) => (value === null ? "unknown" : value ? "
 const num = (value: number | null, digits: number, unit: string) => (value === null ? "unknown" : `${value.toFixed(digits)} ${unit}`);
 
 export function FieldCards({ field }: { field: FieldState }) {
-  const { devices, process } = field;
+  const { devices, clock, process } = field;
   return <div className="grid gap-4 md:grid-cols-2">
     {Object.entries(devices).map(([node, device]) => {
       const m = device.measurements;
@@ -66,6 +66,14 @@ export function FieldCards({ field }: { field: FieldState }) {
         <Row label="Received (UTC)">{formatUtcTime(m.received_at)}</Row>
       </Card>;
     })}
+    {clock && <Card title="Station clock (GPS) · truth" subtitle="Management network, outside IEC 104 · not the control centre time">
+      <Row label="Sync status" alert={clock.sync_status !== "locked"}>{clock.sync_status.toUpperCase()}</Row>
+      <Row label="Time offset">{num(clock.time_offset_sec, 3, "s")}</Row>
+      <Row label="Satellites">{clock.satellite_count}</Row>
+      <Row label="Reported time (UTC)">{clock.reported_time}</Row>
+      <Row label="Actual time (UTC)">{clock.actual_time}</Row>
+      <Row label="Alarm / comms OK" alert={clock.alarm || !clock.comms_ok}>{yesNo(clock.alarm)} / {yesNo(clock.comms_ok)}</Row>
+    </Card>}
     <Card title="Solver output" subtitle={`OpenDSS · ${process.profile_id} · separate process plane`}>
       <Row label="Fault section" alert={process.fault_section !== "none"}>{process.fault_section}</Row>
       <Row label="F2 tripped" alert={process.f2_tripped}>{yesNo(process.f2_tripped)}</Row>
