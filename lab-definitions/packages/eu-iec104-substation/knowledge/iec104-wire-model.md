@@ -19,7 +19,7 @@ The schema-2 package point map contains five devices, 31 monitored points and fi
 | 2301, 2302 | OLTC LV bus kV and current A |
 | 1401, 1402, 2401–2403 | PLC running, input-valid, setpoint kV, deadband %, delay s |
 
-Double-point statuses use M_DP_TB_1 spontaneously and M_DP_NA_1 during GI. Single-point statuses use M_SP_TB_1 and M_SP_NA_1 respectively. Tap position uses M_ST_TB_1 and M_ST_NA_1, preserving both signed position and transient state. Floating-point values use untimed M_ME_NC_1.
+Double-point statuses use M_DP_TB_1 spontaneously and M_DP_NA_1 during GI. Single-point statuses use M_SP_TB_1 and M_SP_NA_1 respectively. Tap position uses M_ST_TB_1 and M_ST_NA_1, preserving both signed position and transient state. Floating-point values use untimed M_ME_NC_1 for cyclic COT 1, spontaneous COT 3 and GI COT 20. This selected teaching profile is modelled on WEMAG/SvK practice, not an EU default. The CC’s point `asdu` names the last received type, while `asdu` in points.json configures the event type; a GI can therefore change the displayed status type without changing its value. Measurements are cyclic every 10 seconds, PLC parameters every 60 seconds; GI is on connect, every 15 minutes or operator request. See [reporting and quality](#iec104-gi-cot-quality) for deadbands and the float watchdog.
 
 Breaker/RMU commands at 3001/3101/3201 use C_DC_NA_1. OLTC step at 3301 uses C_RC_NA_1; mode at 3302 uses C_SC_NA_1. All five are select-before-operate. Station interrogation is C_IC_NA_1 with QOI 20. See [GI and quality](#iec104-gi-cot-quality) and [command sequencing](#iec104-sbo-commands) before interpreting their responses.
 
@@ -27,7 +27,7 @@ Breaker/RMU commands at 3001/3101/3201 use C_DC_NA_1. OLTC step at 3301 uses C_R
 
 For an observation exercise, capture the allowed CC-to-RTU flow and identify STARTDT, interrogation activation, confirmation, monitored responses and termination. Then correlate a status change by CA, IOA, type and COT rather than matching only its text label. Compare the decoded value and quality with the CC export, including source time when present.
 
-Configured link parameters are t0/t1 10 seconds, t2/t3 5 seconds, k 12 and w 8. These transport parameters are not the five-second SBO selection timeout or the actuator's movement duration. Mixing those budgets leads to false diagnoses of slow or failed operation.
+Configured link parameters are t0 10 seconds, t1 15 seconds, t2 10 seconds, t3 20 seconds, k 12 and w 8. These transport parameters are not the five-second SBO selection timeout or the actuator's movement duration. Mixing those budgets leads to false diagnoses of slow or failed operation.
 
 ### Limits
 

@@ -2,7 +2,7 @@ A historian preserves observations for later analysis. That does not make it an 
 
 ### Push into an operations DMZ
 
-The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall zone `lan5`. The CC pushes its schema-2 state once per second and for every applied timed report to `POST /api/ingest` on TCP/8081, binding its source to `10.60.60.20`. A timed snapshot is rendered before a following untimed GI can clear its source tag. Pushes have a 500 ms total timeout and one in flight. A bounded queue holds at most 16 pending snapshots; overflow drops the oldest and increments CC health's `historian.dropped_snapshots`. Failed pushes are dropped, never replayed. Historian failure must not block IEC 104 processing.
+The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall zone `lan5`. The CC pushes its schema-2 state once per second and for every applied timed report to `POST /api/ingest` on TCP/8081, binding its source to `10.60.60.20`. This 1 Hz publication is independent of IEC 104 reporting: status can remain quiet, floats are cyclic at 10/60 seconds and GI normally runs every 15 minutes. Repeated ingestion does not advance a point’s CC receipt time. A timed snapshot is rendered before a following untimed GI can clear its source tag. Pushes have a 500 ms total timeout and one in flight. A bounded queue holds at most 16 pending snapshots; overflow drops the oldest and increments CC health's `historian.dropped_snapshots`. Failed pushes are dropped, never replayed. Historian failure must not block IEC 104 processing.
 
 Read listeners are separate: `10.70.70.40:8080` and management `10.99.99.40:8080`. They expose GET points, history and health only; neither serves ingestion. The historian never polls the CC, field devices or process, never sends a command, and has no write-back path into OT.
 
@@ -10,7 +10,7 @@ Ingestion strictly validates the CC state. Malformed schemas, unknown or duplica
 
 ### What a sample means
 
-Each point sample retains `snapshot_seq`, value, quality flags, stale reason, source time, source-time validity, `cc_received_at` and `ingested_at`. Step values retain their `{value, transient}` object. The CC point's receipt time becomes `cc_received_at`; it is not rewritten to the historian's receipt time.
+The points listing includes stable `kind` and last received `asdu` (null before receipt), not the configured event type. Each point sample retains `snapshot_seq`, value, quality flags, stale reason, source time, source-time validity, `cc_received_at` and `ingested_at`. Step values retain their `{value, transient}` object. The CC point's receipt time becomes `cc_received_at`; it is not rewritten to the historian's receipt time.
 
 A changed `cache_epoch` starts a new segment. More than three seconds between accepted ingests becomes a gap from the previous ingest to the next one. A continuous stream of stale CC points is **not** an ingest gap: the feed is working while its observations are degraded. Current silence appears in health before a completed gap can be recorded on recovery.
 

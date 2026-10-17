@@ -22,7 +22,7 @@ The historian is not cleared, and the CC is not restarted. Resetting GPS offset 
 
 ### Acceptance after reset
 
-In `/substation`, compare physical baseline positions and flags with fresh CC feedback. Check process `truth_stale`, delivery revisions and section voltages; then check CC link/GI, quality and receipt times. Read PLC running/input-valid/heartbeat evidence before calling automatic control ready. The nominal circuit is in the [regulation band](#eu-voltage-regulation), so a healthy seeded controller should not need to chase voltage at boot.
+In `/substation`, compare physical baseline positions and flags with fresh CC feedback. Check process `truth_stale`, delivery revisions and section voltages; then check CC link/GI, quality and receipt times. Quiet GOOD status does not expire; for validator acceptance require a retained current-connection GI inside the ten-minute attempt window and points received since its start. If missing, press **Interrogate station** in the **Control Centre** and validate again; no forced reconnect is needed. Read PLC running/input-valid/heartbeat evidence before calling automatic control ready. The nominal circuit is in the [regulation band](#eu-voltage-regulation), so a healthy seeded controller should not need to chase voltage at boot.
 
 Verify policy identity separately. Restoring weak intentionally reopens its teaching exposure; it is not a production hardening action. If the next test requires improved, apply it deliberately and establish fresh positive and negative protocol evidence inside that test's window.
 

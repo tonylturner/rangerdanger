@@ -104,6 +104,16 @@ describe("package flow liveness", () => {
     expect(createFlowContext(eu, {}).observations["cc-rtu"].status).toBe("unknown");
   });
 
+  it("describes the reporting conduit without treating a periodic GI as loss of integrity", () => {
+    const op = operator();
+    op.link.gi.state = "running";
+    op.link.gi.trigger = "periodic";
+    const observation = createFlowContext(eu, { operator: op }).observations["cc-rtu"];
+    expect(observation.status).toBe("active");
+    expect(observation.reason).toBe("IEC104 started; GI running (connect / 15 min / operator); spontaneous status, cyclic/deadband measurands");
+    expect(op.link.gi.last_complete_at).not.toBeNull();
+  });
+
   it("does not confuse invalid measurements or old time tags with failed Modbus or GPS transport", () => {
     const op = operator();
     op.points[0].source_time_invalid = true;

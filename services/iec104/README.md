@@ -64,6 +64,19 @@ monitored points and the commands. Each point names its device, register
 table/address and format (`dp`, `bit`, `f32`, `u16`, `i16`, or `step`); each command names its
 Modbus write target and the monitored point that provides its feedback. See
 `check/points.test.json` for a complete example. Schema 1 is rejected.
+The root requires `gi_interval_ms` (60000–86400000); float points require
+`cyclic_ms` (1000–3600000), forbidden on non-floats. Point-map `asdu` is the
+configured event type, not the last type actually received by the CC.
+
+The package uses a **selected teaching profile modelled on WEMAG/SvK
+practice**, not an EU default: GI every 900000 ms (15 minutes), measurement
+floats cyclic every 10000 ms, PLC parameters every 60000 ms. APCI timers are
+t0=10 s, t1=15 s, t2=10 s, t3=20 s, k=12, w=8. The check fixture deliberately
+uses shorter timings. Measurement deadbands are 0.1 kV (0.5% of 20 kV, below
+the roughly 0.24–0.25 kV tap step) and 2 A (about 3% of nominal feeder
+current), teaching choices, not equipment ratings. PLC parameters have
+zero deadband, so any value change qualifies.
+
 Each device declares a bounded `poll: {table, start, count}`; sources,
 measurement-valid bits, transient bits and optional heartbeat addresses must
 be inside that block. `u16`/`i16` optionally scale into a float. `step` reads
@@ -93,8 +106,16 @@ Behaviour:
   rendered as `stale_reason: heartbeat`.
 - **Spontaneous reporting (COT 3).** Every quality change is reported with
   the last value, regardless of deadband; the float deadband suppresses only
-  value-only float changes. Status events use the timed type
+  value-only float changes. The baseline is the last spontaneous, cyclic or
+  command-return value; GI does not move it. Value-driven float reports are
+  limited to one per point per 1000 ms. A held change is sent at expiry only
+  if it still exceeds the deadband from the last transmitted value. Quality
+  changes bypass both deadband and limiter. Status events use the timed type
   (`M_DP_TB_1` / `M_SP_TB_1` / `M_ST_TB_1`) with a CP56Time2a tag; floats use `M_ME_NC_1`.
+- **Cyclic reporting (COT 1).** Floats report every `cyclic_ms` as untimed
+  `M_ME_NC_1`; status points have no cyclic refresh. Floats due on the same
+  tick are packed by type with multiple information objects (SQ=0), splitting
+  when an ASDU is full. There is no COT 2 background scan.
 - **Station clock.** A background thread polls gps-sim over HTTP
   (`src/stationclock.{c,h}`); station time is the last GPS `reported_time`
   advanced monotonically. CP56Time2a carries the invalid (IV) bit whenever
@@ -102,7 +123,8 @@ Behaviour:
   `synced_status`).
 - **General interrogation (COT 20).** Returns the monitored points in the
   untimed types (`M_DP_NA_1` / `M_SP_NA_1` / `M_ST_NA_1` / `M_ME_NC_1`) with current
-  quality, then ACT-TERM. Before the first poll a point answers GI as IV+NT.
+  quality, packed by type (SQ=0), splitting full ASDUs, then ACT-TERM. Before
+  the first poll a point answers GI as IV+NT.
 - **Commands (SBO per peer).** `C_DC_NA_1`, `C_RC_NA_1`, and
   `C_SC_NA_1`, qualifier 0 only. Select expires after `select_timeout_ms`;
   execute must match its type, value and peer. A fresh good post-select
@@ -175,21 +197,40 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   is fatal) to `--target`, sends STARTDT and a station GI after every
   connect, holds the session, and reconnects `reconnect_interval_ms` after
   it ends. APCI timers (`t0`–`t3`, `k`, `w`) come from the point map.
-  `connection_seq` counts TCP connections to the RTU. It refreshes
-  unchanged observations with a real GI at most every 1 s (or half the
-  smallest stale threshold), so freshness checks do not depend on plant
-  movement. GIs never manufacture values or bypass RTU quality.
+  `connection_seq` counts TCP connections to the RTU. GI triggers are
+  `connect`, `periodic` (every `gi_interval_ms` from the previous GI start)
+  and `operator`. Only the link thread sends GI; its tick (at most 250 ms)
+  also services the 2·t1 GI timeout and float watchdog, independently of
+  the GI interval. At most one GI is running or pending. Negative GI
+  confirmation/termination or timeout closes the session (`io_error`).
+  A connect-trigger send failure closes immediately; periodic/operator send
+  failures wait for the GI timeout. Normal reconnect then applies. GIs never
+  manufacture values or bypass RTU quality. Integrity is positive ACT-TERM on this connection,
+  exposed as non-null `link.gi.last_complete_at`; it survives a later running
+  GI but resets on disconnect/new connection, and does not certify coverage.
 - **Per-point cache.** Value, quality (IV/NT/SB/BL/OV), RTU observation
   time (CP56Time2a; `null` for untimed ASDUs, so floats and GI answers carry
   none), receipt time and COT. The RTU's quality maps to `stale_reason`:
-  NT set → `device_unreachable`, IV alone → `measurement_invalid`. On link
+  NT set → `device_unreachable`, IV alone → `measurement_invalid` (or
+  `heartbeat` on a heartbeat-equipped PLC). On link
   loss every point keeps its value and times and goes IV+NT `link_lost`; it
   is GOOD again only when a fresh report for it arrives on the new session.
-  Never-received points have `value: null`, `stale_reason: never_received`.
+  Never-received points have `value: null`, `asdu: null`,
+  `stale_reason: never_received`. Each point exposes stable `kind` and last
+  actually received `asdu` (retained on link loss), not the configured event
+  type. `reporting` is null for status and `{cyclic_ms, deadband}` for floats.
+  Status points never age out. On a started link a currently GOOD float
+  silent for more than 3 × `cyclic_ms` becomes NT/`not_updated`, retaining
+  value, ASDU and COT; the next report of any COT replaces quality. The
+  watchdog never overrides RTU-set reasons, `never_received` or `link_lost`.
 - **Commands.** Typed `open|close`, `lower|raise`, and `auto|manual`
   operations, select-before-execute, one at a time, at most 10 s, never
-  retried. Feedback IV, NT, or older than the device stale threshold is
-  refused with 409 **before select**. `completed` needs positive ACT-CON,
+  retried. Admission requires a started link (503 otherwise), completed
+  current-connection GI integrity, feedback value present and feedback
+  neither IV nor NT (409 otherwise) **before select**. Quiet status receipt
+  age alone never refuses a command. RTU fresh-acquisition and interlock
+  guards remain; completion still requires full GOOD, non-transient feedback.
+  `completed` needs positive ACT-CON,
   positive ACT-TERM, and intervening good matching COT 11 feedback;
   `rejected` means negative ACT-CON; `failed` means negative ACT-TERM;
   missing confirmations, termination or matching feedback mean `unknown`.
@@ -198,8 +239,13 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   times are null. Feedback is null or `{ioa, value, at}`. Step values are
   `{value: int, transient: bool}`, never flattened into a float.
 - **Journal.** A ring of 500 entries (`link_up`, `link_down`, `gi_started`,
-  `gi_complete`, `point_stale`, `point_good`, `command`) tagged with the
-  random per-boot `cache_epoch`. `link_down.reason`: `t1_timeout` (nothing
+  `gi_complete`, `point_stale`, `point_good`, `status_event`, `command`)
+  tagged with the random per-boot `cache_epoch`. Both GI entries include
+  `trigger` (`connect`, `periodic`, `operator`). `status_event` records a
+  received COT 3/11 single/double/step value or transient change, never a
+  float or quality-only transition; detail is
+  `{id, ioa, asdu, cot, value, source_time, source_time_invalid}`.
+  `link_down.reason`: `t1_timeout` (nothing
   received for t1 before lib60870 dropped the session), `peer_closed` (the
   RTU closed or reset the stream), `io_error` (the CC closed it after a GI
   failure), `connect_failed` (TCP or STARTDT failed; journaled once per
@@ -209,8 +255,16 @@ API, which the backend proxies verbatim (`/api/operator/*`).
 |---|---|
 | `GET /api/health` | `status`, `link`, `historian: {last_ok_at, failures, dropped_snapshots}` |
 | `GET /api/state` | `schema: 2`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
-| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight or feedback is stale; 503 when the link is not started; 400 on bad input |
+| `POST /api/gi` | no body; 202 `{"trigger":"operator","requested_at":"<UTC>"}` queues GI; 409 `{"error":"interrogation already running"}` while pending/running; 503 `{"error":"link not started"}` otherwise. Acceptance is not completion. |
+| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight, GI integrity is missing or feedback is missing/IV/NT; 503 when the link is not started; 400 on bad input |
 | `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
+
+`link.gi` is `{state, trigger, started_at, last_complete_at, next_due_at}`:
+state is `none|running|complete`, trigger is `connect|periodic|operator|null`,
+and times are UTC or null. State/trigger/start describe the current or most
+recent GI on this connection; `next_due_at` is null unless the link is started.
+The state schema remains 2. The backend relays operator GI at
+`POST /api/operator/gi` and adds package/range identity to state, not field truth.
 
 The HTTP server is in-tree (`src/cc_http.c`): HTTP/1.0 and 1.1, GET and
 POST, `Content-Length` bodies only (no chunked), headers ≤ 8 KiB, bodies
@@ -288,12 +342,14 @@ src/common.{c,h}       logging, quality/time/ASDU formatting, arg parsing
 src/client.{c,h}       synchronous wrapper over a lib60870 CS104_Connection (iec104cmd)
 src/rtu.c              iec104-rtu: flags, startup, main loop, shutdown
 src/rtu_internal.h     private RTU shared model, locking rules and module interfaces
-src/rtu_server.c       RTU IEC 104 handlers, connection events, quality and reporting
+src/rtu_server.c       RTU IEC 104 handlers and connection events
+src/rtu_reporting.c    RTU quality, deadbands, limiter, packed GI and cyclic reporting
 src/rtu_poll.c         RTU independent Modbus poll workers and register decoding
 src/rtu_command.c      RTU SBO validation, FC6 execution and fresh-feedback completion
 src/cc.c               iec104-cc: flags, startup, shutdown
 src/cc_state.{c,h}     CC shared model: point cache, link/GI status, journal, renderers
-src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, GI, reconnect, sends
+src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, reconnect, sends
+src/cc_gi.c            CC GI scheduling and trigger journal
 src/cc_command.{c,h}   CC select-before-execute state machine
 src/cc_http.{c,h}      CC minimal HTTP/1.1 server
 src/cc_api.{c,h}       CC HTTP routes

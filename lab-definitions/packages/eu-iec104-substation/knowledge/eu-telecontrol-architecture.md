@@ -15,7 +15,7 @@ The [point map](#iec104-wire-model) translates register values into IEC 104 poin
 
 ### Observation, physics and lab control
 
-The CC's operational state comes only from IEC 104. The portal's `/substation` page also shows physical device state and process results, obtained by the backend over management endpoints. They are labelled separately and never used to repair the CC cache.
+The CC's operational state comes only from IEC 104. The portal's `/substation` page also shows physical device state and process results, obtained by the backend over management endpoints. The **Control Centre** and **Field truth** views are separate and field data is never used to repair the CC cache. The Control Centre’s **Alarms**, **Events**, **Points** and **Trends** tabs show CC-derived evidence; **Interrogate station** requests GI without reconnecting.
 
 On `process_net`, the solver reads device truth and returns solved measurements tagged with their truth revision. This closed loop supplies the electrical simulation and local protection inputs. It is not the RTU's telemetry acquisition path. On management, field-device `sim` endpoints accept authored lab actions and reset. The solver's management API owns faults, load and source changes. These are simulation controls, not hidden operator command routes.
 

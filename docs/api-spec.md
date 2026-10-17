@@ -167,15 +167,62 @@ Proxied reads from the RTAC and control commands to individual field devices.
 
 ## Control centre and field
 
-For packages whose manifest has a control centre and a field device simulator (`eu-iec104-substation`). Other packages answer `404 {"error":"not supported by this package"}`. These are read routes plus the operator command relay; the student changes field process state only through scenario step actions.
+For packages whose manifest has a control centre and a field device simulator (`eu-iec104-substation`). Other packages answer `404 {"error":"not supported by this package"}`. These are read routes plus the operator command and interrogation relays; the student changes field process state only through scenario step actions.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/operator/state` | Control-centre state with `package_id` and `range_generation` added |
 | `POST` | `/operator/commands` | Relay one command to the control centre. The CC runs select, execute and feedback; the backend sends it once and never retries. A CC refusal keeps its status. |
-| `GET` | `/operator/journal?after=<seq>` | Control-centre command journal after a sequence number |
+| `POST` | `/operator/gi` | No body. Queue CC interrogation; 202 `{"trigger":"operator","requested_at":"<UTC>"}` is acceptance, not completion. 409 `{"error":"interrogation already running"}` if pending/running; 503 `{"error":"link not started"}` if not started. Other CC failures are upstream failures. |
+| `GET` | `/operator/journal?after=<seq>` | Bounded CC link, GI, quality, status-change and command journal after a sequence number |
 | `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
 | `GET` | `/field/audit?after=<seq>` | Breaker (`breaker-1`) audit after a sequence number |
+
+### Operator state and reporting (schema 2)
+
+The CC observes only IEC 104, never field/process truth. The outer state keeps
+`schema`, `snapshot_seq`, `rendered_at`, `cache_epoch`, `link` and `points`, plus
+backend-added `package_id` and `range_generation`.
+
+`link.gi` is `{state, trigger, started_at, last_complete_at, next_due_at}`.
+`state` is `none|running|complete`, `trigger` is `connect|periodic|operator|null`,
+and timestamps are UTC or null. State/trigger/start describe the current or
+most recent GI on this connection. `last_complete_at` means positive ACT-TERM
+on this connection, not complete point coverage or GOOD quality; it remains
+set during a later running GI. Disconnect clears integrity and `next_due_at`;
+the latter is null unless the link is started.
+
+Each point includes `id`, `ioa`, stable `kind`
+(`single-point|double-point|step-position|float`), last received `asdu` (null
+before receipt), `value`, `quality` (`iv`, `nt`, `sb`, `bl`, `ov`),
+`stale_reason`, `source_time`, `source_time_invalid`, `received_at`, `cot` and
+`reporting`. `reporting` is null for status or `{cyclic_ms, deadband}` for
+floats. GI can replace a timed status type with an untimed type and clear
+source time. Link loss retains values/type/COT with IV+NT/`link_lost`.
+
+This selected teaching profile is modelled on WEMAG/SvK practice, not an EU
+default: GI on connect, every 15 minutes from the preceding GI start, or via
+**Interrogate station**. Status changes are timed spontaneous COT 3 (command
+return COT 11); GI is untimed COT 20. Floats are untimed M_ME_NC_1: cyclic
+COT 1 every 10 seconds for measurements, 60 seconds for PLC parameters, plus
+deadband/quality-driven COT 3. Quiet status never ages out. A currently GOOD
+float on a started link silent for more than three cyclic periods gets NT
+and `not_updated`; a new report replaces quality. Other stale reasons are
+`never_received`, `link_lost`, `device_unreachable`, `heartbeat` and
+`measurement_invalid` (or null).
+
+Commands require a started link (503 otherwise), current-connection GI
+integrity, present feedback and neither IV nor NT (409 otherwise); receipt
+age alone does not refuse quiet status. One command in flight, RTU acquisition
+and interlock checks and full-GOOD non-transient completion still apply.
+`GOOD` requires a value, no true quality flag and null stale reason.
+
+GI journal entries include `trigger`. `status_event` is a COT 3/11 status
+value/transient change with `{id, ioa, asdu, cot, value, source_time,
+source_time_invalid}`, not a float or a quality-only change. The journal is
+a bounded 500-entry ring, not a durable SOE archive. The workshop status
+summary’s GI string is integrity: `complete` if `last_complete_at` is set,
+otherwise `running` if running, else `none` (null when unavailable).
 
 ## Historian
 
@@ -183,7 +230,7 @@ Range-bound read routes to the serving manifest's historian `api` endpoint over 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/historian/points` | The historian's `[{id,ioa,asdu,last}]` array, unchanged |
+| `GET` | `/historian/points` | The historian's `[{id,ioa,kind,asdu,last}]` (stable kind, last received ASDU or null) array, unchanged |
 | `GET` | `/historian/history?point=<id>&since=<rfc3339>&until=<rfc3339>` | `{point,segments:[{cache_epoch,samples:[...]}],gaps:[{from,to}]}`, unchanged, with quality, timestamps and gaps |
 
 A historian `400` keeps its status and body. Other upstream failures return `502`, or `504` on timeout, naming the historian.

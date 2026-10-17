@@ -290,7 +290,7 @@ export function NetworkConsole() {
                 ok={workshopStatus.control_centre.link === "started"}
                 label={`Control centre ${controlCentreLinkText(workshopStatus.control_centre)}`}
                 tooltipTitle="Supervisory control"
-                tooltipBody="The control centre's IEC 104 link to the RTU on tcp/2404 and its general interrogation. Down = the operator's view is stale."
+                tooltipBody="The CC→RTU TCP/2404 session carries spontaneous status events, cyclic/deadband measurands and commands. GI runs on connect, every 15 minutes or via Interrogate station. Quiet GOOD status does not expire; link loss marks retained values stale."
               />
             )}
             <PolicyBadge activeConfig={workshopStatus.firewall_config} />

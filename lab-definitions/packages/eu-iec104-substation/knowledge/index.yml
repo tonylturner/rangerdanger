@@ -88,7 +88,7 @@
         },
         {
           "id": "iec104-gi-cot-quality",
-          "title": "GI, causes of transmission and stale data",
+          "title": "GI, cyclic reporting, deadbands and quality",
           "file": "iec104-gi-cot-quality.md"
         },
         {

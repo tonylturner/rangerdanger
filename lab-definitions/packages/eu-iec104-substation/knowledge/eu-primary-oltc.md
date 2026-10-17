@@ -18,7 +18,7 @@ The PLC writes a separate HR1 absolute request: 0 means no request and 100+targe
 
 The CC receives `oltc-1-tap` at IOA 1301 as a step-position object, including its transient flag. Remote and auto are IOAs 1302 and 1303; lower/upper limit and blocked are 1304–1306. LV bus voltage is 2301 and current 2302. The command points are 3301 (`oltc-1-step`) and 3302 (`oltc-1-mode`).
 
-For a manual exercise, use the operator panel or [operator API](#eu-rtu-control-centre-apis) to select manual, verify feedback, and request one step. Capture the old completed tap with transient true, followed by the new completed tap with transient false. Compare the voltage change only after good post-motion measurement delivery. The [step telemetry article](#eu-iec104-step-telemetry) explains why the intermediate state is meaningful evidence rather than a display glitch.
+For a manual exercise, use the **Control Centre** selected-device faceplate or [operator API](#eu-rtu-control-centre-apis) to select manual, verify feedback, and request one step. Capture the old completed tap with transient true, followed by the new completed tap with transient false. Compare the voltage change only after good post-motion measurement delivery. The [step telemetry article](#eu-iec104-step-telemetry) explains why the intermediate state is meaningful evidence rather than a display glitch.
 
 ### Limits
 

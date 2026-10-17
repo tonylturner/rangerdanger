@@ -846,7 +846,7 @@ noPlan: |
   Build a [plan](/exercises/{{planRole}}).
 tests:
 - kind: positive
-  text: CC→RTU:2404 — CC GI, GOOD values and advancing receipt times. Verify fresh application/device evidence, not only a socket.
+  text: CC→RTU:2404 — completed current-connection GI and non-null GOOD points received within the attempt. Quiet status does not need advancing receipt times; press Interrogate station in the Control Centre and validate again if the GI evidence is missing or outside the ten-minute window. Verify fresh application/device evidence, not only a socket.
 - kind: positive
   text: RTU→field:502 — fresh field points at CC. Verify fresh application/device evidence, not only a socket.
 - kind: positive
