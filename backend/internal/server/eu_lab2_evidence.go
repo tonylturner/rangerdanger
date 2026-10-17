@@ -10,8 +10,8 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
-// The latest CC link_up is the attempt boundary, not a policy name or range
-// boot. Periodic GIs do not restart it. A restart/reconnect requires new proof.
+// A current-connection GI is the attempt boundary. Periodic GIs do not restart
+// it, and a healthy persistent connection need not retain its link_up record.
 const conduitAttemptLimit = 10 * time.Minute
 
 type conduitPoint struct {
@@ -99,24 +99,31 @@ func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 	if ev.stateErr != nil || ev.journalErr != nil || ev.state == nil || ev.journal == nil {
 		return fail(fmt.Sprintf("CC state/journal unavailable: %v; %v", ev.stateErr, ev.journalErr))
 	}
-	if ev.state.Schema != 2 || ev.state.CacheEpoch == "" || ev.state.CacheEpoch != ev.journal.CacheEpoch || ev.state.Link.State != "started" {
+	if ev.state.Schema != 2 || ev.state.CacheEpoch == "" || ev.state.CacheEpoch != ev.journal.CacheEpoch || ev.state.Link.State != "started" || ev.state.Link.ConnectionSeq == 0 {
 		return fail("schema-2 state and journal must share a live CC cache epoch")
 	}
-	var up journalEntry
+	cap := ev.collectedAt.Add(-conduitAttemptLimit)
+	if cap.Before(ev.rangeStart) {
+		cap = ev.rangeStart
+	}
+	var anchor journalEntry
+	found := false
 	for _, entry := range ev.journal.Entries {
-		if entry.Kind == "link_up" && entry.Detail.ConnectionSeq != nil && *entry.Detail.ConnectionSeq == ev.state.Link.ConnectionSeq && entry.Seq > up.Seq {
-			up = entry
+		if entry.Kind != "gi_complete" || entry.Detail.ConnectionSeq == nil ||
+			*entry.Detail.ConnectionSeq != ev.state.Link.ConnectionSeq ||
+			entry.Seq < ev.journal.OldestSeq ||
+			!insideEvidenceWindow(entry.At, cap, ev.collectedAt) {
+			continue
+		}
+		if !found || entry.Seq < anchor.Seq {
+			anchor = entry
+			found = true
 		}
 	}
-	if up.Seq == 0 || up.Seq < ev.journal.OldestSeq || up.At.Before(ev.rangeStart) || !insideEvidenceWindow(up.At, ev.collectedAt.Add(-conduitAttemptLimit), ev.collectedAt) {
-		return fail("no retained link_up for the current connection within ten minutes; run the proof-window session cut and repeat operations")
+	if !found {
+		return fail("no retained completed GI for the current connection within ten minutes; refresh the operator connection and repeat the loop")
 	}
-	for _, entry := range ev.journal.Entries {
-		if entry.Kind == "gi_complete" && entry.Seq > up.Seq && entry.Detail.ConnectionSeq != nil && *entry.Detail.ConnectionSeq == *up.Detail.ConnectionSeq && insideEvidenceWindow(entry.At, up.At, ev.collectedAt) {
-			return up.At, checkPass(name, fmt.Sprintf("CC epoch %s connection %d: link_up %s then GI seq %d; attempt ends %s", ev.state.CacheEpoch, *up.Detail.ConnectionSeq, up.At.Format(time.RFC3339Nano), entry.Seq, ev.collectedAt.Format(time.RFC3339Nano)))
-		}
-	}
-	return fail("no completed GI after the current link_up")
+	return anchor.At, checkPass(name, fmt.Sprintf("CC epoch %s connection %d: completed GI seq %d at %s; attempt ends %s", ev.state.CacheEpoch, ev.state.Link.ConnectionSeq, anchor.Seq, anchor.At.Format(time.RFC3339Nano), ev.collectedAt.Format(time.RFC3339Nano)))
 }
 
 // Each frozen IOA must be represented exactly once. This is independent of

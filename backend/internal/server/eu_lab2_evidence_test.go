@@ -71,12 +71,13 @@ func TestConduitsEvidence(t *testing.T) {
 		{"CC disconnected", func(ev *conduitEvidence) { ev.state.Link.State = "disconnected" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"CC unavailable", func(ev *conduitEvidence) { ev.state = nil; ev.stateErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"journal unavailable", func(ev *conduitEvidence) { ev.journal = nil; ev.journalErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"journal truncated", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"link_up evicted, GI retained", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, nil},
 		{"no GI", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[:1] }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"old connection GI", func(ev *conduitEvidence) { n := uint64(1); ev.journal.Entries[1].Detail.ConnectionSeq = &n }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"pre-generation connection", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:30") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"expired attempt", func(ev *conduitEvidence) { ev.collectedAt = at("12:12:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"future GI", func(ev *conduitEvidence) { ev.journal.Entries[1].At = at("12:06:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"zero connection seq", func(ev *conduitEvidence) { ev.state.Link.ConnectionSeq = 0 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"missing point", func(ev *conduitEvidence) { ev.state.Points = ev.state.Points[1:] }, []int{1}},
 		{"duplicate point", func(ev *conduitEvidence) { ev.state.Points = append(ev.state.Points, ev.state.Points[0]) }, []int{1}},
 		{"stale quality", func(ev *conduitEvidence) { ev.state.Points[0].Quality.NT = true }, []int{1}},
@@ -157,6 +158,23 @@ func TestConduitsEvidence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConduitsSurvivesLinkUpEviction(t *testing.T) {
+	ev := passingConduits(t)
+	retained := ev.journal.Entries[:0]
+	for _, entry := range ev.journal.Entries {
+		if entry.Kind != "link_up" {
+			retained = append(retained, entry)
+		}
+	}
+	ev.journal.Entries = retained
+
+	for _, check := range evaluateConduits(ev) {
+		if check.Status != "pass" {
+			t.Errorf("proof failed without retained link_up: %+v", check)
+		}
 	}
 }
 
