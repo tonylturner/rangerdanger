@@ -59,10 +59,10 @@ func TestKnowledgeActivePackageWithoutHealthyRange(t *testing.T) {
 		for _, section := range got.Sections {
 			count += len(section.Articles)
 		}
-		// Both packages teach the same seven labs; EU carries extra
-		// IEC104/substation-specific deep-dive articles salvaged from its
-		// retired scenarios, so the counts differ by package.
-		wantArticles := map[string]int{usPackageID: 41, euPackageID: 45}
+		// Both packages teach the same seven labs. EU mirrors every US topic
+		// (IEC 104 for DNP3) and also carries IEC104/substation deep-dive
+		// articles salvaged from its retired scenarios, so the counts differ.
+		wantArticles := map[string]int{usPackageID: 41, euPackageID: 61}
 		if count != wantArticles[id] {
 			t.Fatalf("%s articles = %d, want %d", id, count, wantArticles[id])
 		}
