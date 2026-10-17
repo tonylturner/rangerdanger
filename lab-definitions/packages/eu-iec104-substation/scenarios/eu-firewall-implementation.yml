@@ -147,7 +147,17 @@ steps:
   title: Phase 5 - Validate allowed traffic
   expected_config: hardened
   description: |
-    Prove all six required operational intents, not merely open sockets. In the CC view require a fresh GI, GOOD non-null points and advancing receipt times. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request/motion after the policy change. If nominal regulation is quiescent, use the controlled CC manual→auto loop check in the package test instructions below; wait for completed feedback before each command. Check CC historian ingest and advancing archive samples separately from reader access.
+    Prove all six required operational intents, not merely open sockets. In the CC view require a fresh GI, GOOD non-null points and advancing receipt times. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
+
+    :::hint Use your live operator connection
+    The validator anchors the proof on your current operator connection's general interrogation, not on a forced reconnect. A healthy link that is minutes old is valid evidence — do not cut a working session just to pass. Refresh the link with the [documented session procedure](/knowledge#eu-established-sessions) only if your connection predates your evidence window (older than ten minutes) or GI is not current.
+    :::
+
+    **Package test instructions — controlled regulation loop.** When nominal regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the operator panel or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
+
+    1. Select **manual**: command `oltc-1-mode` → `manual`. Verify the auto feedback (IOA 1303) clears before continuing.
+    2. Request **one step** away from nominal: `oltc-1-step` → `lower` (or `raise`). Watch IOA 1301 go transient, then settle one tap away. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
+    3. Return to **auto**: `oltc-1-mode` → `auto`. Automatic control now issues a PLC-originated Modbus request back toward nominal. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
 
     From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
 
