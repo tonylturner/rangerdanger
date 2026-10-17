@@ -158,13 +158,37 @@ eu_lab_wait_good_cc() {
     30 "student route current CC GI and GOOD observations"
 }
 
+# After the manual->step->auto loop the PLC issues its own Modbus correction
+# back to the pre-loop tap. The firewall-implementation validator proves that
+# correction completed and solved, and samples fresh full-station telemetry
+# (oltc-1-bus-kv IOA 2301, oltc-1-current IOA 2302, plc-1-input-valid IOA
+# 1402). A steady-state predicate is already true before the PLC acts, so wait
+# for observations that only exist after the correction: the tap back at its
+# pre-loop position, received after the student's lower command.
+eu_lab_wait_regulated_cc() {
+  local pre_tap="$1" since="$2"
+  eu_fresh_points "point(\"oltc-1-tap\").value == {\"value\": $pre_tap, \"transient\": false}
+    and point(\"oltc-1-auto\").value == true and point(\"oltc-1-remote\").value == true
+    and point(\"plc-1-running\").value == true and point(\"plc-1-input-valid\").value == true
+    and (point(\"oltc-1-bus-kv\").value | type == \"number\")
+    and (point(\"oltc-1-current\").value | type == \"number\")" \
+    "$since" 60 "student regulation loop: PLC restores tap $pre_tap"
+}
+
 eu_lab_positive_conduits() {
+  local pre_tap since
   eu_lab_exec kali-1 'curl -fsS --max-time 3 http://10.70.70.40:8080/api/points' || return
   eu_lab_exec eng-ws-1 'curl -fsS --max-time 3 http://10.30.30.30:8080/login' || return
+  eu_get_operator || return
+  pre_tap=$(printf '%s' "$API_BODY" | jq -er '.points[] | select(.id == "oltc-1-tap") | .value.value | numbers') || {
+    fail "student regulation loop cannot read the pre-loop tap: $API_BODY"
+    return 1
+  }
   eu_lab_cc oltc-1-mode manual || return
   eu_lab_cc oltc-1-step lower || return
+  since=$(eu_utc) || return
   eu_lab_cc oltc-1-mode auto || return
-  eu_lab_wait_good_cc
+  eu_lab_wait_regulated_cc "$pre_tap" "$since"
 }
 
 eu_lab_implementation_walk() {
