@@ -46,6 +46,26 @@
           "id": "eu-historian",
           "title": "The historian DMZ: what is archived and what is not",
           "file": "eu-historian.md"
+        },
+        {
+          "id": "eu-hmi-scada",
+          "title": "HMI, SCADA and DCS supervisory layers",
+          "file": "eu-hmi-scada.md"
+        },
+        {
+          "id": "eu-power-factor-reactive-power",
+          "title": "Real power, reactive power and power factor",
+          "file": "eu-power-factor-reactive-power.md"
+        },
+        {
+          "id": "eu-reclosers",
+          "title": "Reclosers and auto-reclose (background)",
+          "file": "eu-reclosers.md"
+        },
+        {
+          "id": "eu-capacitor-banks",
+          "title": "Capacitor banks and reactive compensation (background)",
+          "file": "eu-capacitor-banks.md"
         }
       ]
     },
@@ -95,6 +115,21 @@
           "id": "eu-rtu-control-centre-apis",
           "title": "Operator APIs versus lab step actions",
           "file": "eu-rtu-control-centre-apis.md"
+        },
+        {
+          "id": "eu-ntp-ot",
+          "title": "OT time distribution: NTP, PTP and IRIG-B (background)",
+          "file": "eu-ntp-ot.md"
+        },
+        {
+          "id": "eu-iec61850-goose",
+          "title": "IEC 61850, GOOSE and Sampled Values (background)",
+          "file": "eu-iec61850-goose.md"
+        },
+        {
+          "id": "eu-opc-ua",
+          "title": "OPC UA in OT environments (background)",
+          "file": "eu-opc-ua.md"
         }
       ]
     },
@@ -262,6 +297,21 @@
           "id": "eu-regulation-deep-dive",
           "title": "Optional PLC regulation, historian and clock investigation",
           "file": "eu-regulation-deep-dive.md"
+        },
+        {
+          "id": "eu-live-firewall-events",
+          "title": "The Live DPI Events panel: L4 evidence, not DPI",
+          "file": "eu-live-firewall-events.md"
+        },
+        {
+          "id": "eu-plan-coverage-pipeline",
+          "title": "The plan-coverage pipeline across labs",
+          "file": "eu-plan-coverage-pipeline.md"
+        },
+        {
+          "id": "eu-containd-policy-enforcement",
+          "title": "containd L4 policy enforcement",
+          "file": "eu-containd-policy-enforcement.md"
         }
       ]
     },
@@ -301,6 +351,11 @@
           "id": "eu-acceptance-handover",
           "title": "Acceptance and handover",
           "file": "eu-acceptance-handover.md"
+        },
+        {
+          "id": "eu-outage-costs-saidi-saifi",
+          "title": "Reliability indices: SAIDI, SAIFI and CAIDI",
+          "file": "eu-outage-costs-saidi-saifi.md"
         }
       ]
     }
