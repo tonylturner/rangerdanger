@@ -40,8 +40,9 @@ REJECTED=$(printf '%s' "$RESULT" | jq -c '.result = "rejected" | .feedback = nul
 t_run check_result "$REJECTED" rejected
 t_expect_eq "$T_STATUS" 0 "a negative command confirmation is rejection, not failure or unknown"
 
-# Freshness is checked only for the requested observations; a cached final state
+# G1-G17 point windows apply only to requested observations; a cached final state
 # cannot pass, while unrelated devices need not emit a new status ASDU.
+eu_interrogate_since() { :; }
 eu_wait_for_operator() {
   printf '%s' "$OPERATOR" | jq -e "$EU_JQ_DEFS $1" >/dev/null 2>&1 || {
     fail "not fresh"; return 1;

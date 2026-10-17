@@ -8,7 +8,9 @@ EU_JQ_DEFS='
 def breaker_points: [.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)];
 def four_points: ([breaker_points[].id] | sort)
   == ["feeder-breaker-position","feeder-current","feeder-protection-trip","feeder-voltage"];
-def good: .quality.iv == false and .quality.nt == false and (.stale_reason == null or .stale_reason == "");
+def good: .value != null and .quality.iv == false and .quality.nt == false
+  and .quality.sb == false and .quality.bl == false and (.quality.ov == null or .quality.ov == false)
+  and .stale_reason == null;
 def all_good: four_points and all(breaker_points[]; good);
 def all_stale($reason): four_points
   and all(breaker_points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
@@ -223,15 +225,29 @@ eu_assert_operator_shape() {
     and (.snapshot_seq | type == "number" and . >= 0)
     and (.rendered_at | type == "string" and endswith("Z"))
     and (.link | type == "object" and has("state") and (has("local") | not))
+    and (.link.gi | keys == ["last_complete_at","next_due_at","started_at","state","trigger"]
+      and (.state == "none" or .state == "running" or .state == "complete")
+      and (.trigger == null or .trigger == "connect" or .trigger == "periodic" or .trigger == "operator")
+      and all(.started_at,.last_complete_at,.next_due_at; . == null or (type == "string" and endswith("Z"))))
     and (.points | length) == 31
-    and ([.points[] | {id,ioa,asdu}] | sort_by(.ioa))
-      == ([$expected[0].points[] | {id,ioa,asdu}] | sort_by(.ioa))
+    and ([.points[] | {id,ioa,kind}] | sort_by(.ioa))
+      == ([$expected[0].points[] | {id,ioa,kind}] | sort_by(.ioa))
     and all(.points[]; (.cot | type == "number") and has("source_time") and has("received_at")
-      and (.quality | all(.iv,.nt,.sb,.bl; type == "boolean"))
-      and (if .asdu == "M_ME_NC_1" or .asdu == "M_ST_TB_1"
+      and has("reporting")
+      and (.quality | keys == ["bl","iv","nt","ov","sb"] and all(.iv,.nt,.sb,.bl; type == "boolean"))
+      and (if .kind == "float" or .kind == "step-position"
         then (.quality.ov | type == "boolean") else .quality.ov == null end))
-    and all(.points[] | select(.asdu == "M_ME_NC_1"); .source_time == null)
-    and all(.points[] | select(.asdu == "M_ST_TB_1"); .value == null or
+    and all(.points[];
+      if .kind == "float" then .asdu == "M_ME_NC_1" and .source_time == null
+        and (.reporting | keys == ["cyclic_ms","deadband"]
+          and (.cyclic_ms | type == "number" and . >= 1000)
+          and (.deadband | type == "number" and . >= 0))
+      else .reporting == null and
+        (if .kind == "single-point" then .asdu == "M_SP_NA_1" or .asdu == "M_SP_TB_1"
+         elif .kind == "double-point" then .asdu == "M_DP_NA_1" or .asdu == "M_DP_TB_1"
+         else .asdu == "M_ST_NA_1" or .asdu == "M_ST_TB_1" end)
+      end)
+    and all(.points[] | select(.kind == "step-position"); .value == null or
       (.value | (.value | type == "number") and (.transient | type == "boolean")))
   ' >/dev/null 2>&1; then
     return 0
@@ -273,6 +289,38 @@ eu_get_point_snapshot() {
   '
 }
 
+# This explicit gate request is not the CC periodic scheduler. A GI can report
+# data received before ACT-TERM; completion, not receipt-age advancement, is the barrier.
+eu_interrogate_since() {
+  local boundary="$1" budget="$2" label="$3" requested epoch connection
+  eu_wait_for_operator '.link.state == "started" and .link.gi.state != "running"' "$budget" "$label idle GI" || return
+  epoch=$(printf '%s' "$WAIT_BODY" | jq -er '.cache_epoch') || return
+  connection=$(printf '%s' "$WAIT_BODY" | jq -er '.link.connection_seq') || return
+  eu_api_post /api/operator/gi '' || return
+  if [ "$HTTP_STATUS" != 202 ]; then
+    fail "$label operator GI not accepted: HTTP $HTTP_STATUS $API_BODY"; return 1
+  fi
+  requested=$(printf '%s' "$API_BODY" | jq -er --arg boundary "$boundary" "$EU_JQ_DEFS"'
+    select(.trigger == "operator" and (.requested_at | epoch) >= ($boundary | epoch)) | .requested_at') || {
+    fail "$label operator GI request predates settling"; return 1;
+  }
+  eu_wait_for_operator ".cache_epoch == \"$epoch\" and .link.connection_seq == $connection
+    and .link.state == \"started\" and .link.gi.state == \"complete\" and .link.gi.trigger == \"operator\"
+    and (.link.gi.started_at | epoch) >= (\"$requested\" | epoch)
+    and (.link.gi.last_complete_at | epoch) >= (.link.gi.started_at | epoch)" "$budget" "$label operator GI"
+}
+
+# Wait for solver delivery, then allow a full acquisition cycle before requesting
+# a snapshot. GI reads RTU cache; it does not synchronously acquire device truth.
+eu_settle_for_gi() {
+  eu_wait_for_field '.process.truth_stale == false and (.devices | length > 0)
+    and all(.devices[]; .moving != true and .measurements.valid == true)
+    and (. as $field | all(.devices[]; . as $device |
+      $field.process.devices[$device.device_id].delivered == true
+      and $field.process.devices[$device.device_id].solved_revision == $device.revision))' "$1" "$2 settled field" || return
+  sleep 2
+}
+
 # eu_baseline_mismatches OPERATOR FIELD: one line per disagreement between
 # the operator view, device truth and solver; no output means a GOOD baseline.
 # GI (COT 20) reports are untimed (contract §3.2), so a status point's time tag
@@ -280,14 +328,17 @@ eu_get_point_snapshot() {
 eu_baseline_mismatches() {
   printf '%s' "$1" | jq -r --argjson truth "$2" "$EU_JQ_DEFS"'
     def time_fits_cot:
-      if .cot == 20 then .source_time == null and .source_time_invalid == null
-      else (.source_time | type == "string" and length > 0)
+      if .cot == 20 then (.asdu == "M_SP_NA_1" or .asdu == "M_DP_NA_1" or .asdu == "M_ST_NA_1")
+        and .source_time == null and .source_time_invalid == null
+      else (.cot == 3 or .cot == 11)
+        and (.asdu == "M_SP_TB_1" or .asdu == "M_DP_TB_1" or .asdu == "M_ST_TB_1")
+        and (.source_time | type == "string" and length > 0)
         and (.source_time_invalid | type == "boolean")
       end;
     def pair($what; $operator; $device): "\($what): operator \($operator | tojson), truth \($device | tojson)";
     $truth.devices["breaker-1"] as $device | $truth.process as $solver
     | (if .link.state != "started" then "link state \(.link.state | tojson), expected started" else empty end),
-      (if .link.gi.state != "complete" then "GI state \(.link.gi.state | tojson), expected complete" else empty end),
+      (if .link.gi.last_complete_at == null then "GI integrity missing" else empty end),
       (if four_points then empty else "operator point ids \([.points[].id] | sort | tojson)" end),
       (.points[] | select(good | not)
         | "\(.id) not GOOD: iv=\(.quality.iv) nt=\(.quality.nt) stale_reason=\(.stale_reason | tojson)"),
@@ -316,7 +367,10 @@ eu_baseline_mismatches() {
 # eu_baseline_mismatches is empty; on timeout print every mismatch and both
 # last snapshots (BASELINE_OPERATOR, BASELINE_TRUTH).
 eu_wait_for_baseline() {
-  local label="$1" budget="$2" start_ms now_ms mismatches
+  local label="$1" budget="$2" start_ms now_ms mismatches boundary
+  eu_settle_for_gi "$budget" "$label" || return
+  boundary=$(eu_utc)
+  eu_interrogate_since "$boundary" "$budget" "$label" || return
   start_ms=$(eu_now_ms) || {
     fail "$label cannot establish monotonic timeout"
     return 1
@@ -385,8 +439,7 @@ eu_action() {
   pass "$node $action acknowledged"
 }
 eu_reset_all() {
-  local started
-  started=$(eu_utc)
+  local settled
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
   eu_api_post /api/workshop/reset '{}' || return
@@ -394,8 +447,10 @@ eu_reset_all() {
     '.actions | length >= 7 and all(.[]; .success == true)' >/dev/null; then
     fail "EU reset failed: HTTP $HTTP_STATUS $API_BODY"; return 1
   fi
-  eu_wait_for_operator ".link.state == \"started\" and all(.points[];
-    good and (.received_at | epoch) >= (\"$started\" | epoch))" 30 "reset fresh CC recovery"
+  eu_settle_for_gi 30 "reset" || return
+  settled=$(eu_utc)
+  eu_interrogate_since "$settled" 40 "reset CC recovery" || return
+  eu_wait_for_operator 'all(.points[]; good)' 10 "reset GOOD observations"
 }
 
 # The CC result and the device audit must independently prove this attempt.

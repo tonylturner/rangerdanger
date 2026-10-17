@@ -30,6 +30,12 @@ Ingest requires the complete CC schema-2 state (including `link`,
 unknown or duplicate keys, wrong types, unknown enums, non-UTC timestamps,
 nonfinite numbers, duplicate point ids/IOAs and bodies over 64 KiB get 400
 and increment `rejected_count`. At most 31 points are accepted per snapshot.
+GI is the five-field object `{state, trigger, started_at, last_complete_at,
+next_due_at}`. Points include `kind`, nullable received `asdu`, and `reporting`
+(null for status, `{cyclic_ms, deadband}` for floats). Value and overflow
+validation follow kind; received ASDU must be legal for that kind.
+`not_updated` is retained like other stale reasons. Quiet GOOD status is not
+stale because of receipt age; float freshness is expressed by CC quality.
 An accepted ingest returns 200 `{"accepted":true}`. Unknown routes return
 404; wrong methods on known routes return 405 (including HEAD and OPTIONS).
 These route/method errors do not increment the body-rejection counter.
@@ -40,7 +46,8 @@ body, as required by HTTP.
 
 ## Read API
 
-- `GET /api/points` returns `[{id, ioa, asdu, last}]`, sorted by id.
+- `GET /api/points` returns `[{id, ioa, kind, asdu, last}]`, sorted by id.
+  `asdu` is nullable and describes the latest received report, not configuration.
   `last` is the last retained sample of that point.
 - `GET /api/history?point=<id>&since=<UTC-RFC3339>&until=<UTC-RFC3339>`
   returns `{point, segments: [{cache_epoch, samples: [...]}], gaps: [{from,to}]}`.

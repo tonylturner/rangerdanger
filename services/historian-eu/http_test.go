@@ -144,7 +144,7 @@ func TestReadAPI(t *testing.T) {
 		t.Fatalf("sample wire fields: %+v", sample)
 	}
 	for _, p := range points {
-		if p.ID == "oltc-1-tap" && (p.IOA != 1301 || p.ASDU != "M_ST_TB_1" ||
+		if p.ID == "oltc-1-tap" && (p.IOA != 1301 || p.Kind != "step-position" || p.ASDU == nil || *p.ASDU != "M_ST_TB_1" ||
 			string(p.Last.Value) != `{"value":-3,"transient":true}`) {
 			t.Fatalf("last sample: %+v", p)
 		}

@@ -110,6 +110,7 @@ eu_monitor_start() {
   monitor_running=1
   # shellcheck disable=SC2016
   if ! docker exec -d "$KALI" sh -c '
+    # Explicit test/adversary client, not the CC periodic GI scheduler.
     iec104cmd "$1" monitor --json --hold 180 --gi-every 2 >"$2" 2>"$3" &
     child=$!
     printf "%s\n" "$child" >"$4"

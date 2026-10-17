@@ -74,6 +74,7 @@ docker() {
 eu_wait_for_operator() {
   printf 'operator %s\n' "$1" | tr -s ' \n' ' ' >>"$CALLS"
   printf '\n' >>"$CALLS"
+  if [ "$1" = '.link.state != "started"' ]; then LOSS_BUDGET="$2"; fi
   WAIT_BODY=$(cat "$T_FIXTURES/operator-gi-untimed.json")
 }
 eu_wait_for_field() {
@@ -110,6 +111,7 @@ eu_api_get() {
 }
 t_run eu_gate_G13
 t_expect_fails 0 "the G13 flow passes against an audit with both first_solve entries"
+t_expect_eq "$LOSS_BUDGET" "$(jq -r '.timers | .t3_s + .t1_s + 10' "$PACKAGE/protocols/points.json")" "G13 loss budget derives from t3+t1 plus ten seconds"
 t_run grep -E '^(policy|reset|field|audit|action|wait|docker (pause|unpause)|operator .link.state != )' "$CALLS"
 t_expect_eq "$T_OUT" "policy improved
 reset

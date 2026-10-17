@@ -11,8 +11,8 @@ eu_gate_G2() {
     return 1
   fi
   sleep 6
-  # The one-second GI can replace a timed event before the API is read. Prove
-  # the actual event on the wire, not whichever cache update won that race.
+  # A GI can replace a timed event before the API is read. Prove the
+  # actual event on the wire, not whichever cache update won that race.
   eu_window_start G2-invalid || return
   eu_wait_command open completed || return
   eu_window_finish G2-invalid || return

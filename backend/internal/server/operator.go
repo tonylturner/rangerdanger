@@ -121,3 +121,27 @@ func (s *Server) handleOperatorJournal(c *gin.Context) {
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", journal)
 }
+
+// handleOperatorGI requests interrogation once; only the CC link thread sends it.
+func (s *Server) handleOperatorGI(c *gin.Context) {
+	cc, ok := controlCentreURL(rangeOf(c))
+	if !ok {
+		notSupported(c)
+		return
+	}
+	status, answer, err := callUpstream(c.Request.Context(), http.MethodPost, cc+"/api/gi", nil, upstreamReadTimeout)
+	if err != nil {
+		upstreamFailed(c, fmt.Errorf("%s unreachable: %w", controlCentreService, err))
+		return
+	}
+	if status != http.StatusAccepted && status != http.StatusConflict && status != http.StatusServiceUnavailable {
+		upstreamFailed(c, &upstreamError{service: controlCentreService, status: status, body: answer})
+		return
+	}
+	result, err := jsonObject(controlCentreService, answer)
+	if err != nil {
+		upstreamFailed(c, err)
+		return
+	}
+	c.Data(status, "application/json; charset=utf-8", result)
+}

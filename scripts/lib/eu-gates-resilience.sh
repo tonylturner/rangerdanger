@@ -151,7 +151,8 @@ eu_gate_G12() {
 }
 
 eu_gate_G13() {
-  local connection_seq generation baseline cursor revisions="[]" active revision audit
+  local connection_seq generation baseline cursor revisions="[]" active revision audit loss_budget
+  loss_budget=$(jq -er '.timers | .t3_s + .t1_s + 10' "$PACKAGE/protocols/points.json") || return
   # Own the initial truth even if a previous gate aborted while tripped or
   # restrictive. The next direct fault action must change the device revision.
   eu_apply_named improved || return
@@ -204,8 +205,9 @@ eu_gate_G13() {
       ".generation == $generation and any(.entries[]; .operation == \"first_solve\" and .detail.revision == $revision)" \
       10 "G13 solver first_solve of device revision $revision while RTU paused" || break
   done
-  # Recovery must be a new connection: wait until the CC drops the paused RTU (t3 + t1).
-  if eu_wait_for_operator '.link.state != "started"' 30 "G13 CC link loss while RTU paused"; then
+  # G13: t3 (20 s) + t1 (15 s) + 10 s scheduling margin.
+  # Recovery must be a new connection after the CC drops the paused RTU.
+  if eu_wait_for_operator '.link.state != "started"' "$loss_budget" "G13 CC link loss while RTU paused"; then
     pass "G13 CC lost the IEC104 link to the paused RTU"
   fi
   eu_unpause_owned "$RTU" rtu "$rtu_paused" || return

@@ -17,8 +17,8 @@ func passingConduits(t *testing.T) conduitEvidence {
 		rangeStart: at("12:00:00"), collectedAt: at("12:05:00"),
 		state: decodeFixture[conduitState](t, `{"schema":2,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
 		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":6,"entries":[
-   {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"link_up","detail":{"connection_seq":2}},
-   {"seq":2,"at":"2026-10-09T12:01:01Z","kind":"gi_complete","detail":{"connection_seq":2}}]}`),
+   {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"gi_started","detail":{"connection_seq":2,"trigger":"connect"}},
+   {"seq":2,"at":"2026-10-09T12:01:01Z","kind":"gi_complete","detail":{"connection_seq":2,"trigger":"connect"}}]}`),
 		audit: decodeFixture[conduitAudit](t, `{"generation":42,"entries":[
    {"seq":1,"at":"2026-10-09T12:02:00Z","operation":"plc_request","result":"accepted","before":{"tap":0},"after":{"revision":2,"tap":0,"target_tap":1,"moving":true},"context":{"peer":"10.30.30.30:12345","protocol":"modbus"}},
    {"seq":2,"at":"2026-10-09T12:02:02Z","operation":"motion_complete","result":"accepted","after":{"revision":3,"tap":1,"target_tap":1,"moving":false}},
@@ -43,7 +43,7 @@ func passingConduits(t *testing.T) conduitEvidence {
 		case ioa >= 2000:
 			value = json.RawMessage(`20.0`)
 		}
-		point := conduitPoint{ccPoint: ccPoint{ID: fmt.Sprint(ioa), Value: value, ReceivedAt: at("12:04:59")}, IOA: ioa}
+		point := conduitPoint{ccPoint: ccPoint{ID: fmt.Sprint(ioa), Value: value, ReceivedAt: at("12:01:00")}, IOA: ioa}
 		ev.state.Points = append(ev.state.Points, point)
 	}
 
@@ -71,7 +71,7 @@ func TestConduitsEvidence(t *testing.T) {
 		{"CC disconnected", func(ev *conduitEvidence) { ev.state.Link.State = "disconnected" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"CC unavailable", func(ev *conduitEvidence) { ev.state = nil; ev.stateErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"journal unavailable", func(ev *conduitEvidence) { ev.journal = nil; ev.journalErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"link_up evicted, GI retained", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, nil},
+		{"start evicted", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"no GI", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[:1] }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"old connection GI", func(ev *conduitEvidence) { n := uint64(1); ev.journal.Entries[1].Detail.ConnectionSeq = &n }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"pre-generation connection", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:30") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
@@ -82,7 +82,8 @@ func TestConduitsEvidence(t *testing.T) {
 		{"duplicate point", func(ev *conduitEvidence) { ev.state.Points = append(ev.state.Points, ev.state.Points[0]) }, []int{1}},
 		{"stale quality", func(ev *conduitEvidence) { ev.state.Points[0].Quality.NT = true }, []int{1}},
 		{"null is not zero", func(ev *conduitEvidence) { ev.state.Points[0].Value = json.RawMessage(`null`) }, []int{1}},
-		{"old receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:04:56") }, []int{1}},
+		{"quiet GOOD receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:01:00") }, nil},
+		{"GI own receipt before completion", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:01:00").Add(500 * time.Millisecond) }, nil},
 		{"pre-attempt receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:00:59") }, []int{1}},
 		{"future receipt", func(ev *conduitEvidence) { ev.state.Points[0].ReceivedAt = at("12:05:01") }, []int{1}},
 		{"audit unavailable", func(ev *conduitEvidence) { ev.audit = nil; ev.auditErr = errors.New("unavailable") }, []int{2}},
@@ -200,13 +201,53 @@ func TestConduitsDenyMatrix(t *testing.T) {
 
 func TestConduitsPeriodicGIDoesNotRestartAttempt(t *testing.T) {
 	ev := passingConduits(t)
-	entry := ev.journal.Entries[1]
-	entry.Seq = 6
-	entry.At = ev.collectedAt.Add(-time.Second)
-	ev.journal.Entries = append(ev.journal.Entries, entry)
+	started, complete := ev.journal.Entries[0], ev.journal.Entries[1]
+	started.Seq, complete.Seq = 5, 6
+	started.At, complete.At = ev.collectedAt.Add(-2*time.Second), ev.collectedAt.Add(-time.Second)
+	ev.journal.Entries = append(ev.journal.Entries, started, complete)
 	for _, check := range evaluateConduits(ev) {
 		if check.Status != "pass" {
 			t.Errorf("periodic GI invalidated proof: %+v", check)
 		}
+	}
+}
+
+func TestConduitsGIAnchor(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*conduitEvidence)
+		pass   bool
+	}{
+		{"quiet GI receipt before completion", func(*conduitEvidence) {}, true},
+		{"start missing", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[1:] }, false},
+		{"start after completion sequence", func(ev *conduitEvidence) { ev.journal.Entries[0].Seq = 3 }, false},
+		{"start after completion time", func(ev *conduitEvidence) { ev.journal.Entries[0].At = at("12:01:02") }, false},
+		{"GI starts before boundary", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:00").Add(500 * time.Millisecond) }, false},
+		{"GI outside ten minute cap", func(ev *conduitEvidence) { ev.collectedAt = at("12:12:00") }, false},
+		{"later running periodic GI", func(ev *conduitEvidence) {
+			entry := ev.journal.Entries[0]
+			entry.Seq = 5
+			entry.At = at("12:04:00")
+			ev.journal.Entries = append(ev.journal.Entries, entry)
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := passingConduits(t)
+			tc.mutate(&ev)
+			start, check := conduitWindow(ev)
+			if (check.Status == "pass") != tc.pass {
+				t.Fatalf("%+v", check)
+			}
+			if tc.pass {
+				if !start.Equal(at("12:01:00")) {
+					t.Fatalf("anchor = %s", start)
+				}
+				if check := conduitPolls(ev, start); check.Status != "pass" {
+					t.Fatal(check)
+				}
+			} else if !strings.Contains(check.Detail, "Interrogate station") {
+				t.Fatal(check)
+			}
+		})
 	}
 }

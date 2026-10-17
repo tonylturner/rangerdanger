@@ -10,9 +10,49 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ccStateFixture is a CC GET /api/state in the contract shape (§6, §13: no
-// link.local).
-const ccStateFixture = `{"schema":1,"cache_epoch":"c0ffee01","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-09T12:00:01Z","last_rx_at":"2026-10-09T12:05:00Z","connection_seq":2,"gi":{"state":"complete","started_at":"2026-10-09T12:00:01Z","completed_at":"2026-10-09T12:00:02Z"}},"points":[{"id":"feeder-breaker-position","ioa":1001,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-09T12:00:01Z","source_time_invalid":false,"received_at":"2026-10-09T12:00:02Z","cot":20}]}`
+// ccStateFixture is the schema-2 contract after a connect GI.
+const ccStateFixture = `{
+  "schema": 2,
+  "cache_epoch": "c0ffee01",
+  "link": {
+    "state": "started",
+    "peer": "10.30.30.20:2404",
+    "since": "2026-10-09T12:00:01Z",
+    "last_rx_at": "2026-10-09T12:05:00Z",
+    "connection_seq": 2,
+    "gi": {
+      "state": "complete",
+      "started_at": "2026-10-09T12:00:01Z",
+      "last_complete_at": "2026-10-09T12:00:02Z",
+      "trigger": "connect",
+      "next_due_at": "2026-10-09T12:15:01Z"
+    }
+  },
+  "points": [
+    {
+      "id": "feeder-breaker-position",
+      "ioa": 1001,
+      "asdu": "M_DP_NA_1",
+      "value": "closed",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T12:00:01.5Z",
+      "cot": 20,
+      "kind": "double-point",
+      "reporting": null
+    }
+  ],
+  "snapshot_seq": 1,
+  "rendered_at": "2026-10-09T12:05:00Z"
+}`
 
 const ccCommandResult = `{"id":"7","status":"completed","select":{"status":"confirmed","at":"2026-10-09T12:01:00Z"},"execute":{"status":"confirmed","at":"2026-10-09T12:01:00.2Z","terminated_at":"2026-10-09T12:01:00.6Z"},"feedback":{"status":"matched","value":"open","received_at":"2026-10-09T12:01:00.5Z"},"error":null}`
 
@@ -117,6 +157,7 @@ func TestOperatorAndSimRoutesNeedTheirServices(t *testing.T) {
 		{http.MethodGet, "/api/operator/state", "", s.handleOperatorState},
 		{http.MethodPost, "/api/operator/commands", `{"point":"feeder-breaker-command","operation":"open"}`, s.handleOperatorCommand},
 		{http.MethodGet, "/api/operator/journal", "", s.handleOperatorJournal},
+		{http.MethodPost, "/api/operator/gi", "", s.handleOperatorGI},
 		{http.MethodGet, "/api/field/state", "", s.handleFieldState},
 		{http.MethodGet, "/api/field/audit", "", s.handleFieldAudit},
 		{http.MethodGet, "/api/historian/points", "", s.handleHistorianPoints},
@@ -132,5 +173,71 @@ func TestOperatorAndSimRoutesNeedTheirServices(t *testing.T) {
 		if rec, body := rangeRequest(routed, route.method, route.path, route.body); rec.Code != http.StatusNotFound || body["error"] != notSupportedMessage {
 			t.Errorf("routed %s %s on US = %d %s", route.method, route.path, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestOperatorGI(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		status, want int
+		body         string
+	}{
+		{"accepted", 202, 202, `{"trigger":"operator","requested_at":"2026-10-09T12:01:00Z"}`},
+		{"running", 409, 409, `{"error":"interrogation already running"}`},
+		{"link down", 503, 503, `{"error":"link not started"}`},
+		{"unexpected success", 200, 502, `{}`},
+		{"upstream failure", 500, 502, `{"error":"failed"}`},
+		{"invalid body", 202, 502, `accepted`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub, cc := newUpstreamStub(t, map[string]stubResponse{"POST /api/gi": {tc.status, tc.body}})
+			s := rangeServer(euGeneration(t, nil, map[string]string{"control_centre": cc.URL}), "weak")
+			rec := callRoute(s, s.handleOperatorGI, http.MethodPost, "/api/operator/gi", "/api/operator/gi", "")
+			if rec.Code != tc.want {
+				t.Fatalf("GI = %d %s", rec.Code, rec.Body)
+			}
+			if tc.want != 502 && rec.Body.String() != tc.body {
+				t.Fatalf("GI body = %s", rec.Body)
+			}
+			if len(stub.bodies) != 1 || stub.bodies[0] != "" {
+				t.Fatalf("GI requests = %q", stub.bodies)
+			}
+		})
+	}
+}
+
+func TestWorkshopGIIntegrity(t *testing.T) {
+	for _, tc := range []struct{ state, last, want string }{
+		{"none", "null", "none"},
+		{"running", "null", "running"},
+		{"complete", `"2026-10-09T12:00:02Z"`, "complete"},
+		{"running", `"2026-10-09T12:00:02Z"`, "complete"},
+	} {
+		t.Run(tc.state+tc.last, func(t *testing.T) {
+			var state map[string]any
+			if err := json.Unmarshal([]byte(ccStateFixture), &state); err != nil {
+				t.Fatal(err)
+			}
+			gi := state["link"].(map[string]any)["gi"].(map[string]any)
+			gi["state"] = tc.state
+			var last any
+			if err := json.Unmarshal([]byte(tc.last), &last); err != nil {
+				t.Fatal(err)
+			}
+			gi["last_complete_at"] = last
+			body, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, cc := newUpstreamStub(t, map[string]stubResponse{"GET /api/state": {200, string(body)}})
+			status := controlCentreLinkStatus(t.Context(), cc.URL)
+			if status.GI == nil || *status.GI != tc.want {
+				t.Fatalf("status = %+v", status)
+			}
+		})
+	}
+	status := controlCentreLinkStatus(t.Context(), closedURL(t))
+	if status.GI != nil || status.Link != nil {
+		t.Fatalf("unavailable status = %+v", status)
 	}
 }

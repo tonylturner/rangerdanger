@@ -40,10 +40,11 @@ func (s snapshot) sample(p point) sample {
 }
 
 type pointLast struct {
-	ID   string `json:"id"`
-	IOA  uint32 `json:"ioa"`
-	ASDU string `json:"asdu"`
-	Last sample `json:"last"`
+	ID   string  `json:"id"`
+	IOA  uint32  `json:"ioa"`
+	Kind string  `json:"kind"`
+	ASDU *string `json:"asdu"`
+	Last sample  `json:"last"`
 }
 
 type segment struct {
@@ -124,7 +125,7 @@ func (s *store) points() []pointLast {
 	for i := 0; i < s.size; i++ {
 		frame := s.ring[(s.start+i)%len(s.ring)]
 		for _, p := range frame.points {
-			latest[p.ID] = pointLast{ID: p.ID, IOA: p.IOA, ASDU: p.ASDU, Last: frame.sample(p)}
+			latest[p.ID] = pointLast{ID: p.ID, IOA: p.IOA, Kind: p.Kind, ASDU: p.ASDU, Last: frame.sample(p)}
 		}
 	}
 	result := make([]pointLast, 0, len(latest))

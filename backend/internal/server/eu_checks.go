@@ -81,27 +81,17 @@ func euSupply(state *euWorkshopProcess, now time.Time) (bool, error) {
 	return present, nil
 }
 
-// A persistent healthy connection need not be cut every ten minutes just to
-// check health. GI must belong to the current connection and cache epoch;
-// freshness belongs to received observations, not the age of link_up.
+// Integrity requires a matched current-connection GI within the attempt cap.
+// Receipt age does not invalidate quiet GOOD status.
 func euLink(state *conduitState, journal *ccJournal, start, now time.Time) ValidationCheck {
-	const name = "Fresh CC link, GI and station observations"
-	fail := func() ValidationCheck {
-		return checkFail(name, "missing current-connection GI or fresh GOOD station observations")
+	const name = "CC link, GI and GOOD station observations"
+	ev := conduitEvidence{state: state, journal: journal, rangeStart: start, collectedAt: now}
+	anchor, window := conduitWindow(ev)
+	if anchor.IsZero() {
+		window.Name = name
+		return window
 	}
-	if state == nil || journal == nil || state.Schema != 2 || state.CacheEpoch == "" || state.CacheEpoch != journal.CacheEpoch || state.Link.State != "started" || state.Link.ConnectionSeq == 0 {
-		return fail()
-	}
-	gi := false
-	for _, entry := range journal.Entries {
-		if entry.Kind == "gi_complete" && entry.Detail.ConnectionSeq != nil && *entry.Detail.ConnectionSeq == state.Link.ConnectionSeq && insideEvidenceWindow(entry.At, start, now) {
-			gi = true
-		}
-	}
-	if !gi {
-		return fail()
-	}
-	check := conduitPolls(conduitEvidence{state: state, collectedAt: now}, start)
+	check := conduitPolls(ev, anchor)
 	check.Name = name
 	return check
 }
