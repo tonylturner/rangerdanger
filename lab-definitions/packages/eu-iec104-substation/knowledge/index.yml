@@ -144,6 +144,31 @@
           "id": "eu-change-resource-plan",
           "title": "Planning a change: resources, rollback and acceptance",
           "file": "eu-change-resource-plan.md"
+        },
+        {
+          "id": "eu-segmentation-approaches",
+          "title": "Segmentation approaches and their limits",
+          "file": "eu-segmentation-approaches.md"
+        },
+        {
+          "id": "eu-purdue-model",
+          "title": "The Purdue model and the EU range",
+          "file": "eu-purdue-model.md"
+        },
+        {
+          "id": "eu-default-deny",
+          "title": "Default-deny policy patterns",
+          "file": "eu-default-deny.md"
+        },
+        {
+          "id": "eu-iec62443-security-levels",
+          "title": "IEC 62443 security levels",
+          "file": "eu-iec62443-security-levels.md"
+        },
+        {
+          "id": "eu-ics-dpi",
+          "title": "ICS deep packet inspection",
+          "file": "eu-ics-dpi.md"
         }
       ]
     },
