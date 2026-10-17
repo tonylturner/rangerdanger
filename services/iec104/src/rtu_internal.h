@@ -45,6 +45,7 @@ typedef struct {
     DoublePointValue repDp;
     bool repSp;
     float repF;
+    uint64_t nextCyclic, lastValueEvent;
 } PointRT;
 
 typedef struct {
@@ -133,6 +134,8 @@ QualityDescriptor rtu_point_quality(const PointRT* rt, const PmPoint* p);
 IMasterConnection rtu_conn_for_peer(const char* peerStr);
 void rtu_report_point(int idx, CS101_CauseOfTransmission cot);
 void rtu_evaluate_and_report(void);
+void rtu_report_cyclic(uint64_t now);
+void rtu_report_gi(IMasterConnection conn, int oa);
 void rtu_apply_connection_events(void);
 
 /* Command helpers: caller holds rtu.lock. */

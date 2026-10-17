@@ -228,9 +228,7 @@ cc_command_run(int cmdIndex, int dcs, const char* operation, cJSON** body)
         return 503;
     }
     const CcPoint* fb = &cc.points[c->feedback_index];
-    const PmDevice* dev = &cc.pm->devices[c->device_index];
-    if (!fb->hasValue || fb->iv || fb->nt || fb->receivedMono == 0 ||
-        cc_mono_ms() - fb->receivedMono >= (uint64_t)dev->stale_after_ms) {
+    if (!cc.link.giCompletedAt[0] || !fb->hasValue || fb->iv || fb->nt) {
         pthread_mutex_unlock(&cc.lock);
         *body = error_body("feedback is stale or invalid");
         return 409;

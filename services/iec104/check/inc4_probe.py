@@ -138,13 +138,20 @@ def main():
         print("PASS DROP: every healthy peer's actual poll gaps <= poll_ms + 250 ms")
         return
     if action == "stale":
-        # RTU has been paused, before link t1 expiry. Real cached point age must refuse.
-        time.sleep(3.3)
+        # Fake Modbus device is paused; the live RTU reports source NT.
+        until(lambda: pt(get_json(CC, "/api/state"), "oltc-1-tap")["quality"]["nt"])
         assert get_json(CC, "/api/state")["link"]["state"] == "started"
         command("oltc-1-step", "raise", status=409)
         print("PASS freshness refusal before select while IEC104 link still started")
         return
 
+    # A quiet status well past its former 3 s age cutoff remains eligible.
+    old = pt(get_json(CC, "/api/state"), "rmu-2-position")["received_at"]
+    time.sleep(4)
+    quiet = pt(get_json(CC, "/api/state"), "rmu-2-position")
+    assert quiet["received_at"] == old and good(quiet), quiet
+    command("rmu-2-command", "open")
+    print("PASS quiet GOOD status remains command-eligible without a new GI")
     s = get_json(CC, "/api/state")
     assert s["schema"] == 2 and s["snapshot_seq"] > 0 and s["rendered_at"].endswith("Z")
     assert len(s["points"]) == 31 and all(good(p) for p in s["points"]), s

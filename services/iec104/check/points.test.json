@@ -154,7 +154,8 @@
         "table": "input",
         "address": 3,
         "format": "f32"
-      }
+      },
+      "cyclic_ms": 2000
     },
     {
       "id": "feeder-voltage",
@@ -169,7 +170,8 @@
         "table": "input",
         "address": 5,
         "format": "f32"
-      }
+      },
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-1-position",
@@ -235,7 +237,8 @@
       },
       "unit": "A",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-1-section-kv",
@@ -250,7 +253,8 @@
       },
       "unit": "kV",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-1-source-kv",
@@ -265,7 +269,8 @@
       },
       "unit": "kV",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-2-position",
@@ -331,7 +336,8 @@
       },
       "unit": "A",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-2-section-kv",
@@ -346,7 +352,8 @@
       },
       "unit": "kV",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "rmu-2-source-kv",
@@ -361,7 +368,8 @@
       },
       "unit": "kV",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "oltc-1-tap",
@@ -457,7 +465,8 @@
       },
       "unit": "kV",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "oltc-1-current",
@@ -472,7 +481,8 @@
       },
       "unit": "A",
       "measurement": true,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "plc-1-running",
@@ -514,7 +524,8 @@
       },
       "unit": "kV",
       "measurement": false,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "plc-1-deadband-pct",
@@ -530,7 +541,8 @@
       },
       "unit": "%",
       "measurement": false,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     },
     {
       "id": "plc-1-delay-s",
@@ -546,7 +558,8 @@
       },
       "unit": "s",
       "measurement": false,
-      "deadband": 0.05
+      "deadband": 0.05,
+      "cyclic_ms": 2000
     }
   ],
   "commands": [
@@ -615,5 +628,6 @@
       },
       "feedback": "oltc-1-auto"
     }
-  ]
+  ],
+  "gi_interval_ms": 60000
 }

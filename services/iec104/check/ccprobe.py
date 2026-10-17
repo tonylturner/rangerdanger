@@ -67,7 +67,7 @@ def link(s):
 
 
 def good(p):
-    return p["stale_reason"] is None and not p["quality"]["iv"] and not p["quality"]["nt"]
+    return p["value"] is not None and p["stale_reason"] is None and not any(p["quality"].values())
 
 
 def all_good(s):

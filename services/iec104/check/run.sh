@@ -81,6 +81,7 @@ snap() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --j
 rm -rf "$OUT"; mkdir -p "$OUT"; cleanup
 
 log "build the iec104 image"
+docker build -f "$SVC/Dockerfile" --target model-check "$ROOT" >"$OUT/model-check.log" 2>&1 || exit 1
 docker build -q -f "$SVC/Dockerfile" -t "$BASEIMG" "$ROOT" >/dev/null || exit 1
 docker build -q -f "$HERE/Dockerfile" --build-arg "BASE_IMAGE=$BASEIMG" -t "$IMG" "$HERE" >/dev/null || exit 1
 docker run --rm --network none -v "$HERE:/check:ro" --entrypoint python3 "$IMG" -I /check/loader_checks.py || exit 1

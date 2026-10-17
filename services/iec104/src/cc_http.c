@@ -35,6 +35,8 @@ reason_phrase(int status)
     switch (status) {
     case 200:
         return "OK";
+    case 202:
+        return "Accepted";
     case 400:
         return "Bad Request";
     case 404:

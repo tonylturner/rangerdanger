@@ -53,6 +53,19 @@ cases = [
     lambda d: d["points"][2]["source"].update(scale=0.1),
     lambda d: d["devices"][0]["measurements_valid"].update(address=11),
 ]
+# Each new field: required, type, inclusive boundaries, and kind restriction.
+for key, low, high in [("gi_interval_ms", 60000, 86400000), ("cyclic_ms", 1000, 3600000)]:
+    def target(d, key=key):
+        return d if key == "gi_interval_ms" else d["points"][2]
+    cases.append(lambda d, key=key, target=target: target(d).pop(key))
+    for bad in (None, True, "1000", 1000.5, low - 1, high + 1):
+        cases.append(lambda d, key=key, bad=bad, target=target: target(d).update({key: bad}))
+    for boundary in (low, high):
+        data = copy.deepcopy(original)
+        target(data)[key] = boundary
+        run(data, True)
+for idx in (0, 1, 18):
+    cases.append(lambda d, idx=idx: d["points"][idx].update(cyclic_ms=1000))
 run(original, True)
 signed = copy.deepcopy(original)
 signed["points"][2]["source"].update(format="i16", scale=0.1)
@@ -61,4 +74,4 @@ for change in cases:
     data = copy.deepcopy(original)
     change(data)
     run(data)
-print(f"PASS {len(cases) + 2} loader cases")
+print(f"PASS {len(cases) + 6} loader cases")

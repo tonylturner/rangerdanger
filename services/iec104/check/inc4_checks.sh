@@ -1,6 +1,11 @@
 # shellcheck shell=bash
 # Increment-4 checks, sourced with the existing throwaway RTU and CC.
 docker network connect --ip 172.28.104.40 "$NET" "$PROBE"
+if docker exec "$PROBE" python3 /app/reporting_probe.py >"$OUT/reporting-probe.log" 2>&1; then
+  pass "packed cyclic/GI traffic, deadband/rate limit, quality bypass and operator GI"
+else
+  fail "reporting profile (reporting-probe.log)"
+fi
 inc4_probe() { docker exec "$PROBE" python3 /app/inc4_probe.py "$@"; }
 if inc4_probe main >"$OUT/inc4-probe.log" 2>&1; then
   pass "increment 4: schema, RMU/OLTC SBO, transient VTI, budgets, ambiguous write, heartbeat, historian"
@@ -18,14 +23,14 @@ fi
 docker exec "$RTU" iptables -D OUTPUT -d 172.28.104.21 -p tcp --dport 502 -j DROP
 probe wait 10 "all_good(s) and good(pt(s,'rmu-1-position'))" >/dev/null || fail "RMU DROP recovery"
 
-log "increment 4: freshness refusal before select (still-started link)"
-docker pause "$RTU" >/dev/null
+log "increment 4: NT refusal before select (still-started link)"
+docker pause "$OLTC" >/dev/null
 if inc4_probe stale >"$OUT/inc4-stale.log" 2>&1; then
   pass "stale feedback refused with 409 before select while link remained started"
 else
   fail "stale feedback refusal (inc4-stale.log)"
 fi
-docker unpause "$RTU" >/dev/null
+docker unpause "$OLTC" >/dev/null
 probe wait 15 "all_good(s)" >/dev/null || fail "post-pause recovery"
 
 docker rm -f "$MON" >/dev/null

@@ -31,7 +31,7 @@
 #define CC_PEER_LEN 64
 #define CC_EPOCH_LEN 17 /* 16 hex digits + NUL */
 
-typedef enum { CC_STALE_NONE, CC_STALE_NEVER, CC_STALE_LINK, CC_STALE_DEVICE, CC_STALE_MEASUREMENT, CC_STALE_HEARTBEAT } CcStale;
+typedef enum { CC_STALE_NONE, CC_STALE_NEVER, CC_STALE_LINK, CC_STALE_DEVICE, CC_STALE_MEASUREMENT, CC_STALE_HEARTBEAT, CC_STALE_NOT_UPDATED } CcStale;
 
 typedef enum { CC_LINK_DISCONNECTED, CC_LINK_CONNECTING, CC_LINK_STARTED } CcLinkState;
 
@@ -51,6 +51,7 @@ typedef struct {
     char sourceTime[CC_STAMP_LEN]; /* "" for untimed reports */
     bool sourceTimeInvalid;
     char receivedAt[CC_STAMP_LEN];
+    TypeID asdu; /* 0 until received */
     int cot; /* -1 until received */
 } CcPoint;
 
@@ -113,6 +114,10 @@ typedef struct {
     char giStartedAt[CC_STAMP_LEN];
     char giCompletedAt[CC_STAMP_LEN];
     bool giFailed;
+    const char* giTrigger;
+    const char* giPending; /* reservation; only the link thread sends */
+    uint64_t giStartedMono, giNextMono;
+    char giNextAt[CC_STAMP_LEN];
 
     /* per-attempt outcome flags, reset by the link thread before each attempt */
     bool attemptOpened;
@@ -152,6 +157,7 @@ bool cc_state_init(const PointMap* pm, const char* peer, char* err, size_t errLe
 
 uint64_t cc_mono_ms(void);
 void cc_stamp_now(char out[CC_STAMP_LEN]);
+void cc_stamp_after_ms(int ms, char out[CC_STAMP_LEN]);
 
 /* Caller holds. Waits on cc.cond until woken or deadlineMono passes; false on timeout. */
 bool cc_wait_until(uint64_t deadlineMono);
@@ -178,7 +184,10 @@ void cc_on_ended(void);
 /* ---- link-thread transitions (lock) -------------------------------- */
 
 void cc_link_begin_attempt(void);
-void cc_gi_begin(void);
+/* Caller holds. Reserves a due GI atomically with HTTP requests; NULL if not due. */
+const char* cc_gi_tick_locked(uint64_t now);
+/* Caller holds; used on every short link tick, regardless of GI cadence. */
+void cc_watchdog_locked(uint64_t now);
 
 /* ---- HTTP renderers (lock) ----------------------------------------- */
 

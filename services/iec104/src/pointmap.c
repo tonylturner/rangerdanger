@@ -312,7 +312,7 @@ static bool
 parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
 {
     static const char* const keys[] = {"id",   "ioa",         "kind", "asdu", "unit",
-                                        "deadband", "measurement", "source", NULL};
+                                        "deadband", "cyclic_ms", "measurement", "source", NULL};
     static const char* const srckeys[] = {"device", "table", "address", "format", "bit", "scale", "transient", NULL};
 
     if (!cJSON_IsObject(p))
@@ -343,6 +343,12 @@ parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
     }
     if (pt->kind != PM_KIND_FLOAT && (pt->has_deadband || pt->measurement))
         return fail(e, "point %s: \"deadband\"/\"measurement\" apply only to float points", pt->id);
+
+    if (pt->kind == PM_KIND_FLOAT) {
+        if (!get_int(e, p, "point", "cyclic_ms", 1000, 3600000, &pt->cyclic_ms))
+            return false;
+    } else if (cJSON_GetObjectItemCaseSensitive(p, "cyclic_ms"))
+        return fail(e, "point %s: \"cyclic_ms\" applies only to float points", pt->id);
 
     const cJSON* src = required(e, p, "point", "source");
     if (!src)
@@ -475,7 +481,7 @@ pointmap_load(const char* path, char* err, size_t errLen)
     }
 
     static const char* const rootkeys[] = {"schema",  "ca",     "timers",   "select_timeout_ms",
-                                            "reconnect_interval_ms", "clock",  "devices",  "points",
+                                            "reconnect_interval_ms", "gi_interval_ms", "clock",  "devices",  "points",
                                             "commands", NULL};
 
     bool ok = cJSON_IsObject(root) && only_keys(&e, root, "root", rootkeys) &&
@@ -483,6 +489,7 @@ pointmap_load(const char* path, char* err, size_t errLen)
               get_int(&e, root, "root", "ca", 1, 65535, &pm->ca) && parse_timers(&e, root, pm) &&
               get_int(&e, root, "root", "select_timeout_ms", 1, 600000, &pm->select_timeout_ms) &&
               get_int(&e, root, "root", "reconnect_interval_ms", 1, 600000, &pm->reconnect_interval_ms) &&
+              get_int(&e, root, "root", "gi_interval_ms", 60000, 86400000, &pm->gi_interval_ms) &&
               parse_clock(&e, root, pm);
 
     /* devices */

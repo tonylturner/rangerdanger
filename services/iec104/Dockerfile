@@ -56,12 +56,29 @@ RUN set -eux; \
     CFLAGS="-std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror -Isrc -I/src/cjson -I/opt/lib60870/include"; \
     LIBS="/opt/lib60870/lib/liblib60870.a -lpthread -lm"; \
     cc $CFLAGS -o /out/iec104-rtu \
-        src/rtu.c src/rtu_server.c src/rtu_poll.c src/rtu_command.c \
+        src/rtu.c src/rtu_reporting.c src/rtu_server.c src/rtu_poll.c src/rtu_command.c \
         src/common.c src/pointmap.c src/modbus.c src/stationclock.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104-cc \
-        src/cc.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c src/cc_historian.c \
+        src/cc.c src/cc_gi.c src/cc_state.c src/cc_link.c src/cc_command.c src/cc_http.c src/cc_api.c src/cc_historian.c \
         src/common.c src/pointmap.c /src/cjson/cJSON.c $LIBS; \
     cc $CFLAGS -o /out/iec104cmd  src/iec104cmd.c src/common.c src/client.c $LIBS
+
+FROM build AS model-check
+COPY services/iec104/check/model_checks.c services/iec104/check/points.test.json /src/check/
+COPY services/iec104/check/rtu_model_checks.c /src/check/
+RUN cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror \
+    -Isrc -I/src/cjson -I/opt/lib60870/include \
+    -o /out/model-check /src/check/model_checks.c \
+    src/cc_state.c src/cc_gi.c src/cc_api.c src/cc_command.c src/cc_http.c \
+    src/common.c src/pointmap.c /src/cjson/cJSON.c \
+    /opt/lib60870/lib/liblib60870.a -lpthread -lm \
+ && /out/model-check /src/check/points.test.json
+RUN cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror \
+    -Isrc -I/src/cjson -I/opt/lib60870/include \
+    -o /out/rtu-model-check /src/check/rtu_model_checks.c \
+    src/rtu_reporting.c src/common.c /opt/lib60870/lib/liblib60870.a \
+    -Wl,--wrap=Hal_getMonotonicTimeInMs -lpthread -lm \
+ && /out/rtu-model-check
 
 FROM alpine:3.22@${ALPINE_DIGEST}
 

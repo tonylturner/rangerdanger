@@ -80,10 +80,10 @@ start_cc "$CC2" "$CC2_IP" "$CC2_HTTP_IP" "$GPS_IP:2404"
 sleep 7   # several reconnect attempts at reconnect_interval_ms=2000
 cc2() { docker exec "$PROBE" python3 -I /app/ccprobe.py "http://$CC2_HTTP_IP:8080" "$@"; }
 if cc2 wait 5 "link(s)!='started' and s['link']['connection_seq']==0 and s['link']['last_rx_at'] is None \
-     and s['link']['gi']=={'state':'none','started_at':None,'completed_at':None} \
+     and s['link']['gi']=={'state':'none','trigger':None,'started_at':None,'last_complete_at':None,'next_due_at':None} \
      and [(e['kind'],e['detail']) for e in j['entries']]==[('link_down',{'peer':'$GPS_IP:2404','connection_seq':0,'reason':'connect_failed'})] \
      and all(p['value'] is None and p['stale_reason']=='never_received' and p['quality']['iv'] and p['quality']['nt'] \
-       and p['received_at'] is None and p['cot'] is None and p['source_time'] is None for p in s['points'])" \
+       and p['asdu'] is None and p['received_at'] is None and p['cot'] is None and p['source_time'] is None for p in s['points'])" \
   >"$OUT/cc2-state-never.json" && cc2 cmd open | grep -q '^503 {"error":"link not started"}$'; then
   pass "CC: unreachable RTU -> exactly one link_down connect_failed, points never_received (null value), 503"
 else
@@ -273,9 +273,9 @@ probe get "/api/journal?after=0" | cut -d' ' -f2- >"$OUT/cc-journal.json"
 probe get "/api/journal?after=5" | cut -d' ' -f2- >"$OUT/cc-journal-after5.json"
 probe get /api/state | cut -d' ' -f2- >"$OUT/cc-state-final.json"
 epoch="$(jget "$OUT/cc-state-baseline.json" "d['cache_epoch']")"
-details="{'link_up':{'peer','connection_seq'},'link_down':{'peer','connection_seq','reason'},'gi_started':{'connection_seq'}, \
-  'gi_complete':{'connection_seq','points_good'},'point_stale':{'point','stale_reason','value'},'point_good':{'point','value'}, \
-  'command':{'id','point','operation','result','reason','selected_at','executed_at','con_at','term_at','feedback'}}"
+details="{'link_up':{'peer','connection_seq'},'link_down':{'peer','connection_seq','reason'},'gi_started':{'connection_seq','trigger'}, \
+  'gi_complete':{'connection_seq','points_good','trigger'},'point_stale':{'point','stale_reason','value'},'point_good':{'point','value'}, \
+  'status_event':{'id','ioa','asdu','cot','value','source_time','source_time_invalid'},'command':{'id','point','operation','result','reason','selected_at','executed_at','con_at','term_at','feedback'}}"
 if jtest "$OUT/cc-journal.json" "d['cache_epoch']=='$epoch' and d['oldest_seq']==1 \
      and d['latest_seq']==d['entries'][-1]['seq'] and [e['seq'] for e in d['entries']]==list(range(1,d['latest_seq']+1)) \
      and all(set(e)=={'seq','at','kind','detail'} and set(e['detail'])==${details}[e['kind']] for e in d['entries'])" \

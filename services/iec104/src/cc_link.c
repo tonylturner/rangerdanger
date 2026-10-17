@@ -90,11 +90,8 @@ decode_report(TypeID type, InformationObject io, CcReport* r)
         if (type == M_ST_TB_1) t = StepPositionWithCP56Time2a_getTimestamp((StepPositionWithCP56Time2a)io);
         break;
     case M_ME_NC_1:
-    case M_ME_TF_1:
         r->f = MeasuredValueShort_getValue((MeasuredValueShort)io);
         r->q = MeasuredValueShort_getQuality((MeasuredValueShort)io);
-        if (type == M_ME_TF_1)
-            t = MeasuredValueShortWithCP56Time2a_getTimestamp((MeasuredValueShortWithCP56Time2a)io);
         break;
     default:
         return false;
@@ -238,12 +235,6 @@ started_alive(void)
 }
 
 static bool
-gi_settled(void)
-{
-    return cc.link.gi == CC_GI_COMPLETE || cc.link.giFailed || cc.link.attemptEnded;
-}
-
-static bool
 ended(void)
 {
     return cc.link.attemptEnded;
@@ -332,50 +323,33 @@ run_session(volatile sig_atomic_t* stop)
         return;
     }
 
-    cc_gi_begin();
-    pthread_mutex_lock(&ioLock);
-    bool sent = CS104_Connection_sendInterrogationCommand(con, CS101_COT_ACTIVATION, pm->ca, IEC60870_QOI_STATION);
-    pthread_mutex_unlock(&ioLock);
-    rd_log("sent station GI ca=%d", pm->ca);
-
-    /* GI ACT-CON and ACT-TERM each within t1 */
-    bool settled = sent && wait_for(gi_settled, 2 * t1Ms, stop);
-    if (*stop)
-        return;
-    pthread_mutex_lock(&cc.lock);
-    bool giOk = cc.link.gi == CC_GI_COMPLETE;
-    bool gone = cc.link.attemptEnded;
-    pthread_mutex_unlock(&cc.lock);
-    if (!giOk && !gone) {
-        rd_log("GI %s; closing the session", settled ? "rejected" : "not completed within 2*t1");
-        close_session("io_error");
-        return;
-    }
-
-    uint64_t refreshMs = 1000;
-    for (int i = 0; i < pm->n_devices; i++) {
-        uint64_t half = (uint64_t)pm->devices[i].stale_after_ms / 2;
-        if (half < refreshMs) refreshMs = half;
-    }
-    uint64_t lastGi = cc_mono_ms();
-    while (!*stop && !wait_for(ended, refreshMs, stop)) {
-        if (cc_mono_ms() - lastGi >= refreshMs) {
-            pthread_mutex_lock(&cc.lock);
-            bool refresh = cc.link.gi == CC_GI_COMPLETE;
-            bool failed = cc.link.giFailed || (cc.link.gi == CC_GI_RUNNING && cc_mono_ms() - lastGi >= 2 * t1Ms);
-            pthread_mutex_unlock(&cc.lock);
-            if (failed) {
+    while (!*stop) {
+        pthread_mutex_lock(&cc.lock);
+        uint64_t now = cc_mono_ms();
+        bool gone = cc.link.attemptEnded;
+        bool failed = cc.link.giFailed || (cc.link.gi == CC_GI_RUNNING &&
+            now - cc.link.giStartedMono >= 2 * t1Ms);
+        cc_watchdog_locked(now);
+        const char* trigger = !gone && !failed ? cc_gi_tick_locked(now) : NULL;
+        pthread_mutex_unlock(&cc.lock);
+        if (gone) break;
+        if (failed) {
+            close_session("io_error");
+            return;
+        }
+        if (trigger) {
+            pthread_mutex_lock(&ioLock);
+            bool sent = CS104_Connection_sendInterrogationCommand(con, CS101_COT_ACTIVATION,
+                pm->ca, IEC60870_QOI_STATION);
+            pthread_mutex_unlock(&ioLock);
+            rd_log("sent station GI ca=%d trigger=%s sent=%d", pm->ca, trigger, sent);
+            /* Preserve initial send-failure closure; later send failures time out. */
+            if (!sent && strcmp(trigger, "connect") == 0) {
                 close_session("io_error");
                 return;
             }
-            if (refresh) {
-                cc_gi_begin();
-                pthread_mutex_lock(&ioLock);
-                CS104_Connection_sendInterrogationCommand(con, CS101_COT_ACTIVATION, pm->ca, IEC60870_QOI_STATION);
-                pthread_mutex_unlock(&ioLock);
-                lastGi = cc_mono_ms();
-            }
         }
+        if (wait_for(ended, 100, stop)) break;
     }
     if (!*stop)
         close_session(NULL);
