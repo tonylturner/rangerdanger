@@ -37,6 +37,12 @@ export type ViewState = "ok" | "lost" | "recovering" | "degraded" | "not-establi
 export function hasCurrentConnectionGi({ since, gi }: ControlCentreLink): boolean {
   return since !== null && gi.last_complete_at !== null && Date.parse(gi.last_complete_at) >= Date.parse(since);
 }
+// IV alone can mean an electrically undefined measurement, not loss of view.
+export function pointObservationNotCurrent(p: OperatorPoint): boolean {
+  return p.value === null || p.quality.nt ||
+    p.stale_reason === "link_lost" || p.stale_reason === "device_unreachable" ||
+    p.stale_reason === "heartbeat" || p.stale_reason === "not_updated" || p.stale_reason === "never_received";
+}
 export function scadaViewState(state: OperatorState | undefined, unavailable = false): ViewState {
   if (unavailable) return "unavailable";
   if (!state) return "not-established";
@@ -45,7 +51,7 @@ export function scadaViewState(state: OperatorState | undefined, unavailable = f
     return received ? "lost" : "not-established";
   }
   if (!hasCurrentConnectionGi(state.link)) return "recovering";
-  return state.points.length > 0 && state.points.every((p) => pointCondition(p) === "good") ? "ok" : "degraded";
+  return state.points.length > 0 && !state.points.some(pointObservationNotCurrent) ? "ok" : "degraded";
 }
 
 export function receivedAuthority(points: OperatorPoint[], device: DeviceId, unavailable = false): "LOCAL" | "REMOTE" | "not established" {

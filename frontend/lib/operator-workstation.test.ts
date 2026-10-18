@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeAlarms, abnormalConditions, deviceCommsHealth, devicePoints, receivedAuthority, regulationBand, scadaViewState, DEVICES } from "./operator-workstation";
+import { activeAlarms, abnormalConditions, deviceCommsHealth, devicePoints, pointObservationNotCurrent, receivedAuthority, regulationBand, scadaViewState, DEVICES } from "./operator-workstation";
 import { BOOT_STATE, FEEDER_STATE, LOST_LINK_STATE, PERIODIC_GI_STATE, WATCHDOG_STATE } from "./operator-fixtures.test-util";
 import { pointCondition } from "./operator-format";
 
@@ -102,15 +102,43 @@ describe("view establishment", () => {
     state.link.gi.last_complete_at = null;
     expect(scadaViewState(state)).toBe("recovering");
   });
-  it("requires every inventory point GOOD, including the indication-only F2 bay", () => {
+  it("requires current observations, not all quality flags GOOD, across the inventory including F2", () => {
     for (const point of FEEDER_STATE.points) {
       for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
         const state = { ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
-        expect(scadaViewState(state)).toBe("degraded");
+        expect(scadaViewState(state)).toBe(flag === "nt" ? "degraded" : "ok");
       }
       expect(scadaViewState({ ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, value: null } : p) })).toBe("degraded");
     }
     expect(scadaViewState({ ...FEEDER_STATE, points: [] })).toBe("degraded");
+  });
+  it.each(["link_lost", "device_unreachable", "heartbeat", "not_updated", "never_received"] as const)("counts %s as loss of observation even without NT", (stale_reason) => {
+    const state = structuredClone(FEEDER_STATE);
+    const point = state.points.find((p) => p.id === "feeder-pf")!;
+    point.stale_reason = stale_reason;
+    expect(pointObservationNotCurrent(point)).toBe(true);
+    expect(scadaViewState(state)).toBe("degraded");
+  });
+  it("keeps the view intact when CB1 opens and power factor is electrically undefined", () => {
+    const state = structuredClone(FEEDER_STATE);
+    state.points.find((p) => p.id === "feeder-breaker-position")!.value = "open";
+    state.points.find((p) => p.id === "feeder-current")!.value = 0;
+    const point = state.points.find((p) => p.id === "feeder-pf")!;
+    point.value = 0; // RTU encodes NaN as zero with IV, without NT.
+    point.quality = { ...point.quality, iv: true, nt: false };
+    point.stale_reason = "measurement_invalid";
+    expect(pointObservationNotCurrent(point)).toBe(false);
+    expect(scadaViewState(state)).toBe("ok");
+    point.quality.nt = true;
+    expect(pointObservationNotCurrent(point)).toBe(true);
+    expect(scadaViewState(state)).toBe("degraded");
+    point.quality.nt = false;
+    point.value = null;
+    expect(pointObservationNotCurrent(point)).toBe(true);
+    expect(scadaViewState(state)).toBe("degraded");
+    point.value = 0;
+    point.stale_reason = "device_unreachable";
+    expect(scadaViewState(state)).toBe("degraded");
   });
   it.each(DEVICES)("distinguishes unreachable %s observations after GI from recovery without GI", (device) => {
     const state = structuredClone(FEEDER_STATE);
