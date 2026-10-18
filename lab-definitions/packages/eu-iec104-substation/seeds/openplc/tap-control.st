@@ -17,9 +17,7 @@ PROGRAM TapControl
     Heartbeat AT %MW5 : UINT;
   END_VAR
   VAR
-    Remaining : UINT;
     Band : UDINT;
-    DelayMS : UDINT;
     Stale : TON;
     Delay : TON;
     PreviousHeartbeat : UINT;
@@ -66,9 +64,10 @@ PROGRAM TapControl
   IF Permitted THEN Status := Status OR WORD#4; END_IF;
   Setpoint := 20400;
   Deadband := 10;
+  (* matiec converts integers to TIME as seconds, so the delay stays a
+     literal; ConfiguredDelay reports the same value in seconds. *)
   ConfiguredDelay := 30;
   Band := UINT_TO_UDINT(Setpoint) * UINT_TO_UDINT(Deadband) / 1000;
-  DelayMS := UINT_TO_UDINT(ConfiguredDelay) * 1000;
 
   Direction := 0;
   IF Permitted THEN
@@ -79,13 +78,11 @@ PROGRAM TapControl
     Pending := FALSE;
   END_IF;
   Delay(IN := (Direction <> 0) AND (Direction = PreviousDirection)
-              AND NOT Pending, PT := UDINT_TO_TIME(DelayMS));
+              AND NOT Pending, PT := T#30s);
   PreviousDirection := Direction;
   Request := 0;
-  Remaining := 0;
   IF Direction <> 0 THEN
     IF NOT Pending THEN
-      Remaining := UDINT_TO_UINT((DelayMS - TIME_TO_UDINT(Delay.ET) + 999) / 1000);
       IF Delay.Q THEN
         StartTap := Tap;
         EncodedTarget := INT_TO_UINT(100 + Tap + Direction);

@@ -39,9 +39,10 @@ overcurrent, IR1 bit 5). A generation change or an
 unarmed result cancels the demand, writing zero to allow device-side arming.
 Never infer freshness from retained `%IW` values alone.
 
-An out-of-band demand must persist in the same direction for the configured 30 seconds. The TON preset is derived from `%MW3`,
-and thresholds derive from `%MW1` ± `%MW1` × `%MW2` / 1000
-(20196–20604 V). `Remaining` is internal and is not telemetered.
+An out-of-band demand must persist in the same direction for the configured 30 seconds. The TON preset is the literal `T#30s` and `%MW3` reports
+the same value: matiec converts integers to `TIME` as seconds, not
+milliseconds, so a computed preset would silently be wrong. Thresholds derive from `%MW1` ± `%MW1` × `%MW2` / 1000
+(20196–20604 V).
 An outstanding absolute request is not recalculated if voltage changes
 direction; it is cleared on inhibition, no demand, or completion. A new
 delay follows the step. Requests are zero at boot and whenever inhibited.
