@@ -38,6 +38,7 @@ def test_one_vector_per_tick_per_device_measurements(tmp_path):
     loop = make_loop(tmp_path)
     state = tick(loop)
     assert state['schema'] == 3 and state['solve_seq'] == 1
+    assert set(state['buses']) == {'bus20', 's1', 's2', 's3'}
     assert not state['truth_stale']
     assert len(loop.client.gets) == len(loop.client.posts) == 4
     for payload in loop.client.posts:

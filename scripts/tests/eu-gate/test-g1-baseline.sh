@@ -13,6 +13,12 @@ edit_truth() {
   printf '%s' "$TRUTH" | jq -c "$1"
 }
 
+t_run jq -e '.process.buses.s1.kv != .devices["breaker-1"].measurements.voltage_kv_ll' <<<"$TRUTH"
+t_expect_fails 0 "CB1 line-side VT fixture is distinct from the S1 process bus"
+t_run jq -e '[.points[] | select(.id == "feeder-voltage" or .id == "rmu-1-source-kv")
+  | [.id, .value]] | from_entries | .["feeder-voltage"] != .["rmu-1-source-kv"]' <<<"$OPERATOR"
+t_expect_fails 0 "operator feeder VT is distinct from RMU1's S1 source voltage"
+
 t_run eu_baseline_mismatches "$OPERATOR" "$TRUTH"
 t_expect_eq "$T_OUT" "" "untimed GI (COT 20, null source_time) agreeing with truth has no mismatch"
 t_run eu_assert_operator_shape "$OPERATOR" "fixture"

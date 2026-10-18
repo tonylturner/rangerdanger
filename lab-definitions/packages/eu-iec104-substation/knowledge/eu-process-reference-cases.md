@@ -17,6 +17,11 @@ The feeder is a reduced, **CIGRE-derived teaching model**, not the CIGRE benchma
 | Source 0.90 p.u., tap +8 | Bus 19.91245230 kV, still below band |
 | Source 1.10 p.u., tap −6 | Bus 20.38198681 kV, inside band |
 
+The reference samples also distinguish the CB1 line-side VT at f1 from S1:
+at nominal tap 0 they are 19.91346435 kV and 19.70587545 kV, respectively;
+at the settled tap +2 they are 20.42919735 kV and 20.22759677 kV. The S1
+reading is RMU1's source-side measurement.
+
 These schema-3 reference cases start at tap zero with the daily profile disabled. Positive tap raises solved voltage through the 110 kV winding tap ratio, giving an asymmetric +11.1% / −9.1% MV range. The high-source case settles at −6; requiring it to reach −8 would be the wrong acceptance criterion. The low-source case genuinely exhausts the +8 range without returning to the band.
 
 ### Match inputs before comparing outputs

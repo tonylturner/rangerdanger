@@ -27,39 +27,53 @@
   "nominal": {
     "tap": 0,
     "bus20_kv": 19.91346435,
+    "feeder_voltage_kv": 19.91346435,
+    "s1_kv": 19.70587545,
     "in_band": false
   },
   "nominal_trace": [
     {
       "tap": 0,
       "bus20_kv": 19.91346435,
+      "feeder_voltage_kv": 19.91346435,
+      "s1_kv": 19.70587545,
       "in_band": false
     },
     {
       "tap": 1,
       "bus20_kv": 20.16808162,
+      "feeder_voltage_kv": 20.16808162,
+      "s1_kv": 19.96348466,
       "in_band": false
     },
     {
       "tap": 2,
       "bus20_kv": 20.42919735,
+      "feeder_voltage_kv": 20.42919735,
+      "s1_kv": 20.22759677,
       "in_band": true
     }
   ],
   "steady_state": {
     "tap": 2,
     "bus20_kv": 20.42919735,
+    "feeder_voltage_kv": 20.42919735,
+    "s1_kv": 20.22759677,
     "in_band": true
   },
   "tap_polarity": {
     "lower": {
       "tap": -1,
       "bus20_kv": 19.66508827,
+      "feeder_voltage_kv": 19.66508827,
+      "s1_kv": 19.45449794,
       "in_band": false
     },
     "raise": {
       "tap": 1,
       "bus20_kv": 20.16808162,
+      "feeder_voltage_kv": 20.16808162,
+      "s1_kv": 19.96348467,
       "in_band": false
     }
   },
@@ -67,16 +81,22 @@
     {
       "tap": 0,
       "bus20_kv": 19.68483441,
+      "feeder_voltage_kv": 19.68483441,
+      "s1_kv": 19.01754069,
       "in_band": false
     },
     {
       "tap": 1,
       "bus20_kv": 19.93924213,
+      "feeder_voltage_kv": 19.93924213,
+      "s1_kv": 19.27448681,
       "in_band": false
     },
     {
       "tap": 2,
       "bus20_kv": 20.20260102,
+      "feeder_voltage_kv": 20.20260102,
+      "s1_kv": 19.54501773,
       "in_band": true
     }
   ],
@@ -84,46 +104,64 @@
     {
       "tap": 0,
       "bus20_kv": 17.91605153,
+      "feeder_voltage_kv": 17.91605153,
+      "s1_kv": 17.71711556,
       "in_band": false
     },
     {
       "tap": 1,
       "bus20_kv": 18.14258144,
+      "feeder_voltage_kv": 18.14258144,
+      "s1_kv": 17.94082135,
       "in_band": false
     },
     {
       "tap": 2,
       "bus20_kv": 18.37492192,
+      "feeder_voltage_kv": 18.37492192,
+      "s1_kv": 18.17027011,
       "in_band": false
     },
     {
       "tap": 3,
       "bus20_kv": 18.6132894,
+      "feeder_voltage_kv": 18.61328939,
+      "s1_kv": 18.40567107,
       "in_band": false
     },
     {
       "tap": 4,
       "bus20_kv": 18.85792424,
+      "feeder_voltage_kv": 18.85792424,
+      "s1_kv": 18.6472583,
       "in_band": false
     },
     {
       "tap": 5,
       "bus20_kv": 19.10919739,
+      "feeder_voltage_kv": 19.10919739,
+      "s1_kv": 18.89540624,
       "in_band": false
     },
     {
       "tap": 6,
       "bus20_kv": 19.36868475,
+      "feeder_voltage_kv": 19.36868475,
+      "s1_kv": 19.15441873,
       "in_band": false
     },
     {
       "tap": 7,
       "bus20_kv": 19.63686966,
+      "feeder_voltage_kv": 19.63686966,
+      "s1_kv": 19.42593949,
       "in_band": false
     },
     {
       "tap": 8,
       "bus20_kv": 19.9124523,
+      "feeder_voltage_kv": 19.9124523,
+      "s1_kv": 19.70485018,
       "in_band": false
     }
   ],
@@ -131,36 +169,50 @@
     {
       "tap": 0,
       "bus20_kv": 21.91835432,
+      "feeder_voltage_kv": 21.91835432,
+      "s1_kv": 21.71924826,
       "in_band": false
     },
     {
       "tap": -1,
       "bus20_kv": 21.64784963,
+      "feeder_voltage_kv": 21.64784963,
+      "s1_kv": 21.45119512,
       "in_band": false
     },
     {
       "tap": -2,
       "bus20_kv": 21.38394783,
+      "feeder_voltage_kv": 21.38394783,
+      "s1_kv": 21.189695,
       "in_band": false
     },
     {
       "tap": -3,
       "bus20_kv": 21.12554513,
+      "feeder_voltage_kv": 21.12554513,
+      "s1_kv": 20.93157154,
       "in_band": false
     },
     {
       "tap": -4,
       "bus20_kv": 20.8719069,
+      "feeder_voltage_kv": 20.8719069,
+      "s1_kv": 20.67521244,
       "in_band": false
     },
     {
       "tap": -5,
       "bus20_kv": 20.62408391,
+      "feeder_voltage_kv": 20.62408391,
+      "s1_kv": 20.42467357,
       "in_band": false
     },
     {
       "tap": -6,
       "bus20_kv": 20.38198681,
+      "feeder_voltage_kv": 20.38198681,
+      "s1_kv": 20.17984906,
       "in_band": true
     }
   ],

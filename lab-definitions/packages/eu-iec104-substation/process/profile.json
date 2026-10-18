@@ -21,7 +21,7 @@
     "fault_s1": "Fault.S1",
     "fault_s2": "Fault.S2"
   },
-  "buses": {"hv": "hv", "bus20": "bus20", "s1": "s1", "s2": "s2", "s3": "s3"},
+  "buses": {"hv": "hv", "bus20": "bus20", "f1": "f1", "s1": "s1", "s2": "s2", "s3": "s3"},
   "solve_interval_ms": 1000,
   "request_timeout_ms": 500,
   "truth_stale_after_ms": 3000,

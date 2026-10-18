@@ -23,6 +23,7 @@ def test_reference_cases_match_active_circuit_and_schema3_requirements(solver):
     assert cases == json.loads((PROCESS_DIR / 'reference-cases.json').read_text())
     assert cases['status'] == 'passed'
     assert all(cases['checks'].values())
+    assert cases['nominal']['feeder_voltage_kv'] > cases['nominal']['s1_kv']
     assert cases['source_1_10_settle_tap'] < 0
     assert cases['triple_load'][0]['bus20_kv'] < cases['band_kv'][0]
     assert cases['triple_load'][-1]['in_band']
@@ -30,6 +31,10 @@ def test_reference_cases_match_active_circuit_and_schema3_requirements(solver):
     result = solver.solve(truths(), ProcessControls(profile_enabled=False))
     assert result['converged']
     assert result['buses']['bus20']['kv'] == pytest.approx(cases['nominal']['bus20_kv'], abs=1e-7)
+    assert result['measurements']['feeder-breaker']['voltage_kv_ll'] == pytest.approx(
+        cases['nominal']['feeder_voltage_kv'], abs=1e-7)
+    assert result['measurements']['rmu-1']['source_kv_ll'] == pytest.approx(
+        cases['nominal']['s1_kv'], abs=1e-7)
     assert solver.solution_frequency_hz == 50
 
 
@@ -86,11 +91,36 @@ def test_ring_solves_meshed_network_and_side_voltages(solver):
     assert ring['converged']
     assert all(b['live'] for b in ring['buses'].values())
     assert ring['buses']['s2']['kv'] > radial['buses']['s2']['kv']
-    for key, source, section in [('feeder-breaker', 'bus20', 's1'),
+    for key, source, section in [('feeder-breaker', 'bus20', 'f1'),
                                  ('rmu-1', 's1', 's2'), ('rmu-2', 's3', 's2')]:
         assert ring['measurements'][key]['source_kv_ll'] == ring['buses'][source]['kv']
-        assert ring['measurements'][key]['voltage_kv_ll'] == ring['buses'][section]['kv']
+        expected = solver._bus(section) if section == 'f1' else ring['buses'][section]
+        assert ring['measurements'][key]['voltage_kv_ll'] == expected['kv']
     assert ring['measurements']['oltc-1']['source_kv_ll'] > 100
+
+
+@pytest.mark.parametrize('breaker,rmu1,rmu2,live', [
+    ('closed', 'closed', 'open', True),
+    ('open', 'closed', 'open', False),
+    ('open', 'closed', 'closed', True),
+])
+def test_cb1_line_side_liveness_preserves_switch_interlock_sides(
+        solver, breaker, rmu1, rmu2, live):
+    vector = truths()
+    vector['feeder-breaker']['position'] = breaker
+    vector['rmu-1']['position'] = rmu1
+    vector['rmu-2']['position'] = rmu2
+    result = solver.solve(vector, ProcessControls(profile_enabled=False))
+    cb1 = result['measurements']['feeder-breaker']
+
+    assert result['buses']['s1']['live'] is live
+    assert solver._bus('f1')['live'] is result['buses']['s1']['live']
+    assert cb1['section_live'] is result['buses']['s1']['live']
+    assert cb1['source_live'] is result['buses']['bus20']['live']
+    if breaker == 'open' and rmu2 == 'closed':
+        # G15's "reverse feed S1 through tie" state leaves both CB1 sides live.
+        # The unchanged switch interlock therefore rejects a close as live_live.
+        assert cb1['source_live'] and cb1['section_live']
 
 
 def test_f2_latch_does_not_invent_a_dead_s3_if_ring_backfeeds_it(solver):

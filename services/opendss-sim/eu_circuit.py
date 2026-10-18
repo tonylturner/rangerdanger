@@ -95,7 +95,7 @@ class EUFeederSolver:
                 return {"converged": False, "solved_at": solved_at}
             buses = {key: self._bus(name) for key, name in self.profile.buses.items()}
             sides = {
-                "feeder-breaker": ("bus20", "s1"), "rmu-1": ("s1", "s2"),
+                "feeder-breaker": ("bus20", "f1"), "rmu-1": ("s1", "s2"),
                 "rmu-2": ("s3", "s2"), "oltc-1": ("hv", "bus20"),
             }
             measurements = {}

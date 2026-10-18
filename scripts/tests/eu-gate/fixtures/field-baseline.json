@@ -17,7 +17,7 @@
     "buses": {
       "s1": {
         "live": true,
-        "kv": 19.93
+        "kv": 19.77
       }
     },
     "fault_section": "none",

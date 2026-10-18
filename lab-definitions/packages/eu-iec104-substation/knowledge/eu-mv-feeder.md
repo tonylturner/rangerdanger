@@ -14,6 +14,8 @@ The normal arrangement is:
 
 Both RMUs call S2 their **section** side. RMU1's source side is S1; RMU2's source side is S3. These names describe fixed measurement locations, not the direction current must always flow. After back-feeding, current can reverse without the point names changing.
 
+CB1's `feeder-voltage` is its line-side VT at bus f1, before the 2.82 km Section1. It is not the S1 bus voltage: S1 is reported by RMU1's source-side point, `rmu-1-source-kv`. CB1's `section_live` follows f1; Section1 joins f1 and S1, so their liveness is the same even when supply reverses through the tie.
+
 ### Physics and protection are separate responsibilities
 
 The solver reads every field device's truth, solves one consistent vector and posts measurements back to each device. The configured solve interval is 1000 ms. Devices reject measurements calculated from an obsolete truth revision; a trip or other revision change can trigger one immediate correction solve within the tick. This prevents the displayed post-trip circuit from being fabricated by simply forcing current to zero.

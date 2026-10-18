@@ -127,6 +127,10 @@ solver epoch/sequence/UTC time, `current_a`, `voltage_kv_ll`, `source_kv_ll`,
 revision during receipt. Stale truth and replay return 409; invalid input
 returns 400. Measurements expire after 3 seconds, and any truth revision
 immediately invalidates them. Last known voltage/current remain visible, not fresh zeros; invalid P/Q/PF are null.
+For the EU feeder, CB1's `voltage_kv_ll` / `section_live` use its line-side VT
+at bus f1; S1 voltage is `rmu-1-source-kv` from RMU1's source side. The
+solver uses f1 internally while the public `.process.buses` map remains
+`bus20`, `s1`, `s2`, and `s3`.
 
 The sim listener exposes `GET /api/state`, `/api/health`, `/api/audit?after=N`
 and `POST /api/sim/actions` with exactly `{"action":"<name>"}`. Audit contexts

@@ -262,6 +262,9 @@ for `feeder-voltage` and the four RMU section/source voltage points. A GOOD
 point above 0.1 kV alarms strictly outside its limits; equality is normal.
 Zero/de-energised, bad quality, or a return within limits clears that process
 alarm; bad quality remains visible separately in Points/Alarms.
+`feeder-voltage` is the CB1 line-side VT at f1, before the 2.82 km Section1;
+the S1 bus voltage is reported by RMU1's source-side point
+`rmu-1-source-kv`.
 
 Device comms health uses points grouped by `device`: a non-started link
 means `link_down`; every point `device_unreachable`/`never_received` means

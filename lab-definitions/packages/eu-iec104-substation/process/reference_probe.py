@@ -23,6 +23,14 @@ class Probe:
         self.engine.Text.Command(f"Edit Vsource.Source pu={source_pu}")
         self.engine.Solution.LoadMult(load_multiplier)
 
+    def _bus_voltage(self, bus: str) -> float:
+        self.engine.Circuit.SetActiveBus(bus)
+        phasors = self.engine.Bus.VLL()
+        kv = sum(math.hypot(*phasors[i : i + 2]) for i in range(0, 6, 2)) / 3000
+        if not math.isfinite(kv):
+            raise RuntimeError(f"Nonfinite voltage at {bus}")
+        return kv
+
     def sample(self, tap: int) -> dict:
         # Positive operator tap reduces the HV turns ratio, raising MV voltage.
         self.engine.Text.Command(
@@ -31,15 +39,13 @@ class Probe:
         self.engine.Solution.Solve()
         if not self.engine.Solution.Converged():
             raise RuntimeError("Reference feeder did not converge")
-        self.engine.Circuit.SetActiveBus("bus20")
-        phasors = self.engine.Bus.VLL()
-        kv = sum(math.hypot(*phasors[i : i + 2]) for i in range(0, 6, 2)) / 3000
-        if not math.isfinite(kv):
-            raise RuntimeError("Nonfinite bus voltage")
+        bus20_kv = self._bus_voltage("bus20")
         return {
             "tap": tap,
-            "bus20_kv": round(kv, 8),
-            "in_band": LOW_KV <= kv <= HIGH_KV,
+            "bus20_kv": round(bus20_kv, 8),
+            "feeder_voltage_kv": round(self._bus_voltage("f1"), 8),
+            "s1_kv": round(self._bus_voltage("s1"), 8),
+            "in_band": LOW_KV <= bus20_kv <= HIGH_KV,
         }
 
 

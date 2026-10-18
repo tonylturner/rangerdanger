@@ -18,7 +18,7 @@ Floating-point and unsigned 32-bit values use two registers, high word first. Si
 
 ### Registers are typed by device
 
-For breaker and RMUs, IR0 is position. Their IR1 flag meanings differ: the breaker includes lockout, overcurrent pickup and protection trip, while an RMU includes earth, latched fault passage and present FPI pickup. IR2 is measurement-valid. Current and section voltage start at IR3 and IR5. RMUs add source voltage at IR11. Breaker IR1 bit 2 is overcurrent pickup, not a topology flag; breaker P/Q/PF start at IR11/13/15.
+For breaker and RMUs, IR0 is position. Their IR1 flag meanings differ: the breaker includes lockout, overcurrent pickup and protection trip, while an RMU includes earth, latched fault passage and present FPI pickup. IR2 is measurement-valid. Current starts at IR3 and voltage at IR5. CB1's IR5 is its line-side VT at f1; RMU1's source-side voltage at IR11 is the S1 reading. Breaker IR1 bit 2 is overcurrent pickup, not a topology flag; breaker P/Q/PF start at IR11/13/15.
 
 The OLTC instead uses IR0 for signed completed tap, IR1 for authority/mode/motion/limits/block/energisation, and IR3/IR5 for bus voltage/current. IR11 is target tap, IR12 integer volts, IR13 PLC request result and IR14 heartbeat. OLTC P/Q/PF start at IR15/17/19. IR1 bit 5 is effective block (manual OR overcurrent), and bit 7 is overcurrent block alone. Reusing a breaker decoder for the OLTC silently swaps meanings. Null power values use float32 NaN; the RTU marks them IV/measurement_invalid rather than reporting valid zeros.
 

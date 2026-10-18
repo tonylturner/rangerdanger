@@ -17,7 +17,7 @@ DEVICE_KINDS = {
     "feeder-breaker": "breaker", "rmu-1": "rmu", "rmu-2": "rmu", "oltc-1": "oltc"
 }
 ELEMENT_KEYS = set(DEVICE_KINDS) | {"source", "f2", "fault_s1", "fault_s2"}
-BUS_KEYS = {"hv", "bus20", "s1", "s2", "s3"}
+BUS_KEYS = {"hv", "bus20", "f1", "s1", "s2", "s3"}
 PROFILE_KEYS = {
     "schema", "id", "frequency_hz", "hv_kv", "mv_kv", "circuit_file",
     "devices", "elements", "buses", "solve_interval_ms", "request_timeout_ms",

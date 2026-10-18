@@ -24,7 +24,7 @@ Before an authored fault step, save CC state and the breaker audit cursor. After
 
 1. Physical `position`, `lockout`, `protection_tripped` and the audit's operation, peer and result.
 2. Process fault location, solved section voltages and delivery revisions.
-3. CC position IOA 1001, protection trip 1002, current 2001, voltage 2002 and P/Q/PF 2003–2005, including quality and receipt times.
+3. CC position IOA 1001, protection trip 1002, current 2001, voltage 2002 and P/Q/PF 2003–2005, including quality and receipt times. IOA 2002 is the CB1 line-side VT at f1; the S1 bus voltage is RMU1's source-side point, `rmu-1-source-kv`.
 
 The portal provides `GET /api/operator/state`, `/api/field/state` and `/api/field/audit?after=N`. The field audit proxy defaults to the breaker; `device=breaker-1|rmu-1|rmu-2|oltc-1` selects a device, not an aggregate. A CC that is disconnected may retain its previous closed indication while the physical section already shows open. That disagreement is expected evidence of lost observation, not evidence that local protection failed.
 
