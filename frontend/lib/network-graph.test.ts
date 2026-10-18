@@ -110,7 +110,8 @@ describe("buildStyledGraph", () => {
     }
     const result = buildStyledGraph(graph, [], { traffic: true, policyDim: true, iec62443 }, undefined, undefined, context);
     expect(result.edges.find((e) => e.target === "gps-1")?.data.status).toBe("unknown");
-    expect(result.edges.filter((e) => e.type === "trafficEdge")).toHaveLength(12);
+    expect(result.edges.filter((e) => e.type === "trafficEdge")).toHaveLength(13);
+    expect(result.edges.find((e) => e.source === "rtu-1" && e.target === "f2-breaker")).toBeDefined();
     expect(result.edges.find((e) => e.target === "gps-1")?.data.sameZone).toBe(true);
     expect(result.edges.find((e) => e.source === "cc-1" && e.target === "rtu-1")?.data.sameZone).toBe(false);
   });

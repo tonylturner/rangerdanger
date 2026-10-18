@@ -3,7 +3,8 @@ import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { FieldState, OperatorState } from "../lib/operator-api";
+import type { FieldState, OperatorState, ProcessElectrical } from "../lib/operator-api";
+import initialProcess from "../lib/fixtures/process-initial.json";
 import { AUDIT, FEEDER_STATE, JOURNAL, NOW, TRUTH } from "../lib/operator-fixtures.test-util";
 import { EU_ORACLE, oracleFixture } from "../lib/eu-oracle.test-util";
 import { physicalAbnormalities } from "../lib/physical-abnormalities";
@@ -181,6 +182,34 @@ describe("Physical System presentation", () => {
     expect(t1).toContain("Target tap 2"); expect(t1).toContain("Manual block / armed"); expect(t1).toContain("PLC request result not_auto"); expect(t1).toContain("Heartbeat 200");
     expect(rmu).toContain("Earth closed"); expect(rmu).toContain("Fault passage"); expect(rmu).not.toContain("Lockout");
   });
+  it("uses F2 device protection for equipment, abnormalities and advanced diagnostics", () => {
+    const field = normalField();
+    const f2 = field.devices["f2-breaker"];
+    if (f2.kind !== "breaker") throw new Error("Expected F2 breaker");
+    Object.assign(f2, { position: "open", protection_tripped: true, lockout: true });
+    Object.assign(f2.protection, { picked_up: true, picked_up_since: "2026-10-09T12:00:12Z", last_trip_current_a: 2010 });
+    // The process summary cannot override independently owned device evidence.
+    field.process.f2_tripped = false;
+    expect(physicalAbnormalities(field).filter((a) => a.device === "F2")).toEqual([
+      { id: "f2-breaker-trip", text: "F2 protection TRIPPED", tone: "fault", device: "F2" },
+      { id: "f2-breaker-lockout", text: "F2 LOCKOUT", tone: "fault", device: "F2" },
+      { id: "f2-breaker-pickup", text: "F2 protection picked up", tone: "warning", device: "F2" },
+    ]);
+    const card = text(renderToStaticMarkup(<EquipmentCard id="F2" title="F2" device={f2} open onToggle={() => {}} stale={false} />));
+    const diagnostics = mount(<PhysicalDiagnostics field={field} audit={null} />);
+    const group = diagnostics.root.findAllByType("h4").find((h) => h.children.join("") === "f2-breaker")!.parent!;
+    const details = group.findAllByType("span").map((span) => span.children.join("")).join(" ");
+    for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A"]) expect(card).toContain(value);
+    for (const value of ["Protection tripped YES", "Lockout YES", "Protection picked up YES", "Instantaneous pickup 2000 A", "Last trip current 2010.0 A", "overcurrent"]) expect(details).toContain(value);
+    expect(details).not.toContain("3000 A");
+  });
+  it("labels the initial process tap unknown rather than inventing tap zero", () => {
+    const field = { ...TRUTH, process: initialProcess as ProcessElectrical };
+    const out = text(renderToStaticMarkup(<PhysicalDiagnostics field={field} audit={null} />));
+    expect(out).toContain("Source / tap 1 p.u. / unknown");
+    expect(out).toContain("f2-breaker delivery FAILED · solved rev unknown / current unknown");
+    expect(out).toContain("f2-breaker delivered I / P / Q unknown / unknown / unknown");
+  });
   it("preserves solver, clock, delivery and audit evidence in advanced diagnostics", () => {
     const html = renderToStaticMarkup(<PhysicalDiagnostics field={TRUTH} audit={<AuditTable audit={AUDIT} />} />);
     const out = text(html);
@@ -255,7 +284,7 @@ describe("Physical System interactions", () => {
     expect(output(tree)).not.toContain("Physical system unavailable");
     expect(output(tree)).not.toContain("Control centre API unavailable");
   });
-  it("polls audit only inside the expanded advanced section and retains selected device through data refresh", async () => {
+  it.each(["rmu-2", "f2-breaker"])("polls audit only inside the expanded advanced section and retains %s through data refresh", async (device) => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : AUDIT)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
@@ -268,12 +297,12 @@ describe("Physical System interactions", () => {
       await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
     });
     await act(async () => {
-      tree.root.findByType("select").props.onChange({ target: { value: "rmu-2" } });
-      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true));
+      tree.root.findByType("select").props.onChange({ target: { value: device } });
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true));
     });
-    expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith(`device=${device}`))).toBe(true);
     act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
-    expect(tree.root.findByType("select").props.value).toBe("rmu-2");
+    expect(tree.root.findByType("select").props.value).toBe(device);
     act(() => button(tree, "Advanced diagnostics").props.onClick());
     expect(clients[0].getQueryCache().findAll({ queryKey: ["field", "audit"] }).every((q) => q.getObserversCount() === 0)).toBe(true);
   });

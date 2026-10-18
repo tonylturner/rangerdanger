@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { FieldState } from "../lib/operator-api";
 import { formatUtcTime } from "../lib/operator-format";
-import { DeviceDiagnostics } from "./physical-system-equipment";
+import { DeviceDiagnostics, ProtectionDiagnostics } from "./physical-system-equipment";
 import { Group, Row, num, yesNo } from "./physical-system-parts";
 
 export function PhysicalDiagnostics({ field, audit }: { field: FieldState; audit: ReactNode }) {
@@ -14,7 +14,7 @@ export function PhysicalDiagnostics({ field, audit }: { field: FieldState; audit
         <Row label="Solve seq · solved (UTC)">{p.solve_seq} · {formatUtcTime(p.solved_at)}</Row>
         <Row label="Device input stale" alert={p.truth_stale}>{yesNo(p.truth_stale)}</Row>
         <Row label="Fault section">{p.fault_section}</Row>
-        <Row label="Load multiplier">{p.load_multiplier}</Row><Row label="Source / tap">{p.source_pu} p.u. / {p.tap}</Row>
+        <Row label="Load multiplier">{p.load_multiplier}</Row><Row label="Source / tap">{p.source_pu} p.u. / {p.tap ?? "unknown"}</Row>
         <Row label="Profile enabled">{yesNo(p.profile.enabled)}</Row>
         {Object.entries(p.profile.load_factors).map(([category, factor]) => <Row key={category} label={`${category} profile factor`}>{num(factor, 3, "×")}</Row>)}
         <Row label="Profile source">{num(p.profile.source_pu, 3, "p.u.")}</Row>
@@ -36,7 +36,7 @@ export function PhysicalDiagnostics({ field, audit }: { field: FieldState; audit
       </Group>
     </div>
     <section aria-label="Device diagnostics"><h3 className="text-sm font-semibold text-slate-200">Device diagnostics</h3>
-      <div className="grid min-w-0 gap-x-6 md:grid-cols-2">{Object.entries(field.devices).map(([id, device]) => <Group key={id} title={id}><DeviceDiagnostics device={device} /></Group>)}</div>
+      <div className="grid min-w-0 gap-x-6 md:grid-cols-2">{Object.entries(field.devices).map(([id, device]) => <Group key={id} title={id}><DeviceDiagnostics device={device} /><ProtectionDiagnostics device={device} /></Group>)}</div>
       <Group title="Solver delivery">{Object.entries(p.devices).map(([id, d]) => <div key={id} className="mb-2">
         <Row label={`${id} delivery`} alert={!d.delivered}>{d.delivered ? "delivered" : "FAILED"} · solved rev {d.solved_revision ?? "unknown"} / current {d.revision ?? "unknown"}</Row>
         <Row label={`${id} delivered I / P / Q`}>{num(d.current_a, 1, "A")} / {num(d.p_mw, 2, "MW")} / {num(d.q_mvar, 2, "Mvar")}</Row>

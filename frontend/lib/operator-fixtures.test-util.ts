@@ -210,7 +210,6 @@ export const TRUTH: FieldState = {
     solved_at: "2026-10-09T12:00:29.500Z", truth_stale: false, fault_section: "S1", f2_tripped: false,
     load_multiplier: 1, source_pu: 1, tap: 1,
     profile: { enabled: true, load_factors: { residential: 0.8, commercial: 0.9, industrial: 1 }, source_pu: 1.01 },
-    f2_protection: { picked_up: false, picked_up_since: null, last_trip_current_a: null },
     buses: { bus20: { kv: 20.02, live: true }, s1: { kv: 0, live: false }, s2: { kv: 0, live: false }, s3: { kv: 19.97, live: true } },
     devices: Object.fromEntries([["f2-breaker", 5], ["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, current_a: 0, p_mw: 0, q_mvar: 0, revision: Number(revision), solved_revision: Number(revision) }])),
   },

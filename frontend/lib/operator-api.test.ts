@@ -232,6 +232,19 @@ describe("schema 3 realism cutover", () => {
     respond({ ...AUDIT, entries: AUDIT.entries.map((e) => ({ ...e, before: { ...e.before, schema: 2 } })) });
     await expect(getFieldAudit()).rejects.toThrow("schema 3 snapshots");
   });
+  it("preserves F2 identity and device-owned protection in audit snapshots", async () => {
+    const before = TRUTH.devices["f2-breaker"];
+    const after = { ...before, position: "open", protection_tripped: true, lockout: true,
+      protection: { ...before.protection, picked_up: true, last_trip_current_a: 2010 } };
+    const answer = { ...AUDIT, entries: [{ ...AUDIT.entries[0], before, after }] };
+    respond(answer);
+    const audit = await getFieldAudit("f2-breaker");
+    expect(audit).toEqual(answer);
+    expect(audit.entries[0].after).toMatchObject({
+      device_id: "f2-breaker", kind: "breaker", protection_tripped: true,
+      protection: { instantaneous_a: 2000, last_trip_current_a: 2010 },
+    });
+  });
   it.each([
     { ...BREAKER, schema: 2 }, { ...BREAKER, protection: null },
     { ...BREAKER, protection: { ...BREAKER.protection, picked_up_since: "not a timestamp" } },
@@ -245,7 +258,9 @@ describe("schema 3 realism cutover", () => {
   it.each([
     { ...TRUTH.process, schema: 2 }, { ...TRUTH.process, profile: null },
     { ...TRUTH.process, profile: { ...TRUTH.process.profile, source_pu: "1.01" } },
-    { ...TRUTH.process, f2_protection: {} }, { ...TRUTH.process, fault_section: ["none"] },
+    { ...TRUTH.process, f2_tripped: "false" }, { ...TRUTH.process, f2_tripped: undefined },
+    { ...TRUTH.process, tap: "0" }, { ...TRUTH.process, solver_epoch: undefined },
+    { ...TRUTH.process, fault_section: ["none"] },
     { ...TRUTH.process, devices: { "feeder-breaker": { delivered: true, revision: 1, solved_revision: 1 } } },
   ])("rejects incomplete new process state (%j)", async (process) => {
     respond({ ...TRUTH, process });
