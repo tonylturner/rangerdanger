@@ -4,14 +4,23 @@ import { AUTHORITY_POINTS, type DeviceId } from "../lib/operator-workstation";
 import { pointLabel } from "../lib/operator-format";
 import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
 import type { Readings } from "../lib/observation-readings";
+import { LIVE_KV, voltageState, type VoltageState } from "../lib/electrical-state";
 
 export function FeederOneLine({ read, physical = false, unavailable = false, selected = "T1", onSelect = () => {} }: {
   read: Readings; physical?: boolean; unavailable?: boolean; selected?: DeviceId; onSelect?: (id: DeviceId) => void;
 }) {
-  const voltage = (id: string) => {
+  const lineStyle = (state: VoltageState) => {
+    return state === "UNKNOWN" ? { color: "#fbbf24", dash: "6 5", state }
+      : state === "LIVE" ? { color: "#38bdf8", dash: undefined, state } : { color: "#94a3b8", dash: undefined, state };
+  };
+  const voltage = (id: string) => lineStyle(voltageState(read(id)));
+  const solverLine = (id: string) => {
     const r = read(id);
-    return r.condition !== "good" || typeof r.value !== "number" ? { color: "#fbbf24", dash: "6 5", state: "UNKNOWN" }
-      : r.value > 0 ? { color: "#38bdf8", dash: undefined, state: "LIVE" } : { color: "#94a3b8", dash: undefined, state: "DEAD" };
+    return lineStyle(r.condition !== "good" || typeof r.value !== "boolean" ? "UNKNOWN" : r.value ? "LIVE" : "DEAD");
+  };
+  const position = (id: string) => {
+    const value = read(id).value;
+    return typeof value === "string" && ["closed", "open", "intermediate", "indeterminate"].includes(value) ? value : "unknown";
   };
   const section = (x1: number, y1: number, x2: number, y2: number, id: string) => {
     const v = voltage(id);
@@ -25,7 +34,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   });
   const measure = (x: number, y: number, id: string) => <g aria-label={`${pointLabel(id)}: ${read(id).text}`}>
     <text x={x} y={y} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
-    <text x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
+    <text data-point={id} data-state={id.endsWith("-kv") || id === "feeder-voltage" ? voltage(id).state : undefined} x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
   </g>;
   const authorityTag = (x: number, y: number, device: keyof typeof AUTHORITY_POINTS) => {
     const authority = AUTHORITY_POINTS[device];
@@ -54,7 +63,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const switchSymbol = (x: number, y: number, label: string, id: string, device: DeviceId) => {
     const r = read(id);
     const known = r.value === "open" || r.value === "closed";
-    return <g {...selectProps(device)} aria-label={`${label}: ${r.text}`}>
+    return <g {...selectProps(device)} data-device={device} data-position={position(id)} data-quality={r.condition} aria-label={`${label}: ${r.text}`}>
       {device.startsWith("RMU") && <g aria-label={`${label} assembly: switch function and earth`}>
         <rect x={x - 78} y={y - 40} width="156" height="164" rx="6" fill="none" stroke={r.condition === "good" ? "#64748b" : "#fbbf24"} strokeDasharray={r.condition === "good" ? undefined : "6 5"} />
         <path d={`M${x} ${y + 20} v20 h-30 v40`} stroke="#64748b" fill="none" />
@@ -75,11 +84,12 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     const id = SECTION_VOLTAGE[section];
     const path = sectionSupplyPath(read, section);
     const pathText = `${path.state}${path.state === "path unknown" ? " · F2 unobserved" : path.f2ContributionUnobserved ? " †" : ""}`;
-    return <g aria-label={`${label}: ${pointLabel(id)}: ${read(id).text}; supply ${pathText}: ${path.reason}`}>
+    const kv = read(id).value;
+    return <g data-section={section} data-state={voltage(id).state} data-path={path.state} data-kv={typeof kv === "number" && Number.isFinite(kv) ? kv : ""} aria-label={`${label}: ${pointLabel(id)}: ${read(id).text}; supply ${pathText}: ${path.reason}`}>
       <title>{path.reason}</title>
       <text x={x} y={y} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label} · {voltage(id).state}</text>
       <text x={x} y={y + 18} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
-      <text x={x} y={y + 36} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
+      <text data-point={id} data-state={voltage(id).state} x={x} y={y + 36} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
       <text x={x} y={y + 54} textAnchor="middle" fill={path.state === "unknown" || path.state === "path unknown" ? "#fbbf24" : "#cbd5e1"} fontSize="12" data-supply-path={path.state}>{pathText}</text>
     </g>;
   };
@@ -87,9 +97,9 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const f2 = read("f2-position");
   const f2Known = f2.condition === "good";
   const energization = read("s3-live");
-  const lowerRun = !physical ? { color: "#94a3b8", dash: "6 5" }
-    : energization.condition !== "good" || !f2Known ? { color: "#fbbf24", dash: "6 5" }
-    : { color: energization.value === true ? "#38bdf8" : "#94a3b8", dash: undefined };
+  const unobserved = { color: "#94a3b8", dash: "6 5", state: "UNKNOWN" };
+  const upstreamRun = physical ? solverLine("bus20-live") : unobserved;
+  const lowerRun = physical ? solverLine("s3-live") : unobserved;
   const provenance = "Simulation-observed · independent of IEC 104";
   return <figure className="min-w-0 space-y-3">
     {physical && <p className="text-xs text-slate-300">{provenance}</p>}
@@ -97,8 +107,8 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
       <svg viewBox="0 0 1060 410" role="group" aria-label={`${physical ? "Simulation-observed · independent of IEC 104" : "CC-observed"} CIGRE-derived teaching feeder · simplified functional one-line`} className="w-full min-w-[1060px]">
         <defs><pattern id="cc-unknown" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8 L8 0" stroke="#fbbf24" strokeOpacity="0.5" /></pattern></defs>
         <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">{physical ? "110 kV nominal · sim source" : "110 kV nominal — not telemetered"}</text>
-        <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />
-        <g {...selectProps("T1")} aria-label={`T1 OLTC: ${tap.text}`}>
+        <line x1="80" y1="45" x2="80" y2="70" stroke={upstreamRun.color} strokeDasharray={upstreamRun.dash} />
+        <g {...selectProps("T1")} data-device="T1" data-tap={typeof tap.value === "object" && tap.value !== null ? tap.value.value : ""} data-quality={tap.condition} aria-label={`T1 OLTC: ${tap.text}`}>
           {selected === "T1" && <rect x="52" y="65" width="55" height="76" rx="4" stroke="#e2e8f0" fill="none" />}
           <circle cx="80" cy="90" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
           <circle cx="80" cy="113" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
@@ -127,14 +137,14 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {switchSymbol(850, 190, "RMU2 · NOP", "rmu-2-position", "RMU2")}
         {section(870, 190, 1000, 190, "rmu-2-source-kv")}
         {section(1000, 190, 1000, 325, "rmu-2-source-kv")}
-        <line x1="80" y1="325" x2="305" y2="325" stroke="#94a3b8" strokeWidth="3" strokeDasharray="6 5" />
-        <rect x="305" y="309" width="32" height="32" fill={physical && f2Known && f2.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={physical && !f2Known ? "#fbbf24" : "#94a3b8"} strokeDasharray={physical && f2Known ? undefined : "5 3"} />
+        <line x1="80" y1="325" x2="305" y2="325" stroke={upstreamRun.color} strokeWidth="3" strokeDasharray={upstreamRun.dash} />
+        <rect data-device="F2" data-position={physical ? position("f2-position") : "unknown"} x="305" y="309" width="32" height="32" fill={physical && f2Known && f2.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={physical && !f2Known ? "#fbbf24" : "#94a3b8"} strokeDasharray={physical && f2Known ? undefined : "5 3"} />
         <text x="321" y="331" textAnchor="middle" fill={physical && f2Known && f2.value === "closed" ? "#0f172a" : "#cbd5e1"}>{physical && f2Known ? f2.value === "closed" ? "●" : "○" : "?"}</text>
         <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">{physical ? f2Known ? f2.value === "closed" ? "F2 · closed (sim)" : "F2 · TRIPPED (sim)" : "F2 · unknown (sim)" : "F2 head · unobserved"}</text>
-        <line x1="337" y1="325" x2="1000" y2="325" stroke={lowerRun.color} strokeWidth="3" strokeDasharray={lowerRun.dash} aria-label={physical ? `F2 connection · solver energization: ${energization.text}` : "F2 connection · not established"} />
+        <line x1="337" y1="325" x2="1000" y2="325" data-f2-line="" data-state={lowerRun.state} stroke={lowerRun.color} strokeWidth="3" strokeDasharray={lowerRun.dash} aria-label={physical ? `F2 connection · solver energization: ${energization.text}` : "F2 connection · not established"} />
         {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>
-    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage &gt; 0 kV; grey: measured zero; dashed amber: invalid, stale or unknown. The lower F2 connection follows solver energization, separately from measured kV. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local control authority; hatched AUTHORITY STALE/UNKNOWN means control authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. The dashed grey F2 connection is not established by the S3 measurement. F2 has no telemetry.</>}</figcaption>
+    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage ≥ {LIVE_KV} kV; grey: measured voltage below {LIVE_KV} kV; dashed amber: invalid, stale or unknown. The lower F2 connection follows solver energization, separately from measured kV. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local control authority; hatched AUTHORITY STALE/UNKNOWN means control authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage ≥ {LIVE_KV} kV, not proof of a supply path. Grey: observed voltage below {LIVE_KV} kV. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. The dashed grey F2 connection is not established by the S3 measurement. F2 has no telemetry.</>}</figcaption>
   </figure>;
 }

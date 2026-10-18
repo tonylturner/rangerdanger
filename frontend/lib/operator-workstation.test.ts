@@ -5,6 +5,28 @@ import { pointCondition } from "./operator-format";
 
 describe("operator observation rules", () => {
   it.each([
+    ["feeder-breaker-position", "open", "CB1: OPEN (normal CLOSED)"],
+    ["rmu-1-position", "open", "RMU1 · NC: OPEN (normal CLOSED)"],
+    ["rmu-2-position", "closed", "RMU2 · NOP: CLOSED (normal OPEN)"],
+    ["rmu-1-position", "intermediate", "RMU1 · NC: INTERMEDIATE (normal CLOSED)"],
+    ["rmu-2-position", "indeterminate", "RMU2 · NOP: INDETERMINATE (normal OPEN)"],
+    ["rmu-1-section-kv", 0.000004653, "S2 commercial: no supply"],
+  ] as const)("lists GOOD %s off-normal observations without adding alarms", (id, value, text) => {
+    const state = structuredClone(FEEDER_STATE);
+    state.points.find((p) => p.id === id)!.value = value;
+    expect(abnormalConditions(state).map((c) => c.text)).toEqual([text]);
+    expect(activeAlarms(state)).toEqual([]);
+    for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+      const bad = { ...state, points: state.points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
+      expect(abnormalConditions(bad)).toEqual([]);
+    }
+    for (const patch of [{ value: null }, { stale_reason: "not_updated" as const }]) {
+      const bad = { ...state, points: state.points.map((p) => p.id === id ? { ...p, ...patch } : p) };
+      expect(abnormalConditions(bad).map((c) => c.text)).not.toContain(text);
+    }
+    expect(abnormalConditions({ ...state, points: state.points.filter((p) => p.id !== id) })).toEqual([]);
+  });
+  it.each([
     ["rmu-1-remote", "RMU1 authority: LOCAL"],
     ["rmu-2-remote", "RMU2 authority: LOCAL"],
     ["oltc-1-remote", "T1 OLTC authority: LOCAL"],
@@ -64,7 +86,7 @@ describe("operator observation rules", () => {
 
 describe("voltage limits", () => {
   it.each([
-    [0, false], [0.1, false], [0.10001, true], [18.999, true], [19, false], [20, false], [21, false], [21.001, true],
+    [0, false], [0.000004679, false], [0.099, false], [-1, false], [NaN, false], [Infinity, false], [0.1, true], [0.10001, true], [18.999, true], [19, false], [20, false], [21, false], [21.001, true],
   ])("alarms at %s kV: %s", (value, alarm) => {
     const point = FEEDER_STATE.points.find((p) => p.id === "feeder-voltage")!;
     expect(activeAlarms({ ...FEEDER_STATE, points: [{ ...point, value }] }).some((a) => a.id === "feeder-voltage-voltage-limit")).toBe(alarm);

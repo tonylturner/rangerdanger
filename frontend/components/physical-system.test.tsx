@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FieldState, OperatorState } from "../lib/operator-api";
 import { AUDIT, FEEDER_STATE, JOURNAL, NOW, TRUTH } from "../lib/operator-fixtures.test-util";
+import { EU_ORACLE, oracleFixture } from "../lib/eu-oracle.test-util";
 import { physicalAbnormalities } from "../lib/physical-abnormalities";
 import { physicalSystemObservations } from "../lib/observation-readings";
 import { PhysicalSystem, PhysicalSystemScreen } from "./physical-system";
@@ -32,12 +33,14 @@ afterEach(() => {
   vi.unstubAllGlobals(); vi.clearAllMocks();
 });
 function normalField() {
-  const field = structuredClone(TRUTH);
-  field.process.fault_section = "none";
+  const field = oracleFixture(EU_ORACLE[12]).field;
   for (const d of Object.values(field.devices)) {
-    if (d.kind === "breaker") { d.position = "closed"; d.lockout = false; d.protection_tripped = false; }
-    if (d.kind === "rmu") d.fault_passage = false;
-    d.measurements.pf = .957;
+    const m = d.measurements;
+    const apparentMva = Math.sqrt(3) * m.voltage_kv_ll! * m.current_a! / 1000;
+    m.pf = .957;
+    m.p_mw = apparentMva * m.pf;
+    m.q_mvar = apparentMva * Math.sqrt(1 - m.pf ** 2);
+    Object.assign(field.process.devices[d.device_id], { p_mw: m.p_mw, q_mvar: m.q_mvar });
   }
   return field;
 }
@@ -52,6 +55,10 @@ function matchingOperator(field: FieldState): OperatorState {
 describe("Physical System presentation", () => {
   it("shows a quiet normal state, every device and the required section order", () => {
     const field = normalField(), operator = matchingOperator(field);
+    expect(Object.values(field.process.buses).every((bus) => bus.live && bus.kv! > 19)).toBe(true);
+    expect(field.devices["breaker-1"].measurements.current_a).toBe(61.4);
+    expect(field.devices["oltc-1"].measurements.current_a).toBe(72.3);
+    expect(field.devices["oltc-1"].measurements.p_mw).toBeGreaterThan(0);
     const body = <PhysicalSystemScreen {...props} field={field} operator={operator} />;
     const html = renderToStaticMarkup(<ControlCentreScreen state={operator} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} view="physical-system" physicalSystem={body} />);
     const out = text(html);

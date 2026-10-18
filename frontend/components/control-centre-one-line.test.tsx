@@ -26,6 +26,17 @@ afterEach(() => { act(() => mounted.splice(0).forEach((tree) => tree.unmount()))
 
 describe("functional one-line observations", () => {
   it.each([
+    [0, "DEAD", "#94a3b8"], [0.000004679, "DEAD", "#94a3b8"], [0.099, "DEAD", "#94a3b8"],
+    [0.1, "LIVE", "#38bdf8"], [-1, "UNKNOWN", "#fbbf24"], [NaN, "UNKNOWN", "#fbbf24"], [Infinity, "UNKNOWN", "#fbbf24"],
+  ])("colours S1 at %s kV as %s while retaining its measured value", (value, state, color) => {
+    const points = FEEDER_STATE.points.map((p) => p.id === "rmu-1-source-kv" ? { ...p, value: value as number } : p);
+    const tree = schematic(points);
+    const s1 = tree.findAllByType("g").find((n) => n.props["aria-label"]?.startsWith("S1 residential:"))!;
+    expect(s1.findAllByType("text")[0].children.join("")).toBe(`S1 residential · ${state}`);
+    expect(tree.findAllByType("line").find((n) => n.props.x1 === 330)!.props.stroke).toBe(color);
+    if (value === 0.000004679) expect(s1.props["aria-label"]).toContain("0.00 kV");
+  });
+  it.each([
     ["rmu-1-remote", "RMU1"],
     ["rmu-2-remote", "RMU2"],
     ["oltc-1-remote", "T1 OLTC"],
