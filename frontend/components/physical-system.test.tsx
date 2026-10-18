@@ -26,7 +26,6 @@ function mount(node: ReactNode) {
 const props = { field: TRUTH, stateError: null, operator: FEEDER_STATE, now: NOW };
 const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
 const button = (tree: ReactTestRenderer, label: string) => tree.root.findAllByType("button").find((b) => b.children.map((c) => typeof c === "string" ? c : JSON.stringify(c.props.children)).join("").includes(label))!;
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 afterEach(() => {
   act(() => trees.splice(0).forEach((tree) => tree.unmount()));
   clients.splice(0).forEach((client) => client.clear());
@@ -34,6 +33,7 @@ afterEach(() => {
 });
 function normalField() {
   const field = oracleFixture(EU_ORACLE[12]).field;
+  field.devices["f2-breaker"].measurements.current_a = 11.2;
   for (const d of Object.values(field.devices)) {
     const m = d.measurements;
     const apparentMva = Math.sqrt(3) * m.voltage_kv_ll! * m.current_a! / 1000;
@@ -62,7 +62,7 @@ describe("Physical System presentation", () => {
     const body = <PhysicalSystemScreen {...props} field={field} operator={operator} />;
     const html = renderToStaticMarkup(<ControlCentreScreen state={operator} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} view="physical-system" physicalSystem={body} />);
     const out = text(html);
-    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 31 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
+    for (const value of ["Physical System State", "Live electrical and device conditions from the simulation, independent of SCADA communications.", "Simulation observations · Independent of IEC 104", "No active physical abnormalities", "CB1 — Feeder breaker", "T1 — Transformer / OLTC", "RMU1", "RMU2 · NOP", "SCADA data quality:", "Physical agreement: 35 matched / 0 mismatched", "CC alarm limits 19.8–21.0 kV"]) expect(out).toContain(value);
     const sections = ["Physical abnormalities", "System overview", "Physical system vs. Control Centre", "Electrical network overview", "Equipment overview", "Advanced diagnostics"];
     const indices = sections.map((label) => html.indexOf(`aria-label="${label}"`));
     expect(indices.every((i) => i >= 0)).toBe(true);
@@ -99,9 +99,11 @@ describe("Physical System presentation", () => {
     if (rmu.kind === "rmu") { rmu.earth_closed = true; rmu.measurements.valid = false; }
     field.devices["breaker-1"].protection.picked_up = true;
     field.process.devices["rmu-1"].delivered = false;
-    field.process.truth_stale = true; field.process.f2_tripped = true;
+    field.process.truth_stale = true;
+    const f2 = field.devices["f2-breaker"];
+    if (f2.kind === "breaker") f2.protection_tripped = true;
     const out = text(renderToStaticMarkup(<PhysicalSystemScreen {...props} field={field} />));
-    for (const value of ["CB1 protection TRIPPED", "CB1 LOCKOUT", "CB1 protection picked up", "RMU1 earth CLOSED", "RMU1 fault passage LATCHED", "T1 OLTC effective block", "T1 LOCAL control authority", "RMU1 measurements INVALID", "Fault section S1", "F2 TRIPPED", "device input STALE", "rmu-1 device delivery FAILED"]) expect(out).toContain(value);
+    for (const value of ["CB1 protection TRIPPED", "CB1 LOCKOUT", "CB1 protection picked up", "RMU1 earth CLOSED", "RMU1 fault passage LATCHED", "T1 OLTC effective block", "T1 LOCAL control authority", "RMU1 measurements INVALID", "Fault section S1", "F2 protection TRIPPED", "device input STALE", "rmu-1 device delivery FAILED"]) expect(out).toContain(value);
   });
   it("shows physical API failure without inventing a SCADA outage", () => {
     const out = text(renderToStaticMarkup(<PhysicalSystemScreen {...props} stateError={new Error("device offline")} />));
@@ -122,7 +124,7 @@ describe("Physical System presentation", () => {
     const html = renderToStaticMarkup(<PhysicalSystemScreen {...props} />);
     expect(html).toContain("≠ MISMATCH"); expect(html).toContain("border-red-700");
     expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · closed (sim)");
+    expect(html).toContain("F2 · CLOSED · GOOD · sim");
     expect(html).toContain("Physical topology path: via F2");
     expect(html).toContain("ENERGIZED"); expect(html).toContain("solver bus live");
     expect(html).toContain("received 29 s ago"); expect(html).toContain("Source UTC");
@@ -137,7 +139,7 @@ describe("Physical System presentation", () => {
     const row = tree.root.findAll((n) => n.props["data-comparison"] === p.id)[0];
     expect(row.props["data-status"]).toBe("STALE");
     expect(output(tree)).toContain("CC↔RTU link lost");
-    expect(button(tree, "All comparable points (31)").props["aria-expanded"]).toBe(false);
+    expect(button(tree, "All comparable points (35)").props["aria-expanded"]).toBe(false);
   });
   it("never turns null into zero and distinguishes validity, freshness, energization and known positions", () => {
     const field = structuredClone(TRUTH);
@@ -150,7 +152,7 @@ describe("Physical System presentation", () => {
     expect(html).toContain("I unknown"); expect(html).toContain("Bus voltage");
     expect(html).toContain("CB1: unknown · UNKNOWN · sim");
     expect(html).toContain("INVALID · retained measurements");
-    expect(html).toContain("F2 · unknown (sim)");
+    expect(html).toContain("F2 · CLOSED · GOOD · sim");
     expect(html).toContain("Physical topology path: unknown");
     expect(html).toContain("UNKNOWN · solver bus live");
   });
@@ -182,7 +184,7 @@ describe("Physical System presentation", () => {
   it("preserves solver, clock, delivery and audit evidence in advanced diagnostics", () => {
     const html = renderToStaticMarkup(<PhysicalDiagnostics field={TRUTH} audit={<AuditTable audit={AUDIT} />} />);
     const out = text(html);
-    for (const value of ["Simulation engine", "OpenDSS", "Solver epoch e1", "Device input stale", "residential profile factor 0.800 ×", "F2 last trip current unknown", "Station time", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Device diagnostics", "Heartbeat 200", "solved rev 5 / current 5", "close rejected modbus · station · 10.30.30.20:41000 lockout", "closed → open"]) expect(out).toContain(value);
+    for (const value of ["Simulation engine", "OpenDSS", "Solver epoch e1", "Device input stale", "residential profile factor 0.800 ×", "Station time", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Device diagnostics", "Heartbeat 200", "solved rev 5 / current 5", "close rejected modbus · station · 10.30.30.20:41000 lockout", "closed → open"]) expect(out).toContain(value);
     expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
   });
 });
@@ -199,7 +201,7 @@ describe("Physical System interactions", () => {
     expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
     expect(scroll).toHaveBeenCalledTimes(calls);
     act(() => button(tree, "SCADA agreement").props.onClick());
-    expect(button(tree, "All comparable points (31)").props["aria-expanded"]).toBe(true);
+    expect(button(tree, "All comparable points (35)").props["aria-expanded"]).toBe(true);
   });
   it("shares device selection across views in both directions", async () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : url.includes("journal") ? JOURNAL : FEEDER_STATE)));
@@ -207,10 +209,14 @@ describe("Physical System interactions", () => {
     const location = { search: "", href: "http://localhost/substation" };
     vi.stubGlobal("window", { location, history: { pushState: (_: unknown, _title: string, url: URL) => { location.search = url.search; location.href = url.href; } }, addEventListener: vi.fn(), removeEventListener: vi.fn() });
     const tree = mount(<ControlCentreView />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))).toBeDefined());
+    });
     act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))!.props.onClick());
     act(() => button(tree, "Physical System").props.onClick());
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "CB1 — Feeder breaker")?.props["aria-expanded"]).toBe(true));
+    });
     expect(location.search).toBe("?view=physical-system");
     expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
     expect(selector).toHaveBeenCalledWith("#physical-equipment-CB1");
@@ -218,6 +224,16 @@ describe("Physical System interactions", () => {
     act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("RMU2 ·"))!.props.onClick());
     act(() => button(tree, "Control Centre").props.onClick());
     expect(output(tree)).toContain("RMU2 faceplate");
+    act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("F2 indication"))!.props.onClick());
+    act(() => button(tree, "Physical System").props.onClick());
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "F2 — Alternative feeder")?.props["aria-expanded"]).toBe(true));
+    });
+    expect(button(tree, "F2 — Alternative feeder").props["aria-expanded"]).toBe(true);
+    expect(selector).toHaveBeenCalledWith("#physical-equipment-F2");
+    act(() => button(tree, "Control Centre").props.onClick());
+    expect(output(tree)).toContain("F2 faceplate");
+    expect(button(tree, "Confirm")).toBeUndefined();
   });
   it("retains audit evidence on audit failure independently of physical and SCADA availability", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
@@ -225,9 +241,14 @@ describe("Physical System interactions", () => {
       throw new Error("audit offline");
     }));
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+    });
     clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
-    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
+    await act(async () => {
+      button(tree, "Advanced diagnostics").props.onClick();
+      await vi.waitFor(() => expect(clients[0].getQueryState(["field", "audit", "breaker-1"])?.error).toMatchObject({ message: "audit offline" }));
+    });
     expect(output(tree)).toContain("audit offline");
     expect(output(tree)).toContain("Showing the last answer.");
     expect(output(tree)).toContain("rejected");
@@ -238,10 +259,18 @@ describe("Physical System interactions", () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : AUDIT)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+    });
     expect(fetchMock.mock.calls.some(([url]) => url.includes("audit"))).toBe(false);
-    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
-    await act(async () => { tree.root.findByType("select").props.onChange({ target: { value: "rmu-2" } }); await settle(); });
+    await act(async () => {
+      button(tree, "Advanced diagnostics").props.onClick();
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
+    });
+    await act(async () => {
+      tree.root.findByType("select").props.onChange({ target: { value: "rmu-2" } });
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true));
+    });
     expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true);
     act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
     expect(tree.root.findByType("select").props.value).toBe("rmu-2");

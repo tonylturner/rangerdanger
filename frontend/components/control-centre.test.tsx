@@ -27,13 +27,13 @@ function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) 
 }
 
 describe("ControlCentreScreen schema 3", () => {
-  it("shows all 38 points, per-device controls and snapshot identity", () => {
+  it("shows all 42 points, per-device controls and snapshot identity", () => {
     const html = screen();
     const out = text(html);
-    expect(FEEDER_STATE.points).toHaveLength(38);
-    expect(out).toContain("38/38 good");
-    expect(html.match(/data-condition="good"/g)).toHaveLength(38);
-    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · unobserved", "snapshot 120", "Trends"]) expect(out).toContain(label);
+    expect(FEEDER_STATE.points).toHaveLength(42);
+    expect(out).toContain("42/42 good");
+    expect(html.match(/data-condition="good"/g)).toHaveLength(42);
+    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 · CLOSED · GOOD", "snapshot 120", "Trends"]) expect(out).toContain(label);
     expect(out).toContain("Confirm RAISE");
     expect(out).toContain("Confirm MANUAL");
   });
@@ -41,7 +41,7 @@ describe("ControlCentreScreen schema 3", () => {
   it("keeps last values on link loss, including age and reason", () => {
     const html = screen({ state: STALE_STATE, journal: EMPTY_JOURNAL });
     const out = text(html);
-    expect(out).toContain("IEC 104 LINK CONNECTING: telemetry is stale");
+    expect(out).toContain("SCADA VIEW LOST — retained values are not current");
     expect(html.match(/data-condition="stale"/g)).toHaveLength(4);
     for (const value of ["CLOSED", "28.9 A", "19.94 kV", "IV NT", "29 s", "0/4 good · 4 STALE"]) expect(out).toContain(value);
     expect(out).not.toContain("0.0 A");
@@ -95,7 +95,7 @@ describe("CC schematic layout", () => {
     // Each section now has a location, voltage and separate supply-path row.
     expect(s1.y + 54).toBeLessThan(150);
     expect(s2.y + 54).toBeLessThan(150);
-    const section = position("RMU2 S2 side");
+    const section = position("RMU2 S2 bus VT");
     expect(section.x).toBeGreaterThan(772);
     expect(section.x).toBeLessThan(1000);
     expect(section.y + 18).toBeLessThan(150);
@@ -232,7 +232,7 @@ describe("select-then-execute controls", () => {
     const out = text(panel({ phase: "result", operation: "open", result }));
     expect(out).toContain(`OPEN ${status.toUpperCase()}`);
     if (result.reason !== null) expect(out).toContain(result.reason);
-    expect(out).toContain("Selected (UTC) 12:00:01.000");
+    expect(out).toContain("Select requested (UTC) 12:00:01.000");
     expect(out).toContain("ACT-TERM (UTC)");
     if (status === "unknown") expect(out).toContain("It is not retried");
     if (status === "completed") expect(out).toContain("IOA 1001: OPEN");
@@ -291,13 +291,13 @@ describe("realism presentation", () => {
     state.points.find((p) => p.id === id)!.value = false;
     const out = text(render(<AbnormalSummary state={state} />));
     expect(out).toContain(label);
-    expect(out).not.toContain("No abnormal conditions");
+    expect(out).not.toContain("No alarms in GOOD observations");
     expect(text(screen({ state }))).toContain("0 active alarms");
     expect(render(<ControlCentreOneLine points={state.points} />)).toContain(`data-authority="${id}"`);
   });
 
   it("has a compact explicit abnormal-condition empty state above the schematic", () => {
-    expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toBe("No abnormal conditions");
+    expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toContain("No alarms in GOOD observations");
     const html = screen();
     expect(html.indexOf('aria-label="Abnormal conditions"')).toBeLessThan(html.indexOf('aria-label="Feeder schematic"'));
   });

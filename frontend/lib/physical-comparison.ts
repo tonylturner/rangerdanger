@@ -2,7 +2,7 @@ import type { FieldState, OperatorPoint, OperatorState, PointValue } from "./ope
 import { pointCondition, pointLabel, qualityFlags } from "./operator-format";
 import { PHYSICAL_POINTS, physicalSystemObservations, type Reading } from "./observation-readings";
 
-export const PRIMARY_POINTS = ["feeder-breaker-position", "rmu-1-position", "rmu-2-position", "oltc-1-tap", "oltc-1-bus-kv"];
+export const PRIMARY_POINTS = ["feeder-breaker-position", "rmu-1-position", "rmu-2-position", "oltc-1-tap", "oltc-1-bus-kv", "f2-position"];
 export const COMPARISON_STATUSES = ["MATCH", "MISMATCH", "STALE", "INVALID", "UNKNOWN"] as const;
 export type ComparisonStatus = typeof COMPARISON_STATUSES[number];
 export type ComparisonRow = {

@@ -92,23 +92,23 @@ describe("functional one-line observations", () => {
     expect(renderToStaticMarkup(<ControlCentreOneLine points={points} />)).toContain("CB1 line-side VT");
   });
 
-  it("does not colour the unestablished F2 run from the S3 voltage", () => {
+  it("colours the F2 run only from received S3 VT, with provenance", () => {
     const tree = schematic();
     const lower = tree.findAllByType("line").find((n) => n.props.x1 === "337")!;
-    expect(lower.props.stroke).toBe("#94a3b8");
-    expect(lower.props.strokeDasharray).toBe("6 5");
-    expect(lower.props["aria-label"]).toBe("F2 connection · not established");
+    expect(lower.props.stroke).toBe("#38bdf8");
+    expect(lower.props.strokeDasharray).toBeUndefined();
+    expect(lower.props["aria-label"]).toContain("S3 received VT, not proof of path");
     const html = renderToStaticMarkup(<ControlCentreOneLine points={FEEDER_STATE.points} />);
     expect(html).toContain("S3 industrial · LIVE");
     expect(html).toContain("19.97 kV");
   });
 
-  it("separates GOOD live S3 voltage from its unobserved supply path", () => {
+  it("establishes a GOOD F2 path separately from measured voltage", () => {
     const tree = schematic();
     const s3 = tree.findAllByType("g").find((n) => n.props["aria-label"]?.startsWith("S3 industrial:"))!;
     expect(s3.props["aria-label"]).toContain("GOOD");
-    expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("path unknown · F2 unobserved");
-    expect(s3.findByType("title").children.join("")).toContain("F2 unobserved");
+    expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("via F2");
+    expect(s3.findByType("title").children.join("")).toContain("Observed F2 path");
     expect(tree.findAllByType("text").filter((n) => n.props["data-supply-path"] === "via CB1")).toHaveLength(2);
   });
 
@@ -126,13 +126,24 @@ describe("functional one-line observations", () => {
     }
   });
 
-  it("notes F2 uncertainty even when the observed CB1 path reaches S3", () => {
+  it("shows both observed feeder paths when the tie closes", () => {
     const points = FEEDER_STATE.points.map((p) => p.id === "rmu-2-position" ? { ...p, value: "closed" as const } : p);
     const tree = schematic(points);
     const s3 = tree.findAllByType("g").find((n) => n.props["aria-label"]?.startsWith("S3 industrial:"))!;
-    expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("via CB1 †");
-    expect(s3.findByType("title").children.join("")).toContain("F2 contribution unobserved");
-    expect(renderToStaticMarkup(<ControlCentreOneLine points={points} />)).toContain("† F2 contribution unobserved");
+    expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("via CB1 + F2");
+    expect(s3.findByType("title").children.join("")).toContain("Both observed switch paths");
+    expect(renderToStaticMarkup(<ControlCentreOneLine points={points} />)).not.toContain("F2 has no telemetry");
+  });
+  it("retains uncertain F2 position without treating live S3 VT as proof of its path", () => {
+    const points = FEEDER_STATE.points.map((p) => p.id === "f2-position" ? { ...p, quality: { ...p.quality, iv: true, nt: true }, stale_reason: "device_unreachable" as const } : p);
+    const tree = schematic(points);
+    const f2 = tree.findAllByType("rect").find((n) => n.props["data-device"] === "F2")!;
+    expect(f2.props).toMatchObject({ "data-position": "closed", "data-quality": "stale", fill: "url(#cc-unknown)" });
+    const s3 = tree.findAllByType("g").find((n) => n.props["data-section"] === "S3")!;
+    expect(s3.props).toMatchObject({ "data-state": "LIVE", "data-path": "path unknown" });
+    const missing = schematic(points.filter((p) => p.id !== "f2-position"));
+    expect(missing.findAllByType("rect").find((n) => n.props["data-device"] === "F2")!.props).toMatchObject({ "data-position": "unknown", "data-quality": "unknown" });
+    expect(missing.findAllByType("g").find((n) => n.props["data-section"] === "S3")!.props["data-path"]).toBe("path unknown");
   });
 
   it("keeps stale CB1 closed feedback hatched amber after an unobserved field trip", () => {
@@ -154,7 +165,7 @@ describe("functional one-line observations", () => {
     const table = renderToStaticMarkup(<PointTable points={FEEDER_STATE.points} now={0} />);
     for (const selected of DEVICES) {
       const html = faceplate({ state: FEEDER_STATE, selected, unavailable: false });
-      const prefix = selected === "T1" ? "oltc-1-" : selected === "CB1" ? "feeder-" : selected === "RMU1" ? "rmu-1-" : "rmu-2-";
+      const prefix = selected === "F2" ? "f2-" : selected === "T1" ? "oltc-1-" : selected === "CB1" ? "feeder-" : selected === "RMU1" ? "rmu-1-" : "rmu-2-";
       for (const p of FEEDER_STATE.points.filter((p) => p.id.startsWith(prefix) && p.kind === "float")) {
         expect(html).toContain(pointLabel(p.id));
         expect(table).toContain(pointLabel(p.id));

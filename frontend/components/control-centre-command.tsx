@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CommandOperation, CommandResult, ControlCentreLink, LinkState, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText, commandOutcome, formatPointValue, formatUtcTime, pointCondition } from "../lib/operator-format";
-import { type DeviceId } from "../lib/operator-workstation";
+import { receivedAuthority, type DeviceId } from "../lib/operator-workstation";
 import { useOperatorCommand } from "../lib/operator-queries";
 
 export const CONTROL_PANELS = [
@@ -31,7 +31,7 @@ export function CommandResultView({ result }: { result: CommandResult }) {
     {result.result === "unknown" && <p>It is not retried. Observe fresh feedback before deciding what to do next.</p>}
     <dl className="mt-2 grid grid-cols-2 gap-x-3 font-mono text-slate-300">
       <dt>Command</dt><dd>{result.point} · {result.id}</dd>
-      <dt>Selected (UTC)</dt><dd>{formatUtcTime(result.selected_at)}</dd>
+      <dt>Select requested (UTC)</dt><dd>{formatUtcTime(result.selected_at)}</dd>
       <dt>Executed (UTC)</dt><dd>{formatUtcTime(result.executed_at)}</dd>
       <dt>ACT-CON (UTC)</dt><dd>{formatUtcTime(result.con_at)}</dd>
       <dt>ACT-TERM (UTC)</dt><dd>{formatUtcTime(result.term_at)}</dd>
@@ -40,7 +40,7 @@ export function CommandResultView({ result }: { result: CommandResult }) {
   </div>;
 }
 
-export function CommandPanelView({ linkState, position, state, onArm, onExecute, onCancel, panel = CONTROL_PANELS[0], disabled = false }: {
+export function CommandPanelView({ linkState, position, state, onArm, onExecute, onCancel, panel = CONTROL_PANELS[0], disabled = false, authority = "not established" }: {
   linkState: LinkState;
   position: OperatorPoint | undefined;
   state: CommandPanelState;
@@ -49,6 +49,7 @@ export function CommandPanelView({ linkState, position, state, onArm, onExecute,
   onCancel: () => void;
   panel?: ControlPanel;
   disabled?: boolean;
+  authority?: ReturnType<typeof receivedAuthority>;
 }) {
   const condition = position ? pointCondition(position) : "never";
   const ready = linkState === "started" && !!position && position.value !== null && !position.quality.iv && !position.quality.nt && !disabled;
@@ -59,6 +60,7 @@ export function CommandPanelView({ linkState, position, state, onArm, onExecute,
     <p className="text-xs text-slate-300">Reported: {position ? formatPointValue(position.id, position.value) : "unknown"} · {condition === "good" ? "GOOD" : condition === "stale" ? "STALE" : "UNKNOWN"}</p>
     {state.phase === "armed" ? <div className="space-y-2 rounded border border-sky-800 bg-sky-950/30 p-2">
       <p className="text-xs text-sky-200">Local confirmation: {state.operation.toUpperCase()} on {panel.label}? No RTU reservation has been made.</p>
+      <p className="text-xs text-sky-200">Received control authority: {authority}. This attempt is still subject to device interlocks.</p>
       <div className="flex flex-wrap gap-2">
         <button className={BUTTON} disabled={!ready} onClick={() => onExecute(state.operation)}>Execute {state.operation.toUpperCase()}</button>
         <button className={BUTTON} onClick={onCancel}>Cancel</button>
@@ -78,7 +80,7 @@ export function SupervisoryControls({ link, points, unavailable, selected }: { l
   const [active, setActive] = useState<string | null>(null);
   const [state, setState] = useState<CommandPanelState>({ phase: "idle" });
   useEffect(() => { setState((s) => s.phase === "armed" ? { phase: "idle" } : s); }, [selected]);
-  const visible = CONTROL_PANELS.filter((p) => selected === "T1" ? p.point.startsWith("oltc-") : selected === "CB1" ? p.point.startsWith("feeder-") : p.point.startsWith(selected === "RMU1" ? "rmu-1-" : "rmu-2-"));
+  const visible = CONTROL_PANELS.filter((p) => selected === "F2" ? false : selected === "T1" ? p.point.startsWith("oltc-") : selected === "CB1" ? p.point.startsWith("feeder-") : p.point.startsWith(selected === "RMU1" ? "rmu-1-" : "rmu-2-"));
   const execute = (panel: ControlPanel, operation: CommandOperation) => {
     const feedback = points.find((p) => p.id === panel.feedback);
     if (inFlight.current || unavailable || link.state !== "started" || !link.gi.last_complete_at || !feedback || feedback.value === null || feedback.quality.iv || feedback.quality.nt || active !== panel.point || state.phase !== "armed" || state.operation !== operation) return;
@@ -92,6 +94,7 @@ export function SupervisoryControls({ link, points, unavailable, selected }: { l
   };
   return <div className="space-y-3">{visible.map((panel) => <CommandPanelView
     key={panel.point} panel={panel} linkState={link.state} position={points.find((p) => p.id === panel.feedback)}
+    authority={receivedAuthority(points, selected, unavailable || link.state !== "started")}
     state={active === panel.point && state.phase !== "result" && state.phase !== "error" ? state : { phase: "idle" }} disabled={unavailable || !link.gi.last_complete_at || state.phase === "pending"}
     onArm={(operation) => { setActive(panel.point); setState({ phase: "armed", operation }); }}
     onExecute={(operation) => execute(panel, operation)} onCancel={() => setState({ phase: "idle" })}

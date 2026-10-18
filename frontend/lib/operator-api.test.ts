@@ -19,7 +19,7 @@ describe("physical feeder reads", () => {
     const answer = { ...TRUTH, clock: { ...CLOCK, sync_status, holdover_started: sync_status === "holdover" ? CLOCK.actual_time : "" } };
     respond(answer);
     const field = await getFieldState();
-    expect(Object.keys(field.devices)).toEqual(["breaker-1", "rmu-1", "rmu-2", "oltc-1"]);
+    expect(Object.keys(field.devices)).toEqual(["breaker-1", "rmu-1", "rmu-2", "oltc-1", "f2-breaker"]);
     expect(field.clock).toEqual(answer.clock);
   });
 
@@ -195,10 +195,10 @@ describe("rev 2 strict operator shape", () => {
 });
 
 describe("step-position QDS regression", () => {
-  it("accepts the migrated GI regression payload without rewriting the tap's OV", async () => {
+  it("accepts the GI regression payload extended with synthetic F2 contract points without rewriting the tap's OV", async () => {
     const { default: live } = await import("./fixtures/operator-state-live.json");
     const { getOperatorState, validOperatorState } = await import("./operator-api");
-    expect(live.points).toHaveLength(38);
+    expect(live.points).toHaveLength(42);
     expect(live.points.find((p) => p.id === "oltc-1-tap")).toMatchObject({
       kind: "step-position", asdu: "M_ST_NA_1", quality: { ov: false }, value: { value: 0, transient: false },
     });
@@ -223,7 +223,7 @@ describe("schema 3 realism cutover", () => {
   function respond(answer: unknown) {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
   }
-  it.each(["breaker-1", "rmu-1", "rmu-2", "oltc-1"] as const)("requests the selected %s audit", async (device) => {
+  it.each(["breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"] as const)("requests the selected %s audit", async (device) => {
     respond({ ...AUDIT, entries: [] });
     await getFieldAudit(device);
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toMatch(new RegExp(`device=${device}$`));

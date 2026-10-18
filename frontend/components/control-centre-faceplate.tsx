@@ -28,7 +28,8 @@ export function RegulationBand({ band }: { band: VoltageBand | null }) {
 
 export function DeviceFaceplate({ state, selected, unavailable }: { state: OperatorState; selected: DeviceId; unavailable: boolean }) {
   return <aside aria-label={`${selected} faceplate`} className="min-w-0 space-y-4 rounded-lg border border-slate-700 bg-slate-950 p-4">
-    <h2 className="text-base font-semibold text-slate-100">{selected} · {selected === "T1" ? "Transformer / AVR" : selected === "CB1" ? "Feeder breaker" : "Ring main unit"}</h2>
+    <h2 className="text-base font-semibold text-slate-100">{selected} · {selected === "T1" ? "Transformer / AVR" : selected === "CB1" || selected === "F2" ? "Feeder breaker" : "Ring main unit"}</h2>
+    {selected === "F2" && <p className="text-xs text-slate-300">Indication only · no supervisory controls. F2 is an alternative feeder from the same T1 / bus20.</p>}
     {selected === "CB1" && <p className="text-xs text-slate-400">Remote/local authority is not telemetered for CB1.</p>}
     {selected === "T1" && <><RegulationBand band={regulationBand(state.points)} /><p className="text-xs text-slate-400">Configured delay only; no live countdown is telemetered.</p></>}
     <dl className="text-xs">

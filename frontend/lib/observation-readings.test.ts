@@ -20,7 +20,7 @@ describe("independent one-line sources", () => {
     });
   });
   it("pins missing CC observation text and leaves F2 unknown", () => {
-    expect(controlCentreObservations(FEEDER_STATE.points)("f2-position")).toEqual({
+    expect(controlCentreObservations(FEEDER_STATE.points.filter((p) => p.id !== "f2-position"))("f2-position")).toEqual({
       value: undefined, condition: "unknown", text: "unknown · UNKNOWN", shortText: "unknown · UNKNOWN",
       flags: [], staleReason: undefined, transient: false,
     });
@@ -42,11 +42,11 @@ describe("independent one-line sources", () => {
     expect(read("feeder-current").flags).toEqual([]);
     const html = renderToStaticMarkup(createElement(FeederOneLine, { read, physical: true }));
     expect(html).toContain("CB1: OPEN · GOOD · sim");
-    expect(html).toContain("F2 · closed (sim)");
+    expect(html).toContain("F2 · CLOSED · GOOD · sim");
     expect(html).toContain("Simulation-observed · independent of IEC 104");
     expect(html).not.toContain("faceplate");
   });
-  it("keeps null unknown, invalid retained values stale, and stale F2 unknown", () => {
+  it("keeps null unknown and invalid measurements stale without invalidating device positions", () => {
     const field = structuredClone(TRUTH);
     field.devices["breaker-1"].measurements.current_a = null;
     field.devices["rmu-1"].measurements.valid = false;
@@ -54,10 +54,32 @@ describe("independent one-line sources", () => {
     const read = physicalSystemObservations(field);
     expect(read("feeder-current")).toMatchObject({ value: null, condition: "unknown" });
     expect(read("rmu-1-section-kv").text).toContain("INVALID");
-    expect(read("f2-position").condition).toBe("unknown");
+    expect(read("f2-position").condition).toBe("good");
     expect(read("rmu-1-position").condition).toBe("good");
     delete field.devices["breaker-1"];
     expect(physicalSystemObservations(field)("feeder-breaker-position").condition).toBe("unknown");
+  });
+  it("reads all four F2 channels from its device, never a process latch or the other view", () => {
+    const field = structuredClone(TRUTH);
+    // Deliberately contradictory process data cannot override the device.
+    field.process.f2_tripped = true;
+    const physical = physicalSystemObservations(field);
+    expect(physical("f2-position")).toMatchObject({ value: "closed", condition: "good" });
+    expect(physical("f2-protection-trip")).toMatchObject({ value: false, condition: "good" });
+    expect(physical("f2-current")).toMatchObject({ value: 11.2, condition: "good" });
+    expect(physical("f2-p-mw")).toMatchObject({ value: 0.38, condition: "good" });
+    const cc = controlCentreObservations(FEEDER_STATE.points.map((p) => p.id === "f2-position" ? { ...p, value: "open" } : p));
+    expect(cc("f2-position").value).toBe("open");
+    expect(physical("f2-position").value).toBe("closed");
+    field.devices["f2-breaker"].measurements.valid = false;
+    expect(physicalSystemObservations(field)("f2-current").condition).toBe("stale");
+    expect(physicalSystemObservations(field)("f2-p-mw").condition).toBe("stale");
+    expect(physicalSystemObservations(field)("f2-position").condition).toBe("good");
+    for (const id of ["f2-position", "f2-protection-trip", "f2-current", "f2-p-mw"]) {
+      expect(physicalSystemObservations(field, true)(id).condition).toBe("stale");
+    }
+    delete field.devices["f2-breaker"];
+    expect(physicalSystemObservations(field)("f2-position")).toMatchObject({ value: null, condition: "unknown" });
   });
   it("establishes a physical F2 path and both sources when the tie closes", () => {
     const field = structuredClone(TRUTH);
@@ -67,7 +89,8 @@ describe("independent one-line sources", () => {
     if (cb1.kind === "breaker") cb1.position = "closed";
     if (tie.kind === "rmu") tie.position = "closed";
     expect(sectionSupplyPath(physicalSystemObservations(field), "S3").state).toBe("via CB1 + F2");
-    field.process.f2_tripped = true;
+    const f2 = field.devices["f2-breaker"];
+    if (f2.kind === "breaker") f2.position = "open";
     if (cb1.kind === "breaker") cb1.position = "open";
     expect(sectionSupplyPath(physicalSystemObservations(field), "S3")).toMatchObject({ state: "unknown", reason: expect.stringContaining("contradicts") });
   });

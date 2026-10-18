@@ -929,6 +929,100 @@
       "source_time_invalid": null,
       "received_at": null,
       "cot": null
+    },
+    {
+      "id": "f2-position",
+      "ioa": 1501,
+      "kind": "double-point",
+      "asdu": "M_DP_NA_1",
+      "reporting": null,
+      "value": "closed",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-17T22:02:38.494236042Z",
+      "cot": 20,
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-protection-trip",
+      "ioa": 1502,
+      "kind": "single-point",
+      "asdu": "M_SP_NA_1",
+      "reporting": null,
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-17T22:02:38.494169626Z",
+      "cot": 20,
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-current",
+      "ioa": 2501,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      },
+      "value": 11.2,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-17T22:03:53.404977841Z",
+      "cot": 1,
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-p-mw",
+      "device": "f2-breaker",
+      "limits": null,
+      "ioa": 2502,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "value": 0.38,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-17T22:03:53.404977841Z",
+      "cot": 1
     }
   ],
   "range_generation": 21,

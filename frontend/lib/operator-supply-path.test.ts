@@ -12,24 +12,24 @@ function pointsWith(patch: Record<string, Partial<OperatorPoint>> = {}) {
 }
 
 describe("observed supply path", () => {
-  it("keeps the normal F2-fed S3 path unknown despite GOOD live voltage", () => {
+  it("establishes the normal F2-fed S3 path from GOOD indications", () => {
     expect(sectionSupplyPath(FEEDER_STATE.points, "S1").state).toBe("via CB1");
     expect(sectionSupplyPath(FEEDER_STATE.points, "S2").state).toBe("via CB1");
-    expect(sectionSupplyPath(FEEDER_STATE.points, "S3")).toMatchObject({ state: "path unknown", reason: expect.stringContaining("F2 unobserved") });
+    expect(sectionSupplyPath(FEEDER_STATE.points, "S3")).toMatchObject({ state: "via F2", reason: expect.stringContaining("F2 path") });
   });
 
   it("does not claim the tie-fed S2 is supplied via CB1", () => {
     const points = pointsWith({ "rmu-1-position": { value: "open" }, "rmu-2-position": { value: "closed" } });
     expect(sectionSupplyPath(points, "S1").state).toBe("via CB1");
     for (const section of ["S2", "S3"] as const) {
-      expect(sectionSupplyPath(points, section)).toMatchObject({ state: "path unknown", reason: expect.stringContaining("F2 unobserved") });
+      expect(sectionSupplyPath(points, section)).toMatchObject({ state: "via F2", reason: expect.stringContaining("F2 path") });
     }
   });
 
-  it.each(sections)("notes the unobserved F2 contribution when %s also has a CB1 path", (section) => {
+  it.each(sections)("shows both sources when %s has two GOOD paths", (section) => {
     const points = pointsWith({ "rmu-2-position": { value: "closed" } });
     expect(sectionSupplyPath(points, section)).toMatchObject({
-      state: "via CB1", f2ContributionUnobserved: true, reason: expect.stringContaining("F2 contribution unobserved"),
+      state: "via CB1 + F2", reason: expect.stringContaining("Both observed switch paths"),
     });
   });
 
@@ -51,7 +51,7 @@ describe("observed supply path", () => {
   });
 
   it.each(["feeder-breaker-position", "rmu-1-position", "rmu-2-position"])("requires GOOD closed feedback for %s", (id) => {
-    const closed = pointsWith({ "rmu-2-position": { value: "closed" } });
+    const closed = pointsWith({ "rmu-2-position": { value: "closed" }, "f2-position": { value: "open" } });
     const point = closed.find((p) => p.id === id)!;
     const patches: Partial<OperatorPoint>[] = [
       ...(["open", "intermediate", "indeterminate", null] as const).map((value) => ({ value })),
@@ -60,9 +60,9 @@ describe("observed supply path", () => {
     ];
     for (const patch of patches) {
       const points = closed.map((p) => p.id === id ? { ...p, ...patch } : p);
-      expect(sectionSupplyPath(points, "S3").state).toBe("path unknown");
+      expect(sectionSupplyPath(points, "S3").state).toBe("unknown");
     }
-    expect(sectionSupplyPath(closed.filter((p) => p.id !== id), "S3").state).toBe("path unknown");
+    expect(sectionSupplyPath(closed.filter((p) => p.id !== id), "S3").state).toBe("unknown");
   });
 
   it("requires GOOD live busbar voltage, not a CB1 line-side voltage substitute", () => {
@@ -77,8 +77,20 @@ describe("observed supply path", () => {
 
   it("does not let downstream feedback quality invalidate a proven upstream path", () => {
     const points = pointsWith({ "rmu-2-position": { stale_reason: "device_unreachable" } });
-    expect(sectionSupplyPath(points, "S1")).toMatchObject({ state: "via CB1", f2ContributionUnobserved: false });
-    expect(sectionSupplyPath(points, "S2")).toMatchObject({ state: "via CB1", f2ContributionUnobserved: false });
+    expect(sectionSupplyPath(points, "S1")).toMatchObject({ state: "via CB1" });
+    expect(sectionSupplyPath(points, "S2")).toMatchObject({ state: "via CB1" });
+  });
+
+  it("keeps paths uncertain when F2 is missing, retained or not binary", () => {
+    const f2 = FEEDER_STATE.points.find((p) => p.id === "f2-position")!;
+    const patches: Partial<OperatorPoint>[] = [
+      { value: null }, { value: "intermediate" }, { value: "indeterminate" }, { stale_reason: "device_unreachable" },
+      ...(["iv", "nt", "sb", "bl"] as const).map((flag) => ({ quality: { ...f2.quality, [flag]: true } })),
+    ];
+    for (const section of sections) {
+      for (const patch of patches) expect(sectionSupplyPath(pointsWith({ "f2-position": patch }), section).state).toBe("path unknown");
+      expect(sectionSupplyPath(FEEDER_STATE.points.filter((p) => p.id !== "f2-position"), section).state).toBe("path unknown");
+    }
   });
 
   it.each([BOOT_STATE, LOST_LINK_STATE])("makes every section unknown without valid observations", (state) => {

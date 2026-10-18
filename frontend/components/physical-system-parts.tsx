@@ -4,6 +4,7 @@ import type { DeviceId } from "../lib/operator-workstation";
 
 export const EQUIPMENT: { id: DeviceId; key: string; title: string }[] = [
   { id: "CB1", key: "breaker-1", title: "CB1 — Feeder breaker" },
+  { id: "F2", key: "f2-breaker", title: "F2 — Alternative feeder · indication only" },
   { id: "T1", key: "oltc-1", title: "T1 — Transformer / OLTC" },
   { id: "RMU1", key: "rmu-1", title: "RMU1" },
   { id: "RMU2", key: "rmu-2", title: "RMU2 · NOP" },

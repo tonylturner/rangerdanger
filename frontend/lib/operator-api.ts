@@ -182,7 +182,7 @@ export type Protection = {
   picked_up_since: string | null;
   last_trip_current_a: number | null;
 };
-export type FieldDeviceKey = "breaker-1" | "rmu-1" | "rmu-2" | "oltc-1";
+export type FieldDeviceKey = "breaker-1" | "f2-breaker" | "rmu-1" | "rmu-2" | "oltc-1";
 export type BreakerPosition = "open" | "closed";
 type DeviceCommon = {
   schema: 3;

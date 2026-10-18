@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EU_ORACLE, CC_PATH, PHYSICAL_PATH, ORACLE_SECTIONS, oracleFixture } from "../lib/eu-oracle.test-util";
+import { EU_ORACLE, PHYSICAL_PATH, ORACLE_SECTIONS, oracleFixture } from "../lib/eu-oracle.test-util";
 import { controlCentreObservations, physicalSystemObservations } from "../lib/observation-readings";
 import { SECTION_VOLTAGE } from "../lib/operator-supply-path";
 import { FeederOneLine } from "./feeder-one-line";
@@ -26,9 +26,7 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       expect(hook(root, "data-section")).toHaveLength(3);
       for (const [i, section] of ORACLE_SECTIONS.entries()) {
         const node = hook(root, "data-section", section)[0];
-        const expectedPath = physical
-          ? PHYSICAL_PATH[row.supply.split("/")[i] as keyof typeof PHYSICAL_PATH]
-          : CC_PATH[row.cc.split("/")[i] as keyof typeof CC_PATH];
+        const expectedPath = PHYSICAL_PATH[row.supply.split("/")[i] as keyof typeof PHYSICAL_PATH];
         expect(node.props).toMatchObject({
           "data-state": live[i] ? "LIVE" : "DEAD", "data-path": expectedPath, "data-kv": kv[i],
         });
@@ -45,8 +43,8 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
         });
       }
       expect(hook(root, "data-device", "T1")[0].props).toMatchObject({ "data-tap": 0, "data-quality": "good" });
-      expect(hook(root, "data-device", "F2")[0].props["data-position"]).toBe(physical ? row.f2 === "tripped" ? "open" : "closed" : "unknown");
-      expect(hook(root, "data-f2-line")[0].props["data-state"]).toBe(physical ? live[2] ? "LIVE" : "DEAD" : "UNKNOWN");
+      expect(hook(root, "data-device", "F2")[0].props).toMatchObject({ "data-position": row.f2 === "tripped" ? "open" : "closed", "data-quality": "good" });
+      expect(hook(root, "data-f2-line")[0].props["data-state"]).toBe(live[2] ? "LIVE" : "DEAD");
       expect(hook(root, "data-point").map((n) => n.props["data-point"]).sort()).toEqual([
         "oltc-1-current", "oltc-1-bus-kv", "feeder-current", "feeder-voltage", "rmu-1-current", "rmu-2-current",
         "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv", "rmu-2-section-kv",
@@ -55,7 +53,7 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       if ("fault" in row) expect(hook(root, "data-point", "rmu-1-source-kv")[0].children.join("")).toContain("0.00 kV");
     });
     inspect(<AbnormalSummary state={operator} />, (root) => {
-      const expected = [];
+      const expected = row.f2 === "tripped" ? ["f2-protection-trip"] : [];
       if (row.switches[0] === "O") expected.push("feeder-breaker-position-off-normal");
       if (row.switches[1] === "O") expected.push("rmu-1-position-off-normal");
       if (row.switches[2] === "C") expected.push("rmu-2-position-off-normal");
@@ -78,7 +76,7 @@ it.each(["stale", "unknown"] as const)("exports CC %s states without turning ret
     for (const section of hook(root, "data-section")) {
       expect(section.props).toMatchObject({ "data-state": "UNKNOWN", "data-path": "unknown", "data-kv": condition === "unknown" ? "" : 19.9 });
     }
-    for (const device of ["CB1", "RMU1", "RMU2", "T1"]) expect(hook(root, "data-device", device)[0].props["data-quality"]).toBe(condition);
+    for (const device of ["CB1", "RMU1", "RMU2", "T1", "F2"]) expect(hook(root, "data-device", device)[0].props["data-quality"]).toBe(condition);
     expect(hook(root, "data-device", "CB1")[0].props["data-position"]).toBe(condition === "unknown" ? "unknown" : "closed");
     expect(hook(root, "data-device", "T1")[0].props["data-tap"]).toBe(condition === "unknown" ? "" : 0);
     expect(hook(root, "data-point", "feeder-voltage")[0].props["data-state"]).toBe("UNKNOWN");
@@ -91,7 +89,7 @@ it("exports stale physical measurements but still GOOD physical switch positions
   inspect(<FeederOneLine physical read={physicalSystemObservations(field)} />, (root) => {
     expect(hook(root, "data-section").every((n) => n.props["data-state"] === "UNKNOWN" && n.props["data-path"] === "unknown")).toBe(true);
     expect(hook(root, "data-device", "CB1")[0].props).toMatchObject({ "data-position": "closed", "data-quality": "good" });
-    expect(hook(root, "data-device", "F2")[0].props["data-position"]).toBe("unknown");
+    expect(hook(root, "data-device", "F2")[0].props["data-position"]).toBe("open");
     expect(hook(root, "data-f2-line")[0].props["data-state"]).toBe("UNKNOWN");
   });
 });

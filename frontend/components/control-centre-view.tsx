@@ -3,14 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { postOperatorGi, type ControlCentreLink, type OperatorJournal, type OperatorState } from "../lib/operator-api";
-import { LINK_STATE_TEXT, ageMs, formatAge, formatUtcTime, telemetrySummary, telemetryText } from "../lib/operator-format";
+import { LINK_STATE_TEXT, ageMs, formatAge, formatUtcTime, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { OPERATOR_KEY, useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
-import { activeAlarms, abnormalConditions, type DeviceId } from "../lib/operator-workstation";
+import { activeAlarms, abnormalConditions, devicePoints, DEVICES, hasCurrentConnectionGi, pointObservationNotCurrent, scadaViewState, type DeviceId } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 import { DeviceFaceplate } from "./control-centre-faceplate";
 import { ControlCentreOneLine } from "./control-centre-one-line";
-import { STALE_HATCH } from "./control-centre-points";
 import { PhysicalSystem, PHYSICAL_DESCRIPTION } from "./physical-system";
 import { ControlCentrePane, type PaneTab } from "./control-centre-pane";
 
@@ -22,10 +21,9 @@ export function viewFromSearch(search: string): WorkstationView {
 function Cell({ label, children }: { label: string; children: ReactNode }) {
   return <div className="min-w-0"><dt className="text-xs text-slate-400">{label}</dt><dd className="break-words font-mono text-xs text-slate-100">{children}</dd></div>;
 }
-export function LinkStrip({ link, now }: { link: ControlCentreLink; now: number }) {
-  const integrity = link.gi.last_complete_at !== null;
-  return <section aria-label="IEC 104 link" className={`rounded-lg border p-3 ${link.state === "started" ? "border-slate-700 bg-slate-900" : `border-dashed border-amber-600 ${STALE_HATCH}`}`}>
-    {link.state !== "started" && <p role="alert" className="mb-2 text-xs text-amber-300">IEC 104 LINK {LINK_STATE_TEXT[link.state]}: telemetry is stale; retained values are not current.</p>}
+export function LinkDetails({ link, now }: { link: ControlCentreLink; now: number }) {
+  const integrity = hasCurrentConnectionGi(link);
+  return <section aria-label="IEC 104 link" className="rounded-lg border border-slate-700 bg-slate-900 p-3">
     <dl className="flex flex-wrap gap-x-6 gap-y-3">
       <Cell label="Link">{LINK_STATE_TEXT[link.state]}</Cell>
       <Cell label="RTU peer">{link.peer}</Cell>
@@ -36,6 +34,21 @@ export function LinkStrip({ link, now }: { link: ControlCentreLink; now: number 
       <Cell label="GI trigger / state">{link.gi.trigger ?? "—"} / {link.gi.state === "running" ? "RUNNING" : link.gi.state}</Cell>
       <Cell label="GI next due (UTC)">{formatUtcTime(link.gi.next_due_at)}</Cell>
     </dl>
+  </section>;
+}
+export function ScadaViewBanner({ state, unavailable }: { state: OperatorState | undefined; unavailable: boolean }) {
+  const viewState = scadaViewState(state, unavailable);
+  const notCurrent = state?.points.filter(pointObservationNotCurrent).length ?? 0;
+  const affected = state ? DEVICES.filter((device) => devicePoints(state.points, device).some(pointObservationNotCurrent)) : [];
+  const messages = {
+    lost: "SCADA VIEW LOST — retained values are not current",
+    recovering: "VIEW RECOVERING — GI/GOOD observations pending",
+    degraded: `SCADA VIEW DEGRADED — ${notCurrent}/${state?.points.length ?? 0} points not current`,
+    "not-established": "SCADA VIEW NOT ESTABLISHED — no established view yet",
+    unavailable: "SCADA VIEW UNAVAILABLE — API unavailable; cached state cannot establish current observations",
+  };
+  return <section data-view-state={viewState} aria-label="SCADA view state" role={viewState === "lost" ? "alert" : viewState === "ok" ? undefined : "status"} className={viewState === "ok" ? undefined : `sticky top-0 z-20 rounded-lg border-2 p-4 ${viewState === "lost" ? "border-rose-400 bg-rose-950 text-rose-100" : "border-amber-400 bg-amber-950 text-amber-100"}`}>
+    {viewState !== "ok" && <><h2 className="text-lg font-bold">{messages[viewState]}</h2><p className="mt-1 text-sm">{viewState === "degraded" ? <>{state?.points.length ? `Affected devices: ${affected.join(", ")}. Retained values for these points are not current.` : "Point inventory unavailable."}</> : state ? `${notCurrent}/${state.points.length} inventory points not current.` : "No operator snapshot received."} Physical System observations are independent of SCADA.</p></>}
   </section>;
 }
 export function InterrogateStation({ state, unavailable }: { state: OperatorState; unavailable: boolean }) {
@@ -54,8 +67,10 @@ export function SnapshotMarker({ age }: { age: string | null }) {
 }
 export function AbnormalSummary({ state }: { state: OperatorState }) {
   const conditions = abnormalConditions(state);
+  const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good").length;
   return <section aria-label="Abnormal conditions" className={`rounded-lg border p-3 text-sm ${conditions.length ? "border-amber-700 bg-amber-950/30 text-amber-200" : "border-slate-700 text-slate-300"}`}>
-    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id} data-condition={c.id}>⚠ {c.text}</li>)}</ul> : <span data-condition="none">No abnormal conditions</span>}
+    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id} data-condition={c.id}>⚠ {c.text}</li>)}</ul> : <span data-condition="none">No alarms in GOOD observations</span>}
+    <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-GOOD measurements · separate from process alarms.</p>
   </section>;
 }
 export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalSystem, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms", selected = "T1", onSelect = () => {} }: {
@@ -78,11 +93,12 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
       {([['control-centre', 'Control Centre'], ['physical-system', 'Physical System']] as const).map(([id, label]) => <button key={id} className={`${BUTTON} ${view === id ? "bg-slate-700" : "border-transparent"}`} aria-pressed={view === id} onClick={() => onViewChange(id)}>{label}</button>)}
     </div>
     {unavailable && <p role="alert" className="rounded-lg border border-amber-700 p-3 text-sm text-amber-200">{isRangeNotReady(stateError) ? "Range not ready" : "Control centre API unavailable"}: {errorMessage(stateError)}. {state ? view === "control-centre" ? "Showing the last answer; controls disabled." : "Comparison uses the last CC answer. Physical data is fetched independently." : "Nothing received yet."}</p>}
+    <ScadaViewBanner state={state} unavailable={unavailable} />
     {view === "physical-system" ? <>{cachedAge !== null && <p role="status" className="text-xs text-amber-200">Field-vs-CC comparison uses a cached CC snapshot · {cachedAge} since last operator API answer. Field data is fetched independently.</p>}{physicalSystem}</> : <>
       <p className="text-xs text-slate-300">Portal API: {unavailable ? "unavailable" : state ? "available" : "waiting"} · {alarms.length} active alarms{cachedAge !== null ? " in cached snapshot" : ""}</p>
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
-        <div><SnapshotMarker age={cachedAge} /><LinkStrip link={state.link} now={now} /><div className="mt-3"><InterrogateStation state={state} unavailable={unavailable} /></div></div>
+        <div><SnapshotMarker age={cachedAge} /><InterrogateStation state={state} unavailable={unavailable} /></div>
         <AbnormalSummary state={state} />
         {/* Keep 12px schematic labels; put the faceplate alongside only when both fit without shrinking the SVG. */}
         <div className="grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]">
@@ -96,6 +112,7 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
           <SnapshotMarker age={cachedAge} /><p className="mb-3 text-xs text-slate-400">{summary && telemetryText(summary)}</p>
           <ControlCentrePane state={state} journal={journal} journalError={journalError} now={now} initialTab={initialTab} />
         </section>
+        <details className="text-xs text-slate-400"><summary>Link diagnostics</summary><LinkDetails link={state.link} now={now} /></details>
         <details className="break-all text-xs text-slate-400"><summary>Snapshot identity</summary>snapshot {state.snapshot_seq} · rendered {state.rendered_at} · cache epoch {state.cache_epoch} · generation {state.range_generation} · package {state.package_id}</details>
       </section>}
     </>}

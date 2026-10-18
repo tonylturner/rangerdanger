@@ -1,24 +1,24 @@
-import type { OperatorPoint, OperatorState } from "./operator-api";
+import type { ControlCentreLink, OperatorPoint, OperatorState } from "./operator-api";
 import { pointCondition, pointLabel } from "./operator-format";
 import { LIVE_KV, voltageState } from "./electrical-state";
 import { controlCentreObservations } from "./observation-readings";
 import { SECTION_VOLTAGE, type SectionId } from "./operator-supply-path";
 
-export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2";
-export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2"];
+export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2" | "F2";
+export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2", "F2"];
 export const AUTHORITY_POINTS = {
   T1: { id: "oltc-1-remote", label: "T1 OLTC authority" },
   RMU1: { id: "rmu-1-remote", label: "RMU1 authority" },
   RMU2: { id: "rmu-2-remote", label: "RMU2 authority" },
 };
 export function devicePoints(points: OperatorPoint[], device: DeviceId) {
-  const prefixes = device === "T1" ? ["oltc-1-", "plc-1-"] : device === "CB1" ? ["feeder-"] : [device === "RMU1" ? "rmu-1-" : "rmu-2-"];
+  const prefixes = device === "T1" ? ["oltc-1-", "plc-1-"] : device === "CB1" ? ["feeder-"] : device === "F2" ? ["f2-"] : [device === "RMU1" ? "rmu-1-" : "rmu-2-"];
   return points.filter((p) => prefixes.some((prefix) => p.id.startsWith(prefix)));
 }
 export function activeAlarms(state: OperatorState): { id: string; text: string }[] {
   const alarms: { id: string; text: string }[] = [];
   if (state.link.state !== "started") alarms.push({ id: "link", text: `IEC 104 link ${state.link.state}` });
-  const asserted = ["feeder-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
+  const asserted = ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
   for (const p of state.points) {
     if (pointCondition(p) !== "good") continue;
     if (p.limits && typeof p.value === "number" && Number.isFinite(p.value) && p.value >= LIVE_KV && (p.value < p.limits.low || p.value > p.limits.high)) {
@@ -29,6 +29,35 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
     }
   }
   return alarms;
+}
+export type ViewState = "ok" | "lost" | "recovering" | "degraded" | "not-established" | "unavailable";
+
+// A periodic/operator GI does not revoke a completed GI on this connection.
+// A completion retained from an earlier connection cannot establish this one.
+export function hasCurrentConnectionGi({ since, gi }: ControlCentreLink): boolean {
+  return since !== null && gi.last_complete_at !== null && Date.parse(gi.last_complete_at) >= Date.parse(since);
+}
+// IV alone can mean an electrically undefined measurement, not loss of view.
+export function pointObservationNotCurrent(p: OperatorPoint): boolean {
+  return p.value === null || p.quality.nt ||
+    p.stale_reason === "link_lost" || p.stale_reason === "device_unreachable" ||
+    p.stale_reason === "heartbeat" || p.stale_reason === "not_updated" || p.stale_reason === "never_received";
+}
+export function scadaViewState(state: OperatorState | undefined, unavailable = false): ViewState {
+  if (unavailable) return "unavailable";
+  if (!state) return "not-established";
+  if (state.link.state !== "started") {
+    const received = state.link.gi.last_complete_at !== null || state.points.some((p) => p.value !== null || p.received_at !== null);
+    return received ? "lost" : "not-established";
+  }
+  if (!hasCurrentConnectionGi(state.link)) return "recovering";
+  return state.points.length > 0 && !state.points.some(pointObservationNotCurrent) ? "ok" : "degraded";
+}
+
+export function receivedAuthority(points: OperatorPoint[], device: DeviceId, unavailable = false): "LOCAL" | "REMOTE" | "not established" {
+  const authority = device === "T1" || device === "RMU1" || device === "RMU2" ? AUTHORITY_POINTS[device] : undefined;
+  const p = authority && points.find((point) => point.id === authority.id);
+  return !unavailable && p && pointCondition(p) === "good" && typeof p.value === "boolean" ? p.value ? "REMOTE" : "LOCAL" : "not established";
 }
 export type VoltageBand = { low: number; high: number; setpoint: number; bus: number | null };
 export function regulationBand(points: OperatorPoint[]): VoltageBand | null {

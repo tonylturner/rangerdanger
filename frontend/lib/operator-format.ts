@@ -33,6 +33,10 @@ export const POINT_META: Record<string, PointMeta> = {
   "feeder-protection-trip": { label: "Protection trip", states: ["NORMAL", "TRIPPED"] },
   "feeder-current": { label: "CB1 current", unit: "A", digits: 1 },
   "feeder-voltage": { label: "CB1 line-side VT", unit: "kV", digits: 2 },
+  "f2-position": { label: "F2 breaker position" },
+  "f2-protection-trip": { label: "F2 protection trip", states: ["NORMAL", "TRIPPED"] },
+  "f2-current": { label: "F2 current", unit: "A", digits: 1 },
+  "f2-p-mw": { label: "F2 active power P", unit: "MW", digits: 2 },
   "oltc-1-tap": { label: "T1 completed tap", digits: 0 },
   "oltc-1-auto": { label: "OLTC mode", states: ["MANUAL", "AUTO"] },
   "oltc-1-bus-kv": { label: "20 kV busbar (T1 secondary)", unit: "kV", digits: 2 },
@@ -63,7 +67,7 @@ for (const id of ["rmu-1", "rmu-2"]) {
   const location = id === "rmu-1" ? "RMU1" : "RMU2";
   POINT_META[`${id}-current`] = { label: `${location} current`, unit: "A", digits: 1 };
   POINT_META[`${id}-source-kv`] = { label: `${location} ${id === "rmu-1" ? "S1" : "S3"} side`, unit: "kV", digits: 2 };
-  POINT_META[`${id}-section-kv`] = { label: `${location} S2 side`, unit: "kV", digits: 2 };
+  POINT_META[`${id}-section-kv`] = { label: `${location} S2 bus VT`, unit: "kV", digits: 2 };
 }
 
 export function pointLabel(id: string): string {
