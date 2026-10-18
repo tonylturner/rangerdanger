@@ -247,8 +247,15 @@ eu_gate_G9() {
     fail "G9 cannot verify recovery without the verified G7 CC disconnect"
     return
   fi
-  if eu_wait_for_operator "($shape) and .link.state == \"started\" and .link.gi.state == \"complete\" and all(.points[]; good)" \
-    30 "G9 CC reconnect/GI and every inventory point GOOD"; then
+  # GI refresh and measurement validity are distinct: PF is undefined at zero
+  # power after G8 leaves CB1 open, but its IV report still proves recovery.
+  if eu_wait_for_operator "($shape) and .link.state == \"started\" and .link.gi.state == \"complete\"
+    and all(.points[]; .value != null and .quality.nt == false
+      and .quality.sb == false and .quality.bl == false
+      and (.quality.ov == null or .quality.ov == false)
+      and ((.quality.iv == false and .stale_reason == null)
+        or (.quality.iv == true and .stale_reason == \"measurement_invalid\")))" \
+    30 "G9 CC reconnect/GI and every inventory point refreshed"; then
     pass "G9 restored IEC104 observations after GI"
   fi
   if ! eu_get_field; then

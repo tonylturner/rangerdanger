@@ -49,7 +49,9 @@ eu_api_get() {
          | .received_at = ($sample.received // $received)
          | .quality.iv = ($sample.invalid // false))
     | (.points[] | select(.id == "oltc-1-bus-kv")) |=
-        (.value = $sample.kv | .quality.iv = ($sample.invalid // false))
+        (.value = $sample.kv | .quality.iv = ($sample.bus_invalid // $sample.invalid // false)
+         | .stale_reason = (if .quality.iv then "measurement_invalid" else null end)
+         | .received_at = ($sample.bus_received // $received))
     | if $posts > 0 then
         .link.gi = {state:(if $clock >= $gi_delay then "complete" else "running" end),
           trigger:"operator",started_at:$since,last_complete_at:$since,next_due_at:$since}
@@ -83,6 +85,50 @@ reset_trace '[{"at":0,"tap":0,"kv":21.0},{"at":39000,"tap":-1,"kv":20.9},
 t_run wait_trace
 t_expect_eq "$T_STATUS" 0 "steady completed lower steps also renew the window"
 
+reset_trace '[{"at":0,"tap":0,"kv":20.0},
+  {"at":39000,"tap":1,"kv":20.0,"bus_invalid":true},
+  {"at":65000,"tap":1,"kv":20.4}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "a completed raise renews the window even with a simultaneous IV bus"
+t_expect_eq "$CLOCK" 65000 "GOOD voltage may recover after the original deadline"
+
+reset_trace '[{"at":0,"tap":0,"kv":21.0},
+  {"at":39000,"tap":-1,"kv":21.0,"bus_invalid":true},
+  {"at":65000,"tap":-1,"kv":20.4}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "a completed lower also uses demand from before an IV bus sample"
+
+reset_trace '[{"at":0,"tap":0,"kv":20.0},
+  {"at":13000,"tap":0,"kv":20.0,"bus_invalid":true},
+  {"at":39000,"tap":1,"kv":20.0,"bus_invalid":true},
+  {"at":65000,"tap":1,"kv":20.4}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "invalid bus samples do not erase the last known demand"
+
+reset_trace '[{"at":0,"tap":0,"kv":20.0},
+  {"at":39000,"tap":0,"kv":20.177},
+  {"at":78000,"tap":0,"kv":20.177},{"at":117000,"tap":1,"kv":20.4}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "near-low-edge reports renew the timer hidden by the reporting deadband"
+t_expect_eq "$CLOCK" 117000 "ambiguous bus reports can outlast the original stall window"
+
+reset_trace '[{"at":0,"tap":0,"kv":21.0},
+  {"at":39000,"tap":0,"kv":20.65},{"at":78000,"tap":-1,"kv":20.4}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "near-high-edge observations also renew the window"
+
+reset_trace '[{"at":0,"tap":0,"kv":20.0},
+  {"at":39000,"tap":0,"kv":20.177,"bus_invalid":true}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 1 "an IV near-edge bus cannot renew the window without tap progress"
+t_expect_eq "$CLOCK" 52000 "ambiguous voltage must be GOOD"
+
+reset_trace '[{"at":0,"tap":0,"kv":20.0},
+  {"at":39000,"tap":0,"kv":20.177,"bus_received":"2026-10-15T11:59:59Z"}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 1 "a near-edge bus predating this attempt cannot renew the window"
+t_expect_eq "$CLOCK" 52000 "ambiguous voltage must be fresh"
+
 reset_trace '[{"at":0,"tap":0,"kv":20.0}]'
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "a stall out of band fails"
@@ -113,8 +159,10 @@ t_expect_eq "$T_STATUS" 0 "an already in-band state passes"
 t_expect_eq "$CLOCK" 0 "an already in-band state passes immediately after fresh GI"
 t_expect_eq "$LAST_TIMEOUT" 52.000 "the API request is bounded by the shared window"
 
+# Keep the bus beyond the reporting deadband here to isolate tap motion and
+# freshness from the separate near-edge renewal rule.
 reset_trace '[{"at":0,"tap":0,"kv":20.0},
-  {"at":39000,"tap":1,"kv":20.1,"transient":true}]'
+  {"at":39000,"tap":1,"kv":20.05,"transient":true}]'
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "motion alone cannot renew the deadline"
 t_expect_eq "$CLOCK" 52000 "transient observations do not hide a stall"
@@ -125,7 +173,7 @@ t_expect_eq "$T_STATUS" 1 "a completed wrong-way step cannot renew the deadline"
 t_expect_eq "$CLOCK" 52000 "wrong-way movement fails within the original window"
 
 reset_trace '[{"at":0,"tap":0,"kv":20.0,"received":"2026-10-15T12:00:00Z"},
-  {"at":39000,"tap":1,"kv":20.1,"received":"2026-10-15T12:00:00Z"}]'
+  {"at":39000,"tap":1,"kv":20.05,"received":"2026-10-15T12:00:00Z"}]'
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "a retained tap observation is not fresh progress"
 t_expect_eq "$CLOCK" 52000 "receipt time must advance before a step can renew the window"
@@ -139,7 +187,7 @@ reset_trace '[{"at":0,"tap":2,"kv":20.4,"received":"2026-10-15T11:59:59Z"}]'
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "an in-band tap received before the boundary cannot pass"
 
-reset_trace '[{"at":0,"tap":0,"kv":20.0},{"at":39000,"tap":1,"kv":20.1}]'
+reset_trace '[{"at":0,"tap":0,"kv":20.0},{"at":39000,"tap":1,"kv":20.05}]'
 GI_DELAY=65000
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "GI must complete before success can be reported"
@@ -191,6 +239,12 @@ t_expect_eq "$T_STATUS" 1 "continuing regulation cannot evade the absolute cap"
 t_expect_eq "$CLOCK" 832000 "full symmetric tap span times the window caps each wait"
 t_expect_out 'absolute cap' "absolute cap failure is explicit"
 
+reset_trace '[{"at":0,"tap":0,"kv":20.177}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 1 "perpetual near-edge ambiguity cannot certify regulation"
+t_expect_eq "$CLOCK" 832000 "near-edge renewals remain bounded by the absolute cap"
+t_expect_out 'absolute cap' "near-edge observations do not loosen the pass band"
+
 # The gate tolerance is fixed, but changes in the physics reference must flow
 # through to the window, band and limits without editing the waiter.
 REFERENCE_PACKAGE="$PACKAGE"
@@ -212,5 +266,12 @@ CLOCK_STEP=1000
 t_run wait_trace
 t_expect_eq "$T_STATUS" 1 "the modified timing reference still detects a stall"
 t_expect_eq "$CLOCK" 23000 "reference delay and motion determine the inactivity window"
+# A wider configured reporting deadband makes this otherwise far-out value
+# ambiguous. Read it from points.json, independently of the physics reference.
+jq '(.points[] | select(.id == "oltc-1-bus-kv") | .deadband) = 0.5' \
+  "$REFERENCE_PACKAGE/protocols/points.json" >"$PACKAGE/protocols/points.json"
+reset_trace '[{"at":0,"tap":0,"kv":17.6},{"at":39000,"tap":1,"kv":18.5}]'
+t_run wait_trace
+t_expect_eq "$T_STATUS" 0 "near-edge tolerance follows the bus point reporting deadband"
 PACKAGE="$REFERENCE_PACKAGE"
 t_finish

@@ -16,18 +16,23 @@ eu_fresh_points() {
 EU_REGULATION_SLACK_S=20
 
 # A moving daily profile has no fixed equilibrium tap. Only a fresh completed
-# step in the direction demanded by the preceding voltage renews the deadline.
-# GI shares these deadlines; retained samples, motion and wrong-way steps do not.
+# step in the direction demanded by the preceding voltage proves progress.
+# Near-edge reports cannot prove continuous PLC demand across the deadband, so
+# they also renew the deadline. GI shares both deadlines and the absolute cap.
 eu_wait_for_regulation() {
-  local predicate="$1" since="$2" label="$3" low high upper window span
-  local start now deadline cap remaining timeout body sample tap direction received
-  local previous_tap="" previous_direction="" previous_received="" epoch="" connection="" requested="" ready=false
+  local predicate="$1" since="$2" label="$3" low high upper window span deadband
+  local start now deadline cap remaining timeout body sample tap direction received bus_sample near_edge
+  local previous_tap="" previous_direction=0 previous_received="" epoch="" connection="" requested="" ready=false
   # Like G16, derive both symmetric limits from the upper-limit reference case.
   read -r low high upper window span < <(jq -er --argjson slack "$EU_REGULATION_SLACK_S" '
     .source_0_90[-1].tap as $upper
     | [.band_kv[0], .band_kv[1], $upper,
        (.configured_delay_s + .motion_s + $slack), ($upper - (-$upper))] | @tsv
   ' "$PACKAGE/process/reference-cases.json") || return
+  deadband=$(jq -er '
+    [.points[] | select(.id == "oltc-1-bus-kv")]
+    | select(length == 1) | .[0].deadband | numbers | select(. >= 0)
+  ' "$PACKAGE/protocols/points.json") || return
   start=$(eu_now_ms) || return
   deadline=$((start + window * 1000))
   cap=$((start + span * window * 1000))
@@ -61,20 +66,32 @@ eu_wait_for_regulation() {
         and (.link.gi.last_complete_at | epoch) >= (.link.gi.started_at | epoch)
       ' >/dev/null; then ready=true; else ready=false; fi
     fi
+    # Bus quality gates direction and success, not completed tap observations.
+    # Within one reporting deadband of either edge, the PLC may already be in
+    # band (and resetting its delay) while IEC104 still reports out of band.
+    bus_sample=$(printf '%s' "$body" | jq -er --arg since "$since" --argjson low "$low" \
+      --argjson high "$high" --argjson deadband "$deadband" "$EU_JQ_DEFS"'
+      point("oltc-1-bus-kv")
+      | select(good and (.received_at | epoch) >= ($since | epoch) and (.value | type) == "number")
+      | [(if .value < $low then 1 elif .value > $high then -1 else 0 end),
+         (near(.value; $low; $deadband) or near(.value; $high; $deadband))] | @tsv
+    ') || bus_sample=""
+    direction=0
+    if [ -n "$bus_sample" ]; then
+      read -r direction near_edge <<<"$bus_sample"
+      if [ "$near_edge" = true ]; then deadline=$((now + window * 1000)); fi
+    fi
     # A fresh receipt is necessary but not sufficient: repeated GI snapshots of
     # the same tap must not turn a stalled regulator into apparent progress.
-    sample=$(printf '%s' "$body" | jq -er --arg since "$since" --argjson low "$low" \
-      --argjson high "$high" "$EU_JQ_DEFS"'
+    sample=$(printf '%s' "$body" | jq -er --arg since "$since" "$EU_JQ_DEFS"'
       def fresh: good and (.received_at | epoch) >= ($since | epoch);
-      point("oltc-1-tap") as $tap | point("oltc-1-bus-kv") as $bus
-      | select(($tap | fresh) and ($bus | fresh) and $tap.value.transient == false
-        and ($tap.value.value | type) == "number" and ($bus.value | type) == "number")
-      | [$tap.value.value, (if $bus.value < $low then 1 elif $bus.value > $high then -1 else 0 end),
-         ($tap.received_at | epoch)] | @tsv
+      point("oltc-1-tap")
+      | select(fresh and .value.transient == false and (.value.value | type) == "number")
+      | [.value.value, (.received_at | epoch)] | @tsv
     ') || sample=""
     if [ -n "$sample" ]; then
-      read -r tap direction received <<<"$sample"
-      if [ "$ready" = true ] && [ "$direction" -eq 0 ] \
+      read -r tap received <<<"$sample"
+      if [ "$ready" = true ] && [ -n "$bus_sample" ] && [ "$direction" -eq 0 ] \
         && printf '%s' "$body" | jq -e --arg since "$since" "$EU_JQ_DEFS
           def point(\$id): [.points[] | select(.id == \$id and good
             and (.received_at | epoch) >= (\$since | epoch))]
@@ -96,8 +113,9 @@ eu_wait_for_regulation() {
         fi
       fi
       previous_tap="$tap"
-      previous_direction="$direction"
       previous_received="$received"
+      # An invalid bus must not erase the demand used to judge the next step.
+      if [ -n "$bus_sample" ]; then previous_direction="$direction"; fi
     fi
     if [ -z "$requested" ] && printf '%s' "$body" | jq -e \
       '.link.state == "started" and .link.gi.state != "running"' >/dev/null; then

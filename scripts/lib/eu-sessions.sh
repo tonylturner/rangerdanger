@@ -2,6 +2,14 @@
 # Strict firewall conntrack tuple selection, deletion and closing-history drain.
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
+# Closing rows are history, both before a gate owns a connection and when
+# selecting its live kill target. Unknown states remain live (fail closed).
+# shellcheck disable=SC2016
+EU_SESSION_JQ_DEFS='
+  def closing: .state as $state
+    | ["TIME_WAIT", "CLOSE", "CLOSE_WAIT", "FIN_WAIT", "LAST_ACK"] | any(. == $state);
+'
+
 # eu_read_sessions DPORT SRC [allow-empty]: the filtered conntrack list. An
 # empty list fails unless the caller is proving that no session exists.
 eu_read_sessions() {
@@ -36,9 +44,10 @@ eu_session_tuple() {
   local body="$1" src="$2" dst="$3" dport="$4" matches count
   SESSION_TUPLE=""
   matches=$(printf '%s' "$body" | jq -c --arg src "$src" --arg dst "$dst" \
-    --argjson dport "$dport" '
+    --argjson dport "$dport" "$EU_SESSION_JQ_DEFS"'
       [.sessions[] | select((.proto | ascii_downcase) == "tcp"
-        and .src == $src and .dst == $dst and .dport == $dport)]
+        and .src == $src and .dst == $dst and .dport == $dport
+        and (closing | not))]
     ') || {
       printf 'session response cannot be parsed while selecting %s -> %s tcp/%s\n' \
         "$src" "$dst" "$dport" >&2
@@ -46,7 +55,7 @@ eu_session_tuple() {
     }
   count=$(printf '%s' "$matches" | jq 'length') || count=""
   if [ "$count" != "1" ]; then
-    printf 'expected exactly one session tuple for %s -> %s tcp/%s, found %s\n' \
+    printf 'expected exactly one live session tuple for %s -> %s tcp/%s, found %s\n' \
       "$src" "$dst" "$dport" "${count:-unparsable}" >&2
     return 1
   fi
@@ -93,11 +102,11 @@ eu_wait_session_history_drained() {
   }
   while :; do
     eu_read_sessions "$dport" "$src" allow-empty || return 1
-    rows=$(printf '%s' "$SESSION_BODY" | jq -c --arg src "$src" --arg dst "$dst" --argjson dport "$dport" '
+    rows=$(printf '%s' "$SESSION_BODY" | jq -c --arg src "$src" --arg dst "$dst" \
+      --argjson dport "$dport" "$EU_SESSION_JQ_DEFS"'
       [.sessions[] | select((.proto | ascii_downcase) == "tcp"
         and .src == $src and .dst == $dst and .dport == $dport)]
-      | map(. + {closing: (.state as $state
-          | ["TIME_WAIT", "CLOSE", "CLOSE_WAIT", "FIN_WAIT", "LAST_ACK"] | any(. == $state))})
+      | map(. + {closing: closing})
     ') || {
       fail "$label cannot select $src -> $dst tcp/$dport rows: $SESSION_BODY"
       return 1
