@@ -24,11 +24,13 @@ def fixture(row, view):
     dom['view'] = view
     dom['text'] = 'Protection TRIPPED · LOCKOUT' if row.get('lockout') else ''
     dom['authorities'] = []
+    dom['observationUncertainty'] = '0'
     dom['devices'][3]['text'] = 'Tap 0 · GOOD · MANUAL'
     expected = dict(zip(check.VOLTAGES, row.get('section_kv', [0 if s == 'D' else 19.8 for s in row['supply']])))
     expected.update({'oltc-1-bus-kv': 20, 'feeder-voltage': row['vt_kv'],
                      'oltc-1-current': row['currents_a'][3], 'feeder-current': row['currents_a'][0],
                      'rmu-1-current': row['currents_a'][1], 'rmu-2-current': row['currents_a'][2],
+                     'f2-current': row['f2_current_a'], 'f2-p-mw': row['f2_p_mw'],
                      'rmu-2-section-kv': expected['rmu-1-section-kv']})
     for i, section in enumerate(dom['sections']):
         section.update(state='DEAD' if row['supply'][i] == 'D' else 'LIVE',
@@ -37,8 +39,9 @@ def fixture(row, view):
         section['text'] = f'{section["section"]} · {section["state"]} {section["path"]} {section["kv"]} kV'
     for d, s in zip(dom['devices'], row['switches']):
         d['position'] = 'closed' if s == 'C' else 'open'
-    dom['devices'][4]['position'] = 'unknown' if view == 'cc' else 'open' if row['f2'] == 'tripped' else 'closed'
-    dom['f2Line'] = 'UNKNOWN' if view == 'cc' else 'DEAD' if row['supply'][2] == 'D' else 'LIVE'
+    dom['devices'][4]['position'] = 'open' if row['f2'] == 'tripped' else 'closed'
+    dom['f2Line'] = 'DEAD' if row['supply'][2] == 'D' else 'LIVE'
+    dom['f2Telemetry'] = f'F2 · indication only: {"TRIPPED" if row["f2"] == "tripped" else "NORMAL"} · I {row["f2_current_a"]:.1f} A · P {row["f2_p_mw"]:.2f} MW'
     for m in dom['measurements']:
         m['text'] = f'{expected[m["point"]]:.2f} {"kV" if m["point"].endswith("-kv") or m["point"] == "feeder-voltage" else "A"} · GOOD'
         if m['point'].endswith('-kv') or m['point'] == 'feeder-voltage':
@@ -55,6 +58,9 @@ def fixture(row, view):
     if row.get('lockout'):
         dom['conditions'] = [c for c in dom['conditions'] if c['id'] != 'none']
         dom['conditions'].append({'id': 'feeder-protection-trip', 'text': 'Protection trip: asserted'})
+    if row['f2'] == 'tripped':
+        dom['conditions'] = [c for c in dom['conditions'] if c['id'] != 'none']
+        dom['conditions'].append({'id': 'f2-protection-trip', 'text': 'F2 protection trip: asserted'})
     if view == 'physical':
         dom['comparisons'] = [{'point': id, 'status': 'MATCH'} for id in expected]
     return dom, expected
@@ -74,18 +80,21 @@ def data_fixture(row):
     field['process']['buses']['bus20'] = {'kv': 20, 'live': True}
     for i, name in enumerate(check.DEVICES):
         device_id = 'feeder-breaker' if i == 0 else name
-        amps = row['currents_a'][i]
+        amps = row['f2_current_a'] if name == 'f2-breaker' else row['currents_a'][i]
         d = {'device_id': device_id, 'generation': 7, 'revision': 1, 'remote_enabled': True,
              'protection': {'picked_up': False}, 'position': 'closed' if i < 3 and row['switches'][i] == 'C' else 'open',
              'earth_closed': False, 'fault_passage': False,
              'measurements': {'valid': True, 'solver_epoch': 'fixture', 'solve_seq': 2,
                               'received_at': now, 'current_a': amps,
-                              'voltage_kv_ll': [row['vt_kv'], kv[1], kv[1], 20][i],
-                              'source_kv_ll': [20, kv[0], kv[2], 110][i],
+                              'voltage_kv_ll': [row['vt_kv'], kv[1], kv[1], 20, kv[2]][i],
+                              'source_kv_ll': [20, kv[0], kv[2], 110, 20][i],
                               'p_mw': amps / 30, 'q_mvar': amps / 100, 'pf': .95 if amps else None}}
         field['devices'][name] = d
         field['process']['devices'][device_id] = {'delivered': True, 'solved_revision': 1}
     field['devices']['breaker-1'].update(lockout=row.get('lockout', False), protection_tripped=row.get('lockout', False))
+    field['devices']['f2-breaker'].update(position='open' if row['f2'] == 'tripped' else 'closed',
+                                         lockout=row['f2'] == 'tripped', protection_tripped=row['f2'] == 'tripped')
+    field['devices']['f2-breaker']['measurements']['p_mw'] = row['f2_p_mw']
     field['devices']['oltc-1'].update(tap=0, moving=False, auto=False, blocked=False)
     values = check.point_values(field)
     values.update({'plc-1-running': True, 'plc-1-input-valid': True,
@@ -118,6 +127,7 @@ class StateSmoke(unittest.TestCase):
                     if view == 'physical':
                         dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
                                               for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+                    dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
                     check.check_dom(row, dom, view, expected)
 
     def test_data_mutations_fail(self):
@@ -127,6 +137,14 @@ class StateSmoke(unittest.TestCase):
             lambda f, o: f['process'].update(solve_seq=1),
             lambda f, o: f['process'].update(solver_epoch='new'),
             lambda f, o: f['process'].update(f2_tripped=True),
+            lambda f, o: f['process'].update(f2_tripped=None),
+            lambda f, o: f['devices']['f2-breaker'].update(position='open'),
+            lambda f, o: f['devices']['f2-breaker'].update(protection_tripped=True),
+            lambda f, o: f['devices']['f2-breaker'].update(lockout=True),
+            lambda f, o: f['devices']['f2-breaker']['measurements'].update(current_a=0),
+            lambda f, o: f['devices']['f2-breaker']['measurements'].update(p_mw=0),
+            lambda f, o: f['devices']['f2-breaker']['measurements'].update(valid=False),
+            lambda f, o: f['process']['devices']['f2-breaker'].update(solved_revision=0),
             lambda f, o: f['process']['devices']['rmu-1'].update(solved_revision=0),
             lambda f, o: f['devices']['rmu-1']['measurements'].update(valid=False),
             lambda f, o: f['devices']['breaker-1']['measurements'].update(voltage_kv_ll=0),
@@ -135,6 +153,7 @@ class StateSmoke(unittest.TestCase):
             lambda f, o: o['points'][0].update(value='open'),
             lambda f, o: o['points'][0]['quality'].update(iv=True),
             lambda f, o: o['points'][0].update(received_at='2026-10-18T17:00:00Z'),
+            lambda f, o: o['points'].pop(),
         ]
         for i, mutation in enumerate(mutations):
             with self.subTest(mutation=i):
@@ -142,6 +161,15 @@ class StateSmoke(unittest.TestCase):
                 mutation(f, o)
                 with self.assertRaises(AssertionError):
                     check.check_data(row, f, o, before, since)
+        for id in ['f2-position', 'f2-protection-trip', 'f2-current', 'f2-p-mw']:
+            for change in [{'quality': {'iv': True, 'nt': False, 'sb': False, 'bl': False, 'ov': False}},
+                           {'received_at': '2026-10-18T17:00:00Z'},
+                           {'value': 'open' if id == 'f2-position' else True if id == 'f2-protection-trip' else 100}]:
+                with self.subTest(point=id, change=change):
+                    f, o, before, since = data_fixture(row)
+                    next(p for p in o['points'] if p['id'] == id).update(change)
+                    with self.assertRaises(AssertionError):
+                        check.check_data(row, f, o, before, since)
 
     def test_oracle_shape_and_electrical_reachability(self):
         rows = check.ORACLE['rows']
@@ -154,8 +182,22 @@ class StateSmoke(unittest.TestCase):
                 b = all(s == 'C' for s in r['switches'][:i+1])
                 f = r['f2'] == 'normal' and all(s == 'C' for s in r['switches'][i+1:])
                 self.assertEqual(r['supply'][i], 'BF' if b and f else 'B' if b else 'F' if f else 'D')
+                self.assertEqual(r['cc_paths'][i], check.PATHS[r['supply'][i]])
             self.assertEqual(len(r['currents_a']), 4)
             self.assertEqual(len(r['cc_paths']), 3)
+            if r['f2'] == 'tripped':
+                self.assertEqual((r['f2_current_a'], r['f2_p_mw']), (0, 0))
+
+    def test_f2_inventory_and_wire_mapping(self):
+        field, operator, _, _ = data_fixture(check.ROWS['CCO-normal'])
+        self.assertEqual(len(field['devices']), 5)
+        self.assertEqual(len(operator['points']), 42)
+        protocol = json.loads((ROOT / 'lab-definitions/packages/eu-iec104-substation/protocols/points.json').read_text())
+        points = {p['id']: p for p in protocol['points']}
+        for id, ioa in [('f2-position', 1501), ('f2-protection-trip', 1502),
+                        ('f2-current', 2501), ('f2-p-mw', 2502)]:
+            self.assertEqual(points[id]['ioa'], ioa)
+            self.assertEqual(points[id]['source']['device'], 'f2-breaker')
 
     def test_list_is_offline_and_complete(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/eu-state-smoke.sh'), '--list'], capture_output=True, text=True, timeout=5)
@@ -164,9 +206,49 @@ class StateSmoke(unittest.TestCase):
             name = 'CCC-normal-interlock' if r['id'] == 'CCC-normal' else r['id']
             self.assertIn(name + ':', result.stdout)
         self.assertIn('CCC-normal-interlock: interlock', result.stdout)
+        self.assertIn('f2-cycle: supported', result.stdout)
         self.assertNotIn('CCC-normal: UNSUPPORTED', result.stdout)
         for name in ['S3-fault', 'PLC-setpoint', 'S1-pre-trip']:
             self.assertIn(name + ': UNSUPPORTED', result.stdout)
+
+    def test_dom_cannot_be_disabled(self):
+        result = subprocess.run(['bash', str(ROOT / 'scripts/eu-state-smoke.sh'), '--pending-dom'],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('unrecognized arguments: --pending-dom', result.stderr)
+
+    def test_cli_requires_both_dom_views(self):
+        row = check.ROWS['CCO-tripped']
+        field, operator, before, since = data_fixture(row)
+        expected = check.check_data(row, field, operator, before, since)
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            snapshots = {'field.json': field, 'operator.json': operator, 'before-field.json': before}
+            for view in ['cc', 'physical']:
+                dom, _ = fixture(row, view)
+                dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
+                if view == 'physical':
+                    dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
+                                          for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+                snapshots[f'{view}-dom.json'] = dom
+            for name, value in snapshots.items():
+                (directory / name).write_text(json.dumps(value))
+            (directory / 'since.txt').write_text(since)
+            command = ['python3', str(ROOT / 'scripts/lib/eu-state-check.py'), row['id'], tmp]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)['dom'], 'PASS')
+            for view in ['cc', 'physical']:
+                dom = snapshots[f'{view}-dom.json']
+                (directory / f'{view}-dom.json').write_text(json.dumps(dict(dom, viewState='degraded')))
+                result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('SCADA banner not ok', result.stdout)
+                (directory / f'{view}-dom.json').write_text(json.dumps(dom))
+            (directory / 'physical-dom.json').unlink()
+            result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout)['result'], 'FAIL')
 
     def test_interlock_rejected_without_state_change(self):
         field, operator, _, _ = data_fixture(check.ROWS['OCC-normal'])
@@ -217,7 +299,7 @@ class StateSmoke(unittest.TestCase):
         run_spec.loader.exec_module(run)
         import io
         calls = []
-        def worker(case, directory, pending, timeout):
+        def worker(case, directory, timeout):
             calls.append((case, timeout))
             return {'case': case, 'exit_code': 0 if case == 'cleanup' else 1}
         class Response(io.BytesIO):
@@ -228,7 +310,7 @@ class StateSmoke(unittest.TestCase):
              patch.object(run, 'worker', side_effect=worker), \
              patch.object(run.signal, 'signal'), \
              patch.object(run.urllib.request, 'urlopen', side_effect=lambda *a, **k: Response(b'{}')), \
-             patch.object(sys, 'argv', ['smoke', '--case', 'switching', '--pending-dom']):
+             patch.object(sys, 'argv', ['smoke', '--case', 'switching']):
             self.assertEqual(run.main(), 1)
         self.assertEqual([case for case, _ in calls], ['OOO-normal', 'cleanup'])
         self.assertEqual(calls[1][1], 110)
@@ -242,7 +324,7 @@ class StateSmoke(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.object(run.subprocess, 'Popen', return_value=process) as popen, \
              patch.object(run.os, 'killpg') as kill:
-            result = run.worker('baseline', Path(tmp) / 'evidence', True, 1)
+            result = run.worker('baseline', Path(tmp) / 'evidence', 1)
         self.assertEqual(result['exit_code'], 124)
         self.assertTrue(popen.call_args.kwargs['start_new_session'])
         kill.assert_called_once_with(43210, run.signal.SIGTERM)
@@ -250,6 +332,7 @@ class StateSmoke(unittest.TestCase):
     def test_static_baseline_fixture(self):
         check.check_dom(check.ROWS['CCO-normal'], FIXTURE, 'cc', {
             'rmu-1-source-kv': 19.8, 'rmu-1-section-kv': 19.7, 'rmu-2-source-kv': 19.9,
+            'f2-current': 11.25, 'f2-p-mw': .332494,
             'oltc-1-bus-kv': 20, 'feeder-voltage': 19.91, 'rmu-2-section-kv': 19.7,
             'oltc-1-current': 72.3, 'feeder-current': 61.4, 'rmu-1-current': 18.7, 'rmu-2-current': 0})
 
@@ -271,6 +354,10 @@ class StateSmoke(unittest.TestCase):
                      lambda d: d['devices'][0].update(quality='unknown'),
                      lambda d: d['devices'][3].update(tap='1'),
                      lambda d: d['devices'][4].update(position='closed'),
+                     lambda d: d['devices'][4].update(quality='unknown'),
+                     lambda d: d.update(f2Telemetry='F2 indication only: NORMAL · I 0 A · P 0 MW'),
+                     lambda d: d.update(f2Telemetry='F2 indication only: TRIPPED · I 20 A · P 0 MW'),
+                     lambda d: d.update(f2Telemetry='F2 indication only: TRIPPED · I 0 A · P 1 MW'),
                      lambda d: d.update(f2Line='LIVE'),
                      lambda d: d['measurements'][3].update(state='DEAD'),
                      lambda d: d['measurements'][0].update(visible=False),
@@ -284,6 +371,27 @@ class StateSmoke(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     check.check_dom(row, dom, 'physical', expected)
 
+    def test_steady_banner_and_pf_uncertainty(self):
+        row = check.ROWS['OOO-tripped']
+        expected = check.check_data(row, *data_fixture(row))
+        self.assertEqual(sum(v is None for v in expected.values()), 2)
+        for view in ['cc', 'physical']:
+            dom, _ = fixture(row, view)
+            dom['observationUncertainty'] = '2'
+            if view == 'physical':
+                dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
+                                      for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+            check.check_dom(row, dom, view, expected)
+            for state in ['lost', 'recovering', 'degraded', 'not-established', 'unavailable', None]:
+                with self.subTest(view=view, state=state), self.assertRaises(AssertionError):
+                    check.check_dom(row, dict(dom, viewState=state), view, expected)
+            if view == 'cc':
+                with self.assertRaises(AssertionError):
+                    check.check_dom(row, dict(dom, observationUncertainty='0'), view, expected)
+                dom['conditions'] = [c for c in dom['conditions'] if c['id'] != 'f2-protection-trip']
+                with self.assertRaises(AssertionError):
+                    check.check_dom(row, dom, view, expected)
+
     def test_empty_or_missing_abnormal_summary_fails(self):
         row = check.ROWS['OOC-normal']
         for conditions in [[], FIXTURE['conditions'], [{'id': 'offnormal', 'text': 'CB1 OPEN'}]]:
@@ -296,6 +404,7 @@ class StateSmoke(unittest.TestCase):
         row = check.ROWS['OOO-tripped']
         dom, expected = fixture(row, 'physical')
         expected['feeder-pf'] = None
+        dom['observationUncertainty'] = '1'
         dom['comparisons'].append({'point': 'feeder-pf', 'status': 'INVALID'})
         check.check_dom(row, dom, 'physical', expected)
         dom['comparisons'][-1]['status'] = 'UNKNOWN'

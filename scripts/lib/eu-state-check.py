@@ -9,7 +9,7 @@ from pathlib import Path
 
 ORACLE = json.loads(Path(__file__).with_name('eu-state-oracle.json').read_text())
 ROWS = {r['id']: r for r in ORACLE['rows']}
-DEVICES = ['breaker-1', 'rmu-1', 'rmu-2', 'oltc-1']
+DEVICES = ['breaker-1', 'rmu-1', 'rmu-2', 'oltc-1', 'f2-breaker']
 SECTIONS = ['S1', 'S2', 'S3']
 VOLTAGES = ['rmu-1-source-kv', 'rmu-1-section-kv', 'rmu-2-source-kv']
 PATHS = {'D': 'no supply', 'B': 'via CB1', 'F': 'via F2', 'BF': 'via CB1 + F2'}
@@ -48,7 +48,10 @@ def point_values(field):
             for suffix, key in [('p-mw', 'p_mw'), ('q-mvar', 'q_mvar'), ('pf', 'pf')]:
                 values[f'{prefix}-{suffix}'] = d['measurements'][key]
     d = field['devices']['oltc-1']
+    f2 = field['devices']['f2-breaker']
     values.update({'feeder-protection-trip': field['devices']['breaker-1']['protection_tripped'],
+                   'f2-position': f2['position'], 'f2-protection-trip': f2['protection_tripped'],
+                   'f2-current': f2['measurements']['current_a'], 'f2-p-mw': f2['measurements']['p_mw'],
                    'oltc-1-tap': {'value': d['tap'], 'transient': d['moving']},
                    'oltc-1-remote': d['remote_enabled'], 'oltc-1-auto': d['auto'],
                    'oltc-1-at-lower': d['tap'] == -8, 'oltc-1-at-upper': d['tap'] == 8,
@@ -71,7 +74,7 @@ def check_interlock(case, before_field, before_operator, field, operator, comman
             and command['feedback'] is None, 'interlock: expected negative ACT-CON, not unknown/completed')
     before_points = {p['id']: p for p in before_operator['points']}
     points = {p['id']: p for p in operator['points']}
-    for name, id in zip(DEVICES[:3], ['feeder-breaker-position', 'rmu-1-position', 'rmu-2-position']):
+    for name, id in zip(DEVICES[:3] + ['f2-breaker'], ['feeder-breaker-position', 'rmu-1-position', 'rmu-2-position', 'f2-position']):
         before, after = before_field['devices'][name], field['devices'][name]
         require(all(before[k] == after[k] for k in ['generation', 'revision', 'position']),
                 f'interlock: {name} moved or changed revision/generation')
@@ -96,6 +99,14 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
     require(p['solver_epoch'] == before['process']['solver_epoch'] and p['solve_seq'] > before['process']['solve_seq'], 'solver epoch changed or solve_seq did not advance')
     require(timestamp(p['solved_at']) >= timestamp(since), 'solve predates checkpoint')
     require(p['f2_tripped'] == (row['f2'] == 'tripped'), 'plant F2 state')
+    f2 = field['devices']['f2-breaker']
+    tripped = row['f2'] == 'tripped'
+    require(f2['position'] == ('open' if tripped else 'closed')
+            and f2['protection_tripped'] is tripped and f2['lockout'] is tripped,
+            'plant F2 position/trip/lockout')
+    near(f2['measurements']['current_a'], row['f2_current_a'],
+         ORACLE['current_zero_a'] if row['f2_current_a'] == 0 else max(2, row['f2_current_a'] * .1), 'F2 current')
+    near(f2['measurements']['p_mw'], row['f2_p_mw'], max(.05, abs(row['f2_p_mw']) * .1), 'F2 MW')
     require(p['fault_section'] == row.get('fault', 'none'), 'plant fault')
     bus20 = p['buses']['bus20']
     require(bus20['live'] is True and 18 <= bus20['kv'] <= 22, 'plant bus20/T1 must remain energized')
@@ -142,6 +153,10 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
     require(operator['link']['state'] == 'started' and operator['link']['gi']['state'] == 'complete', 'CC link/GI')
     points = {v['id']: v for v in operator['points']}
     expected = point_values(field)
+    plc = {'plc-1-running': True, 'plc-1-input-valid': True, 'plc-1-setpoint-kv': 20.4,
+           'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30}
+    require(len(operator['points']) == ORACLE['point_count']
+            and set(points) == set(expected) | set(plc), 'CC 42-point inventory incomplete/duplicate')
     for id, value in expected.items():
         point = points[id]
         require(timestamp(point['received_at']) >= timestamp(since), f'{id}: retained CC receipt')
@@ -156,7 +171,7 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
                 near(point['value'], value, point['reporting']['deadband'], id + ' reporting deadband')
             else:
                 require(point['value'] == value, f'{id}: CC {point["value"]!r} != plant {value!r}')
-    for id, value in {'plc-1-running': True, 'plc-1-input-valid': True, 'plc-1-setpoint-kv': 20.4, 'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30}.items():
+    for id, value in plc.items():
         require(good(points[id]) and timestamp(points[id]['received_at']) >= timestamp(since), f'{id}: not fresh GOOD')
         near(points[id]['value'], value, .001, id)
     return expected
@@ -164,6 +179,7 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
 
 def check_dom(row, dom, view, expected, tap=0):
     require(dom['view'] == view and dom['visible'] and not dom['cached'], f'{view}: missing/hidden/cached root')
+    require(dom['viewState'] == 'ok', f'{view}: SCADA banner not ok')
     require(len(dom['sections']) == 3, f'{view}: section cardinality')
     sections = {v['section']: v for v in dom['sections']}
     for i, (id, supply) in enumerate(zip(SECTIONS, row['supply'])):
@@ -182,8 +198,15 @@ def check_dom(row, dom, view, expected, tap=0):
     require(devices['T1']['quality'] == 'good' and devices['T1']['tap'] == str(tap), f'{view} T1: tap/quality')
     if 'oltc-1-auto' in expected:
         require(re.search(r'\b' + ('AUTO' if expected['oltc-1-auto'] else 'MANUAL') + r'\b', devices['T1']['text']), f'{view} T1: displayed mode')
-    require(devices['F2']['position'] == ('unknown' if view == 'cc' else 'open' if row['f2'] == 'tripped' else 'closed'), f'{view} F2 position')
-    require(dom['f2Line'] == ('UNKNOWN' if view == 'cc' else 'DEAD' if row['supply'][2] == 'D' else 'LIVE'), f'{view} F2 lower-run state')
+    require(devices['F2']['position'] == ('open' if row['f2'] == 'tripped' else 'closed')
+            and devices['F2']['quality'] == 'good', f'{view} F2 position/quality')
+    require(dom['f2Line'] == ('DEAD' if row['supply'][2] == 'D' else 'LIVE'), f'{view} F2 lower-run state')
+    telemetry = dom['f2Telemetry']
+    require(('TRIPPED' if row['f2'] == 'tripped' else 'NORMAL') in telemetry, f'{view}: F2 trip text')
+    for id, unit, tolerance in [('f2-current', 'A', 2.05), ('f2-p-mw', 'MW', .055)]:
+        numbers = re.findall(r'(-?\d+(?:\.\d+)?)\s*' + unit + r'\b', telemetry)
+        require(bool(numbers), f'{view}: F2 {unit} reading absent')
+        near(float(numbers[-1]), expected[id], tolerance, f'{view}: displayed {id}')
     measurements = {v['point']: v for v in dom['measurements']}
     for id in ['oltc-1-current', 'oltc-1-bus-kv', 'feeder-current', 'feeder-voltage', 'rmu-1-current', 'rmu-2-current', 'rmu-2-section-kv']:
         require(id in measurements and measurements[id]['visible'] and measurements[id]['text'].strip(), f'{view} missing visible measurement {id}')
@@ -202,12 +225,17 @@ def check_dom(row, dom, view, expected, tap=0):
     if view == 'physical' and row.get('lockout'):
         require('lockout' in dom['text'].lower(), 'physical lockout indication absent')
     if view == 'cc':
+        require(dom['observationUncertainty'] == str(sum(v is None for v in expected.values())),
+                'CC observation uncertainty differs from expected measurement_invalid PF count')
         # IDs intentionally unspecified by the DOM contract; verify visible wording.
         conditions = dom['conditions']
         require(conditions and all(v['id'] and v['text'] for v in conditions), 'CC summary missing stable condition IDs/text')
         text = ' '.join(v['text'].lower() for v in conditions)
         if expected.get('feeder-protection-trip'):
             require(any('protection trip' in v['text'].lower() and 'asserted' in v['text'].lower() for v in conditions), 'CC asserted trip summary absent')
+        if row['f2'] == 'tripped':
+            require(any(v['id'] == 'f2-protection-trip' and 'asserted' in v['text'].lower() for v in conditions),
+                    'CC F2 asserted trip summary absent')
         abnormal = False
         for name, switch, normal in zip(['CB1', 'RMU1', 'RMU2'], row['switches'], 'CCO'):
             if switch != normal:
@@ -234,7 +262,6 @@ def main():
     ap.add_argument('--tap', type=int, default=0)
     ap.add_argument('--auto', action='store_true')
     ap.add_argument('--local', action='store_true')
-    ap.add_argument('--pending-dom', action='store_true')
     ap.add_argument('--interlock', choices=ORACLE['interlocks'])
     ap.add_argument('--cleared', action='store_true', help='isolated S1 fault cleared; electrical row unchanged, lockout retained')
     args = ap.parse_args()
@@ -253,13 +280,12 @@ def main():
                             json.loads((parent / 'predecessor/operator.json').read_text()),
                             read('field.json'), read('operator.json'),
                             json.loads((parent / 'interlock-command.json').read_text()))
-        if not args.pending_dom:
-            for view in ['cc', 'physical']:
-                check_dom(row, read(f'{view}-dom.json'), view, expected, args.tap)
-        result = {'plant': 'PASS', 'cc': 'PASS', 'dom': 'PENDING lane A' if args.pending_dom else 'PASS'}
+        for view in ['cc', 'physical']:
+            check_dom(row, read(f'{view}-dom.json'), view, expected, args.tap)
+        result = {'plant': 'PASS', 'cc': 'PASS', 'dom': 'PASS'}
         if args.interlock:
             result['interlock'] = 'PASS: negative ACT-CON; plant/GOOD CC positions and section states unchanged'
-    except (AssertionError, KeyError, ValueError, TypeError) as error:
+    except (AssertionError, KeyError, ValueError, TypeError, OSError) as error:
         result = {'result': 'FAIL', 'error': str(error)}
         print(json.dumps(result))
         raise SystemExit(1)
