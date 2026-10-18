@@ -1,5 +1,30 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "presentation": {
+    "supply_nodes": {
+      "rmu-1-source-kv": {"id": "S1-no-supply", "label": "S1 residential"},
+      "rmu-1-section-kv": {"id": "S2-no-supply", "label": "S2 commercial"},
+      "rmu-2-source-kv": {"id": "S3-no-supply", "label": "S3 industrial"},
+      "oltc-1-bus-kv": {"id": "bus20-no-supply", "label": "20 kV busbar (T1 secondary)"}
+    },
+    "voltage_limits": {
+      "feeder-voltage": [19.0, 21.0],
+      "rmu-1-section-kv": [19.0, 21.0],
+      "rmu-1-source-kv": [19.0, 21.0],
+      "rmu-2-section-kv": [19.0, 21.0],
+      "rmu-2-source-kv": [19.0, 21.0],
+      "oltc-1-bus-kv": [19.8, 21.0]
+    },
+    "asserted_alarms": ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"],
+    "false_alarms": ["plc-1-running", "plc-1-input-valid"],
+    "switches": {
+      "CB1": {"point": "feeder-breaker-position", "label": "CB1", "normal": "closed"},
+      "RMU1": {"point": "rmu-1-position", "label": "RMU1 · NC", "normal": "closed"},
+      "RMU2": {"point": "rmu-2-position", "label": "RMU2 · NOP", "normal": "open"},
+      "F2": {"point": "f2-position", "label": "F2", "normal": "closed"}
+    },
+    "authorities": {"T1": "oltc-1-remote", "RMU1": "rmu-1-remote", "RMU2": "rmu-2-remote"}
+  },
   "source": "feeder.dss; eu_circuit.py switch topology/meters; eu-state-smoke/oracle.md (21 independent solver probes, tap=0, profile off, load/source=1); F2 A/MW re-probed from five-device eu_circuit.py/feeder.dss (tap=0, profile off, load/source=1)",
   "live_kv": 0.1,
   "current_zero_a": 0.1,

@@ -13,6 +13,7 @@ DEVICES = ['breaker-1', 'rmu-1', 'rmu-2', 'oltc-1', 'f2-breaker']
 SECTIONS = ['S1', 'S2', 'S3']
 VOLTAGES = ['rmu-1-source-kv', 'rmu-1-section-kv', 'rmu-2-source-kv']
 PATHS = {'D': 'no supply', 'B': 'via CB1', 'F': 'via F2', 'BF': 'via CB1 + F2'}
+PRESENTATION = ORACLE['presentation']
 
 
 def require(ok, message):
@@ -174,7 +175,47 @@ def check_data(row, field, operator, before, since, tap=0, auto=False, local=Fal
     for id, value in plc.items():
         require(good(points[id]) and timestamp(points[id]['received_at']) >= timestamp(since), f'{id}: not fresh GOOD')
         near(points[id]['value'], value, .001, id)
-    return expected
+    return dict(expected, **plc)
+
+
+def expected_alarms(expected):
+    """Independent alarm oracle from verified point values and protocol limits."""
+    alarms = set()
+    for id, node in PRESENTATION['supply_nodes'].items():
+        value = expected[id]
+        if isinstance(value, (int, float)) and math.isfinite(value) and 0 <= value < ORACLE['live_kv']:
+            alarms.add(node['id'])
+    for id, (low, high) in PRESENTATION['voltage_limits'].items():
+        value = expected[id]
+        if isinstance(value, (int, float)) and math.isfinite(value) and value >= ORACLE['live_kv'] and not low <= value <= high:
+            alarms.add(id + '-voltage-limit')
+    alarms.update(id for id in PRESENTATION['asserted_alarms'] if expected[id] is True)
+    alarms.update(id for id in PRESENTATION['false_alarms'] if expected[id] is False)
+    return alarms
+
+
+def expected_off_normal(expected):
+    conditions = {}
+    devices = {device: False for device in ['CB1', 'RMU1', 'RMU2', 'F2', 'T1']}
+    for device, spec in PRESENTATION['switches'].items():
+        value = expected[spec['point']]
+        if value in ['open', 'closed', 'intermediate', 'indeterminate'] and value != spec['normal']:
+            devices[device] = True
+            conditions[spec['point'] + '-off-normal'] = f'{spec["label"]}: {value.upper()} (normal {spec["normal"].upper()})'
+    if expected['oltc-1-auto'] is False:
+        devices['T1'] = True
+        conditions['oltc-1-auto-off-normal'] = 'T1: MANUAL (normal AUTO)'
+    for device, id in PRESENTATION['authorities'].items():
+        if expected[id] is False:
+            devices[device] = True
+            conditions[id] = f'{"T1 OLTC" if device == "T1" else device} authority: LOCAL'
+    return devices, conditions
+
+
+def comparison_values(expected):
+    # PLC points and tap-limit flags have no corresponding physical comparison.
+    return {id: v for id, v in expected.items()
+            if not id.startswith('plc-') and id not in ['oltc-1-at-lower', 'oltc-1-at-upper']}
 
 
 def check_dom(row, dom, view, expected, tap=0):
@@ -198,6 +239,9 @@ def check_dom(row, dom, view, expected, tap=0):
     require(devices['T1']['quality'] == 'good' and devices['T1']['tap'] == str(tap), f'{view} T1: tap/quality')
     if 'oltc-1-auto' in expected:
         require(re.search(r'\b' + ('AUTO' if expected['oltc-1-auto'] else 'MANUAL') + r'\b', devices['T1']['text']), f'{view} T1: displayed mode')
+    off_normal_devices, off_normal_conditions = expected_off_normal(expected)
+    for device, off_normal in off_normal_devices.items():
+        require(devices[device]['offNormal'] == str(off_normal).lower(), f'{view} {device}: off-normal indication')
     require(devices['F2']['position'] == ('open' if row['f2'] == 'tripped' else 'closed')
             and devices['F2']['quality'] == 'good', f'{view} F2 position/quality')
     require(dom['f2Line'] == ('DEAD' if row['supply'][2] == 'D' else 'LIVE'), f'{view} F2 lower-run state')
@@ -227,9 +271,30 @@ def check_dom(row, dom, view, expected, tap=0):
     if view == 'cc':
         require(dom['observationUncertainty'] == str(sum(v is None for v in expected.values())),
                 'CC observation uncertainty differs from expected measurement_invalid PF count')
-        # IDs intentionally unspecified by the DOM contract; verify visible wording.
+        # Verify stable IDs, classification, ordering and visible wording.
         conditions = dom['conditions']
         require(conditions and all(v['id'] and v['text'] for v in conditions), 'CC summary missing stable condition IDs/text')
+        alarms = expected_alarms(expected)
+        strip = dom['abnormalStrip']
+        require(strip and strip['visible'] and strip['beforeSchematic'], 'CC abnormal strip missing/hidden/below schematic')
+        require(strip['alarmCount'] == str(len(alarms)), 'CC alarm count differs from expected point values')
+        require(strip['offNormalCount'] == str(len(off_normal_conditions)), 'CC off-normal count differs from expected point values')
+        headline = f'{len(alarms)} alarms · {len(off_normal_conditions)} off-normal' if alarms or off_normal_conditions else 'No alarms in GOOD observations'
+        require(headline in strip['text'], 'CC abnormal strip headline absent')
+        alarm_entries = [c for c in conditions if c.get('kind') == 'alarm']
+        require(len(alarm_entries) == len(alarms) and {c['id'] for c in alarm_entries} == alarms,
+                'CC alarm entries differ from expected point values')
+        off_entries = [c for c in conditions if c.get('kind') == 'off-normal']
+        require(len(off_entries) == len(off_normal_conditions) and {c['id'] for c in off_entries} == set(off_normal_conditions),
+                'CC off-normal entries differ from expected point values')
+        require(conditions == alarm_entries + off_entries if alarms or off_normal_conditions
+                else len(conditions) == 1 and conditions[0]['id'] == 'none', 'CC conditions not alarms first')
+        for node in PRESENTATION['supply_nodes'].values():
+            if node['id'] in alarms:
+                require(any(c['id'] == node['id'] and f'{node["label"]}: loss of supply' in c['text'] for c in alarm_entries),
+                        f'CC missing loss-of-supply alarm for {node["label"]}')
+        for id, wording in off_normal_conditions.items():
+            require(any(c['id'] == id and wording in c['text'] for c in off_entries), f'CC missing off-normal {id}')
         text = ' '.join(v['text'].lower() for v in conditions)
         if expected.get('feeder-protection-trip'):
             require(any('protection trip' in v['text'].lower() and 'asserted' in v['text'].lower() for v in conditions), 'CC asserted trip summary absent')
@@ -244,11 +309,12 @@ def check_dom(row, dom, view, expected, tap=0):
         for section, supply in zip(SECTIONS, row['supply']):
             if supply == 'D':
                 abnormal = True
-                require(section.lower() in text and 'no supply' in text, f'CC missing no-supply {section}')
+                require(any(f'{section.lower()} ' in c['text'].lower() and ': loss of supply' in c['text'].lower()
+                            for c in alarm_entries), f'CC missing loss-of-supply alarm {section}')
         require(not abnormal or all(v['id'] != 'none' for v in conditions), 'CC incorrectly says no abnormal conditions')
     else:
         rows = dom['comparisons']
-        comparable = {id: v for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']}
+        comparable = comparison_values(expected)
         require(len(rows) == len(comparable) and {r['point'] for r in rows} == set(comparable), 'comparison inventory incomplete/duplicate')
         for r in rows:
             status = 'INVALID' if expected[r['point']] is None else 'MATCH'

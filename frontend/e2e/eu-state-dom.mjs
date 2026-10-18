@@ -9,6 +9,7 @@ export function captureDom(root, view) {
   const text = node => {
     const parts = [];
     const visit = node => {
+      if (node.localName === 'title') return; // Tooltips are not visible plant state.
       if (node.nodeType === 3) {
         const value = node.nodeValue.trim();
         if (value) parts.push(value);
@@ -22,7 +23,16 @@ export function captureDom(root, view) {
   const visible = node => !!node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden';
   const all = (selector, read) => [...root.querySelectorAll(selector)].map(read);
   const f2Figure = root.querySelector('[data-device="F2"]')?.closest('figure');
+  const strip = root.querySelector('[aria-label="Abnormal conditions"]');
+  const schematic = root.querySelector('[aria-label="Feeder schematic"]');
   return {
+    abnormalStrip: strip ? {
+      visible: visible(strip),
+      beforeSchematic: !!schematic && !!(strip.compareDocumentPosition(schematic) & 4),
+      alarmCount: strip.getAttribute('data-alarm-count'),
+      offNormalCount: strip.getAttribute('data-off-normal-count'),
+      text: text(strip),
+    } : null,
     view, visible: visible(root), cached: root.getAttribute('data-cached') === 'true',
     // The shared SCADA banner is a sibling of either view's snapshot.
     viewState: document.querySelector('[data-view-state]')?.getAttribute('data-view-state'),
@@ -30,11 +40,11 @@ export function captureDom(root, view) {
     capturedAt: new Date().toISOString(), url: location.href,
     text: text(root),
     sections: all('[data-section]', node => ({ section: node.dataset.section, state: node.dataset.state, path: node.dataset.path, kv: node.dataset.kv, text: text(node) })),
-    devices: all('[data-device]', node => ({ device: node.dataset.device, position: node.dataset.position, quality: node.dataset.quality, tap: node.dataset.tap, text: text(node) })),
+    devices: all('[data-device]', node => ({ device: node.dataset.device, position: node.dataset.position, quality: node.dataset.quality, offNormal: node.dataset.offNormal, tap: node.dataset.tap, text: text(node) })),
     f2Line: root.querySelector('[data-f2-line]')?.getAttribute('data-state'),
     f2Telemetry: text([...(f2Figure?.querySelectorAll('p') ?? [])].find(node => text(node).startsWith('F2 ·'))),
     measurements: all('[data-point]', node => ({ point: node.dataset.point, state: node.dataset.state, text: text(node), visible: visible(node) })),
-    conditions: all('[aria-label="Abnormal conditions"] [data-condition]', node => ({ id: node.dataset.condition, text: text(node) })),
+    conditions: all('[aria-label="Abnormal conditions"] [data-condition]', node => ({ id: node.dataset.condition, kind: node.dataset.conditionKind, text: text(node) })),
     authorities: all('[data-authority]', node => ({ point: node.dataset.authority, text: text(node) })),
     comparisons: all('[data-comparison]', node => ({ point: node.dataset.comparison, status: node.dataset.status })),
   };

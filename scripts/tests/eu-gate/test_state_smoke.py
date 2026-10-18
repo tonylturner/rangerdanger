@@ -26,12 +26,10 @@ def fixture(row, view):
     dom['authorities'] = []
     dom['observationUncertainty'] = '0'
     dom['devices'][3]['text'] = 'Tap 0 · GOOD · MANUAL'
-    expected = dict(zip(check.VOLTAGES, row.get('section_kv', [0 if s == 'D' else 19.8 for s in row['supply']])))
-    expected.update({'oltc-1-bus-kv': 20, 'feeder-voltage': row['vt_kv'],
-                     'oltc-1-current': row['currents_a'][3], 'feeder-current': row['currents_a'][0],
-                     'rmu-1-current': row['currents_a'][1], 'rmu-2-current': row['currents_a'][2],
-                     'f2-current': row['f2_current_a'], 'f2-p-mw': row['f2_p_mw'],
-                     'rmu-2-section-kv': expected['rmu-1-section-kv']})
+    expected = check.point_values(data_fixture(row)[0])
+    expected.update({'plc-1-running': True, 'plc-1-input-valid': True,
+                     'plc-1-setpoint-kv': 20.4, 'plc-1-deadband-pct': 1, 'plc-1-delay-s': 30})
+    dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
     for i, section in enumerate(dom['sections']):
         section.update(state='DEAD' if row['supply'][i] == 'D' else 'LIVE',
                        path=row['cc_paths'][i] if view == 'cc' else check.PATHS[row['supply'][i]],
@@ -46,24 +44,48 @@ def fixture(row, view):
         m['text'] = f'{expected[m["point"]]:.2f} {"kV" if m["point"].endswith("-kv") or m["point"] == "feeder-voltage" else "A"} · GOOD'
         if m['point'].endswith('-kv') or m['point'] == 'feeder-voltage':
             m['state'] = 'LIVE' if expected[m['point']] >= .1 else 'DEAD'
-    dom['conditions'] = []
-    for d, s, normal in zip(['CB1', 'RMU1', 'RMU2'], row['switches'], 'CCO'):
-        if s != normal:
-            dom['conditions'].append({'id': d, 'text': f'{d}: {"OPEN" if s == "O" else "CLOSED"} (normal {"CLOSED" if normal == "C" else "OPEN"})'})
-    for section, supply in zip(check.SECTIONS, row['supply']):
-        if supply == 'D':
-            dom['conditions'].append({'id': section, 'text': f'{section}: no supply'})
-    if not dom['conditions']:
-        dom['conditions'] = copy.deepcopy(FIXTURE['conditions'])
-    if row.get('lockout'):
-        dom['conditions'] = [c for c in dom['conditions'] if c['id'] != 'none']
-        dom['conditions'].append({'id': 'feeder-protection-trip', 'text': 'Protection trip: asserted'})
-    if row['f2'] == 'tripped':
-        dom['conditions'] = [c for c in dom['conditions'] if c['id'] != 'none']
-        dom['conditions'].append({'id': 'f2-protection-trip', 'text': 'F2 protection trip: asserted'})
+    add_presentation(dom, expected)
     if view == 'physical':
-        dom['comparisons'] = [{'point': id, 'status': 'MATCH'} for id in expected]
+        dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
+                              for id, v in check.comparison_values(expected).items()]
     return dom, expected
+
+
+def add_presentation(dom, expected):
+    """Extend the historical text-node fixture with the new presentation contract."""
+    rules = check.ORACLE['presentation']
+    alarms, off = [], []
+    for id, node in rules['supply_nodes'].items():
+        if expected[id] is not None and 0 <= expected[id] < .1:
+            alarms.append({'id': node['id'], 'text': f'{node["label"]}: loss of supply'})
+    for id, (low, high) in rules['voltage_limits'].items():
+        if expected[id] is not None and expected[id] >= .1 and not low <= expected[id] <= high:
+            alarms.append({'id': id + '-voltage-limit', 'text': f'{id}: voltage limit'})
+    for id in rules['asserted_alarms'] + rules['false_alarms']:
+        if expected[id] is (id in rules['asserted_alarms']):
+            label = 'Protection trip' if id == 'feeder-protection-trip' else 'F2 protection trip' if id == 'f2-protection-trip' else id
+            alarms.append({'id': id, 'text': f'{label}: asserted'})
+    for device, spec in rules['switches'].items():
+        value = expected[spec['point']]
+        if value != spec['normal']:
+            off.append({'id': spec['point'] + '-off-normal',
+                        'text': f'{spec["label"]}: {value.upper()} (normal {spec["normal"].upper()})'})
+    if expected['oltc-1-auto'] is False:
+        off.append({'id': 'oltc-1-auto-off-normal', 'text': 'T1: MANUAL (normal AUTO)'})
+    for device, id in rules['authorities'].items():
+        if expected[id] is False:
+            off.append({'id': id, 'text': f'{"T1 OLTC" if device == "T1" else device} authority: LOCAL'})
+    for d in dom['devices']:
+        device = d['device']
+        position_bad = device in rules['switches'] and expected[rules['switches'][device]['point']] != rules['switches'][device]['normal']
+        local = device in rules['authorities'] and expected[rules['authorities'][device]] is False
+        d['offNormal'] = str(position_bad or local or device == 'T1' and expected['oltc-1-auto'] is False).lower()
+    dom['conditions'] = [dict(c, kind='alarm') for c in alarms] + [dict(c, kind='off-normal') for c in off]
+    if not dom['conditions']:
+        dom['conditions'] = [{'id': 'none', 'text': 'No alarms in GOOD observations'}]
+    headline = f'{len(alarms)} alarms · {len(off)} off-normal' if alarms or off else 'No alarms in GOOD observations'
+    dom['abnormalStrip'] = {'visible': True, 'beforeSchematic': True, 'alarmCount': str(len(alarms)),
+                            'offNormalCount': str(len(off)), 'text': headline}
 
 
 def data_fixture(row):
@@ -113,6 +135,131 @@ def data_fixture(row):
 
 
 class StateSmoke(unittest.TestCase):
+    def test_alarm_oracle_covers_all_kinds_and_busbar_loss(self):
+        _, expected = fixture(check.ROWS['CCO-normal'], 'cc')
+        self.assertEqual(check.expected_alarms(expected), set())
+        for id in check.PRESENTATION['asserted_alarms'] + check.PRESENTATION['false_alarms']:
+            with self.subTest(point=id):
+                values = dict(expected)
+                values[id] = id in check.PRESENTATION['asserted_alarms']
+                self.assertEqual(check.expected_alarms(values), {id})
+        for id, node in check.PRESENTATION['supply_nodes'].items():
+            for value in [0, .000004, .099]:
+                with self.subTest(point=id, value=value):
+                    self.assertEqual(check.expected_alarms(dict(expected, **{id: value})), {node['id']})
+            for value in [None, -1, float('nan'), float('inf')]:
+                self.assertEqual(check.expected_alarms(dict(expected, **{id: value})), set())
+        for id in check.PRESENTATION['voltage_limits']:
+            self.assertEqual(check.expected_alarms(dict(expected, **{id: 18})), {id + '-voltage-limit'})
+
+    def test_presentation_oracle_matches_protocol(self):
+        points = json.loads((ROOT / 'lab-definitions/packages/eu-iec104-substation/protocols/points.json').read_text())['points']
+        self.assertEqual(check.PRESENTATION['voltage_limits'],
+                         {p['id']: [p['limits']['low'], p['limits']['high']] for p in points if p.get('limits')})
+
+    def test_strip_mutations_fail_for_every_oracle_row(self):
+        for row in check.ORACLE['rows']:
+            mutations = [
+                lambda d: d.update(abnormalStrip=None),
+                lambda d: d['abnormalStrip'].update(visible=False),
+                lambda d: d['abnormalStrip'].update(beforeSchematic=False),
+                lambda d: d['abnormalStrip'].update(alarmCount='999'),
+                lambda d: d['abnormalStrip'].update(offNormalCount='999'),
+                lambda d: d['abnormalStrip'].update(text='Portal API: available · 0 active alarms'),
+                lambda d: d['conditions'].pop(),
+            ]
+            for i, mutate in enumerate(mutations):
+                with self.subTest(row=row['id'], mutation=i):
+                    dom, expected = fixture(row, 'cc')
+                    mutate(dom)
+                    with self.assertRaises(AssertionError):
+                        check.check_dom(row, dom, 'cc', expected)
+            dom, expected = fixture(row, 'cc')
+            alarms = [c for c in dom['conditions'] if c['kind'] == 'alarm']
+            if alarms:
+                dom['conditions'] = dom['conditions'][len(alarms):] + alarms
+                with self.assertRaisesRegex(AssertionError, 'alarms first'):
+                    check.check_dom(row, dom, 'cc', expected)
+            for device in ['CB1', 'RMU1', 'RMU2', 'F2', 'T1']:
+                for view in ['cc', 'physical']:
+                    dom, expected = fixture(row, view)
+                    node = next(d for d in dom['devices'] if d['device'] == device)
+                    for wrong in [None, 'false' if node['offNormal'] == 'true' else 'true']:
+                        with self.subTest(row=row['id'], view=view, device=device, wrong=wrong):
+                            bad = copy.deepcopy(dom)
+                            next(d for d in bad['devices'] if d['device'] == device)['offNormal'] = wrong
+                            with self.assertRaisesRegex(AssertionError, 'off-normal indication'):
+                                check.check_dom(row, bad, view, expected)
+
+    def test_each_dead_node_requires_its_own_loss_of_supply_wording(self):
+        row = check.ROWS['OOO-tripped']
+        for id, node in check.PRESENTATION['supply_nodes'].items():
+            label = node['label']
+            dom, expected = fixture(row, 'cc')
+            expected['oltc-1-bus-kv'] = 0
+            next(m for m in dom['measurements'] if m['point'] == 'oltc-1-bus-kv').update(text='0.00 kV GOOD', state='DEAD')
+            add_presentation(dom, expected)
+            check.check_dom(row, dom, 'cc', expected)
+            alarm = next(c for c in dom['conditions'] if c['id'] == node['id'])
+            for wording in [f'{label}: no supply', 'Another node: loss of supply']:
+                with self.subTest(point=id, wording=wording):
+                    alarm['text'] = wording
+                    with self.assertRaisesRegex(AssertionError, 'loss-of-supply alarm'):
+                        check.check_dom(row, dom, 'cc', expected)
+
+    def test_manual_auto_and_local_checkpoints_both_views(self):
+        row = check.ROWS['CCO-normal']
+        for auto, local in itertools.product([False, True], repeat=2):
+            for view in ['cc', 'physical']:
+                dom, expected = fixture(row, view)
+                expected.update({'oltc-1-auto': auto, 'rmu-1-remote': not local})
+                next(d for d in dom['devices'] if d['device'] == 'T1')['text'] = 'Tap 0 · GOOD · ' + ('AUTO' if auto else 'MANUAL')
+                dom['authorities'] = [{'point': 'rmu-1-remote', 'text': 'RMU1 authority: LOCAL'}] if local else []
+                add_presentation(dom, expected)
+                self.assertEqual(dom['abnormalStrip']['offNormalCount'], str(int(not auto) + int(local)))
+                check.check_dom(row, dom, view, expected)
+
+    def test_capture_serializes_strip_order_counts_and_off_normal(self):
+        # Exercise the real evaluate callback without Chrome or a second capture implementation.
+        script = r'''
+import assert from 'node:assert/strict';
+import { captureDom } from './frontend/e2e/eu-state-dom.mjs';
+const element = (dataset = {}, value = '', localName = 'span') => ({
+  nodeType: 1, localName, dataset,
+  childNodes: [{nodeType: 3, nodeValue: value}],
+  getAttribute: name => dataset[name.replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())] ?? null,
+  getClientRects: () => [{}],
+});
+const device = element({device: 'CB1', offNormal: 'true', position: 'open', quality: 'good'}, 'OPEN · GOOD');
+device.childNodes.push(element({}, 'IEC tooltip must not be visible plant text', 'title'));
+const condition = element({condition: 'S1-no-supply', conditionKind: 'alarm'}, 'S1 residential: loss of supply');
+const strip = element({alarmCount: '1', offNormalCount: '1'}, '1 alarms · 1 off-normal');
+strip.compareDocumentPosition = () => 4;
+const schematic = element();
+const root = element({cached: 'false'});
+root.querySelector = selector => ({
+  '[aria-label="Abnormal conditions"]': strip, '[aria-label="Feeder schematic"]': schematic,
+})[selector];
+root.querySelectorAll = selector => ({
+  '[data-device]': [device], '[aria-label="Abnormal conditions"] [data-condition]': [condition],
+})[selector] ?? [];
+globalThis.document = {querySelector: () => element({viewState: 'ok'})};
+globalThis.getComputedStyle = () => ({visibility: 'visible'});
+globalThis.location = {href: 'offline:test'};
+let dom = captureDom(root, 'cc');
+assert.deepEqual(dom.abnormalStrip, {visible: true, beforeSchematic: true, alarmCount: '1', offNormalCount: '1', text: '1 alarms · 1 off-normal'});
+assert.equal(dom.devices[0].offNormal, 'true');
+assert.equal(dom.devices[0].text, 'OPEN · GOOD');
+assert.deepEqual(dom.conditions, [{id: condition.dataset.condition, kind: 'alarm', text: 'S1 residential: loss of supply'}]);
+strip.compareDocumentPosition = () => 2;
+assert.equal(captureDom(root, 'cc').abnormalStrip.beforeSchematic, false);
+root.querySelector = () => null;
+assert.equal(captureDom(root, 'physical').abnormalStrip, null);
+'''
+        result = subprocess.run(['node', '--input-type=module', '-e', script], cwd=ROOT,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_oracle_fault_uses_plant_vocabulary(self):
         # data_fixture copies the oracle into the plant, so it cannot catch a
         # spelling the live process API never reports (eu_controls.py upper-cases).
@@ -133,7 +280,7 @@ class StateSmoke(unittest.TestCase):
                     dom, _ = fixture(row, view)
                     if view == 'physical':
                         dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
-                                              for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+                                              for id, v in check.comparison_values(expected).items()]
                     dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
                     check.check_dom(row, dom, view, expected)
 
@@ -236,7 +383,7 @@ class StateSmoke(unittest.TestCase):
                 dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
                 if view == 'physical':
                     dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
-                                          for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+                                          for id, v in check.comparison_values(expected).items()]
                 snapshots[f'{view}-dom.json'] = dom
             for name, value in snapshots.items():
                 (directory / name).write_text(json.dumps(value))
@@ -337,12 +484,13 @@ class StateSmoke(unittest.TestCase):
         kill.assert_called_once_with(43210, run.signal.SIGTERM)
 
     def test_static_baseline_fixture(self):
-        expected = {
+        _, expected = fixture(check.ROWS['CCO-normal'], 'cc')
+        expected.update({
             'rmu-1-source-kv': 19.8, 'rmu-1-section-kv': 19.7, 'rmu-2-source-kv': 19.9,
             'f2-current': 11.25, 'f2-p-mw': .332494,
             'oltc-1-bus-kv': 20, 'feeder-voltage': 19.91, 'rmu-2-section-kv': 19.7,
             'oltc-1-current': 72.3, 'feeder-current': 61.4, 'rmu-1-current': 18.7, 'rmu-2-current': 0,
-            'oltc-1-auto': False}
+            'oltc-1-auto': False})
         # Raw fixture preserves the real SVG sibling concatenation, not spaces
         # hand-inserted between Tap/GOOD/MANUAL. The checker must stay strict.
         with self.assertRaisesRegex(AssertionError, 'cc T1: displayed mode'):
@@ -351,11 +499,16 @@ class StateSmoke(unittest.TestCase):
                                   capture_output=True, text=True, timeout=10)
         self.assertEqual(captured.returncode, 0, captured.stdout + captured.stderr)
         dom = json.loads(captured.stdout)
+        # The archived capture fixture predates off-normal hooks and the strip.
+        # These fields are exercised against the real capture callback below.
+        add_presentation(dom, expected)
         check.check_dom(check.ROWS['CCO-normal'], dom, 'cc', expected)
         auto_dom = copy.deepcopy(dom)
         next(d for d in auto_dom['devices'] if d['device'] == 'T1')['text'] = next(
             d['text'] for d in dom['devices'] if d['device'] == 'T1').replace('MANUAL', 'AUTO')
-        check.check_dom(check.ROWS['CCO-normal'], auto_dom, 'cc', dict(expected, **{'oltc-1-auto': True}))
+        auto_expected = dict(expected, **{'oltc-1-auto': True})
+        add_presentation(auto_dom, auto_expected)
+        check.check_dom(check.ROWS['CCO-normal'], auto_dom, 'cc', auto_expected)
 
     def test_all_21_rows_both_dom_views(self):
         for row in check.ORACLE['rows']:
@@ -401,7 +554,7 @@ class StateSmoke(unittest.TestCase):
             dom['observationUncertainty'] = '2'
             if view == 'physical':
                 dom['comparisons'] = [{'point': id, 'status': 'INVALID' if v is None else 'MATCH'}
-                                      for id, v in expected.items() if id not in ['oltc-1-at-lower', 'oltc-1-at-upper']]
+                                      for id, v in check.comparison_values(expected).items()]
             check.check_dom(row, dom, view, expected)
             for state in ['lost', 'recovering', 'degraded', 'not-established', 'unavailable', None]:
                 with self.subTest(view=view, state=state), self.assertRaises(AssertionError):
@@ -425,10 +578,11 @@ class StateSmoke(unittest.TestCase):
         row = check.ROWS['OOO-tripped']
         dom, expected = fixture(row, 'physical')
         expected['feeder-pf'] = None
-        dom['observationUncertainty'] = '1'
-        dom['comparisons'].append({'point': 'feeder-pf', 'status': 'INVALID'})
+        dom['observationUncertainty'] = str(sum(v is None for v in expected.values()))
+        pf_row = next(r for r in dom['comparisons'] if r['point'] == 'feeder-pf')
+        pf_row['status'] = 'INVALID'
         check.check_dom(row, dom, 'physical', expected)
-        dom['comparisons'][-1]['status'] = 'UNKNOWN'
+        pf_row['status'] = 'UNKNOWN'
         with self.assertRaises(AssertionError):
             check.check_dom(row, dom, 'physical', expected)
 
