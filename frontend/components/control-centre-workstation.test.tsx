@@ -37,7 +37,6 @@ function button(tree: ReactTestRenderer, text: string) {
   return tree.root.findAllByType("button").find((b) => b.children.join("").includes(text))!;
 }
 const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
-const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 afterEach(() => { act(() => mounted.splice(0).forEach((r) => r.unmount())); clients.splice(0).forEach((c) => c.clear()); vi.unstubAllGlobals(); });
 
 function OperatorStateScreenProbe() {
@@ -52,7 +51,9 @@ describe("operator state failure visibility", () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(malformed)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<OperatorStateScreenProbe />, true);
-    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
+    await act(async () => {
+      await vi.waitFor(() => expect(output(tree)).toContain("Expected CC state schema 3"));
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(output(tree)).toContain("Control centre API unavailable");
     expect(output(tree)).toContain("Expected CC state schema 3");
@@ -64,7 +65,9 @@ describe("operator state failure visibility", () => {
       .mockImplementation(async () => new Response(JSON.stringify(liveState)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<OperatorStateScreenProbe />, true);
-    await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
+    await act(async () => {
+      await vi.waitFor(() => expect(output(tree)).toContain("T1 faceplate"));
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(output(tree)).toContain("T1 faceplate");
     expect(output(tree)).toContain("available");
@@ -112,11 +115,17 @@ describe("operator workstation interactions", () => {
     expect(output(tree)).toContain("No RTU reservation"); expect(fetchMock).not.toHaveBeenCalled();
     select("RMU1"); select("CB1"); expect(button(tree, "Execute OPEN")).toBeUndefined();
     act(() => button(tree, "Confirm OPEN").props.onClick());
-    await act(async () => { button(tree, "Execute OPEN").props.onClick(); await settle(); });
+    await act(async () => {
+      button(tree, "Execute OPEN").props.onClick();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ point: "feeder-breaker-command", operation: "open" });
     select("T1"); expect(button(tree, "Confirm RAISE").props.disabled).toBe(true);
-    await act(async () => { resolve(new Response(JSON.stringify(commandResult("completed")))); await settle(); });
+    await act(async () => {
+      resolve(new Response(JSON.stringify(commandResult("completed"))));
+      await vi.waitFor(() => expect(output(tree)).toContain("COMPLETED"));
+    });
     expect(output(tree)).toContain("CB1 feeder breaker"); expect(output(tree)).toContain("feeder-breaker-command");
     expect(output(tree)).toContain("T1 faceplate"); expect(output(tree)).toContain("COMPLETED");
     expect(output(tree)).toContain("IOA 1001: OPEN at 12:00:01.600");
@@ -130,7 +139,8 @@ describe("operator workstation interactions", () => {
     let tree!: ReactTestRenderer;
     await act(async () => {
       tree = create(<QueryClientProvider client={client}><RunnerOperatorStatus resolution={resolveOperatorView(EU_PACKAGE, null)} /></QueryClientProvider>);
-      mounted.push(tree); await settle();
+      mounted.push(tree);
+      await vi.waitFor(() => expect(output(tree)).toContain("operator proxy offline"));
     });
     expect(output(tree)).toContain("Operator API unavailable");
     expect(output(tree)).toContain("Cached snapshot");
@@ -188,7 +198,10 @@ describe("operator interrogation button", () => {
   it.each([409, 503])("shows %s without retrying", async (status) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: status === 409 ? "interrogation already running" : "link not started" }), { status })); vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<InterrogateStation state={FEEDER_STATE} unavailable={false} />);
-    await act(async () => { button(tree, "Interrogate station").props.onClick(); await settle(); });
+    await act(async () => {
+      button(tree, "Interrogate station").props.onClick();
+      await vi.waitFor(() => expect(output(tree)).toContain("No automatic retry"));
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1); expect(output(tree)).toContain(String(status)); expect(output(tree)).toContain("No automatic retry");
   });
   it("disables on link loss or API failure and distinguishes accepted from completed", async () => {
@@ -196,7 +209,10 @@ describe("operator interrogation button", () => {
     expect(button(mount(<InterrogateStation state={FEEDER_STATE} unavailable />), "Interrogate station").props.disabled).toBe(true);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ trigger: "operator", requested_at: "2026-10-09T12:00:30Z" }), { status: 202 })));
     const tree = mount(<InterrogateStation state={FEEDER_STATE} unavailable={false} />);
-    await act(async () => { button(tree, "Interrogate station").props.onClick(); await settle(); });
+    await act(async () => {
+      button(tree, "Interrogate station").props.onClick();
+      await vi.waitFor(() => expect(output(tree)).toContain("awaiting CC start"));
+    });
     expect(output(tree)).toContain("awaiting CC start"); expect(button(tree, "Interrogate station").props.disabled).toBe(true);
   });
 });
@@ -205,14 +221,19 @@ it("queries each selected device audit with an independent cache identity", asyn
   const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : { ...AUDIT, entries: [] })));
   vi.stubGlobal("fetch", fetchMock);
   const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-  await act(async () => { await settle(); });
+  await act(async () => {
+    await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+  });
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/field/audit"))).toBe(false);
-  await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
+  await act(async () => {
+    button(tree, "Advanced diagnostics").props.onClick();
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true));
+  });
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true);
   for (const device of ["rmu-1", "rmu-2", "oltc-1", "f2-breaker"]) {
     await act(async () => {
       tree.root.findByProps({ "aria-label": "Audit device" }).props.onChange({ target: { value: device } });
-      await settle();
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true));
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true);
   }

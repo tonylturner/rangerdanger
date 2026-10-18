@@ -26,7 +26,6 @@ function mount(node: ReactNode) {
 const props = { field: TRUTH, stateError: null, operator: FEEDER_STATE, now: NOW };
 const output = (tree: ReactTestRenderer) => JSON.stringify(tree.toJSON());
 const button = (tree: ReactTestRenderer, label: string) => tree.root.findAllByType("button").find((b) => b.children.map((c) => typeof c === "string" ? c : JSON.stringify(c.props.children)).join("").includes(label))!;
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 afterEach(() => {
   act(() => trees.splice(0).forEach((tree) => tree.unmount()));
   clients.splice(0).forEach((client) => client.clear());
@@ -210,10 +209,14 @@ describe("Physical System interactions", () => {
     const location = { search: "", href: "http://localhost/substation" };
     vi.stubGlobal("window", { location, history: { pushState: (_: unknown, _title: string, url: URL) => { location.search = url.search; location.href = url.href; } }, addEventListener: vi.fn(), removeEventListener: vi.fn() });
     const tree = mount(<ControlCentreView />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))).toBeDefined());
+    });
     act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("CB1:"))!.props.onClick());
     act(() => button(tree, "Physical System").props.onClick());
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "CB1 — Feeder breaker")?.props["aria-expanded"]).toBe(true));
+    });
     expect(location.search).toBe("?view=physical-system");
     expect(button(tree, "CB1 — Feeder breaker").props["aria-expanded"]).toBe(true);
     expect(selector).toHaveBeenCalledWith("#physical-equipment-CB1");
@@ -223,7 +226,9 @@ describe("Physical System interactions", () => {
     expect(output(tree)).toContain("RMU2 faceplate");
     act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith("F2 indication"))!.props.onClick());
     act(() => button(tree, "Physical System").props.onClick());
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "F2 — Alternative feeder")?.props["aria-expanded"]).toBe(true));
+    });
     expect(button(tree, "F2 — Alternative feeder").props["aria-expanded"]).toBe(true);
     expect(selector).toHaveBeenCalledWith("#physical-equipment-F2");
     act(() => button(tree, "Control Centre").props.onClick());
@@ -236,7 +241,9 @@ describe("Physical System interactions", () => {
       throw new Error("audit offline");
     }));
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+    });
     clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
     await act(async () => {
       button(tree, "Advanced diagnostics").props.onClick();
@@ -252,10 +259,18 @@ describe("Physical System interactions", () => {
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : AUDIT)));
     vi.stubGlobal("fetch", fetchMock);
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
-    await act(async () => { await settle(); });
+    await act(async () => {
+      await vi.waitFor(() => expect(button(tree, "Advanced diagnostics")).toBeDefined());
+    });
     expect(fetchMock.mock.calls.some(([url]) => url.includes("audit"))).toBe(false);
-    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
-    await act(async () => { tree.root.findByType("select").props.onChange({ target: { value: "rmu-2" } }); await settle(); });
+    await act(async () => {
+      button(tree, "Advanced diagnostics").props.onClick();
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=breaker-1"))).toBe(true));
+    });
+    await act(async () => {
+      tree.root.findByType("select").props.onChange({ target: { value: "rmu-2" } });
+      await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true));
+    });
     expect(fetchMock.mock.calls.some(([url]) => url.endsWith("device=rmu-2"))).toBe(true);
     act(() => { clients[0].setQueryData(["field", "state"], structuredClone(TRUTH)); });
     expect(tree.root.findByType("select").props.value).toBe("rmu-2");
