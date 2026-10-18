@@ -37,7 +37,7 @@ def create_eu_app(profile_path: str) -> FastAPI:
 
     app = FastAPI(
         title="OpenDSS EU Process",
-        description="Autonomous CIGRE-derived feeder driven by four schema-3 device truths",
+        description="Autonomous CIGRE-derived feeder driven by five schema-3 device truths",
         lifespan=lifespan,
     )
     app.state.eu_profile = profile
