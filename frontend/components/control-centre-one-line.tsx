@@ -86,17 +86,18 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
         {measure(570, 120, "rmu-1-current")}
         {measure(570, 140, "rmu-1-source-kv", "Source ")}
         {measure(850, 120, "rmu-2-current")}
-        {measure(920, 245, "rmu-2-section-kv", "Section ")}
-        {measure(920, 265, "rmu-2-source-kv", "Source ")}
+        {measure(880, 35, "rmu-2-section-kv", "Section ")}
+        {measure(880, 55, "rmu-2-source-kv", "Source ")}
         {section(80, 133, 80, 325, "oltc-1-bus-kv")}
-        <text x="400" y="65" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 via CB1</text>
+        <text x="310" y="145" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 via CB1</text>
         {section(80, 190, 310, 190, "oltc-1-bus-kv")}
         {switchSymbol(310, 190, "CB1", "feeder-breaker-position", "CB1")}
         {section(330, 190, 570, 190, "feeder-voltage")}
-        {busLabel(440, 245, "S1 residential", "feeder-voltage")}
+        {/* Section labels use the upper annotation lane, clear of both RMU enclosures. */}
+        {busLabel(410, 75, "S1 residential", "feeder-voltage")}
         {switchSymbol(570, 190, "RMU1 · NC", "rmu-1-position", "RMU1")}
         {section(590, 190, 850, 190, "rmu-1-section-kv")}
-        {busLabel(710, 245, "S2 commercial", "rmu-1-section-kv")}
+        {busLabel(710, 75, "S2 commercial", "rmu-1-section-kv")}
         {switchSymbol(850, 190, "RMU2 · NOP", "rmu-2-position", "RMU2")}
         {section(870, 190, 1000, 190, "rmu-2-source-kv")}
         {section(1000, 190, 1000, 325, "rmu-2-source-kv")}

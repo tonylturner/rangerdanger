@@ -34,7 +34,7 @@ export function DeviceComms({ state, unavailable = false }: { state: OperatorSta
   return <section aria-label="Device comms health" className="min-w-0 rounded-xl border border-slate-800 bg-slate-950 p-4">
     <h2 className="mb-2 text-sm font-semibold text-slate-200">Device comms health · IEC 104 observations</h2>
     {unavailable && <p className="mb-2 text-xs text-amber-300">Control centre API unavailable; retained snapshot, not live comms health.</p>}
-    {state ? <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">{Object.entries(deviceCommsHealth(state)).map(([device, health]) => <div key={device}><dt className="text-slate-400">{device}</dt><dd className={health === "ok" ? "text-slate-200" : "text-amber-300"}>{health.replaceAll("_", " ")}</dd></div>)}</dl> : <p className="text-sm text-slate-400">Waiting for control centre observations…</p>}
+    {state ? <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">{Object.entries(deviceCommsHealth(state)).map(([device, health]) => <div key={device} className="min-w-0 max-w-full break-words"><dt className="text-slate-400">{device}</dt><dd className={health === "ok" ? "text-slate-200" : "text-amber-300"}>{health.replaceAll("_", " ")}</dd></div>)}</dl> : <p className="text-sm text-slate-400">Waiting for control centre observations…</p>}
   </section>;
 }
 export function EuDashboard({ title }: { title: string }) {
@@ -42,7 +42,7 @@ export function EuDashboard({ title }: { title: string }) {
   const summary = operator ? telemetrySummary(operator.points) : null;
   const cc = ws?.control_centre;
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6 px-6 py-10">
       <header>
         <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">OT/ICS Cyber Range</p>
         <h1 className="text-3xl font-bold text-white">{title}</h1>

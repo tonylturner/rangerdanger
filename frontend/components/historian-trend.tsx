@@ -18,7 +18,7 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
   const ymin = Math.min(...values, ...(band ? [band.low] : [])), ymax = Math.max(...values, ...(band ? [band.high] : []));
   const x = (t: string) => 60 + (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
   const y = (n: number) => 160 - (n - ymin) / (ymax - ymin || 1) * 120;
-  return <div className="space-y-3">
+  return <div className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
     {values.length ? <svg viewBox="0 0 940 205" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="w-full">
       {band && <rect x="60" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
       <path d="M60 25 V175 H900" fill="none" stroke="#64748b" />
@@ -35,8 +35,8 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
-    <div className="max-h-64 overflow-auto">
-      <table className="w-full text-left text-xs text-slate-300">
+    <div role="region" aria-label="Latest snapshots" tabIndex={0} className="max-w-full overflow-x-auto">
+      <table className="w-full min-w-[48rem] text-left text-xs text-slate-300">
         <caption className="pb-2 text-left text-slate-400">Latest 30 snapshots, newest first · full timestamps in UTC</caption>
         <thead><tr>{["CC epoch / seq", "Value", "Quality / reason", "Source time", "CC received", "Ingested"].map((h) => <th className="px-2 py-1" key={h}>{h}</th>)}</tr></thead>
         <tbody>{history.segments.flatMap((segment, i) => segment.samples.map((sample) => ({ sample, epoch: segment.cache_epoch, segment: i }))).slice(-30).reverse().map(({ sample: s, epoch, segment }) => <tr key={`${segment}-${s.snapshot_seq}`} className="border-t border-slate-800">
@@ -65,7 +65,7 @@ export function HistorianTrend({ points = [], voltageOnly = false }: { points?: 
   });
   const error = catalogue.error ?? history.error;
   const signals = catalogue.data?.filter((p) => !voltageOnly || ["oltc-1-bus-kv", "feeder-voltage", "rmu-1-section-kv", "rmu-2-section-kv", "rmu-1-source-kv", "rmu-2-source-kv"].includes(p.id));
-  return <section aria-label="Historian trend" className="space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
+  return <section aria-label="Historian trend" className="min-w-0 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
     <h2 className="text-sm font-bold text-slate-200">{voltageOnly ? "Voltage trend · bus and sections" : "Historian · CC-observed history"}</h2>
     <p className="max-w-3xl text-xs text-slate-400">Last 15 minutes in the Operations DMZ. Read-only 1 s snapshots, not a complete sequence-of-events archive. The horizontal axis uses ingest time, not the station clock. Reset Lab does not erase history.</p>
     <label className="flex flex-wrap items-center gap-2 text-xs text-slate-300">Signal

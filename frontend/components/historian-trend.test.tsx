@@ -5,6 +5,21 @@ import { HistoryPlot } from "./historian-trend";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 describe("historian trend", () => {
+  it("contains wide snapshot rows horizontally and shows all 30 without a vertical clip", () => {
+    const history = {
+      ...HISTORY, gaps: [],
+      segments: [{ cache_epoch: "0ba59ec6be7b5148", samples: Array.from({ length: 35 }, (_, i) => historySample(i + 1)) }],
+    };
+    const html = renderToStaticMarkup(<HistoryPlot history={history} />);
+    expect(html).toContain('role="region" aria-label="Latest snapshots" tabindex="0" class="max-w-full overflow-x-auto"');
+    expect(html).toContain('min-w-[48rem]');
+    expect(html).toContain('[overflow-wrap:anywhere]');
+    expect(html).not.toMatch(/max-h-|overflow-auto|overflow-y-/);
+    expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(30);
+    const rows = text(html).slice(text(html).indexOf("CC epoch / seq"));
+    expect(rows.indexOf("0ba59ec6be7b5148 / 35")).toBeLessThan(rows.indexOf("0ba59ec6be7b5148 / 6"));
+    expect(rows).not.toContain("0ba59ec6be7b5148 / 5 ");
+  });
   it("plots separate runs while retaining stale quality and full UTC times in the table", () => {
     const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);
     expect(html.match(/data-history-run="true"/g)).toHaveLength(4);

@@ -12,6 +12,8 @@ import { ControlCentreOneLine, observedReading } from "./control-centre-one-line
 import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
 import { AuditTable, OperatorContrast, FieldCards, PhysicalFeederScreen } from "./physical-feeder";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
+import { DeviceFaceplate, RegulationBand } from "./control-centre-faceplate";
+import { devicePoints } from "../lib/operator-workstation";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 function render(node: ReactNode): string {
@@ -75,6 +77,53 @@ describe("ControlCentreScreen schema 3", () => {
 });
 
 describe("CC schematic layout", () => {
+  it("reserves upper annotation lanes clear of the RMUs and right-hand ring line", () => {
+    const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
+    const labels = [...html.matchAll(/<text x="(\d+)" y="(\d+)"[^>]*>([^<]*)<\/text>/g)];
+    const position = (prefix: string) => {
+      const label = labels.find((m) => m[3].startsWith(prefix));
+      expect(label).toBeDefined();
+      return { x: Number(label![1]), y: Number(label![2]) };
+    };
+    const s1 = position("S1 residential"), s2 = position("S2 commercial");
+    // Geometry contract, not a browser text-bounds measurement: section
+    // captions sit over their spans, above the RMU enclosures (y=150).
+    expect(s1.x).toBeGreaterThan(330);
+    expect(s1.x).toBeLessThan(492);
+    expect(s2.x).toBeGreaterThan(648);
+    expect(s2.x).toBeLessThan(772);
+    expect(s1.y + 18).toBeLessThan(150);
+    expect(s2.y + 18).toBeLessThan(150);
+    const section = position("Section "), source = labels.find((m) => m[3].startsWith("Source ") && Number(m[1]) > 772)!;
+    expect(section.y).toBeLessThan(s2.y - 18);
+    expect(Number(source[2])).toBeLessThan(s2.y - 12);
+    expect(section.y).not.toBe(Number(source[2]));
+    expect(position("F1 via CB1").y).toBeGreaterThan(120);
+    expect(position("F1 via CB1").y).toBeLessThan(165);
+  });
+
+  it("keeps regulation labels in fixed-size HTML outside the height-bounded graphic", () => {
+    const html = render(<RegulationBand band={{ setpoint: 20.4, low: 20.2, high: 20.6, bus: 20.23 }} />);
+    const svg = html.match(/<svg[\s\S]*?<\/svg>/)?.[0];
+    expect(svg).toContain('class="h-12 w-full"');
+    expect(svg).toContain('preserveAspectRatio="none"');
+    expect(svg).not.toContain("<text");
+    expect(html).toContain('text-xs text-slate-300"><span>20.20–20.60 kV</span><span>Bus 20.23</span>');
+    expect(text(render(<RegulationBand band={{ setpoint: 20.4, low: 20.2, high: 20.6, bus: null }} />))).toContain("Bus unknown");
+    expect(text(render(<RegulationBand band={null} />))).toContain("Current regulation band unavailable");
+  });
+
+  it("shows every T1 point and its reporting without a height-limited nested scroll", () => {
+    const html = render(<DeviceFaceplate state={FEEDER_STATE} selected="T1" unavailable={false} />);
+    const list = html.match(/<dl[\s\S]*?<\/dl>/)?.[0];
+    expect(list).toBeDefined();
+    expect(list).not.toMatch(/max-h-|overflow-/);
+    expect(list?.match(/<dt /g)).toHaveLength(devicePoints(FEEDER_STATE.points, "T1").length);
+    expect(list?.match(/✓/g)).toHaveLength(devicePoints(FEEDER_STATE.points, "T1").length);
+    expect(text(list!)).toContain("OLTC lower limit CLEAR ✓ GOOD on change · timed event; GI untimed");
+    expect(text(list!)).toContain("Configured delay 30 s");
+  });
+
   it("stacks until wide desktop and does not stretch the schematic to faceplate height", () => {
     const html = screen();
     expect(html).toContain("grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]");

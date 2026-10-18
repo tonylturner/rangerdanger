@@ -13,14 +13,16 @@ export function RegulationBand({ band }: { band: VoltageBand | null }) {
   const x = (n: number) => 20 + (n - min) / (max - min) * 260;
   return <figure>
     <figcaption className="text-xs text-slate-300">Current band: {band.setpoint.toFixed(2)} ± {((band.high - band.low) / 2).toFixed(2)} kV</figcaption>
-    <svg viewBox="0 0 300 65" className="w-full" role="img" aria-label={`Current band ${band.low.toFixed(2)} to ${band.high.toFixed(2)} kV; bus ${band.bus ?? "unknown"}`}>
-      <path d="M20 25 H280" stroke="#64748b" />
+    <svg viewBox="0 0 300 48" preserveAspectRatio="none" className="h-12 w-full" role="img" aria-label={`Current band ${band.low.toFixed(2)} to ${band.high.toFixed(2)} kV; bus ${band.bus ?? "unknown"}`}>
+      <path d="M20 25 H280" stroke="#64748b" vectorEffect="non-scaling-stroke" />
       <rect x={x(band.low)} y="16" width={Math.max(1, x(band.high) - x(band.low))} height="18" fill="#475569" />
-      <path d={`M${x(band.setpoint)} 12 V38`} stroke="#e2e8f0" />
-      {band.bus !== null && <path d={`M${x(band.bus)} 8 l-5 -7 h10 Z M${x(band.bus)} 8 V40`} fill="#38bdf8" stroke="#38bdf8" />}
-      <text x="20" y="58" fill="#cbd5e1" fontSize="11">{band.low.toFixed(2)}–{band.high.toFixed(2)} kV</text>
-      <text x="280" y="58" textAnchor="end" fill="#cbd5e1" fontSize="11">Bus {band.bus?.toFixed(2) ?? "unknown"}</text>
+      <path d={`M${x(band.setpoint)} 12 V38`} stroke="#e2e8f0" vectorEffect="non-scaling-stroke" />
+      {band.bus !== null && <path d={`M${x(band.bus)} 8 l-5 -7 h10 Z M${x(band.bus)} 8 V40`} fill="#38bdf8" stroke="#38bdf8" vectorEffect="non-scaling-stroke" />}
     </svg>
+    <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-slate-300">
+      <span>{band.low.toFixed(2)}–{band.high.toFixed(2)} kV</span>
+      <span>Bus {band.bus?.toFixed(2) ?? "unknown"}</span>
+    </div>
   </figure>;
 }
 
@@ -29,11 +31,11 @@ export function DeviceFaceplate({ state, selected, unavailable }: { state: Opera
     <h2 className="text-base font-semibold text-slate-100">{selected} · {selected === "T1" ? "Transformer / AVR" : selected === "CB1" ? "Feeder breaker" : "Ring main unit"}</h2>
     {selected === "CB1" && <p className="text-xs text-slate-400">Remote/local authority is not telemetered for CB1.</p>}
     {selected === "T1" && <><RegulationBand band={regulationBand(state.points)} /><p className="text-xs text-slate-400">Configured delay only; no live countdown is telemetered.</p></>}
-    <dl className="max-h-80 space-y-2 overflow-y-auto text-xs">
-      {devicePoints(state.points, selected).map((p) => <div key={p.id} className={`border-t border-slate-800 py-2 ${pointCondition(p) !== "good" ? `border-dashed ${STALE_HATCH}` : ""}`}>
+    <dl className="text-xs">
+      {devicePoints(state.points, selected).map((p) => <div key={p.id} className={`grid gap-x-4 gap-y-1 border-t border-slate-800 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] ${pointCondition(p) !== "good" ? `border-dashed ${STALE_HATCH}` : ""}`}>
         <dt className="text-slate-400">{pointLabel(p.id)}</dt>
-        <dd className="mt-1 flex flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} /><span>{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
-        <dd className="mt-1 text-slate-400">{reportingText(p)}</dd>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} /><span className="break-words">{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
+        <dd className="text-slate-400 sm:col-start-2">{reportingText(p)}</dd>
       </div>)}
     </dl>
     <SupervisoryControls link={state.link} points={state.points} unavailable={unavailable} selected={selected} />
