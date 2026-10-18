@@ -75,7 +75,7 @@ def data_fixture(row):
     for i, name in enumerate(check.DEVICES):
         device_id = 'feeder-breaker' if i == 0 else name
         amps = row['currents_a'][i]
-        d = {'device_id': device_id, 'revision': 1, 'remote_enabled': True,
+        d = {'device_id': device_id, 'generation': 7, 'revision': 1, 'remote_enabled': True,
              'protection': {'picked_up': False}, 'position': 'closed' if i < 3 and row['switches'][i] == 'C' else 'open',
              'earth_closed': False, 'fault_passage': False,
              'measurements': {'valid': True, 'solver_epoch': 'fixture', 'solve_seq': 2,
@@ -161,9 +161,55 @@ class StateSmoke(unittest.TestCase):
         result = subprocess.run(['bash', str(ROOT / 'scripts/eu-state-smoke.sh'), '--list'], capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         for r in check.ORACLE['rows'][:16]:
-            self.assertIn(r['id'] + ':', result.stdout)
-        for name in ['S3-fault', 'PLC-setpoint', 'CCC-normal', 'S1-pre-trip']:
+            name = 'CCC-normal-interlock' if r['id'] == 'CCC-normal' else r['id']
+            self.assertIn(name + ':', result.stdout)
+        self.assertIn('CCC-normal-interlock: interlock', result.stdout)
+        self.assertNotIn('CCC-normal: UNSUPPORTED', result.stdout)
+        for name in ['S3-fault', 'PLC-setpoint', 'S1-pre-trip']:
             self.assertIn(name + ': UNSUPPORTED', result.stdout)
+
+    def test_interlock_rejected_without_state_change(self):
+        field, operator, _, _ = data_fixture(check.ROWS['OCC-normal'])
+        command = {'point': 'feeder-breaker-command', 'operation': 'close', 'result': 'rejected',
+                   'reason': 'execute rejected (negative ACT-CON)',
+                   'con_at': '2026-10-18T18:00:05Z', 'term_at': None, 'feedback': None}
+        check.check_interlock(check.ORACLE['interlocks']['CCC-normal-interlock'],
+                              field, operator, copy.deepcopy(field), copy.deepcopy(operator), command)
+
+    def test_interlock_mutations_fail(self):
+        before_field, before_operator, _, _ = data_fixture(check.ROWS['OCC-normal'])
+        mutations = [
+            lambda f, o, c: c.update(result='unknown'),
+            lambda f, o, c: c.update(result='completed'),
+            lambda f, o, c: c.update(reason='timeout'),
+            lambda f, o, c: c.update(point='rmu-1-command'),
+            lambda f, o, c: c.update(con_at=None),
+            lambda f, o, c: c.update(term_at='2026-10-18T18:00:06Z'),
+            lambda f, o, c: c.update(feedback={'value': 'closed'}),
+            lambda f, o, c: f['devices']['breaker-1'].update(position='closed'),
+            lambda f, o, c: f['devices']['breaker-1'].update(revision=2),
+            lambda f, o, c: f['devices']['breaker-1'].update(generation=8),
+            lambda f, o, c: o['points'][0].update(value='closed'),
+            lambda f, o, c: o['points'][0]['quality'].update(iv=True),
+        ]
+        for section, point in zip(check.SECTIONS, check.VOLTAGES):
+            mutations.append(lambda f, o, c, s=section: f['process']['buses'][s.lower()].update(live=False, kv=0))
+            mutations.append(lambda f, o, c, id=point: next(p for p in o['points'] if p['id'] == id).update(value=0))
+        for i, mutate in enumerate(mutations):
+            with self.subTest(mutation=i):
+                field, operator = copy.deepcopy(before_field), copy.deepcopy(before_operator)
+                command = {'point': 'feeder-breaker-command', 'operation': 'close', 'result': 'rejected',
+                           'reason': 'execute rejected (negative ACT-CON)',
+                           'con_at': '2026-10-18T18:00:05Z', 'term_at': None, 'feedback': None}
+                mutate(field, operator, command)
+                with self.assertRaises(AssertionError):
+                    check.check_interlock(check.ORACLE['interlocks']['CCC-normal-interlock'],
+                                          before_field, before_operator, field, operator, command)
+        bad_before = copy.deepcopy(before_operator)
+        bad_before['points'][0]['quality']['nt'] = True
+        with self.assertRaises(AssertionError):
+            check.check_interlock(check.ORACLE['interlocks']['CCC-normal-interlock'],
+                                  before_field, bad_before, before_field, before_operator, command)
 
     def test_failed_case_stops_without_retry_and_resets(self):
         run_spec = importlib.util.spec_from_file_location('run', ROOT / 'scripts/lib/eu-state-run.py')

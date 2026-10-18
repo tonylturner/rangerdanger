@@ -486,8 +486,16 @@
       "lockout": true
     }
   ],
+  "interlocks": {
+    "CCC-normal-interlock": {
+      "target": "CCC-normal",
+      "predecessor": "OCC-normal",
+      "point": "feeder-breaker-command",
+      "operation": "close",
+      "reason": "live_live"
+    }
+  },
   "unsupported": {
-    "CCC-normal": "live/live interlock rejects the final close in every CC ordering; oracle/offline only",
     "S1-pre-trip": "instantaneous protection cannot hold this residual-voltage row for GI/DOM; oracle/offline only",
     "S1-pickup": "F2 delayed protection cannot hold pickup for GI/DOM; oracle/offline only",
     "S3-fault": "no process fault_s3 action",

@@ -14,7 +14,9 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 ORACLE = json.loads(Path(__file__).with_name('eu-state-oracle.json').read_text())
-CASES = ['baseline'] + [r['id'] for r in ORACLE['rows'][:16] if r['id'] not in ORACLE['unsupported']] + ['s1-cycle', 'rmu-local', 'oltc']
+INTERLOCK_CASES = {case['target']: name for name, case in ORACLE['interlocks'].items()}
+SWITCHING_CASES = [INTERLOCK_CASES.get(r['id'], r['id']) for r in ORACLE['rows'][:16]]
+CASES = ['baseline'] + SWITCHING_CASES + ['s1-cycle', 'rmu-local', 'oltc']
 
 
 def wait_owned(process, timeout):
@@ -69,13 +71,17 @@ def main():
     args = parser.parse_args()
     if args.list:
         for name in CASES:
-            print(f'{name}: supported')
+            if name in ORACLE['interlocks']:
+                case = ORACLE['interlocks'][name]
+                print(f'{name}: interlock — {case["predecessor"]}; {case["point"]} {case["operation"]} rejected ({case["reason"]}); no state change')
+            else:
+                print(f'{name}: supported')
         for name, why in ORACLE['unsupported'].items():
             print(f'{name}: UNSUPPORTED — {why}')
         return 0
     cases = []
     for name in args.case or CASES:
-        expanded = [r for r in CASES if r.endswith(('-normal', '-tripped'))] if name == 'switching' else [name]
+        expanded = SWITCHING_CASES if name == 'switching' else [name]
         for case in expanded:
             if case not in CASES:
                 parser.error(f'unsupported/unknown case {case}: {ORACLE["unsupported"].get(case, "use --list")}')

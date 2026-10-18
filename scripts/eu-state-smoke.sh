@@ -79,7 +79,7 @@ reference() {
 }
 
 switching() {
-  local row="$1" sw="${1%%-*}" f2="${1#*-}"
+  local row="$1" sw="${1%%-*}" f2="${1#*-}" label="${2:-final}"
   reference
   if [ "$f2" = tripped ]; then
     eu_action process fault_s2
@@ -101,7 +101,7 @@ switching() {
   fi
   [ "${sw:1:1}" = O ] || switch_command rmu-1 close
   [ "${sw:0:1}" = O ] || switch_command feeder-breaker close
-  checkpoint final "$row"
+  checkpoint "$label" "$row"
 }
 
 case "$mode" in
@@ -119,6 +119,13 @@ case "$mode" in
       and .process.fault_section == "none" and (.process.f2_tripped | not) and .process.profile.enabled' >/dev/null
     ;;
   baseline) reference; checkpoint baseline CCO-normal ;;
+  CCC-normal-interlock)
+    switching OCC-normal predecessor
+    eu_command feeder-breaker-command close rejected live_live
+    printf '%s\n' "$COMMAND_BODY" > "$CASE_DIR/interlock-command.json"
+    printf '%s\n' "$API_BODY" > "$CASE_DIR/interlock-audit.json"
+    checkpoint rejected OCC-normal --interlock CCC-normal-interlock
+    ;;
   ???-normal|???-tripped) switching "$mode" ;;
   s1-cycle)
     reference

@@ -63,6 +63,33 @@ def good(point):
             and q['ov'] in (None, False) and not point.get('stale_reason'))
 
 
+def check_interlock(case, before_field, before_operator, field, operator, command):
+    require(command['point'] == case['point'] and command['operation'] == case['operation'],
+            'interlock: wrong command attempt')
+    require(command['result'] == 'rejected' and 'negative ACT-CON' in (command['reason'] or '')
+            and command['con_at'] is not None and command['term_at'] is None
+            and command['feedback'] is None, 'interlock: expected negative ACT-CON, not unknown/completed')
+    before_points = {p['id']: p for p in before_operator['points']}
+    points = {p['id']: p for p in operator['points']}
+    for name, id in zip(DEVICES[:3], ['feeder-breaker-position', 'rmu-1-position', 'rmu-2-position']):
+        before, after = before_field['devices'][name], field['devices'][name]
+        require(all(before[k] == after[k] for k in ['generation', 'revision', 'position']),
+                f'interlock: {name} moved or changed revision/generation')
+        require(good(before_points[id]) and good(points[id])
+                and before_points[id]['value'] == points[id]['value'] == after['position'],
+                f'interlock: {id} changed or is not GOOD')
+    for section, id in zip(SECTIONS, VOLTAGES):
+        before = before_field['process']['buses'][section.lower()]
+        after = field['process']['buses'][section.lower()]
+        require(before['live'] == after['live']
+                and (before['kv'] >= ORACLE['live_kv']) == (after['kv'] >= ORACLE['live_kv']) == after['live'],
+                f'interlock: plant {section} changed state')
+        require(good(before_points[id]) and good(points[id])
+                and (before_points[id]['value'] >= ORACLE['live_kv'])
+                == (points[id]['value'] >= ORACLE['live_kv']) == after['live'],
+                f'interlock: CC {section} changed state or is not GOOD')
+
+
 def check_data(row, field, operator, before, since, tap=0, auto=False, local=False):
     p = field['process']
     require(p['truth_stale'] is False, 'plant truth stale/unknown')
@@ -208,6 +235,7 @@ def main():
     ap.add_argument('--auto', action='store_true')
     ap.add_argument('--local', action='store_true')
     ap.add_argument('--pending-dom', action='store_true')
+    ap.add_argument('--interlock', choices=ORACLE['interlocks'])
     ap.add_argument('--cleared', action='store_true', help='isolated S1 fault cleared; electrical row unchanged, lockout retained')
     args = ap.parse_args()
     read = lambda name: json.loads((args.directory / name).read_text())
@@ -217,10 +245,20 @@ def main():
         row['fault'] = 'none'
     try:
         expected = check_data(row, read('field.json'), read('operator.json'), read('before-field.json'), (args.directory / 'since.txt').read_text().strip(), args.tap, args.auto, args.local)
+        if args.interlock:
+            case = ORACLE['interlocks'][args.interlock]
+            require(args.row == case['predecessor'], 'interlock: wrong predecessor oracle')
+            parent = args.directory.parent
+            check_interlock(case, json.loads((parent / 'predecessor/field.json').read_text()),
+                            json.loads((parent / 'predecessor/operator.json').read_text()),
+                            read('field.json'), read('operator.json'),
+                            json.loads((parent / 'interlock-command.json').read_text()))
         if not args.pending_dom:
             for view in ['cc', 'physical']:
                 check_dom(row, read(f'{view}-dom.json'), view, expected, args.tap)
         result = {'plant': 'PASS', 'cc': 'PASS', 'dom': 'PENDING lane A' if args.pending_dom else 'PASS'}
+        if args.interlock:
+            result['interlock'] = 'PASS: negative ACT-CON; plant/GOOD CC positions and section states unchanged'
     except (AssertionError, KeyError, ValueError, TypeError) as error:
         result = {'result': 'FAIL', 'error': str(error)}
         print(json.dumps(result))

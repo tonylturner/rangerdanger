@@ -228,8 +228,11 @@ Cleanup re-enables the profile and uses the workshop reset barrier; this
 **clears workshop work and restores the weak policy**. The harness never
 pauses/restarts containers or directly edits firewall policy.
 
-`CCC-normal` is electrical-oracle/offline-only: every final CC close is
-live/live-interlocked. All eight F2-tripped rows are reachable via the S2
+`--case CCC-normal-interlock` proves that closing CB1 from the reachable
+OCC-normal predecessor is rejected with negative ACT-CON / `live_live`, with
+unchanged plant switch revisions/positions, GOOD CC positions and all section
+states. It is included in `--case switching`; the CCC-normal electrical row
+remains in the offline oracle. All eight F2-tripped rows are reachable via the S2
 fault/tie sequence. Instantaneous pre-trip and delayed pickup fault rows
 cannot be held for GI/DOM sampling. `--list` also names unsupported S3 fault
 and PLC setpoint controls. At zero power, undefined PF is intentionally
