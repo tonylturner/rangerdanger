@@ -54,7 +54,7 @@ eu_check_g13_audit() {
 # PLC accepted requests must be new, peer-attributed Modbus writes, never just
 # a tap that happened to have the desired value before the attempted load change.
 eu_plc_requests() {
-  local cursor="$1" count="$2" generation="$3"
+  local cursor="$1" count="$2" generation="$3" gate="${4:-G16}"
   eu_management oltc-1 GET "/api/audit?after=$cursor" || return
   if printf '%s' "$API_BODY" | jq -e --argjson cursor "$cursor" --argjson count "$count" --argjson gen "$generation" '
     .generation == $gen and .oldest_seq <= $cursor + 1
@@ -62,8 +62,8 @@ eu_plc_requests() {
       and .context.protocol == "modbus" and (.context.peer | startswith("10.30.30.30:"))); .result == "accepted")
     and ([.entries[] | select(.seq > $cursor and .operation == "plc_request" and .result == "accepted"
       and .context.protocol == "modbus" and (.context.peer | startswith("10.30.30.30:")))] | length) == $count' >/dev/null; then
-    pass "G16 exactly $count new PLC Modbus request(s) after cursor $cursor"
-  else fail "G16 PLC request evidence mismatch: $API_BODY"; return 1; fi
+    pass "$gate exactly $count new PLC Modbus request(s) after cursor $cursor"
+  else fail "$gate PLC request evidence mismatch: $API_BODY"; return 1; fi
 }
 eu_command_result() {
   python3 - "$@" <<'PYRESULT'

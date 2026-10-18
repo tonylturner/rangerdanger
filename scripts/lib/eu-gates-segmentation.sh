@@ -225,7 +225,7 @@ eu_g8_wait_plc_step() {
       ' >/dev/null; then
         # Stop after the first completed step, rather than spending another
         # cycle settling. The helper checks cursor, generation and PLC peer.
-        eu_plc_requests "$cursor" 1 "$generation" || return
+        eu_plc_requests "$cursor" 1 "$generation" G8 || return
         if ! printf '%s' "$API_BODY" | jq -e --argjson cursor "$cursor" --argjson tap "$tap" \
           --argjson direction "$direction" --argjson truth "$truth" '
           [.entries[] | select(.seq > $cursor and .operation == "plc_request"
