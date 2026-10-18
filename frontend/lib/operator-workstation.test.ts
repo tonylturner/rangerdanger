@@ -10,7 +10,8 @@ describe("operator observation rules", () => {
     ["rmu-2-position", "closed", "RMU2 · NOP: CLOSED (normal OPEN)"],
     ["rmu-1-position", "intermediate", "RMU1 · NC: INTERMEDIATE (normal CLOSED)"],
     ["rmu-2-position", "indeterminate", "RMU2 · NOP: INDETERMINATE (normal OPEN)"],
-    ["rmu-1-section-kv", 0.000004653, "S2 commercial: no supply"],
+    ["f2-position", "open", "F2: OPEN (normal CLOSED)"],
+    ["oltc-1-auto", false, "T1: MANUAL (normal AUTO)"],
   ] as const)("lists GOOD %s off-normal observations without adding alarms", (id, value, text) => {
     const state = structuredClone(FEEDER_STATE);
     state.points.find((p) => p.id === id)!.value = value;
@@ -224,5 +225,30 @@ describe("device comms precedence", () => {
     state.points.find((p) => p.id === "rmu-2-current")!.stale_reason = "not_updated";
     expect(abnormalConditions(state).map((c) => c.id)).toEqual(expect.arrayContaining(["gi", "feeder-protection-trip", "rmu-1-fault-passage", "oltc-1-blocked", "feeder-voltage-voltage-limit", "comms-rmu-2"]));
     expect(abnormalConditions(FEEDER_STATE)).toEqual([]);
+  });
+});
+
+describe("loss of supply", () => {
+  it.each([
+    ["rmu-1-source-kv", "S1 residential", "S1-no-supply"], ["rmu-1-section-kv", "S2 commercial", "S2-no-supply"],
+    ["rmu-2-source-kv", "S3 industrial", "S3-no-supply"], ["oltc-1-bus-kv", "20 kV busbar (T1 secondary)", "bus20-no-supply"],
+  ])("alarms once for a GOOD dead %s, never for uncertainty", (id, label, conditionId) => {
+    const original = FEEDER_STATE.points.find((p) => p.id === id)!;
+    for (const value of [0, 0.000004653, 0.099]) {
+      const p = { ...original, value };
+      const state = { ...FEEDER_STATE, points: [p] };
+      const alarm = { id: conditionId, text: `${label}: loss of supply` };
+      expect(activeAlarms(state)).toEqual([alarm]);
+      expect(abnormalConditions(state)).toEqual([alarm]);
+      for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+        expect(activeAlarms({ ...state, points: [{ ...p, quality: { ...p.quality, [flag]: true } }] })).toEqual([]);
+      }
+      for (const patch of [{ value: null }, { stale_reason: "not_updated" as const }]) {
+        expect(activeAlarms({ ...state, points: [{ ...p, ...patch }] })).toEqual([]);
+      }
+    }
+    for (const value of [-1, NaN, Infinity, 0.1, 20]) {
+      expect(activeAlarms({ ...FEEDER_STATE, points: [{ ...original, value }] }).some((a) => a.id.endsWith("-no-supply"))).toBe(false);
+    }
   });
 });

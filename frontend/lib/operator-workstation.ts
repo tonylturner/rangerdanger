@@ -1,8 +1,20 @@
 import type { ControlCentreLink, OperatorPoint, OperatorState } from "./operator-api";
 import { pointCondition, pointLabel } from "./operator-format";
 import { LIVE_KV, voltageState } from "./electrical-state";
-import { controlCentreObservations } from "./observation-readings";
-import { SECTION_VOLTAGE, type SectionId } from "./operator-supply-path";
+import { controlCentreObservations, type Readings } from "./observation-readings";
+
+export const SWITCH_NORMALS = {
+  CB1: { id: "feeder-breaker-position", label: "CB1", normal: "closed" },
+  F2: { id: "f2-position", label: "F2", normal: "closed" },
+  RMU1: { id: "rmu-1-position", label: "RMU1 · NC", normal: "closed" },
+  RMU2: { id: "rmu-2-position", label: "RMU2 · NOP", normal: "open" },
+} as const;
+export const SUPPLY_VOLTAGES: Record<string, { id: string; label: string }> = {
+  "rmu-1-source-kv": { id: "S1-no-supply", label: "S1 residential" },
+  "rmu-1-section-kv": { id: "S2-no-supply", label: "S2 commercial" },
+  "rmu-2-source-kv": { id: "S3-no-supply", label: "S3 industrial" },
+  "oltc-1-bus-kv": { id: "bus20-no-supply", label: "20 kV busbar (T1 secondary)" },
+};
 
 export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2" | "F2";
 export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2", "F2"];
@@ -11,6 +23,18 @@ export const AUTHORITY_POINTS = {
   RMU1: { id: "rmu-1-remote", label: "RMU1 authority" },
   RMU2: { id: "rmu-2-remote", label: "RMU2 authority" },
 };
+export function switchOffNormal(read: Readings, device: keyof typeof SWITCH_NORMALS): boolean {
+  const { id, normal } = SWITCH_NORMALS[device];
+  const r = read(id);
+  return r.condition === "good" && typeof r.value === "string" &&
+    ["open", "closed", "intermediate", "indeterminate"].includes(r.value) && r.value !== normal;
+}
+export function deviceOffNormal(read: Readings, device: DeviceId): boolean {
+  const authority = device in AUTHORITY_POINTS ? AUTHORITY_POINTS[device as keyof typeof AUTHORITY_POINTS] : undefined;
+  const local = authority ? read(authority.id).condition === "good" && read(authority.id).value === false : false;
+  const manual = read("oltc-1-auto");
+  return local || (device === "T1" ? manual.condition === "good" && manual.value === false : switchOffNormal(read, device));
+}
 export function devicePoints(points: OperatorPoint[], device: DeviceId) {
   const prefixes = device === "T1" ? ["oltc-1-", "plc-1-"] : device === "CB1" ? ["feeder-"] : device === "F2" ? ["f2-"] : [device === "RMU1" ? "rmu-1-" : "rmu-2-"];
   return points.filter((p) => prefixes.some((prefix) => p.id.startsWith(prefix)));
@@ -21,6 +45,10 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
   const asserted = ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
   for (const p of state.points) {
     if (pointCondition(p) !== "good") continue;
+    const supply = SUPPLY_VOLTAGES[p.id];
+    if (supply && voltageState({ condition: "good", value: p.value }) === "DEAD") {
+      alarms.push({ id: supply.id, text: `${supply.label}: loss of supply` });
+    }
     if (p.limits && typeof p.value === "number" && Number.isFinite(p.value) && p.value >= LIVE_KV && (p.value < p.limits.low || p.value > p.limits.high)) {
       alarms.push({ id: `${p.id}-voltage-limit`, text: `${pointLabel(p.id)}: voltage limit (${p.value.toFixed(2)} kV; ${p.limits.low.toFixed(2)}–${p.limits.high.toFixed(2)} kV)` });
     }
@@ -89,20 +117,16 @@ export function deviceCommsHealth(state: OperatorState): Record<string, CommsHea
 export function abnormalConditions(state: OperatorState): { id: string; text: string }[] {
   const conditions = activeAlarms(state);
   const read = controlCentreObservations(state.points);
-  for (const [id, label, normal] of [
-    ["feeder-breaker-position", "CB1", "closed"],
-    ["rmu-1-position", "RMU1 · NC", "closed"],
-    ["rmu-2-position", "RMU2 · NOP", "open"],
-  ]) {
+  for (const device of Object.keys(SWITCH_NORMALS) as (keyof typeof SWITCH_NORMALS)[]) {
+    const { id, label, normal } = SWITCH_NORMALS[device];
     const r = read(id);
-    if (r.condition === "good" && typeof r.value === "string" && ["open", "closed", "intermediate", "indeterminate"].includes(r.value) && r.value !== normal) {
-      conditions.push({ id: `${id}-off-normal`, text: `${label}: ${r.value.toUpperCase()} (normal ${normal.toUpperCase()})` });
+    if (switchOffNormal(read, device)) {
+      const value = String(r.value);
+      conditions.push({ id: `${id}-off-normal`, text: `${label}: ${value.toUpperCase()} (normal ${normal.toUpperCase()})` });
     }
   }
-  for (const [section, label] of Object.entries({ S1: "residential", S2: "commercial", S3: "industrial" })) {
-    if (voltageState(read(SECTION_VOLTAGE[section as SectionId])) === "DEAD") {
-      conditions.push({ id: `${section}-no-supply`, text: `${section} ${label}: no supply` });
-    }
+  if (read("oltc-1-auto").condition === "good" && read("oltc-1-auto").value === false) {
+    conditions.push({ id: "oltc-1-auto-off-normal", text: "T1: MANUAL (normal AUTO)" });
   }
   for (const authority of Object.values(AUTHORITY_POINTS)) {
     const point = state.points.find((p) => p.id === authority.id);

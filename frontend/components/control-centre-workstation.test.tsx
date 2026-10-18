@@ -70,7 +70,8 @@ describe("operator state failure visibility", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(output(tree)).toContain("T1 faceplate");
-    expect(output(tree)).toContain("available");
+    expect(tree.root.findByProps({ "aria-label": "CC observation snapshot" }).props["data-cached"]).toBe(false);
+    expect(tree.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     expect(output(tree)).not.toContain("Loading the control centre");
   });
 });

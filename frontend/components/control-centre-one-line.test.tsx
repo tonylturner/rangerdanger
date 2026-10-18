@@ -46,7 +46,7 @@ describe("functional one-line observations", () => {
     authority.value = false;
     const tag = schematic(points).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
     expect(tag.props["aria-label"]).toContain(`${device} authority: LOCAL`);
-    expect(tag.findByType("text").children.join("")).toBe("LOCAL");
+    expect(tag.findByType("text").children.filter((c) => typeof c === "string").join("")).toBe("LOCAL");
     expect(tag.findByType("rect").props.stroke).toBe("#fbbf24");
     authority.value = true;
     expect(schematic(points).findAllByType("g").filter((n) => n.props["data-authority"] === id)).toHaveLength(0);
@@ -55,21 +55,21 @@ describe("functional one-line observations", () => {
       for (const flag of ["iv", "nt", "sb", "bl"] as const) {
         const bad = points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p);
         const stale = schematic(bad).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-        expect(stale.findByType("text").children.join("")).toBe("AUTHORITY STALE");
+        expect(stale.findByType("text").children.filter((c) => typeof c === "string").join("")).toBe("AUTHORITY STALE");
         expect(stale.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
         expect(stale.findByType("rect").props.fill).toBe("url(#cc-unknown)");
         expect(stale.findByType("rect").props.strokeDasharray).toBeDefined();
       }
       authority.stale_reason = "not_updated";
       const stale = schematic(points).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-      expect(stale.findByType("text").children.join("")).toBe("AUTHORITY STALE");
-      expect(stale.findByType("title").children.join("")).toContain("not_updated");
+      expect(stale.findByType("text").children.filter((c) => typeof c === "string").join("")).toBe("AUTHORITY STALE");
+      expect(stale.findAllByType("title")[0].children.join("")).toContain("not_updated");
       authority.stale_reason = null;
     }
     authority.value = null;
     for (const unknown of [points, points.filter((p) => p.id !== id)]) {
       const tag = schematic(unknown).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-      expect(tag.findByType("text").children.join("")).toBe("AUTHORITY UNKNOWN");
+      expect(tag.findByType("text").children.filter((c) => typeof c === "string").join("")).toBe("AUTHORITY UNKNOWN");
       expect(tag.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
     }
   });
@@ -108,7 +108,7 @@ describe("functional one-line observations", () => {
     const s3 = tree.findAllByType("g").find((n) => n.props["aria-label"]?.startsWith("S3 industrial:"))!;
     expect(s3.props["aria-label"]).toContain("GOOD");
     expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("via F2");
-    expect(s3.findByType("title").children.join("")).toContain("Observed F2 path");
+    expect(s3.findAllByType("title")[0].children.join("")).toContain("Observed F2 path");
     expect(tree.findAllByType("text").filter((n) => n.props["data-supply-path"] === "via CB1")).toHaveLength(2);
   });
 
@@ -131,7 +131,7 @@ describe("functional one-line observations", () => {
     const tree = schematic(points);
     const s3 = tree.findAllByType("g").find((n) => n.props["aria-label"]?.startsWith("S3 industrial:"))!;
     expect(s3.findAllByType("text").map((n) => n.children.join("")).join("|")).toContain("via CB1 + F2");
-    expect(s3.findByType("title").children.join("")).toContain("Both observed switch paths");
+    expect(s3.findAllByType("title")[0].children.join("")).toContain("Both observed switch paths");
     expect(renderToStaticMarkup(<ControlCentreOneLine points={points} />)).not.toContain("F2 has no telemetry");
   });
   it("retains uncertain F2 position without treating live S3 VT as proof of its path", () => {

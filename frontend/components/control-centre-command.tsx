@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CommandOperation, CommandResult, ControlCentreLink, LinkState, OperatorPoint } from "../lib/operator-api";
-import { commandErrorText, commandOutcome, formatPointValue, formatUtcTime, pointCondition } from "../lib/operator-format";
+import { commandErrorText, commandOutcome, formatPointValue, formatUtcTime, pointCondition, qualityDefinition } from "../lib/operator-format";
 import { receivedAuthority, type DeviceId } from "../lib/operator-workstation";
 import { useOperatorCommand } from "../lib/operator-queries";
 
@@ -57,7 +57,7 @@ export function CommandPanelView({ linkState, position, state, onArm, onExecute,
   return <section aria-label={panel.label} className="space-y-2 border-t border-slate-800 pt-3">
     <h3 className="text-sm font-bold text-slate-200">{panel.label}</h3>
     <p className="text-xs text-slate-400">{panel.wire} · select-before-operate via RTU</p>
-    <p className="text-xs text-slate-300">Reported: {position ? formatPointValue(position.id, position.value) : "unknown"} · {condition === "good" ? "GOOD" : condition === "stale" ? "STALE" : "UNKNOWN"}</p>
+    <p className="text-xs text-slate-300">Reported: {position ? formatPointValue(position.id, position.value) : "unknown"} · <span title={qualityDefinition(condition)} tabIndex={0}>{condition === "good" ? "GOOD" : condition === "stale" ? "STALE" : "UNKNOWN"}</span></p>
     {state.phase === "armed" ? <div className="space-y-2 rounded border border-sky-800 bg-sky-950/30 p-2">
       <p className="text-xs text-sky-200">Local confirmation: {state.operation.toUpperCase()} on {panel.label}? No RTU reservation has been made.</p>
       <p className="text-xs text-sky-200">Received control authority: {authority}. This attempt is still subject to device interlocks.</p>

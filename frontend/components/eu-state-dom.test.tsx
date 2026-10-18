@@ -40,10 +40,11 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       for (const [i, device] of ["CB1", "RMU1", "RMU2"].entries()) {
         expect(hook(root, "data-device", device)[0].props).toMatchObject({
           "data-position": row.switches[i] === "C" ? "closed" : "open", "data-quality": "good",
+          "data-off-normal": row.switches[i] !== "CCO"[i] ? "true" : "false",
         });
       }
-      expect(hook(root, "data-device", "T1")[0].props).toMatchObject({ "data-tap": 0, "data-quality": "good" });
-      expect(hook(root, "data-device", "F2")[0].props).toMatchObject({ "data-position": row.f2 === "tripped" ? "open" : "closed", "data-quality": "good" });
+      expect(hook(root, "data-device", "T1")[0].props).toMatchObject({ "data-tap": 0, "data-quality": "good", "data-off-normal": "false" });
+      expect(hook(root, "data-device", "F2")[0].props).toMatchObject({ "data-position": row.f2 === "tripped" ? "open" : "closed", "data-quality": "good", "data-off-normal": row.f2 === "tripped" ? "true" : "false" });
       expect(hook(root, "data-f2-line")[0].props["data-state"]).toBe(live[2] ? "LIVE" : "DEAD");
       expect(hook(root, "data-point").map((n) => n.props["data-point"]).sort()).toEqual([
         "oltc-1-current", "oltc-1-bus-kv", "feeder-current", "feeder-voltage", "rmu-1-current", "rmu-2-current",
@@ -53,7 +54,7 @@ it.each(EU_ORACLE.flatMap((row) => [false, true].map((physical) => ({ ...row, ph
       if ("fault" in row) expect(hook(root, "data-point", "rmu-1-source-kv")[0].children.join("")).toContain("0.00 kV");
     });
     inspect(<AbnormalSummary state={operator} />, (root) => {
-      const expected = row.f2 === "tripped" ? ["f2-protection-trip"] : [];
+      const expected = row.f2 === "tripped" ? ["f2-protection-trip", "f2-position-off-normal"] : [];
       if (row.switches[0] === "O") expected.push("feeder-breaker-position-off-normal");
       if (row.switches[1] === "O") expected.push("rmu-1-position-off-normal");
       if (row.switches[2] === "C") expected.push("rmu-2-position-off-normal");
@@ -76,7 +77,10 @@ it.each(["stale", "unknown"] as const)("exports CC %s states without turning ret
     for (const section of hook(root, "data-section")) {
       expect(section.props).toMatchObject({ "data-state": "UNKNOWN", "data-path": "unknown", "data-kv": condition === "unknown" ? "" : 19.9 });
     }
-    for (const device of ["CB1", "RMU1", "RMU2", "T1", "F2"]) expect(hook(root, "data-device", device)[0].props["data-quality"]).toBe(condition);
+    for (const device of ["CB1", "RMU1", "RMU2", "T1", "F2"]) {
+      expect(hook(root, "data-device", device)[0].props["data-quality"]).toBe(condition);
+      expect(hook(root, "data-device", device)[0].props["data-off-normal"]).toBe("false");
+    }
     expect(hook(root, "data-device", "CB1")[0].props["data-position"]).toBe(condition === "unknown" ? "unknown" : "closed");
     expect(hook(root, "data-device", "T1")[0].props["data-tap"]).toBe(condition === "unknown" ? "" : 0);
     expect(hook(root, "data-point", "feeder-voltage")[0].props["data-state"]).toBe("UNKNOWN");
@@ -98,7 +102,26 @@ it.each(["intermediate", "indeterminate"] as const)("exports the received %s swi
   const { operator } = oracleFixture(EU_ORACLE[12]);
   operator.points.find((p) => p.id === "rmu-1-position")!.value = value;
   inspect(<FeederOneLine read={controlCentreObservations(operator.points)} />, (root) => {
-    expect(hook(root, "data-device", "RMU1")[0].props).toMatchObject({ "data-position": value, "data-quality": "good" });
+    expect(hook(root, "data-device", "RMU1")[0].props).toMatchObject({ "data-position": value, "data-quality": "good", "data-off-normal": "true" });
+  });
+});
+
+it.each([false, true])("exports MANUAL and LOCAL off-normal in physical=%s without conflating tap or position", (physical) => {
+  const { field, operator } = oracleFixture(EU_ORACLE[12]);
+  operator.points.find((p) => p.id === "oltc-1-auto")!.value = false;
+  operator.points.find((p) => p.id === "rmu-1-remote")!.value = false;
+  const t1 = field.devices["oltc-1"];
+  if (t1.kind !== "oltc") throw new Error("Expected OLTC fixture");
+  t1.auto = false;
+  field.devices["rmu-1"].remote_enabled = false;
+  const read = physical ? physicalSystemObservations(field) : controlCentreObservations(operator.points);
+  inspect(<FeederOneLine read={read} physical={physical} />, (root) => {
+    const transformer = hook(root, "data-device", "T1")[0];
+    expect(transformer.props).toMatchObject({ "data-off-normal": "true", "data-tap": 0 });
+    expect(transformer.findAllByType("circle").every((n) => n.props.stroke === "#fbbf24" && n.props.strokeDasharray === undefined)).toBe(true);
+    expect(hook(root, "data-device", "RMU1")[0].props).toMatchObject({ "data-off-normal": "true", "data-position": "closed" });
+    expect(hook(root, "data-device", "CB1")[0].props["data-off-normal"]).toBe("false");
+    expect(hook(root, "data-device", "F2")[0].props["data-off-normal"]).toBe("false");
   });
 });
 

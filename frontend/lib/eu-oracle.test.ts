@@ -26,22 +26,23 @@ it.each(EU_ORACLE)("$switches / F2 $f2 / $supply / VT $vt: both adapters match t
     }
   }
   const tripped = row.f2 === "tripped";
-  const expectedConditions: string[] = tripped ? ["F2 protection trip: asserted"] : [];
+  const expectedConditions: string[] = tripped ? ["F2 protection trip: asserted", "F2: OPEN (normal CLOSED)"] : [];
   const expectedPhysical: string[] = [];
   if (row.switches[0] === "O") { expectedConditions.push("CB1: OPEN (normal CLOSED)"); expectedPhysical.push("breaker-1-open"); }
   if (row.switches[1] === "O") { expectedConditions.push("RMU1 · NC: OPEN (normal CLOSED)"); expectedPhysical.push("rmu-1-switch"); }
   if (row.switches[2] === "C") { expectedConditions.push("RMU2 · NOP: CLOSED (normal OPEN)"); expectedPhysical.push("rmu-2-switch"); }
   for (const [i, label] of ["S1 residential", "S2 commercial", "S3 industrial"].entries()) {
-    if (supply[i] === "D") expectedConditions.push(`${label}: no supply`);
+    if (supply[i] === "D") expectedConditions.push(`${label}: loss of supply`);
   }
   const conditions = abnormalConditions(operator);
-  expect(conditions.filter((c) => !c.id.endsWith("-voltage-limit")).map((c) => c.text)).toEqual(expectedConditions);
+  expect(conditions.filter((c) => !c.id.endsWith("-voltage-limit")).map((c) => c.text).sort()).toEqual(expectedConditions.sort());
+  const expectedAlarmIds = ORACLE_SECTIONS.filter((_, i) => supply[i] === "D").map((section) => `${section}-no-supply`);
+  if (tripped) expectedAlarmIds.push("f2-protection-trip");
   if ("fault" in row) {
-    expect(activeAlarms(operator).map((c) => c.id).sort()).toEqual(["feeder-voltage-voltage-limit", "rmu-2-source-kv-voltage-limit"]);
+    expectedAlarmIds.push("feeder-voltage-voltage-limit", "rmu-2-source-kv-voltage-limit");
     expectedPhysical.push("fault");
-  } else {
-    expect(activeAlarms(operator).map((c) => c.id)).toEqual(tripped ? ["f2-protection-trip"] : []);
   }
+  expect(activeAlarms(operator).map((c) => c.id).sort()).toEqual(expectedAlarmIds.sort());
   if (row.f2 === "tripped") expectedPhysical.push("f2-breaker-trip");
   expect(physicalAbnormalities(field).map((c) => c.id).sort()).toEqual(expectedPhysical.sort());
   expect(conditions.some((c) => c.text.includes("F2"))).toBe(tripped);

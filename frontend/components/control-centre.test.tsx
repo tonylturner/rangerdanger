@@ -77,14 +77,14 @@ describe("ControlCentreScreen schema 3", () => {
 });
 
 describe("CC schematic layout", () => {
-  it.each([1440, 1920])("orders status, schematic, selected controls, secondary rows and alarms at %ipx", (viewport) => {
+  it.each([1440, 1920])("orders status, abnormal strip, schematic, selected controls and secondary rows at %ipx", (viewport) => {
     // DOM-order contract at both sides of the existing desktop breakpoint;
     // SSR does not measure pixels or execute media queries.
     const html = render(<div style={{ width: viewport }}><ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} /></div>);
     const order = [
-      'aria-label="Observation status"', 'aria-label="Feeder schematic"',
+      'aria-label="Observation status"', 'aria-label="Abnormal conditions"', 'aria-label="Feeder schematic"',
       'aria-label="T1 faceplate"', "Confirm RAISE", "Current band:", '<dl class="text-xs">',
-      'aria-label="Abnormal conditions"', 'aria-label="Operator records"', "<summary>Link diagnostics</summary>",
+      'aria-label="Operator records"', "<summary>Link diagnostics</summary>",
     ].map((marker) => html.indexOf(marker));
     expect(html).toContain(`width:${viewport}px`);
     expect(order.every((index) => index >= 0)).toBe(true);
@@ -315,6 +315,20 @@ describe("ControlCentreMiniStatus", () => {
 });
 
 describe("realism presentation", () => {
+  it("shows loss of supply once per dead node in both the strip and Alarms pane", () => {
+    const state = structuredClone(FEEDER_STATE);
+    for (const id of ["rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-source-kv", "oltc-1-bus-kv"]) {
+      state.points.find((p) => p.id === id)!.value = 0;
+    }
+    const html = screen({ state, initialTab: "Alarms" });
+    expect(text(html)).toContain("4 alarms · 0 off-normal");
+    expect(text(html)).toContain("Alarms (4)");
+    for (const label of ["S1 residential", "S2 commercial", "S3 industrial", "20 kV busbar (T1 secondary)"]) {
+      expect(text(html).split(`${label}: loss of supply`)).toHaveLength(3);
+    }
+    expect(html.match(/data-condition="S[123]-no-supply"/g)).toHaveLength(3);
+  });
+
   it.each([
     ["rmu-1-remote", "RMU1 authority: LOCAL"],
     ["rmu-2-remote", "RMU2 authority: LOCAL"],
@@ -325,14 +339,16 @@ describe("realism presentation", () => {
     const out = text(render(<AbnormalSummary state={state} />));
     expect(out).toContain(label);
     expect(out).not.toContain("No alarms in GOOD observations");
-    expect(text(screen({ state }))).toContain("0 active alarms");
+    expect(text(screen({ state }))).toContain("0 alarms · 1 off-normal");
     expect(render(<ControlCentreOneLine points={state.points} />)).toContain(`data-authority="${id}"`);
   });
 
-  it("keeps abnormal-condition detail after the selected faceplate", () => {
+  it("places the abnormal strip after observation status and before the schematic", () => {
     expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toContain("No alarms in GOOD observations");
     const html = screen();
-    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeGreaterThan(html.indexOf('aria-label="T1 faceplate"'));
+    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeGreaterThan(html.indexOf('aria-label="Observation status"'));
+    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeLessThan(html.indexOf('aria-label="Feeder schematic"'));
+    expect(html).not.toContain("Portal API:");
   });
   it("shows P/Q/PF and configured delay while PF IV remains a quality-marked dash", () => {
     const state = structuredClone(FEEDER_STATE);

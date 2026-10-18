@@ -73,11 +73,15 @@ export function ObservationStatus({ state, unavailable }: { state: OperatorState
     Link {LINK_STATE_TEXT[state.link.state]}{unavailable ? " (cached)" : ""} · Current-connection GI (UTC): {integrity ? formatUtcTime(state.link.gi.last_complete_at) : "not completed"} · Points current {current}/{state.points.length}
   </p>;
 }
-export function AbnormalSummary({ state }: { state: OperatorState }) {
+export function AbnormalSummary({ state, cached = false }: { state: OperatorState; cached?: boolean }) {
+  const alarms = activeAlarms(state);
+  const alarmIds = new Set(alarms.map((a) => a.id));
   const conditions = abnormalConditions(state);
+  const offNormal = conditions.filter((c) => !alarmIds.has(c.id));
   const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good").length;
-  return <section aria-label="Abnormal conditions" className={`rounded-lg border p-3 text-sm ${conditions.length ? "border-amber-700 bg-amber-950/30 text-amber-200" : "border-slate-700 text-slate-300"}`}>
-    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id} data-condition={c.id}>⚠ {c.text}</li>)}</ul> : <span data-condition="none">No alarms in GOOD observations</span>}
+  return <section aria-label="Abnormal conditions" data-alarm-count={alarms.length} data-off-normal-count={offNormal.length} className={`rounded-lg border p-3 text-sm ${alarms.length ? "border-rose-700 bg-rose-950/30" : conditions.length ? "border-amber-700 bg-amber-950/30" : "border-slate-700"} text-slate-300`}>
+    <p className="font-semibold">{conditions.length ? `${alarms.length} alarms · ${offNormal.length} off-normal` : <span data-condition="none">No alarms in GOOD observations</span>}{cached ? " in cached snapshot" : ""}</p>
+    {conditions.length > 0 && <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{[...alarms, ...offNormal].map((c) => <li key={c.id} data-condition={c.id} data-condition-kind={alarmIds.has(c.id) ? "alarm" : "off-normal"} className={alarmIds.has(c.id) ? "text-rose-300" : "text-amber-200"}>⚠ {c.text}</li>)}</ul>}
     <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-GOOD measurements · separate from process alarms.</p>
   </section>;
 }
@@ -90,7 +94,6 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
   const unavailable = stateError !== null && stateError !== undefined;
   const cachedAge = state && unavailable ? formatAge(Math.max(0, now - stateUpdatedAt)) : null;
   const summary = state ? telemetrySummary(state.points) : null;
-  const alarms = state ? activeAlarms(state) : [];
   return <main className="mx-auto flex w-screen min-w-0 max-w-[1600px] md:w-[calc(100vw-12rem)] flex-col gap-4 px-3 py-6 sm:px-6">
     <header>
       <h1 className="text-2xl font-semibold text-white">{view === "control-centre" ? "Control Centre" : "Physical System State"}</h1>
@@ -103,10 +106,10 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
     {unavailable && <p role="alert" className="rounded-lg border border-amber-700 p-3 text-sm text-amber-200">{isRangeNotReady(stateError) ? "Range not ready" : "Control centre API unavailable"}: {errorMessage(stateError)}. {state ? view === "control-centre" ? "Showing the last answer; controls disabled." : "Comparison uses the last CC answer. Physical data is fetched independently." : "Nothing received yet."}</p>}
     <ScadaViewBanner state={state} unavailable={unavailable} />
     {view === "physical-system" ? <>{cachedAge !== null && <p role="status" className="text-xs text-amber-200">Field-vs-CC comparison uses a cached CC snapshot · {cachedAge} since last operator API answer. Field data is fetched independently.</p>}{physicalSystem}</> : <>
-      <p className="text-xs text-slate-300">Portal API: {unavailable ? "unavailable" : state ? "available" : "waiting"} · {alarms.length} active alarms{cachedAge !== null ? " in cached snapshot" : ""}</p>
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
         <div><SnapshotMarker age={cachedAge} /><div className="flex flex-wrap items-center justify-between gap-2"><ObservationStatus state={state} unavailable={unavailable} /><InterrogateStation state={state} unavailable={unavailable} /></div></div>
+        <AbnormalSummary state={state} cached={cachedAge !== null} />
         {/* Keep 12px schematic labels; put the faceplate alongside only when both fit without shrinking the SVG. */}
         <div className="grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]">
           <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
@@ -115,7 +118,6 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
           </section>
           <div className="min-w-0"><SnapshotMarker age={cachedAge} /><DeviceFaceplate key={state.cache_epoch} state={state} selected={selected} unavailable={unavailable} /></div>
         </div>
-        <AbnormalSummary state={state} />
         <section aria-label="Operator records" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
           <SnapshotMarker age={cachedAge} /><p className="mb-3 text-xs text-slate-400">{summary && telemetryText(summary)}</p>
           <ControlCentrePane state={state} journal={journal} journalError={journalError} now={now} initialTab={initialTab} />
