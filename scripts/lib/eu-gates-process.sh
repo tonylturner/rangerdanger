@@ -12,6 +12,117 @@ eu_fresh_points() {
   pass "$label: fresh protocol observations"
 }
 
+# Observation tolerance, not process physics: allow GI/acquisition/poll latency.
+EU_REGULATION_SLACK_S=20
+
+# A moving daily profile has no fixed equilibrium tap. Only a fresh completed
+# step in the direction demanded by the preceding voltage renews the deadline.
+# GI shares these deadlines; retained samples, motion and wrong-way steps do not.
+eu_wait_for_regulation() {
+  local predicate="$1" since="$2" label="$3" low high upper window span
+  local start now deadline cap remaining timeout body sample tap direction received
+  local previous_tap="" previous_direction="" previous_received="" epoch="" connection="" requested="" ready=false
+  # Like G16, derive both symmetric limits from the upper-limit reference case.
+  read -r low high upper window span < <(jq -er --argjson slack "$EU_REGULATION_SLACK_S" '
+    .source_0_90[-1].tap as $upper
+    | [.band_kv[0], .band_kv[1], $upper,
+       (.configured_delay_s + .motion_s + $slack), ($upper - (-$upper))] | @tsv
+  ' "$PACKAGE/process/reference-cases.json") || return
+  start=$(eu_now_ms) || return
+  deadline=$((start + window * 1000))
+  cap=$((start + span * window * 1000))
+  while :; do
+    now=$(eu_now_ms) || return
+    remaining=$((deadline - now))
+    [ "$remaining" -le "$((cap - now))" ] || remaining=$((cap - now))
+    if [ "$remaining" -le 0 ]; then
+      if [ "$now" -ge "$cap" ]; then
+        fail "$label exceeded the ${span}-window absolute cap"
+      else
+        fail "$label stalled: no completed step toward the band within ${window}s"
+      fi
+      return 1
+    fi
+    timeout=$(printf '%d.%03d' "$((remaining / 1000))" "$((remaining % 1000))")
+    eu_api_get /api/operator/state "$timeout" || return
+    body="$API_BODY"
+    eu_assert_operator_shape "$body" "$label" || return
+    now=$(eu_now_ms) || return
+    if [ "$now" -gt "$deadline" ] || [ "$now" -ge "$cap" ]; then
+      fail "$label observation exceeded the regulation deadline"
+      return 1
+    fi
+    if [ -n "$requested" ]; then
+      if printf '%s' "$body" | jq -e --arg epoch "$epoch" --argjson connection "$connection" \
+        --arg requested "$requested" "$EU_JQ_DEFS"'
+        .cache_epoch == $epoch and .link.connection_seq == $connection
+        and .link.state == "started" and .link.gi.state == "complete" and .link.gi.trigger == "operator"
+        and (.link.gi.started_at | epoch) >= ($requested | epoch)
+        and (.link.gi.last_complete_at | epoch) >= (.link.gi.started_at | epoch)
+      ' >/dev/null; then ready=true; else ready=false; fi
+    fi
+    # A fresh receipt is necessary but not sufficient: repeated GI snapshots of
+    # the same tap must not turn a stalled regulator into apparent progress.
+    sample=$(printf '%s' "$body" | jq -er --arg since "$since" --argjson low "$low" \
+      --argjson high "$high" "$EU_JQ_DEFS"'
+      def fresh: good and (.received_at | epoch) >= ($since | epoch);
+      point("oltc-1-tap") as $tap | point("oltc-1-bus-kv") as $bus
+      | select(($tap | fresh) and ($bus | fresh) and $tap.value.transient == false
+        and ($tap.value.value | type) == "number" and ($bus.value | type) == "number")
+      | [$tap.value.value, (if $bus.value < $low then 1 elif $bus.value > $high then -1 else 0 end),
+         ($tap.received_at | epoch)] | @tsv
+    ') || sample=""
+    if [ -n "$sample" ]; then
+      read -r tap direction received <<<"$sample"
+      if [ "$ready" = true ] && [ "$direction" -eq 0 ] \
+        && printf '%s' "$body" | jq -e --arg since "$since" "$EU_JQ_DEFS
+          def point(\$id): [.points[] | select(.id == \$id and good
+            and (.received_at | epoch) >= (\$since | epoch))]
+            | if length == 1 then .[0] else error(\"no fresh good observation\") end;
+          ($predicate)" >/dev/null; then
+        pass "$label: fresh protocol observations"
+        return 0
+      fi
+      if [ "$direction" -ne 0 ] \
+        && { [ "$tap" -ge "$upper" ] || [ "$tap" -le "$((-upper))" ]; }; then
+        fail "$label reached a tap limit out of band"
+        return 1
+      fi
+      if [ -n "$previous_tap" ] && [ "$tap" -ne "$previous_tap" ] \
+        && jq -ne --argjson received "$received" --argjson previous "$previous_received" \
+          '$received > $previous' >/dev/null; then
+        if [ "$(((tap - previous_tap) * previous_direction))" -gt 0 ]; then
+          deadline=$((now + window * 1000))
+        fi
+      fi
+      previous_tap="$tap"
+      previous_direction="$direction"
+      previous_received="$received"
+    fi
+    if [ -z "$requested" ] && printf '%s' "$body" | jq -e \
+      '.link.state == "started" and .link.gi.state != "running"' >/dev/null; then
+      epoch=$(printf '%s' "$body" | jq -er '.cache_epoch') || return
+      connection=$(printf '%s' "$body" | jq -er '.link.connection_seq') || return
+      now=$(eu_now_ms) || return
+      remaining=$((deadline - now))
+      [ "$remaining" -le "$((cap - now))" ] || remaining=$((cap - now))
+      [ "$remaining" -gt 0 ] || continue
+      timeout=$(printf '%d.%03d' "$((remaining / 1000))" "$((remaining % 1000))")
+      eu_request_gi_since "$since" "$label" "$timeout" || return
+      requested="$EU_GI_REQUESTED"
+      continue
+    fi
+    now=$(eu_now_ms) || return
+    remaining=$((deadline - now))
+    [ "$remaining" -le "$((cap - now))" ] || remaining=$((cap - now))
+    [ "$remaining" -gt 0 ] || continue
+    # Do not let the last polling sleep extend either deadline.
+    [ "$remaining" -le 100 ] || remaining=100
+    timeout=$(printf '%d.%03d' "$((remaining / 1000))" "$((remaining % 1000))")
+    sleep "$timeout"
+  done
+}
+
 eu_gate_G15() {
   local section expected since grading instant
   instant=$(jq -er '.f2_protection.instantaneous_a' "$PACKAGE/process/profile.json") || return

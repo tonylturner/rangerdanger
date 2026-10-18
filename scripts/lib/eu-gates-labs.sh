@@ -163,27 +163,20 @@ eu_lab_wait_good_cc() {
 # The validator independently requires PLC-origin requests and solved motion.
 # With the daily profile running the final tap need not equal the starting tap.
 eu_lab_wait_regulated_cc() {
-  local pre_tap="$1" since="$2" low="$3" high="$4" budget="$5"
-  eu_fresh_points "point(\"oltc-1-tap\").value.transient == false
-    and point(\"oltc-1-tap\").value.value > $((pre_tap - 2))
+  local pre_tap="$1" since="$2"
+  eu_wait_for_regulation "point(\"oltc-1-tap\").value.value > $((pre_tap - 2))
     and point(\"oltc-1-auto\").value == true and point(\"oltc-1-remote\").value == true
     and point(\"plc-1-running\").value == true and point(\"plc-1-input-valid\").value == true
-    and point(\"oltc-1-bus-kv\").value >= $low and point(\"oltc-1-bus-kv\").value <= $high
     and (point(\"oltc-1-current\").value | type == \"number\")" \
-    "$since" "$budget" "student regulation loop: PLC restores the operating band"
+    "$since" "student regulation loop: PLC restores the operating band"
 }
 
 eu_lab_positive_conduits() {
-  local pre_tap since low high budget
-  low=$(jq -er '.band_kv[0]' "$PACKAGE/process/reference-cases.json") || return
-  high=$(jq -er '.band_kv[1]' "$PACKAGE/process/reference-cases.json") || return
-  budget=$(jq -er '2 * (.configured_delay_s + .motion_s) + 20' "$PACKAGE/process/reference-cases.json") || return
+  local pre_tap since
   eu_lab_exec kali-1 'curl -fsS --max-time 3 http://10.70.70.40:8080/api/points' || return
   eu_lab_exec eng-ws-1 'curl -fsS --max-time 3 http://10.30.30.30:8080/login' || return
   since=$(eu_utc) || return
-  eu_fresh_points "point(\"oltc-1-tap\").value.transient == false
-    and point(\"oltc-1-bus-kv\").value >= $low and point(\"oltc-1-bus-kv\").value <= $high" \
-    "$since" "$budget" "student regulation loop: settled baseline" || return
+  eu_wait_for_regulation true "$since" "student regulation loop: settled baseline" || return
   eu_lab_cc oltc-1-mode manual || return
   eu_get_operator || return
   pre_tap=$(printf '%s' "$API_BODY" | jq -er '.points[] | select(.id == "oltc-1-tap") | .value.value | numbers') || {
@@ -194,11 +187,7 @@ eu_lab_positive_conduits() {
   eu_lab_cc oltc-1-step lower || return
   since=$(eu_utc) || return
   eu_lab_cc oltc-1-mode auto || return
-  # Restoring two forced steps can need a third: the daily profile keeps
-  # moving the load while each 30 s delay runs, so the baseline may drift
-  # out of band by one step before the PLC catches up.
-  budget=$(jq -er '3 * (.configured_delay_s + .motion_s) + 20' "$PACKAGE/process/reference-cases.json") || return
-  eu_lab_wait_regulated_cc "$pre_tap" "$since" "$low" "$high" "$budget"
+  eu_lab_wait_regulated_cc "$pre_tap" "$since"
 }
 
 eu_lab_implementation_walk() {

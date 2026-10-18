@@ -54,10 +54,10 @@ eu_api_get() {
 }
 
 eu_api_post() {
-  local path="$1" body="$2"
+  local path="$1" body="$2" budget="${3:-30}"
   API_BODY=""
   HTTP_STATUS=""
-  HTTP_STATUS=$(curl -sS --max-time 30 -o "$TMP_DIR/api-response.json" \
+  HTTP_STATUS=$(curl -sS --max-time "$budget" -o "$TMP_DIR/api-response.json" \
     -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
     -d "$body" "$API$path" 2>"$TMP_DIR/curl.err") || {
       printf 'POST %s failed: %s\n' "$path" "$(cat "$TMP_DIR/curl.err")" >&2
@@ -294,19 +294,25 @@ eu_get_point_snapshot() {
 
 # This explicit gate request is not the CC periodic scheduler. A GI can report
 # data received before ACT-TERM; completion, not receipt-age advancement, is the barrier.
+eu_request_gi_since() {
+  local boundary="$1" label="$2" budget="${3:-30}"
+  eu_api_post /api/operator/gi '' "$budget" || return
+  if [ "$HTTP_STATUS" != 202 ]; then
+    fail "$label operator GI not accepted: HTTP $HTTP_STATUS $API_BODY"; return 1
+  fi
+  EU_GI_REQUESTED=$(printf '%s' "$API_BODY" | jq -er --arg boundary "$boundary" "$EU_JQ_DEFS"'
+    select(.trigger == "operator" and (.requested_at | epoch) >= ($boundary | epoch)) | .requested_at') || {
+    fail "$label operator GI request predates settling"; return 1;
+  }
+}
+
 eu_interrogate_since() {
   local boundary="$1" budget="$2" label="$3" requested epoch connection
   eu_wait_for_operator '.link.state == "started" and .link.gi.state != "running"' "$budget" "$label idle GI" || return
   epoch=$(printf '%s' "$WAIT_BODY" | jq -er '.cache_epoch') || return
   connection=$(printf '%s' "$WAIT_BODY" | jq -er '.link.connection_seq') || return
-  eu_api_post /api/operator/gi '' || return
-  if [ "$HTTP_STATUS" != 202 ]; then
-    fail "$label operator GI not accepted: HTTP $HTTP_STATUS $API_BODY"; return 1
-  fi
-  requested=$(printf '%s' "$API_BODY" | jq -er --arg boundary "$boundary" "$EU_JQ_DEFS"'
-    select(.trigger == "operator" and (.requested_at | epoch) >= ($boundary | epoch)) | .requested_at') || {
-    fail "$label operator GI request predates settling"; return 1;
-  }
+  eu_request_gi_since "$boundary" "$label" || return
+  requested="$EU_GI_REQUESTED"
   eu_wait_for_operator ".cache_epoch == \"$epoch\" and .link.connection_seq == $connection
     and .link.state == \"started\" and .link.gi.state == \"complete\" and .link.gi.trigger == \"operator\"
     and (.link.gi.started_at | epoch) >= (\"$requested\" | epoch)
