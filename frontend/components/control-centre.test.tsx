@@ -92,14 +92,22 @@ describe("CC schematic layout", () => {
     expect(s1.x).toBeLessThan(492);
     expect(s2.x).toBeGreaterThan(648);
     expect(s2.x).toBeLessThan(772);
-    expect(s1.y + 18).toBeLessThan(150);
-    expect(s2.y + 18).toBeLessThan(150);
-    const section = position("Section "), source = labels.find((m) => m[3].startsWith("Source ") && Number(m[1]) > 772)!;
-    expect(section.y).toBeLessThan(s2.y - 18);
-    expect(Number(source[2])).toBeLessThan(s2.y - 12);
-    expect(section.y).not.toBe(Number(source[2]));
-    expect(position("F1 via CB1").y).toBeGreaterThan(120);
-    expect(position("F1 via CB1").y).toBeLessThan(165);
+    // Each section now has a location, voltage and separate supply-path row.
+    expect(s1.y + 54).toBeLessThan(150);
+    expect(s2.y + 54).toBeLessThan(150);
+    const section = position("RMU2 S2 side");
+    expect(section.x).toBeGreaterThan(772);
+    expect(section.x).toBeLessThan(1000);
+    expect(section.y + 18).toBeLessThan(150);
+    // The S3-side measurement lives in the lower annotation lane, not
+    // beside the right-hand vertical ring conductor (x=1000).
+    const source = position("RMU2 S3 side");
+    expect(source.x).toBeGreaterThan(648);
+    expect(source.x).toBeLessThan(772);
+    expect(source.y).toBeGreaterThan(325);
+    expect(source.y + 36).toBeLessThan(410);
+    expect(position("F1 feeder").y).toBeGreaterThan(120);
+    expect(position("F1 feeder").y).toBeLessThan(165);
   });
 
   it("keeps regulation labels in fixed-size HTML outside the height-bounded graphic", () => {
@@ -108,7 +116,8 @@ describe("CC schematic layout", () => {
     expect(svg).toContain('class="h-12 w-full"');
     expect(svg).toContain('preserveAspectRatio="none"');
     expect(svg).not.toContain("<text");
-    expect(html).toContain('text-xs text-slate-300"><span>20.20–20.60 kV</span><span>Bus 20.23</span>');
+    expect(html).toContain('text-xs text-slate-300"><span>20.20–20.60 kV</span><span>Bus 20.23 kV</span>');
+    expect(svg).toContain('aria-label="Current band 20.20 to 20.60 kV; 20 kV busbar (T1 secondary) 20.23"');
     expect(text(render(<RegulationBand band={{ setpoint: 20.4, low: 20.2, high: 20.6, bus: null }} />))).toContain("Bus unknown");
     expect(text(render(<RegulationBand band={null} />))).toContain("Current regulation band unavailable");
   });
@@ -165,9 +174,10 @@ describe("CC one-line observation integrity", () => {
     const p = points("feeder-breaker-position", { value: "open" });
     const out = text(render(<ControlCentreOneLine points={p} />));
     expect(out).toContain("S1 residential · LIVE");
-    const zero = p.map((point) => point.id === "feeder-voltage" ? { ...point, value: 0 } : point);
+    const zero = p.map((point) => ["feeder-voltage", "rmu-1-source-kv", "rmu-1-section-kv", "rmu-2-section-kv"].includes(point.id) ? { ...point, value: 0 } : point);
     expect(text(render(<ControlCentreOneLine points={zero} />))).toContain("S1 residential · DEAD");
-    const missing = p.filter((point) => point.id !== "feeder-voltage");
+    expect(text(render(<ControlCentreOneLine points={zero} />))).toContain("S2 commercial · DEAD");
+    const missing = p.filter((point) => point.id !== "rmu-1-source-kv");
     expect(text(render(<ControlCentreOneLine points={missing} />))).toContain("S1 residential · UNKNOWN");
   });
 
@@ -319,9 +329,9 @@ describe("realism presentation", () => {
     pf.quality.iv = true;
     pf.stale_reason = "measurement_invalid";
     const out = text(screen({ state }));
-    expect(out).toContain("T1 active power P 3.05 MW");
-    expect(out).toContain("T1 reactive power Q 0.92 Mvar");
-    expect(out).toContain("T1 power factor PF — ⚠ STALE IV measurement_invalid");
+    expect(out).toContain("T1 20 kV terminal active power P 3.05 MW");
+    expect(out).toContain("T1 20 kV terminal reactive power Q 0.92 Mvar");
+    expect(out).toContain("T1 20 kV terminal power factor PF — ⚠ STALE IV measurement_invalid");
     expect(out).toContain("Configured delay 30 s");
   });
   it("keeps solver identities and revisions in closed diagnostics disclosures", () => {

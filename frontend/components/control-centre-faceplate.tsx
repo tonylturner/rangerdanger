@@ -21,7 +21,7 @@ export function RegulationBand({ band }: { band: VoltageBand | null }) {
     </svg>
     <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-slate-300">
       <span>{band.low.toFixed(2)}–{band.high.toFixed(2)} kV</span>
-      <span>{pointLabel("oltc-1-bus-kv")} {band.bus?.toFixed(2) ?? "unknown"} kV</span>
+      <span>Bus {band.bus?.toFixed(2) ?? "unknown"} kV</span>
     </div>
   </figure>;
 }
