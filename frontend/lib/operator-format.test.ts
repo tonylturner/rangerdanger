@@ -12,6 +12,7 @@ import {
   journalRangeText,
   journalSummary,
   pointCondition,
+  pointLabel,
   qualityFlags,
   staleReasonText,
   telemetrySummary,
@@ -121,7 +122,7 @@ describe("journalSummary", () => {
     );
     expect(journalSummary("gi_complete", { connection_seq: 4, points_good: 4 })).toContain("4 points good");
     expect(journalSummary("point_stale", { point: "feeder-current", stale_reason: "link_lost", value: 28.93 })).toBe(
-      "Feeder current STALE (IEC 104 link to the RTU lost), keeps 28.9 A",
+      "CB1 current STALE (IEC 104 link to the RTU lost), keeps 28.9 A",
     );
     expect(journalSummary("point_good", { point: "feeder-breaker-position", value: "open" })).toBe("Feeder breaker position good: OPEN");
     expect(
@@ -144,6 +145,27 @@ describe("journalSummary", () => {
     expect(journalRangeText(null, null)).toBe("empty");
     expect(journalRangeText(1, 50)).toBe("seq 1–50");
   });
+});
+
+it.each([
+  ["oltc-1-bus-kv", "20 kV busbar (T1 secondary)"],
+  ["oltc-1-current", "T1 20 kV terminal current"],
+  ["oltc-1-p-mw", "T1 20 kV terminal active power P"],
+  ["oltc-1-q-mvar", "T1 20 kV terminal reactive power Q"],
+  ["oltc-1-pf", "T1 20 kV terminal power factor PF"],
+  ["feeder-voltage", "CB1 line-side VT"],
+  ["feeder-current", "CB1 current"],
+  ["feeder-p-mw", "CB1 active power P"],
+  ["feeder-q-mvar", "CB1 reactive power Q"],
+  ["feeder-pf", "CB1 power factor PF"],
+  ["rmu-1-current", "RMU1 current"],
+  ["rmu-2-current", "RMU2 current"],
+  ["rmu-1-source-kv", "RMU1 S1 side"],
+  ["rmu-1-section-kv", "RMU1 S2 side"],
+  ["rmu-2-source-kv", "RMU2 S3 side"],
+  ["rmu-2-section-kv", "RMU2 S2 side"],
+])("locates measurement %s", (id, label) => {
+  expect(pointLabel(id)).toBe(label);
 });
 
 describe("workshop status control centre", () => {
