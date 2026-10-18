@@ -101,6 +101,9 @@ describe("operator workstation interactions", () => {
     await act(async () => { resolve(new Response(JSON.stringify(commandResult("completed")))); await settle(); });
     expect(output(tree)).toContain("CB1 feeder breaker"); expect(output(tree)).toContain("feeder-breaker-command");
     expect(output(tree)).toContain("T1 faceplate"); expect(output(tree)).toContain("COMPLETED");
+    expect(output(tree)).toContain("IOA 1001: OPEN at 12:00:01.600");
+    expect(tree.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    expect(output(tree)).not.toContain("command outcome is unknown");
   });
   it("marks the runner's retained snapshot when its operator API fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("operator proxy offline")));

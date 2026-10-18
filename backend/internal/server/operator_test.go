@@ -56,7 +56,7 @@ const ccStateFixture = `{
   "rendered_at": "2026-10-09T12:05:00Z"
 }`
 
-const ccCommandResult = `{"id":"7","status":"completed","select":{"status":"confirmed","at":"2026-10-09T12:01:00Z"},"execute":{"status":"confirmed","at":"2026-10-09T12:01:00.2Z","terminated_at":"2026-10-09T12:01:00.6Z"},"feedback":{"status":"matched","value":"open","received_at":"2026-10-09T12:01:00.5Z"},"error":null}`
+const ccCommandResult = `{"id":"cmd-7","point":"feeder-breaker-command","operation":"open","result":"completed","reason":null,"selected_at":"2026-10-09T12:01:00Z","executed_at":"2026-10-09T12:01:00.2Z","con_at":"2026-10-09T12:01:00.3Z","term_at":"2026-10-09T12:01:00.6Z","feedback":{"ioa":1001,"value":"open","at":"2026-10-09T12:01:00.5Z"}}`
 
 func TestOperatorState(t *testing.T) {
 	_, cc := newUpstreamStub(t, map[string]stubResponse{"GET /api/state": {http.StatusOK, ccStateFixture}})

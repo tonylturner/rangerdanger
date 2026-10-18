@@ -99,9 +99,9 @@ describe("times", () => {
 describe("commands", () => {
   it("names every command status", () => {
     expect(commandOutcome(commandResult("completed"))).toMatchObject({ tone: "ok", title: "COMPLETED" });
-    expect(commandOutcome(commandResult("completed")).explanation).toBe("fresh feedback matched");
+    expect(commandOutcome(commandResult("completed")).explanation).toBeNull();
     expect(commandOutcome(commandResult("rejected"))).toMatchObject({ tone: "bad", title: "REJECTED", explanation: "execute rejected (negative ACT-CON)" });
-    expect(commandOutcome(commandResult("failed"))).toMatchObject({ tone: "bad", title: "FAILED", explanation: "feedback timeout (negative ACT-TERM)" });
+    expect(commandOutcome(commandResult("failed"))).toMatchObject({ tone: "bad", title: "FAILED", explanation: "negative ACT-TERM" });
     expect(commandOutcome(commandResult("unknown"))).toMatchObject({ tone: "warn", title: "UNKNOWN" });
   });
 
@@ -127,9 +127,9 @@ describe("journalSummary", () => {
     expect(journalSummary("point_good", { point: "feeder-breaker-position", value: "open" })).toBe("Feeder breaker position good: OPEN");
     expect(
       journalSummary("command", {
-        id: "c1", point: "feeder-breaker-command", operation: "open", result: "completed", reason: "fresh feedback matched",
+        id: "c1", point: "feeder-breaker-command", operation: "open", result: "completed", reason: null,
       }),
-    ).toBe('Command feeder-breaker-command OPEN: {"id":"c1","point":"feeder-breaker-command","operation":"open","result":"completed","reason":"fresh feedback matched"}');
+    ).toBe('Command feeder-breaker-command OPEN: {"id":"c1","point":"feeder-breaker-command","operation":"open","result":"completed","reason":null}');
     expect(journalSummary("new_kind", { a: 1 })).toBe('new_kind {"a":1}');
   });
 

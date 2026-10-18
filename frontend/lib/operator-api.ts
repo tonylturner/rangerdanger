@@ -87,7 +87,7 @@ export type CommandResult = {
   point: string;
   operation: CommandOperation;
   result: CommandStatus;
-  reason: string;
+  reason: string | null;
   selected_at: string | null;
   executed_at: string | null;
   con_at: string | null;
@@ -102,7 +102,7 @@ export async function sendOperatorCommand(command: OperatorCommand) {
   const result = await request<CommandResult>("/operator/commands", {
     method: "POST", body: JSON.stringify(command),
   });
-  if (!["completed", "rejected", "failed", "unknown"].includes(result.result) || typeof result.reason !== "string") {
+  if (!["completed", "rejected", "failed", "unknown"].includes(result.result) || (result.reason !== null && typeof result.reason !== "string")) {
     throw new Error("Expected increment-4 command result; command outcome is unknown");
   }
   return result;

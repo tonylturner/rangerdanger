@@ -184,7 +184,7 @@ export function controlCentreHealth(cc: WorkshopControlCentre | undefined): "onl
 
 export type Tone = "ok" | "bad" | "warn";
 
-export type CommandOutcome = { tone: Tone; title: string; explanation: string };
+export type CommandOutcome = { tone: Tone; title: string; explanation: string | null };
 
 export function commandOutcome(command: CommandResult): CommandOutcome {
   return {

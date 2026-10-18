@@ -27,7 +27,7 @@ export function CommandResultView({ result }: { result: CommandResult }) {
   const feedbackPoint = CONTROL_PANELS.find((panel) => panel.point === result.point)?.feedback ?? "";
   return <div role="status" className={`rounded border p-3 text-xs ${outcome.tone === "ok" ? "border-green-800 text-green-300" : outcome.tone === "warn" ? "border-amber-700 text-amber-300" : "border-red-800 text-red-300"}`}>
     <p className="font-bold">{result.operation.toUpperCase()} {outcome.title}</p>
-    <p>{result.reason}</p>
+    {result.reason !== null && <p>{result.reason}</p>}
     {result.result === "unknown" && <p>It is not retried. Observe fresh feedback before deciding what to do next.</p>}
     <dl className="mt-2 grid grid-cols-2 gap-x-3 font-mono text-slate-300">
       <dt>Command</dt><dd>{result.point} · {result.id}</dd>

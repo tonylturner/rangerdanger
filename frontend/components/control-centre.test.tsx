@@ -7,7 +7,7 @@ import type { CommandResult, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText } from "../lib/operator-format";
 import { FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, commandResult } from "../lib/operator-fixtures.test-util";
 import { RangeNotReadyError } from "../lib/range";
-import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
+import { CommandPanelView, CommandResultView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { controlCentreObservations } from "../lib/observation-readings";
 import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
@@ -231,11 +231,23 @@ describe("select-then-execute controls", () => {
     const result = commandResult(status);
     const out = text(panel({ phase: "result", operation: "open", result }));
     expect(out).toContain(`OPEN ${status.toUpperCase()}`);
-    expect(out).toContain(result.reason);
+    if (result.reason !== null) expect(out).toContain(result.reason);
     expect(out).toContain("Selected (UTC) 12:00:01.000");
     expect(out).toContain("ACT-TERM (UTC)");
     if (status === "unknown") expect(out).toContain("It is not retried");
     if (status === "completed") expect(out).toContain("IOA 1001: OPEN");
+  });
+
+  it("renders completed feedback without a reason line or an error when the CC reason is null", () => {
+    const result = commandResult("completed");
+    expect(result.reason).toBeNull();
+    const html = render(<CommandResultView result={result} />);
+    expect(text(html)).toContain("OPEN COMPLETED");
+    expect(text(html)).toContain("IOA 1001: OPEN at 12:00:01.600");
+    expect(html.match(/<p\b/g)).toHaveLength(1);
+    expect(html).not.toContain("null");
+    expect(html).not.toContain('role="alert"');
+    expect(text(html)).not.toContain("command outcome is unknown");
   });
 
   it("renders step and mode feedback without treating it as a double point", () => {

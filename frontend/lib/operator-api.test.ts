@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getFieldAudit, getFieldState } from "./operator-api";
-import { AUDIT, BREAKER, CLOCK, TRUTH } from "./operator-fixtures.test-util";
+import { getFieldAudit, getFieldState, sendOperatorCommand } from "./operator-api";
+import { AUDIT, BREAKER, CLOCK, TRUTH, commandResult } from "./operator-fixtures.test-util";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -79,6 +79,33 @@ describe("physical feeder reads", () => {
 });
 
 describe("increment-4 operator contract", () => {
+  // cc_command.c finishes these four paths after execute ACT-CON.
+  it.each([
+    { result: "completed", reason: null, term_at: "2026-10-09T12:00:01.700Z", feedback: { ioa: 1001, value: "open", at: "2026-10-09T12:00:01.600Z" } },
+    { result: "rejected", reason: "execute rejected (negative ACT-CON)", term_at: null, feedback: null },
+    { result: "failed", reason: "negative ACT-TERM", term_at: "2026-10-09T12:00:01.700Z", feedback: null },
+    { result: "unknown", reason: "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM", term_at: "2026-10-09T12:00:01.700Z", feedback: null },
+  ] as const)("decodes the CC $result response without changing its reason or evidence", async (outcome) => {
+    const answer = {
+      id: "cmd-17", point: "feeder-breaker-command", operation: "open",
+      selected_at: "2026-10-09T12:00:01.000Z",
+      executed_at: "2026-10-09T12:00:01.100Z",
+      con_at: "2026-10-09T12:00:01.200Z",
+      ...outcome,
+    };
+    expect(commandResult(outcome.result)).toEqual(answer);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer)));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendOperatorCommand({ point: "feeder-breaker-command", operation: "open" })).resolves.toEqual(answer);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, 0, false, [], {}])("rejects a non-string, non-null reason (%j)", async (reason) => {
+    const answer = { ...commandResult("completed"), reason };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+    await expect(sendOperatorCommand({ point: "feeder-breaker-command", operation: "open" })).rejects.toThrow("command outcome is unknown");
+  });
+
   it.each([
     ["feeder-breaker-command", "open"], ["feeder-breaker-command", "close"],
     ["rmu-1-command", "open"], ["rmu-1-command", "close"],

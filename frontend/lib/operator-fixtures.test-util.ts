@@ -154,11 +154,11 @@ export const EMPTY_JOURNAL: OperatorJournal = { cache_epoch: "a1b2c3d4", oldest_
 export function commandResult(result: CommandResult["result"]): CommandResult {
   return {
     id: "cmd-17", point: "feeder-breaker-command", operation: "open", result,
-    reason: { completed: "fresh feedback matched", rejected: "execute rejected (negative ACT-CON)", failed: "feedback timeout (negative ACT-TERM)", unknown: "no ACT-CON within the command budget" }[result],
+    reason: { completed: null, rejected: "execute rejected (negative ACT-CON)", failed: "negative ACT-TERM", unknown: "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM" }[result],
     selected_at: "2026-10-09T12:00:01.000Z",
     executed_at: "2026-10-09T12:00:01.100Z",
-    con_at: result === "unknown" ? null : "2026-10-09T12:00:01.200Z",
-    term_at: result === "completed" || result === "failed" ? "2026-10-09T12:00:01.700Z" : null,
+    con_at: "2026-10-09T12:00:01.200Z",
+    term_at: result === "rejected" ? null : "2026-10-09T12:00:01.700Z",
     feedback: result === "completed" ? { ioa: 1001, value: "open", at: "2026-10-09T12:00:01.600Z" } : null,
   };
 }
