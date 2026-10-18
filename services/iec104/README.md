@@ -252,13 +252,14 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   `link_down.reason`: `t1_timeout` (nothing
   received for t1 before lib60870 dropped the session), `peer_closed` (the
   RTU closed or reset the stream), `io_error` (the CC closed it after a GI
-  failure), `connect_failed` (TCP or STARTDT failed; journaled once per
-  outage, not per attempt).
+  failure), `operator_reconnect` (an operator requested a fresh session),
+  `connect_failed` (TCP or STARTDT failed; journaled once per outage, not per attempt).
 
 | Endpoint | Answer |
 |---|---|
 | `GET /api/health` | `status`, `link`, `historian: {last_ok_at, failures, dropped_snapshots}` |
-| `GET /api/state` | `schema: 2`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
+| `GET /api/state` | `schema: 3`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
+| `POST /api/reconnect` | no body; 202 queues a real connection close on the link worker, journal reason `operator_reconnect`; normal configured reconnect and connect GI follow. 409 for a pending reconnect or active command; 503 when already down/reconnecting. Cache identity and device/policy state are unchanged. |
 | `POST /api/gi` | no body; 202 `{"trigger":"operator","requested_at":"<UTC>"}` queues GI; 409 `{"error":"interrogation already running"}` while pending/running; 503 `{"error":"link not started"}` otherwise. Acceptance is not completion. |
 | `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight, GI integrity is missing or feedback is missing/IV/NT; 503 when the link is not started; 400 on bad input |
 | `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
@@ -267,8 +268,8 @@ API, which the backend proxies verbatim (`/api/operator/*`).
 state is `none|running|complete`, trigger is `connect|periodic|operator|null`,
 and times are UTC or null. State/trigger/start describe the current or most
 recent GI on this connection; `next_due_at` is null unless the link is started.
-The state schema remains 2. The backend relays operator GI at
-`POST /api/operator/gi` and adds package/range identity to state, not field truth.
+The state schema is 3. The backend relays operator GI at
+`POST /api/operator/gi` and `POST /api/operator/reconnect` and adds package/range identity to state, not field truth.
 
 The HTTP server is in-tree (`src/cc_http.c`): HTTP/1.0 and 1.1, GET and
 POST, `Content-Length` bodies only (no chunked), headers ≤ 8 KiB, bodies

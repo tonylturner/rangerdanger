@@ -55,6 +55,9 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		ev.negative = append(ev.negative, validationRow{validationProbe: row, Actual: "deny", Pass: true})
 	}
 
+	ev.cc.Link.Since = at("12:00:59")
+	ev.policyHash = "full-running-hash"
+	ev.report = &euRetainedReport{Hash: ev.policyHash, Markdown: "retained report", RangeStart: ev.start, PolicyAt: ev.policyAt, StartedAt: at("12:02:00"), FinishedAt: at("12:03:00"), Pass: true}
 	return ev
 }
 
@@ -230,5 +233,61 @@ func TestEUNegativeProbesDoNotUseConnectionWindow(t *testing.T) {
 	ev.negative[0].Pass = false
 	if check := euWorkshopNegative(ev); check.Status != "fail" {
 		t.Fatal(check)
+	}
+}
+
+func TestEUPostCommitVisibility(t *testing.T) {
+	for _, slot := range []string{euWorkshopSlots[1], euWorkshopSlots[2]} {
+		for _, tc := range []struct {
+			name   string
+			mutate func(*euWorkshopEvidence)
+		}{
+			{"stale session despite new GI", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = ev.policyAt.Add(-time.Second) }},
+			{"session at commit", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = ev.policyAt }},
+			{"missing session time", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = time.Time{} }},
+			{"no GI", func(ev *euWorkshopEvidence) { ev.journal.Entries = nil }},
+			{"old connection GI", func(ev *euWorkshopEvidence) { ev.cc.Link.ConnectionSeq++ }},
+			{"GI before connection", func(ev *euWorkshopEvidence) { ev.cc.Link.Since = at("12:01:02") }},
+			{"non GOOD", func(ev *euWorkshopEvidence) { ev.cc.Points[0].Quality.NT = true }},
+			{"null observation", func(ev *euWorkshopEvidence) { ev.cc.Points[0].Value = nil }},
+			{"missing point", func(ev *euWorkshopEvidence) { ev.cc.Points = ev.cc.Points[1:] }},
+			{"pre GI observation", func(ev *euWorkshopEvidence) { ev.cc.Points[0].ReceivedAt = at("12:00:59") }},
+			{"missing supply", func(ev *euWorkshopEvidence) { delete(ev.process.Buses, "s2") }},
+		} {
+			t.Run(slot+"/"+tc.name, func(t *testing.T) {
+				ev := passingEUWorkshop(t, slot)
+				tc.mutate(&ev)
+				assertEUChecks(t, slot, ev, false)
+			})
+		}
+	}
+	for _, node := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2"} {
+		t.Run("continuity/"+node, func(t *testing.T) {
+			ev := passingEUWorkshop(t, euWorkshopSlots[1])
+			ev.devices[node].Position = "unknown"
+			assertEUChecks(t, euWorkshopSlots[1], ev, false)
+		})
+	}
+}
+
+func TestEURetainedReportAcceptance(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*euWorkshopEvidence)
+	}{
+		{"missing", func(ev *euWorkshopEvidence) { ev.report = nil }},
+		{"failed", func(ev *euWorkshopEvidence) { ev.report.Pass = false }},
+		{"hash mismatch", func(ev *euWorkshopEvidence) { ev.report.Hash = "other" }},
+		{"reapplied same hash", func(ev *euWorkshopEvidence) { ev.policyAt = at("12:03:30") }},
+		{"old range", func(ev *euWorkshopEvidence) { ev.report.RangeStart = ev.start.Add(-time.Hour) }},
+		{"before commit", func(ev *euWorkshopEvidence) { ev.report.StartedAt = ev.start }},
+		{"future", func(ev *euWorkshopEvidence) { ev.report.FinishedAt = ev.now.Add(time.Second) }},
+		{"inverted window", func(ev *euWorkshopEvidence) { ev.report.FinishedAt = ev.report.StartedAt.Add(-time.Second) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := passingEUWorkshop(t, euWorkshopSlots[4])
+			tc.mutate(&ev)
+			assertEUChecks(t, euWorkshopSlots[4], ev, false)
+		})
 	}
 }

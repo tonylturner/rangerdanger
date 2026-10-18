@@ -154,8 +154,27 @@ eu_lab_baseline_prepare() {
 }
 
 eu_lab_wait_good_cc() {
-  eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
-    30 "student route current CC GI and GOOD observations"
+  local shape
+  shape=$(eu_station_shape) || return
+  eu_wait_for_operator "($shape) and .link.state == \"started\" and .link.gi.state == \"complete\" and all(.points[]; good)" \
+    30 "student route current CC GI and every inventory observation GOOD"
+}
+
+# Close the actual TCP connection, even when the new policy permits it.
+# Retiring conntrack alone under an allow can leave the old session alive.
+eu_lab_reconnect_cc() {
+  local requested shape
+  shape=$(eu_station_shape) || return
+  eu_api_post /api/operator/reconnect '' || return
+  if [ "$HTTP_STATUS" != 202 ]; then
+    fail "CC reconnect refused: HTTP $HTTP_STATUS $API_BODY"
+    return 1
+  fi
+  requested=$(printf '%s' "$API_BODY" | jq -er '.requested_at | strings') || return
+  eu_wait_for_operator "(.link.gi.started_at | epoch) as \$gi | ($shape) and .link.state == \"started\" and (.link.since | epoch) > (\"$requested\" | epoch)
+    and .link.gi.state == \"complete\" and (.link.gi.started_at | epoch) >= (.link.since | epoch)
+    and all(.points[]; good and (.received_at | epoch) >= \$gi)" \
+    30 "fresh CC session, completed GI and all inventory points since GI"
 }
 
 # Establish an in-band baseline, then force two completed lower steps. One
@@ -198,6 +217,7 @@ eu_lab_implementation_walk() {
   eu_lab_step "$scenario" phase-2-remove-broad-trust-and-establish-default-deny || return
   eu_lab_step "$scenario" implement-rules || return
   eu_lab_step "$scenario" phase-4-enable-logging-and-visibility || return
+  eu_lab_reconnect_cc || return
   eu_lab_step "$scenario" test-positive || return
   eu_lab_positive_conduits || return
   eu_lab_step "$scenario" test-negative || return
@@ -205,6 +225,7 @@ eu_lab_implementation_walk() {
 }
 
 eu_lab_implementation_prepare() {
+  eu_lab_reconnect_cc || return
   eu_lab_step "$1" test-positive || return
   eu_lab_positive_conduits
 }
@@ -224,6 +245,7 @@ eu_lab_hardening_walk() {
     and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' \
     15 "student breaker restore and process solve" || return
   eu_lab_step "$scenario" apply-the-hardened-policy || return
+  eu_lab_reconnect_cc || return
   eu_lab_step "$scenario" re-test-the-attack-under-the-hardened-policy || return
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
   eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
@@ -249,7 +271,7 @@ eu_assert_unchanged_breaker() {
 
 eu_lab_hardening_prepare() {
   local scenario="$1" revision
-  eu_lab_wait_good_cc || return
+  eu_lab_reconnect_cc || return
   revision=$(eu_get_field && printf '%s' "$API_BODY" | jq -er '.devices["breaker-1"].revision') || return
   eu_lab_exec_denied kali-1 'iec104cmd 10.30.30.20 dc 3001 open -sbo --json' || return
   eu_assert_unchanged_breaker "$revision" "post-hardening IEC104 retest" || return
@@ -362,7 +384,38 @@ eu_lab_validation_walk() {
 }
 
 eu_lab_validation_prepare() {
-  eu_lab_wait_good_cc
+  eu_lab_wait_good_cc || return
+  eu_api_post /api/firewall/validation-report '{}' || return
+  [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.summary.result == "PASS" and .summary.skipped == 0' >/dev/null
+}
+
+eu_lab_visibility_failed() {
+  if ! printf '%s' "$API_BODY" | jq -e 'any(.checks[];
+    .status == "fail" and (.name == "Fresh CC session admitted after policy commit"
+      or .name == "CC link, GI and GOOD station observations"))' >/dev/null; then
+    fail "bad change must fail CC visibility, not merely an unrelated prerequisite: $API_BODY"
+    return 1
+  fi
+}
+
+# Only the gate deliberately commits the incomplete request. Learners may
+# reject/correct it before commit; an outage is never a completion condition.
+eu_lab_bad_change() {
+  local scenario="$1" prepare="$2" policy="$TMP_DIR/lesson-without-cc.json" shape result=0
+  shape=$(eu_station_shape) || return
+  if ! eu_reset_all || ! eu_apply_named improved || ! eu_lab_reconnect_cc \
+    || ! eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$policy" \
+    || ! eu_apply_custom "$policy" "lesson missing CC conduit" \
+    || ! eu_api_post /api/operator/reconnect '' || [ "$HTTP_STATUS" != 202 ] \
+    || ! eu_wait_for_operator "($shape) and .link.state != \"started\" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == \"link_lost\")" 15 "bad change loses CC observations" \
+    || ! eu_validate_scenario FAIL "$scenario" || ! eu_lab_visibility_failed \
+    || ! eu_apply_named improved || ! eu_lab_wait_good_cc \
+    || ! "$prepare" "$scenario" || ! eu_validate_scenario PASS "$scenario"; then
+    result=1
+  fi
+  eu_apply_named weak || result=1
+  eu_reset_all || result=1
+  return "$result"
 }
 
 eu_curriculum_slot() {
@@ -408,10 +461,12 @@ eu_gate_G20() {
   eu_lab_gate eu-baseline-assessment eu_lab_baseline_walk weak eu_lab_baseline_prepare
 }
 eu_gate_G21() {
-  eu_lab_gate eu-firewall-implementation eu_lab_implementation_walk improved eu_lab_implementation_prepare
+  eu_lab_gate eu-firewall-implementation eu_lab_implementation_walk improved eu_lab_implementation_prepare || return
+  eu_lab_bad_change eu-firewall-implementation eu_lab_implementation_prepare
 }
 eu_gate_G22() {
-  eu_lab_gate eu-hardening-configurations eu_lab_hardening_walk improved eu_lab_hardening_prepare
+  eu_lab_gate eu-hardening-configurations eu_lab_hardening_walk improved eu_lab_hardening_prepare || return
+  eu_lab_bad_change eu-hardening-configurations eu_lab_hardening_prepare
 }
 eu_gate_G24() {
   eu_lab_gate eu-vendor-rdp-compromise eu_lab_vendor_walk improved eu_lab_vendor_prepare

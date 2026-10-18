@@ -196,6 +196,10 @@ def main():
         status, text = request(base, "GET", args[0])
         print(status, text)
         return 0
+    if op == "reconnect":
+        status, text = request(base, "POST", "/api/reconnect", "")
+        print(status, text)
+        return 0 if status == 202 else 1
     if op == "cmd":
         status, text = command(base, args[0])
         print(status, text)

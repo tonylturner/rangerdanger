@@ -8,6 +8,7 @@ The RTU offers IEC 104 northbound and Modbus acquisition/control southbound. It 
 - `GET /api/state` for schema-3 observed state.
 - `GET /api/journal?after=N` for bounded link, GI, status-change, point-quality and command evidence.
 - `POST /api/commands` for one operator command.
+- `POST /api/reconnect` with no body queues a real IEC 104 connection close (202), then the normal configured reconnect/connect GI. It never resets devices, policy, cache epoch or fills observations from truth. 409 refuses duplicate requests or a command in flight; 503 means already down/reconnecting. New commands/GIs are refused while reconnect is reserved. Portal relay: `POST /api/operator/reconnect`. Use after a policy commit to prove new admission, not just another GI on an old session.
 - `POST /api/gi` with no body to queue operator interrogation: 202 with `trigger: operator` and UTC `requested_at`; 409 if running/pending, 503 if link not started. Acceptance is not GI completion.
 
 The portal proxies state, journal, commands and GI as `/api/operator/state`, `/api/operator/journal`, `/api/operator/commands` and `/api/operator/gi`. The **Interrogate station** button uses the GI relay. State adds `package_id` and `range_generation`; these identify the backend range generation and do not replace the CC's `cache_epoch`.

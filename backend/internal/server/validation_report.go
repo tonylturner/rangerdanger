@@ -120,14 +120,14 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 
 	s.activeConfigMu.RLock()
 	active, source := s.activeConfig, s.policySource
+	policyAt, wantHash := s.policyChangedAt, s.lastAppliedHash
 	s.activeConfigMu.RUnlock()
 
-	hash := "unknown"
-	if h, err := gen.Containd().GetFirewallHash(ctx); err == nil && h != "" {
-		hash = strings.TrimPrefix(h, "sha256:")
-		if len(hash) > 12 {
-			hash = hash[:12]
-		}
+	reportStart := time.Now().UTC()
+	fullHash, hashErr := gen.Containd().GetFirewallHash(ctx)
+	hash := strings.TrimPrefix(fullHash, "sha256:")
+	if hashErr != nil || hash == "" {
+		hash = "unknown"
 	}
 
 	// Start a short PCAP at the firewall covering the field zone, so the
@@ -187,11 +187,30 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		pcapSummary = s.analyzePcapSources(ctx, cli, firewall, pcapPath, captureNet)
 	}
 
+	reportEnd := time.Now().UTC()
+	finalHash, finalHashErr := gen.Containd().GetFirewallHash(ctx)
+	s.activeConfigMu.RLock()
+	stable := hashErr == nil && finalHashErr == nil && fullHash != "" && fullHash == finalHash &&
+		fullHash == wantHash && s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt)
+	s.activeConfigMu.RUnlock()
+	if recipe.report.strictProbes && !stable {
+		tally.pass = false
+	}
+
 	authPass, authTotal := tally.authPass, tally.authTotal
 	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
 	skipped, result := tally.skipped, tally.pass
 	md := recipe.renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
 		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
+
+	if recipe.report.strictProbes {
+		md += fmt.Sprintf("\nPolicy proof window: %s — %s; full firewall hash `%s`; stable: %t.\n", reportStart.Format(time.RFC3339Nano), reportEnd.Format(time.RFC3339Nano), fullHash, stable)
+		s.activeConfigMu.Lock()
+		if s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt) {
+			s.lastValidationReport = &euRetainedReport{Hash: fullHash, Markdown: md, RangeStart: gen.StartedAt, PolicyAt: policyAt, StartedAt: reportStart, FinishedAt: reportEnd, Pass: result && stable}
+		}
+		s.activeConfigMu.Unlock()
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"markdown": md,
@@ -203,6 +222,10 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 			"skipped":            skipped,
 			"result":             map[bool]string{true: "PASS", false: "FAIL"}[result],
 		},
+		"policy_hash":   fullHash,
+		"window_start":  reportStart,
+		"window_end":    reportEnd,
+		"policy_stable": stable,
 		"active_config": active,
 		"policy_source": source,
 		"pcap_path":     pcapHostPath,

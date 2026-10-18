@@ -558,6 +558,7 @@ cc_link_begin_attempt(void)
     cc_stamp_now(cc.link.since);
     cc.link.attemptOpened = false;
     cc.link.attemptEnded = false;
+    cc.link.reconnectPending = false;
     cc.link.closeRequested = false;
     cc.link.closeReason = NULL;
     cc.link.giFailed = false;

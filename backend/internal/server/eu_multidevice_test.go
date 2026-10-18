@@ -163,11 +163,7 @@ func TestFieldStateEverySimNode(t *testing.T) {
 		"GET /process/api/electrical": {http.StatusOK, electricalFixture},
 	}
 	for _, node := range euRecipe.simDevices {
-		body := strings.Replace(deviceStateFixture, `"device_id":"feeder-breaker"`, fmt.Sprintf(`"device_id":%q`, node), 1)
-		if node == "gps-1" {
-			body = clockStateFixture
-		}
-		routes["GET /"+node+"/api/state"] = stubResponse{http.StatusOK, body}
+		routes["GET /"+node+"/api/state"] = stubResponse{http.StatusOK, fieldDeviceFixture(t, node)}
 	}
 	stub, upstream := newUpstreamStub(t, routes)
 	gen := multiDeviceGeneration(t, upstream.URL)
@@ -195,7 +191,7 @@ func TestFieldStateEverySimNode(t *testing.T) {
 		if node == "gps-1" {
 			continue
 		}
-		want := strings.Replace(deviceStateFixture, `"device_id":"feeder-breaker"`, fmt.Sprintf(`"device_id":%q`, node), 1)
+		want := fieldDeviceFixture(t, node)
 		if string(got.Devices[node]) != want {
 			t.Errorf("missing or miskeyed %s: %s", node, rec.Body)
 		}

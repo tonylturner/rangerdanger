@@ -149,12 +149,42 @@ route_gi(const CcHttpRequest* req, CcHttpResponse* resp)
         cc_http_error(resp, 503, "link not started");
         return;
     }
-    if (cc.link.gi == CC_GI_RUNNING || cc.link.giPending) {
+    if (cc.link.gi == CC_GI_RUNNING || cc.link.giPending || cc.link.reconnectPending) {
         pthread_mutex_unlock(&cc.lock);
         cc_http_error(resp, 409, "interrogation already running");
         return;
     }
     cc.link.giPending = "operator";
+    char at[CC_STAMP_LEN];
+    cc_stamp_now(at);
+    pthread_cond_broadcast(&cc.cond);
+    pthread_mutex_unlock(&cc.lock);
+    cJSON* body = cJSON_CreateObject();
+    cJSON_AddStringToObject(body, "trigger", "operator");
+    cJSON_AddStringToObject(body, "requested_at", at);
+    respond_json(resp, 202, body);
+}
+
+static void
+route_reconnect(const CcHttpRequest* req, CcHttpResponse* resp)
+{
+    if (!no_query(req, resp)) return;
+    if (req->bodyLen) {
+        cc_http_error(resp, 400, "this endpoint takes no body");
+        return;
+    }
+    pthread_mutex_lock(&cc.lock);
+    if (cc.link.state != CC_LINK_STARTED || cc.link.attemptEnded) {
+        pthread_mutex_unlock(&cc.lock);
+        cc_http_error(resp, 503, "link not started; normal reconnect is already running");
+        return;
+    }
+    if (cc.link.reconnectPending || cc.tracker.active) {
+        pthread_mutex_unlock(&cc.lock);
+        cc_http_error(resp, 409, "reconnect pending or command in flight");
+        return;
+    }
+    cc.link.reconnectPending = true;
     char at[CC_STAMP_LEN];
     cc_stamp_now(at);
     pthread_cond_broadcast(&cc.cond);
@@ -177,6 +207,7 @@ static const Route routes[] = {
     {"/api/journal", "GET", route_journal},
     {"/api/commands", "POST", route_commands},
     {"/api/gi", "POST", route_gi},
+    {"/api/reconnect", "POST", route_reconnect},
 };
 
 void

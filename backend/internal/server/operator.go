@@ -124,12 +124,21 @@ func (s *Server) handleOperatorJournal(c *gin.Context) {
 
 // handleOperatorGI requests interrogation once; only the CC link thread sends it.
 func (s *Server) handleOperatorGI(c *gin.Context) {
+	s.handleOperatorLinkAction(c, "/api/gi")
+}
+
+// handleOperatorReconnect requests a real close, never a cache or simulator reset.
+func (s *Server) handleOperatorReconnect(c *gin.Context) {
+	s.handleOperatorLinkAction(c, "/api/reconnect")
+}
+
+func (s *Server) handleOperatorLinkAction(c *gin.Context, path string) {
 	cc, ok := controlCentreURL(rangeOf(c))
 	if !ok {
 		notSupported(c)
 		return
 	}
-	status, answer, err := callUpstream(c.Request.Context(), http.MethodPost, cc+"/api/gi", nil, upstreamReadTimeout)
+	status, answer, err := callUpstream(c.Request.Context(), http.MethodPost, cc+path, nil, upstreamReadTimeout)
 	if err != nil {
 		upstreamFailed(c, fmt.Errorf("%s unreachable: %w", controlCentreService, err))
 		return

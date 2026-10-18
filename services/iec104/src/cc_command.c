@@ -217,9 +217,9 @@ cc_command_run(int cmdIndex, int dcs, const char* operation, cJSON** body)
     uint64_t deadline = cc_mono_ms() + CC_COMMAND_BUDGET_MS;
 
     pthread_mutex_lock(&cc.lock);
-    if (cc.tracker.active) {
+    if (cc.tracker.active || cc.link.reconnectPending) {
         pthread_mutex_unlock(&cc.lock);
-        *body = error_body("a command is in flight");
+        *body = error_body("a command or reconnect is in flight");
         return 409;
     }
     if (cc.link.state != CC_LINK_STARTED) {

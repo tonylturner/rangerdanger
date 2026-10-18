@@ -70,6 +70,7 @@ func (s *Server) activateRange(gen *lifecycle.Generation) {
 	s.lastAppliedHash = ""
 	s.lastAppliedAt = time.Time{}
 	s.policyChangedAt = time.Time{}
+	s.lastValidationReport = nil
 	s.policyEvidenceSince = time.Time{}
 	s.policyObservedAt = gen.StartedAt.UTC()
 	s.activeConfigMu.Unlock()

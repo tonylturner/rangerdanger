@@ -32,6 +32,8 @@ func euWorkshopValidator(slot string) scenarioValidator {
 
 type euWorkshopEvidence struct {
 	stationPoints                                      []labs.IEC104Point
+	policyHash                                         string
+	report                                             *euRetainedReport
 	start, now, policyAt, hardeningSince, operationEnd time.Time
 	policy                                             string
 	policyErr                                          error
@@ -62,6 +64,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	s.activeConfigMu.RLock()
 	ev.policy, ev.policyAt, ev.hardeningSince = s.activeConfig, s.policyChangedAt, s.policyEvidenceSince
 	wantHash := s.lastAppliedHash
+	ev.policyHash, ev.report = wantHash, s.lastValidationReport
 	s.activeConfigMu.RUnlock()
 	hash, err := gen.Containd().GetFirewallHash(ctx)
 	ev.policyErr = err
@@ -105,18 +108,22 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	}
 	if slot == "eu-firewall-implementation" {
 		ev.conduits = s.collectEUWorkshopConduits(ctx, gen)
-	} else {
-		nodes := []string{"breaker-1"}
-		if slot == "eu-vendor-rdp-compromise" || slot == "eu-validation-evidence" {
-			nodes = append(nodes, "f2-breaker", "rmu-1", "rmu-2", "oltc-1")
+	}
+	nodes := []string{"breaker-1"}
+	if slot == "eu-vendor-rdp-compromise" || slot == "eu-validation-evidence" || slot == "eu-firewall-implementation" {
+		nodes = append(nodes, "f2-breaker", "rmu-1", "rmu-2", "oltc-1")
+	}
+	for _, node := range nodes {
+		ev.devices[node], ev.deviceErrors[node] = euDevice(ctx, gen, node)
+	}
+	ev.process, ev.processErr = euProcess(ctx, gen)
+	if slot == "eu-firewall-implementation" {
+		ev.cc, ev.journal, ev.ccErr = ev.conduits.state, ev.conduits.journal, ev.conduits.stateErr
+		if ev.ccErr == nil {
+			ev.ccErr = ev.conduits.journalErr
 		}
-		for _, node := range nodes {
-			ev.devices[node], ev.deviceErrors[node] = euDevice(ctx, gen, node)
-		}
-		ev.process, ev.processErr = euProcess(ctx, gen)
-		if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" {
-			ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
-		}
+	} else if slot == "eu-baseline-assessment" || slot == "eu-validation-evidence" || slot == "eu-hardening-configurations" {
+		ev.cc, ev.journal, ev.ccErr = euCC(ctx, gen)
 	}
 	if slot == "eu-hardening-configurations" {
 		// Read both streams after this cutoff; later activity cannot sneak
@@ -207,6 +214,9 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		if ev.ccErr != nil {
 			return checkFail("CC link, GI and GOOD station observations", ev.ccErr.Error())
 		}
+		if slot == "eu-firewall-implementation" || slot == "eu-hardening-configurations" {
+			return euWorkshopFreshLink(ev)
+		}
 		return euLink(ev.cc, ev.journal, ev.stationPoints, ev.start, ev.now)
 	}
 	switch slot {
@@ -228,9 +238,9 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		if len(ev.conduits.reads) < 2 {
 			checks = append(checks, checkFail("Teaching-source HTTP conduits", "missing historian and PLC GET evidence"))
 		}
-		checks = append(checks, euWorkshopNegative(ev))
+		checks = append(checks, link(), euWorkshopContinuity(ev), euWorkshopSupply(ev), euWorkshopNegative(ev))
 	case "eu-hardening-configurations":
-		checks = append(checks, breaker(), euWorkshopSupply(ev), euWorkshopNegative(ev), euNoForeignBreaker(ev))
+		checks = append(checks, link(), breaker(), euWorkshopSupply(ev), euWorkshopNegative(ev), euNoForeignBreaker(ev))
 	case "eu-vendor-rdp-compromise":
 		checks = append(checks, euWorkshopNegative(ev))
 		for _, node := range []string{"rmu-1", "rmu-2"} {
@@ -239,7 +249,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		}
 		checks = append(checks, euWorkshopDeviceCheck(ev, "oltc-1", "OLTC restored", func(d *euWorkshopDevice) bool { ok, err := euOLTCAuto(d); return err == nil && ok }))
 	case "eu-validation-evidence":
-		checks = append(checks, link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
+		checks = append(checks, euWorkshopReport(ev), link(), euWorkshopDevicesFresh(ev), euWorkshopSupply(ev))
 	default:
 		checks = append(checks, checkFail("Known workshop slot", "unknown validator key "+slot))
 	}
@@ -262,4 +272,28 @@ func euWorkshopDevicesFresh(ev euWorkshopEvidence) ValidationCheck {
 		}
 	}
 	return checkPass(name, "all five device revisions match solver revisions and delivery acknowledgements; CC freshness checked independently")
+}
+
+// A GI on an established pre-change connection cannot test the new policy.
+func euWorkshopFreshLink(ev euWorkshopEvidence) ValidationCheck {
+	const name = "Fresh CC session admitted after policy commit"
+	if ev.cc == nil || ev.policyAt.IsZero() || !ev.cc.Link.Since.After(ev.policyAt) || ev.cc.Link.Since.After(ev.now) {
+		return checkFail(name, "CC link.since must be later than the policy commit; POST /api/operator/reconnect, wait for reconnect/GI, then validate. A GI on the old session proves nothing")
+	}
+	return euLink(ev.cc, ev.journal, ev.stationPoints, ev.cc.Link.Since, ev.now)
+}
+
+func euWorkshopContinuity(ev euWorkshopEvidence) ValidationCheck {
+	const name = "Breaker and RMU baseline positions preserved"
+	for _, node := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2"} {
+		position := "closed"
+		if node == "rmu-2" {
+			position = "open"
+		}
+		if check := euWorkshopDeviceCheck(ev, node, name, func(d *euWorkshopDevice) bool { return d.Position == position }); check.Status != "pass" {
+			check.Detail = node + ": " + check.Detail
+			return check
+		}
+	}
+	return checkPass(name, "independent field truth: both breakers closed, RMU1 closed/RMU2 open; loss of observations is not loss of supply")
 }
