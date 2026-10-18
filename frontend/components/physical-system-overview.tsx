@@ -14,7 +14,7 @@ export function PhysicalOverview({ field, operator, unavailable, fieldUnavailabl
     { label: "Feeder breaker", value: position(cb1), detail: cb1?.kind === "breaker" ? `${cb1.protection_tripped ? "Protection TRIPPED" : cb1.protection.picked_up ? "Protection picked up" : "Protection normal"}${cb1.lockout ? " · LOCKOUT" : ""}` : "Protection unknown", action: () => onDevice("CB1") },
     { label: "Switching", value: `RMU1 ${position(rmu1)} · RMU2 ${position(rmu2)}`, detail: rmu2 && "position" in rmu2 ? rmu2.position === "open" ? "RMU2 · NOP" : "RMU2 · off-normal" : "RMU2 · unknown", action: onSwitching },
     { label: "T1/OLTC", value: oltc ? `Completed tap ${oltc.tap}` : "Completed tap unknown", detail: oltc ? `${oltc.auto ? "AUTO" : "MANUAL"} · ${oltc.moving ? "moving" : "stationary"}${oltc.tap !== oltc.target_tap ? ` · target ${oltc.target_tap}` : ""}` : "Mode unknown", action: () => onDevice("T1") },
-    { label: "Bus voltage", value: num(m?.voltage_kv_ll, 2, "kV"), detail: `20 kV nominal${band ? ` · configured band ${band.low.toFixed(1)}–${band.high.toFixed(1)} kV` : ""} · 110 kV source measured ${num(m?.source_kv_ll, 2, "kV")} · ${freshness}`, action: () => onDevice("T1") },
+    { label: "Bus voltage", value: num(m?.voltage_kv_ll, 2, "kV"), detail: `20 kV nominal${band ? ` · CC alarm limits ${band.low.toFixed(1)}–${band.high.toFixed(1)} kV` : ""} · 110 kV source measured ${num(m?.source_kv_ll, 2, "kV")} · ${freshness}`, action: () => onDevice("T1") },
     { label: "T1 load", value: num(m?.p_mw, 2, "MW"), detail: `I ${num(m?.current_a, 1, "A")} · PF ${num(m?.pf, 3)} · ${freshness}`, action: () => onDevice("T1") },
   ];
   return <section aria-label="System overview" className="space-y-2">
