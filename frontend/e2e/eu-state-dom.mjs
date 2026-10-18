@@ -39,15 +39,20 @@ try {
         const dom = await page.locator(rootSelector).evaluate((root, view) => {
           const visible = node => !!node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden';
           const all = (selector, read) => [...root.querySelectorAll(selector)].map(read);
+          const f2Figure = root.querySelector('[data-device="F2"]')?.closest('figure');
           return {
             view, visible: visible(root), cached: root.getAttribute('data-cached') === 'true',
+            // The shared SCADA banner is a sibling of either view's snapshot.
+            viewState: document.querySelector('[data-view-state]')?.getAttribute('data-view-state'),
+            observationUncertainty: root.querySelector('[data-observation-uncertainty]')?.getAttribute('data-observation-uncertainty'),
             capturedAt: new Date().toISOString(), url: location.href,
             text: root.textContent,
             sections: all('[data-section]', node => ({ section: node.dataset.section, state: node.dataset.state, path: node.dataset.path, kv: node.dataset.kv, text: node.textContent })),
             devices: all('[data-device]', node => ({ device: node.dataset.device, position: node.dataset.position, quality: node.dataset.quality, tap: node.dataset.tap, text: node.textContent })),
             f2Line: root.querySelector('[data-f2-line]')?.getAttribute('data-state'),
+            f2Telemetry: [...(f2Figure?.querySelectorAll('p') ?? [])].find(node => node.textContent.startsWith('F2 ·'))?.textContent,
             measurements: all('[data-point]', node => ({ point: node.dataset.point, state: node.dataset.state, text: node.textContent, visible: visible(node) })),
-            conditions: all('[data-condition]', node => ({ id: node.dataset.condition, text: node.textContent })),
+            conditions: all('[aria-label="Abnormal conditions"] [data-condition]', node => ({ id: node.dataset.condition, text: node.textContent })),
             authorities: all('[data-authority]', node => ({ point: node.dataset.authority, text: node.textContent })),
             comparisons: all('[data-comparison]', node => ({ point: node.dataset.comparison, status: node.dataset.status })),
           };

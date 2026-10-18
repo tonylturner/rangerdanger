@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source": "feeder.dss; eu_circuit.py switch topology/meters; eu-state-smoke/oracle.md (21 independent solver probes, tap=0, profile off, load/source=1)",
+  "source": "feeder.dss; eu_circuit.py switch topology/meters; eu-state-smoke/oracle.md (21 independent solver probes, tap=0, profile off, load/source=1); F2 A/MW re-probed from five-device eu_circuit.py/feeder.dss (tap=0, profile off, load/source=1)",
   "live_kv": 0.1,
   "current_zero_a": 0.1,
   "rows": [
@@ -16,7 +16,7 @@
       "cc_paths": [
         "no supply",
         "no supply",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -24,7 +24,9 @@
         0,
         0,
         11.2
-      ]
+      ],
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
     },
     {
       "id": "OOO-tripped",
@@ -46,7 +48,9 @@
         0,
         0,
         0
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "OOC-normal",
@@ -59,8 +63,8 @@
       ],
       "cc_paths": [
         "no supply",
-        "path unknown",
-        "path unknown"
+        "via F2",
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -68,7 +72,9 @@
         0,
         18.5,
         29.8
-      ]
+      ],
+      "f2_current_a": 29.787,
+      "f2_p_mw": 0.91191
     },
     {
       "id": "OOC-tripped",
@@ -90,7 +96,9 @@
         0,
         0,
         0
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "OCO-normal",
@@ -104,7 +112,7 @@
       "cc_paths": [
         "no supply",
         "no supply",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -112,7 +120,9 @@
         0,
         0,
         11.2
-      ]
+      ],
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
     },
     {
       "id": "OCO-tripped",
@@ -134,7 +144,9 @@
         0,
         0,
         0
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "OCC-normal",
@@ -146,9 +158,9 @@
         "F"
       ],
       "cc_paths": [
-        "path unknown",
-        "path unknown",
-        "path unknown"
+        "via F2",
+        "via F2",
+        "via F2"
       ],
       "vt_kv": 19.33,
       "currents_a": [
@@ -156,7 +168,9 @@
         43.9,
         62.4,
         73.5
-      ]
+      ],
+      "f2_current_a": 73.493,
+      "f2_p_mw": 2.393896
     },
     {
       "id": "OCC-tripped",
@@ -178,7 +192,9 @@
         0,
         0,
         0
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "COO-normal",
@@ -192,7 +208,7 @@
       "cc_paths": [
         "via CB1",
         "no supply",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 19.94,
       "currents_a": [
@@ -200,7 +216,9 @@
         0,
         0,
         53.6
-      ]
+      ],
+      "f2_current_a": 11.231,
+      "f2_p_mw": 0.332454
     },
     {
       "id": "COO-tripped",
@@ -222,7 +240,9 @@
         0,
         0,
         42.7
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "COC-normal",
@@ -235,8 +255,8 @@
       ],
       "cc_paths": [
         "via CB1",
-        "path unknown",
-        "path unknown"
+        "via F2",
+        "via F2"
       ],
       "vt_kv": 19.91,
       "currents_a": [
@@ -244,7 +264,9 @@
         0,
         18.6,
         72.1
-      ]
+      ],
+      "f2_current_a": 29.848,
+      "f2_p_mw": 0.911986
     },
     {
       "id": "COC-tripped",
@@ -266,7 +288,9 @@
         0,
         0,
         42.7
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "CCO-normal",
@@ -280,7 +304,7 @@
       "cc_paths": [
         "via CB1",
         "via CB1",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 19.91,
       "currents_a": [
@@ -288,7 +312,9 @@
         18.7,
         0,
         72.3
-      ]
+      ],
+      "f2_current_a": 11.25,
+      "f2_p_mw": 0.332494
     },
     {
       "id": "CCO-tripped",
@@ -310,7 +336,9 @@
         18.7,
         0,
         61.3
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "CCC-normal",
@@ -322,9 +350,9 @@
         "BF"
       ],
       "cc_paths": [
-        "via CB1",
-        "via CB1",
-        "via CB1"
+        "via CB1 + F2",
+        "via CB1 + F2",
+        "via CB1 + F2"
       ],
       "vt_kv": 19.91,
       "currents_a": [
@@ -332,7 +360,9 @@
         6,
         21,
         72.1
-      ]
+      ],
+      "f2_current_a": 31.745,
+      "f2_p_mw": 1.046769
     },
     {
       "id": "CCC-tripped",
@@ -354,7 +384,9 @@
         30.3,
         11.5,
         72.7
-      ]
+      ],
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "S1-pre-trip",
@@ -368,7 +400,7 @@
       "cc_paths": [
         "no supply",
         "no supply",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 11.53,
       "currents_a": [
@@ -382,7 +414,9 @@
         4.679e-06,
         4.653e-06,
         11.5
-      ]
+      ],
+      "f2_current_a": 6.61,
+      "f2_p_mw": 0.113104
     },
     {
       "id": "S1-lockout",
@@ -396,7 +430,7 @@
       "cc_paths": [
         "no supply",
         "no supply",
-        "path unknown"
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -406,7 +440,9 @@
         11.2
       ],
       "fault": "s1",
-      "lockout": true
+      "lockout": true,
+      "f2_current_a": 11.209,
+      "f2_p_mw": 0.332431
     },
     {
       "id": "S1-pickup",
@@ -419,8 +455,8 @@
       ],
       "cc_paths": [
         "no supply",
-        "path unknown",
-        "path unknown"
+        "via F2",
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -435,7 +471,9 @@
         9.13,
         9.13
       ],
-      "lockout": true
+      "lockout": true,
+      "f2_current_a": 1377.583,
+      "f2_p_mw": 26.769845
     },
     {
       "id": "S1-F2-trip",
@@ -459,7 +497,9 @@
         0
       ],
       "fault": "s1",
-      "lockout": true
+      "lockout": true,
+      "f2_current_a": 0,
+      "f2_p_mw": 0
     },
     {
       "id": "S1-isolated",
@@ -472,8 +512,8 @@
       ],
       "cc_paths": [
         "no supply",
-        "path unknown",
-        "path unknown"
+        "via F2",
+        "via F2"
       ],
       "vt_kv": 0,
       "currents_a": [
@@ -483,7 +523,9 @@
         29.8
       ],
       "fault": "s1",
-      "lockout": true
+      "lockout": true,
+      "f2_current_a": 29.787,
+      "f2_p_mw": 0.91191
     }
   ],
   "interlocks": {
@@ -500,5 +542,6 @@
     "S1-pickup": "F2 delayed protection cannot hold pickup for GI/DOM; oracle/offline only",
     "S3-fault": "no process fault_s3 action",
     "PLC-setpoint": "PLC overwrites settings each scan; no persistent control surface"
-  }
+  },
+  "point_count": 42
 }

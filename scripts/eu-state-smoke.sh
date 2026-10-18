@@ -8,7 +8,7 @@ if [ "${1:-}" != --worker ]; then
   exec python3 "$SCRIPT_DIR/lib/eu-state-run.py" "$@"
 fi
 shift
-mode="$1"; CASE_DIR="$2"; PENDING_DOM="$3"
+mode="$1"; CASE_DIR="$2"
 API="${RANGERDANGER_API:-http://127.0.0.1:8088}"
 FW=rangerdanger-firewall
 PACKAGE="$ROOT/lab-definitions/packages/eu-iec104-substation"
@@ -53,13 +53,7 @@ checkpoint() {
   printf '%s\n' "$API_BODY" > "$out/field.json"
   eu_get_operator
   printf '%s\n' "$API_BODY" > "$out/operator.json"
-  if [ "$PENDING_DOM" = 0 ]; then
-    node "$ROOT/frontend/e2e/eu-state-dom.mjs" "$API" "$out" "$row"
-  else
-    printf '{"status":"PENDING lane A: explicitly disabled"}\n' > "$out/dom-pending.json"
-  fi
-  # Empty arrays under nounset are not portable to the host's bash 3.2.
-  if [ "$PENDING_DOM" != 0 ]; then set -- --pending-dom "$@"; fi
+  node "$ROOT/frontend/e2e/eu-state-dom.mjs" "$API" "$out" "$row"
   python3 "$SCRIPT_DIR/lib/eu-state-check.py" "$row" "$out" "$@" > "$out/result.json" || {
     cat "$out/result.json"; return 1;
   }
@@ -86,9 +80,11 @@ switching() {
     eu_wait_for_field '.devices["breaker-1"].lockout and .devices["breaker-1"].protection_tripped and .process.buses.s2.live == false' 10 'S2 trip'
     switch_command rmu-1 open
     switch_command rmu-2 close
-    instant=$(jq -er '.f2_protection.instantaneous_a' "$PACKAGE/process/profile.json")
-    eu_wait_for_field ".process.f2_tripped and .process.f2_protection.last_trip_current_a >= $instant
-      and .process.buses.s2.live == false and .process.buses.s3.live == false" 10 'F2 trip amps and settled dead buses'
+    eu_wait_for_field '.devices["f2-breaker"].protection_tripped and .devices["f2-breaker"].lockout
+      and .devices["f2-breaker"].position == "open"
+      and (.devices["f2-breaker"].protection | .instantaneous_a == 2000 and .pickup_a == 400
+        and .delay_ms == 1000 and .last_trip_current_a >= .instantaneous_a)
+      and .process.buses.s2.live == false and .process.buses.s3.live == false' 10 'F2 trip amps and settled dead buses'
     eu_action process clear_fault
     eu_action breaker-1 reset_lockout
     eu_action rmu-1 reset_fault_passage
@@ -115,6 +111,8 @@ case "$mode" in
       and (.devices["breaker-1"].protection_tripped | not) and .devices["rmu-1"].position == "closed"
       and .devices["rmu-2"].position == "open" and .devices["oltc-1"].auto
       and (.devices["oltc-1"].blocked | not) and all(.devices[]; .remote_enabled == true)
+      and .devices["f2-breaker"].position == "closed"
+      and (.devices["f2-breaker"] | (.lockout | not) and (.protection_tripped | not))
       and all(.devices["rmu-1"], .devices["rmu-2"]; (.earth_closed | not) and (.fault_passage | not))
       and .process.fault_section == "none" and (.process.f2_tripped | not) and .process.profile.enabled' >/dev/null
     ;;
@@ -127,6 +125,11 @@ case "$mode" in
     checkpoint rejected OCC-normal --interlock CCC-normal-interlock
     ;;
   ???-normal|???-tripped) switching "$mode" ;;
+  f2-cycle)
+    switching OOO-tripped tripped
+    eu_action f2-breaker reset
+    checkpoint reset OOO-normal
+    ;;
   s1-cycle)
     reference
     eu_action process fault_s1

@@ -220,9 +220,23 @@ Control Centre and Physical System DOMs. Install frontend dependencies with
 headlessly, with no browser download or shared browser session.
 
 `--list` is offline; `--case NAME` is repeatable, and `--case switching` selects
-the reachable switching matrix. `--pending-dom` explicitly records both DOM
-checks as pending (not a full pass) for a frontend without the DOM contract.
-Offline fixtures run with `bash scripts/tests/eu-gate/run.sh`.
+the reachable switching matrix. Both DOM checks are mandatory; the old
+`--pending-dom` option is removed. The full matrix (including F2 reset,
+S1 recovery, LOCAL rejection and OLTC) is:
+
+```sh
+RANGERDANGER_API=http://127.0.0.1:8088 bash scripts/eu-state-smoke.sh
+```
+
+Rebuild the range with the fifth device, `f2-breaker`, before running it.
+All 42 IEC indications must be present; F2 position/trip/current/MW must be
+fresh and agree with the independent device/model observations. Both pages'
+SCADA banners must stay `ok` in steady states, including zero-power PF marked
+`measurement_invalid`; the CC summary reports that uncertainty separately.
+Offline fixtures run with `bash scripts/tests/eu-gate/run.sh`. To re-probe
+the 21 F2 current/MW and section vectors directly from OpenDSS (no live range),
+use the process Python 3.13 environment to run
+`python scripts/tests/eu-gate/probe-state-oracle.py`.
 
 Evidence (field/operator snapshots, command/audit responses, DOM JSON,
 screenshots and outcomes with timings) stays in `build/eu-state-smoke/<UTC>/`.
@@ -237,7 +251,9 @@ OCC-normal predecessor is rejected with negative ACT-CON / `live_live`, with
 unchanged plant switch revisions/positions, GOOD CC positions and all section
 states. It is included in `--case switching`; the CCC-normal electrical row
 remains in the offline oracle. All eight F2-tripped rows are reachable via the S2
-fault/tie sequence. Instantaneous pre-trip and delayed pickup fault rows
+fault/tie sequence; the F2 device owns the protection latch. `--case f2-cycle`
+also proves `f2-breaker`'s `/api/sim/actions` reset and restored CC indications,
+without a process `reset_f2` action. Instantaneous pre-trip and delayed pickup fault rows
 cannot be held for GI/DOM sampling. `--list` also names unsupported S3 fault
 and PLC setpoint controls. At zero power, undefined PF is intentionally
 IEC IV / comparison INVALID, not MATCH or a communications outage.
