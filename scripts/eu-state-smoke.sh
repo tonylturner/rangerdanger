@@ -43,7 +43,7 @@ checkpoint() {
   mkdir -p "$out"
   eu_get_field
   printf '%s\n' "$API_BODY" > "$out/before-field.json"
-  since=$(eu_utc)
+  since=$(eu_utc) || return
   printf '%s\n' "$since" > "$out/since.txt"
   # A strictly advancing solve is required, even if no device revision changed.
   sleep 1.1
