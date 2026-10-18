@@ -35,5 +35,5 @@
     "source_pu_min": 0.985,
     "source_pu_max": 1.025
   },
-  "f2_protection": {"pickup_a": 400, "delay_ms": 1000, "instantaneous_a": 3000}
+  "f2_protection": {"pickup_a": 400, "delay_ms": 1000, "instantaneous_a": 2000}
 }

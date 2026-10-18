@@ -198,7 +198,7 @@ Each device has `protection`:
 `{function,pickup_a,delay_ms,instantaneous_a,picked_up,picked_up_since,last_trip_current_a}`.
 Functions are `overcurrent` (breaker), `fpi` (RMU), `oltc_block` (OLTC).
 Instantaneous pickup, picked-up timestamp (UTC), and last-trip current are
-nullable. Defaults: breaker 400 A / 1000 ms / 3000 A instantaneous; RMU
+nullable. Defaults: breaker 400 A / 1000 ms / 2000 A instantaneous; RMU
 300 A / 0 ms / no instantaneous; OLTC 866 A / 0 ms / no instantaneous.
 Timers are sample-quantised; I> operates on the first sample at or after
 its configured delay (rounded up to the solve cadence). OLTC truth

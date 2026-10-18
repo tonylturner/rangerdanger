@@ -216,7 +216,7 @@ func DefaultProtection(kind Kind) ProtectionSettings {
 	s := ProtectionSettings{MaxGapMS: 2500}
 	switch kind {
 	case Breaker:
-		v := 3000.0
+		v := 2000.0
 		s.PickupA = 400
 		s.DelayMS = 1000
 		s.InstantaneousA = &v

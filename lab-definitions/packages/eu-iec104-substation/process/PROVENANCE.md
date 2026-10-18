@@ -158,7 +158,7 @@ representation of a bolted fault). A closed earth switch on either RMU enables
 the S2 DSS fault; whether current actually flows is exclusively a DSS result.
 
 F2 protection samples **solved F2 terminal-1 current**: pickup 400 A,
-delay 1000 ms, instantaneous 3000 A. The first picked-up solve starts the timer;
+delay 1000 ms, instantaneous 2000 A. The first picked-up solve starts the timer;
 the first subsequent sample at or beyond delay trips. Thus effective operate
 time is the delay rounded up to the solve cadence (and may be later with
 scheduling jitter). A correction solve is a sample, not an elapsed second.
@@ -173,6 +173,7 @@ The F2 head stays latched open until `reset_f2` or process `reset`. Resetting
 a connected fault starts a new pickup period, not an immediate Boolean trip.
 In the disabled-profile baseline, S1/S2 radial faults draw about 2701/1438 A
 at CB1; an isolated F2 back-feed into the S2 fault draws about 2535 A at F2.
-These are below the 3000 A instantaneous setting, so delayed operation is
-expected. Opening F2 does **not** forcibly zero S3: DSS may supply it through
+The 2000 A instantaneous element is graded on these values: a close-in S1
+fault and the F2 back-feed operate instantaneously, while the remote S2 fault
+(below 2000 A) operates on the definite-time element. Opening F2 does **not** forcibly zero S3: DSS may supply it through
 a healthy closed ring. It is dead when no alternate supply remains.

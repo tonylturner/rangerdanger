@@ -163,7 +163,7 @@ IR14 is a wrapping 250 ms heartbeat, independent of process delivery.
 
 Protection is configured with `DEVICE_PICKUP_A`, `DEVICE_DELAY_MS`,
 `DEVICE_INSTANTANEOUS_A` (number or `null`), and `DEVICE_MAX_GAP_MS`.
-Compose and code defaults agree: breaker 400 A / 1000 ms / 3000 A;
+Compose and code defaults agree: breaker 400 A / 1000 ms / 2000 A;
 RMU FPI 300 A / 0 ms / null; OLTC block 866 A / 0 ms / null.
 The maximum accepted-sample gap is 2500 ms by default. Timing uses accepted
 `solved_at` samples, not receipt or wall time: first pickup starts the timer;

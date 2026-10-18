@@ -239,7 +239,7 @@ func TestSnapshotDoesNotExposeOwnedMeasurementPointers(t *testing.T) {
 	*snapshot.Measurements.SectionLive = false
 	*snapshot.Measurements.SolverEpoch = "mutated"
 	current := m.Snapshot().Measurements
-	if *current.PMW != 3 || *current.QMvar != 4 || *current.PF != 0.6 || *m.Snapshot().Protection.InstantaneousA != 3000 || *current.CurrentA != 41.2 || !*current.SectionLive || *current.SolverEpoch != "solver-a" {
+	if *current.PMW != 3 || *current.QMvar != 4 || *current.PF != 0.6 || *m.Snapshot().Protection.InstantaneousA != 2000 || *current.CurrentA != 41.2 || !*current.SectionLive || *current.SolverEpoch != "solver-a" {
 		t.Fatal("snapshot mutated owned state")
 	}
 }
