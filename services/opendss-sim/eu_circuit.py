@@ -53,7 +53,7 @@ class EUFeederSolver:
     def solve(self, truths: dict[str, dict], controls: ProcessControls) -> dict:
         """Return pre-protection measurements; the loop owns any correction solve.
 
-        F2 current is sampled here; the loop owns its protection and correction.
+        All protection belongs to field devices; their acknowledgements drive correction.
         No topological fault indicator competes with solved current.
         """
         with self._lock:
@@ -61,8 +61,7 @@ class EUFeederSolver:
                 raise RuntimeError("EU circuit not compiled")
             elements = self.profile.elements
             closed = {key: truths[key]["position"] == "closed"
-                      for key in ("feeder-breaker", "rmu-1", "rmu-2")}
-            closed["f2"] = not controls.f2_tripped
+                      for key in ("feeder-breaker", "f2-breaker", "rmu-1", "rmu-2")}
             for key, is_closed in closed.items():
                 self._dss.Text.Command(f"{'Close' if is_closed else 'Open'} {elements[key]} 1")
             tap = truths["oltc-1"]["tap"]
@@ -95,7 +94,7 @@ class EUFeederSolver:
                 return {"converged": False, "solved_at": solved_at}
             buses = {key: self._bus(name) for key, name in self.profile.buses.items()}
             sides = {
-                "feeder-breaker": ("bus20", "f1"), "rmu-1": ("s1", "s2"),
+                "feeder-breaker": ("bus20", "f1"), "f2-breaker": ("bus20", "s3"), "rmu-1": ("s1", "s2"),
                 "rmu-2": ("s3", "s2"), "oltc-1": ("hv", "bus20"),
             }
             measurements = {}
@@ -117,7 +116,8 @@ class EUFeederSolver:
             return {
                 "converged": True, "solved_at": solved_at, "tap": tap,
                 "buses": {key: buses[key] for key in ("bus20", "s1", "s2", "s3")},
-                "measurements": measurements, "f2_current_a": self._current(elements["f2"], 1),
+                "measurements": measurements,
+                "f2_tripped": truths["f2-breaker"]["protection_tripped"],
                 "profile": factors,
                 **controls.snapshot(),
             }

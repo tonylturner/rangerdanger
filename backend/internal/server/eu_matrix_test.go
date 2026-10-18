@@ -26,9 +26,9 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 		slot  string
 		count int
 	}{
-		{"eu-firewall-implementation", 16},
+		{"eu-firewall-implementation", 19},
 		{"eu-hardening-configurations", 1},
-		{"eu-vendor-rdp-compromise", 6},
+		{"eu-vendor-rdp-compromise", 7},
 	} {
 		matrix, err := euResolveMatrix(gen, euRecipe.validation, tc.slot)
 		if err != nil || len(matrix) != tc.count {

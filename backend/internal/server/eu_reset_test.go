@@ -18,7 +18,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/orchestrator"
 )
 
-var resetRevisions = map[string]uint64{"feeder-breaker": 10, "rmu-1": 11, "rmu-2": 12, "oltc-1": 13}
+var resetRevisions = map[string]uint64{"feeder-breaker": 10, "f2-breaker": 18, "rmu-1": 11, "rmu-2": 12, "oltc-1": 13}
 
 func deliveredState(t *testing.T, revisions map[string]uint64) string {
 	t.Helper()
@@ -37,7 +37,7 @@ func TestEUWorkshopReset(t *testing.T) {
 	order := []string{
 		"/process/api/process/actions", "/oltc-1/api/sim/actions",
 		"/rmu-2/api/sim/actions", "/rmu-1/api/sim/actions",
-		"/breaker-1/api/sim/actions", "/gps-1/api/command",
+		"/breaker-1/api/sim/actions", "/f2-breaker/api/sim/actions", "/gps-1/api/command",
 	}
 	for _, failed := range append([]string{""}, order...) {
 		t.Run("failure="+failed, func(t *testing.T) {
@@ -103,12 +103,12 @@ func TestEUWorkshopReset(t *testing.T) {
 			if failed != "" {
 				wantCode = http.StatusBadGateway
 			}
-			if rec.Code != wantCode || result.Success != (failed == "") || len(result.Actions) != 8 {
+			if rec.Code != wantCode || result.Success != (failed == "") || len(result.Actions) != 9 {
 				t.Fatalf("reset = %d %s", rec.Code, rec.Body)
 			}
 			if result.Actions[0].Action != "process/reset" ||
-				result.Actions[6].Action != "Wait for post-reset measurement delivery" ||
-				result.Actions[7].Action != "Apply weak firewall baseline" {
+				result.Actions[7].Action != "Wait for post-reset measurement delivery" ||
+				result.Actions[8].Action != "Apply weak firewall baseline" {
 				t.Fatalf("ordered truth reset must precede housekeeping: %s", rec.Body)
 			}
 			if counters.commitCount != 1 || s.activeConfig != "weak" {
@@ -121,7 +121,7 @@ func TestEUWorkshopReset(t *testing.T) {
 			}
 			for i, body := range bodies {
 				want := `{"action":"reset"}`
-				if i == 5 {
+				if i == 6 {
 					want = `{"command":"reset_offset","source":"lab"}`
 				}
 				if body != want {
@@ -166,7 +166,7 @@ func TestResetDeliveryReady(t *testing.T) {
 			}
 		})
 	}
-	newer := map[string]uint64{"feeder-breaker": 14, "rmu-1": 15, "rmu-2": 16, "oltc-1": 17}
+	newer := map[string]uint64{"feeder-breaker": 14, "f2-breaker": 19, "rmu-1": 15, "rmu-2": 16, "oltc-1": 17}
 	if ready, err := resetDeliveryReady([]byte(deliveredState(t, newer)), resetRevisions); !ready || err != nil {
 		t.Fatalf("newer consistent revisions = %v %v", ready, err)
 	}

@@ -32,6 +32,8 @@ def truths():
     return {
         'feeder-breaker': dict(base, device_id='feeder-breaker', kind='breaker',
                               position='closed', lockout=False, protection_tripped=False),
+        'f2-breaker': dict(base, device_id='f2-breaker', kind='breaker',
+                           position='closed', lockout=False, protection_tripped=False),
         'rmu-1': dict(base, device_id='rmu-1', kind='rmu', position='closed',
                       earth_closed=False, fault_passage=False),
         'rmu-2': dict(base, device_id='rmu-2', kind='rmu', position='open',

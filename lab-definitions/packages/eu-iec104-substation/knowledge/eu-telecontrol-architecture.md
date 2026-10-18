@@ -4,12 +4,13 @@ Telecontrol separates an operator's request from the equipment that acts on it. 
 
 The Control Centre (CC) is an IEC 104 client at `10.60.60.20`. It opens the northbound connection to RTU `10.30.30.20:2404`. The RTU is the controlled station/server. It independently polls the southbound devices using Modbus TCP, unit 1, on TCP/502:
 
-- Breaker `10.40.40.20`.
+- CB1 breaker `10.40.40.20`.
+- F2 indication-only breaker `10.40.40.24`.
 - RMU1 `10.40.40.21` and RMU2 `10.40.40.22`.
 - OLTC `10.40.40.23`.
 - PLC status at `10.30.30.30`.
 
-The first four cross the Station-to-Field boundary. RTU-to-PLC is same-subnet station traffic, not an inter-zone firewall conduit. Automatic PLC-to-OLTC control is another separate cross-zone path. A healthy CC-to-RTU link cannot prove that any of these Modbus exchanges succeeded.
+The five field devices cross the Station-to-Field boundary. RTU-to-PLC is same-subnet station traffic, not an inter-zone firewall conduit. Automatic PLC-to-OLTC control is another separate cross-zone path. A healthy CC-to-RTU link cannot prove that any of these Modbus exchanges succeeded.
 
 The [point map](#iec104-wire-model) translates register values into IEC 104 points and operator commands back into device writes. A command needs both protocol progress and fresh matching feedback. Local protection can trip the breaker without waiting for either northbound availability or a CC command.
 

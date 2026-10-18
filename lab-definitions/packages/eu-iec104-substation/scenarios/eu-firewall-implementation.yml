@@ -81,6 +81,8 @@ steps:
     targets:
     - host: 10.30.30.20
       port: 2404
+    - host: 10.40.40.24
+      port: 502
     - host: 10.40.40.20
       port: 502
     - host: 10.40.40.23
@@ -147,7 +149,7 @@ steps:
   title: Phase 5 - Validate allowed traffic
   expected_config: hardened
   description: |
-    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and all 38 points non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
+    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and all 42 points non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
 
     :::hint Use your live operator connection
     The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. A healthy persistent link is valid — do not cut it just to pass. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
@@ -168,6 +170,10 @@ steps:
     :::hint Continuity is a hard constraint
     Breaker closed, supply present, RMU1 closed/RMU2 open, OLTC remote/auto and fresh operator observations must survive. The validator collects operational evidence, including same-subnet endpoint checks; same-subnet success is not firewall enforcement.
     :::
+
+    :::hint Instructor-supervised F2 visibility check
+    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all 42 non-null GOOD points received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
+    :::
   action:
     type: probe
     outcome: reachable
@@ -176,6 +182,9 @@ steps:
       port: 2404
       from: cc-1
     - host: 10.40.40.20
+      port: 502
+      from: rtu-1
+    - host: 10.40.40.24
       port: 502
       from: rtu-1
     - host: 10.40.40.23

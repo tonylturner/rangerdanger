@@ -73,7 +73,7 @@ func conduitDenyMatrix(gen *lifecycle.Generation, prior error) ([]conduitDeny, e
 			node, network string
 			port          int
 		}{
-			{"breaker-1", "field_net", 502}, {"rmu-1", "field_net", 502}, {"rmu-2", "field_net", 502}, {"oltc-1", "field_net", 502},
+			{"breaker-1", "field_net", 502}, {"f2-breaker", "field_net", 502}, {"rmu-1", "field_net", 502}, {"rmu-2", "field_net", 502}, {"oltc-1", "field_net", 502},
 			{"rtu-1", "station_net", 2404}, {"historian-1", "ops_dmz_net", 8081},
 		} {
 			to, err := nodeIP(gen, target.node, target.network)

@@ -11,14 +11,13 @@ class ActionError(ValueError):
 @dataclass
 class ProcessControls:
     fault_section: str = "none"
-    f2_tripped: bool = False
     load_multiplier: float = 1.0
     source_pu: float = 1.0
     profile_enabled: bool = True
 
     def snapshot(self) -> dict:
         return {key: getattr(self, key) for key in
-                ("fault_section", "f2_tripped", "load_multiplier", "source_pu")}
+                ("fault_section", "load_multiplier", "source_pu")}
 
     def action(self, body: object) -> None:
         if not isinstance(body, dict) or not isinstance(body.get("action"), str):
@@ -46,11 +45,8 @@ class ProcessControls:
                 self.fault_section = action[-2:].upper()
             elif action == "clear_fault":
                 self.fault_section = "none"
-            elif action == "reset_f2":
-                self.f2_tripped = False
             elif action == "reset":
                 self.fault_section = "none"
-                self.f2_tripped = False
                 self.load_multiplier = self.source_pu = 1.0
             else:
                 raise ActionError("unknown_action")

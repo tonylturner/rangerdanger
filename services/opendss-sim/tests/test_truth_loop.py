@@ -2,15 +2,13 @@ import asyncio
 import json
 import threading
 from contextlib import ExitStack, contextmanager
-from dataclasses import replace
-from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from eu_app import create_eu_app
 from eu_circuit import EUFeederSolver
 from eu_controls import ProcessControls
-from eu_profile import ProtectionSettings, load_profile
+from eu_profile import load_profile
 from eu_support import MemoryClient, profile, profile_file
 from eu_truth_loop import TruthSolveLoop
 
@@ -21,12 +19,6 @@ def make_loop(tmp_path, config=None, **kwargs):
     solver = EUFeederSolver(config, **kwargs.pop('solver_kwargs', {}))
     solver.compile_circuit()
     return TruthSolveLoop(config, solver, client=kwargs.pop('client', MemoryClient()), **kwargs)
-
-
-@pytest.fixture
-def delayed_f2_profile(tmp_path):
-    # Disable I>> in memory so timing coverage is independent of shipped grading.
-    return replace(profile(tmp_path), f2_protection=ProtectionSettings(400, 1000, float('inf')))
 
 
 def tick(loop):
@@ -40,7 +32,7 @@ def test_one_vector_per_tick_per_device_measurements(tmp_path):
     assert state['schema'] == 3 and state['solve_seq'] == 1
     assert set(state['buses']) == {'bus20', 's1', 's2', 's3'}
     assert not state['truth_stale']
-    assert len(loop.client.gets) == len(loop.client.posts) == 4
+    assert len(loop.client.gets) == len(loop.client.posts) == 5
     for payload in loop.client.posts:
         assert set(payload) == {
             'schema', 'device_id', 'generation', 'revision', 'solver_epoch', 'solve_seq',
@@ -60,15 +52,15 @@ def test_peer_io_is_concurrent_and_read_before_any_delivery(tmp_path):
     class ConcurrentClient(MemoryClient):
         def __init__(self):
             super().__init__()
-            self.read_barrier = threading.Barrier(4)
-            self.post_barrier = threading.Barrier(4)
+            self.read_barrier = threading.Barrier(5)
+            self.post_barrier = threading.Barrier(5)
 
         def get_truth(self, device):
             self.read_barrier.wait(timeout=2)
             return super().get_truth(device)
 
         def post_measurements(self, device, payload):
-            assert len(self.gets) == 4
+            assert len(self.gets) == 5
             self.post_barrier.wait(timeout=2)
             return super().post_measurements(device, payload)
 
@@ -83,10 +75,10 @@ def test_protection_ack_rereads_all_and_resolves_once(tmp_path, fault, rmu_fault
     loop = make_loop(tmp_path, client=client)
     result = asyncio.run(loop.action(dict(action=fault)))
     assert loop.solve_seq == 2
-    assert len(client.gets) == 8
-    assert len(client.posts) == 8
-    first = {p['device_id']: p for p in client.posts[:4]}
-    second = {p['device_id']: p for p in client.posts[4:]}
+    assert len(client.gets) == 10
+    assert len(client.posts) == 10
+    first = {p['device_id']: p for p in client.posts[:5]}
+    second = {p['device_id']: p for p in client.posts[5:]}
     assert first['feeder-breaker']['current_a'] >= 400
     assert (first['rmu-1']['current_a'] >= 300) is rmu_fault
     assert client.truths['rmu-1']['fault_passage'] is rmu_fault
@@ -105,7 +97,7 @@ def test_409_stale_truth_rereads_full_vector_at_most_once(tmp_path):
     loop = make_loop(tmp_path, client=client)
     state = tick(loop)
     assert loop.solve_seq == 2
-    assert len(client.gets) == len(client.posts) == 8
+    assert len(client.gets) == len(client.posts) == 10
     assert not state['devices']['rmu-1']['delivered']
     assert state['devices']['rmu-2']['delivered']
     assert loop.state.health()['status'] == 'degraded'
@@ -141,7 +133,7 @@ def test_partial_delivery_does_not_hide_healthy_peers_or_retry(tmp_path, failure
     loop = make_loop(tmp_path, client=client)
     state = tick(loop)
     assert loop.solve_seq == 1
-    assert len(client.posts) == 4
+    assert len(client.posts) == 5
     assert not state['devices']['rmu-2']['delivered']
     assert all(d['delivered'] for k, d in state['devices'].items() if k != 'rmu-2')
     assert all(b['kv'] > 0 for b in state['buses'].values())
@@ -157,7 +149,7 @@ def test_truth_loss_immediately_stale_retains_last_solve_and_recovers(tmp_path):
     assert stale['truth_stale']
     for key in ('buses', 'tap', 'solve_seq', 'solved_at'):
         assert stale[key] == last[key]
-    assert len(loop.client.posts) == 4
+    assert len(loop.client.posts) == 5
     now[0] += 4
     assert loop.state.truth_stale()
     loop.client.unreachable.clear()
@@ -186,7 +178,7 @@ def test_truth_loss_during_correction_does_not_solve_assumed_vector(tmp_path):
     loop.client.after_post = lose_truth
     state = asyncio.run(loop.action(dict(action='fault_s1')))
     assert loop.solve_seq == 1
-    assert len(loop.client.posts) == 4
+    assert len(loop.client.posts) == 5
     assert state['truth_stale']
     assert not any(d['delivered'] for d in state['devices'].values())
 
@@ -196,7 +188,7 @@ def test_malformed_truth_and_solver_failure_preserve_last_values(tmp_path):
     last = tick(loop)
     loop.client.truths['rmu-2']['schema'] = 1
     assert tick(loop)['truth_stale']
-    assert len(loop.client.posts) == 4
+    assert len(loop.client.posts) == 5
     loop.client.truths['rmu-2']['schema'] = 3
     loop.solver.solve = lambda *_: dict(converged=False)
     state = tick(loop)
@@ -213,7 +205,7 @@ def test_generation_restart_sequence_epoch_and_snapshot_copy(tmp_path):
     assert loop.state.electrical()['buses']['s1']['kv'] > 0
     loop.client.truths['rmu-1'].update(generation=98300, revision=0)
     tick(loop)
-    restart = next(p for p in loop.client.posts[4:] if p['device_id'] == 'rmu-1')
+    restart = next(p for p in loop.client.posts[5:] if p['device_id'] == 'rmu-1')
     assert restart['generation'] == 98300 and restart['revision'] == 0
     assert restart['solve_seq'] == 2
     second = make_loop(tmp_path)
@@ -222,94 +214,27 @@ def test_generation_restart_sequence_epoch_and_snapshot_copy(tmp_path):
     assert second.client.posts[0]['solve_seq'] == 1
 
 
-def test_f2_trip_reset_retrip_and_latched_until_reset(tmp_path, delayed_f2_profile):
-    now = [1792270800.]
-    loop = make_loop(tmp_path, config=delayed_f2_profile,
-                     solver_kwargs=dict(clock=lambda: now[0]))
+def test_f2_field_trip_ack_corrects_and_process_reset_cannot_clear_it(tmp_path):
+    loop = make_loop(tmp_path)
     loop.client.protect = True
     loop.client.truths['feeder-breaker']['position'] = 'open'
     loop.client.truths['rmu-1']['position'] = 'open'
     loop.client.truths['rmu-2']['position'] = 'closed'
     state = asyncio.run(loop.action(dict(action='fault_s2')))
-    assert not state['f2_tripped']  # First solve picks up, immediate FPI correction cannot trip.
-    assert state['f2_protection']['picked_up']
-    assert loop.client.truths['rmu-2']['fault_passage']
-    now[0] += 1.001
-    state = tick(loop)
-    assert state['f2_tripped'] and not state['buses']['s3']['live']
-    assert state['f2_protection']['last_trip_current_a'] >= 400
-    assert not state['f2_protection']['picked_up']  # Post-open correction has no current.
-    retrip = asyncio.run(loop.action(dict(action='reset_f2')))
-    assert not retrip['f2_tripped']  # Reset starts a fresh pickup timer.
-    now[0] = datetime.fromisoformat(retrip['solved_at'].replace('Z', '+00:00')).timestamp() + 1
-    retrip = tick(loop)
-    assert retrip['f2_tripped'] and not retrip['buses']['s3']['live']
-    cleared = asyncio.run(loop.action(dict(action='clear_fault')))
-    assert cleared['f2_tripped'] and not cleared['buses']['s3']['live']
-    reset = asyncio.run(loop.action(dict(action='reset_f2')))
-    assert not reset['f2_tripped']
-    assert reset['buses']['s3']['live'] and reset['buses']['s2']['live']
-
-
-def test_second_pass_f2_transition_uses_no_third_solve(tmp_path, delayed_f2_profile):
-    # Both passes see overcurrent, one second apart; the second trips F2.
-    times = iter([1792270800., 1792270800., 1792270801., 1792270801.,
-                  1792270802., 1792270802.])
-    loop = make_loop(tmp_path, config=delayed_f2_profile,
-                     solver_kwargs=dict(clock=lambda: next(times)))
-    client = loop.client
-    client.truths['feeder-breaker']['position'] = 'open'
-    client.truths['rmu-1']['position'] = 'open'
-    client.truths['rmu-2']['position'] = 'closed'
-    client.responses['rmu-2'] = [(409, dict(accepted=False, reason='stale_truth'))]
-    state = asyncio.run(loop.action(dict(action='fault_s2')))
     assert loop.solve_seq == 2
-    assert loop.controls.f2_tripped and state['f2_tripped']
-    assert loop.state.health()['status'] == 'degraded'
-    settled = tick(loop)
-    assert loop.solve_seq == 3 and not settled['buses']['s3']['live']
-    assert loop.state.health()['status'] == 'ok'
-
-
-def test_shipped_profile_f2_backfeed_into_s2_trips_on_first_sample(tmp_path):
-    loop = make_loop(tmp_path, solver_kwargs=dict(clock=lambda: 1792270800.))
-    assert loop.profile.f2_protection.instantaneous_a == 2000
-    assert loop.profile.f2_protection.delay_ms == 1000
-    loop.client.truths['feeder-breaker']['position'] = 'open'
-    loop.client.truths['rmu-1']['position'] = 'open'
-    loop.client.truths['rmu-2']['position'] = 'closed'
-    state = asyncio.run(loop.action(dict(action='fault_s2')))
-    # Frozen wall time cannot satisfy I>; the first-sample trip causes one
-    # immediate post-open correction solve, with the second sample at +1 ms.
-    assert loop.solve_seq == 2
+    first = next(p for p in loop.client.posts if p['device_id'] == 'f2-breaker')
+    assert first['current_a'] >= 2000 and first['p_mw'] > 0
     assert state['f2_tripped'] and not state['buses']['s3']['live']
-    assert 2000 <= state['f2_protection']['last_trip_current_a'] < 3000
-    assert not state['f2_protection']['picked_up']
-    first_at = datetime.fromisoformat(loop.client.posts[0]['solved_at'].replace('Z', '+00:00'))
-    second_at = datetime.fromisoformat(loop.client.posts[4]['solved_at'].replace('Z', '+00:00'))
-    assert (second_at - first_at).total_seconds() == .001
-
-
-@pytest.mark.parametrize('settings,fault,expected', [
-    (ProtectionSettings(5, 0, 3000), 'none', True),
-    (ProtectionSettings(10000, 1000, 20000), 'S2', False),
-])
-def test_f2_operates_from_amperes_not_requested_fault_or_topology(tmp_path, settings, fault, expected):
-    config = replace(profile(tmp_path), f2_protection=settings)
-    solver = EUFeederSolver(config)
-    solver.compile_circuit()
-    client = MemoryClient()
-    client.truths['feeder-breaker']['position'] = 'open'
-    client.truths['rmu-1']['position'] = 'open'
-    client.truths['rmu-2']['position'] = 'closed'
-    loop = TruthSolveLoop(config, solver, client=client)
-    loop.controls.fault_section = fault
-    state = tick(loop)
-    assert state['f2_tripped'] is expected
-    if expected:
-        assert state['f2_protection']['last_trip_current_a'] >= settings.pickup_a
-    else:
-        assert not state['f2_protection']['picked_up']
+    assert state['devices']['f2-breaker']['solved_revision'] == 2
+    assert state['devices']['f2-breaker']['current_a'] < 1
+    reset = asyncio.run(loop.action(dict(action='reset')))
+    assert reset['f2_tripped'] and not reset['buses']['s3']['live']
+    # Instructor resets the field device, never a second process latch.
+    loop.client.truths['f2-breaker'].update(position='closed', protection_tripped=False,
+                                         lockout=False, revision=3)
+    reset = tick(loop)
+    assert not reset['f2_tripped'] and reset['buses']['s3']['live']
+    assert reset['devices']['f2-breaker']['p_mw'] > 0
 
 
 async def invoke(app, method, path, body=None, raw=None):
@@ -341,7 +266,7 @@ def app_with_memory(tmp_path):
 
 @pytest.mark.parametrize('action,value,field,expected', [
     ('fault_s1', None, 'fault_section', 'S1'), ('fault_s2', None, 'fault_section', 'S2'),
-    ('clear_fault', None, 'fault_section', 'none'), ('reset_f2', None, 'f2_tripped', False),
+    ('clear_fault', None, 'fault_section', 'none'),
     ('reset', None, 'load_multiplier', 1.0), ('set_load', .2, 'load_multiplier', .2),
     ('set_load', 3.0, 'load_multiplier', 3.0), ('set_source', .90, 'source_pu', .90),
     ('set_source', 1.10, 'source_pu', 1.10),
@@ -358,13 +283,13 @@ def test_process_action_api_each_action_and_boundaries(tmp_path, action, value, 
     assert state['schema'] == 3
     assert set(state) == {'schema', 'profile_id', 'solver_epoch', 'solve_seq', 'solved_at',
                           'truth_stale', 'fault_section', 'f2_tripped', 'load_multiplier',
-                          'source_pu', 'tap', 'buses', 'devices', 'profile', 'f2_protection'}
+                          'source_pu', 'tap', 'buses', 'devices', 'profile'}
     if action == 'reset':
         assert (state['fault_section'], state['f2_tripped'], state['source_pu']) == ('none', False, 1.0)
 
 
 @pytest.mark.parametrize('body', [
-    {}, [], None, dict(action='unknown'), dict(action='set_load'),
+    {}, [], None, dict(action='reset_f2'), dict(action='unknown'), dict(action='set_load'),
     dict(action='set_load', value=.1999), dict(action='set_load', value=3.001),
     dict(action='set_source', value=.8999), dict(action='set_source', value=1.1001),
     dict(action='set_load', value=True), dict(action='set_load', value='3'),
@@ -405,11 +330,10 @@ def assert_schema3(state):
     assert set(state) == {
         'schema', 'profile_id', 'solver_epoch', 'solve_seq', 'solved_at', 'truth_stale',
         'fault_section', 'f2_tripped', 'load_multiplier', 'source_pu', 'tap', 'buses',
-        'devices', 'profile', 'f2_protection'}
+        'devices', 'profile'}
     assert state['schema'] == 3
     assert set(state['profile']) == {'enabled', 'load_factors', 'source_pu'}
     assert set(state['profile']['load_factors']) == {'residential', 'commercial', 'industrial'}
-    assert set(state['f2_protection']) == {'picked_up', 'picked_up_since', 'last_trip_current_a'}
     for record in state['devices'].values():
         assert set(record) == {
             'delivered', 'solved_revision', 'revision', 'current_a', 'p_mw', 'q_mvar'}
@@ -422,8 +346,7 @@ def test_electrical_exact_keys_initial_and_solved_values_match_last_post(tmp_pat
     assert initial['profile']['enabled'] is False
     assert initial['profile']['source_pu'] is None
     assert all(n is None for n in initial['profile']['load_factors'].values())
-    assert initial['f2_protection'] == {
-        'picked_up': False, 'picked_up_since': None, 'last_trip_current_a': None}
+    assert initial['f2_tripped'] is None
     assert all(record[k] is None for record in initial['devices'].values()
                for k in ('current_a', 'p_mw', 'q_mvar'))
     tick(app.state.eu_loop)
@@ -460,31 +383,6 @@ def test_profile_action_rejects_invalid_shape_without_mutation(tmp_path, body):
     assert status == 400 and app.state.eu_loop.controls.profile_enabled is before
 
 
-@pytest.mark.parametrize('failure', ['truth', 'solve'])
-def test_f2_timer_invalidated_when_truth_or_solve_unavailable(tmp_path, delayed_f2_profile, failure):
-    now = [1792270800.]
-    loop = make_loop(tmp_path, config=delayed_f2_profile,
-                     solver_kwargs=dict(clock=lambda: now[0]))
-    loop.client.truths['feeder-breaker']['position'] = 'open'
-    loop.client.truths['rmu-1']['position'] = 'open'
-    loop.client.truths['rmu-2']['position'] = 'closed'
-    picked = asyncio.run(loop.action(dict(action='fault_s2')))
-    assert picked['f2_protection']['picked_up']
-    original = loop.solver.solve
-    if failure == 'truth':
-        loop.client.unreachable.add('rmu-2')
-    else:
-        loop.solver.solve = lambda *_: dict(converged=False)
-    failed = tick(loop)
-    assert not failed['f2_protection']['picked_up']
-    loop.client.unreachable.clear()
-    loop.solver.solve = original
-    now[0] += 2
-    recovered = tick(loop)
-    assert not recovered['f2_tripped']
-    assert recovered['f2_protection']['picked_up_since'] == recovered['solved_at']
-
-
 def test_lifespan_starts_autonomous_solver_and_stops_cleanly(tmp_path):
     app = create_eu_app(str(profile_file(tmp_path)))
     app.state.eu_loop.client = MemoryClient()
@@ -496,7 +394,7 @@ def test_lifespan_starts_autonomous_solver_and_stops_cleanly(tmp_path):
                     await asyncio.sleep(.001)
             await asyncio.wait_for(wait_for_delivery(), timeout=5)
             assert app.state.eu_loop.solve_seq == 1
-            assert len(app.state.eu_loop.client.posts) == 4
+            assert len(app.state.eu_loop.client.posts) == 5
 
     asyncio.run(exercise())
 
@@ -531,7 +429,7 @@ def http_device(client, device_id):
         thread.join()
 
 
-def test_real_http_four_independent_device_origins(tmp_path):
+def test_real_http_five_independent_device_origins(tmp_path):
     client = MemoryClient()
     with ExitStack() as stack:
         urls = {k: stack.enter_context(http_device(client, k)) for k in client.truths}
@@ -540,6 +438,6 @@ def test_real_http_four_independent_device_origins(tmp_path):
         solver.compile_circuit()
         loop = TruthSolveLoop(config, solver)
         state = tick(loop)
-    assert len(client.posts) == 4
+    assert len(client.posts) == 5
     assert all(v['delivered'] for v in state['devices'].values())
     assert loop.state.health()['status'] == 'ok'

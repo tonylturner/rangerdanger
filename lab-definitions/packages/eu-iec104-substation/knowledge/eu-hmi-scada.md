@@ -8,8 +8,8 @@ The view orients an operator with:
 
 - **Control Centre** and **Physical System** are separate views.
 - IEC 104 link and general-interrogation status, with **Interrogate station** for an operator GI (on-connect and 15-minute periodic GI remain automatic).
-- A feeder one-line built from CC-monitored points. It shows breaker and RMU positions, section voltages, and OLTC telemetry; the CB1 VT is on the line side, while S1 voltage is from RMU1's source side. Parts with no CC point, including the F2 head and 110 kV source, are explicitly marked unobserved.
-- A selected-device faceplate with select-before-operate controls for the breaker, RMUs and OLTC.
+- A feeder one-line built from CC-monitored points. It shows breaker and RMU positions, section voltages, and OLTC telemetry; the CB1 VT is on the line side, while S1 voltage is from RMU1's source side. F2 has indication-only position, protection trip, current and MW points; the 110 kV source remains unobserved. No F2 supervisory controls are provided.
+- A selected-device faceplate with select-before-operate controls for CB1, RMUs and OLTC.
 - **Alarms**, **Events**, **Points** and **Trends** tabs. Alarms are active conditions derived from CC points, not latched/acknowledged alarm state; Events uses the bounded CC journal, not a durable SOE archive. Points shows stable kind, last received ASDU, value, quality, stale reason, source/receipt times and COT. Receipt age is provenance, not status expiry; floats use the reporting watchdog. Trends plots archived CC observations.
 
 When the RTU link is lost, the CC retains its last values and marks their quality stale; the display does not turn an old position into a current observation. Interpret command progress together with fresh feedback, not just a button result; see the [SBO evidence rules](#iec104-sbo-commands).

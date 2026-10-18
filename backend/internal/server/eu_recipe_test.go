@@ -311,11 +311,11 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 			t.Fatalf("US row leaked: %+v", row)
 		}
 	}
-	if allows != 9 || denies != 16 {
+	if allows != 10 || denies != 19 {
 		t.Fatalf("matrix=%d allow, %d deny", allows, denies)
 	}
 	hosts, network, err := euRecipe.resolveCapture(gen)
-	if err != nil || len(hosts) != 4 || strings.Join(network, ".") != "10.40.40" {
+	if err != nil || len(hosts) != 5 || strings.Join(network, ".") != "10.40.40" {
 		t.Fatalf("capture=%v %v %v", hosts, network, err)
 	}
 	traffic, err := euRecipe.resolveTraffic(gen)

@@ -113,6 +113,25 @@
         "address": 1029,
         "stale_after_ms": 3000
       }
+    },
+    {
+      "id": "f2-breaker",
+      "host": "10.40.40.24",
+      "port": 502,
+      "unit": 1,
+      "poll_ms": 500,
+      "timeout_ms": 1000,
+      "stale_after_ms": 3000,
+      "measurements_valid": {
+        "table": "input",
+        "address": 2,
+        "bit": 0
+      },
+      "poll": {
+        "table": "input",
+        "start": 0,
+        "count": 17
+      }
     }
   ],
   "points": [
@@ -692,6 +711,63 @@
         "address": 1,
         "format": "bit",
         "bit": 7
+      }
+    },
+    {
+      "id": "f2-position",
+      "ioa": 1501,
+      "kind": "double-point",
+      "asdu": "M_DP_TB_1",
+      "source": {
+        "device": "f2-breaker",
+        "table": "input",
+        "address": 0,
+        "format": "dp"
+      }
+    },
+    {
+      "id": "f2-protection-trip",
+      "ioa": 1502,
+      "kind": "single-point",
+      "asdu": "M_SP_TB_1",
+      "source": {
+        "device": "f2-breaker",
+        "table": "input",
+        "address": 1,
+        "format": "bit",
+        "bit": 3
+      }
+    },
+    {
+      "id": "f2-current",
+      "ioa": 2501,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "A",
+      "deadband": 2.0,
+      "measurement": true,
+      "source": {
+        "device": "f2-breaker",
+        "table": "input",
+        "address": 3,
+        "format": "f32"
+      },
+      "cyclic_ms": 10000
+    },
+    {
+      "id": "f2-p-mw",
+      "ioa": 2502,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "MW",
+      "deadband": 0.05,
+      "cyclic_ms": 10000,
+      "measurement": true,
+      "source": {
+        "device": "f2-breaker",
+        "table": "input",
+        "address": 11,
+        "format": "f32"
       }
     }
   ],

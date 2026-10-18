@@ -44,6 +44,44 @@ func TestInstantaneousTrip(t *testing.T) {
 	}
 }
 
+func TestF2BreakerIndependentProtectionAndReset(t *testing.T) {
+	for _, instantaneous := range []bool{false, true} {
+		t.Run(map[bool]string{false: "delayed", true: "instantaneous"}[instantaneous], func(t *testing.T) {
+			cb1, clock := newTestModel(t, Breaker)
+			f2, err := NewModel(Config{Kind: Breaker, DeviceID: "f2-breaker", Generation: 43, Clock: clock})
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings := f2.Snapshot().Protection
+			if settings.PickupA != 400 || settings.DelayMS != 1000 || settings.InstantaneousA == nil || *settings.InstantaneousA != 2000 {
+				t.Fatalf("F2 settings: %+v", settings)
+			}
+			at, amps := clock.Now(), 450.0
+			if instantaneous {
+				amps = 2000
+			}
+			tripped := sampleAt(t, f2, at, amps)
+			if !instantaneous {
+				if tripped.ProtectionTripped {
+					t.Fatal("F2 tripped before its delay")
+				}
+				clock.advance(time.Second)
+				tripped = sampleAt(t, f2, at.Add(time.Second), amps)
+			}
+			if tripped.DeviceID != "f2-breaker" || !tripped.ProtectionTripped || !tripped.Lockout || tripped.Position != PositionOpen {
+				t.Fatalf("F2 did not trip: %+v", tripped)
+			}
+			if cb1.Truth().ProtectionTripped || cb1.Truth().Position != PositionClosed {
+				t.Fatal("F2 trip affected CB1")
+			}
+			reset := action(t, f2, "reset")
+			if reset.ProtectionTripped || reset.Lockout || reset.Position != PositionClosed || reset.Revision <= tripped.Revision {
+				t.Fatalf("F2 instructor reset: %+v", reset)
+			}
+		})
+	}
+}
+
 func TestPickupTimerResets(t *testing.T) {
 	for _, cause := range []string{"drop-off", "epoch", "generation", "gap", "expiry", "revision"} {
 		t.Run(cause, func(t *testing.T) {

@@ -7,7 +7,7 @@ from eu_support import profile, truths
 from eu_wire import TruthClient, TruthError, acknowledgement, validate_truth
 
 
-@pytest.mark.parametrize('device_id', ['feeder-breaker', 'rmu-1', 'rmu-2', 'oltc-1'])
+@pytest.mark.parametrize('device_id', ['feeder-breaker', 'f2-breaker', 'rmu-1', 'rmu-2', 'oltc-1'])
 def test_truth_exact_per_kind_shape(tmp_path, device_id):
     device = next(d for d in profile(tmp_path).devices if d.id == device_id)
     value = truths()[device_id]
@@ -46,7 +46,7 @@ def test_truth_rejects_invalid_types_id_ranges_and_time(tmp_path, field, value):
     dict(moving=True, target_tap=0), dict(auto=1), dict(armed=None),
 ])
 def test_invalid_oltc_truth(tmp_path, changes):
-    device = profile(tmp_path).devices[-1]
+    device = next(d for d in profile(tmp_path).devices if d.id == 'oltc-1')
     with pytest.raises(TruthError):
         validate_truth(dict(truths()[device.id], **changes), device)
 

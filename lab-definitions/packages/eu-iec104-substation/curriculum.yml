@@ -1,7 +1,7 @@
 schema: 1
 requirements:
   enterprise-to-field:
-    label: Enterprise/vendor → field devices on Modbus/502
+    label: Enterprise/vendor → five field devices on Modbus/502
     impl:
       BLOCK:
       - block-enterprise-to-field
@@ -29,7 +29,7 @@ requirements:
       RESTRICT:
       - restrict-vendor-to-station
   non-rtu-to-field:
-    label: Hosts other than RTU (and PLC→OLTC) → field devices
+    label: Hosts other than RTU (and PLC→OLTC) → five field devices
     impl:
       BLOCK:
       - pin-rtu-to-field
@@ -322,11 +322,11 @@ baselineRules:
   purpose: Allow the named Control Centre to open IEC104 sessions to the RTU
 - id: rtu-to-feeder-modbus
   source: ${ip:rtu-1}/32
-  destination: ${ip:breaker-1}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
+  destination: ${ip:breaker-1}/32, ${ip:f2-breaker}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
   proto: TCP
   port: '502'
   action: ALLOW
-  purpose: Allow the named RTU to poll and control the breaker, RMUs and OLTC over Modbus TCP
+  purpose: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
 - id: plc-to-oltc-modbus
   source: ${ip:plc-1}/32
   destination: ${ip:oltc-1}/32
@@ -468,11 +468,11 @@ groups:
     rules:
     - id: rtu-to-feeder-modbus
       source: ${ip:rtu-1}/32
-      destination: ${ip:breaker-1}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
+      destination: ${ip:breaker-1}/32, ${ip:f2-breaker}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
       proto: TCP
       port: '502'
       action: ALLOW
-      purpose: Allow the named RTU to poll and control the breaker, RMUs and OLTC over Modbus TCP
+      purpose: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
       ics:
         protocol: modbus
         functionCode:
@@ -574,7 +574,7 @@ policy:
     mode: enforce
 - rule:
     id: rtu-to-feeder-modbus
-    description: Allow the named RTU to poll and control the breaker, RMUs and OLTC over Modbus TCP
+    description: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
     sourceZones:
     - ${zone:station_net}
     destZones:
@@ -583,6 +583,7 @@ policy:
     - ${ip:rtu-1}/32
     destinations:
     - ${ip:breaker-1}/32
+    - ${ip:f2-breaker}/32
     - ${ip:rmu-1}/32
     - ${ip:rmu-2}/32
     - ${ip:oltc-1}/32

@@ -43,12 +43,13 @@ func multiDeviceGeneration(t *testing.T, base string) *lifecycle.Generation {
 func TestEUFullActionWire(t *testing.T) {
 	rmu := []string{"set_local", "set_remote", "earth_close", "earth_open", "reset_fault_passage", "reset"}
 	commands := map[string][]string{
-		"breaker": {"reset_lockout", "reset"},
-		"rmu-1":   rmu,
-		"rmu-2":   rmu,
-		"oltc-1":  {"set_local", "set_remote", "block", "unblock", "reset"},
-		"process": {"fault_s1", "fault_s2", "clear_fault", "reset_f2", "set_load", "set_source", "reset"},
-		"gps":     {"set_offset", "reset_offset"},
+		"breaker":    {"reset_lockout", "reset"},
+		"f2-breaker": {"reset_lockout", "reset"},
+		"rmu-1":      rmu,
+		"rmu-2":      rmu,
+		"oltc-1":     {"set_local", "set_remote", "block", "unblock", "reset"},
+		"process":    {"fault_s1", "fault_s2", "clear_fault", "set_load", "set_source", "reset"},
+		"gps":        {"set_offset", "reset_offset"},
 	}
 	for device, names := range commands {
 		for _, command := range names {
@@ -187,7 +188,7 @@ func TestFieldStateEverySimNode(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
 		t.Fatalf("state = %d %s", rec.Code, rec.Body)
 	}
-	if len(got.Devices) != 4 || string(got.Clock) != clockStateFixture || string(got.Process) != electricalFixture || len(stub.requests) != 6 {
+	if len(got.Devices) != 5 || string(got.Clock) != clockStateFixture || string(got.Process) != electricalFixture || len(stub.requests) != 7 {
 		t.Fatalf("not every upstream returned: %s, requests=%v", rec.Body, stub.requests)
 	}
 	for _, node := range euRecipe.simDevices {
@@ -202,7 +203,7 @@ func TestFieldStateEverySimNode(t *testing.T) {
 }
 
 func TestFieldStateFailureNamesUpstream(t *testing.T) {
-	for _, failed := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1", "gps-1", "process"} {
+	for _, failed := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1", "gps-1", "process"} {
 		t.Run(failed, func(t *testing.T) {
 			routes := map[string]stubResponse{
 				"GET /process/api/electrical": {http.StatusOK, electricalFixture},

@@ -7,8 +7,8 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-// The six policy intents expand to nine positive endpoints: RTU access to
-// every field device matters independently. Negatives likewise cover all four
+// The six policy intents expand to ten positive endpoints: RTU access to
+// every field device matters independently. Negatives likewise cover all five
 // field devices, not just one representative of a subnet-wide rule.
 func euValidationMatrix() []validationProbeSpec {
 	rows := []validationProbeSpec{
@@ -22,7 +22,7 @@ func euValidationMatrix() []validationProbeSpec {
 		{"kali-1", "", "vendor-jump-1", "vendor_net", "3389", "deny", "Enterprise vendor RDP", "unauthorized"},
 		{"kali-1", "", "vendor-jump-1", "vendor_net", "5900", "deny", "Enterprise vendor VNC", "unauthorized"},
 	}
-	for _, device := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"} {
+	for _, device := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"} {
 		rows = append(rows, validationProbeSpec{"rtu-1", "", device, "field_net", "502", "allow", "RTU field Modbus", "authorized"})
 		for _, source := range []string{"kali-1", "vendor-jump-1", "eng-ws-1"} {
 			rows = append(rows, validationProbeSpec{source, "", device, "field_net", "502", "deny", "Foreign field Modbus connect", "unauthorized"})

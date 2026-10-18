@@ -174,12 +174,12 @@ func TestConduitsEvidence(t *testing.T) {
 
 func TestConduitsPollsInventoryCount(t *testing.T) {
 	ev := passingConduits(t)
-	if len(ev.stationPoints) != 38 || len(ev.state.Points) != 38 {
-		t.Fatalf("loaded inventory=%d, observations=%d; want 38", len(ev.stationPoints), len(ev.state.Points))
+	if len(ev.stationPoints) != 42 || len(ev.state.Points) != 42 {
+		t.Fatalf("loaded inventory=%d, observations=%d; want 42", len(ev.stationPoints), len(ev.state.Points))
 	}
 	start, _ := conduitWindow(ev)
 	check := conduitPolls(ev, start)
-	if check.Status != "pass" || !strings.Contains(check.Detail, "all 38 station IOAs") {
+	if check.Status != "pass" || !strings.Contains(check.Detail, "all 42 station IOAs") {
 		t.Fatal(check)
 	}
 	for i, point := range ev.state.Points {
@@ -189,7 +189,7 @@ func TestConduitsPollsInventoryCount(t *testing.T) {
 		}
 	}
 	check = conduitPolls(ev, start)
-	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 38 station IOAs [1307]") {
+	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 42 station IOAs [1307]") {
 		t.Fatal(check)
 	}
 }
@@ -213,13 +213,13 @@ func TestConduitsSurvivesLinkUpEviction(t *testing.T) {
 
 func TestConduitsDenyMatrix(t *testing.T) {
 	ev := passingConduits(t)
-	if len(ev.denies) != 20 {
-		t.Fatalf("deny pairs=%d, want20", len(ev.denies))
+	if len(ev.denies) != 23 {
+		t.Fatalf("deny pairs=%d, want23", len(ev.denies))
 	}
 	// In particular, vendor and engineering are different hosts, not a dmz
 	// aggregate that could certify an overbroad maintenance allow.
 	for _, source := range []string{"10.10.10.50", "10.20.20.10", "10.20.20.20"} {
-		for _, dest := range []string{"10.40.40.20", "10.40.40.21", "10.40.40.22", "10.40.40.23"} {
+		for _, dest := range []string{"10.40.40.20", "10.40.40.21", "10.40.40.22", "10.40.40.23", "10.40.40.24"} {
 			found := false
 			for _, row := range ev.denies {
 				found = found || (row.source == source && row.dest == dest && row.port == 502)

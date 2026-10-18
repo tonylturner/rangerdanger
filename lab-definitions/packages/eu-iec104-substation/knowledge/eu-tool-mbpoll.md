@@ -2,16 +2,17 @@
 
 ### Read a device's input block
 
-All four field devices use TCP/502 and unit 1. Addresses in the package point map are zero-based. From Kali, these reads should succeed under weak as the **teaching exposure**, then fail on new connections under improved:
+All five field devices use TCP/502 and unit 1. Addresses in the package point map are zero-based. From Kali, these reads should succeed under weak as the **teaching exposure**, then fail on new connections under improved:
 
 ```sh
 mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 17 -1 10.40.40.20
 mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 13 -1 10.40.40.21
 mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 13 -1 10.40.40.22
 mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 21 -1 10.40.40.23
+mbpoll -m tcp -a 1 -p 502 -t 3 -0 -r 0 -c 17 -1 10.40.40.24
 ```
 
-`-t 3` selects input registers (FC4); it does not mean function code 3. `-0` makes the starting reference zero-based, `-r 0` selects IR0, `-c` selects the register count and `-1` makes one poll rather than a continuous loop. The addresses identify breaker, RMU1, RMU2 and OLTC respectively.
+`-t 3` selects input registers (FC4); it does not mean function code 3. `-0` makes the starting reference zero-based, `-r 0` selects IR0, `-c` selects the register count and `-1` makes one poll rather than a continuous loop. The addresses identify CB1, RMU1, RMU2, OLTC and F2 respectively. F2 is indication-only at IEC 104; its generic field Modbus adapter still accepts writes, so source/port segmentation remains essential.
 
 Weak policy permits station-to-field Modbus and direct enterprise- and vendor-to-field TCP/502 through `weak-foreign-field-modbus`. This includes Kali, vendor-jump and eng-ws. Improved policy removes that foreign access and narrows station access to the RTU and the PLC's OLTC conduit. Close baseline clients and match fresh denied attempts to logged `deny-unauthorized-modbus` events under improved, recording source, destination and attempt times. Do not add a diagnostic allow, move a container or impersonate a controller to obtain output.
 

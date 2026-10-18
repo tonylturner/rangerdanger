@@ -380,6 +380,31 @@
       "endpoints": {
         "api": "http://10.99.99.40:8080"
       }
+    },
+    {
+      "key": "f2_breaker",
+      "container": "rangerdanger-f2-breaker",
+      "node": "f2-breaker",
+      "roles": [
+        "field-device"
+      ],
+      "interfaces": [
+        {
+          "network": "field_net",
+          "ipv4": "10.40.40.24"
+        },
+        {
+          "network": "process_net",
+          "ipv4": "10.50.50.34"
+        },
+        {
+          "network": "mgmt_net",
+          "ipv4": "10.99.99.28"
+        }
+      ],
+      "endpoints": {
+        "sim": "http://10.99.99.28:8080"
+      }
     }
   ]
 }

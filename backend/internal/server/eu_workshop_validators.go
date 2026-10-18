@@ -108,7 +108,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 	} else {
 		nodes := []string{"breaker-1"}
 		if slot == "eu-vendor-rdp-compromise" || slot == "eu-validation-evidence" {
-			nodes = append(nodes, "rmu-1", "rmu-2", "oltc-1")
+			nodes = append(nodes, "f2-breaker", "rmu-1", "rmu-2", "oltc-1")
 		}
 		for _, node := range nodes {
 			ev.devices[node], ev.deviceErrors[node] = euDevice(ctx, gen, node)
@@ -251,7 +251,7 @@ func euWorkshopDevicesFresh(ev euWorkshopEvidence) ValidationCheck {
 	if ev.processErr != nil || ev.process == nil {
 		return checkFail(name, "process delivery evidence unavailable")
 	}
-	for _, node := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"} {
+	for _, node := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"} {
 		device := ev.devices[node]
 		if device == nil || ev.deviceErrors[node] != nil || device.Revision == nil {
 			return checkFail(name, "device unavailable: "+node)
@@ -261,5 +261,5 @@ func euWorkshopDevicesFresh(ev euWorkshopEvidence) ValidationCheck {
 			return checkFail(name, "solver has not delivered the current revision of "+node)
 		}
 	}
-	return checkPass(name, "all four device revisions match solver revisions and delivery acknowledgements; CC freshness checked independently")
+	return checkPass(name, "all five device revisions match solver revisions and delivery acknowledgements; CC freshness checked independently")
 }

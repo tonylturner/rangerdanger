@@ -226,6 +226,8 @@ services:
         condition: service_started
       feeder_breaker:
         condition: service_healthy
+      f2_breaker:
+        condition: service_healthy
       gps_sim:
         condition: service_healthy
     build:
@@ -310,6 +312,52 @@ services:
       - wget
       - -qO-
       - http://10.99.99.22:8080/api/health
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+      target: field-device-sim
+  f2_breaker:
+    image: rangerdanger-field-device-sim
+    container_name: rangerdanger-f2-breaker
+    hostname: f2-breaker
+    cap_add:
+    - NET_ADMIN
+    sysctls:
+      net.ipv4.ip_forward: 0
+    environment:
+    - GATEWAY=10.40.40.2
+    - DEVICE_ID=f2-breaker
+    - DEVICE_KIND=breaker
+    - DEVICE_PICKUP_A=400
+    - DEVICE_DELAY_MS=1000
+    - DEVICE_INSTANTANEOUS_A=2000
+    - DEVICE_MAX_GAP_MS=2500
+    - DEVICE_MODBUS_LISTEN=10.40.40.24:502
+    - DEVICE_PROCESS_LISTEN=10.50.50.34:8080
+    - DEVICE_SIM_LISTEN=10.99.99.28:8080
+    - DEVICE_ZONES=field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24
+    command:
+    - sh
+    - -c
+    - set -e; set-gateway.sh; exec field-device-sim
+    networks:
+      field_net:
+        ipv4_address: 10.40.40.24
+      process_net:
+        ipv4_address: 10.50.50.34
+      mgmt_net:
+        ipv4_address: 10.99.99.28
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://10.99.99.28:8080/api/health
       interval: 10s
       timeout: 3s
       retries: 5

@@ -14,15 +14,15 @@ class ProfileError(ValueError):
 
 
 DEVICE_KINDS = {
-    "feeder-breaker": "breaker", "rmu-1": "rmu", "rmu-2": "rmu", "oltc-1": "oltc"
+    "feeder-breaker": "breaker", "f2-breaker": "breaker", "rmu-1": "rmu", "rmu-2": "rmu", "oltc-1": "oltc"
 }
-ELEMENT_KEYS = set(DEVICE_KINDS) | {"source", "f2", "fault_s1", "fault_s2"}
+ELEMENT_KEYS = set(DEVICE_KINDS) | {"source", "fault_s1", "fault_s2"}
 BUS_KEYS = {"hv", "bus20", "f1", "s1", "s2", "s3"}
 PROFILE_KEYS = {
     "schema", "id", "frequency_hz", "hv_kv", "mv_kv", "circuit_file",
     "devices", "elements", "buses", "solve_interval_ms", "request_timeout_ms",
     "truth_stale_after_ms",
-    "profile", "f2_protection",
+    "profile",
 }
 
 
@@ -36,13 +36,6 @@ class ProfileSettings:
     source_tau_s: float
     source_pu_min: float
     source_pu_max: float
-
-
-@dataclass(frozen=True)
-class ProtectionSettings:
-    pickup_a: float
-    delay_ms: int
-    instantaneous_a: float
 
 
 @dataclass(frozen=True)
@@ -66,7 +59,6 @@ class EUProfile:
     request_timeout_ms: int
     truth_stale_after_ms: int
     profile: ProfileSettings
-    f2_protection: ProtectionSettings
 
 
 def _number(value: object, name: str, minimum: float = 0) -> float:
@@ -98,17 +90,6 @@ def _settings(value: object) -> ProfileSettings:
             or value["source_pu_min"] == value["source_pu_max"]):
         raise ProfileError("invalid profile time constants/source bounds")
     return ProfileSettings(**value)
-
-
-def _protection(value: object) -> ProtectionSettings:
-    if not isinstance(value, dict) or set(value) != set(ProtectionSettings.__annotations__):
-        raise ProfileError("invalid f2 protection settings")
-    pickup = _number(value["pickup_a"], "pickup_a")
-    instantaneous = _number(value["instantaneous_a"], "instantaneous_a")
-    delay = value["delay_ms"]
-    if pickup <= 0 or instantaneous < pickup or type(delay) is not int or delay < 0:
-        raise ProfileError("invalid f2 protection thresholds/delay")
-    return ProtectionSettings(pickup, delay, instantaneous)
 
 
 def _positive_integer(value: object, name: str) -> int:
@@ -164,8 +145,8 @@ def load_profile(path: str | Path) -> EUProfile:
     if not circuit_file.is_file():
         raise ProfileError(f"circuit_file does not exist: {circuit_file}")
     devices = value["devices"]
-    if not isinstance(devices, list) or len(devices) != 4:
-        raise ProfileError("devices must contain all four devices")
+    if not isinstance(devices, list) or len(devices) != 5:
+        raise ProfileError("devices must contain all five devices")
     parsed = []
     for device in devices:
         if (not isinstance(device, dict) or set(device) != {"id", "kind", "truth_url"}
@@ -174,7 +155,7 @@ def load_profile(path: str | Path) -> EUProfile:
                 or device["kind"] != DEVICE_KINDS[device["id"]]):
             raise ProfileError("invalid device identity/kind")
         parsed.append(DeviceProfile(device["id"], device["kind"], _origin(device["truth_url"])))
-    if len({d.id for d in parsed}) != 4 or len({d.truth_url for d in parsed}) != 4:
+    if len({d.id for d in parsed}) != 5 or len({d.truth_url for d in parsed}) != 5:
         raise ProfileError("duplicate device or truth_url")
     elements = _mapping(value["elements"], ELEMENT_KEYS, "elements")
     buses = _mapping(value["buses"], BUS_KEYS, "buses")
@@ -185,4 +166,4 @@ def load_profile(path: str | Path) -> EUProfile:
         raise ProfileError("require interval=1000, stale=3000 and timeout < interval")
     return EUProfile(value["id"], 50, 110, 20, circuit_file, tuple(parsed),
                      elements, buses, interval, timeout, stale,
-                     _settings(value["profile"]), _protection(value["f2_protection"]))
+                     _settings(value["profile"]))
