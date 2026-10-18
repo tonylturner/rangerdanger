@@ -4,7 +4,7 @@
 control-centre observations. It never polls the CC, field devices or solver,
 never sends commands, and is not a sequence-of-events (SOE) archive.
 
-The CC pushes a schema-2 snapshot every second and for each applied timed
+The CC pushes a schema-3 snapshot every second and for each applied timed
 report. Timed snapshots are rendered before a following untimed GI can clear
 the cached source timestamp or its invalid-time flag. A 16-snapshot pending
 FIFO drops the oldest on overflow; CC health counts these as
@@ -25,13 +25,14 @@ wildcard and duplicate bindings are errors. Every listener binds before any
 serves requests; any bind failure fails startup. Separate handlers prevent
 ingest on **every** read interface, including management.
 
-Ingest requires the complete CC schema-2 state (including `link`,
+Ingest requires the complete CC schema-3 state (including `link`,
 `snapshot_seq`, `rendered_at` and each point's nullable fields). Missing,
 unknown or duplicate keys, wrong types, unknown enums, non-UTC timestamps,
 nonfinite numbers, duplicate point ids/IOAs and bodies over 64 KiB get 400
-and increment `rejected_count`. At most 31 points are accepted per snapshot.
+and increment `rejected_count`. At most 48 points are accepted per snapshot.
 GI is the five-field object `{state, trigger, started_at, last_complete_at,
-next_due_at}`. Points include `kind`, nullable received `asdu`, and `reporting`
+next_due_at}`. Points include required source `device` and nullable `limits` (`{low, high}`),
+`kind`, nullable received `asdu`, and `reporting`
 (null for status, `{cyclic_ms, deadband}` for floats). Value and overflow
 validation follow kind; received ASDU must be legal for that kind.
 `not_updated` is retained like other stale reasons. Quiet GOOD status is not

@@ -312,7 +312,7 @@ static bool
 parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
 {
     static const char* const keys[] = {"id",   "ioa",         "kind", "asdu", "unit",
-                                        "deadband", "cyclic_ms", "measurement", "source", NULL};
+                                        "deadband", "cyclic_ms", "measurement", "source", "limits", NULL};
     static const char* const srckeys[] = {"device", "table", "address", "format", "bit", "scale", "transient", NULL};
 
     if (!cJSON_IsObject(p))
@@ -350,6 +350,17 @@ parse_point(PmErr* e, const cJSON* p, PmPoint* pt)
     } else if (cJSON_GetObjectItemCaseSensitive(p, "cyclic_ms"))
         return fail(e, "point %s: \"cyclic_ms\" applies only to float points", pt->id);
 
+    const cJSON* limits = cJSON_GetObjectItemCaseSensitive(p, "limits");
+    if (limits) {
+        static const char* const lk[] = {"low", "high", NULL};
+        if (pt->kind != PM_KIND_FLOAT || strcmp(pt->unit, "kV") != 0 ||
+            !cJSON_IsObject(limits) || !only_keys(e, limits, "limits", lk) ||
+            !get_double(e, limits, "limits", "low", &pt->limit_low) ||
+            !get_double(e, limits, "limits", "high", &pt->limit_high) ||
+            pt->limit_low >= pt->limit_high)
+            return fail(e, "point %s: invalid voltage limits", pt->id);
+        pt->has_limits = true;
+    }
     const cJSON* src = required(e, p, "point", "source");
     if (!src)
         return false;

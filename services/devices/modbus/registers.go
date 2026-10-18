@@ -8,12 +8,12 @@ import (
 )
 
 func inputRegisters(s fielddevice.Snapshot) []uint16 {
-	count := 11
+	count := 17
 	if s.Kind == fielddevice.RMU {
 		count = 13
 	}
 	if s.Kind == fielddevice.OLTC {
-		count = 15
+		count = 21
 	}
 	registers := make([]uint16, count)
 	registers[0], _ = positionRegister(s.Position)
@@ -23,23 +23,24 @@ func inputRegisters(s fielddevice.Snapshot) []uint16 {
 		}
 	}
 	setBit(0, s.RemoteEnabled)
-	fault := s.Measurements.Valid && s.Measurements.FaultCurrent != nil && *s.Measurements.FaultCurrent
+	pickedUp := s.Protection.PickedUp
 	switch s.Kind {
 	case fielddevice.Breaker:
 		setBit(1, s.Lockout)
-		setBit(2, fault)
+		setBit(2, pickedUp)
 		setBit(3, s.ProtectionTripped)
 	case fielddevice.RMU:
 		setBit(1, s.EarthClosed)
 		setBit(2, s.FaultPassage)
-		setBit(3, fault)
+		setBit(3, pickedUp)
 	case fielddevice.OLTC:
 		registers[0] = uint16(s.Tap)
 		setBit(1, s.Auto)
 		setBit(2, s.Moving)
 		setBit(3, s.Tap == -8)
 		setBit(4, s.Tap == 8)
-		setBit(5, s.Blocked)
+		setBit(5, s.Blocked || pickedUp)
+		setBit(7, pickedUp)
 		setBit(6, s.Measurements.SectionLive != nil && *s.Measurements.SectionLive)
 		registers[11], registers[13], registers[14] = uint16(s.TargetTap), uint16(s.PLCRequestResult), s.Heartbeat
 		if s.Measurements.Valid && s.Measurements.VoltageKV != nil {
@@ -64,6 +65,19 @@ func inputRegisters(s fielddevice.Snapshot) []uint16 {
 	putUint32(registers[9:11], s.Generation)
 	if s.Kind == fielddevice.RMU && s.Measurements.SourceKV != nil {
 		putFloat32(registers[11:13], *s.Measurements.SourceKV)
+	}
+	if s.Kind != fielddevice.RMU {
+		start := 11
+		if s.Kind == fielddevice.OLTC {
+			start = 15
+		}
+		for i, v := range []*float64{s.Measurements.PMW, s.Measurements.QMvar, s.Measurements.PF} {
+			n := math.NaN()
+			if s.Measurements.Valid && v != nil {
+				n = *v
+			}
+			putFloat32(registers[start+2*i:start+2*i+2], n)
+		}
 	}
 	return registers
 }

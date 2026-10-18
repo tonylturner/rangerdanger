@@ -77,6 +77,8 @@ typedef struct {
     int cyclic_ms; /* required for float points */
     double deadband; /* floats only: value-only changes smaller than this are suppressed */
     bool has_deadband;
+    bool has_limits;
+    double limit_low, limit_high;
 
     int device_index; /* resolved index into PointMap.devices */
     PmTable table;

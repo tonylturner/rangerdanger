@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	maxPoints    = 31
+	maxPoints    = 48
 	maxBodyBytes = 64 * 1024
 )
 
@@ -192,7 +192,9 @@ var stepRule = object(map[string]rule{
 })
 
 var pointRule = object(map[string]rule{
-	"id": text(63), "ioa": integer(1, 16777215),
+	"device": text(63),
+	"limits": nullable(object(map[string]rule{"low": finite, "high": finite})),
+	"id":     text(63), "ioa": integer(1, 16777215),
 	"kind": enum("single-point", "double-point", "step-position", "float"),
 	"asdu": nullable(enum("M_DP_NA_1", "M_DP_TB_1", "M_SP_NA_1", "M_SP_TB_1", "M_ST_NA_1", "M_ST_TB_1", "M_ME_NC_1")),
 	"reporting": nullable(object(map[string]rule{"cyclic_ms": integer(1000, 3600000), "deadband": func(v any) bool {
@@ -214,6 +216,14 @@ func validPoint(v any) bool {
 	}
 	m := v.(map[string]any)
 	q := m["quality"].(map[string]any)
+	if limits := m["limits"]; limits != nil {
+		l := limits.(map[string]any)
+		low, _ := l["low"].(json.Number).Float64()
+		high, _ := l["high"].(json.Number).Float64()
+		if low >= high || m["kind"] != "float" {
+			return false
+		}
+	}
 	if (m["source_time"] == nil) != (m["source_time_invalid"] == nil) {
 		return false
 	}
@@ -274,7 +284,7 @@ func validPoints(v any) bool {
 }
 
 var stateRule = object(map[string]rule{
-	"schema": integer(2, 2), "cache_epoch": text(63),
+	"schema": integer(3, 3), "cache_epoch": text(63),
 	"snapshot_seq": unsigned, "rendered_at": stamp,
 	"link": object(map[string]rule{
 		"state": enum("disconnected", "connecting", "started"), "peer": text(63),
@@ -303,7 +313,7 @@ func decodeState(body []byte) (ccState, error) {
 		return state, errors.New("trailing JSON")
 	}
 	if !stateRule(value) {
-		return state, errors.New("expected a complete CC state schema 2")
+		return state, errors.New("expected a complete CC state schema 3")
 	}
 	// The generic validation above also checks fields not retained in the ring.
 	err = json.Unmarshal(body, &state)

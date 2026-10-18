@@ -63,7 +63,7 @@ func (s *Server) handleMeasurements(w http.ResponseWriter, r *http.Request) {
 	complete, err := decodeRequired(r, &input,
 		"schema", "device_id", "generation", "revision", "solver_epoch",
 		"solve_seq", "solved_at", "current_a", "voltage_kv_ll",
-		"source_kv_ll", "section_live", "source_live", "fault_current")
+		"source_kv_ll", "section_live", "source_live", "p_mw", "q_mvar")
 	if err != nil || !complete {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"accepted": false, "reason": "invalid"})
 		return

@@ -47,7 +47,7 @@ func (m *Model) writeOLTCLocked(address, value uint16, actor AuditContext, befor
 	if m.truth.Moving {
 		return reject("moving")
 	}
-	if m.truth.Blocked {
+	if m.truth.Blocked || m.protection.PickedUp {
 		return reject("blocked")
 	}
 	if !m.energizedLocked() {
@@ -88,7 +88,7 @@ func (m *Model) plcRequestLocked(value uint16, actor AuditContext, before Snapsh
 		result = RequestNotAuto
 	case m.truth.Moving:
 		result = RequestMoving
-	case m.truth.Blocked:
+	case m.truth.Blocked || m.protection.PickedUp:
 		result = RequestBlocked
 	case !m.truth.Armed:
 		result = RequestUnarmed

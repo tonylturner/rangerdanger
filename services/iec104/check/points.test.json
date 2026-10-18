@@ -36,7 +36,7 @@
       "poll": {
         "table": "input",
         "start": 0,
-        "count": 11
+        "count": 17
       }
     },
     {
@@ -88,7 +88,7 @@
       "poll": {
         "table": "input",
         "start": 0,
-        "count": 15
+        "count": 21
       },
       "measurements_valid": {
         "table": "input",
@@ -171,7 +171,11 @@
         "address": 5,
         "format": "f32"
       },
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
+      }
     },
     {
       "id": "rmu-1-position",
@@ -254,7 +258,11 @@
       "unit": "kV",
       "measurement": true,
       "deadband": 0.05,
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
+      }
     },
     {
       "id": "rmu-1-source-kv",
@@ -270,7 +278,11 @@
       "unit": "kV",
       "measurement": true,
       "deadband": 0.05,
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
+      }
     },
     {
       "id": "rmu-2-position",
@@ -353,7 +365,11 @@
       "unit": "kV",
       "measurement": true,
       "deadband": 0.05,
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
+      }
     },
     {
       "id": "rmu-2-source-kv",
@@ -369,7 +385,11 @@
       "unit": "kV",
       "measurement": true,
       "deadband": 0.05,
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
+      }
     },
     {
       "id": "oltc-1-tap",
@@ -466,7 +486,11 @@
       "unit": "kV",
       "measurement": true,
       "deadband": 0.05,
-      "cyclic_ms": 2000
+      "cyclic_ms": 2000,
+      "limits": {
+        "low": 19.8,
+        "high": 21.0
+      }
     },
     {
       "id": "oltc-1-current",
@@ -560,6 +584,115 @@
       "measurement": false,
       "deadband": 0.05,
       "cyclic_ms": 2000
+    },
+    {
+      "id": "feeder-p-mw",
+      "ioa": 2003,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "MW",
+      "deadband": 0.05,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 11,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "feeder-q-mvar",
+      "ioa": 2004,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "Mvar",
+      "deadband": 0.05,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 13,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "feeder-pf",
+      "ioa": 2005,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "",
+      "deadband": 0.01,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "feeder-breaker",
+        "table": "input",
+        "address": 15,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "oltc-1-p-mw",
+      "ioa": 2303,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "MW",
+      "deadband": 0.05,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "oltc-1",
+        "table": "input",
+        "address": 15,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "oltc-1-q-mvar",
+      "ioa": 2304,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "Mvar",
+      "deadband": 0.05,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "oltc-1",
+        "table": "input",
+        "address": 17,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "oltc-1-pf",
+      "ioa": 2305,
+      "kind": "float",
+      "asdu": "M_ME_NC_1",
+      "unit": "",
+      "deadband": 0.01,
+      "cyclic_ms": 2000,
+      "measurement": true,
+      "source": {
+        "device": "oltc-1",
+        "table": "input",
+        "address": 19,
+        "format": "f32"
+      }
+    },
+    {
+      "id": "oltc-1-overcurrent-block",
+      "ioa": 1307,
+      "kind": "single-point",
+      "asdu": "M_SP_TB_1",
+      "source": {
+        "device": "oltc-1",
+        "table": "input",
+        "address": 1,
+        "format": "bit",
+        "bit": 7
+      }
     }
   ],
   "commands": [

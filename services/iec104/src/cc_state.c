@@ -604,6 +604,12 @@ point_json(int index)
     const PmPoint* pp = &cc.pm->points[index];
     const CcPoint* p = &cc.points[index];
     cJSON* o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "device", cc.pm->devices[pp->device_index].id);
+    if (pp->has_limits) {
+        cJSON* limits = cJSON_AddObjectToObject(o, "limits");
+        cJSON_AddNumberToObject(limits, "low", pp->limit_low);
+        cJSON_AddNumberToObject(limits, "high", pp->limit_high);
+    } else cJSON_AddNullToObject(o, "limits");
     cJSON_AddStringToObject(o, "id", pp->id);
     cJSON_AddNumberToObject(o, "ioa", pp->ioa);
     const char* kind = pp->kind == PM_KIND_SINGLE_POINT ? "single-point" :
@@ -655,7 +661,7 @@ cJSON*
 cc_render_state_locked(void)
 {
     cJSON* o = cJSON_CreateObject();
-    cJSON_AddNumberToObject(o, "schema", 2);
+    cJSON_AddNumberToObject(o, "schema", 3);
     char seq[32];
     snprintf(seq, sizeof(seq), "%llu", (unsigned long long)++cc.snapshotSeq);
     cJSON_AddRawToObject(o, "snapshot_seq", seq);

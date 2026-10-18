@@ -10,6 +10,9 @@ import (
 // Model serializes all remote operations, actions, measurement effects and motion.
 type Model struct {
 	mu                           sync.Mutex
+	protection                   Protection
+	maxGap                       time.Duration
+	protectionGeneration         uint32
 	truth                        Truth
 	normal                       Position
 	measurements                 Measurements
@@ -56,9 +59,20 @@ func NewModel(cfg Config) (*Model, error) {
 	if cfg.ProcessContext.Protocol == "" {
 		cfg.ProcessContext = AuditContext{Peer: "measurement-validity", Protocol: "process", Zone: "process"}
 	}
+	settings := DefaultProtection(cfg.Kind)
+	if cfg.Protection != nil {
+		settings = *cfg.Protection
+	}
+	const maxDurationMS = int64((1<<63 - 1) / time.Millisecond)
+	if settings.DelayMS > maxDurationMS || settings.MaxGapMS > maxDurationMS || !finiteSetting(settings.PickupA) || settings.PickupA <= 0 || settings.DelayMS < 0 || settings.MaxGapMS <= 0 || (settings.InstantaneousA != nil && (!finiteSetting(*settings.InstantaneousA) || *settings.InstantaneousA < settings.PickupA)) {
+		return nil, errors.New("invalid protection settings")
+	}
 	now := cfg.Clock.Now()
 	m := &Model{normal: cfg.RMUNormal, clock: cfg.Clock, started: now, localContext: cfg.LocalContext, processContext: cfg.ProcessContext, audit: NewAuditLog(AuditCapacity)}
-	m.truth = Truth{Schema: 2, DeviceID: cfg.DeviceID, Kind: cfg.Kind, Generation: cfg.Generation, Revision: 1, ChangedAt: now.UTC(), RemoteEnabled: true}
+	m.truth = Truth{Schema: 3, DeviceID: cfg.DeviceID, Kind: cfg.Kind, Generation: cfg.Generation, Revision: 1, ChangedAt: now.UTC(), RemoteEnabled: true}
+	m.protection = Protection{Function: map[Kind]string{Breaker: "overcurrent", RMU: "fpi", OLTC: "oltc_block"}[cfg.Kind], PickupA: settings.PickupA, DelayMS: settings.DelayMS, InstantaneousA: copyValue(settings.InstantaneousA)}
+	m.maxGap = time.Duration(settings.MaxGapMS) * time.Millisecond
+	m.protectionGeneration = cfg.Generation
 	m.initialLocked()
 	return m, nil
 }
@@ -84,7 +98,17 @@ func (m *Model) Snapshot() Snapshot {
 }
 func (m *Model) Truth() Truth { return m.Snapshot().Truth }
 func (m *Model) snapshotLocked() Snapshot {
-	return Snapshot{Truth: m.truth, Measurements: m.measurements.clone(), PLCRequestResult: m.requestResult,
+	measurements := m.measurements.clone()
+	if !measurements.Valid {
+		measurements.PMW = nil
+		measurements.QMvar = nil
+		measurements.PF = nil
+	}
+	protection := m.protection
+	protection.InstantaneousA = copyValue(protection.InstantaneousA)
+	protection.PickedUpSince = copyValue(protection.PickedUpSince)
+	protection.LastTripCurrentA = copyValue(protection.LastTripCurrentA)
+	return Snapshot{Truth: m.truth, Protection: protection, Measurements: measurements, PLCRequestResult: m.requestResult,
 		Heartbeat: uint16(m.clock.Now().Sub(m.started) / (250 * time.Millisecond)), LastRequest: m.lastRequest}
 }
 func (m *Model) changedLocked() {
@@ -97,11 +121,12 @@ func (m *Model) recordLocked(operation, result string, detail any, before Snapsh
 	m.audit.Add(AuditEntry{At: m.clock.Now().UTC(), Operation: operation, Result: result, Detail: detail, Before: before, After: m.snapshotLocked(), Context: actor})
 }
 func (m *Model) expireLocked(now time.Time) {
-	if !m.measurements.Valid || now.Sub(m.receivedMono) < MeasurementValidity {
+	if !m.hasSolve || (!m.measurements.Valid && m.protection.PickedUpSince == nil) || now.Sub(m.receivedMono) < MeasurementValidity {
 		return
 	}
 	before := m.snapshotLocked()
 	m.measurements.Valid = false
+	m.resetPickupLocked()
 	m.recordLocked("measurements_invalid", "accepted", "validity_expired", before, m.processContext)
 }
 func (m *Model) MeasurementStatus() (bool, *int64) {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tturner/rangerdanger/services/devices/fielddevice"
 )
@@ -44,7 +45,7 @@ func decode(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
 }
 func inputFor(m *fielddevice.Model) fielddevice.MeasurementInput {
 	truth := m.Truth()
-	return fielddevice.MeasurementInput{Schema: 2, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
+	return fielddevice.MeasurementInput{Schema: 3, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
 		SolverEpoch: "solver-a", SolveSeq: 1, SolvedAt: "2026-10-15T10:00:00Z", CurrentA: 41.2, VoltageKV: 19.93, SourceKV: 20, SectionLive: true, SourceLive: false}
 }
 func postMeasurement(t *testing.T, api *Server, input fielddevice.MeasurementInput) *httptest.ResponseRecorder {
@@ -117,7 +118,8 @@ func TestMeasurementsHTTPAcceptanceConflictsAndProtectionAck(t *testing.T) {
 				})
 			}
 			input.SolveSeq++
-			input.FaultCurrent = true
+			input.SolvedAt = time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC).Add(time.Duration(input.SolveSeq) * time.Second).Format(time.RFC3339Nano)
+			input.CurrentA = 3500
 			expected := uint64(1)
 			if kind != fielddevice.OLTC {
 				expected = 2
@@ -129,11 +131,12 @@ func TestMeasurementsHTTPAcceptanceConflictsAndProtectionAck(t *testing.T) {
 				}
 				input.Revision = expected
 				input.SolveSeq++
+				input.SolvedAt = time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC).Add(time.Duration(input.SolveSeq) * time.Second).Format(time.RFC3339Nano)
 				assertAck(t, postMeasurement(t, api, input), expected, expected)
 			}
 			state := decode(t, perform(api.SimHandler(), "GET", "/api/state", "", ""))
 			values := state["measurements"].(map[string]any)
-			if state["schema"] != float64(2) || values["valid"] != true || values["source_kv_ll"] != float64(20) || values["fault_current"] != true {
+			if state["schema"] != float64(3) || values["valid"] != true || values["source_kv_ll"] != float64(20) || state["protection"].(map[string]any)["picked_up"] != true {
 				t.Fatalf("state=%v", state)
 			}
 			if _, old := state["fault_active"]; old {
@@ -143,14 +146,16 @@ func TestMeasurementsHTTPAcceptanceConflictsAndProtectionAck(t *testing.T) {
 	}
 }
 
-func TestMeasurementStrictSchemaTwoBodies(t *testing.T) {
+func TestMeasurementStrictSchemaThreeBodies(t *testing.T) {
 	model, api := newTestAPI(t, fielddevice.Breaker)
 	base, _ := json.Marshal(inputFor(model))
 	for _, tt := range []struct {
 		name string
 		body string
 	}{
-		{"schema1", strings.Replace(string(base), `"schema":2`, `"schema":1`, 1)},
+		{"schema1", strings.Replace(string(base), `"schema":3`, `"schema":1`, 1)},
+		{"schema2", strings.Replace(string(base), `"schema":3`, `"schema":2`, 1)},
+		{"removed topology flag", strings.TrimSuffix(string(base), "}") + `,"fault_current":true}`},
 		{"unknown", strings.TrimSuffix(string(base), "}") + `,"fault_active":true}`},
 		{"missing", strings.Replace(string(base), `,"source_live":false`, "", 1)},
 		{"null", strings.Replace(string(base), `"source_live":false`, `"source_live":null`, 1)},
@@ -168,7 +173,7 @@ func TestMeasurementStrictSchemaTwoBodies(t *testing.T) {
 			}
 		})
 	}
-	// Every schema-2 field, including false booleans, is required and non-null.
+	// Every schema-3 field, including false booleans, is required and non-null.
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(base, &fields); err != nil {
 		t.Fatal(err)

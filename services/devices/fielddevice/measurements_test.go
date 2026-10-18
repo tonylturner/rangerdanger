@@ -83,6 +83,8 @@ func TestMeasurementInvalidValues(t *testing.T) {
 		{"overflow", func(i *MeasurementInput) { i.CurrentA = math.MaxFloat64 }},
 		{"nonUTC", func(i *MeasurementInput) { i.SolvedAt = "2026-10-15T10:00:00-04:00" }},
 		{"UTC without Z", func(i *MeasurementInput) { i.SolvedAt = "2026-10-15T10:00:00+00:00" }},
+		{"comma time", func(i *MeasurementInput) { i.SolvedAt = "2026-10-15T10:00:00,123Z" }},
+		{"short hour", func(i *MeasurementInput) { i.SolvedAt = "2026-10-15T1:00:00Z" }},
 		{"bad time", func(i *MeasurementInput) { i.SolvedAt = "no" }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -138,7 +140,7 @@ func assertKeys(t *testing.T, m map[string]json.RawMessage, want string) {
 		t.Fatalf("keys=%v want=%v", keys(m), expected)
 	}
 }
-func TestExactSchemaTwoTruthAndStateKeys(t *testing.T) {
+func TestExactSchemaThreeTruthAndStateKeys(t *testing.T) {
 	common := "schema device_id kind generation revision event_seq changed_at remote_enabled "
 	for _, tt := range []struct {
 		kind  Kind
@@ -165,21 +167,26 @@ func TestExactSchemaTwoTruthAndStateKeys(t *testing.T) {
 				}
 				want := common + tt.extra
 				if state {
-					want += " measurements"
+					want += " measurements protection"
 					if tt.kind == OLTC {
 						want += " plc_request_result heartbeat"
 					}
 				}
 				assertKeys(t, fields, want)
-				if string(fields["schema"]) != "2" || !strings.HasSuffix(string(fields["changed_at"]), `Z"`) {
+				if string(fields["schema"]) != "3" || !strings.HasSuffix(string(fields["changed_at"]), `Z"`) {
 					t.Fatalf("schema/time=%s", body)
 				}
 				if state {
+					var protection map[string]json.RawMessage
+					if err := json.Unmarshal(fields["protection"], &protection); err != nil {
+						t.Fatal(err)
+					}
+					assertKeys(t, protection, "function pickup_a delay_ms instantaneous_a picked_up picked_up_since last_trip_current_a")
 					var values map[string]json.RawMessage
 					if err := json.Unmarshal(fields["measurements"], &values); err != nil {
 						t.Fatal(err)
 					}
-					assertKeys(t, values, "valid current_a voltage_kv_ll source_kv_ll section_live source_live fault_current solver_epoch solve_seq solved_at received_at")
+					assertKeys(t, values, "valid current_a voltage_kv_ll source_kv_ll section_live source_live p_mw q_mvar pf solver_epoch solve_seq solved_at received_at")
 					for key, value := range values {
 						if key != "valid" && string(value) != "null" {
 							t.Fatalf("unknown %s=%s", key, value)
@@ -222,13 +229,17 @@ func TestCanceledOperationsAndIdentityValidation(t *testing.T) {
 
 func TestSnapshotDoesNotExposeOwnedMeasurementPointers(t *testing.T) {
 	m, _ := newTestModel(t, Breaker)
-	measure(t, m, nil)
+	measure(t, m, func(i *MeasurementInput) { i.PMW = 3; i.QMvar = 4 })
 	snapshot := m.Snapshot()
+	*snapshot.Measurements.PMW = 999
+	*snapshot.Measurements.QMvar = 999
+	*snapshot.Measurements.PF = 999
+	*snapshot.Protection.InstantaneousA = 999
 	*snapshot.Measurements.CurrentA = 999
 	*snapshot.Measurements.SectionLive = false
 	*snapshot.Measurements.SolverEpoch = "mutated"
 	current := m.Snapshot().Measurements
-	if *current.CurrentA != 41.2 || !*current.SectionLive || *current.SolverEpoch != "solver-a" {
+	if *current.PMW != 3 || *current.QMvar != 4 || *current.PF != 0.6 || *m.Snapshot().Protection.InstantaneousA != 3000 || *current.CurrentA != 41.2 || !*current.SectionLive || *current.SolverEpoch != "solver-a" {
 		t.Fatal("snapshot mutated owned state")
 	}
 }

@@ -12,5 +12,12 @@ RUN chmod +x /openplc-eu-entrypoint.sh /usr/local/bin/set-gateway.sh \
     && cd /opt/openplc-eu \
     && sha256sum tap-control.st oltc.json install.py > seed.sha256
 
+# Compile at image build time too: a malformed seed must fail before startup.
+RUN cd /root/OpenPLC_v3/webserver \
+    && cp /opt/openplc-eu/tap-control.st st_files/tap-control.st \
+    && rm -f core/openplc \
+    && ./scripts/compile_program.sh tap-control.st \
+    && test -x core/openplc
+
 WORKDIR /root/OpenPLC_v3/webserver
 ENTRYPOINT ["/openplc-eu-entrypoint.sh"]

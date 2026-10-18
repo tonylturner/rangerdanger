@@ -65,7 +65,7 @@ def input_registers():
         closed = pos == 2
         cur = state["current"] if closed else 0.0
         volt = state["voltage"] if closed else 0.0
-    regs = [0] * 11
+    regs = [0] * 17
     regs[0] = pos
     regs[1] = bits
     regs[2] = mv
@@ -73,6 +73,8 @@ def input_registers():
     v = struct.unpack(">HH", struct.pack(">f", volt))
     regs[3], regs[4] = c
     regs[5], regs[6] = v
+    for addr, val in [(11, 2.0), (13, 0.6), (15, 0.96)]:
+        regs[addr:addr+2] = struct.unpack(">HH", struct.pack(">f", val))
     return regs
 
 

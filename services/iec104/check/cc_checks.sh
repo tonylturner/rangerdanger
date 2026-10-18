@@ -109,7 +109,7 @@ if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' an
     and abs(pt(s,'feeder-current')['value']-28.9)<0.01 and abs(pt(s,'feeder-voltage')['value']-20.0)<0.01 \
     and ${POS}['quality']['ov'] is None and pt(s,'feeder-current')['quality']['ov'] is False \
     and pt(s,'feeder-current')['source_time'] is None and pt(s,'feeder-current')['source_time_invalid'] is None \
-    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==31" \
+    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==38" \
   >"$OUT/cc-state-baseline.json"; then
   pass "CC: link started, GI complete, four points GOOD with correct values"
 else

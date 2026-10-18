@@ -22,8 +22,8 @@ import threading
 import time
 import urllib.parse
 
-POINTS = ["feeder-breaker-position", "feeder-protection-trip", "feeder-current", "feeder-voltage"]
-FLOATS = ["feeder-current", "feeder-voltage"]
+FLOATS = ["feeder-current", "feeder-voltage", "feeder-p-mw", "feeder-q-mvar", "feeder-pf"]
+POINTS = ["feeder-breaker-position", "feeder-protection-trip", *FLOATS]
 
 
 def request(base, method, path, body=None, headers=None):

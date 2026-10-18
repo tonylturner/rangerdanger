@@ -23,7 +23,7 @@
  *
  * Quality and reporting rules are contract §3.2:
  *   - device_unreachable (no successful poll within stale_after_ms) -> IV+NT.
- *   - measurement_invalid (measurement point while the device valid bit is 0)
+ *   - measurement_invalid (measurement point while the device valid bit is 0, or register NaN)
  *     -> IV, floats only.
  *   - every quality change is reported spontaneously with the last value;
  *     the float deadband suppresses value-only float changes.

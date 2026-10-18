@@ -28,6 +28,8 @@ func (m *Model) Action(ctx context.Context, action string, actor AuditContext) (
 			m.motion.Stop()
 			m.motion = nil
 		}
+		m.resetPickupLocked()
+		m.protection.LastTripCurrentA = nil
 		m.initialLocked()
 	} else {
 		switch m.truth.Kind {

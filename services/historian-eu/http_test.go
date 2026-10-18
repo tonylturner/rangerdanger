@@ -228,7 +228,7 @@ func TestJSONErrors(t *testing.T) {
 		{"read-method", false, "POST", "/api/points", nil, 405, "method not allowed"},
 		{"ingest-route", true, "POST", "/api/points", nil, 404, "not found"},
 		{"ingest-method", true, "GET", "/api/ingest", nil, 405, "method not allowed"},
-		{"ingest-schema", true, "POST", "/api/ingest", strings.NewReader(`{"schema":1}`), 400, "expected a complete CC state schema 2"},
+		{"ingest-schema", true, "POST", "/api/ingest", strings.NewReader(`{"schema":1}`), 400, "expected a complete CC state schema 3"},
 		{"ingest-malformed", true, "POST", "/api/ingest", strings.NewReader(`{`), 400, "EOF"},
 		{"ingest-oversize", true, "POST", "/api/ingest", strings.NewReader(strings.Repeat(" ", maxBodyBytes+1)), 400, "invalid ingest body"},
 		{"ingest-read-failure", true, "POST", "/api/ingest", iotest.ErrReader(errors.New("broken body")), 400, "invalid ingest body"},

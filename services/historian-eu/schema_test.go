@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const fixture = `{"schema":2,"cache_epoch":"0123456789abcdef","snapshot_seq":1,"rendered_at":"2026-10-15T10:00:00Z","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-15T09:59:00Z","last_rx_at":"2026-10-15T10:00:00Z","connection_seq":1,"gi":{"state":"complete","started_at":"2026-10-15T09:59:01Z","last_complete_at":"2026-10-15T09:59:02Z","trigger":"connect","next_due_at":"2026-10-15T10:14:01Z"}},"points":[{"id":"rmu-1-position","ioa":1101,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":false,"received_at":"2026-10-15T10:00:00.123Z","cot":3,"kind":"double-point","reporting":null},{"id":"oltc-1-auto","ioa":1303,"asdu":"M_SP_NA_1","value":true,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T09:59:01.5Z","cot":20,"kind":"single-point","reporting":null},{"id":"oltc-1-bus-kv","ioa":2301,"asdu":"M_ME_NC_1","value":19.8,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"float","reporting":{"cyclic_ms":10000,"deadband":0.1}},{"id":"oltc-1-tap","ioa":1301,"asdu":"M_ST_TB_1","value":{"value":-3,"transient":true},"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":true,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"step-position","reporting":null}]}`
+const fixture = `{"schema":3,"cache_epoch":"0123456789abcdef","snapshot_seq":1,"rendered_at":"2026-10-15T10:00:00Z","link":{"state":"started","peer":"10.30.30.20:2404","since":"2026-10-15T09:59:00Z","last_rx_at":"2026-10-15T10:00:00Z","connection_seq":1,"gi":{"state":"complete","started_at":"2026-10-15T09:59:01Z","last_complete_at":"2026-10-15T09:59:02Z","trigger":"connect","next_due_at":"2026-10-15T10:14:01Z"}},"points":[{"id":"rmu-1-position","ioa":1101,"asdu":"M_DP_TB_1","value":"closed","quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":false,"received_at":"2026-10-15T10:00:00.123Z","cot":3,"kind":"double-point","reporting":null,"device":"rmu-1","limits":null},{"id":"oltc-1-auto","ioa":1303,"asdu":"M_SP_NA_1","value":true,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":null},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T09:59:01.5Z","cot":20,"kind":"single-point","reporting":null,"device":"oltc-1","limits":null},{"id":"oltc-1-bus-kv","ioa":2301,"asdu":"M_ME_NC_1","value":19.8,"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":null,"source_time_invalid":null,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"float","reporting":{"cyclic_ms":10000,"deadband":0.1},"device":"oltc-1","limits":{"low":19.8,"high":21.0}},{"id":"oltc-1-tap","ioa":1301,"asdu":"M_ST_TB_1","value":{"value":-3,"transient":true},"quality":{"iv":false,"nt":false,"sb":false,"bl":false,"ov":false},"stale_reason":null,"source_time":"2026-10-15T10:00:00Z","source_time_invalid":true,"received_at":"2026-10-15T10:00:00Z","cot":3,"kind":"step-position","reporting":null,"device":"oltc-1","limits":null}]}`
 
 func fixtureMap(t *testing.T) map[string]any {
 	t.Helper()
@@ -112,12 +112,18 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 		name string
 		edit func(map[string]any)
 	}{
+		{"v2", func(m map[string]any) { m["schema"] = 2 }},
 		{"v1", func(m map[string]any) { m["schema"] = 1 }},
 		{"null-schema", func(m map[string]any) { m["schema"] = nil }},
 		{"fractional-schema", func(m map[string]any) { m["schema"] = 2.1 }},
 		{"unknown-top", func(m map[string]any) { m["truth"] = true }},
 		{"unknown-link", func(m map[string]any) { m["link"].(map[string]any)["extra"] = true }},
 		{"unknown-gi", func(m map[string]any) { m["link"].(map[string]any)["gi"].(map[string]any)["extra"] = true }},
+		{"empty-device", func(m map[string]any) { pointMap(m, 0)["device"] = "" }},
+		{"limits-reversed", func(m map[string]any) { pointMap(m, 2)["limits"] = map[string]any{"low": 21, "high": 19} }},
+		{"limits-extra", func(m map[string]any) { pointMap(m, 2)["limits"].(map[string]any)["extra"] = true }},
+		{"limits-string", func(m map[string]any) { pointMap(m, 2)["limits"].(map[string]any)["low"] = "19.8" }},
+		{"limits-on-status", func(m map[string]any) { pointMap(m, 0)["limits"] = map[string]any{"low": 19, "high": 21} }},
 		{"unknown-point", func(m map[string]any) { pointMap(m, 0)["extra"] = true }},
 		{"unknown-quality", func(m map[string]any) { pointMap(m, 0)["quality"].(map[string]any)["extra"] = true }},
 		{"unknown-step", func(m map[string]any) { pointMap(m, 3)["value"].(map[string]any)["extra"] = true }},
@@ -235,10 +241,10 @@ func TestStrictValidationAndRejectionCounting(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty": "", "array": "[]", "null": "null", "malformed": "{",
 		"truncated":        fixture[:len(fixture)-3],
-		"mismatched-close": `{"schema":2]`, "unexpected-close": `]`,
+		"mismatched-close": `{"schema":3]`, "unexpected-close": `]`,
 		"trailing": fixture + `{}`, "oversize": strings.Repeat(" ", maxBodyBytes+1),
 		"invalid-utf8":      strings.Replace(fixture, "closed", string([]byte{0xff}), 1),
-		"duplicate":         strings.Replace(fixture, `"schema":2`, `"schema":2,"schema":2`, 1),
+		"duplicate":         strings.Replace(fixture, `"schema":3`, `"schema":3,"schema":3`, 1),
 		"escaped-duplicate": strings.Replace(fixture, `"iv":false`, `"iv":false,"\u0069v":true`, 1),
 		"overflow-float":    strings.Replace(fixture, `19.8`, `1e999`, 1),
 		"nan":               strings.Replace(fixture, `19.8`, `NaN`, 1),
@@ -265,8 +271,8 @@ func TestContractCCStateIngest(t *testing.T) {
 		t.Fatalf("contract ingest counters: %+v", h)
 	}
 	points := s.points()
-	if len(points) != 31 {
-		t.Fatalf("stored %d points, want all 31 contract points", len(points))
+	if len(points) != 38 {
+		t.Fatalf("stored %d points, want all 38 contract points", len(points))
 	}
 	for _, p := range points {
 		if p.ID == "oltc-1-tap" {

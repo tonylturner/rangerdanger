@@ -63,7 +63,7 @@ func testMeasurement(m *Model) MeasurementInput {
 	if m.hasSolve {
 		seq = *m.measurements.SolveSeq + 1
 	}
-	return MeasurementInput{Schema: 2, DeviceID: t.DeviceID, Generation: t.Generation, Revision: t.Revision, SolverEpoch: "solver-a", SolveSeq: seq, SolvedAt: "2026-10-15T10:00:00Z", CurrentA: 41.2, VoltageKV: 19.93, SourceKV: 20, SectionLive: true, SourceLive: false}
+	return MeasurementInput{Schema: 3, DeviceID: t.DeviceID, Generation: t.Generation, Revision: t.Revision, SolverEpoch: "solver-a", SolveSeq: seq, SolvedAt: time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC).Add(time.Duration(seq) * time.Second).Format(time.RFC3339Nano), CurrentA: 41.2, VoltageKV: 19.93, SourceKV: 20, SectionLive: true, SourceLive: false}
 }
 func measure(t *testing.T, m *Model, edit func(*MeasurementInput)) Snapshot {
 	t.Helper()
