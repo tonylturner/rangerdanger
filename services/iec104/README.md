@@ -261,7 +261,7 @@ API, which the backend proxies verbatim (`/api/operator/*`).
 | `GET /api/state` | `schema: 3`, `cache_epoch`, `snapshot_seq` (+1 per render), `rendered_at`, `link` (`state`, `peer`, `since`, `last_rx_at`, `connection_seq`, `gi`), `points` |
 | `POST /api/reconnect` | no body; 202 queues a real connection close on the link worker, journal reason `operator_reconnect`; normal configured reconnect and connect GI follow. 409 for a pending reconnect or active command; 503 when already down/reconnecting. Cache identity and device/policy state are unchanged. |
 | `POST /api/gi` | no body; 202 `{"trigger":"operator","requested_at":"<UTC>"}` queues GI; 409 `{"error":"interrogation already running"}` while pending/running; 503 `{"error":"link not started"}` otherwise. Acceptance is not completion. |
-| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight, GI integrity is missing or feedback is missing/IV/NT; 503 when the link is not started; 400 on bad input |
+| `POST /api/commands` | body `{"point":"feeder-breaker-command","operation":"open\|close\|lower\|raise\|auto\|manual"}` → 200 command result; 409 while a command is in flight or an operator reconnect is pending, GI integrity is missing or feedback is missing/IV/NT; 503 when the link is not started; 400 on bad input |
 | `GET /api/journal?after=N` | `cache_epoch`, `entries` with `seq > N`, `latest_seq`, `oldest_seq` (null when empty) |
 
 `link.gi` is `{state, trigger, started_at, last_complete_at, next_due_at}`:

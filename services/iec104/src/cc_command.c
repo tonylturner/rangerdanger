@@ -218,8 +218,9 @@ cc_command_run(int cmdIndex, int dcs, const char* operation, cJSON** body)
 
     pthread_mutex_lock(&cc.lock);
     if (cc.tracker.active || cc.link.reconnectPending) {
+        bool reconnect = !cc.tracker.active;
         pthread_mutex_unlock(&cc.lock);
-        *body = error_body("a command or reconnect is in flight");
+        *body = error_body(reconnect ? "an operator reconnect is pending" : "a command is in flight");
         return 409;
     }
     if (cc.link.state != CC_LINK_STARTED) {
