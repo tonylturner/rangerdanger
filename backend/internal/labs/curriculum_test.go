@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,43 @@ func TestCurriculumEUExample(t *testing.T) {
 	}
 	if next.Policy[0].Rule.Sources[0] != "192.0.2.20/32" {
 		t.Fatal("stale CC source")
+	}
+}
+
+func TestCurriculumEUFieldDestinationInventory(t *testing.T) {
+	pkg, _ := curriculumExample(t)
+	var want []string
+	for _, node := range pkg.Template.Nodes {
+		if len(node.Networks) == 1 && node.Networks[0] == "field_net" {
+			want = append(want, node.IP+"/32")
+		}
+	}
+	if len(want) == 0 {
+		t.Fatal("no field devices in topology")
+	}
+	slices.Sort(want)
+	surfaces := map[string][]string{}
+	for _, rule := range pkg.Curriculum.BaselineRules {
+		if rule.ID == "rtu-to-feeder-modbus" {
+			surfaces["baseline"] = strings.Split(rule.Destination, ", ")
+		}
+	}
+	for _, rule := range pkg.Curriculum.Groups["modbus-dpi"].Rules {
+		if rule.ID == "rtu-to-feeder-modbus" {
+			surfaces["semantic display"] = strings.Split(rule.Destination, ", ")
+		}
+	}
+	for _, entry := range pkg.Curriculum.Policy {
+		if entry.Rule.ID == "rtu-to-feeder-modbus" {
+			surfaces["policy"] = entry.Rule.Destinations
+		}
+	}
+	for _, surface := range []string{"baseline", "semantic display", "policy"} {
+		got := surfaces[surface]
+		slices.Sort(got)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s field destinations = %v; want topology inventory %v", surface, got, want)
+		}
 	}
 }
 
