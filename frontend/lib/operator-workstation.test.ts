@@ -88,7 +88,7 @@ describe("view establishment", () => {
   it.each([
     [undefined, "not-established"], [BOOT_STATE, "not-established"],
     [LOST_LINK_STATE, "lost"], [FEEDER_STATE, "ok"],
-    [PERIODIC_GI_STATE, "ok"], [WATCHDOG_STATE, "recovering"],
+    [PERIODIC_GI_STATE, "ok"], [WATCHDOG_STATE, "degraded"],
   ] as const)("uses link, current-connection GI and the full inventory: %s", (state, expected) => {
     expect(scadaViewState(state)).toBe(expected);
     expect(scadaViewState(state, true)).toBe("unavailable");
@@ -106,11 +106,23 @@ describe("view establishment", () => {
     for (const point of FEEDER_STATE.points) {
       for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
         const state = { ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
-        expect(scadaViewState(state)).toBe("recovering");
+        expect(scadaViewState(state)).toBe("degraded");
       }
-      expect(scadaViewState({ ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, value: null } : p) })).toBe("recovering");
+      expect(scadaViewState({ ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, value: null } : p) })).toBe("degraded");
     }
-    expect(scadaViewState({ ...FEEDER_STATE, points: [] })).toBe("recovering");
+    expect(scadaViewState({ ...FEEDER_STATE, points: [] })).toBe("degraded");
+  });
+  it.each(DEVICES)("distinguishes unreachable %s observations after GI from recovery without GI", (device) => {
+    const state = structuredClone(FEEDER_STATE);
+    for (const p of devicePoints(state.points, device)) {
+      p.quality = { ...p.quality, iv: true, nt: true };
+      p.stale_reason = "device_unreachable";
+    }
+    expect(scadaViewState(state)).toBe("degraded");
+    state.link.gi.last_complete_at = null;
+    expect(scadaViewState(state)).toBe("recovering");
+    state.link.gi.last_complete_at = "2026-10-09T11:59:57Z";
+    expect(scadaViewState(state)).toBe("recovering");
   });
 });
 

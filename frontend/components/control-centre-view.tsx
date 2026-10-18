@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { postOperatorGi, type ControlCentreLink, type OperatorJournal, type OperatorState } from "../lib/operator-api";
 import { LINK_STATE_TEXT, ageMs, formatAge, formatUtcTime, pointCondition, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { OPERATOR_KEY, useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
-import { activeAlarms, abnormalConditions, hasCurrentConnectionGi, scadaViewState, type DeviceId } from "../lib/operator-workstation";
+import { activeAlarms, abnormalConditions, devicePoints, DEVICES, hasCurrentConnectionGi, scadaViewState, type DeviceId } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 import { DeviceFaceplate } from "./control-centre-faceplate";
@@ -39,14 +39,16 @@ export function LinkDetails({ link, now }: { link: ControlCentreLink; now: numbe
 export function ScadaViewBanner({ state, unavailable }: { state: OperatorState | undefined; unavailable: boolean }) {
   const viewState = scadaViewState(state, unavailable);
   const bad = state?.points.filter((p) => pointCondition(p) !== "good").length ?? 0;
+  const affected = state ? DEVICES.filter((device) => devicePoints(state.points, device).some((p) => pointCondition(p) !== "good")) : [];
   const messages = {
     lost: "SCADA VIEW LOST — retained values are not current",
     recovering: "VIEW RECOVERING — GI/GOOD observations pending",
+    degraded: `SCADA VIEW DEGRADED — ${bad}/${state?.points.length ?? 0} points not GOOD`,
     "not-established": "SCADA VIEW NOT ESTABLISHED — no established view yet",
     unavailable: "SCADA VIEW UNAVAILABLE — API unavailable; cached state cannot establish current observations",
   };
   return <section data-view-state={viewState} aria-label="SCADA view state" role={viewState === "lost" ? "alert" : viewState === "ok" ? undefined : "status"} className={viewState === "ok" ? undefined : `sticky top-0 z-20 rounded-lg border-2 p-4 ${viewState === "lost" ? "border-rose-400 bg-rose-950 text-rose-100" : "border-amber-400 bg-amber-950 text-amber-100"}`}>
-    {viewState !== "ok" && <><h2 className="text-lg font-bold">{messages[viewState]}</h2><p className="mt-1 text-sm">{state ? `${bad}/${state.points.length} inventory points not GOOD.` : "No operator snapshot received."} Physical System observations are independent of SCADA.</p></>}
+    {viewState !== "ok" && <><h2 className="text-lg font-bold">{messages[viewState]}</h2><p className="mt-1 text-sm">{viewState === "degraded" ? <>{state?.points.length ? `Affected devices: ${affected.join(", ")}. Retained values for these points are not current.` : "Point inventory unavailable."}</> : state ? `${bad}/${state.points.length} inventory points not GOOD.` : "No operator snapshot received."} Physical System observations are independent of SCADA.</p></>}
   </section>;
 }
 export function InterrogateStation({ state, unavailable }: { state: OperatorState; unavailable: boolean }) {

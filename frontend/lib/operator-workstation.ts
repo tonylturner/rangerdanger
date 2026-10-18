@@ -30,7 +30,7 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
   }
   return alarms;
 }
-export type ViewState = "ok" | "lost" | "recovering" | "not-established" | "unavailable";
+export type ViewState = "ok" | "lost" | "recovering" | "degraded" | "not-established" | "unavailable";
 
 // A periodic/operator GI does not revoke a completed GI on this connection.
 // A completion retained from an earlier connection cannot establish this one.
@@ -44,7 +44,8 @@ export function scadaViewState(state: OperatorState | undefined, unavailable = f
     const received = state.link.gi.last_complete_at !== null || state.points.some((p) => p.value !== null || p.received_at !== null);
     return received ? "lost" : "not-established";
   }
-  return hasCurrentConnectionGi(state.link) && state.points.length > 0 && state.points.every((p) => pointCondition(p) === "good") ? "ok" : "recovering";
+  if (!hasCurrentConnectionGi(state.link)) return "recovering";
+  return state.points.length > 0 && state.points.every((p) => pointCondition(p) === "good") ? "ok" : "degraded";
 }
 
 export function receivedAuthority(points: OperatorPoint[], device: DeviceId, unavailable = false): "LOCAL" | "REMOTE" | "not established" {
