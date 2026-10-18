@@ -12,11 +12,14 @@ PROGRAM TapControl
     Status AT %MW0 : WORD;
     Setpoint AT %MW1 : UINT;
     Deadband AT %MW2 : UINT;
-    Remaining AT %MW3 : UINT;
+    ConfiguredDelay AT %MW3 : UINT;
     LastDemand AT %MW4 : UINT;
     Heartbeat AT %MW5 : UINT;
   END_VAR
   VAR
+    Remaining : UINT;
+    Band : UDINT;
+    DelayMS : UDINT;
     Stale : TON;
     Delay : TON;
     PreviousHeartbeat : UINT;
@@ -61,25 +64,28 @@ PROGRAM TapControl
   Status := WORD#1;
   IF Valid THEN Status := Status OR WORD#2; END_IF;
   IF Permitted THEN Status := Status OR WORD#4; END_IF;
-  Setpoint := 20000;
+  Setpoint := 20400;
   Deadband := 10;
+  ConfiguredDelay := 30;
+  Band := UINT_TO_UDINT(Setpoint) * UINT_TO_UDINT(Deadband) / 1000;
+  DelayMS := UINT_TO_UDINT(ConfiguredDelay) * 1000;
 
   Direction := 0;
   IF Permitted THEN
-    IF (Voltage < 19800) AND (Tap < 8) THEN Direction := 1; END_IF;
-    IF (Voltage > 20200) AND (Tap > -8) THEN Direction := -1; END_IF;
+    IF (UINT_TO_UDINT(Voltage) < (UINT_TO_UDINT(Setpoint) - Band)) AND (Tap < 8) THEN Direction := 1; END_IF;
+    IF (UINT_TO_UDINT(Voltage) > (UINT_TO_UDINT(Setpoint) + Band)) AND (Tap > -8) THEN Direction := -1; END_IF;
   END_IF;
   IF Pending AND ((Tap <> StartTap) OR (Direction = 0)) THEN
     Pending := FALSE;
   END_IF;
   Delay(IN := (Direction <> 0) AND (Direction = PreviousDirection)
-              AND NOT Pending, PT := T#10s);
+              AND NOT Pending, PT := UDINT_TO_TIME(DelayMS));
   PreviousDirection := Direction;
   Request := 0;
   Remaining := 0;
   IF Direction <> 0 THEN
     IF NOT Pending THEN
-      Remaining := UDINT_TO_UINT((10000 - TIME_TO_UDINT(Delay.ET) + 999) / 1000);
+      Remaining := UDINT_TO_UINT((DelayMS - TIME_TO_UDINT(Delay.ET) + 999) / 1000);
       IF Delay.Q THEN
         StartTap := Tap;
         EncodedTarget := INT_TO_UINT(100 + Tap + Direction);

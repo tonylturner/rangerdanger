@@ -52,8 +52,8 @@ func euDevice(ctx context.Context, gen *lifecycle.Generation, node string) (*euW
 	if node == "breaker-1" {
 		id = "feeder-breaker"
 	}
-	if state.Schema != 2 || state.Generation == 0 || state.Revision == nil || state.DeviceID != id {
-		return nil, fmt.Errorf("%s has no schema-2 identity/generation/revision", node)
+	if state.Schema != 3 || state.Generation == 0 || state.Revision == nil || state.DeviceID != id {
+		return nil, fmt.Errorf("%s has no schema-3 identity/generation/revision", node)
 	}
 	return state, nil
 }
@@ -67,8 +67,8 @@ func euProcess(ctx context.Context, gen *lifecycle.Generation) (*euWorkshopProce
 }
 
 func euSupply(state *euWorkshopProcess, now time.Time) (bool, error) {
-	if state == nil || state.Schema != 2 || state.Stale == nil || *state.Stale || !insideEvidenceWindow(state.SolvedAt, now.Add(-3*time.Second), now) {
-		return false, fmt.Errorf("no fresh schema-2 process solve (≤3 s)")
+	if state == nil || state.Schema != 3 || state.Stale == nil || *state.Stale || !insideEvidenceWindow(state.SolvedAt, now.Add(-3*time.Second), now) {
+		return false, fmt.Errorf("no fresh schema-3 process solve (≤3 s)")
 	}
 	present := true
 	for _, id := range []string{"bus20", "s1", "s2", "s3"} {

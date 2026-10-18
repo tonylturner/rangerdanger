@@ -80,8 +80,11 @@ func assertRegisters(t *testing.T, got, want []uint16) {
 func apply(t *testing.T, m *fielddevice.Model, fault bool) {
 	t.Helper()
 	truth := m.Truth()
-	input := fielddevice.MeasurementInput{Schema: 2, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
-		SolverEpoch: "solver", SolveSeq: uint64(time.Now().UnixNano()), SolvedAt: "2026-10-15T10:00:00Z", CurrentA: 1, VoltageKV: 20, SourceKV: 110, SectionLive: true, FaultCurrent: fault}
+	input := fielddevice.MeasurementInput{Schema: 3, DeviceID: truth.DeviceID, Generation: truth.Generation, Revision: truth.Revision,
+		SolverEpoch: "solver", SolveSeq: uint64(time.Now().UnixNano()), SolvedAt: time.Now().UTC().Format(time.RFC3339Nano), CurrentA: 1, VoltageKV: 20, SourceKV: 110, SectionLive: true}
+	if fault {
+		input.CurrentA = 3500
+	}
 	if _, err := m.ApplyMeasurements(context.Background(), input, fielddevice.AuditContext{Protocol: "process"}); err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +97,14 @@ func TestInputMapsOneSnapshotPerRead(t *testing.T) {
 		kind fielddevice.Kind
 		want []uint16
 	}{
-		{fielddevice.Breaker, []uint16{2, 15, 1, 0x3f80, 0, 0x41a0, 0, 0x89ab, 0xcdef, 0x1234, 0x5678}},
+		{fielddevice.Breaker, []uint16{2, 15, 1, 0x3f80, 0, 0x41a0, 0, 0x89ab, 0xcdef, 0x1234, 0x5678, 0x7fc0, 0, 0x7fc0, 0, 0x7fc0, 0}},
 		{fielddevice.RMU, []uint16{2, 15, 1, 0x3f80, 0, 0x41a0, 0, 0x89ab, 0xcdef, 0x1234, 0x5678, 0x42dc, 0}},
-		{fielddevice.OLTC, []uint16{0xfff8, 0x6f, 1, 0x41a0, 0, 0x3f80, 0, 0x89ab, 0xcdef, 0x1234, 0x5678, 0xfff9, 20000, 1, 42}},
+		{fielddevice.OLTC, []uint16{0xfff8, 0xef, 1, 0x41a0, 0, 0x3f80, 0, 0x89ab, 0xcdef, 0x1234, 0x5678, 0xfff9, 20000, 1, 42, 0x7fc0, 0, 0x7fc0, 0, 0x7fc0, 0}},
 	} {
 		t.Run(string(tt.kind), func(t *testing.T) {
 			d := &snapshotDevice{snapshot: fielddevice.Snapshot{Truth: fielddevice.Truth{Kind: tt.kind, Position: fielddevice.PositionClosed, RemoteEnabled: true,
 				Lockout: true, ProtectionTripped: true, EarthClosed: true, FaultPassage: true, Tap: -8, TargetTap: -7, Moving: true, Auto: true, Blocked: true,
-				EventSeq: 0x89abcdef, Generation: 0x12345678}, Measurements: fielddevice.Measurements{CurrentA: &current, VoltageKV: &voltage, SourceKV: &source, FaultCurrent: &yes, SectionLive: &yes, Valid: true}, PLCRequestResult: fielddevice.RequestAccepted, Heartbeat: 42}}
+				EventSeq: 0x89abcdef, Generation: 0x12345678}, Measurements: fielddevice.Measurements{CurrentA: &current, VoltageKV: &voltage, SourceKV: &source, SectionLive: &yes, Valid: true}, Protection: fielddevice.Protection{PickedUp: true}, PLCRequestResult: fielddevice.RequestAccepted, Heartbeat: 42}}
 			response := newServer(t, d).HandlePDU(pdu(functionReadInput, 0, uint16(len(tt.want))), "10.30.30.20:43001")
 			if d.calls != 1 {
 				t.Fatalf("snapshots=%d want 1", d.calls)
@@ -116,7 +119,7 @@ func TestInvalidMeasurementRegistersAndFlags(t *testing.T) {
 	voltage := 20.0
 	for _, kind := range []fielddevice.Kind{fielddevice.Breaker, fielddevice.RMU, fielddevice.OLTC} {
 		t.Run(string(kind), func(t *testing.T) {
-			d := &snapshotDevice{snapshot: fielddevice.Snapshot{Truth: fielddevice.Truth{Kind: kind, Position: fielddevice.PositionOpen}, Measurements: fielddevice.Measurements{FaultCurrent: &yes, SectionLive: &yes, VoltageKV: &voltage}}}
+			d := &snapshotDevice{snapshot: fielddevice.Snapshot{Truth: fielddevice.Truth{Kind: kind, Position: fielddevice.PositionOpen}, Measurements: fielddevice.Measurements{SectionLive: &yes, VoltageKV: &voltage}}}
 			r := inputRegisters(d.snapshot)
 			flags := uint16(0)
 			if kind == fielddevice.OLTC {
@@ -134,6 +137,36 @@ func TestInvalidMeasurementRegistersAndFlags(t *testing.T) {
 				t.Fatal("unknown measurement encoded nonzero")
 			}
 		})
+	}
+}
+
+func TestPowerRegistersAndEffectiveBlock(t *testing.T) {
+	model, _ := newModelServer(t, fielddevice.OLTC)
+	truth := model.Truth()
+	input := fielddevice.MeasurementInput{Schema: 3, DeviceID: truth.DeviceID, Generation: truth.Generation,
+		Revision: truth.Revision, SolverEpoch: "power", SolveSeq: 1, SolvedAt: "2026-10-18T00:00:00Z",
+		CurrentA: 866, PMW: -0.0001, QMvar: -0.0001, VoltageKV: 20, SectionLive: true}
+	s, err := model.ApplyMeasurements(context.Background(), input, fielddevice.AuditContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := inputRegisters(s)
+	if len(r) != 21 || r[1]&(1<<5|1<<7) != 1<<5|1<<7 || s.Blocked {
+		t.Fatalf("effective block flags/manual truth: %x %+v", r[1], s.Truth)
+	}
+	value := func(offset int) float32 {
+		return math.Float32frombits(uint32(r[offset])<<16 | uint32(r[offset+1]))
+	}
+	if value(15) != float32(input.PMW) || value(17) != float32(input.QMvar) || !math.IsNaN(float64(value(19))) {
+		t.Fatalf("signed power/null PF registers: %x", r[15:])
+	}
+	s.Measurements.Valid = false
+	r = inputRegisters(s)
+	for _, offset := range []int{15, 17, 19} {
+		bits := uint32(r[offset])<<16 | uint32(r[offset+1])
+		if !math.IsNaN(float64(math.Float32frombits(bits))) || bits&(1<<22) == 0 {
+			t.Fatalf("null power not quiet NaN at %d: %x", offset, bits)
+		}
 	}
 }
 
@@ -184,7 +217,7 @@ func TestEveryModbusExceptionAndExactLengths(t *testing.T) {
 	}{
 		{"unsupported", breaker, []byte{1}, 1},
 		{"FC3 address", breaker, pdu(3, 1, 1), 2}, {"FC3 quantity", breaker, pdu(3, 0, 0), 2},
-		{"FC4 address", breaker, pdu(4, 10, 2), 2}, {"FC4 quantity", breaker, pdu(4, 0, 0), 2}, {"FC4 overflow", breaker, pdu(4, 65535, 2), 2},
+		{"FC4 address", breaker, pdu(4, 16, 2), 2}, {"FC4 quantity", breaker, pdu(4, 0, 0), 2}, {"FC4 overflow", breaker, pdu(4, 65535, 2), 2},
 		{"FC6 address", breaker, pdu(6, 1, 1), 2}, {"FC6 value", breaker, pdu(6, 0, 0), 3},
 		{"OLTC bad address", oltc, pdu(6, 3, 1), 2}, {"OLTC bad step", oltc, pdu(6, 0, 3), 3}, {"OLTC bad mode", oltc, pdu(6, 2, 0), 3},
 		{"OLTC HR1 91", oltc, pdu(6, 1, 91), 3}, {"OLTC HR1 109", oltc, pdu(6, 1, 109), 3}, {"OLTC HR1 1", oltc, pdu(6, 1, 1), 3},

@@ -48,25 +48,25 @@ describe("physical feeder reads", () => {
   });
 
   it.each([
-    null, [], {}, { ...BREAKER, schema: 1 }, { ...BREAKER, kind: "gps" },
+    null, [], {}, { ...BREAKER, schema: 2 }, { ...BREAKER, kind: "gps" },
     { ...BREAKER, position: "unknown" }, { ...BREAKER, measurements: null },
     { ...BREAKER, measurements: { ...BREAKER.measurements, current_a: "0" } },
     { ...BREAKER, lockout: undefined }, CLOCK,
   ])("rejects malformed and unknown devices, including GPS in devices (%j)", async (device) => {
     respond({ ...TRUTH, devices: { ...TRUTH.devices, unexpected: device } });
-    await expect(getFieldState()).rejects.toThrow("Expected field and process schema 2");
+    await expect(getFieldState()).rejects.toThrow("Expected field and process schema 3");
   });
 
   it.each([null, [], {}, { ...TRUTH, devices: [] }, { ...TRUTH, devices: {} }, { ...TRUTH, process: null }])(
     "rejects malformed aggregate containers (%j)", async (answer) => {
       respond(answer);
-      await expect(getFieldState()).rejects.toThrow("Expected field and process schema 2");
+      await expect(getFieldState()).rejects.toThrow("Expected field and process schema 3");
     },
   );
 
   it.each([
     ["/field/state", getFieldState, TRUTH],
-    ["/field/audit?after=0", getFieldAudit, AUDIT],
+    ["/field/audit?after=0&device=breaker-1", getFieldAudit, AUDIT],
   ] as const)("reads %s without a mutation", async (path, read, answer) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(answer), {
       status: 200, headers: { "Content-Type": "application/json" },
@@ -97,17 +97,17 @@ describe("increment-4 operator contract", () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: JSON.stringify({ point, operation }) });
   });
 
-  it("hard-cuts CC and field reads to schema 2", async () => {
+  it("hard-cuts CC and field reads to schema 3", async () => {
     const { getOperatorState } = await import("./operator-api");
     const { FEEDER_STATE } = await import("./operator-fixtures.test-util");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(FEEDER_STATE)))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...FEEDER_STATE, schema: 1 })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...TRUTH, process: { ...TRUTH.process, schema: 1 } })));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...FEEDER_STATE, schema: 2 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...TRUTH, process: { ...TRUTH.process, schema: 2 } })));
     vi.stubGlobal("fetch", fetchMock);
     await expect(getOperatorState()).resolves.toEqual(FEEDER_STATE);
-    await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 2");
-    await expect(getFieldState()).rejects.toThrow("Expected field and process schema 2");
+    await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 3");
+    await expect(getFieldState()).rejects.toThrow("Expected field and process schema 3");
   });
 
   it("preserves the CC reason on a 409 refusal", async () => {
@@ -147,7 +147,7 @@ describe("rev 2 strict operator shape", () => {
     ];
     for (const answer of answers) {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
-      await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 2");
+      await expect(getOperatorState()).rejects.toThrow("Expected CC state schema 3");
     }
   });
   it("queues GI with a single bodyless POST and preserves refusal causes", async () => {
@@ -168,9 +168,10 @@ describe("rev 2 strict operator shape", () => {
 });
 
 describe("step-position QDS regression", () => {
-  it("accepts the captured live GI payload without rewriting the tap's OV", async () => {
+  it("accepts the migrated GI regression payload without rewriting the tap's OV", async () => {
     const { default: live } = await import("./fixtures/operator-state-live.json");
     const { getOperatorState, validOperatorState } = await import("./operator-api");
+    expect(live.points).toHaveLength(38);
     expect(live.points.find((p) => p.id === "oltc-1-tap")).toMatchObject({
       kind: "step-position", asdu: "M_ST_NA_1", quality: { ov: false }, value: { value: 0, transient: false },
     });
@@ -188,5 +189,58 @@ describe("step-position QDS regression", () => {
     for (const p of FEEDER_STATE.points.filter((p) => p.kind === "single-point" || p.kind === "double-point")) {
       expect(validOperatorState({ ...FEEDER_STATE, points: [{ ...p, quality: { ...p.quality, ov: false } }] })).toBe(false);
     }
+  });
+});
+
+describe("schema 3 realism cutover", () => {
+  function respond(answer: unknown) {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
+  }
+  it.each(["breaker-1", "rmu-1", "rmu-2", "oltc-1"] as const)("requests the selected %s audit", async (device) => {
+    respond({ ...AUDIT, entries: [] });
+    await getFieldAudit(device);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toMatch(new RegExp(`device=${device}$`));
+  });
+  it("rejects old audit snapshots", async () => {
+    respond({ ...AUDIT, entries: AUDIT.entries.map((e) => ({ ...e, before: { ...e.before, schema: 2 } })) });
+    await expect(getFieldAudit()).rejects.toThrow("schema 3 snapshots");
+  });
+  it.each([
+    { ...BREAKER, schema: 2 }, { ...BREAKER, protection: null },
+    { ...BREAKER, protection: { ...BREAKER.protection, picked_up_since: "not a timestamp" } },
+    { ...BREAKER, protection: { ...BREAKER.protection, function: "fpi" } },
+    { ...BREAKER, measurements: { ...BREAKER.measurements, p_mw: undefined } },
+    { ...BREAKER, measurements: { ...BREAKER.measurements, pf: "0.95" } },
+  ])("rejects incomplete new device protection/metering (%j)", async (device) => {
+    respond({ ...TRUTH, devices: { "breaker-1": device } });
+    await expect(getFieldState()).rejects.toThrow("schema 3");
+  });
+  it.each([
+    { ...TRUTH.process, schema: 2 }, { ...TRUTH.process, profile: null },
+    { ...TRUTH.process, profile: { ...TRUTH.process.profile, source_pu: "1.01" } },
+    { ...TRUTH.process, f2_protection: {} }, { ...TRUTH.process, fault_section: ["none"] },
+    { ...TRUTH.process, devices: { "feeder-breaker": { delivered: true, revision: 1, solved_revision: 1 } } },
+  ])("rejects incomplete new process state (%j)", async (process) => {
+    respond({ ...TRUTH, process });
+    await expect(getFieldState()).rejects.toThrow("schema 3");
+  });
+  it("accepts unsolved numeric nulls and signed power without zero substitution", async () => {
+    const process = structuredClone(TRUTH.process);
+    process.solved_at = null;
+    process.solve_seq = 0;
+    process.profile = { enabled: true, load_factors: { residential: null, commercial: null, industrial: null }, source_pu: null };
+    for (const d of Object.values(process.devices)) Object.assign(d, { delivered: false, revision: null, solved_revision: null, current_a: null, p_mw: null, q_mvar: null });
+    const answer = { ...TRUTH, process, devices: { "breaker-1": { ...BREAKER, measurements: { ...BREAKER.measurements, p_mw: -2.1, q_mvar: -0.3, pf: 0.99 } } } };
+    respond(answer);
+    await expect(getFieldState()).resolves.toEqual(answer);
+  });
+  it("requires both new CC keys and finite ordered limits", async () => {
+    const { validOperatorState } = await import("./operator-api");
+    const { FEEDER_STATE } = await import("./operator-fixtures.test-util");
+    const p = FEEDER_STATE.points[0];
+    for (const patch of [{ device: undefined }, { limits: undefined }, { device: 1 }, { limits: { low: 21, high: 19 } }, { limits: { low: 19, high: 21, extra: true } }]) {
+      expect(validOperatorState({ ...FEEDER_STATE, points: [{ ...p, ...patch }] })).toBe(false);
+    }
+    expect(validOperatorState({ ...FEEDER_STATE, schema: 2 })).toBe(false);
   });
 });

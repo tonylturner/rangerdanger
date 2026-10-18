@@ -75,7 +75,7 @@ function PointRow({ point, now }: { point: OperatorPoint; now: number }) {
             condition === "never" ? "text-slate-500" : stale ? "text-amber-200" : "text-slate-100"
           }`}
         >
-          {formatPointValue(point.id, point.value)}
+          {formatPointValue(point.id, point.value, point.quality)}
         </div>
         {stale && <div className="text-[9px] font-bold uppercase tracking-wider text-amber-400">last known value</div>}
       </td>

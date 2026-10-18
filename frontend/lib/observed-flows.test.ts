@@ -14,11 +14,11 @@ const workshop: WorkshopStatus = {
 };
 function operator(): OperatorState {
   return {
-    schema: 2, snapshot_seq: 1, rendered_at: new Date(now).toISOString(), cache_epoch: "cc-boot", package_id: "eu-iec104-substation", range_generation: 7,
+    schema: 3, snapshot_seq: 1, rendered_at: new Date(now).toISOString(), cache_epoch: "cc-boot", package_id: "eu-iec104-substation", range_generation: 7,
     link: { state: "started", peer: "10.30.30.20:2404", since: null, last_rx_at: null, connection_seq: 1,
       gi: { state: "complete", started_at: null, trigger: "connect", last_complete_at: new Date(now).toISOString(), next_due_at: new Date(now + 900000).toISOString() } },
     points: ["feeder-breaker-position", "feeder-protection-trip"].map((id) => ({
-      id, ioa: 1, kind: "single-point", reporting: null, asdu: "M_SP_TB_1", value: false, quality: { iv: false, nt: false, sb: false, bl: false, ov: null },
+      id, device: "feeder-breaker", limits: null, ioa: 1, kind: "single-point", reporting: null, asdu: "M_SP_TB_1", value: false, quality: { iv: false, nt: false, sb: false, bl: false, ov: null },
       stale_reason: null, source_time: null, source_time_invalid: null,
       received_at: "2020-01-01T00:00:00Z", cot: 3,
     })),

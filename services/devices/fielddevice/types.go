@@ -69,17 +69,19 @@ func (t Truth) wireFields() map[string]any {
 func (t Truth) MarshalJSON() ([]byte, error) { return json.Marshal(t.wireFields()) }
 
 type Measurements struct {
-	Valid        bool       `json:"valid"`
-	CurrentA     *float64   `json:"current_a"`
-	VoltageKV    *float64   `json:"voltage_kv_ll"`
-	SourceKV     *float64   `json:"source_kv_ll"`
-	SectionLive  *bool      `json:"section_live"`
-	SourceLive   *bool      `json:"source_live"`
-	FaultCurrent *bool      `json:"fault_current"`
-	SolverEpoch  *string    `json:"solver_epoch"`
-	SolveSeq     *uint64    `json:"solve_seq"`
-	SolvedAt     *time.Time `json:"solved_at"`
-	ReceivedAt   *time.Time `json:"received_at"`
+	Valid       bool       `json:"valid"`
+	CurrentA    *float64   `json:"current_a"`
+	VoltageKV   *float64   `json:"voltage_kv_ll"`
+	SourceKV    *float64   `json:"source_kv_ll"`
+	SectionLive *bool      `json:"section_live"`
+	SourceLive  *bool      `json:"source_live"`
+	PMW         *float64   `json:"p_mw"`
+	QMvar       *float64   `json:"q_mvar"`
+	PF          *float64   `json:"pf"`
+	SolverEpoch *string    `json:"solver_epoch"`
+	SolveSeq    *uint64    `json:"solve_seq"`
+	SolvedAt    *time.Time `json:"solved_at"`
+	ReceivedAt  *time.Time `json:"received_at"`
 }
 
 func copyValue[T any](value *T) *T {
@@ -96,7 +98,9 @@ func (m Measurements) clone() Measurements {
 	m.SourceKV = copyValue(m.SourceKV)
 	m.SectionLive = copyValue(m.SectionLive)
 	m.SourceLive = copyValue(m.SourceLive)
-	m.FaultCurrent = copyValue(m.FaultCurrent)
+	m.PMW = copyValue(m.PMW)
+	m.QMvar = copyValue(m.QMvar)
+	m.PF = copyValue(m.PF)
 	m.SolverEpoch = copyValue(m.SolverEpoch)
 	m.SolveSeq = copyValue(m.SolveSeq)
 	m.SolvedAt = copyValue(m.SolvedAt)
@@ -106,6 +110,7 @@ func (m Measurements) clone() Measurements {
 
 type Snapshot struct {
 	Truth
+	Protection       Protection
 	Measurements     Measurements
 	PLCRequestResult RequestResult
 	Heartbeat        uint16
@@ -115,6 +120,7 @@ type Snapshot struct {
 func (s Snapshot) MarshalJSON() ([]byte, error) {
 	fields := s.Truth.wireFields()
 	fields["measurements"] = s.Measurements
+	fields["protection"] = s.Protection
 	if s.Kind == OLTC {
 		fields["plc_request_result"] = s.PLCRequestResult.String()
 		fields["heartbeat"] = s.Heartbeat
@@ -123,19 +129,20 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 }
 
 type MeasurementInput struct {
-	Schema       int     `json:"schema"`
-	DeviceID     string  `json:"device_id"`
-	Generation   uint32  `json:"generation"`
-	Revision     uint64  `json:"revision"`
-	SolverEpoch  string  `json:"solver_epoch"`
-	SolveSeq     uint64  `json:"solve_seq"`
-	SolvedAt     string  `json:"solved_at"`
-	CurrentA     float64 `json:"current_a"`
-	VoltageKV    float64 `json:"voltage_kv_ll"`
-	SourceKV     float64 `json:"source_kv_ll"`
-	SectionLive  bool    `json:"section_live"`
-	SourceLive   bool    `json:"source_live"`
-	FaultCurrent bool    `json:"fault_current"`
+	Schema      int     `json:"schema"`
+	DeviceID    string  `json:"device_id"`
+	Generation  uint32  `json:"generation"`
+	Revision    uint64  `json:"revision"`
+	SolverEpoch string  `json:"solver_epoch"`
+	SolveSeq    uint64  `json:"solve_seq"`
+	SolvedAt    string  `json:"solved_at"`
+	CurrentA    float64 `json:"current_a"`
+	VoltageKV   float64 `json:"voltage_kv_ll"`
+	SourceKV    float64 `json:"source_kv_ll"`
+	SectionLive bool    `json:"section_live"`
+	SourceLive  bool    `json:"source_live"`
+	PMW         float64 `json:"p_mw"`
+	QMvar       float64 `json:"q_mvar"`
 }
 type MeasurementError string
 
@@ -185,7 +192,44 @@ type systemClock struct{}
 func (systemClock) Now() time.Time                            { return time.Now() }
 func (systemClock) AfterFunc(d time.Duration, f func()) Timer { return time.AfterFunc(d, f) }
 
+// Protection is the sample-quantised protection state exposed with measurements.
+type Protection struct {
+	Function         string     `json:"function"`
+	PickupA          float64    `json:"pickup_a"`
+	DelayMS          int64      `json:"delay_ms"`
+	InstantaneousA   *float64   `json:"instantaneous_a"`
+	PickedUp         bool       `json:"picked_up"`
+	PickedUpSince    *time.Time `json:"picked_up_since"`
+	LastTripCurrentA *float64   `json:"last_trip_current_a"`
+}
+
+// ProtectionSettings are device-owned thresholds and accepted-sample timing.
+type ProtectionSettings struct {
+	PickupA        float64
+	DelayMS        int64
+	InstantaneousA *float64
+	MaxGapMS       int64
+}
+
+// DefaultProtection returns the EU teaching profile for the device function.
+func DefaultProtection(kind Kind) ProtectionSettings {
+	s := ProtectionSettings{MaxGapMS: 2500}
+	switch kind {
+	case Breaker:
+		v := 3000.0
+		s.PickupA = 400
+		s.DelayMS = 1000
+		s.InstantaneousA = &v
+	case RMU:
+		s.PickupA = 300
+	case OLTC:
+		s.PickupA = 866
+	}
+	return s
+}
+
 type Config struct {
+	Protection     *ProtectionSettings
 	Kind           Kind
 	DeviceID       string
 	RMUNormal      Position

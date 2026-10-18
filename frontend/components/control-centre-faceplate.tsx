@@ -32,7 +32,7 @@ export function DeviceFaceplate({ state, selected, unavailable }: { state: Opera
     <dl className="max-h-80 space-y-2 overflow-y-auto text-xs">
       {devicePoints(state.points, selected).map((p) => <div key={p.id} className={`border-t border-slate-800 py-2 ${pointCondition(p) !== "good" ? `border-dashed ${STALE_HATCH}` : ""}`}>
         <dt className="text-slate-400">{pointLabel(p.id)}</dt>
-        <dd className="mt-1 flex flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value)}</span><ConditionBadge condition={pointCondition(p)} /><span>{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
+        <dd className="mt-1 flex flex-wrap items-center gap-2 text-slate-100"><span className="font-mono">{formatPointValue(p.id, p.value, p.quality)}</span><ConditionBadge condition={pointCondition(p)} /><span>{qualityFlags(p.quality).join(" ")} {p.stale_reason}</span></dd>
         <dd className="mt-1 text-slate-400">{reportingText(p)}</dd>
       </div>)}
     </dl>

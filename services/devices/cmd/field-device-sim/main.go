@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 const defaultZones = "field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24"
 
 type config struct {
+	protection    fielddevice.ProtectionSettings
 	kind          fielddevice.Kind
 	normal        fielddevice.Position
 	deviceID      string
@@ -39,7 +42,7 @@ func main() {
 		log.Fatalf("generate device generation: %v", err)
 	}
 	model, err := fielddevice.NewModel(fielddevice.Config{
-		Kind: cfg.kind, RMUNormal: cfg.normal,
+		Protection: &cfg.protection, Kind: cfg.kind, RMUNormal: cfg.normal,
 		DeviceID:   cfg.deviceID,
 		Generation: generation,
 		LocalContext: fielddevice.AuditContext{
@@ -120,8 +123,37 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	protection := fielddevice.DefaultProtection(kind)
+	if raw, ok := os.LookupEnv("DEVICE_PICKUP_A"); ok {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return config{}, fmt.Errorf("DEVICE_PICKUP_A: %w", err)
+		}
+		protection.PickupA = value
+	}
+	for name, dest := range map[string]*int64{"DEVICE_DELAY_MS": &protection.DelayMS, "DEVICE_MAX_GAP_MS": &protection.MaxGapMS} {
+		if raw, ok := os.LookupEnv(name); ok {
+			value, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				return config{}, fmt.Errorf("%s: %w", name, err)
+			}
+			*dest = value
+		}
+	}
+	if raw, ok := os.LookupEnv("DEVICE_INSTANTANEOUS_A"); ok {
+		if raw == "null" {
+			protection.InstantaneousA = nil
+		} else {
+			value, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return config{}, err
+			}
+			protection.InstantaneousA = &value
+		}
+	}
 	return config{
-		kind: kind, normal: normal,
+		protection: protection,
+		kind:       kind, normal: normal,
 		deviceID:      deviceID,
 		modbusListen:  modbusListen,
 		processListen: processListen,

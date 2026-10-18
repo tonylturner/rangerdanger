@@ -58,7 +58,7 @@ for attempt in range(30):
             body = receive(sock, 14)
             require(body[:2] == b"\x03\x0c", "invalid Modbus response")
             words = struct.unpack(">6H", body[2:])
-            require(words[0] & 1 and words[1:3] == (20000, 10), "invalid seeded status")
+            require(words[0] & 1 and words[1:4] == (20400, 10, 30), "invalid seeded status")
             if previous is not None and words[5] != previous:
                 with socket.create_connection(("127.0.0.1", 8080), 1):
                     pass

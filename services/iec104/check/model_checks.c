@@ -55,13 +55,17 @@ main(int argc, char** argv)
     assert(pm && pm->gi_interval_ms == 60000);
     assert(cc_state_init(pm, "test:2404", err, sizeof(err)));
     cJSON* s = cc_render_state();
+    assert(member(s, "schema")->valueint == 3);
     cJSON* gi = member(member(s, "link"), "gi");
     assert(cJSON_GetArraySize(gi) == 5);
     assert(cJSON_IsNull(member(gi, "trigger")) && cJSON_IsNull(member(gi, "next_due_at")));
     cJSON* points = member(s, "points");
     for (int i = 0; i < pm->n_points; i++) {
         cJSON* p = cJSON_GetArrayItem(points, i);
-        assert(cJSON_GetArraySize(p) == 12);
+        assert(cJSON_GetArraySize(p) == 14);
+        assert(strcmp(member(p, "device")->valuestring, pm->devices[pm->points[i].device_index].id) == 0);
+        cJSON* limits = member(p, "limits");
+        assert(pm->points[i].has_limits ? cJSON_IsObject(limits) && cJSON_GetArraySize(limits) == 2 : cJSON_IsNull(limits));
         assert(cJSON_IsNull(member(p, "asdu")) && cJSON_IsNull(member(p, "value")));
         assert(cJSON_IsString(member(p, "kind")));
         cJSON* r = member(p, "reporting");

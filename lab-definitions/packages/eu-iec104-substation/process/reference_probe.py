@@ -1,7 +1,7 @@
 """Numerical operating-point evidence, not a substitute PLC.
 
 Print actual reference cases and exit nonzero if an operating requirement fails.
-Uses the active schema-2 feeder without altering its physical parameters.
+Uses the active schema-3 feeder without altering its physical parameters.
 """
 
 import json
@@ -11,7 +11,8 @@ from pathlib import Path
 import opendssdirect as dss
 
 ROOT = Path(__file__).resolve().parent
-LOW_KV, HIGH_KV = 19.8, 20.2
+SETPOINT_KV = 20.4
+LOW_KV, HIGH_KV = round(SETPOINT_KV * .99, 3), round(SETPOINT_KV * 1.01, 3)
 
 
 class Probe:
@@ -23,9 +24,9 @@ class Probe:
         self.engine.Solution.LoadMult(load_multiplier)
 
     def sample(self, tap: int) -> dict:
-        # Positive tap raises the LV winding voltage, not the HV winding ratio.
+        # Positive operator tap reduces the HV turns ratio, raising MV voltage.
         self.engine.Text.Command(
-            f"Edit Transformer.T1 wdg=2 tap={1.0 + 0.0125 * tap}"
+            f"Edit Transformer.T1 wdg=1 tap={1.0 - 0.0125 * tap}"
         )
         self.engine.Solution.Solve()
         if not self.engine.Solution.Converged():
@@ -61,15 +62,18 @@ def demand_trace(load_multiplier: float, source_pu: float) -> list[dict]:
 
 
 def reference_cases() -> dict:
-    nominal = Probe().sample(0)
+    nominal_trace = demand_trace(1.0, 1.0)
+    nominal = nominal_trace[0]
+    steady = nominal_trace[-1]
     lower = Probe().sample(-1)
     raise_ = Probe().sample(1)
     triple_load = demand_trace(3.0, 1.0)
     low_source = demand_trace(1.0, 0.90)
     high_source = demand_trace(1.0, 1.10)
     checks = {
-        "nominal_within_half_percent": abs(nominal["bus20_kv"] - 20.0) <= 0.1,
-        "nominal_in_plc_deadband": nominal["in_band"],
+        "steady_state_within_half_percent": abs(steady["bus20_kv"] - SETPOINT_KV) <= .102,
+        "nominal_steady_state_tap_plus_two": steady["tap"] == 2,
+        "steady_state_in_plc_deadband": steady["in_band"],
         "positive_tap_raises_voltage": (
             lower["bus20_kv"] < nominal["bus20_kv"] < raise_["bus20_kv"]
         ),
@@ -87,7 +91,12 @@ def reference_cases() -> dict:
         ),
     }
     return {
-        "schema": 2,
+        "schema": 3,
+        "profile_enabled": False,
+        "initial_tap": 0,
+        "setpoint_kv": SETPOINT_KV,
+        "configured_delay_s": 30,
+        "motion_s": 2,
         "status": "passed" if all(checks.values()) else "blocked",
         "engine": dss.__version__,
         "circuit": "feeder.dss",
@@ -96,6 +105,8 @@ def reference_cases() -> dict:
         "band_kv": [LOW_KV, HIGH_KV],
         "checks": checks,
         "nominal": nominal,
+        "nominal_trace": nominal_trace,
+        "steady_state": steady,
         "tap_polarity": {"lower": lower, "raise": raise_},
         "triple_load": triple_load,
         "source_0_90": low_source,
@@ -103,7 +114,7 @@ def reference_cases() -> dict:
         "source_1_10_settle_tap": high_source[-1]["tap"],
         "scope": (
             "Converged static OpenDSS solves; not PLC timing or protocol evidence. "
-            "Contract v3; no physics tuning to meet acceptance values."
+            "EU realism contract rev 2; profile disabled; no physics tuning to meet acceptance values."
         ),
     }
 

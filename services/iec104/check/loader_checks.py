@@ -37,22 +37,27 @@ def run(data, valid=False):
 
 cases = [
     lambda d: d.update(schema=1),
-    lambda d: d["points"][0]["source"].update(address=11),
+    lambda d: d["points"][0]["source"].update(address=17),
     lambda d: d["points"][0]["source"].update(table="holding"),
-    lambda d: d["points"][2]["source"].update(address=10),
+    lambda d: d["points"][2]["source"].update(address=16),
     lambda d: d["points"][0]["source"].update(format="u16"),
     lambda d: d["points"][2]["source"].update(format="bogus"),
     lambda d: d["commands"][0].update(feedback="feeder-current"),
     lambda d: d["commands"][0].update(feedback="rmu-1-position"),
     lambda d: d["devices"][4]["heartbeat"].update(address=1030),
-    lambda d: d["points"][18]["source"]["transient"].update(address=15),
+    lambda d: d["points"][18]["source"]["transient"].update(address=21),
     lambda d: d["points"][1].update(ioa=1001),
     lambda d: d["devices"][1].update(id="feeder-breaker"),
     lambda d: d["commands"][1].update(id="feeder-breaker-command"),
     lambda d: d["points"][0].update(asdu="M_ST_TB_1"),
     lambda d: d["points"][2]["source"].update(scale=0.1),
-    lambda d: d["devices"][0]["measurements_valid"].update(address=11),
+    lambda d: d["devices"][0]["measurements_valid"].update(address=17),
 ]
+cases.extend([
+    lambda d: d["points"][3].update(limits={"low": 21, "high": 19}),
+    lambda d: d["points"][3].update(limits={"low": 19, "high": 21, "extra": 0}),
+    lambda d: d["points"][0].update(limits={"low": 19, "high": 21}),
+])
 # Each new field: required, type, inclusive boundaries, and kind restriction.
 for key, low, high in [("gi_interval_ms", 60000, 86400000), ("cyclic_ms", 1000, 3600000)]:
     def target(d, key=key):

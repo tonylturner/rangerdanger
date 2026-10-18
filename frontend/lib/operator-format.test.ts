@@ -158,3 +158,11 @@ describe("workshop status control centre", () => {
     expect(controlCentreHealth(undefined)).toBe("offline");
   });
 });
+
+it("formats PF IV as an em dash, not the wire zero, without hiding its quality", () => {
+  const q = { iv: true, nt: false, sb: false, bl: false, ov: false };
+  expect(formatPointValue("feeder-pf", 0, q)).toBe("—");
+  expect(formatPointValue("oltc-1-pf", null)).toBe("—");
+  expect(formatPointValue("feeder-pf", 0, { ...q, iv: false })).toBe("0.000");
+  expect(qualityFlags(q)).toEqual(["IV"]);
+});

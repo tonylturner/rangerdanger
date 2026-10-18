@@ -27,7 +27,7 @@ apply_point(int idx, const uint16_t* regs)
     case PM_FMT_F32:
         rt->f = mb_regs_to_f32(regs[addr], regs[addr+1]);
         rt->valueInvalid = !isfinite(rt->f);
-        if (rt->valueInvalid) rt->f = rt->repF;
+        if (rt->valueInvalid) rt->f = 0.0f;
         break;
     case PM_FMT_U16: rt->f = (float)(regs[addr] * p->scale); break;
     case PM_FMT_I16: rt->f = (float)((int16_t)regs[addr] * p->scale); break;
@@ -42,7 +42,7 @@ apply_point(int idx, const uint16_t* regs)
     }
     if (p->kind == PM_KIND_FLOAT && !isfinite(rt->f)) {
         rt->valueInvalid = true;
-        rt->f = rt->repF;
+        rt->f = 0.0f;
     }
 }
 

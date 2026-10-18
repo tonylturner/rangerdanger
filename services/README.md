@@ -120,23 +120,23 @@ it defaults to `field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,
 Unknown peers remain `unknown`; attribution is not authorization.
 
 The process listener exposes only `GET /api/truth` and `POST /api/measurements`.
-Both use schema 2. Measurements carry identity, generation, solved revision,
+Both use schema 3 (schema 2 is rejected). Measurements carry identity, generation, solved revision,
 solver epoch/sequence/UTC time, `current_a`, `voltage_kv_ll`, `source_kv_ll`,
-`section_live`, `source_live` and `fault_current`. A successful delivery returns
+`section_live`, `source_live`, signed finite `p_mw` and `q_mvar`. A successful delivery returns
 `{accepted:true, solved_revision, revision}`: protection/FPI can change the
 revision during receipt. Stale truth and replay return 409; invalid input
 returns 400. Measurements expire after 3 seconds, and any truth revision
-immediately invalidates them. Last known values remain visible, not fresh zeros.
+immediately invalidates them. Last known voltage/current remain visible, not fresh zeros; invalid P/Q/PF are null.
 
 The sim listener exposes `GET /api/state`, `/api/health`, `/api/audit?after=N`
 and `POST /api/sim/actions` with exactly `{"action":"<name>"}`. Audit contexts
 retain the socket peer; sim actions use protocol `lab`.
 
 - Breaker: `reset_lockout`, `reset`. Faults belong to the process, not the
-  device. Measurement fault current trips a closed breaker and latches lockout.
+  device. Solved amps drive the overcurrent timer and instantaneous trip on a closed breaker, latching lockout.
 - RMU: `set_local`, `set_remote`, `earth_close`, `earth_open`,
   `reset_fault_passage`, `reset`. Earth close needs an open way and a valid,
-  dead section. Fault passage latches on receipt of fault current.
+  dead section. Fault passage latches on solved-current pickup.
 - OLTC: `set_local`, `set_remote`, `block`, `unblock`, `reset`.
 - Reset bypasses interlocks, restores initial truth and invalidates measurements.
   Old `/api/sim/fault` and `/api/sim/reset` routes do not exist.
@@ -144,11 +144,10 @@ retain the socket peer; sim actions use protocol `lab`.
 Modbus TCP uses unit 1, zero-based addresses, high-word-first f32/u32.
 FC3 reads holding, FC4 reads input, FC6 writes one holding register. Switch
 HR0 is 1 open / 2 close. Close needs valid measurements and refuses live-live;
-RMU open also needs valid measurements and refuses valid fault current. This
+RMU open also needs valid measurements and refuses current pickup. This
 includes the invalid interval between an FPI latch and the re-solve. Breaker
 open remains allowed in remote even without valid measurements. Rejections use
-exception 04 and audit peer/reason. Breaker IR1 bit 2 is measured fault current,
-not owned fault state.
+exception 04 and audit peer/reason. Breaker IR1 bit 2 is overcurrent picked up; RMU IR1 bit 3 is FPI picked up.
 
 OLTC HR0 is 1 lower / 2 raise (remote/manual); HR2 is 1 manual / 2 auto
 (remote only, also allowed during motion). HR1 is the PLC absolute request:
@@ -161,6 +160,39 @@ remote/auto and reset disarm HR1 until a new zero is written. Motion takes
 2 seconds on a non-blocking timer; completed tap remains unchanged until it
 finishes. Reset cancels motion. FC3 returns HR0=0, HR1=last request, HR2=mode.
 IR14 is a wrapping 250 ms heartbeat, independent of process delivery.
+
+Protection is configured with `DEVICE_PICKUP_A`, `DEVICE_DELAY_MS`,
+`DEVICE_INSTANTANEOUS_A` (number or `null`), and `DEVICE_MAX_GAP_MS`.
+Compose and code defaults agree: breaker 400 A / 1000 ms / 3000 A;
+RMU FPI 300 A / 0 ms / null; OLTC block 866 A / 0 ms / null.
+The maximum accepted-sample gap is 2500 ms by default. Timing uses accepted
+`solved_at` samples, not receipt or wall time: first pickup starts the timer;
+the first sample at or beyond the delay operates. Effective delay is rounded
+up to the solve cadence (1000 ms at the default 1 s cadence). Instantaneous
+pickup operates on the first sample. Drop-off, epoch/generation changes,
+expiry and gaps above the maximum restart the timer. Rejected samples do not
+advance or reset it. A truth revision alone does not restart it; its temporary
+measurement invalidation is distinct from expiry. Within an epoch both sequence
+and solve time must strictly increase.
+
+Schema-3 state and audit snapshots include `protection` (function, pickup,
+delay, instantaneous, picked-up state/since and last-trip current). Power factor
+is |P|/hypot(P,Q), null below 0.001 MVA. Breaker input count is 17 with P/Q/PF
+at 11/13/15; OLTC count is 21 with P/Q/PF at 15/17/19. RMU count stays 13.
+Null power values encode quiet NaN. RTU converts NaN to 0 with IV (no NT),
+classified by CC as `measurement_invalid`, not a communications failure.
+OLTC IR1 bit 5 is the effective block (manual OR overcurrent), bit 7 is the
+overcurrent block, telemetered as `oltc-1-overcurrent-block`, IOA 1307.
+Both PLC and manual tap requests refuse the effective block; truth `blocked`
+continues to mean only the manual block.
+
+The EU PLC publishes configured 20.4 kV / 10 per-mille / 30 s at holding
+1025–1027. Its thresholds derive from setpoint and deadband (20.196–20.604 kV),
+and timer PT derives from the configured delay. Countdown is internal only.
+The image build compiles the ST, and startup checks all three settings.
+CC state is schema 3 with 38 points; each point carries its source `device`
+and nullable voltage `limits`. The point-map configuration itself remains
+schema 2 (not a state or measurement surface).
 
 Targeted checks:
 

@@ -36,8 +36,8 @@ func resetEUTruth(ctx context.Context, gen *lifecycle.Generation, recipe *packag
 			if step.device == "breaker" {
 				expectedID = "feeder-breaker"
 			}
-			if err == nil && (reset.Schema != 2 || reset.DeviceID != expectedID || reset.Revision == nil) {
-				err = fmt.Errorf("%s reset returned no schema-2 state with matching device id/revision", step.device)
+			if err == nil && (reset.Schema != 3 || reset.DeviceID != expectedID || reset.Revision == nil) {
+				err = fmt.Errorf("%s reset returned no schema-3 state with matching device id/revision", step.device)
 			}
 			if err == nil {
 				revisions[reset.DeviceID] = *reset.Revision
@@ -101,8 +101,8 @@ func resetDeliveryReady(raw json.RawMessage, revisions map[string]uint64) (bool,
 	if err := json.Unmarshal(raw, &state); err != nil {
 		return false, fmt.Errorf("process solver delivery state: %w", err)
 	}
-	if state.Schema != 2 {
-		return false, fmt.Errorf("process solver delivery state must use schema 2")
+	if state.Schema != 3 {
+		return false, fmt.Errorf("process solver delivery state must use schema 3")
 	}
 	if state.TruthStale == nil || *state.TruthStale {
 		return false, nil

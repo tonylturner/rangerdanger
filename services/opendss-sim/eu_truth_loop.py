@@ -8,6 +8,7 @@ from uuid import uuid4
 from eu_circuit import EUFeederSolver
 from eu_controls import ProcessControls
 from eu_profile import EUProfile
+from eu_protection import F2Protection
 from eu_state import EUProcessState
 from eu_wire import TruthClient, acknowledgement, validate_truth
 
@@ -21,7 +22,8 @@ class TruthSolveLoop:
         self.client = client or TruthClient(profile)
         self.clock = clock
         self.state = state or EUProcessState(profile, clock)
-        self.controls = ProcessControls()
+        self.controls = ProcessControls(profile_enabled=profile.profile.enabled)
+        self.f2_protection = F2Protection(profile.f2_protection, profile.solve_interval_ms)
         self.solver_epoch = str(uuid4())
         self.solve_seq = 0
         self.state.set_epoch(self.solver_epoch)
@@ -46,6 +48,9 @@ class TruthSolveLoop:
     async def action(self, body: object) -> dict:
         async with self._lock:
             self.controls.action(body)
+            if body["action"] in ("reset", "reset_f2"):
+                self.f2_protection.reset()
+                self.state.protection_changed(self.f2_protection.snapshot())
             self.state.controls_changed(self.controls)
             await self._tick()
             return self.state.electrical()
@@ -67,6 +72,8 @@ class TruthSolveLoop:
             except Exception as error:
                 logger.warning("EU truth unavailable for %s: %s", device.id, error)
                 self.state.truth_lost()
+                self.f2_protection.invalidate()
+                self.state.protection_changed(self.f2_protection.snapshot())
                 return None
         self.state.truth_received()
         return vector
@@ -83,13 +90,15 @@ class TruthSolveLoop:
             except Exception:
                 logger.exception("EU solve failed")
                 self.state.solver_failed()
+                self.f2_protection.invalidate()
+                self.state.protection_changed(self.f2_protection.snapshot())
                 return
             self.solve_seq += 1
             payloads = {}
             for device in self.profile.devices:
                 truth = truths[device.id]
                 payloads[device.id] = {
-                    "schema": 2, "device_id": device.id,
+                    "schema": 3, "device_id": device.id,
                     "generation": truth["generation"], "revision": truth["revision"],
                     "solver_epoch": self.solver_epoch, "solve_seq": self.solve_seq,
                     "solved_at": result["solved_at"], **result["measurements"][device.id],
@@ -100,7 +109,9 @@ class TruthSolveLoop:
                 for d in self.profile.devices
             ), return_exceptions=True)
             delivery = {}
-            changed = bool(result["f2_trip"])
+            changed = self.f2_protection.sample(
+                result["f2_current_a"], result["solved_at"], self.solver_epoch,
+                closed=not self.controls.f2_tripped)
             if changed:
                 self.controls.f2_tripped = True
             for device, response in zip(self.profile.devices, responses):
@@ -111,16 +122,18 @@ class TruthSolveLoop:
                 else:
                     status, body = response
                 record, retry = acknowledgement(status, body, revision)
+                record.update({k: payloads[device.id][k] for k in ("current_a", "p_mw", "q_mvar")})
                 delivery[device.id] = record
                 changed |= retry
                 if not record["delivered"]:
                     logger.warning("EU feedback rejected for %s: HTTP %s", device.id, status)
             snapshot = {
-                "schema": 2, "profile_id": self.profile.id,
+                "schema": 3, "profile_id": self.profile.id,
                 "solver_epoch": self.solver_epoch, "solve_seq": self.solve_seq,
                 "solved_at": result["solved_at"], "truth_stale": False,
                 **{k: result[k] for k in ("fault_section", "f2_tripped", "load_multiplier",
-                                         "source_pu", "tap", "buses")},
+                                         "source_pu", "tap", "buses", "profile")},
+                "f2_protection": self.f2_protection.snapshot(),
                 "devices": delivery,
             }
             # The head latch is process truth; buses remain the sampled values

@@ -1,4 +1,4 @@
-"""Strict schema-2 process/device wire validation and bounded HTTP transport."""
+"""Strict schema-3 process/device wire validation and bounded HTTP transport."""
 
 import json
 import re
@@ -28,8 +28,8 @@ def validate_truth(value: object, device: DeviceProfile) -> dict:
     """Validate the exact per-kind shape, identity, types, ranges and UTC time."""
     if not isinstance(value, dict) or set(value) != BASE | FIELDS[device.kind]:
         raise TruthError("truth fields mismatch")
-    if type(value["schema"]) is not int or value["schema"] != 2:
-        raise TruthError("truth schema must be 2")
+    if type(value["schema"]) is not int or value["schema"] != 3:
+        raise TruthError("truth schema must be 3")
     if value["device_id"] != device.id or value["kind"] != device.kind:
         raise TruthError("truth identity/kind mismatch")
     for key in ("generation", "revision", "event_seq"):

@@ -34,7 +34,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494236042Z",
-      "cot": 20
+      "cot": 20,
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-protection-trip",
@@ -54,7 +56,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494169626Z",
-      "cot": 20
+      "cot": 20,
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-current",
@@ -77,7 +81,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.404977841Z",
-      "cot": 1
+      "cot": 1,
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-voltage",
@@ -100,7 +106,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.404993258Z",
-      "cot": 1
+      "cot": 1,
+      "device": "feeder-breaker",
+      "limits": {
+        "low": 19,
+        "high": 21
+      }
     },
     {
       "id": "rmu-1-position",
@@ -120,7 +131,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494237209Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-remote",
@@ -140,7 +153,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494174709Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-earth",
@@ -160,7 +175,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494175834Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-fault-passage",
@@ -180,7 +197,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494176917Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-current",
@@ -203,7 +222,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.404995383Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-section-kv",
@@ -226,7 +247,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.404996174Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-1",
+      "limits": {
+        "low": 19,
+        "high": 21
+      }
     },
     {
       "id": "rmu-1-source-kv",
@@ -249,7 +275,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405025924Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-1",
+      "limits": {
+        "low": 19,
+        "high": 21
+      }
     },
     {
       "id": "rmu-2-position",
@@ -269,7 +300,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494238126Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-remote",
@@ -289,7 +322,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494177584Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-earth",
@@ -309,7 +344,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494178251Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-fault-passage",
@@ -329,7 +366,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494178876Z",
-      "cot": 20
+      "cot": 20,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-current",
@@ -352,7 +391,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405034466Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-section-kv",
@@ -375,7 +416,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405035383Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-2",
+      "limits": {
+        "low": 19,
+        "high": 21
+      }
     },
     {
       "id": "rmu-2-source-kv",
@@ -398,7 +444,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405036258Z",
-      "cot": 1
+      "cot": 1,
+      "device": "rmu-2",
+      "limits": {
+        "low": 19,
+        "high": 21
+      }
     },
     {
       "id": "oltc-1-tap",
@@ -421,7 +472,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494256792Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-remote",
@@ -441,7 +494,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494179542Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-auto",
@@ -461,7 +516,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494180167Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-at-lower",
@@ -481,7 +538,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494180792Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-at-upper",
@@ -501,7 +560,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494181709Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-blocked",
@@ -521,7 +582,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494184917Z",
-      "cot": 20
+      "cot": 20,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-bus-kv",
@@ -544,7 +607,12 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405036841Z",
-      "cot": 1
+      "cot": 1,
+      "device": "oltc-1",
+      "limits": {
+        "low": 19.8,
+        "high": 21
+      }
     },
     {
       "id": "oltc-1-current",
@@ -567,7 +635,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:53.405037508Z",
-      "cot": 1
+      "cot": 1,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "plc-1-running",
@@ -587,7 +657,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494185792Z",
-      "cot": 20
+      "cot": 20,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-input-valid",
@@ -607,7 +679,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:02:38.494203709Z",
-      "cot": 20
+      "cot": 20,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-setpoint-kv",
@@ -618,7 +692,7 @@
         "cyclic_ms": 60000,
         "deadband": 0
       },
-      "value": 20,
+      "value": 20.4,
       "quality": {
         "iv": false,
         "nt": false,
@@ -630,7 +704,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:02.924050429Z",
-      "cot": 1
+      "cot": 1,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-deadband-pct",
@@ -653,7 +729,9 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:02.924074387Z",
-      "cot": 1
+      "cot": 1,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-delay-s",
@@ -664,7 +742,7 @@
         "cyclic_ms": 60000,
         "deadband": 0
       },
-      "value": 0,
+      "value": 30,
       "quality": {
         "iv": false,
         "nt": false,
@@ -676,11 +754,185 @@
       "source_time": null,
       "source_time_invalid": null,
       "received_at": "2026-10-17T22:03:02.924075887Z",
-      "cot": 1
+      "cot": 1,
+      "device": "plc-1",
+      "limits": null
+    },
+    {
+      "id": "feeder-p-mw",
+      "device": "feeder-breaker",
+      "limits": null,
+      "ioa": 2003,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "feeder-q-mvar",
+      "device": "feeder-breaker",
+      "limits": null,
+      "ioa": 2004,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "feeder-pf",
+      "device": "feeder-breaker",
+      "limits": null,
+      "ioa": 2005,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.01
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "oltc-1-p-mw",
+      "device": "oltc-1",
+      "limits": null,
+      "ioa": 2303,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "oltc-1-q-mvar",
+      "device": "oltc-1",
+      "limits": null,
+      "ioa": 2304,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "oltc-1-pf",
+      "device": "oltc-1",
+      "limits": null,
+      "ioa": 2305,
+      "kind": "float",
+      "asdu": null,
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.01
+      },
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
+    },
+    {
+      "id": "oltc-1-overcurrent-block",
+      "device": "oltc-1",
+      "limits": null,
+      "ioa": 1307,
+      "kind": "single-point",
+      "asdu": null,
+      "reporting": null,
+      "value": null,
+      "quality": {
+        "iv": true,
+        "nt": true,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": "never_received",
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": null,
+      "cot": null
     }
   ],
   "range_generation": 21,
   "rendered_at": "2026-10-17T22:03:59.796684802Z",
-  "schema": 2,
+  "schema": 3,
   "snapshot_seq": 4103
 }

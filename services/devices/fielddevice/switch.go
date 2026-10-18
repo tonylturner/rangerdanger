@@ -37,6 +37,9 @@ func (m *Model) WriteHolding(ctx context.Context, address, value uint16, actor A
 		if m.truth.Kind == Breaker && m.truth.Lockout {
 			return reject("lockout")
 		}
+		if m.protection.PickedUp {
+			return reject("picked_up")
+		}
 		if m.truth.Kind == RMU && m.truth.EarthClosed {
 			return reject("earth_closed")
 		}
@@ -50,8 +53,8 @@ func (m *Model) WriteHolding(ctx context.Context, address, value uint16, actor A
 		if !m.measurements.Valid {
 			return reject("no_measurement")
 		}
-		if *m.measurements.FaultCurrent {
-			return reject("fault_current")
+		if m.protection.PickedUp {
+			return reject("picked_up")
 		}
 	}
 	if m.truth.Position == target {

@@ -61,3 +61,29 @@ func TestConfigRejectsMissingKindAndInvalidListeners(t *testing.T) {
 		}
 	}
 }
+
+func TestProtectionEnvironment(t *testing.T) {
+	env(t)
+	t.Setenv("DEVICE_PICKUP_A", "500")
+	t.Setenv("DEVICE_DELAY_MS", "2000")
+	t.Setenv("DEVICE_INSTANTANEOUS_A", "4000")
+	t.Setenv("DEVICE_MAX_GAP_MS", "4000")
+	cfg, err := loadConfig()
+	if err != nil || cfg.protection.PickupA != 500 || cfg.protection.DelayMS != 2000 ||
+		cfg.protection.MaxGapMS != 4000 || *cfg.protection.InstantaneousA != 4000 {
+		t.Fatalf("protection env: %+v, %v", cfg.protection, err)
+	}
+	t.Setenv("DEVICE_INSTANTANEOUS_A", "null")
+	cfg, err = loadConfig()
+	if err != nil || cfg.protection.InstantaneousA != nil {
+		t.Fatal("null instantaneous setting rejected")
+	}
+	for _, key := range []string{"DEVICE_PICKUP_A", "DEVICE_DELAY_MS", "DEVICE_INSTANTANEOUS_A", "DEVICE_MAX_GAP_MS"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, "invalid")
+			if _, err := loadConfig(); err == nil {
+				t.Fatalf("bad %s accepted", key)
+			}
+		})
+	}
+}

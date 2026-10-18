@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 
 	"github.com/gin-gonic/gin"
 
@@ -19,6 +23,7 @@ import (
 func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 	gen := rangeOf(c)
 	topology := gen.Package.Template
+	statuses := s.workshopNodeStatuses(c.Request.Context(), gen)
 
 	zoneOrder := manifestZones(gen)
 	zoneCounts := map[string]int{}
@@ -73,7 +78,7 @@ func (s *Server) handleGetWorkshopGraph(c *gin.Context) {
 				Label:         n.Name,
 				Zone:          zone,
 				Networks:      n.Networks,
-				Status:        "running",
+				Status:        statuses[n.ID],
 				IP:            n.IP,
 				InterfaceIPs:  interfaceIPs,
 				UIPath:        uiPath,
@@ -180,7 +185,8 @@ func controlCentreLinkStatus(ctx context.Context, cc string) ccLinkStatus {
 		return ccLinkStatus{}
 	}
 	var state struct {
-		Link struct {
+		Schema int `json:"schema"`
+		Link   struct {
 			State *string `json:"state"`
 			GI    struct {
 				State          *string `json:"state"`
@@ -188,7 +194,7 @@ func controlCentreLinkStatus(ctx context.Context, cc string) ccLinkStatus {
 			} `json:"gi"`
 		} `json:"link"`
 	}
-	if err := json.Unmarshal(body, &state); err != nil {
+	if err := json.Unmarshal(body, &state); err != nil || state.Schema != 3 {
 		return ccLinkStatus{}
 	}
 	var integrity *string
@@ -233,4 +239,51 @@ func manifestInterfaceIPs(gen *lifecycle.Generation, n labs.NodeYAML) map[string
 		}
 	}
 	return ips
+}
+
+// workshopNodeStatuses uses one bounded inventory read, including stopped containers.
+// An unavailable daemon is unknown, not proof that a container is missing.
+func (s *Server) workshopNodeStatuses(ctx context.Context, gen *lifecycle.Generation) map[string]string {
+	states := map[string]string{}
+	for _, node := range gen.Package.Template.Nodes {
+		states[node.ID] = "unknown"
+	}
+	if s.orchestrator == nil || s.orchestrator.DockerClient() == nil {
+		return states
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	containers, err := s.orchestrator.DockerClient().ContainerList(ctx, container.ListOptions{
+		All: true, Filters: filters.NewArgs(filters.Arg("label", "com.docker.compose.project="+manifest.RangeProject)),
+	})
+	if err != nil {
+		return states
+	}
+	byName := map[string]string{}
+	for _, item := range containers {
+		// Check the label as well as the query: never display a platform container.
+		if item.Labels["com.docker.compose.project"] != manifest.RangeProject {
+			continue
+		}
+		state := "unknown"
+		switch item.State {
+		case "running", "exited", "restarting", "paused":
+			state = item.State
+		}
+		for _, name := range item.Names {
+			byName[strings.TrimPrefix(name, "/")] = state
+		}
+	}
+	for _, node := range gen.Package.Template.Nodes {
+		service, ok := gen.Manifest.ServiceByNode(node.ID)
+		if !ok {
+			continue
+		}
+		state, found := byName[service.Container]
+		if !found {
+			state = "missing"
+		}
+		states[node.ID] = state
+	}
+	return states
 }

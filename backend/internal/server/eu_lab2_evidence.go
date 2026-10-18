@@ -99,8 +99,8 @@ func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 	if ev.stateErr != nil || ev.journalErr != nil || ev.state == nil || ev.journal == nil {
 		return fail(fmt.Sprintf("CC state/journal unavailable: %v; %v", ev.stateErr, ev.journalErr))
 	}
-	if ev.state.Schema != 2 || ev.state.CacheEpoch == "" || ev.state.CacheEpoch != ev.journal.CacheEpoch || ev.state.Link.State != "started" || ev.state.Link.ConnectionSeq == 0 {
-		return fail("schema-2 state and journal must share a live CC cache epoch")
+	if ev.state.Schema != 3 || ev.state.CacheEpoch == "" || ev.state.CacheEpoch != ev.journal.CacheEpoch || ev.state.Link.State != "started" || ev.state.Link.ConnectionSeq == 0 {
+		return fail("schema-3 state and journal must share a live CC cache epoch")
 	}
 	cap := ev.collectedAt.Add(-conduitAttemptLimit)
 	if cap.Before(ev.rangeStart) {
@@ -162,8 +162,8 @@ func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {
 	if ev.audit.Generation != ev.device.Generation {
 		return checkFail(name, "missing evidence: OLTC generation changed; repeat the attempt")
 	}
-	if ev.device.Schema != 2 {
-		return checkFail(name, "missing evidence: OLTC state must use schema 2")
+	if ev.device.Schema != 3 {
+		return checkFail(name, "missing evidence: OLTC state must use schema 3")
 	}
 	for _, ioa := range []int{1302, 1303, 1401, 1402} {
 		enabled := false

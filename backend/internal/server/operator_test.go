@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ccStateFixture is the schema-2 contract after a connect GI.
+// ccStateFixture is the schema-3 contract after a connect GI.
 const ccStateFixture = `{
-  "schema": 2,
+  "schema": 3,
   "cache_epoch": "c0ffee01",
   "link": {
     "state": "started",
@@ -31,6 +31,8 @@ const ccStateFixture = `{
   "points": [
     {
       "id": "feeder-breaker-position",
+      "device": "feeder-breaker",
+      "limits": null,
       "ioa": 1001,
       "asdu": "M_DP_NA_1",
       "value": "closed",
@@ -207,6 +209,14 @@ func TestOperatorGI(t *testing.T) {
 }
 
 func TestWorkshopGIIntegrity(t *testing.T) {
+	for _, schema := range []string{"1", "2"} {
+		_, cc := newUpstreamStub(t, map[string]stubResponse{"GET /api/state": {200, strings.Replace(ccStateFixture, `"schema": 3`, `"schema": `+schema, 1)}})
+		status := controlCentreLinkStatus(t.Context(), cc.URL)
+		if status.GI != nil || status.Link != nil {
+			t.Fatalf("old schema %s returned live health: %+v", schema, status)
+		}
+	}
+
 	for _, tc := range []struct{ state, last, want string }{
 		{"none", "null", "none"},
 		{"running", "null", "running"},

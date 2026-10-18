@@ -17,7 +17,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		start: conduit.rangeStart, now: conduit.collectedAt, policyAt: at("12:00:30"), operationEnd: at("12:05:00"), hardeningSince: at("12:00:30"), policy: "custom", capture: true,
 		cc: conduit.state, journal: conduit.journal, conduits: conduit,
 		devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{},
-		process: decodeFixture[euWorkshopProcess](t, `{"schema":2,"truth_stale":false,"solved_at":"2026-10-09T12:04:59Z","buses":{"bus20":{"live":true,"kv":20},"s1":{"live":true,"kv":20},"s2":{"live":true,"kv":20},"s3":{"live":true,"kv":20}},"devices":{"feeder-breaker":{"delivered":true,"revision":1,"solved_revision":1},"rmu-1":{"delivered":true,"revision":1,"solved_revision":1},"rmu-2":{"delivered":true,"revision":1,"solved_revision":1},"oltc-1":{"delivered":true,"revision":1,"solved_revision":1}}}`),
+		process: decodeFixture[euWorkshopProcess](t, `{"schema":3,"truth_stale":false,"solved_at":"2026-10-09T12:04:59Z","buses":{"bus20":{"live":true,"kv":20},"s1":{"live":true,"kv":20},"s2":{"live":true,"kv":20},"s3":{"live":true,"kv":20}},"devices":{"feeder-breaker":{"delivered":true,"revision":1,"solved_revision":1},"rmu-1":{"delivered":true,"revision":1,"solved_revision":1},"rmu-2":{"delivered":true,"revision":1,"solved_revision":1},"oltc-1":{"delivered":true,"revision":1,"solved_revision":1}}}`),
 		ccIP:    "10.60.60.20", rtuIP: "10.30.30.20",
 		rtuLog:       "set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=31 devices=4 select-timeout=5000ms\n",
 		breakerAudit: decodeFixture[euWorkshopBreakerAudit](t, `{"generation":42,"oldest_seq":1,"latest_seq":2,"entries":[{"seq":1,"at":"2026-10-09T12:00:00Z","operation":"reset","result":"accepted","context":{"protocol":"lab"}},{"seq":2,"at":"2026-10-09T12:02:00Z","operation":"first_solve","result":"accepted"}]}`),
@@ -36,7 +36,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		if node == "rmu-2" {
 			position = "open"
 		}
-		ev.devices[node] = decodeFixture[euWorkshopDevice](t, fmt.Sprintf(`{"schema":2,"device_id":%q,"generation":42,"revision":1,"event_seq":2,"position":%q,"remote_enabled":true,"auto":true,"tap":0,"blocked":false,"moving":false}`, id, position))
+		ev.devices[node] = decodeFixture[euWorkshopDevice](t, fmt.Sprintf(`{"schema":3,"device_id":%q,"generation":42,"revision":1,"event_seq":2,"position":%q,"remote_enabled":true,"auto":true,"tap":0,"blocked":false,"moving":false}`, id, position))
 	}
 	if slot == euWorkshopSlots[0] {
 		ev.policy = "weak"

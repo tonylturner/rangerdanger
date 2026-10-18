@@ -153,11 +153,22 @@ def main():
     command("rmu-2-command", "open")
     print("PASS quiet GOOD status remains command-eligible without a new GI")
     s = get_json(CC, "/api/state")
-    assert s["schema"] == 2 and s["snapshot_seq"] > 0 and s["rendered_at"].endswith("Z")
-    assert len(s["points"]) == 31 and all(good(p) for p in s["points"]), s
+    assert s["schema"] == 3 and s["snapshot_seq"] > 0 and s["rendered_at"].endswith("Z")
+    assert len(s["points"]) == 38 and all(good(p) for p in s["points"]), s
     assert pt(s, "oltc-1-tap")["value"] == {"value": 0, "transient": False}
-    assert pt(s, "plc-1-setpoint-kv")["value"] == 20
+    assert pt(s, "plc-1-setpoint-kv")["value"] == 20.4
     assert pt(s, "plc-1-deadband-pct")["value"] == 1
+    assert pt(s, "plc-1-delay-s")["value"] == 30
+    assert all(p["device"] and "limits" in p for p in s["points"])
+    assert pt(s, "oltc-1-bus-kv")["limits"] == {"low": 19.8, "high": 21}
+    fixture(23, "pf_invalid=true")
+    until(lambda: pt(get_json(CC, "/api/state"), "oltc-1-pf")["quality"]["iv"])
+    pf = pt(get_json(CC, "/api/state"), "oltc-1-pf")
+    assert pf["value"] == 0 and not pf["quality"]["nt"]
+    assert pf["stale_reason"] == "measurement_invalid", pf
+    fixture(23, "pf_invalid=false")
+    until(lambda: good(pt(get_json(CC, "/api/state"), "oltc-1-pf")))
+    print("PASS schema-3 metadata, configured delay, NaN PF IV/no NT/zero and recovery")
     for point, op in [
         ("rmu-1-command", "raise"),
         ("oltc-1-step", "open"),
@@ -253,7 +264,7 @@ def main():
     until(lambda: get_json(CC, "/api/health")["historian"]["last_ok_at"] is not None)
     samples = get_json(HIST, "/samples")
     assert len(samples) >= 2
-    assert all(x["state"]["schema"] == 2 for x in samples)
+    assert all(x["state"]["schema"] == 3 for x in samples)
     [x["state"]["snapshot_seq"] for x in samples]
     # Prior regression checks deliberately restart CC, creating new epochs.
     current_epoch = get_json(CC, "/api/state")["cache_epoch"]
@@ -270,7 +281,7 @@ def main():
     command_write("oltc-1-mode", "auto", 23, 2, 2)
     get_json(HIST, "/set?delay=0")
     print(
-        "PASS bound schema-2 historian POSTs, increasing snapshots and slow-ingest isolation"
+        "PASS bound schema-3 historian POSTs, increasing snapshots and slow-ingest isolation"
     )
 
 

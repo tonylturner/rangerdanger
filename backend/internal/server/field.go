@@ -93,7 +93,14 @@ func (s *Server) handleFieldState(c *gin.Context) {
 
 // handleFieldAudit is the device audit after ?after=.
 func (s *Server) handleFieldAudit(c *gin.Context) {
-	device, ok := nodeSimURL(rangeOf(c), "breaker-1")
+	key := c.DefaultQuery("device", "breaker-1")
+	switch key {
+	case "breaker-1", "rmu-1", "rmu-2", "oltc-1":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device key"})
+		return
+	}
+	device, ok := nodeSimURL(rangeOf(c), key)
 	if !ok {
 		notSupported(c)
 		return

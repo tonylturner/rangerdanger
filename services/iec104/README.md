@@ -67,6 +67,9 @@ Modbus write target and the monitored point that provides its feedback. See
 The root requires `gi_interval_ms` (60000–86400000); float points require
 `cyclic_ms` (1000–3600000), forbidden on non-floats. Point-map `asdu` is the
 configured event type, not the last type actually received by the CC.
+Voltage points optionally declare `limits: {low, high}` in kV, with low < high.
+CC state (distinct from the schema-2 point map) is schema 3: every point adds
+its source `device` and nullable `limits`. OLTC overcurrent block is IOA 1307.
 
 The package uses a **selected teaching profile modelled on WEMAG/SvK
 practice**, not an EU default: GI every 900000 ms (15 minutes), measurement
@@ -100,7 +103,8 @@ Behaviour:
   retried. The in-tree Modbus master is `src/modbus.{c,h}`.
 - **Quality per point, per cause.** No successful poll within
   `stale_after_ms` → `IV`+`NT` (device unreachable). A `measurement:true`
-  point while the device's valid bit is 0 → `IV` (floats only). A point is
+  point while the device's valid bit is 0 → `IV` (floats only).
+  A NaN float register also becomes IV without NT, with wire value 0.0. A point is
   GOOD only when no cause applies. A frozen device heartbeat makes all of
   its points IV after the heartbeat's `stale_after_ms`; PLC IV alone is
   rendered as `stale_reason: heartbeat`.
@@ -181,7 +185,7 @@ iec104-cc --config /etc/rangerdanger/points.json --bind 10.60.60.20 \
 Both historian flags are optional as a pair; an invalid URL/source bind is
 fatal. There are no new environment variables. The container still requires
 `GATEWAY=10.60.60.2` for its existing gateway entrypoint. The publisher opens
-no listener: one schema-2 snapshot POST each second and for every applied
+no listener: one schema-3 snapshot POST each second and for every applied
 timed report, captured before a following untimed GI can clear its source tag.
 A 16-snapshot FIFO drops the oldest on overflow. One dedicated worker handles
 serialization and HTTP, with one push in flight, a 500 ms **total** socket
@@ -304,7 +308,7 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   floats, GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on
   link loss.
 - Control centre (`check/cc_checks.sh`, every assertion through its HTTP
-  API via `check/ccprobe.py`): GI and the 31 points GOOD; open, close and
+  API via `check/ccprobe.py`): GI and the 38 points GOOD; open, close and
   no-op → `completed` with matched feedback; interlock → `rejected`; 409,
   503 and every 4xx/5xx input case; `measurement_invalid` and
   `device_unreachable` with the link started; RTU paused → `t1_timeout`,

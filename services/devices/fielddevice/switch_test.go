@@ -16,7 +16,7 @@ func TestSwitchRefusals(t *testing.T) {
 	}{
 		{"breaker local open", Breaker, 1, func(t *testing.T, m *Model) { m.truth.RemoteEnabled = false }, "not_remote"},
 		{"breaker local close", Breaker, 2, func(t *testing.T, m *Model) { m.truth.RemoteEnabled = false }, "not_remote"},
-		{"breaker lockout", Breaker, 2, func(t *testing.T, m *Model) { measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true }) }, "lockout"},
+		{"breaker lockout", Breaker, 2, func(t *testing.T, m *Model) { measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 }) }, "lockout"},
 		{"breaker unknown", Breaker, 2, nil, "no_measurement"},
 		{"breaker live-live", Breaker, 2, func(t *testing.T, m *Model) { measure(t, m, func(i *MeasurementInput) { i.SourceLive = true }) }, "live_live"},
 		{"rmu local close", RMU, 2, func(t *testing.T, m *Model) { action(t, m, "set_local") }, "not_remote"},
@@ -31,9 +31,9 @@ func TestSwitchRefusals(t *testing.T) {
 		{"rmu unknown open", RMU, 1, nil, "no_measurement"},
 		{"rmu live-live", RMU, 2, func(t *testing.T, m *Model) { measure(t, m, func(i *MeasurementInput) { i.SourceLive = true }) }, "live_live"},
 		{"rmu fault-current", RMU, 1, func(t *testing.T, m *Model) {
-			measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
-			measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
-		}, "fault_current"},
+			measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
+			measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
+		}, "picked_up"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,23 +77,27 @@ func TestSwitchSuccessAndNoOp(t *testing.T) {
 
 func TestRMUOpenAfterFPILatch(t *testing.T) {
 	m, _ := newTestModel(t, RMU)
-	latched := measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+	latched := measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
 	if !latched.FaultPassage || latched.Measurements.Valid || latched.Position != PositionClosed {
 		t.Fatalf("FPI did not latch and invalidate measurements: %+v", latched)
 	}
 	for _, tt := range []struct {
-		name         string
-		deliver      bool
-		faultCurrent bool
-		reason       string
+		name     string
+		deliver  bool
+		pickedUp bool
+		reason   string
 	}{
 		{"immediate open after latch", false, false, "no_measurement"},
-		{"valid fault current", true, true, "fault_current"},
+		{"valid fault current", true, true, "picked_up"},
 		{"valid without fault current", true, false, ""},
 	} {
 		if !t.Run(tt.name, func(t *testing.T) {
 			if tt.deliver {
-				measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = tt.faultCurrent })
+				measure(t, m, func(i *MeasurementInput) {
+					if tt.pickedUp {
+						i.CurrentA = 3500
+					}
+				})
 			}
 			before := m.Truth()
 			_, cursor, _ := m.AuditAfter(0)
@@ -133,7 +137,7 @@ func TestBreakerOpenDoesNotRequireMeasurements(t *testing.T) {
 	}{
 		{"unknown", func(t *testing.T, m *Model, c *fakeClock) {}},
 		{"protection-invalidated", func(t *testing.T, m *Model, c *fakeClock) {
-			measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+			measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
 		}},
 		{"expired", func(t *testing.T, m *Model, c *fakeClock) {
 			measure(t, m, nil)
@@ -161,7 +165,7 @@ func TestProtectionAndFPILatchOnMeasurement(t *testing.T) {
 			// Local authority cannot disable protection or FPI.
 			m.truth.RemoteEnabled = false
 			before := m.Truth()
-			s := measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+			s := measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
 			if s.Revision != before.Revision+1 || s.EventSeq != before.EventSeq+1 || s.Measurements.Valid {
 				t.Fatalf("effect=%+v", s)
 			}
@@ -177,7 +181,7 @@ func TestProtectionAndFPILatchOnMeasurement(t *testing.T) {
 				t.Fatalf("protection actor=%+v", last.Context)
 			}
 			tripped := s.Revision
-			s = measure(t, m, func(i *MeasurementInput) { i.FaultCurrent = true })
+			s = measure(t, m, func(i *MeasurementInput) { i.CurrentA = 3500 })
 			if !s.Measurements.Valid || s.Revision != tripped {
 				t.Fatal("latched indication repeatedly bumped truth")
 			}

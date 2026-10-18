@@ -51,6 +51,8 @@ export type Reporting = { cyclic_ms: number; deadband: number };
 
 export type OperatorPoint = {
   id: string;
+  device: string;
+  limits: { low: number; high: number } | null;
   ioa: number;
   kind: PointKind;
   asdu: string | null;
@@ -68,7 +70,7 @@ export type OperatorPoint = {
 };
 
 export type OperatorState = {
-  schema: 2;
+  schema: 3;
   snapshot_seq: number;
   rendered_at: string;
   cache_epoch: string;
@@ -108,7 +110,7 @@ export async function sendOperatorCommand(command: OperatorCommand) {
 
 export class OperatorStateSchemaError extends Error {
   constructor() {
-    super("Expected CC state schema 2 with valid IEC reporting and GI");
+    super("Expected CC state schema 3 with valid IEC reporting and GI");
     this.name = "OperatorStateSchemaError";
   }
 }
@@ -162,16 +164,28 @@ export type DeviceMeasurements = {
   source_kv_ll: number | null;
   section_live: boolean | null;
   source_live: boolean | null;
-  fault_current: boolean | null;
+  p_mw: number | null;
+  q_mvar: number | null;
+  pf: number | null;
   solver_epoch: string | null;
   solve_seq: number | null;
   solved_at: string | null;
   received_at: string | null;
 };
 
+export type Protection = {
+  function: "overcurrent" | "fpi" | "oltc_block";
+  pickup_a: number;
+  delay_ms: number;
+  instantaneous_a: number | null;
+  picked_up: boolean;
+  picked_up_since: string | null;
+  last_trip_current_a: number | null;
+};
+export type FieldDeviceKey = "breaker-1" | "rmu-1" | "rmu-2" | "oltc-1";
 export type BreakerPosition = "open" | "closed";
 type DeviceCommon = {
-  schema: 2;
+  schema: 3;
   device_id: string;
   generation: number;
   revision: number;
@@ -179,6 +193,7 @@ type DeviceCommon = {
   changed_at: string;
   remote_enabled: boolean;
   measurements: DeviceMeasurements;
+  protection: Protection;
 };
 export type BreakerState = DeviceCommon & {
   kind: "breaker";
@@ -206,11 +221,11 @@ export type OltcState = DeviceCommon & {
 export type DeviceState = BreakerState | RmuState | OltcState;
 
 export type ProcessElectrical = {
-  schema: 2;
+  schema: 3;
   profile_id: string;
   solver_epoch: string;
   solve_seq: number;
-  solved_at: string;
+  solved_at: string | null;
   truth_stale: boolean;
   fault_section: "none" | "S1" | "S2";
   f2_tripped: boolean;
@@ -218,7 +233,9 @@ export type ProcessElectrical = {
   source_pu: number;
   tap: number;
   buses: Record<string, { kv: number | null; live: boolean | null }>;
-  devices: Record<string, { delivered: boolean; solved_revision: number; revision: number }>;
+  profile: { enabled: boolean; load_factors: { residential: number | null; commercial: number | null; industrial: number | null }; source_pu: number | null };
+  f2_protection: Pick<Protection, "picked_up" | "picked_up_since" | "last_trip_current_a">;
+  devices: Record<string, { delivered: boolean; solved_revision: number | null; revision: number | null; current_a: number | null; p_mw: number | null; q_mvar: number | null }>;
 };
 
 export type FieldState = {
@@ -228,7 +245,7 @@ export type FieldState = {
   process: ProcessElectrical;
 };
 
-// GPS /api/state is not a schema-2 feeder device.
+// GPS /api/state is not a schema-3 feeder device.
 export type StationClock = {
   actual_time: string;
   reported_time: string;
@@ -264,8 +281,9 @@ const ASDU_BY_KIND: Record<PointKind, string[]> = {
   float: ["M_ME_NC_1"],
 };
 function validPoint(p: unknown): boolean {
-  if (!isObject(p) || !exactKeys(p, ["id", "ioa", "kind", "asdu", "value", "quality", "stale_reason", "source_time", "source_time_invalid", "received_at", "cot", "reporting"]) ||
-    typeof p.id !== "string" || !integer(p.ioa) || p.ioa < 1 || p.ioa > 16777215 ||
+  if (!isObject(p) || !exactKeys(p, ["id", "device", "limits", "ioa", "kind", "asdu", "value", "quality", "stale_reason", "source_time", "source_time_invalid", "received_at", "cot", "reporting"]) ||
+    typeof p.id !== "string" || typeof p.device !== "string" || p.device.length === 0 ||
+    !nullable(p.limits, (l) => isObject(l) && exactKeys(l, ["low", "high"]) && finite(l.low) && finite(l.high) && l.low < l.high) || !integer(p.ioa) || p.ioa < 1 || p.ioa > 16777215 ||
     typeof p.kind !== "string" || !Object.hasOwn(ASDU_BY_KIND, p.kind)) return false;
   const kind = p.kind as PointKind;
   if (!nullable(p.asdu, (v) => typeof v === "string" && ASDU_BY_KIND[kind].includes(v)) ||
@@ -290,7 +308,7 @@ function validPoint(p: unknown): boolean {
 }
 export function validOperatorState(s: unknown): s is OperatorState {
   if (!isObject(s) || !exactKeys(s, ["schema", "snapshot_seq", "rendered_at", "cache_epoch", "link", "points", "package_id", "range_generation"]) ||
-    s.schema !== 2 || !integer(s.snapshot_seq) || s.snapshot_seq < 0 || !timestamp(s.rendered_at) ||
+    s.schema !== 3 || !integer(s.snapshot_seq) || s.snapshot_seq < 0 || !timestamp(s.rendered_at) ||
     !strings(s, ["cache_epoch", "package_id"]) || !integer(s.range_generation) || s.range_generation < 0 ||
     !Array.isArray(s.points) || !s.points.every(validPoint)) return false;
   const l = s.link;
@@ -305,13 +323,21 @@ export function validOperatorState(s: unknown): s is OperatorState {
 }
 
 function validDevice(value: unknown): boolean {
-  if (!isObject(value) || value.schema !== 2 || !strings(value, ["device_id"]) ||
+  if (!isObject(value) || value.schema !== 3 || !strings(value, ["device_id"]) ||
     !["generation", "revision", "event_seq"].every((key) => integer(value[key]) && value[key] >= 0) ||
     !timestamp(value.changed_at) || !booleans(value, ["remote_enabled"])) return false;
+  const protection = value.protection;
+  const functions = { breaker: "overcurrent", rmu: "fpi", oltc: "oltc_block" };
+  if (!isObject(protection) || !exactKeys(protection, ["function", "pickup_a", "delay_ms", "instantaneous_a", "picked_up", "picked_up_since", "last_trip_current_a"]) ||
+    protection.function !== functions[value.kind as keyof typeof functions] ||
+    !finite(protection.pickup_a) || protection.pickup_a <= 0 || !integer(protection.delay_ms) || protection.delay_ms < 0 ||
+    !nullable(protection.instantaneous_a, finite) || !validPickup(protection)) return false;
   const m = value.measurements;
-  if (!isObject(m) || !booleans(m, ["valid"]) ||
-    !["current_a", "voltage_kv_ll", "source_kv_ll"].every((key) => nullable(m[key], finite)) ||
-    !["section_live", "source_live", "fault_current"].every((key) => nullable(m[key], (v) => typeof v === "boolean")) ||
+  if (!isObject(m) || !exactKeys(m, ["valid", "current_a", "voltage_kv_ll", "source_kv_ll", "section_live", "source_live", "p_mw", "q_mvar", "pf", "solver_epoch", "solve_seq", "solved_at", "received_at"]) || !booleans(m, ["valid"]) ||
+    !["current_a", "voltage_kv_ll", "source_kv_ll", "p_mw", "q_mvar", "pf"].every((key) => nullable(m[key], finite)) ||
+    !["section_live", "source_live"].every((key) => nullable(m[key], (v) => typeof v === "boolean")) ||
+    (m.valid === false && [m.p_mw, m.q_mvar, m.pf].some((v) => v !== null)) ||
+    (m.pf !== null && (!finite(m.pf) || m.pf < 0 || m.pf > 1)) ||
     !nullable(m.solver_epoch, (v) => typeof v === "string") || !nullable(m.solve_seq, integer) ||
     !["solved_at", "received_at"].every((key) => nullable(m[key], timestamp))) return false;
   switch (value.kind) {
@@ -325,6 +351,24 @@ function validDevice(value: unknown): boolean {
     default:
       return false;
   }
+}
+
+function validPickup(p: Record<string, unknown>): boolean {
+  return typeof p.picked_up === "boolean" && nullable(p.picked_up_since, timestamp) && nullable(p.last_trip_current_a, finite);
+}
+function validProcess(p: unknown): boolean {
+  if (!isObject(p) || p.schema !== 3 || !strings(p, ["profile_id", "solver_epoch"]) || !integer(p.solve_seq) || p.solve_seq < 0 ||
+    !nullable(p.solved_at, timestamp) || !booleans(p, ["truth_stale", "f2_tripped"]) ||
+    (typeof p.fault_section !== "string" || !["none", "S1", "S2"].includes(p.fault_section)) ||
+    !["load_multiplier", "source_pu", "tap"].every((k) => finite(p[k]))) return false;
+  const profile = p.profile, f2 = p.f2_protection;
+  if (!isObject(profile) || !exactKeys(profile, ["enabled", "load_factors", "source_pu"]) || typeof profile.enabled !== "boolean" ||
+    !nullable(profile.source_pu, finite) || !isObject(profile.load_factors) ||
+    !exactKeys(profile.load_factors, ["residential", "commercial", "industrial"]) || !Object.values(profile.load_factors).every((v) => nullable(v, finite)) ||
+    !isObject(f2) || !exactKeys(f2, ["picked_up", "picked_up_since", "last_trip_current_a"]) || !validPickup(f2)) return false;
+  return isObject(p.buses) && Object.values(p.buses).every((b) => isObject(b) && nullable(b.kv, finite) && nullable(b.live, (v) => typeof v === "boolean")) &&
+    isObject(p.devices) && Object.values(p.devices).every((d) => isObject(d) && exactKeys(d, ["delivered", "solved_revision", "revision", "current_a", "p_mw", "q_mvar"]) && typeof d.delivered === "boolean" &&
+      ["solved_revision", "revision"].every((k) => nullable(d[k], integer)) && ["current_a", "p_mw", "q_mvar"].every((k) => nullable(d[k], finite)));
 }
 
 function validClock(value: unknown): boolean {
@@ -360,16 +404,22 @@ export type DeviceAudit = {
 
 export async function getFieldState() {
   const state = await request<FieldState>("/field/state");
-  if (!isObject(state) || !isObject(state.process) || state.process.schema !== 2 || !isObject(state.devices) ||
+  if (!isObject(state) || !validProcess(state.process) || !isObject(state.devices) ||
     Object.keys(state.devices).length === 0 || !Object.values(state.devices).every(validDevice)) {
-    throw new Error("Expected field and process schema 2");
+    throw new Error("Expected field and process schema 3");
   }
   if (state.clock !== null && !validClock(state.clock)) throw new Error("Expected station clock state or null");
   return state;
 }
 
-export async function getFieldAudit() {
-  return request<DeviceAudit>("/field/audit?after=0");
+export async function getFieldAudit(device: FieldDeviceKey = "breaker-1") {
+  const audit = await request<DeviceAudit>(`/field/audit?after=0&device=${device}`);
+  if (!isObject(audit) || !integer(audit.generation) || !Array.isArray(audit.entries) ||
+    !(["latest_seq", "oldest_seq"] as const).every((k) => nullable(audit[k], integer)) ||
+    !audit.entries.every((e) => isObject(e) && integer(e.seq) && timestamp(e.at) && strings(e, ["operation", "result"]) && validDevice(e.before) && validDevice(e.after) && isObject(e.context) && strings(e.context, ["peer", "protocol", "zone"]))) {
+    throw new Error("Expected device audit with schema 3 snapshots");
+  }
+  return audit;
 }
 
 // ── Firewall sessions (GET /api/firewall/sessions) ───────────────
