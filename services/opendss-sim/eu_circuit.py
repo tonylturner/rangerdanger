@@ -2,52 +2,25 @@
 
 import math
 import threading
+import time
+from datetime import datetime, timezone
 
 import opendssdirect as dss
 from eu_controls import ProcessControls
+from eu_dynamics import LOAD_CATEGORIES, ProfileDynamics
 from eu_profile import EUProfile
-from time_utils import utc_timestamp
-
-# These edges describe section connectivity, not a substitute power-flow model.
-EDGES = {
-    "feeder-breaker": ("bus20", "s1"), "rmu-1": ("s1", "s2"),
-    "rmu-2": ("s3", "s2"), "f2": ("bus20", "s3"),
-}
-
-
-def fault_paths(closed: dict[str, bool], targets: set[str]) -> set[str]:
-    """Union of all simple energised source-to-fault paths, including a ring."""
-    result = set()
-
-    def walk(bus: str, seen: set[str], path: set[str]) -> None:
-        if bus in targets:
-            result.update(path)
-        for edge, (a, b) in EDGES.items():
-            if not closed[edge] or bus not in (a, b):
-                continue
-            peer = b if bus == a else a
-            if peer not in seen:
-                walk(peer, seen | {peer}, path | {edge})
-
-    walk("bus20", {"bus20"}, set())
-    return result
-
-
-def reachable(closed: dict[str, bool]) -> set[str]:
-    live = {"bus20"}
-    for _ in EDGES:
-        for edge, (a, b) in EDGES.items():
-            if closed[edge] and (a in live or b in live):
-                live.update((a, b))
-    return live
 
 
 class EUFeederSolver:
-    def __init__(self, profile: EUProfile):
+    def __init__(self, profile: EUProfile, clock=time.time):
         self.profile = profile
         self._dss = dss.NewContext()
         self._lock = threading.Lock()
         self._compiled = False
+        self._clock = clock
+        self._last_solved_ms = None
+        self.dynamics = ProfileDynamics(profile.profile, clock)
+        self._base_loads = {}
 
     @property
     def solution_frequency_hz(self) -> float:
@@ -69,13 +42,19 @@ class EUFeederSolver:
                 raise RuntimeError("EU circuit must not contain autonomous RegControl")
             self._dss.Solution.Frequency(self.profile.frequency_hz)
             self._dss.Text.Command("Set ControlMode=Off")
+            load_names = {name.lower() for name in self._dss.Loads.AllNames()}
+            if load_names != {name.lower() for name in LOAD_CATEGORIES}:
+                raise RuntimeError("Every DSS load must have exactly one profile category")
+            for name in LOAD_CATEGORIES:
+                self._dss.Loads.Name(name)
+                self._base_loads[name] = (self._dss.Loads.kW(), self._dss.Loads.kvar())
             self._compiled = True
 
     def solve(self, truths: dict[str, dict], controls: ProcessControls) -> dict:
         """Return pre-protection measurements; the loop owns any correction solve.
 
-        The F2 trip is reported, not silently solved a second time here. Devices
-        must see this vector's fault passage before its protection changes state.
+        F2 current is sampled here; the loop owns its protection and correction.
+        No topological fault indicator competes with solved current.
         """
         with self._lock:
             if not self._compiled:
@@ -87,19 +66,31 @@ class EUFeederSolver:
             for key, is_closed in closed.items():
                 self._dss.Text.Command(f"{'Close' if is_closed else 'Open'} {elements[key]} 1")
             tap = truths["oltc-1"]["tap"]
-            self._dss.Text.Command(f"Edit {elements['oltc-1']} wdg=2 tap={1 + .0125 * tap}")
-            self._dss.Text.Command(f"Edit {elements['source']} pu={controls.source_pu}")
+            self._dss.Text.Command(f"Edit {elements['oltc-1']} wdg=1 tap={1 - .0125 * tap}")
+            factors = self.dynamics.sample(controls.profile_enabled)
+            for name, category in LOAD_CATEGORIES.items():
+                kw, kvar = self._base_loads[name]
+                factor = factors["load_factors"][category]
+                self._dss.Text.Command(f"Edit Load.{name} kw={kw * factor} kvar={kvar * factor}")
+            self._dss.Text.Command(
+                f"Edit {elements['source']} pu={controls.source_pu * factors['source_pu']}")
             self._dss.Solution.LoadMult(controls.load_multiplier)
             targets = set() if controls.fault_section == "none" else {controls.fault_section.lower()}
             # Both RMUs' earth switch is on S2, including the normally-open tie.
-            if "s2" in reachable(closed) and any(truths[k]["earth_closed"] for k in ("rmu-1", "rmu-2")):
+            if any(truths[k]["earth_closed"] for k in ("rmu-1", "rmu-2")):
                 targets.add("s2")
             for section in ("s1", "s2"):
                 enabled = 'yes' if section in targets else 'no'
                 self._dss.Text.Command(f"Edit {elements['fault_' + section]} enabled={enabled}")
-            paths = fault_paths(closed, targets)
             self._dss.Solution.Solve()
-            solved_at = utc_timestamp()
+            # Correction solves can share a millisecond, and wall time can step
+            # backwards. Preserve strict ordering within this solver epoch.
+            solved_ms = int(self._clock() * 1000)
+            if self._last_solved_ms is not None:
+                solved_ms = max(solved_ms, self._last_solved_ms + 1)
+            self._last_solved_ms = solved_ms
+            solved_at = datetime.fromtimestamp(solved_ms / 1000, timezone.utc).isoformat(
+                timespec="milliseconds").replace("+00:00", "Z")
             if not self._dss.Solution.Converged():
                 return {"converged": False, "solved_at": solved_at}
             buses = {key: self._bus(name) for key, name in self.profile.buses.items()}
@@ -109,18 +100,25 @@ class EUFeederSolver:
             }
             measurements = {}
             for key, (source, section) in sides.items():
+                terminal = 2 if key == "oltc-1" else 1
+                p, q = self._power(elements[key], terminal)
+                if key == "oltc-1":
+                    p, q = -p, -q
+                elif not closed[key]:
+                    p, q = 0.0, 0.0
                 measurements[key] = {
-                    "current_a": self._current(elements[key], 2 if key == "oltc-1" else 1),
+                    "current_a": self._current(elements[key], terminal),
                     "voltage_kv_ll": buses[section]["kv"],
                     "source_kv_ll": buses[source]["kv"],
                     "section_live": buses[section]["live"],
                     "source_live": buses[source]["live"],
-                    "fault_current": bool(paths) if key == "oltc-1" else key in paths,
+                    "p_mw": p, "q_mvar": q,
                 }
             return {
                 "converged": True, "solved_at": solved_at, "tap": tap,
                 "buses": {key: buses[key] for key in ("bus20", "s1", "s2", "s3")},
-                "measurements": measurements, "f2_trip": "f2" in paths,
+                "measurements": measurements, "f2_current_a": self._current(elements["f2"], 1),
+                "profile": factors,
                 **controls.snapshot(),
             }
 
@@ -142,3 +140,13 @@ class EUFeederSolver:
         if not math.isfinite(value) or value < 0:
             raise RuntimeError("Invalid DSS current")
         return value
+
+    def _power(self, name: str, terminal: int) -> tuple[float, float]:
+        self._dss.Circuit.SetActiveElement(name)
+        values = self._dss.CktElement.Powers()
+        offset = (terminal - 1) * self._dss.CktElement.NumConductors() * 2
+        p, q = (sum(values[offset + component + 2*i] for i in range(3)) / 1000
+                for component in (0, 1))
+        if not math.isfinite(p) or not math.isfinite(q):
+            raise RuntimeError("Nonfinite DSS power")
+        return p, q

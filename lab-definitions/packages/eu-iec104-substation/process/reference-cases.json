@@ -1,17 +1,23 @@
 {
-  "schema": 2,
+  "schema": 3,
+  "profile_enabled": false,
+  "initial_tap": 0,
+  "setpoint_kv": 20.4,
+  "configured_delay_s": 30,
+  "motion_s": 2,
   "status": "passed",
   "engine": "0.9.4",
   "circuit": "feeder.dss",
   "circuit_selected_by_profile": true,
   "nominal_load_kw": 2340.85,
   "band_kv": [
-    19.8,
-    20.2
+    20.196,
+    20.604
   ],
   "checks": {
-    "nominal_within_half_percent": true,
-    "nominal_in_plc_deadband": true,
+    "steady_state_within_half_percent": true,
+    "nominal_steady_state_tap_plus_two": true,
+    "steady_state_in_plc_deadband": true,
     "positive_tap_raises_voltage": true,
     "triple_load_initially_out_of_band": true,
     "triple_load_returns_in_at_most_three_steps": true,
@@ -21,18 +27,40 @@
   "nominal": {
     "tap": 0,
     "bus20_kv": 19.91346435,
+    "in_band": false
+  },
+  "nominal_trace": [
+    {
+      "tap": 0,
+      "bus20_kv": 19.91346435,
+      "in_band": false
+    },
+    {
+      "tap": 1,
+      "bus20_kv": 20.16808162,
+      "in_band": false
+    },
+    {
+      "tap": 2,
+      "bus20_kv": 20.42919735,
+      "in_band": true
+    }
+  ],
+  "steady_state": {
+    "tap": 2,
+    "bus20_kv": 20.42919735,
     "in_band": true
   },
   "tap_polarity": {
     "lower": {
       "tap": -1,
-      "bus20_kv": 19.66412128,
+      "bus20_kv": 19.66508827,
       "in_band": false
     },
     "raise": {
       "tap": 1,
-      "bus20_kv": 20.16281407,
-      "in_band": true
+      "bus20_kv": 20.16808162,
+      "in_band": false
     }
   },
   "triple_load": [
@@ -43,7 +71,12 @@
     },
     {
       "tap": 1,
-      "bus20_kv": 19.92818774,
+      "bus20_kv": 19.93924213,
+      "in_band": false
+    },
+    {
+      "tap": 2,
+      "bus20_kv": 20.20260102,
       "in_band": true
     }
   ],
@@ -55,42 +88,42 @@
     },
     {
       "tap": 1,
-      "bus20_kv": 18.1376832,
+      "bus20_kv": 18.14258144,
       "in_band": false
     },
     {
       "tap": 2,
-      "bus20_kv": 18.35923901,
+      "bus20_kv": 18.37492192,
       "in_band": false
     },
     {
       "tap": 3,
-      "bus20_kv": 18.58071118,
+      "bus20_kv": 18.6132894,
       "in_band": false
     },
     {
       "tap": 4,
-      "bus20_kv": 18.80206936,
+      "bus20_kv": 18.85792424,
       "in_band": false
     },
     {
       "tap": 5,
-      "bus20_kv": 19.02334645,
+      "bus20_kv": 19.10919739,
       "in_band": false
     },
     {
       "tap": 6,
-      "bus20_kv": 19.24521669,
+      "bus20_kv": 19.36868475,
       "in_band": false
     },
     {
       "tap": 7,
-      "bus20_kv": 19.46899299,
+      "bus20_kv": 19.63686966,
       "in_band": false
     },
     {
       "tap": 8,
-      "bus20_kv": 19.6932652,
+      "bus20_kv": 19.9124523,
       "in_band": false
     }
   ],
@@ -102,40 +135,35 @@
     },
     {
       "tap": -1,
-      "bus20_kv": 21.6464029,
+      "bus20_kv": 21.64784963,
       "in_band": false
     },
     {
       "tap": -2,
-      "bus20_kv": 21.37436458,
+      "bus20_kv": 21.38394783,
       "in_band": false
     },
     {
       "tap": -3,
-      "bus20_kv": 21.10130235,
+      "bus20_kv": 21.12554513,
       "in_band": false
     },
     {
       "tap": -4,
-      "bus20_kv": 20.8269042,
+      "bus20_kv": 20.8719069,
       "in_band": false
     },
     {
       "tap": -5,
-      "bus20_kv": 20.55246134,
+      "bus20_kv": 20.62408391,
       "in_band": false
     },
     {
       "tap": -6,
-      "bus20_kv": 20.27802099,
-      "in_band": false
-    },
-    {
-      "tap": -7,
-      "bus20_kv": 20.00359757,
+      "bus20_kv": 20.38198681,
       "in_band": true
     }
   ],
-  "source_1_10_settle_tap": -7,
-  "scope": "Converged static OpenDSS solves; not PLC timing or protocol evidence. Contract v3; no physics tuning to meet acceptance values."
+  "source_1_10_settle_tap": -6,
+  "scope": "Converged static OpenDSS solves; not PLC timing or protocol evidence. EU realism contract rev 2; profile disabled; no physics tuning to meet acceptance values."
 }

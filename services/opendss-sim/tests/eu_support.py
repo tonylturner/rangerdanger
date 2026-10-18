@@ -1,4 +1,4 @@
-"""Schema-2 EU fixtures shared by process tests (not runtime code)."""
+"""Schema-3 EU fixtures shared by process tests (not runtime code)."""
 
 import copy
 import json
@@ -12,6 +12,7 @@ PROCESS_DIR = SERVICE_DIR.parents[1] / 'lab-definitions/packages/eu-iec104-subst
 
 def profile_file(tmp_path, urls=None):
     config = json.loads((PROCESS_DIR / 'profile.json').read_text())
+    config['profile']['enabled'] = False
     config['circuit_file'] = str(PROCESS_DIR / 'feeder.dss')
     for device in config['devices']:
         if urls:
@@ -26,7 +27,7 @@ def profile(tmp_path):
 
 
 def truths():
-    base = dict(schema=2, generation=98231, revision=1, event_seq=1,
+    base = dict(schema=3, generation=98231, revision=1, event_seq=1,
                 changed_at='2026-10-15T12:00:00.000Z', remote_enabled=True)
     return {
         'feeder-breaker': dict(base, device_id='feeder-breaker', kind='breaker',
@@ -65,11 +66,14 @@ class MemoryClient:
             return self.responses[device.id].pop(0)
         truth = self.truths[device.id]
         revision = payload['revision']
-        if self.protect and payload['fault_current']:
-            if device.kind == 'breaker' and truth['position'] == 'closed':
+        # Zero-delay peer: tests revision-changing acknowledgements, not field timing.
+        if self.protect:
+            if (device.kind == 'breaker' and truth['position'] == 'closed'
+                    and payload['current_a'] >= 400):
                 truth.update(position='open', lockout=True, protection_tripped=True)
                 truth['revision'] += 1
-            if device.kind == 'rmu' and not truth['fault_passage']:
+            if (device.kind == 'rmu' and not truth['fault_passage']
+                    and payload['current_a'] >= 300):
                 truth['fault_passage'] = True
                 truth['revision'] += 1
         if self.after_post:

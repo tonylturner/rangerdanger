@@ -1,10 +1,12 @@
-"""Strict schema-2 configuration for the CIGRE-derived EU teaching feeder."""
+"""Strict schema-3 configuration for the CIGRE-derived EU teaching feeder."""
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class ProfileError(ValueError):
@@ -20,7 +22,27 @@ PROFILE_KEYS = {
     "schema", "id", "frequency_hz", "hv_kv", "mv_kv", "circuit_file",
     "devices", "elements", "buses", "solve_interval_ms", "request_timeout_ms",
     "truth_stale_after_ms",
+    "profile", "f2_protection",
 }
+
+
+@dataclass(frozen=True)
+class ProfileSettings:
+    enabled: bool
+    seed: int | None
+    timezone: str
+    noise_sigma: float
+    noise_tau_s: float
+    source_tau_s: float
+    source_pu_min: float
+    source_pu_max: float
+
+
+@dataclass(frozen=True)
+class ProtectionSettings:
+    pickup_a: float
+    delay_ms: int
+    instantaneous_a: float
 
 
 @dataclass(frozen=True)
@@ -43,6 +65,50 @@ class EUProfile:
     solve_interval_ms: int
     request_timeout_ms: int
     truth_stale_after_ms: int
+    profile: ProfileSettings
+    f2_protection: ProtectionSettings
+
+
+def _number(value: object, name: str, minimum: float = 0) -> float:
+    if type(value) not in (int, float):
+        raise ProfileError(f"invalid {name}")
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ProfileError(f"invalid {name}") from error
+    if not math.isfinite(number) or number < minimum:
+        raise ProfileError(f"invalid {name}")
+    return number
+
+
+def _settings(value: object) -> ProfileSettings:
+    if not isinstance(value, dict) or set(value) != set(ProfileSettings.__annotations__):
+        raise ProfileError("invalid profile settings")
+    if (type(value["enabled"]) is not bool
+            or (value["seed"] is not None and type(value["seed"]) is not int)):
+        raise ProfileError("invalid profile enabled/seed")
+    try:
+        ZoneInfo(value["timezone"])
+    except (TypeError, ValueError, ZoneInfoNotFoundError) as error:
+        raise ProfileError("invalid profile timezone") from error
+    for key in ("noise_sigma", "noise_tau_s", "source_tau_s", "source_pu_min", "source_pu_max"):
+        _number(value[key], key)
+    if (value["noise_tau_s"] <= 0 or value["source_tau_s"] <= 0
+            or not 0 < value["source_pu_min"] <= 1 <= value["source_pu_max"]
+            or value["source_pu_min"] == value["source_pu_max"]):
+        raise ProfileError("invalid profile time constants/source bounds")
+    return ProfileSettings(**value)
+
+
+def _protection(value: object) -> ProtectionSettings:
+    if not isinstance(value, dict) or set(value) != set(ProtectionSettings.__annotations__):
+        raise ProfileError("invalid f2 protection settings")
+    pickup = _number(value["pickup_a"], "pickup_a")
+    instantaneous = _number(value["instantaneous_a"], "instantaneous_a")
+    delay = value["delay_ms"]
+    if pickup <= 0 or instantaneous < pickup or type(delay) is not int or delay < 0:
+        raise ProfileError("invalid f2 protection thresholds/delay")
+    return ProtectionSettings(pickup, delay, instantaneous)
 
 
 def _positive_integer(value: object, name: str) -> int:
@@ -84,8 +150,8 @@ def load_profile(path: str | Path) -> EUProfile:
         raise ProfileError(f"cannot load profile: {error}") from error
     if not isinstance(value, dict) or set(value) != PROFILE_KEYS:
         raise ProfileError("profile fields mismatch")
-    if type(value["schema"]) is not int or value["schema"] != 2:
-        raise ProfileError("schema must be 2")
+    if type(value["schema"]) is not int or value["schema"] != 3:
+        raise ProfileError("schema must be 3")
     if value["id"] != "eu-cigre-mv-teaching":
         raise ProfileError("id must be eu-cigre-mv-teaching")
     for name, expected in (("frequency_hz", 50), ("hv_kv", 110), ("mv_kv", 20)):
@@ -118,4 +184,5 @@ def load_profile(path: str | Path) -> EUProfile:
     if interval != 1000 or stale != 3000 or timeout >= interval:
         raise ProfileError("require interval=1000, stale=3000 and timeout < interval")
     return EUProfile(value["id"], 50, 110, 20, circuit_file, tuple(parsed),
-                     elements, buses, interval, timeout, stale)
+                     elements, buses, interval, timeout, stale,
+                     _settings(value["profile"]), _protection(value["f2_protection"]))

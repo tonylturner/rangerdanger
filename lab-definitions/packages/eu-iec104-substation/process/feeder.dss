@@ -6,7 +6,8 @@ New Circuit.EUTeachingFeeder phases=3 bus1=hv basekv=110 pu=1 frequency=50 MVAsc
 
 ! pandapower T1: 25 MVA, 110/20 kV, vkr=0.16%, vk=12.00107%.
 ! X = sqrt(vk^2 - vkr^2) = 12.000003381%; split copper loss equally.
-New Transformer.T1 phases=3 windings=2 buses=[hv bus20] conns=[delta wye] kvs=[110 20] kvas=[25000 25000] %rs=[0.08 0.08] xhl=12.000003381 %noloadloss=0 %imag=0 wdg=2 mintap=0.9 maxtap=1.1 numtaps=16
+! Operator tap is on HV winding 1: ratio 1 - 0.0125*tap (positive raises MV).
+New Transformer.T1 phases=3 windings=2 buses=[hv bus20] conns=[delta wye] kvs=[110 20] kvas=[25000 25000] %rs=[0.08 0.08] xhl=12.000003381 %noloadloss=0 %imag=0 wdg=1 mintap=0.9 maxtap=1.1 numtaps=16
 
 ! Idealised switch impedances; explicit zero capacitance.
 New Line.CB1 phases=3 bus1=bus20 bus2=f1 switch=yes r1=0.000001 x1=0.000001 r0=0.000001 x0=0.000001 c1=0 c0=0 length=0.001 units=km

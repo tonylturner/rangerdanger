@@ -27,7 +27,7 @@ def test_truth_exact_per_kind_shape(tmp_path, device_id):
 
 
 @pytest.mark.parametrize('field,value', [
-    ('schema', 1), ('schema', 2.0), ('device_id', 'breaker-1'), ('kind', 'rmu'),
+    ('schema', 1), ('schema', 2), ('schema', 3.0), ('device_id', 'breaker-1'), ('kind', 'rmu'),
     ('generation', -1), ('generation', 2**32), ('generation', True),
     ('revision', 2**64), ('revision', 1.5), ('event_seq', None),
     ('changed_at', '2026-10-15'), ('changed_at', '2026-10-15T12:00:00+00:00'),
@@ -84,12 +84,12 @@ def test_http_client_paths_timeout_and_strict_truth(tmp_path):
         calls.append((request, timeout))
         return Response(json.dumps(truths()[device.id]).encode())
     client = TruthClient(config, opener)
-    assert client.get_truth(device)['schema'] == 2
+    assert client.get_truth(device)['schema'] == 3
     request, timeout = calls[-1]
     assert request.full_url == device.truth_url + '/api/truth'
     assert request.method == 'GET'
     assert timeout == .5
-    payload = dict(schema=2, revision=1)
+    payload = dict(schema=3, revision=1)
     client.post_measurements(device, payload)
     request, _ = calls[-1]
     assert request.full_url == device.truth_url + '/api/measurements'

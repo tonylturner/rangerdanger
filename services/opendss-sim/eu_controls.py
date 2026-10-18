@@ -1,7 +1,7 @@
 """Process-owned fault, source and load controls; no field-device authority."""
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 
 class ActionError(ValueError):
@@ -14,16 +14,22 @@ class ProcessControls:
     f2_tripped: bool = False
     load_multiplier: float = 1.0
     source_pu: float = 1.0
+    profile_enabled: bool = True
 
     def snapshot(self) -> dict:
-        return asdict(self)
+        return {key: getattr(self, key) for key in
+                ("fault_section", "f2_tripped", "load_multiplier", "source_pu")}
 
     def action(self, body: object) -> None:
         if not isinstance(body, dict) or not isinstance(body.get("action"), str):
             raise ActionError("invalid_action")
         action = body["action"]
         ranges = {"set_load": (0.2, 3.0), "set_source": (0.90, 1.10)}
-        if action in ranges:
+        if action == "set_profile":
+            if set(body) != {"action", "enabled"} or type(body["enabled"]) is not bool:
+                raise ActionError("invalid_value")
+            self.profile_enabled = body["enabled"]
+        elif action in ranges:
             value = body.get("value")
             low, high = ranges[action]
             if (set(body) != {"action", "value"} or type(value) not in (int, float)
