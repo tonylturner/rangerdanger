@@ -279,7 +279,7 @@ def check_dom(row, dom, view, expected, tap=0):
         require(strip and strip['visible'] and strip['beforeSchematic'], 'CC abnormal strip missing/hidden/below schematic')
         require(strip['alarmCount'] == str(len(alarms)), 'CC alarm count differs from expected point values')
         require(strip['offNormalCount'] == str(len(off_normal_conditions)), 'CC off-normal count differs from expected point values')
-        headline = f'{len(alarms)} alarms · {len(off_normal_conditions)} off-normal' if alarms or off_normal_conditions else 'No alarms in GOOD observations'
+        headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off_normal_conditions)} off-normal' if alarms or off_normal_conditions else 'No alarms in GOOD observations'
         require(headline in strip['text'], 'CC abnormal strip headline absent')
         alarm_entries = [c for c in conditions if c.get('kind') == 'alarm']
         require(len(alarm_entries) == len(alarms) and {c['id'] for c in alarm_entries} == alarms,

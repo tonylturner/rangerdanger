@@ -2,6 +2,7 @@ import type { ControlCentreLink, OperatorPoint, OperatorState } from "./operator
 import { pointCondition, pointLabel } from "./operator-format";
 import { LIVE_KV, voltageState } from "./electrical-state";
 import { controlCentreObservations, type Readings } from "./observation-readings";
+import { SECTION_VOLTAGE } from "./operator-supply-path";
 
 export const SWITCH_NORMALS = {
   CB1: { id: "feeder-breaker-position", label: "CB1", normal: "closed" },
@@ -10,9 +11,9 @@ export const SWITCH_NORMALS = {
   RMU2: { id: "rmu-2-position", label: "RMU2 · NOP", normal: "open" },
 } as const;
 export const SUPPLY_VOLTAGES: Record<string, { id: string; label: string }> = {
-  "rmu-1-source-kv": { id: "S1-no-supply", label: "S1 residential" },
-  "rmu-1-section-kv": { id: "S2-no-supply", label: "S2 commercial" },
-  "rmu-2-source-kv": { id: "S3-no-supply", label: "S3 industrial" },
+  [SECTION_VOLTAGE.S1]: { id: "S1-no-supply", label: "S1 residential" },
+  [SECTION_VOLTAGE.S2]: { id: "S2-no-supply", label: "S2 commercial" },
+  [SECTION_VOLTAGE.S3]: { id: "S3-no-supply", label: "S3 industrial" },
   "oltc-1-bus-kv": { id: "bus20-no-supply", label: "20 kV busbar (T1 secondary)" },
 };
 

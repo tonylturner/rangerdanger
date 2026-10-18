@@ -66,7 +66,7 @@ it("counts, orders and distinguishes alarms from off-normal conditions, includin
   expect(entries.map((n) => n.props["data-condition-kind"])).toEqual(["alarm", "off-normal", "off-normal"]);
   expect(entries[0].props.className).toBe("text-rose-300");
   expect(entries[1].props.className).toBe("text-amber-200");
-  expect(renderToStaticMarkup(<AbnormalSummary state={state} cached />)).toContain("1 alarms · 2 off-normal in cached snapshot");
+  expect(renderToStaticMarkup(<AbnormalSummary state={state} cached />)).toContain("1 alarm · 2 off-normal in cached snapshot");
   expect(renderToStaticMarkup(<AbnormalSummary state={FEEDER_STATE} />)).toContain("No alarms in GOOD observations");
 });
 

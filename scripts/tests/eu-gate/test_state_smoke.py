@@ -83,7 +83,7 @@ def add_presentation(dom, expected):
     dom['conditions'] = [dict(c, kind='alarm') for c in alarms] + [dict(c, kind='off-normal') for c in off]
     if not dom['conditions']:
         dom['conditions'] = [{'id': 'none', 'text': 'No alarms in GOOD observations'}]
-    headline = f'{len(alarms)} alarms · {len(off)} off-normal' if alarms or off else 'No alarms in GOOD observations'
+    headline = f'{len(alarms)} {"alarm" if len(alarms) == 1 else "alarms"} · {len(off)} off-normal' if alarms or off else 'No alarms in GOOD observations'
     dom['abnormalStrip'] = {'visible': True, 'beforeSchematic': True, 'alarmCount': str(len(alarms)),
                             'offNormalCount': str(len(off)), 'text': headline}
 
@@ -233,7 +233,7 @@ const element = (dataset = {}, value = '', localName = 'span') => ({
 const device = element({device: 'CB1', offNormal: 'true', position: 'open', quality: 'good'}, 'OPEN · GOOD');
 device.childNodes.push(element({}, 'IEC tooltip must not be visible plant text', 'title'));
 const condition = element({condition: 'S1-no-supply', conditionKind: 'alarm'}, 'S1 residential: loss of supply');
-const strip = element({alarmCount: '1', offNormalCount: '1'}, '1 alarms · 1 off-normal');
+const strip = element({alarmCount: '1', offNormalCount: '1'}, '1 alarm · 1 off-normal');
 strip.compareDocumentPosition = () => 4;
 const schematic = element();
 const root = element({cached: 'false'});
@@ -247,7 +247,7 @@ globalThis.document = {querySelector: () => element({viewState: 'ok'})};
 globalThis.getComputedStyle = () => ({visibility: 'visible'});
 globalThis.location = {href: 'offline:test'};
 let dom = captureDom(root, 'cc');
-assert.deepEqual(dom.abnormalStrip, {visible: true, beforeSchematic: true, alarmCount: '1', offNormalCount: '1', text: '1 alarms · 1 off-normal'});
+assert.deepEqual(dom.abnormalStrip, {visible: true, beforeSchematic: true, alarmCount: '1', offNormalCount: '1', text: '1 alarm · 1 off-normal'});
 assert.equal(dom.devices[0].offNormal, 'true');
 assert.equal(dom.devices[0].text, 'OPEN · GOOD');
 assert.deepEqual(dom.conditions, [{id: condition.dataset.condition, kind: 'alarm', text: 'S1 residential: loss of supply'}]);
