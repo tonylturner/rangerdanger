@@ -226,7 +226,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 	for _, pkg := range catalog.Packages {
 		if pkg.ID == euPackageID {
 			euListed = true
-			if pkg.Revision != 3 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
+			if pkg.Revision != 4 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
 				t.Fatal("EU revision / curriculum binding missing")
 			}
 			for role, id := range pkg.Curriculum.Roles {
