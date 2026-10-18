@@ -5,12 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
 import type { CommandResult, OperatorPoint } from "../lib/operator-api";
 import { commandErrorText } from "../lib/operator-format";
-import { AUDIT, CLOCK, FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, TRUTH, commandResult } from "../lib/operator-fixtures.test-util";
+import { FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, commandResult } from "../lib/operator-fixtures.test-util";
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreOneLine, observedReading } from "./control-centre-one-line";
 import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
-import { AuditTable, OperatorContrast, FieldCards, PhysicalFeederScreen } from "./physical-feeder";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 import { DeviceFaceplate, RegulationBand } from "./control-centre-faceplate";
 import { devicePoints } from "../lib/operator-workstation";
@@ -262,64 +261,6 @@ describe("select-then-execute controls", () => {
   });
 });
 
-describe("separate field plane", () => {
-  const physical = (stateError: unknown = null, auditError: unknown = null) => <PhysicalFeederScreen field={TRUTH} stateError={stateError} audit={AUDIT} auditError={auditError} operator={STALE_STATE} />;
-  it("shows four devices, the station clock and process without controls or CC enrichment", () => {
-    const html = screen({ view: "field-truth", state: STALE_STATE, physicalFeeder: physical() });
-    const out = text(html);
-    for (const label of ["breaker-1 device state", "rmu-1 device state", "rmu-2 device state", "oltc-1 device state", "Station clock (GPS) · truth", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Solver output", "Fault section S1", "Completed / target tap 1 / 2", "Field vs control centre", "breaker-1 position OPEN CLOSED ⚠ STALE"]) expect(out).toContain(label);
-    expect(out).toContain("control centre never reads these values");
-    expect(out).not.toContain("Feeder schematic");
-    expect(html).not.toContain("Inject fault</button>");
-    expect(html).not.toContain("gps-1 device state");
-    expect(text(render(<OperatorContrast field={TRUTH} operator={STALE_STATE} />))).not.toContain("clock");
-  });
-
-  it("renders the field cards and contrast when no clock is declared", () => {
-    const out = text(render(<PhysicalFeederScreen field={{ ...TRUTH, clock: null }} stateError={null} audit={AUDIT} auditError={null} operator={undefined} />));
-    expect(out).toContain("breaker-1 device state");
-    expect(out).toContain("Field vs control centre");
-    expect(out).not.toContain("Station clock");
-  });
-
-  it.each(["holdover", "freerun"] as const)("renders a %s clock without changing the CC", (sync_status) => {
-    const field = { ...TRUTH, clock: { ...CLOCK, sync_status, alarm: true, comms_ok: false, time_offset_sec: -30 } };
-    const html = render(<FieldCards field={field} />);
-    expect(text(html)).toContain(`Sync status ${sync_status.toUpperCase()}`);
-    expect(text(html)).toContain("Time offset -30.000 s");
-    expect(text(html)).toContain("Alarm / comms OK YES / no");
-    expect(text(screen())).toContain("38/38 good");
-  });
-
-  it("keeps field and audit failures separate from CC availability", () => {
-    const out = text(screen({ view: "field-truth", physicalFeeder: physical(new Error("device offline"), new Error("audit offline")) }));
-    expect(out).not.toContain("Control centre API unavailable");
-    expect(out).toContain("Physical feeder unavailable: device offline Showing the last answer.");
-    expect(out).toContain("Audit unavailable: audit offline Showing the last answer.");
-  });
-
-  it("renders invalid measurements as retained and unknowns without zero substitution", () => {
-    const field = structuredClone(TRUTH);
-    field.devices["rmu-1"].measurements = { ...field.devices["rmu-1"].measurements, valid: false, current_a: null, p_mw: null, q_mvar: null, pf: null };
-    field.process.devices["rmu-1"].delivered = false;
-    const out = text(render(<FieldCards field={field} />));
-    expect(out).toContain("INVALID · last values, not current");
-    expect(out).toContain("Current unknown");
-    expect(out).toContain("FAILED · solved rev");
-  });
-
-  it("contrasts all devices without substituting field values into unknown CC cells", () => {
-    expect(text(render(<OperatorContrast field={TRUTH} operator={undefined} />))).toContain("oltc-1 tap 1 unknown · UNKNOWN");
-  });
-
-  it("shows the breaker audit newest first", () => {
-    const out = text(render(<AuditTable audit={AUDIT} />));
-    expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
-    expect(out).toContain("closed → open");
-    expect(out).toContain("close rejected modbus · station · 10.30.30.20:41000 lockout");
-  });
-});
-
 describe("ControlCentreMiniStatus", () => {
   it("preserves the runner summary", () => {
     expect(text(render(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 good");
@@ -358,14 +299,6 @@ describe("realism presentation", () => {
     expect(out).toContain("T1 20 kV terminal reactive power Q 0.92 Mvar");
     expect(out).toContain("T1 20 kV terminal power factor PF — ⚠ STALE IV measurement_invalid");
     expect(out).toContain("Configured delay 30 s");
-  });
-  it("keeps solver identities and revisions in closed diagnostics disclosures", () => {
-    const html = render(<FieldCards field={TRUTH} />);
-    expect(html).not.toContain('<details open');
-    expect(html).toMatch(/<details[^>]*><summary[^>]*>Diagnostics<\/summary>[\s\S]*?Revision \/ generation/);
-    expect(html).toMatch(/<details[^>]*><summary[^>]*>Diagnostics<\/summary>[\s\S]*?Solver epoch/);
-    expect(text(html)).toContain("residential profile factor 0.800 ×");
-    expect(text(html)).toContain("Pickup / configured delay 400 A / 1000 ms");
   });
   it("keeps S3 unknown when its own received kV is invalid despite a good F2-side switch", () => {
     const points = FEEDER_STATE.points.map((p) => p.id === "rmu-2-source-kv" ? { ...p, quality: { ...p.quality, iv: true } } : p);

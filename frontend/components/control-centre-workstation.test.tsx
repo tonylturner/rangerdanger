@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,7 +8,8 @@ import { ControlCentreScreen, InterrogateStation, LinkStrip, viewFromSearch } fr
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { resolveOperatorView } from "../lib/operator-view";
 import { ControlCentreMiniStatus, RunnerOperatorStatus } from "./runner-operator-status";
-import { PhysicalFeeder } from "./physical-feeder";
+import { PhysicalSystem } from "./physical-system";
+import type { DeviceId } from "../lib/operator-workstation";
 import { HistoryPlot } from "./historian-trend";
 import { useOperatorState } from "../lib/operator-queries";
 import { retryQuery } from "../lib/query-retry";
@@ -26,7 +27,11 @@ function mount(node: ReactNode, usePortalRetry = false) {
   mounted.push(result); return result;
 }
 function screen(patch: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) {
-  return <ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...patch} />;
+  return <InteractiveScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...patch} />;
+}
+function InteractiveScreen(props: Parameters<typeof ControlCentreScreen>[0]) {
+  const [selected, onSelect] = useState<DeviceId>("T1");
+  return <ControlCentreScreen {...props} selected={selected} onSelect={onSelect} />;
 }
 function button(tree: ReactTestRenderer, text: string) {
   return tree.root.findAllByType("button").find((b) => b.children.join("").includes(text))!;
@@ -137,11 +142,11 @@ describe("operator workstation interactions", () => {
     expect(state).toEqual(FEEDER_STATE);
     act(() => button(tree, "Events").props.onClick()); expect(output(tree)).toContain("Journal unavailable: "); expect(output(tree)).toContain("journal offline"); expect(output(tree)).toContain("cached events");
   });
-  it("does not mount field truth in the CC view or the CC schematic in field truth", () => {
-    expect(output(mount(screen({ physicalFeeder: <div>FIELD-ONLY</div> })))).not.toContain("FIELD-ONLY");
-    const field = output(mount(screen({ view: "field-truth", physicalFeeder: <div>FIELD-ONLY</div> })));
+  it("does not mount Physical System in the CC view or the CC schematic in Physical System", () => {
+    expect(output(mount(screen({ physicalSystem: <div>FIELD-ONLY</div> })))).not.toContain("FIELD-ONLY");
+    const field = output(mount(screen({ view: "physical-system", physicalSystem: <div>FIELD-ONLY</div> })));
     expect(field).toContain("FIELD-ONLY"); expect(field).not.toContain("CC-observed CIGRE");
-    expect(viewFromSearch("?view=field-truth")).toBe("field-truth"); expect(viewFromSearch("?view=unknown")).toBe("control-centre");
+    expect(viewFromSearch("?view=physical-system")).toBe("physical-system"); expect(viewFromSearch("?view=field-truth")).toBe("control-centre"); expect(viewFromSearch("?view=unknown")).toBe("control-centre");
   });
   it("shows received ASDU and reporting, and labels the trend band as current only", () => {
     const tree = mount(screen({ initialTab: "Points" }));
@@ -178,8 +183,10 @@ describe("operator interrogation button", () => {
 it("queries each selected device audit with an independent cache identity", async () => {
   const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : { ...AUDIT, entries: [] })));
   vi.stubGlobal("fetch", fetchMock);
-  const tree = mount(<PhysicalFeeder operator={FEEDER_STATE} />);
+  const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
   await act(async () => { await settle(); });
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/field/audit"))).toBe(false);
+  await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true);
   for (const device of ["rmu-1", "rmu-2", "oltc-1"]) {
     await act(async () => {

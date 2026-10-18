@@ -11,13 +11,13 @@ import { errorMessage } from "../lib/utils";
 import { DeviceFaceplate } from "./control-centre-faceplate";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { STALE_HATCH } from "./control-centre-points";
-import { PhysicalFeeder } from "./physical-feeder";
+import { PhysicalSystem, PHYSICAL_DESCRIPTION } from "./physical-system";
 import { ControlCentrePane, type PaneTab } from "./control-centre-pane";
 
 const BUTTON = "rounded border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
-export type WorkstationView = "control-centre" | "field-truth";
+export type WorkstationView = "control-centre" | "physical-system";
 export function viewFromSearch(search: string): WorkstationView {
-  return new URLSearchParams(search).get("view") === "field-truth" ? "field-truth" : "control-centre";
+  return new URLSearchParams(search).get("view") === "physical-system" ? "physical-system" : "control-centre";
 }
 function Cell({ label, children }: { label: string; children: ReactNode }) {
   return <div className="min-w-0"><dt className="text-xs text-slate-400">{label}</dt><dd className="break-words font-mono text-xs text-slate-100">{children}</dd></div>;
@@ -58,26 +58,27 @@ export function AbnormalSummary({ state }: { state: OperatorState }) {
     {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id}>⚠ {c.text}</li>)}</ul> : "No abnormal conditions"}
   </section>;
 }
-export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalFeeder, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms" }: {
+export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalSystem, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms", selected = "T1", onSelect = () => {} }: {
   state: OperatorState | undefined; stateError: unknown; stateUpdatedAt: number;
-  journal: OperatorJournal | undefined; journalError?: unknown; now: number; physicalFeeder?: ReactNode;
+  journal: OperatorJournal | undefined; journalError?: unknown; now: number; physicalSystem?: ReactNode;
+  selected?: DeviceId; onSelect?: (id: DeviceId) => void;
   view?: WorkstationView; onViewChange?: (view: WorkstationView) => void; initialTab?: PaneTab;
 }) {
-  const [selected, setSelected] = useState<DeviceId>("T1");
   const unavailable = stateError !== null && stateError !== undefined;
   const cachedAge = state && unavailable ? formatAge(Math.max(0, now - stateUpdatedAt)) : null;
   const summary = state ? telemetrySummary(state.points) : null;
   const alarms = state ? activeAlarms(state) : [];
   return <main className="mx-auto flex w-screen min-w-0 max-w-[1600px] md:w-[calc(100vw-12rem)] flex-col gap-4 px-3 py-6 sm:px-6">
     <header>
-      <h1 className="text-2xl font-semibold text-white">{view === "control-centre" ? "Control Centre" : "Field truth"}</h1>
-      <p className="mt-1 max-w-3xl text-sm text-slate-400">20 kV teaching feeder · {view === "control-centre" ? "IEC 60870-5-104 observations only. Selected teaching reporting profile, not a universal European default." : "Direct device, station clock and solver observations, outside IEC 104."}</p>
+      <h1 className="text-2xl font-semibold text-white">{view === "control-centre" ? "Control Centre" : "Physical System State"}</h1>
+      <p className="mt-1 max-w-3xl text-sm text-slate-400">{view === "control-centre" ? "20 kV teaching feeder · IEC 60870-5-104 observations only. Selected teaching reporting profile, not a universal European default." : PHYSICAL_DESCRIPTION}</p>
+      {view === "physical-system" && <p className="mt-2 inline-block rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-300">Simulation observations · Independent of IEC 104</p>}
     </header>
     <div role="group" aria-label="Observation view" className="flex flex-wrap gap-1 self-start rounded-lg border border-slate-700 p-1">
-      {([['control-centre', 'Control Centre'], ['field-truth', 'Field truth']] as const).map(([id, label]) => <button key={id} className={`${BUTTON} ${view === id ? "bg-slate-700" : "border-transparent"}`} aria-pressed={view === id} onClick={() => onViewChange(id)}>{label}</button>)}
+      {([['control-centre', 'Control Centre'], ['physical-system', 'Physical System']] as const).map(([id, label]) => <button key={id} className={`${BUTTON} ${view === id ? "bg-slate-700" : "border-transparent"}`} aria-pressed={view === id} onClick={() => onViewChange(id)}>{label}</button>)}
     </div>
-    {unavailable && <p role="alert" className="rounded-lg border border-amber-700 p-3 text-sm text-amber-200">{isRangeNotReady(stateError) ? "Range not ready" : "Control centre API unavailable"}: {errorMessage(stateError)}. {state ? "Showing the last answer; controls disabled." : "Nothing received yet."}</p>}
-    {view === "field-truth" ? <>{cachedAge !== null && <p role="status" className="text-xs text-amber-200">Field-vs-CC comparison uses a cached CC snapshot · {cachedAge} since last operator API answer. Field data is fetched independently.</p>}{physicalFeeder}</> : <>
+    {unavailable && <p role="alert" className="rounded-lg border border-amber-700 p-3 text-sm text-amber-200">{isRangeNotReady(stateError) ? "Range not ready" : "Control centre API unavailable"}: {errorMessage(stateError)}. {state ? view === "control-centre" ? "Showing the last answer; controls disabled." : "Comparison uses the last CC answer. Physical data is fetched independently." : "Nothing received yet."}</p>}
+    {view === "physical-system" ? <>{cachedAge !== null && <p role="status" className="text-xs text-amber-200">Field-vs-CC comparison uses a cached CC snapshot · {cachedAge} since last operator API answer. Field data is fetched independently.</p>}{physicalSystem}</> : <>
       <p className="text-xs text-slate-300">Portal API: {unavailable ? "unavailable" : state ? "available" : "waiting"} · {alarms.length} active alarms{cachedAge !== null ? " in cached snapshot" : ""}</p>
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
@@ -87,7 +88,7 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
         <div className="grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]">
           <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
             <h2 className="mb-3 text-sm font-semibold text-slate-200">Feeder schematic</h2><SnapshotMarker age={cachedAge} />
-            <ControlCentreOneLine points={state.points} unavailable={unavailable} selected={selected} onSelect={setSelected} />
+            <ControlCentreOneLine points={state.points} unavailable={unavailable} selected={selected} onSelect={onSelect} />
           </section>
           <div className="min-w-0"><SnapshotMarker age={cachedAge} /><DeviceFaceplate key={state.cache_epoch} state={state} selected={selected} unavailable={unavailable} /></div>
         </div>
@@ -102,6 +103,9 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
 }
 export function ControlCentreView() {
   const state = useOperatorState(2000), journal = useOperatorJournal(3000), now = useNow(1000);
+  const [selected, setSelected] = useState<DeviceId>("T1");
+  const [selectionActivated, setSelectionActivated] = useState(false);
+  const selectDevice = (id: DeviceId) => { setSelected(id); setSelectionActivated(true); };
   const [view, setView] = useState<WorkstationView>("control-centre");
   useEffect(() => {
     const sync = () => setView(viewFromSearch(window.location.search));
@@ -112,5 +116,5 @@ export function ControlCentreView() {
     const url = new URL(window.location.href); url.searchParams.set("view", next);
     window.history.pushState(null, "", url); setView(next);
   };
-  return <ControlCentreScreen state={state.data} stateError={state.error} stateUpdatedAt={state.dataUpdatedAt} journal={journal.data} journalError={journal.error} now={now} view={view} onViewChange={changeView} physicalFeeder={view === "field-truth" ? <PhysicalFeeder operator={state.data} /> : null} />;
+  return <ControlCentreScreen state={state.data} stateError={state.error} stateUpdatedAt={state.dataUpdatedAt} journal={journal.data} journalError={journal.error} now={now} view={view} onViewChange={changeView} selected={selected} onSelect={selectDevice} physicalSystem={view === "physical-system" ? <PhysicalSystem operator={state.data} operatorUnavailable={!!state.error} now={now} selected={selected} onSelect={selectDevice} revealSelected={selectionActivated} /> : null} />;
 }
