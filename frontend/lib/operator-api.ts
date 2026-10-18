@@ -228,13 +228,12 @@ export type ProcessElectrical = {
   solved_at: string | null;
   truth_stale: boolean;
   fault_section: "none" | "S1" | "S2";
-  f2_tripped: boolean;
+  f2_tripped: boolean | null;
   load_multiplier: number;
   source_pu: number;
-  tap: number;
+  tap: number | null;
   buses: Record<string, { kv: number | null; live: boolean | null }>;
   profile: { enabled: boolean; load_factors: { residential: number | null; commercial: number | null; industrial: number | null }; source_pu: number | null };
-  f2_protection: Pick<Protection, "picked_up" | "picked_up_since" | "last_trip_current_a">;
   devices: Record<string, { delivered: boolean; solved_revision: number | null; revision: number | null; current_a: number | null; p_mw: number | null; q_mvar: number | null }>;
 };
 
@@ -358,14 +357,13 @@ function validPickup(p: Record<string, unknown>): boolean {
 }
 function validProcess(p: unknown): boolean {
   if (!isObject(p) || p.schema !== 3 || !strings(p, ["profile_id", "solver_epoch"]) || !integer(p.solve_seq) || p.solve_seq < 0 ||
-    !nullable(p.solved_at, timestamp) || !booleans(p, ["truth_stale", "f2_tripped"]) ||
+    !nullable(p.solved_at, timestamp) || !booleans(p, ["truth_stale"]) || !nullable(p.f2_tripped, (v) => typeof v === "boolean") ||
     (typeof p.fault_section !== "string" || !["none", "S1", "S2"].includes(p.fault_section)) ||
-    !["load_multiplier", "source_pu", "tap"].every((k) => finite(p[k]))) return false;
-  const profile = p.profile, f2 = p.f2_protection;
+    !["load_multiplier", "source_pu"].every((k) => finite(p[k])) || !nullable(p.tap, finite)) return false;
+  const profile = p.profile;
   if (!isObject(profile) || !exactKeys(profile, ["enabled", "load_factors", "source_pu"]) || typeof profile.enabled !== "boolean" ||
     !nullable(profile.source_pu, finite) || !isObject(profile.load_factors) ||
-    !exactKeys(profile.load_factors, ["residential", "commercial", "industrial"]) || !Object.values(profile.load_factors).every((v) => nullable(v, finite)) ||
-    !isObject(f2) || !exactKeys(f2, ["picked_up", "picked_up_since", "last_trip_current_a"]) || !validPickup(f2)) return false;
+    !exactKeys(profile.load_factors, ["residential", "commercial", "industrial"]) || !Object.values(profile.load_factors).every((v) => nullable(v, finite))) return false;
   return isObject(p.buses) && Object.values(p.buses).every((b) => isObject(b) && nullable(b.kv, finite) && nullable(b.live, (v) => typeof v === "boolean")) &&
     isObject(p.devices) && Object.values(p.devices).every((d) => isObject(d) && exactKeys(d, ["delivered", "solved_revision", "revision", "current_a", "p_mw", "q_mvar"]) && typeof d.delivered === "boolean" &&
       ["solved_revision", "revision"].every((k) => nullable(d[k], integer)) && ["current_a", "p_mw", "q_mvar"].every((k) => nullable(d[k], finite)));

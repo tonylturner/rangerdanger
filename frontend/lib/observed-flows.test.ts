@@ -61,6 +61,7 @@ describe("package flow liveness", () => {
     expect(Object.fromEntries(Object.entries(context.observations).map(([id, o]) => [id, o.status]))).toEqual({
       "cc-rtu": "active",
       "rtu-breaker": "active",
+      "rtu-f2-breaker": "unknown",
       "station-clock": "unknown",
       "attacker-rtu": "idle",
       "rtu-rmu-1": "unknown",
@@ -82,6 +83,20 @@ describe("package flow liveness", () => {
     const context = createFlowContext(eu, { operator: op });
     expect(context.observations["cc-rtu"].status).toBe(state === "disconnected" ? "down" : "idle");
     expect(context.observations["rtu-breaker"].status).toBe("unknown");
+  });
+
+  it("infers F2 polling only from its own received indications, independently of CB1", () => {
+    const op = operator();
+    op.points.push(
+      { ...op.points[0], id: "f2-position", device: "f2-breaker", ioa: 1501, kind: "double-point", asdu: "M_DP_TB_1", value: "closed" },
+      { ...op.points[1], id: "f2-protection-trip", device: "f2-breaker", ioa: 1502 },
+    );
+    expect(createFlowContext(eu, { operator: op }).observations["rtu-f2-breaker"].status).toBe("active");
+    op.points[2].stale_reason = "device_unreachable";
+    op.points[2].quality = { ...op.points[2].quality, iv: true };
+    const context = createFlowContext(eu, { operator: op });
+    expect(context.observations["rtu-f2-breaker"].status).toBe("down");
+    expect(context.observations["rtu-breaker"].status).toBe("active");
   });
 
   it.each([
@@ -152,7 +167,7 @@ describe("package flow liveness", () => {
 
   it("shares filtering and pair status precedence, with no fallback on empty inventory", () => {
     const context = createFlowContext(eu, {});
-    expect(aggregateFlows(context, { zone: "all", crossZoneOnly: true })).toHaveLength(10);
+    expect(aggregateFlows(context, { zone: "all", crossZoneOnly: true })).toHaveLength(11);
     expect(aggregateFlows(context, { zone: "control_centre_net", crossZoneOnly: false })).toHaveLength(2);
     expect(aggregateFlows(createFlowContext({ ...eu, flows: [] }, {}))).toEqual([]);
     const f = { ...eu.flows[0], id: "second", port: 502 };

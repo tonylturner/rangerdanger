@@ -3,6 +3,20 @@ import { formatUtcTime } from "../lib/operator-format";
 import type { DeviceId } from "../lib/operator-workstation";
 import { ACTION, EQUIPMENT, Group, PANEL, Row, num, position, yesNo } from "./physical-system-parts";
 
+export function ProtectionDiagnostics({ device: d }: { device: DeviceState }) {
+  return <>
+    {d.kind === "breaker" && <><Row label="Protection tripped">{yesNo(d.protection_tripped)}</Row><Row label="Lockout">{yesNo(d.lockout)}</Row></>}
+    {d.kind === "rmu" && <><Row label="Earth closed">{yesNo(d.earth_closed)}</Row><Row label="Fault passage">{yesNo(d.fault_passage)}</Row></>}
+    {d.kind === "oltc" && <Row label="Effective block">{yesNo(d.blocked || d.protection.picked_up)}</Row>}
+    <Row label="Protection function">{d.protection.function}</Row>
+    <Row label="Pickup / configured delay">{d.protection.pickup_a} A / {d.protection.delay_ms} ms</Row>
+    <Row label="Instantaneous pickup">{d.protection.instantaneous_a === null ? "Not configured" : num(d.protection.instantaneous_a, 0, "A")}</Row>
+    <Row label="Protection picked up">{yesNo(d.protection.picked_up)}</Row>
+    <Row label="Picked up since (UTC)">{formatUtcTime(d.protection.picked_up_since)}</Row>
+    <Row label="Last trip current">{num(d.protection.last_trip_current_a, 1, "A")}</Row>
+  </>;
+}
+
 export function DeviceDiagnostics({ device }: { device: DeviceState }) {
   const m = device.measurements;
   return <>
@@ -47,18 +61,10 @@ export function EquipmentCard({ id, title, device: d, open, onToggle, stale }: {
           <p className="text-xs text-slate-400">Authority does not imply command acceptance. See device audit.</p>
         </Group>
         <Group title="Protection & interlocks">
-          {d.kind === "breaker" && <><Row label="Protection tripped">{yesNo(d.protection_tripped)}</Row><Row label="Lockout">{yesNo(d.lockout)}</Row></>}
-          {d.kind === "rmu" && <><Row label="Earth closed">{yesNo(d.earth_closed)}</Row><Row label="Fault passage">{yesNo(d.fault_passage)}</Row></>}
-          {d.kind === "oltc" && <Row label="Effective block">{yesNo(d.blocked || d.protection.picked_up)}</Row>}
-          <Row label="Protection function">{d.protection.function}</Row>
-          <Row label="Pickup / configured delay">{d.protection.pickup_a} A / {d.protection.delay_ms} ms</Row>
-          <Row label="Instantaneous pickup">{d.protection.instantaneous_a === null ? "Not configured" : num(d.protection.instantaneous_a, 0, "A")}</Row>
-          <Row label="Protection picked up">{yesNo(d.protection.picked_up)}</Row>
-          <Row label="Last trip current">{num(d.protection.last_trip_current_a, 1, "A")}</Row>
+          <ProtectionDiagnostics device={d} />
         </Group>
         <Group title="Events & timestamps">
           <Row label="Changed (UTC)">{formatUtcTime(d.changed_at)}</Row>
-          <Row label="Picked up since (UTC)">{formatUtcTime(d.protection.picked_up_since)}</Row>
           <Row label="Measurement solved (UTC)">{formatUtcTime(m.solved_at)}</Row>
           <Row label="Measurement received (UTC)">{formatUtcTime(m.received_at)}</Row>
         </Group>

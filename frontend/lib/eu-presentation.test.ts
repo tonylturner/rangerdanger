@@ -30,6 +30,7 @@ describe("EU presentation vocabulary", () => {
     expect(NODE_LABELS["cc-1"]).toBe("Control Centre");
     expect(NODE_LABELS["rtu-1"]).toBe("IEC 104 RTU");
     expect(NODE_LABELS["breaker-1"]).toBe("Feeder Breaker");
+    expect(NODE_LABELS["f2-breaker"]).toBe("F2 Feeder Breaker");
     expect(nodeTypeLabel("rmu")).toMatch(/RMU/);
     expect(nodeTypeLabel("oltc")).toMatch(/OLTC/);
     expect(NODE_LABELS["rmu-1"]).toContain("Sectionaliser");
@@ -47,7 +48,7 @@ import { injectDynamicContent, showsValidateButton } from "./scenario-runner-log
 import { getExerciseNodes, inferNodeFromDescription } from "./exercise-nodes";
 import type { CurriculumPolicyRule } from "./api";
 
-const EU = fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu");
+const EU = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
 function euPlan(ids: string[], binding = EU) {
   return buildDynamicPlan({ exerciseId: binding.roles.planning, selectedActionIds: ids, savedAt: "" }, binding);
 }
@@ -84,7 +85,7 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
       expect(wire).not.toMatch(/RTAC|DNP3|20000|gps-to-field/i);
       expect(config.firewall.rules.slice(0, 6)).toMatchObject([
         { id: "control-centre-to-rtu-iec104", sources: ["10.60.60.20/32"], destinations: ["10.30.30.20/32"] },
-        { id: "rtu-to-feeder-modbus", sources: ["10.30.30.20/32"], destinations: ["10.40.40.20/32", "10.40.40.21/32", "10.40.40.22/32", "10.40.40.23/32"] },
+        { id: "rtu-to-feeder-modbus", sources: ["10.30.30.20/32"], destinations: ["10.40.40.20/32", "10.40.40.24/32", "10.40.40.21/32", "10.40.40.22/32", "10.40.40.23/32"] },
         { id: "plc-to-oltc-modbus", sources: ["10.30.30.30/32"], destinations: ["10.40.40.23/32"] },
         { id: "control-centre-to-historian-ingest", protocols: [{ name: "tcp", port: "8081" }] },
         { id: "enterprise-to-historian-read", protocols: [{ name: "tcp", port: "8080" }] },
@@ -120,7 +121,7 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
     const plan = buildDynamicPlan(null, EU);
     expect(injectDynamicContent("original", "implement-rules", plan)).toContain("/exercises/eu-remediation-planning");
     expect(injectDynamicContent("original", "Phase 3", plan)).toBe("original");
-    expect(injectDynamicContent("original", "test-positive", plan)).toContain("control-centre-to-rtu-iec104");
+    expect(injectDynamicContent("original", "test-positive", plan)).toContain("CC→RTU:2404");
     expect(getExerciseNodes(EU.roles.hardening, undefined, EU)).toEqual(["kali-1"]);
     expect(inferNodeFromDescription("from the RTU", EU)).toBe("rtu-1");
     expect(inferNodeFromDescription("RTAC 10.30.30.20")).toBeNull();
