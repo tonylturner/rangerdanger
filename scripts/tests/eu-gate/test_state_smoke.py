@@ -113,6 +113,13 @@ def data_fixture(row):
 
 
 class StateSmoke(unittest.TestCase):
+    def test_oracle_fault_uses_plant_vocabulary(self):
+        # data_fixture copies the oracle into the plant, so it cannot catch a
+        # spelling the live process API never reports (eu_controls.py upper-cases).
+        for row in check.ORACLE['rows']:
+            with self.subTest(row=row['id']):
+                self.assertIn(row.get('fault', 'none'), {'none', 'S1', 'S2'})
+
     def test_all_21_plant_and_cc_vectors(self):
         for row in check.ORACLE['rows']:
             with self.subTest(row=row['id']):
