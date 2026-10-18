@@ -251,4 +251,11 @@ describe("loss of supply", () => {
       expect(activeAlarms({ ...FEEDER_STATE, points: [{ ...original, value }] }).some((a) => a.id.endsWith("-no-supply"))).toBe(false);
     }
   });
+  it("lists loss of supply upstream to downstream, before point-ordered alarms", () => {
+    const dead = ["rmu-2-source-kv", "rmu-1-section-kv", "oltc-1-bus-kv", "rmu-1-source-kv"];
+    const points = [{ ...FEEDER_STATE.points.find((p) => p.id === "feeder-protection-trip")!, value: true },
+      ...dead.map((id) => ({ ...FEEDER_STATE.points.find((p) => p.id === id)!, value: 0 }))];
+    expect(activeAlarms({ ...FEEDER_STATE, points }).map((a) => a.id))
+      .toEqual(["bus20-no-supply", "S1-no-supply", "S2-no-supply", "S3-no-supply", "feeder-protection-trip"]);
+  });
 });

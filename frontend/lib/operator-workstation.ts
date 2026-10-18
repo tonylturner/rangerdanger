@@ -44,12 +44,15 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
   const alarms: { id: string; text: string }[] = [];
   if (state.link.state !== "started") alarms.push({ id: "link", text: `IEC 104 link ${state.link.state}` });
   const asserted = ["feeder-protection-trip", "f2-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
-  for (const p of state.points) {
-    if (pointCondition(p) !== "good") continue;
-    const supply = SUPPLY_VOLTAGES[p.id];
-    if (supply && voltageState({ condition: "good", value: p.value }) === "DEAD") {
+  // Loss of supply first, upstream to downstream, so the strip reads along the feeder.
+  for (const id of ["oltc-1-bus-kv", SECTION_VOLTAGE.S1, SECTION_VOLTAGE.S2, SECTION_VOLTAGE.S3]) {
+    const p = state.points.find((point) => point.id === id), supply = SUPPLY_VOLTAGES[id];
+    if (p && pointCondition(p) === "good" && voltageState({ condition: "good", value: p.value }) === "DEAD") {
       alarms.push({ id: supply.id, text: `${supply.label}: loss of supply` });
     }
+  }
+  for (const p of state.points) {
+    if (pointCondition(p) !== "good") continue;
     if (p.limits && typeof p.value === "number" && Number.isFinite(p.value) && p.value >= LIVE_KV && (p.value < p.limits.low || p.value > p.limits.high)) {
       alarms.push({ id: `${p.id}-voltage-limit`, text: `${pointLabel(p.id)}: voltage limit (${p.value.toFixed(2)} kV; ${p.limits.low.toFixed(2)}–${p.limits.high.toFixed(2)} kV)` });
     }
