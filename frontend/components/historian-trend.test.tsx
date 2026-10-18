@@ -5,6 +5,34 @@ import { HistoryPlot } from "./historian-trend";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 describe("historian trend", () => {
+  it("keeps axis labels outside the scalable SVG and the plot at least 150px tall", () => {
+    const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);
+    const svg = html.match(/<svg[\s\S]*?<\/svg>/)?.[0];
+    expect(svg).toBeDefined();
+    expect(svg).toContain('viewBox="0 0 840 150" preserveAspectRatio="none"');
+    expect(svg).toContain('class="aspect-[840/150] h-auto min-h-[150px] w-full overflow-visible"');
+    expect(svg).not.toContain("<text");
+    expect(html).toContain("pt-6 text-xs text-slate-300");
+    expect(html).toContain('top-[10%] -translate-y-1/2">20.20</span>');
+    expect(html).toContain('top-[90%] -translate-y-1/2">19.70</span>');
+    expect(html).toContain('<span class="whitespace-nowrap">10:00:01.000 UTC</span>');
+    expect(html).toContain('<span class="ml-auto whitespace-nowrap">10:00:10.000 UTC</span>');
+    expect(html).toContain("col-start-2 flex min-w-0 flex-wrap justify-between");
+    expect(svg).toContain('vector-effect="non-scaling-stroke"');
+  });
+
+  it("preserves plot-relative coordinates and gap bounds after separating the axes", () => {
+    const html = renderToStaticMarkup(<HistoryPlot history={HISTORY} />);
+    expect(html).toContain('cx="0"');
+    expect(html).toContain('cx="840" cy="15"');
+    expect(html).toContain('cy="135"');
+    // The ingest gap starts at 5s, four ninths of the 1s–10s window.
+    const gap = html.match(/<rect x="([^"]+)" y="0" width="([^"]+)" height="150"/);
+    expect(gap).not.toBeNull();
+    expect(Number(gap![1])).toBeCloseTo(840 * 4 / 9);
+    expect(Number(gap![1]) + Number(gap![2])).toBeCloseTo(840);
+  });
+
   it("contains wide snapshot rows horizontally and shows all 30 without a vertical clip", () => {
     const history = {
       ...HISTORY, gaps: [],

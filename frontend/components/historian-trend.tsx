@@ -16,22 +16,30 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
   const values = runs.flat().map((s) => numericSample(s)!);
   const xmin = Math.min(...times), xmax = Math.max(...times);
   const ymin = Math.min(...values, ...(band ? [band.low] : [])), ymax = Math.max(...values, ...(band ? [band.high] : []));
-  const x = (t: string) => 60 + (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
-  const y = (n: number) => 160 - (n - ymin) / (ymax - ymin || 1) * 120;
+  const x = (t: string) => (Date.parse(t) - xmin) / (xmax - xmin || 1) * 840;
+  const y = (n: number) => 135 - (n - ymin) / (ymax - ymin || 1) * 120;
   return <div className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
-    {values.length ? <svg viewBox="0 0 940 205" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="w-full">
-      {band && <rect x="60" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
-      <path d="M60 25 V175 H900" fill="none" stroke="#64748b" />
-      {history.gaps.map((gap, i) => <rect key={i} x={Math.max(60, x(gap.from))} y="25" width={Math.max(0, Math.min(900, x(gap.to)) - Math.max(60, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
-      {runs.map((run, i) => <g key={i} data-history-run="true">
-        <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" />
-        {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="2" fill="#38bdf8"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value, s.quality)}`}</title></circle>)}
-      </g>)}
-      <text x="55" y="40" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymax.toFixed(2)}</text>
-      <text x="55" y="164" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymin.toFixed(2)}</text>
-      <text x="60" y="195" fill="#cbd5e1" fontSize="11">{formatUtcTime(new Date(xmin).toISOString())} UTC</text>
-      <text x="900" y="195" textAnchor="end" fill="#cbd5e1" fontSize="11">{formatUtcTime(new Date(xmax).toISOString())} UTC</text>
-    </svg> : <p className="text-sm text-amber-300">No good numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
+    {values.length ? <div className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-x-1 gap-y-2 pt-6 text-xs text-slate-300 sm:pr-10">
+      {/* HTML axes keep their type size while the plot scales horizontally.
+          Its desktop proportions stay the same; phones get a 150px floor. */}
+      <div className="relative">
+        <span className="absolute right-0 top-[10%] -translate-y-1/2">{ymax.toFixed(2)}</span>
+        <span className="absolute right-0 top-[90%] -translate-y-1/2">{ymin.toFixed(2)}</span>
+      </div>
+      <svg viewBox="0 0 840 150" preserveAspectRatio="none" role="img" aria-label={`${pointLabel(history.point)} trend by ingest time UTC; breaks mark missing or invalid observations`} className="aspect-[840/150] h-auto min-h-[150px] w-full overflow-visible">
+        {band && <rect x="0" y={y(band.high)} width="840" height={Math.max(1, y(band.low) - y(band.high))} fill="#64748b" fillOpacity="0.3"><title>Current PLC band, not historical setpoints</title></rect>}
+        <path d="M0 0 V150 H840" fill="none" stroke="#64748b" vectorEffect="non-scaling-stroke" />
+        {history.gaps.map((gap, i) => <rect key={i} x={Math.max(0, x(gap.from))} y="0" width={Math.max(0, Math.min(840, x(gap.to)) - Math.max(0, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
+        {runs.map((run, i) => <g key={i} data-history-run="true">
+          <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="1" fill="#38bdf8" stroke="#38bdf8" strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value, s.quality)}`}</title></circle>)}
+        </g>)}
+      </svg>
+      <div className="col-start-2 flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1">
+        <span className="whitespace-nowrap">{formatUtcTime(new Date(xmin).toISOString())} UTC</span>
+        <span className="ml-auto whitespace-nowrap">{formatUtcTime(new Date(xmax).toISOString())} UTC</span>
+      </div>
+    </div> : <p className="text-sm text-amber-300">No good numeric observations in this window. Unknown and stale samples are not plotted as zero. Select a numeric or single-point signal for a trend.</p>}
     {band && <p className="text-xs text-slate-300">Current PLC band {band.low.toFixed(2)}–{band.high.toFixed(2)} kV, not historical setpoints.</p>}
     <ul className="text-xs text-amber-300">{history.gaps.map((gap, i) => <li key={i}>Ingest gap: {gap.from} → {gap.to}</li>)}</ul>
     <p className="text-xs text-slate-400">{history.segments.length} cache-epoch segment(s). Lines never cross an epoch or a gap. Invalid, substituted, blocked, overflow and transient samples break the line.</p>
