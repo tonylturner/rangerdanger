@@ -2,7 +2,8 @@
 
 import type { OperatorPoint } from "../lib/operator-api";
 import type { DeviceId } from "../lib/operator-workstation";
-import { formatPointValue, pointCondition, qualityFlags } from "../lib/operator-format";
+import { formatPointValue, pointCondition, pointLabel, qualityFlags } from "../lib/operator-format";
+import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
 
 // Every symbol is independently observed. No field/process input is accepted.
 export function observedReading(points: OperatorPoint[], id: string, unavailable = false) {
@@ -32,7 +33,10 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(device); }
     }, className: "cursor-pointer outline-none focus-visible:[outline:2px_solid_#38bdf8]",
   });
-  const measure = (x: number, y: number, id: string, label = "") => <text x={x} y={y} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{label}{read(id).shortText}</text>;
+  const measure = (x: number, y: number, id: string) => <g aria-label={`${pointLabel(id)}: ${read(id).text}`}>
+    <text x={x} y={y} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
+    <text x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
+  </g>;
   const indicators = (x: number, prefix: string) => {
     const earth = read(`${prefix}-earth`), fault = read(`${prefix}-fault-passage`);
     return <g>
@@ -61,14 +65,22 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
       <text x={x} y={y + 35} textAnchor="middle" fill={r.condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{r.shortText}</text>
     </g>;
   };
-  const busLabel = (x: number, y: number, label: string, id: string) => <g aria-label={`${label}: ${read(id).text}`}>
-    <text x={x} y={y} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label} · {voltage(id).state}</text>
-    <text x={x} y={y + 18} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
-  </g>;
+  const busLabel = (x: number, y: number, label: string, section: SectionId) => {
+    const id = SECTION_VOLTAGE[section];
+    const path = sectionSupplyPath(points, section);
+    const pathText = `${path.state}${path.state === "path unknown" ? " · F2 unobserved" : path.f2ContributionUnobserved ? " †" : ""}`;
+    return <g aria-label={`${label}: ${pointLabel(id)}: ${read(id).text}; supply ${pathText}: ${path.reason}`}>
+      <title>{path.reason}</title>
+      <text x={x} y={y} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label} · {voltage(id).state}</text>
+      <text x={x} y={y + 18} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
+      <text x={x} y={y + 36} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
+      <text x={x} y={y + 54} textAnchor="middle" fill={path.state === "unknown" || path.state === "path unknown" ? "#fbbf24" : "#cbd5e1"} fontSize="12" data-supply-path={path.state}>{pathText}</text>
+    </g>;
+  };
   const tap = read("oltc-1-tap");
   return <figure className="min-w-0 space-y-3">
     <div className="max-w-full overflow-x-auto">
-      <svg viewBox="0 0 1060 410" role="group" aria-label="CC-observed CIGRE-derived teaching feeder" className="w-full min-w-[1060px]">
+      <svg viewBox="0 0 1060 410" role="group" aria-label="CC-observed CIGRE-derived teaching feeder · simplified functional one-line" className="w-full min-w-[1060px]">
         <defs><pattern id="cc-unknown" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8 L8 0" stroke="#fbbf24" strokeOpacity="0.5" /></pattern></defs>
         <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">110 kV nominal — not telemetered</text>
         <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />
@@ -81,23 +93,22 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
           <text x="125" y="128" fill="#cbd5e1" fontSize="12">{read("oltc-1-auto").shortText}</text>
         </g>
         {measure(175, 150, "oltc-1-current")}
-        {measure(150, 285, "oltc-1-bus-kv", "Bus ")}
-        {measure(310, 120, "feeder-current")}
-        {measure(570, 120, "rmu-1-current")}
-        {measure(570, 140, "rmu-1-source-kv", "Source ")}
-        {measure(850, 120, "rmu-2-current")}
-        {measure(880, 35, "rmu-2-section-kv", "Section ")}
-        {measure(880, 55, "rmu-2-source-kv", "Source ")}
+        {measure(175, 267, "oltc-1-bus-kv")}
+        {measure(310, 110, "feeder-current")}
+        {measure(400, 260, "feeder-voltage")}
+        {measure(570, 110, "rmu-1-current")}
+        {measure(850, 110, "rmu-2-current")}
+        {measure(925, 35, "rmu-2-section-kv")}
         {section(80, 133, 80, 325, "oltc-1-bus-kv")}
-        <text x="310" y="145" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 via CB1</text>
+        <text x="310" y="145" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 feeder</text>
         {section(80, 190, 310, 190, "oltc-1-bus-kv")}
         {switchSymbol(310, 190, "CB1", "feeder-breaker-position", "CB1")}
-        {section(330, 190, 570, 190, "feeder-voltage")}
+        {section(330, 190, 570, 190, "rmu-1-source-kv")}
         {/* Section labels use the upper annotation lane, clear of both RMU enclosures. */}
-        {busLabel(410, 75, "S1 residential", "feeder-voltage")}
+        {busLabel(410, 25, "S1 residential", "S1")}
         {switchSymbol(570, 190, "RMU1 · NC", "rmu-1-position", "RMU1")}
         {section(590, 190, 850, 190, "rmu-1-section-kv")}
-        {busLabel(710, 75, "S2 commercial", "rmu-1-section-kv")}
+        {busLabel(700, 25, "S2 commercial", "S2")}
         {switchSymbol(850, 190, "RMU2 · NOP", "rmu-2-position", "RMU2")}
         {section(870, 190, 1000, 190, "rmu-2-source-kv")}
         {section(1000, 190, 1000, 325, "rmu-2-source-kv")}
@@ -106,9 +117,9 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
         <text x="321" y="331" textAnchor="middle" fill="#cbd5e1">?</text>
         <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">F2 head · unobserved</text>
         {section(337, 325, 1000, 325, "rmu-2-source-kv")}
-        {busLabel(710, 365, "S3 industrial", "rmu-2-source-kv")}
+        {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>
-    <figcaption className="text-xs text-slate-400">Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. RMU enclosures contain the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 feeds through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. F2 has no telemetry.</figcaption>
+    <figcaption className="text-xs text-slate-400"><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. F2 has no telemetry.</figcaption>
   </figure>;
 }

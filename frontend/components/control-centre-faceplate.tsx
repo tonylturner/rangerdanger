@@ -13,7 +13,7 @@ export function RegulationBand({ band }: { band: VoltageBand | null }) {
   const x = (n: number) => 20 + (n - min) / (max - min) * 260;
   return <figure>
     <figcaption className="text-xs text-slate-300">Current band: {band.setpoint.toFixed(2)} ± {((band.high - band.low) / 2).toFixed(2)} kV</figcaption>
-    <svg viewBox="0 0 300 48" preserveAspectRatio="none" className="h-12 w-full" role="img" aria-label={`Current band ${band.low.toFixed(2)} to ${band.high.toFixed(2)} kV; bus ${band.bus ?? "unknown"}`}>
+    <svg viewBox="0 0 300 48" preserveAspectRatio="none" className="h-12 w-full" role="img" aria-label={`Current band ${band.low.toFixed(2)} to ${band.high.toFixed(2)} kV; ${pointLabel("oltc-1-bus-kv")} ${band.bus ?? "unknown"}`}>
       <path d="M20 25 H280" stroke="#64748b" vectorEffect="non-scaling-stroke" />
       <rect x={x(band.low)} y="16" width={Math.max(1, x(band.high) - x(band.low))} height="18" fill="#475569" />
       <path d={`M${x(band.setpoint)} 12 V38`} stroke="#e2e8f0" vectorEffect="non-scaling-stroke" />
@@ -21,7 +21,7 @@ export function RegulationBand({ band }: { band: VoltageBand | null }) {
     </svg>
     <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-slate-300">
       <span>{band.low.toFixed(2)}–{band.high.toFixed(2)} kV</span>
-      <span>Bus {band.bus?.toFixed(2) ?? "unknown"}</span>
+      <span>{pointLabel("oltc-1-bus-kv")} {band.bus?.toFixed(2) ?? "unknown"} kV</span>
     </div>
   </figure>;
 }

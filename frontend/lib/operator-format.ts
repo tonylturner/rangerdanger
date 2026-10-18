@@ -31,12 +31,12 @@ type PointMeta = {
 export const POINT_META: Record<string, PointMeta> = {
   "feeder-breaker-position": { label: "Feeder breaker position" },
   "feeder-protection-trip": { label: "Protection trip", states: ["NORMAL", "TRIPPED"] },
-  "feeder-current": { label: "Feeder current", unit: "A", digits: 1 },
-  "feeder-voltage": { label: "Feeder voltage (L-L)", unit: "kV", digits: 2 },
+  "feeder-current": { label: "CB1 current", unit: "A", digits: 1 },
+  "feeder-voltage": { label: "CB1 line-side VT", unit: "kV", digits: 2 },
   "oltc-1-tap": { label: "T1 completed tap", digits: 0 },
   "oltc-1-auto": { label: "OLTC mode", states: ["MANUAL", "AUTO"] },
-  "oltc-1-bus-kv": { label: "20 kV bus", unit: "kV", digits: 2 },
-  "oltc-1-current": { label: "T1 current", unit: "A", digits: 1 },
+  "oltc-1-bus-kv": { label: "20 kV busbar (T1 secondary)", unit: "kV", digits: 2 },
+  "oltc-1-current": { label: "T1 20 kV terminal current", unit: "A", digits: 1 },
   "oltc-1-remote": { label: "OLTC authority", states: ["LOCAL", "REMOTE"] },
   "oltc-1-at-lower": { label: "OLTC lower limit", states: ["CLEAR", "AT LIMIT"] },
   "oltc-1-at-upper": { label: "OLTC upper limit", states: ["CLEAR", "AT LIMIT"] },
@@ -49,9 +49,10 @@ export const POINT_META: Record<string, PointMeta> = {
 };
 
 for (const prefix of ["feeder", "oltc-1"]) {
-  POINT_META[`${prefix}-p-mw`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} active power P`, unit: "MW", digits: 2 };
-  POINT_META[`${prefix}-q-mvar`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} reactive power Q`, unit: "Mvar", digits: 2 };
-  POINT_META[`${prefix}-pf`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} power factor PF`, digits: 3 };
+  const location = prefix === "feeder" ? "CB1" : "T1 20 kV terminal";
+  POINT_META[`${prefix}-p-mw`] = { label: `${location} active power P`, unit: "MW", digits: 2 };
+  POINT_META[`${prefix}-q-mvar`] = { label: `${location} reactive power Q`, unit: "Mvar", digits: 2 };
+  POINT_META[`${prefix}-pf`] = { label: `${location} power factor PF`, digits: 3 };
 }
 POINT_META["oltc-1-overcurrent-block"] = { label: "OLTC overcurrent block", states: ["CLEAR", "BLOCKED"] };
 for (const id of ["rmu-1", "rmu-2"]) {
@@ -59,8 +60,10 @@ for (const id of ["rmu-1", "rmu-2"]) {
   POINT_META[`${id}-remote`] = { label: `${id.toUpperCase()} authority`, states: ["LOCAL", "REMOTE"] };
   POINT_META[`${id}-earth`] = { label: `${id.toUpperCase()} earth switch`, states: ["OPEN", "CLOSED"] };
   POINT_META[`${id}-fault-passage`] = { label: `${id.toUpperCase()} fault passage`, states: ["CLEAR", "LATCHED"] };
-  POINT_META[`${id}-current`] = { label: `${id.toUpperCase()} current`, unit: "A", digits: 1 };
-  for (const side of ["section", "source"]) POINT_META[`${id}-${side}-kv`] = { label: `${id.toUpperCase()} ${side}`, unit: "kV", digits: 2 };
+  const location = id === "rmu-1" ? "RMU1" : "RMU2";
+  POINT_META[`${id}-current`] = { label: `${location} current`, unit: "A", digits: 1 };
+  POINT_META[`${id}-source-kv`] = { label: `${location} ${id === "rmu-1" ? "S1" : "S3"} side`, unit: "kV", digits: 2 };
+  POINT_META[`${id}-section-kv`] = { label: `${location} S2 side`, unit: "kV", digits: 2 };
 }
 
 export function pointLabel(id: string): string {
