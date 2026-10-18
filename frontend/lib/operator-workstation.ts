@@ -1,6 +1,8 @@
 import type { OperatorPoint, OperatorState } from "./operator-api";
 import { pointCondition, pointLabel } from "./operator-format";
-import { LIVE_KV } from "./electrical-state";
+import { LIVE_KV, voltageState } from "./electrical-state";
+import { controlCentreObservations } from "./observation-readings";
+import { SECTION_VOLTAGE, type SectionId } from "./operator-supply-path";
 
 export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2";
 export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2"];
@@ -57,6 +59,22 @@ export function deviceCommsHealth(state: OperatorState): Record<string, CommsHea
 }
 export function abnormalConditions(state: OperatorState): { id: string; text: string }[] {
   const conditions = activeAlarms(state);
+  const read = controlCentreObservations(state.points);
+  for (const [id, label, normal] of [
+    ["feeder-breaker-position", "CB1", "closed"],
+    ["rmu-1-position", "RMU1 · NC", "closed"],
+    ["rmu-2-position", "RMU2 · NOP", "open"],
+  ]) {
+    const r = read(id);
+    if (r.condition === "good" && typeof r.value === "string" && ["open", "closed", "intermediate", "indeterminate"].includes(r.value) && r.value !== normal) {
+      conditions.push({ id: `${id}-off-normal`, text: `${label}: ${r.value.toUpperCase()} (normal ${normal.toUpperCase()})` });
+    }
+  }
+  for (const [section, label] of Object.entries({ S1: "residential", S2: "commercial", S3: "industrial" })) {
+    if (voltageState(read(SECTION_VOLTAGE[section as SectionId])) === "DEAD") {
+      conditions.push({ id: `${section}-no-supply`, text: `${section} ${label}: no supply` });
+    }
+  }
   for (const authority of Object.values(AUTHORITY_POINTS)) {
     const point = state.points.find((p) => p.id === authority.id);
     if (point && pointCondition(point) === "good" && point.value === false) {
