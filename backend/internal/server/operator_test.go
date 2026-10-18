@@ -160,6 +160,7 @@ func TestOperatorAndSimRoutesNeedTheirServices(t *testing.T) {
 		{http.MethodPost, "/api/operator/commands", `{"point":"feeder-breaker-command","operation":"open"}`, s.handleOperatorCommand},
 		{http.MethodGet, "/api/operator/journal", "", s.handleOperatorJournal},
 		{http.MethodPost, "/api/operator/gi", "", s.handleOperatorGI},
+		{http.MethodPost, "/api/operator/reconnect", "", s.handleOperatorReconnect},
 		{http.MethodGet, "/api/field/state", "", s.handleFieldState},
 		{http.MethodGet, "/api/field/audit", "", s.handleFieldAudit},
 		{http.MethodGet, "/api/historian/points", "", s.handleHistorianPoints},
@@ -203,6 +204,36 @@ func TestOperatorGI(t *testing.T) {
 			}
 			if len(stub.bodies) != 1 || stub.bodies[0] != "" {
 				t.Fatalf("GI requests = %q", stub.bodies)
+			}
+		})
+	}
+}
+
+func TestOperatorReconnect(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		status, want int
+		body         string
+	}{
+		{"accepted", 202, 202, `{"trigger":"operator","requested_at":"2026-10-09T12:01:00Z"}`},
+		{"running", 409, 409, `{"error":"reconnect pending or command in flight"}`},
+		{"link down", 503, 503, `{"error":"link not started"}`},
+		{"unexpected success", 200, 502, `{}`},
+		{"upstream failure", 500, 502, `{"error":"failed"}`},
+		{"invalid body", 202, 502, `accepted`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub, cc := newUpstreamStub(t, map[string]stubResponse{"POST /api/reconnect": {tc.status, tc.body}})
+			s := rangeServer(euGeneration(t, nil, map[string]string{"control_centre": cc.URL}), "weak")
+			rec := callRoute(s, s.handleOperatorReconnect, http.MethodPost, "/api/operator/reconnect", "/api/operator/reconnect", "")
+			if rec.Code != tc.want {
+				t.Fatalf("Reconnect = %d %s", rec.Code, rec.Body)
+			}
+			if tc.want != 502 && rec.Body.String() != tc.body {
+				t.Fatalf("Reconnect body = %s", rec.Body)
+			}
+			if len(stub.bodies) != 1 || stub.bodies[0] != "" {
+				t.Fatalf("Reconnect requests = %q", stub.bodies)
 			}
 		})
 	}

@@ -111,12 +111,14 @@ steps:
 - id: implement-rules
   title: Phase 3 - Create minimal required rules
   description: |
-    Create the minimal operational rules:
+    **Prepared change request CR-22 (review before approval):** replace broad trust with default deny; retain RTU→field, PLC→OLTC, CC→historian ingest, enterprise→historian read and engineering→PLC web. The request accidentally omits CC→RTU TCP/2404. Identify the operator impact, correct that gap before commit and retain a known-good export plus rollback trigger/owner. Rejecting/correcting the request passes; causing an outage is never required. If you choose to test the incomplete request, remove only `control-centre-to-rtu-iec104` from a copy of improved, keep its logged deny rules and management access, and have rollback ready.
+
+    Compare the request against the complete minimal operational rules:
 
     | Required conduit | Pin | Port |
     |---|---|---|
     | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
-    | RTU→field | 10.30.30.20→10.40.40.20…23 | TCP/502 |
+    | RTU→field | 10.30.30.20→10.40.40.20…24 | TCP/502 |
     | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
     | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
     | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
@@ -140,7 +142,19 @@ steps:
   title: Phase 4 - Enable logging and visibility
   expected_config: hardened
   description: |
-    Enable per-rule logging where useful, preserve PCAP and note UTC change time. Use containd events to correlate observed tuples with rules. Logged denies are optional corroboration, not the only way to prove a default-deny drop.
+    Preserve PCAP and the UTC commit boundary. Keep `deny-unauthorized-iec104` after the CC allow: it includes the CC zone, TCP/2404, DENY and `log: true`. If the allow is missing, new CC→RTU sessions hit this explicit logged deny rather than the silent default drop. A custom policy must keep equivalent logged coverage for this lesson.
+
+    Compare the **Control Centre** link/quality, **Network Map** CC→RTU conduit and **Live DPI Events** tuple/rule. A missing CC allow can leave the old session healthy because conntrack survives commit. Force a fresh session after every commit with the portal operator API (from a host terminal):
+
+        curl -fsS -X POST http://localhost:8088/api/operator/reconnect
+
+    Or in the **cc-1 terminal**, use its management listener:
+
+        wget -qO- --post-data '' http://10.99.99.21:8080/api/reconnect
+
+    A 202 queues the actual connection close; normal reconnect runs at the inventory-configured interval (currently 2 s), followed by connect GI. A 409 means reconnect pending or a command in flight; 503 means the link is already down and retrying. Do not blindly repeat. If testing CR-22, expect the CC link/conduit down, last values retained with IV/NT `link_lost`, and a logged CC→RTU deny. Restore the exported known-good policy, wait for reconnect/GI and inspect every inventory observation. Field truth may still show a healthy supplied feeder: observation loss is not supply loss. No trip/reset is needed to repair communications.
+
+    Exact firewall session retirement remains an instructor diagnostic, not the normal fresh-session action: deleting conntrack under an allowed policy does not reliably close the old TCP connection. With a silent blackhole, detection can take configured t3+t1 (currently about 35 s). See [established sessions](/knowledge#eu-established-sessions).
 
     :::hint A timeout is a specific result
     Strict active probes count only connection timeout as denied. Connection refused means the packet reached a host; a missing tool or failed container exec is missing evidence, never a pass. A logged SYN deny cannot reveal the denied command payload.
@@ -149,10 +163,10 @@ steps:
   title: Phase 5 - Validate allowed traffic
   expected_config: hardened
   description: |
-    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and all 42 points non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
+    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and every inventory point non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
 
     :::hint Use your live operator connection
-    The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. A healthy persistent link is valid — do not cut it just to pass. If GI evidence is missing or outside the window, press **Interrogate station** in the **Control Centre** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
+    The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. The CC `link.since` must be strictly later than the policy commit; use **POST /api/operator/reconnect** first, then wait for its connect GI. Interrogate station on the old connection does not test the new policy. If only GI evidence is missing or outside the window on an already post-commit connection, press **Interrogate station** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
     :::
 
     **Package test instructions — controlled regulation loop.** First wait for a settled tap and the 20.196–20.604 kV band (20.4 kV ±1%). Reset starts at zero but the profile-disabled nominal equilibrium is +2, about 20.429 kV; the daily profile normally keeps running. When regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the **Control Centre** selected-device faceplate or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
@@ -168,11 +182,11 @@ steps:
         curl -fsS --max-time 3 http://10.30.30.30:8080/login
 
     :::hint Continuity is a hard constraint
-    Breaker closed, supply present, RMU1 closed/RMU2 open, OLTC remote/auto and fresh operator observations must survive. The validator collects operational evidence, including same-subnet endpoint checks; same-subnet success is not firewall enforcement.
+    Both breakers closed, RMU1 closed/RMU2 open and a fresh (≤3 s) bus20/S1/S2/S3 supply solve are independently checked from field/process truth. OLTC remote/auto, PLC motion and fresh operator observations must survive. The validator collects operational evidence, including same-subnet endpoint checks; same-subnet success is not firewall enforcement.
     :::
 
     :::hint Instructor-supervised F2 visibility check
-    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all 42 non-null GOOD points received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
+    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and GOOD received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
     :::
   action:
     type: probe

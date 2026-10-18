@@ -123,6 +123,7 @@ typedef struct {
     bool attemptOpened;
     bool attemptEnded;
 
+    bool reconnectPending; /* operator reservation; consumed by the link thread */
     /* set by the link thread when it closes the session itself */
     bool closeRequested;
     const char* closeReason;

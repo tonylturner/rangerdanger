@@ -32,6 +32,8 @@ eu_assert_unchanged_breaker() {
   UNCHANGED_CALLS=$((UNCHANGED_CALLS + 1))
 }
 eu_wait_for_operator() { :; }
+# Reconnect admission/receipt boundaries have their own lesson tests.
+eu_lab_reconnect_cc() { :; }
 eu_wait_for_field() {
   local field
   FIELD_WAITS=$((FIELD_WAITS + 1))

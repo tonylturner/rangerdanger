@@ -301,3 +301,16 @@ library. It supports the read/write function codes the exercises
 exercise (FC 1/3/4 read, FC 5/6 write) and is intentionally explicit
 about register addresses so students can correlate writes against
 state changes during attack walkthroughs.
+
+## EU post-change operator proof
+
+The IEC 104 CC accepts bodyless `POST /api/reconnect` (portal relay:
+`POST /api/operator/reconnect`). Its link worker closes the real connection,
+then uses the point-map reconnect interval and connect GI. This does not
+reset policy, devices or cache identity. 202 is queued, not completed;
+409 refuses a pending reconnect or active command, and 503 means already
+down/reconnecting. Labs 2.2/2.3 require link.since after the latest policy
+commit, matched GI completion on that connection and every loaded inventory
+point non-null/GOOD received since GI start. An established session surviving
+a commit is not proof of the new policy. Loss of observations remains distinct
+from independently measured physical supply.

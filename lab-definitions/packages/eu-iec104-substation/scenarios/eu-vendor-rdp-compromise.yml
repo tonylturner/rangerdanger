@@ -150,6 +150,8 @@ steps:
   description: |
     Run Validate with hardened active, both hops denied and RMU/OLTC state restored. The strict active matrix must prove each hop; a screenshot of a rule is not enough. Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
 
+    PASS certifies only the current sampled negative paths (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
+
     :::hint Residual risk
     Neither L4 boundary proves vendor identity security. Record MFA, just-in-time approval and session recording as organizational follow-up, not as infrastructure deployed by this exercise.
     :::

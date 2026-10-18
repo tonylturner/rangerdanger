@@ -2,6 +2,18 @@
 # Firewall denial, exact-session cuts and CC cache isolation/recovery (G4-G10).
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
+# Inventory identity, not a hard-coded point count or a vacuous all([]).
+eu_station_shape() {
+  local ioas
+  ioas=$(jq -ce '[.points[].ioa] | sort | if length > 0 and length == (unique | length) then . else error("invalid station inventory") end' "$PACKAGE/protocols/points.json") || return
+  printf '([.points[].ioa] | sort) == %s' "$ioas"
+}
+
+# Silent conntrack deletion is detected by TESTFR idle + response timeout.
+eu_cc_loss_deadline() {
+  jq -er '.timers.t1_s + .timers.t3_s + (.reconnect_interval_ms / 1000 | ceil) + 10' "$PACKAGE/protocols/points.json"
+}
+
 eu_gate_G4() {
   if eu_apply_named weak; then
     eu_run_kali_gi G4 0 || true
@@ -108,7 +120,9 @@ eu_g6_cut_monitor_session() {
 }
 
 eu_gate_G7() {
-  local before_g7 g7_policy g7_kill_started_ms
+  local before_g7 g7_policy g7_kill_started_ms deadline shape
+  deadline=$(eu_cc_loss_deadline) || return
+  shape=$(eu_station_shape) || return
   g7_loss_verified=0
   if ! eu_get_operator; then
     fail "G7 operator state unavailable before restrictive policy"
@@ -138,8 +152,8 @@ eu_gate_G7() {
   if ! [[ "$g7_kill_started_ms" =~ ^[0-9]+$ ]]; then
     fail "G7 cannot establish monotonic timeout before conntrack kill"
   elif eu_kill_tuple "$SESSION_TUPLE" && eu_wait_for_operator \
-    '.link.state != "started" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' \
-    30 "G7 CC link loss with all 42 link_lost points" "$g7_kill_started_ms"; then
+    "($shape) and .link.state != \"started\" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == \"link_lost\")" \
+    "$deadline" "G7 CC link loss with every inventory point link_lost" "$g7_kill_started_ms"; then
     g7_loss_verified=1
     pass "G7 CC link is not started and all points are IV+NT link_lost"
   fi
@@ -223,7 +237,8 @@ eu_gate_G8() {
 }
 
 eu_gate_G9() {
-  local g9_truth
+  local g9_truth shape
+  shape=$(eu_station_shape) || return
   if ! eu_apply_named improved; then
     fail "G9 cannot restore improved policy"
     return
@@ -232,8 +247,8 @@ eu_gate_G9() {
     fail "G9 cannot verify recovery without the verified G7 CC disconnect"
     return
   fi
-  if eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
-    30 "G9 CC reconnect/GI and all 42 GOOD points"; then
+  if eu_wait_for_operator "($shape) and .link.state == \"started\" and .link.gi.state == \"complete\" and all(.points[]; good)" \
+    30 "G9 CC reconnect/GI and every inventory point GOOD"; then
     pass "G9 restored IEC104 observations after GI"
   fi
   if ! eu_get_field; then
@@ -258,5 +273,6 @@ eu_gate_G9() {
 eu_gate_G10() {
   eu_reset_all || return
   eu_apply_named improved || return
+  eu_lab_validation_prepare eu-validation-evidence || return
   eu_validate_scenario PASS eu-validation-evidence
 }

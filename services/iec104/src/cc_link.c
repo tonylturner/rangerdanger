@@ -327,12 +327,17 @@ run_session(volatile sig_atomic_t* stop)
         pthread_mutex_lock(&cc.lock);
         uint64_t now = cc_mono_ms();
         bool gone = cc.link.attemptEnded;
+        bool reconnect = cc.link.reconnectPending;
         bool failed = cc.link.giFailed || (cc.link.gi == CC_GI_RUNNING &&
             now - cc.link.giStartedMono >= 2 * t1Ms);
         cc_watchdog_locked(now);
-        const char* trigger = !gone && !failed ? cc_gi_tick_locked(now) : NULL;
+        const char* trigger = !gone && !failed && !reconnect ? cc_gi_tick_locked(now) : NULL;
         pthread_mutex_unlock(&cc.lock);
         if (gone) break;
+        if (reconnect) {
+            close_session("operator_reconnect");
+            return;
+        }
         if (failed) {
             close_session("io_error");
             return;

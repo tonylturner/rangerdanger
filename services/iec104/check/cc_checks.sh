@@ -110,7 +110,7 @@ if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' an
     and abs(pt(s,'feeder-current')['value']-28.9)<0.01 and abs(pt(s,'feeder-voltage')['value']-20.0)<0.01 \
     and ${POS}['quality']['ov'] is None and pt(s,'feeder-current')['quality']['ov'] is False \
     and pt(s,'feeder-current')['source_time'] is None and pt(s,'feeder-current')['source_time_invalid'] is None \
-    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==42" \
+    and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==len(s['points'])" \
   >"$OUT/cc-state-baseline.json"; then
   pass "CC: link started, GI complete, four points GOOD with correct values"
 else
@@ -347,6 +347,23 @@ if probe wait 40 "link(s)=='started' and all_good(s) and ${POS}['value']=='close
   pass "CC: RTU restart -> link up, points GOOD through fresh reports"
 else
   fail "CC: recovery after the RTU restart"
+fi
+
+# Real post-policy proof: reconnect under an unchanged allow must create a
+# different IEC 104 connection, without changing boot/cache identity.
+log "CC check 9b: operator reconnect under an allowed path"
+probe get /api/state | cut -d' ' -f2- >"$OUT/cc-before-operator-reconnect.json"
+reconnect_seq="$(jget "$OUT/cc-before-operator-reconnect.json" "d['link']['connection_seq']")"
+reconnect_epoch="$(jget "$OUT/cc-before-operator-reconnect.json" "d['cache_epoch']")"
+if probe reconnect >"$OUT/cc-reconnect.txt" \
+  && probe wait 30 "link(s)=='started' and s['link']['connection_seq']>$reconnect_seq \
+     and s['cache_epoch']=='$reconnect_epoch' and s['link']['gi']['state']=='complete' \
+     and all_good(s) and all(p['value'] is not None and p['received_at'] >= s['link']['gi']['started_at'] for p in s['points']) \
+     and last(j,'link_down')['detail']['reason']=='operator_reconnect' \
+     and last(j,'gi_complete')['detail']['connection_seq']==s['link']['connection_seq']" >/dev/null; then
+  pass "CC: operator reconnect creates a fresh session and GI under the allowed policy"
+else
+  fail "CC: operator reconnect did not prove fresh admission and observations"
 fi
 
 # ---- CC 10. journal integrity ------------------------------------------

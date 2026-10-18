@@ -53,7 +53,9 @@ steps:
     :::validation-report
     :::
 
-    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The 29 rows (10 positive, 19 negative) cover all six required intents and all five field devices including F2. Retain all 42 points after a fresh GI; F2 has four indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
+    Completion requires the backend-retained **PASS** report, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart; export the markdown/PCAP before reset or shutdown. A local screenshot or old browser report cannot substitute for the retained proof.
+
+    Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh GI; F2 has four indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
 
     Inspect PCAP source analysis: RTU **and PLC→OLTC** are legitimate field sources. RTU↔PLC/GPS stays invisible at the firewall. A SYN captured on ingress does not prove a completed control operation.
 

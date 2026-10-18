@@ -25,8 +25,9 @@ type conduitState struct {
 	CacheEpoch string         `json:"cache_epoch"`
 	Points     []conduitPoint `json:"points"`
 	Link       struct {
-		State         string `json:"state"`
-		ConnectionSeq uint64 `json:"connection_seq"`
+		State         string    `json:"state"`
+		Since         time.Time `json:"since"`
+		ConnectionSeq uint64    `json:"connection_seq"`
 	} `json:"link"`
 }
 

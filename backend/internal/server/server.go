@@ -89,12 +89,13 @@ type Server struct {
 	// A manual commit happened between the previous matching observation and
 	// discovery; backend commits between request start and response. Absence
 	// proofs use the lower bound, negative tests the upper bound.
-	policyEvidenceSince time.Time
-	policyObservedAt    time.Time
-	pcapMu              sync.Mutex
-	pcap                pcapState
-	trafficMu           sync.Mutex
-	traffic             trafficState
+	policyEvidenceSince  time.Time
+	policyObservedAt     time.Time
+	lastValidationReport *euRetainedReport // immutable, guarded by activeConfigMu
+	pcapMu               sync.Mutex
+	pcap                 pcapState
+	trafficMu            sync.Mutex
+	traffic              trafficState
 }
 
 // New constructs a server with routes registered. catalog is the result of
@@ -201,6 +202,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		operator.GET("/state", s.handleOperatorState)
 		operator.POST("/commands", s.handleOperatorCommand)
 		operator.POST("/gi", s.handleOperatorGI)
+		operator.POST("/reconnect", s.handleOperatorReconnect)
 		operator.GET("/journal", s.handleOperatorJournal)
 	}
 	field := rng.Group("/field")

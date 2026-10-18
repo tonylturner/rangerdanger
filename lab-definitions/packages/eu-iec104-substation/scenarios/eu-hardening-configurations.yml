@@ -121,10 +121,12 @@ steps:
   title: Validate
   expected_config: hardened
   description: |
-    Run Validate with hardened active. It requires restored breaker/supply, a post-hardening foreign-source denied attempt and no foreign breaker operation since hardening. The validator uses active strict probes and bounded audit evidence; missing evidence is not a pass.
+    Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and GOOD received since GI start. Interrogate station on an old established session is not post-commit proof. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
+
+    Run Validate with hardened active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and no foreign breaker operation in the bounded hardening audit window. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
 
     :::hint What this certifies
-    This phase proves the live source boundary, not future DPI. Keep the operational cost and semantic residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
+    PASS certifies the current sampled source boundary, restored breaker/supply, bounded absence of foreign breaker operations, and post-commit CC visibility. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. DPI remains planned, not enforced. Keep the operational cost and semantic residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
     :::
   action:
     type: check

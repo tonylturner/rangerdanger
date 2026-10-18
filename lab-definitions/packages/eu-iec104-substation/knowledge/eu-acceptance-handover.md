@@ -42,3 +42,11 @@ The reference policy is source/port based. A compromised permitted CC or PLC rem
 Name the owner of unresolved issues, the monitoring plan and a review date. Regulatory relevance may be discussed through [NIS2/NCCS](#eu-dso-regulatory-context), [BDEW](#eu-bdew-security-context) and [IEC 62443 risk design](#eu-iec62443-risk-design), but no lab result establishes conformity.
 
 The final verdict should be narrow enough to defend: “These new unauthorized flows were denied, these required operations completed with fresh evidence, and these residual risks were accepted or deferred by the named owner.”
+
+### Completion is scoped evidence
+
+Lab 2.2 requires a fresh post-commit CC session, current-connection GI, every inventory point non-null/GOOD since GI start, the operational conduit proofs, independent breaker/RMU baseline positions and fresh section supply, plus active negative probes. A bad segmentation change fails visibility even when physical supply survives.
+
+Lab 2.3 requires that same fresh CC visibility, restored breaker/fresh supply, active negative probes and bounded absence of foreign breaker operations since hardening. PASS does not certify that the earlier attack/restoration was performed, future DPI or regulatory compliance. The bonus certifies its sampled negative paths and restored RMU/OLTC state, not attack completion, supply or fresh CC observations.
+
+Lab 2.4 additionally requires a backend-retained PASS report for this range, full running firewall hash and latest commit window. Hash reads bracket the probe run. Recommit/reapply or range/backend restart requires a new report; export it for durable handover. Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.

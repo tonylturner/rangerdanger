@@ -165,6 +165,27 @@ main(int argc, char** argv)
     cc.points[0].sb = false;
     puts("PASS concurrent POSTs reserve exactly one GI; operator restarts interval");
 
+    CcHttpRequest reconnect = {.method="POST", .path="/api/reconnect", .query="", .body="", .bodyLen=0};
+    CcHttpResponse rr = {0};
+    cc.tracker.active = true;
+    cc_api_handle(&reconnect, &rr);
+    assert(rr.status == 409 && !cc.link.reconnectPending);
+    free(rr.body); rr = (CcHttpResponse){0};
+    cc.tracker.active = false;
+    cc_api_handle(&reconnect, &rr);
+    assert(rr.status == 202 && cc.link.reconnectPending);
+    assert(admission() == 409); /* reservation also blocks new commands */
+    free(rr.body); rr = (CcHttpResponse){0};
+    cc_api_handle(&reconnect, &rr);
+    assert(rr.status == 409);
+    free(rr.body); rr = (CcHttpResponse){0};
+    reconnect.body = "{}"; reconnect.bodyLen = 2;
+    cc_api_handle(&reconnect, &rr);
+    assert(rr.status == 400);
+    free(rr.body);
+    cc.link.reconnectPending = false;
+    puts("PASS reconnect reservation, in-flight refusal, duplicate/body rejection and command exclusion");
+
     uint64_t before = cc.journalNext;
     status.type = M_DP_TB_1; status.dp = 1; status.timed = true; status.timeMs = 1792065600000;
     cc_on_report(&status, 3);
