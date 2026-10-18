@@ -13,7 +13,7 @@ import (
 // Collect only the positive evidence the new 2.2 validator consumes. The old
 // wrapper's clock/isolation/logged-deny collection belongs to its old exercise.
 func (s *Server) collectEUWorkshopConduits(ctx context.Context, gen *lifecycle.Generation) conduitEvidence {
-	ev := conduitEvidence{rangeStart: gen.StartedAt, readStart: time.Now().UTC()}
+	ev := conduitEvidence{rangeStart: gen.StartedAt, readStart: time.Now().UTC(), stationPoints: gen.Package.StationPoints}
 	for _, read := range []struct{ source, dest, network, path, name string }{
 		{"kali-1", "historian-1", "ops_dmz_net", "/api/points", "Enterprise historian read"},
 		{"eng-ws-1", "plc-1", "station_net", "/login", "Named engineering PLC maintenance GET"},

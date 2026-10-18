@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
@@ -83,9 +84,9 @@ func euSupply(state *euWorkshopProcess, now time.Time) (bool, error) {
 
 // Integrity requires a matched current-connection GI within the attempt cap.
 // Receipt age does not invalidate quiet GOOD status.
-func euLink(state *conduitState, journal *ccJournal, start, now time.Time) ValidationCheck {
+func euLink(state *conduitState, journal *ccJournal, points []labs.IEC104Point, start, now time.Time) ValidationCheck {
 	const name = "CC link, GI and GOOD station observations"
-	ev := conduitEvidence{state: state, journal: journal, rangeStart: start, collectedAt: now}
+	ev := conduitEvidence{state: state, journal: journal, stationPoints: points, rangeStart: start, collectedAt: now}
 	anchor, window := conduitWindow(ev)
 	if anchor.IsZero() {
 		window.Name = name
@@ -186,7 +187,7 @@ func (s *Server) executeEUCheck(ctx context.Context, gen *lifecycle.Generation, 
 			var journal *ccJournal
 			state, journal, err = euCC(ctx, gen)
 			if err == nil {
-				check := euLink(state, journal, gen.StartedAt, time.Now().UTC())
+				check := euLink(state, journal, gen.Package.StationPoints, gen.StartedAt, time.Now().UTC())
 				actual = check.Status == "pass"
 				// Unknown/missing observations are not a measured false value.
 				if !actual {

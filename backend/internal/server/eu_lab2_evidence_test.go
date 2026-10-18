@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +12,10 @@ import (
 
 func passingConduits(t *testing.T) conduitEvidence {
 	t.Helper()
+	gen := euGeneration(t, nil, nil)
 	ev := conduitEvidence{
-		rangeStart: at("12:00:00"), collectedAt: at("12:05:00"),
+		stationPoints: gen.Package.StationPoints,
+		rangeStart:    at("12:00:00"), collectedAt: at("12:05:00"),
 		state: decodeFixture[conduitState](t, `{"schema":3,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
 		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":6,"entries":[
    {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"gi_started","detail":{"connection_seq":2,"trigger":"connect"}},
@@ -31,7 +32,8 @@ func passingConduits(t *testing.T) conduitEvidence {
 		reads:     []ValidationCheck{checkPass("Enterprise historian read", "GET"), checkPass("Named engineering PLC maintenance GET", "GET")},
 		readStart: at("12:04:58"), readEnd: at("12:04:59"),
 	}
-	for _, ioa := range conduitIOAs {
+	for _, identity := range ev.stationPoints {
+		ioa := identity.IOA
 		value := json.RawMessage(`true`)
 		switch {
 		case ioa == 1001 || ioa == 1101:
@@ -43,11 +45,10 @@ func passingConduits(t *testing.T) conduitEvidence {
 		case ioa >= 2000:
 			value = json.RawMessage(`20.0`)
 		}
-		point := conduitPoint{ccPoint: ccPoint{ID: fmt.Sprint(ioa), Value: value, ReceivedAt: at("12:01:00")}, IOA: ioa}
+		point := conduitPoint{ccPoint: ccPoint{ID: identity.ID, Value: value, ReceivedAt: at("12:01:00")}, IOA: ioa}
 		ev.state.Points = append(ev.state.Points, point)
 	}
 
-	gen := euGeneration(t, nil, nil)
 	var err error
 	ev.denies, err = conduitDenyMatrix(gen, nil)
 	if err != nil {
@@ -79,6 +80,15 @@ func TestConduitsEvidence(t *testing.T) {
 		{"future GI", func(ev *conduitEvidence) { ev.journal.Entries[1].At = at("12:06:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"zero connection seq", func(ev *conduitEvidence) { ev.state.Link.ConnectionSeq = 0 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
 		{"missing point", func(ev *conduitEvidence) { ev.state.Points = ev.state.Points[1:] }, []int{1}},
+		{"missing inventory", func(ev *conduitEvidence) { ev.stationPoints = nil }, []int{1}},
+		{"missing C4 point", func(ev *conduitEvidence) {
+			for i, point := range ev.state.Points {
+				if point.IOA == 2305 {
+					ev.state.Points = append(ev.state.Points[:i], ev.state.Points[i+1:]...)
+					return
+				}
+			}
+		}, []int{1}},
 		{"duplicate point", func(ev *conduitEvidence) { ev.state.Points = append(ev.state.Points, ev.state.Points[0]) }, []int{1}},
 		{"stale quality", func(ev *conduitEvidence) { ev.state.Points[0].Quality.NT = true }, []int{1}},
 		{"null is not zero", func(ev *conduitEvidence) { ev.state.Points[0].Value = json.RawMessage(`null`) }, []int{1}},
@@ -159,6 +169,28 @@ func TestConduitsEvidence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConduitsPollsInventoryCount(t *testing.T) {
+	ev := passingConduits(t)
+	if len(ev.stationPoints) != 38 || len(ev.state.Points) != 38 {
+		t.Fatalf("loaded inventory=%d, observations=%d; want 38", len(ev.stationPoints), len(ev.state.Points))
+	}
+	start, _ := conduitWindow(ev)
+	check := conduitPolls(ev, start)
+	if check.Status != "pass" || !strings.Contains(check.Detail, "all 38 station IOAs") {
+		t.Fatal(check)
+	}
+	for i, point := range ev.state.Points {
+		if point.IOA == 1307 {
+			ev.state.Points = append(ev.state.Points[:i], ev.state.Points[i+1:]...)
+			break
+		}
+	}
+	check = conduitPolls(ev, start)
+	if check.Status != "fail" || !strings.Contains(check.Detail, "1 of 38 station IOAs [1307]") {
+		t.Fatal(check)
 	}
 }
 

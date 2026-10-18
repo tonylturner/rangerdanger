@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 // A current-connection GI is the attempt boundary. Periodic GIs do not restart
@@ -70,6 +71,7 @@ type conduitDeny struct {
 }
 
 type conduitEvidence struct {
+	stationPoints           []labs.IEC104Point
 	rangeStart, collectedAt time.Time
 	state                   *conduitState
 	stateErr                error
@@ -127,14 +129,14 @@ func conduitWindow(ev conduitEvidence) (time.Time, ValidationCheck) {
 	return fail("no retained matched GI start/completion for the current connection within ten minutes and after the attempt boundary")
 }
 
-// Each frozen IOA must be represented exactly once, independently of the
-// smaller validator-specific point sets.
-var conduitIOAs = []int{1001, 1002, 2001, 2002, 1101, 1102, 1103, 1104, 2101, 2102, 2103, 1201, 1202, 1203, 1204, 2201, 2202, 2203, 1301, 1302, 1303, 1304, 1305, 1306, 2301, 2302, 1401, 1402, 2401, 2402, 2403}
-
 func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 	name := "Fresh full-station protocol observations"
+	count := len(ev.stationPoints)
+	if count == 0 {
+		return checkFail(name, "missing evidence: active package station inventory unavailable (0 points)")
+	}
 	if start.IsZero() || ev.state == nil {
-		return checkFail(name, "missing evidence: no current CC attempt")
+		return checkFail(name, fmt.Sprintf("missing evidence: no current CC attempt for %d station IOAs", count))
 	}
 	seen := map[int]int{}
 	for _, point := range ev.state.Points {
@@ -143,15 +145,15 @@ func conduitPolls(ev conduitEvidence, start time.Time) ValidationCheck {
 		}
 	}
 	var missing []int
-	for _, ioa := range conduitIOAs {
-		if seen[ioa] != 1 {
-			missing = append(missing, ioa)
+	for _, point := range ev.stationPoints {
+		if seen[point.IOA] != 1 {
+			missing = append(missing, point.IOA)
 		}
 	}
 	if len(missing) != 0 {
-		return checkFail(name, fmt.Sprintf("missing evidence: IOAs %v need unique, non-null, GOOD observations received at or after this attempt’s GI start", missing))
+		return checkFail(name, fmt.Sprintf("missing evidence: %d of %d station IOAs %v need unique, non-null, GOOD observations received at or after this attempt’s GI start", len(missing), count, missing))
 	}
-	return checkPass(name, "all 31 station IOAs received at or after the completed GI’s start over IEC 104; no field/process truth substituted")
+	return checkPass(name, fmt.Sprintf("all %d station IOAs received at or after the completed GI’s start over IEC 104; no field/process truth substituted", count))
 }
 
 func conduitPLC(ev conduitEvidence, start time.Time) ValidationCheck {

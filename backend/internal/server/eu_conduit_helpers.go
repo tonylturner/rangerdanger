@@ -6,16 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/containd"
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
 func (s *Server) collectConduits(ctx context.Context, gen *lifecycle.Generation) conduitEvidence {
-	ev := conduitEvidence{rangeStart: gen.StartedAt}
+	ev := conduitEvidence{rangeStart: gen.StartedAt, stationPoints: gen.Package.StationPoints}
 	// These GETs originate on teaching interfaces, never on the multi-homed
 	// workstations' management plane. They do not change policy or PLC logic.
 	ev.readStart = time.Now().UTC()
@@ -139,23 +139,34 @@ func (s *Server) conduitRead(ctx context.Context, gen *lifecycle.Generation, fro
 	if response.Status != 200 || response.Body == "" {
 		return fail(fmt.Errorf("GET returned HTTP %d or empty body", response.Status))
 	}
+	inventoryDetail := ""
 	if toNode == "historian-1" {
-		var points []struct {
-			ID  string `json:"id"`
-			IOA int    `json:"ioa"`
+		inventory := gen.Package.StationPoints
+		count := len(inventory)
+		if count == 0 {
+			return fail(errors.New("active package station inventory unavailable (0 points)"))
 		}
-		if err := json.Unmarshal([]byte(response.Body), &points); err != nil || len(points) != len(conduitIOAs) {
-			return fail(errors.New("historian GET did not return the full station point inventory"))
+		var points []labs.IEC104Point
+		if err := json.Unmarshal([]byte(response.Body), &points); err != nil {
+			return fail(fmt.Errorf("historian GET could not decode the %d-point station inventory: %w", count, err))
+		}
+		if len(points) != count {
+			return fail(fmt.Errorf("historian GET returned %d points; expected the full %d-point station inventory", len(points), count))
+		}
+		expected := make(map[int]string, count)
+		for _, point := range inventory {
+			expected[point.IOA] = point.ID
 		}
 		seen := map[int]bool{}
 		for _, point := range points {
-			if point.ID == "" || seen[point.IOA] || !slices.Contains(conduitIOAs, point.IOA) {
-				return fail(errors.New("historian GET returned missing, duplicate or unknown point identities"))
+			if point.ID == "" || seen[point.IOA] || expected[point.IOA] != point.ID {
+				return fail(fmt.Errorf("historian GET returned missing, duplicate or unknown point identities; expected the full %d-point station inventory", count))
 			}
 			seen[point.IOA] = true
 		}
+		inventoryDetail = fmt.Sprintf("; full %d-point station inventory verified", count)
 	}
-	return checkPass(name, fmt.Sprintf("GET %s:%d%s from teaching source %s returned HTTP 200 at %s (completed %s); no write performed", toIP, port, path, fromIP, began.Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano)))
+	return checkPass(name, fmt.Sprintf("GET %s:%d%s from teaching source %s returned HTTP 200 at %s (completed %s)%s; no write performed", toIP, port, path, fromIP, began.Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), inventoryDetail))
 }
 
 // GI forms are deliberately untimed and overwrite source_time in the CC

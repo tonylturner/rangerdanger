@@ -120,7 +120,7 @@ func TestEUCheckDispatchAndMissingEvidence(t *testing.T) {
 func TestEULinkRequiresRecentGIWithoutExpiringConnection(t *testing.T) {
 	ev := passingEUWorkshop(t, euWorkshopSlots[0])
 	ev.now = ev.now.Add(time.Hour)
-	if got := euLink(ev.cc, ev.journal, ev.start, ev.now); got.Status != "fail" || !strings.Contains(got.Detail, "Interrogate station") {
+	if got := euLink(ev.cc, ev.journal, ev.stationPoints, ev.start, ev.now); got.Status != "fail" || !strings.Contains(got.Detail, "Interrogate station") {
 		t.Fatal(got)
 	}
 	for i := range ev.journal.Entries {
@@ -129,7 +129,7 @@ func TestEULinkRequiresRecentGIWithoutExpiringConnection(t *testing.T) {
 	for i := range ev.cc.Points {
 		ev.cc.Points[i].ReceivedAt = ev.now.Add(-time.Second)
 	}
-	if got := euLink(ev.cc, ev.journal, ev.start, ev.now); got.Status != "pass" {
+	if got := euLink(ev.cc, ev.journal, ev.stationPoints, ev.start, ev.now); got.Status != "pass" {
 		t.Fatal(got)
 	}
 }

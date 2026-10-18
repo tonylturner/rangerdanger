@@ -31,6 +31,7 @@ func euWorkshopValidator(slot string) scenarioValidator {
 }
 
 type euWorkshopEvidence struct {
+	stationPoints                                      []labs.IEC104Point
 	start, now, policyAt, hardeningSince, operationEnd time.Time
 	policy                                             string
 	policyErr                                          error
@@ -57,7 +58,7 @@ type euWorkshopEvidence struct {
 func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generation, slot string) euWorkshopEvidence {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	ev := euWorkshopEvidence{start: gen.StartedAt, devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{}}
+	ev := euWorkshopEvidence{start: gen.StartedAt, stationPoints: gen.Package.StationPoints, devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{}}
 	s.activeConfigMu.RLock()
 	ev.policy, ev.policyAt, ev.hardeningSince = s.activeConfig, s.policyChangedAt, s.policyEvidenceSince
 	wantHash := s.lastAppliedHash
@@ -206,7 +207,7 @@ func evaluateEUWorkshop(slot string, ev euWorkshopEvidence) []ValidationCheck {
 		if ev.ccErr != nil {
 			return checkFail("CC link, GI and GOOD station observations", ev.ccErr.Error())
 		}
-		return euLink(ev.cc, ev.journal, ev.start, ev.now)
+		return euLink(ev.cc, ev.journal, ev.stationPoints, ev.start, ev.now)
 	}
 	switch slot {
 	case "eu-baseline-assessment":

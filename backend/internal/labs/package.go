@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -86,12 +87,15 @@ type PackageYAML struct {
 
 // Package is one fully parsed and validated curriculum package.
 type Package struct {
-	Curriculum   *Curriculum
-	ID           string
-	Title        string
-	Revision     int
-	Capabilities []string
-	Template     LabYAML
+	Curriculum *Curriculum
+	// StationPoints is the IEC 104 identity inventory from protocols/points.json.
+	// It is required for packages declaring protocol.iec104.
+	StationPoints []IEC104Point
+	ID            string
+	Title         string
+	Revision      int
+	Capabilities  []string
+	Template      LabYAML
 	// FirewallConfigPath is the topology's firewall_config resolved from the
 	// topology file and re-expressed relative to the definitions directory,
 	// which is how the orchestrator joins it.
@@ -283,6 +287,11 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 		Policies:           policies,
 		OperatorView:       manifest.OperatorView,
 		ICSRules:           icsRules,
+	}
+	if slices.Contains(pkg.Capabilities, CapabilityProtocolIEC104) {
+		if pkg.StationPoints, err = loadIEC104Points(packageDir); err != nil {
+			return Package{}, "", err
+		}
 	}
 	if _, ok := pkg.PolicyName(firewallConfigPath); !ok {
 		return Package{}, "", fmt.Errorf("topology %s: firewall_config %s is not one of the package policies", filepath.Base(topologyPath), firewallConfigPath)

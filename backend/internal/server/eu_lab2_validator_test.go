@@ -236,6 +236,64 @@ func TestConduitsReadErrors(t *testing.T) {
 	}
 }
 
+func TestConduitsHistorianInventory(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func([]labs.IEC104Point) []labs.IEC104Point
+		pass   bool
+	}{
+		{"full 38-point inventory", func(points []labs.IEC104Point) []labs.IEC104Point { return points }, true},
+		{"missing C4 PF point", func(points []labs.IEC104Point) []labs.IEC104Point {
+			return slices.DeleteFunc(points, func(point labs.IEC104Point) bool { return point.IOA == 2305 })
+		}, false},
+		{"duplicate IOA", func(points []labs.IEC104Point) []labs.IEC104Point {
+			points[0] = points[1]
+			return points
+		}, false},
+		{"unknown IOA", func(points []labs.IEC104Point) []labs.IEC104Point {
+			points[0].IOA = 9999
+			return points
+		}, false},
+		{"wrong ID", func(points []labs.IEC104Point) []labs.IEC104Point {
+			points[0].ID = "not-a-station-point"
+			return points
+		}, false},
+		{"extra point", func(points []labs.IEC104Point) []labs.IEC104Point {
+			return append(points, labs.IEC104Point{ID: "extra", IOA: 9999})
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gen := euGeneration(t, nil, nil)
+			if len(gen.Package.StationPoints) != 38 {
+				t.Fatalf("loaded %d station points, want 38", len(gen.Package.StationPoints))
+			}
+			points := tc.mutate(slices.Clone(gen.Package.StationPoints))
+			body, err := json.Marshal(points)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := json.Marshal(map[string]any{"status": 200, "body": string(body)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := rangeServer(gen, "improved")
+			s.execInContainer = func(context.Context, string, []string, int) (string, string, int, error) {
+				return string(response), "", 0, nil
+			}
+			check := s.conduitRead(t.Context(), gen, "kali-1", "enterprise_net", "historian-1", "ops_dmz_net", "/api/points", "read")
+			if (check.Status == "pass") != tc.pass || !strings.Contains(check.Detail, "38-point station inventory") {
+				t.Fatalf("inventory check: %+v", check)
+			}
+			// An absent inventory is a failure, never a vacuous pass.
+			gen.Package.StationPoints = nil
+			check = s.conduitRead(t.Context(), gen, "kali-1", "enterprise_net", "historian-1", "ops_dmz_net", "/api/points", "read")
+			if check.Status != "fail" || !strings.Contains(check.Detail, "inventory unavailable (0 points)") {
+				t.Fatal(check)
+			}
+		})
+	}
+}
+
 func TestConduitsClockRead(t *testing.T) {
 	for _, tt := range []struct {
 		name, status string
