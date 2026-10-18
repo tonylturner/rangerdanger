@@ -12,9 +12,11 @@ import {
   startPcapCapture,
   startTrafficGeneration,
   stopPcapCapture,
+  type ZoneRuleSummary,
 } from "../lib/api";
 import { aggregateFlows, nodeZone, nodeIp, type FlowStatus, type FlowContext } from "../lib/observed-flows";
-import { humanZoneName } from "../lib/network-console-data";
+import { getFlowAuthorization, humanZoneName } from "../lib/network-console-data";
+import { FlowEvidence } from "./network-flow-evidence";
 
 // ── Style maps ──────────────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ const STATUS_COLOR: Record<FlowStatus, { dot: string; text: string; label: strin
 
 export function TrafficMatrixView({
   context,
+  ruleSummaries,
   canvasEdgesOn,
   onToggleCanvasEdges,
   filter,
@@ -64,6 +67,7 @@ export function TrafficMatrixView({
   onHighlightPair,
 }: {
   context?: FlowContext;
+  ruleSummaries?: ZoneRuleSummary[];
   canvasEdgesOn?: boolean;
   onToggleCanvasEdges?: () => void;
   filter?: { zone: string; crossZoneOnly: boolean };
@@ -73,6 +77,7 @@ export function TrafficMatrixView({
 } = {}) {
   const queryClient = useQueryClient();
   const [captureDuration, setCaptureDuration] = useState(30);
+  const [selectedPair, setSelectedPair] = useState<string | null>(null);
 
   // Filters can be controlled from the parent (so the canvas mirrors
   // them) or local-only if no parent callbacks are provided.
@@ -211,6 +216,7 @@ export function TrafficMatrixView({
       </div>
 
       {hasOperator && <p className="text-[11px] text-slate-400">The process/truth plane is intentionally outside the segmentation map.</p>}
+      <p className="text-xs text-slate-300">Topology is declared; liveness is observed, not authorization. Select a flow for its purpose and evidence.</p>
 
       {/* ── Capture & Generate controls ─────────────────────────── */}
       <div className="space-y-1.5 rounded border border-slate-800 bg-slate-900/40 p-2">
@@ -364,22 +370,32 @@ export function TrafficMatrixView({
           const tZone = nodeZone(r.target, context!.graph);
           const pairKey = `${r.source}->${r.target}`;
           const isHighlighted = highlightedPair === pairKey;
+          const isSelected = selectedPair === pairKey;
+          const toggleSelection = () => {
+            setSelectedPair(isSelected ? null : pairKey);
+            onHighlightPair?.(isSelected ? null : pairKey);
+          };
+          const authorization = getFlowAuthorization(r.source, r.target, ruleSummaries, context!.graph);
           return (
             <div
               key={pairKey}
-              className={`cursor-pointer rounded border p-2 text-[10px] transition-colors ${
-                isHighlighted
+              className={`rounded border p-2 text-[10px] transition-colors ${
+                isHighlighted || isSelected
                   ? "border-sky-500 bg-sky-950/30 ring-1 ring-sky-500/40"
                   : r.crossZone
                   ? "border-amber-900/40 bg-amber-950/10 hover:border-amber-700/60"
                   : "border-slate-800 bg-slate-900/40 hover:border-slate-700"
               }`}
               onMouseEnter={() => onHighlightPair?.(pairKey)}
-              onMouseLeave={() => onHighlightPair?.(null)}
-              onClick={() =>
-                onHighlightPair?.(isHighlighted ? null : pairKey)
-              }
+              onMouseLeave={() => onHighlightPair?.(selectedPair)}
             >
+              <button
+                type="button"
+                className="w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                aria-label={`Inspect flow ${r.source} to ${r.target}`}
+                aria-expanded={isSelected}
+                onClick={toggleSelection}
+              >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span className={`h-1.5 w-1.5 rounded-full ${ZONE_DOT[sZone] || "bg-slate-600"}`} />
@@ -456,6 +472,9 @@ export function TrafficMatrixView({
                   {r.protocols[0].cadence} · {r.category}
                 </span>
               </div>
+              <p className="mt-1 text-xs text-slate-300">Topology: declared · Observed liveness: {r.status} · {authorization.state === "denied" ? "Authorization: denied by zone-pair summary" : authorization.state === "same-zone" ? "Authorization: outside firewall scope (same zone)" : "Authorization unknown"}</p>
+              </button>
+              {isSelected && <FlowEvidence context={context!} pair={r} ruleSummaries={ruleSummaries} />}
             </div>
           );
         })}

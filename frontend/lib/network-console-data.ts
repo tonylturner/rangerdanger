@@ -44,44 +44,6 @@ export function humanizeSummary(summary: string): string[] {
     .map((tok) => PORT_PROTOCOL[tok] || `tcp/${tok}`);
 }
 
-// Operational flows that occur entirely inside a zone and never traverse
-// the firewall. The lab teaches that the firewall view is intentionally
-// incomplete: HMI→RTAC and Historian→RTAC carry critical state but never
-// hit the segmentation boundary, so they need host- and network-level
-// protections within the zone instead of firewall policy.
-//
-// Source/target are node IDs as emitted by the workshop graph (e.g.
-// `hmi-1`, `rtac-1`). Direction is meaningful - source initiates.
-export const INTRA_ZONE_FLOWS: Array<{
-  source: string;
-  target: string;
-  zone: string;
-  protocol: string;
-  description: string;
-}> = [
-  {
-    source: "hmi-1",
-    target: "rtac-1",
-    zone: "ot_ops_net",
-    protocol: "Modbus 502",
-    description: "HMI polls RTAC tag DB ~2s - invisible to firewall",
-  },
-  {
-    source: "historian-1",
-    target: "rtac-1",
-    zone: "ot_ops_net",
-    protocol: "HTTP 8080",
-    description: "Historian reads RTAC state ~5s - invisible to firewall",
-  },
-  {
-    source: "openplc-1",
-    target: "rtac-1",
-    zone: "ot_ops_net",
-    protocol: "Modbus 502",
-    description: "OpenPLC tags exposed to RTAC - intra-zone",
-  },
-];
-
 // View modes that toggle overlays on the map without changing the
 // underlying topology. Each toggle is independent so a student can
 // stack policy + traffic to see "what's allowed AND what's flowing".
@@ -114,39 +76,35 @@ export const ZONE_HUMAN_NAME: Record<string, string> = {
 export function humanZoneName(z: string): string {
   return ZONE_HUMAN_NAME[z] || z;
 }
-// Check whether a specific host-to-host flow is blocked by the live
-// firewall rules. Maps the source/target to containd zone names and
-// looks up the matching rule summary. For MIXED zone pairs (like
-// lan1→lan2 where RTAC is pinned as the only allowed source), the
-// flow is blocked unless the source is the RTAC.
-// Returns null if allowed, or a description of the blocking rule if denied.
-export function getFlowBlockReason(
+export type FlowAuthorization = {
+  state: "unknown" | "denied" | "same-zone";
+  text: string;
+};
+
+// A zone summary is not an endpoint/port policy evaluation. In particular,
+// MIXED cannot establish a source pin, even for the traditional US RTAC.
+export function getFlowAuthorization(
   sourceNodeId: string,
   targetNodeId: string,
   ruleSummaries: ZoneRuleSummary[] | undefined,
   graph: LabGraph,
-): string | null {
-  if (!ruleSummaries || ruleSummaries.length === 0) return null;
-
+): FlowAuthorization {
+  const unknown: FlowAuthorization = { state: "unknown", text: "Authorization unknown — no matching zone-pair summary or endpoint/port evaluation." };
   const srcZone = graph.networks.find((n) => n.id === nodeZone(sourceNodeId, graph))?.zone;
   const dstZone = graph.networks.find((n) => n.id === nodeZone(targetNodeId, graph))?.zone;
-  if (!srcZone || !dstZone) return null;
-  if (srcZone === dstZone) return null;
+  if (!srcZone || !dstZone) return unknown;
+  if (srcZone === dstZone) return { state: "same-zone", text: "Same zone — does not traverse containd; firewall policy does not establish authorization." };
 
-  const rule = ruleSummaries.find(
+  const rule = ruleSummaries?.find(
     (r) => r.source_zone === srcZone && r.dest_zone === dstZone,
   );
 
-  if (!rule) return null;
+  if (!rule) return unknown;
   if (rule.action === "DENY") {
     const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: DENY`;
-    return detail;
+    return { state: "denied", text: `Denied by zone-pair summary — ${detail}` };
   }
-  if (rule.action === "MIXED" && graph.networks.some((n) => n.id === "ot_ops_net") && sourceNodeId !== "rtac-1") {
-    const detail = rule.rule_details?.[0] || `${srcZone} → ${dstZone}: source not authorized`;
-    return `${detail} (only RTAC is source-pinned)`;
-  }
-  return null;
+  return { state: "unknown", text: `Authorization unknown — ${rule.action} zone-pair summary, not an endpoint/port evaluation. ${rule.rule_details.join("; ")}` };
 }
 
 // Build policy info for a zone from the live containd rules. The label
@@ -205,7 +163,7 @@ export function getZonePolicyInfo(
       r.rule_details.some((d) => d.trim().toUpperCase().startsWith("WEAK:")),
   );
   const permissiveness: Permissiveness =
-    action === "DENY" ? "blocked" : overPermissive ? "over" : "allowed";
+    action === "DENY" ? "blocked" : action === "MIXED" ? "unknown" : overPermissive ? "over" : "allowed";
 
   // Structured details for tooltip
   const details = relevantRules.map((r) => {
@@ -228,7 +186,7 @@ export function getZonePolicyInfo(
   if (action === "DENY") {
     label = "BLOCKED";
   } else if (action === "MIXED") {
-    label = protos.length > 0 ? `MIXED · ${protos.slice(0, 2).join(" / ")}` : "MIXED · source-restricted";
+    label = "MIXED · authorization unknown";
   } else if (protos.length === 0) {
     label = "ALLOW";
   } else if (protos.length === 1) {

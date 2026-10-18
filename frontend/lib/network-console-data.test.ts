@@ -4,7 +4,7 @@ import usFixture from "../../backend/internal/labs/testdata/us-flow-graph.json";
 import { describe, expect, it } from "vitest";
 import {
   deriveNodeHealth,
-  getFlowBlockReason,
+  getFlowAuthorization,
   getZonePolicyInfo,
   humanizeSummary,
 } from "./network-console-data";
@@ -52,71 +52,55 @@ describe("getZonePolicyInfo", () => {
   it.each(["ALLOW", "DENY", "MIXED"] as const)("retains %s and wildcard destinations", (action) => {
     expect(getZonePolicyInfo("enterprise_net", [{ ...rules[0], dest_zone: "any", action }], graph.networks)).toMatchObject({
       action,
-      permissiveness: action === "DENY" ? "blocked" : "over",
+      permissiveness: action === "DENY" ? "blocked" : action === "MIXED" ? "unknown" : "over",
     });
   });
 });
 
-describe("getFlowBlockReason", () => {
-  const graph: LabGraph = {
-    nodes: [ ["eng-ws-1", "vendor_net"], ["relay-1", "field_net"] ].map(([id, zone]) => ({ id, type: "host", position: { x: 0, y: 0 }, data: { label: id, zone, networks: [zone] } })),
-    edges: [], flows: [], liveness: {}, operations: { traffic_generation: true },
-    networks: [{ id: "vendor_net", name: "Vendor", zone: "dmz" }, { id: "field_net", name: "Field", zone: "lan2" }],
-  };
-  const summaries = [
-    {
-      source_zone: "dmz",
-      dest_zone: "lan2",
-      summary: "502, 20000",
-      rule_details: ["WEAK: vendor to field access"],
-      action: "DENY" as const,
-    },
-  ];
+describe("getFlowAuthorization", () => {
+  const eu = euFixture as LabGraph;
+  const rule: ZoneRuleSummary = { source_zone: "lan4", dest_zone: "lan1", summary: "2404", rule_details: ["CC /32 only"], action: "MIXED" };
 
-  it("returns the matching denial reason for a blocked flow", () => {
-    expect(getFlowBlockReason("eng-ws-1", "relay-1", summaries, graph)).toBe(
-      "WEAK: vendor to field access",
-    );
+  it.each([undefined, [], [{ ...rule, source_zone: "wan" }]])("does not invent authorization without a matching summary (%s)", (rules) => {
+    expect(getFlowAuthorization("cc-1", "rtu-1", rules, eu)).toMatchObject({ state: "unknown", text: expect.stringContaining("Authorization unknown") });
   });
 
-  it("returns null for an allowed flow", () => {
-    expect(
-      getFlowBlockReason("eng-ws-1", "relay-1", [
-        { ...summaries[0], action: "ALLOW" },
-      ], graph),
-    ).toBeNull();
-  });
-
-  it("uses real EU zone mappings without treating MIXED as non-RTAC denial", () => {
-    const eu = euFixture as LabGraph;
-    const rules = [{ source_zone: "lan4", dest_zone: "lan1", summary: "2404", rule_details: ["CC /32 only"], action: "MIXED" as const }];
-    expect(getFlowBlockReason("cc-1", "rtu-1", rules, eu)).toBeNull();
-    expect(getFlowBlockReason("cc-1", "rtu-1", [{ ...rules[0], action: "DENY" }], eu)).toBe("CC /32 only");
-    expect(getFlowBlockReason("rtu-1", "gps-1", rules, eu)).toBeNull();
-    expect(getZonePolicyInfo("station_net", rules, eu.networks)).toMatchObject({ action: "MIXED", label: "MIXED · source-restricted" });
-  });
-
-  it("keeps authorised EU HTTP flows distinct from logged zone-pair denies", () => {
-    const eu = euFixture as LabGraph;
-    const rules: ZoneRuleSummary[] = [
-      { source_zone: "lan4", dest_zone: "lan5", summary: "8081", rule_details: ["CC ingest allow; other ingest sources denied and logged"], action: "MIXED" },
-      { source_zone: "wan", dest_zone: "lan5", summary: "8080, 8081", rule_details: ["Enterprise read allow; ingest denied and logged"], action: "MIXED" },
-      { source_zone: "dmz", dest_zone: "lan1", summary: "2404, 8080", rule_details: ["Engineering PLC web allow; other web sources denied and logged"], action: "MIXED" },
-    ];
-    for (const id of ["cc-historian", "enterprise-historian", "engineering-plc"]) {
-      const flow = eu.flows.find((flow) => flow.id === id)!;
-      expect(getFlowBlockReason(flow.source, flow.target, rules, eu)).toBeNull();
-    }
-    expect(getZonePolicyInfo("ops_dmz_net", rules, eu.networks)).toMatchObject({
-      action: "MIXED", permissiveness: "allowed",
+  it.each(["MIXED", "ALLOW"] as const)("does not treat %s as endpoint/port authorization", (action) => {
+    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action }], eu)).toEqual({
+      state: "unknown", text: expect.stringContaining(`${action} zone-pair summary, not an endpoint/port evaluation`),
     });
   });
 
-  it("retains the established US source-pin overlay", () => {
+  it("reports denial evidence independently of liveness", () => {
+    expect(getFlowAuthorization("cc-1", "rtu-1", [{ ...rule, action: "DENY" }], eu)).toEqual({ state: "denied", text: "Denied by zone-pair summary — CC /32 only" });
+  });
+
+  it.each(["station-clock", "rtu-plc-1"])("identifies %s as outside firewall scope, even without summaries", (id) => {
+    const f = eu.flows.find((f) => f.id === id)!;
+    expect(getFlowAuthorization(f.source, f.target, undefined, eu)).toEqual({ state: "same-zone", text: expect.stringContaining("does not traverse containd") });
+  });
+
+  it("does not infer source pins from a US MIXED summary either", () => {
     const us = usFixture as LabGraph;
-    const rules = [{ source_zone: "lan1", dest_zone: "lan2", summary: "502", rule_details: ["RTAC source pin"], action: "MIXED" as const }];
-    expect(getFlowBlockReason("rtac-1", "relay-1", rules, us)).toBeNull();
-    expect(getFlowBlockReason("historian-1", "relay-1", rules, us)).toContain("only RTAC");
+    const rules: ZoneRuleSummary[] = [{ ...rule, source_zone: "lan1", dest_zone: "lan2", rule_details: ["RTAC source pin"] }];
+    for (const source of ["rtac-1", "historian-1"]) {
+      expect(getFlowAuthorization(source, "relay-1", rules, us).state).toBe("unknown");
+    }
+  });
+
+  it("keeps EU ingestion, read and engineering authorization unknown with MIXED summaries", () => {
+    const rules: ZoneRuleSummary[] = [
+      { ...rule, dest_zone: "lan5", summary: "8081" },
+      { ...rule, source_zone: "wan", dest_zone: "lan5", summary: "8080, 8081" },
+      { ...rule, source_zone: "dmz", summary: "2404, 8080" },
+    ];
+    for (const id of ["cc-historian", "enterprise-historian", "engineering-plc"]) {
+      const flow = eu.flows.find((flow) => flow.id === id)!;
+      expect(getFlowAuthorization(flow.source, flow.target, rules, eu).state).toBe("unknown");
+    }
+    expect(getZonePolicyInfo("ops_dmz_net", rules, eu.networks)).toMatchObject({
+      action: "MIXED", permissiveness: "unknown", label: "MIXED · authorization unknown",
+    });
   });
 });
 

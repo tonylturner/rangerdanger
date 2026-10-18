@@ -4,11 +4,12 @@ import { aggregateFlows, nodeZone, type FlowContext, type FlowFilter } from "./o
 import {
   ViewMode,
   deriveNodeHealth,
-  getFlowBlockReason,
+  getFlowAuthorization,
   getZonePolicyInfo,
   zones,
 } from "./network-console-data";
 import { zoneColors } from "./zone-colors";
+import { CONNECTION_DIRECTION, flowPurpose, PORT_RULE_BOUNDARY } from "./network-flow-meaning";
 
 // Reserve the entire host envelope, including a three-line name and IP.
 const HOST_ENVELOPE = { width: 120, height: 130 };
@@ -615,7 +616,8 @@ function trafficEdges(context: FlowContext, nodes: Node[], policyEdges: Edge[], 
   const edges = aggregateFlows(context).filter((r) => present.has(r.source) && present.has(r.target)).map((r): Edge => {
     const key = `${r.source}->${r.target}`;
     const label = flowLabel(r.protocols);
-    const blockReason = policyOn ? getFlowBlockReason(r.source, r.target, rules, context.graph) : null;
+    const authorization = getFlowAuthorization(r.source, r.target, rules, context.graph);
+    const blockReason = policyOn && authorization.state === "denied" ? authorization.text : null;
     const dimmed = !!highlight && highlight !== key;
     const sourceZone = nodeZone(r.source, context.graph);
     const sameZone = sourceZone !== "unknown" && sourceZone === nodeZone(r.target, context.graph);
@@ -624,9 +626,10 @@ function trafficEdges(context: FlowContext, nodes: Node[], policyEdges: Edge[], 
       animated: r.status === "active" && !dimmed && !blockReason,
       data: { label, status: r.status, category: r.category, sameZone, highlighted: highlight === key,
         dimmedByHighlight: dimmed, blockedByFirewall: blockReason !== null, blockReason,
-        tooltipLines: [`${r.source} → ${r.target}`,
+        tooltipLines: [`${r.source} → ${r.target}`, "Topology: declared by package, not proof of authorization.",
           ...r.protocols.map((f) => `${f.protocol} on tcp/${f.port} · ${f.cadence}`),
-          `category: ${r.category}`,
+          ...r.protocols.map(flowPurpose), CONNECTION_DIRECTION, PORT_RULE_BOUNDARY,
+          authorization.text, `Observed liveness: ${r.status}`,
           ...r.protocols.map((f) => `${context.observations[f.id]?.evidence}: ${context.observations[f.id]?.reason}`)],
       },
     };
