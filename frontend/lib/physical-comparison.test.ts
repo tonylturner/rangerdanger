@@ -37,7 +37,36 @@ describe("physical comparison precedence", () => {
     field.devices["breaker-1"].changed_at = "2026-10-09T12:00:30Z";
     expect(physicalComparison(field, FEEDER_STATE)[0]).toMatchObject({ status: "UNKNOWN", detail: "awaiting CC snapshot" });
   });
-  it("makes absent, null, invalid and stale physical values unknown before evaluating CC quality", () => {
+  it.each(["iv", "sb", "bl"] as const)("reports CC %s as invalid even when physical PF is null", (flag) => {
+    expect(compare("feeder-pf").status).toBe("UNKNOWN");
+    expect(compare("feeder-pf", {
+      quality: { ...FEEDER_STATE.points[0].quality, [flag]: true },
+      stale_reason: flag === "iv" ? "measurement_invalid" : null,
+    })).toMatchObject({ status: "INVALID", physical: { value: null } });
+  });
+  it("keeps never-received and awaiting-snapshot points unknown before evaluating CC quality", () => {
+    expect(compare("feeder-pf", {
+      quality: { ...FEEDER_STATE.points[0].quality, iv: true },
+      stale_reason: "never_received",
+    }).status).toBe("UNKNOWN");
+    const field = structuredClone(TRUTH), operator = structuredClone(FEEDER_STATE);
+    field.devices["breaker-1"].changed_at = "2026-10-09T12:00:30Z";
+    const p = operator.points.find((p) => p.id === "feeder-pf")!;
+    p.quality.iv = true;
+    p.stale_reason = "measurement_invalid";
+    expect(physicalComparison(field, operator).find((r) => r.id === p.id)).toMatchObject({ status: "UNKNOWN", detail: "awaiting CC snapshot" });
+  });
+  it("evaluates unusable CC quality before physical freshness and reporting deadband", () => {
+    const field = structuredClone(TRUTH), operator = structuredClone(FEEDER_STATE);
+    field.process.truth_stale = true;
+    const p = operator.points.find((p) => p.id === "oltc-1-bus-kv")!;
+    p.quality.iv = true;
+    p.stale_reason = "measurement_invalid";
+    p.reporting = null;
+    expect(physicalComparison(field, operator).find((r) => r.id === p.id)?.status).toBe("INVALID");
+    expect(physicalComparison(TRUTH, operator).find((r) => r.id === p.id)?.status).toBe("INVALID");
+  });
+  it("makes absent, null, invalid and stale physical values unknown with good CC quality", () => {
     expect(physicalComparison(TRUTH, undefined).every((r) => r.status === "UNKNOWN")).toBe(true);
     expect(compare("feeder-current", { value: null }).status).toBe("UNKNOWN");
     const field = structuredClone(TRUTH);

@@ -28,12 +28,13 @@ const scalar = (v: PointValue | undefined) => typeof v === "object" && v !== nul
 function outcome(physical: Reading, p: OperatorPoint | undefined, field: FieldState, operator: OperatorState | undefined, id: string, unavailable: boolean): [ComparisonStatus, string] {
   if (!operator) return ["UNKNOWN", "CC snapshot absent"];
   if (!p || pointCondition(p) === "never" || p.stale_reason === "never_received") return ["UNKNOWN", "CC point not received"];
-  if (physical.value === null || physical.value === undefined || physical.condition !== "good") return ["UNKNOWN", physical.staleReason ?? "physical value unknown"];
-  if (p.kind === "float" && (p.reporting?.deadband === undefined || !Number.isFinite(p.reporting.deadband))) return ["UNKNOWN", "no configured reporting deadband"];
-  const device = field.devices[PHYSICAL_POINTS[id].device];
+  const mapping = PHYSICAL_POINTS[id];
+  const device = mapping ? field.devices[mapping.device] : undefined;
   if (device && Date.parse(device.changed_at) > Date.parse(operator.rendered_at)) return ["UNKNOWN", "awaiting CC snapshot"];
   const q = p.quality;
   if ((q.iv && (p.stale_reason === null || p.stale_reason === "measurement_invalid")) || q.sb || q.bl) return ["INVALID", ["unusable IEC quality", ...qualityFlags(q), p.stale_reason && HOP[p.stale_reason]].filter(Boolean).join(" · ")];
+  if (physical.value === null || physical.value === undefined || physical.condition !== "good") return ["UNKNOWN", physical.staleReason ?? "physical value unknown"];
+  if (p.kind === "float" && (p.reporting?.deadband === undefined || !Number.isFinite(p.reporting.deadband))) return ["UNKNOWN", "no configured reporting deadband"];
   if (qualityFlags(q).length || p.stale_reason || unavailable) return ["STALE", [p.stale_reason ? HOP[p.stale_reason] ?? p.stale_reason : null, ...qualityFlags(q), unavailable ? "cached snapshot · CC API unavailable" : null].filter(Boolean).join(" · ")];
   const actual = scalar(physical.value), observed = scalar(p.value);
   if (p.kind === "float" && typeof actual === "number" && typeof observed === "number") {
