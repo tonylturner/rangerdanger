@@ -851,7 +851,7 @@ tests:
   text: RTU→field:502 — fresh field points at CC. Verify fresh application/device evidence, not only a socket.
 - kind: positive
   text: |-
-    PLC→OLTC:502 — require an accepted PLC-source adjacent request, motion_complete and solved revision AFTER policy change. If nominal regulation is quiescent, use the CC terminal for this controlled operational check (not an attack):
+    PLC→OLTC:502 — require an accepted PLC-source adjacent request, motion_complete and solved revision AFTER policy change. First allow the daily-profile loop to settle in the 20.4 kV ±1% band (20.196–20.604 kV); tap zero after reset is not a steady baseline. If regulation is quiescent, use the CC terminal for this controlled operational check (not an attack):
 
         iec104cmd ${ip:rtu-1} sc 3302 off -sbo --json
         iec104cmd ${ip:rtu-1} rc 3301 lower -sbo --json
@@ -861,7 +861,7 @@ tests:
         iec104cmd ${ip:rtu-1} rc 3301 lower -sbo --json
         iec104cmd ${ip:rtu-1} sc 3302 on -sbo --json
 
-    With tap −2 the nominal bus is below band. Wait for the PLC's 10-second demand and 2-second motions to return in band. Verify remote/auto, advancing heartbeat, device audit and fresh CC observations. Never use a final socket alone as loop proof.
+    Two completed lowers from the settled baseline should put the bus below band; do not assume the starting tap was zero. With the profile disabled nominal settles at +2, so two lowers reach zero. Wait for the PLC's configured 30-second demand and 2-second motions to return in band; IOA 2403 is the configured delay, not a countdown. The default Europe/Berlin daily load/source profile composes with instructor controls and keeps running through reset. Verify remote/auto, advancing heartbeat, device audit and fresh CC observations. Never use a final socket alone as loop proof.
 - kind: positive
   text: CC→historian:8081 — advancing ingested observations. Verify fresh application/device evidence, not only a socket.
 - kind: positive

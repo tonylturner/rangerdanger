@@ -26,7 +26,7 @@ First verify the policy is actually active. Then test a new unauthorized connect
 
 If the exercise needs an operator outage, follow the [exact-session procedure](#eu-established-sessions). Policy application alone may preserve established connections. Allow enough time for protocol failure detection and point staleness; do not shorten the observation window to obtain a green result.
 
-For switching, retain the command attempt and fresh completion feedback within the same window. For automatic regulation, allow the ten-second continuous out-of-band delay and two-second step motion, then observe the completed tap and bus response.
+For switching, retain the command attempt and fresh completion feedback within the same window. For automatic regulation, allow the 30-second continuous out-of-band delay and two-second step motion, then observe the completed tap and bus response.
 
 ### Define rollback before starting
 

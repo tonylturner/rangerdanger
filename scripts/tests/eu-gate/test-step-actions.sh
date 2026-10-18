@@ -83,7 +83,7 @@ unset -f eu_action
 eu_management() {
   # shellcheck disable=SC2034 # consumed by the sourced action helper
   HTTP_STATUS=200
-  API_BODY='{"schema":2}'
+  API_BODY='{"schema":3}'
   POST_PATH="$1 $2 $3"
   ACTION_BODY="$4"
 }

@@ -1,6 +1,6 @@
 {
   "process": {
-    "schema": 2,
+    "schema": 3,
     "profile_id": "eu-cigre-mv-teaching",
     "solve_seq": 23,
     "truth_stale": false,
@@ -8,7 +8,10 @@
       "feeder-breaker": {
         "delivered": true,
         "solved_revision": 9,
-        "revision": 9
+        "revision": 9,
+        "current_a": 28.88,
+        "p_mw": 0.94,
+        "q_mvar": 0.32
       }
     },
     "buses": {
@@ -17,11 +20,31 @@
         "kv": 19.93
       }
     },
-    "fault_section": "none"
+    "fault_section": "none",
+    "solver_epoch": "9d1c2f4e",
+    "solved_at": "2026-10-09T21:02:09.010Z",
+    "f2_tripped": false,
+    "load_multiplier": 1,
+    "source_pu": 1,
+    "tap": 0,
+    "profile": {
+      "enabled": true,
+      "load_factors": {
+        "residential": 0.8,
+        "commercial": 0.8,
+        "industrial": 0.8
+      },
+      "source_pu": 1
+    },
+    "f2_protection": {
+      "picked_up": false,
+      "picked_up_since": null,
+      "last_trip_current_a": null
+    }
   },
   "devices": {
     "breaker-1": {
-      "schema": 2,
+      "schema": 3,
       "device_id": "feeder-breaker",
       "generation": 42,
       "revision": 9,
@@ -42,9 +65,20 @@
         "source_kv_ll": 20.0,
         "section_live": true,
         "source_live": true,
-        "fault_current": false
+        "p_mw": 0.94,
+        "q_mvar": 0.32,
+        "pf": 0.947
       },
-      "kind": "breaker"
+      "kind": "breaker",
+      "protection": {
+        "function": "overcurrent",
+        "pickup_a": 400,
+        "delay_ms": 1000,
+        "instantaneous_a": 2000,
+        "picked_up": false,
+        "picked_up_since": null,
+        "last_trip_current_a": null
+      }
     }
   }
 }

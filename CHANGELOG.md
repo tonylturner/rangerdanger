@@ -8,6 +8,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **EU realism and operator parity (01a14c11, 01a14d90).** Derive
+  protection, fault passage and P/Q/PF from solved current/power; grade
+  breaker/F2 protection at 400 A / 1 s and 2000 A instantaneous. Put the
+  OLTC on the 110 kV winding, regulate to 20.4 kV ±1% with a 30 s delay,
+  and add a daily load/source profile. Add EU power/protection/profile
+  displays, voltage alarms, device comms health and a clearer one-line;
+  derive workshop node status from Docker. Align gates, CI and teaching
+  references with schema 3 and the new operating points.
+
 - **EU Control Centre observations now follow a selected WEMAG/SvK-modelled
   teaching profile, not an EU default.** GI runs on connect, every 15 minutes
   or via Interrogate station; status is spontaneous and measurands use

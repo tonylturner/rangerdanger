@@ -10,9 +10,9 @@ The ST task runs every 50 ms. Its Modbus master reads OLTC input registers 0–1
 
 ### Validity, permission and arming
 
-Input validity requires an observed change of the OLTC heartbeat, no two-second heartbeat timeout, IR2 equal to 1 and energisation. Permission additionally requires remote, auto, idle and not blocked. Retained input-register values are not proof that the field device is still communicating.
+Input validity requires an observed change of the OLTC heartbeat, no two-second heartbeat timeout, IR2 equal to 1 and energisation. Permission additionally requires remote, auto, idle and not effectively blocked (manual block OR solved-current pickup at 866 A). Retained input-register values are not proof that the field device is still communicating.
 
-Voltage below 19800 V requests raise; above 20200 V requests lower. The demand must persist in the same direction for ten seconds. The PLC encodes an adjacent absolute target as `100 + completed tap ± 1`, within −8…+8. Zero is written when there is no demand or control is inhibited. A pending request is cleared on completion or inhibition; a new step needs a new delay.
+Setpoint is 20400 V and deadband is 10 per-mille (±1%). Derived thresholds are 20196 V and 20604 V: below requests raise, above requests lower. The demand must persist in the same direction for the configured 30 s. The PLC encodes an adjacent absolute target as `100 + completed tap ± 1`, within −8…+8. Zero is written when there is no demand or control is inhibited. A pending request is cleared on completion or inhibition; a new step needs a new delay.
 
 The OLTC requires zero before accepting a nonzero request after reset or entry into remote+auto. Generation-change and unarmed-result handling in the PLC help re-establish that handshake. A well-formed HR1 request can be acknowledged but ignored by the device; inspect IR13 or `plc_request_result` rather than treating every echo as movement.
 
@@ -21,9 +21,9 @@ The OLTC requires zero before accepting a nonzero request after reset or entry i
 The RTU reads PLC holding registers 1024–1029 using FC3:
 
 - 1024: running, input-valid and control-permitted flag bits.
-- 1025: setpoint, 20000 V; CC IOA 2401 scales it to kV.
+- 1025: setpoint, 20400 V; CC IOA 2401 scales it to kV.
 - 1026: deadband, 10 tenths-percent; CC IOA 2402 shows percent.
-- 1027: delay remaining in seconds, rounded up; CC IOA 2403.
+- 1027: configured delay, 30 s; CC IOA 2403. The countdown is internal and not telemetered.
 - 1028: last demand, 0 none / 1 lower / 2 raise.
 - 1029: wrapping heartbeat, advanced every 500 ms.
 

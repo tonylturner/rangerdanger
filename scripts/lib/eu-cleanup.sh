@@ -97,6 +97,9 @@ eu_cleanup() {
       fail "cleanup could not restore weak policy"
       weak_reset=1
     fi
+    if [ "${profile_disabled:-0}" -eq 1 ]; then
+      eu_set_profile true || weak_reset=1
+    fi
     eu_reset_all || weak_reset=1
     if [ "$weak_reset" -eq 0 ] && eu_get_field; then
       if printf '%s' "$API_BODY" | jq -e \
@@ -136,6 +139,9 @@ eu_on_exit() {
 # A failed gate must not leave its owned injector/capture affecting later gates.
 # shellcheck disable=SC2154 # ownership flags are initialized by the gate runner
 eu_gate_resources_finish() {
+  if [ "${profile_disabled:-0}" -eq 1 ]; then
+    eu_set_profile true || fail "$1 profile restoration failed"
+  fi
   if [ -n "$PLC_SCAN_HELPER" ]; then
     eu_stop_plc_scan || fail "$1 owned PLC tracer teardown failed"
   fi

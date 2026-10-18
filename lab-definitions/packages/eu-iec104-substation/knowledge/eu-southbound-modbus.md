@@ -6,10 +6,10 @@ All configured devices use TCP/502, unit 1 and zero-based addresses. The RTU's s
 
 | Device | Endpoint | Read |
 | --- | --- | --- |
-| `feeder-breaker` | 10.40.40.20 | FC4 input 0–10 |
+| `feeder-breaker` | 10.40.40.20 | FC4 input 0–16 |
 | `rmu-1` | 10.40.40.21 | FC4 input 0–12 |
 | `rmu-2` | 10.40.40.22 | FC4 input 0–12 |
-| `oltc-1` | 10.40.40.23 | FC4 input 0–14 |
+| `oltc-1` | 10.40.40.23 | FC4 input 0–20 |
 | `plc-1` | 10.30.30.30 | FC3 holding 1024–1029 |
 
 Each poll period is 500 ms, device timeout 1000 ms and device stale threshold 3000 ms. Each device has an independent worker, so a dropped connection to one should not hold all peers behind its timeout. Connect attempts are capped at 250 ms and reconnect backoff is bounded by the configured 2000 ms interval.
@@ -18,9 +18,9 @@ Floating-point and unsigned 32-bit values use two registers, high word first. Si
 
 ### Registers are typed by device
 
-For breaker and RMUs, IR0 is position. Their IR1 flag meanings differ: the breaker includes lockout, current fault indication and protection trip, while an RMU includes earth, latched fault passage and current fault indication. IR2 is measurement-valid. Current and section voltage start at IR3 and IR5. RMUs add source voltage at IR11.
+For breaker and RMUs, IR0 is position. Their IR1 flag meanings differ: the breaker includes lockout, overcurrent pickup and protection trip, while an RMU includes earth, latched fault passage and present FPI pickup. IR2 is measurement-valid. Current and section voltage start at IR3 and IR5. RMUs add source voltage at IR11. Breaker IR1 bit 2 is overcurrent pickup, not a topology flag; breaker P/Q/PF start at IR11/13/15.
 
-The OLTC instead uses IR0 for signed completed tap, IR1 for authority/mode/motion/limits/block/energisation, and IR3/IR5 for bus voltage/current. IR11 is target tap, IR12 integer volts, IR13 PLC request result and IR14 heartbeat. Reusing a breaker decoder for the OLTC silently swaps meanings.
+The OLTC instead uses IR0 for signed completed tap, IR1 for authority/mode/motion/limits/block/energisation, and IR3/IR5 for bus voltage/current. IR11 is target tap, IR12 integer volts, IR13 PLC request result and IR14 heartbeat. OLTC P/Q/PF start at IR15/17/19. IR1 bit 5 is effective block (manual OR overcurrent), and bit 7 is overcurrent block alone. Reusing a breaker decoder for the OLTC silently swaps meanings. Null power values use float32 NaN; the RTU marks them IV/measurement_invalid rather than reporting valid zeros.
 
 ### Writes and freshness
 

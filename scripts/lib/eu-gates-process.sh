@@ -13,7 +13,8 @@ eu_fresh_points() {
 }
 
 eu_gate_G15() {
-  local section expected since
+  local section expected since grading instant
+  instant=$(jq -er '.f2_protection.instantaneous_a' "$PACKAGE/process/profile.json") || return
   eu_apply_named improved || return
   eu_reset_all || return
   eu_management rmu-1 POST /api/sim/actions '{"action":"earth_close"}' || return
@@ -35,10 +36,16 @@ eu_gate_G15() {
     eu_reset_all || return
     since=$(eu_utc)
     expected=false; [ "$section" != s2 ] || expected=true
+    # Validate operation against solved trip amps, not a topological fault flag.
+    grading='(.devices["breaker-1"].protection | (.last_trip_current_a | type == "number")
+      and (.instantaneous_a | type == "number") and .last_trip_current_a >= .instantaneous_a)'
+    if [ "$section" = s2 ]; then
+      grading='(.devices["breaker-1"].protection | .last_trip_current_a >= .pickup_a and .last_trip_current_a < .instantaneous_a)'
+    fi
     eu_action process "fault_$section" || return
     eu_wait_for_field ".devices[\"breaker-1\"].protection_tripped and .devices[\"breaker-1\"].lockout
       and .devices[\"rmu-1\"].fault_passage == $expected and .devices[\"rmu-1\"].measurements.valid
-      and .process.buses.s2.live == false" 10 "G15 $section trip/FPI and solve" || return
+      and .process.buses.s2.live == false and $grading" 10 "G15 $section trip/FPI and solve" || return
     eu_fresh_points "point(\"feeder-protection-trip\").value and point(\"rmu-1-fault-passage\").value == $expected" \
       "$since" 10 "G15 $section protection/FPI via Modbus/IEC104" || return
     eu_command rmu-1-command open completed || return
@@ -55,17 +62,40 @@ eu_gate_G15() {
       eu_wait_for_field '.devices["breaker-1"].measurements.valid and .process.buses.s1.live' 10 "G15 reverse feed S1 through tie" || return
       eu_command feeder-breaker-command close rejected live_live || return
     else
-      eu_wait_for_field '.process.f2_tripped and .process.buses.s2.live == false and .process.buses.s3.live == false' 10 "G15 S2 backfeed trips F2" || return
+      eu_wait_for_field ".process.f2_tripped and .process.f2_protection.last_trip_current_a >= $instant
+        and .process.buses.s2.live == false and .process.buses.s3.live == false" 10 "G15 S2 backfeed trips F2" || return
       eu_fresh_points 'point("rmu-1-fault-passage").value and point("rmu-2-fault-passage").value
         and point("rmu-2-source-kv").value < 0.1' "$since" 10 "G15 S2 FPI and S3 loss via protocols" || return
     fi
   done
   eu_reset_all
 }
-eu_gate_G16() {
-  local cursor generation since source tap count budget
-  eu_reset_all || return
+# Reset starts in auto and can move during GI recovery. Freeze it, finish any
+# accepted motion, then restore the reference initial tap using normal commands.
+eu_reference_tap() {
+  local initial="$1" tap direction
   eu_command oltc-1-mode manual completed || return
+  eu_wait_for_field '.devices["oltc-1"].moving == false' 10 "G16 idle before reference" || return
+  eu_get_field || return
+  tap=$(printf '%s' "$API_BODY" | jq -er '.devices["oltc-1"].tap') || return
+  while [ "$tap" -ne "$initial" ]; do
+    direction=lower; [ "$tap" -gt "$initial" ] || direction=raise
+    eu_command oltc-1-step "$direction" completed || return
+    if [ "$direction" = lower ]; then tap=$((tap - 1)); else tap=$((tap + 1)); fi
+  done
+}
+eu_gate_G16() {
+  local cursor generation since source tap count budget key initial low high delay motion lower
+  local reference="$PACKAGE/process/reference-cases.json"
+  initial=$(jq -er '.initial_tap' "$reference") || return
+  low=$(jq -er '.band_kv[0]' "$reference") || return
+  high=$(jq -er '.band_kv[1]' "$reference") || return
+  delay=$(jq -er '.configured_delay_s' "$reference") || return
+  motion=$(jq -er '.motion_s' "$reference") || return
+  lower=$(jq -er '.source_0_90[-1].tap | -.' "$reference") || return
+  eu_set_profile false || return
+  eu_reset_all || return
+  eu_reference_tap "$initial" || return
   eu_command oltc-1-step raise completed || return
   eu_command oltc-1-step lower completed || return
   eu_action oltc-1 set_local || return
@@ -75,40 +105,51 @@ eu_gate_G16() {
   eu_command oltc-1-step raise rejected blocked || return
   eu_action oltc-1 unblock || return
   eu_command oltc-1-mode auto completed || return
-  for source in load 0.90 1.10; do
+  for source in nominal load 0.90 1.10; do
     eu_reset_all || return
-    eu_wait_for_field '.devices["oltc-1"].armed and .devices["oltc-1"].tap == 0' 10 "G16 armed nominal" || return
-    eu_management oltc-1 GET '/api/audit?after=0' || return
-    cursor=$(printf '%s' "$API_BODY" | jq -r '.latest_seq // 0')
-    generation=$(printf '%s' "$API_BODY" | jq -r '.generation')
-    since=$(eu_utc)
+    eu_reference_tap "$initial" || return
     case "$source" in
-      load) tap=1; count=1; budget=35; eu_action process set_load 3.0 || return ;;
-      0.90) tap=8; count=8; budget=130; eu_action process set_source "$source" || return ;;
-      1.10) tap=-7; count=7; budget=120; eu_action process set_source "$source" || return ;;
+      nominal) key=nominal_trace ;;
+      load) key=triple_load; eu_action process set_load 3.0 || return ;;
+      0.90) key=source_0_90; eu_action process set_source "$source" || return ;;
+      1.10) key=source_1_10; eu_action process set_source "$source" || return ;;
     esac
+    tap=$(jq -er --arg key "$key" '.[$key][-1].tap' "$reference") || return
+    count=$((tap - initial)); [ "$count" -ge 0 ] || count=$((-count))
+    # Include scan/acquisition/GI overhead, but never shorten the physical delay.
+    budget=$((count * (delay + motion) + 20))
+    eu_management oltc-1 GET '/api/audit?after=0' || return
+    cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq // 0') || return
+    generation=$(printf '%s' "$API_BODY" | jq -er '.generation') || return
+    since=$(eu_utc)
+    eu_command oltc-1-mode auto completed || return
     eu_fresh_points "point(\"oltc-1-tap\").value == {value:$tap,transient:false}
       and (point(\"oltc-1-tap\") | good)" "$since" "$budget" "G16 $source reaches tap $tap" || return
-    sleep 15
+    # Wait a whole additional demand cycle to detect unwanted extra requests.
+    sleep "$((delay + motion + 5))"
     eu_plc_requests "$cursor" "$count" "$generation" || return
     if [ "$source" = 0.90 ]; then
-      eu_fresh_points 'point("oltc-1-at-upper").value and point("oltc-1-bus-kv").value < 19.8' "$since" 10 "G16 upper limit remains undervoltage" || return
+      eu_fresh_points "point(\"oltc-1-at-upper\").value and point(\"oltc-1-bus-kv\").value < $low" "$since" 10 "G16 upper limit remains undervoltage" || return
       eu_command oltc-1-mode manual completed || return
       eu_command oltc-1-step raise rejected limit || return
       eu_command oltc-1-step lower completed || return
     else
       eu_fresh_points "point(\"oltc-1-tap\").value == {value:$tap,transient:false}
-        and point(\"oltc-1-bus-kv\").value >= 19.8 and point(\"oltc-1-bus-kv\").value <= 20.2" \
+        and point(\"oltc-1-bus-kv\").value >= $low and point(\"oltc-1-bus-kv\").value <= $high" \
         "$since" 10 "G16 $source settles in band without extra steps" || return
       if [ "$source" = 1.10 ]; then
         eu_command oltc-1-mode manual completed || return
-        eu_command oltc-1-step lower completed || return
+        while [ "$tap" -gt "$lower" ]; do
+          eu_command oltc-1-step lower completed || return
+          tap=$((tap - 1))
+        done
         eu_command oltc-1-step lower rejected limit || return
         eu_command oltc-1-step raise completed || return
       fi
     fi
   done
-  eu_reset_all
+  eu_reset_all || return
+  eu_set_profile true
 }
 
 eu_stop_plc_scan() {
