@@ -330,11 +330,25 @@ class StateSmoke(unittest.TestCase):
         kill.assert_called_once_with(43210, run.signal.SIGTERM)
 
     def test_static_baseline_fixture(self):
-        check.check_dom(check.ROWS['CCO-normal'], FIXTURE, 'cc', {
+        expected = {
             'rmu-1-source-kv': 19.8, 'rmu-1-section-kv': 19.7, 'rmu-2-source-kv': 19.9,
             'f2-current': 11.25, 'f2-p-mw': .332494,
             'oltc-1-bus-kv': 20, 'feeder-voltage': 19.91, 'rmu-2-section-kv': 19.7,
-            'oltc-1-current': 72.3, 'feeder-current': 61.4, 'rmu-1-current': 18.7, 'rmu-2-current': 0})
+            'oltc-1-current': 72.3, 'feeder-current': 61.4, 'rmu-1-current': 18.7, 'rmu-2-current': 0,
+            'oltc-1-auto': False}
+        # Raw fixture preserves the real SVG sibling concatenation, not spaces
+        # hand-inserted between Tap/GOOD/MANUAL. The checker must stay strict.
+        with self.assertRaisesRegex(AssertionError, 'cc T1: displayed mode'):
+            check.check_dom(check.ROWS['CCO-normal'], FIXTURE, 'cc', expected)
+        captured = subprocess.run(['node', str(Path(__file__).with_name('test_state_dom_capture.mjs'))],
+                                  capture_output=True, text=True, timeout=10)
+        self.assertEqual(captured.returncode, 0, captured.stdout + captured.stderr)
+        dom = json.loads(captured.stdout)
+        check.check_dom(check.ROWS['CCO-normal'], dom, 'cc', expected)
+        auto_dom = copy.deepcopy(dom)
+        next(d for d in auto_dom['devices'] if d['device'] == 'T1')['text'] = next(
+            d['text'] for d in dom['devices'] if d['device'] == 'T1').replace('MANUAL', 'AUTO')
+        check.check_dom(check.ROWS['CCO-normal'], auto_dom, 'cc', dict(expected, **{'oltc-1-auto': True}))
 
     def test_all_21_rows_both_dom_views(self):
         for row in check.ORACLE['rows']:

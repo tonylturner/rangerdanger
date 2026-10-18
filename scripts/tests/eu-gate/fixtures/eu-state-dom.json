@@ -8,21 +8,36 @@
       "state": "LIVE",
       "path": "via CB1",
       "kv": "19.8",
-      "text": "S1 residential \u00b7 LIVE via CB1 19.80 kV"
+      "text": "S1 · LIVE19.80 kV · GOODvia CB1",
+      "textNodes": [
+        "S1 · LIVE",
+        "19.80 kV · GOOD",
+        "via CB1"
+      ]
     },
     {
       "section": "S2",
       "state": "LIVE",
       "path": "via CB1",
       "kv": "19.7",
-      "text": "S2 commercial \u00b7 LIVE via CB1 19.70 kV"
+      "text": "S2 · LIVE19.70 kV · GOODvia CB1",
+      "textNodes": [
+        "S2 · LIVE",
+        "19.70 kV · GOOD",
+        "via CB1"
+      ]
     },
     {
       "section": "S3",
       "state": "LIVE",
       "path": "via F2",
       "kv": "19.9",
-      "text": "S3 industrial \u00b7 LIVE via F2 19.90 kV"
+      "text": "S3 · LIVE19.90 kV · GOODvia F2",
+      "textNodes": [
+        "S3 · LIVE",
+        "19.90 kV · GOOD",
+        "via F2"
+      ]
     }
   ],
   "devices": [
@@ -30,31 +45,52 @@
       "device": "CB1",
       "position": "closed",
       "quality": "good",
-      "text": "CB1 closed"
+      "text": "CB1: CLOSED · GOODCB1CLOSED · GOOD",
+      "textNodes": [
+        "CB1: CLOSED · GOOD",
+        "CB1",
+        "CLOSED · GOOD"
+      ]
     },
     {
       "device": "RMU1",
       "position": "closed",
       "quality": "good",
-      "text": "RMU1 closed"
+      "text": "RMU1 · NC: CLOSED · GOODRMU1 · NCCLOSED · GOOD",
+      "textNodes": [
+        "RMU1 · NC: CLOSED · GOOD",
+        "RMU1 · NC",
+        "CLOSED · GOOD"
+      ]
     },
     {
       "device": "RMU2",
       "position": "open",
       "quality": "good",
-      "text": "RMU2 open"
+      "text": "RMU2 · NOP: OPEN · GOODRMU2 · NOPOPEN · GOOD",
+      "textNodes": [
+        "RMU2 · NOP: OPEN · GOOD",
+        "RMU2 · NOP",
+        "OPEN · GOOD"
+      ]
     },
     {
       "device": "T1",
       "tap": "0",
       "quality": "good",
-      "text": "Tap 0"
+      "text": "T1 110/20 kV · OLTCTap 0 · GOODMANUAL · GOOD",
+      "textNodes": [
+        "T1 110/20 kV · OLTC",
+        "Tap 0 · GOOD",
+        "MANUAL · GOOD"
+      ]
     },
     {
       "device": "F2",
       "position": "closed",
-      "text": "\u25cf",
-      "quality": "good"
+      "text": "",
+      "quality": "good",
+      "textNodes": []
     }
   ],
   "f2Line": "LIVE",
@@ -107,5 +143,10 @@
   "comparisons": [],
   "viewState": "ok",
   "observationUncertainty": "0",
-  "f2Telemetry": "F2 \u00b7 IEC 104 \u00b7 indication only: NORMAL \u00b7 I 11.2 A \u00b7 P 0.33 MW. Alternative feeder from the same T1 / bus20."
+  "f2Telemetry": "F2 · IEC 104 · indication only: NORMAL · I 11.2 A · P 0.33 MW. Alternative feeder from the same T1 / bus20.",
+  "textNodes": [
+    "Protection ",
+    "TRIPPED",
+    " lockout"
+  ]
 }
