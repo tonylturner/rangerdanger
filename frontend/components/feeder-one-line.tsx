@@ -4,15 +4,19 @@ import { AUTHORITY_POINTS, type DeviceId } from "../lib/operator-workstation";
 import { pointLabel } from "../lib/operator-format";
 import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
 import type { Readings } from "../lib/observation-readings";
-import { LIVE_KV, voltageState } from "../lib/electrical-state";
+import { LIVE_KV, voltageState, type VoltageState } from "../lib/electrical-state";
 
 export function FeederOneLine({ read, physical = false, unavailable = false, selected = "T1", onSelect = () => {} }: {
   read: Readings; physical?: boolean; unavailable?: boolean; selected?: DeviceId; onSelect?: (id: DeviceId) => void;
 }) {
-  const voltage = (id: string) => {
-    const state = voltageState(read(id));
+  const lineStyle = (state: VoltageState) => {
     return state === "UNKNOWN" ? { color: "#fbbf24", dash: "6 5", state }
       : state === "LIVE" ? { color: "#38bdf8", dash: undefined, state } : { color: "#94a3b8", dash: undefined, state };
+  };
+  const voltage = (id: string) => lineStyle(voltageState(read(id)));
+  const solverLine = (id: string) => {
+    const r = read(id);
+    return lineStyle(r.condition !== "good" || typeof r.value !== "boolean" ? "UNKNOWN" : r.value ? "LIVE" : "DEAD");
   };
   const section = (x1: number, y1: number, x2: number, y2: number, id: string) => {
     const v = voltage(id);
@@ -88,9 +92,9 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const f2 = read("f2-position");
   const f2Known = f2.condition === "good";
   const energization = read("s3-live");
-  const lowerRun = !physical ? { color: "#94a3b8", dash: "6 5" }
-    : energization.condition !== "good" || !f2Known ? { color: "#fbbf24", dash: "6 5" }
-    : { color: energization.value === true ? "#38bdf8" : "#94a3b8", dash: undefined };
+  const unobserved = { color: "#94a3b8", dash: "6 5", state: "UNKNOWN" };
+  const upstreamRun = physical ? solverLine("bus20-live") : unobserved;
+  const lowerRun = physical ? solverLine("s3-live") : unobserved;
   const provenance = "Simulation-observed · independent of IEC 104";
   return <figure className="min-w-0 space-y-3">
     {physical && <p className="text-xs text-slate-300">{provenance}</p>}
@@ -98,7 +102,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
       <svg viewBox="0 0 1060 410" role="group" aria-label={`${physical ? "Simulation-observed · independent of IEC 104" : "CC-observed"} CIGRE-derived teaching feeder · simplified functional one-line`} className="w-full min-w-[1060px]">
         <defs><pattern id="cc-unknown" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8 L8 0" stroke="#fbbf24" strokeOpacity="0.5" /></pattern></defs>
         <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">{physical ? "110 kV nominal · sim source" : "110 kV nominal — not telemetered"}</text>
-        <line x1="80" y1="45" x2="80" y2="70" stroke="#94a3b8" strokeDasharray="6 5" />
+        <line x1="80" y1="45" x2="80" y2="70" stroke={upstreamRun.color} strokeDasharray={upstreamRun.dash} />
         <g {...selectProps("T1")} aria-label={`T1 OLTC: ${tap.text}`}>
           {selected === "T1" && <rect x="52" y="65" width="55" height="76" rx="4" stroke="#e2e8f0" fill="none" />}
           <circle cx="80" cy="90" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
@@ -128,7 +132,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {switchSymbol(850, 190, "RMU2 · NOP", "rmu-2-position", "RMU2")}
         {section(870, 190, 1000, 190, "rmu-2-source-kv")}
         {section(1000, 190, 1000, 325, "rmu-2-source-kv")}
-        <line x1="80" y1="325" x2="305" y2="325" stroke="#94a3b8" strokeWidth="3" strokeDasharray="6 5" />
+        <line x1="80" y1="325" x2="305" y2="325" stroke={upstreamRun.color} strokeWidth="3" strokeDasharray={upstreamRun.dash} />
         <rect x="305" y="309" width="32" height="32" fill={physical && f2Known && f2.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={physical && !f2Known ? "#fbbf24" : "#94a3b8"} strokeDasharray={physical && f2Known ? undefined : "5 3"} />
         <text x="321" y="331" textAnchor="middle" fill={physical && f2Known && f2.value === "closed" ? "#0f172a" : "#cbd5e1"}>{physical && f2Known ? f2.value === "closed" ? "●" : "○" : "?"}</text>
         <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">{physical ? f2Known ? f2.value === "closed" ? "F2 · closed (sim)" : "F2 · TRIPPED (sim)" : "F2 · unknown (sim)" : "F2 head · unobserved"}</text>
