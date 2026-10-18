@@ -6,6 +6,8 @@ The range's `historian-1` sits at `10.70.70.40` in the Operations DMZ, firewall 
 
 Read listeners are separate: `10.70.70.40:8080` and management `10.99.99.40:8080`. They expose GET points, history and health only; neither serves ingestion. The historian never polls the CC, field devices or process, never sends a command, and has no write-back path into OT.
 
+The Network console calls CC→historian **Archive ingestion** and enterprise→historian **Archive reading**. Its arrows identify the connection initiator, not all information direction: an enterprise read receives archived observations in the response. A live ingest path does not certify current field observations or permission for a different listener; see [telecontrol roles](#eu-telecontrol-architecture) and [authorization evidence](#eu-port-source-boundary).
+
 Ingestion strictly validates the CC state. Malformed schemas, unknown or duplicate keys, invalid types and other invalid bodies receive 400 and increment the rejection counter. Permitting the network conduit is therefore necessary but not sufficient for an accepted sample.
 
 ### What a sample means

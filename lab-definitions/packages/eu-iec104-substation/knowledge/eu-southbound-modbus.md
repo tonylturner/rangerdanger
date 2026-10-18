@@ -25,7 +25,7 @@ The OLTC instead uses IR0 for signed completed tap, IR1 for authority/mode/motio
 
 ### Writes and freshness
 
-RTU commands use FC6. Switch HR0 accepts 1 open/2 close; OLTC HR0 accepts 1 lower/2 raise and HR2 accepts 1 manual/2 auto. The PLC separately uses FC16, quantity one, on OLTC HR1 for absolute requests. Device authority and interlocks remain authoritative even when the firewall permits Modbus.
+RTU commands use FC6. Switch HR0 accepts 1 open/2 close; OLTC HR0 accepts 1 lower/2 raise and HR2 accepts 1 manual/2 auto. F2 has four monitored IEC 104 points but no mapped supervisory command. The PLC separately uses FC16, quantity one, on OLTC HR1 for absolute requests. Device authority and interlocks remain authoritative even when the firewall permits Modbus.
 
 Electrical measurements expire three seconds after delivery by the solver. Reading the register block successfully cannot refresh that validity. For the PLC, an unchanged HR1029 heartbeat for three seconds invalidates every mapped PLC point even if the Modbus server is still reachable. The [quality article](#iec104-gi-cot-quality) explains the resulting IEC 104 flags.
 
@@ -33,8 +33,10 @@ Electrical measurements expire three seconds after delivery by the solver. Readi
 
 Use an authorised source and [mbpoll recipe](#eu-tool-mbpoll) to read the exact table, start, count and unit. Correlate the capture's function code and response with the register decoder and CC point. For command tests, retain exception or echo plus fresh feedback and device audit; a timeout is not a negative device decision.
 
+Network console arrows show the Modbus client that initiates the connection, not one-way telemetry: requests and replies are bidirectional. Purpose text distinguishes RTU polling/relayed supervisory requests, same-zone RTU→PLC status monitoring and PLC→OLTC regulation. Declared topology, liveness and authorization remain separate evidence, as explained in [telecontrol architecture](#eu-telecontrol-architecture) and [port/source boundaries](#eu-port-source-boundary).
+
 ### Limits
 
-Modbus here provides no cryptographic user identity, and the improved firewall does not distinguish read from write function codes. RTU-to-PLC reads are same-subnet traffic, not firewall-enforced inter-zone operations. A permitted trusted source can still misuse writes; [authority checks](#eu-control-authority) and operating controls remain necessary.
+Modbus here provides no cryptographic user identity, and the improved firewall does not distinguish read from write function codes. The console's port-rule warning refers to this limit: command-level filtering would need DPI. RTU-to-PLC reads are same-subnet traffic, not firewall-enforced inter-zone operations; **Infrastructure planes** also explains the same-zone [station-clock path](#eu-station-clock). A permitted trusted source can still misuse writes; [authority checks](#eu-control-authority) and operating controls remain necessary.
 
 Implementation: package `protocols/points.json`; `services/devices/modbus/registers.go`; `services/iec104/src/rtu.c` and `modbus.c`.

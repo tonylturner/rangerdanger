@@ -12,6 +12,8 @@ The Control Centre (CC) is an IEC 104 client at `10.60.60.20`. It opens the nort
 
 The five field devices cross the Station-to-Field boundary. RTU-to-PLC is same-subnet station traffic, not an inter-zone firewall conduit. Automatic PLC-to-OLTC control is another separate cross-zone path. A healthy CC-to-RTU link cannot prove that any of these Modbus exchanges succeeded.
 
+In the Network console, arrows show **who initiates the connection**, not the direction of every item of information. IEC 104 and Modbus exchanges are bidirectional. CC→RTU supports monitoring and supervisory control on the same session; PLC→OLTC supports autonomous regulation, reading feedback and writing tap requests. Selected-flow purpose text explains these roles separately from topology, observed liveness and authorization. Engineering-workstation→PLC web access is maintenance through the teaching conduit; opening OpenPLC from the portal instead uses management. See the [node map](#eu-range-node-map) for omitted infrastructure planes and [southbound Modbus](#eu-southbound-modbus) for acquisition and write semantics.
+
 The [point map](#iec104-wire-model) translates register values into IEC 104 points and operator commands back into device writes. A command needs both protocol progress and fresh matching feedback. Local protection can trip the breaker without waiting for either northbound availability or a CC command.
 
 ### Observation, physics and lab control
@@ -20,7 +22,7 @@ The CC's operational state comes only from IEC 104. The portal's `/substation` p
 
 On `process_net`, the solver reads device truth and returns solved measurements tagged with their truth revision. This closed loop supplies the electrical simulation and local protection inputs. It is not the RTU's telemetry acquisition path. On management, field-device `sim` endpoints accept authored lab actions and reset. The solver's management API owns faults, load and source changes. These are simulation controls, not hidden operator command routes.
 
-The CC additionally pushes its own observations to the [historian](#eu-historian) in the Operations DMZ. The historian does not reach back to the station to fill gaps. A recording of stale observations remains stale.
+The CC additionally pushes its own observations to the [historian](#eu-historian) in the Operations DMZ: the console labels this **Archive ingestion**, distinct from enterprise archive reading. The historian does not reach back to the station to fill gaps. A recording of stale observations remains stale.
 
 ### Diagnose each boundary separately
 

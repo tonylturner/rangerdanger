@@ -7,12 +7,29 @@ In this package, the Control Centre (CC) is the IEC 104 client at `10.60.60.20`;
 The view orients an operator with:
 
 - **Control Centre** and **Physical System** are separate views.
-- IEC 104 link and general-interrogation status, with **Interrogate station** for an operator GI (on-connect and 15-minute periodic GI remain automatic).
-- A feeder one-line built from CC-monitored points. It shows breaker and RMU positions, section voltages, and OLTC telemetry; the CB1 VT is on the line side, while S1 voltage is from RMU1's source side. F2 has indication-only position, protection trip, current and MW points; the 110 kV source remains unobserved. No F2 supervisory controls are provided.
-- A selected-device faceplate with select-before-operate controls for CB1, RMUs and OLTC.
+- A compact observation-status line above the feeder schematic: IEC 104 link state, current-connection GI completion time (UTC), and **Points current N/M**. **Interrogate station** requests an operator GI (on-connect and 15-minute periodic GI remain automatic). Detailed **Link diagnostics** stay collapsed below the records.
+- A feeder one-line built from CC-monitored points. It shows breaker and RMU positions, section voltages, and OLTC telemetry; the CB1 VT is on the line side, while S1 voltage is from RMU1's source side. F2 is selectable with four indication-only points: position, protection trip, current and MW. It is an alternative feeder from the same T1 / bus20, not an independent source. The 110 kV source remains unobserved. No F2 supervisory controls are provided; missing or stale F2 observations leave its path unknown.
+- A selected-device faceplate with identity and select-before-operate controls for CB1, RMUs and OLTC before secondary telemetry rows. Abnormal-condition detail follows the schematic and faceplate, rather than preceding the one-line.
 - **Alarms**, **Events**, **Points** and **Trends** tabs. Alarms are active conditions derived from CC points, not latched/acknowledged alarm state; Events uses the bounded CC journal, not a durable SOE archive. Points shows stable kind, last received ASDU, value, quality, stale reason, source/receipt times and COT. Receipt age is provenance, not status expiry; floats use the reporting watchdog. Trends plots archived CC observations.
 
-When the RTU link is lost, the CC retains its last values and marks their quality stale; the display does not turn an old position into a current observation. Interpret command progress together with fresh feedback, not just a button result; see the [SBO evidence rules](#iec104-sbo-commands).
+### Reading observation status
+
+The current inventory in `protocols/points.json` contains **42 monitored points** across six polled devices, including F2's four points. The status line counts the inventory returned in the operator snapshot, not a fixed display total. N counts points with a value and no non-topical flag or acquisition-stale reason, but is zero unless the API is available, the link is started and GI has completed on this connection. M is the snapshot's point count. A GI completed before the current connection cannot establish it; a later periodic or operator GI does not revoke that connection's completed GI.
+
+The shared annunciator remains visible for non-OK states above both **Control Centre** and **Physical System**, independently of the selected records tab:
+
+| View state | Meaning |
+| --- | --- |
+| `unavailable` | Operator API unavailable; even a cached answer cannot establish current observations. |
+| `not-established` | No snapshot yet, or a non-started link with no received point evidence or completed GI. |
+| `lost` | Link no longer started after observation evidence existed: **SCADA VIEW LOST — retained values are not current**. |
+| `recovering` | Link started but no completed GI for this connection: **VIEW RECOVERING — GI/GOOD observations pending**. |
+| `degraded` | Current-connection GI complete, but inventory empty or one or more observations not current; the banner reports the affected count and devices. |
+| `ok` | Link started, current-connection GI complete and all returned inventory observations current; no warning text. |
+
+“Current” is not synonymous with electrically valid or GOOD. A null value, NT, or a stale reason of `link_lost`, `device_unreachable`, `heartbeat`, `not_updated` or `never_received` makes an observation not current. IV alone can mean an electrically undefined measurement without loss of view. The abnormal summary separately reports non-GOOD floating-point measurements as observation uncertainty; **No alarms in GOOD observations** is not an all-clear for uncertain data. See [GI and quality](#iec104-gi-cot-quality) for the underlying flags and freshness rules.
+
+When the RTU link is lost, the CC retains its last values and marks their quality stale; the display does not turn an old position into a current observation. This view warning is not a per-point process alarm or an acknowledgement engine. Interpret command progress together with fresh feedback, not just a button result; see the [SBO evidence rules](#iec104-sbo-commands).
 
 ### Operator observation is not physical truth
 
