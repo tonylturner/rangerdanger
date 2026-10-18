@@ -25,6 +25,44 @@ function schematic(points = FEEDER_STATE.points) {
 afterEach(() => { act(() => mounted.splice(0).forEach((tree) => tree.unmount())); });
 
 describe("functional one-line observations", () => {
+  it.each([
+    ["rmu-1-remote", "RMU1"],
+    ["rmu-2-remote", "RMU2"],
+    ["oltc-1-remote", "T1 OLTC"],
+  ])("shows LOCAL on %s only for GOOD authority and marks uncertainty explicitly", (id, device) => {
+    const points = structuredClone(FEEDER_STATE.points);
+    const authority = points.find((p) => p.id === id)!;
+    authority.value = false;
+    const tag = schematic(points).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
+    expect(tag.props["aria-label"]).toContain(`${device} authority: LOCAL`);
+    expect(tag.findByType("text").children.join("")).toBe("LOCAL");
+    expect(tag.findByType("rect").props.stroke).toBe("#fbbf24");
+    authority.value = true;
+    expect(schematic(points).findAllByType("g").filter((n) => n.props["data-authority"] === id)).toHaveLength(0);
+    for (const value of [false, true]) {
+      authority.value = value;
+      for (const flag of ["iv", "nt", "sb", "bl"] as const) {
+        const bad = points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p);
+        const stale = schematic(bad).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
+        expect(stale.findByType("text").children.join("")).toBe("AUTH STALE");
+        expect(stale.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
+        expect(stale.findByType("rect").props.fill).toBe("url(#cc-unknown)");
+        expect(stale.findByType("rect").props.strokeDasharray).toBeDefined();
+      }
+      authority.stale_reason = "not_updated";
+      const stale = schematic(points).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
+      expect(stale.findByType("text").children.join("")).toBe("AUTH STALE");
+      expect(stale.findByType("title").children.join("")).toContain("not_updated");
+      authority.stale_reason = null;
+    }
+    authority.value = null;
+    for (const unknown of [points, points.filter((p) => p.id !== id)]) {
+      const tag = schematic(unknown).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
+      expect(tag.findByType("text").children.join("")).toBe("AUTH UNKNOWN");
+      expect(tag.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
+    }
+  });
+
   it("names the simplified functional model and retains the bounded schematic scroller", () => {
     const tree = schematic();
     expect(tree.findByType("svg").props["aria-label"]).toContain("simplified functional one-line");

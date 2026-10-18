@@ -4,6 +4,33 @@ import { BOOT_STATE, FEEDER_STATE, PERIODIC_GI_STATE, WATCHDOG_STATE } from "./o
 import { pointCondition } from "./operator-format";
 
 describe("operator observation rules", () => {
+  it.each([
+    ["rmu-1-remote", "RMU1 authority: LOCAL"],
+    ["rmu-2-remote", "RMU2 authority: LOCAL"],
+    ["oltc-1-remote", "T1 OLTC authority: LOCAL"],
+  ])("treats GOOD LOCAL %s as an off-normal state, not an alarm", (id, text) => {
+    const state = structuredClone(FEEDER_STATE);
+    const point = state.points.find((p) => p.id === id)!;
+    point.value = false;
+    expect(abnormalConditions(state)).toContainEqual({ id, text });
+    expect(activeAlarms(state)).toEqual([]);
+    point.value = true;
+    expect(abnormalConditions(state)).toEqual([]);
+    for (const value of [false, true]) {
+      point.value = value;
+      for (const flag of ["iv", "nt", "sb", "bl"] as const) {
+        const bad = { ...state, points: state.points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
+        expect(abnormalConditions(bad).some((c) => c.id === id)).toBe(false);
+      }
+      point.stale_reason = "not_updated";
+      expect(abnormalConditions(state).some((c) => c.id === id)).toBe(false);
+      point.stale_reason = null;
+    }
+    point.value = null;
+    expect(abnormalConditions(state).some((c) => c.id === id)).toBe(false);
+    expect(abnormalConditions({ ...state, points: state.points.filter((p) => p.id !== id) }).some((c) => c.id === id)).toBe(false);
+  });
+
   it("derives process alarms only from full GOOD and separates bad quality", () => {
     const state = structuredClone(FEEDER_STATE);
     for (const id of ["feeder-protection-trip", "rmu-1-earth", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-at-lower", "oltc-1-at-upper"]) {

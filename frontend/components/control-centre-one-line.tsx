@@ -1,7 +1,7 @@
 "use client";
 
 import type { OperatorPoint } from "../lib/operator-api";
-import type { DeviceId } from "../lib/operator-workstation";
+import { AUTHORITY_POINTS, type DeviceId } from "../lib/operator-workstation";
 import { formatPointValue, pointCondition, pointLabel, qualityFlags } from "../lib/operator-format";
 import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
 
@@ -13,7 +13,7 @@ export function observedReading(points: OperatorPoint[], id: string, unavailable
   const transient = typeof p?.value === "object" && p.value !== null && p.value.transient;
   const shortText = `${p ? formatPointValue(id, p.value, p.quality) : "unknown"} · ${condition.toUpperCase()}${flags.length ? ` · ${flags.join(" ")}` : ""}`;
   const text = `${shortText}${p?.stale_reason ? ` · ${p.stale_reason}` : ""}${unavailable ? " · cached snapshot · CC API unavailable" : ""}`;
-  return { value: p?.value, condition, text, shortText, transient };
+  return { value: p?.value, condition, text, shortText, transient, flags, staleReason: p?.stale_reason };
 }
 
 export function ControlCentreOneLine({ points, unavailable = false, selected = "T1", onSelect = () => {} }: { points: OperatorPoint[]; unavailable?: boolean; selected?: DeviceId; onSelect?: (id: DeviceId) => void }) {
@@ -37,6 +37,21 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
     <text x={x} y={y} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
     <text x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
   </g>;
+  const authorityTag = (x: number, y: number, device: keyof typeof AUTHORITY_POINTS) => {
+    const authority = AUTHORITY_POINTS[device];
+    const r = read(authority.id);
+    if (r.condition === "good" && r.value === true) return null;
+    // A retained authority value cannot establish LOCAL or REMOTE.
+    const state = r.condition === "good" && r.value === false ? "LOCAL" : r.condition === "stale" ? "STALE" : "UNKNOWN";
+    const uncertain = state !== "LOCAL";
+    const width = uncertain ? 108 : 60;
+    const detail = [`${authority.label}: ${state}`, ...r.flags, r.staleReason, unavailable ? "cached snapshot · CC API unavailable" : null].filter(Boolean).join(" · ");
+    return <g data-authority={authority.id} aria-label={detail}>
+      <title>{detail}</title>
+      <rect x={x - width / 2} y={y} width={width} height="20" rx="3" fill={uncertain ? "url(#cc-unknown)" : "#451a03"} stroke="#fbbf24" strokeDasharray={uncertain ? "5 3" : undefined} />
+      <text x={x} y={y + 14} textAnchor="middle" fill="#fbbf24" fontSize="12">{uncertain ? `AUTH ${state}` : state}</text>
+    </g>;
+  };
   const indicators = (x: number, prefix: string) => {
     const earth = read(`${prefix}-earth`), fault = read(`${prefix}-fault-passage`);
     return <g>
@@ -55,6 +70,7 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
         <path d={`M${x} ${y + 20} v20 h-30 v40`} stroke="#64748b" fill="none" />
       </g>}
       {device.startsWith("RMU") && indicators(x - 30, device === "RMU1" ? "rmu-1" : "rmu-2")}
+      {(device === "RMU1" || device === "RMU2") && authorityTag(x, y - 63, device)}
       {selected === device && <rect x={x - 27} y={y - 27} width="54" height="54" rx="4" fill="none" stroke="#e2e8f0" />}
       <title>{`${label}: ${r.text}`}</title>
       <rect x={x - 20} y={y - 20} width="40" height="40" fill={r.condition !== "good" ? "url(#cc-unknown)" : r.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={r.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeWidth="2" strokeDasharray={r.condition !== "good" ? "5 3" : undefined} />
@@ -91,16 +107,17 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
           <text x="125" y="88" fill="#e2e8f0" fontSize="13">T1 110/20 kV · OLTC</text>
           <text x="125" y="108" fill={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">Tap {tap.shortText}</text>
           <text x="125" y="128" fill="#cbd5e1" fontSize="12">{read("oltc-1-auto").shortText}</text>
+          {authorityTag(179, 143, "T1")}
         </g>
-        {measure(175, 150, "oltc-1-current")}
-        {measure(175, 267, "oltc-1-bus-kv")}
+        {measure(175, 245, "oltc-1-current")}
+        {measure(175, 285, "oltc-1-bus-kv")}
         {measure(310, 110, "feeder-current")}
         {measure(400, 260, "feeder-voltage")}
-        {measure(570, 110, "rmu-1-current")}
-        {measure(850, 110, "rmu-2-current")}
+        {measure(570, 95, "rmu-1-current")}
+        {measure(850, 95, "rmu-2-current")}
         {measure(925, 35, "rmu-2-section-kv")}
         {section(80, 133, 80, 325, "oltc-1-bus-kv")}
-        <text x="310" y="145" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 feeder</text>
+        <text x="220" y="180" textAnchor="middle" fill="#e2e8f0" fontSize="14">F1 feeder</text>
         {section(80, 190, 310, 190, "oltc-1-bus-kv")}
         {switchSymbol(310, 190, "CB1", "feeder-breaker-position", "CB1")}
         {section(330, 190, 570, 190, "rmu-1-source-kv")}
@@ -120,6 +137,6 @@ export function ControlCentreOneLine({ points, unavailable = false, selected = "
         {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>
-    <figcaption className="text-xs text-slate-400"><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. F2 has no telemetry.</figcaption>
+    <figcaption className="text-xs text-slate-400"><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local authority; hatched AUTH STALE/UNKNOWN means authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. F2 has no telemetry.</figcaption>
   </figure>;
 }

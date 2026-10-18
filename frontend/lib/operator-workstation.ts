@@ -3,6 +3,11 @@ import { pointCondition, pointLabel } from "./operator-format";
 
 export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2";
 export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2"];
+export const AUTHORITY_POINTS = {
+  T1: { id: "oltc-1-remote", label: "T1 OLTC authority" },
+  RMU1: { id: "rmu-1-remote", label: "RMU1 authority" },
+  RMU2: { id: "rmu-2-remote", label: "RMU2 authority" },
+};
 export function devicePoints(points: OperatorPoint[], device: DeviceId) {
   const prefixes = device === "T1" ? ["oltc-1-", "plc-1-"] : device === "CB1" ? ["feeder-"] : [device === "RMU1" ? "rmu-1-" : "rmu-2-"];
   return points.filter((p) => prefixes.some((prefix) => p.id.startsWith(prefix)));
@@ -51,6 +56,12 @@ export function deviceCommsHealth(state: OperatorState): Record<string, CommsHea
 }
 export function abnormalConditions(state: OperatorState): { id: string; text: string }[] {
   const conditions = activeAlarms(state);
+  for (const authority of Object.values(AUTHORITY_POINTS)) {
+    const point = state.points.find((p) => p.id === authority.id);
+    if (point && pointCondition(point) === "good" && point.value === false) {
+      conditions.push({ id: authority.id, text: `${authority.label}: LOCAL` });
+    }
+  }
   if (state.link.gi.last_complete_at === null) conditions.push({ id: "gi", text: "GI incomplete" });
   for (const [device, health] of Object.entries(deviceCommsHealth(state))) {
     if (health === "lost" || health === "degraded") conditions.push({ id: `comms-${device}`, text: `${device}: ${health} comms` });

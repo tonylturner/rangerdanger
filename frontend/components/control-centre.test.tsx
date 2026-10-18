@@ -106,8 +106,19 @@ describe("CC schematic layout", () => {
     expect(source.x).toBeLessThan(772);
     expect(source.y).toBeGreaterThan(325);
     expect(source.y + 36).toBeLessThan(410);
-    expect(position("F1 feeder").y).toBeGreaterThan(120);
-    expect(position("F1 feeder").y).toBeLessThan(165);
+    // F1 is beside the incoming conductor, not crowded under CB1 current.
+    const f1 = position("F1 feeder");
+    expect(f1.x).toBeGreaterThan(80);
+    expect(f1.x).toBeLessThan(270);
+    expect(f1.y).toBeGreaterThan(165);
+    expect(f1.y).toBeLessThan(190);
+    // T1 current has its own lower-left lane, below the switch feedback,
+    // clear of the transformer selection outline (bottom y=141).
+    const t1Current = position("T1 20 kV terminal current");
+    const busbar = position("20 kV busbar (T1 secondary)");
+    expect(t1Current.y).toBeGreaterThan(235);
+    expect(t1Current.y + 36).toBeLessThan(busbar.y);
+    expect(busbar.y + 18).toBeLessThan(325);
   });
 
   it("keeps regulation labels in fixed-size HTML outside the height-bounded graphic", () => {
@@ -317,6 +328,20 @@ describe("ControlCentreMiniStatus", () => {
 });
 
 describe("realism presentation", () => {
+  it.each([
+    ["rmu-1-remote", "RMU1 authority: LOCAL"],
+    ["rmu-2-remote", "RMU2 authority: LOCAL"],
+    ["oltc-1-remote", "T1 OLTC authority: LOCAL"],
+  ])("surfaces %s LOCAL in the summary and schematic without calling it an alarm", (id, label) => {
+    const state = structuredClone(FEEDER_STATE);
+    state.points.find((p) => p.id === id)!.value = false;
+    const out = text(render(<AbnormalSummary state={state} />));
+    expect(out).toContain(label);
+    expect(out).not.toContain("No abnormal conditions");
+    expect(text(screen({ state }))).toContain("0 active alarms");
+    expect(render(<ControlCentreOneLine points={state.points} />)).toContain(`data-authority="${id}"`);
+  });
+
   it("has a compact explicit abnormal-condition empty state above the schematic", () => {
     expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toBe("No abnormal conditions");
     const html = screen();
