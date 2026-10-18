@@ -1,0 +1,27 @@
+{
+  "view": "cc", "visible": true, "cached": false,
+  "sections": [
+    {"section":"S1","state":"LIVE","path":"via CB1","kv":"19.8","text":"S1 residential · LIVE via CB1 19.80 kV"},
+    {"section":"S2","state":"LIVE","path":"via CB1","kv":"19.7","text":"S2 commercial · LIVE via CB1 19.70 kV"},
+    {"section":"S3","state":"LIVE","path":"path unknown","kv":"19.9","text":"S3 industrial · LIVE path unknown · F2 unobserved 19.90 kV"}
+  ],
+  "devices": [
+    {"device":"CB1","position":"closed","quality":"good","text":"CB1 closed"},
+    {"device":"RMU1","position":"closed","quality":"good","text":"RMU1 closed"},
+    {"device":"RMU2","position":"open","quality":"good","text":"RMU2 open"},
+    {"device":"T1","tap":"0","quality":"good","text":"Tap 0"},
+    {"device":"F2","position":"unknown","text":"F2 head · unobserved"}
+  ],
+  "f2Line":"UNKNOWN",
+  "measurements": [
+    {"point":"oltc-1-current","text":"T1 current 72.3 A GOOD","visible":true},
+    {"point":"oltc-1-bus-kv","state":"LIVE","text":"20 kV GOOD","visible":true},
+    {"point":"feeder-current","text":"61.4 A GOOD","visible":true},
+    {"point":"feeder-voltage","state":"LIVE","text":"19.91 kV GOOD","visible":true},
+    {"point":"rmu-1-current","text":"18.7 A GOOD","visible":true},
+    {"point":"rmu-2-current","text":"0 A GOOD","visible":true},
+    {"point":"rmu-2-section-kv","state":"LIVE","text":"19.7 kV GOOD","visible":true}
+  ],
+  "conditions":[{"id":"none","text":"No abnormal conditions"}],
+  "comparisons":[]
+}

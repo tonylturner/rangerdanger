@@ -206,6 +206,35 @@ go -C services vet ./devices/...
 gofmt -l services/devices
 ```
 
+## Live EU state smoke
+
+With exclusive ownership of a ready EU range, run
+`bash scripts/eu-state-smoke.sh` (default `RANGERDANGER_API=http://127.0.0.1:8088`).
+It checks independent electrical truth, fresh IEC104 observations, and the
+Control Centre and Physical System DOMs. Install frontend dependencies with
+`npm ci --prefix frontend`; the pinned `playwright-core` uses system Chrome
+headlessly, with no browser download or shared browser session.
+
+`--list` is offline; `--case NAME` is repeatable, and `--case switching` selects
+the reachable switching matrix. `--pending-dom` explicitly records both DOM
+checks as pending (not a full pass) for a frontend without the DOM contract.
+Offline fixtures run with `bash scripts/tests/eu-gate/run.sh`.
+
+Evidence (field/operator snapshots, command/audit responses, DOM JSON,
+screenshots and outcomes with timings) stays in `build/eu-state-smoke/<UTC>/`.
+Cases have 180 s deadlines (OLTC 300 s), inside a 30-minute run cap including
+reset. An unknown command result or timeout stops the matrix without retry.
+Cleanup re-enables the profile and uses the workshop reset barrier; this
+**clears workshop work and restores the weak policy**. The harness never
+pauses/restarts containers or directly edits firewall policy.
+
+`CCC-normal` is electrical-oracle/offline-only: every final CC close is
+live/live-interlocked. All eight F2-tripped rows are reachable via the S2
+fault/tie sequence. Instantaneous pre-trip and delayed pickup fault rows
+cannot be held for GI/DOM sampling. `--list` also names unsupported S3 fault
+and PLC setpoint controls. At zero power, undefined PF is intentionally
+IEC IV / comparison INVALID, not MATCH or a communications outage.
+
 ## Adding a new sim
 
 1. Create `services/<name>-sim/main.go`. Define a `<Name>State` struct
