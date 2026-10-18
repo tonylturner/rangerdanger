@@ -194,6 +194,10 @@ eu_lab_positive_conduits() {
   eu_lab_cc oltc-1-step lower || return
   since=$(eu_utc) || return
   eu_lab_cc oltc-1-mode auto || return
+  # Restoring two forced steps can need a third: the daily profile keeps
+  # moving the load while each 30 s delay runs, so the baseline may drift
+  # out of band by one step before the PLC catches up.
+  budget=$(jq -er '3 * (.configured_delay_s + .motion_s) + 20' "$PACKAGE/process/reference-cases.json") || return
   eu_lab_wait_regulated_cc "$pre_tap" "$since" "$low" "$high" "$budget"
 }
 
