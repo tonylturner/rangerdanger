@@ -10,7 +10,7 @@ import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, CommandResultView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { controlCentreObservations } from "../lib/observation-readings";
-import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
+import { AbnormalSummary, ControlCentreScreen, ObservationStatus } from "./control-centre-view";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 import { DeviceFaceplate, RegulationBand } from "./control-centre-faceplate";
 import { devicePoints } from "../lib/operator-workstation";
@@ -77,6 +77,39 @@ describe("ControlCentreScreen schema 3", () => {
 });
 
 describe("CC schematic layout", () => {
+  it.each([1440, 1920])("orders status, schematic, selected controls, secondary rows and alarms at %ipx", (viewport) => {
+    // DOM-order contract at both sides of the existing desktop breakpoint;
+    // SSR does not measure pixels or execute media queries.
+    const html = render(<div style={{ width: viewport }}><ControlCentreScreen state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW} journal={JOURNAL} now={NOW} /></div>);
+    const order = [
+      'aria-label="Observation status"', 'aria-label="Feeder schematic"',
+      'aria-label="T1 faceplate"', "Confirm RAISE", "Current band:", '<dl class="text-xs">',
+      'aria-label="Abnormal conditions"', 'aria-label="Operator records"', "<summary>Link diagnostics</summary>",
+    ].map((marker) => html.indexOf(marker));
+    expect(html).toContain(`width:${viewport}px`);
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(html).toContain("<details class=\"text-xs text-slate-400\"><summary>Link diagnostics</summary>");
+  });
+
+  it("shows only a current-connection GI and counts current observations, not electrical validity", () => {
+    const state = structuredClone(FEEDER_STATE);
+    const status = (unavailable = false) => text(render(<ObservationStatus state={state} unavailable={unavailable} />));
+    expect(status()).toContain("Points current 42/42");
+    state.points[0].quality = { ...state.points[0].quality, iv: true };
+    state.points[0].stale_reason = "measurement_invalid";
+    expect(status()).toContain("Points current 42/42");
+    state.points[0].quality.nt = true;
+    expect(status()).toContain("Points current 41/42");
+    expect(status(true)).toContain("Points current 0/42");
+    expect(status(true)).toContain("(cached)");
+    state.link.gi.state = "running";
+    expect(status()).not.toContain("not completed");
+    state.link.since = "2099-01-01T00:00:00Z";
+    expect(status()).toContain("Current-connection GI (UTC): not completed");
+    expect(status()).toContain("Points current 0/42");
+    expect(text(render(<ObservationStatus state={STALE_STATE} unavailable={false} />))).toContain("Points current 0/4");
+  });
   it("reserves upper annotation lanes clear of the RMUs and right-hand ring line", () => {
     const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
     const labels = [...html.matchAll(/<text x="(\d+)" y="(\d+)"[^>]*>([^<]*)<\/text>/g)];
@@ -296,10 +329,10 @@ describe("realism presentation", () => {
     expect(render(<ControlCentreOneLine points={state.points} />)).toContain(`data-authority="${id}"`);
   });
 
-  it("has a compact explicit abnormal-condition empty state above the schematic", () => {
+  it("keeps abnormal-condition detail after the selected faceplate", () => {
     expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toContain("No alarms in GOOD observations");
     const html = screen();
-    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeLessThan(html.indexOf('aria-label="Feeder schematic"'));
+    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeGreaterThan(html.indexOf('aria-label="T1 faceplate"'));
   });
   it("shows P/Q/PF and configured delay while PF IV remains a quality-marked dash", () => {
     const state = structuredClone(FEEDER_STATE);

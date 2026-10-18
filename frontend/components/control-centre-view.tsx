@@ -65,6 +65,14 @@ export function InterrogateStation({ state, unavailable }: { state: OperatorStat
 export function SnapshotMarker({ age }: { age: string | null }) {
   return age === null ? null : <p role="status" className="mb-2 border border-dashed border-amber-600 p-2 text-xs text-amber-200">Cached snapshot · {age} since last API answer. All link states, values and IEC quality below are from that snapshot, not a live feed.</p>;
 }
+export function ObservationStatus({ state, unavailable }: { state: OperatorState; unavailable: boolean }) {
+  const integrity = hasCurrentConnectionGi(state.link);
+  const current = !unavailable && state.link.state === "started" && integrity
+    ? state.points.filter((p) => !pointObservationNotCurrent(p)).length : 0;
+  return <p aria-label="Observation status" className="text-xs text-slate-300">
+    Link {LINK_STATE_TEXT[state.link.state]}{unavailable ? " (cached)" : ""} · Current-connection GI (UTC): {integrity ? formatUtcTime(state.link.gi.last_complete_at) : "not completed"} · Points current {current}/{state.points.length}
+  </p>;
+}
 export function AbnormalSummary({ state }: { state: OperatorState }) {
   const conditions = abnormalConditions(state);
   const uncertain = state.points.filter((p) => p.kind === "float" && pointCondition(p) !== "good").length;
@@ -98,8 +106,7 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
       <p className="text-xs text-slate-300">Portal API: {unavailable ? "unavailable" : state ? "available" : "waiting"} · {alarms.length} active alarms{cachedAge !== null ? " in cached snapshot" : ""}</p>
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
-        <div><SnapshotMarker age={cachedAge} /><InterrogateStation state={state} unavailable={unavailable} /></div>
-        <AbnormalSummary state={state} />
+        <div><SnapshotMarker age={cachedAge} /><div className="flex flex-wrap items-center justify-between gap-2"><ObservationStatus state={state} unavailable={unavailable} /><InterrogateStation state={state} unavailable={unavailable} /></div></div>
         {/* Keep 12px schematic labels; put the faceplate alongside only when both fit without shrinking the SVG. */}
         <div className="grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]">
           <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
@@ -108,6 +115,7 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
           </section>
           <div className="min-w-0"><SnapshotMarker age={cachedAge} /><DeviceFaceplate key={state.cache_epoch} state={state} selected={selected} unavailable={unavailable} /></div>
         </div>
+        <AbnormalSummary state={state} />
         <section aria-label="Operator records" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
           <SnapshotMarker age={cachedAge} /><p className="mb-3 text-xs text-slate-400">{summary && telemetryText(summary)}</p>
           <ControlCentrePane state={state} journal={journal} journalError={journalError} now={now} initialTab={initialTab} />
