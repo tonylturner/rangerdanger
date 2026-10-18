@@ -1,9 +1,9 @@
-import type { OperatorPoint } from "./operator-api";
-import { pointCondition, pointLabel } from "./operator-format";
+import type { Readings } from "./physical-readings";
+import { pointLabel } from "./operator-format";
 
 export type SectionId = "S1" | "S2" | "S3";
 export type SupplyPath = {
-  state: "via CB1" | "path unknown" | "no supply" | "unknown";
+  state: "via CB1" | "via F2" | "via CB1 + F2" | "path unknown" | "no supply" | "unknown";
   reason: string;
   f2ContributionUnobserved: boolean;
 };
@@ -16,12 +16,12 @@ export const SECTION_VOLTAGE: Record<SectionId, string> = {
 const SWITCHES = ["feeder-breaker-position", "rmu-1-position", "rmu-2-position"];
 const SECTION_INDEX: Record<SectionId, number> = { S1: 0, S2: 1, S3: 2 };
 
-// Voltage presence is independent of path certainty. F2 is deliberately
-// unobserved: neither field truth nor current direction can prove its state.
-export function sectionSupplyPath(points: OperatorPoint[], section: SectionId): SupplyPath {
+// Voltage presence and switch reachability are separate evidence.
+// CC callers leave F2 unknown; physical callers provide its solver state.
+export function sectionSupplyPath(read: Readings, section: SectionId): SupplyPath {
   const goodValue = (id: string) => {
-    const point = points.find((p) => p.id === id);
-    return point && pointCondition(point) === "good" ? point.value : null;
+    const r = read(id);
+    return r.condition === "good" ? r.value : null;
   };
   const result = (state: SupplyPath["state"], reason: string, f2ContributionUnobserved = false): SupplyPath =>
     ({ state, reason, f2ContributionUnobserved });
@@ -37,6 +37,16 @@ export function sectionSupplyPath(points: OperatorPoint[], section: SectionId): 
   const path = SWITCHES.slice(0, index + 1);
   const unproven = path.filter((id) => goodValue(id) !== "closed");
   const busLive = typeof bus === "number" && Number.isFinite(bus) && bus > 0;
+  const f2 = goodValue("f2-position");
+  if (f2 === "closed" || f2 === "open") {
+    const cb1Path = busLive && unproven.length === 0;
+    const f2Switches = SWITCHES.slice(index + 1);
+    const f2Path = f2 === "closed" && f2Switches.every((id) => goodValue(id) === "closed");
+    if (cb1Path && f2Path) return result("via CB1 + F2", "Both physical switch paths connect to this live section");
+    if (cb1Path) return result("via CB1", "Physical CB1 path connects to this live section");
+    if (f2Path) return result("via F2", "Physical F2 path connects to this live section");
+    return result("unknown", "Live measured kV contradicts or cannot establish a supply path from the switch states");
+  }
   if (!busLive || unproven.length) {
     const gaps = [
       ...(!busLive ? ["20 kV busbar voltage is not confirmed GOOD and live"] : []),
