@@ -227,7 +227,10 @@ describe("Physical System interactions", () => {
     const tree = mount(<PhysicalSystem operator={FEEDER_STATE} now={NOW} />);
     await act(async () => { await settle(); });
     clients[0].setQueryData(["field", "audit", "breaker-1"], AUDIT);
-    await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
+    await act(async () => {
+      button(tree, "Advanced diagnostics").props.onClick();
+      await vi.waitFor(() => expect(clients[0].getQueryState(["field", "audit", "breaker-1"])?.error).toMatchObject({ message: "audit offline" }));
+    });
     expect(output(tree)).toContain("audit offline");
     expect(output(tree)).toContain("Showing the last answer.");
     expect(output(tree)).toContain("rejected");
