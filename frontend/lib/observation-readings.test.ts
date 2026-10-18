@@ -1,17 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { FEEDER_STATE, TRUTH } from "./operator-fixtures.test-util";
-import { controlCentreObservations, physicalSystemObservations } from "./physical-readings";
+import { FEEDER_STATE, STALE_STATE, TRUTH } from "./operator-fixtures.test-util";
+import { controlCentreObservations, physicalSystemObservations } from "./observation-readings";
 import { sectionSupplyPath } from "./operator-supply-path";
 import { FeederOneLine } from "../components/feeder-one-line";
-import { observedReading } from "../components/control-centre-one-line";
 
 describe("independent one-line sources", () => {
-  it("preserves every CC reading and leaves F2 unobserved", () => {
-    const read = controlCentreObservations(FEEDER_STATE.points);
-    for (const p of FEEDER_STATE.points) expect(read(p.id)).toEqual(observedReading(FEEDER_STATE.points, p.id));
-    expect(read("f2-position").condition).toBe("unknown");
+  it("pins GOOD CC observation values and text", () => {
+    expect(controlCentreObservations(FEEDER_STATE.points)("feeder-breaker-position")).toEqual({
+      value: "closed", condition: "good", text: "CLOSED · GOOD", shortText: "CLOSED · GOOD",
+      flags: [], staleReason: null, transient: false,
+    });
+  });
+  it("pins stale CC text, IEC flag order and the stale reason", () => {
+    expect(controlCentreObservations(STALE_STATE.points)("feeder-breaker-position")).toEqual({
+      value: "closed", condition: "stale", text: "CLOSED · STALE · IV NT · link_lost", shortText: "CLOSED · STALE · IV NT",
+      flags: ["IV", "NT"], staleReason: "link_lost", transient: false,
+    });
+  });
+  it("pins missing CC observation text and leaves F2 unknown", () => {
+    expect(controlCentreObservations(FEEDER_STATE.points)("f2-position")).toEqual({
+      value: undefined, condition: "unknown", text: "unknown · UNKNOWN", shortText: "unknown · UNKNOWN",
+      flags: [], staleReason: undefined, transient: false,
+    });
+  });
+  it("pins the cached CC snapshot suffix without rewriting IEC quality", () => {
+    expect(controlCentreObservations(FEEDER_STATE.points, true)("feeder-breaker-position")).toEqual({
+      value: "closed", condition: "good", text: "CLOSED · GOOD · cached snapshot · CC API unavailable", shortText: "CLOSED · GOOD",
+      flags: [], staleReason: null, transient: false,
+    });
   });
   it("uses physical values, completed taps, effective blocks and no IEC flags", () => {
     const field = structuredClone(TRUTH);

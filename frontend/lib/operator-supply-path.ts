@@ -1,4 +1,4 @@
-import type { Readings } from "./physical-readings";
+import type { Readings } from "./observation-readings";
 import { pointLabel } from "./operator-format";
 
 export type SectionId = "S1" | "S2" | "S3";

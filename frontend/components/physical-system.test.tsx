@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FieldState, OperatorState } from "../lib/operator-api";
 import { AUDIT, FEEDER_STATE, JOURNAL, NOW, TRUTH } from "../lib/operator-fixtures.test-util";
 import { physicalAbnormalities } from "../lib/physical-abnormalities";
-import { physicalSystemObservations } from "../lib/physical-readings";
+import { physicalSystemObservations } from "../lib/observation-readings";
 import { PhysicalSystem, PhysicalSystemScreen } from "./physical-system";
 import { AuditTable } from "./physical-system-audit";
 import { PhysicalDiagnostics } from "./physical-system-diagnostics";
@@ -63,6 +63,18 @@ describe("Physical System presentation", () => {
     expect(out).not.toContain("Instructor"); expect(out).not.toContain("faceplate");
     expect(html).toContain("max-w-full overflow-x-auto");
     expect(out).not.toContain("Solver epoch"); expect(out).not.toContain("Device audit");
+  });
+  it("renders the Physical System without a clock and declares its absence in Station time", () => {
+    const field = { ...normalField(), clock: null };
+    const tree = mount(<PhysicalSystemScreen {...props} field={field} />);
+    expect(physicalAbnormalities(field).some((a) => a.id === "clock")).toBe(false);
+    expect(output(tree)).toContain("No active physical abnormalities");
+    expect(output(tree)).not.toContain("Time-sync warning");
+    act(() => button(tree, "Advanced diagnostics").props.onClick());
+    const stationTime = tree.root.findAllByType("h4").find((h) => h.children.join("") === "Station time")!.parent!;
+    expect(stationTime.findByType("p").children.join("")).toBe("No station clock declared.");
+    expect(output(tree)).toContain("Device diagnostics");
+    expect(output(tree)).not.toContain("Time-sync warning");
   });
   it("keeps NOP open quiet, off-normal switching informational and clock warnings separate", () => {
     const field = normalField();
@@ -165,7 +177,6 @@ describe("Physical System presentation", () => {
     const out = text(html);
     for (const value of ["Simulation engine", "OpenDSS", "Solver epoch e1", "Device input stale", "residential profile factor 0.800 ×", "F2 last trip current unknown", "Station time", "Sync status LOCKED", "Time offset 2.500 s", "Satellites 9", "Reported time (UTC) 2026-10-09T12:00:32.000Z", "Actual time (UTC) 2026-10-09T12:00:29.500Z", "Device diagnostics", "Heartbeat 200", "solved rev 5 / current 5", "close rejected modbus · station · 10.30.30.20:41000 lockout", "closed → open"]) expect(out).toContain(value);
     expect(out.indexOf("first_solve")).toBeLessThan(out.indexOf("local_protection_trip"));
-    expect(text(renderToStaticMarkup(<PhysicalDiagnostics field={{ ...TRUTH, clock: null }} audit={null} />))).toContain("No station clock declared.");
   });
 });
 

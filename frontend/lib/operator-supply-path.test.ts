@@ -3,7 +3,7 @@ import type { OperatorPoint } from "./operator-api";
 import { BOOT_STATE, FEEDER_STATE, LOST_LINK_STATE } from "./operator-fixtures.test-util";
 import { SECTION_VOLTAGE, sectionSupplyPath as readingSupplyPath, type SectionId } from "./operator-supply-path";
 
-import { controlCentreObservations } from "./physical-readings";
+import { controlCentreObservations } from "./observation-readings";
 const sectionSupplyPath = (points: OperatorPoint[], section: SectionId) => readingSupplyPath(controlCentreObservations(points), section);
 
 const sections: SectionId[] = ["S1", "S2", "S3"];

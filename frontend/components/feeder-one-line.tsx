@@ -3,7 +3,7 @@
 import { AUTHORITY_POINTS, type DeviceId } from "../lib/operator-workstation";
 import { pointLabel } from "../lib/operator-format";
 import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
-import type { Readings } from "../lib/physical-readings";
+import type { Readings } from "../lib/observation-readings";
 
 export function FeederOneLine({ read, physical = false, unavailable = false, selected = "T1", onSelect = () => {} }: {
   read: Readings; physical?: boolean; unavailable?: boolean; selected?: DeviceId; onSelect?: (id: DeviceId) => void;

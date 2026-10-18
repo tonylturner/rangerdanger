@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { FieldState, OperatorState } from "../lib/operator-api";
 import { physicalAbnormalities } from "../lib/physical-abnormalities";
 import { physicalComparison, comparisonCounts } from "../lib/physical-comparison";
-import { physicalSystemObservations } from "../lib/physical-readings";
+import { physicalSystemObservations } from "../lib/observation-readings";
 import { useFieldState } from "../lib/operator-queries";
 import type { DeviceId } from "../lib/operator-workstation";
 import { sectionSupplyPath, SECTION_VOLTAGE, type SectionId } from "../lib/operator-supply-path";

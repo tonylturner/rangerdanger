@@ -1,6 +1,6 @@
 import type { FieldState, OperatorPoint, OperatorState, PointValue } from "./operator-api";
 import { pointCondition, pointLabel, qualityFlags } from "./operator-format";
-import { PHYSICAL_POINTS, physicalSystemObservations, type Reading } from "./physical-readings";
+import { PHYSICAL_POINTS, physicalSystemObservations, type Reading } from "./observation-readings";
 
 export const PRIMARY_POINTS = ["feeder-breaker-position", "rmu-1-position", "rmu-2-position", "oltc-1-tap", "oltc-1-bus-kv"];
 export const COMPARISON_STATUSES = ["MATCH", "MISMATCH", "STALE", "INVALID", "UNKNOWN"] as const;

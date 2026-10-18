@@ -8,7 +8,8 @@ import { commandErrorText } from "../lib/operator-format";
 import { FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, STALE_STATE, commandResult } from "../lib/operator-fixtures.test-util";
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
-import { ControlCentreOneLine, observedReading } from "./control-centre-one-line";
+import { ControlCentreOneLine } from "./control-centre-one-line";
+import { controlCentreObservations } from "../lib/observation-readings";
 import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 import { DeviceFaceplate, RegulationBand } from "./control-centre-faceplate";
@@ -204,8 +205,8 @@ describe("CC one-line observation integrity", () => {
     expect(html).toContain("RMU1 · NC: CLOSED · STALE · IV NT · device_unreachable");
     expect(html).toContain("RMU2 · NOP: not received · UNKNOWN");
     expect(html).toContain("T1 OLTC: -3 · TRANSIENT · STALE · SB");
-    expect(observedReading(mixed, "plc-1-running").text).toContain("IV · heartbeat");
-    expect(observedReading(mixed, "oltc-1-tap").transient).toBe(true);
+    expect(controlCentreObservations(mixed)("plc-1-running").text).toContain("IV · heartbeat");
+    expect(controlCentreObservations(mixed)("oltc-1-tap").transient).toBe(true);
   });
 });
 
