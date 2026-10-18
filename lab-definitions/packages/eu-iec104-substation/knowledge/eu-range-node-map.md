@@ -21,6 +21,8 @@ Management is `10.99.99.0/24`, firewall zone `lan3`. It carries backend orchestr
 
 The internal `process_net`, `10.50.50.0/24`, is not a firewall zone. Solver .20 exchanges truth and measurements with breaker .30, RMU1 .31, RMU2 .32, OLTC .33 and F2 .34. Neither network is the student's simulated enterprise path into the plant. Successful backend access to a management endpoint cannot establish that the corresponding operational conduit is allowed.
 
+The Network console's collapsed **Infrastructure planes** explanation accounts for paths omitted from the teaching map: management/orchestration, solver-to-device process truth and isolated proxy-to-desktop delivery bridges. Desktop delivery provides browser access, not forwarding between teaching zones. Portal OpenPLC access uses management; it does not test engineering-workstation-to-PLC access through containd. The map's routed teaching conduits are therefore not a drawing of every network path. See [zone/conduit design](#eu-zone-conduit-design) for same-zone exceptions and [port/source boundaries](#eu-port-source-boundary) for the distinction between a declared path and authorization.
+
 Keep identities separate from service names. The CB1 topology node is `breaker-1`, device id `feeder-breaker`, container `rangerdanger-feeder-breaker`. Other device identities are `f2-breaker`, `rmu-1`, `rmu-2`, `oltc-1` and `plc-1`; field-state keys use node ids. Do not join evidence by Docker service-name spelling alone.
 
 ### Trace a real path

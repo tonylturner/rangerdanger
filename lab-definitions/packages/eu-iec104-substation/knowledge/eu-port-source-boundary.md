@@ -8,17 +8,23 @@ This is an intentional teaching baseline, not an approved production design. Do 
 
 ### What improved actually permits
 
-The improved policy source-pins the CC at `10.60.60.20` to RTU `10.30.30.20:2404`. It permits RTU `10.30.30.20` to breaker `10.40.40.20`, RMUs `.21` and `.22`, and OLTC `.23` on TCP/502. The separate PLC rule permits `10.30.30.30` to OLTC `.23:502`.
+The improved policy source-pins the CC at `10.60.60.20` to RTU `10.30.30.20:2404`. It permits RTU `10.30.30.20` to CB1 breaker `10.40.40.20`, RMUs `.21` and `.22`, OLTC `.23` and F2 breaker `.24` on TCP/502. F2 is indication-only in the IEC 104 point map; this is not a read-only firewall rule. The separate PLC rule permits `10.30.30.30` to OLTC `.23:502`.
 
 The archive has two different services. CC snapshots go to `10.70.70.40:8081`; enterprise reads go to `.40:8080`. Engineering `10.20.20.20` may reach OpenPLC `10.30.30.30:8080` for maintenance. The vendor host `.10` is not interchangeable with engineering `.20`.
 
 Other new cross-zone connections are denied by the policy's explicit denies or default deny. There is no permitted historian-initiated OT conduit. These rules are a reference design, not the only possible acceptable communications matrix.
 
+### Reading Network console evidence
+
+Selected-flow evidence keeps three questions separate: **Topology** says the package declares a path; **Observed liveness** reports its available observations; **Authorization** reports policy evidence. Liveness is neither authorization nor proof that a command succeeded. A `DENY` zone-pair summary is shown as denied by that summary, with its rule detail. `MIXED`, `ALLOW` or absent summaries leave **Authorization unknown**: none evaluates the exact source, destination and port or proves a source pin. Same-zone flows do not traverse containd, so firewall policy does not establish their authorization.
+
+Use the actual rules and attempt-local evidence for the tuple under test, rather than upgrading a zone summary or a live feed into endpoint permission. The [zone/conduit matrix](#eu-zone-conduit-design) names the operational dependencies; the following limits explain why even a permitted connection is not command-level permission.
+
 ### A port is not a permission level
 
 Telemetry, general interrogation and switching share TCP/2404. Allowing that port does not create a read-only IEC 104 session. The EU policy disables DPI and does not enforce an ASDU-type, common-address or IOA allowlist. A capture that decodes C_DC_NA_1 proves observability, not command-aware blocking.
 
-Similarly, TCP/502 can carry input-register reads and holding-register writes. The permitted PLC-to-OLTC flow is necessary for regulation but is not an FC/register restriction. Device logic supplies further checks such as remote mode, auto/manual state and interlocks; those are different controls with different failure modes.
+Similarly, TCP/502 can carry input-register reads and holding-register writes. The permitted PLC-to-OLTC flow is necessary for regulation but is not an FC/register restriction. This is the Network console's read/write warning: command-level filtering would need deep packet inspection (DPI), which the EU reference policy disables. Device logic supplies further checks such as remote mode, auto/manual state and interlocks; those are different controls with different failure modes.
 
 The historian's read-only property comes from its GET-only read listener and lack of write-back behavior, combined with network separation from its ingest service. It is not a generic property of port 8080.
 

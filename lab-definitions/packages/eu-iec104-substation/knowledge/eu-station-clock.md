@@ -8,6 +8,8 @@ The source is `gps-1` in the station zone, with management simulation endpoint `
 
 RTU-to-GPS polling is same-subnet station traffic. It is not a separate inter-zone conduit whose enforcement can be demonstrated by editing the station-to-field firewall rule.
 
+This is the Network console's **Time quality** flow: its arrow means the RTU initiates polling, not that the clock sends no information back. Selected-flow evidence and **Infrastructure planes** summarize the same-zone and HTTP-not-NTP/PTP limits above. A declared or live time path is not a firewall authorization check; see [port/source evidence](#eu-port-source-boundary).
+
 ### Timestamp invalidity versus point invalidity
 
 Spontaneous single-point, double-point and step-position reports carry CP56Time2a assigned by the RTU station clock. Its invalid-time bit follows synchronization. The CC exposes this as `source_time_invalid`, separately from quality `iv`. GI responses and floating-point measurements are untimed and have no source timestamp to validate.

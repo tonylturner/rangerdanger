@@ -82,6 +82,14 @@ The lab runs as two Compose projects:
 
 The platform owns `mgmt_net` (Engine name `rangerdanger_mgmt_net`) and all three delivery bridges; range files declare the platform networks they use as external. Teaching and physics/process networks belong to the range and keep their `rangerdanger_<key>` names. Delivery networks persist across range switches, including the corporate bridge when EU is active. One range runs at a time; switching packages (the UI toggle) stops the old range, starts the new one, installs its proxy routes (`nginx.routes.conf`) and imports its default firewall policy. Each package's `manifest.json` names which container plays which role and the endpoints the backend calls. `setup.sh` writes `RANGERDANGER_ROOT` (the install directory) to `.env`; every Compose call uses it as the project directory, and the backend mounts it read-only at the same path so the range's relative binds resolve to host paths. Teardown is by Compose project label only (`scripts/dev-down.sh`): the range with `down -v --remove-orphans`, which removes only its image-declared anonymous volumes because range models have no named volumes, and the platform without `-v`. The API is in [`api-spec.md`](api-spec.md).
 
+### EU console boundaries
+
+The Network console depicts the package's teaching paths, not every network attachment. Its collapsed **Infrastructure planes** explanation covers management/orchestration, internal solver-to-device process truth and isolated proxy-to-desktop delivery. These are not teaching conduits. Portal OpenPLC access is management access, not proof of the engineering-workstation-to-PLC conduit. RTU→PLC and RTU→station-clock traffic stays inside the station zone without containd; the clock path is simulated HTTP, not NTP/PTP.
+
+Selected-flow evidence separates declared **Topology**, **Observed liveness** and **Authorization**, alongside operational purpose. Arrows identify connection initiation, not one-way information: IEC 104 and Modbus exchanges are bidirectional. Even an `ALLOW` zone-pair summary is not endpoint/port evaluation; `ALLOW`, `MIXED` and missing summaries leave flow authorization unknown, while `DENY` retains its summary evidence. EU reference policy is source/port based with DPI disabled, so a port allowance does not separate monitoring from commands or Modbus reads from writes.
+
+The package knowledge pages hold the detailed [EU node/plane map](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-range-node-map.md), [zone/conduit matrix](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-zone-conduit-design.md), [authorization limits](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-port-source-boundary.md) and [telecontrol roles](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-telecontrol-architecture.md).
+
 ## Services
 
 ### Backend (Go + Gin)
@@ -113,8 +121,16 @@ Top-level pages:
 - `/labs` - Workshop environment status
 - `/scenarios` - Legacy redirect to `/exercises`
 
-The operator HMI itself is **FUXA**, served via the nginx proxy at
-`/apps/fuxa-hmi/` rather than as a route inside the Next.js app.
+For the US package, the operator HMI is **FUXA**, served via the nginx proxy
+at `/apps/fuxa-hmi/` rather than as a route inside the Next.js app.
+For EU, `/substation` instead presents the IEC 104 **Control Centre** and a
+separate management-backed **Physical System** view. A shared SCADA
+view-state annunciator spans both; the compact link/current-connection
+GI/current-point status precedes the CC schematic, with detailed diagnostics
+collapsed below records. The current station inventory has 42 monitored
+points, including four indication-only F2 points and no F2 supervisory
+command. See [EU HMI/SCADA](../lab-definitions/packages/eu-iec104-substation/knowledge/eu-hmi-scada.md)
+for view states, count semantics and observation-versus-physical-truth limits.
 
 Key components:
 
