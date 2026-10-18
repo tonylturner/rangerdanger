@@ -239,6 +239,7 @@ export const LINK_DOWN_REASON_TEXT: Record<LinkDownReason, string> = {
   peer_closed: "the RTU end closed or reset the connection",
   connect_failed: "TCP connect or STARTDT failed",
   io_error: "the control centre closed it after a failed general interrogation",
+  operator_reconnect: "an operator requested a fresh session",
 };
 
 function linkDownReasonText(reason: string): string {

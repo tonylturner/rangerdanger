@@ -132,7 +132,7 @@ export async function postOperatorGi() {
 
 // Why the CC journals a link_down. lib60870 reports no close cause, so
 // the CC infers it (services/iec104/README.md).
-export type LinkDownReason = "t1_timeout" | "peer_closed" | "connect_failed" | "io_error";
+export type LinkDownReason = "t1_timeout" | "peer_closed" | "connect_failed" | "io_error" | "operator_reconnect";
 
 // detail differs per kind (link_up, link_down, gi_started, gi_complete,
 // point_stale, point_good, command); lib/operator-format.ts reads it.

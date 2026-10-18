@@ -138,6 +138,7 @@ describe("journalSummary", () => {
     expect(reason("peer_closed")).toBe("Link down #0: the RTU end closed or reset the connection (peer_closed)");
     expect(reason("connect_failed")).toBe("Link down #0: TCP connect or STARTDT failed (connect_failed)");
     expect(reason("io_error")).toContain("failed general interrogation (io_error)");
+    expect(reason("operator_reconnect")).toBe("Link down #0: an operator requested a fresh session (operator_reconnect)");
     expect(reason("later_reason")).toBe("Link down #0: later_reason");
   });
 

@@ -478,6 +478,10 @@ export type ValidationReport = {
   active_config: string;
   policy_source: string;
   pcap_path: string;
+  policy_hash: string;
+  window_start: string;
+  window_end: string;
+  policy_stable: boolean;
 };
 
 // runValidationReport runs the positive/negative segmentation test matrix
