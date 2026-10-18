@@ -131,6 +131,7 @@ func TestTopologyFlowsShippedInventory(t *testing.T) {
 			want := []TopologyFlow{
 				{"cc-rtu", "cc-1", "rtu-1", "IEC104", 2404, "persistent", "baseline", "cc-rtu"},
 				{"rtu-breaker", "rtu-1", "breaker-1", "Modbus", 502, "~500ms", "baseline", "rtu-breaker"},
+				{"rtu-f2-breaker", "rtu-1", "f2-breaker", "Modbus", 502, "~500ms", "baseline", "rtu-f2-breaker"},
 				{"station-clock", "rtu-1", "gps-1", "HTTP", 8080, "~1s", "baseline", "station-clock"},
 				{"attacker-rtu", "kali-1", "rtu-1", "IEC104", 2404, "manual", "scenario", "attacker-rtu"},
 				{"rtu-rmu-1", "rtu-1", "rmu-1", "Modbus", 502, "~500ms", "baseline", "rtu-rmu-1"},
@@ -148,6 +149,7 @@ func TestTopologyFlowsShippedInventory(t *testing.T) {
 			wantLiveness := map[string]LivenessBinding{
 				"cc-rtu":               {Provider: "operator-link"},
 				"rtu-breaker":          {Provider: "operator-device", Points: []string{"feeder-breaker-position", "feeder-protection-trip"}},
+				"rtu-f2-breaker":       {Provider: "operator-device", Points: []string{"f2-position", "f2-protection-trip"}},
 				"station-clock":        {Provider: "unobserved"},
 				"attacker-rtu":         {Provider: "session-presence", Transport: "tcp"},
 				"rtu-rmu-1":            {Provider: "operator-device", Points: []string{"rmu-1-position", "rmu-1-fault-passage"}},

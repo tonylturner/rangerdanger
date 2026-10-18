@@ -33,8 +33,8 @@ type Model struct {
 func NewModel(cfg Config) (*Model, error) {
 	switch cfg.Kind {
 	case Breaker:
-		if cfg.DeviceID != "feeder-breaker" {
-			return nil, errors.New("breaker DEVICE_ID must be feeder-breaker")
+		if cfg.DeviceID != "feeder-breaker" && cfg.DeviceID != "f2-breaker" {
+			return nil, errors.New("breaker DEVICE_ID must be feeder-breaker or f2-breaker")
 		}
 	case RMU:
 		if cfg.DeviceID != "rmu-1" && cfg.DeviceID != "rmu-2" {

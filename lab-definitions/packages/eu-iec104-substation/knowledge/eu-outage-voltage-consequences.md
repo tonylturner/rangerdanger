@@ -10,7 +10,7 @@ For the reference S1 fault, CB1 trips instantaneously (about 2.7 kA above I>> 20
 
 For the reference S2 fault (about 1.4 kA), RMU1 latches at 300 A with zero delay; CB1 trips after about 1 s on I> 400 A / 1000 ms, below I>> 2000 A. Merely opening RMU1 and closing RMU2 still connects feeder 2 to the fault. The modeled F2 head sees about 2.5 kA, above I>> 2000 A, and trips instantaneously, potentially losing S3 as well. The same apparent restoration action can therefore enlarge the outage when fault location is misunderstood.
 
-The F2 head is a process element, not a remotely controlled field device. Its state is not directly telemetered to the CC; S3 energization is observed through RMU2's source-voltage point. Do not fill the operator diagram from process truth to make it look complete.
+The F2 head is an indication-only field breaker. The RTU telemeters position, protection trip, current and MW; S3 energization still requires RMU2's source-voltage point, not position alone. Do not fill the operator diagram from process truth to make it look complete.
 
 ### Interlocks do not replace an operating order
 

@@ -184,7 +184,7 @@ steps:
 - id: transition-decide-what-to-fix-first
   title: Transition - decide what to fix first
   description: |
-    Confirm the known-good baseline still operates. You have observed traffic, identified six operational conduits, recorded five passive findings and tested latent reachability. Write measurable success criteria in Notes.
+    Confirm the known-good baseline still operates: five field devices, 42 IEC 104 points including F2 position/trip/current/MW; five commands unchanged. You have observed traffic, identified six operational conduits, recorded five passive findings and tested latent reachability. Write measurable success criteria in Notes.
 
     Next, [Lab 1.3](/exercises/eu-segmentation-requirements) converts these observations into design verdicts. [Lab 1.4](/exercises/eu-remediation-planning) funds selected changes. You cannot fix everything at once: deferred exposure remains risk, not a completed control.
 

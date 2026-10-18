@@ -50,13 +50,14 @@ CC2_IP=172.28.104.31
 CC2_HTTP_IP=172.28.105.22
 RTU=$PREFIX-rtu BRK=$PREFIX-brk GPS=$PREFIX-gps MON=$PREFIX-mon NOACTTERM=$PREFIX-no-actterm \
   CC=$PREFIX-cc CC2=$PREFIX-cc2 PROBE=$PREFIX-probe
+F2=$PREFIX-f2
 RMU1=$PREFIX-rmu1 RMU2=$PREFIX-rmu2 OLTC=$PREFIX-oltc PLC=$PREFIX-plc
 FAILED=0
 if [[ ! "$PREFIX" =~ ^rd[a-z0-9-]+$ ]]; then echo "invalid check prefix" >&2; exit 2; fi
 case "$OUT" in "$ROOT"/build/*) ;; *) echo "output must be under $ROOT/build" >&2; exit 2 ;; esac
 
 cleanup() {
-  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" "$RMU1" "$RMU2" "$OLTC" "$PLC" >/dev/null 2>&1 || true
+  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" "$RMU1" "$RMU2" "$OLTC" "$PLC" "$F2" >/dev/null 2>&1 || true
   docker network rm "$NET" "$MGMT" >/dev/null 2>&1 || true
 }
 trap 'cleanup; docker image rm "$IMG" "$BASEIMG" >/dev/null 2>&1 || true' EXIT
@@ -108,12 +109,13 @@ docker run -d --name "$BRK" --network "$NET" --ip "$BRK_IP" \
   -v "$HERE/fake_breaker.py:/app/fake_breaker.py:ro" "$PY" python3 -I /app/fake_breaker.py >/dev/null
 sleep 2
 
-for device in rmu-1 rmu-2 oltc plc; do
+for device in rmu-1 rmu-2 oltc plc f2; do
   case "$device" in
     rmu-1) name=$RMU1; ip=172.28.104.21 ;;
     rmu-2) name=$RMU2; ip=172.28.104.22 ;;
     oltc) name=$OLTC; ip=172.28.104.23 ;;
     plc) name=$PLC; ip=172.28.104.24 ;;
+    f2) name=$F2; ip=172.28.104.25 ;;
   esac
   docker run -d --name "$name" --network "$NET" --ip "$ip" -e "KIND=$device" \
     -v "$HERE/fake_device.py:/app/fake_device.py:ro" "$PY" python3 -I /app/fake_device.py >/dev/null || exit 1

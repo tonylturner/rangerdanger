@@ -21,13 +21,11 @@ class EUProcessState:
         self._latest = {
             "schema": 3, "profile_id": profile.id, "solver_epoch": None,
             "solve_seq": 0, "solved_at": None, "truth_stale": True,
-            **ProcessControls().snapshot(), "tap": None,
+            **ProcessControls().snapshot(), "tap": None, "f2_tripped": None,
             "profile": {"enabled": profile.profile.enabled,
                         "load_factors": dict.fromkeys(
                             ("residential", "commercial", "industrial"), None),
                         "source_pu": None},
-            "f2_protection": {"picked_up": False, "picked_up_since": None,
-                              "last_trip_current_a": None},
             "buses": {k: {"kv": None, "live": None} for k in ("bus20", "s1", "s2", "s3")},
             "devices": {d.id: {"delivered": False, "solved_revision": None, "revision": None,
                                "current_a": None, "p_mw": None, "q_mvar": None}
@@ -42,10 +40,6 @@ class EUProcessState:
         with self._lock:
             self._latest.update(controls.snapshot())
             self._pending = True
-
-    def protection_changed(self, protection: dict) -> None:
-        with self._lock:
-            self._latest["f2_protection"] = copy.deepcopy(protection)
 
     def truth_received(self) -> None:
         with self._lock:

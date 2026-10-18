@@ -118,7 +118,7 @@ and gates must disable the profile explicitly.
 
 Keep `OPENDSS_PROFILE=/profiles/profile.json` and the existing read-only mount
 of this entire directory at `/profiles`. The process requires HTTP reachability
-to all four origins in `devices` (10.50.50.30–33:8080); those entries are
+to all five origins in `devices` (10.50.50.30–34:8080); those entries are
 `{id, kind, truth_url}`, where truth_url is the origin, not `/api/truth`.
 The profile maps the HV/MV buses, switching elements, transformer and faults.
 The application image copies all `eu_*.py` runtime modules. No US service or
@@ -131,14 +131,14 @@ values and `truth_stale=true`; it never assumes a switch position. Actions
 are serialized with ticks, validated before mutation, and trigger a fresh tick.
 On truth loss, sampled bus values and their solve timestamp remain last-known.
 
-Each tick reads all truths concurrently, solves once and delivers all four
+Each tick reads all truths concurrently, solves once and delivers all five
 measurements concurrently. Each device's delivery result is independent.
 A stale-truth conflict, a newer acknowledged revision or an F2 trip uses the
 single immediate correction budget: reread every truth and solve again.
 A further change during that correction is settled on the next tick, not a
 third solve. Health remains degraded while a correction is pending. F2's
-latched state is process truth; bus values are samples at `solved_at` and can
-precede the resulting trip, just like a device's protection-changing ack.
+latched state is field truth; bus values are samples at `solved_at` and can
+precede the resulting protection-changing acknowledgement.
 Measurements expire at the devices after 3 s; delivery success is not a claim
 that previously sampled measurements stay valid indefinitely.
 
@@ -150,27 +150,26 @@ zero P/Q. There is no topological fault-current flag or fault-path authority.
 Solve sequence and UTC `solved_at` strictly increase within an epoch; timestamp
 collisions or backward wall time are advanced to the previous timestamp +1 ms.
 The electrical snapshot includes the last POST's current/P/Q per device,
-effective profile factors and F2 protection, with new sampled numbers null
+effective profile factors and field-device delivery evidence, with new sampled numbers null
 before the first solve.
 
 Faults are three-phase shunts of 1 micro-ohm per phase (finite numerical
 representation of a bolted fault). A closed earth switch on either RMU enables
 the S2 DSS fault; whether current actually flows is exclusively a DSS result.
 
-F2 protection samples **solved F2 terminal-1 current**: pickup 400 A,
-delay 1000 ms, instantaneous 2000 A. The first picked-up solve starts the timer;
-the first subsequent sample at or beyond delay trips. Thus effective operate
-time is the delay rounded up to the solve cadence (and may be later with
-scheduling jitter). A correction solve is a sample, not an elapsed second.
-Drop-off, epoch change, unavailable truth/nonconverged solve, reset, or a gap
-**greater than 2500 ms** clears the pickup timer. F2 has no separate field-device
-generation: process restart changes its epoch; process reset/reset_f2 restarts
-its timer and clears last-trip evidence. Field generation/revision changes do
-not reset this independently process-owned relay. Last trip current persists
-after drop-off until reset. An already open F2 cannot trip again.
+F2 is a second instance of the shared breaker field-device model. Its sole
+protection owner samples **solved terminal-1 current** with pickup 400 A,
+delay 1000 ms and instantaneous 2000 A; Compose configures these settings.
+The device owns pickup timing, generation/revision, latch and trip-current
+evidence, just like CB1. A revision-changing measurement acknowledgement
+triggers the existing bounded full-vector correction solve. There is no
+parallel process-owned relay. Process reset clears faults and load/source
+controls only; instructor `f2-breaker/reset` restores F2 after fault removal.
+The process `f2_tripped` value is a read-only projection of F2 device truth,
+null before the first successful solve; protection diagnostics live on the device, not under
+`process.f2_protection`. F2 has four IEC 104 indications and no command IOA.
+Its generic Modbus endpoint is not write-disabled.
 
-The F2 head stays latched open until `reset_f2` or process `reset`. Resetting
-a connected fault starts a new pickup period, not an immediate Boolean trip.
 In the disabled-profile baseline, S1/S2 radial faults draw about 2701/1438 A
 at CB1; an isolated F2 back-feed into the S2 fault draws about 2535 A at F2.
 The 2000 A instantaneous element is graded on these values: a close-in S1

@@ -8,10 +8,11 @@ Within an ASDU, the type identifies the representation or operation, COT explain
 
 ### The implemented point families
 
-The schema-2 package point map contains five devices, 38 monitored points and five commands. Important groupings are:
+The schema-2 package point map contains six RTU sources (five field devices plus PLC), 42 monitored points and five commands. Important groupings are:
 
 | IOAs | Meaning |
 | --- | --- |
+| 1501, 1502, 2501, 2502 | F2 position, protection trip, current A, MW (no command) |
 | 1001, 1002, 2001, 2002 | Breaker position, protection trip, current A, voltage kV |
 | 1101–1104 / 1201–1204 | RMU1 / RMU2 position, remote, earth, fault passage |
 | 2101–2103 / 2201–2203 | RMU current, section kV, source kV |

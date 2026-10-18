@@ -308,7 +308,7 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   floats, GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on
   link loss.
 - Control centre (`check/cc_checks.sh`, state/command assertions through its
-  HTTP API via `check/ccprobe.py`): GI and the 38 points GOOD; open, close and
+  HTTP API via `check/ccprobe.py`): GI and the 42 points GOOD; open, close and
   no-op → `completed` with matched feedback; interlock → `rejected`; 409,
   503 and every 4xx/5xx input case; `measurement_invalid` and
   `device_unreachable` with the link started; RTU paused → `t1_timeout`,

@@ -49,6 +49,12 @@
       "label": "field_net"
     },
     {
+      "id": "edge-field_net-f2-breaker",
+      "source": "zone-field_net",
+      "target": "f2-breaker",
+      "label": "field_net"
+    },
+    {
       "id": "edge-field_net-rmu-1",
       "source": "zone-field_net",
       "target": "rmu-1",
@@ -99,6 +105,16 @@
       "cadence": "~500ms",
       "category": "baseline",
       "liveness_key": "rtu-breaker"
+    },
+    {
+      "id": "rtu-f2-breaker",
+      "source": "rtu-1",
+      "target": "f2-breaker",
+      "protocol": "Modbus",
+      "port": 502,
+      "cadence": "~500ms",
+      "category": "baseline",
+      "liveness_key": "rtu-f2-breaker"
     },
     {
       "id": "station-clock",
@@ -228,6 +244,13 @@
         "feeder-protection-trip"
       ]
     },
+    "rtu-f2-breaker": {
+      "provider": "operator-device",
+      "points": [
+        "f2-position",
+        "f2-protection-trip"
+      ]
+    },
     "rtu-oltc-1": {
       "provider": "operator-device",
       "points": [
@@ -287,7 +310,7 @@
       "name": "Field Device Zone",
       "subnet": "10.40.40.0/24",
       "zone": "lan2",
-      "description": "Breaker, two RMUs and OLTC Modbus endpoints"
+      "description": "Two breakers, two RMUs and OLTC Modbus endpoints"
     },
     {
       "id": "control_centre_net",
@@ -576,11 +599,31 @@
       }
     },
     {
+      "id": "f2-breaker",
+      "type": "feeder_breaker",
+      "position": {
+        "x": 780,
+        "y": 330
+      },
+      "data": {
+        "label": "F2 Breaker (indication only)",
+        "zone": "field_net",
+        "networks": [
+          "field_net"
+        ],
+        "status": "running",
+        "ip": "10.40.40.24",
+        "interface_ips": {
+          "field_net": "10.40.40.24"
+        }
+      }
+    },
+    {
       "id": "rmu-1",
       "type": "rmu",
       "position": {
         "x": 780,
-        "y": 330
+        "y": 500
       },
       "data": {
         "label": "RMU 1 (normally closed)",
@@ -600,7 +643,7 @@
       "type": "rmu",
       "position": {
         "x": 780,
-        "y": 500
+        "y": 670
       },
       "data": {
         "label": "RMU 2 (normally open tie)",
@@ -620,7 +663,7 @@
       "type": "oltc",
       "position": {
         "x": 780,
-        "y": 670
+        "y": 840
       },
       "data": {
         "label": "Transformer OLTC",

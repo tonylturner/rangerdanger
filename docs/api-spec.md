@@ -206,7 +206,9 @@ its configured delay (rounded up to the solve cadence). OLTC truth
 
 Process state additionally carries
 `profile: {enabled,load_factors:{residential,commercial,industrial},source_pu}`
-and `f2_protection: {picked_up,picked_up_since,last_trip_current_a}`.
+and read-only `f2_tripped` projected from F2 field truth (null before the first successful solve).
+F2 protection diagnostics are on `devices["f2-breaker"].protection` in field state;
+there is no process-owned F2 latch or `reset_f2` action.
 Each process `devices[id]` entry contains delivery/revision fields plus
 nullable `current_a`, `p_mw`, `q_mvar`. Before the first solve, numeric
 profile values and device metering are null; `solved_at` and delivery
@@ -250,7 +252,8 @@ and `not_updated`; a new report replaces quality. Other stale reasons are
 `never_received`, `link_lost`, `device_unreachable`, `heartbeat` and
 `measurement_invalid` (or null).
 
-The 38 monitored points include feeder P/Q/PF (IOAs 2003/2004/2005),
+The 42 monitored points include F2 position/trip/current/MW (1501/1502/2501/2502,
+indication-only; five supervisory commands unchanged), feeder P/Q/PF (IOAs 2003/2004/2005),
 T1 P/Q/PF (2303/2304/2305), and `oltc-1-overcurrent-block` (1307,
 OLTC input register 1 bit 7). P is MW, Q is Mvar, PF is dimensionless.
 PF with IV displays “—” alongside quality, never the wire placeholder 0.

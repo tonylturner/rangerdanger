@@ -139,7 +139,7 @@ eu_gate_G7() {
     fail "G7 cannot establish monotonic timeout before conntrack kill"
   elif eu_kill_tuple "$SESSION_TUPLE" && eu_wait_for_operator \
     '.link.state != "started" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == "link_lost")' \
-    30 "G7 CC link loss with four link_lost points" "$g7_kill_started_ms"; then
+    30 "G7 CC link loss with all 42 link_lost points" "$g7_kill_started_ms"; then
     g7_loss_verified=1
     pass "G7 CC link is not started and all points are IV+NT link_lost"
   fi
@@ -157,7 +157,7 @@ eu_gate_G8() {
   fi
   g8_before="$API_BODY"
   g8_epoch=$(printf '%s' "$g8_before" | jq -r '.cache_epoch // empty')
-  g8_points=$(eu_get_point_snapshot "$g8_before") || g8_points=""
+  g8_points=$(eu_get_point_snapshot "$g8_before" station) || g8_points=""
   if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] \
     || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
     fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
@@ -186,7 +186,7 @@ eu_gate_G8() {
       continue
     fi
     g8_operator="$API_BODY"
-    current_points=$(eu_get_point_snapshot "$g8_operator") || current_points=""
+    current_points=$(eu_get_point_snapshot "$g8_operator" station) || current_points=""
     current_epoch=$(printf '%s' "$g8_operator" | jq -r '.cache_epoch // empty')
     if [ -n "$g8_points" ] && [ -n "$current_points" ] \
       && [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
@@ -232,8 +232,8 @@ eu_gate_G9() {
     fail "G9 cannot verify recovery without the verified G7 CC disconnect"
     return
   fi
-  if eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
-    30 "G9 CC reconnect/GI and four GOOD points"; then
+  if eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
+    30 "G9 CC reconnect/GI and all 42 GOOD points"; then
     pass "G9 restored IEC104 observations after GI"
   fi
   if ! eu_get_field; then
@@ -246,6 +246,8 @@ eu_gate_G9() {
     eu_assert_jq_truth "$API_BODY" "$g9_truth" '
       point("feeder-breaker-position").value == $truth.devices["breaker-1"].position
       and point("feeder-protection-trip").value == $truth.devices["breaker-1"].protection_tripped
+      and point("f2-position").value == $truth.devices["f2-breaker"].position
+      and point("f2-protection-trip").value == $truth.devices["f2-breaker"].protection_tripped
       and $truth.devices["breaker-1"].position == "open" and $truth.devices["breaker-1"].protection_tripped == true
     ' "G9 restored operator state equals open/tripped physical state"
   else

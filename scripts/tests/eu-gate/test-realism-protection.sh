@@ -29,7 +29,8 @@ eu_wait_for_field() {
         "protection":{"last_trip_current_a":1400,"instantaneous_a":2000,"pickup_a":400}},
         "rmu-1":{"fault_passage":true,"measurements":{"valid":true}}},"process":{"buses":{"s2":{"live":false}}}}' ;;
     "G15 S2 backfeed trips F2")
-      field="{\"process\":{\"f2_tripped\":true,\"f2_protection\":{\"last_trip_current_a\":$F2_CURRENT},
+      field="{\"devices\":{\"f2-breaker\":{\"position\":\"open\",\"protection_tripped\":true,
+        \"protection\":{\"instantaneous_a\":2000,\"pickup_a\":400,\"delay_ms\":1000,\"last_trip_current_a\":$F2_CURRENT}}},\"process\":{
         \"buses\":{\"s2\":{\"live\":false},\"s3\":{\"live\":false}}}}" ;;
     *) return 0 ;;
   esac

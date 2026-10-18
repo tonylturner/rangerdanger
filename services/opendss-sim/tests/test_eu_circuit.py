@@ -73,14 +73,15 @@ def test_isolation_backfeed_and_f2_trip_vector(solver):
     healthy = solver.solve(vector, ProcessControls(profile_enabled=False, fault_section='S1'))
     assert healthy['buses']['s2']['live'] and healthy['buses']['s3']['live']
     assert not healthy['buses']['s1']['live']
-    assert healthy['f2_current_a'] < 400
+    assert healthy['measurements']['f2-breaker']['current_a'] < 400
     fault = solver.solve(vector, ProcessControls(profile_enabled=False, fault_section='S2'))
-    assert fault['f2_current_a'] >= 400
+    assert fault['measurements']['f2-breaker']['current_a'] >= 400
     assert fault['measurements']['rmu-2']['current_a'] > 1000
-    dead = solver.solve(vector, ProcessControls(profile_enabled=False, fault_section='S2', f2_tripped=True))
+    vector['f2-breaker'].update(position='open', protection_tripped=True)
+    dead = solver.solve(vector, ProcessControls(profile_enabled=False, fault_section='S2'))
     assert not dead['buses']['s3']['live']
     assert not dead['buses']['s2']['live']
-    assert dead['f2_current_a'] < 1
+    assert dead['measurements']['f2-breaker']['current_a'] < 1
 
 
 def test_ring_solves_meshed_network_and_side_voltages(solver):
@@ -123,10 +124,11 @@ def test_cb1_line_side_liveness_preserves_switch_interlock_sides(
         assert cb1['source_live'] and cb1['section_live']
 
 
-def test_f2_latch_does_not_invent_a_dead_s3_if_ring_backfeeds_it(solver):
+def test_open_f2_does_not_invent_a_dead_s3_if_ring_backfeeds_it(solver):
     vector = truths()
     vector['rmu-2']['position'] = 'closed'
-    backfed = solver.solve(vector, ProcessControls(profile_enabled=False, f2_tripped=True))
+    vector['f2-breaker'].update(position='open', protection_tripped=True)
+    backfed = solver.solve(vector, ProcessControls(profile_enabled=False))
     assert backfed['converged'] and backfed['buses']['s3']['live']
 
 @pytest.mark.parametrize('earth_device', ['rmu-1', 'rmu-2'])
@@ -171,6 +173,7 @@ def test_three_phase_power_sign_and_terminal_selection(solver):
     # Check the actual metering terminal and 3-phase kW/kvar conversion.
     for device, element, terminal, sign in [
         ('feeder-breaker', 'Line.CB1', 1, 1),
+        ('f2-breaker', 'Line.F2', 1, 1),
         ('oltc-1', 'Transformer.T1', 2, -1),
     ]:
         solver._dss.Circuit.SetActiveElement(element)
@@ -182,12 +185,13 @@ def test_three_phase_power_sign_and_terminal_selection(solver):
             sign * sum(values[offset + 1:offset + 6:2]) / 1000)
     vector = truths()
     vector['rmu-2']['position'] = 'closed'
+    vector['f2-breaker'].update(position='open', protection_tripped=True)
     reverse = solver.solve(vector, ProcessControls(
-        profile_enabled=False, f2_tripped=True))['measurements']['rmu-2']
+        profile_enabled=False))['measurements']['rmu-2']
     assert reverse['p_mw'] < 0 and reverse['q_mvar'] < 0
 
 
-@pytest.mark.parametrize('device', ['feeder-breaker', 'rmu-1', 'rmu-2'])
+@pytest.mark.parametrize('device', ['feeder-breaker', 'f2-breaker', 'rmu-1', 'rmu-2'])
 def test_open_switch_has_exact_zero_power_even_with_energised_sides(solver, device):
     vector = truths()
     vector['rmu-2']['position'] = 'closed'

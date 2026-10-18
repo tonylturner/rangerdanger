@@ -83,7 +83,7 @@ func TestEUVendorCollectorActiveProbesWithoutDenyLogs(t *testing.T) {
 			t.Cleanup(func() { s.orchestrator.DockerClient().Close() })
 			collected := s.collectEUWorkshop(t.Context(), gen, euWorkshopSlots[3])
 			assertEUChecks(t, euWorkshopSlots[3], collected, tc.pass)
-			if collected.negativeExpected != 6 || len(collected.negative) != 6 || sources["rangerdanger-kali"] != 2 || sources["rangerdanger-vendor-jump"] != 4 {
+			if collected.negativeExpected != 7 || len(collected.negative) != 7 || sources["rangerdanger-kali"] != 2 || sources["rangerdanger-vendor-jump"] != 5 {
 				t.Fatalf("wrong real-source matrix: %+v %+v", sources, collected.negative)
 			}
 			if tc.rc == 127 && !strings.Contains(euWorkshopNegative(collected).Detail, "probe tool exit 127") {
@@ -154,5 +154,46 @@ func TestEUPositiveCollectorOnlyRequiredSourcesAndStrictQuality(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEUValidationCollectorIncludesF2(t *testing.T) {
+	ev := passingEUWorkshop(t, euWorkshopSlots[4])
+	policy := []byte(`{"firewall":{"defaultAction":"DENY","rules":[]}}`)
+	hash, err := containd.FirewallHashFromBytes(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body any
+		switch r.URL.Path {
+		case "/api/v1/config":
+			w.Write(policy)
+			return
+		case "/process/api/electrical":
+			body = ev.process
+		case "/cc-1/api/state":
+			body = ev.cc
+		case "/cc-1/api/journal":
+			body = ev.journal
+		default:
+			node := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/api/state")
+			body = ev.devices[node]
+			if body == nil {
+				t.Errorf("unexpected evidence endpoint: %s", r.URL.Path)
+			}
+		}
+		if err := json.NewEncoder(w).Encode(body); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer upstream.Close()
+	base := multiDeviceGeneration(t, upstream.URL)
+	gen := lifecycle.NewGeneration(base.ID, base.Package, base.Manifest, containd.NewClient(upstream.URL), base.StartedAt)
+	s := rangeServer(gen, "custom")
+	s.lastAppliedHash = hash
+	collected := s.collectEUWorkshop(t.Context(), gen, euWorkshopSlots[4])
+	if len(collected.devices) != 5 || euWorkshopDevicesFresh(collected).Status != "pass" {
+		t.Fatalf("missing current five-device delivery evidence: %+v", collected.devices)
 	}
 }

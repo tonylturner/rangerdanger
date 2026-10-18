@@ -9,7 +9,7 @@ The package uses these student-facing and operational networks:
 | `wan` Enterprise | 10.10.10.0/24 | Kali at 10.10.10.50; enterprise probes and historian reads |
 | `dmz` Vendor/Engineering | 10.20.20.0/24 | Vendor jump 10.20.20.10; engineering workstation 10.20.20.20 |
 | `lan1` Station | 10.30.30.0/24 | RTU .20, PLC .30, GPS .50 |
-| `lan2` Field | 10.40.40.0/24 | Breaker .20, RMU1 .21, RMU2 .22, OLTC .23 |
+| `lan2` Field | 10.40.40.0/24 | Breaker .20, RMU1 .21, RMU2 .22, OLTC .23, F2 breaker .24 |
 | `lan4` Control Centre | 10.60.60.0/24 | CC .20 |
 | `lan5` Operations DMZ | 10.70.70.0/24 | Historian .40 |
 
@@ -17,11 +17,11 @@ The firewall is .2 in each routed zone. The similarly named Vendor/Engineering z
 
 ### Support networks are not student conduits
 
-Management is `10.99.99.0/24`, firewall zone `lan3`. It carries backend orchestration, portal proxies and simulation control. Important management endpoints on TCP/8080 are CC .21, breaker .22, solver .23, RMU1 .24, RMU2 .25, OLTC .26, GPS .27, PLC .30 and historian .40.
+Management is `10.99.99.0/24`, firewall zone `lan3`. It carries backend orchestration, portal proxies and simulation control. Important management endpoints on TCP/8080 are CC .21, breaker .22, solver .23, RMU1 .24, RMU2 .25, OLTC .26, GPS .27, F2 .28, PLC .30 and historian .40.
 
-The internal `process_net`, `10.50.50.0/24`, is not a firewall zone. Solver .20 exchanges truth and measurements with breaker .30, RMU1 .31, RMU2 .32 and OLTC .33. Neither network is the student's simulated enterprise path into the plant. Successful backend access to a management endpoint cannot establish that the corresponding operational conduit is allowed.
+The internal `process_net`, `10.50.50.0/24`, is not a firewall zone. Solver .20 exchanges truth and measurements with breaker .30, RMU1 .31, RMU2 .32, OLTC .33 and F2 .34. Neither network is the student's simulated enterprise path into the plant. Successful backend access to a management endpoint cannot establish that the corresponding operational conduit is allowed.
 
-Keep identities separate from service names. The breaker topology node is `breaker-1`, device id `feeder-breaker`, container `rangerdanger-feeder-breaker`. New device identities are `rmu-1`, `rmu-2`, `oltc-1` and `plc-1`; field-state keys use node ids. Do not join evidence by Docker service-name spelling alone.
+Keep identities separate from service names. The CB1 topology node is `breaker-1`, device id `feeder-breaker`, container `rangerdanger-feeder-breaker`. Other device identities are `f2-breaker`, `rmu-1`, `rmu-2`, `oltc-1` and `plc-1`; field-state keys use node ids. Do not join evidence by Docker service-name spelling alone.
 
 ### Trace a real path
 

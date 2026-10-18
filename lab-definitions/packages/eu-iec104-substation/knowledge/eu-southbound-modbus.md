@@ -7,6 +7,7 @@ All configured devices use TCP/502, unit 1 and zero-based addresses. The RTU's s
 | Device | Endpoint | Read |
 | --- | --- | --- |
 | `feeder-breaker` | 10.40.40.20 | FC4 input 0–16 |
+| `f2-breaker` | 10.40.40.24 | FC4 input 0–16 (IEC 104 indications only) |
 | `rmu-1` | 10.40.40.21 | FC4 input 0–12 |
 | `rmu-2` | 10.40.40.22 | FC4 input 0–12 |
 | `oltc-1` | 10.40.40.23 | FC4 input 0–20 |

@@ -52,6 +52,11 @@ t_expect_eq "$T_OUT" "" "a later running GI preserves integrity"
 t_run eu_baseline_mismatches "$(edit_operator '.link.gi.last_complete_at = null')" "$TRUTH"
 t_expect_out 'GI integrity missing' "missing integrity is reported"
 
+t_run eu_baseline_mismatches "$OPERATOR" "$(edit_truth '.devices["f2-breaker"].position = "open"')"
+t_expect_out 'F2 position' "F2 position is compared independently"
+t_run eu_baseline_mismatches "$OPERATOR" "$(edit_truth '.devices["f2-breaker"].measurements.p_mw = 9')"
+t_expect_out 'F2 p-mw' "F2 MW is compared independently"
+
 # Isolate convergence from the separately tested GI barrier.
 eu_settle_for_gi() { :; }
 eu_interrogate_since() { :; }

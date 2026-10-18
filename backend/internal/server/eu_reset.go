@@ -21,6 +21,7 @@ func resetEUTruth(ctx context.Context, gen *lifecycle.Generation, recipe *packag
 		{"rmu-2", "reset"},
 		{"rmu-1", "reset"},
 		{"breaker", "reset"},
+		{"f2-breaker", "reset"},
 		{"gps", "reset_offset"},
 	}
 	for _, step := range steps {
@@ -57,7 +58,7 @@ func resetEUTruth(ctx context.Context, gen *lifecycle.Generation, recipe *packag
 }
 
 func waitResetDelivery(ctx context.Context, gen *lifecycle.Generation, revisions map[string]uint64) error {
-	if len(revisions) != 4 {
+	if len(revisions) != 5 {
 		return fmt.Errorf("cannot confirm delivery: missing post-reset device revisions")
 	}
 	solver, ok := solverURL(gen)

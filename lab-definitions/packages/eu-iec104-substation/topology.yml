@@ -32,7 +32,7 @@ networks:
     name: Field Device Zone
     subnet: 10.40.40.0/24
     zone: lan2
-    description: Breaker, two RMUs and OLTC Modbus endpoints
+    description: Two breakers, two RMUs and OLTC Modbus endpoints
 
   - id: control_centre_net
     name: Control Centre Zone
@@ -116,6 +116,14 @@ nodes:
       - field_net
     ip: 10.40.40.20
 
+  - id: f2-breaker
+    type: feeder_breaker
+    name: F2 Breaker (indication only)
+    container: rangerdanger-f2-breaker
+    networks:
+      - field_net
+    ip: 10.40.40.24
+
   - id: rmu-1
     type: rmu
     name: RMU 1 (normally closed)
@@ -176,6 +184,14 @@ flows:
     cadence: ~500ms
     category: baseline
     liveness_key: rtu-breaker
+  - id: rtu-f2-breaker
+    source: rtu-1
+    target: f2-breaker
+    protocol: Modbus
+    port: 502
+    cadence: ~500ms
+    category: baseline
+    liveness_key: rtu-f2-breaker
   - id: station-clock
     source: rtu-1
     target: gps-1
@@ -264,6 +280,9 @@ liveness:
   rtu-breaker:
     provider: operator-device
     points: ["feeder-breaker-position", "feeder-protection-trip"]
+  rtu-f2-breaker:
+    provider: operator-device
+    points: ["f2-position", "f2-protection-trip"]
   station-clock:
     provider: unobserved
   attacker-rtu:

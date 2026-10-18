@@ -12,7 +12,7 @@ An S1 fault gives about 2.7 kA at CB1, above its 2000 A I>> setting, so it trips
 
 The reference S2 fault produces about 1.4 kA: RMU1 crosses its 300 A, zero-delay FPI setting immediately, while CB1 uses I> 400 A with a 1000 ms delay (about 1 s at the solve cadence), not I>> 2000 A. Opening RMU1 separates the first feeder, but does **not** remove a fault on S2. Closing RMU2 into that remaining fault brings F2 onto the fault path, gives about 2.5 kA, above F2 I>> 2000 A, trips its latched head protection instantaneously and can lose S3 as well. This is why “breaker open” is not sufficient restoration evidence.
 
-Use authored lab fault steps rather than inventing direct management commands. The process actions distinguish fault removal (`clear_fault`) from reclosing the F2 head (`reset_f2`). Reclosing F2 with its fault path still connected causes another trip on the next solve.
+Use authored lab fault steps rather than inventing direct management commands. Process fault removal (`clear_fault`) is distinct from the instructor-only F2 device `reset`. Process reset cannot clear the F2 field latch. Reclosing F2 with its fault path still connected causes another trip on the next solve.
 
 ### A defensible observation sequence
 
@@ -26,6 +26,6 @@ The portal's physical process section can explain a failed hypothesis, but it mu
 
 ### Limits
 
-This is a training switching order, not authority to operate real equipment. There is no crew dispatch, safety document system, full earth-switch/key interlocking or protection-selectivity study. F2 is process state without a controllable IEC 104 point. The [RMU model](#eu-rmu-switchgear) is one load-break way per device. Full [Reset Lab](#eu-reset-acceptance) bypasses operating interlocks and restores a teaching baseline; it is not a shortcut in an operational restoration sequence.
+This is a training switching order, not authority to operate real equipment. There is no crew dispatch, safety document system, full earth-switch/key interlocking or protection-selectivity study. F2 has four IEC 104 indications but no command point; its protection belongs to the F2 breaker instance. The [RMU model](#eu-rmu-switchgear) is one load-break way per device. Full [Reset Lab](#eu-reset-acceptance) bypasses operating interlocks and restores a teaching baseline; it is not a shortcut in an operational restoration sequence.
 
 Implementation: `services/opendss-sim/eu_circuit.py`, `eu_controls.py`; `services/devices/fielddevice/switch.go`.

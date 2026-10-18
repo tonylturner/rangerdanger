@@ -6,10 +6,31 @@
   "mv_kv": 20,
   "circuit_file": "/profiles/feeder.dss",
   "devices": [
-    {"id": "feeder-breaker", "kind": "breaker", "truth_url": "http://10.50.50.30:8080"},
-    {"id": "rmu-1", "kind": "rmu", "truth_url": "http://10.50.50.31:8080"},
-    {"id": "rmu-2", "kind": "rmu", "truth_url": "http://10.50.50.32:8080"},
-    {"id": "oltc-1", "kind": "oltc", "truth_url": "http://10.50.50.33:8080"}
+    {
+      "id": "feeder-breaker",
+      "kind": "breaker",
+      "truth_url": "http://10.50.50.30:8080"
+    },
+    {
+      "id": "rmu-1",
+      "kind": "rmu",
+      "truth_url": "http://10.50.50.31:8080"
+    },
+    {
+      "id": "rmu-2",
+      "kind": "rmu",
+      "truth_url": "http://10.50.50.32:8080"
+    },
+    {
+      "id": "oltc-1",
+      "kind": "oltc",
+      "truth_url": "http://10.50.50.33:8080"
+    },
+    {
+      "id": "f2-breaker",
+      "kind": "breaker",
+      "truth_url": "http://10.50.50.34:8080"
+    }
   ],
   "elements": {
     "source": "Vsource.Source",
@@ -17,11 +38,18 @@
     "rmu-1": "Line.RMU1",
     "rmu-2": "Line.RMU2",
     "oltc-1": "Transformer.T1",
-    "f2": "Line.F2",
     "fault_s1": "Fault.S1",
-    "fault_s2": "Fault.S2"
+    "fault_s2": "Fault.S2",
+    "f2-breaker": "Line.F2"
   },
-  "buses": {"hv": "hv", "bus20": "bus20", "f1": "f1", "s1": "s1", "s2": "s2", "s3": "s3"},
+  "buses": {
+    "hv": "hv",
+    "bus20": "bus20",
+    "f1": "f1",
+    "s1": "s1",
+    "s2": "s2",
+    "s3": "s3"
+  },
   "solve_interval_ms": 1000,
   "request_timeout_ms": 500,
   "truth_stale_after_ms": 3000,
@@ -34,6 +62,5 @@
     "source_tau_s": 600,
     "source_pu_min": 0.985,
     "source_pu_max": 1.025
-  },
-  "f2_protection": {"pickup_a": 400, "delay_ms": 1000, "instantaneous_a": 2000}
+  }
 }

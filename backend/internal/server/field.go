@@ -95,7 +95,7 @@ func (s *Server) handleFieldState(c *gin.Context) {
 func (s *Server) handleFieldAudit(c *gin.Context) {
 	key := c.DefaultQuery("device", "breaker-1")
 	switch key {
-	case "breaker-1", "rmu-1", "rmu-2", "oltc-1":
+	case "breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device key"})
 		return

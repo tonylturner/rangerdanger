@@ -7,7 +7,7 @@ eu_gate_G18() {
   eu_reset_all || return
   since=$(eu_utc)
   eu_api_get /api/historian/points || return
-  eu_assert_jq "$API_BODY" 'length == 38' "G18 historian exposes 38 points"
+  eu_assert_jq "$API_BODY" 'length == 42' "G18 historian exposes 42 points"
   eu_get_operator || return
   epoch=$(printf '%s' "$API_BODY" | jq -r '.cache_epoch')
   eu_window_start G18 || return

@@ -17,6 +17,7 @@ def test_package_profile_freezes_schema_devices_and_endpoints(tmp_path):
         ('rmu-1', 'rmu', 'http://10.50.50.31:8080'),
         ('rmu-2', 'rmu', 'http://10.50.50.32:8080'),
         ('oltc-1', 'oltc', 'http://10.50.50.33:8080'),
+        ('f2-breaker', 'breaker', 'http://10.50.50.34:8080'),
     ]
     result = load_profile(profile_file(tmp_path))
     assert (result.frequency_hz, result.hv_kv, result.mv_kv) == (50, 110, 20)
@@ -33,6 +34,7 @@ def test_image_copies_every_eu_runtime_module():
 @pytest.mark.parametrize('mutation', [
     lambda c: c.update(schema=1), lambda c: c.update(schema=2),
     lambda c: c.update(schema=3.0),
+    lambda c: c.update(f2_protection={}),
     lambda c: c.update(primary_kv=20), lambda c: c.update(frequency_hz=60),
     lambda c: c.update(devices=c['devices'][:3]),
     lambda c: c['devices'][1].update(kind='breaker'),
@@ -41,8 +43,8 @@ def test_image_copies_every_eu_runtime_module():
     lambda c: c['devices'][1].update(truth_url='http://host:8080/api/truth'),
     lambda c: c['devices'][1].update(truth_url='http://user@host:8080'),
     lambda c: c['devices'][1].update(truth_url='http://host:99999'),
-    lambda c: c['elements'].update(f2='Line.Missing; Solve'),
-    lambda c: c['elements'].update(f2=c['elements']['rmu-1']),
+    lambda c: c['elements'].update({'f2-breaker': 'Line.Missing; Solve'}),
+    lambda c: c['elements'].update({'f2-breaker': c['elements']['rmu-1']}),
     lambda c: c.update(solve_interval_ms=999),
     lambda c: c.update(request_timeout_ms=1000),
     lambda c: c.update(truth_stale_after_ms=2000),
@@ -58,12 +60,6 @@ def test_image_copies_every_eu_runtime_module():
     lambda c: c['profile'].update(source_pu_min=1.01),
     lambda c: c['profile'].update(source_pu_max=.99),
     lambda c: c['profile'].update(extra=True),
-    lambda c: c['f2_protection'].update(pickup_a=0),
-    lambda c: c['f2_protection'].update(delay_ms=-1),
-    lambda c: c['f2_protection'].update(delay_ms=1.5),
-    lambda c: c['f2_protection'].update(instantaneous_a=300),
-    lambda c: c['f2_protection'].update(instantaneous_a=None),
-    lambda c: c['f2_protection'].update(extra=True),
 ])
 def test_invalid_profiles_rejected(tmp_path, mutation):
     path = profile_file(tmp_path)

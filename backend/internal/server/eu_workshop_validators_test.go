@@ -18,9 +18,9 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		start:         conduit.rangeStart, now: conduit.collectedAt, policyAt: at("12:00:30"), operationEnd: at("12:05:00"), hardeningSince: at("12:00:30"), policy: "custom", capture: true,
 		cc: conduit.state, journal: conduit.journal, conduits: conduit,
 		devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{},
-		process: decodeFixture[euWorkshopProcess](t, `{"schema":3,"truth_stale":false,"solved_at":"2026-10-09T12:04:59Z","buses":{"bus20":{"live":true,"kv":20},"s1":{"live":true,"kv":20},"s2":{"live":true,"kv":20},"s3":{"live":true,"kv":20}},"devices":{"feeder-breaker":{"delivered":true,"revision":1,"solved_revision":1},"rmu-1":{"delivered":true,"revision":1,"solved_revision":1},"rmu-2":{"delivered":true,"revision":1,"solved_revision":1},"oltc-1":{"delivered":true,"revision":1,"solved_revision":1}}}`),
+		process: decodeFixture[euWorkshopProcess](t, `{"schema":3,"truth_stale":false,"solved_at":"2026-10-09T12:04:59Z","buses":{"bus20":{"live":true,"kv":20},"s1":{"live":true,"kv":20},"s2":{"live":true,"kv":20},"s3":{"live":true,"kv":20}},"devices":{"f2-breaker":{"delivered":true,"revision":1,"solved_revision":1},"feeder-breaker":{"delivered":true,"revision":1,"solved_revision":1},"rmu-1":{"delivered":true,"revision":1,"solved_revision":1},"rmu-2":{"delivered":true,"revision":1,"solved_revision":1},"oltc-1":{"delivered":true,"revision":1,"solved_revision":1}}}`),
 		ccIP:    "10.60.60.20", rtuIP: "10.30.30.20",
-		rtuLog:       fmt.Sprintf("set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=%d devices=4 select-timeout=5000ms\n", len(conduit.stationPoints)),
+		rtuLog:       fmt.Sprintf("set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=%d devices=6 select-timeout=5000ms\n", len(conduit.stationPoints)),
 		breakerAudit: decodeFixture[euWorkshopBreakerAudit](t, `{"generation":42,"oldest_seq":1,"latest_seq":2,"entries":[{"seq":1,"at":"2026-10-09T12:00:00Z","operation":"reset","result":"accepted","context":{"protocol":"lab"}},{"seq":2,"at":"2026-10-09T12:02:00Z","operation":"first_solve","result":"accepted"}]}`),
 	}
 	for i := range ev.cc.Points {
@@ -28,7 +28,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 			ev.cc.Points[i].Quality.OV = new(bool)
 		}
 	}
-	for _, node := range []string{"breaker-1", "rmu-1", "rmu-2", "oltc-1"} {
+	for _, node := range []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"} {
 		id := node
 		if node == "breaker-1" {
 			id = "feeder-breaker"
@@ -163,6 +163,8 @@ func TestEUWorkshopFailures(t *testing.T) {
 		{"OLTC local", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.devices["oltc-1"].Remote = new(bool) }},
 		{"OLTC unknown mode", euWorkshopSlots[3], func(ev *euWorkshopEvidence) { ev.devices["oltc-1"].Auto = nil }},
 		{"device revision stale", euWorkshopSlots[4], func(ev *euWorkshopEvidence) { *ev.devices["rmu-1"].Revision = 2 }},
+		{"F2 missing", euWorkshopSlots[4], func(ev *euWorkshopEvidence) { delete(ev.devices, "f2-breaker") }},
+		{"F2 revision stale", euWorkshopSlots[4], func(ev *euWorkshopEvidence) { *ev.devices["f2-breaker"].Revision = 2 }},
 		{"no delivery", euWorkshopSlots[4], func(ev *euWorkshopEvidence) { ev.process.Devices = nil }},
 	}
 	for _, tc := range cases {

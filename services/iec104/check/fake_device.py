@@ -44,7 +44,7 @@ def snapshot():
             else state["held_heartbeat"]
         )
         return [7, 20400, 10, 30, 0, hb]
-    regs = [0] * (21 if kind == "oltc" else 13)
+    regs = [0] * (21 if kind == "oltc" else 17 if kind == "f2" else 13)
     regs[0] = (
         (100 if state["bad_vti"] else state["tap"]) & 65535
         if kind == "oltc"
@@ -64,7 +64,10 @@ def snapshot():
         (5, 41.2 if kind == "oltc" else 19.9),
     ]:
         regs[addr : addr + 2] = struct.unpack(">HH", struct.pack(">f", val))
-    if kind != "oltc":
+    if kind == "f2":
+        for addr, val in [(11, 0.33), (13, 0.1), (15, 0.96)]:
+            regs[addr:addr+2] = struct.unpack(">HH", struct.pack(">f", val))
+    elif kind != "oltc":
         regs[11:13] = struct.unpack(">HH", struct.pack(">f", 20.0))
     if kind == "oltc":
         for addr, val in [(15, 2.0), (17, 0.6), (19, float("nan") if state["pf_invalid"] else 0.96)]:

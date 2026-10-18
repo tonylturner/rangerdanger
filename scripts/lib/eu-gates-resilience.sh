@@ -37,7 +37,7 @@ eu_gate_G11() {
       "$PACKAGE/protocols/points.json" 2>/dev/null) || stale_ms=""
     if ! [[ "$stale_ms" =~ ^[0-9]+$ ]] || [ "$stale_ms" -ne 3000 ]; then
       fail "G11 points.json stale_after_ms missing/invalid or differs from 3000: $stale_ms"
-    elif eu_wait_for_operator '.link.state == "started" and all_stale("device_unreachable")' \
+    elif eu_wait_for_operator '.link.state == "started" and all_stale("device_unreachable") and f2_good' \
       5 "G11 RTU device_unreachable within stale_after_ms + 2s" "$g11_loss_started_ms"; then
       g11_loss_verified=1
       pass "G11 four points IV+NT device_unreachable with IEC104 link started"
@@ -94,7 +94,7 @@ eu_gate_G11() {
   eu_apply_named improved || return
   if [ "$g11_loss_verified" -ne 1 ]; then
     fail "G11 Modbus recovery not tested without the verified device_unreachable transition"
-  elif eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
+  elif eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
     30 "G11 Modbus recovery after improved restore"; then
     g11_loss_verified=2
     pass "G11 four observations GOOD after restored Modbus conduit"
@@ -158,7 +158,7 @@ eu_gate_G13() {
   eu_apply_named improved || return
   eu_reset_all || return
   # Settle the CC and the reset revision before taking the audit cursor.
-  if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and all_good' \
+  if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
     30 "G13 CC baseline before the RTU outage"; then
     return
   fi
@@ -230,7 +230,7 @@ eu_gate_G14() {
   eu_reset_all || return
   eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false and .process.devices["feeder-breaker"].delivered == true and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision' 15 "G14 reset truth and process recovery" || true
   if eu_wait_for_operator '
-    .link.state == "started" and .link.gi.state == "complete" and all_good
+    .link.state == "started" and .link.gi.state == "complete" and station_good and f2_good
     and point("feeder-breaker-position").value == "closed"
   ' 30 "G14 CC observes reset through IEC104"; then
     pass "G14 reset state recovered through RTU/IEC104/CC chain"

@@ -4,15 +4,15 @@ A lab reset establishes a reproducible teaching baseline. It is not an operating
 
 The backend performs the package-specific sequence in this order:
 
-1. Process `reset`: clear faults and F2 trip, restore load multiplier 1.0 and source 1.00 p.u.
+1. Process `reset`: clear faults (not field trip latches), restore load multiplier 1.0 and source 1.00 p.u.
 2. OLTC `reset`.
-3. RMU2 `reset`, then RMU1 `reset`, then breaker `reset`.
+3. RMU2 `reset`, then RMU1 `reset`, then CB1 breaker `reset`, then F2 breaker `reset`.
 4. GPS `reset_offset`.
 5. Wait up to five seconds for post-reset measurement delivery.
 
 Each field reset returns schema-3 state with the expected device id and revision. The wait requires non-stale process truth, every expected device delivered, equal `solved_revision` and `revision`, and revisions no older than the recorded post-reset values. A prior successful solve is not sufficient evidence for a newer reset state.
 
-The restored device baseline is breaker closed and remote, lockout/trip clear; RMU1 closed, RMU2 open, both remote with earths open and fault passage clear; OLTC completed/target tap 0, idle, remote, auto, unblocked and initially unarmed. The PLC's zero-before-request handshake arms the OLTC; there is no PLC reset call. Arming can therefore advance the revision beyond the immediate reset response without violating the acceptance rule. The tap can then move under automatic regulation: zero is the immediate reset value, not the steady-state baseline.
+The restored device baseline is both breakers closed and remote, lockout/trip clear; RMU1 closed, RMU2 open, both remote with earths open and fault passage clear; OLTC completed/target tap 0, idle, remote, auto, unblocked and initially unarmed. The PLC's zero-before-request handshake arms the OLTC; there is no PLC reset call. Arming can therefore advance the revision beyond the immediate reset response without violating the acceptance rule. The tap can then move under automatic regulation: zero is the immediate reset value, not the steady-state baseline.
 
 ### Shared cleanup follows
 

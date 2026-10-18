@@ -102,21 +102,25 @@ Required environment:
 | Variable | Values |
 |----------|--------|
 | `DEVICE_KIND` | `breaker`, `rmu`, `oltc` |
-| `DEVICE_ID` | `feeder-breaker` for breaker; `rmu-1` / `rmu-2` for RMU; `oltc-1` for OLTC |
+| `DEVICE_ID` | `feeder-breaker` / `f2-breaker` for breakers; `rmu-1` / `rmu-2` for RMU; `oltc-1` for OLTC |
 | `DEVICE_RMU_NORMAL` | Required for RMU: `closed` (rmu-1) or `open` (rmu-2) |
 
-The breaker retains node id `breaker-1` but device id `feeder-breaker`.
+The CB1 breaker retains node id `breaker-1` but device id `feeder-breaker`.
 New devices use the same node/device id. Configure all three explicit-IPv4
-listeners per container; unchanged defaults are only suitable for the breaker:
+listeners per container; unchanged defaults are only suitable for CB1:
 
-| Variable | Default | rmu-1 | rmu-2 | oltc-1 |
-|----------|---------|-------|-------|--------|
-| `DEVICE_MODBUS_LISTEN` | `10.40.40.20:502` | `10.40.40.21:502` | `10.40.40.22:502` | `10.40.40.23:502` |
-| `DEVICE_PROCESS_LISTEN` | `10.50.50.30:8080` | `10.50.50.31:8080` | `10.50.50.32:8080` | `10.50.50.33:8080` |
-| `DEVICE_SIM_LISTEN` | `10.99.99.22:8080` | `10.99.99.24:8080` | `10.99.99.25:8080` | `10.99.99.26:8080` |
+| Variable | Default | rmu-1 | rmu-2 | oltc-1 | f2-breaker |
+|----------|---------|-------|-------|--------|------------|
+| `DEVICE_MODBUS_LISTEN` | `10.40.40.20:502` | `10.40.40.21:502` | `10.40.40.22:502` | `10.40.40.23:502` | `10.40.40.24:502` |
+| `DEVICE_PROCESS_LISTEN` | `10.50.50.30:8080` | `10.50.50.31:8080` | `10.50.50.32:8080` | `10.50.50.33:8080` | `10.50.50.34:8080` |
+| `DEVICE_SIM_LISTEN` | `10.99.99.22:8080` | `10.99.99.24:8080` | `10.99.99.25:8080` | `10.99.99.26:8080` | `10.99.99.28:8080` |
 
 `DEVICE_ZONES` is a comma-separated `name=IPv4-CIDR` map for audit attribution;
 it defaults to `field=10.40.40.0/24,station=10.30.30.0/24,process=10.50.50.0/24,mgmt=10.99.99.0/24`.
+F2 owns its 400 A / 1000 ms / 2000 A protection and
+provides four indications, no IEC 104 command. Its generic Modbus writes
+remain available to permitted field clients. Process reset does not reset F2.
+
 Unknown peers remain `unknown`; attribution is not authorization.
 
 The process listener exposes only `GET /api/truth` and `POST /api/measurements`.
@@ -194,7 +198,7 @@ The EU PLC publishes configured 20.4 kV / 10 per-mille / 30 s at holding
 1025–1027. Its thresholds derive from setpoint and deadband (20.196–20.604 kV),
 and timer PT derives from the configured delay. Countdown is internal only.
 The image build compiles the ST, and startup checks all three settings.
-CC state is schema 3 with 38 points; each point carries its source `device`
+CC state is schema 3 with 42 points; each point carries its source `device`
 and nullable voltage `limits`. The point-map configuration itself remains
 schema 2 (not a state or measurement surface).
 

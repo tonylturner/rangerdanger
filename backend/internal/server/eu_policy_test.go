@@ -68,7 +68,7 @@ func TestEUImprovedPolicyConduitEvidence(t *testing.T) {
 		return rule{}
 	}
 
-	// All 20 lab-2 proof pairs must hit explicit logged denies, including
+	// All 23 lab-2 proof pairs must hit explicit logged denies, including
 	// three ingest sources and the two unauthorised PLC maintenance sources.
 	denies, err := conduitDenyMatrix(euGeneration(t, nil, nil), nil)
 	if err != nil {
@@ -89,8 +89,8 @@ func TestEUImprovedPolicyConduitEvidence(t *testing.T) {
 			httpDenies++
 		}
 	}
-	if len(denies) != 20 || httpDenies != 5 {
-		t.Fatalf("proof matrix = %d pairs, %d HTTP; want 20, 5", len(denies), httpDenies)
+	if len(denies) != 23 || httpDenies != 5 {
+		t.Fatalf("proof matrix = %d pairs, %d HTTP; want 23, 5", len(denies), httpDenies)
 	}
 
 	// The allows must still win before the logged denies. Enterprise read
@@ -104,6 +104,7 @@ func TestEUImprovedPolicyConduitEvidence(t *testing.T) {
 		{"engineering-to-plc-web", "dmz", "lan1", conduitDeny{"10.20.20.20", "10.30.30.30", 8080}},
 		{"control-centre-to-rtu-iec104", "lan4", "lan1", conduitDeny{"10.60.60.20", "10.30.30.20", 2404}},
 		{"rtu-to-feeder-modbus", "lan1", "lan2", conduitDeny{"10.30.30.20", "10.40.40.21", 502}},
+		{"rtu-to-feeder-modbus", "lan1", "lan2", conduitDeny{"10.30.30.20", "10.40.40.24", 502}},
 		{"plc-to-oltc-modbus", "lan1", "lan2", conduitDeny{"10.30.30.30", "10.40.40.23", 502}},
 	} {
 		t.Run("allow/"+allow.id, func(t *testing.T) {
