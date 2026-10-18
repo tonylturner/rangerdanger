@@ -11,7 +11,7 @@ const { workshop } = vi.hoisted(() => ({
 }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({}) }));
 vi.mock("../lib/live-queries", () => ({ useWorkshopStatus: () => ({ data: workshop }) }));
-vi.mock("../lib/operator-queries", () => ({ useOperatorView: () => "eu-iec104-substation" }));
+vi.mock("../lib/operator-queries", () => ({ useOperatorView: () => ({ kind: "known", view: "eu-iec104", pkg: { title: "EU Substation" } }) }));
 vi.mock("../lib/network-flow-queries", () => ({ useNetworkFlowContext: () => undefined }));
 vi.mock("./use-styled-graph", () => ({ useStyledGraph: () => ({ nodes: [], edges: [] }) }));
 vi.mock("./node-terminal", () => ({ NodeTerminal: () => null }));
@@ -43,5 +43,19 @@ describe("NetworkConsole IEC 104 explanation", () => {
     expect(html).toContain("Quiet GOOD status does not expire");
     expect(html).toContain("link loss marks retained values stale");
     expect(html).not.toContain("RTAC polls");
+  });
+
+  it("discloses omitted infrastructure and same-zone boundaries without claiming blanket enforcement", () => {
+    const html = renderToStaticMarkup(<NetworkConsole />);
+    expect(html).toContain("<summary");
+    expect(html).toContain(">Infrastructure planes</summary>");
+    expect(html).not.toMatch(/<details[^>]*open/);
+    for (const copy of [
+      "teaching-zone conduits through containd", "Management / orchestration", "Process truth",
+      "Desktop delivery", "Desktop forwarding is disabled", "Portal OpenPLC access is management access, not an engineering conduit",
+      "RTU→PLC and RTU→clock stay inside the station zone", "simulated over HTTP, not NTP/PTP",
+      "Port rules do not distinguish reads from writes", "command-level filtering would need DPI",
+    ]) expect(html).toContain(copy);
+    expect(html).not.toContain("Mediates every cross-zone flow");
   });
 });

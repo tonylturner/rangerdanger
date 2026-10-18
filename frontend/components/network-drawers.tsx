@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import type { LabGraph, ZoneRuleSummary } from "../lib/api";
-import type { FlowContext } from "../lib/observed-flows";
+import { nodeZone as flowNodeZone, type FlowContext } from "../lib/observed-flows";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
@@ -13,7 +13,6 @@ import {
   type PolicyWording,
 } from "../lib/policy-wording";
 import {
-  INTRA_ZONE_FLOWS,
   ViewMode,
   humanizeSummary,
   humanZoneName,
@@ -241,6 +240,7 @@ const DRAWER_ORDER: DrawerKey[] = ["segmentation", "traffic"];
 
 export function LeftDrawerMenu({
   flowContext,
+  ruleSummaries,
   active,
   onChange,
   trafficEdgesOn,
@@ -251,6 +251,7 @@ export function LeftDrawerMenu({
   onHighlightTrafficPair,
 }: {
   flowContext?: FlowContext;
+  ruleSummaries?: ZoneRuleSummary[];
   active: DrawerKey | null;
   onChange: (id: DrawerKey | null) => void;
   trafficEdgesOn: boolean;
@@ -268,6 +269,7 @@ export function LeftDrawerMenu({
       return (
         <TrafficMatrixView
           context={flowContext}
+          ruleSummaries={ruleSummaries}
           canvasEdgesOn={trafficEdgesOn}
           onToggleCanvasEdges={onToggleTrafficEdges}
           filter={trafficFilter}
@@ -420,9 +422,7 @@ export function ViewModeToolbar({
 //     "outbound from this zone" or "inbound to this zone" so the
 //     student can correlate the rule list to the selected node.
 //
-// Note: containd policy is enforced at the zone level, not per host
-// IP. We say so explicitly so students don't think a per-node ACL is
-// being shown.
+// These are zone-pair summaries, not an endpoint/port policy evaluation.
 export function ActiveFlowsPanel({
   graph,
   nodeId,
@@ -455,10 +455,11 @@ export function ActiveFlowsPanel({
     return { outbound: out, inbound: inb };
   }, [ruleSummaries, nodeZone, graph]);
 
-  // Intra-zone flows that name this node as source or target.
+  // Use the same declared inventory as the map, including EU station peers.
   const intraFlows = useMemo(() => {
-    return INTRA_ZONE_FLOWS.filter((f) => f.source === nodeId || f.target === nodeId);
-  }, [nodeId]);
+    return graph?.flows.filter((f) => (f.source === nodeId || f.target === nodeId) &&
+      flowNodeZone(f.source, graph) !== "unknown" && flowNodeZone(f.source, graph) === flowNodeZone(f.target, graph)) ?? [];
+  }, [graph, nodeId]);
 
   const hasContent =
     outbound.length > 0 ||
@@ -498,6 +499,7 @@ export function ActiveFlowsPanel({
           <span className="text-slate-500">·</span>
           <span className="text-slate-300">{protoLabel}</span>
         </div>
+        {r.action === "MIXED" && <p className="text-xs text-amber-300">MIXED · authorization unknown</p>}
       </li>
     );
   };
@@ -547,7 +549,7 @@ export function ActiveFlowsPanel({
                     {isSource ? "→" : "←"}
                   </span>{" "}
                   <span className="text-slate-200">{peer}</span>{" "}
-                  <span className="text-slate-500">· {f.protocol}</span>
+                  <span className="text-slate-300">· {f.protocol} :{f.port}</span>
                 </li>
               );
             })}
@@ -586,8 +588,9 @@ export function ActiveFlowsPanel({
             </div>
           )}
           <div className="mt-1.5 text-[10px] text-slate-500 italic">
-            Policy is enforced per zone, not per host. This list shows
-            the rules that govern any flow between {nodeZone ? humanZoneName(nodeZone) : "this zone"} and another zone.
+            Zone-pair summaries only, not host authorization. Rules can restrict
+            source, destination and port. MIXED or missing summaries leave authorization
+            unknown; an ALLOW summary alone does not establish this host&apos;s permission.
           </div>
         </div>
       )}

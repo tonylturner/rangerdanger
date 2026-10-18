@@ -31,7 +31,7 @@ import { isRangeNotReady } from "../lib/range";
 import { controlCentreLinkText } from "../lib/operator-format";
 import { useWorkshopStatus } from "../lib/live-queries";
 import { useOperatorView } from "../lib/operator-queries";
-import { networkMapHeading } from "../lib/operator-view";
+import { EU_OPERATOR_VIEW, isView, networkMapHeading } from "../lib/operator-view";
 import {
   ActiveFlowsPanel,
   InfoRow,
@@ -41,10 +41,12 @@ import {
   ViewModeToolbar,
 } from "./network-drawers";
 import { useStyledGraph } from "./use-styled-graph";
+import { InfrastructurePlanes } from "./network-infrastructure-planes";
 import { ExternalLink, Map as MapIcon, Maximize2, X } from "lucide-react";
 
 export function NetworkConsole() {
-  const heading = networkMapHeading(useOperatorView());
+  const operatorView = useOperatorView();
+  const heading = networkMapHeading(operatorView);
   const [inspectorNode, setInspectorNode] = useState<Node | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
@@ -267,7 +269,7 @@ export function NetworkConsole() {
               ok={workshopStatus.firewall_online}
               label="containd"
               tooltipTitle="Segmentation enforcement"
-              tooltipBody="containd NGFW. Mediates every cross-zone flow in the lab. Down = no cross-zone path is enforced."
+              tooltipBody="containd NGFW enforces teaching-zone conduits through containd. Health is not evidence of per-flow authorization; infrastructure and same-zone paths are separate."
             />
             {workshopStatus.rtac_online !== undefined && (
               <>
@@ -297,6 +299,7 @@ export function NetworkConsole() {
           </div>
         )}
       </header>
+      {isView(operatorView, EU_OPERATOR_VIEW) && <InfrastructurePlanes />}
 
       {/* GET /workshop/graph is served whatever the range does; the
           live status behind the node and edge colours is range-bound. */}
@@ -381,6 +384,7 @@ export function NetworkConsole() {
         {viewMode.policyDim && (
           <LeftDrawerMenu
             flowContext={flowContext}
+            ruleSummaries={firewallRulesData?.summaries}
             active={activeDrawer}
             onChange={setActiveDrawer}
             trafficEdgesOn={viewMode.traffic}
