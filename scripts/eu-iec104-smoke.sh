@@ -67,6 +67,8 @@ passes=0
 gate_failures=0
 # shellcheck disable=SC2034
 state_touched=0
+# shellcheck disable=SC2034 # consumed by eu-cleanup.sh
+profile_disabled=0
 # shellcheck disable=SC2034
 cleanup_running=0
 # shellcheck disable=SC2034
@@ -153,7 +155,7 @@ EU IEC104 gate plan (no Docker or backend access):
   G15 RMU switching, local/earth/live-live interlocks, S1 restore and S2 FPI
   G16 OLTC manual/auto, load raise, source limit and negative settle
   G17 Real PLC scan-thread freeze; responsive Modbus, heartbeat stale and recovery
-  G18 Historian CC outage gap, schema-2 snapshots and ingest isolation
+  G18 Historian CC outage gap, schema-3 snapshots and ingest isolation
   G19 Improved denies Kali solver and historian ingest
   G20 eu-baseline-assessment validator: weak baseline, traffic capture and student walk
   G21 eu-firewall-implementation validator: weak-to-improved conduit and policy walk

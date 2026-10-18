@@ -7,7 +7,7 @@ eu_gate_G18() {
   eu_reset_all || return
   since=$(eu_utc)
   eu_api_get /api/historian/points || return
-  eu_assert_jq "$API_BODY" 'length == 31' "G18 historian exposes 31 points"
+  eu_assert_jq "$API_BODY" 'length == 38' "G18 historian exposes 38 points"
   eu_get_operator || return
   epoch=$(printf '%s' "$API_BODY" | jq -r '.cache_epoch')
   eu_window_start G18 || return
@@ -26,7 +26,7 @@ eu_gate_G18() {
   until=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   eu_api_get "/api/historian/history?point=feeder-current&since=$since&until=$until" || return
   if eu_historian_gap "$API_BODY" "$epoch" "$paused" "$resumed"; then
-    pass "G18 real CC ingest resumes with schema-2 samples and an outage-spanning gap"
+    pass "G18 real CC ingest resumes with schema-3 samples and an outage-spanning gap"
   else fail "G18 historian outage evidence failed ($paused to $resumed): $API_BODY"; fi
   # A valid snapshot on a read listener must not ingest, even from enterprise.
   eu_get_operator || return
@@ -47,8 +47,9 @@ eu_gate_G18() {
 
 eu_gate_G19() {
   local container ip port rc path method body
-  eu_get_operator || return
-  body="$API_BODY"
+  # An invalid schema cannot be archived even if the network boundary fails.
+  # Do not send a real CC snapshot from an untrusted peer.
+  body='{"schema":0}'
   eu_apply_named improved || return
   eu_window_start G19 || return
   for container in "$KALI" "$RTU" rangerdanger-eng-ws; do

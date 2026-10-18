@@ -94,7 +94,7 @@ eu_assert_device_state_response() {
   if [ "$HTTP_STATUS" = "200" ] \
     && printf '%s' "$API_BODY" | jq -e '
       type == "object"
-      and .schema == 2 and .kind == "breaker" and .device_id == "feeder-breaker"
+      and .schema == 3 and .kind == "breaker" and .device_id == "feeder-breaker"
       and (.generation | type == "number" and . >= 0)
       and (.revision | type == "number" and . >= 0)
       and (.position | type == "string" and (. == "open" or . == "closed"))
@@ -103,16 +103,19 @@ eu_assert_device_state_response() {
       and (.protection_tripped | type == "boolean")
       and (.event_seq | type == "number" and . >= 0)
       and (.changed_at | type == "string" and length > 0)
-      and (.measurements | type == "object")
-      and (has("measurements") and
-        (.measurements | has("current_a") and has("voltage_kv_ll") and has("valid")
-          and has("solver_epoch") and has("solve_seq") and has("solved_at") and has("received_at")
-          and has("source_kv_ll") and has("section_live") and has("source_live") and has("fault_current")))
+      and (.measurements | keys == ["current_a","p_mw","pf","q_mvar","received_at","section_live",
+        "solve_seq","solved_at","solver_epoch","source_kv_ll","source_live","valid","voltage_kv_ll"])
       and (.measurements.current_a == null or (.measurements.current_a | type == "number"))
       and (.measurements.voltage_kv_ll == null or (.measurements.voltage_kv_ll | type == "number"))
       and (.measurements.source_kv_ll == null or (.measurements.source_kv_ll | type == "number"))
-      and all(.measurements.section_live, .measurements.source_live, .measurements.fault_current;
+      and all(.measurements.section_live, .measurements.source_live;
         . == null or type == "boolean")
+      and all(.measurements.p_mw, .measurements.q_mvar, .measurements.pf; . == null or type == "number")
+      and (.protection | keys == ["delay_ms","function","instantaneous_a","last_trip_current_a","picked_up","picked_up_since","pickup_a"]
+        and .function == "overcurrent" and (.pickup_a | type == "number")
+        and (.delay_ms | type == "number") and (.picked_up | type == "boolean")
+        and all(.instantaneous_a, .last_trip_current_a; . == null or type == "number")
+        and (.picked_up_since == null or (.picked_up_since | type == "string")))
       and (.measurements.valid | type == "boolean")
       and (.measurements.solver_epoch == null or (.measurements.solver_epoch | type == "string"))
       and (.measurements.solve_seq == null or (.measurements.solve_seq | type == "number"))
@@ -220,7 +223,7 @@ eu_wait_for_state() {
 eu_assert_operator_shape() {
   local body="$1" label="$2"
   if printf '%s' "$body" | jq -e --slurpfile expected "$PACKAGE/protocols/points.json" '
-    type == "object" and .schema == 2
+    type == "object" and .schema == 3
     and (.cache_epoch | type == "string" and length > 0)
     and (.snapshot_seq | type == "number" and . >= 0)
     and (.rendered_at | type == "string" and endswith("Z"))
@@ -229,11 +232,11 @@ eu_assert_operator_shape() {
       and (.state == "none" or .state == "running" or .state == "complete")
       and (.trigger == null or .trigger == "connect" or .trigger == "periodic" or .trigger == "operator")
       and all(.started_at,.last_complete_at,.next_due_at; . == null or (type == "string" and endswith("Z"))))
-    and (.points | length) == 31
-    and ([.points[] | {id,ioa,kind}] | sort_by(.ioa))
-      == ([$expected[0].points[] | {id,ioa,kind}] | sort_by(.ioa))
+    and (.points | length) == ($expected[0].points | length)
+    and ([.points[] | {id,ioa,kind,device,limits}] | sort_by(.ioa))
+      == ([$expected[0].points[] | {id,ioa,kind,device:.source.device,limits:(.limits // null)}] | sort_by(.ioa))
     and all(.points[]; (.cot | type == "number") and has("source_time") and has("received_at")
-      and has("reporting")
+      and has("reporting") and has("device") and has("limits")
       and (.quality | keys == ["bl","iv","nt","ov","sb"] and all(.iv,.nt,.sb,.bl; type == "boolean"))
       and (if .kind == "float" or .kind == "step-position"
         then (.quality.ov | type == "boolean") else .quality.ov == null end))
@@ -438,6 +441,18 @@ eu_action() {
   fi
   pass "$node $action acknowledged"
 }
+# Profile ownership is restored both on normal completion and aborted G16 runs.
+eu_set_profile() {
+  local enabled="$1"
+  # shellcheck disable=SC2034 # consumed by eu-cleanup.sh
+  profile_disabled=1 state_touched=1
+  eu_management process POST /api/process/actions "{\"action\":\"set_profile\",\"enabled\":$enabled}" || return
+  if [ "$HTTP_STATUS" != 200 ]; then
+    fail "process set_profile HTTP $HTTP_STATUS: $API_BODY"; return 1
+  fi
+  # shellcheck disable=SC2034 # ownership is consumed by eu-cleanup.sh
+  if [ "$enabled" = true ]; then profile_disabled=0; fi
+}
 eu_reset_all() {
   local settled
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
@@ -509,7 +524,7 @@ eu_wait_valid_device() {
   start=$(eu_now_ms)
   while :; do
     eu_management "$node" GET /api/state || return
-    if [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.schema == 2 and .measurements.valid == true' >/dev/null; then return 0; fi
+    if [ "$HTTP_STATUS" = 200 ] && printf '%s' "$API_BODY" | jq -e '.schema == 3 and .measurements.valid == true' >/dev/null; then return 0; fi
     now=$(eu_now_ms)
     if [ "$((now - start))" -ge 10000 ]; then fail "$node no valid pre-command solve: $API_BODY"; return 1; fi
     sleep 0.1

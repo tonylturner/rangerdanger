@@ -207,8 +207,8 @@ func TestEULab3CollectorFailsClosed(t *testing.T) {
 func TestEULab3And4Knowledge(t *testing.T) {
 	// Operational deep dives moved out of the seven-slot lesson sequence.
 	for file, concepts := range map[string][]string{
-		"eu-switching-deep-dive.md":  {"not_remote", "live_live", "fault passage", "isolation", "back-feed"},
-		"eu-regulation-deep-dive.md": {"19.8", "10 s", "2 s", "+8", "−7", "zero", "manual", "auto"},
+		"eu-switching-deep-dive.md":  {"not_remote", "live_live", "fault passage", "isolation", "back-feed", "300 A", "2000 A", "1000 ms", "sample-quantised", "normal open point"},
+		"eu-regulation-deep-dive.md": {"20.196–20.604", "30 s", "2 s", "+8", "−6", "110 kV", "866 A", "1307", "2003–2005", "2303–2305", "daily", "zero", "manual", "auto"},
 	} {
 		data, err := os.ReadFile(filepath.Join(repoRoot(), "lab-definitions", "packages", euPackageID, "knowledge", file))
 		if err != nil {

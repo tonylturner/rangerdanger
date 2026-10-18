@@ -10,6 +10,31 @@ permissions:
   contents: read
 
 jobs:
+  eu-gates:
+    name: EU gates (offline)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install capture decoder and JSON tools
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark jq
+      - name: Test EU gates without a range
+        run: bash scripts/tests/eu-gate/run.sh
+
+  iec104:
+    name: IEC 104 image and protocol checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build IEC 104 image
+        run: docker build -f services/iec104/Dockerfile -t rdci-g-iec104 .
+      - name: Check IEC 104 protocols
+        run: RD_CHECK_PREFIX=rdci-g-iec104 services/iec104/check/run.sh "$GITHUB_WORKSPACE/build/iec104-check"
+
   release-tooling:
     name: Release image planner and input guard
     runs-on: ubuntu-24.04

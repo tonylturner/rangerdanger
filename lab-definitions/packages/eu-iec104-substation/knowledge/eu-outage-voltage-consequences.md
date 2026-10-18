@@ -6,9 +6,9 @@ The model is a reduced CIGRE-derived teaching feeder, not a full utility study o
 
 The 110/20 kV transformer supplies a 20 kV bus. CB1 feeds S1, then normally closed RMU1 connects S2. Normally open RMU2 is the tie from S2 to S3 on feeder 2. The normally-open point matters: indiscriminate closing can join live sources rather than simply “restore power.”
 
-For an S1 fault, CB1 trips while RMU1 sees no fault passage. The lab's isolation/back-feed exercise can restore S2 from feeder 2 after opening RMU1 and using the tie. S1 remains isolated.
+For the reference S1 fault, CB1 trips instantaneously (about 2.7 kA above I>> 2000 A) while RMU1 remains below its 300 A FPI pickup. The lab's isolation/back-feed exercise can restore S2 from feeder 2 after opening RMU1 and using the tie. S1 remains isolated.
 
-For an S2 fault, CB1 trips and RMU1 latches fault passage. Merely opening RMU1 and closing RMU2 still connects feeder 2 to the fault. The modeled F2 head trips, potentially losing S3 as well. The same apparent restoration action can therefore enlarge the outage when fault location is misunderstood.
+For the reference S2 fault (about 1.4 kA), RMU1 latches at 300 A with zero delay; CB1 trips after about 1 s on I> 400 A / 1000 ms, below I>> 2000 A. Merely opening RMU1 and closing RMU2 still connects feeder 2 to the fault. The modeled F2 head sees about 2.5 kA, above I>> 2000 A, and trips instantaneously, potentially losing S3 as well. The same apparent restoration action can therefore enlarge the outage when fault location is misunderstood.
 
 The F2 head is a process element, not a remotely controlled field device. Its state is not directly telemetered to the CC; S3 energization is observed through RMU2's source-voltage point. Do not fill the operator diagram from process truth to make it look complete.
 
@@ -20,9 +20,9 @@ Fault passage is latched history, not proof that fault current still flows. A po
 
 ### Voltage consequences need time
 
-Positive OLTC steps raise the modeled LV bus. The range uses taps −8 through +8, 1.25% per step and two seconds of motion. Automatic regulation uses a 20 kV setpoint, ±1% band and ten seconds continuously out of band before an adjacent request.
+Positive OLTC steps raise the modeled LV bus. The range uses taps −8 through +8, 1.25% per step and two seconds of motion. The OLTC is on the 110 kV winding, giving an asymmetric MV range +11.1% / −9.1%. Automatic regulation uses a 20.4 kV setpoint, ±1% band (20.196–20.604 kV) and 30 s continuously out of band before an adjacent request.
 
-At the reference operating point, load multiplier 3.0 moves the bus outside the band and requires only a few steps to recover. Source 0.90 p.u. reaches the +8 limit while voltage remains low: actuator saturation is not successful regulation. Source 1.10 p.u. settles negative, measured around −7, rather than necessarily reaching −8.
+With the daily profile disabled and initial tap zero, nominal settles at +2 (20.429 kV), and load multiplier 3.0 also settles at +2 (20.203 kV). From a settled +2, load ×3 may need no further correction. Source 0.90 p.u. reaches the +8 limit while voltage remains low: actuator saturation is not successful regulation. Source 1.10 p.u. settles negative, measured at −6 (20.382 kV), rather than necessarily reaching −8.
 
 Use the [reference cases](#eu-process-reference-cases) and measured attempt evidence, not those descriptions as invented telemetry. A completed tap and target tap differ during motion.
 

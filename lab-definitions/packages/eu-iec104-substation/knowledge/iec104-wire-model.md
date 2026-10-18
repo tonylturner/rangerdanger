@@ -8,16 +8,18 @@ Within an ASDU, the type identifies the representation or operation, COT explain
 
 ### The implemented point families
 
-The schema-2 package point map contains five devices, 31 monitored points and five commands. Important groupings are:
+The schema-2 package point map contains five devices, 38 monitored points and five commands. Important groupings are:
 
 | IOAs | Meaning |
 | --- | --- |
 | 1001, 1002, 2001, 2002 | Breaker position, protection trip, current A, voltage kV |
 | 1101–1104 / 1201–1204 | RMU1 / RMU2 position, remote, earth, fault passage |
 | 2101–2103 / 2201–2203 | RMU current, section kV, source kV |
-| 1301–1306 | OLTC tap, remote, auto, lower limit, upper limit, blocked |
+| 1301–1306 | OLTC tap, remote, auto, lower limit, upper limit, effective blocked |
 | 2301, 2302 | OLTC LV bus kV and current A |
-| 1401, 1402, 2401–2403 | PLC running, input-valid, setpoint kV, deadband %, delay s |
+| 2003–2005 / 2303–2305 | Feeder / T1 P MW, Q Mvar, PF |
+| 1307 | oltc-1-overcurrent-block (866 A pickup) |
+| 1401, 1402, 2401–2403 | PLC running, input-valid, setpoint kV, deadband %, configured delay s (20.4 kV, 1%, 30 s) |
 
 Double-point statuses use M_DP_TB_1 spontaneously and M_DP_NA_1 during GI. Single-point statuses use M_SP_TB_1 and M_SP_NA_1 respectively. Tap position uses M_ST_TB_1 and M_ST_NA_1, preserving both signed position and transient state. Floating-point values use untimed M_ME_NC_1 for cyclic COT 1, spontaneous COT 3 and GI COT 20. This selected teaching profile is modelled on WEMAG/SvK practice, not an EU default. The CC’s point `asdu` names the last received type, while `asdu` in points.json configures the event type; a GI can therefore change the displayed status type without changing its value. Measurements are cyclic every 10 seconds, PLC parameters every 60 seconds; GI is on connect, every 15 minutes or operator request. See [reporting and quality](#iec104-gi-cot-quality) for deadbands and the float watchdog.
 

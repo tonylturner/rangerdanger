@@ -1,6 +1,6 @@
 {"generation":42,"latest_seq":25,"oldest_seq":1,"entries":[
  {"seq":21,"at":"2026-10-09T21:03:01.000Z","operation":"measurement_expired","result":"accepted","before":{"revision":9},"after":{"revision":9},"context":{"protocol":"local"}},
- {"seq":22,"at":"2026-10-09T21:03:01.000Z","operation":"local_protection_trip","result":"accepted","before":{"revision":9},"after":{"revision":10},"context":{"protocol":"local-protection"},"detail":{"cause":"fault_current"}},
+ {"seq":22,"at":"2026-10-09T21:03:01.000Z","operation":"local_protection_trip","result":"accepted","before":{"revision":9},"after":{"revision":10},"context":{"protocol":"local-protection"},"detail":{"current_a":2700}},
  {"seq":23,"at":"2026-10-09T21:03:01.900Z","operation":"first_solve","result":"accepted","before":{"revision":10},"after":{"revision":10},"context":{"protocol":"process"},"detail":{"revision":10,"solver_epoch":"9d1c2f4e","solve_seq":31,"solved_at":"2026-10-09T21:03:01.890Z","current_a":0}},
  {"seq":24,"at":"2026-10-09T21:03:02.100Z","operation":"reset","result":"accepted","before":{"revision":10},"after":{"revision":11},"context":{"protocol":"lab"}},
  {"seq":25,"at":"2026-10-09T21:03:02.950Z","operation":"first_solve","result":"accepted","before":{"revision":11},"after":{"revision":11},"context":{"protocol":"process"},"detail":{"revision":11,"solver_epoch":"9d1c2f4e","solve_seq":32,"solved_at":"2026-10-09T21:03:02.940Z","current_a":0}}]}

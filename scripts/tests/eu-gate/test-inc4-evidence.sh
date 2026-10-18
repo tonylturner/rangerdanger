@@ -5,8 +5,8 @@
 OPERATOR=$(cat "$T_FIXTURES/operator-gi-untimed.json")
 edit() { printf '%s' "$OPERATOR" | jq -c "$1"; }
 t_run eu_assert_operator_shape "$OPERATOR" fixture
-t_expect_fails 0 "all 31 schema-2 points pass"
-for expression in '.schema = 1' 'del(.snapshot_seq)' '.points |= .[0:4]' \
+t_expect_fails 0 "all 38 schema-3 points pass"
+for expression in '.schema = 1' '.schema = 2' 'del(.points[0].device)' 'del(.points[0].limits)' 'del(.snapshot_seq)' '.points |= .[0:4]' \
   '.points[2].quality.ov = null' '.points[0].quality.ov = false' \
   '(.points[] | select(.ioa == 1301) | .quality.ov) = null' \
   'del(.points[0].cot)' '.link.local = "10.60.60.20:1234"' \
@@ -15,10 +15,24 @@ for expression in '.schema = 1' 'del(.snapshot_seq)' '.points |= .[0:4]' \
   t_expect_fails 1 "invalid shape fails: $expression"
 done
 t_run jq -e "$EU_JQ_DEFS four_points and all_good" <<<"$OPERATOR"
-t_expect_eq "$T_STATUS" 0 "lab-1 subset survives adding the other 27 points"
+t_expect_eq "$T_STATUS" 0 "lab-1 subset survives adding the other 34 points"
 stale=$(edit '(.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)) |= (.quality.iv = true | .quality.nt = true | .stale_reason = "device_unreachable")')
 t_run jq -e "$EU_JQ_DEFS all_stale(\"device_unreachable\")" <<<"$stale"
 t_expect_eq "$T_STATUS" 0 "one lost breaker conduit does not require stale healthy peers"
+
+DEVICE=$(jq -c '.devices["breaker-1"]' "$T_FIXTURES/field-baseline.json")
+# shellcheck disable=SC2034 # read by the sourced response validator
+HTTP_STATUS=200
+API_BODY="$DEVICE"
+t_run eu_assert_device_state_response fixture
+t_expect_fails 0 "device schema 3 includes solved power and protection"
+for expression in '.schema = 2' 'del(.protection)' 'del(.measurements.p_mw)' \
+  '.measurements.legacy = false' 'del(.protection.last_trip_current_a)'; do
+  # shellcheck disable=SC2034 # read by the sourced response validator
+  API_BODY=$(printf '%s' "$DEVICE" | jq -c "$expression")
+  t_run eu_assert_device_state_response fixture
+  t_expect_fails 1 "old or incomplete device state rejected: $expression"
+done
 
 RESULT='{"id":"cmd-1","point":"rmu-1-command","operation":"open","result":"completed","reason":null,"selected_at":"2026-10-15T12:00:00.10Z","executed_at":"2026-10-15T12:00:00.20Z","con_at":"2026-10-15T12:00:00.30Z","term_at":"2026-10-15T12:00:00.50Z","feedback":{"ioa":1101,"value":"open","at":"2026-10-15T12:00:00.40Z"}}'
 check_result() {

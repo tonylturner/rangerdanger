@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "cache_epoch": "3b9f6c0e2a5d4e71",
   "package_id": "eu-iec104-substation",
   "range_generation": 3,
@@ -36,7 +36,9 @@
       "received_at": "2026-10-09T21:01:55.170Z",
       "cot": 20,
       "kind": "double-point",
-      "reporting": null
+      "reporting": null,
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-protection-trip",
@@ -56,7 +58,9 @@
       "received_at": "2026-10-09T21:01:55.171Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-current",
@@ -78,8 +82,10 @@
       "kind": "float",
       "reporting": {
         "cyclic_ms": 10000,
-        "deadband": 2
-      }
+        "deadband": 2.0
+      },
+      "device": "feeder-breaker",
+      "limits": null
     },
     {
       "id": "feeder-voltage",
@@ -102,6 +108,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "feeder-breaker",
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
       }
     },
     {
@@ -122,7 +133,9 @@
       "received_at": "2026-10-09T21:01:55.174Z",
       "cot": 20,
       "kind": "double-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-remote",
@@ -142,7 +155,9 @@
       "received_at": "2026-10-09T21:01:55.175Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-earth",
@@ -162,7 +177,9 @@
       "received_at": "2026-10-09T21:01:55.176Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-fault-passage",
@@ -182,7 +199,9 @@
       "received_at": "2026-10-09T21:01:55.177Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-current",
@@ -204,8 +223,10 @@
       "kind": "float",
       "reporting": {
         "cyclic_ms": 10000,
-        "deadband": 2
-      }
+        "deadband": 2.0
+      },
+      "device": "rmu-1",
+      "limits": null
     },
     {
       "id": "rmu-1-section-kv",
@@ -228,6 +249,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "rmu-1",
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
       }
     },
     {
@@ -251,6 +277,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "rmu-1",
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
       }
     },
     {
@@ -271,7 +302,9 @@
       "received_at": "2026-10-09T21:01:55.181Z",
       "cot": 20,
       "kind": "double-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-remote",
@@ -291,7 +324,9 @@
       "received_at": "2026-10-09T21:01:55.182Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-earth",
@@ -311,7 +346,9 @@
       "received_at": "2026-10-09T21:01:55.183Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-fault-passage",
@@ -331,7 +368,9 @@
       "received_at": "2026-10-09T21:01:55.184Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-current",
@@ -353,8 +392,10 @@
       "kind": "float",
       "reporting": {
         "cyclic_ms": 10000,
-        "deadband": 2
-      }
+        "deadband": 2.0
+      },
+      "device": "rmu-2",
+      "limits": null
     },
     {
       "id": "rmu-2-section-kv",
@@ -377,6 +418,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "rmu-2",
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
       }
     },
     {
@@ -400,6 +446,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "rmu-2",
+      "limits": {
+        "low": 19.0,
+        "high": 21.0
       }
     },
     {
@@ -423,7 +474,9 @@
       "received_at": "2026-10-09T21:01:55.188Z",
       "cot": 20,
       "kind": "step-position",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-remote",
@@ -443,7 +496,9 @@
       "received_at": "2026-10-09T21:01:55.189Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-auto",
@@ -463,7 +518,9 @@
       "received_at": "2026-10-09T21:01:55.190Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-at-lower",
@@ -483,7 +540,9 @@
       "received_at": "2026-10-09T21:01:55.191Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-at-upper",
@@ -503,7 +562,9 @@
       "received_at": "2026-10-09T21:01:55.192Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-blocked",
@@ -523,7 +584,9 @@
       "received_at": "2026-10-09T21:01:55.193Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "oltc-1-bus-kv",
@@ -546,6 +609,11 @@
       "reporting": {
         "cyclic_ms": 10000,
         "deadband": 0.1
+      },
+      "device": "oltc-1",
+      "limits": {
+        "low": 19.8,
+        "high": 21.0
       }
     },
     {
@@ -568,8 +636,10 @@
       "kind": "float",
       "reporting": {
         "cyclic_ms": 10000,
-        "deadband": 2
-      }
+        "deadband": 2.0
+      },
+      "device": "oltc-1",
+      "limits": null
     },
     {
       "id": "plc-1-running",
@@ -589,7 +659,9 @@
       "received_at": "2026-10-09T21:01:55.196Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-input-valid",
@@ -609,13 +681,15 @@
       "received_at": "2026-10-09T21:01:55.197Z",
       "cot": 20,
       "kind": "single-point",
-      "reporting": null
+      "reporting": null,
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-setpoint-kv",
       "ioa": 2401,
       "asdu": "M_ME_NC_1",
-      "value": 20,
+      "value": 20.4,
       "quality": {
         "iv": false,
         "nt": false,
@@ -632,7 +706,9 @@
       "reporting": {
         "cyclic_ms": 60000,
         "deadband": 0
-      }
+      },
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-deadband-pct",
@@ -655,13 +731,15 @@
       "reporting": {
         "cyclic_ms": 60000,
         "deadband": 0
-      }
+      },
+      "device": "plc-1",
+      "limits": null
     },
     {
       "id": "plc-1-delay-s",
       "ioa": 2403,
       "asdu": "M_ME_NC_1",
-      "value": 0,
+      "value": 30,
       "quality": {
         "iv": false,
         "nt": false,
@@ -678,7 +756,181 @@
       "reporting": {
         "cyclic_ms": 60000,
         "deadband": 0
-      }
+      },
+      "device": "plc-1",
+      "limits": null
+    },
+    {
+      "id": "feeder-p-mw",
+      "ioa": 2003,
+      "asdu": "M_ME_NC_1",
+      "value": 0.94,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "device": "feeder-breaker",
+      "limits": null
+    },
+    {
+      "id": "feeder-q-mvar",
+      "ioa": 2004,
+      "asdu": "M_ME_NC_1",
+      "value": 0.32,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "device": "feeder-breaker",
+      "limits": null
+    },
+    {
+      "id": "feeder-pf",
+      "ioa": 2005,
+      "asdu": "M_ME_NC_1",
+      "value": 0.947,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.01
+      },
+      "device": "feeder-breaker",
+      "limits": null
+    },
+    {
+      "id": "oltc-1-p-mw",
+      "ioa": 2303,
+      "asdu": "M_ME_NC_1",
+      "value": 2.35,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "device": "oltc-1",
+      "limits": null
+    },
+    {
+      "id": "oltc-1-q-mvar",
+      "ioa": 2304,
+      "asdu": "M_ME_NC_1",
+      "value": 0.8,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "device": "oltc-1",
+      "limits": null
+    },
+    {
+      "id": "oltc-1-pf",
+      "ioa": 2305,
+      "asdu": "M_ME_NC_1",
+      "value": 0.947,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.01
+      },
+      "device": "oltc-1",
+      "limits": null
+    },
+    {
+      "id": "oltc-1-overcurrent-block",
+      "ioa": 1307,
+      "asdu": "M_SP_NA_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-09T21:01:55.172Z",
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null,
+      "device": "oltc-1",
+      "limits": null
     }
   ],
   "snapshot_seq": 1,
