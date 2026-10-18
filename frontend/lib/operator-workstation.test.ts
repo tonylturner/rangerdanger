@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { activeAlarms, abnormalConditions, deviceCommsHealth, devicePoints, regulationBand, DEVICES } from "./operator-workstation";
-import { BOOT_STATE, FEEDER_STATE, PERIODIC_GI_STATE, WATCHDOG_STATE } from "./operator-fixtures.test-util";
+import { activeAlarms, abnormalConditions, deviceCommsHealth, devicePoints, receivedAuthority, regulationBand, scadaViewState, DEVICES } from "./operator-workstation";
+import { BOOT_STATE, FEEDER_STATE, LOST_LINK_STATE, PERIODIC_GI_STATE, WATCHDOG_STATE } from "./operator-fixtures.test-util";
 import { pointCondition } from "./operator-format";
 
 describe("operator observation rules", () => {
@@ -78,9 +78,70 @@ describe("operator observation rules", () => {
     expect(regulationBand(BOOT_STATE.points)).toBeNull();
     expect(regulationBand(FEEDER_STATE.points.map((p) => p.id === "plc-1-deadband-pct" ? { ...p, quality: { ...p.quality, sb: true } } : p))).toBeNull();
   });
-  it("groups the entire point inventory into four devices without a field input", () => {
+  it("groups the entire point inventory into five devices without a field input", () => {
     expect(DEVICES.flatMap((id) => devicePoints(FEEDER_STATE.points, id)).map((p) => p.id).sort()).toEqual(FEEDER_STATE.points.map((p) => p.id).sort());
     expect(PERIODIC_GI_STATE.link.gi.last_complete_at).not.toBeNull();
+  });
+});
+
+describe("view establishment", () => {
+  it.each([
+    [undefined, "not-established"], [BOOT_STATE, "not-established"],
+    [LOST_LINK_STATE, "lost"], [FEEDER_STATE, "ok"],
+    [PERIODIC_GI_STATE, "ok"], [WATCHDOG_STATE, "recovering"],
+  ] as const)("uses link, current-connection GI and the full inventory: %s", (state, expected) => {
+    expect(scadaViewState(state)).toBe(expected);
+    expect(scadaViewState(state, true)).toBe("unavailable");
+  });
+  it("requires GI on this connection, not just an old completion or started link", () => {
+    const state = structuredClone(FEEDER_STATE);
+    state.link.since = "2026-10-09T12:00:30Z";
+    expect(scadaViewState(state)).toBe("recovering");
+    state.link.gi.last_complete_at = "2026-10-09T12:00:31Z";
+    expect(scadaViewState(state)).toBe("ok");
+    state.link.gi.last_complete_at = null;
+    expect(scadaViewState(state)).toBe("recovering");
+  });
+  it("requires every inventory point GOOD, including the indication-only F2 bay", () => {
+    for (const point of FEEDER_STATE.points) {
+      for (const flag of ["iv", "nt", "sb", "bl", "ov"] as const) {
+        const state = { ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, quality: { ...p.quality, [flag]: true } } : p) };
+        expect(scadaViewState(state)).toBe("recovering");
+      }
+      expect(scadaViewState({ ...FEEDER_STATE, points: FEEDER_STATE.points.map((p) => p.id === point.id ? { ...p, value: null } : p) })).toBe("recovering");
+    }
+    expect(scadaViewState({ ...FEEDER_STATE, points: [] })).toBe("recovering");
+  });
+});
+
+describe("F2 and command authority", () => {
+  it("alarms for F2 protection only on GOOD true feedback", () => {
+    const state = structuredClone(FEEDER_STATE);
+    const trip = state.points.find((p) => p.id === "f2-protection-trip")!;
+    trip.value = true;
+    expect(activeAlarms(state)).toEqual([{ id: trip.id, text: "F2 protection trip: asserted" }]);
+    for (const flag of ["iv", "nt", "sb", "bl"] as const) {
+      expect(activeAlarms({ ...state, points: [{ ...trip, quality: { ...trip.quality, [flag]: true } }] })).toEqual([]);
+    }
+    trip.stale_reason = "device_unreachable";
+    expect(activeAlarms(state)).toEqual([]);
+  });
+  it("never establishes authority from missing, stale, cached or non-boolean input", () => {
+    expect(receivedAuthority(FEEDER_STATE.points, "CB1")).toBe("not established");
+    expect(receivedAuthority(FEEDER_STATE.points, "F2")).toBe("not established");
+    for (const device of ["T1", "RMU1", "RMU2"] as const) {
+      const id = device === "T1" ? "oltc-1-remote" : device === "RMU1" ? "rmu-1-remote" : "rmu-2-remote";
+      const p = FEEDER_STATE.points.find((point) => point.id === id)!;
+      expect(receivedAuthority([p], device)).toBe("REMOTE");
+      expect(receivedAuthority([{ ...p, value: false }], device)).toBe("LOCAL");
+      for (const flag of ["iv", "nt", "sb", "bl"] as const) {
+        expect(receivedAuthority([{ ...p, quality: { ...p.quality, [flag]: true } }], device)).toBe("not established");
+      }
+      for (const value of [null, "closed", 1] as const) expect(receivedAuthority([{ ...p, value }], device)).toBe("not established");
+      expect(receivedAuthority([{ ...p, stale_reason: "not_updated" }], device)).toBe("not established");
+      expect(receivedAuthority([p], device, true)).toBe("not established");
+      expect(receivedAuthority([], device)).toBe("not established");
+    }
   });
 });
 

@@ -13,14 +13,11 @@ export function PhysicalDiagnostics({ field, audit }: { field: FieldState; audit
         <Row label="Solver epoch">{p.solver_epoch}</Row>
         <Row label="Solve seq · solved (UTC)">{p.solve_seq} · {formatUtcTime(p.solved_at)}</Row>
         <Row label="Device input stale" alert={p.truth_stale}>{yesNo(p.truth_stale)}</Row>
-        <Row label="Fault section">{p.fault_section}</Row><Row label="F2 tripped">{yesNo(p.f2_tripped)}</Row>
+        <Row label="Fault section">{p.fault_section}</Row>
         <Row label="Load multiplier">{p.load_multiplier}</Row><Row label="Source / tap">{p.source_pu} p.u. / {p.tap}</Row>
         <Row label="Profile enabled">{yesNo(p.profile.enabled)}</Row>
         {Object.entries(p.profile.load_factors).map(([category, factor]) => <Row key={category} label={`${category} profile factor`}>{num(factor, 3, "×")}</Row>)}
         <Row label="Profile source">{num(p.profile.source_pu, 3, "p.u.")}</Row>
-        <Row label="F2 picked up">{yesNo(p.f2_protection.picked_up)}</Row>
-        <Row label="F2 picked up since (UTC)">{formatUtcTime(p.f2_protection.picked_up_since)}</Row>
-        <Row label="F2 last trip current">{num(p.f2_protection.last_trip_current_a, 1, "A")}</Row>
         {Object.entries(p.buses).map(([id, bus]) => <Row key={id} label={`${id} voltage / live`}>{num(bus.kv, 2, "kV")} / {yesNo(bus.live)}{p.truth_stale ? " · STALE" : ""}</Row>)}
       </Group>
       <Group title="Station time">

@@ -28,6 +28,10 @@ type Mapping = { device: string; value: (d: DeviceState) => PointValue; measurem
 export const PHYSICAL_POINTS: Record<string, Mapping> = {
   "feeder-breaker-position": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.position : null },
   "feeder-protection-trip": { device: "breaker-1", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "f2-position": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.position : null },
+  "f2-protection-trip": { device: "f2-breaker", value: (d) => d.kind === "breaker" ? d.protection_tripped : null },
+  "f2-current": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.current_a },
+  "f2-p-mw": { device: "f2-breaker", measurement: true, value: (d) => d.measurements.p_mw },
   "oltc-1-tap": { device: "oltc-1", value: (d) => d.kind === "oltc" ? { value: d.tap, transient: d.moving } : null },
   "oltc-1-remote": { device: "oltc-1", value: (d) => d.remote_enabled },
   "oltc-1-auto": { device: "oltc-1", value: (d) => d.kind === "oltc" ? d.auto : null },
@@ -55,13 +59,12 @@ export function physicalSystemObservations(field: FieldState, unavailable = fals
   return (id) => {
     const mapping = PHYSICAL_POINTS[id];
     const device = mapping && field.devices[mapping.device];
-    const isF2 = id === "f2-position";
     const busId = id.endsWith("-live") ? id.slice(0, -5) : null;
     const bus = busId ? field.process.buses[busId] : undefined;
-    const processValue = isF2 ? field.process.truth_stale ? null : field.process.f2_tripped ? "open" : "closed" : bus?.live ?? null;
+    const processValue = bus?.live ?? null;
     const value = device ? mapping.value(device) : processValue;
     const invalid = !!(mapping?.measurement && device && !device.measurements.valid);
-    const stale = unavailable || ((mapping?.measurement || isF2 || busId !== null) && field.process.truth_stale);
+    const stale = unavailable || ((mapping?.measurement || busId !== null) && field.process.truth_stale);
     const condition = value === null || value === undefined ? "unknown" : invalid || stale ? "stale" : "good";
     const staleReason = unavailable ? "field API unavailable · retained snapshot" : invalid ? "measurements invalid · last values, not current" : stale ? "device input stale" : null;
     const transient = typeof value === "object" && value !== null ? value.transient : false;

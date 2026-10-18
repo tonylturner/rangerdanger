@@ -161,9 +161,9 @@ it.each([
   ["rmu-1-current", "RMU1 current"],
   ["rmu-2-current", "RMU2 current"],
   ["rmu-1-source-kv", "RMU1 S1 side"],
-  ["rmu-1-section-kv", "RMU1 S2 side"],
+  ["rmu-1-section-kv", "RMU1 S2 bus VT"],
   ["rmu-2-source-kv", "RMU2 S3 side"],
-  ["rmu-2-section-kv", "RMU2 S2 side"],
+  ["rmu-2-section-kv", "RMU2 S2 bus VT"],
 ])("locates measurement %s", (id, label) => {
   expect(pointLabel(id)).toBe(label);
 });

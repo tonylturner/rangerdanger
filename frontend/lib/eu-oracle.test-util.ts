@@ -2,33 +2,32 @@ import type { OperatorPoint } from "./operator-api";
 import { FEEDER_STATE, TRUTH } from "./operator-fixtures.test-util";
 
 // Transcribed from build/specs/eu-state-smoke/oracle.md, not from UI reachability.
-// D=dead, B=CB1, F=F2, BF=both; ?=F2 unobserved, B†=CB1 with F2 unobserved.
+// D=dead, B=CB1, F=F2, BF=both. F2 now has independent IEC indications.
 export const EU_ORACLE = [
-  { switches: "OOO", f2: "normal", supply: "D/D/F", cc: "–/–/?", vt: 0, currents: [0, 0, 0, 11.2] },
-  { switches: "OOO", f2: "tripped", supply: "D/D/D", cc: "–/–/–", vt: 0, currents: [0, 0, 0, 0] },
-  { switches: "OOC", f2: "normal", supply: "D/F/F", cc: "–/?/?", vt: 0, currents: [0, 0, 18.5, 29.8] },
-  { switches: "OOC", f2: "tripped", supply: "D/D/D", cc: "–/–/–", vt: 0, currents: [0, 0, 0, 0] },
-  { switches: "OCO", f2: "normal", supply: "D/D/F", cc: "–/–/?", vt: 0, currents: [0, 0, 0, 11.2] },
-  { switches: "OCO", f2: "tripped", supply: "D/D/D", cc: "–/–/–", vt: 0, currents: [0, 0, 0, 0] },
-  { switches: "OCC", f2: "normal", supply: "F/F/F", cc: "?/?/?", vt: 19.33, currents: [0, 43.9, 62.4, 73.5] },
-  { switches: "OCC", f2: "tripped", supply: "D/D/D", cc: "–/–/–", vt: 0, currents: [0, 0, 0, 0] },
-  { switches: "COO", f2: "normal", supply: "B/D/F", cc: "B/–/?", vt: 19.94, currents: [42.8, 0, 0, 53.6] },
-  { switches: "COO", f2: "tripped", supply: "B/D/D", cc: "B/–/–", vt: 19.97, currents: [42.7, 0, 0, 42.7] },
-  { switches: "COC", f2: "normal", supply: "B/F/F", cc: "B/?/?", vt: 19.91, currents: [42.9, 0, 18.6, 72.1] },
-  { switches: "COC", f2: "tripped", supply: "B/D/D", cc: "B/–/–", vt: 19.97, currents: [42.7, 0, 0, 42.7] },
-  { switches: "CCO", f2: "normal", supply: "B/B/F", cc: "B/B/?", vt: 19.91, currents: [61.4, 18.7, 0, 72.3] },
-  { switches: "CCO", f2: "tripped", supply: "B/B/D", cc: "B/B/–", vt: 19.93, currents: [61.3, 18.7, 0, 61.3] },
-  { switches: "CCC", f2: "normal", supply: "BF/BF/BF", cc: "B†/B†/B†", vt: 19.91, currents: [40.4, 6, 21, 72.1] },
-  { switches: "CCC", f2: "tripped", supply: "B/B/B", cc: "B†/B†/B†", vt: 19.91, currents: [72.7, 30.3, 11.5, 72.7] },
+  { switches: "OOO", f2: "normal", supply: "D/D/F", vt: 0, currents: [0, 0, 0, 11.2] },
+  { switches: "OOO", f2: "tripped", supply: "D/D/D", vt: 0, currents: [0, 0, 0, 0] },
+  { switches: "OOC", f2: "normal", supply: "D/F/F", vt: 0, currents: [0, 0, 18.5, 29.8] },
+  { switches: "OOC", f2: "tripped", supply: "D/D/D", vt: 0, currents: [0, 0, 0, 0] },
+  { switches: "OCO", f2: "normal", supply: "D/D/F", vt: 0, currents: [0, 0, 0, 11.2] },
+  { switches: "OCO", f2: "tripped", supply: "D/D/D", vt: 0, currents: [0, 0, 0, 0] },
+  { switches: "OCC", f2: "normal", supply: "F/F/F", vt: 19.33, currents: [0, 43.9, 62.4, 73.5] },
+  { switches: "OCC", f2: "tripped", supply: "D/D/D", vt: 0, currents: [0, 0, 0, 0] },
+  { switches: "COO", f2: "normal", supply: "B/D/F", vt: 19.94, currents: [42.8, 0, 0, 53.6] },
+  { switches: "COO", f2: "tripped", supply: "B/D/D", vt: 19.97, currents: [42.7, 0, 0, 42.7] },
+  { switches: "COC", f2: "normal", supply: "B/F/F", vt: 19.91, currents: [42.9, 0, 18.6, 72.1] },
+  { switches: "COC", f2: "tripped", supply: "B/D/D", vt: 19.97, currents: [42.7, 0, 0, 42.7] },
+  { switches: "CCO", f2: "normal", supply: "B/B/F", vt: 19.91, currents: [61.4, 18.7, 0, 72.3] },
+  { switches: "CCO", f2: "tripped", supply: "B/B/D", vt: 19.93, currents: [61.3, 18.7, 0, 61.3] },
+  { switches: "CCC", f2: "normal", supply: "BF/BF/BF", vt: 19.91, currents: [40.4, 6, 21, 72.1] },
+  { switches: "CCC", f2: "tripped", supply: "B/B/B", vt: 19.91, currents: [72.7, 30.3, 11.5, 72.7] },
   // No trip indication yet: fault current is not a substitute for received protection.
   // The oracle marks the old CC B!/B! as a residual-voltage error; the corrected
   // expectation is no supply on S1/S2, consistent with its D/D/F electrical truth.
-  { switches: "CCO", f2: "normal", supply: "D/D/F", cc: "–/–/?", vt: 11.53, currents: [2701, 0, 0, 2707], fault: true },
+  { switches: "CCO", f2: "normal", supply: "D/D/F", vt: 11.53, currents: [2701, 0, 0, 2707], fault: true },
 ] as const;
 export type OracleRow = (typeof EU_ORACLE)[number];
 export const ORACLE_SECTIONS = ["S1", "S2", "S3"] as const;
 export const PHYSICAL_PATH = { D: "no supply", B: "via CB1", F: "via F2", BF: "via CB1 + F2" } as const;
-export const CC_PATH = { "–": "no supply", B: "via CB1", "?": "path unknown", "B†": "via CB1" } as const;
 
 export function oracleFixture(row: OracleRow) {
   const fault = "fault" in row && row.fault;
@@ -48,6 +47,12 @@ export function oracleFixture(row: OracleRow) {
     bus20: { kv: 20, live: true },
     s1: { kv: kv[0], live: live[0] }, s2: { kv: kv[1], live: live[1] }, s3: { kv: kv[2], live: live[2] },
   };
+  const f2 = field.devices["f2-breaker"];
+  if (f2.kind === "breaker") {
+    f2.position = row.f2 === "tripped" ? "open" : "closed";
+    f2.protection_tripped = row.f2 === "tripped";
+  }
+  Object.assign(f2.measurements, { current_a: null, p_mw: null, q_mvar: null, pf: null });
   const deviceIds = ["breaker-1", "rmu-1", "rmu-2", "oltc-1"];
   for (const [index, id] of deviceIds.entries()) {
     const d = field.devices[id];
@@ -66,6 +71,8 @@ export function oracleFixture(row: OracleRow) {
   // Explicit CC channels keep adapter mapping bugs visible rather than generating
   // CC input by reading the physical adapter under test.
   const values: Record<string, OperatorPoint["value"]> = {
+    "f2-position": row.f2 === "tripped" ? "open" : "closed", "f2-protection-trip": row.f2 === "tripped",
+    "f2-current": null, "f2-p-mw": null,
     "feeder-breaker-position": positions[0], "rmu-1-position": positions[1], "rmu-2-position": positions[2],
     "feeder-voltage": row.vt, "feeder-current": cb1, "rmu-1-current": rmu1, "rmu-2-current": rmu2, "oltc-1-current": t1,
     "rmu-1-source-kv": kv[0], "rmu-1-section-kv": kv[1], "rmu-2-source-kv": kv[2], "rmu-2-section-kv": kv[1],

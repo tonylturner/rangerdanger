@@ -201,6 +201,9 @@ export const TRUTH: FieldState = {
     "breaker-1": BREAKER, "rmu-1": RMU1,
     "rmu-2": { ...RMU1, device_id: "rmu-2", position: "open", fault_passage: false, measurements: { ...RMU1.measurements, source_kv_ll: 19.97, source_live: true } },
     "oltc-1": OLTC,
+    "f2-breaker": { ...BREAKER, device_id: "f2-breaker", position: "closed", lockout: false, protection_tripped: false,
+      protection: { ...BREAKER.protection, instantaneous_a: 2000, last_trip_current_a: null },
+      measurements: { ...BREAKER.measurements, current_a: 11.2, p_mw: 0.38, voltage_kv_ll: 19.97, section_live: true } },
   },
   process: {
     schema: 3, profile_id: "eu-cigre-mv-teaching", solver_epoch: "e1", solve_seq: 140,
@@ -209,7 +212,7 @@ export const TRUTH: FieldState = {
     profile: { enabled: true, load_factors: { residential: 0.8, commercial: 0.9, industrial: 1 }, source_pu: 1.01 },
     f2_protection: { picked_up: false, picked_up_since: null, last_trip_current_a: null },
     buses: { bus20: { kv: 20.02, live: true }, s1: { kv: 0, live: false }, s2: { kv: 0, live: false }, s3: { kv: 19.97, live: true } },
-    devices: Object.fromEntries([["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, current_a: 0, p_mw: 0, q_mvar: 0, revision: Number(revision), solved_revision: Number(revision) }])),
+    devices: Object.fromEntries([["f2-breaker", 5], ["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, current_a: 0, p_mw: 0, q_mvar: 0, revision: Number(revision), solved_revision: Number(revision) }])),
   },
 };
 
@@ -265,8 +268,12 @@ export const SESSIONS: FirewallSessionList = {
   ],
 };
 
-// Full schema-3 snapshot: all 38 monitored points in contract §5.
+// Full schema-3 snapshot: all 42 monitored points, including indication-only F2.
 const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
+  ["f2-position", 1501, "closed", "M_DP_TB_1"],
+  ["f2-protection-trip", 1502, false, "M_SP_TB_1"],
+  ["f2-current", 2501, 11.2, "M_ME_NC_1"],
+  ["f2-p-mw", 2502, 0.38, "M_ME_NC_1"],
   ["feeder-p-mw", 2003, 2.05, "M_ME_NC_1"],
   ["feeder-q-mvar", 2004, 0.62, "M_ME_NC_1"],
   ["feeder-pf", 2005, 0.957, "M_ME_NC_1"],
@@ -306,7 +313,7 @@ export const FEEDER_STATE: OperatorState = {
   ...FRESH_STATE,
   points: [...FRESH_POINTS, ...EXTRA_POINTS.map(([id, ioa, value, asdu]): OperatorPoint => ({
     ...FRESH_POINTS[0], id, ioa, value, asdu,
-    device: id.startsWith("feeder-") ? "feeder-breaker" : id.slice(0, id.startsWith("oltc-") ? 6 : 5),
+    device: id.startsWith("f2-") ? "f2-breaker" : id.startsWith("feeder-") ? "feeder-breaker" : id.slice(0, id.startsWith("oltc-") ? 6 : 5),
     limits: id === "oltc-1-bus-kv" ? { low: 19.8, high: 21 } : id.includes("-kv") && id.startsWith("rmu-") ? { low: 19, high: 21 } : null,
     kind: asdu === "M_ME_NC_1" ? "float" : asdu === "M_ST_TB_1" ? "step-position" : asdu === "M_DP_TB_1" ? "double-point" : "single-point",
     reporting: asdu === "M_ME_NC_1" ? { cyclic_ms: id.startsWith("plc-") ? 60000 : 10000, deadband: id.startsWith("plc-") ? 0 : id.endsWith("current") ? 2 : id.endsWith("-pf") ? 0.01 : id.endsWith("-mw") || id.endsWith("-mvar") ? 0.05 : 0.1 } : null,

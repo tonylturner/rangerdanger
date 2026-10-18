@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AUDIT, TRUTH, BOOT_STATE, EU_PACKAGE, FEEDER_STATE, JOURNAL, NOW, PERIODIC_GI_STATE, WATCHDOG_STATE, commandResult } from "../lib/operator-fixtures.test-util";
-import { ControlCentreScreen, InterrogateStation, LinkStrip, viewFromSearch } from "./control-centre-view";
+import { ControlCentreScreen, InterrogateStation, LinkDetails, viewFromSearch } from "./control-centre-view";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { resolveOperatorView } from "../lib/operator-view";
 import { ControlCentreMiniStatus, RunnerOperatorStatus } from "./runner-operator-status";
@@ -83,7 +83,25 @@ describe("operator workstation interactions", () => {
     select("CB1", "Enter"); expect(output(tree)).toContain("CB1 faceplate");
     select("RMU1", " "); expect(output(tree)).toContain("RMU1 faceplate");
     select("RMU2"); expect(output(tree)).toContain("RMU2 faceplate");
+    select("F2", "Enter"); expect(output(tree)).toContain("F2 faceplate");
+    expect(output(tree)).toContain("Indication only");
+    expect(button(tree, "Confirm")).toBeUndefined();
     select("T1"); expect(output(tree)).toContain("Configured delay only");
+  });
+  it.each([
+    ["T1", "oltc-1-remote", true, "REMOTE"],
+    ["RMU1", "rmu-1-remote", false, "LOCAL"],
+    ["RMU2", "rmu-2-remote", null, "not established"],
+    ["CB1", null, true, "not established"],
+  ] as const)("confirms %s with received authority only, still subject to interlocks", (device, id, value, authority) => {
+    const state = structuredClone(FEEDER_STATE);
+    if (id) state.points.find((p) => p.id === id)!.value = value;
+    const tree = mount(screen({ state }));
+    act(() => tree.root.findAllByType("g").find((n) => n.props.role === "button" && n.props["aria-label"].startsWith(device))!.props.onClick());
+    act(() => button(tree, "Confirm").props.onClick());
+    expect(output(tree)).toContain(`Received control authority: `);
+    expect(output(tree)).toContain(authority);
+    expect(output(tree)).toContain("This attempt is still subject to device interlocks.");
   });
   it("cancels local arming on device change; one POST does wire SBO; late result retains CB1 attribution", async () => {
     let resolve!: (response: Response) => void;
@@ -124,7 +142,7 @@ describe("operator workstation interactions", () => {
     const tree = mount(screen({ state }));
     expect(button(tree, "Confirm RAISE").props.disabled).toBe(false);
     expect(button(tree, "Interrogate station").props.disabled).toBe(true);
-    expect(renderToStaticMarkup(<LinkStrip link={state.link} now={NOW} />)).toContain("GI ok");
+    expect(renderToStaticMarkup(<LinkDetails link={state.link} now={NOW} />)).toContain("GI ok");
     expect(renderToStaticMarkup(<ControlCentreMiniStatus state={state} waiting={false} />)).toContain("GI ok");
   });
   it("opens bad-quality Points without turning an uncertain bus into a process alarm", () => {
@@ -134,7 +152,7 @@ describe("operator workstation interactions", () => {
     expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(1);
     expect(output(tree)).toContain("not_updated");
     act(() => tree.root.findByType("select").props.onChange({ target: { value: "status" } }));
-    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(19);
+    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(21);
   });
   it("marks the complete cached surface and shows journal failures, without rewriting GOOD", () => {
     const state = structuredClone(FEEDER_STATE);
@@ -191,12 +209,12 @@ it("queries each selected device audit with an independent cache identity", asyn
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/field/audit"))).toBe(false);
   await act(async () => { button(tree, "Advanced diagnostics").props.onClick(); await settle(); });
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true);
-  for (const device of ["rmu-1", "rmu-2", "oltc-1"]) {
+  for (const device of ["rmu-1", "rmu-2", "oltc-1", "f2-breaker"]) {
     await act(async () => {
       tree.root.findByProps({ "aria-label": "Audit device" }).props.onChange({ target: { value: device } });
       await settle();
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true);
   }
-  expect(clients.at(-1)!.getQueryCache().findAll({ queryKey: ["field", "audit"] })).toHaveLength(4);
+  expect(clients.at(-1)!.getQueryCache().findAll({ queryKey: ["field", "audit"] })).toHaveLength(5);
 });
