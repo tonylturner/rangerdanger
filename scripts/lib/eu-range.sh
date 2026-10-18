@@ -3,8 +3,14 @@
 
 # jq definitions shared by every operator-state predicate (eu_wait_for_state,
 # eu_assert_jq*): baseline CB1 subset and full-station/F2 quality.
+# Embed the package inventory count once so direct jq callers need no extra args.
+EU_JQ_DEFS=$(jq -er '.points | arrays | select(length > 0)
+  | "def station_point_count: \(length);"' "$PACKAGE/protocols/points.json") || {
+  printf 'Cannot load station point count from %s/protocols/points.json\n' "$PACKAGE" >&2
+  return 1
+}
 # shellcheck disable=SC2016
-EU_JQ_DEFS='
+EU_JQ_DEFS+='
 def breaker_points: [.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)];
 def four_points: ([breaker_points[].id] | sort)
   == ["feeder-breaker-position","feeder-current","feeder-protection-trip","feeder-voltage"];
@@ -14,7 +20,7 @@ def good: .value != null and .quality.iv == false and .quality.nt == false
 def all_good: four_points and all(breaker_points[]; good);
 def all_stale($reason): four_points
   and all(breaker_points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
-def station_good: (.points | length == 42) and all(.points[]; good);
+def station_good: (.points | length == station_point_count) and all(.points[]; good);
 def f2_good: ([.points[] | select(.device == "f2-breaker")] | length == 4 and all(.[]; good));
 def point($id): ([.points[] | select(.id == $id)][0] // {});
 def epoch: capture("^(?<base>.*:[0-9]{2})(?:\\.(?<frac>[0-9]+))?Z$")
@@ -325,6 +331,7 @@ eu_interrogate_since() {
 # Wait for solver delivery, then allow a full acquisition cycle before requesting
 # a snapshot. GI reads RTU cache; it does not synchronously acquire device truth.
 eu_settle_for_gi() {
+  # shellcheck disable=SC2016 # $field and $device are jq variables.
   eu_wait_for_field '.process.truth_stale == false and (.devices | length > 0)
     and all(.devices[]; .moving != true and .measurements.valid == true)
     and (. as $field | all(.devices[]; . as $device |

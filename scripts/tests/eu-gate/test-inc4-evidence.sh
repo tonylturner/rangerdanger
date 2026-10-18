@@ -22,8 +22,32 @@ t_expect_eq "$T_STATUS" 0 "one lost breaker conduit does not require stale healt
 
 t_run jq -e "$EU_JQ_DEFS f2_good and station_good" <<<"$OPERATOR"
 t_expect_eq "$T_STATUS" 0 "all four F2 indications and full station GOOD"
-t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit '.points |= .[0:41]')"
+t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit 'del(.points[-1])')"
 t_expect_eq "$T_STATUS" 1 "an incomplete station cannot pass full recovery"
+t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit '.points += [.points[0]]')"
+t_expect_eq "$T_STATUS" 1 "an oversized station cannot pass full recovery"
+
+# Reload definitions in isolation to prove the count follows the selected
+# inventory, not the fixture size or an extra jq argument supplied by callers.
+inventory_defs() {
+  bash -c 'PACKAGE="$1"; . "$2" || exit 1; printf "%s" "$EU_JQ_DEFS"' \
+    bash "$1" "$T_REPO/scripts/lib/eu-range.sh"
+}
+inventory_package="$TMP_DIR/station-inventory"
+mkdir -p "$inventory_package/protocols"
+jq 'del(.points[-1])' "$PACKAGE/protocols/points.json" >"$inventory_package/protocols/points.json"
+short_defs=$(inventory_defs "$inventory_package")
+t_run jq -e "$short_defs station_good" <<<"$(edit 'del(.points[-1])')"
+t_expect_eq "$T_STATUS" 0 "full recovery derives its count from a different package inventory"
+t_run jq -e "$short_defs station_good" <<<"$OPERATOR"
+t_expect_eq "$T_STATUS" 1 "the old point count does not pass a changed inventory"
+printf '{"points":[]}\n' >"$inventory_package/protocols/points.json"
+t_run inventory_defs "$inventory_package"
+t_expect_eq "$T_STATUS" 1 "an empty inventory cannot define full-station recovery"
+rm "$inventory_package/protocols/points.json"
+t_run inventory_defs "$inventory_package"
+t_expect_eq "$T_STATUS" 1 "a missing inventory cannot define full-station recovery"
+
 f2_stale=$(edit '(.points[] | select(.device == "f2-breaker")) |= (.quality.iv = true | .quality.nt = true | .stale_reason = "device_unreachable")')
 t_run jq -e "$EU_JQ_DEFS (f2_good | not) and all(.points[] | select(.device != \"f2-breaker\"); good)" <<<"$f2_stale"
 t_expect_eq "$T_STATUS" 0 "lost F2 is not GOOD; healthy peers remain independent"
