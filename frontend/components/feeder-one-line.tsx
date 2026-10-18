@@ -4,14 +4,15 @@ import { AUTHORITY_POINTS, type DeviceId } from "../lib/operator-workstation";
 import { pointLabel } from "../lib/operator-format";
 import { SECTION_VOLTAGE, sectionSupplyPath, type SectionId } from "../lib/operator-supply-path";
 import type { Readings } from "../lib/observation-readings";
+import { LIVE_KV, voltageState } from "../lib/electrical-state";
 
 export function FeederOneLine({ read, physical = false, unavailable = false, selected = "T1", onSelect = () => {} }: {
   read: Readings; physical?: boolean; unavailable?: boolean; selected?: DeviceId; onSelect?: (id: DeviceId) => void;
 }) {
   const voltage = (id: string) => {
-    const r = read(id);
-    return r.condition !== "good" || typeof r.value !== "number" ? { color: "#fbbf24", dash: "6 5", state: "UNKNOWN" }
-      : r.value > 0 ? { color: "#38bdf8", dash: undefined, state: "LIVE" } : { color: "#94a3b8", dash: undefined, state: "DEAD" };
+    const state = voltageState(read(id));
+    return state === "UNKNOWN" ? { color: "#fbbf24", dash: "6 5", state }
+      : state === "LIVE" ? { color: "#38bdf8", dash: undefined, state } : { color: "#94a3b8", dash: undefined, state };
   };
   const section = (x1: number, y1: number, x2: number, y2: number, id: string) => {
     const v = voltage(id);
@@ -135,6 +136,6 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>
-    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage &gt; 0 kV; grey: measured zero; dashed amber: invalid, stale or unknown. The lower F2 connection follows solver energization, separately from measured kV. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local control authority; hatched AUTHORITY STALE/UNKNOWN means control authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. The dashed grey F2 connection is not established by the S3 measurement. F2 has no telemetry.</>}</figcaption>
+    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage ≥ {LIVE_KV} kV; grey: measured voltage below {LIVE_KV} kV; dashed amber: invalid, stale or unknown. The lower F2 connection follows solver energization, separately from measured kV. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local control authority; hatched AUTHORITY STALE/UNKNOWN means control authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage ≥ {LIVE_KV} kV, not proof of a supply path. Grey: observed voltage below {LIVE_KV} kV. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. The dashed grey F2 connection is not established by the S3 measurement. F2 has no telemetry.</>}</figcaption>
   </figure>;
 }

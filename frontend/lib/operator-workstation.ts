@@ -1,5 +1,6 @@
 import type { OperatorPoint, OperatorState } from "./operator-api";
 import { pointCondition, pointLabel } from "./operator-format";
+import { LIVE_KV } from "./electrical-state";
 
 export type DeviceId = "T1" | "CB1" | "RMU1" | "RMU2";
 export const DEVICES: DeviceId[] = ["T1", "CB1", "RMU1", "RMU2"];
@@ -18,7 +19,7 @@ export function activeAlarms(state: OperatorState): { id: string; text: string }
   const asserted = ["feeder-protection-trip", "rmu-1-earth", "rmu-2-earth", "rmu-1-fault-passage", "rmu-2-fault-passage", "oltc-1-blocked", "oltc-1-overcurrent-block", "oltc-1-at-lower", "oltc-1-at-upper"];
   for (const p of state.points) {
     if (pointCondition(p) !== "good") continue;
-    if (p.limits && typeof p.value === "number" && p.value > 0.1 && (p.value < p.limits.low || p.value > p.limits.high)) {
+    if (p.limits && typeof p.value === "number" && Number.isFinite(p.value) && p.value >= LIVE_KV && (p.value < p.limits.low || p.value > p.limits.high)) {
       alarms.push({ id: `${p.id}-voltage-limit`, text: `${pointLabel(p.id)}: voltage limit (${p.value.toFixed(2)} kV; ${p.limits.low.toFixed(2)}–${p.limits.high.toFixed(2)} kV)` });
     }
     if ((asserted.includes(p.id) && p.value === true) || (["plc-1-running", "plc-1-input-valid"].includes(p.id) && p.value === false)) {

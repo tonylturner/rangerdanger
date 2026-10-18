@@ -64,7 +64,7 @@ describe("operator observation rules", () => {
 
 describe("voltage limits", () => {
   it.each([
-    [0, false], [0.1, false], [0.10001, true], [18.999, true], [19, false], [20, false], [21, false], [21.001, true],
+    [0, false], [0.000004679, false], [0.099, false], [-1, false], [NaN, false], [Infinity, false], [0.1, true], [0.10001, true], [18.999, true], [19, false], [20, false], [21, false], [21.001, true],
   ])("alarms at %s kV: %s", (value, alarm) => {
     const point = FEEDER_STATE.points.find((p) => p.id === "feeder-voltage")!;
     expect(activeAlarms({ ...FEEDER_STATE, points: [{ ...point, value }] }).some((a) => a.id === "feeder-voltage-voltage-limit")).toBe(alarm);

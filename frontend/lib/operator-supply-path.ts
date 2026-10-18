@@ -1,5 +1,6 @@
 import type { Readings } from "./observation-readings";
 import { pointLabel } from "./operator-format";
+import { LIVE_KV } from "./electrical-state";
 
 export type SectionId = "S1" | "S2" | "S3";
 export type SupplyPath = {
@@ -30,13 +31,13 @@ export function sectionSupplyPath(read: Readings, section: SectionId): SupplyPat
   if (typeof kv !== "number" || !Number.isFinite(kv) || kv < 0) {
     return result("unknown", `${pointLabel(voltageId)} voltage is unavailable or invalid`);
   }
-  if (kv === 0) return result("no supply", `${pointLabel(voltageId)} voltage is GOOD and 0 kV`);
+  if (kv < LIVE_KV) return result("no supply", `${pointLabel(voltageId)} voltage is GOOD and below ${LIVE_KV} kV (${kv} kV measured)`);
 
   const bus = goodValue("oltc-1-bus-kv");
   const index = SECTION_INDEX[section];
   const path = SWITCHES.slice(0, index + 1);
   const unproven = path.filter((id) => goodValue(id) !== "closed");
-  const busLive = typeof bus === "number" && Number.isFinite(bus) && bus > 0;
+  const busLive = typeof bus === "number" && Number.isFinite(bus) && bus >= LIVE_KV;
   const f2 = goodValue("f2-position");
   if (f2 === "closed" || f2 === "open") {
     const cb1Path = busLive && unproven.length === 0;
