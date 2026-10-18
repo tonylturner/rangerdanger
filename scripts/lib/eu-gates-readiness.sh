@@ -121,7 +121,7 @@ eu_gate_preflight() {
 
   for required_container in "$FW" "$KALI" rangerdanger-vendor-jump rangerdanger-eng-ws \
     "$RTU" "$CC" "$BREAKER" "$GPS" "$OPENDSS" rangerdanger-rmu-1 rangerdanger-rmu-2 \
-    rangerdanger-oltc-1 rangerdanger-openplc rangerdanger-historian; do
+    rangerdanger-oltc-1 rangerdanger-f2-breaker rangerdanger-openplc rangerdanger-historian; do
     if eu_container_running "$required_container"; then
       pass "$required_container running"
     else
@@ -264,11 +264,12 @@ eu_gate_G1() {
 # New increment-4 services retain the same non-forwarding/loopback boundaries.
 eu_inc4_boundaries() {
   local node field process mgmt container forwarding
-  for node in 1 2 3; do
+  for node in 1 2 3 4; do
     case "$node" in
       1) container=rangerdanger-rmu-1; field=21; process=31; mgmt=24 ;;
       2) container=rangerdanger-rmu-2; field=22; process=32; mgmt=25 ;;
       3) container=rangerdanger-oltc-1; field=23; process=33; mgmt=26 ;;
+      4) container=rangerdanger-f2-breaker; field=24; process=34; mgmt=28 ;;
     esac
     check_listener "$container" "10.40.40.$field:502" "$container Modbus"
     check_listener "$container" "10.50.50.$process:8080" "$container truth" 2
@@ -280,7 +281,7 @@ eu_inc4_boundaries() {
   check_listener rangerdanger-historian 10.99.99.40:8080 "historian mgmt read" 2
   check_gateway rangerdanger-historian 10.70.70.2
   check_gateway rangerdanger-openplc 10.30.30.2
-  for container in rangerdanger-rmu-1 rangerdanger-rmu-2 rangerdanger-oltc-1 rangerdanger-historian rangerdanger-openplc; do
+  for container in rangerdanger-rmu-1 rangerdanger-rmu-2 rangerdanger-oltc-1 rangerdanger-f2-breaker rangerdanger-historian rangerdanger-openplc; do
     forwarding=$(docker exec "$container" cat /proc/sys/net/ipv4/ip_forward) || forwarding=""
     if [ "$forwarding" = 0 ]; then pass "$container ip_forward=0"
     else fail "$container ip_forward=$forwarding (expected 0)"; fi

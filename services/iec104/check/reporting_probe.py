@@ -103,9 +103,9 @@ def main():
         peer.gi()
         until(lambda: any(a[0] == 100 and a[2] & 63 == 10 for _, a in peer.frames))
         gi = [(a[0], a[1] & 127) for _, a in peer.frames if a[2] & 63 == 20]
-        assert sorted(gi) == [(1, 15), (3, 3), (5, 1), (13, 19)], gi
+        assert sorted(gi) == [(1, 16), (3, 4), (5, 1), (13, 21)], gi
         cycles = until(lambda: peer.analog(1) if len(peer.analog(1)) >= 3 else None)
-        assert all(x[3] == 19 for x in cycles), cycles
+        assert all(x[3] == 21 for x in cycles), cycles
         assert all(1.9 <= b[0] - a[0] <= 2.5 for a, b in zip(cycles, cycles[1:])), cycles
         print("PASS GI and COT 1 pack by type with SQ=0; cyclic floats arrive every 2000 ms")
 

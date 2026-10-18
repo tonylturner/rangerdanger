@@ -2,7 +2,7 @@
 # EU range API/device operations and operator/truth/solver convergence helpers.
 
 # jq definitions shared by every operator-state predicate (eu_wait_for_state,
-# eu_assert_jq*): the four monitored points and their per-point quality.
+# eu_assert_jq*): baseline CB1 subset and full-station/F2 quality.
 # shellcheck disable=SC2016
 EU_JQ_DEFS='
 def breaker_points: [.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)];
@@ -14,6 +14,8 @@ def good: .value != null and .quality.iv == false and .quality.nt == false
 def all_good: four_points and all(breaker_points[]; good);
 def all_stale($reason): four_points
   and all(breaker_points[]; .quality.iv == true and .quality.nt == true and .stale_reason == $reason);
+def station_good: (.points | length == 42) and all(.points[]; good);
+def f2_good: ([.points[] | select(.device == "f2-breaker")] | length == 4 and all(.[]; good));
 def point($id): ([.points[] | select(.id == $id)][0] // {});
 def epoch: capture("^(?<base>.*:[0-9]{2})(?:\\.(?<frac>[0-9]+))?Z$")
   | ((.base + "Z" | fromdateiso8601) + ("0." + (.frac // "0") | tonumber));
@@ -278,15 +280,16 @@ eu_get_operator() {
   eu_assert_operator_shape "$API_BODY" "GET /api/operator/state"
 }
 eu_get_point_snapshot() {
-  local body="$1"
-  printf '%s' "$body" | jq -ce "$EU_JQ_DEFS"'
+  local body="$1" scope="${2:-breaker}"
+  printf '%s' "$body" | jq -ce --arg scope "$scope" "$EU_JQ_DEFS"'
     if type == "object" and (.points | type == "array")
     and all(.points[]; has("id") and has("value") and has("received_at") and has("source_time"))
     and ([.points[] | select(.id == "feeder-current" or .id == "feeder-voltage")
           | .id] | sort == ["feeder-current", "feeder-voltage"])
     and all(.points[] | select(.id == "feeder-current" or .id == "feeder-voltage");
       .source_time == null)
-    then [breaker_points[] | {id, value, received_at, source_time}] | sort_by(.id)
+    then [(if $scope == "station" then .points else breaker_points end)[]
+      | {id, value, received_at, source_time}] | sort_by(.id)
     else error("float point source_time must be null and both float points must exist")
     end
   '
@@ -354,6 +357,18 @@ eu_baseline_mismatches() {
       (.points[] | select(.id == "feeder-breaker-position" or .id == "feeder-protection-trip")
         | select(time_fits_cot | not)
         | "\(.id) time tag does not fit COT \(.cot | tojson): source_time=\(.source_time | tojson) source_time_invalid=\(.source_time_invalid | tojson)"),
+      (point("f2-position").value as $value
+        | if $value == $truth.devices["f2-breaker"].position then empty
+          else pair("F2 position"; $value; $truth.devices["f2-breaker"].position) end),
+      (point("f2-protection-trip").value as $value
+        | if $value == $truth.devices["f2-breaker"].protection_tripped then empty
+          else pair("F2 trip"; $value; $truth.devices["f2-breaker"].protection_tripped) end),
+      (["current", "p-mw"][] as $suffix
+        | (if $suffix == "current" then "current_a" else "p_mw" end) as $key
+        | point("f2-" + $suffix).value as $value
+        | if near($value; $truth.devices["f2-breaker"].measurements[$key];
+            (if $suffix == "current" then 2 else 0.05 end)) then empty
+          else pair("F2 " + $suffix; $value; $truth.devices["f2-breaker"].measurements[$key]) end),
       (point("feeder-breaker-position").value as $value
         | if $value == $device.position then empty else pair("position"; $value; $device.position) end),
       (point("feeder-protection-trip").value as $value
@@ -422,7 +437,7 @@ eu_wait_command() {
 eu_management() {
   local node="$1" method="$2" path="$3" body="${4:-}" ip output
   case "$node" in
-    breaker-1) ip=10.99.99.22 ;; rmu-1) ip=10.99.99.24 ;;
+    breaker-1) ip=10.99.99.22 ;; f2-breaker) ip=10.99.99.28 ;; rmu-1) ip=10.99.99.24 ;;
     rmu-2) ip=10.99.99.25 ;; oltc-1) ip=10.99.99.26 ;;
     process) ip=10.99.99.23 ;; *) fail "unknown management node $node"; return 1 ;;
   esac

@@ -271,8 +271,8 @@ func TestContractCCStateIngest(t *testing.T) {
 		t.Fatalf("contract ingest counters: %+v", h)
 	}
 	points := s.points()
-	if len(points) != 38 {
-		t.Fatalf("stored %d points, want all 38 contract points", len(points))
+	if len(points) != 42 {
+		t.Fatalf("stored %d points, want all 42 contract points", len(points))
 	}
 	for _, p := range points {
 		if p.ID == "oltc-1-tap" {

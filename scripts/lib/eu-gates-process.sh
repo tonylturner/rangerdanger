@@ -124,8 +124,7 @@ eu_wait_for_regulation() {
 }
 
 eu_gate_G15() {
-  local section expected since grading instant
-  instant=$(jq -er '.f2_protection.instantaneous_a' "$PACKAGE/process/profile.json") || return
+  local section expected since grading
   eu_apply_named improved || return
   eu_reset_all || return
   eu_management rmu-1 POST /api/sim/actions '{"action":"earth_close"}' || return
@@ -173,13 +172,20 @@ eu_gate_G15() {
       eu_wait_for_field '.devices["breaker-1"].measurements.valid and .process.buses.s1.live' 10 "G15 reverse feed S1 through tie" || return
       eu_command feeder-breaker-command close rejected live_live || return
     else
-      eu_wait_for_field ".process.f2_tripped and .process.f2_protection.last_trip_current_a >= $instant
-        and .process.buses.s2.live == false and .process.buses.s3.live == false" 10 "G15 S2 backfeed trips F2" || return
+      eu_wait_for_field '.devices["f2-breaker"].protection_tripped and .devices["f2-breaker"].position == "open"
+        and (.devices["f2-breaker"].protection | .instantaneous_a == 2000 and .pickup_a == 400
+          and .delay_ms == 1000 and .last_trip_current_a >= .instantaneous_a)
+        and .process.buses.s2.live == false and .process.buses.s3.live == false' 10 "G15 S2 backfeed trips F2" || return
       eu_fresh_points 'point("rmu-1-fault-passage").value and point("rmu-2-fault-passage").value
-        and point("rmu-2-source-kv").value < 0.1' "$since" 10 "G15 S2 FPI and S3 loss via protocols" || return
+        and point("rmu-2-source-kv").value < 0.1
+        and point("f2-position").value == "open" and point("f2-protection-trip").value
+        and point("f2-current").value < 1 and point("f2-p-mw").value == 0' "$since" 10 "G15 S2 FPI and S3 loss via protocols" || return
     fi
   done
-  eu_reset_all
+  eu_reset_all || return
+  since=$(eu_utc)
+  eu_fresh_points 'point("f2-position").value == "closed" and point("f2-protection-trip").value == false
+    and point("f2-current").value > 0 and point("f2-p-mw").value > 0' "$since" 10 "G15 F2 reset indications"
 }
 # Reset starts in auto and can move during GI recovery. Freeze it, finish any
 # accepted motion, then restore the reference initial tap using normal commands.

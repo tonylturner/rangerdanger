@@ -931,6 +931,100 @@
       "reporting": null,
       "device": "oltc-1",
       "limits": null
+    },
+    {
+      "id": "f2-position",
+      "ioa": 1501,
+      "asdu": "M_DP_NA_1",
+      "value": "closed",
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.047601178Z",
+      "cot": 20,
+      "kind": "double-point",
+      "reporting": null,
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-protection-trip",
+      "ioa": 1502,
+      "asdu": "M_SP_NA_1",
+      "value": false,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": null
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.04763522Z",
+      "cot": 20,
+      "kind": "single-point",
+      "reporting": null,
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-current",
+      "ioa": 2501,
+      "asdu": "M_ME_NC_1",
+      "value": 10.0,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.047654053Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 2
+      },
+      "device": "f2-breaker",
+      "limits": null
+    },
+    {
+      "id": "f2-p-mw",
+      "ioa": 2502,
+      "asdu": "M_ME_NC_1",
+      "value": 0.33,
+      "quality": {
+        "iv": false,
+        "nt": false,
+        "sb": false,
+        "bl": false,
+        "ov": false
+      },
+      "stale_reason": null,
+      "source_time": null,
+      "source_time_invalid": null,
+      "received_at": "2026-10-15T21:07:12.047654053Z",
+      "cot": 20,
+      "kind": "float",
+      "reporting": {
+        "cyclic_ms": 10000,
+        "deadband": 0.05
+      },
+      "device": "f2-breaker",
+      "limits": null
     }
   ]
 }
