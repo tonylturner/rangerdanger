@@ -45,6 +45,7 @@ const GOOD_QDS: QdsQuality = { ...GOOD_INDICATION, ov: false };
 
 export const FRESH_POINTS: OperatorPoint[] = [
   {
+    device: "feeder-breaker", limits: null,
     id: "feeder-breaker-position",
     ioa: 1001,
     kind: "double-point", reporting: null,
@@ -58,6 +59,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     cot: 3,
   },
   {
+    device: "feeder-breaker", limits: null,
     id: "feeder-protection-trip",
     ioa: 1002,
     kind: "single-point", reporting: null,
@@ -71,6 +73,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     cot: 20,
   },
   {
+    device: "feeder-breaker", limits: null,
     id: "feeder-current",
     ioa: 2001,
     kind: "float", reporting: { cyclic_ms: 10000, deadband: 2 },
@@ -84,6 +87,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
     cot: 3,
   },
   {
+    device: "feeder-breaker", limits: { low: 19, high: 21 },
     id: "feeder-voltage",
     kind: "float", reporting: { cyclic_ms: 10000, deadband: 0.1 },
     ioa: 2002,
@@ -99,7 +103,7 @@ export const FRESH_POINTS: OperatorPoint[] = [
 ];
 
 export const FRESH_STATE: OperatorState = {
-  schema: 2,
+  schema: 3,
   snapshot_seq: 120,
   rendered_at: "2026-10-09T12:00:29.900Z",
   cache_epoch: "a1b2c3d4",
@@ -160,24 +164,27 @@ export function commandResult(result: CommandResult["result"]): CommandResult {
 }
 
 export const BREAKER: BreakerState = {
-  schema: 2, kind: "breaker", device_id: "feeder-breaker", generation: 3141592, revision: 5,
+  schema: 3, kind: "breaker", device_id: "feeder-breaker", generation: 3141592, revision: 5,
   position: "open", remote_enabled: true, lockout: true, protection_tripped: true,
   event_seq: 9, changed_at: "2026-10-09T12:00:12.000Z",
+  protection: { function: "overcurrent", pickup_a: 400, delay_ms: 1000, instantaneous_a: 3000, picked_up: false, picked_up_since: null, last_trip_current_a: 600 },
   measurements: {
-    current_a: 0, voltage_kv_ll: 0, source_kv_ll: 20, section_live: false, source_live: true, fault_current: false,
+    current_a: 0, voltage_kv_ll: 0, source_kv_ll: 20, section_live: false, source_live: true, p_mw: 0, q_mvar: 0, pf: null,
     valid: true, solver_epoch: "e1", solve_seq: 140,
     solved_at: "2026-10-09T12:00:29.500Z", received_at: "2026-10-09T12:00:29.510Z",
   },
 };
 export const RMU1: RmuState = {
-  schema: 2, kind: "rmu", device_id: "rmu-1", generation: 1, revision: 3, event_seq: 31,
+  schema: 3, kind: "rmu", device_id: "rmu-1", generation: 1, revision: 3, event_seq: 31,
   changed_at: BREAKER.changed_at, remote_enabled: true, position: "closed", earth_closed: false, fault_passage: true,
+  protection: { ...BREAKER.protection, function: "fpi", pickup_a: 300, delay_ms: 0, instantaneous_a: null },
   measurements: { ...BREAKER.measurements, source_kv_ll: 0 },
 };
 export const OLTC: OltcState = {
-  schema: 2, kind: "oltc", device_id: "oltc-1", generation: 1, revision: 7, event_seq: 17,
+  schema: 3, kind: "oltc", device_id: "oltc-1", generation: 1, revision: 7, event_seq: 17,
   changed_at: BREAKER.changed_at, remote_enabled: true, tap: 1, target_tap: 2, moving: true,
   auto: false, blocked: false, armed: false, plc_request_result: "not_auto", heartbeat: 200,
+  protection: { ...BREAKER.protection, function: "oltc_block", pickup_a: 866, delay_ms: 0, instantaneous_a: null },
   measurements: { ...BREAKER.measurements, voltage_kv_ll: 20.02, source_kv_ll: 110, section_live: true, source_live: true },
 };
 export const CLOCK: StationClock = {
@@ -196,11 +203,13 @@ export const TRUTH: FieldState = {
     "oltc-1": OLTC,
   },
   process: {
-    schema: 2, profile_id: "eu-cigre-mv-teaching", solver_epoch: "e1", solve_seq: 140,
+    schema: 3, profile_id: "eu-cigre-mv-teaching", solver_epoch: "e1", solve_seq: 140,
     solved_at: "2026-10-09T12:00:29.500Z", truth_stale: false, fault_section: "S1", f2_tripped: false,
     load_multiplier: 1, source_pu: 1, tap: 1,
+    profile: { enabled: true, load_factors: { residential: 0.8, commercial: 0.9, industrial: 1 }, source_pu: 1.01 },
+    f2_protection: { picked_up: false, picked_up_since: null, last_trip_current_a: null },
     buses: { bus20: { kv: 20.02, live: true }, s1: { kv: 0, live: false }, s2: { kv: 0, live: false }, s3: { kv: 19.97, live: true } },
-    devices: Object.fromEntries([["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, revision: Number(revision), solved_revision: Number(revision) }])),
+    devices: Object.fromEntries([["feeder-breaker", 5], ["rmu-1", 3], ["rmu-2", 3], ["oltc-1", 7]].map(([id, revision]) => [id, { delivered: true, current_a: 0, p_mw: 0, q_mvar: 0, revision: Number(revision), solved_revision: Number(revision) }])),
   },
 };
 
@@ -222,7 +231,7 @@ export const AUDIT: DeviceAudit = {
       before: CLOSED_DEVICE,
       after: BREAKER,
       context: { peer: "protection", protocol: "local-protection", zone: "field" },
-      detail: { cause: "fault_current" },
+      detail: { cause: "overcurrent" },
     },
     {
       seq: 2,
@@ -256,8 +265,15 @@ export const SESSIONS: FirewallSessionList = {
   ],
 };
 
-// Full schema-2 snapshot: all 31 monitored points in contract §5.
+// Full schema-3 snapshot: all 38 monitored points in contract §5.
 const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
+  ["feeder-p-mw", 2003, 2.05, "M_ME_NC_1"],
+  ["feeder-q-mvar", 2004, 0.62, "M_ME_NC_1"],
+  ["feeder-pf", 2005, 0.957, "M_ME_NC_1"],
+  ["oltc-1-p-mw", 2303, 3.05, "M_ME_NC_1"],
+  ["oltc-1-q-mvar", 2304, 0.92, "M_ME_NC_1"],
+  ["oltc-1-pf", 2305, 0.957, "M_ME_NC_1"],
+  ["oltc-1-overcurrent-block", 1307, false, "M_SP_TB_1"],
   ["rmu-1-position", 1101, "closed", "M_DP_TB_1"],
   ["rmu-1-remote", 1102, true, "M_SP_TB_1"],
   ["rmu-1-earth", 1103, false, "M_SP_TB_1"],
@@ -282,16 +298,18 @@ const EXTRA_POINTS: [string, number, OperatorPoint["value"], string][] = [
   ["oltc-1-current", 2302, 100, "M_ME_NC_1"],
   ["plc-1-running", 1401, true, "M_SP_TB_1"],
   ["plc-1-input-valid", 1402, true, "M_SP_TB_1"],
-  ["plc-1-setpoint-kv", 2401, 20, "M_ME_NC_1"],
+  ["plc-1-setpoint-kv", 2401, 20.4, "M_ME_NC_1"],
   ["plc-1-deadband-pct", 2402, 1, "M_ME_NC_1"],
-  ["plc-1-delay-s", 2403, 0, "M_ME_NC_1"],
+  ["plc-1-delay-s", 2403, 30, "M_ME_NC_1"],
 ];
 export const FEEDER_STATE: OperatorState = {
   ...FRESH_STATE,
   points: [...FRESH_POINTS, ...EXTRA_POINTS.map(([id, ioa, value, asdu]): OperatorPoint => ({
     ...FRESH_POINTS[0], id, ioa, value, asdu,
+    device: id.startsWith("feeder-") ? "feeder-breaker" : id.slice(0, id.startsWith("oltc-") ? 6 : 5),
+    limits: id === "oltc-1-bus-kv" ? { low: 19.8, high: 21 } : id.includes("-kv") && id.startsWith("rmu-") ? { low: 19, high: 21 } : null,
     kind: asdu === "M_ME_NC_1" ? "float" : asdu === "M_ST_TB_1" ? "step-position" : asdu === "M_DP_TB_1" ? "double-point" : "single-point",
-    reporting: asdu === "M_ME_NC_1" ? { cyclic_ms: id.startsWith("plc-") ? 60000 : 10000, deadband: id.startsWith("plc-") ? 0 : id.endsWith("current") ? 2 : 0.1 } : null,
+    reporting: asdu === "M_ME_NC_1" ? { cyclic_ms: id.startsWith("plc-") ? 60000 : 10000, deadband: id.startsWith("plc-") ? 0 : id.endsWith("current") ? 2 : id.endsWith("-pf") ? 0.01 : id.endsWith("-mw") || id.endsWith("-mvar") ? 0.05 : 0.1 } : null,
     source_time: asdu === "M_ME_NC_1" ? null : FRESH_POINTS[0].source_time,
     source_time_invalid: asdu === "M_ME_NC_1" ? null : false,
     quality: asdu === "M_ME_NC_1" || asdu === "M_ST_TB_1" ? GOOD_QDS : GOOD_INDICATION,

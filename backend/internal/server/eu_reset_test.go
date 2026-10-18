@@ -26,7 +26,7 @@ func deliveredState(t *testing.T, revisions map[string]uint64) string {
 	for id, revision := range revisions {
 		devices[id] = map[string]any{"delivered": true, "solved_revision": revision, "revision": revision}
 	}
-	state, err := json.Marshal(map[string]any{"schema": 2, "truth_stale": false, "devices": devices})
+	state, err := json.Marshal(map[string]any{"schema": 3, "truth_stale": false, "devices": devices})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestEUWorkshopReset(t *testing.T) {
 					polls++
 					if polls == 1 {
 						// Equal but pre-reset revisions must not satisfy the wait.
-						fmt.Fprint(w, `{"schema":2,"devices":{"feeder-breaker":{"delivered":true,"solved_revision":9,"revision":9}}}`)
+						fmt.Fprint(w, `{"schema":3,"devices":{"feeder-breaker":{"delivered":true,"solved_revision":9,"revision":9}}}`)
 					} else {
 						fmt.Fprint(w, readyState)
 					}
@@ -84,7 +84,7 @@ func TestEUWorkshopReset(t *testing.T) {
 				if node == "breaker-1" {
 					id = "feeder-breaker"
 				}
-				fmt.Fprintf(w, `{"schema":2,"device_id":%q,"revision":%d}`, id, resetRevisions[id])
+				fmt.Fprintf(w, `{"schema":3,"device_id":%q,"revision":%d}`, id, resetRevisions[id])
 			}))
 			t.Cleanup(upstream.Close)
 			gen := multiDeviceGeneration(t, upstream.URL)
@@ -150,8 +150,8 @@ func TestResetDeliveryReady(t *testing.T) {
 		{"ready", good, true, false},
 		{"later revision", strings.ReplaceAll(good, `"revision":10`, `"revision":14`), false, false},
 		{"stale", strings.Replace(good, `"truth_stale":false`, `"truth_stale":true`, 1), false, false},
-		{"missing", `{"schema":2,"truth_stale":false}`, false, false},
-		{"old schema", strings.Replace(good, `"schema":2`, `"schema":1`, 1), false, true},
+		{"missing", `{"schema":3,"truth_stale":false}`, false, false},
+		{"old schema", strings.Replace(good, `"schema":3`, `"schema":1`, 1), false, true},
 		{"missing truth quality", strings.Replace(good, `,"truth_stale":false`, ``, 1), false, false},
 		{"not delivered", strings.Replace(good, `"delivered":true`, `"delivered":false`, 1), false, false},
 		{"not solved", strings.Replace(good, `"solved_revision":10`, `"solved_revision":9`, 1), false, false},
@@ -180,7 +180,7 @@ func TestResetDeliveryDeadlineAndUpstreamFailure(t *testing.T) {
 		name, body string
 		status     int
 	}{
-		{"not delivered", `{"schema":2,"truth_stale":false,"devices":{}}`, 200},
+		{"not delivered", `{"schema":3,"truth_stale":false,"devices":{}}`, 200},
 		{"upstream failure", `{"error":"unavailable"}`, 503},
 	} {
 		t.Run(test.name, func(t *testing.T) {

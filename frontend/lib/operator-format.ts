@@ -45,9 +45,15 @@ export const POINT_META: Record<string, PointMeta> = {
   "plc-1-input-valid": { label: "OpenPLC input", states: ["INVALID", "VALID"] },
   "plc-1-setpoint-kv": { label: "OpenPLC setpoint", unit: "kV", digits: 2 },
   "plc-1-deadband-pct": { label: "OpenPLC deadband", unit: "%", digits: 1 },
-  "plc-1-delay-s": { label: "OpenPLC configured delay", unit: "s", digits: 0 },
+  "plc-1-delay-s": { label: "Configured delay", unit: "s", digits: 0 },
 };
 
+for (const prefix of ["feeder", "oltc-1"]) {
+  POINT_META[`${prefix}-p-mw`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} active power P`, unit: "MW", digits: 2 };
+  POINT_META[`${prefix}-q-mvar`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} reactive power Q`, unit: "Mvar", digits: 2 };
+  POINT_META[`${prefix}-pf`] = { label: `${prefix === "feeder" ? "Feeder" : "T1"} power factor PF`, digits: 3 };
+}
+POINT_META["oltc-1-overcurrent-block"] = { label: "OLTC overcurrent block", states: ["CLEAR", "BLOCKED"] };
 for (const id of ["rmu-1", "rmu-2"]) {
   POINT_META[`${id}-position`] = { label: `${id.toUpperCase()} position` };
   POINT_META[`${id}-remote`] = { label: `${id.toUpperCase()} authority`, states: ["LOCAL", "REMOTE"] };
@@ -98,8 +104,10 @@ export function staleReasonText(reason: StaleReason | null): string {
 
 // The value as the operator reads it. A stale value is formatted
 // exactly like a good one: the screen marks it stale, it never
-// replaces it. Only a point never received has no value.
-export function formatPointValue(id: string, value: PointValue): string {
+// replaces it. PF IV is the exception: its wire zero is a placeholder,
+// not a power factor. Only a point never received has no value.
+export function formatPointValue(id: string, value: PointValue, quality?: PointQuality): string {
+  if (id.endsWith("-pf") && (quality?.iv || value === null)) return "—";
   if (value === null) return "not received";
   if (typeof value === "object") return `${value.value}${value.transient ? " · TRANSIENT" : ""}`;
   const meta = POINT_META[id];

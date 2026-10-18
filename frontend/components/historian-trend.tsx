@@ -25,7 +25,7 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
       {history.gaps.map((gap, i) => <rect key={i} x={Math.max(60, x(gap.from))} y="25" width={Math.max(0, Math.min(900, x(gap.to)) - Math.max(60, x(gap.from)))} height="150" fill="#fbbf24" fillOpacity="0.15"><title>{`Ingest gap ${gap.from} to ${gap.to}`}</title></rect>)}
       {runs.map((run, i) => <g key={i} data-history-run="true">
         <polyline points={run.map((s) => `${x(s.ingested_at)},${y(numericSample(s)!)}`).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" />
-        {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="2" fill="#38bdf8"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value)}`}</title></circle>)}
+        {run.map((s) => <circle key={s.snapshot_seq} cx={x(s.ingested_at)} cy={y(numericSample(s)!)} r="2" fill="#38bdf8"><title>{`${s.ingested_at}: ${formatPointValue(history.point, s.value, s.quality)}`}</title></circle>)}
       </g>)}
       <text x="55" y="40" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymax.toFixed(2)}</text>
       <text x="55" y="164" textAnchor="end" fill="#cbd5e1" fontSize="11">{ymin.toFixed(2)}</text>
@@ -41,7 +41,7 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
         <thead><tr>{["CC epoch / seq", "Value", "Quality / reason", "Source time", "CC received", "Ingested"].map((h) => <th className="px-2 py-1" key={h}>{h}</th>)}</tr></thead>
         <tbody>{history.segments.flatMap((segment, i) => segment.samples.map((sample) => ({ sample, epoch: segment.cache_epoch, segment: i }))).slice(-30).reverse().map(({ sample: s, epoch, segment }) => <tr key={`${segment}-${s.snapshot_seq}`} className="border-t border-slate-800">
           <td className="px-2 py-1">{epoch} / {s.snapshot_seq}</td>
-          <td className="px-2 py-1">{formatPointValue(history.point, s.value)}</td>
+          <td className="px-2 py-1">{formatPointValue(history.point, s.value, s.quality)}</td>
           <td className="px-2 py-1">{qualityFlags(s.quality).join(" ") || "no flags"} {s.stale_reason ?? ""}</td>
           <td className="px-2 py-1">{s.source_time ?? "untimed"}{s.source_time_invalid ? " · time IV" : ""}</td>
           <td className="px-2 py-1">{s.cc_received_at ?? "unknown"}</td>
@@ -52,7 +52,7 @@ export function HistoryPlot({ history, band }: { history: History; band?: Voltag
   </div>;
 }
 
-export function HistorianTrend({ points = [] }: { points?: OperatorPoint[] }) {
+export function HistorianTrend({ points = [], voltageOnly = false }: { points?: OperatorPoint[]; voltageOnly?: boolean }) {
   const [point, setPoint] = useState("oltc-1-bus-kv");
   const catalogue = useQuery({ queryKey: ["historian", "points"], queryFn: getHistorianPoints, refetchInterval: 10000 });
   const history = useQuery({
@@ -64,13 +64,14 @@ export function HistorianTrend({ points = [] }: { points?: OperatorPoint[] }) {
     refetchInterval: 5000,
   });
   const error = catalogue.error ?? history.error;
+  const signals = catalogue.data?.filter((p) => !voltageOnly || ["oltc-1-bus-kv", "feeder-voltage", "rmu-1-section-kv", "rmu-2-section-kv", "rmu-1-source-kv", "rmu-2-source-kv"].includes(p.id));
   return <section aria-label="Historian trend" className="space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
-    <h2 className="text-sm font-bold text-slate-200">Historian · CC-observed history</h2>
+    <h2 className="text-sm font-bold text-slate-200">{voltageOnly ? "Voltage trend · bus and sections" : "Historian · CC-observed history"}</h2>
     <p className="max-w-3xl text-xs text-slate-400">Last 15 minutes in the Operations DMZ. Read-only 1 s snapshots, not a complete sequence-of-events archive. The horizontal axis uses ingest time, not the station clock. Reset Lab does not erase history.</p>
     <label className="flex flex-wrap items-center gap-2 text-xs text-slate-300">Signal
       <select className="max-w-full rounded border border-slate-600 bg-slate-900 p-2 text-slate-100" value={point} onChange={(e) => setPoint(e.target.value)}>
-        {!catalogue.data?.some((p) => p.id === point) && <option value={point}>{pointLabel(point)}</option>}
-        {catalogue.data?.map((p) => <option key={p.id} value={p.id}>{pointLabel(p.id)} · IOA {p.ioa}</option>)}
+        {!signals?.some((p) => p.id === point) && <option value={point}>{pointLabel(point)}</option>}
+        {signals?.map((p) => <option key={p.id} value={p.id}>{pointLabel(p.id)} · IOA {p.ioa}</option>)}
       </select>
     </label>
     {error ? <p role="alert" className="text-xs text-amber-300">{isRangeNotReady(error) ? "History shows once the range is ready." : `Historian unavailable: ${errorMessage(error)}. ${history.data ? "Showing the last answer, not a live feed." : "No history received."}`}</p> : null}

@@ -150,8 +150,8 @@ func outageCheck(ev telecontrolEvidence) ([]outageWindow, ValidationCheck) {
 		return nil, checkFail(checkOutage, "missing evidence: CC state unavailable to confirm the journal's cache epoch: "+ev.ccStateErr.Error())
 	case ev.journal == nil || ev.ccState == nil:
 		return nil, checkFail(checkOutage, "missing evidence: CC journal or state is absent")
-	case ev.ccState.Schema != 2:
-		return nil, checkFail(checkOutage, "missing evidence: CC state is not schema 2")
+	case ev.ccState.Schema != 3:
+		return nil, checkFail(checkOutage, "missing evidence: CC state is not schema 3")
 	case ev.journal.CacheEpoch == "" || ev.journal.CacheEpoch != ev.ccState.CacheEpoch:
 		return nil, checkFail(checkOutage, fmt.Sprintf("missing evidence: the CC cache epoch changed (journal %q, state %q): the control centre restarted and its journal no longer covers the exercise",
 			ev.journal.CacheEpoch, ev.ccState.CacheEpoch))
@@ -205,8 +205,8 @@ func tripCheck(ev telecontrolEvidence, windows []outageWindow) ValidationCheck {
 		return checkFail(checkTrip, "missing evidence: device state unavailable to confirm the audit's generation: "+ev.deviceErr.Error())
 	case ev.audit == nil || ev.device == nil:
 		return checkFail(checkTrip, "missing evidence: device audit or state is absent")
-	case ev.device.Schema != 2:
-		return checkFail(checkTrip, "missing evidence: device state is not schema 2")
+	case ev.device.Schema != 3:
+		return checkFail(checkTrip, "missing evidence: device state is not schema 3")
 	case ev.audit.Generation != ev.device.Generation:
 		return checkFail(checkTrip, fmt.Sprintf("missing evidence: the device generation changed (audit %d, state %d): the device restarted", ev.audit.Generation, ev.device.Generation))
 	case len(windows) == 0:
@@ -270,8 +270,8 @@ func operatorCheck(ev telecontrolEvidence, windows []outageWindow) ValidationChe
 		return checkFail(checkOperator, "missing evidence: device state unavailable: "+ev.deviceErr.Error())
 	case ev.ccState == nil || ev.device == nil:
 		return checkFail(checkOperator, "missing evidence: CC or device state is absent")
-	case ev.ccState.Schema != 2 || ev.device.Schema != 2:
-		return checkFail(checkOperator, "missing evidence: CC/device state must use schema 2")
+	case ev.ccState.Schema != 3 || ev.device.Schema != 3:
+		return checkFail(checkOperator, "missing evidence: CC/device state must use schema 3")
 	case len(windows) == 0:
 		return checkFail(checkOperator, "missing evidence: no control-centre outage window for recovery observations")
 	}

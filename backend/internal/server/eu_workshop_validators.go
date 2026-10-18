@@ -171,7 +171,7 @@ func euWorkshopDeviceCheck(ev euWorkshopEvidence, node, name string, test func(*
 	if !test(state) {
 		return checkFail(name, "device is not in the required restored state")
 	}
-	return checkPass(name, "current schema-2 device truth (not wire-attack evidence)")
+	return checkPass(name, "current schema-3 device truth (not wire-attack evidence)")
 }
 
 func euWorkshopSupply(ev euWorkshopEvidence) ValidationCheck {

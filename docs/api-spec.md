@@ -94,6 +94,12 @@ The workshop endpoints operate on the serving range, with nodes from the topolog
 
 For `eu-iec104-substation`, `POST /workshop/reset` runs process `reset`, then device `reset` for the OLTC, RMU2, RMU1 and breaker, then GPS `reset_offset`, and waits up to 5 s until every process device reports `solved_revision == revision` at or after its post-reset revision. The PLC is not reset and historian data is kept. Shared firewall-baseline and cleanup steps follow.
 
+Graph node `data.status` is Docker-derived for the active range: `running`,
+`exited`, `restarting`, `paused`, `missing`, or `unknown`. Missing means a
+successful Docker inventory did not contain the manifest container. An
+unavailable Docker client/daemon or an unrecognised Docker state means
+`unknown`, never `running`. Zone grouping nodes retain `status: "zone"`.
+
 The graph's `flows` entries have `id`, `source`, `target` (node IDs),
 `protocol` (display label), `port`, `cadence`, `category` (`baseline` or
 `scenario`) and `liveness_key`. `liveness` is a package-local binding map:
@@ -176,9 +182,41 @@ For packages whose manifest has a control centre and a field device simulator (`
 | `POST` | `/operator/gi` | No body. Queue CC interrogation; 202 `{"trigger":"operator","requested_at":"<UTC>"}` is acceptance, not completion. 409 `{"error":"interrogation already running"}` if pending/running; 503 `{"error":"link not started"}` if not started. Other CC failures are upstream failures. |
 | `GET` | `/operator/journal?after=<seq>` | Bounded CC link, GI, quality, status-change and command journal after a sequence number |
 | `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
-| `GET` | `/field/audit?after=<seq>` | Breaker (`breaker-1`) audit after a sequence number |
+| `GET` | `/field/audit?after=<seq>&device=<key>` | Per-device audit. Keys: `breaker-1`, `rmu-1`, `rmu-2`, `oltc-1`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. |
 
-### Operator state and reporting (schema 2)
+### Field truth (schema 3)
+
+Device `/api/state` and process `/api/electrical` (inside `/field/state`)
+accept schema 3 only. Field truth is instructor-only simulator information,
+not operator telemetry. Device `measurements` includes nullable `p_mw`,
+`q_mvar`, `pf`; the removed topological fault Boolean is not accepted.
+Positive P/Q means flow from source to section; P/Q may be negative. PF is
+`abs(P)/sqrt(P²+Q²)` at apparent power ≥0.001 MVA, otherwise null. Invalid
+measurements have null P/Q/PF.
+
+Each device has `protection`:
+`{function,pickup_a,delay_ms,instantaneous_a,picked_up,picked_up_since,last_trip_current_a}`.
+Functions are `overcurrent` (breaker), `fpi` (RMU), `oltc_block` (OLTC).
+Instantaneous pickup, picked-up timestamp (UTC), and last-trip current are
+nullable. Defaults: breaker 400 A / 1000 ms / 3000 A instantaneous; RMU
+300 A / 0 ms / no instantaneous; OLTC 866 A / 0 ms / no instantaneous.
+Timers are sample-quantised; I> operates on the first sample at or after
+its configured delay (rounded up to the solve cadence). OLTC truth
+`blocked` is manual block; effective block also includes protection pickup.
+
+Process state additionally carries
+`profile: {enabled,load_factors:{residential,commercial,industrial},source_pu}`
+and `f2_protection: {picked_up,picked_up_since,last_trip_current_a}`.
+Each process `devices[id]` entry contains delivery/revision fields plus
+nullable `current_a`, `p_mw`, `q_mvar`. Before the first solve, numeric
+profile values and device metering are null; `solved_at` and delivery
+revisions may also be null. Controls `load_multiplier` and top-level
+`source_pu` multiply the running profile; reset restores controls to 1.0
+without changing whether the profile is enabled. Revisions, generations,
+epochs and solve/delivery diagnostics are in collapsed disclosures in the UI.
+Audit before/after snapshots use the same device schema 3.
+
+### Operator state and reporting (schema 3)
 
 The CC observes only IEC 104, never field/process truth. The outer state keeps
 `schema`, `snapshot_seq`, `rendered_at`, `cache_epoch`, `link` and `points`, plus
@@ -192,7 +230,8 @@ on this connection, not complete point coverage or GOOD quality; it remains
 set during a later running GI. Disconnect clears integrity and `next_due_at`;
 the latter is null unless the link is started.
 
-Each point includes `id`, `ioa`, stable `kind`
+Each point includes `id`, `device` (source device identity), `limits`
+(`{low, high}` in kV, or null), `ioa`, stable `kind`
 (`single-point|double-point|step-position|float`), last received `asdu` (null
 before receipt), `value`, `quality` (`iv`, `nt`, `sb`, `bl`, `ov`),
 `stale_reason`, `source_time`, `source_time_invalid`, `received_at`, `cot` and
@@ -210,6 +249,27 @@ float on a started link silent for more than three cyclic periods gets NT
 and `not_updated`; a new report replaces quality. Other stale reasons are
 `never_received`, `link_lost`, `device_unreachable`, `heartbeat` and
 `measurement_invalid` (or null).
+
+The 38 monitored points include feeder P/Q/PF (IOAs 2003/2004/2005),
+T1 P/Q/PF (2303/2304/2305), and `oltc-1-overcurrent-block` (1307,
+OLTC input register 1 bit 7). P is MW, Q is Mvar, PF is dimensionless.
+PF with IV displays “—” alongside quality, never the wire placeholder 0.
+`plc-1-delay-s` (2403) is the **configured delay**, 30 s; no countdown is
+telemetered. PLC setpoint is 20.4 kV with 1% deadband (20.196–20.604 kV).
+
+Voltage limits are 19.80–21.00 kV for `oltc-1-bus-kv`, and 19.00–21.00 kV
+for `feeder-voltage` and the four RMU section/source voltage points. A GOOD
+point above 0.1 kV alarms strictly outside its limits; equality is normal.
+Zero/de-energised, bad quality, or a return within limits clears that process
+alarm; bad quality remains visible separately in Points/Alarms.
+
+Device comms health uses points grouped by `device`: a non-started link
+means `link_down`; every point `device_unreachable`/`never_received` means
+`lost`; any `device_unreachable`, `never_received`, `heartbeat` or
+`not_updated` means `degraded`; otherwise `ok`. This precedence is strict.
+`measurement_invalid` is process quality, not a comms failure. Overview
+and Workshop Status show this health. Overview voltage history reads only
+the historian's CC observations, never field truth.
 
 Commands require a started link (503 otherwise), current-connection GI
 integrity, present feedback and neither IV nor NT (409 otherwise); receipt

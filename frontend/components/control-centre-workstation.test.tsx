@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BOOT_STATE, EU_PACKAGE, FEEDER_STATE, JOURNAL, NOW, PERIODIC_GI_STATE, WATCHDOG_STATE, commandResult } from "../lib/operator-fixtures.test-util";
+import { AUDIT, TRUTH, BOOT_STATE, EU_PACKAGE, FEEDER_STATE, JOURNAL, NOW, PERIODIC_GI_STATE, WATCHDOG_STATE, commandResult } from "../lib/operator-fixtures.test-util";
 import { ControlCentreScreen, InterrogateStation, LinkStrip, viewFromSearch } from "./control-centre-view";
 import { ControlCentreOneLine } from "./control-centre-one-line";
 import { resolveOperatorView } from "../lib/operator-view";
 import { ControlCentreMiniStatus, RunnerOperatorStatus } from "./runner-operator-status";
+import { PhysicalFeeder } from "./physical-feeder";
 import { HistoryPlot } from "./historian-trend";
 import { useOperatorState } from "../lib/operator-queries";
 import { retryQuery } from "../lib/query-retry";
@@ -49,7 +50,7 @@ describe("operator state failure visibility", () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 25)); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(output(tree)).toContain("Control centre API unavailable");
-    expect(output(tree)).toContain("Expected CC state schema 2");
+    expect(output(tree)).toContain("Expected CC state schema 3");
     expect(output(tree)).not.toContain("Loading the control centre");
     expect(output(tree)).not.toContain("waiting");
   });
@@ -125,7 +126,7 @@ describe("operator workstation interactions", () => {
     expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(1);
     expect(output(tree)).toContain("not_updated");
     act(() => tree.root.findByType("select").props.onChange({ target: { value: "status" } }));
-    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(18);
+    expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(19);
   });
   it("marks the complete cached surface and shows journal failures, without rewriting GOOD", () => {
     const state = structuredClone(FEEDER_STATE);
@@ -172,4 +173,20 @@ describe("operator interrogation button", () => {
     await act(async () => { button(tree, "Interrogate station").props.onClick(); await settle(); });
     expect(output(tree)).toContain("awaiting CC start"); expect(button(tree, "Interrogate station").props.disabled).toBe(true);
   });
+});
+
+it("queries each selected device audit with an independent cache identity", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(url.includes("/field/state") ? TRUTH : { ...AUDIT, entries: [] })));
+  vi.stubGlobal("fetch", fetchMock);
+  const tree = mount(<PhysicalFeeder operator={FEEDER_STATE} />);
+  await act(async () => { await settle(); });
+  expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/field/audit?after=0&device=breaker-1"))).toBe(true);
+  for (const device of ["rmu-1", "rmu-2", "oltc-1"]) {
+    await act(async () => {
+      tree.root.findByProps({ "aria-label": "Audit device" }).props.onChange({ target: { value: device } });
+      await settle();
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/field/audit?after=0&device=${device}`))).toBe(true);
+  }
+  expect(clients.at(-1)!.getQueryCache().findAll({ queryKey: ["field", "audit"] })).toHaveLength(4);
 });

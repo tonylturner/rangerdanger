@@ -15,7 +15,7 @@ func passingConduits(t *testing.T) conduitEvidence {
 	t.Helper()
 	ev := conduitEvidence{
 		rangeStart: at("12:00:00"), collectedAt: at("12:05:00"),
-		state: decodeFixture[conduitState](t, `{"schema":2,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
+		state: decodeFixture[conduitState](t, `{"schema":3,"cache_epoch":"cc-2","link":{"state":"started","connection_seq":2}}`),
 		journal: decodeFixture[ccJournal](t, `{"cache_epoch":"cc-2","oldest_seq":1,"latest_seq":6,"entries":[
    {"seq":1,"at":"2026-10-09T12:01:00Z","kind":"gi_started","detail":{"connection_seq":2,"trigger":"connect"}},
    {"seq":2,"at":"2026-10-09T12:01:01Z","kind":"gi_complete","detail":{"connection_seq":2,"trigger":"connect"}}]}`),
@@ -23,7 +23,7 @@ func passingConduits(t *testing.T) conduitEvidence {
    {"seq":1,"at":"2026-10-09T12:02:00Z","operation":"plc_request","result":"accepted","before":{"tap":0},"after":{"revision":2,"tap":0,"target_tap":1,"moving":true},"context":{"peer":"10.30.30.30:12345","protocol":"modbus"}},
    {"seq":2,"at":"2026-10-09T12:02:02Z","operation":"motion_complete","result":"accepted","after":{"revision":3,"tap":1,"target_tap":1,"moving":false}},
    {"seq":3,"at":"2026-10-09T12:02:03Z","operation":"first_solve","result":"accepted","detail":{"revision":3}}]}`),
-		device: &deviceTruth{Schema: 2, Generation: 42}, plcIP: "10.30.30.30",
+		device: &deviceTruth{Schema: 3, Generation: 42}, plcIP: "10.30.30.30",
 		history: decodeFixture[conduitHistory](t, `{"point":"oltc-1-tap","segments":[{"cache_epoch":"cc-2","samples":[
    {"snapshot_seq":100,"value":{"value":1,"transient":false},"cc_received_at":"2026-10-09T12:04:57Z","ingested_at":"2026-10-09T12:04:58Z"},
    {"snapshot_seq":101,"value":{"value":1,"transient":false},"cc_received_at":"2026-10-09T12:04:58Z","ingested_at":"2026-10-09T12:04:59Z"}]}]}`),

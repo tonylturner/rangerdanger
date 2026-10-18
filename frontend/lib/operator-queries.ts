@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getActivePackage } from "./api";
 import {
   getFieldAudit,
+  type FieldDeviceKey,
   getFieldState,
   getOperatorJournal,
   getOperatorState,
@@ -61,8 +62,8 @@ export function useFieldState(intervalMs: number) {
   return useQuery({ queryKey: [...FIELD_KEY, "state"], queryFn: getFieldState, refetchInterval: intervalMs });
 }
 
-export function useFieldAudit(intervalMs: number) {
-  return useQuery({ queryKey: [...FIELD_KEY, "audit"], queryFn: getFieldAudit, refetchInterval: intervalMs });
+export function useFieldAudit(intervalMs: number, device: FieldDeviceKey) {
+  return useQuery({ queryKey: [...FIELD_KEY, "audit", device], queryFn: () => getFieldAudit(device), refetchInterval: intervalMs });
 }
 
 // Wall-clock time, ticking, for sample ages.

@@ -9,7 +9,7 @@ import { AUDIT, CLOCK, FEEDER_STATE, FRESH_STATE, JOURNAL, EMPTY_JOURNAL, NOW, S
 import { RangeNotReadyError } from "../lib/range";
 import { CommandPanelView, CONTROL_PANELS, type CommandPanelState } from "./control-centre-command";
 import { ControlCentreOneLine, observedReading } from "./control-centre-one-line";
-import { ControlCentreScreen } from "./control-centre-view";
+import { AbnormalSummary, ControlCentreScreen } from "./control-centre-view";
 import { AuditTable, OperatorContrast, FieldCards, PhysicalFeederScreen } from "./physical-feeder";
 import { ControlCentreMiniStatus } from "./runner-operator-status";
 
@@ -24,14 +24,14 @@ function screen(props: Partial<Parameters<typeof ControlCentreScreen>[0]> = {}) 
   return render(<ControlCentreScreen initialTab="Points" state={FEEDER_STATE} stateError={null} stateUpdatedAt={NOW - 1000} journal={JOURNAL} now={NOW} {...props} />);
 }
 
-describe("ControlCentreScreen schema 2", () => {
-  it("shows all 31 points, per-device controls and snapshot identity", () => {
+describe("ControlCentreScreen schema 3", () => {
+  it("shows all 38 points, per-device controls and snapshot identity", () => {
     const html = screen();
     const out = text(html);
-    expect(FEEDER_STATE.points).toHaveLength(31);
-    expect(out).toContain("31/31 good");
-    expect(html.match(/data-condition="good"/g)).toHaveLength(31);
-    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · UNOBSERVED", "snapshot 120", "Trends"]) expect(out).toContain(label);
+    expect(FEEDER_STATE.points).toHaveLength(38);
+    expect(out).toContain("38/38 good");
+    expect(html.match(/data-condition="good"/g)).toHaveLength(38);
+    for (const label of ["STARTED", "GI ok", "T1 110/20 kV", "CB1", "RMU1", "RMU2", "S1 residential", "S2 commercial", "S3 industrial", "F2 head · unobserved", "snapshot 120", "Trends"]) expect(out).toContain(label);
     expect(out).toContain("Confirm RAISE");
     expect(out).toContain("Confirm MANUAL");
   });
@@ -77,28 +77,28 @@ describe("ControlCentreScreen schema 2", () => {
 describe("CC schematic layout", () => {
   it("stacks until wide desktop and does not stretch the schematic to faceplate height", () => {
     const html = screen();
-    expect(html).toContain("grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]");
+    expect(html).toContain("grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]");
     expect(html).not.toContain("xl:grid-cols-[minmax(0,2fr)");
   });
 
-  it.each([1280, 1440, 1536, 1920])("fits the SVG with at least 9px labels at %ipx", (viewport) => {
+  it.each([1280, 1440, 1536, 1920])("fits the SVG with at least 12px labels at %ipx", (viewport) => {
     const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
     expect(html).toContain('viewBox="0 0 1060 410"');
-    expect(html).toContain('class="w-full min-w-[850px] md:min-w-0"');
+    expect(html).toContain('class="w-full min-w-[1060px]"');
     const fonts = [...html.matchAll(/font-size="(\d+)"/g)].map((m) => Number(m[1]));
-    // Match the shell's 12rem sidebar, max-w-7xl, px-6, gap-4 and
+    // Match the shell's 12rem sidebar, max-w-[1600px], px-6, gap-4 and
     // the schematic panel's p-3 + border. This checks sizing arithmetic,
     // not a browser layout measurement.
-    const content = Math.min(viewport - 192, 1280) - 48;
-    const svgWidth = content - (viewport >= 1536 ? 300 + 16 : 0) - 26;
-    expect(Math.min(...fonts) * svgWidth / 1060).toBeGreaterThanOrEqual(9);
+    const content = Math.min(viewport - 192, 1600) - 48;
+    const svgWidth = content - (viewport >= 1920 ? 300 + 16 : 0) - 26;
+    expect(Math.min(...fonts) * Math.max(1060, svgWidth) / 1060).toBeGreaterThanOrEqual(12);
   });
 
   it("contains phone overflow in the schematic's scroll box, not the page", () => {
     const html = screen();
     expect(html).toContain("w-screen min-w-0");
     expect(html).toContain('<figure class="min-w-0 space-y-3"><div class="max-w-full overflow-x-auto">');
-    expect(html).toContain('class="w-full min-w-[850px] md:min-w-0"');
+    expect(html).toContain('class="w-full min-w-[1060px]"');
   });
 });
 
@@ -106,7 +106,7 @@ describe("CC one-line observation integrity", () => {
   const points = (id: string, patch: Partial<OperatorPoint>) => FEEDER_STATE.points.map((p) => p.id === id ? { ...p, ...patch } : p);
   it("left-aligns the full 110 kV source label inside the SVG", () => {
     const html = render(<ControlCentreOneLine points={FEEDER_STATE.points} />);
-    const label = html.match(/<text\b[^>]*>110 kV source · UNOBSERVED<\/text>/)?.[0];
+    const label = html.match(/<text\b[^>]*>110 kV nominal — not telemetered<\/text>/)?.[0];
     expect(label).toBeDefined();
     expect(label).toContain('x="16"');
     expect(label).toContain('text-anchor="start"');
@@ -133,7 +133,7 @@ describe("CC one-line observation integrity", () => {
     const html = render(<ControlCentreOneLine points={mixed} />);
     expect(html).toContain("CB1: CLOSED · GOOD");
     expect(html).toContain("RMU1 · NC: CLOSED · STALE · IV NT · device_unreachable");
-    expect(html).toContain("RMU2 tie · NO: not received · UNKNOWN");
+    expect(html).toContain("RMU2 · NOP: not received · UNKNOWN");
     expect(html).toContain("T1 OLTC: -3 · TRANSIENT · STALE · SB");
     expect(observedReading(mixed, "plc-1-running").text).toContain("IV · heartbeat");
     expect(observedReading(mixed, "oltc-1-tap").transient).toBe(true);
@@ -218,7 +218,7 @@ describe("separate field plane", () => {
     expect(text(html)).toContain(`Sync status ${sync_status.toUpperCase()}`);
     expect(text(html)).toContain("Time offset -30.000 s");
     expect(text(html)).toContain("Alarm / comms OK YES / no");
-    expect(text(screen())).toContain("31/31 good");
+    expect(text(screen())).toContain("38/38 good");
   });
 
   it("keeps field and audit failures separate from CC availability", () => {
@@ -230,7 +230,7 @@ describe("separate field plane", () => {
 
   it("renders invalid measurements as retained and unknowns without zero substitution", () => {
     const field = structuredClone(TRUTH);
-    field.devices["rmu-1"].measurements = { ...field.devices["rmu-1"].measurements, valid: false, current_a: null };
+    field.devices["rmu-1"].measurements = { ...field.devices["rmu-1"].measurements, valid: false, current_a: null, p_mw: null, q_mvar: null, pf: null };
     field.process.devices["rmu-1"].delivered = false;
     const out = text(render(<FieldCards field={field} />));
     expect(out).toContain("INVALID · last values, not current");
@@ -254,5 +254,39 @@ describe("ControlCentreMiniStatus", () => {
   it("preserves the runner summary", () => {
     expect(text(render(<ControlCentreMiniStatus state={FRESH_STATE} waiting={false} />))).toContain("4/4 good");
     expect(text(render(<ControlCentreMiniStatus state={STALE_STATE} waiting={false} />))).toContain("CLOSED ⚠ STALE");
+  });
+});
+
+describe("realism presentation", () => {
+  it("has a compact explicit abnormal-condition empty state above the schematic", () => {
+    expect(text(render(<AbnormalSummary state={FEEDER_STATE} />))).toBe("No abnormal conditions");
+    const html = screen();
+    expect(html.indexOf('aria-label="Abnormal conditions"')).toBeLessThan(html.indexOf('aria-label="Feeder schematic"'));
+  });
+  it("shows P/Q/PF and configured delay while PF IV remains a quality-marked dash", () => {
+    const state = structuredClone(FEEDER_STATE);
+    const pf = state.points.find((p) => p.id === "oltc-1-pf")!;
+    pf.value = 0;
+    pf.quality.iv = true;
+    pf.stale_reason = "measurement_invalid";
+    const out = text(screen({ state }));
+    expect(out).toContain("T1 active power P 3.05 MW");
+    expect(out).toContain("T1 reactive power Q 0.92 Mvar");
+    expect(out).toContain("T1 power factor PF — ⚠ STALE IV measurement_invalid");
+    expect(out).toContain("Configured delay 30 s");
+  });
+  it("keeps solver identities and revisions in closed diagnostics disclosures", () => {
+    const html = render(<FieldCards field={TRUTH} />);
+    expect(html).not.toContain('<details open');
+    expect(html).toMatch(/<details[^>]*><summary[^>]*>Diagnostics<\/summary>[\s\S]*?Revision \/ generation/);
+    expect(html).toMatch(/<details[^>]*><summary[^>]*>Diagnostics<\/summary>[\s\S]*?Solver epoch/);
+    expect(text(html)).toContain("residential profile factor 0.800 ×");
+    expect(text(html)).toContain("Pickup / configured delay 400 A / 1000 ms");
+  });
+  it("keeps S3 unknown when its own received kV is invalid despite a good F2-side switch", () => {
+    const points = FEEDER_STATE.points.map((p) => p.id === "rmu-2-source-kv" ? { ...p, quality: { ...p.quality, iv: true } } : p);
+    const html = render(<ControlCentreOneLine points={points} />);
+    expect(text(html)).toContain("S3 industrial · UNKNOWN");
+    expect(html).toContain("RMU2 · NOP assembly: switch function and earth");
   });
 });

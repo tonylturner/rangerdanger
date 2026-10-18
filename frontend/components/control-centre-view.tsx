@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { postOperatorGi, type ControlCentreLink, type OperatorJournal, type OperatorState } from "../lib/operator-api";
 import { LINK_STATE_TEXT, ageMs, formatAge, formatUtcTime, telemetrySummary, telemetryText } from "../lib/operator-format";
 import { OPERATOR_KEY, useNow, useOperatorJournal, useOperatorState } from "../lib/operator-queries";
-import { activeAlarms, type DeviceId } from "../lib/operator-workstation";
+import { activeAlarms, abnormalConditions, type DeviceId } from "../lib/operator-workstation";
 import { isRangeNotReady } from "../lib/range";
 import { errorMessage } from "../lib/utils";
 import { DeviceFaceplate } from "./control-centre-faceplate";
@@ -52,6 +52,12 @@ export function InterrogateStation({ state, unavailable }: { state: OperatorStat
 export function SnapshotMarker({ age }: { age: string | null }) {
   return age === null ? null : <p role="status" className="mb-2 border border-dashed border-amber-600 p-2 text-xs text-amber-200">Cached snapshot · {age} since last API answer. All link states, values and IEC quality below are from that snapshot, not a live feed.</p>;
 }
+export function AbnormalSummary({ state }: { state: OperatorState }) {
+  const conditions = abnormalConditions(state);
+  return <section aria-label="Abnormal conditions" className={`rounded-lg border p-3 text-sm ${conditions.length ? "border-amber-700 bg-amber-950/30 text-amber-200" : "border-slate-700 text-slate-300"}`}>
+    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id}>⚠ {c.text}</li>)}</ul> : "No abnormal conditions"}
+  </section>;
+}
 export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalFeeder, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms" }: {
   state: OperatorState | undefined; stateError: unknown; stateUpdatedAt: number;
   journal: OperatorJournal | undefined; journalError?: unknown; now: number; physicalFeeder?: ReactNode;
@@ -62,7 +68,7 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
   const cachedAge = state && unavailable ? formatAge(Math.max(0, now - stateUpdatedAt)) : null;
   const summary = state ? telemetrySummary(state.points) : null;
   const alarms = state ? activeAlarms(state) : [];
-  return <main className="mx-auto flex w-screen min-w-0 max-w-7xl md:w-[calc(100vw-12rem)] flex-col gap-4 px-3 py-6 sm:px-6">
+  return <main className="mx-auto flex w-screen min-w-0 max-w-[1600px] md:w-[calc(100vw-12rem)] flex-col gap-4 px-3 py-6 sm:px-6">
     <header>
       <h1 className="text-2xl font-semibold text-white">{view === "control-centre" ? "Control Centre" : "Field truth"}</h1>
       <p className="mt-1 max-w-3xl text-sm text-slate-400">20 kV teaching feeder · {view === "control-centre" ? "IEC 60870-5-104 observations only. Selected teaching reporting profile, not a universal European default." : "Direct device, station clock and solver observations, outside IEC 104."}</p>
@@ -76,8 +82,9 @@ export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal
       {!state && <p className="text-sm text-slate-400">{isRangeNotReady(stateError) ? "The control centre shows once the range is ready." : unavailable ? "No operator snapshot available." : "Loading the control centre…"}</p>}
       {state && <section aria-label="CC observation snapshot" data-cached={unavailable} className="min-w-0 space-y-4">
         <div><SnapshotMarker age={cachedAge} /><LinkStrip link={state.link} now={now} /><div className="mt-3"><InterrogateStation state={state} unavailable={unavailable} /></div></div>
-        {/* Keep the full-width schematic at laptop sizes; the 300px faceplate fits alongside only on wider screens. */}
-        <div className="grid min-w-0 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
+        <AbnormalSummary state={state} />
+        {/* Keep 12px schematic labels; put the faceplate alongside only when both fit without shrinking the SVG. */}
+        <div className="grid min-w-0 items-start gap-4 min-[1920px]:grid-cols-[minmax(0,1fr)_300px]">
           <section aria-label="Feeder schematic" className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 p-3">
             <h2 className="mb-3 text-sm font-semibold text-slate-200">Feeder schematic</h2><SnapshotMarker age={cachedAge} />
             <ControlCentreOneLine points={state.points} unavailable={unavailable} selected={selected} onSelect={setSelected} />
