@@ -10,6 +10,15 @@ T_FIXTURES="$T_DIR/fixtures"
 T_REPO="$(cd "$T_DIR/../../.." && pwd)"
 # shellcheck source-path=SCRIPTDIR source=../../eu-iec104-smoke.sh
 . "$T_REPO/scripts/eu-iec104-smoke.sh"
+# Evidence time is deterministic/offline, like the API stubs. Clock-specific
+# tests reload eu-range.sh and stub docker to exercise the real implementation.
+eu_utc() {
+  case "${1:-}" in
+    +%s.%N) printf '1760529600.500000000\n' ;;
+    +%s%N) printf '1760529600500000000\n' ;;
+    *) printf '2026-10-15T12:00:00.500000000Z\n' ;;
+  esac
+}
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eu-gate-test.XXXXXX") || exit 1
 T_CHECKS=0
 T_ERRORS=0

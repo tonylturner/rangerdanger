@@ -162,7 +162,7 @@ eu_gate_G15() {
   eu_command rmu-1-command close completed || return
   for section in s1 s2; do
     eu_reset_all || return
-    since=$(eu_utc)
+    since=$(eu_utc) || return
     expected=false; [ "$section" != s2 ] || expected=true
     # Validate operation against solved trip amps, not a topological fault flag.
     grading='(.devices["breaker-1"].protection | (.last_trip_current_a | type == "number")
@@ -178,7 +178,7 @@ eu_gate_G15() {
       "$since" 10 "G15 $section protection/FPI via Modbus/IEC104" || return
     eu_command rmu-1-command open completed || return
     eu_wait_for_field '.devices["rmu-2"].measurements.valid and .devices["rmu-2"].measurements.section_live == false' 10 "G15 tie ready" || return
-    since=$(eu_utc)
+    since=$(eu_utc) || return
     eu_command rmu-2-command close completed || return
     if [ "$section" = s1 ]; then
       eu_wait_for_field '.process.buses.s2.live and .process.buses.s3.live and .process.f2_tripped == false' 10 "G15 S1 tie restores S2" || return
@@ -201,7 +201,7 @@ eu_gate_G15() {
     fi
   done
   eu_reset_all || return
-  since=$(eu_utc)
+  since=$(eu_utc) || return
   eu_fresh_points 'point("f2-position").value == "closed" and point("f2-protection-trip").value == false
     and point("f2-current").value > 0 and point("f2-p-mw").value > 0' "$since" 10 "G15 F2 reset indications"
 }
@@ -256,7 +256,7 @@ eu_gate_G16() {
     eu_management oltc-1 GET '/api/audit?after=0' || return
     cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq // 0') || return
     generation=$(printf '%s' "$API_BODY" | jq -er '.generation') || return
-    since=$(eu_utc)
+    since=$(eu_utc) || return
     eu_command oltc-1-mode auto completed || return
     eu_fresh_points "point(\"oltc-1-tap\").value == {value:$tap,transient:false}
       and (point(\"oltc-1-tap\") | good)" "$since" "$budget" "G16 $source reaches tap $tap" || return
@@ -320,14 +320,14 @@ eu_gate_G17() {
     docker logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1
     fail "G17 scan freeze unavailable: $(cat "$TMP_DIR/G17-scan.log")"; return 1
   fi
-  frozen_at=$(python3 -c 'import time; print(time.time())')
+  frozen_at=$(eu_utc +%s.%N) || return
   if eu_wait_for_operator '.link.state == "started"
     and ([.points[] | select(.id | startswith("plc-1-"))] | length == 5
       and all(.[]; .quality.iv and .stale_reason == "heartbeat"))
     and all(.points[] | select(.id | startswith("plc-1-") | not); good)' 5 "G17 responsive PLC heartbeat staleness"; then
     pass "G17 all five PLC points IV heartbeat while every healthy peer remains GOOD"
   fi
-  until=$(python3 -c 'import time; print(time.time())')
+  until=$(eu_utc +%s.%N) || return
   eu_window_finish G17 || return
   eu_stop_plc_scan || return
   if tshark -r "$TMP_DIR/G17.pcap" -Y 'ip.src == 10.30.30.30 && tcp.srcport == 502 && modbus.func_code == 3 && modbus.byte_cnt == 12' \

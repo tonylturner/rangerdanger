@@ -400,7 +400,7 @@ eu_baseline_mismatches() {
 eu_wait_for_baseline() {
   local label="$1" budget="$2" start_ms now_ms mismatches boundary
   eu_settle_for_gi "$budget" "$label" || return
-  boundary=$(eu_utc)
+  boundary=$(eu_utc) || return
   eu_interrogate_since "$boundary" "$budget" "$label" || return
   start_ms=$(eu_now_ms) || {
     fail "$label cannot establish monotonic timeout"
@@ -491,7 +491,7 @@ eu_reset_all() {
     fail "EU reset failed: HTTP $HTTP_STATUS $API_BODY"; return 1
   fi
   eu_settle_for_gi 30 "reset" || return
-  settled=$(eu_utc)
+  settled=$(eu_utc) || return
   eu_interrogate_since "$settled" 40 "reset CC recovery" || return
   eu_wait_for_operator 'all(.points[]; good)' 10 "reset GOOD observations"
 }
@@ -522,11 +522,11 @@ eu_command() {
   eu_management "$node" GET '/api/audit?after=0' || return
   cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq // 0') || return
   generation=$(printf '%s' "$API_BODY" | jq -er '.generation') || return
-  started=$(eu_utc)
+  started=$(eu_utc) || return
   eu_api_post /api/operator/commands "{\"point\":\"$point\",\"operation\":\"$operation\"}" || return
   # shellcheck disable=SC2034 # caller checks the original command response
   response="$API_BODY" COMMAND_BODY="$API_BODY"
-  ended=$(eu_utc)
+  ended=$(eu_utc) || return
   if [ "$HTTP_STATUS" != 200 ] || ! eu_command_result "$response" "$point" "$operation" "$expected" "$started" "$ended" "$feedback_ioa" "$target"; then
     fail "$point $operation expected $expected in attempt window: HTTP $HTTP_STATUS $response"; return 1
   fi
@@ -544,9 +544,13 @@ eu_command() {
   pass "$point $operation $expected: fresh IEC104 confirmations/feedback and RTU Modbus audit${reason:+ ($reason)}"
 }
 
-# Use parsed UTC timestamps: lexical comparisons are wrong at fractional-second
-# boundaries ("00Z" sorts after "00.5Z").
-eu_utc() { python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"))'; }
+# Evidence boundaries must share the range kernel's clock, not the host clock
+# (Docker Desktop can drift). The firewall has GNU date and is never paused:
+# firewall-cut gates change packet policy/conntrack, and workshop reset changes
+# truth/policy, not container lifecycle. Docker exec bypasses those network cuts.
+# One exec per boundary; no cached offset or host fallback. Packet windows use
+# epoch seconds; G5/G6 use integer epoch nanoseconds; otherwise use parsed UTC.
+eu_utc() { docker exec "$FW" date -u "${1:-+%Y-%m-%dT%H:%M:%S.%NZ}"; }
 eu_wait_valid_device() {
   local node="$1" start now
   start=$(eu_now_ms)
