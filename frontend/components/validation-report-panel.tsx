@@ -83,6 +83,27 @@ export function ValidationReportPanel() {
               {report.summary.unauthorized_total}
             </span>
           </div>
+          <div className="mb-3 space-y-1 text-xs text-slate-400">
+            <div>
+              Policy hash:{" "}
+              <code className="break-all font-mono text-slate-300">
+                {report.policy_hash || "(empty)"}
+              </code>
+            </div>
+            <div>
+              Proof window (UTC):{" "}
+              <time dateTime={report.window_start}>
+                {new Date(report.window_start).toISOString()}
+              </time>
+              {" — "}
+              <time dateTime={report.window_end}>
+                {new Date(report.window_end).toISOString()}
+              </time>
+            </div>
+            <div className={report.policy_stable ? "" : "text-amber-300"}>
+              Policy stable during proof: {report.policy_stable ? "yes" : "no"}
+            </div>
+          </div>
           <div className="max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-slate-950/60 p-4">
             <MarkdownProse>{report.markdown}</MarkdownProse>
           </div>
