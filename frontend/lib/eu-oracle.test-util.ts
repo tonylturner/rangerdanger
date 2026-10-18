@@ -21,6 +21,8 @@ export const EU_ORACLE = [
   { switches: "CCC", f2: "normal", supply: "BF/BF/BF", cc: "B†/B†/B†", vt: 19.91, currents: [40.4, 6, 21, 72.1] },
   { switches: "CCC", f2: "tripped", supply: "B/B/B", cc: "B†/B†/B†", vt: 19.91, currents: [72.7, 30.3, 11.5, 72.7] },
   // No trip indication yet: fault current is not a substitute for received protection.
+  // The oracle marks the old CC B!/B! as a residual-voltage error; the corrected
+  // expectation is no supply on S1/S2, consistent with its D/D/F electrical truth.
   { switches: "CCO", f2: "normal", supply: "D/D/F", cc: "–/–/?", vt: 11.53, currents: [2701, 0, 0, 2707], fault: true },
 ] as const;
 export type OracleRow = (typeof EU_ORACLE)[number];

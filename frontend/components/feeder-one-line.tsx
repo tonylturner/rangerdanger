@@ -18,6 +18,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     const r = read(id);
     return lineStyle(r.condition !== "good" || typeof r.value !== "boolean" ? "UNKNOWN" : r.value ? "LIVE" : "DEAD");
   };
+  const position = (id: string) => {
+    const value = read(id).value;
+    return typeof value === "string" && ["closed", "open", "intermediate", "indeterminate"].includes(value) ? value : "unknown";
+  };
   const section = (x1: number, y1: number, x2: number, y2: number, id: string) => {
     const v = voltage(id);
     return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={v.color} strokeWidth="3" strokeDasharray={v.dash} />;
@@ -30,7 +34,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   });
   const measure = (x: number, y: number, id: string) => <g aria-label={`${pointLabel(id)}: ${read(id).text}`}>
     <text x={x} y={y} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
-    <text x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
+    <text data-point={id} data-state={id.endsWith("-kv") || id === "feeder-voltage" ? voltage(id).state : undefined} x={x} y={y + 18} textAnchor="middle" fill={read(id).condition === "good" ? "#cbd5e1" : "#fbbf24"} fontSize="12">{read(id).shortText}</text>
   </g>;
   const authorityTag = (x: number, y: number, device: keyof typeof AUTHORITY_POINTS) => {
     const authority = AUTHORITY_POINTS[device];
@@ -59,7 +63,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const switchSymbol = (x: number, y: number, label: string, id: string, device: DeviceId) => {
     const r = read(id);
     const known = r.value === "open" || r.value === "closed";
-    return <g {...selectProps(device)} aria-label={`${label}: ${r.text}`}>
+    return <g {...selectProps(device)} data-device={device} data-position={position(id)} data-quality={r.condition} aria-label={`${label}: ${r.text}`}>
       {device.startsWith("RMU") && <g aria-label={`${label} assembly: switch function and earth`}>
         <rect x={x - 78} y={y - 40} width="156" height="164" rx="6" fill="none" stroke={r.condition === "good" ? "#64748b" : "#fbbf24"} strokeDasharray={r.condition === "good" ? undefined : "6 5"} />
         <path d={`M${x} ${y + 20} v20 h-30 v40`} stroke="#64748b" fill="none" />
@@ -80,11 +84,12 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     const id = SECTION_VOLTAGE[section];
     const path = sectionSupplyPath(read, section);
     const pathText = `${path.state}${path.state === "path unknown" ? " · F2 unobserved" : path.f2ContributionUnobserved ? " †" : ""}`;
-    return <g aria-label={`${label}: ${pointLabel(id)}: ${read(id).text}; supply ${pathText}: ${path.reason}`}>
+    const kv = read(id).value;
+    return <g data-section={section} data-state={voltage(id).state} data-path={path.state} data-kv={typeof kv === "number" && Number.isFinite(kv) ? kv : ""} aria-label={`${label}: ${pointLabel(id)}: ${read(id).text}; supply ${pathText}: ${path.reason}`}>
       <title>{path.reason}</title>
       <text x={x} y={y} textAnchor="middle" fill="#e2e8f0" fontSize="13">{label} · {voltage(id).state}</text>
       <text x={x} y={y + 18} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
-      <text x={x} y={y + 36} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
+      <text data-point={id} data-state={voltage(id).state} x={x} y={y + 36} textAnchor="middle" fill={voltage(id).color} fontSize="12">{read(id).shortText}</text>
       <text x={x} y={y + 54} textAnchor="middle" fill={path.state === "unknown" || path.state === "path unknown" ? "#fbbf24" : "#cbd5e1"} fontSize="12" data-supply-path={path.state}>{pathText}</text>
     </g>;
   };
@@ -103,7 +108,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         <defs><pattern id="cc-unknown" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8 L8 0" stroke="#fbbf24" strokeOpacity="0.5" /></pattern></defs>
         <text x="16" y="35" textAnchor="start" fill="#cbd5e1" fontSize="13">{physical ? "110 kV nominal · sim source" : "110 kV nominal — not telemetered"}</text>
         <line x1="80" y1="45" x2="80" y2="70" stroke={upstreamRun.color} strokeDasharray={upstreamRun.dash} />
-        <g {...selectProps("T1")} aria-label={`T1 OLTC: ${tap.text}`}>
+        <g {...selectProps("T1")} data-device="T1" data-tap={typeof tap.value === "object" && tap.value !== null ? tap.value.value : ""} data-quality={tap.condition} aria-label={`T1 OLTC: ${tap.text}`}>
           {selected === "T1" && <rect x="52" y="65" width="55" height="76" rx="4" stroke="#e2e8f0" fill="none" />}
           <circle cx="80" cy="90" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
           <circle cx="80" cy="113" r="20" fill="none" stroke={tap.condition === "good" ? "#cbd5e1" : "#fbbf24"} strokeDasharray={tap.condition === "good" ? undefined : "5 3"} />
@@ -133,10 +138,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         {section(870, 190, 1000, 190, "rmu-2-source-kv")}
         {section(1000, 190, 1000, 325, "rmu-2-source-kv")}
         <line x1="80" y1="325" x2="305" y2="325" stroke={upstreamRun.color} strokeWidth="3" strokeDasharray={upstreamRun.dash} />
-        <rect x="305" y="309" width="32" height="32" fill={physical && f2Known && f2.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={physical && !f2Known ? "#fbbf24" : "#94a3b8"} strokeDasharray={physical && f2Known ? undefined : "5 3"} />
+        <rect data-device="F2" data-position={physical ? position("f2-position") : "unknown"} x="305" y="309" width="32" height="32" fill={physical && f2Known && f2.value === "closed" ? "#cbd5e1" : "#0f172a"} stroke={physical && !f2Known ? "#fbbf24" : "#94a3b8"} strokeDasharray={physical && f2Known ? undefined : "5 3"} />
         <text x="321" y="331" textAnchor="middle" fill={physical && f2Known && f2.value === "closed" ? "#0f172a" : "#cbd5e1"}>{physical && f2Known ? f2.value === "closed" ? "●" : "○" : "?"}</text>
         <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">{physical ? f2Known ? f2.value === "closed" ? "F2 · closed (sim)" : "F2 · TRIPPED (sim)" : "F2 · unknown (sim)" : "F2 head · unobserved"}</text>
-        <line x1="337" y1="325" x2="1000" y2="325" stroke={lowerRun.color} strokeWidth="3" strokeDasharray={lowerRun.dash} aria-label={physical ? `F2 connection · solver energization: ${energization.text}` : "F2 connection · not established"} />
+        <line x1="337" y1="325" x2="1000" y2="325" data-f2-line="" data-state={lowerRun.state} stroke={lowerRun.color} strokeWidth="3" strokeDasharray={lowerRun.dash} aria-label={physical ? `F2 connection · solver energization: ${energization.text}` : "F2 connection · not established"} />
         {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>

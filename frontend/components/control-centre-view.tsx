@@ -55,7 +55,7 @@ export function SnapshotMarker({ age }: { age: string | null }) {
 export function AbnormalSummary({ state }: { state: OperatorState }) {
   const conditions = abnormalConditions(state);
   return <section aria-label="Abnormal conditions" className={`rounded-lg border p-3 text-sm ${conditions.length ? "border-amber-700 bg-amber-950/30 text-amber-200" : "border-slate-700 text-slate-300"}`}>
-    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id}>⚠ {c.text}</li>)}</ul> : "No abnormal conditions"}
+    {conditions.length ? <ul className="flex flex-wrap gap-x-5 gap-y-2">{conditions.map((c) => <li key={c.id} data-condition={c.id}>⚠ {c.text}</li>)}</ul> : <span data-condition="none">No abnormal conditions</span>}
   </section>;
 }
 export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalSystem, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms", selected = "T1", onSelect = () => {} }: {
