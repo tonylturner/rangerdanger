@@ -45,7 +45,7 @@ it.each(["control-centre", "physical-system"] as const)("keeps a single persiste
     expect(banner()[0].props["data-view-state"]).toBe("ok");
     expect(banner()[0].children).toHaveLength(0);
     if (view === "control-centre") {
-      expect(tree.root.findByProps({ "data-observation-uncertainty": 1 }).children.join("")).toContain("1 non-GOOD measurements");
+      expect(tree.root.findByProps({ "data-observation-uncertainty": 1 }).children.join("")).toContain("1 non-GOOD measurement");
     }
     pf.stale_reason = "device_unreachable";
     act(() => tree.update(page(open)));
@@ -108,5 +108,5 @@ it("separates uncertain measurements from the GOOD-observation empty summary", (
   expect(html).toContain('data-condition="none"');
   expect(html).toContain("No alarms in GOOD observations");
   expect(html).toContain('data-observation-uncertainty="1"');
-  expect(html).toContain("1 non-GOOD measurements");
+  expect(html).toContain("1 non-GOOD measurement");
 });

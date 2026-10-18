@@ -158,7 +158,7 @@ describe("operator workstation interactions", () => {
   });
   it("opens bad-quality Points without turning an uncertain bus into a process alarm", () => {
     const tree = mount(screen({ state: WATCHDOG_STATE }));
-    act(() => button(tree, "1 points with bad quality").props.onClick());
+    act(() => button(tree, "1 point with bad quality").props.onClick());
     expect(tree.root.findByType("select").props.value).toBe("bad quality");
     expect(tree.root.findAllByType("tbody")[0].findAllByType("tr")).toHaveLength(1);
     expect(output(tree)).toContain("not_updated");

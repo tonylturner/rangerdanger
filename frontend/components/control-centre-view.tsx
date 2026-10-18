@@ -82,7 +82,7 @@ export function AbnormalSummary({ state, cached = false }: { state: OperatorStat
   return <section aria-label="Abnormal conditions" data-alarm-count={alarms.length} data-off-normal-count={offNormal.length} className={`rounded-lg border p-3 text-sm ${alarms.length ? "border-rose-700 bg-rose-950/30" : conditions.length ? "border-amber-700 bg-amber-950/30" : "border-slate-700"} text-slate-300`}>
     <p className="font-semibold">{conditions.length ? `${alarms.length} ${alarms.length === 1 ? "alarm" : "alarms"} · ${offNormal.length} off-normal` : <span data-condition="none">No alarms in GOOD observations</span>}{cached ? " in cached snapshot" : ""}</p>
     {conditions.length > 0 && <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{[...alarms, ...offNormal].map((c) => <li key={c.id} data-condition={c.id} data-condition-kind={alarmIds.has(c.id) ? "alarm" : "off-normal"} className={alarmIds.has(c.id) ? "text-rose-300" : "text-amber-200"}>⚠ {c.text}</li>)}</ul>}
-    <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-GOOD measurements · separate from process alarms.</p>
+    <p data-observation-uncertainty={uncertain} className={`mt-2 text-xs ${uncertain ? "text-amber-200" : "text-slate-400"}`}>Observation uncertainty: {uncertain} non-GOOD {uncertain === 1 ? "measurement" : "measurements"} · separate from process alarms.</p>
   </section>;
 }
 export function ControlCentreScreen({ state, stateError, stateUpdatedAt, journal, journalError, now, physicalSystem, view = "control-centre", onViewChange = () => {}, initialTab = "Alarms", selected = "T1", onSelect = () => {} }: {
