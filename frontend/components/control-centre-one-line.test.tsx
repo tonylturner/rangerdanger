@@ -44,21 +44,21 @@ describe("functional one-line observations", () => {
       for (const flag of ["iv", "nt", "sb", "bl"] as const) {
         const bad = points.map((p) => p.id === id ? { ...p, quality: { ...p.quality, [flag]: true } } : p);
         const stale = schematic(bad).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-        expect(stale.findByType("text").children.join("")).toBe("AUTH STALE");
+        expect(stale.findByType("text").children.join("")).toBe("AUTHORITY STALE");
         expect(stale.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
         expect(stale.findByType("rect").props.fill).toBe("url(#cc-unknown)");
         expect(stale.findByType("rect").props.strokeDasharray).toBeDefined();
       }
       authority.stale_reason = "not_updated";
       const stale = schematic(points).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-      expect(stale.findByType("text").children.join("")).toBe("AUTH STALE");
+      expect(stale.findByType("text").children.join("")).toBe("AUTHORITY STALE");
       expect(stale.findByType("title").children.join("")).toContain("not_updated");
       authority.stale_reason = null;
     }
     authority.value = null;
     for (const unknown of [points, points.filter((p) => p.id !== id)]) {
       const tag = schematic(unknown).findAllByType("g").find((n) => n.props["data-authority"] === id)!;
-      expect(tag.findByType("text").children.join("")).toBe("AUTH UNKNOWN");
+      expect(tag.findByType("text").children.join("")).toBe("AUTHORITY UNKNOWN");
       expect(tag.props["aria-label"]).not.toMatch(/LOCAL|REMOTE/);
     }
   });
@@ -79,6 +79,17 @@ describe("functional one-line observations", () => {
     const cable = tree.findAllByType("line").find((n) => n.props.x1 === 330 && n.props.x2 === 570)!;
     expect(cable.props.stroke).toBe("#38bdf8");
     expect(renderToStaticMarkup(<ControlCentreOneLine points={points} />)).toContain("CB1 line-side VT");
+  });
+
+  it("does not colour the unestablished F2 run from the S3 voltage", () => {
+    const tree = schematic();
+    const lower = tree.findAllByType("line").find((n) => n.props.x1 === "337")!;
+    expect(lower.props.stroke).toBe("#94a3b8");
+    expect(lower.props.strokeDasharray).toBe("6 5");
+    expect(lower.props["aria-label"]).toBe("F2 connection · not established");
+    const html = renderToStaticMarkup(<ControlCentreOneLine points={FEEDER_STATE.points} />);
+    expect(html).toContain("S3 industrial · LIVE");
+    expect(html).toContain("19.97 kV");
   });
 
   it("separates GOOD live S3 voltage from its unobserved supply path", () => {

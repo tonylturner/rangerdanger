@@ -34,12 +34,12 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     // A retained authority value cannot establish LOCAL or REMOTE.
     const state = r.condition === "good" && r.value === false ? "LOCAL" : r.condition === "stale" ? "STALE" : "UNKNOWN";
     const uncertain = state !== "LOCAL";
-    const width = uncertain ? 108 : 60;
+    const width = uncertain ? 164 : 60;
     const detail = [`${authority.label}: ${state}`, ...r.flags, r.staleReason, unavailable ? "cached snapshot · CC API unavailable" : null].filter(Boolean).join(" · ");
     return <g data-authority={authority.id} aria-label={detail}>
       <title>{detail}</title>
       <rect x={x - width / 2} y={y} width={width} height="20" rx="3" fill={uncertain ? "url(#cc-unknown)" : "#451a03"} stroke="#fbbf24" strokeDasharray={uncertain ? "5 3" : undefined} />
-      <text x={x} y={y + 14} textAnchor="middle" fill="#fbbf24" fontSize="12">{uncertain ? `AUTH ${state}` : state}</text>
+      <text x={x} y={y + 14} textAnchor="middle" fill="#fbbf24" fontSize="12">{uncertain ? `AUTHORITY ${state}` : state}</text>
     </g>;
   };
   const indicators = (x: number, prefix: string) => {
@@ -86,6 +86,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
   const tap = read("oltc-1-tap");
   const f2 = read("f2-position");
   const f2Known = f2.condition === "good";
+  const energization = read("s3-live");
+  const lowerRun = !physical ? { color: "#94a3b8", dash: "6 5" }
+    : energization.condition !== "good" || !f2Known ? { color: "#fbbf24", dash: "6 5" }
+    : { color: energization.value === true ? "#38bdf8" : "#94a3b8", dash: undefined };
   const provenance = "Simulation-observed · independent of IEC 104";
   return <figure className="min-w-0 space-y-3">
     {physical && <p className="text-xs text-slate-300">{provenance}</p>}
@@ -127,10 +131,10 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
         <rect x="305" y="309" width="32" height="32" fill="#0f172a" stroke="#94a3b8" strokeDasharray="5 3" />
         <text x="321" y="331" textAnchor="middle" fill="#cbd5e1">{physical && f2Known ? f2.value === "closed" ? "●" : "○" : "?"}</text>
         <text x="321" y="365" textAnchor="middle" fill="#cbd5e1" fontSize="12">{physical ? f2Known ? f2.value === "closed" ? "F2 · closed (sim)" : "F2 · TRIPPED (sim)" : "F2 · unknown (sim)" : "F2 head · unobserved"}</text>
-        {section(337, 325, 1000, 325, "rmu-2-source-kv")}
+        <line x1="337" y1="325" x2="1000" y2="325" stroke={lowerRun.color} strokeWidth="3" strokeDasharray={lowerRun.dash} aria-label={physical ? `F2 connection · solver energization: ${energization.text}` : "F2 connection · not established"} />
         {busLabel(710, 348, "S3 industrial", "S3")}
       </svg>
     </div>
-    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage &gt; 0 kV; grey: measured zero; dashed amber: invalid, stale or unknown. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local authority; hatched AUTH STALE/UNKNOWN means authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. F2 has no telemetry.</>}</figcaption>
+    <figcaption className="text-xs text-slate-400">{physical ? <>{provenance}. Select a device to expand its equipment card. Filled switch: closed; hollow: open; ?: unknown. Blue: measured voltage &gt; 0 kV; grey: measured zero; dashed amber: invalid, stale or unknown. The lower F2 connection follows solver energization, separately from measured kV. Measurements do not establish energization or a supply path. Paths use physical switch topology and valid voltages, not IEC feedback. LOCAL is control authority, not evidence of command acceptance; accepted and rejected commands remain in the audit. Tap is the completed step, never the target.</> : <><span className="font-semibold text-slate-300">Simplified functional one-line.</span> Select a device for its faceplate. Filled switch: closed; hollow: open; ½: intermediate; ×: indeterminate. LOCAL marks received local control authority; hatched AUTHORITY STALE/UNKNOWN means control authority is not established. Real RMUs contain several functional units; these enclosures show the switch function, earth blade and FPI. RMU2 is the NOP (normal open point). Earth blade and FPI show received indications. Blue: observed voltage &gt; 0 kV, not proof of a supply path. Grey: observed zero. Dashed amber: unknown or stale, never inferred from switch position. Supply paths use only valid received voltages and switch feedback. † F2 contribution unobserved. Tap TRANSIENT means motion; the displayed tap is the last completed step. F1 connects through CB1; the lower branch returns through the unobserved F2 head. S3 colour follows its received kV only, not F2 state. The dashed grey F2 connection is not established by the S3 measurement. F2 has no telemetry.</>}</figcaption>
   </figure>;
 }
