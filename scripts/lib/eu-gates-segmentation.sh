@@ -159,8 +159,142 @@ eu_gate_G7() {
   fi
 }
 
+# The same isolation assertion covers autonomous regulation and local faults.
+eu_g8_cache_unchanged() {
+  local body="$1" epoch="$2" points="$3" label="$4" current
+  current=$(eu_get_point_snapshot "$body" station) || current=""
+  if [ -z "$points" ] || [ "$current" != "$points" ] \
+    || ! printf '%s' "$body" | jq -e --arg epoch "$epoch" \
+      '.cache_epoch == $epoch and .link.state != "started"' >/dev/null; then
+    fail "G8 operator cache changed or CC link reconnected during $label"
+    return 1
+  fi
+  pass "G8 operator values/received_at/source_time and cache_epoch unchanged; CC link down during $label"
+}
+
+# One shared deadline includes acquisition, any already accepted motion, the
+# forced demand, and the completed step. Never reset devices or issue CC writes.
+eu_g8_wait_plc_step() {
+  local epoch="$1" points="$2" deadline="$3" low="$4" high="$5"
+  local truth tap="" direction source cursor generation now remaining timeout demanded=false
+  while :; do
+    eu_get_operator || { fail "G8 operator state unavailable during PLC regulation"; return 1; }
+    eu_g8_cache_unchanged "$API_BODY" "$epoch" "$points" "PLC regulation" || return
+    eu_get_field || { fail "G8 field truth unavailable during PLC regulation"; return 1; }
+    truth="$API_BODY"
+    now=$(eu_now_ms) || return
+    if [ "$now" -ge "$deadline" ]; then
+      fail "G8 no completed PLC-origin tap step within one demand cycle"
+      return 1
+    fi
+    if ! printf '%s' "$truth" | jq -e '
+      .devices["breaker-1"].position == "closed"
+      and (.devices["oltc-1"] | .auto == true and .remote_enabled == true
+        and .blocked == false and (.tap | type == "number" and floor == .))
+    ' >/dev/null; then
+      fail "G8 PLC regulation requires CB1 closed and an automatic, remote, unblocked OLTC"
+      return 1
+    fi
+    if [ -z "$tap" ]; then
+      if printf '%s' "$truth" | jq -e '.devices["oltc-1"].moving == false' >/dev/null; then
+        tap=$(printf '%s' "$truth" | jq -er '.devices["oltc-1"].tap') || return
+        # Choose the extreme that demands a step away from the nearer limit.
+        source=1.10 direction=-1
+        if [ "$tap" -lt 0 ]; then source=0.90 direction=1; fi
+        eu_management oltc-1 GET '/api/audit?after=0' || return
+        cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq // 0') || return
+        generation=$(printf '%s' "$API_BODY" | jq -er '.generation') || return
+        eu_action process set_source "$source" || return
+        continue
+      fi
+    else
+      # Demand must be observed in solved field truth, not inferred merely from
+      # an accepted process action or the retained operator voltage.
+      if printf '%s' "$truth" | jq -e --argjson source "$source" --argjson low "$low" \
+        --argjson high "$high" --argjson direction "$direction" '
+        .process.truth_stale == false and .process.source_pu == $source
+        and .process.profile.enabled == false
+        and (.devices["oltc-1"].measurements | .valid == true
+          and (.voltage_kv_ll | type == "number")
+          and (if $direction == 1 then .voltage_kv_ll < $low else .voltage_kv_ll > $high end))
+      ' >/dev/null; then demanded=true; fi
+      if [ "$demanded" = true ] && printf '%s' "$truth" | jq -e --argjson tap "$tap" \
+        --argjson direction "$direction" --argjson generation "$generation" '
+        .devices["oltc-1"] | .generation == $generation and .moving == false
+          and .tap == $tap + $direction
+      ' >/dev/null; then
+        # Stop after the first completed step, rather than spending another
+        # cycle settling. The helper checks cursor, generation and PLC peer.
+        eu_plc_requests "$cursor" 1 "$generation" || return
+        if ! printf '%s' "$API_BODY" | jq -e --argjson cursor "$cursor" --argjson tap "$tap" \
+          --argjson direction "$direction" --argjson truth "$truth" '
+          [.entries[] | select(.seq > $cursor and .operation == "plc_request"
+            and .result == "accepted" and .context.protocol == "modbus"
+            and (.context.peer | startswith("10.30.30.30:"))
+            and .before.tap == $tap and .after.target_tap == $tap + $direction
+            and .after.moving == true)] as $requests
+          | ($requests | length) == 1
+          and any(.entries[]; .seq > $requests[0].seq and .operation == "motion_complete"
+            and .result == "accepted" and .before.moving == true
+            and .before.target_tap == $requests[0].after.target_tap
+            and .after.moving == false and .after.tap == $truth.devices["oltc-1"].tap
+            and .after.revision <= $truth.devices["oltc-1"].revision)
+        ' >/dev/null; then
+          fail "G8 PLC request lacks a matching completed tap in audit and field truth"
+          return 1
+        fi
+        now=$(eu_now_ms) || return
+        if [ "$now" -ge "$deadline" ]; then
+          fail "G8 PLC completion evidence exceeded the demand-cycle deadline"
+          return 1
+        fi
+        pass "G8 PLC-origin tap step toward the band completed while CC had no view"
+        return 0
+      fi
+    fi
+    now=$(eu_now_ms) || return
+    remaining=$((deadline - now))
+    [ "$remaining" -gt 0 ] || continue
+    [ "$remaining" -le 1000 ] || remaining=1000
+    timeout=$(printf '%d.%03d' "$((remaining / 1000))" "$((remaining % 1000))")
+    sleep "$timeout"
+  done
+}
+
+eu_g8_regulate_without_cc() {
+  local epoch="$1" points="$2" source profile low high budget start result=0
+  read -r low high budget < <(jq -er --argjson slack "$EU_REGULATION_SLACK_S" '
+    [.band_kv[0], .band_kv[1], (.configured_delay_s + .motion_s + $slack)] | @tsv
+  ' "$PACKAGE/process/reference-cases.json") || return
+  eu_get_field || { fail "G8 cannot snapshot process controls before PLC regulation"; return 1; }
+  source=$(printf '%s' "$API_BODY" | jq -er '.process.source_pu | numbers') || return
+  profile=$(printf '%s' "$API_BODY" | jq -r '.process.profile.enabled | booleans') || return
+  if [ "$profile" != true ] && [ "$profile" != false ]; then
+    fail "G8 process profile state unavailable before PLC regulation"
+    return 1
+  fi
+  start=$(eu_now_ms) || return
+  if ! eu_set_profile false \
+    || ! eu_g8_wait_plc_step "$epoch" "$points" "$((start + budget * 1000))" "$low" "$high"; then
+    result=1
+  fi
+  # Restore both drivers even on timeout or isolation failure, before G8 trips
+  # CB1. Neither restoration waits for a second PLC demand cycle.
+  eu_action process set_source "$source" || result=1
+  eu_set_profile "$profile" || result=1
+  if [ "$result" -eq 0 ]; then
+    if ! eu_get_operator; then
+      fail "G8 operator state unavailable after process restoration"
+      result=1
+    else
+      eu_g8_cache_unchanged "$API_BODY" "$epoch" "$points" "process restoration" || result=1
+    fi
+  fi
+  return "$result"
+}
+
 eu_gate_G8() {
-  local g8_before g8_epoch g8_points active g8_truth g8_operator current_points current_epoch g8_seq1 g8_seq2
+  local g8_before g8_epoch g8_points active g8_truth g8_operator g8_seq1 g8_seq2
   if [ "$g7_loss_verified" -ne 1 ]; then
     fail "G8 cannot test cache isolation without the verified G7 CC disconnect"
     return
@@ -175,7 +309,9 @@ eu_gate_G8() {
   if [ -z "$g8_epoch" ] || [ -z "$g8_points" ] \
     || ! printf '%s' "$g8_before" | jq -e "$EU_JQ_DEFS four_points" >/dev/null 2>&1; then
     fail "G8 cache epoch, four-point shape, or point snapshot is empty/invalid"
+    return 1
   fi
+  eu_g8_regulate_without_cc "$g8_epoch" "$g8_points" || return
   for active in true false true; do
     if [ "$active" = true ]; then
       eu_action_step process clear_fault "G8 clear before trip" || return
@@ -200,19 +336,7 @@ eu_gate_G8() {
       continue
     fi
     g8_operator="$API_BODY"
-    current_points=$(eu_get_point_snapshot "$g8_operator" station) || current_points=""
-    current_epoch=$(printf '%s' "$g8_operator" | jq -r '.cache_epoch // empty')
-    if [ -n "$g8_points" ] && [ -n "$current_points" ] \
-      && [ "$current_points" = "$g8_points" ] && [ "$current_epoch" = "$g8_epoch" ]; then
-      pass "G8 operator values/received_at/source_time and cache_epoch unchanged with fault active=$active"
-    else
-      fail "G8 operator cache changed while CC path denied with fault active=$active"
-    fi
-    if printf '%s' "$g8_operator" | jq -e '.link.state != "started"' >/dev/null 2>&1; then
-      pass "G8 operator-state route remains HTTP 200 while CC link is down"
-    else
-      fail "G8 operator route did not report the expected disconnected CC while fault active=$active"
-    fi
+    eu_g8_cache_unchanged "$g8_operator" "$g8_epoch" "$g8_points" "fault active=$active" || true
     if [ "$active" = "true" ]; then
       eu_assert_jq "$g8_truth" '.devices["breaker-1"].position == "open" and .devices["breaker-1"].lockout == true and .devices["breaker-1"].protection_tripped == true and .process.buses.s1.live == false and .devices["breaker-1"].measurements.current_a < 0.1' "G8 physical state and independent solver show open/tripped"
     fi
@@ -271,7 +395,9 @@ eu_gate_G9() {
       and point("f2-position").value == $truth.devices["f2-breaker"].position
       and point("f2-protection-trip").value == $truth.devices["f2-breaker"].protection_tripped
       and $truth.devices["breaker-1"].position == "open" and $truth.devices["breaker-1"].protection_tripped == true
-    ' "G9 restored operator state equals open/tripped physical state"
+      and ($truth.devices["oltc-1"].tap | type) == "number"
+      and point("oltc-1-tap").value.value == $truth.devices["oltc-1"].tap
+    ' "G9 restored operator state equals open/tripped physical state and OLTC tap"
   else
     fail "G9 operator state unavailable after reconnect"
   fi

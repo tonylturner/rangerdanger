@@ -10,7 +10,8 @@ RECOVERED=$(jq -c '
   | (.points[] | select(.id == "feeder-pf")) |=
       (.quality.iv = true | .stale_reason = "measurement_invalid")
 ' "$T_FIXTURES/operator-gi-untimed.json")
-TRUTH=$(jq -c '.devices["breaker-1"] |= (.position = "open" | .protection_tripped = true)' \
+TRUTH=$(jq -c '(.devices["breaker-1"] |= (.position = "open" | .protection_tripped = true))
+  | .devices["oltc-1"] = {tap:0}' \
   "$T_FIXTURES/field-baseline.json")
 OPERATOR="$RECOVERED"
 # shellcheck disable=SC2034 # gate precondition
@@ -59,5 +60,14 @@ done
 OPERATOR=$(jq -c '(.points[] | select(.id == "feeder-breaker-position") | .value) = "closed"' <<<"$RECOVERED")
 t_run eu_gate_G9
 t_expect_fails 1 "G9 rejects operator/truth disagreement despite refreshed inventory"
+
+OPERATOR=$(jq -c '(.points[] | select(.id == "oltc-1-tap") | .value.value) = -1' <<<"$RECOVERED")
+TRUTH=$(jq -c '.devices["oltc-1"].tap = -1' <<<"$TRUTH")
+t_run eu_gate_G9
+t_expect_fails 0 "G9 learns the autonomous OLTC step after reconnect and GI"
+OPERATOR="$RECOVERED"
+t_run eu_gate_G9
+t_expect_fails 1 "G9 rejects a retained pre-disconnect tap even when breaker truth agrees"
+t_expect_out "physical state and OLTC tap" "the truth comparison includes the OLTC tap"
 
 t_finish
