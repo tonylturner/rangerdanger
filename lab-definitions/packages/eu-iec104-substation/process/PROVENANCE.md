@@ -175,5 +175,6 @@ In the disabled-profile baseline, S1/S2 radial faults draw about 2701/1438 A
 at CB1; an isolated F2 back-feed into the S2 fault draws about 2535 A at F2.
 The 2000 A instantaneous element is graded on these values: a close-in S1
 fault and the F2 back-feed operate instantaneously, while the remote S2 fault
-(below 2000 A) operates on the definite-time element. Opening F2 does **not** forcibly zero S3: DSS may supply it through
-a healthy closed ring. It is dead when no alternate supply remains.
+(below 2000 A) operates on the definite-time element. Opening F2 does **not**
+forcibly zero S3: DSS may supply it through a healthy closed ring. It is dead
+when no alternate supply remains.

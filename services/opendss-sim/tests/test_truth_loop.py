@@ -15,11 +15,18 @@ from eu_support import MemoryClient, profile, profile_file
 from eu_truth_loop import TruthSolveLoop
 
 
-def make_loop(tmp_path, **kwargs):
-    config = profile(tmp_path)
+def make_loop(tmp_path, config=None, **kwargs):
+    if config is None:
+        config = profile(tmp_path)
     solver = EUFeederSolver(config, **kwargs.pop('solver_kwargs', {}))
     solver.compile_circuit()
     return TruthSolveLoop(config, solver, client=kwargs.pop('client', MemoryClient()), **kwargs)
+
+
+@pytest.fixture
+def delayed_f2_profile(tmp_path):
+    # Disable I>> in memory so timing coverage is independent of shipped grading.
+    return replace(profile(tmp_path), f2_protection=ProtectionSettings(400, 1000, float('inf')))
 
 
 def tick(loop):
@@ -214,9 +221,10 @@ def test_generation_restart_sequence_epoch_and_snapshot_copy(tmp_path):
     assert second.client.posts[0]['solve_seq'] == 1
 
 
-def test_f2_trip_reset_retrip_and_latched_until_reset(tmp_path):
+def test_f2_trip_reset_retrip_and_latched_until_reset(tmp_path, delayed_f2_profile):
     now = [1792270800.]
-    loop = make_loop(tmp_path, solver_kwargs=dict(clock=lambda: now[0]))
+    loop = make_loop(tmp_path, config=delayed_f2_profile,
+                     solver_kwargs=dict(clock=lambda: now[0]))
     loop.client.protect = True
     loop.client.truths['feeder-breaker']['position'] = 'open'
     loop.client.truths['rmu-1']['position'] = 'open'
@@ -242,11 +250,12 @@ def test_f2_trip_reset_retrip_and_latched_until_reset(tmp_path):
     assert reset['buses']['s3']['live'] and reset['buses']['s2']['live']
 
 
-def test_second_pass_f2_transition_uses_no_third_solve(tmp_path):
+def test_second_pass_f2_transition_uses_no_third_solve(tmp_path, delayed_f2_profile):
     # Both passes see overcurrent, one second apart; the second trips F2.
     times = iter([1792270800., 1792270800., 1792270801., 1792270801.,
                   1792270802., 1792270802.])
-    loop = make_loop(tmp_path, solver_kwargs=dict(clock=lambda: next(times)))
+    loop = make_loop(tmp_path, config=delayed_f2_profile,
+                     solver_kwargs=dict(clock=lambda: next(times)))
     client = loop.client
     client.truths['feeder-breaker']['position'] = 'open'
     client.truths['rmu-1']['position'] = 'open'
@@ -259,6 +268,25 @@ def test_second_pass_f2_transition_uses_no_third_solve(tmp_path):
     settled = tick(loop)
     assert loop.solve_seq == 3 and not settled['buses']['s3']['live']
     assert loop.state.health()['status'] == 'ok'
+
+
+def test_shipped_profile_f2_backfeed_into_s2_trips_on_first_sample(tmp_path):
+    loop = make_loop(tmp_path, solver_kwargs=dict(clock=lambda: 1792270800.))
+    assert loop.profile.f2_protection.instantaneous_a == 2000
+    assert loop.profile.f2_protection.delay_ms == 1000
+    loop.client.truths['feeder-breaker']['position'] = 'open'
+    loop.client.truths['rmu-1']['position'] = 'open'
+    loop.client.truths['rmu-2']['position'] = 'closed'
+    state = asyncio.run(loop.action(dict(action='fault_s2')))
+    # Frozen wall time cannot satisfy I>; the first-sample trip causes one
+    # immediate post-open correction solve, with the second sample at +1 ms.
+    assert loop.solve_seq == 2
+    assert state['f2_tripped'] and not state['buses']['s3']['live']
+    assert 2000 <= state['f2_protection']['last_trip_current_a'] < 3000
+    assert not state['f2_protection']['picked_up']
+    first_at = datetime.fromisoformat(loop.client.posts[0]['solved_at'].replace('Z', '+00:00'))
+    second_at = datetime.fromisoformat(loop.client.posts[4]['solved_at'].replace('Z', '+00:00'))
+    assert (second_at - first_at).total_seconds() == .001
 
 
 @pytest.mark.parametrize('settings,fault,expected', [
@@ -432,9 +460,10 @@ def test_profile_action_rejects_invalid_shape_without_mutation(tmp_path, body):
 
 
 @pytest.mark.parametrize('failure', ['truth', 'solve'])
-def test_f2_timer_invalidated_when_truth_or_solve_unavailable(tmp_path, failure):
+def test_f2_timer_invalidated_when_truth_or_solve_unavailable(tmp_path, delayed_f2_profile, failure):
     now = [1792270800.]
-    loop = make_loop(tmp_path, solver_kwargs=dict(clock=lambda: now[0]))
+    loop = make_loop(tmp_path, config=delayed_f2_profile,
+                     solver_kwargs=dict(clock=lambda: now[0]))
     loop.client.truths['feeder-breaker']['position'] = 'open'
     loop.client.truths['rmu-1']['position'] = 'open'
     loop.client.truths['rmu-2']['position'] = 'closed'
