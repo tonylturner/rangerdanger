@@ -5,7 +5,7 @@
 eu_gate_G18() {
   local since paused resumed until epoch
   eu_reset_all || return
-  since=$(eu_utc)
+  since=$(eu_utc) || return
   eu_api_get /api/historian/points || return
   eu_assert_jq "$API_BODY" 'length == 42' "G18 historian exposes 42 points"
   eu_get_operator || return
@@ -16,14 +16,14 @@ eu_gate_G18() {
   # One push may already be in flight (contract budget 500ms). Drain it
   # before measuring the genuine ingest-silence window.
   sleep 1
-  paused=$(eu_utc)
+  paused=$(eu_utc) || return
   sleep 5
   # End the confirmed-paused window before starting unpause: an ingest can
   # legitimately arrive before the Docker CLI has returned.
-  resumed=$(eu_utc)
+  resumed=$(eu_utc) || return
   eu_unpause_owned "$CC" cc "$cc_paused" || return
   sleep 3
-  until=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  until=$(eu_utc) || return
   eu_api_get "/api/historian/history?point=feeder-current&since=$since&until=$until" || return
   if eu_historian_gap "$API_BODY" "$epoch" "$paused" "$resumed"; then
     pass "G18 real CC ingest resumes with schema-3 samples and an outage-spanning gap"

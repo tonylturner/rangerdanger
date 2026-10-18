@@ -69,20 +69,36 @@ eu_command_result() {
   python3 - "$@" <<'PYRESULT'
 import datetime, json, sys
 body, point, op, expected, start, end, ioa, target = sys.argv[1:]
-def at(value):
-    assert isinstance(value, str) and value.endswith('Z'), value
-    return datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+def at(value, field):
+    assert isinstance(value, str) and value.endswith('Z'), f'{field}: expected UTC timestamp, got {value!r}'
+    try:
+        return datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError as error:
+        raise ValueError(f'{field}: invalid UTC timestamp {value!r}') from error
 try:
     b = json.loads(body)
-    assert b['point'] == point and b['operation'] == op and b['result'] == expected
-    assert isinstance(b['id'], str) and b['id']
-    assert at(start) <= at(b['selected_at']) <= at(b['executed_at']) <= at(b['con_at']) <= at(end)
+    assert b['point'] == point, f'point: expected {point!r}, got {b["point"]!r}'
+    assert b['operation'] == op, f'operation: expected {op!r}, got {b["operation"]!r}'
+    assert b['result'] == expected, f'result: expected {expected!r}, got {b["result"]!r}'
+    assert isinstance(b['id'], str) and b['id'], f'id: expected non-empty string, got {b["id"]!r}'
+    start_at, end_at = at(start, 'start'), at(end, 'end')
+    selected, executed, con = (at(b[key], key) for key in ('selected_at', 'executed_at', 'con_at'))
+    assert start_at <= selected, f'start <= selected_at: {start!r} > {b["selected_at"]!r}'
+    assert selected <= executed, f'selected_at <= executed_at: {b["selected_at"]!r} > {b["executed_at"]!r}'
+    assert executed <= con, f'executed_at <= con_at: {b["executed_at"]!r} > {b["con_at"]!r}'
+    assert con <= end_at, f'con_at <= end: {b["con_at"]!r} > {end!r}'
     if expected == 'completed':
         f = b['feedback']
-        assert f['ioa'] == int(ioa) and f['value'] == json.loads(target)
-        assert at(b['con_at']) <= at(f['at']) <= at(b['term_at']) <= at(end)
+        assert f['ioa'] == int(ioa), f'feedback.ioa: expected {ioa}, got {f["ioa"]!r}'
+        assert f['value'] == json.loads(target), f'feedback.value: expected {target}, got {f["value"]!r}'
+        feedback_at, term = at(f['at'], 'feedback.at'), at(b['term_at'], 'term_at')
+        assert con <= feedback_at, f'con_at <= feedback.at: {b["con_at"]!r} > {f["at"]!r}'
+        assert feedback_at <= term, f'feedback.at <= term_at: {f["at"]!r} > {b["term_at"]!r}'
+        assert term <= end_at, f'term_at <= end: {b["term_at"]!r} > {end!r}'
     else:
-        assert expected == 'rejected' and b['feedback'] is None and b['term_at'] is None
+        assert expected == 'rejected', f'expected result: must be completed or rejected, got {expected!r}'
+        assert b['feedback'] is None, f'feedback: rejected command must have null feedback, got {b["feedback"]!r}'
+        assert b['term_at'] is None, f'term_at: rejected command must have null term_at, got {b["term_at"]!r}'
 except (AssertionError, ValueError, KeyError, TypeError) as error:
     print('invalid command evidence:', error, file=sys.stderr)
     sys.exit(1)

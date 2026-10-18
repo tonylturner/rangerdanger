@@ -27,7 +27,7 @@ eu_gate_G11() {
   fi
   g11_tuple="$SESSION_TUPLE"
   eu_window_start G11 || return
-  poll_since=$(python3 -c 'import time; print(time.time())')
+  poll_since=$(eu_utc +%s.%N) || return
   pass "G11 exact RTU-to-breaker Modbus session exists before kill"
   g11_loss_started_ms=$(eu_now_ms) || g11_loss_started_ms=""
   if ! [[ "$g11_loss_started_ms" =~ ^[0-9]+$ ]]; then
@@ -43,7 +43,7 @@ eu_gate_G11() {
       pass "G11 four points IV+NT device_unreachable with IEC104 link started"
     fi
   fi
-  poll_until=$(python3 -c 'import time; print(time.time())')
+  poll_until=$(eu_utc +%s.%N) || return
   eu_window_finish G11 || return
   eu_peer_poll_gaps "$TMP_DIR/G11.pcap" "$poll_since" "$poll_until" || true
   g11_stale_points=""
