@@ -83,8 +83,8 @@ eu_wait_for_regulation() {
         pass "$label: fresh protocol observations"
         return 0
       fi
-      if [ "$direction" -ne 0 ] \
-        && { [ "$tap" -ge "$upper" ] || [ "$tap" -le "$((-upper))" ]; }; then
+      if { [ "$direction" -gt 0 ] && [ "$tap" -ge "$upper" ]; } \
+        || { [ "$direction" -lt 0 ] && [ "$tap" -le "$((-upper))" ]; }; then
         fail "$label reached a tap limit out of band"
         return 1
       fi
