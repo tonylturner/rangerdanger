@@ -5,9 +5,10 @@
 # Sourced by check/run.sh once the RTU checks have run and the RTU, fake
 # breaker and fake GPS are up. Starts the real iec104-cc against the RTU
 # with its HTTP API on the management network, and a python probe container
-# on that network (check/ccprobe.py) that every assertion goes through: the
+# on that network (check/ccprobe.py) for state/command assertions: the
 # CC learns plant state only through IEC 104, and the harness reads it only
-# through the CC API.
+# through the CC API. Receive-log counts independently catch duplicate
+# deliveries that the cache/journal would hide.
 # shellcheck shell=bash
 
 CC_URL="http://$CC_HTTP_IP:8080"
@@ -66,9 +67,9 @@ log "start the API probe"
 docker run -d --name "$PROBE" --network "$MGMT" --ip 172.28.105.30 \
   -v "$HERE:/app:ro" "$PY" python3 -I /app/fake_historian.py >/dev/null
 
-# start_cc NAME IEC104_IP HTTP_IP TARGET: the CC on the station network, its API on the management network
+# start_cc NAME IEC104_IP HTTP_IP TARGET [CONFIG]: IEC 104 + management API
 start_cc() {
-  docker create --name "$1" --network "$NET" --ip "$2" -v "$HERE/points.test.json:/etc/points.json:ro" "$IMG" \
+  docker create --name "$1" --network "$NET" --ip "$2" -v "${5:-$HERE/points.test.json}:/etc/points.json:ro" "$IMG" \
     iec104-cc --config /etc/points.json --bind "$2" --target "$4" --http "$3:8080" --historian-url http://172.28.105.30:8081/api/ingest --historian-bind "$3" >/dev/null
   docker network connect --ip "$3" "$MGMT" "$1"
   docker start "$1" >/dev/null
@@ -123,6 +124,12 @@ if grep -q '^200 {"status":"ok","link":"started","historian":' "$OUT/cc-health.t
   pass "CC: /api/health reports the started link (also to busybox wget)"
 else
   fail "CC: /api/health unexpected (cc-health.txt)"
+fi
+probe get "/api/journal?after=5" | cut -d' ' -f2- >"$OUT/cc-journal-early-after5.json"
+if jtest "$OUT/cc-journal-early-after5.json" "d['oldest_seq']==1 and d['entries'][0]['seq']==6"; then
+  pass "CC: before journal wrap, ?after=5 starts at seq 6 with oldest_seq 1"
+else
+  fail "CC: early journal filter (cc-journal-early-after5.json)"
 fi
 
 # ---- CC 2. SBO commands: open, close, no-op close ---------------------
@@ -209,6 +216,18 @@ probe wait 15 "all_good(s)" >/dev/null || fail "CC: points did not recover after
 
 # ---- CC 8. RTU paused -> link_lost; back -> new connection, GI --------
 log "CC check 8: RTU paused -> t1 timeout, link_lost cache, 503; unpaused -> recovery"
+# A second real CC uses short APCI/reconnect timers to fill the listen
+# backlog while the RTU is frozen. Its abandoned STARTDTs cause TCP resets
+# on thaw, where getpeername can no longer identify the closed connections.
+# The primary CC and RTU retain the normal test profile.
+docker exec -i "$PROBE" python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+d["timers"].update(t0_s=1, t1_s=1, t2_s=1, t3_s=1)
+d["reconnect_interval_ms"] = 100
+print(json.dumps(d))' <"$HERE/points.test.json" >"$OUT/points.reconnect.json"
+start_cc "$CC2" "$CC2_IP" "$CC2_HTTP_IP" "$RTU_IP:2404" "$OUT/points.reconnect.json"
+cc2 wait 10 "link(s)=='started' and all_good(s)" >/dev/null || fail "CC: reconnect driver did not start"
 probe wait 5 "all_good(s)" >"$OUT/cc-state-before-pause.json"
 docker pause "$RTU" >/dev/null
 if probe wait 40 "link(s)!='started' and all_stale(s,'link_lost')" >"$OUT/cc-state-linklost.json" \
@@ -239,6 +258,19 @@ if [ "$(cat "$OUT/cc-cmd-linkdown.status")" = 503 ] && grep -q '"error":"link no
 else
   fail "CC: link-down command/health (cc-cmd-linkdown.json, cc-health-down.txt)"
 fi
+reconnect_attempts=0
+for _ in $(seq 1 10); do
+  docker logs "$CC2" >"$OUT/cc-reconnect-driver.log" 2>&1
+  reconnect_attempts="$(grep -c 'link opened' "$OUT/cc-reconnect-driver.log" || true)"
+  [ "$reconnect_attempts" -ge 3 ] && break
+  sleep 1
+done
+if [ "$reconnect_attempts" -ge 3 ]; then
+  pass "CC: frozen RTU queued STARTDTs across $reconnect_attempts real CC connections"
+else
+  fail "CC: reconnect stress was not exercised ($reconnect_attempts connections)"
+fi
+reconnect_total=$((reconnect_attempts - 1))
 docker unpause "$RTU" >/dev/null
 if probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s) \
      and last(j,'link_up')['seq']>last(j,'link_down')['seq'] \
@@ -248,6 +280,56 @@ if probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' an
   pass "CC: RTU back -> link_up with a higher connection_seq, GI complete, four points GOOD"
 else
   fail "CC: recovery after the RTU pause (cc-state-recovered.json)"
+fi
+# lib60870's Linux listen backlog is only two. Repeated freezes (not one
+# oversized burst) are needed to exercise more than MAX_CONNECTIONS
+# abandoned sessions and expose both handle reuse and list exhaustion.
+for round in 2 3 4 5; do
+  cc2 wait 20 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s)" \
+    >/dev/null || fail "CC: reconnect driver did not recover before freeze $round"
+  docker logs "$CC2" >"$OUT/cc-reconnect-driver.log" 2>&1
+  opened_before="$(grep -c 'link opened' "$OUT/cc-reconnect-driver.log" || true)"
+  docker pause "$RTU" >/dev/null
+  queued=0
+  for _ in $(seq 1 15); do
+    docker logs "$CC2" >"$OUT/cc-reconnect-driver.log" 2>&1
+    opened_now="$(grep -c 'link opened' "$OUT/cc-reconnect-driver.log" || true)"
+    queued=$((opened_now - opened_before))
+    [ "$queued" -ge 2 ] && break
+    sleep 0.5
+  done
+  docker unpause "$RTU" >/dev/null
+  if [ "$queued" -lt 2 ]; then
+    fail "CC: freeze $round did not queue two reconnects ($queued)"
+  fi
+  reconnect_total=$((reconnect_total + queued))
+done
+if [ "$reconnect_total" -ge 10 ] \
+  && probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s)" >/dev/null; then
+  pass "CC: recovered after five freezes and $reconnect_total queued reconnects (more than the eight-entry list)"
+else
+  fail "CC: repeated-freeze recovery/stress ($reconnect_total queued reconnects)"
+fi
+docker logs "$CC2" >"$OUT/cc-reconnect-driver.log" 2>&1
+docker rm -f "$CC2" >/dev/null
+
+log "CC check 8b: commands complete after reconnect churn; no duplicate spontaneous/feedback/cyclic ASDUs"
+# Only count frames after the recovery GI and the driver's departure.
+sleep 1
+docker logs "$CC" >"$OUT/cc-before-reconnect-commands.log" 2>&1
+before_lines="$(wc -l <"$OUT/cc-before-reconnect-commands.log")"
+if cmd_ok cc-cmd-after-freeze-open open open && cmd_ok cc-cmd-after-freeze-close close closed; then
+  pass "CC: post-freeze open and close both completed with ACT-CON, ACT-TERM and matched feedback"
+else
+  fail "CC: post-freeze command did not complete (cc-cmd-after-freeze-*.json)"
+fi
+sleep 7  # at least three 2000 ms cyclic images, including any duplicate copies
+docker logs "$CC" >"$OUT/cc-after-reconnect-commands.log" 2>&1
+if docker exec -i "$PROBE" python3 -I /app/reconnect_checks.py "$before_lines" \
+  <"$OUT/cc-after-reconnect-commands.log" >"$OUT/cc-reconnect-frames.log" 2>&1; then
+  pass "CC: each post-freeze spontaneous, COT 11 feedback and cyclic image arrived once"
+else
+  fail "CC: duplicated/missing post-freeze frames (cc-reconnect-frames.log)"
 fi
 
 # ---- CC 9. RTU stopped -> peer_closed; started -> recovery ------------
@@ -276,12 +358,15 @@ epoch="$(jget "$OUT/cc-state-baseline.json" "d['cache_epoch']")"
 details="{'link_up':{'peer','connection_seq'},'link_down':{'peer','connection_seq','reason'},'gi_started':{'connection_seq','trigger'}, \
   'gi_complete':{'connection_seq','points_good','trigger'},'point_stale':{'point','stale_reason','value'},'point_good':{'point','value'}, \
   'status_event':{'id','ioa','asdu','cot','value','source_time','source_time_invalid'},'command':{'id','point','operation','result','reason','selected_at','executed_at','con_at','term_at','feedback'}}"
-if jtest "$OUT/cc-journal.json" "d['cache_epoch']=='$epoch' and d['oldest_seq']==1 \
-     and d['latest_seq']==d['entries'][-1]['seq'] and [e['seq'] for e in d['entries']]==list(range(1,d['latest_seq']+1)) \
+# Repeated freezes legitimately exceed the documented 500-entry ring.
+# Check its entire retained window, not an impossible unbounded history.
+if jtest "$OUT/cc-journal.json" "d['cache_epoch']=='$epoch' and d['oldest_seq']==max(1,d['latest_seq']-499) \
+     and d['latest_seq']==d['entries'][-1]['seq'] \
+     and [e['seq'] for e in d['entries']]==list(range(d['oldest_seq'],d['latest_seq']+1)) \
      and all(set(e)=={'seq','at','kind','detail'} and set(e['detail'])==${details}[e['kind']] for e in d['entries'])" \
-  && jtest "$OUT/cc-journal-after5.json" "d['entries'][0]['seq']==6" \
+  && jtest "$OUT/cc-journal-after5.json" "d['entries'][0]['seq']==max(6,d['oldest_seq'])" \
   && jtest "$OUT/cc-state-final.json" "d['cache_epoch']=='$epoch'"; then
-  pass "CC: journal seqs contiguous from 1, one cache_epoch, details exactly as specified, ?after= filters"
+  pass "CC: journal seqs contiguous within 500-entry retention, one cache_epoch, exact details, ?after= filters"
 else
   fail "CC: journal integrity (cc-journal.json)"
 fi

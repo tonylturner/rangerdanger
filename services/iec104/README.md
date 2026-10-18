@@ -307,8 +307,8 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   ACT-CON on interlock, Modbus-loss IV+NT, measurement-invalid IV on
   floats, GPS-loss CP56 IV, strict-loader rejection, and `monitor` exit 3 on
   link loss.
-- Control centre (`check/cc_checks.sh`, every assertion through its HTTP
-  API via `check/ccprobe.py`): GI and the 38 points GOOD; open, close and
+- Control centre (`check/cc_checks.sh`, state/command assertions through its
+  HTTP API via `check/ccprobe.py`): GI and the 38 points GOOD; open, close and
   no-op → `completed` with matched feedback; interlock → `rejected`; 409,
   503 and every 4xx/5xx input case; `measurement_invalid` and
   `device_unreachable` with the link started; RTU paused → `t1_timeout`,
@@ -316,6 +316,18 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   `connection_seq`; RTU stopped → `peer_closed`; an unreachable RTU →
   one `connect_failed` and `never_received` points; fatal binds; SIGTERM
   exit 0; journal ordering and detail shapes.
+  The pause check also queues at least ten real CC reconnects across five
+  freezes, then requires completed open/close commands and exactly one
+  copy of each spontaneous, feedback and cyclic report at the CC receive
+  callback (not the deduplicated cache).
+
+RTU connection lifetime is keyed by `IMasterConnection`, not the peer
+address. In lib60870 v2.4.1, CLOSED is emitted even after a TCP reset, but
+`getPeerAddress` calls `getpeername`, which can then fail. STARTDT records
+the diagnostic peer string; STOPDT/CLOSED remove the handle synchronously
+under the same lock as queued sends, before lib60870 can recycle it.
+The model checks cover lost peer addresses, handle reuse, a concurrent
+sender/close boundary, STOPDT and a logged full-list condition.
 
 Increment 4 adds strict schema/format/block/feedback rejection cases, real
 FC3 PLC reads, RMU and OLTC FC6 writes in the attempt window, moving and

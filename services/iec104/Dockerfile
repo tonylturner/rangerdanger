@@ -66,6 +66,7 @@ RUN set -eux; \
 FROM build AS model-check
 COPY services/iec104/check/model_checks.c services/iec104/check/points.test.json /src/check/
 COPY services/iec104/check/rtu_model_checks.c /src/check/
+COPY services/iec104/check/rtu_connection_checks.c /src/check/
 RUN cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror \
     -Isrc -I/src/cjson -I/opt/lib60870/include \
     -o /out/model-check /src/check/model_checks.c \
@@ -79,6 +80,16 @@ RUN cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror \
     src/rtu_reporting.c src/common.c /opt/lib60870/lib/liblib60870.a \
     -Wl,--wrap=Hal_getMonotonicTimeInMs -lpthread -lm \
  && /out/rtu-model-check
+RUN cc -std=gnu11 -D_GNU_SOURCE -O2 -Wall -Wextra -Werror \
+    -Isrc -I/src/cjson -I/opt/lib60870/include \
+    -o /out/rtu-connection-check /src/check/rtu_connection_checks.c \
+    src/rtu_server.c src/rtu_reporting.c src/common.c src/pointmap.c /src/cjson/cJSON.c \
+    /opt/lib60870/lib/liblib60870.a \
+    -Wl,--wrap=CS104_Slave_setConnectionEventHandler \
+    -Wl,--wrap=IMasterConnection_getPeerAddress -Wl,--wrap=IMasterConnection_sendASDU -lpthread -lm \
+ && /out/rtu-connection-check > /out/rtu-connection-check.log \
+ && cat /out/rtu-connection-check.log \
+ && grep -q 'started connection list full (8)' /out/rtu-connection-check.log
 
 FROM alpine:3.22@${ALPINE_DIGEST}
 

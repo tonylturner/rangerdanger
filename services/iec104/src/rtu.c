@@ -53,7 +53,6 @@ static void
 tick(void)
 {
     pthread_mutex_lock(&rtu.lock);
-    rtu_apply_connection_events();
     if (rtu.sel.active && rtu_mono_ms() >= rtu.sel.deadlineMono) rtu_clear_selection("select timeout elapsed");
     rtu_evaluate_and_report();
     rtu_advance_command();
@@ -106,7 +105,6 @@ main(int argc, char** argv)
     rtu.pm = pm;
 
     pthread_mutex_init(&rtu.lock, NULL);
-    pthread_mutex_init(&rtu.evLock, NULL);
 
     /* seed per-point reported state so the first good poll reports a GOOD transition */
     for (int i = 0; i < pm->n_points; i++) {

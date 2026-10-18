@@ -131,80 +131,61 @@ connection_request_handler(void* param, const char* ip)
     return true;
 }
 
-/* Caller holds rtu.lock. */
-static void
-forget_started(const char* peerStr)
-{
-    for (int i = 0; i < rtu.nStarted; i++) {
-        if (strcmp(rtu.started[i].peer, peerStr) == 0) {
-            rtu.started[i] = rtu.started[--rtu.nStarted];
-            break;
-        }
-    }
-}
-
-/* Caller holds rtu.lock. */
-static void
-forget_connection(const char* peerStr)
-{
-    forget_started(peerStr);
-    if (rtu.sel.active && strcmp(rtu.sel.peer, peerStr) == 0)
-        rtu_clear_selection("selecting connection stopped");
-}
-
 static void
 connection_event_handler(void* param, IMasterConnection conn, CS104_PeerConnectionEvent event)
 {
     (void)param;
     static const char* names[] = {"connection opened", "connection closed", "STARTDT", "STOPDT"};
     char addr[PEER_LEN];
-    peer(conn, addr, sizeof(addr));
-    rd_log("%s peer=%s", names[event], addr);
+    pthread_mutex_lock(&rtu.lock);
 
-    pthread_mutex_lock(&rtu.evLock);
-    if (rtu.nEvents < EVENT_QUEUE) {
-        ConnEvent* e = &rtu.events[rtu.nEvents++];
-        e->conn = conn;
-        e->event = event;
-        snprintf(e->peer, PEER_LEN, "%s", addr);
-    } else {
-        rd_log("connection event queue full; event dropped");
-    }
-    pthread_mutex_unlock(&rtu.evLock);
-}
-
-/* Caller holds rtu.lock. */
-void
-rtu_apply_connection_events(void)
-{
-    ConnEvent events[EVENT_QUEUE];
-    int n;
-    pthread_mutex_lock(&rtu.evLock);
-    n = rtu.nEvents;
-    memcpy(events, rtu.events, sizeof(ConnEvent) * (size_t)n);
-    rtu.nEvents = 0;
-    pthread_mutex_unlock(&rtu.evLock);
-
-    for (int i = 0; i < n; i++) {
-        switch (events[i].event) {
-        case CS104_CON_EVENT_ACTIVATED:
-            /* Events apply late: a select may already have arrived on this
-             * started connection, so STARTDT must not clear it. */
-            forget_started(events[i].peer);
-            if (rtu.nStarted < MAX_CONNECTIONS) {
-                snprintf(rtu.started[rtu.nStarted].peer, PEER_LEN, "%s", events[i].peer);
-                rtu.started[rtu.nStarted].conn = events[i].conn;
-                rtu.nStarted++;
-            }
-            break;
-        case CS104_CON_EVENT_DEACTIVATED:
-        case CS104_CON_EVENT_CONNECTION_CLOSED:
-            forget_connection(events[i].peer);
-            break;
-        case CS104_CON_EVENT_CONNECTION_OPENED:
+    int index = -1;
+    for (int i = 0; i < rtu.nStarted; i++) {
+        if (rtu.started[i].conn == conn) {
+            index = i;
             break;
         }
     }
+    /* lib60870 v2.4.1 emits CLOSED, but getPeerAddress calls getpeername
+     * on the socket: after a reset it returns no address. Identity must be
+     * the handle, not that fallible diagnostic string. lib60870 reuses
+     * handles only after this callback returns, so retirement cannot be
+     * deferred to the next main-loop tick. */
+    if (index >= 0)
+        snprintf(addr, sizeof(addr), "%s", rtu.started[index].peer);
+    else
+        peer(conn, addr, sizeof(addr));
+    rd_log("%s peer=%s", names[event], addr);
+
+    switch (event) {
+    case CS104_CON_EVENT_ACTIVATED:
+        if (index < 0) {
+            if (rtu.nStarted == MAX_CONNECTIONS) {
+                rd_log("started connection list full (%d); peer=%s not added", MAX_CONNECTIONS, addr);
+                break;
+            }
+            Started* s = &rtu.started[rtu.nStarted++];
+            s->conn = conn;
+            snprintf(s->peer, sizeof(s->peer), "%s", addr);
+        }
+        break;
+    case CS104_CON_EVENT_DEACTIVATED:
+    case CS104_CON_EVENT_CONNECTION_CLOSED:
+        if (index >= 0) {
+            if (rtu.sel.active && strcmp(rtu.sel.peer, addr) == 0)
+                rtu_clear_selection("selecting connection stopped");
+            /* Let an in-flight field write finish, but never deliver its
+             * response to a later connection reusing the same peer tuple. */
+            if (rtu.pend.active && strcmp(rtu.pend.peer, addr) == 0)
+                rtu.pend.peer[0] = '\0';
+            rtu.started[index] = rtu.started[--rtu.nStarted];
+            rtu.started[rtu.nStarted] = (Started){0};
+        }
+        break;
+    case CS104_CON_EVENT_CONNECTION_OPENED:
+        break;
+    }
+    pthread_mutex_unlock(&rtu.lock);
 }
 
 void
