@@ -78,7 +78,7 @@
       "articles": [
         {
           "id": "eu-telecontrol-architecture",
-          "title": "Two hops: operator observation and physical feeder state",
+          "title": "Two hops: Control Centre observations and Physical System state",
           "file": "eu-telecontrol-architecture.md"
         },
         {

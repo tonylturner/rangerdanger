@@ -28,7 +28,7 @@ steps:
   description: |
     Start with weak policy and a healthy feeder. Use Reset Lab only before gathering evidence. On the [Network Map](/console), walk Enterprise, Vendor/Engineering, Station, Field, Control Centre and Operations DMZ. Label the two control hops: CC→RTU TCP/2404 and RTU→field TCP/502. The PLC has a separate pinned OLTC conduit.
 
-    In [/substation](/substation), compare the **Control Centre** observations, quality and receipt times with the separate **Field truth** view. GI runs on connect, every 15 minutes or via **Interrogate station**; quiet GOOD status does not expire. Float measurements are cyclic every 10 seconds, PLC parameters every 60 seconds, with deadband/quality spontaneous reports between cycles. Breaker closed and supply present are your known-good baseline; a socket is not proof of fresh observation.
+    In [/substation](/substation), compare the **Control Centre** observations, quality and receipt times with the separate **Physical System** view. GI runs on connect, every 15 minutes or via **Interrogate station**; quiet GOOD status does not expire. Float measurements are cyclic every 10 seconds, PLC parameters every 60 seconds, with deadband/quality spontaneous reports between cycles. Breaker closed and supply present are your known-good baseline; a socket is not proof of fresh observation.
 
     :::hint Boundaries and blind spots
     RTU↔PLC and RTU↔GPS share station_net, so the firewall cannot enforce those same-subnet relationships. PLC→OLTC crosses Station→Field and IS visible. Read [Zones and conduits](/knowledge#eu-zone-conduit-design).

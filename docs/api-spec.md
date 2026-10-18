@@ -184,12 +184,12 @@ For packages whose manifest has a control centre and a field device simulator (`
 | `GET` | `/field/state` | `{"devices":{<node-id>:<device state>},"clock":<time-source state>|null,"process":<electrical state>}`. `devices` holds every manifest `sim` endpoint except the time source, keyed by topology node ID; the `time-source` sim (GPS) is `clock`, `null` only when none is declared, and more than one is a `502`. Any upstream failure, including a timeout, returns `502 {"error":"..."}` naming the failed upstream; it never returns partial state. |
 | `GET` | `/field/audit?after=<seq>&device=<key>` | Per-device audit. Keys: `breaker-1`, `rmu-1`, `rmu-2`, `oltc-1`; defaults to `breaker-1`. Other keys (including an explicit empty key) return `400`. |
 
-### Field truth (schema 3)
+### Physical System (schema 3)
 
 Device `/api/state` and process `/api/electrical` (inside `/field/state`)
-accept schema 3 only. Field truth is instructor-only simulator information,
-not operator telemetry. Device `measurements` includes nullable `p_mw`,
-`q_mvar`, `pf`; the removed topological fault Boolean is not accepted.
+accept schema 3 only. The student-facing Physical System view shows simulation
+observations independent of IEC 104, not operator telemetry. Device
+`measurements` includes nullable `p_mw`, `q_mvar`, `pf`; the removed topological fault Boolean is not accepted.
 Positive P/Q means flow from source to section; P/Q may be negative. PF is
 `abs(P)/sqrt(P²+Q²)` at apparent power ≥0.001 MVA, otherwise null. Invalid
 measurements have null P/Q/PF.
