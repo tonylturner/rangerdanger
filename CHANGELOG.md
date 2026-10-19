@@ -22,6 +22,8 @@ SSD installs follow `REPO-UPDATE-README.md` on the SSD.
   `L4_SOURCE_PIN`, the HMI question asks about the Kali re-test, the RTAC
   write is an optional check with its expected result and restore steps,
   and the Modbus sidebar no longer credits function-code DPI (RD-02, RD-24).
+  After the optional RTAC write, Validate reports PARTIAL even once restored;
+  the lab says to expect PARTIAL with all device-state rows passing.
 - **Lab 2.4 report scope.** The text says the report is a TCP reachability
   matrix that sends no control write.
 - **Lab 2.2 commits.** containd web-UI rule Create/Delete only take effect
@@ -31,9 +33,10 @@ SSD installs follow `REPO-UPDATE-README.md` on the SSD.
 - **Run-button `mbpoll` reads poll once (`-1`)** instead of polling until
   Ctrl-C, and Lab 2.3 / 2.3-bonus register prose uses mbpoll's 1-based
   labels. The retired `bounded_poll` oracle exception is removed.
-- **Lab 2.3-bonus attribution.** Recloser "Last Command" is read from
-  Electrical Detail; the One-Line shows "Last command from" only for the
-  feeder breaker.
+- **Lab 2.3-bonus attribution.** The recloser records a Modbus write only
+  as `modbus-tcp`; students attribute the live write in containd
+  NETWORK → Sessions (SRC 10.20.20.10 to 10.40.40.21:502; rows expire after
+  about 2 minutes), and the attribution question asks about that row (RD-26).
 - **Network Map links.** The proxy redirects the frozen `/apps/firewall/`
   and OpenPLC node links to `/containd/` and `/apps/openplc/`, and serves
   containd's `/icons/*.svg`.
