@@ -60,6 +60,73 @@ class ExtractTests(unittest.TestCase):
         self.assertTrue(extract.verdict(oracle, 0, "[1]: 1", ""))
         self.assertFalse(extract.verdict(oracle, 0, "[1]: 1", "Read failed"))
 
+    def test_reviewed_continuous_poll_requires_samples_and_clean_bounded_stop(self):
+        oracle = {"intent": "read", "match": r"\[1\]:\s+[01]", "bounded_poll": True}
+        for rc in (0, 124, 130, 143):
+            with self.subTest(rc=rc):
+                self.assertTrue(extract.verdict(oracle, rc, "[1]: 1", ""))
+                self.assertFalse(extract.verdict(oracle, rc, "", ""))
+                self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", "Read failed"))
+        for rc, err in ((1, ""), (127, ""), (124, "Illegal function"),
+                        (124, "host execution timeout")):
+            with self.subTest(rc=rc, err=err):
+                self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", err))
+
+    def test_poll_timeout_exception_is_pinned_only_to_rtac_continuous_reads(self):
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        polls = [r for r in extract.extract(ROOT)
+                 if data["commands"][extract.key(r)]["oracle"] and
+                 data["commands"][extract.key(r)]["oracle"].get("bounded_poll")]
+        self.assertEqual(len(polls), 6)
+        for row in polls:
+            self.assertEqual(row["container"], "rangerdanger-rtac-sim")
+            self.assertTrue(row["command"].startswith("mbpoll "))
+            self.assertNotIn(" -1 ", row["command"])
+            self.assertEqual(data["commands"][extract.key(row)]["oracle"]["intent"], "read")
+        rows = extract.extract(ROOT)
+        data["commands"][extract.key(rows[0])]["oracle"]["bounded_poll"] = True
+        with self.assertRaisesRegex(ValueError, "bounded polling"):
+            extract.validate_inventory(rows, data)
+
+    def test_negative_location_is_not_a_source_and_via_tags_is(self):
+        desc = ("Analysis happens on the **engineering workstation**, not on the firewall.\n"
+                "    tshark -r capture.pcap\n")
+        self.assertEqual(extract.infer_node_per_command(desc, 1), "eng-ws-1")
+        desc = ("From Kali, send the attack.\nConfirm via the RTAC tags:\n"
+                "    mbpoll -a 1 10.30.30.20\n")
+        self.assertEqual(extract.infer_node_per_command(desc, 2), "rtac-1")
+
+    def test_shipped_analysis_sources_and_firewall_prompts(self):
+        rows = extract.extract(ROOT)
+        analysis = [r for r in rows
+                    if r["scenario"] == "baseline-assessment" and r["step"] == 4]
+        self.assertEqual(len(analysis), 12)
+        for row in analysis:
+            self.assertEqual((row["node"], row["prompt"]), ("eng-ws-1", "shell"))
+        for row in rows:
+            if row["node"] == "fw-1":
+                self.assertNotEqual(row["command"], "containd cli")
+                if row["command"].startswith("tcpdump "):
+                    self.assertEqual((row["prompt"], row["entry"]), ("shell", "shell"))
+
+    def test_manual_default_deny_probe_checks_reference_end_state_not_weak_read(self):
+        rows = extract.extract(ROOT)
+        row = next(r for r in rows if r["scenario"] == "firewall-implementation"
+                   and r["step"] == 4 and r["command"].startswith("mbpoll "))
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        oracle = data["commands"][extract.key(row)]["oracle"]
+        self.assertEqual((row["policy"], oracle["policy"], oracle["intent"]),
+                         ("weak", "hardened", "deny"))
+        self.assertFalse(extract.verdict(oracle, 0, "[1]: 1", "", control=True))
+        self.assertTrue(extract.verdict(oracle, 1, "", "timed out", control=True))
+        result = subprocess.run([sys.executable, str(HELPER), "--matrix"],
+                                capture_output=True, text=True, timeout=5, check=True)
+        line = result.stdout.splitlines()[rows.index(row)]
+        self.assertTrue(line.endswith("|hardened|RUN|deny"), line)
+        oracle["policy"] = "weak"
+        with self.assertRaisesRegex(ValueError, "end-state override"):
+            extract.validate_inventory(rows, data)
+
     def test_deny_requires_control_and_real_denial(self):
         oracle = {"intent": "deny", "match": "timed out|refused"}
         self.assertFalse(extract.verdict(oracle, 1, "", "timed out"))

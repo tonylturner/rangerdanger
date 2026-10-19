@@ -55,6 +55,9 @@ steps:
       unified Modbus holding-register view, so a single read captures
       the whole substation:
 
+      These reads poll continuously so you can watch updates. Use Ctrl-C
+      after recording the values, before running the next command.
+
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
       Expected: `[0]=1` (breaker closed), `[1]=1` (recloser closed),
@@ -368,6 +371,8 @@ steps:
       out at the L4 perimeter. The same source-pin rule that
       blocked DNP3 above (only `10.30.30.20`/RTAC can reach field
       on TCP/502) closes both Modbus attacks:
+
+      From Kali, repeat the writes:
 
           mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520   # FC6 regulator tap
           mbpoll -a 1 -t 0 -r 1 10.40.40.20 0          # FC5 breaker trip
