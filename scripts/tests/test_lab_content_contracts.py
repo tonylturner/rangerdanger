@@ -143,6 +143,14 @@ class ErrataContracts(unittest.TestCase):
 
 
 class BaselineContracts(unittest.TestCase):
+    def test_vendor_observation_depends_on_capture_window(self):
+        doc = scenario("baseline-assessment")
+        self.assertIn("NOT_OBSERVED", doc["steps"][3]["description"])
+        text = doc["steps"][5]["description"]
+        decision = next(line for line in text.splitlines() if "id=vendor-to-ot " in line)
+        self.assertNotIn("correct=", decision)
+        self.assertIn("if your capture contains", text)
+
     def test_observation_key_does_not_invent_writes(self):
         doc = scenario("baseline-assessment")
         text = doc["steps"][5]["description"]

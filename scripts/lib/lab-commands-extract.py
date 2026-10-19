@@ -269,8 +269,18 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
             and bool(re.search(oracle["match"], stdout, re.M)))
 
 
+def shell_command(command):
+    """Keep head's visible output, but drain input so pipefail tests the reader.
+
+    Early head exit can make tshark return 16 (broken pipe). sed without `q`
+    reads the entire PCAP, preserving missing/corrupt-file and late failures
+    rather than allowing an arbitrary producer error code.
+    """
+    return re.sub(r"\|\s*head -(\d+)\s*$", r"| sed -n '1,\1p'", command)
+
+
 def invocation(row, timeout):
-    command = row["command"]
+    command = shell_command(row["command"]) if row["prompt"] == "shell" else row["command"]
     prefix = ["docker", "exec", "-i", row["container"], "timeout",
               "-s", "INT", str(timeout)]
     if row["container"] == "rangerdanger-firewall":
@@ -315,7 +325,7 @@ def run_staged_shell(argv, row, timeout):
                 argv, 125, (prefix + out).decode(errors="replace"),
                 (errors + err).decode(errors="replace") + "\ndocumented shell transition failed")
         try:
-            out, err = process.communicate((row["command"] + "\nexit\n").encode(),
+            out, err = process.communicate((shell_command(row["command"]) + "\nexit\n").encode(),
                                            timeout=timeout + 10)
         except subprocess.TimeoutExpired:
             process.kill()

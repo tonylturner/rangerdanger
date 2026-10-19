@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -92,14 +94,21 @@ class ExtractTests(unittest.TestCase):
             with self.subTest(rc=rc, err=err):
                 self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", err))
 
-    def test_poll_timeout_exception_is_pinned_only_to_rtac_continuous_reads(self):
+    def test_poll_timeout_exception_is_pinned_only_to_reviewed_continuous_reads(self):
         data = json.loads(extract.EXPECTATIONS.read_text())
         polls = [r for r in extract.extract(ROOT)
                  if data["commands"][extract.key(r)]["oracle"] and
                  data["commands"][extract.key(r)]["oracle"].get("bounded_poll")]
-        self.assertEqual(len(polls), 6)
+        rtac = [r for r in polls if r["container"] == "rangerdanger-rtac-sim"]
+        vendor = [r for r in polls if r["container"] == "rangerdanger-vendor-jump"]
+        self.assertEqual(len(polls), 8)
+        self.assertEqual(len(rtac), 6)
+        self.assertEqual({(r["scenario"], r["step"], r["policy"], r["command"]) for r in vendor}, {
+            ("vendor-rdp-compromise", 3, "weak",
+             f"mbpoll -a 1 -t {kind} -r 1 -c {count} 10.30.30.20")
+            for kind, count in ((4, 5), (3, 6))
+        })
         for row in polls:
-            self.assertEqual(row["container"], "rangerdanger-rtac-sim")
             self.assertTrue(row["command"].startswith("mbpoll "))
             self.assertNotIn(" -1 ", row["command"])
             self.assertEqual(data["commands"][extract.key(row)]["oracle"]["intent"], "read")
@@ -107,6 +116,65 @@ class ExtractTests(unittest.TestCase):
         data["commands"][extract.key(rows[0])]["oracle"]["bounded_poll"] = True
         with self.assertRaisesRegex(ValueError, "bounded polling"):
             extract.validate_inventory(rows, data)
+
+    def test_vendor_continuous_reads_document_ctrl_c(self):
+        doc = extract.yaml.safe_load(
+            (ROOT / "lab-definitions/scenarios/vendor-rdp-compromise.yml").read_text())
+        text = doc["steps"][2]["description"]
+        self.assertIn("continuous", text)
+        self.assertIn("Ctrl-C", text)
+
+    def test_vendor_filter_allows_not_observed_but_still_requires_reader_success(self):
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        row = next(r for r in extract.extract(ROOT) if
+                   r["command"].startswith("tshark ") and
+                   "'ip.src==10.20.20.0/24" in r["command"])
+        oracle = data["commands"][extract.key(row)]["oracle"]
+        self.assertTrue(extract.verdict(oracle, 0, "", ""))
+        self.assertTrue(extract.verdict(oracle, 0, "10.20.20.20 -> 10.30.30.20 HTTP", ""))
+        self.assertFalse(extract.verdict(oracle, 0, "unexpected output", ""))
+        for rc in (2, 16, 124, 127):
+            self.assertFalse(extract.verdict(oracle, rc, "", ""))
+            self.assertFalse(extract.verdict(oracle, rc, "10.20.20.20", ""))
+
+    def test_head_pipeline_drains_reader_without_masking_early_or_late_errors(self):
+        # Stand-in decoder: enough output to break the producer's pipe when
+        # head exits, with tshark's observed rc=16 on that broken pipe.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            reader = path / "tshark"
+            reader.write_text(
+                f"#!{sys.executable}\nimport os, sys\n"
+                "try:\n"
+                "    with open(sys.argv[2]) as f:\n"
+                "        sys.stdout.write(f.read())\n"
+                "    sys.stdout.flush()\n"
+                "except BrokenPipeError:\n"
+                "    os._exit(16)\n"
+                "except OSError:\n"
+                "    sys.exit(2)\n"
+                "sys.exit(int(os.environ.get('READER_RC', '0')))\n")
+            reader.chmod(0o755)
+            capture = path / "fixture.pcap"
+            capture.write_text("10.20.20.20 -> 10.30.30.20 HTTP\n" * 100000)
+            row = next(r for r in extract.extract(ROOT) if
+                       "'ip.src==10.20.20.0/24" in r["command"])
+            row["command"] = row["command"].replace(
+                "/home/abc/pcaps/baseline.pcap", shlex.quote(str(capture)))
+            argv, _ = extract.invocation(row, 5)
+            env = {**os.environ, "PATH": directory + os.pathsep + os.environ["PATH"],
+                   "READER_RC": "0"}
+            # Drop docker exec + timeout, exercise the exact bash invocation locally.
+            result = subprocess.run(argv[8:], env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "10.20.20.20 -> 10.30.30.20 HTTP\n" * 15)
+            env["READER_RC"] = "2"
+            result = subprocess.run(argv[8:], env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2)  # even after valid visible frames
+            capture.unlink()
+            result = subprocess.run(argv[8:], env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2)  # missing PCAP, stderr redirected
+            self.assertEqual(result.stdout, "")
 
     def test_negative_location_is_not_a_source_and_via_tags_is(self):
         desc = ("Analysis happens on the **engineering workstation**, not on the firewall.\n"

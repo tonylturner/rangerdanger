@@ -113,6 +113,15 @@ The lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
 extracts these the same way and runs each. If a command in your
 lab YAML doesn't run cleanly, CI fails.
 
+The gate keeps `pipefail`, but drains terminal `| head -N` pipelines with
+`sed -n '1,Np'`: visible lines are unchanged and an early closed pipe cannot
+masquerade as a reader failure. Missing/corrupt PCAPs and late reader failures
+still fail. A reviewed passive filter may return no matches only after a
+successful read; absence is `NOT_OBSERVED`, not enforcement proof.
+Continuous Modbus reads must tell students to press Ctrl-C. Only individually
+reviewed `bounded_poll` oracles accept the gate's bounded stop, and they still
+require valid samples without protocol/read errors.
+
 ### Hints - `:::hint`
 
 Collapsible "reveal answer" panel. Default state is collapsed.

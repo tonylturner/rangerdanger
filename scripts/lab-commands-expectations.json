@@ -131,7 +131,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+        "match": "\\A\\s*\\Z|\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
       },
       "reason": null
     },
@@ -1060,7 +1060,8 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "bounded_poll": true
       },
       "reason": null
     },
@@ -1072,7 +1073,8 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "bounded_poll": true
       },
       "reason": null
     },
