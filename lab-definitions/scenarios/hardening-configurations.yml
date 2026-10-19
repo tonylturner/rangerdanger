@@ -364,6 +364,12 @@ steps:
       **Supervisory Control** → **Enable Reclose** (or click **Reset Lab**,
       then re-apply **Hardened reference**). The Validate step expects
       auto-reclose enabled.
+
+      Expect **PARTIAL** from Validate afterwards, even once restored: its
+      audit row counts this write as an unauthorized command that reached
+      a field device (it did), alongside your earlier weak-baseline
+      writes. With every device-state row ✓ that is the correct result -
+      the audit is a history, not a verdict on the current policy.
       :::
 
       :::hint Optional: confirm Modbus is blocked too
@@ -442,6 +448,15 @@ steps:
       first (**Supervisory Control** → **Enable Reclose**, or **Reset
       Lab** and re-apply **Hardened reference**): this check expects it
       enabled.
+
+      **Expect PARTIAL, not PASS.** The audit row counts every write that
+      reached a field device - the Step 2 attack under the weak baseline
+      and, if you ran it, the optional RTAC-origin write - as "N
+      unauthorized command(s) reached field devices". That history does
+      not change when you restore. The result you want is PARTIAL with
+      every device-state row ✓ (voltage normal, breaker and recloser
+      closed, auto-reclose enabled, Hardened reference active); record it
+      with your Step 5 register read.
 
       The cross-zone DNP3 control surface is closed by the source pin.
       Lab 2.4 takes this further with a positive/negative TCP

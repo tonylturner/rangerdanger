@@ -365,6 +365,14 @@ class EnforcementContracts(unittest.TestCase):
                          .split("\n:::\n", 1)[0])
         self.assertIn("Enable Reclose", steps[5]["description"])
         self.assertEqual(steps[5]["action"]["expect"]["reclose_enabled"], True)
+        # Live check: the audit row counts the RTAC-origin and weak-baseline
+        # writes after restore, so Validate returns PARTIAL with all state rows ok.
+        self.assertIn("Expect **PARTIAL** from Validate afterwards, even once restored", hint)
+        validate = self.flat(steps[5]["description"])
+        self.assertIn("**Expect PARTIAL, not PASS.**", validate)
+        self.assertIn("unauthorized command(s) reached field devices", validate)
+        self.assertIn("PARTIAL with every device-state row ✓", validate)
+        self.assertIn("do not clear audit or repeatedly reset/re-attack", validate)
 
     def test_no_independent_dpi_overclaim_remains(self):
         texts = {
