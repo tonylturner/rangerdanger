@@ -27,9 +27,11 @@ moved to `docs/v0.1.36-hotfix.md`.
 - **SSD archive installs could not update.** They have no `.git`, so
   `apply-repo-update` refused them. Without `.git` it now skips the
   tracked-file guard and says so; every image and Compose check stays.
-- **Scenario-header errata were too long to read.** The v0.1.35 images
-  show the header as one plain paragraph. Each header now gives only the
-  rules for that lab; the detail moved to step bodies and the errata page.
+- **Lab errata no longer fill the scenario headers.** Headers are back to
+  their v0.1.35 text, without version references. The Lab 2.2 phase steps
+  are renamed "Stage 1-6", so the v0.1.35 frontend renders their corrected
+  bodies instead of its stale generated ones. The remaining rules are short
+  workshop notes in the step where students act.
 - **rc.1 CI failures.** ShellCheck SC2015 in `apply-repo-update.sh`, and
   the Lab 2.2 schema example again shows the Modbus rule that the
   frontend consistency test pins to the hardened reference.
