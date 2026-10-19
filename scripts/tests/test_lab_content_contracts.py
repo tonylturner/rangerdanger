@@ -1,11 +1,11 @@
 """Offline contracts for content consumed by the frozen v0.1.35 images."""
 
 from pathlib import Path
+import importlib.util
 import ipaddress
 import json
 import re
 import shlex
-import subprocess
 import unittest
 
 import yaml
@@ -52,16 +52,15 @@ class TerminalContracts(unittest.TestCase):
                 for source in sources:
                     with self.subTest(scenario=name, source=source):
                         self.assertIn(source, doc["nodes"])
-        # Execute only the shell extractor function, never the live smoke gate.
-        # Retains its CLI boundary when the inline Python becomes a separate tool.
-        shell = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
-        function = shell.split("extract_commands() {", 1)[1].split("\n}\n", 1)[0]
-        result = subprocess.run(["bash", "-c", "extract_commands() {" + function +
-                                 "\n}\nextract_commands"], cwd=ROOT, text=True,
-                                capture_output=True, timeout=30, check=True)
-        self.assertTrue(result.stdout.strip())
-        for line in result.stdout.splitlines():
-            name, _, _, _, container, _ = line.split("|", 5)
+        # Import only the offline extractor, never the live smoke gate.
+        spec = importlib.util.spec_from_file_location(
+            "lab_commands_extract", ROOT / "scripts/lib/lab-commands-extract.py")
+        extractor = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(extractor)
+        rows = extractor.extract(ROOT)
+        self.assertTrue(rows)
+        for row in rows:
+            name, container = row["scenario"], row["container"]
             with self.subTest(scenario=name, container=container):
                 self.assertIn(containers[container], docs[name]["nodes"])
 
