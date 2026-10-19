@@ -62,16 +62,19 @@ class CompatTests(unittest.TestCase):
         # Docker. Never execute a smoke script, even with mocked executables.
         guard = self.source.split("# Guard BEFORE", 1)[1]
         guard = guard[guard.index("running="):guard.index('mkdir -p "$receipts"')]
-        for running, replace, expected in (("foreign-container", 0, 1),
-                                           ("foreign-container", 1, 0), ("", 0, 0)):
-            with self.subTest(running=running, replace=replace):
+        for running, replace, existing, expected in (
+                ("foreign-container", 0, 0, 1),
+                ("foreign-container", 1, 0, 0), ("", 0, 0, 0),
+                ("compat-container", 0, 1, 0), ("", 0, 1, 1),
+                ("compat-container", 1, 1, 2)):
+            with self.subTest(running=running, replace=replace, existing=existing):
                 result = subprocess.run(
                     ["bash", "-c", "docker_bounded() { printf '%s' \"$1\"; }\n"
                      .replace('"$1"', json.dumps(running))
-                     + f"\nreplace={replace}\n" + guard],
+                     + f"\nreplace={replace}\nexisting={existing}\n" + guard],
                     capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, expected, result.stderr)
-                if expected:
+                if expected and not existing:
                     self.assertIn("REFUSED", result.stderr)
 
     def test_build_version_is_exact(self):
@@ -92,8 +95,41 @@ class CompatTests(unittest.TestCase):
         self.assertNotIn("compose pull", self.source)
         self.assertIn("image inspect", self.source)
         self.assertLess(self.source.index("running=$("), self.source.index("compose down"))
-        self.assertIn("sixth original smoke gate NOT RUN", self.source)
-        self.assertIn('failed=1\nexit "$failed"', self.source)
+        self.assertNotIn("sixth original smoke gate NOT RUN", self.source)
+        self.assertIn('exit "$failed"', self.source)
+        self.assertIn("if [ \"$existing\" -ne 1 ]; then\n  started=1", self.source)
+        self.assertIn('[ "$started" -eq 1 ] && [ "$keep" -ne 1 ]', self.source)
+
+    def test_all_six_original_gates_and_auxiliary_proxy_run(self):
+        gates = self.source.split("for gate in ", 1)[1].split("; do", 1)[0].split()
+        self.assertEqual(set(gates), {
+            "smoke-test", "proxy-smoke", "firewall-smoke", "lab-commands-smoke",
+            "events-smoke", "substation-smoke", "test-suite-smoke"})
+        self.assertEqual(len(gates), 7)
+        self.assertIn('if [ "$gate" = smoke-test ]; then args=(--existing-stack); fi',
+                      self.source)
+        hard = next(s for s in self.workflow["jobs"]["release-compat"]["steps"]
+                    if s.get("id") == "hard-gates")
+        self.assertIn("up -d --no-build --pull never", hard["run"])
+        self.assertIn("release-compat-smoke.sh --existing-stack", hard["run"])
+
+    def test_existing_boot_mode_skips_all_lifecycle_and_database_operations(self):
+        source = (ROOT / "scripts/smoke-test.sh").read_text()
+        # Evaluate only isolated preparation/cleanup functions, not a smoke
+        # script. Stubs fail if any lifecycle or DB command is attempted.
+        prepare = source.split("prepare_stack() {", 1)[1].split("\n}", 1)[0]
+        cleanup = source.split("cleanup() {", 1)[1].split("\n}", 1)[0]
+        for function in (prepare, cleanup):
+            result = subprocess.run(
+                ["bash", "-c", "EXISTING_STACK=1\nKEEP=0\nfail=0\n"
+                 "note() { :; }\ndocker() { echo forbidden; return 99; }\n"
+                 "rm() { echo forbidden; return 99; }\n"
+                 "check() {" + function + "\n}\ncheck"],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("forbidden", result.stdout)
+        self.assertIn('--existing-stack) EXISTING_STACK=1', source)
+        self.assertIn("EXISTING_STACK=0", source)
 
     def test_only_rd01_is_non_blocking(self):
         steps = self.workflow["jobs"]["release-compat"]["steps"]

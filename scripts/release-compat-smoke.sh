@@ -3,12 +3,12 @@
 # Disposable stacks only. --replace explicitly authorizes replacing even the
 # separate rangerdanger-us checkout's stack (it uses the SAME project label).
 # Local: run this script, then --known-defects --replace if --keep was used.
-# CI: hard gates --keep, one advisory known-defects step, then CI teardown.
+# CI: explicitly boot cached images, --existing-stack hard gates, one advisory
+# known-defects step, then CI teardown.
 #
-# Fence limitation: smoke-test.sh has no existing-stack mode: it unconditionally
-# builds images and removes the DB. It MUST NOT run here. The other five
-# original smoke scripts run unchanged. A literal six-original-script run
-# needs a separately approved --existing-stack change in smoke-test.sh.
+# --existing-stack checks an already-running disposable compat stack without
+# stopping, starting, rebuilding, pulling, or deleting its database/volumes.
+# Gates still mutate policy/device state: never use a student's active stack.
 set -euo pipefail
 export VERSION=v0.1.35
 export COMPOSE_FILE=docker-compose.release.yml
@@ -18,11 +18,13 @@ receipts="${COMPAT_ARTIFACT_DIR:-build/release-compat}"
 replace=0
 keep=0
 known=0
+existing=0
 for arg in "$@"; do
   case "$arg" in
     --replace) replace=1 ;;
     --keep) keep=1 ;;
     --known-defects) known=1 ;;
+    --existing-stack) existing=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -40,8 +42,16 @@ assert_version() {
 
 # Guard BEFORE any stop/up/down/pull, including containers from another cwd.
 running=$(docker_bounded ps -q --filter label=com.docker.compose.project=rangerdanger)
-if [ -n "$running" ] && [ "$replace" -ne 1 ]; then
+if [ -n "$running" ] && [ "$replace" -ne 1 ] && [ "$existing" -ne 1 ]; then
   echo "REFUSED: rangerdanger project is up (possibly rangerdanger-us). Stop it yourself or explicitly pass --replace." >&2
+  exit 1
+fi
+if [ "$existing" -eq 1 ] && [ "$replace" -eq 1 ]; then
+  echo "--existing-stack and --replace are mutually exclusive" >&2
+  exit 2
+fi
+if [ "$existing" -eq 1 ] && [ -z "$running" ]; then
+  echo "--existing-stack needs a running disposable v0.1.35 compat stack" >&2
   exit 1
 fi
 mkdir -p "$receipts"
@@ -88,7 +98,7 @@ done <<<"$images"
 # A cache miss fails here, rather than fetching over the workshop's Wi-Fi.
 # Full inspect includes RepoDigests + image IDs, including containd:latest.
 docker_bounded image inspect "${image_list[@]}" >"$receipts/images.json"
-if [ -n "$running" ]; then
+if [ -n "$running" ] && [ "$existing" -ne 1 ]; then
   echo "WARNING: --replace stopping the existing rangerdanger project, without deleting volumes." >&2
   compose down --remove-orphans
 fi
@@ -97,20 +107,20 @@ started=0
 cleanup() {
   local rc=$?
   trap - EXIT
-  if [ "$started" -eq 1 ]; then
-    if ! compose logs --no-color >"$receipts/compose.log" 2>&1; then
-      echo "could not archive compose logs" >&2
-      rc=1
-    fi
-    if [ "$keep" -ne 1 ]; then
-      if ! compose down --remove-orphans; then rc=1; fi
-    fi
+  if ! compose logs --no-color >"$receipts/compose.log" 2>&1; then
+    echo "could not archive compose logs" >&2
+    rc=1
+  fi
+  if [ "$started" -eq 1 ] && [ "$keep" -ne 1 ]; then
+    if ! compose down --remove-orphans; then rc=1; fi
   fi
   exit "$rc"
 }
 trap cleanup EXIT
-started=1
-compose up -d --no-build --pull never
+if [ "$existing" -ne 1 ]; then
+  started=1
+  compose up -d --no-build --pull never
+fi
 ready=0
 for _ in $(seq 1 60); do
   if curl -fsS --max-time 3 "$API/api/health" >"$receipts/health.json" 2>/dev/null; then
@@ -127,19 +137,16 @@ compose ps --format json >"$receipts/containers.json"
 # Do not short-circuit: preserve the outputs of every hard gate, then fail if
 # ANY failed. Only the separate RD-01 workflow step is continue-on-error.
 failed=0
-for gate in proxy-smoke firewall-smoke lab-commands-smoke events-smoke substation-smoke test-suite-smoke; do
+for gate in smoke-test proxy-smoke firewall-smoke lab-commands-smoke events-smoke substation-smoke test-suite-smoke; do
   echo "=== compat: $gate ==="
-  if python3 -c 'import subprocess,sys; sys.exit(subprocess.run(["bash",sys.argv[1]], timeout=1200).returncode)' \
-      "scripts/$gate.sh" >"$receipts/$gate.log" 2>&1; then
+  args=()
+  if [ "$gate" = smoke-test ]; then args=(--existing-stack); fi
+  if python3 -c 'import subprocess,sys; sys.exit(subprocess.run(["bash",*sys.argv[1:]], timeout=1200).returncode)' \
+      "scripts/$gate.sh" "${args[@]}" >"$receipts/$gate.log" 2>&1; then
     cat "$receipts/$gate.log"
   else
     cat "$receipts/$gate.log"
     failed=1
   fi
 done
-# Fail closed rather than certify an incomplete six-original-script run.
-# The lane's fence excludes smoke-test.sh; the orchestrator must add a
-# build-free existing-stack mode there, wire it here, and remove this blocker.
-echo "BLOCKED: scripts/smoke-test.sh always builds; sixth original smoke gate NOT RUN. Full release compatibility is not certified." >&2
-failed=1
 exit "$failed"

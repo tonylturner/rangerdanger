@@ -8,13 +8,21 @@
 # Usage:
 #   ./scripts/smoke-test.sh           # full: build, up, test, tear down
 #   ./scripts/smoke-test.sh --keep    # leave the stack running afterwards
+#   ./scripts/smoke-test.sh --existing-stack # checks only; no lifecycle/DB changes
 #
 # Exit 0 = pass, non-zero = fail. Prints what failed.
 
 set -uo pipefail
 
 KEEP=0
-[ "${1:-}" = "--keep" ] && KEEP=1
+EXISTING_STACK=0
+for arg in "$@"; do
+  case "$arg" in
+    --keep) KEEP=1 ;;
+    --existing-stack) EXISTING_STACK=1 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
 
 # Expected lab inventory after the workshop-deck-aligned restructure.
 # Format: order|id (sorted lexicographically — same order containd
@@ -36,7 +44,9 @@ ok()   { printf '  ✓ %s\n' "$1"; }
 err()  { printf '  ✗ %s\n' "$1"; fail=1; }
 
 cleanup() {
-  if [ "$KEEP" = "0" ]; then
+  if [ "$EXISTING_STACK" = "1" ]; then
+    note "existing stack left running; database preserved"
+  elif [ "$KEEP" = "0" ]; then
     note "tearing down"
     docker compose down -v >/dev/null 2>&1 || true
   else
@@ -59,30 +69,36 @@ else
   err "docker-compose.release.yml"
 fi
 
-# The backend bind-mounts this database. Stop it before unlinking the file so
-# it cannot keep using a stale SQLite handle; compose up below starts it on the
-# clean database and runs migrations.
-if ! docker compose stop backend >/dev/null; then
-  err "backend could not be stopped; stale database not cleared"
-  exit 1
-fi
-rm -f backend/data/rangerdanger.db
-ok "stale database cleared"
+# Only a fresh-stack run owns lifecycle and database preparation.
+prepare_stack() {
+  [ "$EXISTING_STACK" = "1" ] && return 0
 
-# --- bring up ---------------------------------------------------------------
-note "build + up"
-if docker compose build --parallel >/tmp/smoke-build.log 2>&1; then
-  ok "build complete"
-else
-  err "build failed; see /tmp/smoke-build.log"
-  exit 1
-fi
-if docker compose up -d >/tmp/smoke-up.log 2>&1; then
-  ok "compose up"
-else
-  err "compose up failed; see /tmp/smoke-up.log"
-  exit 1
-fi
+  # The backend bind-mounts this database. Stop it before unlinking the file so
+  # it cannot keep using a stale SQLite handle; compose up below starts it on the
+  # clean database and runs migrations.
+  if ! docker compose stop backend >/dev/null; then
+    err "backend could not be stopped; stale database not cleared"
+    exit 1
+  fi
+  rm -f backend/data/rangerdanger.db
+  ok "stale database cleared"
+
+  # --- bring up ---------------------------------------------------------------
+  note "build + up"
+  if docker compose build --parallel >/tmp/smoke-build.log 2>&1; then
+    ok "build complete"
+  else
+    err "build failed; see /tmp/smoke-build.log"
+    exit 1
+  fi
+  if docker compose up -d >/tmp/smoke-up.log 2>&1; then
+    ok "compose up"
+  else
+    err "compose up failed; see /tmp/smoke-up.log"
+    exit 1
+  fi
+}
+prepare_stack
 
 # --- wait for backend healthy ----------------------------------------------
 note "wait for backend health (5min budget)"
