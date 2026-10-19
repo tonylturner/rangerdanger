@@ -49,6 +49,41 @@ class ProxyProbeTests(unittest.TestCase):
                          "10.20.20.10:80/", "sites-enabled/default", "base + \"programs\""):
             self.assertIn(required, source)
         self.assertIn("RD-22, non-blocking", source)
+        self.assertIn("grep -qx '/etc/nginx/sites-available/default'", source)
+
+    def desktop_verdict(self, body, code):
+        source = (ROOT / "scripts/proxy-smoke.sh").read_text()
+        self.assertEqual(source.count("-w '\\n%{http_code}\\n'"), 2)
+        self.assertIn("is_desktop_shell() {", source)
+        function = source.split("is_desktop_shell() {", 1)[1].split("\n}", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / "desktop.html"
+            receipt.write_text(body + "\n" + code + "\n")
+            # Evaluate only the pure receipt oracle, never a smoke script.
+            return subprocess.run(
+                ["bash", "-c", "is_desktop_shell() {" + function +
+                 '\n}\nis_desktop_shell "$1"', "fixture", str(receipt)],
+                capture_output=True, text=True, timeout=5).returncode
+
+    def test_selkies_desktop_shell_without_old_brand_keywords_passes(self):
+        shell = (ROOT / "scripts/tests/fixtures/vendor-selkies-shell.html").read_text()
+        for keyword in ("kasm", "novnc", "webtop"):
+            self.assertNotIn(keyword, shell.lower())
+        self.assertEqual(self.desktop_verdict(shell, "200"), 0)
+        source = (ROOT / "scripts/proxy-smoke.sh").read_text()
+        for receipt in ("vendor-3000.html", "desktop.html"):
+            self.assertIn(f'is_desktop_shell "$logs/{receipt}"', source)
+
+    def test_desktop_oracle_rejects_bad_status_portal_and_missing_markers(self):
+        shell = (ROOT / "scripts/tests/fixtures/vendor-selkies-shell.html").read_text()
+        for body, code in (
+                (shell, "502"), (shell, "302"), (shell, "000"),
+                ("<h1>Vendor Remote Access Portal</h1>", "200"),
+                ("<html>kasm novnc webtop</html>", "200"),
+                (shell.replace("touch-gamepad-host", "missing"), "200"),
+                (shell.replace("universalTouchGamepad.js", "missing.js"), "200")):
+            with self.subTest(body=body, code=code):
+                self.assertNotEqual(self.desktop_verdict(body, code), 0)
 
 
 class CompatTests(unittest.TestCase):
