@@ -543,5 +543,54 @@ class CommandContracts(unittest.TestCase):
                             count = int(args[args.index("-c") + 1]) if "-c" in args else 1
                             self.assertLessEqual(count, 4)
 
+    def test_run_button_mbpoll_reads_poll_once_or_document_ctrl_c(self):
+        # mbpoll usage: "-1 Poll only once only, otherwise every poll rate interval";
+        # a write (data after the host) prints "Written N references." and exits.
+        # The frozen runner has no Cancel for an auto-run command, so a read
+        # that polls forever must be the reviewed RTAC-tag reads (pinned without
+        # -1 in scripts/lab-commands-expectations.json) in a lab that tells the
+        # student to Ctrl-C; every other read must terminate on its own.
+        continuous = {"hardening-configurations": 6, "vendor-rdp-compromise": 2}
+        seen = {name: 0 for name in continuous}
+        for path in sorted(SCENARIOS.glob("*.yml")):
+            steps = scenario(path.stem)["steps"]
+            lab_text = "\n".join(s["description"] for s in steps)
+            for index, step in enumerate(steps, 1):
+                # Dedented step text, as the runner and extractor read it: a
+                # command block is an indented line that starts with the tool.
+                for line in step["description"].splitlines():
+                    match = re.match(r"^\s+mbpoll (.+)$", line)
+                    if not match:
+                        continue
+                    args = shlex.split(match.group(1), comments=True)
+                    host = next(i for i, a in enumerate(args) if a.startswith("10."))
+                    with self.subTest(path=path.name, step=index, command=line.strip()):
+                        if args[host + 1:]:
+                            self.assertNotIn("-1", args)  # a write already exits
+                        elif "-1" not in args:
+                            self.assertEqual(args[host], "10.30.30.20")
+                            self.assertIn(path.stem, continuous)
+                            self.assertIn("Ctrl-C", lab_text)
+                            seen[path.stem] += 1
+        self.assertEqual(seen, continuous)
+
+    def test_rtac_register_prose_uses_mbpoll_reference_labels(self):
+        # `mbpoll -r 1` prints [1]..[n]: reference = 0-based register address + 1.
+        for name in ("hardening-configurations", "vendor-rdp-compromise"):
+            text = " ".join("\n".join(s["description"] for s in scenario(name)["steps"]).split())
+            with self.subTest(scenario=name):
+                self.assertNotIn("`[0]", text)
+                self.assertNotRegex(text, r"(?i)\b(?:holding|input) registers? [0-9]\b")
+                self.assertIn("reference = 0-based register address + 1", text)
+        text = " ".join(scenario("hardening-configurations")["steps"][0]["description"].split())
+        self.assertIn("`[1]=1` (breaker closed), `[2]=1` (recloser closed), "
+                      "`[3]=1` (auto-reclose enabled)", text)
+        text = " ".join(scenario("vendor-rdp-compromise")["steps"][2]["description"].split())
+        # -c 5 reads references [1]..[5]; the shot count is holding register 5 = [6].
+        self.assertIn("mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20", text)
+        self.assertNotIn("`[6]` (`recloser_shot_count`) is `1`", text)
+        self.assertIn("Re-run with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,22 +37,23 @@ steps:
       Read the RTAC's aggregated state via Modbus from the RTAC's own
       terminal. The RTAC re-exposes every field device's state as a
       unified Modbus holding-register view, so a single read captures
-      the whole substation:
-
-      These reads poll continuously so you can watch updates. Use Ctrl-C
-      after recording the values, before running the next command.
+      the whole substation. `-r 1` starts at Modbus reference 1, so the
+      output labels the values `[1]`..`[5]` (reference = 0-based
+      register address + 1). These reads poll continuously so you can
+      watch updates: use Ctrl-C after recording the values, before
+      running the next command.
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
-      Expected: `[0]=1` (breaker closed), `[1]=1` (recloser closed),
-      `[2]=1` (auto-reclose enabled), `[3]≈0` (regulator tap),
-      `[4]=0` (regulator auto mode).
+      Expected: `[1]=1` (breaker closed), `[2]=1` (recloser closed),
+      `[3]=1` (auto-reclose enabled), `[4]≈0` (regulator tap),
+      `[5]=0` (regulator manual mode off, i.e. auto).
 
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
 
-      Analog measurements (FC4, x10 scaling): `[0]≈1200` (substation
-      bus 120V), `[1]≈1200` (downstream 120V), `[2]≈1240`
-      (critical-load 124V), `[3]≈360` (feeder current 36A).
+      Analog measurements (FC4, x10 scaling): `[1]≈1200` (substation
+      bus 120V), `[2]≈1200` (downstream 120V), `[3]≈1240`
+      (critical-load 124V), `[4]≈360` (feeder current 36A).
 
       :::hint Cyber → state → physics has a ~2–3s lag
       Every protocol write you'll send mutates the field-device sim's
@@ -112,15 +113,15 @@ steps:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
-      Holding register 1 reads `0` (recloser_closed=false) and
-      register 2 reads `0` (reclose_enabled=false).
+      `[2]` (recloser_closed) reads `0` and `[3]` (reclose_enabled)
+      reads `0`.
 
           mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
 
-      Input register 1 (`downstream_voltage_v × 10`) and register 3
+      `[2]` (`downstream_voltage_v × 10`) and `[4]`
       (`feeder_current_a × 10`) both read `0` - the loads
       downstream of the recloser are unenergized. Hospital and fire
-      station are dark. The substation bus (input register 0) is
+      station are dark. The substation bus (`[1]`) is
       still energized at the source side because the substation
       breaker is still closed - only the downstream feeder lost
       power.
@@ -166,7 +167,7 @@ steps:
       `65520` is `-16` as an unsigned 16-bit (two's complement).
       Forces the regulator tap to the minimum position, dropping
       critical-load voltage below ANSI Range A. Wait 3 s, read the
-      RTAC analog tags - input register 2 (`critical_load_voltage_v
+      RTAC analog tags - `[3]` (`critical_load_voltage_v
       × 10`) drops below 1140. HMI shows the **LOW VOLTAGE**
       alarm banner; customers still have power but at unsafe voltage.
 
@@ -320,7 +321,7 @@ steps:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
-      Holding registers 1 and 2 both read `1` (recloser_closed,
+      `[2]` and `[3]` both read `1` (recloser_closed,
       reclose_enabled). The cross-zone DNP3 control surface is
       closed - by the source pin. That register read is your
       enforcement evidence; record it.
@@ -355,7 +356,7 @@ steps:
       terminal (not the Run button, which targets Kali).
 
       Expected result: `Result: SUCCESS`; the RTAC register read above
-      now shows auto-reclose `0`; the Feeder One-Line shows the yellow
+      now shows `[3]=0`; the Feeder One-Line shows the yellow
       **AUTO-RECLOSE DISABLED** banner; the firewall records the attempt
       as a DPI event (Network Map → Segmentation drawer → **Live DPI
       Events**). That is the point: the event proves visibility, the
@@ -383,7 +384,7 @@ steps:
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
-      `[0]=1` (breaker still closed), `[3]≈0` (regulator tap
+      `[1]=1` (breaker still closed), `[4]≈0` (regulator tap
       unchanged). One rule, three attack paths neutralized.
 
       These Modbus timeouts demonstrate source-pinning, not read-only DPI.
