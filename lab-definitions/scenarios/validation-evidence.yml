@@ -77,7 +77,7 @@ steps:
       **Workshop note:**
       - The report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI. Save the report, PCAP and notes.
       - Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report. Trust the report, not the banner.
-      - A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a Direct Operate is rejected and reclose remains enabled using Lab 2.3's RTAC re-test, not Kali.
+      - The report is a TCP reachability matrix: its DNP3 row is an FC1 read and no row sends a control write, so a PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Protocol-level enforcement evidence is Lab 2.3's re-test: auto-reclose still enabled after the Kali Direct Operate.
 
       A segmentation change ships with *evidence*: proof that authorized
       flows still work, proof that unauthorized flows are blocked, and a
@@ -92,7 +92,8 @@ steps:
       captures PCAP at the firewall, and analyzes which sources reached the
       field zone - the same work an operator does after a change, assembled
       into a change-board-ready document. A green **PASS** means every
-      authorized flow works and every unauthorized flow is blocked.
+      authorized flow connected and every unauthorized flow was blocked at
+      the TCP level; it says nothing about function codes.
 
       **Read the report, not just the verdict:**
 

@@ -74,8 +74,19 @@ RELEASE_HEADERS = {
     ),
 }
 
-# The original promised plan-driven attacks, which reference-only enforcement retires.
+# Reviewed false claims: plan-driven attacks (reference-only enforcement retires them)
+# and "DPI or the pin" (on the frozen images only the L4 source pin stops the write).
 HEADER_EXCEPTIONS = {
+    "hardening-configurations": (
+        "Stress-test the policy you built in Lab 2.2 against the canonical "
+        "distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali "
+        "that disables the recloser's auto-reclose and trips it, turning a brief flicker "
+        "into a sustained downstream outage. You'll run the attack under the weak baseline "
+        "(it succeeds), then under the hardened policy (it's blocked by the L4 source pin, "
+        "the control that enforces on this build; the ICS DPI layer records the attempt). "
+        "The lesson: verify enforcement by device state, not by policy labels. Optional "
+        "Modbus FC5/FC6 bonus attacks in the same step are closed by the same source pin.\n"
+    ),
     "remediation-planning": (
         "You have findings from the baseline assessment but not unlimited time, people, "
         "or political capital. Pick which remediations to execute this quarter - knowing "
@@ -215,16 +226,19 @@ class ErrataContracts(unittest.TestCase):
             # Neither of these labs has Lab 2.2's generated-step replacement.
             step_index = 4 if name == "hardening-configurations" else 1
             text = scenario(name)["steps"][step_index]["description"]
-            self.assertIn("Verify a Direct Operate is rejected and reclose remains enabled", text)
-            self.assertIn("A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection", text)
+            self.assertIn("does not prove FC5/6 rejection", text)
+            self.assertIn("Enforcement proof is device state" if step_index == 4
+                          else "Protocol-level enforcement evidence is Lab 2.3's re-test", text)
         text = scenario("validation-evidence")["steps"][1]["description"]
         self.assertIn("may PASS and auto-complete with no report or a FAIL report", text)
         self.assertIn("Trust the report, not the banner.", text)
         self.assertIn("The report is your proof:", text)
         self.assertIn("Save the report, PCAP and notes.", text)
         self.assertIn("check Hardened reference is active, fix the ✗ rows, and re-run", text)
-        text = scenario("hardening-configurations")["steps"][3]["description"]
-        self.assertIn("DNP3 permits reads only (FC1), even from RTAC", text)
+        text = " ".join(scenario("hardening-configurations")["steps"][3]["description"].split())
+        self.assertIn("the reference DNP3 rule permits reads only (FC1), even from RTAC", text)
+        self.assertIn("records a Direct Operate sent from the RTAC as a firewall event, "
+                      "but it does not stop that write", text)
 
     def test_export_recipes_print_and_copy_without_fictitious_files(self):
         for name in ("firewall-implementation", "validation-evidence"):
@@ -298,6 +312,84 @@ class ErrataContracts(unittest.TestCase):
             self.assertIn(phrase, text)
         for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23):
             self.assertIn(f"RD-{number:02}", text)
+
+
+class EnforcementContracts(unittest.TestCase):
+    """Lab 2.3 states what the frozen images do: the L4 source pin blocks, DPI records."""
+
+    OVERCLAIMS = (
+        "blocks Direct Operate even from the RTAC",
+        "would catch it even if L4 were loosened",
+        "same DPI defense",
+        "independent defenses",
+        "Direct Operate must still be rejected",
+        "Verify a Direct Operate is rejected",
+        "blocked at the DPI layer even from the RTAC",
+    )
+
+    def flat(self, text):
+        return " ".join(text.split())
+
+    def test_keyed_answers_name_the_source_pin(self):
+        text = scenario("hardening-configurations")["steps"][4]["description"]
+        decisions = {m.group(1): m.group(0)
+                     for m in re.finditer(r":::decision id=([\w-]+) [^\n]*", text)}
+        self.assertIn("correct=L4_SOURCE_PIN", decisions["retest-defense-in-depth"])
+        self.assertNotIn("correct=EITHER_LAYER", decisions["retest-defense-in-depth"])
+        self.assertIn("correct=NORMAL_OPS", decisions["retest-hmi-state"])
+        # The keyed HMI answer is asked about the Kali re-test, which is NORMAL_OPS for
+        # every student; the optional RTAC write comes after it with its own restore.
+        self.assertLess(text.index("id=retest-hmi-state"), text.index("RTAC-origin write"))
+        self.assertIn("after the Kali re-test", text)
+
+    def test_rtac_write_hint_states_outcome_and_restore(self):
+        steps = scenario("hardening-configurations")["steps"]
+        hint = steps[4]["description"].split(":::hint Optional: see what the DPI layer", 1)[1]
+        hint = self.flat(hint.split("\n:::\n", 1)[0])
+        self.assertIn("recorded, not stopped", hint)
+        self.assertIn("Expected result: `Result: SUCCESS`", hint)
+        self.assertIn("**Supervisory Control** → **Enable Reclose**", hint)
+        self.assertIn("re-apply **Hardened reference**", hint)
+        # The inline command keeps the Run button (which targets Kali) away from it.
+        self.assertNotIn("\n    dnp3cmd", steps[4]["description"].split(":::hint Optional: see", 1)[1]
+                         .split("\n:::\n", 1)[0])
+        self.assertIn("Enable Reclose", steps[5]["description"])
+        self.assertEqual(steps[5]["action"]["expect"]["reclose_enabled"], True)
+
+    def test_no_independent_dpi_overclaim_remains(self):
+        texts = {
+            "hardening-configurations": scenario("hardening-configurations"),
+            "validation-evidence": scenario("validation-evidence"),
+        }
+        for name, doc in texts.items():
+            body = self.flat(doc["summary"] + doc["description"]
+                             + " ".join(s["description"] for s in doc["steps"]))
+            for claim in self.OVERCLAIMS:
+                with self.subTest(scenario=name, claim=claim):
+                    self.assertNotIn(claim, body)
+        for path in ("docs/workshop-overview.md", "docs/v0.1.36-hotfix.md"):
+            body = self.flat((ROOT / path).read_text())
+            for claim in self.OVERCLAIMS:
+                with self.subTest(path=path, claim=claim):
+                    self.assertNotIn(claim, body)
+        doc = texts["hardening-configurations"]
+        self.assertIn("source pin is what enforces", doc["summary"])
+        self.assertIn("the control that enforces", doc["description"])
+        self.assertIn("the control that enforces", self.flat(doc["steps"][3]["description"]))
+
+    def test_validation_report_is_described_as_tcp_matrix(self):
+        text = self.flat(scenario("validation-evidence")["steps"][1]["description"])
+        self.assertIn("The report is a TCP reachability matrix", text)
+        self.assertIn("no row sends a control write", text)
+        self.assertIn("blocked at the TCP level; it says nothing about function codes", text)
+        overview = (ROOT / "docs/workshop-overview.md").read_text()
+        self.assertIn("The report is a TCP reachability matrix", overview)
+        self.assertIn("the L4 source pin is the control that enforces", overview)
+        errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
+        self.assertIn("**RD-24:**", errata)
+        self.assertIn("L4 source pin is the control that enforces", errata)
+        self.assertIn("returns `Result: SUCCESS` and auto-reclose turns off", errata)
+        self.assertIn("(RD-24)", errata)
 
 
 class BaselineContracts(unittest.TestCase):

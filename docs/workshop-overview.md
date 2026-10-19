@@ -55,9 +55,9 @@ Times below are the **Guided-path golden-path** estimates (the in-app card chip 
 | 1.3 | `segmentation-requirements` | Segmentation Requirements & Policy Design | ~12 min | Translate Lab 1.2 findings into design verdicts (BLOCK / RESTRICT / ALLOW / BLOCK and LOG) per risk category, then commit a resourcing-readiness reality check (OT engineering capacity, firewall admin skills, vendor change windows, risk-acceptance authority). Closes with concrete success criteria for the hardened state. |
 | 1.4 | `remediation-planning` | Remediation Planning Under Constraint | ~18 min | A finite labor budget with per-role capacity caps forces tradeoffs between firewall changes, protocol controls, and architecture work. The design verdicts and readiness flags from 1.3 drive per-action requirement badges and a sticky coverage summary. Selections drive Lab 2.2's content via the dynamic-content pipeline. |
 | 2.2 | `firewall-implementation` | Firewall Policy Implementation | ~12 min | Apply a least-privilege containd policy from your plan - Guided track (one click) by default, or author the rules yourself on the Advanced track. Phase 3/5/6 step text adapts to the remediation choices made in Lab 1.4. |
-| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~10 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). The defense-in-depth lesson combines L4 source-pinning with ICS DPI - including DNP3 function-code DPI that blocks Direct Operate even from the RTAC source. Optional Modbus FC5/FC6 sidebar attacks demonstrate the same defense generalizes across protocols. |
+| 2.3 | `hardening-configurations` | Protocol-Hardened Configurations | ~10 min | Stress-test the policy against a DNP3 Direct Operate injection against the recloser (the canonical distribution-substation attack vector). On the workshop images the L4 source pin is the control that enforces; the ICS DPI layer records a Direct Operate from the RTAC source but does not stop it, so students verify enforcement by device state (auto-reclose still enabled), not by policy labels. Optional Modbus FC5/FC6 sidebar attacks are closed by the same source pin. |
 | 2.3-bonus | `vendor-rdp-compromise` | Vendor Remote Access Compromise *(optional)* | ~12 min | RDP/VNC pivot from enterprise → vendor → field. Hardening blocks both links of the kill chain (perimeter + second hop). Optional, time permitting. |
-| 2.4 | `validation-evidence` | Testing & Validation | ~6 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the in-app equivalent of `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
+| 2.4 | `validation-evidence` | Testing & Validation | ~6 min | Generate a change-board validation report in one click (positive/negative test matrix + PCAP evidence, the in-app equivalent of `scripts/validation-report.sh`), read it like a reviewer, and reflect on residual risk. The report is a TCP reachability matrix - no row sends a control write - so it complements Lab 2.3's device-state check rather than replacing it. The `:::plan-coverage` panel surfaces, in real time, which Lab 1.3 requirements your Lab 1.4 plan addressed vs deferred. The by-hand evidence-assembly steps remain available as optional Advanced hints. |
 
 Total ≈ 73 min for the 6 core labs (Guided path), +12 min for the bonus.
 
@@ -126,12 +126,14 @@ Two reference configurations ship with the lab:
   Enterprise→field is allowed, which is what makes the attack
   exercises possible. Students start here.
 - **`substation-improved.json`** - the target hardened state. Only
-  the RTAC reaches field devices, and ICS DPI filters by function
-  code: Modbus writes (FC5/6) are allowed only from the RTAC, and
-  DNP3 Direct Operate (FC5/FC6) is blocked from *every* source -
-  the RTAC's master only ever polls (FC1), so a DNP3 control write
-  is illegitimate from anyone. Students compare their own designs
-  against this and validate remediation work against it in Lab 2.4.
+  the RTAC reaches field devices; its Modbus rule permits FC1-6 and
+  its DNP3 rule permits reads only (FC1) - the RTAC's master only
+  ever polls, so a DNP3 control write is illegitimate from anyone.
+  On the workshop images the source pin is what blocks unauthorized
+  sources; a DNP3 Direct Operate sent from the RTAC itself is recorded
+  by DPI but not stopped (Lab 2.3 shows this as an optional check).
+  Students compare their own designs against this and validate
+  remediation work against it in Lab 2.4.
 
 ## Single-student deployment
 

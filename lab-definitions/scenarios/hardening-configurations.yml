@@ -1,7 +1,7 @@
 id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
-summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. Defense in depth via L4 source-pin + ICS DPI is the lesson. Modbus FC5/FC6 variants available as optional bonus attacks."
+summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. The lesson: on this build the L4 source pin is what enforces, so verify enforcement by device state, not by policy labels. Modbus FC5/FC6 variants available as optional bonus attacks."
 estimated_minutes: 10
 description: >
   Stress-test the policy you built in Lab 2.2 against the canonical
@@ -9,9 +9,11 @@ description: >
   from Kali that disables the recloser's auto-reclose and trips it,
   turning a brief flicker into a sustained downstream outage. You'll run
   the attack under the weak baseline (it succeeds), then under the
-  hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
-  both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
-  bonus attacks in the same step show the same defense generalizes.
+  hardened policy (it's blocked by the L4 source pin, the control that
+  enforces on this build; the ICS DPI layer records the attempt). The
+  lesson: verify enforcement by device state, not by policy labels.
+  Optional Modbus FC5/FC6 bonus attacks in the same step are closed by
+  the same source pin.
 nodes:
   - kali-1
   - rtac-1
@@ -152,10 +154,10 @@ steps:
       :::hint Optional: try the same attack via Modbus
       DNP3 is the dominant SCADA protocol on these field devices, but
       Modbus is also present on most installed gear (primarily for
-      HMI integration). The same DPI defense closes both protocols,
-      and the Modbus variants are pedagogically useful if you want
-      to show that "function-code filtering" generalizes across
-      protocols. Two optional Modbus attacks:
+      HMI integration). Under the hardened policy the same L4 source
+      pin closes both protocols from Kali, and the Modbus variants
+      show that the pin - not a per-protocol signature - is what
+      blocks an unauthorized source. Two optional Modbus attacks:
 
       **Modbus FC6 - regulator tap override.** From Kali:
 
@@ -177,8 +179,10 @@ steps:
       alarm; entire feeder dark. This is the worst-case
       single-packet kinetic outcome in the lab.
 
-      Both ride on TCP 502 - same DPI defense (function-code
-      filtering, source-pinning at L4) closes both. The re-test
+      Both ride on TCP 502 - the same L4 source pin closes both from
+      Kali. The reference RTAC Modbus rule still permits supervisory
+      writes from the RTAC itself, so do not read these timeouts as
+      function-code filtering. The re-test
       step later covers the hardened-policy behavior for whichever
       of these you tried; if you only ran the primary DNP3 attack,
       the re-test step covers that one.
@@ -256,35 +260,40 @@ steps:
       Keep your Lab 2.2 policy work for design review. Use the **Apply Hardened**
       button below for this workshop's enforcement test, not a custom-policy commit.
 
-      One DPI gotcha that bites *this* attack specifically: an **ICS
-      Protocol Filter** rule defaults to **Rule Mode: Learning (passive)**,
-      which only observes. Set it to **Enforcement (active)** or the DNP3
-      Direct Operate restriction won't actually block the recloser attack.
+      One DPI gotcha worth knowing: an **ICS Protocol Filter** rule
+      defaults to **Rule Mode: Learning (passive)**, which only observes;
+      the reference policy sets **Enforcement (active)**. Judge the result
+      by device state in the re-test, not by the rule's mode label.
       :::
 
-      The hardened policy combines two defense-in-depth layers:
+      The hardened policy has two layers:
 
       - **L4 source-pinning:** only the RTAC (`10.30.30.20`) can reach
         field devices on Modbus 502 and DNP3 20000. Enterprise and
-        vendor sources are blocked at the perimeter - this alone
-        closes the primary DNP3 attack and both optional Modbus attacks.
-      - **ICS DPI:** DNP3 permits reads only (FC1), even from RTAC.
-        Both FC05 Direct Operate and FC06 Direct Operate No Ack are
-        denied. Modbus uses a separate source-pinned RTAC rule that
-        permits supervisory reads/writes; do not assume it becomes
-        read-only if you loosen that pin for monitoring access.
+        vendor sources are blocked at the perimeter - this is the
+        control that closes the primary DNP3 attack and both optional
+        Modbus attacks, and it is the control you will verify.
+      - **ICS DPI:** the reference DNP3 rule permits reads only (FC1),
+        even from RTAC, and lists no Direct Operate verb. On this build
+        the DPI layer records a Direct Operate sent from the RTAC as a
+        firewall event, but it does not stop that write. Modbus uses a
+        separate source-pinned RTAC rule that permits supervisory
+        reads/writes; do not assume it becomes read-only if you loosen
+        that pin for monitoring access.
 
-      For the primary DNP3 attack, the L4 pin and read-only DPI are
-      independent defenses. The optional Modbus attacks from Kali are
-      blocked by the source pin. Prove DNP3 DPI separately from RTAC
-      in the re-test; a Kali timeout alone demonstrates only the perimeter.
+      So on this build the source pin enforces and the DPI layer gives
+      visibility. Prove enforcement by device state in the re-test:
+      `reclose_enabled` stays `1` after the Kali attempt. A policy label,
+      a green banner or a rule's function-code list is not that proof.
 
       :::plan-coverage title="Your plan vs the primary attack"
       :::
 
       If your Lab 1.4 plan didn't pin RTAC-to-field
-      (`pin-rtac-to-field`) AND didn't add DNP3 DPI (`dnp3-dpi`),
-      record that design gap. Keep **Hardened reference** active for the re-test.
+      (`pin-rtac-to-field`), record that design gap - the pin is the
+      control that enforces here. `dnp3-dpi` is the right design for
+      visibility, but on this build it is not what stops the write.
+      Keep **Hardened reference** active for the re-test.
     action:
       type: check
       expect:
@@ -295,18 +304,17 @@ steps:
     node: kali-1
     description: |
       **Workshop note:**
-      - A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a Direct Operate is rejected and reclose remains enabled using the RTAC procedure below.
+      - A TCP PASS, a green banner or the dnp3-dpi selection does not prove FC5/6 rejection. Enforcement proof is device state: after the Kali re-test, the RTAC read below must still show auto-reclose enabled.
       - Execute may show red failure/BLOCKED without advancing. That label is not a packet verdict; it can reject before sending a packet. Run the real protocol retest, inspect healthy device/HMI state and firewall evidence, record the result, then Mark Complete.
-      - A refused/timeout connection without state/evidence is not enough to claim DPI.
+      - A refused/timeout connection without state/evidence is not enough to claim enforcement; record the register read with it.
 
       Repeat the DNP3 Direct Operate from Kali:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
 
-      The connection should time out - containd's L4 source-pin
-      blocks the packet at the perimeter before DPI even applies.
-      Auto-reclose stays enabled, the recloser stays closed, the
-      downstream feeder stays energized.
+      The connection should time out - containd's L4 source pin
+      blocks the packet at the perimeter. Auto-reclose stays enabled,
+      the recloser stays closed, the downstream feeder stays energized.
 
       Confirm via the RTAC tags that nothing changed:
 
@@ -314,13 +322,8 @@ steps:
 
       Holding registers 1 and 2 both read `1` (recloser_closed,
       reclose_enabled). The cross-zone DNP3 control surface is
-      closed.
-
-      For a DPI test rather than just a perimeter test, select the RTAC
-      terminal under Hardened reference and run the same
-      `dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off` command. The RTAC
-      source is allowed through L4; Direct Operate must still be rejected and
-      `reclose_enabled` must remain true. Record firewall/packet evidence.
+      closed - by the source pin. That register read is your
+      enforcement evidence; record it.
 
       ### Operational consequence at the HMI
 
@@ -333,13 +336,35 @@ steps:
       - **Customer-service tile:** "N kW serving ~M customers"
 
       :::decision id=retest-hmi-state options=NORMAL_OPS,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
-      **What did the Feeder One-Line tab show after the re-test?**
+      **What did the Feeder One-Line tab show after the Kali re-test?**
+      Answer for the Kali re-test above, before any optional RTAC check.
       :::
 
-      :::decision id=retest-defense-in-depth options=L4_SOURCE_PIN,DNP3_DPI,EITHER_LAYER correct=EITHER_LAYER
-      **If the L4 source pin were loosened (e.g., to allow engineering
-      workstation monitoring), would the DNP3 Direct Operate restriction
-      still block this attack?**
+      :::decision id=retest-defense-in-depth options=L4_SOURCE_PIN,DNP3_DPI,EITHER_LAYER correct=L4_SOURCE_PIN
+      **On this build, which layer actually stopped the Direct Operate
+      from Kali?** Consider what would happen if the L4 source pin were
+      loosened (e.g., to allow engineering workstation monitoring).
+      :::
+
+      :::hint Optional: see what the DPI layer does with an RTAC-origin write
+      The RTAC is allowed through the source pin, so a Direct Operate
+      sent from the **RTAC** terminal tab under Hardened reference reaches
+      the DPI layer. On this build it is recorded, not stopped - expect
+      the write to land. Type
+      `dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off` in the RTAC
+      terminal (not the Run button, which targets Kali).
+
+      Expected result: `Result: SUCCESS`; the RTAC register read above
+      now shows auto-reclose `0`; the Feeder One-Line shows the yellow
+      **AUTO-RECLOSE DISABLED** banner; the firewall records the attempt
+      as a DPI event (Network Map → Segmentation drawer → **Live DPI
+      Events**). That is the point: the event proves visibility, the
+      register proves enforcement, and here only the source pin enforces.
+
+      Restore before you continue: [Feeder HMI](/substation) →
+      **Supervisory Control** → **Enable Reclose** (or click **Reset Lab**,
+      then re-apply **Hardened reference**). The Validate step expects
+      auto-reclose enabled.
       :::
 
       :::hint Optional: confirm Modbus is blocked too
@@ -381,20 +406,18 @@ steps:
 
           dnp3cmd 10.40.40.21:20000 -a 2 -no-ack crob 1 latch-off
 
-      Under the **hardened** policy this still fails - and it's worth
-      understanding *why* at each layer:
+      Under the **hardened** policy this times out too: the L4 source
+      pin doesn't care about function codes at all. FC05 and FC06 ride
+      the same TCP/20000 from the same blocked source, so the packet
+      never reaches the outstation regardless.
 
-      - **L4 source-pin** doesn't care about function codes at all. FC05
-        and FC06 ride the same TCP/20000 from the same blocked source,
-        so the packet never reaches the outstation regardless.
-      - **ICS DPI** would catch it even if L4 were loosened: containd's
-        DNP3 Direct Operate restriction matches **both** FC05 and FC06,
-        precisely because No Ack is the obvious evasion move. Function-
-        code filtering that only listed FC05 would be a paper defense.
-
-      The lesson: enumerate the *whole* family of dangerous verbs, not
-      just the textbook one. A control-write restriction that misses the
-      No-Ack variant is the kind of gap an attacker probes for first.
+      The reference DNP3 rule lists neither verb for the RTAC. On this
+      build, do not rely on the DPI layer to stop either one - the source
+      pin is what blocks them. The design lesson still stands: enumerate
+      the *whole* family of dangerous verbs, not just the textbook one. A
+      control-write restriction that misses the No-Ack variant is the kind
+      of gap an attacker probes for first - and a rule that lists the
+      right verbs still has to be verified by device state.
 
       For comparison, send the same command under the **weak** baseline
       (Reset Lab, then re-apply weak) and it executes silently with no
@@ -416,10 +439,16 @@ steps:
       - PARTIAL may include successful attacks from earlier weak-policy training or smoke runs. Record current retest timestamps; compare those events with earlier weak-policy writes.
       - Check for healthy restored state and blocked current attempts; do not clear audit or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes still fail.
 
-      The cross-zone DNP3 control surface is closed. Lab 2.4 takes
-      this further with a holistic positive/negative test pass
-      across the full zone-pair matrix and a change-board-ready
-      evidence package.
+      If you ran the optional RTAC-origin write, restore auto-reclose
+      first (**Supervisory Control** → **Enable Reclose**, or **Reset
+      Lab** and re-apply **Hardened reference**): this check expects it
+      enabled.
+
+      The cross-zone DNP3 control surface is closed by the source pin.
+      Lab 2.4 takes this further with a positive/negative TCP
+      reachability pass across the full zone-pair matrix and a
+      change-board-ready evidence package; the device-state check you
+      just made is what proves protocol-level enforcement.
     action:
       type: check
       expect:
