@@ -15,37 +15,37 @@
 </p>
 
 > [!IMPORTANT]
-> **Workshop update: v0.1.35 → v0.1.36-rc.2**
+> **Workshop update: v0.1.35 → v0.1.36-rc.3**
 >
-> rc.2 corrects lab content and scripts only. It uses your v0.1.35 images: nothing downloads or rebuilds, and your `.env` and saved work stay.
+> rc.3 corrects lab content, proxy routes and scripts only. It uses your v0.1.35 images: nothing downloads or rebuilds, and your `.env` and saved work stay.
 >
-> **Already installed** (v0.1.35 or rc.1), from your `rangerdanger` folder. macOS / Linux:
+> **Already installed** (v0.1.35, rc.1 or rc.2), from your `rangerdanger` folder. macOS / Linux:
 >
 > ```bash
-> git fetch origin tag v0.1.36-rc.2 &&
-> git checkout --detach v0.1.36-rc.2 &&
+> git fetch origin tag v0.1.36-rc.3 &&
+> git checkout --detach v0.1.36-rc.3 &&
 > ./scripts/apply-repo-update.sh
 > ```
 >
 > Windows PowerShell:
 >
 > ```powershell
-> git fetch origin tag v0.1.36-rc.2
-> if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.2 }
+> git fetch origin tag v0.1.36-rc.3
+> if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.3 }
 > if ($LASTEXITCODE -eq 0) { .\scripts\apply-repo-update.ps1 }
 > ```
 >
 > **Installed from the workshop SSD:** follow `REPO-UPDATE-README.md` on the SSD.
 >
-> **New install:** clone the rc.2 tag, then run setup as usual (`.\setup.ps1` on Windows). Git's "not a commit" and "detached HEAD" messages are expected:
+> **New install:** clone the rc.3 tag, then run setup as usual (`.\setup.ps1` on Windows). Git's "not a commit" and "detached HEAD" messages are expected:
 >
 > ```bash
-> git clone --branch v0.1.36-rc.2 https://github.com/tonylturner/rangerdanger
+> git clone --branch v0.1.36-rc.3 https://github.com/tonylturner/rangerdanger
 > cd rangerdanger
 > ./setup.sh
 > ```
 >
-> Do not run `./setup.sh --version v0.1.36-rc.2`. Details and lab notes: [v0.1.36 workshop errata](https://github.com/tonylturner/rangerdanger/blob/v0.1.36-rc.2/docs/v0.1.36-hotfix.md).
+> Do not run `./setup.sh --version v0.1.36-rc.3`. Details and lab notes: [v0.1.36 workshop errata](https://github.com/tonylturner/rangerdanger/blob/v0.1.36-rc.3/docs/v0.1.36-hotfix.md).
 
 RangerDanger teaches network segmentation by putting students inside a working electric distribution substation. The whole experience runs in a single web portal: an interactive topology map shows the zones and devices, clicking a node opens its container terminal in the browser, structured exercises walk through each lab step-by-step with live validation, and a process view shows how cyber actions actually change voltages, breaker states, and load energization in real time. The firewall at the center is [containd](https://github.com/tonylturner/containd), a purpose-built NGFW with ICS deep-packet inspection, so students see and control Modbus function codes, DNP3 Direct Operate commands, and per-zone policy decisions the way modern OT-aware firewalls actually surface them.
 
