@@ -164,6 +164,51 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
+## Repo-only v0.1.36-rc.1 update (existing v0.1.35 images)
+
+From a **clean Git checkout** of the existing installation, macOS/Linux:
+
+```bash
+git fetch origin tag v0.1.36-rc.1 && git checkout --detach v0.1.36-rc.1 && ./scripts/apply-repo-update.sh
+```
+
+Windows PowerShell 5.1+ (does not use PowerShell 7's `&&`):
+
+```powershell
+git fetch origin tag v0.1.36-rc.1; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.1; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
+```
+
+For **Git-based SSD installs**, after obtaining the same clean detached
+tag checkout from the instructor's offline distribution, run:
+
+```bash
+./scripts/apply-repo-update.sh --from-tarballs /Volumes/WORKSHOP_SSD
+```
+
+```powershell
+.\scripts\apply-repo-update.ps1 -FromTarballs D:\WORKSHOP_SSD
+```
+
+As in setup, the SSD parameter selects `docker-compose.offline.yml`; this
+helper does not load tarballs. Setup records no persistent offline-mode
+marker, so the parameter is required for SSD installs. Archive-only
+installs without Git metadata, and archives extracted over tracked files
+that produce local edits, are refused by this helper.
+
+The helper names and refuses tracked local edits (back them up first),
+checks that **every release image is already local**, validates Compose,
+restarts backend and proxy, then recreates only vendor_jump without
+dependencies, builds or image downloads. It keeps `.env` (including
+`VERSION`), data and the vendor's anonymous `/config` volume. The recreate
+ends any open vendor desktop session; allow about 20 seconds, then open
+http://localhost:8088/apps/vendor-jump/.
+
+Compose must support `up --pull never` (present in v2.8.0); setup's
+Compose-subcommand check alone does not guarantee this. The helper
+refuses unsupported CLIs before restarting anything. Do not rerun setup
+with the rc version or use a plain source-stack `docker compose up` as a
+substitute: those paths can download/build images.
+
 ## Common errors
 
 Compose commands below use the release and offline files explicitly, so
