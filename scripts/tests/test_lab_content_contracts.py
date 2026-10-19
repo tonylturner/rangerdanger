@@ -78,6 +78,71 @@ class TerminalContracts(unittest.TestCase):
                 self.assertEqual(scenario(name)["nodes"], nodes)
 
 
+class ErrataContracts(unittest.TestCase):
+    def test_reference_workflow_is_visible_outside_injected_steps(self):
+        for name in ("remediation-planning", "firewall-implementation",
+                     "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"):
+            text = scenario(name)["description"]
+            with self.subTest(scenario=name):
+                for phrase in ("v0.1.35 application images", "not Apply Your Plan",
+                               "authorized 8/8", "unauthorized blocked 11/11", "no skipped tests"):
+                    self.assertIn(phrase, text)
+        ui = (ROOT / "frontend/components/scenario-runner.tsx").read_text()
+        self.assertIn("{scenario.description}</p>", ui)
+        self.assertNotIn("injectDynamicContent(scenario.description", ui)
+
+    def test_dnp3_and_grading_warnings_are_scenario_level(self):
+        for name in ("hardening-configurations", "validation-evidence"):
+            text = scenario(name)["description"]
+            self.assertIn("Verify a Direct Operate is rejected and reclose remains enabled", text)
+        text = scenario("validation-evidence")["description"]
+        self.assertIn("may PASS and auto-complete with no report or a FAIL report", text)
+        self.assertIn("Do not accept the exercise banner alone", text)
+        text = scenario("hardening-configurations")["steps"][3]["description"]
+        self.assertIn("DNP3 permits reads only (FC1), even from RTAC", text)
+
+    def test_export_recipes_print_and_copy_without_fictitious_files(self):
+        for name in ("firewall-implementation", "validation-evidence"):
+            doc = scenario(name)
+            text = doc["description"] + "\n" + "\n".join(s["description"] for s in doc["steps"])
+            self.assertNotRegex(text, r"export config\s*>")
+            self.assertNotIn("cat /tmp/student-policy.json", text)
+            self.assertIn("Copy that JSON to your evidence document", text)
+        text = scenario("firewall-implementation")["description"]
+        self.assertIn("does not support shell redirection", text)
+        self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
+        self.assertIn("rangerdanger@10.30.30.20 hostname", text)
+
+    def test_rejection_and_historical_audit_warnings_survive_ui_injection(self):
+        for name in ("hardening-configurations", "vendor-rdp-compromise"):
+            text = scenario(name)["description"]
+            self.assertIn("That label is not a packet verdict", text)
+            self.assertIn("then Mark Complete", text)
+        text = scenario("hardening-configurations")["description"]
+        self.assertIn("Record current retest timestamps", text)
+        self.assertIn("Current successful unauthorized writes still fail", text)
+
+    def test_vnc_auth_and_headless_fallback_are_explicit(self):
+        text = scenario("vendor-rdp-compromise")["steps"][1]["description"]
+        self.assertIn("fallback; password `rangerdanger`", text)
+        self.assertIn("Native RDP/VNC viewers require a GUI/DISPLAY", text)
+        self.assertIn("terminal-only Kali use the existing SSH fallback", text)
+        self.assertNotIn("no auth required", text)
+
+    def test_errata_has_repo_only_update_and_every_mitigation(self):
+        path = ROOT / "docs/v0.1.36-rc.1-hotfix.md"
+        self.assertTrue(path.exists(), "student/instructor errata is missing")
+        text = path.read_text()
+        self.assertIn("git fetch origin tag v0.1.36-rc.1 && git checkout --detach "
+                      "v0.1.36-rc.1 && ./scripts/apply-repo-update.sh", text)
+        for phrase in ("How to update", "PowerShell", "scripts/apply-repo-update.ps1",
+                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.1`",
+                       "no pull", "no rebuild", "checksum"):
+            self.assertIn(phrase, text)
+        for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23):
+            self.assertIn(f"RD-{number:02}", text)
+
+
 class BaselineContracts(unittest.TestCase):
     def test_observation_key_does_not_invent_writes(self):
         doc = scenario("baseline-assessment")
@@ -163,11 +228,13 @@ class ActionContracts(unittest.TestCase):
                 self.assertIn("without replacing it", doc["description"])
 
     def test_planning_keeps_decision_ui_and_manual_completion(self):
-        step = scenario("remediation-planning")["steps"][2]
+        doc = scenario("remediation-planning")
+        step = doc["steps"][2]
         self.assertEqual(step["action"]["type"], "decision")
         self.assertIn("Selections save automatically.", step["description"])
         self.assertIn("click Mark Complete", step["description"])
         self.assertIn("Do not use Execute Step", step["description"])
+        self.assertIn("Selections save automatically.", doc["description"])
 
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.

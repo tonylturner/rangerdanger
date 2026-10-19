@@ -12,6 +12,17 @@ description: >
   the policy you have active - then read it like a reviewer would. This
   is the validation step required before any segmentation change goes to
   production.
+  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
+  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
+  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
+  no skipped tests, plus healthy HMI. Only use the Hardened reference for the read-only DNP3
+  demonstration. A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a
+  Direct Operate is rejected and reclose remains enabled; then record the result. Validate
+  Exercise checks operational state only in these images; it may PASS and auto-complete with no
+  report or a FAIL report. Course completion requires the actual report (8 authorized passes, 11
+  unauthorized blocks, zero skipped), saved PCAP, notes and healthy HMI, reviewed separately. Do
+  not accept the exercise banner alone. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the
+  workshop errata.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -193,8 +204,11 @@ steps:
       Beyond the test results + PCAP, a change board wants the policy itself
       and proof it's the one running. From the `fw-1` terminal:
 
-          export config > /data/student-policy.json
+          export config
           show audit
+
+      Copy that JSON to your evidence document; the appliance CLI prints JSON
+      only and does not create a file through redirection.
 
       `export config` is the change-board-ready record of the running rule
       set; the recent `config.commit` entries in `show audit` prove the
