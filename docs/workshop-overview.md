@@ -45,8 +45,6 @@ The three planning labs (1.2 / 1.3 / 1.4) are deliberately separate
 
 Each step's student input persists in browser localStorage and downstream labs render it via inline `:::findings-panel` and `:::plan-coverage` panels - see [`docs/lab-authoring.md`](lab-authoring.md) for the fence vocabulary.
 
-| Lab | ID | Name | Time | What it teaches |
-|---|---|---|---|---|
 Times below are the **Guided-path golden-path** estimates (the in-app card chip and step-1 "Time budget" callout) - Advanced-track hints and optional bonus activities run longer. They match the `estimated_minutes` field in each scenario YAML.
 
 | Lab | ID | Name | Time | What it teaches |
