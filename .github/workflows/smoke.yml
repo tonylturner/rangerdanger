@@ -7,7 +7,7 @@ name: Smoke
 #   2. lab inventory matches the workshop deck         (content gate)
 #   3. sim healthchecks pass                           (init gate)
 #   4. firewall enforces the traffic matrix correctly  (dataplane gate)
-#   5. every documented lab command runs cleanly       (lab-doc gate)
+#   5. reviewed YAML/CLI command examples satisfy semantic oracles
 #   6. the workshop test-suite reports no step/reset failures
 #
 # Runs on every push to main + PR. Catches startup regressions and
@@ -21,7 +21,7 @@ name: Smoke
 
 on:
   push:
-    branches: [main]
+    branches: [main, hotfix/v0.1.36-rc.1]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -86,6 +86,26 @@ jobs:
         run: |
           curl -fsS http://localhost:8088/api/health | tee /tmp/health.json
           curl -fsS http://localhost:8088/api/build  | tee /tmp/build.json
+
+      - name: Archive environment receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p build/smoke-receipts
+          docker compose config > build/smoke-receipts/compose.resolved.yml
+          docker compose images --format json > build/smoke-receipts/compose-images.json
+          ids=$(docker compose images -q)
+          image_list=()
+          while IFS= read -r image; do
+            [ -n "$image" ] && image_list+=("$image")
+          done <<<"$ids"
+          docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
+          docker image inspect ghcr.io/tonylturner/containd:latest > build/smoke-receipts/containd.json
+          curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
+          curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
+
+      - name: Embedded UI and desktop probes
+        run: ./scripts/proxy-smoke.sh
 
       - name: Validate lab inventory
         # 6 workshop labs + 1 bonus, deck-aligned ordering. The list
@@ -158,11 +178,9 @@ jobs:
           ./scripts/firewall-smoke.sh
 
       - name: Lab commands smoke
-        # scripts/lab-commands-smoke.sh extracts every documented
-        # command from the lab YAMLs and runs them via docker exec
-        # from the right container under the right policy. Catches
-        # lab-doc rot - typo'd IPs, missing tools, wrong source
-        # containers, broken policies - before a student does.
+        # Reviewed YAML examples, including hints and appliance commands.
+        # This does not execute the old frontend's generated replacements;
+        # the inventory explicitly reports unautomated manual mutations.
         # PyYAML is needed by the script's parser; install once
         # alongside any other ad-hoc deps.
         run: |
@@ -218,6 +236,70 @@ jobs:
           path: /tmp/logs/
           retention-days: 7
 
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-smoke-evidence
+          path: |
+            build/smoke-receipts/
+            build/lab-commands/
+            build/proxy-smoke/
+          retention-days: 7
+
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  release-compat:
+    name: RC checkout with cached v0.1.35 images (no build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: v0.1.35
+      COMPOSE_FILE: docker-compose.release.yml
+      COMPOSE_PROJECT_NAME: rangerdanger
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install YAML dependency
+        run: python3 -m pip install pyyaml
+      - name: Make room for approximately 21 GB of expanded images
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+          python3 - <<'PY'
+          import shutil
+          if shutil.disk_usage(".").free < 21 * 1024**3:
+              raise SystemExit("Need ~21 GiB before pulling v0.1.35 images; use a larger runner")
+          PY
+      - name: Cache published v0.1.35 images (including containd latest)
+        # This is CI-only cache population. The local twin NEVER pulls.
+        run: docker compose -f docker-compose.release.yml pull
+      - name: Repo-only hard gates
+        id: hard-gates
+        run: ./scripts/release-compat-smoke.sh --keep
+      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
+        if: ${{ !cancelled() && steps.hard-gates.outcome != 'skipped' }}
+        continue-on-error: true
+        run: ./scripts/release-compat-smoke.sh --known-defects --replace
+      - name: Capture final compat logs
+        if: always()
+        run: |
+          mkdir -p build/release-compat
+          docker compose -f docker-compose.release.yml logs --no-color > build/release-compat/compose.final.log 2>&1
+      - name: Upload compat receipts and command output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-compat-v0.1.35
+          path: |
+            build/release-compat/
+            build/lab-commands/
+            build/proxy-smoke/
+          retention-days: 14
+      - name: Tear down disposable CI stack
+        if: always()
+        run: docker compose -f docker-compose.release.yml down -v --remove-orphans

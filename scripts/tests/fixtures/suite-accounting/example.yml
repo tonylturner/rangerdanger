@@ -1,0 +1,9 @@
+id: example
+steps:
+  - title: Execute a check
+    action:
+      type: check
+  - title: Record evidence
+  - title: Choose a plan
+    action:
+      type: decision
