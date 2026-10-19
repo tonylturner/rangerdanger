@@ -123,10 +123,10 @@ steps:
       The report automates this, but the manual method is what you'd do on a
       real appliance. From the **RTAC** terminal, confirm authorized flows:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-          dnp3poll 10.40.40.20:20000 -a 1
-          dnp3poll 10.40.40.21:20000 -a 2
-          dnp3poll 10.40.40.22:20000 -a 3
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
+          dnp3poll -a 3 -t 3s 10.40.40.22:20000
 
       All should return data. Then intra-zone HMI → RTAC, and the RTAC's
       aggregated field-comms view:
@@ -150,13 +150,13 @@ steps:
       attack vector from Lab 2.3:
 
           nmap -p 20000 10.40.40.20 --max-retries 1 -T4
-          dnp3poll 10.40.40.20:20000 -a 1
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       From **vendor-jump** (`10.20.20.10`) - the vendor-pivot path (Lab
       2.3-bonus):
 
           nmap -p 20000 10.40.40.21 --max-retries 1 -T4
-          dnp3poll 10.40.40.21:20000 -a 2
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       From **historian** (a single-homed non-RTAC OT host) - the source-pin
       test: only the RTAC may reach field, even from inside OT Ops:

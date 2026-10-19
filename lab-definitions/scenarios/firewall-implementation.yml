@@ -13,6 +13,12 @@ description: >
   unauthorized cross-zone traffic will be blocked and logged,
   while critical substation operations continue without
   interruption.
+  v0.1.36-rc.1 command override: generated Phase 5/6 snippets in the old
+  images are stale. Put dnp3poll flags before the host and use duration units:
+  `dnp3poll -a 2 -t 3s 10.40.40.21:20000` (use the device address).
+  For relay/capbank coil reads use FC1 and at most four coils, for example
+  `mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20`. Use these valid requests
+  for negative tests too; a protocol exception is not a firewall block.
 nodes:
   - fw-1
   - kali-1
@@ -121,19 +127,19 @@ steps:
 
       Test Modbus read from enterprise to field relay:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
       Test DNP3 poll from enterprise to field relay:
 
-          dnp3poll 10.40.40.20:20000 -a 1
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Test DNP3 poll from enterprise to field recloser:
 
-          dnp3poll 10.40.40.21:20000 -a 2
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       Test Modbus read from enterprise to field recloser:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.21
 
       **From the eng-ws terminal** (`eng-ws-1` on the [Network Map](/console)):
 
@@ -143,7 +149,7 @@ steps:
 
       Test Modbus to field capbank:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.23
 
       All of these should return data. That is the problem. Kali (an attacker box in the enterprise zone) can speak Modbus and DNP3 directly to field protection relays. The engineering workstation can bypass the RTAC entirely. This is what you are about to fix.
     action:
@@ -247,7 +253,7 @@ steps:
 
       **Verify default-deny.** From kali, this should now time out:
 
-          mbpoll -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
 
       If it still returns register data, the default-deny isn't active -
       re-check your rule list and whether you committed.
@@ -447,8 +453,8 @@ steps:
 
       From the RTAC terminal (`rtac-1` on the [Network Map](/console)):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-          dnp3poll 10.40.40.20:20000 -a 1
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Both should return data. This confirms the RTAC-to-field ALLOW rules are working for Modbus and DNP3.
 
@@ -496,27 +502,27 @@ steps:
 
       Modbus to field relay (enterprise to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
       DNP3 to field relay (enterprise to field, should be blocked):
 
-          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       **From eng-ws** (`eng-ws-1` on the [Network Map](/console)):
 
       Modbus to field capbank (vendor/DMZ to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23
 
       **From vendor-jump** (`vendor-jump-1` on the [Network Map](/console)):
 
       DNP3 to field relay (vendor/DMZ to field, should be blocked):
 
-          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Modbus to field relay (vendor/DMZ to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
       After each failed attempt, the connection should time out and
       the substation HMI should remain unchanged. The combination is

@@ -289,7 +289,7 @@ steps:
 
         curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40
 
-      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with - proof that the underlying control flows are alive even when they are intra-subnet. (Real RTACs don't expose a JSON state API; this is a lab convenience. The equivalent SCADA-protocol probe from the RTAC terminal is a DNP3 read against an outstation - `dnp3poll 10.40.40.20:20000 -a 1` - or a Modbus read - `mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20`.)
+      The `device_comms` and `devices` keys show every field device the RTAC is currently in contact with - proof that the underlying control flows are alive even when they are intra-subnet. (Real RTACs don't expose a JSON state API; this is a lab convenience. The equivalent SCADA-protocol probe from the RTAC terminal is a DNP3 read against an outstation - `dnp3poll -a 1 -t 3s 10.40.40.20:20000` - or a Modbus read - `mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20`.)
 
       ### Reflection
 
@@ -428,9 +428,9 @@ steps:
 
           nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
-          dnp3poll 10.40.40.21:20000 -a 2
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       **Test enterprise -> OT Operations on ICS ports:**
 

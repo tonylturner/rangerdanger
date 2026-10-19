@@ -96,7 +96,7 @@ Continuation lines with trailing backslash get joined automatically.
 description: |
   Run a Modbus poll to confirm the path:
 
-      mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+      mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
   And check the API:
 
