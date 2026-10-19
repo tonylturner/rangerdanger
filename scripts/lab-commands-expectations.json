@@ -1,0 +1,1204 @@
+{
+  "schema": 1,
+  "pinned_yaml_base": "5805c11",
+  "legacy_inventory": {
+    "baseline-assessment": {
+      "RUN": 17,
+      "SKIP": 0
+    },
+    "firewall-implementation": {
+      "RUN": 17,
+      "SKIP": 0
+    },
+    "hardening-configurations": {
+      "RUN": 14,
+      "SKIP": 0
+    },
+    "remediation-planning": {
+      "RUN": 0,
+      "SKIP": 0
+    },
+    "segmentation-requirements": {
+      "RUN": 0,
+      "SKIP": 0
+    },
+    "validation-evidence": {
+      "RUN": 14,
+      "SKIP": 1
+    },
+    "vendor-rdp-compromise": {
+      "RUN": 7,
+      "SKIP": 0
+    }
+  },
+  "inventory": {
+    "baseline-assessment": {
+      "RUN": 17,
+      "SKIP": 0
+    },
+    "firewall-implementation": {
+      "RUN": 29,
+      "SKIP": 9
+    },
+    "hardening-configurations": {
+      "RUN": 14,
+      "SKIP": 0
+    },
+    "remediation-planning": {
+      "RUN": 0,
+      "SKIP": 0
+    },
+    "segmentation-requirements": {
+      "RUN": 0,
+      "SKIP": 0
+    },
+    "validation-evidence": {
+      "RUN": 17,
+      "SKIP": 1
+    },
+    "vendor-rdp-compromise": {
+      "RUN": 7,
+      "SKIP": 0
+    }
+  },
+  "minimum_executed": 84,
+  "commands": {
+    "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "capture",
+        "file": "/data/captures/baseline.pcap"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|ls -lh /home/abc/pcaps/baseline.pcap|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\\bbaseline\\.pcap\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap 2>/dev/null | wc -l|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "^\\s*[1-9]\\d*\\s*$"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,ip 2>/dev/null|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "Conversations"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -q -z io,stat,0,\"tcp.port==20000\",\"tcp.port==502\",\"tcp.port==8080\",\"tcp.port==1881\",\"udp.port==123\" 2>/dev/null|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "IO Statistics"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.20.20.0/24 and ip.dst==10.30.30.0/24' 2>/dev/null | head -15|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.10.10.0/24 and (ip.dst==10.30.30.0/24 or ip.dst==10.40.40.0/24)' 2>/dev/null|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "^\\s*$"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -q -z conv,tcp 2>/dev/null | head -20|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Conversations"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.0/24 and ip.dst==10.40.40.0/24' 2>/dev/null | head -15|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==20000' 2>/dev/null | head -10|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'tcp.port==502' 2>/dev/null | head -10|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.30.30.20' 2>/dev/null | head -20|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "baseline-assessment|4|curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool | head -40|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"(?:device_comms|breaker_closed)\"\\s*:"
+      },
+      "reason": null
+    },
+    "baseline-assessment|7|nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)(?=.*\\b502/tcp\\s+open\\b)(?=.*\\b8080/tcp\\s+open\\b)(?=.*\\b20000/tcp\\s+open\\b).*"
+      },
+      "reason": null
+    },
+    "baseline-assessment|7|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "baseline-assessment|7|dnp3poll 10.40.40.21:20000 -a 2|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "baseline-assessment|7|nmap -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)(?=.*\\b502/tcp\\s+open\\b)(?=.*\\b1881/tcp\\s+open\\b)(?=.*\\b8080/tcp\\s+open\\b)(?=.*\\b20000/tcp\\s+open\\b).*"
+      },
+      "reason": null
+    },
+    "firewall-implementation|2|show interfaces|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:eth\\d|wan|lan1)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|2|show running-config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|dnp3poll 10.40.40.20:20000 -a 1|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|dnp3poll 10.40.40.21:20000 -a 2|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 2 -1 -t 4 10.40.40.22|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|4|delete firewall rule enterprise-to-ot-weak|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|delete firewall rule enterprise-to-field-weak|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|delete firewall rule vendor-to-ot-weak|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|delete firewall rule vendor-to-field-weak|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|delete firewall rule ot-to-field-broad|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|show diff|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:diff|no changes|firewall|candidate)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|4|commit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|4|mbpoll -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|export config > /tmp/policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:",
+        "file": "/tmp/policy.json"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|shell                   # drop to bash|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "containd CLI"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|vi /tmp/policy.json     # edit the firewall.rules array|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "shell",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|5|exit                    # back to containd CLI|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "shell",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "containd CLI"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|import config /tmp/policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "shell",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|5|show diff               # confirm what will change|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "shell",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:diff|no changes|firewall|candidate)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|5|commit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "weak",
+      "prompt": "cli",
+      "entry": "shell",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "manual policy editing/mutation; not automated"
+    },
+    "firewall-implementation|6|containd cli|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "containd CLI"
+      },
+      "reason": null
+    },
+    "firewall-implementation|6|show audit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:config\\.|audit|no entries|\\[\\])"
+      },
+      "reason": null
+    },
+    "firewall-implementation|7|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "firewall-implementation|7|dnp3poll 10.40.40.20:20000 -a 1|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "firewall-implementation|7|curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"(?:device_comms|breaker_closed)\"\\s*:"
+      },
+      "reason": null
+    },
+    "firewall-implementation|7|curl -sf http://10.30.30.10:1881 --connect-timeout 3|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?i)<(?:!doctype html|html)"
+      },
+      "reason": null
+    },
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "firewall-implementation|8|dnp3poll 10.40.40.20:20000 -a 1 -t 3|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23|1": {
+      "container": "rangerdanger-eng-ws",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "firewall-implementation|8|dnp3poll 10.40.40.20:20000 -a 1 -t 3|2": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20|2": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|export config > student-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:",
+        "file": "student-policy.json"
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|shell                       # drop to bash|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "containd CLI"
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|cat /tmp/student-policy.json | python3 -m json.tool|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "shell",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "firewall-implementation|9|exit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "shell",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "containd CLI"
+      },
+      "reason": null
+    },
+    "hardening-configurations|1|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "hardening-configurations|1|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Result: SUCCESS"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|dnp3cmd 10.40.40.21:20000 -a 2 crob 0 trip|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Result: SUCCESS"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Written \\d+ (?:references|registers|coils)"
+      },
+      "reason": null
+    },
+    "hardening-configurations|2|mbpoll -a 1 -t 0 -r 1 10.40.40.20 0|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Written \\d+ (?:references|registers|coils)"
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "Result: SUCCESS",
+        "nmap": false,
+        "zero_rc_denial": true
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 10.40.40.22 -- 65520   # FC6 regulator tap|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "Written \\d+ (?:references|registers|coils)",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|mbpoll -a 1 -t 0 -r 1 10.40.40.20 0          # FC5 breaker trip|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "Written \\d+ (?:references|registers|coils)",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|2": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "hardening-configurations|5|dnp3cmd 10.40.40.21:20000 -a 2 -no-ack crob 1 latch-off|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "Result: SUCCESS",
+        "nmap": false,
+        "zero_rc_denial": true
+      },
+      "reason": null
+    },
+    "validation-evidence|1|show running-config|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|dnp3poll 10.40.40.20:20000 -a 1|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "validation-evidence|2|dnp3poll 10.40.40.21:20000 -a 2|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "validation-evidence|2|dnp3poll 10.40.40.22:20000 -a 3|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)DNP3 Outstation .*\\(addr 3\\).*\\[\\s*\\d+\\] = "
+      },
+      "reason": null
+    },
+    "validation-evidence|2|curl -s http://10.30.30.20:8080/api/health|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"status\"\\s*:\\s*\"ok\""
+      },
+      "reason": null
+    },
+    "validation-evidence|2|curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool|1": {
+      "container": "rangerdanger-rtac-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\"(?:device_comms|breaker_closed)\"\\s*:"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|ssh -o StrictHostKeyChecking=no rangerdanger@10.30.30.20 'hostname'|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "SKIP",
+      "oracle": null,
+      "reason": "interactive login"
+    },
+    "validation-evidence|2|curl -ks https://10.30.30.20/ -o /dev/null -w '%{http_code}\\n'|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "^200\\s*$"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|nmap -p 20000 10.40.40.20 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "validation-evidence|2|dnp3poll 10.40.40.20:20000 -a 1|2": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "(?s)DNP3 Outstation .*\\(addr 1\\).*\\[\\s*\\d+\\] = ",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "validation-evidence|2|nmap -p 20000 10.40.40.21 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "validation-evidence|2|dnp3poll 10.40.40.21:20000 -a 2|2": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "(?s)DNP3 Outstation .*\\(addr 2\\).*\\[\\s*\\d+\\] = ",
+        "nmap": false
+      },
+      "reason": null
+    },
+    "validation-evidence|2|nmap -p 20000 10.40.40.22 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-historian-sim",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
+        "nmap": true
+      },
+      "reason": null
+    },
+    "validation-evidence|2|tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "capture",
+        "file": "/data/captures/validation.pcap"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|tcpdump -r /data/captures/validation.pcap -nn | awk '{print $3, $5}' | sort | uniq -c | sort -rn|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|export config > /data/student-policy.json|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "\"firewall\"\\s*:",
+        "file": "/data/student-policy.json"
+      },
+      "reason": null
+    },
+    "validation-evidence|2|show audit|1": {
+      "container": "rangerdanger-firewall",
+      "policy": "hardened",
+      "prompt": "cli",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "cli",
+        "match": "(?i)(?:config\\.|audit|no entries|\\[\\])"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|1|nmap -p 3389,5900 10.20.20.10|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)(?=.*\\b3389/tcp\\s+open\\b)(?=.*\\b5900/tcp\\s+open\\b).*"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 0 -r 2 10.40.40.21 0|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Written \\d+ (?:references|registers|coils)"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 0 -r 5 10.40.40.21 1|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "Written \\d+ (?:references|registers|coils)"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|6|nmap -p 3389,5900 10.20.20.10|1": {
+      "container": "rangerdanger-kali",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)(?=.*\\b3389/tcp\\s+open\\b)(?=.*\\b5900/tcp\\s+open\\b).*"
+      },
+      "reason": null
+    },
+    "vendor-rdp-compromise|6|mbpoll -a 1 -t 0 -r 2 10.40.40.21 0|1": {
+      "container": "rangerdanger-vendor-jump",
+      "policy": "hardened",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "deny",
+        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
+        "control_match": "Written \\d+ (?:references|registers|coils)",
+        "nmap": false
+      },
+      "reason": null
+    }
+  }
+}
