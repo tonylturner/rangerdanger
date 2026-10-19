@@ -6,6 +6,41 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.36-rc.3] - 2026-10-19
+
+Repository-only follow-up to rc.2 from a full student walkthrough, still
+on the v0.1.35 images with `VERSION=latest`; this pre-release tag does not
+move `latest`. Update an installed range with
+`git fetch origin tag v0.1.36-rc.3 && git checkout --detach v0.1.36-rc.3 && ./scripts/apply-repo-update.sh`.
+SSD installs follow `REPO-UPDATE-README.md` on the SSD.
+
+### Fixed
+
+- **Lab 2.3 enforcement claims.** On these images the L4 source pin is the
+  control that stops the DNP3 Direct Operate; the DPI layer records an
+  RTAC-origin write but does not stop it. The keyed answer is now
+  `L4_SOURCE_PIN`, the HMI question asks about the Kali re-test, the RTAC
+  write is an optional check with its expected result and restore steps,
+  and the Modbus sidebar no longer credits function-code DPI (RD-02, RD-24).
+- **Lab 2.4 report scope.** The text says the report is a TCP reachability
+  matrix that sends no control write.
+- **Lab 2.2 commits.** containd web-UI rule Create/Delete only take effect
+  on Commit; Stage 2/3 now say to commit after the last edit, and the
+  Advanced track proves RDP/VNC (3389/5900) is filtered after the commit
+  (RD-25).
+- **Run-button `mbpoll` reads poll once (`-1`)** instead of polling until
+  Ctrl-C, and Lab 2.3 / 2.3-bonus register prose uses mbpoll's 1-based
+  labels. The retired `bounded_poll` oracle exception is removed.
+- **Lab 2.3-bonus attribution.** Recloser "Last Command" is read from
+  Electrical Detail; the One-Line shows "Last command from" only for the
+  feeder breaker.
+- **Network Map links.** The proxy redirects the frozen `/apps/firewall/`
+  and OpenPLC node links to `/containd/` and `/apps/openplc/`, and serves
+  containd's `/icons/*.svg`.
+- **Lab time estimates** match the measured Guided path: 1.2 20, 1.3 10,
+  1.4 12, 2.2 22, 2.3 12, 2.3-bonus 12, 2.4 7 min (core 83 min).
+- Workshop notes no longer mention instructor grading.
+
 ## [v0.1.36-rc.2] - 2026-10-19
 
 Repository-only follow-up to rc.1, still on the v0.1.35 images with
