@@ -44,6 +44,10 @@ installed range with
   jump) and the firewall terminal's `containd#` start. In-lab notes give
   the working Phase 5 SSH account and the limits the v0.1.35 images
   still have.
+- **Cross-firewall `nmap` examples.** Without `-Pn`, host discovery
+  reported "0 hosts up" across the firewall even when the ports were
+  open, and under the hardened policy that looked like a block. Every
+  cross-zone scan now uses `-Pn`.
 
 ## [v0.1.35] - 2026-10-15
 
