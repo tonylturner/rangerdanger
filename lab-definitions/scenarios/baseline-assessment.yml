@@ -452,9 +452,11 @@ steps:
 
           dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
-      **Test enterprise -> OT Operations on ICS ports:**
+      **Test enterprise -> OT Operations on ICS ports** (RTAC `10.30.30.20`, then the FUXA HMI `10.30.30.10`):
 
-          nmap -Pn -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4
+          nmap -Pn -p 502,8080,20000 10.30.30.20 --max-retries 1 -T4
+
+          nmap -Pn -p 1881 10.30.30.10 --max-retries 1 -T4
 
       All of these should succeed. The weak baseline permits enterprise traffic to OT and field zones - your capture just happened not to contain any.
 

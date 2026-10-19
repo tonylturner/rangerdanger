@@ -241,7 +241,15 @@ class ExtractTests(unittest.TestCase):
     def test_cross_firewall_nmap_skips_discovery_and_checks_port_states(self):
         rows = [r for r in extract.extract(ROOT) if r["command"].startswith("nmap ")]
         data = json.loads(extract.EXPECTATIONS.read_text())
-        self.assertEqual(len(rows), 7)
+        self.assertEqual(len(rows), 8)
+        # FUXA listens on the HMI (10.30.30.10), not the RTAC: the RTAC
+        # answers 1881/tcp closed, which an "open" oracle rightly fails.
+        fuxa = [r for r in rows if "1881" in r["command"]]
+        self.assertEqual([r["command"].split()[-4] for r in fuxa], ["10.30.30.10"])
+        rtac = data["commands"][extract.key(next(
+            r for r in rows if r["command"].endswith("10.30.30.20 --max-retries 1 -T4")))]["oracle"]
+        self.assertTrue(extract.verdict(
+            rtac, 0, "502/tcp open\n8080/tcp open\n20000/tcp open", "", control=True))
         for row in rows:
             with self.subTest(command=extract.key(row)):
                 self.assertIn(" -Pn ", row["command"])

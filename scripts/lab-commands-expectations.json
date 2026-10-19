@@ -33,7 +33,7 @@
   },
   "inventory": {
     "baseline-assessment": {
-      "RUN": 17,
+      "RUN": 18,
       "SKIP": 0
     },
     "firewall-implementation": {
@@ -61,7 +61,7 @@
       "SKIP": 0
     }
   },
-  "minimum_executed": 77,
+  "minimum_executed": 78,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
@@ -255,7 +255,7 @@
       },
       "reason": null
     },
-    "baseline-assessment|7|nmap -Pn -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4|1": {
+    "baseline-assessment|7|nmap -Pn -p 502,8080,20000 10.30.30.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -263,7 +263,19 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "(?s)(?=.*\\b502/tcp\\s+open\\b)(?=.*\\b1881/tcp\\s+open\\b)(?=.*\\b8080/tcp\\s+open\\b)(?=.*\\b20000/tcp\\s+open\\b).*"
+        "match": "(?s)(?=.*\\b502/tcp\\s+open\\b)(?=.*\\b8080/tcp\\s+open\\b)(?=.*\\b20000/tcp\\s+open\\b).*"
+      },
+      "reason": null
+    },
+    "baseline-assessment|7|nmap -Pn -p 1881 10.30.30.10 --max-retries 1 -T4|1": {
+      "container": "rangerdanger-kali",
+      "policy": "weak",
+      "prompt": "shell",
+      "entry": "",
+      "action": "RUN",
+      "oracle": {
+        "intent": "read",
+        "match": "(?s)(?=.*\\b1881/tcp\\s+open\\b).*"
       },
       "reason": null
     },
