@@ -6,6 +6,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.36-rc.1] - 2026-10-19
+
+Repository-only workshop hotfix for installed v0.1.35 ranges. No image
+is rebuilt or pulled: students keep `VERSION=latest` and their v0.1.35
+images, and this pre-release tag does not move `latest`. Update an
+installed range with
+`git fetch origin tag v0.1.36-rc.1 && git checkout --detach v0.1.36-rc.1 && ./scripts/apply-repo-update.sh`
+(PowerShell: `scripts/apply-repo-update.ps1`). See
+`docs/v0.1.36-rc.1-hotfix.md` for the errata and the SSD procedure.
+
+### Added
+
+- **`scripts/apply-repo-update.sh` / `.ps1`.** Applies a checked-out
+  repo-only update without pulls or builds: refuses local tracked edits
+  or missing images, restarts backend and proxy, and recreates only
+  `vendor_jump`. `.env`, data and volumes are kept.
+- **Workshop errata page** `docs/v0.1.36-rc.1-hotfix.md` (RD-01..23).
+- **Frozen-image compatibility gates.** `scripts/release-compat-smoke.sh`
+  runs every workshop gate against cached v0.1.35 images, including a
+  running install (`--existing-stack`); `scripts/proxy-smoke.sh` probes
+  the embedded containd UI and the vendor desktop portal; the lab
+  command inventory is pinned with semantic and device-state oracles.
+
+### Fixed
+
+- **Embedded containd UI (RD-04).** The proxy rewrote every `"/api/`
+  string in the containd bundle, which broke its API base. Only the PCAP
+  download and CLI WebSocket paths are rewritten now.
+- **Vendor desktop (RD-09).** The vendor jump host's init script is
+  bind-mounted from the checkout, and it keeps nginx's default site, so
+  `/apps/vendor-jump/` serves the desktop again.
+- **Lab content (WP3-WP7).** Corrected `dnp3poll`/`mbpoll` reads and
+  outstation addresses, policy steps that verify instead of replacing
+  the selected policy, baseline findings that match the reference
+  evidence, every required source terminal (Lab 2.2 adds RTAC and vendor
+  jump) and the firewall terminal's `containd#` start. In-lab notes give
+  the working Phase 5 SSH account and the limits the v0.1.35 images
+  still have.
+
 ## [v0.1.35] - 2026-10-15
 
 Host-side setup script fixes plus four frontend dependency bumps. The
