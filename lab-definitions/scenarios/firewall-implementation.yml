@@ -356,12 +356,12 @@ steps:
       for the complete rules and global DPI settings:
 
           {
-            "id": "rtac-to-field-dnp3",
+            "id": "rtac-to-field-modbus",
             "sourceZones": ["lan1"],
             "sources": ["10.30.30.20/32"],
             "destZones": ["lan2"],
-            "protocols": [{"name": "tcp", "port": "20000"}],
-            "ics": {"protocol": "dnp3", "functionCode": [1]},
+            "protocols": [{"name": "tcp", "port": "502"}],
+            "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
             "action": "ALLOW",
             "log": true
           }
