@@ -163,18 +163,70 @@ into an image at build time:
 - Setup script changes
 - containd policy JSONs (`lab-definitions/firewall/*.json`)
 
-Distribution: ship the new `rangerdanger.tgz` only. ~1 MB. USB,
-AirDrop, Slack, anything. Student replaces their repo and restarts:
+For the **v0.1.36-rc.2 repo-only hotfix**, keep the installed v0.1.35
+images and `VERSION=latest`: no pull, no rebuild. Do not use
+`stage-ssd-delta.sh`; its digest comparison selects rc images, not this
+repo-only path. Do not run setup again or stop the full stack.
+
+Maintainers on macOS/Linux stage from the **release tag**, not HEAD or
+uncommitted files (the tag must already exist locally):
 
 ```sh
-cd ~/rangerdanger
-docker compose -f docker-compose.release.yml -f docker-compose.offline.yml down
-tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~   # overwrites ~/rangerdanger in place
-./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD      # loads the image archive again
+./stage-ssd-repo-update.sh /Volumes/WORKSHOP_SSD/repo-update v0.1.36-rc.2
 ```
 
-`setup.sh` runs `docker load` on every import. Docker deduplicates
-layers that are already present.
+This Git-only tool never calls Docker. Use a fresh output directory; it
+refuses existing artifact files. It writes exactly:
+
+- `rangerdanger-v0.1.36-rc.2.tgz` (tag archive, top directory `rangerdanger/`)
+- `rangerdanger-v0.1.36-rc.2.bundle` (complete tag history for offline clones)
+- `SHA256SUMS` (both artifacts)
+- `REPO-UPDATE-README.md` (macOS/Linux and Windows student steps)
+
+Distribute all four together. The stager is a Bash maintainer tool; Windows
+students use the existing PowerShell update helper, not the stager.
+
+Students save desktop work and back up local source edits first. Set `SSD`
+to the directory containing the four update files and **stop if checksum
+verification fails**:
+
+```sh
+SSD=/Volumes/WORKSHOP_SSD/repo-update
+(cd "$SSD" && shasum -a 256 -c SHA256SUMS)
+```
+
+For the standard SSD **archive install (no `.git`)**, overwrite only the
+tracked repo files in the existing `~/rangerdanger`; `.env`, data and
+captures remain:
+
+```sh
+tar xzf "$SSD/rangerdanger-v0.1.36-rc.2.tgz" -C ~ &&
+cd ~/rangerdanger &&
+./scripts/apply-repo-update.sh --from-tarballs "$SSD"
+```
+
+For an **offline Git clone**, never extract over the clone. From its clean
+checkout:
+
+```sh
+cd ~/rangerdanger &&
+git fetch "$SSD/rangerdanger-v0.1.36-rc.2.bundle" tag v0.1.36-rc.2 &&
+git checkout --detach v0.1.36-rc.2 &&
+./scripts/apply-repo-update.sh --from-tarballs "$SSD"
+```
+
+Archive installs print that the Git guard was skipped; clones retain the
+tracked-edit refusal. Both still validate cached images and Compose before
+restarting backend/proxy and recreating only vendor_jump. The SSD flag is
+required to add the offline overlay; it does not reload any image archives.
+Allow about 20 seconds for the vendor desktop.
+
+**Windows:** follow `REPO-UPDATE-README.md` or the
+[hotfix SSD steps](v0.1.36-hotfix.md#ssd--offline-update): verify with
+`Get-FileHash`, extract with `tar.exe -xzf` (archive installs only), then
+run `.\scripts\apply-repo-update.ps1 -FromTarballs $SSD`. Offline clones
+fetch the bundle and detach the tag instead of extracting. Stop if any
+checksum, extraction or Git command fails.
 
 ### Pattern 2: image rebuild change (Dockerfile / Go / TS / sim code)
 

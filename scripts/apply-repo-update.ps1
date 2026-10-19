@@ -27,15 +27,20 @@ if ($FromTarballs) {
 }
 
 # Exclude untracked/ignored files (.env and student evidence/data).
-$GitRoot = & git -C $RootDir rev-parse --show-toplevel
-if ($LASTEXITCODE -ne 0) { Die "A Git checkout is required." }
-if ([IO.Path]::GetFullPath($GitRoot) -ne [IO.Path]::GetFullPath($RootDir)) {
-    Die "Run this helper from its own Git checkout."
-}
-$Edits = @(& git -C $RootDir status --porcelain --untracked-files=no)
-if ($LASTEXITCODE -ne 0) { Die "Cannot inspect tracked files." }
-if ($Edits.Count -gt 0) {
-    Die ("Tracked files have local edits; back them up before updating:`n" + ($Edits -join "`n"))
+# A .git file also counts (linked worktrees). Archive installs cannot check edits.
+if (Test-Path -LiteralPath (Join-Path $RootDir ".git")) {
+    $GitRoot = & git -C $RootDir rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0) { Die "A Git checkout is required." }
+    if ([IO.Path]::GetFullPath($GitRoot) -ne [IO.Path]::GetFullPath($RootDir)) {
+        Die "Run this helper from its own Git checkout."
+    }
+    $Edits = @(& git -C $RootDir status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0) { Die "Cannot inspect tracked files." }
+    if ($Edits.Count -gt 0) {
+        Die ("Tracked files have local edits; back them up before updating:`n" + ($Edits -join "`n"))
+    }
+} else {
+    Write-Host "No .git metadata; skipped Git tracked-file guard. Back up local source edits before extracting an update."
 }
 
 # setup.ps1 checks for Compose, but does not enforce a numeric minimum.

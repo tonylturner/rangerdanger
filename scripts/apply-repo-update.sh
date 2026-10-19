@@ -18,13 +18,17 @@ if [ "$#" -gt 0 ]; then
 fi
 
 # Ignore untracked/ignored files, including .env and student evidence/data.
-# Refuse archives without Git metadata rather than guessing which files changed.
-git_root=$(git -C "$ROOT_DIR" rev-parse --show-toplevel) || die "A Git checkout is required."
-[ "$git_root" = "$ROOT_DIR" ] || die "Run this helper from its own Git checkout."
-edits=$(git -C "$ROOT_DIR" status --porcelain --untracked-files=no)
-if [ -n "$edits" ]; then
-    printf 'Tracked files have local edits; back them up before updating:\n%s\n' "$edits" >&2
-    exit 1
+# A .git file also counts (linked worktrees). Archive installs cannot check edits.
+if [ -e "$ROOT_DIR/.git" ]; then
+    git_root=$(git -C "$ROOT_DIR" rev-parse --show-toplevel) || die "A Git checkout is required."
+    [ "$git_root" = "$ROOT_DIR" ] || die "Run this helper from its own Git checkout."
+    edits=$(git -C "$ROOT_DIR" status --porcelain --untracked-files=no)
+    if [ -n "$edits" ]; then
+        printf 'Tracked files have local edits; back them up before updating:\n%s\n' "$edits" >&2
+        exit 1
+    fi
+else
+    printf 'No .git metadata; skipped Git tracked-file guard. Back up local source edits before extracting an update.\n'
 fi
 
 # setup.sh only checks for the Compose subcommand, not a numeric minimum.

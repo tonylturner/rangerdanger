@@ -12,17 +12,12 @@ description: >
   the policy you have active - then read it like a reviewer would. This
   is the validation step required before any segmentation change goes to
   production.
-  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
-  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
-  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
-  no skipped tests, plus healthy HMI. Only use the Hardened reference for the read-only DNP3
-  demonstration. A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a
-  Direct Operate is rejected and reclose remains enabled; then record the result. Validate
-  Exercise checks operational state only in these images; it may PASS and auto-complete with no
-  report or a FAIL report. Course completion requires the actual report (8 authorized passes, 11
-  unauthorized blocks, zero skipped), saved PCAP, notes and healthy HMI, reviewed separately. Do
-  not accept the exercise banner alone. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the
-  workshop errata.
+  v0.1.36-rc.2 uses the v0.1.35 application images.
+  Apply Hardened reference, not Apply Your Plan.
+  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+  Do not accept the exercise banner alone; Validate Exercise checks operational state only.
+  Save the report, PCAP and notes for separate review.
+  See docs/v0.1.36-hotfix.md.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -51,16 +46,11 @@ steps:
       :::
 
       **Start with the policy banner above this step.** If it shows
-      green ("Hardened reference" or "Your custom policy"), the
-      hardened policy you built earlier is still loaded and you're
-      ready to validate. If it shows amber ("Policy mismatch"),
-      re-apply it via the policy-action buttons below the step -
-      **Apply Hardened** for the reference policy, or **Apply Your
-      Plan** to reload the one you built in Lab 2.2 - before
-      continuing. (You're validating an existing policy here, not
-      authoring a new one.) The validation in the next step runs
-      against whatever policy is active, so make sure it's the one
-      you intend to certify.
+      green **Hardened reference**, you're ready to validate.
+      Otherwise click **Apply Hardened** below the step before continuing.
+      Keep your custom plan as a design artifact, not the workshop enforcement target.
+      The validation in the next step runs against whatever policy is active,
+      so confirm the reference policy is selected.
 
       :::hint Optional: cross-check the running policy in containd
       Once the banner is green, you can confirm the running policy from
@@ -87,6 +77,18 @@ steps:
   - title: "Generate the validation report"
     expected_config: hardened
     description: |
+      **Workshop errata:** Keep your plan as a design artifact; use **Hardened reference**
+      for enforcement. A green apply/banner is not enforcement evidence.
+      Only use the Hardened reference for the read-only DNP3 demonstration.
+      A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection.
+      Verify a Direct Operate is rejected and reclose remains enabled; then record the result.
+      Use the RTAC terminal and the procedure in Lab 2.3's re-test, not Kali, to prove DPI.
+
+      Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report.
+      Do not accept the exercise banner alone. Course completion requires the actual report
+      (8 authorized passes, 11 unauthorized blocks, zero skipped), saved PCAP, notes and
+      healthy HMI, reviewed separately.
+
       A segmentation change ships with *evidence*: proof that authorized
       flows still work, proof that unauthorized flows are blocked, and a
       capture showing only the RTAC reaching field devices. Rather than run
@@ -110,10 +112,9 @@ steps:
       - The **PCAP source analysis** should show only `10.30.30.20` (the
         RTAC) and `10.30.30.50` (GPS/NTP) reaching the field zone. Any other
         source IP is a leak.
-      - This grades the policy you *actually* have active - if you applied
-        your own plan in Lab 2.2, it certifies *your* policy, not the
-        reference. A FAIL here is the lab telling you your plan left a gap;
-        go back, tighten the rule, and re-run.
+      - This grades the policy you *actually* have active. Confirm it is
+        **Hardened reference**, not your custom plan. A FAIL means the
+        workshop enforcement target has not been demonstrated; stop for instructor review.
 
       ### Confirm operations at the HMI
 
