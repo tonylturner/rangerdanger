@@ -131,10 +131,11 @@ server {
     add_header X-Powered-By "Vendor Portal" always;
 }
 EOF
-ln -sf /etc/nginx/sites-available/vendor-portal /etc/nginx/sites-enabled/default
+# Keep webtop's default site: it serves the desktop on :3000/:3001.
+ln -sf /etc/nginx/sites-available/vendor-portal /etc/nginx/sites-enabled/vendor-portal
 
 if ! pgrep -x nginx >/dev/null 2>&1; then
-    nginx -t 2>&1 | tail -2
+    nginx -t
     nginx
     log "nginx started on :80 and :443"
 fi
