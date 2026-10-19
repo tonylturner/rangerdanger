@@ -175,23 +175,42 @@ steps:
       - *"Hospital and fire station without power"* under critical load
       - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
 
-      The One-Line shows **Last command from:** only under the feeder
-      breaker. To see who commanded the recloser, open the **Electrical
-      Detail** tab → **Protection & Device Status** → **Mid-Feeder
-      Recloser (79)**: its **Last Command** row shows the vendor jump
-      host address (`10.20.20.10`) - not the attacker IP
-      (`10.10.10.50`). From the field device's perspective, the command
-      came from a trusted source. This is why perimeter rules at the
-      *RDP* hop matter: by the time the Modbus packet reaches the
+      ### Who sent the write?
+
+      The recloser cannot tell you. Open the **Electrical Detail** tab →
+      **Protection & Device Status** → **Mid-Feeder Recloser (79)**: its
+      **Last Command** row reads `modbus-tcp` - the protocol, not an
+      address. A field device sees a valid Modbus request on TCP 502 and
+      executes it; it records no peer address, so it cannot tell a
+      vendor session from the RTAC. (The One-Line's **Last command
+      from:** line belongs to the feeder breaker, not the recloser.)
+
+      The firewall saw the connection. **Right after the attack**, open
+      the [containd firewall](/containd/) (log in as `containd` /
+      `containd`) and go to **NETWORK → Sessions**. Find the rows with
+      **DST `10.40.40.21`** and **DPORT `502`** - one per `mbpoll` write.
+      Their **SRC** is `10.20.20.10`, the vendor jump host:
+
+          tcp   TIME_WAIT   10.20.20.10   41368   10.40.40.21   502   ...   118s
+
+      There is no `10.10.10.50` row for this write. The attack was
+      laundered through the trusted vendor host, and the firewall
+      attributes it to the vendor zone. This is why perimeter rules at
+      the *RDP* hop matter: by the time the Modbus packet reaches the
       recloser, it looks legitimate.
+
+      **These rows expire after about 2 minutes** (the TTL column counts
+      down from ~120 s). If they are gone, re-run the first `mbpoll`
+      write above and refresh Sessions.
 
       :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**
       :::
 
       :::decision id=vendor-source-attribution options=ATTACKER_IP,VENDOR_JUMP_IP,RTAC_IP correct=VENDOR_JUMP_IP
-      **What IP shows as the recloser's Last Command source in
-      Electrical Detail?** The attack laundered through the vendor session.
+      **In containd Sessions, which SRC address do the rows to
+      `10.40.40.21:502` show?** The attack laundered through the vendor
+      session.
       :::
     action:
       type: sequence

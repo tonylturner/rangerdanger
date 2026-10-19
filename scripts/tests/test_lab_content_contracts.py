@@ -310,8 +310,11 @@ class ErrataContracts(unittest.TestCase):
                        "SSD", "Do not run `./setup.sh --version v0.1.36-rc.3`",
                        "no pull", "no rebuild", "checksum"):
             self.assertIn(phrase, text)
-        for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23, 24, 25):
+        for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23, 24, 25, 26):
             self.assertIn(f"RD-{number:02}", text)
+        self.assertIn("**RD-26:** On these images the recloser records a Modbus write only as\n"
+                      "`modbus-tcp`", text)
+        self.assertIn("(RD-26) | Lab 2.3-bonus, Use the vendor foothold", text)
         self.assertIn("**RD-25:** containd web-UI rule **Create** and **Delete** save the running\n"
                       "config but do not enforce it until **Commit**", text)
         self.assertIn("(RD-25) | Lab 2.2, Stage 2 and Stage 3", text)
@@ -384,16 +387,33 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("the control that enforces", doc["description"])
         self.assertIn("the control that enforces", self.flat(doc["steps"][3]["description"]))
 
-    def test_recloser_attribution_points_to_electrical_detail(self):
-        # Frozen frontend: substation-one-line.tsx renders "Last command from" for
-        # the relay only; the recloser's source is substation-electrical.tsx's
-        # "Last Command" row in the "Mid-Feeder Recloser" card (Electrical Detail).
-        text = self.flat(scenario("vendor-rdp-compromise")["steps"][2]["description"])
-        self.assertIn("shows **Last command from:** only under the feeder breaker", text)
-        self.assertIn("**Electrical Detail** tab → **Protection & Device Status** → "
-                      "**Mid-Feeder Recloser (79)**: its **Last Command** row", text)
-        self.assertNotIn("**Last command from:** field on the recloser", text)
-        self.assertIn("Last Command source in Electrical Detail", text)
+    def test_recloser_attribution_uses_containd_sessions(self):
+        # Frozen images: recloser-sim records every Modbus write as "modbus-tcp"
+        # (no peer address) and the mbpoll path adds no Command Audit row, so the
+        # only surface attributing the live write is containd NETWORK -> Sessions
+        # (conntrack, ~120 s TTL). Flows/Events/Live DPI Events are empty under weak.
+        raw = scenario("vendor-rdp-compromise")["steps"][2]["description"]
+        text = self.flat(raw)
+        self.assertIn("**Mid-Feeder Recloser (79)**: its **Last Command** row reads `modbus-tcp`", text)
+        self.assertIn("records no peer address", text)
+        self.assertIn("[containd firewall](/containd/)", text)
+        self.assertIn("`containd` / `containd`", text)
+        self.assertIn("**NETWORK → Sessions**", text)
+        self.assertIn("**DST `10.40.40.21`** and **DPORT `502`**", text)
+        self.assertIn("Their **SRC** is `10.20.20.10`, the vendor jump host", text)
+        self.assertIn("There is no `10.10.10.50` row for this write", text)
+        self.assertIn("**These rows expire after about 2 minutes**", text)
+        self.assertIn("re-run the first `mbpoll` write above and refresh Sessions", text)
+        for surface in ("Flows", "Events", "Live DPI", "Traffic Matrix", "Command Audit"):
+            self.assertNotIn(surface, raw)
+        self.assertNotIn("Last Command** row shows the vendor jump", text)
+        decision = next(line for line in raw.splitlines() if "id=vendor-source-attribution " in line)
+        self.assertIn("correct=VENDOR_JUMP_IP", decision)
+        question = raw.split("id=vendor-source-attribution", 1)[1].split("\n:::", 1)[0]
+        self.assertIn("In containd Sessions, which SRC address", question)
+        self.assertNotIn("Electrical Detail", question)
+        # The sample Sessions row is output, not a Run-button command.
+        self.assertRegex(raw, r"(?m)^    tcp   TIME_WAIT   10\.20\.20\.10 ")
 
     def test_validation_report_is_described_as_tcp_matrix(self):
         text = self.flat(scenario("validation-evidence")["steps"][1]["description"])
