@@ -148,7 +148,7 @@ for gate in smoke-test proxy-smoke firewall-smoke lab-commands-smoke events-smok
   args=()
   if [ "$gate" = smoke-test ]; then args=(--existing-stack); fi
   if python3 -c 'import subprocess,sys; sys.exit(subprocess.run(["bash",*sys.argv[1:]], timeout=1200).returncode)' \
-      "scripts/$gate.sh" "${args[@]}" >"$receipts/$gate.log" 2>&1; then
+      "scripts/$gate.sh" ${args[@]+"${args[@]}"} >"$receipts/$gate.log" 2>&1; then
     cat "$receipts/$gate.log"
   else
     cat "$receipts/$gate.log"

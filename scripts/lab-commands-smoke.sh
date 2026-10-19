@@ -114,7 +114,7 @@ while IFS='|' read -r idx scenario step cfg action intent; do
   fi
   policy "$cfg"
   executed=$((executed + 1))
-  if python3 "$helper" "$target" --execute "$idx" "${control[@]}" \
+  if python3 "$helper" "$target" --execute "$idx" ${control[@]+"${control[@]}"} \
       --output "$logs/$idx" --timeout "$PROBE_TIMEOUT"; then
     passed=$((passed + 1))
   else

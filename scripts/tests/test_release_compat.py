@@ -131,6 +131,20 @@ class CompatTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(Path(directory, "images.json").read_text(), expected)
 
+    def test_possibly_empty_arrays_expand_safely_on_macos_bash(self):
+        # macOS /bin/bash 3.2 aborts on "${empty[@]}" under set -u, and the
+        # EXIT trap then sees $?=0: a silent green. Arrays that may stay empty
+        # (assigned "=()", no "-gt 0" guard) must use ${x[@]+"${x[@]}"}.
+        import re
+        for script in sorted((ROOT / "scripts").glob("*.sh")):
+            source = script.read_text()
+            for name in set(re.findall(r"^\s*(\w+)=\(\)", source, re.M)):
+                if re.search(r"\$\{#" + name + r"\[@\]\}\"? -gt 0", source):
+                    continue  # guarded non-empty before any expansion
+                bare = re.compile(r'(?<!\+)"\$\{' + name + r'\[@\]\}"')
+                with self.subTest(script=script.name, array=name):
+                    self.assertIsNone(bare.search(source), f"use ${{{name}[@]+...}}")
+
     def test_build_version_is_exact(self):
         function = self.source.split("assert_version() {", 1)[1].split("\n}", 1)[0]
         for version, expected in (("v0.1.35", 0), ("v0.1.36-rc.1", 1), ("latest", 1)):
