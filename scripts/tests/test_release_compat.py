@@ -112,6 +112,25 @@ class CompatTests(unittest.TestCase):
                 if expected and not existing:
                     self.assertIn("REFUSED", result.stderr)
 
+    def test_existing_stack_inspects_running_images_not_forced_tag(self):
+        # Students keep VERSION=latest: their :latest tags carry the v0.1.35
+        # digests, so --existing-stack must inspect what the containers run.
+        block = self.source[self.source.index('if [ "$existing" -eq 1 ]; then\n  # A running'):
+                            self.source.index('if [ -n "$running" ] && [ "$existing" -ne 1 ]')]
+        stub = ("docker_bounded() { case \"$1\" in\n"
+                "  ps) printf 'img:latest\\nimg:latest\\nother:latest\\n' ;;\n"
+                "  image) shift 2; printf '%s\\n' \"$@\" ;;\n"
+                "  *) return 9 ;; esac; }\n"
+                "compose() { printf 'img:v0.1.35\\n'; }\n")
+        for existing, expected in ((1, "img:latest\nother:latest\n"), (0, "img:v0.1.35\n")):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
+                script = (f"set -e\nexisting={existing}\nreceipts={json.dumps(directory)}\n"
+                          + stub + block)
+                result = subprocess.run(["bash", "-c", script],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(Path(directory, "images.json").read_text(), expected)
+
     def test_build_version_is_exact(self):
         function = self.source.split("assert_version() {", 1)[1].split("\n}", 1)[0]
         for version, expected in (("v0.1.35", 0), ("v0.1.36-rc.1", 1), ("latest", 1)):

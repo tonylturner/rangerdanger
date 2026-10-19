@@ -89,7 +89,13 @@ fi
 # insufficient). A local cached-image run does not need another 21 GB free.
 echo "compat image budget: ~21 GB expanded; all images must already be cached"
 compose config >"$receipts/compose.resolved.yml"
-images=$(compose config --images)
+if [ "$existing" -eq 1 ]; then
+  # A running install may use :latest (students keep VERSION=latest), so
+  # record the images the containers actually run; /api/build proves v0.1.35.
+  images=$(docker_bounded ps --filter label=com.docker.compose.project=rangerdanger --format '{{.Image}}' | sort -u)
+else
+  images=$(compose config --images)
+fi
 image_list=()
 while IFS= read -r image; do
   [ -n "$image" ] && image_list+=("$image")
