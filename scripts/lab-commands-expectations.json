@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "pinned_yaml_base": "5805c11",
+  "pinned_yaml_base": "8c932ca",
   "legacy_inventory": {
     "baseline-assessment": {
       "RUN": 17,
@@ -37,8 +37,8 @@
       "SKIP": 0
     },
     "firewall-implementation": {
-      "RUN": 29,
-      "SKIP": 9
+      "RUN": 23,
+      "SKIP": 6
     },
     "hardening-configurations": {
       "RUN": 14,
@@ -61,13 +61,13 @@
       "SKIP": 0
     }
   },
-  "minimum_executed": 84,
+  "minimum_executed": 78,
   "commands": {
     "baseline-assessment|3|tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'|1": {
       "container": "rangerdanger-firewall",
       "policy": "weak",
-      "prompt": "cli",
-      "entry": "",
+      "prompt": "shell",
+      "entry": "shell",
       "action": "RUN",
       "oracle": {
         "intent": "capture",
@@ -231,7 +231,7 @@
       },
       "reason": null
     },
-    "baseline-assessment|7|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+    "baseline-assessment|7|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -243,7 +243,7 @@
       },
       "reason": null
     },
-    "baseline-assessment|7|dnp3poll 10.40.40.21:20000 -a 2|1": {
+    "baseline-assessment|7|dnp3poll -a 2 -t 3s 10.40.40.21:20000|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -291,7 +291,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -303,7 +303,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|3|dnp3poll 10.40.40.20:20000 -a 1|1": {
+    "firewall-implementation|3|dnp3poll -a 1 -t 3s 10.40.40.20:20000|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -315,7 +315,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|3|dnp3poll 10.40.40.21:20000 -a 2|1": {
+    "firewall-implementation|3|dnp3poll -a 2 -t 3s 10.40.40.21:20000|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -327,7 +327,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21|1": {
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.21|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -340,7 +340,7 @@
       "reason": null
     },
     "firewall-implementation|3|mbpoll -a 1 -r 1 -c 2 -1 -t 4 10.40.40.22|1": {
-      "container": "rangerdanger-vendor-jump",
+      "container": "rangerdanger-eng-ws",
       "policy": "weak",
       "prompt": "shell",
       "entry": "",
@@ -351,8 +351,8 @@
       },
       "reason": null
     },
-    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23|1": {
-      "container": "rangerdanger-vendor-jump",
+    "firewall-implementation|3|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.23|1": {
+      "container": "rangerdanger-eng-ws",
       "policy": "weak",
       "prompt": "shell",
       "entry": "",
@@ -429,7 +429,7 @@
       "oracle": null,
       "reason": "manual policy editing/mutation; not automated"
     },
-    "firewall-implementation|4|mbpoll -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20|1": {
+    "firewall-implementation|4|mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -441,81 +441,17 @@
       },
       "reason": null
     },
-    "firewall-implementation|5|export config > /tmp/policy.json|1": {
+    "firewall-implementation|5|export config|1": {
       "container": "rangerdanger-firewall",
-      "policy": "weak",
+      "policy": "hardened",
       "prompt": "cli",
       "entry": "",
       "action": "RUN",
       "oracle": {
         "intent": "cli",
-        "match": "\"firewall\"\\s*:",
-        "file": "/tmp/policy.json"
+        "match": "\"firewall\"\\s*:"
       },
       "reason": null
-    },
-    "firewall-implementation|5|shell                   # drop to bash|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "cli",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "cli",
-        "match": "containd CLI"
-      },
-      "reason": null
-    },
-    "firewall-implementation|5|vi /tmp/policy.json     # edit the firewall.rules array|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "shell",
-      "entry": "shell",
-      "action": "SKIP",
-      "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
-    },
-    "firewall-implementation|5|exit                    # back to containd CLI|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "cli",
-      "entry": "shell",
-      "action": "RUN",
-      "oracle": {
-        "intent": "cli",
-        "match": "containd CLI"
-      },
-      "reason": null
-    },
-    "firewall-implementation|5|import config /tmp/policy.json|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "cli",
-      "entry": "shell",
-      "action": "SKIP",
-      "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
-    },
-    "firewall-implementation|5|show diff               # confirm what will change|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "cli",
-      "entry": "shell",
-      "action": "RUN",
-      "oracle": {
-        "intent": "cli",
-        "match": "(?i)(?:diff|no changes|firewall|candidate)"
-      },
-      "reason": null
-    },
-    "firewall-implementation|5|commit|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "weak",
-      "prompt": "cli",
-      "entry": "shell",
-      "action": "SKIP",
-      "oracle": null,
-      "reason": "manual policy editing/mutation; not automated"
     },
     "firewall-implementation|6|containd cli|1": {
       "container": "rangerdanger-firewall",
@@ -541,7 +477,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|7|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+    "firewall-implementation|7|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -553,7 +489,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|7|dnp3poll 10.40.40.20:20000 -a 1|1": {
+    "firewall-implementation|7|dnp3poll -a 1 -t 3s 10.40.40.20:20000|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -589,7 +525,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20|1": {
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -603,7 +539,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|8|dnp3poll 10.40.40.20:20000 -a 1 -t 3|1": {
+    "firewall-implementation|8|dnp3poll -a 1 -t 3s 10.40.40.20:20000|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -617,7 +553,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23|1": {
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23|1": {
       "container": "rangerdanger-eng-ws",
       "policy": "hardened",
       "prompt": "shell",
@@ -631,7 +567,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|8|dnp3poll 10.40.40.20:20000 -a 1 -t 3|2": {
+    "firewall-implementation|8|dnp3poll -a 1 -t 3s 10.40.40.20:20000|2": {
       "container": "rangerdanger-vendor-jump",
       "policy": "hardened",
       "prompt": "shell",
@@ -645,7 +581,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20|2": {
+    "firewall-implementation|8|mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20|2": {
       "container": "rangerdanger-vendor-jump",
       "policy": "hardened",
       "prompt": "shell",
@@ -659,7 +595,7 @@
       },
       "reason": null
     },
-    "firewall-implementation|9|export config > student-policy.json|1": {
+    "firewall-implementation|9|export config|1": {
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "cli",
@@ -667,44 +603,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "cli",
-        "match": "\"firewall\"\\s*:",
-        "file": "student-policy.json"
-      },
-      "reason": null
-    },
-    "firewall-implementation|9|shell                       # drop to bash|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "hardened",
-      "prompt": "cli",
-      "entry": "",
-      "action": "RUN",
-      "oracle": {
-        "intent": "cli",
-        "match": "containd CLI"
-      },
-      "reason": null
-    },
-    "firewall-implementation|9|cat /tmp/student-policy.json | python3 -m json.tool|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "hardened",
-      "prompt": "shell",
-      "entry": "shell",
-      "action": "RUN",
-      "oracle": {
-        "intent": "read",
         "match": "\"firewall\"\\s*:"
-      },
-      "reason": null
-    },
-    "firewall-implementation|9|exit|1": {
-      "container": "rangerdanger-firewall",
-      "policy": "hardened",
-      "prompt": "cli",
-      "entry": "shell",
-      "action": "RUN",
-      "oracle": {
-        "intent": "cli",
-        "match": "containd CLI"
       },
       "reason": null
     },
@@ -913,7 +812,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20|1": {
+    "validation-evidence|2|mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -925,7 +824,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|dnp3poll 10.40.40.20:20000 -a 1|1": {
+    "validation-evidence|2|dnp3poll -a 1 -t 3s 10.40.40.20:20000|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -937,7 +836,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|dnp3poll 10.40.40.21:20000 -a 2|1": {
+    "validation-evidence|2|dnp3poll -a 2 -t 3s 10.40.40.21:20000|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -949,7 +848,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|dnp3poll 10.40.40.22:20000 -a 3|1": {
+    "validation-evidence|2|dnp3poll -a 3 -t 3s 10.40.40.22:20000|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -1020,7 +919,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|dnp3poll 10.40.40.20:20000 -a 1|2": {
+    "validation-evidence|2|dnp3poll -a 1 -t 3s 10.40.40.20:20000|2": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -1048,7 +947,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|dnp3poll 10.40.40.21:20000 -a 2|2": {
+    "validation-evidence|2|dnp3poll -a 2 -t 3s 10.40.40.21:20000|2": {
       "container": "rangerdanger-vendor-jump",
       "policy": "hardened",
       "prompt": "shell",
@@ -1100,7 +999,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|export config > /data/student-policy.json|1": {
+    "validation-evidence|2|export config|1": {
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "cli",
@@ -1108,8 +1007,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "cli",
-        "match": "\"firewall\"\\s*:",
-        "file": "/data/student-policy.json"
+        "match": "\"firewall\"\\s*:"
       },
       "reason": null
     },
