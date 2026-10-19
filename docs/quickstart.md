@@ -202,6 +202,44 @@ Most "doesn't start" issues fall into one of these:
    the dialog; setup continues on its own. Updating Docker Desktop
    avoids it (4.94 recovers without the dialog).
 
+### "the vendor desktop returns 502 / vendor services are missing"
+
+Both mounted init scripts must have **LF** line endings and be executable:
+`scripts/vendor-jump-services.sh` and `scripts/set-gateway.sh`. The vendor
+mount overrides the image's copy; s6 skips a non-executable script, so a
+missing executable bit can disable portal, SSH, RDP and VNC setup too.
+
+In a Linux/macOS shell (or WSL), check and repair permissions:
+
+```bash
+file scripts/vendor-jump-services.sh scripts/set-gateway.sh  # must not report CRLF
+test -x scripts/vendor-jump-services.sh && test -x scripts/set-gateway.sh
+chmod +x scripts/vendor-jump-services.sh scripts/set-gateway.sh
+git ls-files --eol scripts/vendor-jump-services.sh scripts/set-gateway.sh  # w/lf
+git ls-files -s scripts/vendor-jump-services.sh scripts/set-gateway.sh     # 100755
+git config --get core.fileMode  # diagnostic only; false does not grant executable bits
+```
+
+Restore LF endings if the checks report CRLF; the repository already
+specifies LF for shell scripts in `.gitattributes`. Do not change global
+Git settings. On WSL prefer a **Linux-filesystem checkout** (for example
+`~/rangerdanger`, not `/mnt/c/...`) and run `chmod +x` there.
+
+After recreating vendor_jump, verify Docker's view, not just the Git index:
+
+```bash
+docker compose -f docker-compose.release.yml exec vendor_jump bash -ec \
+  'for f in /custom-cont-init.d/01-vendor-services.sh /custom-cont-init.d/10-set-gateway.sh; do test -x "$f"; if LC_ALL=C grep -q $'"'"'\r'"'"' "$f"; then exit 1; fi; done'
+docker compose -f docker-compose.release.yml logs vendor_jump
+```
+
+For SSD installs add `-f docker-compose.offline.yml`. Logs must show both
+01 and 10 executing without skipped/nonzero init. Native Docker Desktop
+NTFS and WSL ext4 fresh-start checks are release signoff requirements,
+not yet verified. If the host share cannot expose executable LF scripts,
+stop and use a verified WSL Linux-filesystem checkout; do not assume the
+image's build-time chmod can repair a read-only mount.
+
 ### "the firewall (`fw-1`) terminal says command not found"
 
 The `fw-1` in-app terminal lands directly in the **containd
