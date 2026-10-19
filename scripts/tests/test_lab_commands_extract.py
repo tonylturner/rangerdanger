@@ -67,6 +67,16 @@ class ExtractTests(unittest.TestCase):
         self.assertFalse(extract.verdict(oracle, 1, "", "Illegal function", control=True))
         self.assertFalse(extract.verdict(oracle, 0, "success", "", control=True))
 
+    def test_nmap_zero_rc_needs_filtered_ports_and_control(self):
+        oracle = {"intent": "deny", "match": r"5900/tcp\s+filtered", "nmap": True}
+        self.assertFalse(extract.verdict(oracle, 0, "5900/tcp open", "", control=True))
+        self.assertFalse(extract.verdict(oracle, 0, "5900/tcp filtered", ""))
+        self.assertTrue(extract.verdict(oracle, 0, "5900/tcp filtered", "", control=True))
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        row = next(v for k, v in data["commands"].items()
+                   if k.startswith("vendor-rdp-compromise|6|nmap "))
+        self.assertEqual(row["oracle"]["intent"], "deny")
+
     def test_capture_requires_decodable_frames(self):
         oracle = {"intent": "capture"}
         self.assertFalse(extract.verdict(oracle, 124, "", ""))

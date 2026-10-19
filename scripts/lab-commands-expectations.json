@@ -1181,8 +1181,10 @@
       "entry": "",
       "action": "RUN",
       "oracle": {
-        "intent": "read",
-        "match": "(?s)(?=.*\\b3389/tcp\\s+open\\b)(?=.*\\b5900/tcp\\s+open\\b).*"
+        "intent": "deny",
+        "match": "(?s)(?=.*\\b3389/tcp\\s+filtered\\b)(?=.*\\b5900/tcp\\s+filtered\\b).*",
+        "control_match": "(?s)(?=.*\\b3389/tcp\\s+open\\b)(?=.*\\b5900/tcp\\s+open\\b).*",
+        "nmap": true
       },
       "reason": null
     },
