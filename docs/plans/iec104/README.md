@@ -1,8 +1,42 @@
 # Plan: selectable range packages and a European IEC104 workshop
 
-Status: **approved 2026-10-09; increment 0 in progress.** Branch
-`iec104`, cut from `v0.1.34` (`b653743`). `main` and the v0.1.34
-release are not affected. Tony's answers are in section 5.
+Status: **parked 2026-10-18** for the US course hotfix. Increments
+0-3 are done; increment 4 is in progress. Branch `iec104`, cut from
+`v0.1.34` (`b653743`). `main` and the v0.1.x releases are not
+affected. Tony's answers are in section 5.
+
+## 0. Parked (2026-10-18): how to resume
+
+Tony paused this branch to hotfix the current release for a US course
+run. Work resumes after that run, when Tony says so.
+
+- **Where it stopped:** `iec104` at `28fe6fb` (this note is the next
+  commit). About 220 local commits are not pushed to `origin/iec104`. The last live run at `4722f73` passed: EU state smoke 22/22
+  and live cert 415 PASS / 0 FAIL; offline eu-gate suite, ShellCheck,
+  Python unittest and frontend 799/799 green.
+- **Rules that still apply:** IEC104 work lands only on `iec104`; no
+  push until Tony ends the epic; no containd changes here (write a
+  containd spec under `docs/plans/iec104/` instead). The range builds
+  containd from its `iec104` branch (`CONTAIND_SOURCE` default in both
+  packages' `compose.source.yml`), never `latest`.
+- **First steps on resume:**
+  1. Merge the hotfix (and any later `main` release) into `iec104`,
+     never the reverse; `main` was 9 commits ahead at park time.
+  2. Rebuild the range and rerun the EU state smoke and live cert.
+  3. Run the frontend once live: `28fe6fb` (singular wording for one
+     non-GOOD point) was never in a live build.
+- **Open scope** (slAIck board, tickets marked "iec104 branch"):
+  - Epic `01a140d2`: increment 4, complete EU package (exit gate in
+    section 4, including owner-run macOS, Windows/WSL2 and SSD
+    acceptance).
+  - `01a14bfa`: EU follow-up debt (stationclock parse, field audit
+    coverage, dead evaluators, `all_good` covers only 4 CB1 points).
+  - `01a150d5`: dev-down reports a range volume left behind that no
+    longer exists.
+  - `01a1489a`: "Live DPI Events" label is misleading when DPI is off.
+  - `01a1503f`: frontend dev-toolchain npm advisories.
+  - Busbar loss of supply is tested offline only; add a live check.
+  - Increment 5 (containd milestone B) is a containd project.
 
 Evidence: four code recon reports and one external research report in
 [`recon/`](recon/). Each finding there cites `file:line` at `b653743`.
