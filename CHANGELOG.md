@@ -6,6 +6,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.36-rc.2] - 2026-10-19
+
+Repository-only follow-up to rc.1, still on the v0.1.35 images with
+`VERSION=latest`; this pre-release tag does not move `latest`. Update an
+installed range with
+`git fetch origin tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh`.
+SSD installs follow `REPO-UPDATE-README.md` on the SSD. The errata page
+moved to `docs/v0.1.36-hotfix.md`.
+
+### Added
+
+- **`stage-ssd-repo-update.sh <out-dir> <tag>`.** Stages a repo-only SSD
+  update from a tag: an archive, a git bundle, `SHA256SUMS` and
+  student steps for archive installs, git clones and Windows. It never
+  touches images.
+
+### Fixed
+
+- **SSD archive installs could not update.** They have no `.git`, so
+  `apply-repo-update` refused them. Without `.git` it now skips the
+  tracked-file guard and says so; every image and Compose check stays.
+- **Scenario-header errata were too long to read.** The v0.1.35 images
+  show the header as one plain paragraph. Each header now gives only the
+  rules for that lab; the detail moved to step bodies and the errata page.
+
 ## [v0.1.36-rc.1] - 2026-10-19
 
 Repository-only workshop hotfix for installed v0.1.35 ranges. No image
