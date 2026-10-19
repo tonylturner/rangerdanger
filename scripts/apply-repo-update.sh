@@ -10,8 +10,9 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 COMPOSE_FLAGS=(--project-directory "$ROOT_DIR" -f "$ROOT_DIR/docker-compose.release.yml")
 
 if [ "$#" -gt 0 ]; then
-    [ "$#" -eq 2 ] && [ "$1" = "--from-tarballs" ] || \
+    if [ "$#" -ne 2 ] || [ "$1" != "--from-tarballs" ]; then
         die "Usage: $0 [--from-tarballs <SSD directory>]"
+    fi
     [ -d "$2" ] || die "SSD directory not found: $2"
     [ -f "$ROOT_DIR/docker-compose.offline.yml" ] || die "Offline overlay is missing."
     COMPOSE_FLAGS+=(-f "$ROOT_DIR/docker-compose.offline.yml")
