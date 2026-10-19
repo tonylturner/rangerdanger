@@ -170,6 +170,27 @@ class ExtractTests(unittest.TestCase):
         self.assertFalse(extract.verdict(
             row["oracle"], 0, summary.replace("filtered", "closed"), "", control=True))
 
+    def test_cross_firewall_nmap_skips_discovery_and_checks_port_states(self):
+        rows = [r for r in extract.extract(ROOT) if r["command"].startswith("nmap ")]
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        self.assertEqual(len(rows), 7)
+        for row in rows:
+            with self.subTest(command=extract.key(row)):
+                self.assertIn(" -Pn ", row["command"])
+                oracle = data["commands"][extract.key(row)]["oracle"]
+                down = "Note: Host seems down\nNmap done: 0 hosts up"
+                self.assertFalse(extract.verdict(oracle, 0, down, "", control=True))
+                if row["scenario"] == "validation-evidence":
+                    self.assertTrue(extract.verdict(
+                        oracle, 0, "20000/tcp filtered dnp", "", control=True))
+                    self.assertFalse(extract.verdict(
+                        oracle, 0, "20000/tcp open dnp", "", control=True))
+                    control = {"intent": "read", "match": oracle["control_match"]}
+                    self.assertTrue(extract.verdict(control, 0, "20000/tcp open dnp", ""))
+                    self.assertFalse(extract.verdict(control, 0, "20000/tcp filtered dnp", ""))
+                if row["scenario"] == "vendor-rdp-compromise":
+                    self.assertEqual(row["container"], "rangerdanger-kali")
+
     def test_capture_requires_decodable_frames(self):
         oracle = {"intent": "capture"}
         self.assertFalse(extract.verdict(oracle, 124, "", ""))
