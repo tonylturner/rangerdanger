@@ -39,17 +39,15 @@ steps:
       unified Modbus holding-register view, so a single read captures
       the whole substation. `-r 1` starts at Modbus reference 1, so the
       output labels the values `[1]`..`[5]` (reference = 0-based
-      register address + 1). These reads poll continuously so you can
-      watch updates: use Ctrl-C after recording the values, before
-      running the next command.
+      register address + 1). `-1` polls once and exits.
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
       Expected: `[1]=1` (breaker closed), `[2]=1` (recloser closed),
       `[3]=1` (auto-reclose enabled), `[4]≈0` (regulator tap),
       `[5]=0` (regulator manual mode off, i.e. auto).
 
-          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+          mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20
 
       Analog measurements (FC4, x10 scaling): `[1]≈1200` (substation
       bus 120V), `[2]≈1200` (downstream 120V), `[3]≈1240`
@@ -111,12 +109,12 @@ steps:
       land, then confirm the downstream de-energization from the
       RTAC's terminal:
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
       `[2]` (recloser_closed) reads `0` and `[3]` (reclose_enabled)
       reads `0`.
 
-          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+          mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20
 
       `[2]` (`downstream_voltage_v × 10`) and `[4]`
       (`feeder_current_a × 10`) both read `0` - the loads
@@ -319,7 +317,7 @@ steps:
 
       Confirm via the RTAC tags that nothing changed:
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
       `[2]` and `[3]` both read `1` (recloser_closed,
       reclose_enabled). The cross-zone DNP3 control surface is
@@ -382,7 +380,7 @@ steps:
 
       Both should time out. Confirm via the RTAC tags:
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
       `[1]=1` (breaker still closed), `[4]≈0` (regulator tap
       unchanged). One rule, three attack paths neutralized.

@@ -94,35 +94,15 @@ class ExtractTests(unittest.TestCase):
             with self.subTest(rc=rc, err=err):
                 self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", err))
 
-    def test_poll_timeout_exception_is_pinned_only_to_reviewed_continuous_reads(self):
-        data = json.loads(extract.EXPECTATIONS.read_text())
-        polls = [r for r in extract.extract(ROOT)
-                 if data["commands"][extract.key(r)]["oracle"] and
-                 data["commands"][extract.key(r)]["oracle"].get("bounded_poll")]
-        rtac = [r for r in polls if r["container"] == "rangerdanger-rtac-sim"]
-        vendor = [r for r in polls if r["container"] == "rangerdanger-vendor-jump"]
-        self.assertEqual(len(polls), 8)
-        self.assertEqual(len(rtac), 6)
-        self.assertEqual({(r["scenario"], r["step"], r["policy"], r["command"]) for r in vendor}, {
-            ("vendor-rdp-compromise", 3, "weak",
-             f"mbpoll -a 1 -t {kind} -r 1 -c {count} 10.30.30.20")
-            for kind, count in ((4, 5), (3, 6))
-        })
-        for row in polls:
-            self.assertTrue(row["command"].startswith("mbpoll "))
-            self.assertNotIn(" -1 ", row["command"])
-            self.assertEqual(data["commands"][extract.key(row)]["oracle"]["intent"], "read")
+    def test_bounded_poll_is_rejected_for_single_shot_reads(self):
         rows = extract.extract(ROOT)
-        data["commands"][extract.key(rows[0])]["oracle"]["bounded_poll"] = True
+        data = json.loads(extract.EXPECTATIONS.read_text())
+        self.assertFalse(any((c.get("oracle") or {}).get("bounded_poll")
+                             for c in data["commands"].values()))
+        row = next(r for r in rows if r["command"].startswith("mbpoll ") and " -1 " in r["command"])
+        data["commands"][extract.key(row)]["oracle"]["bounded_poll"] = True
         with self.assertRaisesRegex(ValueError, "bounded polling"):
             extract.validate_inventory(rows, data)
-
-    def test_vendor_continuous_reads_document_ctrl_c(self):
-        doc = extract.yaml.safe_load(
-            (ROOT / "lab-definitions/scenarios/vendor-rdp-compromise.yml").read_text())
-        text = doc["steps"][2]["description"]
-        self.assertIn("continuous", text)
-        self.assertIn("Ctrl-C", text)
 
     def test_vendor_filter_allows_not_observed_but_still_requires_reader_success(self):
         data = json.loads(extract.EXPECTATIONS.read_text())

@@ -119,11 +119,9 @@ steps:
       OpenDSS electrical results into Modbus registers a vendor
       host can read). `-r 1` starts at Modbus reference 1, so mbpoll
       labels the values from `[1]` (reference = 0-based register
-      address + 1). Both reads below are continuous polls: after
-      recording samples from each command, press Ctrl-C before running
-      the next command.
+      address + 1). `-1` polls once and exits.
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
       `[2]` (`recloser_closed`) is now `0` (the fault
       tripped the recloser) and `[3]` (`reclose_enabled`) is `0`
@@ -132,7 +130,7 @@ steps:
       the fault was counted as the first shot, but with reclose
       disabled there will be no shots 2 or 3 to recover from.
 
-          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+          mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20
 
       `[2]` (`downstream_voltage_v × 10`) and `[4]`
       (`feeder_current_a × 10`) both read `0` - the loads

@@ -610,7 +610,7 @@
       },
       "reason": null
     },
-    "hardening-configurations|1|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+    "hardening-configurations|1|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "weak",
       "prompt": "shell",
@@ -618,12 +618,11 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
-    "hardening-configurations|1|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+    "hardening-configurations|1|mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "weak",
       "prompt": "shell",
@@ -631,8 +630,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
@@ -660,7 +658,7 @@
       },
       "reason": null
     },
-    "hardening-configurations|2|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+    "hardening-configurations|2|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "weak",
       "prompt": "shell",
@@ -668,12 +666,11 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
-    "hardening-configurations|2|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+    "hardening-configurations|2|mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "weak",
       "prompt": "shell",
@@ -681,8 +678,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
@@ -725,7 +721,7 @@
       },
       "reason": null
     },
-    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|1": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -733,8 +729,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
@@ -766,7 +761,7 @@
       },
       "reason": null
     },
-    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|2": {
+    "hardening-configurations|5|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|2": {
       "container": "rangerdanger-rtac-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -774,8 +769,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
@@ -1064,7 +1058,7 @@
       },
       "reason": null
     },
-    "vendor-rdp-compromise|3|mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20|1": {
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20|1": {
       "container": "rangerdanger-vendor-jump",
       "policy": "weak",
       "prompt": "shell",
@@ -1072,12 +1066,11 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
-    "vendor-rdp-compromise|3|mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20|1": {
+    "vendor-rdp-compromise|3|mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20|1": {
       "container": "rangerdanger-vendor-jump",
       "policy": "weak",
       "prompt": "shell",
@@ -1085,8 +1078,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
-        "bounded_poll": true
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
       },
       "reason": null
     },
