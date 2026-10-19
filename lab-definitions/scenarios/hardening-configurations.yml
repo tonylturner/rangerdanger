@@ -12,6 +12,9 @@ description: >
   hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
   both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
   bonus attacks in the same step show the same defense generalizes.
+  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
+  verifies its label without replacing it. This check is not enforcement proof;
+  run the report/retests.
 nodes:
   - kali-1
 tags:
@@ -233,6 +236,7 @@ steps:
           source: "operator"
 
   - title: "Apply the hardened policy"
+    expected_config: hardened
     description: |
       Get a hardened policy active in containd before the re-test.
       The policy banner at the top of this step is your signal -
@@ -287,8 +291,9 @@ steps:
       the lab telling you the plan has a gap. Re-attempt with
       **Apply Hardened** to compare.
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
   - title: "Re-test the attack under the hardened policy"
     expected_config: hardened

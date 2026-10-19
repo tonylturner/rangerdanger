@@ -16,6 +16,48 @@ def scenario(name):
     return yaml.safe_load((SCENARIOS / f"{name}.yml").read_text())
 
 
+class ActionContracts(unittest.TestCase):
+    def test_explicit_policy_application_is_non_mutating(self):
+        for name in ("firewall-implementation", "hardening-configurations",
+                     "vendor-rdp-compromise"):
+            doc = scenario(name)
+            steps = [s for s in doc["steps"] if
+                     s["title"].startswith(("Phase 3", "Apply hardened", "Apply the hardened"))]
+            self.assertEqual(len(steps), 1)
+            with self.subTest(scenario=name):
+                self.assertEqual(steps[0]["action"],
+                                 {"type": "check", "expect": {"firewall_config": "improved"}})
+                self.assertEqual(steps[0].get("expected_config"), "hardened")
+                self.assertIn("without replacing it", doc["description"])
+
+    def test_planning_keeps_decision_ui_and_manual_completion(self):
+        step = scenario("remediation-planning")["steps"][2]
+        self.assertEqual(step["action"]["type"], "decision")
+        self.assertIn("Selections save automatically.", step["description"])
+        self.assertIn("click Mark Complete", step["description"])
+        self.assertIn("Do not use Execute Step", step["description"])
+
+    def test_frozen_runner_action_accounting(self):
+        # evaluateTestStep auto-passes missing actions and decisions only.
+        expected = {
+            "baseline-assessment": (5, 0, 3),
+            "firewall-implementation": (4, 0, 5),
+            "hardening-configurations": (0, 0, 6),
+            "remediation-planning": (3, 1, 0),
+            "segmentation-requirements": (3, 0, 0),
+            "validation-evidence": (1, 0, 2),
+            "vendor-rdp-compromise": (1, 0, 6),
+        }
+        auto_total = 0
+        for name, counts in expected.items():
+            steps = scenario(name)["steps"]
+            manual = sum(not s.get("action") for s in steps)
+            decision = sum(s.get("action", {}).get("type") == "decision" for s in steps)
+            self.assertEqual((manual, decision, len(steps) - manual - decision), counts)
+            auto_total += manual + decision
+        self.assertEqual(auto_total, 18)
+
+
 class CommandContracts(unittest.TestCase):
     def test_dnp3poll_flags_precede_endpoint_and_durations_have_units(self):
         for path in sorted(SCENARIOS.glob("*.yml")):

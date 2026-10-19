@@ -19,6 +19,9 @@ description: >
   For relay/capbank coil reads use FC1 and at most four coils, for example
   `mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20`. Use these valid requests
   for negative tests too; a protocol exception is not a firewall block.
+  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
+  verifies its label without replacing it. This check is not enforcement proof;
+  run the report/retests.
 nodes:
   - fw-1
   - kali-1
@@ -260,6 +263,7 @@ steps:
       :::
 
   - title: "Phase 3 - Create minimal required rules"
+    expected_config: hardened
     description: |
       The six rules below are the contract for what cross-zone
       traffic the substation must allow. Everything else stays
@@ -371,8 +375,9 @@ steps:
       yourself out.
       :::
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
   - title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened

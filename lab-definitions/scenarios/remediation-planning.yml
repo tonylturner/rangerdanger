@@ -95,6 +95,10 @@ steps:
       When you are done, review the Remaining hours and
       per-role utilization. If any role is red, remove an
       action or choose a lighter one.
+
+      Selections save automatically. Do not use Execute Step for this decision
+      in the v0.1.35 application. Finish selecting a feasible plan, click Mark Complete,
+      then record your reflection.
     action:
       type: decision
       budget_hours: 500

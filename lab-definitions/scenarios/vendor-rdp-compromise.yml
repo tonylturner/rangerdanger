@@ -10,6 +10,9 @@ description: >
   under the weak baseline, then apply containd rules that block
   remote-access protocols (RDP/3389, VNC/5900) from enterprise into the
   vendor DMZ - cutting the lateral path before it ever reaches OT.
+  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
+  verifies its label without replacing it. This check is not enforcement proof;
+  run the report/retests.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -214,6 +217,7 @@ steps:
           source: "operator"
 
   - title: "Apply hardened policy"
+    expected_config: hardened
     description: |
       Apply the hardened firewall configuration with **Apply Hardened**
       in the **containd NGFW - policy actions** panel below this step, or
@@ -245,8 +249,9 @@ steps:
       re-test in the next step may still succeed under "Apply Your
       Plan" - re-attempt with **Apply Hardened** to compare.
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
   - title: "Re-attempt the pivot"
     expected_config: hardened
