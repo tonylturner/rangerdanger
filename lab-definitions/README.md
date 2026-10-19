@@ -30,7 +30,8 @@ order: "2.5"                # quoted string; sorts lexicographically.
 name: "My New Exercise"
 summary: "One-line summary that appears in the card view (≤120 chars)."
 description: |
-  Long-form prose. Rendered as Markdown in the exercise runner.
+  Long-form prose. Rendered as one plain-text paragraph (no Markdown,
+  no line breaks); step descriptions render Markdown.
   Explain the scenario, what the student is doing, and why it
   matters operationally.
 nodes:

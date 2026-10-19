@@ -26,7 +26,8 @@ order: "1.5"                 # required, string. Sorts in the inventory; matches
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list
 description: |               # multi-paragraph. Shown above the steps.
-  Longer prose that introduces the lab. Markdown allowed.
+  Plain prose that introduces the lab. Rendered as one plain-text
+  paragraph: no Markdown, no line breaks. Use step bodies for Markdown.
 nodes:                       # optional. Hint to the UI which containers
   - fw-1                     # are involved (drives the in-app terminal
   - kali-1                   # tabs and node UI shortcuts).
