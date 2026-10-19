@@ -232,7 +232,9 @@ steps:
       `vendor-to-field-weak`, and `ot-to-field-broad`. You do *not* need a
       separate "default action" switch - the policy default is already
       DENY and takes over once the broad allows are gone. Per-rule deletes
-      apply immediately. Keep the intra-zone rules `ot-intrazone` and
+      save the running config; the firewall reloads it when you commit
+      (`commit` at `containd#`, or **Commit** on the **Configuration**
+      page). Keep the intra-zone rules `ot-intrazone` and
       `field-intrazone`.
 
       **CLI path.** The `fw-1` terminal opens at `containd#`; run:
@@ -281,17 +283,22 @@ steps:
       "Your custom policy" once your commit lands. The exact JSON
       schema and CLI commands are in the hints below.
 
-      **Before you commit (web UI: before you move on), close the
-      remote-access hole.** The weak `enterprise-to-vendor` rule also
-      allows RDP 3389 and VNC 5900, and it is not one of the five broad
-      allows you deleted in Stage 2. Replace it with rule 6 (TCP 22,
-      80, 443 only), then confirm from Kali that enterprise → vendor
-      remote access is blocked: run
-      `nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal. Both
-      ports must be `filtered`. If either is `open`, your enterprise →
-      vendor rule is broader than rule 6 or the weak rule survived -
-      fix it before you commit. The commit succeeds and the banner
-      turns green either way; nothing else warns you about this gap.
+      **Close the remote-access hole, commit, then prove it.** The weak
+      `enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900, and
+      it is not one of the five broad allows you deleted in Stage 2.
+      Replace it with rule 6 (TCP 22, 80, 443 only) and **commit**: the
+      firewall keeps enforcing the last committed rules until you do, so
+      a test before the commit only describes the old policy. In the web
+      UI, **Create rule** and **Delete** save the running config but do
+      not reload the firewall either - run `commit` at `containd#` (or
+      **Commit** on the **Configuration** page) after your last edit.
+      Then confirm from Kali that enterprise → vendor remote access is
+      blocked: run `nmap -Pn -p 3389,5900 10.20.20.10` in the Kali
+      terminal. Both ports must be `filtered`. If either is `open`, your
+      enterprise → vendor rule is broader than rule 6 or the weak rule
+      survived - fix the rule and commit again. The commit succeeds and
+      the banner turns green either way; nothing else warns you about
+      this gap.
       :::
 
       ### Required Rules
@@ -329,12 +336,13 @@ steps:
         *Learning (passive)*, which only observes - in Learning mode the
         function-code filter will **not** block.
 
-      Click **Create rule**. Each rule takes effect *immediately* - there
-      is no separate commit for individual rules, so just watch the rule
-      list grow. (Only *bulk* edits to the candidate JSON on the
-      **Configuration** page need a commit: an amber "candidate differs
-      from running" banner then appears at the top of every page - click
-      **Commit** on it, or **Review Candidate Diff** to inspect first.)
+      Click **Create rule** and watch the rule list grow. Each rule is
+      saved to the running config, but the firewall only loads the saved
+      rules when you commit - so after your last rule run `commit` at
+      `containd#`, or click **Commit** on the **Configuration** page.
+      (Bulk edits to the candidate JSON on the **Configuration** page show
+      an amber "candidate differs from running" banner first - click
+      **Commit** on it, or **Review Candidate Diff** to inspect.)
       :::
 
       :::hint Policy evidence at the containd CLI

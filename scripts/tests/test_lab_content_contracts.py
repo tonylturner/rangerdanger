@@ -542,11 +542,23 @@ class AdvancedTrackContracts(unittest.TestCase):
         text = scenario("firewall-implementation")["steps"][4]["description"]
         technical = text.split(":::technical\n", 1)[1].split("\n:::\n", 1)[0]
         flat = " ".join(technical.split())
-        self.assertIn("**Before you commit (web UI: before you move on), close the "
-                      "remote-access hole.**", flat)
+        self.assertIn("**Close the remote-access hole, commit, then prove it.**", flat)
         self.assertIn("`enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900", flat)
-        self.assertIn("`nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal", flat)
+        # The probe describes the committed policy: the rule change, the commit
+        # and the nmap appear in that order, and a failure loops back to commit.
+        self.assertLess(flat.index("Replace it with rule 6"), flat.index("and **commit**"))
+        self.assertLess(flat.index("and **commit**"),
+                        flat.index("`nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal"))
         self.assertIn("Both ports must be `filtered`", flat)
+        self.assertIn("fix the rule and commit again", flat)
+        self.assertNotIn("before you commit", flat.lower())
+        # containd (api/http/firewall_rule_handlers.go) saves per-rule web-UI
+        # edits without reloading the dataplane; only a commit applies them.
+        self.assertIn("**Create rule** and **Delete** save the running config but do "
+                      "not reload the firewall either", flat)
+        for index in (3, 4):
+            text = " ".join(scenario("firewall-implementation")["steps"][index]["description"].split())
+            self.assertNotIn("immediately", text)
         # Inline code keeps the pinned command inventory (and its Run count) unchanged.
         self.assertNotRegex(text, r"(?m)^\s+nmap ")
 
