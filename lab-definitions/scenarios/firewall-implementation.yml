@@ -13,15 +13,6 @@ description: >
   unauthorized cross-zone traffic will be blocked and logged,
   while critical substation operations continue without
   interruption.
-  v0.1.36-rc.2 uses the v0.1.35 application images.
-  Apply Hardened reference, not Apply Your Plan.
-  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
-  Override stale Phase 5/6 snippets with flags-first DNP3
-  (dnp3poll -a 2 -t 3s 10.40.40.21:20000) and FC1 Modbus
-  (mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20); read at most four coils on relay/capbank.
-  At containd#, export config prints JSON; copy it without redirection.
-  For Phase 5 SSH, use rangerdanger@10.30.30.20.
-  See docs/v0.1.36-hotfix.md.
 nodes:
   - fw-1
   - kali-1
@@ -39,7 +30,7 @@ steps:
     description: |
       In the Baseline Traffic Analysis, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
 
-      Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Phase 3.
+      Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Stage 3.
 
       :::findings-panel from=segmentation-requirements title="Your design verdicts (Lab 1.3)"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
@@ -59,15 +50,9 @@ steps:
       delivers NTP, the HMI reads state) and **unauthorized traffic fails**
       (an enterprise Modbus write or a vendor DNP3 command is denied and
       logged). That's what you'll put in place here, then validate in
-      Phases 5-6.
+      Stages 5-6.
 
       ### How you'll work
-
-      **Workshop errata:** Keep your plan as a design artifact. Apply **Hardened reference**,
-      not **Apply Your Plan**, in the policy panel. Execute Step verifies its label
-      without replacing it. A green apply/banner is not enforcement evidence; run the
-      report/retests and require authorized 8/8, unauthorized blocked 11/11, zero skipped,
-      plus healthy HMI.
 
       This lab runs **Guided by default**: you apply the policy with the
       **Apply Hardened** button below the step and
@@ -88,12 +73,6 @@ steps:
       Confirm you can reach the containd NGFW through either of its
       management interfaces. **Use whichever you prefer in this lab -
       both the Web UI and the CLI expose the same policy.**
-
-      **Workshop errata:** At containd# run `export config` to print JSON; it does not
-      support shell redirection. Copy that JSON to your evidence document.
-      Author/review using **Configuration** in the direct http://localhost:9080 UI
-      or use **Hardened reference**. The CLI JSON-file edit/import exercise is deferred;
-      do not edit a file the CLI never created, even if Phase 3's generated hint says to.
 
       **Option 1: Web UI**
 
@@ -134,7 +113,7 @@ steps:
       run the containd daemon binary. Only `containd cli` enters the
       appliance shell.)
 
-  - title: "Phase 1 - Verify current access under the weak baseline"
+  - title: "Stage 1 - Check weak-baseline access"
     expected_config: weak
     node: kali-1
     description: |
@@ -180,7 +159,7 @@ steps:
         - { from: eng-ws-1, host: 10.40.40.22, port: 502, note: "Modbus to regulator" }
         - { from: eng-ws-1, host: 10.40.40.23, port: 502, note: "Modbus to capbank" }
 
-  - title: "Phase 2 - Remove broad trust and establish default-deny"
+  - title: "Stage 2 - Remove broad trust and establish default-deny"
     expected_config: weak
     description: |
       Move from a permissive posture to default-deny for all
@@ -208,7 +187,7 @@ steps:
       deny rule - that's the vendor-mechanism difference.
 
       One nuance for later: default-deny *blocks* silently - it emits
-      no per-flow log. Phase 4 adds explicit logged DENY rules for the
+      no per-flow log. Stage 4 adds explicit logged DENY rules for the
       cross-zone pairs you most want visibility on, with the silent
       default-deny as the backstop for everything else.
       :::
@@ -233,11 +212,11 @@ steps:
 
       :::guided
       **On the Guided track you don't delete these by hand.** In the next
-      phase, **Apply Hardened** (or **Apply Your Plan**) replaces the weak
+      stage, **Apply Hardened** replaces the weak
       baseline wholesale - it removes the five broad allows above *and*
       adds the minimal rules in a single commit. Read the list above so
       you understand what's being removed and why, then move on - you'll
-      confirm default-deny holds in Phase 5/6. The manual Web UI / CLI
+      confirm default-deny holds in Stages 5-6. The manual Web UI / CLI
       steps below are the Advanced-track way to do the same removal.
       :::
 
@@ -276,17 +255,20 @@ steps:
       re-check your rule list and whether you committed.
       :::
 
-  - title: "Phase 3 - Create minimal required rules"
+  - title: "Stage 3 - Apply the reference rules"
     expected_config: hardened
     description: |
+      **Workshop note:**
+      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
+
       The six rules below are the contract for what cross-zone
       traffic the substation must allow. Everything else stays
       denied.
 
       :::guided
       Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
-      reference policy, or **Apply Your Plan** to push the policy
-      built from your Lab 1.4 picks. Then walk the rule table below
+      reference policy. Then walk the rule table below
       and confirm each row is present in containd's web UI
       ([http://localhost:9080](http://localhost:9080)) or via
       `show running-config` in the CLI. Understanding *what* is in
@@ -344,10 +326,7 @@ steps:
       :::
 
       :::hint Policy evidence at the containd CLI
-      At containd# run `export config` to print JSON; it does not support shell redirection.
-      Copy that JSON to your evidence document. For this release, author/review using
-      Configuration in the direct http://localhost:9080 UI or use Hardened reference. The CLI
-      JSON-file edit/import exercise is deferred; do not edit a file the CLI never created.
+      At containd# run `export config` to print the running policy for review:
 
           export config
 
@@ -371,7 +350,7 @@ steps:
       expect:
         firewall_config: improved
 
-  - title: "Phase 4 - Enable logging and visibility"
+  - title: "Stage 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
       A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
@@ -391,7 +370,7 @@ steps:
       The `firewall.rules` JSON schema has a `log: true` field. Add
       it to the rule object alongside `action` in Configuration at
       http://localhost:9080, or toggle the **Log matches** checkbox in the
-      Web UI's rule editor. The CLI file-edit/import exercise is deferred.
+      Web UI's rule editor.
       :::
 
       ### Verify your configuration committed
@@ -436,7 +415,7 @@ steps:
       blocked (TCP timeout + no kinetic change).
       :::
 
-  - title: "Phase 5 - Validate allowed traffic"
+  - title: "Stage 5 - Check authorized flows"
     expected_config: hardened
     node: rtac-1
     description: |
@@ -485,10 +464,13 @@ steps:
         - { host: 10.40.40.20, port: 20000, note: "RTAC DNP3 to relay" }
         - { host: 10.30.30.10, port: 1881, note: "OT ops to FUXA HMI" }
 
-  - title: "Phase 6 - Validate blocked traffic"
+  - title: "Stage 6 - Check denied flows"
     expected_config: hardened
     node: kali-1
     description: |
+      **Workshop note:**
+      - For final acceptance in Lab 2.4, require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+
       Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
 
       **From kali** (`kali-1` on the [Network Map](/console)):
@@ -563,9 +545,7 @@ steps:
       This step matters regardless of which path you chose at the
       top of the lab. If you applied the canned hardened reference,
       exporting gives you the starting point for your own future
-      edits. If you applied your Lab 1.4 plan, the export captures
-      what the planner produced from your picks. If you authored
-      the policy in containd, the export is the artifact you hand
+      edits. If you authored the policy in containd, the export is the artifact you hand
       to change management.
 
       **Web UI:** go to **Configuration** in the left nav and click
@@ -576,10 +556,10 @@ steps:
 
           export config
 
-      Copy that JSON to your evidence document. The appliance CLI prints JSON
-      only; it does not create a file through shell redirection. Save the copy
-      on your workstation and validate it there with `python3 -m json.tool`.
-      Browser export is optional only after your instructor verifies the download.
+      **Workshop note:**
+      - Copy that JSON to your evidence document; the appliance CLI does not support shell redirection. Validate the saved copy on your workstation with `python3 -m json.tool`.
+      - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
+      - Browser export is optional only after your instructor verifies the download.
 
       Your policy should contain:
 

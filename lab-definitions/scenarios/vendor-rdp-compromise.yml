@@ -10,12 +10,6 @@ description: >
   under the weak baseline, then apply containd rules that block
   remote-access protocols (RDP/3389, VNC/5900) from enterprise into the
   vendor DMZ - cutting the lateral path before it ever reaches OT.
-  v0.1.36-rc.2 uses the v0.1.35 application images.
-  Apply Hardened reference, not Apply Your Plan.
-  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
-  Treat red Execute/BLOCKED labels as warnings, not packet verdicts.
-  Run the real protocol retest, inspect device/HMI state and firewall evidence, then Mark Complete.
-  See docs/v0.1.36-hotfix.md.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -232,10 +226,9 @@ steps:
   - title: "Apply hardened policy"
     expected_config: hardened
     description: |
-      **Workshop errata:** Keep your plan as a design artifact. Choose/apply
-      **Hardened reference**, not **Apply Your Plan**, explicitly in the policy panel.
-      Execute Step verifies its label without replacing it. This check and a green
-      banner are not enforcement proof; run the report/retests.
+      **Workshop note:**
+      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
 
       Apply the hardened firewall configuration with **Apply Hardened**
       in the **containd NGFW - policy actions** panel below this step.
@@ -273,11 +266,9 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      In these images, Execute may report a red failure/BLOCKED when rejecting an unauthorized
-      action, and it will not advance automatically. That label is not a packet verdict. Run the
-      documented real protocol retest, inspect unchanged healthy device/HMI state and firewall
-      evidence, record the result, then Mark Complete. A refused/timeout connection without
-      state/evidence is not enough to claim DPI.
+      **Workshop note:**
+      - Execute may show red failure/BLOCKED without advancing. That label is not a packet verdict; it can reject before sending a packet. Run the real protocol retest, inspect healthy device/HMI state and firewall evidence, record the result, then Mark Complete.
+      - A refused/timeout connection without state/evidence is not enough to claim DPI.
 
       From Kali, re-scan and re-attempt the connection:
 

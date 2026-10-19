@@ -14,6 +14,76 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "lab-definitions/scenarios"
 
+# Exact decoded headers from 5805c11 (v0.1.35); no Git dependency at test time.
+RELEASE_HEADERS = {
+    "baseline-assessment": (
+        'Before you can segment a substation network, you need to understand two things: '
+        'what traffic actually exists between zones, and which of those flows are required '
+        "for normal operations. In this exercise you'll capture live traffic at the "
+        'firewall, use it to identify the critical conduits operations depends on, and frame'
+        ' concrete success criteria for segmentation - without building diagrams or '
+        'matrices.\n'
+    ),
+    "firewall-implementation": (
+        'You have identified the required flows, designed your requirements, and planned '
+        'which remediations to execute. Now you implement. You will replace the permissive '
+        'weak baseline on the containd NGFW with a least-privilege policy - applying it with'
+        ' one click on the Guided track, or authoring the rules yourself on the Advanced '
+        'track. By the end, unauthorized cross-zone traffic will be blocked and logged, '
+        'while critical substation operations continue without interruption.\n'
+    ),
+    "hardening-configurations": (
+        'Stress-test the policy you built in Lab 2.2 against the canonical '
+        'distribution-substation attack: a DNP3 Direct Operate (FC05) injection from Kali '
+        "that disables the recloser's auto-reclose and trips it, turning a brief flicker "
+        "into a sustained downstream outage. You'll run the attack under the weak baseline "
+        "(it succeeds), then under the hardened policy (it's blocked - by L4 source-pinning,"
+        ' by ICS DPI, or both, which is the defense-in-depth lesson). Optional Modbus '
+        'FC5/FC6 bonus attacks in the same step show the same defense generalizes.\n'
+    ),
+    "remediation-planning": (
+        'You have findings from the baseline assessment but not unlimited time, people, or '
+        'political capital. Pick which remediations to execute this quarter - knowing some '
+        "attack paths stay open because you can't fix everything at once. Your choices carry"
+        ' forward: skip vendor-access restriction and the later vendor-compromise attack '
+        'stays easier; skip protocol-aware filtering and the Modbus/DNP3 abuse labs stay '
+        'easier. Your plan has consequences.\n'
+    ),
+    "segmentation-requirements": (
+        'Using the baseline assessment findings, define what communications should be '
+        'allowed between each zone pair. Apply the principle of least privilege: deny by '
+        'default, allow only named flows required for operations. Then compare your '
+        'requirements to the improved containd configuration to see how they translate to '
+        'firewall rules.\n'
+    ),
+    "validation-evidence": (
+        'After applying the hardened firewall configuration in Lab 2.2 and stress-testing it'
+        ' in Lab 2.3, this exercise builds the formal evidence package: positive tests '
+        'confirming authorized flows still work, negative tests confirming unauthorized '
+        'flows are blocked, and PCAP evidence from the firewall. You generate it in one '
+        'click against the policy you have active - then read it like a reviewer would. This'
+        ' is the validation step required before any segmentation change goes to production.\n'
+    ),
+    "vendor-rdp-compromise": (
+        'Optional companion to Lab 2.3. Phished vendor credentials let an attacker RDP/VNC '
+        'into the vendor jump box from an enterprise foothold, then pivot east-west to OT '
+        "field devices. You'll walk the kill chain under the weak baseline, then apply "
+        'containd rules that block remote-access protocols (RDP/3389, VNC/5900) from '
+        'enterprise into the vendor DMZ - cutting the lateral path before it ever reaches '
+        'OT.\n'
+    ),
+}
+
+# The original promised plan-driven attacks, which reference-only enforcement retires.
+HEADER_EXCEPTIONS = {
+    "remediation-planning": (
+        "You have findings from the baseline assessment but not unlimited time, people, "
+        "or political capital. Pick which remediations to execute this quarter - knowing "
+        "some attack paths stay open because you can't fix everything at once. "
+        "Your plan guides design review; workshop enforcement uses the reference policy.\n"
+    ),
+}
+
 
 def scenario(name):
     return yaml.safe_load((SCENARIOS / f"{name}.yml").read_text())
@@ -78,48 +148,67 @@ class TerminalContracts(unittest.TestCase):
 
 
 class ErrataContracts(unittest.TestCase):
-    def test_headers_are_short_plain_paragraphs_with_rc2_reference(self):
-        # Full header budgets include the unchanged lab introductions.
-        ceilings = {
-            "firewall-implementation": 1100,
-            "hardening-configurations": 1050,
-            "remediation-planning": 600,
-            "validation-evidence": 900,
-            "vendor-rdp-compromise": 850,
-        }
-        for name, ceiling in ceilings.items():
-            text = scenario(name)["description"].strip()
+    def test_headers_match_release_except_reviewed_false_claim(self):
+        self.assertEqual({p.stem for p in SCENARIOS.glob("*.yml")}, set(RELEASE_HEADERS))
+        for name, original in RELEASE_HEADERS.items():
             with self.subTest(scenario=name):
-                self.assertLessEqual(len(text), ceiling)
-                self.assertNotIn("\n", text)
-                self.assertNotRegex(text, r"[`*]|\[[^]]+\]\(")
-                self.assertIn("v0.1.36-rc.2 uses the v0.1.35 application images.", text)
-                self.assertTrue(text.endswith("See docs/v0.1.36-hotfix.md."))
+                self.assertEqual(scenario(name)["description"],
+                                 HEADER_EXCEPTIONS.get(name, original))
+
+    def test_lab_text_has_no_release_strings(self):
         for path in SCENARIOS.glob("*.yml"):
             with self.subTest(path=path.name):
-                self.assertNotIn("v0.1.36-rc.1", path.read_text())
+                self.assertNotRegex(path.read_text(), r"(?i)\bv\d+\.\d+(?:\.\d+)?|\brc\.\d+")
 
-    def test_lab22_keeps_generated_step_overrides_in_header(self):
-        text = scenario("firewall-implementation")["description"]
-        for phrase in ("stale Phase 5/6", "flags-first", "FC1",
-                       "at most four coils", "export config prints JSON",
-                       "without redirection", "Phase 5 SSH",
-                       "rangerdanger@10.30.30.20"):
-            self.assertIn(phrase, text)
+    def test_lab22_titles_cannot_trigger_frozen_body_replacement(self):
+        # Frozen frontend/lib/scenario-runner-logic.ts:9-11; copy, do not import.
+        fragments = ("create minimal", "phase 3", "validate allowed", "phase 5",
+                     "validate blocked", "phase 6")
+        steps = scenario("firewall-implementation")["steps"]
+        for step in steps:
+            with self.subTest(title=step["title"]):
+                self.assertFalse(any(f in step["title"].lower() for f in fragments))
+        for number, step in enumerate(steps[2:8], 1):
+            self.assertTrue(step["title"].startswith(f"Stage {number} - "))
+        self.assertNotRegex(" ".join(s["description"] for s in steps), r"[Pp]hases? [1-6]")
 
-    def test_reference_workflow_is_visible_outside_injected_steps(self):
-        for name in ("remediation-planning", "firewall-implementation",
-                     "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"):
-            text = scenario(name)["description"]
-            with self.subTest(scenario=name):
-                for phrase in ("v0.1.35 application images", "Hardened reference",
-                               "not Apply Your Plan", "Require the report",
-                               "authorized 8/8", "unauthorized blocked 11/11", "0 skipped",
-                               "healthy HMI"):
-                    self.assertIn(phrase, text)
-        ui = (ROOT / "frontend/components/scenario-runner.tsx").read_text()
-        self.assertIn("{scenario.description}</p>", ui)
-        self.assertNotIn("injectDynamicContent(scenario.description", ui)
+    def test_workshop_notes_are_short_and_at_the_action(self):
+        expected = {
+            "remediation-planning": {2: ("Selections save automatically.", "click Mark Complete")},
+            "firewall-implementation": {
+                4: ("not **Apply Your Plan**", "without replacing it"),
+                7: ("authorized 8/8", "unauthorized blocked 11/11", "0 skipped"),
+                8: ("does not support shell redirection", "CLI JSON-file edit/import exercise is deferred")},
+            "hardening-configurations": {
+                3: ("not **Apply Your Plan**", "without replacing it"),
+                4: ("not a packet verdict", "does not prove FC5/6 rejection"),
+                5: ("PARTIAL may include", "Record current retest timestamps")},
+            "vendor-rdp-compromise": {
+                4: ("not **Apply Your Plan**", "without replacing it"),
+                5: ("not a packet verdict", "then Mark Complete")},
+            "validation-evidence": {
+                0: ("not **Apply Your Plan**",),
+                1: ("authorized 8/8", "unauthorized blocked 11/11", "0 skipped",
+                    "Do not accept the exercise banner alone")},
+        }
+        for name, locations in expected.items():
+            steps = scenario(name)["steps"]
+            for index, phrases in locations.items():
+                text = steps[index]["description"]
+                with self.subTest(scenario=name, step=index + 1):
+                    self.assertEqual(text.count("**Workshop note:**"), 1)
+                    note = text.split("**Workshop note:**\n", 1)[1].split("\n\n", 1)[0]
+                    self.assertGreaterEqual(len(re.findall(r"^- ", note, re.M)), 1)
+                    self.assertLessEqual(len(re.findall(r"^- ", note, re.M)), 3)
+                    for phrase in phrases:
+                        self.assertIn(phrase, note)
+                        self.assertEqual(sum(s["description"].count(phrase) for s in steps), 1)
+        for path in SCENARIOS.glob("*.yml"):
+            self.assertNotIn("Workshop errata", path.read_text())
+            for step in scenario(path.stem)["steps"]:
+                for note in step["description"].split("**Workshop note:**\n")[1:]:
+                    bullets = re.findall(r"^- ", note.split("\n\n", 1)[0], re.M)
+                    self.assertTrue(1 <= len(bullets) <= 3, path.name)
 
     def test_dnp3_and_grading_details_are_in_rendered_steps(self):
         for name in ("hardening-configurations", "validation-evidence"):
@@ -141,7 +230,7 @@ class ErrataContracts(unittest.TestCase):
             self.assertNotRegex(text, r"export config\s*>")
             self.assertNotIn("cat /tmp/student-policy.json", text)
             self.assertIn("Copy that JSON to your evidence document", text)
-        text = " ".join(scenario("firewall-implementation")["steps"][1]["description"].split())
+        text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
         self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
 
@@ -161,6 +250,14 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("Native RDP/VNC viewers require a GUI/DISPLAY", text)
         self.assertIn("terminal-only Kali use the existing SSH fallback", text)
         self.assertNotIn("no auth required", text)
+
+    def test_instructor_reference_matches_new_lab22_navigation(self):
+        text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
+        for step in scenario("firewall-implementation")["steps"][2:8]:
+            self.assertIn(step["title"], text)
+        self.assertIn("no longer see the plan-driven rule table", text)
+        self.assertIn("not in labs", text)
+        self.assertNotRegex(text, r"[Pp]hases? [1-6]")
 
     def test_errata_has_repo_only_update_and_every_mitigation(self):
         path = ROOT / "docs/v0.1.36-hotfix.md"
@@ -222,7 +319,7 @@ class BaselineContracts(unittest.TestCase):
                                      expected)
         for letter in "BCD":
             row = next(r for r in rows if f"**{letter}." in r)
-            self.assertIn("in v0.1.36", row)
+            self.assertIn("in this workshop", row)
         requirements = scenario("segmentation-requirements")["steps"][2]["description"]
         self.assertNotIn("all five critical conduits", requirements)
         self.assertIn("A/E autonomous and F/G intra-zone", requirements)
@@ -260,15 +357,13 @@ class ActionContracts(unittest.TestCase):
                      "vendor-rdp-compromise"):
             doc = scenario(name)
             steps = [s for s in doc["steps"] if
-                     s["title"].startswith(("Phase 3", "Apply hardened", "Apply the hardened"))]
+                     s["title"].startswith(("Stage 3", "Apply hardened", "Apply the hardened"))]
             self.assertEqual(len(steps), 1)
             with self.subTest(scenario=name):
                 self.assertEqual(steps[0]["action"],
                                  {"type": "check", "expect": {"firewall_config": "improved"}})
                 self.assertEqual(steps[0].get("expected_config"), "hardened")
-                # Lab 2.2 Phase 3 is replaced by the frozen frontend; use its overview.
-                visible_step = doc["steps"][0] if name == "firewall-implementation" else steps[0]
-                self.assertIn("without replacing it", visible_step["description"])
+                self.assertIn("without replacing it", steps[0]["description"])
 
     def test_planning_keeps_decision_ui_and_manual_completion(self):
         doc = scenario("remediation-planning")
@@ -277,7 +372,7 @@ class ActionContracts(unittest.TestCase):
         self.assertIn("Selections save automatically.", step["description"])
         self.assertIn("click Mark Complete", step["description"])
         self.assertIn("Do not use Execute Step", step["description"])
-        self.assertIn("Selections save automatically.", doc["description"])
+        self.assertIn("design artifact", step["description"])
 
     def test_frozen_runner_action_accounting(self):
         # evaluateTestStep auto-passes missing actions and decisions only.
@@ -328,13 +423,6 @@ class CommandContracts(unittest.TestCase):
                         ):
                             count = int(args[args.index("-c") + 1]) if "-c" in args else 1
                             self.assertLessEqual(count, 4)
-
-    def test_generated_command_overrides_are_scenario_level(self):
-        description = scenario("firewall-implementation")["description"]
-        for fragment in ("Phase 5/6", "dnp3poll -a 2 -t 3s 10.40.40.21:20000",
-                         "mbpoll -a 1 -r 1 -c 4 -1 -t 0"):
-            self.assertIn(fragment, description)
-
 
 if __name__ == "__main__":
     unittest.main()

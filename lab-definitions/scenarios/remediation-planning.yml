@@ -4,13 +4,10 @@ name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
 estimated_minutes: 18
 description: >
-  Prioritize remediation under a finite labor budget. Assess feasibility and
-  residual risk; this release grades the plan separately from reference enforcement.
-  v0.1.36-rc.2 uses the v0.1.35 application images.
-  Keep your plan as a design artifact; apply Hardened reference, not Apply Your Plan.
-  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
-  Selections save automatically. Finish a feasible plan, then click Mark Complete, not Execute Step.
-  Record your reflection. See docs/v0.1.36-hotfix.md.
+  You have findings from the baseline assessment but not unlimited time, people,
+  or political capital. Pick which remediations to execute this quarter - knowing
+  some attack paths stay open because you can't fix everything at once.
+  Your plan guides design review; workshop enforcement uses the reference policy.
 nodes: []
 tags:
   - planning
@@ -77,7 +74,7 @@ steps:
       in the next step. A role in red cannot absorb more work.
 
   - title: "Choose your remediation plan"
-    description: >
+    description: |
       Select the actions you will execute this quarter. The
       total effort must fit inside 500 hours AND each role's
       individual capacity. You will not be able to select
@@ -96,9 +93,9 @@ steps:
       per-role utilization. If any role is red, remove an
       action or choose a lighter one.
 
-      Selections save automatically. Do not use Execute Step for this decision
-      in the v0.1.35 application. Finish selecting a feasible plan, click Mark Complete,
-      then record your reflection.
+      **Workshop note:**
+      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when your plan is feasible, then record your reflection.
+      - Keep your plan as a design artifact; the later enforcement labs use the reference policy.
     action:
       type: decision
       budget_hours: 500

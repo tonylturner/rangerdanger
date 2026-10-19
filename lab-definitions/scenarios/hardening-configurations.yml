@@ -12,13 +12,6 @@ description: >
   hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
   both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
   bonus attacks in the same step show the same defense generalizes.
-  v0.1.36-rc.2 uses the v0.1.35 application images.
-  Apply Hardened reference, not Apply Your Plan.
-  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
-  Test DNP3 Direct Operate from RTAC; require rejection and enabled reclose.
-  Treat red Execute labels and historical PARTIAL as warnings, not packet verdicts.
-  Record current retest evidence, then Mark Complete.
-  See docs/v0.1.36-hotfix.md.
 nodes:
   - kali-1
   - rtac-1
@@ -246,10 +239,9 @@ steps:
   - title: "Apply the hardened policy"
     expected_config: hardened
     description: |
-      **Workshop errata:** Keep your plan as a design artifact. Choose/apply
-      **Hardened reference**, not **Apply Your Plan**, explicitly in the policy panel.
-      Execute Step verifies its label without replacing it. This check and a green
-      banner are not enforcement proof; run the report/retests.
+      **Workshop note:**
+      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
 
       Get a hardened policy active in containd before the re-test.
       The policy banner at the top of this step is your signal -
@@ -302,15 +294,10 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      Only use the Hardened reference for the read-only DNP3 demonstration.
-      A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection.
-      Verify a Direct Operate is rejected and reclose remains enabled; then record the result.
-
-      In these images, Execute may report a red failure/BLOCKED when rejecting an unauthorized
-      action, and it will not advance automatically. That label is not a packet verdict. Run the
-      documented real protocol retest, inspect unchanged healthy device/HMI state and firewall
-      evidence, record the result, then Mark Complete. A refused/timeout connection without
-      state/evidence is not enough to claim DPI.
+      **Workshop note:**
+      - A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a Direct Operate is rejected and reclose remains enabled using the RTAC procedure below.
+      - Execute may show red failure/BLOCKED without advancing. That label is not a packet verdict; it can reject before sending a packet. Run the real protocol retest, inspect healthy device/HMI state and firewall evidence, record the result, then Mark Complete.
+      - A refused/timeout connection without state/evidence is not enough to claim DPI.
 
       Repeat the DNP3 Direct Operate from Kali:
 
@@ -425,11 +412,9 @@ steps:
       Confirm the attack was blocked, the substation is healthy,
       and the hardened firewall policy is active.
 
-      PARTIAL may include successful attacks from earlier weak-policy training or smoke runs.
-      Record current retest timestamps; instructor reviews those events separately from prior
-      writes. Require healthy restored state and blocked current attempts; do not clear audit or
-      repeatedly reset/re-attack to make the banner green. Current successful unauthorized
-      writes still fail.
+      **Workshop note:**
+      - PARTIAL may include successful attacks from earlier weak-policy training or smoke runs. Record current retest timestamps for separate instructor review.
+      - Require healthy restored state and blocked current attempts; do not clear audit or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes still fail.
 
       The cross-zone DNP3 control surface is closed. Lab 2.4 takes
       this further with a holistic positive/negative test pass

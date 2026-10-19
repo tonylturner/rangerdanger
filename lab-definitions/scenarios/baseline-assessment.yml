@@ -349,13 +349,13 @@ steps:
 
       ### Group 2 - Cross-zone scenario flows
 
-      Only present when the traffic generator is running (engineering or vendor activity). B/C/D remain in the inventory, but are blocked by the hardened reference in v0.1.36 because they are unencrypted maintenance paths. A later version will restore restricted conduits.
+      Only present when the traffic generator is running (engineering or vendor activity). B/C/D remain in the inventory, but are blocked by the hardened reference in this workshop because they are unencrypted maintenance paths. A later version will restore restricted conduits.
 
       | Flow | Source → Destination | Protocol | Rule |
       |------|---------------------|----------|------|
-      | **B. Eng-ws → RTAC** | `10.20.20.20` → `10.30.30.20` | HTTP 8080 | **Blocked by the hardened reference in v0.1.36** |
-      | **C. Eng-ws → OpenPLC** | `10.20.20.20` → `10.30.30.30` | HTTP 8080 | **Blocked by the hardened reference in v0.1.36** |
-      | **D. Vendor-jump → HMI** | `10.20.20.10` → `10.30.30.10` | FUXA 1881 | **Blocked by the hardened reference in v0.1.36** |
+      | **B. Eng-ws → RTAC** | `10.20.20.20` → `10.30.30.20` | HTTP 8080 | **Blocked by the hardened reference in this workshop** |
+      | **C. Eng-ws → OpenPLC** | `10.20.20.20` → `10.30.30.30` | HTTP 8080 | **Blocked by the hardened reference in this workshop** |
+      | **D. Vendor-jump → HMI** | `10.20.20.10` → `10.30.30.10` | FUXA 1881 | **Blocked by the hardened reference in this workshop** |
 
       ### Group 3 - Intra-zone, invisible to the firewall
 
