@@ -246,6 +246,10 @@ steps:
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.20.20.0/24 and ip.dst==10.30.30.0/24' 2>/dev/null | head -15
 
+      Empty output is valid: record `NOT_OBSERVED` if no Vendor/DMZ → OT
+      traffic occurred during this capture window. It does not prove denial.
+      Use the packet-count sanity check above to confirm the PCAP was read.
+
       **Is Enterprise speaking to OT or Field directly?** (Should be empty in a healthy baseline - hold on to that result for the active-probe step.)
 
         tshark -r /home/abc/pcaps/baseline.pcap -Y 'ip.src==10.10.10.0/24 and (ip.dst==10.30.30.0/24 or ip.dst==10.40.40.0/24)' 2>/dev/null
@@ -403,7 +407,7 @@ steps:
       **Enterprise → OT Ops** on ICS ports - did you see corporate IT speaking ICS to RTAC / HMI / OpenPLC?
       :::
 
-      :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
+      :::decision id=vendor-to-ot options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED
       **Vendor DMZ → OT Ops** on Modbus or HMI control ports - was the vendor zone reaching OT on more than just SSH/HTTPS?
       :::
 
@@ -422,24 +426,27 @@ steps:
 
       1. **Enterprise → Field on Modbus/DNP3** - `NOT_OBSERVED`. The traffic generator and autonomous baseline don't produce flows from `10.10.10.0/24`. You don't see this in the capture *because nobody made it happen during your capture window*. That doesn't mean the path is closed - it just wasn't exercised.
       2. **Enterprise → OT Ops on ICS ports** - `NOT_OBSERVED`. Same reason as above.
-      3. **Vendor → OT Ops on Modbus/HMI control** - `EXPOSURE_OBSERVED`. Step 4's eng-ws (vendor zone) probes against RTAC and OpenPLC are in the capture.
+      3. **Vendor → OT Ops on Modbus/HMI control** - `EXPOSURE_OBSERVED` if your capture contains eng-ws/vendor probes against RTAC, OpenPLC or HMI. Otherwise record `NOT_OBSERVED`: the capture may end before those probes, and autonomous traffic need not exercise this path.
       4. **Non-RTAC OT Ops → Field** - `NOT_OBSERVED`. RTAC is the only OT host that polls field devices. The HMI, historian, and OpenPLC don't poll field directly in the autonomous baseline.
       5. **Unauthorized Modbus writes / DNP3 Direct Operate** - NOT_OBSERVED in the prescribed read-only capture: step 4 sends reads/HTTP, not Modbus writes or DNP3 Direct Operate. Reachability is potential exposure, not evidence a write occurred. Lab 2.3 supplies the controlled write demonstration. If you ran extra commands, report what your capture actually contains.
 
-      Four categories landed at `NOT_OBSERVED` - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
+      Four categories normally land at `NOT_OBSERVED`; Vendor → OT Ops may too - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
       :::
 
   - title: "Probe for latent exposure"
     expected_config: weak
     node: kali-1
     description: |
-      Four of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
+      Four of your passive findings may have landed at `NOT_OBSERVED`, or all five if Vendor → OT Ops was also absent. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
 
       Run the probes below from the **kali terminal** (`kali-1` on the [Network Map](/console)) to test the paths your passive analysis didn't cover. Every command that returns data instead of timing out is a path that exists in the policy and was simply not exercised in the capture.
 
+      Use `-Pn` to skip host discovery across the firewall. Judge the TCP
+      port states, not "host seems down" or "0 hosts up".
+
       **Test enterprise → field on Modbus and DNP3:**
 
-          nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
+          nmap -Pn -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
@@ -447,7 +454,7 @@ steps:
 
       **Test enterprise -> OT Operations on ICS ports:**
 
-          nmap -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4
+          nmap -Pn -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4
 
       All of these should succeed. The weak baseline permits enterprise traffic to OT and field zones - your capture just happened not to contain any.
 

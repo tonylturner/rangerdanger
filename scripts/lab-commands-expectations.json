@@ -131,7 +131,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
+        "match": "\\A\\s*\\Z|\\b10\\.\\d+\\.\\d+\\.\\d+\\b"
       },
       "reason": null
     },
@@ -219,7 +219,7 @@
       },
       "reason": null
     },
-    "baseline-assessment|7|nmap -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4|1": {
+    "baseline-assessment|7|nmap -Pn -p 502,8080,20000 10.40.40.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -255,7 +255,7 @@
       },
       "reason": null
     },
-    "baseline-assessment|7|nmap -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4|1": {
+    "baseline-assessment|7|nmap -Pn -p 502,1881,8080,20000 10.30.30.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
@@ -898,7 +898,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|nmap -p 20000 10.40.40.20 --max-retries 1 -T4|1": {
+    "validation-evidence|2|nmap -Pn -p 20000 10.40.40.20 --max-retries 1 -T4|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",
@@ -926,7 +926,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|nmap -p 20000 10.40.40.21 --max-retries 1 -T4|1": {
+    "validation-evidence|2|nmap -Pn -p 20000 10.40.40.21 --max-retries 1 -T4|1": {
       "container": "rangerdanger-vendor-jump",
       "policy": "hardened",
       "prompt": "shell",
@@ -954,7 +954,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|nmap -p 20000 10.40.40.22 --max-retries 1 -T4|1": {
+    "validation-evidence|2|nmap -Pn -p 20000 10.40.40.22 --max-retries 1 -T4|1": {
       "container": "rangerdanger-historian-sim",
       "policy": "hardened",
       "prompt": "shell",
@@ -1016,8 +1016,8 @@
       },
       "reason": null
     },
-    "vendor-rdp-compromise|1|nmap -p 3389,5900 10.20.20.10|1": {
-      "container": "rangerdanger-vendor-jump",
+    "vendor-rdp-compromise|1|nmap -Pn -p 3389,5900 10.20.20.10|1": {
+      "container": "rangerdanger-kali",
       "policy": "weak",
       "prompt": "shell",
       "entry": "",
@@ -1060,7 +1060,8 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "bounded_poll": true
       },
       "reason": null
     },
@@ -1072,11 +1073,12 @@
       "action": "RUN",
       "oracle": {
         "intent": "read",
-        "match": "\\[\\d+\\]:\\s+[-\\d.]+"
+        "match": "\\[\\d+\\]:\\s+[-\\d.]+",
+        "bounded_poll": true
       },
       "reason": null
     },
-    "vendor-rdp-compromise|6|nmap -p 3389,5900 10.20.20.10|1": {
+    "vendor-rdp-compromise|6|nmap -Pn -p 3389,5900 10.20.20.10|1": {
       "container": "rangerdanger-kali",
       "policy": "hardened",
       "prompt": "shell",

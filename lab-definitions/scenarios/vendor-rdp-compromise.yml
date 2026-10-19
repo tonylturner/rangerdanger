@@ -42,10 +42,13 @@ steps:
       vendor DMZ on remote-access protocols. This is the lateral
       path the attacker will exploit.
 
-      From Kali (10.10.10.50), scan for remote-access services on
-      the vendor jump box (10.20.20.10):
+      Scan for remote-access services at 10.20.20.10.
+      From **Kali** (10.10.10.50):
 
-          nmap -p 3389,5900 10.20.20.10
+          nmap -Pn -p 3389,5900 10.20.20.10
+
+      `-Pn` skips host discovery across the firewall so you test TCP ports,
+      not whether discovery probes receive a response.
 
       You should see at least one of `3389/tcp` (RDP) or
       `5900/tcp` (VNC) open. The RangerDanger lab's vendor-jump is
@@ -127,6 +130,9 @@ steps:
       outcome (the RTAC aggregates field-device state and
       OpenDSS electrical results into Modbus registers a vendor
       host can read):
+
+      Both reads below are continuous polls. After recording samples from
+      each command, press Ctrl-C before running the next command.
 
           mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
 
@@ -278,7 +284,7 @@ steps:
 
       From Kali, re-scan and re-attempt the connection:
 
-          nmap -p 3389,5900 10.20.20.10
+          nmap -Pn -p 3389,5900 10.20.20.10
           xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger /cert:ignore
           xtightvncviewer 10.20.20.10:5900
 

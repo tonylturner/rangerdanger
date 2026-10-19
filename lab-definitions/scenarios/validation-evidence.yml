@@ -161,22 +161,26 @@ steps:
       :::
 
       :::hint Advanced: run the negative tests by hand
+      Use `-Pn` to skip host discovery across the firewall. A filtered TCP
+      port (with an open-port control under Weak baseline) proves denial;
+      "host seems down" or "0 hosts up" does not.
+
       From **Kali** (`10.10.10.50`, enterprise) - lead with DNP3, the primary
       attack vector from Lab 2.3:
 
-          nmap -p 20000 10.40.40.20 --max-retries 1 -T4
+          nmap -Pn -p 20000 10.40.40.20 --max-retries 1 -T4
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       From **vendor-jump** (`10.20.20.10`) - the vendor-pivot path (Lab
       2.3-bonus):
 
-          nmap -p 20000 10.40.40.21 --max-retries 1 -T4
+          nmap -Pn -p 20000 10.40.40.21 --max-retries 1 -T4
           dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       From **historian** (a single-homed non-RTAC OT host) - the source-pin
       test: only the RTAC may reach field, even from inside OT Ops:
 
-          nmap -p 20000 10.40.40.22 --max-retries 1 -T4
+          nmap -Pn -p 20000 10.40.40.22 --max-retries 1 -T4
 
       All should be filtered / time out. The same L4 source-pin closes Modbus
       too - repeat with port 502 and `mbpoll` for a two-protocol package.
