@@ -2,7 +2,7 @@ id: firewall-implementation
 order: "2.2"
 name: "Firewall Policy Implementation"
 summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds."
-estimated_minutes: 12
+estimated_minutes: 22
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
@@ -65,7 +65,7 @@ steps:
       :::track-picker
       :::
 
-      **Time budget:** ~12 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
+      **Time budget:** ~22 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
 
   - title: "Verify access to containd"
     expected_config: weak

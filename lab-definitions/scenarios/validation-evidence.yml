@@ -2,7 +2,7 @@ id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
 summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
-estimated_minutes: 6
+estimated_minutes: 7
 description: >
   After applying the hardened firewall configuration in Lab 2.2 and
   stress-testing it in Lab 2.3, this exercise builds the formal
@@ -65,7 +65,7 @@ steps:
       removed, default deny on cross-zone.
       :::
 
-      **Time budget:** ~6 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
+      **Time budget:** ~7 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
     action:
       type: check
       expect:

@@ -547,6 +547,33 @@ class AdvancedTrackContracts(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^\s+nmap ")
 
 
+class TimingContracts(unittest.TestCase):
+    # Guided golden-path estimates from the rc.3 student walkthrough QA.
+    MINUTES = {
+        "baseline-assessment": 20,
+        "segmentation-requirements": 10,
+        "remediation-planning": 12,
+        "firewall-implementation": 22,
+        "hardening-configurations": 12,
+        "vendor-rdp-compromise": 12,
+        "validation-evidence": 7,
+    }
+
+    def test_card_chip_time_budget_and_overview_agree(self):
+        overview = (ROOT / "docs/workshop-overview.md").read_text()
+        for name, minutes in self.MINUTES.items():
+            doc = scenario(name)
+            with self.subTest(scenario=name):
+                self.assertEqual(doc["estimated_minutes"], minutes)
+                budgets = re.findall(r"\*\*Time budget:\*\* ~(\d+) minutes", doc["steps"][0]["description"])
+                self.assertEqual(budgets, [str(minutes)])
+                self.assertRegex(overview, rf"\| `{name}` \| [^|]+ \| ~{minutes} min \|")
+        core = sum(m for n, m in self.MINUTES.items() if n != "vendor-rdp-compromise")
+        self.assertEqual(core, 83)
+        self.assertIn(f"Total ≈ {core} min for the 6 core labs (Guided path), "
+                      f"+{self.MINUTES['vendor-rdp-compromise']} min for the bonus.", overview)
+
+
 class CommandContracts(unittest.TestCase):
     def test_dnp3poll_flags_precede_endpoint_and_durations_have_units(self):
         for path in sorted(SCENARIOS.glob("*.yml")):

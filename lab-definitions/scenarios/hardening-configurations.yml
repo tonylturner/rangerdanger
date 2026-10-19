@@ -2,7 +2,7 @@ id: hardening-configurations
 order: "2.3"
 name: "Protocol-Hardened Configurations"
 summary: "Stress-test your firewall against the canonical distribution-substation attack: a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser from an unauthorized source. The lesson: on this build the L4 source pin is what enforces, so verify enforcement by device state, not by policy labels. Modbus FC5/FC6 variants available as optional bonus attacks."
-estimated_minutes: 10
+estimated_minutes: 12
 description: >
   Stress-test the policy you built in Lab 2.2 against the canonical
   distribution-substation attack: a DNP3 Direct Operate (FC05) injection
@@ -66,7 +66,7 @@ steps:
       re-read.
       :::
 
-      **Time budget:** ~10 minutes (Guided path - the primary DNP3 attack and re-test. The optional Modbus bonus attacks and the No-Ack evasion hint are extra).
+      **Time budget:** ~12 minutes (Guided path - the primary DNP3 attack and re-test. The optional Modbus bonus attacks and the No-Ack evasion hint are extra).
     action:
       type: check
       expect:
