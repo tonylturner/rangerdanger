@@ -96,7 +96,8 @@ policy() {
   fi
 }
 curl -fsS --max-time 10 "$API/api/health" >/dev/null
-while IFS='|' read -r idx scenario step cfg action intent; do
+# fd 3: docker exec children must never read the matrix from stdin.
+while IFS='|' read -r idx scenario step cfg action intent <&3; do
   if [ "$action" = SKIP ]; then
     skipped=$((skipped + 1))
     printf 'SKIP %s step %s (see reviewed reason in expectations)\n' "$scenario" "$step"
@@ -120,7 +121,7 @@ while IFS='|' read -r idx scenario step cfg action intent; do
   else
     err "$scenario step $step; stdout/stderr saved in $logs/$idx"
   fi
-done <"$matrix"
+done 3<"$matrix"
 # Restore the disposable range even after semantic failures.
 policy weak
 if [ "$executed" -lt "$minimum" ]; then

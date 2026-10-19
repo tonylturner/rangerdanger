@@ -14,6 +14,26 @@ extract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(extract)
 
 
+class SmokeLoopTests(unittest.TestCase):
+    def test_matrix_loop_survives_children_that_read_stdin(self):
+        # docker exec children inherited the matrix on stdin and swallowed it:
+        # the live gate ran 2 of 77 rows. Run the real loop with stdin-eating stubs.
+        source = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
+        start = source.index("# fd 3: docker exec children")
+        loop = source[start:source.index('done 3<"$matrix"', start) + len('done 3<"$matrix"')]
+        with tempfile.TemporaryDirectory() as directory:
+            matrix = Path(directory, "matrix")
+            matrix.write_text("".join(f"{i}|lab|{i}|weak|RUN|deny\n" for i in range(5)))
+            script = ("set -euo pipefail\nexecuted=0 passed=0 skipped=0 logs=x helper=x"
+                      " target=x PROBE_TIMEOUT=1\nmatrix=" + json.dumps(str(matrix)) + "\n"
+                      "python3() { cat >/dev/null; }\npolicy() { cat >/dev/null; }\n"
+                      "err() { echo \"$*\" >&2; }\n" + loop + "\necho \"$executed $passed\"\n")
+            result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                                    timeout=10, stdin=subprocess.DEVNULL)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "5 5")
+
+
 class ExtractTests(unittest.TestCase):
     def test_inventory_is_reviewed_and_pinned(self):
         rows = extract.extract(ROOT)
