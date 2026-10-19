@@ -177,20 +177,23 @@ steps:
       - *"Hospital and fire station without power"* under critical load
       - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
 
-      Notice that the **Last command from:** field on the recloser
-      shows the vendor jump host address (`10.20.20.10`) - not the
-      attacker IP (`10.10.10.50`). From the field device's
-      perspective, the command came from a trusted source. This is
-      why perimeter rules at the *RDP* hop matter: by the time the
-      Modbus packet reaches the recloser, it looks legitimate.
+      The One-Line shows **Last command from:** only under the feeder
+      breaker. To see who commanded the recloser, open the **Electrical
+      Detail** tab → **Protection & Device Status** → **Mid-Feeder
+      Recloser (79)**: its **Last Command** row shows the vendor jump
+      host address (`10.20.20.10`) - not the attacker IP
+      (`10.10.10.50`). From the field device's perspective, the command
+      came from a trusted source. This is why perimeter rules at the
+      *RDP* hop matter: by the time the Modbus packet reaches the
+      recloser, it looks legitimate.
 
       :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**
       :::
 
       :::decision id=vendor-source-attribution options=ATTACKER_IP,VENDOR_JUMP_IP,RTAC_IP correct=VENDOR_JUMP_IP
-      **What IP shows as the recloser's last-command source?** The
-      attack laundered through the vendor session.
+      **What IP shows as the recloser's Last Command source in
+      Electrical Detail?** The attack laundered through the vendor session.
       :::
     action:
       type: sequence

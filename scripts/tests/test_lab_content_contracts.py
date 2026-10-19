@@ -377,6 +377,17 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("the control that enforces", doc["description"])
         self.assertIn("the control that enforces", self.flat(doc["steps"][3]["description"]))
 
+    def test_recloser_attribution_points_to_electrical_detail(self):
+        # Frozen frontend: substation-one-line.tsx renders "Last command from" for
+        # the relay only; the recloser's source is substation-electrical.tsx's
+        # "Last Command" row in the "Mid-Feeder Recloser" card (Electrical Detail).
+        text = self.flat(scenario("vendor-rdp-compromise")["steps"][2]["description"])
+        self.assertIn("shows **Last command from:** only under the feeder breaker", text)
+        self.assertIn("**Electrical Detail** tab → **Protection & Device Status** → "
+                      "**Mid-Feeder Recloser (79)**: its **Last Command** row", text)
+        self.assertNotIn("**Last command from:** field on the recloser", text)
+        self.assertIn("Last Command source in Electrical Detail", text)
+
     def test_validation_report_is_described_as_tcp_matrix(self):
         text = self.flat(scenario("validation-evidence")["steps"][1]["description"])
         self.assertIn("The report is a TCP reachability matrix", text)
