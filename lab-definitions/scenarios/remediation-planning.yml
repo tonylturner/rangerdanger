@@ -4,13 +4,16 @@ name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
 estimated_minutes: 18
 description: >
-  You have findings from the baseline assessment but not unlimited time,
-  people, or political capital. Pick which remediations to execute this
-  quarter - knowing some attack paths stay open because you can't fix
-  everything at once. Your choices carry forward: skip vendor-access
-  restriction and the later vendor-compromise attack stays easier; skip
-  protocol-aware filtering and the Modbus/DNP3 abuse labs stay easier.
-  Your plan has consequences.
+  Prioritize remediation under a finite labor budget. Assess feasibility and
+  residual risk; this release grades the plan separately from reference enforcement.
+  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
+  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
+  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
+  no skipped tests, plus healthy HMI. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the
+  workshop errata.
+  Selections save automatically. Do not use Execute Step for this decision in the
+  v0.1.35 application. Finish selecting a feasible plan, click Mark Complete,
+  then record your reflection.
 nodes: []
 tags:
   - planning
@@ -95,6 +98,10 @@ steps:
       When you are done, review the Remaining hours and
       per-role utilization. If any role is red, remove an
       action or choose a lighter one.
+
+      Selections save automatically. Do not use Execute Step for this decision
+      in the v0.1.35 application. Finish selecting a feasible plan, click Mark Complete,
+      then record your reflection.
     action:
       type: decision
       budget_hours: 500

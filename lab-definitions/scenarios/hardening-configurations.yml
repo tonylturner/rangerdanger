@@ -12,8 +12,27 @@ description: >
   hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
   both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
   bonus attacks in the same step show the same defense generalizes.
+  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
+  verifies its label without replacing it. This check is not enforcement proof;
+  run the report/retests.
+  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
+  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
+  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
+  no skipped tests, plus healthy HMI. Only use the Hardened reference for the read-only DNP3
+  demonstration. A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a
+  Direct Operate is rejected and reclose remains enabled; then record the result. In these
+  images, Execute may report a red failure/BLOCKED when rejecting an unauthorized action, and it
+  will not advance automatically. That label is not a packet verdict. Run the documented real
+  protocol retest, inspect unchanged healthy device/HMI state and firewall evidence, record the
+  result, then Mark Complete. A refused/timeout connection without state/evidence is not enough
+  to claim DPI. PARTIAL may include successful attacks from earlier weak-policy training or
+  smoke runs. Record current retest timestamps; instructor reviews those events separately from
+  prior writes. Require healthy restored state and blocked current attempts; do not clear audit
+  or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes
+  still fail. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the workshop errata.
 nodes:
   - kali-1
+  - rtac-1
 tags:
   - dpi
   - dnp3
@@ -233,6 +252,7 @@ steps:
           source: "operator"
 
   - title: "Apply the hardened policy"
+    expected_config: hardened
     description: |
       Get a hardened policy active in containd before the re-test.
       The policy banner at the top of this step is your signal -
@@ -265,18 +285,16 @@ steps:
         field devices on Modbus 502 and DNP3 20000. Enterprise and
         vendor sources are blocked at the perimeter - this alone
         closes the primary DNP3 attack and both optional Modbus attacks.
-      - **ICS DPI:** DNP3 Direct Operate - both FC05 and FC06 (No
-        Ack) - restricted to the RTAC; Modbus writes (FC5/6/16)
-        restricted to the RTAC even on flows where reads are allowed.
-        This catches the same attacks if the L4 source pin is ever
-        loosened for monitoring access - e.g., letting the engineering
-        workstation read RTAC tags would punch through L4, but
-        DPI keeps "reads yes, writes no." (The No-Ack evasion variant
-        is covered in the re-test step's optional hint.)
+      - **ICS DPI:** DNP3 permits reads only (FC1), even from RTAC.
+        Both FC05 Direct Operate and FC06 Direct Operate No Ack are
+        denied. Modbus uses a separate source-pinned RTAC rule that
+        permits supervisory reads/writes; do not assume it becomes
+        read-only if you loosen that pin for monitoring access.
 
-      Either layer alone breaks each attack. Together they're
-      defense in depth - the re-test step demonstrates this with a
-      decision question.
+      For the primary DNP3 attack, the L4 pin and read-only DPI are
+      independent defenses. The optional Modbus attacks from Kali are
+      blocked by the source pin. Prove DNP3 DPI separately from RTAC
+      in the re-test; a Kali timeout alone demonstrates only the perimeter.
 
       :::plan-coverage title="Your plan vs the primary attack"
       :::
@@ -287,13 +305,20 @@ steps:
       the lab telling you the plan has a gap. Re-attempt with
       **Apply Hardened** to compare.
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
   - title: "Re-test the attack under the hardened policy"
     expected_config: hardened
     node: kali-1
     description: |
+      In these images, Execute may report a red failure/BLOCKED when rejecting an unauthorized
+      action, and it will not advance automatically. That label is not a packet verdict. Run the
+      documented real protocol retest, inspect unchanged healthy device/HMI state and firewall
+      evidence, record the result, then Mark Complete. A refused/timeout connection without
+      state/evidence is not enough to claim DPI.
+
       Repeat the DNP3 Direct Operate from Kali:
 
           dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off
@@ -310,6 +335,12 @@ steps:
       Holding registers 1 and 2 both read `1` (recloser_closed,
       reclose_enabled). The cross-zone DNP3 control surface is
       closed.
+
+      For a DPI test rather than just a perimeter test, select the RTAC
+      terminal under Hardened reference and run the same
+      `dnp3cmd 10.40.40.21:20000 -a 2 crob 1 latch-off` command. The RTAC
+      source is allowed through L4; Direct Operate must still be rejected and
+      `reclose_enabled` must remain true. Record firewall/packet evidence.
 
       ### Operational consequence at the HMI
 
@@ -348,9 +379,10 @@ steps:
       `[0]=1` (breaker still closed), `[3]≈0` (regulator tap
       unchanged). One rule, three attack paths neutralized.
 
-      DPI gives you the same defense if the L4 pin ever has to
-      loosen - for example to allow eng-ws read-only access. DPI
-      can say *"reads yes, writes no"*; port-only filtering can't.
+      These Modbus timeouts demonstrate source-pinning, not read-only DPI.
+      A future monitoring allowance would need an explicit read-only
+      function-code policy; the reference RTAC Modbus rule permits
+      supervisory writes.
       :::
 
       :::hint Optional: try to evade DPI with Direct Operate No Ack
@@ -397,6 +429,12 @@ steps:
     description: |
       Confirm the attack was blocked, the substation is healthy,
       and the hardened firewall policy is active.
+
+      PARTIAL may include successful attacks from earlier weak-policy training or smoke runs.
+      Record current retest timestamps; instructor reviews those events separately from prior
+      writes. Require healthy restored state and blocked current attempts; do not clear audit or
+      repeatedly reset/re-attack to make the banner green. Current successful unauthorized
+      writes still fail.
 
       The cross-zone DNP3 control surface is closed. Lab 2.4 takes
       this further with a holistic positive/negative test pass
