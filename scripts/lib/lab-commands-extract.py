@@ -96,7 +96,8 @@ def infer_node_per_command(desc: str, cmd_line_idx: int):
     # not just "From the vendor-jump terminal".
     preceding = "\n".join(lines[:cmd_line_idx]).lower()
     matches = re.finditer(
-        r'\b(?:from|on)\s+(?:the\s+)?[`*]*([a-z][a-z0-9-]*)\b', preceding)
+        r'(?<!not )\b(?:from|on|via)\s+(?:the\s+)?[`*]*([a-z][a-z0-9-]*)\b',
+        preceding)
     for m in reversed(list(matches)):
         if m.group(1) in KEYWORD_MAP:
             return KEYWORD_MAP[m.group(1)]
@@ -178,7 +179,8 @@ def extract(root=ROOT, target=""):
                     "scenario": scenario, "step": idx, "title": step["title"],
                     "policy": step.get("expected_config") or "weak",
                     "container": nodes.get(node, ""), "node": node,
-                    "command": command, "prompt": prompt, "entry": entry,
+                    "command": command, "prompt": prompt,
+                    "entry": entry if prompt == "shell" else "",
                     "action": action,
                     "occurrence": occurrences[command],
                 })
@@ -229,8 +231,16 @@ def validate_inventory(rows, data, target=""):
             raise ValueError(f"{key(row)}: missing reviewed oracle")
         if oracle["intent"] != "capture":
             re.compile(oracle["match"])
+        if oracle.get("bounded_poll") and (
+                oracle["intent"] != "read" or
+                not re.fullmatch(r"mbpoll .* 10\.[\d.]+", row["command"]) or
+                " -1 " in row["command"]):
+            raise ValueError(f"{key(row)}: bounded polling is only for continuous Modbus reads")
         if oracle["intent"] == "deny":
             re.compile(oracle["control_match"])
+        if "policy" in oracle and (
+                oracle["intent"] != "deny" or oracle["policy"] != "hardened"):
+            raise ValueError(f"{key(row)}: denial end-state override must be hardened")
         if oracle["intent"] == "capture" and not oracle.get("file"):
             raise ValueError("capture needs a file")
     minimum = sum(expected[s]["RUN"] for s in scenarios)
@@ -241,7 +251,7 @@ def validate_inventory(rows, data, target=""):
 
 def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
     combined = stdout + "\n" + stderr
-    if BAD_OUTPUT.search(combined):
+    if BAD_OUTPUT.search(combined) or "host execution timeout" in combined:
         return False
     intent = oracle["intent"]
     if intent == "capture":
@@ -254,7 +264,8 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
             allowed_rc = (0,)
         return control and rc in allowed_rc and bool(
             re.search(oracle["match"], combined, re.M))
-    return (rc == 0 and not re.search(r"(?:read|write).*failed", combined, re.I)
+    allowed_rc = (0, 124, 130, 143) if oracle.get("bounded_poll") else (0,)
+    return (rc in allowed_rc and not re.search(r"(?:read|write).*failed", combined, re.I)
             and bool(re.search(oracle["match"], stdout, re.M)))
 
 
@@ -465,9 +476,14 @@ def main():
         sys.exit(0 if passed else 1)
     elif args.matrix:
         for idx, row in enumerate(rows):
-            intent = (data["commands"][key(row)].get("oracle") or {}).get("intent", "skip")
+            oracle = data["commands"][key(row)].get("oracle") or {}
+            intent = oracle.get("intent", "skip")
+            # Manual intermediate policy edits are deliberately not automated.
+            # A reviewed deny probe can instead use the reference end state;
+            # its positive control still runs against weak in the shell gate.
+            policy = oracle.get("policy", row["policy"])
             print("|".join(str(x) for x in (
-                idx, row["scenario"], row["step"], row["policy"], row["action"], intent)))
+                idx, row["scenario"], row["step"], policy, row["action"], intent)))
         print(f"minimum executed: {minimum}", file=sys.stderr)
     else:
         print(json.dumps(rows, indent=2))

@@ -11,11 +11,19 @@ if ! python3 scripts/lib/containd-ui-probe.py "$API" >"$logs/containd.log" 2>&1;
 fi
 
 # A portal 200 alone misses RD-09: it can replace webtop's nginx site.
+# The v0.1.35 Selkies SPA has neither the old branding nor a noVNC title.
+# Receipts contain the body followed by curl's HTTP status on its own line.
+is_desktop_shell() {
+  [ "$(tail -n 1 "$1")" = "200" ] &&
+    grep -Fq 'touch-gamepad-host' "$1" &&
+    grep -Fq 'universalTouchGamepad.js' "$1"
+}
+
 ready=0
 for _ in $(seq 1 12); do
-  if docker exec rangerdanger-vendor-jump curl -fsS --max-time 4 \
+  if docker exec rangerdanger-vendor-jump curl -fsS --max-time 4 -w '\n%{http_code}\n' \
       http://127.0.0.1:3000/ >"$logs/vendor-3000.html" 2>"$logs/vendor-3000.stderr" &&
-      grep -Eiq 'kasm|novnc|webtop' "$logs/vendor-3000.html"; then
+      is_desktop_shell "$logs/vendor-3000.html"; then
     ready=1
     break
   fi
@@ -25,8 +33,9 @@ if [ "$ready" -ne 1 ]; then
   echo "FAIL vendor webtop :3000"
   fail=1
 fi
-if ! curl -fsS --max-time 10 "$API/apps/vendor-jump/" >"$logs/desktop.html" ||
-    ! grep -Eiq 'kasm|novnc|webtop' "$logs/desktop.html"; then
+if ! curl -fsS --max-time 10 -w '\n%{http_code}\n' \
+    "$API/apps/vendor-jump/" >"$logs/desktop.html" ||
+    ! is_desktop_shell "$logs/desktop.html"; then
   echo "FAIL proxied vendor desktop"
   fail=1
 fi

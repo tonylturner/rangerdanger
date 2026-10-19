@@ -69,7 +69,7 @@ steps:
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
         Policy & Rules → Firewall Rules (or Configuration → Running).
         Log in with `containd` / `containd` if the session has expired.
-      - **CLI:** from the `fw-1` terminal, `containd cli` then:
+      - **CLI:** the `fw-1` terminal opens at `containd#`; run:
 
             show running-config
 
@@ -189,6 +189,8 @@ steps:
       `fw-1` terminal, uses `-i any` + a BPF subnet filter (Docker's `ethN`
       ordering drifts between hosts):
 
+      At `containd#`, type `shell` before these Linux commands.
+
           tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap
 
       Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
@@ -203,6 +205,9 @@ steps:
       :::hint Advanced: assemble the evidence package by hand
       Beyond the test results + PCAP, a change board wants the policy itself
       and proof it's the one running. From the `fw-1` terminal:
+
+      If still in bash after the capture, type `containd cli` to return
+      to `containd#` before these appliance commands.
 
           export config
           show audit

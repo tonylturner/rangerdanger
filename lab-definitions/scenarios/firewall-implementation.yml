@@ -256,7 +256,7 @@ steps:
       apply immediately. Keep the intra-zone rules `ot-intrazone` and
       `field-intrazone`.
 
-      **CLI path.** From the `fw-1` terminal, type `containd cli`, then:
+      **CLI path.** The `fw-1` terminal opens at `containd#`; run:
 
           delete firewall rule enterprise-to-ot-weak
           delete firewall rule enterprise-to-field-weak
@@ -396,12 +396,8 @@ steps:
 
       ### Verify your configuration committed
 
-      Open a terminal on `fw-1` (below, or on the [Network Map](/console))
-      and inspect the audit log:
-
-          containd cli
-
-      …then at the `containd#` prompt:
+      Open a terminal on `fw-1` (below, or on the [Network Map](/console)).
+      It opens at `containd#`; inspect the audit log there:
 
           show audit
 
@@ -531,7 +527,7 @@ steps:
       2.3 step 1 baseline.
 
       **Administrative confirmation:** from the `fw-1` terminal,
-      `containd cli` then `show audit` - your recent `config.commit`
+      run `show audit` at `containd#` - your recent `config.commit`
       entries should appear, proving the rule set you're testing
       against is the rule set that's loaded.
 
@@ -576,7 +572,7 @@ steps:
       **Download full** to save the running config as JSON (**Download
       redacted** strips secrets if you're sharing it).
 
-      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
+      **CLI:** the `fw-1` terminal opens at `containd#`; run:
 
           export config
 
