@@ -51,12 +51,9 @@ def load_topology(root):
     nodes = {n["id"]: n.get("container", "") for n in topo.get("nodes", [])}
     return nodes
 
-# Mirror frontend/lib/exercise-nodes.ts inferNodeFromDescription:
-# the UI's Run button picks a source node from the step text by
-# scanning for IPs and host keywords (in order; first match wins).
-# The smoke test uses the same heuristic so a green smoke run means
-# "what the student actually clicks works," not "what some other
-# logic says should work."
+# Match frontend/lib/exercise-nodes.ts for the fallback only. Prefer the
+# documented per-command source header; this gate checks YAML recipes,
+# not the old frontend's generated replacement snippets.
 NODE_INFERENCE = [
     ("kali-1",        re.compile(r'10\.10\.10\.50|\bkali\b', re.I)),
     ("vendor-jump-1", re.compile(r'10\.20\.20\.10|\bvendor.?jump\b', re.I)),

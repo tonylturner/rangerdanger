@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts/lib/lab-commands-extract.py"
@@ -18,7 +19,7 @@ class ExtractTests(unittest.TestCase):
         rows = extract.extract(ROOT)
         data = json.loads(extract.EXPECTATIONS.read_text())
         extract.validate_inventory(rows, data)
-        self.assertGreaterEqual(sum(r["action"] == "RUN" for r in rows), 69)
+        self.assertEqual(sum(r["action"] == "RUN" for r in rows), data["minimum_executed"])
         self.assertTrue(any(r["command"].startswith("export config") for r in rows))
         self.assertTrue(any(r["prompt"] == "cli" for r in rows))
 
@@ -98,6 +99,41 @@ class ExtractTests(unittest.TestCase):
         argv, stdin = extract.invocation(row, 5)
         self.assertIn("containd cli", argv[-1])
         self.assertEqual(stdin, "shell\ntcpdump -i any\nexit\n")
+
+    def test_execute_preserves_both_streams(self):
+        row = {"scenario": "fixture", "step": 1, "container": "fixture",
+               "command": "mbpoll fixture", "prompt": "shell", "entry": ""}
+        result = subprocess.CompletedProcess([], 0, "[1]: 1\n", "tool diagnostic\n")
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                extract.subprocess, "run", return_value=result) as run:
+            self.assertTrue(extract.execute(
+                row, {"intent": "read", "match": r"\[1\]: 1"}, Path(directory), 5))
+            self.assertEqual((Path(directory) / "command.stdout").read_text(), result.stdout)
+            self.assertEqual((Path(directory) / "command.stderr").read_text(), result.stderr)
+            self.assertEqual(run.call_args.args[0][:2], ["docker", "exec"])
+
+    def test_export_does_not_pass_on_printed_json_without_file(self):
+        row = {"scenario": "fixture", "step": 1, "container": "rangerdanger-firewall",
+               "command": "export config > /tmp/policy.json", "prompt": "cli", "entry": ""}
+        responses = [subprocess.CompletedProcess([], 0, '{"firewall": {}}', ""),
+                     subprocess.CompletedProcess([], 1, "", "No such file")]
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                extract.subprocess, "run", side_effect=responses):
+            self.assertFalse(extract.execute(
+                row, {"intent": "cli", "match": "firewall", "file": "/tmp/policy.json"},
+                Path(directory), 5))
+
+    def test_staged_transition_preserves_shell_input(self):
+        fixture = (
+            "import sys\n"
+            "assert sys.stdin.readline().strip() == 'shell'\n"
+            "print('__RD_SHELL_READY__', flush=True)\n"
+            "assert sys.stdin.readline().strip() == 'echo evidence'\n"
+            "print('evidence', flush=True)\n")
+        result = extract.run_staged_shell(
+            [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("evidence", result.stdout)
 
 
 if __name__ == "__main__":
