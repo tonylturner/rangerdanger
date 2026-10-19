@@ -119,9 +119,8 @@ The gate keeps `pipefail`, but drains terminal `| head -N` pipelines with
 masquerade as a reader failure. Missing/corrupt PCAPs and late reader failures
 still fail. A reviewed passive filter may return no matches only after a
 successful read; absence is `NOT_OBSERVED`, not enforcement proof.
-Continuous Modbus reads must tell students to press Ctrl-C. Only individually
-reviewed `bounded_poll` oracles accept the gate's bounded stop, and they still
-require valid samples without protocol/read errors.
+Every Run-button `mbpoll` read must terminate on its own (`-1`); the gate
+accepts only a zero exit with valid samples and no protocol/read errors.
 
 ### Hints - `:::hint`
 
