@@ -14,6 +14,8 @@ description: >
 nodes:
   - fw-1
   - eng-ws-1
+  - kali-1
+  - rtac-1
 tags:
   - assessment
   - pcap

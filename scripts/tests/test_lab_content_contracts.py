@@ -5,6 +5,7 @@ import ipaddress
 import json
 import re
 import shlex
+import subprocess
 import unittest
 
 import yaml
@@ -36,6 +37,45 @@ def reference_action(source, destination, protocol, port):
             continue
         return rule["action"]
     return policy["firewall"]["defaultAction"]
+
+
+class TerminalContracts(unittest.TestCase):
+    def test_all_declared_and_extracted_sources_have_tabs(self):
+        topology = yaml.safe_load((ROOT / "lab-definitions/substation-segmentation.yml").read_text())
+        containers = {n["container"]: n["id"] for n in topology["nodes"] if n.get("container")}
+        docs = {p.stem: scenario(p.stem) for p in SCENARIOS.glob("*.yml")}
+        for name, doc in docs.items():
+            for step in doc["steps"]:
+                sources = [step["node"]] if step.get("node") else []
+                sources.extend(t["from"] for t in step.get("action", {}).get("targets", [])
+                               if t.get("from"))
+                for source in sources:
+                    with self.subTest(scenario=name, source=source):
+                        self.assertIn(source, doc["nodes"])
+        # Execute only the shell extractor function, never the live smoke gate.
+        # Retains its CLI boundary when the inline Python becomes a separate tool.
+        shell = (ROOT / "scripts/lab-commands-smoke.sh").read_text()
+        function = shell.split("extract_commands() {", 1)[1].split("\n}\n", 1)[0]
+        result = subprocess.run(["bash", "-c", "extract_commands() {" + function +
+                                 "\n}\nextract_commands"], cwd=ROOT, text=True,
+                                capture_output=True, timeout=30, check=True)
+        self.assertTrue(result.stdout.strip())
+        for line in result.stdout.splitlines():
+            name, _, _, _, container, _ = line.split("|", 5)
+            with self.subTest(scenario=name, container=container):
+                self.assertIn(containers[container], docs[name]["nodes"])
+
+    def test_named_manual_sources_are_available_in_order(self):
+        expected = {
+            "baseline-assessment": ["fw-1", "eng-ws-1", "kali-1", "rtac-1"],
+            "hardening-configurations": ["kali-1", "rtac-1"],
+            "firewall-implementation": ["fw-1", "kali-1", "eng-ws-1", "rtac-1", "vendor-jump-1"],
+            "validation-evidence": ["kali-1", "vendor-jump-1", "eng-ws-1", "rtac-1",
+                                    "fw-1", "historian-1"],
+        }
+        for name, nodes in expected.items():
+            with self.subTest(scenario=name):
+                self.assertEqual(scenario(name)["nodes"], nodes)
 
 
 class BaselineContracts(unittest.TestCase):

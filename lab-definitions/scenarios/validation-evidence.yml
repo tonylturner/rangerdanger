@@ -15,6 +15,10 @@ description: >
 nodes:
   - kali-1
   - vendor-jump-1
+  - eng-ws-1
+  - rtac-1
+  - fw-1
+  - historian-1
 tags:
   - validation
   - testing

@@ -17,6 +17,7 @@ description: >
   run the report/retests.
 nodes:
   - kali-1
+  - rtac-1
 tags:
   - dpi
   - dnp3
