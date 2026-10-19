@@ -18,6 +18,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTATIONS = ROOT / "scripts/lab-commands-expectations.json"
 
+# Every reviewed oracle field the gate reads; anything else is a typo or a
+# retired mechanism that would otherwise be ignored silently.
+ORACLE_KEYS = {"intent", "match", "control_match", "nmap", "file",
+               "zero_rc_denial", "policy", "state"}
+
 SCENARIO_DIR = "lab-definitions/scenarios"
 TOPOLOGY    = "lab-definitions/substation-segmentation.yml"
 
@@ -229,13 +234,11 @@ def validate_inventory(rows, data, target=""):
         oracle = contract.get("oracle") or {}
         if oracle.get("intent") not in ("read", "deny", "capture", "cli"):
             raise ValueError(f"{key(row)}: missing reviewed oracle")
+        unknown = set(oracle) - ORACLE_KEYS
+        if unknown:
+            raise ValueError(f"{key(row)}: unknown oracle key {sorted(unknown)}")
         if oracle["intent"] != "capture":
             re.compile(oracle["match"])
-        if oracle.get("bounded_poll") and (
-                oracle["intent"] != "read" or
-                not re.fullmatch(r"mbpoll .* 10\.[\d.]+", row["command"]) or
-                " -1 " in row["command"]):
-            raise ValueError(f"{key(row)}: bounded polling is only for continuous Modbus reads")
         if oracle["intent"] == "deny":
             re.compile(oracle["control_match"])
         if "policy" in oracle and (
@@ -264,8 +267,7 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
             allowed_rc = (0,)
         return control and rc in allowed_rc and bool(
             re.search(oracle["match"], combined, re.M))
-    allowed_rc = (0, 124, 130, 143) if oracle.get("bounded_poll") else (0,)
-    return (rc in allowed_rc and not re.search(r"(?:read|write).*failed", combined, re.I)
+    return (rc == 0 and not re.search(r"(?:read|write).*failed", combined, re.I)
             and bool(re.search(oracle["match"], stdout, re.M)))
 
 

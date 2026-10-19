@@ -82,26 +82,14 @@ class ExtractTests(unittest.TestCase):
         self.assertTrue(extract.verdict(oracle, 0, "[1]: 1", ""))
         self.assertFalse(extract.verdict(oracle, 0, "[1]: 1", "Read failed"))
 
-    def test_reviewed_continuous_poll_requires_samples_and_clean_bounded_stop(self):
-        oracle = {"intent": "read", "match": r"\[1\]:\s+[01]", "bounded_poll": True}
-        for rc in (0, 124, 130, 143):
-            with self.subTest(rc=rc):
-                self.assertTrue(extract.verdict(oracle, rc, "[1]: 1", ""))
-                self.assertFalse(extract.verdict(oracle, rc, "", ""))
-                self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", "Read failed"))
-        for rc, err in ((1, ""), (127, ""), (124, "Illegal function"),
-                        (124, "host execution timeout")):
-            with self.subTest(rc=rc, err=err):
-                self.assertFalse(extract.verdict(oracle, rc, "[1]: 1", err))
-
-    def test_bounded_poll_is_rejected_for_single_shot_reads(self):
+    def test_unknown_oracle_keys_are_rejected(self):
+        # A retired mechanism such as bounded_poll must not linger unnoticed.
         rows = extract.extract(ROOT)
         data = json.loads(extract.EXPECTATIONS.read_text())
-        self.assertFalse(any((c.get("oracle") or {}).get("bounded_poll")
-                             for c in data["commands"].values()))
-        row = next(r for r in rows if r["command"].startswith("mbpoll ") and " -1 " in r["command"])
-        data["commands"][extract.key(row)]["oracle"]["bounded_poll"] = True
-        with self.assertRaisesRegex(ValueError, "bounded polling"):
+        self.assertTrue(all(set(c["oracle"]) <= extract.ORACLE_KEYS
+                            for c in data["commands"].values() if c.get("oracle")))
+        data["commands"][extract.key(rows[0])]["oracle"]["bounded_poll"] = True
+        with self.assertRaisesRegex(ValueError, "unknown oracle key"):
             extract.validate_inventory(rows, data)
 
     def test_vendor_filter_allows_not_observed_but_still_requires_reader_success(self):
