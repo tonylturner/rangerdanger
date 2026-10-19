@@ -163,7 +163,7 @@ into an image at build time:
 - Setup script changes
 - containd policy JSONs (`lab-definitions/firewall/*.json`)
 
-For the **v0.1.36-rc.2 repo-only hotfix**, keep the installed v0.1.35
+For the **v0.1.36-rc.3 repo-only hotfix**, keep the installed v0.1.35
 images and `VERSION=latest`: no pull, no rebuild. Do not use
 `stage-ssd-delta.sh`; its digest comparison selects rc images, not this
 repo-only path. Do not run setup again or stop the full stack.
@@ -172,14 +172,14 @@ Maintainers on macOS/Linux stage from the **release tag**, not HEAD or
 uncommitted files (the tag must already exist locally):
 
 ```sh
-./stage-ssd-repo-update.sh /Volumes/WORKSHOP_SSD/repo-update v0.1.36-rc.2
+./stage-ssd-repo-update.sh /Volumes/WORKSHOP_SSD/repo-update v0.1.36-rc.3
 ```
 
 This Git-only tool never calls Docker. Use a fresh output directory; it
 refuses existing artifact files. It writes exactly:
 
-- `rangerdanger-v0.1.36-rc.2.tgz` (tag archive, top directory `rangerdanger/`)
-- `rangerdanger-v0.1.36-rc.2.bundle` (complete tag history for offline clones)
+- `rangerdanger-v0.1.36-rc.3.tgz` (tag archive, top directory `rangerdanger/`)
+- `rangerdanger-v0.1.36-rc.3.bundle` (complete tag history for offline clones)
 - `SHA256SUMS` (both artifacts)
 - `REPO-UPDATE-README.md` (macOS/Linux and Windows student steps)
 
@@ -200,7 +200,7 @@ tracked repo files in the existing `~/rangerdanger`; `.env`, data and
 captures remain:
 
 ```sh
-tar xzf "$SSD/rangerdanger-v0.1.36-rc.2.tgz" -C ~ &&
+tar xzf "$SSD/rangerdanger-v0.1.36-rc.3.tgz" -C ~ &&
 cd ~/rangerdanger &&
 ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
@@ -210,8 +210,8 @@ checkout:
 
 ```sh
 cd ~/rangerdanger &&
-git fetch "$SSD/rangerdanger-v0.1.36-rc.2.bundle" tag v0.1.36-rc.2 &&
-git checkout --detach v0.1.36-rc.2 &&
+git fetch "$SSD/rangerdanger-v0.1.36-rc.3.bundle" tag v0.1.36-rc.3 &&
+git checkout --detach v0.1.36-rc.3 &&
 ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
 

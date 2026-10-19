@@ -304,14 +304,18 @@ class ErrataContracts(unittest.TestCase):
         path = ROOT / "docs/v0.1.36-hotfix.md"
         self.assertTrue(path.exists(), "student/instructor errata is missing")
         text = path.read_text()
-        self.assertIn("git fetch origin tag v0.1.36-rc.2 && git checkout --detach "
-                      "v0.1.36-rc.2 && ./scripts/apply-repo-update.sh", text)
+        self.assertIn("git fetch origin tag v0.1.36-rc.3 && git checkout --detach "
+                      "v0.1.36-rc.3 && ./scripts/apply-repo-update.sh", text)
         for phrase in ("How to update", "PowerShell", "scripts/apply-repo-update.ps1",
-                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.2`",
+                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.3`",
                        "no pull", "no rebuild", "checksum"):
             self.assertIn(phrase, text)
-        for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23):
+        for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23, 24):
             self.assertIn(f"RD-{number:02}", text)
+        self.assertTrue(text.startswith("# v0.1.36-rc.3 workshop errata\n"))
+        for path in ("docs/quickstart.md", "docs/workshop-ssd.md", "docs/v0.1.36-hotfix.md"):
+            with self.subTest(path=path):
+                self.assertNotRegex((ROOT / path).read_text(), r"rc\.[12]\b")
 
 
 class EnforcementContracts(unittest.TestCase):

@@ -164,29 +164,29 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
-## Repo-only v0.1.36-rc.2 update (existing v0.1.35 images)
+## Repo-only v0.1.36-rc.3 update (existing v0.1.35 images)
 
 From a **clean Git checkout** of the existing installation, macOS/Linux:
 
 ```bash
-git fetch origin tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh
+git fetch origin tag v0.1.36-rc.3 && git checkout --detach v0.1.36-rc.3 && ./scripts/apply-repo-update.sh
 ```
 
 Windows PowerShell 5.1+ (does not use PowerShell 7's `&&`):
 
 ```powershell
-git fetch origin tag v0.1.36-rc.2; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.2; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
+git fetch origin tag v0.1.36-rc.3; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.3; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
 ```
 
 For **SSD installs**, obtain the instructor's four-file repo-only update
-(`rangerdanger-v0.1.36-rc.2.tgz`, `rangerdanger-v0.1.36-rc.2.bundle`, `SHA256SUMS`, and
+(`rangerdanger-v0.1.36-rc.3.tgz`, `rangerdanger-v0.1.36-rc.3.bundle`, `SHA256SUMS`, and
 `REPO-UPDATE-README.md`). Follow its checksum verification first; stop on
 failure. For an **archive install (no `.git`)**, back up source edits and
 extract over the existing `~/rangerdanger` before running the new helper:
 
 ```sh
 SSD=/Volumes/WORKSHOP_SSD
-tar xzf "$SSD/rangerdanger-v0.1.36-rc.2.tgz" -C ~ &&
+tar xzf "$SSD/rangerdanger-v0.1.36-rc.3.tgz" -C ~ &&
 cd ~/rangerdanger &&
 ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
@@ -195,7 +195,7 @@ For an **offline Git clone**, never extract the archive over it; from the
 clean existing checkout:
 
 ```sh
-git fetch "$SSD/rangerdanger-v0.1.36-rc.2.bundle" tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
+git fetch "$SSD/rangerdanger-v0.1.36-rc.3.bundle" tag v0.1.36-rc.3 && git checkout --detach v0.1.36-rc.3 && ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
 
 On Windows use `Get-FileHash`, `tar.exe -xzf` for archive installs, and

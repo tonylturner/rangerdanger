@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-TAG = "v0.1.36-rc.2"
+TAG = "v0.1.36-rc.3"
 SCRIPT = "stage-ssd-repo-update.sh"
 
 
