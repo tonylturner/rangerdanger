@@ -883,10 +883,21 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?i)(?:timed? out|timeout|refused|filtered|no route to host)",
-        "control_match": "Result: SUCCESS",
+        "match": "(?i)(?:timed? out|timeout|refused|Result: SENT \\(no acknowledgement requested\\))",
+        "control_match": "Result: SENT \\(no acknowledgement requested\\)",
         "nmap": false,
-        "zero_rc_denial": true
+        "zero_rc_denial": true,
+        "state": {
+          "container": "rangerdanger-recloser-sim",
+          "field": "reclose_enabled",
+          "initial": true,
+          "allowed": false,
+          "denied": true,
+          "reset": {
+            "command": "enable_reclose",
+            "source": "reset-script"
+          }
+        }
       },
       "reason": null
     },
@@ -1003,7 +1014,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "match": "(?s)(?:(?=.*\\b20000/tcp\\s+filtered\\b).*|All 1 scanned ports on 10\\.40\\.40\\.20[^\\n]*(?:filtered|ignored states[^\\n]*\\nNot shown: 1 filtered tcp ports))",
         "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
         "nmap": true
       },
@@ -1031,7 +1042,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "match": "(?s)(?:(?=.*\\b20000/tcp\\s+filtered\\b).*|All 1 scanned ports on 10\\.40\\.40\\.21[^\\n]*(?:filtered|ignored states[^\\n]*\\nNot shown: 1 filtered tcp ports))",
         "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
         "nmap": true
       },
@@ -1059,7 +1070,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?s)(?=.*\\b20000/tcp\\s+filtered\\b).*",
+        "match": "(?s)(?:(?=.*\\b20000/tcp\\s+filtered\\b).*|All 1 scanned ports on 10\\.40\\.40\\.22[^\\n]*(?:filtered|ignored states[^\\n]*\\nNot shown: 1 filtered tcp ports))",
         "control_match": "(?s)(?=.*\\b20000/tcp\\s+open\\b).*",
         "nmap": true
       },
@@ -1182,7 +1193,7 @@
       "action": "RUN",
       "oracle": {
         "intent": "deny",
-        "match": "(?s)(?=.*\\b3389/tcp\\s+filtered\\b)(?=.*\\b5900/tcp\\s+filtered\\b).*",
+        "match": "(?s)(?:(?=.*\\b3389/tcp\\s+filtered\\b)(?=.*\\b5900/tcp\\s+filtered\\b).*|All 2 scanned ports on 10\\.20\\.20\\.10[^\\n]*(?:filtered|ignored states[^\\n]*\\nNot shown: 2 filtered tcp ports))",
         "control_match": "(?s)(?=.*\\b3389/tcp\\s+open\\b)(?=.*\\b5900/tcp\\s+open\\b).*",
         "nmap": true
       },

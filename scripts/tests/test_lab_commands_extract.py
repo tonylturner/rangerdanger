@@ -77,6 +77,11 @@ class ExtractTests(unittest.TestCase):
         row = next(v for k, v in data["commands"].items()
                    if k.startswith("vendor-rdp-compromise|6|nmap "))
         self.assertEqual(row["oracle"]["intent"], "deny")
+        summary = ("All 2 scanned ports on 10.20.20.10 are in ignored states.\n"
+                   "Not shown: 2 filtered tcp ports (no-response)")
+        self.assertTrue(extract.verdict(row["oracle"], 0, summary, "", control=True))
+        self.assertFalse(extract.verdict(
+            row["oracle"], 0, summary.replace("filtered", "closed"), "", control=True))
 
     def test_capture_requires_decodable_frames(self):
         oracle = {"intent": "capture"}
@@ -93,6 +98,7 @@ class ExtractTests(unittest.TestCase):
         row = {"container": "rangerdanger-firewall", "command": "tcpdump -i any",
                "prompt": "cli", "entry": ""}
         argv, stdin = extract.invocation(row, 5)
+        self.assertEqual(argv[4:8], ["timeout", "-s", "INT", "5"])
         self.assertEqual(argv[-2:], ["containd", "cli"])
         self.assertEqual(stdin, "tcpdump -i any\nexit\n")
         row.update(prompt="shell", entry="shell")
@@ -134,6 +140,35 @@ class ExtractTests(unittest.TestCase):
             [sys.executable, "-c", fixture], {"entry": "shell", "command": "echo evidence"}, 2)
         self.assertEqual(result.returncode, 0)
         self.assertIn("evidence", result.stdout)
+
+    def test_no_ack_requires_weak_state_change_and_denied_state_preservation(self):
+        row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}
+        state = {"field": "reclose_enabled", "initial": True, "allowed": False, "denied": True}
+        oracle = {"intent": "deny", "state": state}
+        for positive, after, expected in ((True, False, True), (True, True, False),
+                                          (False, True, True), (False, False, False)):
+            with self.subTest(positive=positive, after=after), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory)
+                (path / ("control.json" if positive else "result.json")).write_text('{"passed":true}')
+                observed = [{}, {"reclose_enabled": True}, {"reclose_enabled": after},
+                            {}, {"reclose_enabled": True}]
+                with patch.object(extract, "device_request", side_effect=observed) as request, \
+                        patch.object(extract, "execute_command", return_value=True), \
+                        patch.object(extract.time, "sleep"):
+                    self.assertEqual(extract.execute(
+                        row, oracle, path, 5, positive=positive, control=True), expected)
+                    self.assertTrue(request.call_args_list[-2].kwargs["reset"])
+
+    def test_no_ack_cleanup_failure_is_fatal(self):
+        row = {"scenario": "fixture", "step": 1, "command": "dnp3cmd fixture -no-ack"}
+        state = {"field": "reclose_enabled", "initial": True, "allowed": False, "denied": True}
+        observed = [{}, {"reclose_enabled": True}, {"reclose_enabled": True},
+                    {}, {"reclose_enabled": False}]
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(extract, "device_request", side_effect=observed), \
+                patch.object(extract, "execute_command", return_value=True), \
+                patch.object(extract.time, "sleep"), self.assertRaisesRegex(ValueError, "cleanup"):
+            extract.execute(row, {"intent": "deny", "state": state}, Path(directory), 5)
 
 
 if __name__ == "__main__":

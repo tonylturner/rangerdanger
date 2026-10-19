@@ -261,7 +261,7 @@ def verdict(oracle, rc, stdout, stderr, *, control=False, frames=None):
 def invocation(row, timeout):
     command = row["command"]
     prefix = ["docker", "exec", "-i", row["container"], "timeout",
-              "--signal=INT", str(timeout)]
+              "-s", "INT", str(timeout)]
     if row["container"] == "rangerdanger-firewall":
         if row["prompt"] == "cli":
             return prefix + ["containd", "cli"], command + "\nexit\n"
@@ -317,7 +317,7 @@ def run_staged_shell(argv, row, timeout):
             (errors + err).decode(errors="replace"))
 
 
-def execute(row, oracle, directory, timeout, positive=False, control=False):
+def execute_command(row, oracle, directory, timeout, positive=False, control=False):
     """Keep separate stdout/stderr files even on a timeout or exec failure."""
     directory.mkdir(parents=True, exist_ok=True)
     stem = directory / ("control" if positive else "command")
@@ -364,6 +364,58 @@ def execute(row, oracle, directory, timeout, positive=False, control=False):
     print(out, end="")
     print(err, end="", file=sys.stderr)
     print(f'{"PASS" if passed else "FAIL"} rc={rc}: {key(row)}')
+    return passed
+
+
+def device_request(state, directory, phase, reset=False):
+    """Out-of-band observer, never a replacement for the documented attack."""
+    argv = ["docker", "exec", state["container"], "timeout", "5",
+            "wget", "-qO-"]
+    if reset:
+        argv += ["--header=Content-Type: application/json",
+                 "--post-data=" + json.dumps(state["reset"])]
+    argv += ["http://127.0.0.1:8080/api/" + ("command" if reset else "state")]
+    response = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+    (directory / (phase + ".stdout")).write_text(response.stdout)
+    (directory / (phase + ".stderr")).write_text(response.stderr)
+    if response.returncode != 0:
+        raise ValueError(f"state observer failed: {response.stderr}")
+    document = json.loads(response.stdout)
+    if reset and document.get("result") != "executed":
+        raise ValueError(f"state reset failed: {document}")
+    return document
+
+
+def execute(row, oracle, directory, timeout, positive=False, control=False):
+    state = oracle.get("state")
+    if not state:
+        return execute_command(row, oracle, directory, timeout, positive, control)
+    directory.mkdir(parents=True, exist_ok=True)
+    phase = "control" if positive else "command"
+    # No-Ack sends can return rc=0 both when delivered and when dropped. Prove
+    # the weak control changed the device, then prove the denied send did not.
+    # Reset via the device-local HTTP observer and fail on dirty cleanup.
+    passed = False
+    try:
+        device_request(state, directory, phase + "-prepare", reset=True)
+        initial = device_request(state, directory, phase + "-before")
+        if initial[state["field"]] is not state["initial"]:
+            raise ValueError("state precondition did not take effect")
+        passed = execute_command(row, oracle, directory, timeout, positive, control)
+        time.sleep(1)  # Allow the once-only send to reach the device.
+        actual = device_request(state, directory, phase + "-after")
+        expected = state["allowed"] if positive else state["denied"]
+        passed = passed and actual[state["field"]] is expected
+    finally:
+        device_request(state, directory, phase + "-restore", reset=True)
+        restored = device_request(state, directory, phase + "-restored")
+        if restored[state["field"]] is not state["initial"]:
+            raise ValueError("state oracle cleanup failed")
+    result_path = directory / ("control.json" if positive else "result.json")
+    result = json.loads(result_path.read_text())
+    result.update(passed=passed, state_actual=actual[state["field"]], state_expected=expected)
+    result_path.write_text(json.dumps(result))
+    print(f'{"PASS" if passed else "FAIL"} device-state oracle: {key(row)}')
     return passed
 
 
