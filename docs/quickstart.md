@@ -164,36 +164,48 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
-## Repo-only v0.1.36-rc.1 update (existing v0.1.35 images)
+## Repo-only v0.1.36-rc.2 update (existing v0.1.35 images)
 
 From a **clean Git checkout** of the existing installation, macOS/Linux:
 
 ```bash
-git fetch origin tag v0.1.36-rc.1 && git checkout --detach v0.1.36-rc.1 && ./scripts/apply-repo-update.sh
+git fetch origin tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh
 ```
 
 Windows PowerShell 5.1+ (does not use PowerShell 7's `&&`):
 
 ```powershell
-git fetch origin tag v0.1.36-rc.1; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.1; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
+git fetch origin tag v0.1.36-rc.2; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.2; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
 ```
 
-For **Git-based SSD installs**, after obtaining the same clean detached
-tag checkout from the instructor's offline distribution, run:
+For **SSD installs**, obtain the instructor's four-file repo-only update
+(`rangerdanger-v0.1.36-rc.2.tgz`, `rangerdanger-v0.1.36-rc.2.bundle`, `SHA256SUMS`, and
+`REPO-UPDATE-README.md`). Follow its checksum verification first; stop on
+failure. For an **archive install (no `.git`)**, back up source edits and
+extract over the existing `~/rangerdanger` before running the new helper:
 
-```bash
-./scripts/apply-repo-update.sh --from-tarballs /Volumes/WORKSHOP_SSD
+```sh
+SSD=/Volumes/WORKSHOP_SSD
+tar xzf "$SSD/rangerdanger-v0.1.36-rc.2.tgz" -C ~ &&
+cd ~/rangerdanger &&
+./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
 
-```powershell
-.\scripts\apply-repo-update.ps1 -FromTarballs D:\WORKSHOP_SSD
+For an **offline Git clone**, never extract the archive over it; from the
+clean existing checkout:
+
+```sh
+git fetch "$SSD/rangerdanger-v0.1.36-rc.2.bundle" tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
 ```
 
+On Windows use `Get-FileHash`, `tar.exe -xzf` for archive installs, and
+`.\scripts\apply-repo-update.ps1 -FromTarballs $SSD`; see the
+[complete archive/clone PowerShell steps](v0.1.36-hotfix.md#ssd--offline-update).
 As in setup, the SSD parameter selects `docker-compose.offline.yml`; this
-helper does not load tarballs. Setup records no persistent offline-mode
-marker, so the parameter is required for SSD installs. Archive-only
-installs without Git metadata, and archives extracted over tracked files
-that produce local edits, are refused by this helper.
+helper does not load tarballs or read `.version`. Setup records no persistent
+offline-mode marker, so the parameter is required for SSD installs. Archive
+installs print that the Git guard was skipped; a `.git` directory or file
+retains the normal checkout and tracked-edit checks.
 
 The helper names and refuses tracked local edits (back them up first),
 checks that **every release image is already local**, validates Compose,

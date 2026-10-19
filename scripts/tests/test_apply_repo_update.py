@@ -101,6 +101,7 @@ class UpdateScriptStubTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="repo update ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
+        (self.root / ".git").mkdir()
         (self.root / "scripts").mkdir()
         for name in SCRIPTS:
             shutil.copyfile(ROOT / "scripts" / name, self.root / "scripts" / name)
@@ -187,6 +188,67 @@ class UpdateScriptStubTests(unittest.TestCase):
                 self.assertIn("proxy/nginx.conf", result.stdout + result.stderr)
                 self.assertIn("scripts/set-gateway.sh", result.stdout + result.stderr)
                 self.assertFalse(any(call[0] == "docker" for call in calls))
+
+    def test_archive_skips_git_guard_and_keeps_offline_overlay(self):
+        (self.root / ".git").rmdir()
+        for runner in self.runners:
+            with self.subTest(runner=runner[0]):
+                result, calls = self.run_script(runner, offline=True, TEST_FAIL="git")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("No .git metadata; skipped Git tracked-file guard", result.stdout)
+                self.assertFalse(any(call[0] == "git" for call in calls))
+                for call in calls:
+                    if call[:2] == ["docker", "compose"]:
+                        self.assertIn(str(self.root / "docker-compose.offline.yml"), call)
+                self.assertEqual(len(self.mutations(calls)), 2)
+
+    def test_git_metadata_file_keeps_tracked_edit_guard(self):
+        (self.root / ".git").rmdir()
+        (self.root / ".git").write_text("gitdir: /fixture/worktree\n")
+        for runner in self.runners:
+            with self.subTest(runner=runner[0]):
+                result, calls = self.run_script(runner, TEST_DIRTY=" M proxy/nginx.conf")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("proxy/nginx.conf", result.stdout + result.stderr)
+                self.assertFalse(any(call[0] == "docker" for call in calls))
+
+    def test_archive_keeps_all_non_git_preflights(self):
+        (self.root / ".git").rmdir()
+        for runner in self.runners:
+            for failure in ("old", "help", "images", "empty", "config"):
+                with self.subTest(runner=runner[0], failure=failure):
+                    result, calls = self.run_script(runner, offline=True, TEST_FAIL=failure)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(self.mutations(calls), [])
+            result, calls = self.run_script(runner, offline=True, TEST_MISSING="nginx:1.27-alpine")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("nginx:1.27-alpine", result.stdout + result.stderr)
+            self.assertEqual(self.mutations(calls), [])
+
+    def test_real_git_checkout_with_tracked_edits_is_refused(self):
+        # Use real Git for the guard; Docker remains an isolated executable stub.
+        (self.bin / "git").unlink()
+        for args in (
+            ["init", "-q", str(self.root)],
+            ["-C", str(self.root), "add", "scripts", "docker-compose.release.yml"],
+            ["-C", str(self.root), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"],
+        ):
+            subprocess.run(["git", *args], check=True, capture_output=True, timeout=30)
+        with (self.root / "docker-compose.release.yml").open("a") as stream:
+            stream.write("\n# local edit\n")
+        for runner in self.runners:
+            with self.subTest(runner=runner[0]):
+                self.log.unlink(missing_ok=True)
+                name, command = runner
+                suffix = ".sh" if name == "bash" else ".ps1"
+                result = subprocess.run(
+                    [*command, str(self.root / "scripts" / ("apply-repo-update" + suffix))],
+                    env=self.env, capture_output=True, text=True, timeout=30,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("docker-compose.release.yml", result.stdout + result.stderr)
+                self.assertFalse(self.log.exists(), "Docker must not be contacted")
 
     def test_missing_images_are_all_named_before_any_service_change(self):
         missing = "nginx:1.27-alpine,ghcr.io/example/vendor:v0.1.35"
