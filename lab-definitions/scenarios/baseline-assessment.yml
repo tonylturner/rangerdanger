@@ -71,9 +71,11 @@ steps:
 
       ### Inspect three inter-zone crossings
 
-      Click directly on the edges that cross between zones. Each
-      edge shows a tooltip listing which protocols are traversing
-      that boundary right now. Walk these three:
+      Open Segmentation Policy and inspect the Enterprise→Field, Vendor→OT Ops
+      and OT Ops→Field rows. Use drawn firewall-to-zone links to orient yourself;
+      a direct Enterprise→Field edge is not required. Policy rows show configured
+      permission, not evidence of observed traffic; step 7 tests reachability.
+      Inspect these three zone pairs:
 
       1. **Enterprise → Field** (`10.10.10.0/24` → `10.40.40.0/24`)
       2. **Vendor → OT Ops** (`10.20.20.0/24` → `10.30.30.0/24`)
@@ -91,11 +93,11 @@ steps:
       :::
 
       :::decision id=ent-to-field-protocols options=NO_ICS,MODBUS_OR_DNP3,UNCLEAR correct=MODBUS_OR_DNP3
-      **Enterprise → Field crossing - what did the tooltip show?** Under the weak baseline you should be seeing ICS protocols where you would not expect them.
+      **Enterprise → Field - which protocols does policy permit?** Under the weak baseline ICS protocols are permitted where you would not expect them.
       :::
 
       :::decision id=ot-to-field-protocols options=MODBUS_OR_DNP3,HTTP_ONLY,NOTHING correct=MODBUS_OR_DNP3
-      **OT Ops → Field crossing - what did the tooltip show?** This is the supervisory-control path the RTAC uses.
+      **OT Ops → Field - which protocols does policy permit?** This is the supervisory-control path the RTAC uses.
       :::
 
       **Time budget:** ~15 minutes (Guided path; the Advanced analyst hints are optional extras on top).
@@ -168,8 +170,17 @@ steps:
       > available for every command in the rest of the workshop.
 
       Open the firewall terminal (the **Show terminal** button above, or
-      `fw-1` on the [Network Map](/console)). The firewall runs a Linux shell
-      with `tcpdump`. Start a 60-second capture across all zone interfaces:
+      `fw-1` on the [Network Map](/console)). The firewall terminal opens the
+      containd appliance CLI (`containd#`). Type `shell` to enter bash, then run
+      tcpdump below. To return from bash use `containd cli`; never start the
+      containd daemon.
+
+      | Prompt | What you can run | How you got here |
+      |---|---|---|
+      | `containd#` | `show *`, `set *`, `commit`, `export config` - appliance commands | Default; opens here |
+      | `$` (bash) | `tcpdump`, `nft`, `ip`, generic Linux | Type `shell`, `bash`, or `exit` from `containd#` |
+
+      Start a 60-second capture across all interfaces from bash:
 
         tcpdump -i any -w /data/captures/baseline.pcap -G 60 -W 1 'not host 127.0.0.1'
 
@@ -185,7 +196,7 @@ steps:
         `N packets captured / M packets received by filter / 0 packets
         dropped by kernel` line confirms the capture was clean.
 
-      > **About the filter:** the only thing we exclude is `127.0.0.1` (loopback), which carries containd's own internal dataplane-to-engine RPC and is unrelated to the substation scenario. Every other packet in the capture is real scenario traffic - no management UI traffic, no platform telemetry, no external browser flows, because the RangerDanger platform runs on its own out-of-band management network and does not appear on any zone interface the firewall sees.
+      > **About the filter:** This filter excludes loopback only. `-i any` also sees the firewall's management interface, so 10.99.99.0/24 API/UI/telemetry may appear. Separate/ignore those conversations when inventorying workshop conduits. An ingress packet in an any-interface capture does not by itself prove delivery/forwarding.
 
   - title: "Analyze cross-zone flows"
     node: eng-ws-1
@@ -311,12 +322,12 @@ steps:
       > Reason from the output you just produced. You do not need to build a matrix or diagram. If you get stuck, expand the hint below to see the expected answer.
 
       :::hint Reveal expected answer
-      The substation has **two categories of required flows**:
+      The capture has **two categories of flows**:
 
       - **Autonomous baseline** - runs 24×7 regardless of students or exercises
       - **Scenario-driven** - only appears when the traffic generator is running to model engineering or vendor activity
 
-      Both are "required" - they represent legitimate operations - but they have very different semantic meaning in a capture.
+      Preserve autonomous GPS/RTAC and intra-zone HMI/historian operations. The scenario-driven maintenance examples are not all preserved by the hardened reference in this version. Vendor access after hardening is the shipped RTAC SSH/HTTPS management path; raw HTTP8080/HMI1881 paths B/C/D are blocked in this version, not permanently retired.
 
       ### Group 1 - Cross-zone autonomous baseline
 
@@ -324,21 +335,21 @@ steps:
 
       | Flow | Source → Destination | Protocol | Rule |
       |------|---------------------|----------|------|
-      | **A. GPS → field NTP** | `10.30.30.50` → `10.40.40.{20,21,22,23}` | UDP 123 | `ALLOW`, pin source to `10.30.30.50` |
-      | **E. RTAC → field DNP3** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 20000 | `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (object groups) |
-      | **E. RTAC → field Modbus** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 502 | `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (function codes) |
+      | **A. GPS → field NTP** | `10.30.30.50` → `10.40.40.{20,21,22,23}` | UDP 123 | **Preserve** - `ALLOW`, pin source to `10.30.30.50` |
+      | **E. RTAC → field DNP3** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 20000 | **Preserve** - `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (object groups) |
+      | **E. RTAC → field Modbus** | `10.30.30.20` → `10.40.40.{20,21,22,23}` | TCP 502 | **Preserve** - `ALLOW`, pin source to `10.30.30.20`, apply ICS DPI (function codes) |
 
       > **Why the RTAC's source IP is `10.30.30.20`, not `10.40.40.10`:** the RTAC is multi-homed (it also has a field_net interface at `10.40.40.10` for realism), but host-level routing on the RTAC deliberately sends all field-bound traffic through the OT Ops firewall. The wire-visible source is the OT Ops interface.
 
       ### Group 2 - Cross-zone scenario flows
 
-      Only present when the traffic generator is running (engineering or vendor activity). Write firewall rules to **restrict and pin** these.
+      Only present when the traffic generator is running (engineering or vendor activity). B/C/D remain in the inventory, but are blocked by the hardened reference in v0.1.36 because they are unencrypted maintenance paths. A later version will restore restricted conduits.
 
       | Flow | Source → Destination | Protocol | Rule |
       |------|---------------------|----------|------|
-      | **B. Eng-ws → RTAC** | `10.20.20.20` → `10.30.30.20` | HTTP 8080 | `ALLOW`, pin source to eng-ws |
-      | **C. Eng-ws → OpenPLC** | `10.20.20.20` → `10.30.30.30` | HTTP 8080 | `ALLOW`, pin source to eng-ws |
-      | **D. Vendor-jump → HMI** | `10.20.20.10` → `10.30.30.10` | FUXA 1881 | **Required but restrict** - legitimate pattern, but the baseline is too broad. Should be HTTPS-only, monitoring-only. Flagged for hardening in the next exercise. |
+      | **B. Eng-ws → RTAC** | `10.20.20.20` → `10.30.30.20` | HTTP 8080 | **Blocked by the hardened reference in v0.1.36** |
+      | **C. Eng-ws → OpenPLC** | `10.20.20.20` → `10.30.30.30` | HTTP 8080 | **Blocked by the hardened reference in v0.1.36** |
+      | **D. Vendor-jump → HMI** | `10.20.20.10` → `10.30.30.10` | FUXA 1881 | **Blocked by the hardened reference in v0.1.36** |
 
       ### Group 3 - Intra-zone, invisible to the firewall
 
@@ -346,19 +357,19 @@ steps:
 
       | Flow | Source → Destination | Protocol | Proof it exists |
       |------|---------------------|----------|-----------------|
-      | **F. HMI → RTAC** | `10.30.30.10` → `10.30.30.20` | Modbus 502 (every 2s) | RTAC's `device_comms` and the HMI poller sidecar being alive |
-      | **G. Historian → RTAC** | `10.30.30.40` → `10.30.30.20` | HTTP 8080 (every 5s) | Historian's `last_poll_time` and `last_reading` with live RTAC data |
+      | **F. HMI → RTAC** | `10.30.30.10` → `10.30.30.20` | Modbus 502 (every 2s) | **Preserve** - RTAC's `device_comms` and the HMI poller sidecar being alive |
+      | **G. Historian → RTAC** | `10.30.30.40` → `10.30.30.20` | HTTP 8080 (every 5s) | **Preserve** - Historian's `last_poll_time` and `last_reading` with live RTAC data |
 
       ### Answers to the three questions
 
-      - **Q1.** Flows **A** and **E** are the autonomous cross-zone flows (present in every capture regardless of the generator). Flows **B**, **C**, and **D** are the scenario cross-zone flows (present because you ran the generator). Together these five are the cross-zone flows you need firewall rules for.
+      - **Q1.** Flows **A** and **E** are the autonomous cross-zone flows (present in every capture regardless of the generator). Flows **B**, **C**, and **D** are the scenario cross-zone flows (present because you ran the generator). Preserve A/E; the hardened reference in this version denies B/C/D. Verify the actual authorized/unauthorized matrix, not a preserve-all-five assumption.
       - **Q2.** Flows **F** and **G** exist and are critical, but are invisible in the firewall capture because they are intra-zone.
-      - **Q3.** *Yes* - operations would still run, because these seven flows together cover every operational dependency. Anything else in the capture that isn't on this list is **exposure**, not a required flow.
+      - **Q3.** *Yes* - operations would still run, because A/E autonomous and F/G intra-zone operations continue. B/C/D are blocked maintenance examples in this version; engineering/vendor management uses RTAC SSH/HTTPS. Require a healthy HMI as well as the report.
 
       ### Key insights
 
       > **Insight #1 - The cross-zone firewall rules govern five flows.**
-      > Two (A, E) are the 24×7 operational baseline. Three (B, C, D) are legitimate but scenario-driven - they represent access patterns you'd narrow during hardening.
+      > Two (A, E) are the 24×7 operational baseline. Three (B, C, D) are scenario-driven unencrypted maintenance examples blocked by the hardened reference in this version.
 
       > **Insight #2 - Flows F and G are invisible to the firewall.**
       > They still need to be protected - but by host-level trust, network access controls within OT Ops, or physical security of the control room. The firewall is a powerful layer but it is not the whole story; defense in depth still applies to intra-zone communication.
@@ -398,8 +409,8 @@ steps:
       **Non-RTAC OT hosts → Field devices** - did anything other than the RTAC (10.30.30.20) reach relays / recloser / regulator / capbank?
       :::
 
-      :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=EXPOSURE_OBSERVED
-      **Unauthorized Modbus writes / DNP3 Direct Operate** - did the firewall produce visibility (logs, deny events) for write attempts from non-RTAC sources, or were they silent?
+      :::decision id=unauth-modbus-writes options=EXPOSURE_OBSERVED,LIKELY_OK,NOT_OBSERVED correct=NOT_OBSERVED
+      **Unauthorized Modbus writes / DNP3 Direct Operate** - did you actually observe a write or Direct Operate in your capture? Reachability alone does not prove a write occurred.
       :::
 
       Your findings become context for Lab 1.3, where you decide what the design should *do* about each one.
@@ -411,16 +422,16 @@ steps:
       2. **Enterprise → OT Ops on ICS ports** - `NOT_OBSERVED`. Same reason as above.
       3. **Vendor → OT Ops on Modbus/HMI control** - `EXPOSURE_OBSERVED`. Step 4's eng-ws (vendor zone) probes against RTAC and OpenPLC are in the capture.
       4. **Non-RTAC OT Ops → Field** - `NOT_OBSERVED`. RTAC is the only OT host that polls field devices. The HMI, historian, and OpenPLC don't poll field directly in the autonomous baseline.
-      5. **Unauthorized Modbus writes / DNP3 Direct Operate** - `EXPOSURE_OBSERVED`. Step 4's eng-ws mbpoll write commands against the regulator are in the capture. The firewall did not block them.
+      5. **Unauthorized Modbus writes / DNP3 Direct Operate** - NOT_OBSERVED in the prescribed read-only capture: step 4 sends reads/HTTP, not Modbus writes or DNP3 Direct Operate. Reachability is potential exposure, not evidence a write occurred. Lab 2.3 supplies the controlled write demonstration. If you ran extra commands, report what your capture actually contains.
 
-      Three categories landed at `NOT_OBSERVED` - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
+      Four categories landed at `NOT_OBSERVED` - but **that's a passive-monitoring artifact, not proof those paths are closed.** The next step (Probe for latent exposure) tests the connectivity directly. This is the most important pattern in OT assessments: **passive capture tells you what's been used, not what's possible.**
       :::
 
   - title: "Probe for latent exposure"
     expected_config: weak
     node: kali-1
     description: |
-      Three of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
+      Four of your passive findings landed at `NOT_OBSERVED`. That doesn't mean those paths are closed - it just means nobody used them during your capture window. In real OT assessments, **passive monitoring routinely misses paths an attacker can exercise on demand**. The threat model isn't *"what did I see"* - it's *"what's reachable."*
 
       Run the probes below from the **kali terminal** (`kali-1` on the [Network Map](/console)) to test the paths your passive analysis didn't cover. Every command that returns data instead of timing out is a path that exists in the policy and was simply not exercised in the capture.
 
@@ -443,7 +454,7 @@ steps:
       :::
 
       :::hint Why this matters for the design
-      The verdict you give in Lab 1.3 must address what's **reachable**, not just what's **observed**. If you only block the flows the capture showed (vendor → OT, unauth writes), the latent enterprise → field path still works - it was just dormant during your capture. A real attacker doesn't care whether the flow was in your last 30s of pcap; they care whether they can use it now.
+      The verdict you give in Lab 1.3 must address what's **reachable**, not just what's **observed**. If you only block the flows the capture showed (vendor → OT), the latent enterprise → field path still works - it was just dormant during your capture. A real attacker doesn't care whether the flow was in your last 30s of pcap; they care whether they can use it now.
 
       This is also why segmentation needs both perimeter rules (block reachability) AND visibility (logging + DPI) - so when a previously-dormant path gets exercised, you actually see it.
       :::
@@ -460,7 +471,7 @@ steps:
       You have now:
 
       - **Observed** real traffic at the firewall
-      - **Identified** the five critical conduits operations depends on
+      - **Identified** preserved autonomous/intra-zone flows and maintenance examples blocked in this version
       - **Found** which exposures showed in passive capture
       - **Confirmed** additional latent exposure via active probing
       - **Written** concrete success criteria

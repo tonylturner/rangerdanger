@@ -1,6 +1,8 @@
 """Offline contracts for content consumed by the frozen v0.1.35 images."""
 
 from pathlib import Path
+import ipaddress
+import json
 import re
 import shlex
 import unittest
@@ -14,6 +16,96 @@ SCENARIOS = ROOT / "lab-definitions/scenarios"
 
 def scenario(name):
     return yaml.safe_load((SCENARIOS / f"{name}.yml").read_text())
+
+
+def reference_action(source, destination, protocol, port):
+    """Evaluate the fixture's ordered zone/address/port rules, not a live firewall."""
+    def zone(address):
+        octet = address.split(".")[1]
+        return {"10": "wan", "20": "dmz", "30": "lan1", "40": "lan2"}[octet]
+
+    policy = json.loads((ROOT / "lab-definitions/firewall/substation-improved.json").read_text())
+    for rule in policy["firewall"]["rules"]:
+        if zone(source) not in rule["sourceZones"] or zone(destination) not in rule["destZones"]:
+            continue
+        if rule.get("sources") and not any(
+            ipaddress.ip_address(source) in ipaddress.ip_network(cidr) for cidr in rule["sources"]
+        ):
+            continue
+        if not any(p["name"] == protocol and p["port"] == str(port) for p in rule["protocols"]):
+            continue
+        return rule["action"]
+    return policy["firewall"]["defaultAction"]
+
+
+class BaselineContracts(unittest.TestCase):
+    def test_observation_key_does_not_invent_writes(self):
+        doc = scenario("baseline-assessment")
+        text = doc["steps"][5]["description"]
+        self.assertRegex(text, r"id=unauth-modbus-writes [^\n]*correct=NOT_OBSERVED")
+        self.assertIn("NOT_OBSERVED in the prescribed read-only capture", text)
+        self.assertNotIn("eng-ws mbpoll write commands", text)
+        self.assertIn("Four categories", text)
+        self.assertIn("Four of your passive findings", doc["steps"][6]["description"])
+        self.assertNotIn("capture showed (vendor → OT, unauth writes)",
+                         doc["steps"][6]["description"])
+
+    def test_flow_statuses_agree_with_reference_policy(self):
+        text = scenario("baseline-assessment")["steps"][4]["description"]
+        rows = [line for line in text.splitlines() if re.match(r"\| \*\*[A-G]\.", line)]
+        self.assertEqual(len(rows), 8)  # E has separate Modbus and DNP3 rows.
+        for row in rows:
+            with self.subTest(row=row):
+                # Status is authored per version, not an assertion these tuples
+                # must be denied forever. A future policy and text can change together.
+                status = row.split("|")[-2].lower()
+                self.assertTrue("preserve" in status or "blocked" in status)
+                expected = "DENY" if "blocked" in status else "ALLOW"
+                addresses = re.findall(r"`(10\.[^`]+)`", row)
+                source, destinations = addresses[:2]
+                if "{" in destinations:
+                    prefix, suffixes = destinations.split("{")
+                    destinations = [prefix + s for s in suffixes.rstrip("}").split(",")]
+                else:
+                    destinations = [destinations]
+                match = re.search(r"\b(UDP|TCP|HTTP|FUXA|Modbus) (\d+)", row)
+                self.assertIsNotNone(match)
+                protocol = "udp" if match[1] == "UDP" else "tcp"
+                for destination in destinations:
+                    self.assertEqual(reference_action(source, destination, protocol, match[2]),
+                                     expected)
+        for letter in "BCD":
+            row = next(r for r in rows if f"**{letter}." in r)
+            self.assertIn("in v0.1.36", row)
+        requirements = scenario("segmentation-requirements")["steps"][2]["description"]
+        self.assertNotIn("all five critical conduits", requirements)
+        self.assertIn("A/E autonomous and F/G intra-zone", requirements)
+        self.assertIn("in this version", requirements)
+        self.assertNotIn("deliberately retired", text)
+
+    def test_first_capture_teaches_prompt_transition(self):
+        text = scenario("baseline-assessment")["steps"][2]["description"]
+        self.assertIn("containd#", text)
+        self.assertIn("Type `shell` to enter bash", text)
+        self.assertLess(text.index("Type `shell`"), text.index("tcpdump -i"))
+        self.assertIn("containd cli", text)
+        self.assertIn("| Prompt |", text)
+
+    def test_capture_scope_does_not_hide_management(self):
+        text = scenario("baseline-assessment")["steps"][2]["description"]
+        self.assertIn("This filter excludes loopback only.", text)
+        self.assertIn("10.99.99.0/24", text)
+        self.assertIn("does not by itself prove delivery/forwarding", text)
+        self.assertIn("'not host 127.0.0.1'", text)
+        self.assertNotIn("no management UI traffic", text)
+
+    def test_map_task_uses_policy_rows_not_missing_edges(self):
+        text = scenario("baseline-assessment")["steps"][0]["description"]
+        self.assertIn("Open Segmentation Policy", text)
+        self.assertIn("Policy rows show configured permission", " ".join(text.split()))
+        self.assertNotIn("what did the tooltip show", text)
+        for decision in ("zones-located", "ent-to-field-protocols", "ot-to-field-protocols"):
+            self.assertIn(f"id={decision}", text)
 
 
 class ActionContracts(unittest.TestCase):

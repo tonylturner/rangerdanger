@@ -195,6 +195,6 @@ steps:
          *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
 
       5. **Operations are not broken by the segmentation change.**
-         *Test:* after applying rules, all five critical conduits from Lab 1.2 continue to work.
+         *Test:* A/E autonomous and F/G intra-zone operational dependencies continue; B/C/D insecure maintenance tuples fail under reference in this version. Verify the actual authorized/unauthorized matrix and healthy HMI.
 
-      > **Operational continuity is a hard constraint.** If your segmentation blocks any of the critical conduits you identified earlier, you will break operations.
+      > **Operational continuity is a hard constraint.** Preserve A/E and F/G from Lab 1.2. In this version the hardened reference blocks B/C HTTP8080 and D FUXA1881; engineering/vendor access after hardening uses RTAC SSH/HTTPS management, not encrypted replacements for those editors.
