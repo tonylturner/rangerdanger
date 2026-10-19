@@ -525,6 +525,28 @@ class ActionContracts(unittest.TestCase):
         self.assertEqual(auto_total, 18)
 
 
+class AdvancedTrackContracts(unittest.TestCase):
+    def test_custom_policy_authoring_checks_remote_access_before_commit(self):
+        # The weak enterprise-to-vendor rule carries 3389/5900 and is not among
+        # the five broad allows Stage 2 deletes, so a verbatim Advanced walk
+        # leaves RDP/VNC open; the reference policy denies both.
+        weak = json.loads((ROOT / "lab-definitions/firewall/substation-weak.json").read_text())
+        rule = next(r for r in weak["firewall"]["rules"] if r["id"] == "enterprise-to-vendor")
+        self.assertTrue({"3389", "5900"} <= {p["port"] for p in rule["protocols"]})
+        for port in (3389, 5900):
+            self.assertEqual(reference_action("10.10.10.50", "10.20.20.10", "tcp", port), "DENY")
+        text = scenario("firewall-implementation")["steps"][4]["description"]
+        technical = text.split(":::technical\n", 1)[1].split("\n:::\n", 1)[0]
+        flat = " ".join(technical.split())
+        self.assertIn("**Before you commit (web UI: before you move on), close the "
+                      "remote-access hole.**", flat)
+        self.assertIn("`enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900", flat)
+        self.assertIn("`nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal", flat)
+        self.assertIn("Both ports must be `filtered`", flat)
+        # Inline code keeps the pinned command inventory (and its Run count) unchanged.
+        self.assertNotRegex(text, r"(?m)^\s+nmap ")
+
+
 class CommandContracts(unittest.TestCase):
     def test_dnp3poll_flags_precede_endpoint_and_durations_have_units(self):
         for path in sorted(SCENARIOS.glob("*.yml")):

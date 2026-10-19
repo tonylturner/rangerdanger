@@ -280,6 +280,18 @@ steps:
       web UI or the appliance CLI. The banner above will switch to
       "Your custom policy" once your commit lands. The exact JSON
       schema and CLI commands are in the hints below.
+
+      **Before you commit (web UI: before you move on), close the
+      remote-access hole.** The weak `enterprise-to-vendor` rule also
+      allows RDP 3389 and VNC 5900, and it is not one of the five broad
+      allows you deleted in Stage 2. Replace it with rule 6 (TCP 22,
+      80, 443 only), then confirm from Kali that enterprise → vendor
+      remote access is blocked: run
+      `nmap -Pn -p 3389,5900 10.20.20.10` in the Kali terminal. Both
+      ports must be `filtered`. If either is `open`, your enterprise →
+      vendor rule is broader than rule 6 or the weak rule survived -
+      fix it before you commit. The commit succeeds and the banner
+      turns green either way; nothing else warns you about this gap.
       :::
 
       ### Required Rules
