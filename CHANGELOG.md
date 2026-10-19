@@ -30,6 +30,9 @@ moved to `docs/v0.1.36-hotfix.md`.
 - **Scenario-header errata were too long to read.** The v0.1.35 images
   show the header as one plain paragraph. Each header now gives only the
   rules for that lab; the detail moved to step bodies and the errata page.
+- **rc.1 CI failures.** ShellCheck SC2015 in `apply-repo-update.sh`, and
+  the Lab 2.2 schema example again shows the Modbus rule that the
+  frontend consistency test pins to the hardened reference.
 
 ## [v0.1.36-rc.1] - 2026-10-19
 
