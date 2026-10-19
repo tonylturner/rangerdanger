@@ -75,8 +75,8 @@ steps:
     expected_config: hardened
     description: |
       **Workshop note:**
-      - Require the actual report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI. Save the report, PCAP and notes for separate review.
-      - Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report. Do not accept the exercise banner alone.
+      - The report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI. Save the report, PCAP and notes.
+      - Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report. Trust the report, not the banner.
       - A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a Direct Operate is rejected and reclose remains enabled using Lab 2.3's RTAC re-test, not Kali.
 
       A segmentation change ships with *evidence*: proof that authorized
@@ -102,7 +102,7 @@ steps:
       - The **PCAP source analysis** should show only `10.30.30.20` (the
         RTAC) and `10.30.30.50` (GPS/NTP) reaching the field zone. Any other
         source IP is a leak.
-      - A FAIL means the workshop enforcement target has not been demonstrated; stop for instructor review.
+      - A FAIL means enforcement is not demonstrated yet: check Hardened reference is active, fix the ✗ rows, and re-run.
 
       ### Confirm operations at the HMI
 

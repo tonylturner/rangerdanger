@@ -413,8 +413,8 @@ steps:
       and the hardened firewall policy is active.
 
       **Workshop note:**
-      - PARTIAL may include successful attacks from earlier weak-policy training or smoke runs. Record current retest timestamps for separate instructor review.
-      - Require healthy restored state and blocked current attempts; do not clear audit or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes still fail.
+      - PARTIAL may include successful attacks from earlier weak-policy training or smoke runs. Record current retest timestamps; compare those events with earlier weak-policy writes.
+      - Check for healthy restored state and blocked current attempts; do not clear audit or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes still fail.
 
       The cross-zone DNP3 control surface is closed. Lab 2.4 takes
       this further with a holistic positive/negative test pass

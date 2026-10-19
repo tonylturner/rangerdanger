@@ -65,7 +65,7 @@ steps:
       fraction of zone-pair rows showed "-> would change"?**
       :::
 
-      :::hint Optional: see the Security Level the firewall is being graded against
+      :::hint Optional: see the Security Level target for the firewall
       With the **Purdue Model view** toggled on in [/console](/console),
       hover the **firewall node** - the tooltip shows a `Target SL-3 ·
       MET` (green) or `Target SL-3 · GAP` (red) badge derived from

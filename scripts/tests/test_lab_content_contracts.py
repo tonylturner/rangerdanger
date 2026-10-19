@@ -189,7 +189,7 @@ class ErrataContracts(unittest.TestCase):
             "validation-evidence": {
                 0: ("not **Apply Your Plan**",),
                 1: ("authorized 8/8", "unauthorized blocked 11/11", "0 skipped",
-                    "Do not accept the exercise banner alone")},
+                    "Trust the report, not the banner.")},
         }
         for name, locations in expected.items():
             steps = scenario(name)["steps"]
@@ -210,7 +210,7 @@ class ErrataContracts(unittest.TestCase):
                     bullets = re.findall(r"^- ", note.split("\n\n", 1)[0], re.M)
                     self.assertTrue(1 <= len(bullets) <= 3, path.name)
 
-    def test_dnp3_and_grading_details_are_in_rendered_steps(self):
+    def test_dnp3_and_self_check_details_are_in_rendered_steps(self):
         for name in ("hardening-configurations", "validation-evidence"):
             # Neither of these labs has Lab 2.2's generated-step replacement.
             step_index = 4 if name == "hardening-configurations" else 1
@@ -219,7 +219,10 @@ class ErrataContracts(unittest.TestCase):
             self.assertIn("A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection", text)
         text = scenario("validation-evidence")["steps"][1]["description"]
         self.assertIn("may PASS and auto-complete with no report or a FAIL report", text)
-        self.assertIn("Do not accept the exercise banner alone", text)
+        self.assertIn("Trust the report, not the banner.", text)
+        self.assertIn("The report is your proof:", text)
+        self.assertIn("Save the report, PCAP and notes.", text)
+        self.assertIn("check Hardened reference is active, fix the ✗ rows, and re-run", text)
         text = scenario("hardening-configurations")["steps"][3]["description"]
         self.assertIn("DNP3 permits reads only (FC1), even from RTAC", text)
 
@@ -233,6 +236,7 @@ class ErrataContracts(unittest.TestCase):
         text = " ".join(scenario("firewall-implementation")["steps"][8]["description"].split())
         self.assertIn("does not support shell redirection", text)
         self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
+        self.assertIn("Browser export is optional; the copied CLI JSON is your evidence.", text)
 
     def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):
         for name in ("hardening-configurations", "vendor-rdp-compromise"):
@@ -242,7 +246,30 @@ class ErrataContracts(unittest.TestCase):
             self.assertIn("then Mark Complete", text)
         text = scenario("hardening-configurations")["steps"][5]["description"]
         self.assertIn("Record current retest timestamps", text)
+        self.assertIn("compare those events with earlier weak-policy writes", text)
         self.assertIn("Current successful unauthorized writes still fail", " ".join(text.split()))
+
+    def test_workshop_guidance_has_no_instructor_grading_framing(self):
+        paths = [
+            *(ROOT / "lab-definitions").rglob("*.yml"),
+            ROOT / "docs/v0.1.36-hotfix.md",
+            ROOT / "docs/quickstart.md",
+            ROOT / "docs/workshop-ssd.md",
+            ROOT / "stage-ssd-repo-update.sh",
+        ]
+        grading = re.compile(
+            r"\binstructor\s+(?:review\w*|verif\w*|sign[- ]off)"
+            r"|\bfinal acceptance\b|\bseparate review\b|\bcourse completion\b"
+            r"|\bdo not accept\b|\brequire the (?:actual )?report\b"
+            r"|\bbeing graded against\b", re.I)
+        for path in paths:
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                self.assertNotRegex(path.read_text(), grading)
+        text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
+        self.assertIn("**Not covered by automated tests:**", text)
+        self.assertIn("Trust the report, not the banner.", text)
+        self.assertIn("Browser export/download is optional; the copied CLI JSON is your evidence.",
+                      text)
 
     def test_vnc_auth_and_headless_fallback_are_explicit(self):
         text = scenario("vendor-rdp-compromise")["steps"][1]["description"]

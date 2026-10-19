@@ -469,7 +469,7 @@ steps:
     node: kali-1
     description: |
       **Workshop note:**
-      - For final acceptance in Lab 2.4, require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+      - In Lab 2.4, the report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
 
       Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
 
@@ -559,7 +559,7 @@ steps:
       **Workshop note:**
       - Copy that JSON to your evidence document; the appliance CLI does not support shell redirection. Validate the saved copy on your workstation with `python3 -m json.tool`.
       - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
-      - Browser export is optional only after your instructor verifies the download.
+      - Browser export is optional; the copied CLI JSON is your evidence.
 
       Your policy should contain:
 
