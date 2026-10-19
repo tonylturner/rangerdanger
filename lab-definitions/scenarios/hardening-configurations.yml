@@ -12,24 +12,13 @@ description: >
   hardened policy (it's blocked - by L4 source-pinning, by ICS DPI, or
   both, which is the defense-in-depth lesson). Optional Modbus FC5/FC6
   bonus attacks in the same step show the same defense generalizes.
-  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
-  verifies its label without replacing it. This check is not enforcement proof;
-  run the report/retests.
-  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
-  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
-  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
-  no skipped tests, plus healthy HMI. Only use the Hardened reference for the read-only DNP3
-  demonstration. A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Verify a
-  Direct Operate is rejected and reclose remains enabled; then record the result. In these
-  images, Execute may report a red failure/BLOCKED when rejecting an unauthorized action, and it
-  will not advance automatically. That label is not a packet verdict. Run the documented real
-  protocol retest, inspect unchanged healthy device/HMI state and firewall evidence, record the
-  result, then Mark Complete. A refused/timeout connection without state/evidence is not enough
-  to claim DPI. PARTIAL may include successful attacks from earlier weak-policy training or
-  smoke runs. Record current retest timestamps; instructor reviews those events separately from
-  prior writes. Require healthy restored state and blocked current attempts; do not clear audit
-  or repeatedly reset/re-attack to make the banner green. Current successful unauthorized writes
-  still fail. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the workshop errata.
+  v0.1.36-rc.2 uses the v0.1.35 application images.
+  Apply Hardened reference, not Apply Your Plan.
+  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+  Test DNP3 Direct Operate from RTAC; require rejection and enabled reclose.
+  Treat red Execute labels and historical PARTIAL as warnings, not packet verdicts.
+  Record current retest evidence, then Mark Complete.
+  See docs/v0.1.36-hotfix.md.
 nodes:
   - kali-1
   - rtac-1
@@ -257,24 +246,23 @@ steps:
   - title: "Apply the hardened policy"
     expected_config: hardened
     description: |
+      **Workshop errata:** Keep your plan as a design artifact. Choose/apply
+      **Hardened reference**, not **Apply Your Plan**, explicitly in the policy panel.
+      Execute Step verifies its label without replacing it. This check and a green
+      banner are not enforcement proof; run the report/retests.
+
       Get a hardened policy active in containd before the re-test.
       The policy banner at the top of this step is your signal -
-      it must be **green** (hardened reference or your custom
-      policy) before the re-test will work.
+      it must show **Hardened reference** before the re-test.
 
       :::guided
       Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
-      reference policy, or **Apply Your Plan** if you built a
-      custom policy in Lab 2.2.
+      reference policy.
       :::
 
       :::technical
-      You already authored this policy in Lab 2.2 - here you just need
-      it running again. If your custom policy is still committed, the
-      banner already shows "Your custom policy" and you're set. If not,
-      re-commit it in containd's web UI or CLI (the authoring walkthrough
-      is in Lab 2.2's "Creating rules" hints) or use the **Apply Hardened**
-      button below as a fallback.
+      Keep your Lab 2.2 policy work for design review. Use the **Apply Hardened**
+      button below for this workshop's enforcement test, not a custom-policy commit.
 
       One DPI gotcha that bites *this* attack specifically: an **ICS
       Protocol Filter** rule defaults to **Rule Mode: Learning (passive)**,
@@ -304,9 +292,7 @@ steps:
 
       If your Lab 1.4 plan didn't pin RTAC-to-field
       (`pin-rtac-to-field`) AND didn't add DNP3 DPI (`dnp3-dpi`),
-      the re-test may still succeed under "Apply Your Plan" - that's
-      the lab telling you the plan has a gap. Re-attempt with
-      **Apply Hardened** to compare.
+      record that design gap. Keep **Hardened reference** active for the re-test.
     action:
       type: check
       expect:
@@ -316,6 +302,10 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
+      Only use the Hardened reference for the read-only DNP3 demonstration.
+      A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection.
+      Verify a Direct Operate is rejected and reclose remains enabled; then record the result.
+
       In these images, Execute may report a red failure/BLOCKED when rejecting an unauthorized
       action, and it will not advance automatically. That label is not a packet verdict. Run the
       documented real protocol retest, inspect unchanged healthy device/HMI state and firewall

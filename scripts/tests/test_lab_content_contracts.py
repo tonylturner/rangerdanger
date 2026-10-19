@@ -78,23 +78,57 @@ class TerminalContracts(unittest.TestCase):
 
 
 class ErrataContracts(unittest.TestCase):
+    def test_headers_are_short_plain_paragraphs_with_rc2_reference(self):
+        # Full header budgets include the unchanged lab introductions.
+        ceilings = {
+            "firewall-implementation": 1100,
+            "hardening-configurations": 1050,
+            "remediation-planning": 600,
+            "validation-evidence": 900,
+            "vendor-rdp-compromise": 850,
+        }
+        for name, ceiling in ceilings.items():
+            text = scenario(name)["description"].strip()
+            with self.subTest(scenario=name):
+                self.assertLessEqual(len(text), ceiling)
+                self.assertNotIn("\n", text)
+                self.assertNotRegex(text, r"[`*]|\[[^]]+\]\(")
+                self.assertIn("v0.1.36-rc.2 uses the v0.1.35 application images.", text)
+                self.assertTrue(text.endswith("See docs/v0.1.36-hotfix.md."))
+        for path in SCENARIOS.glob("*.yml"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("v0.1.36-rc.1", path.read_text())
+
+    def test_lab22_keeps_generated_step_overrides_in_header(self):
+        text = scenario("firewall-implementation")["description"]
+        for phrase in ("stale Phase 5/6", "flags-first", "FC1",
+                       "at most four coils", "export config prints JSON",
+                       "without redirection", "Phase 5 SSH",
+                       "rangerdanger@10.30.30.20"):
+            self.assertIn(phrase, text)
+
     def test_reference_workflow_is_visible_outside_injected_steps(self):
         for name in ("remediation-planning", "firewall-implementation",
                      "hardening-configurations", "vendor-rdp-compromise", "validation-evidence"):
             text = scenario(name)["description"]
             with self.subTest(scenario=name):
-                for phrase in ("v0.1.35 application images", "not Apply Your Plan",
-                               "authorized 8/8", "unauthorized blocked 11/11", "no skipped tests"):
+                for phrase in ("v0.1.35 application images", "Hardened reference",
+                               "not Apply Your Plan", "Require the report",
+                               "authorized 8/8", "unauthorized blocked 11/11", "0 skipped",
+                               "healthy HMI"):
                     self.assertIn(phrase, text)
         ui = (ROOT / "frontend/components/scenario-runner.tsx").read_text()
         self.assertIn("{scenario.description}</p>", ui)
         self.assertNotIn("injectDynamicContent(scenario.description", ui)
 
-    def test_dnp3_and_grading_warnings_are_scenario_level(self):
+    def test_dnp3_and_grading_details_are_in_rendered_steps(self):
         for name in ("hardening-configurations", "validation-evidence"):
-            text = scenario(name)["description"]
+            # Neither of these labs has Lab 2.2's generated-step replacement.
+            step_index = 4 if name == "hardening-configurations" else 1
+            text = scenario(name)["steps"][step_index]["description"]
             self.assertIn("Verify a Direct Operate is rejected and reclose remains enabled", text)
-        text = scenario("validation-evidence")["description"]
+            self.assertIn("A TCP PASS or the dnp3-dpi selection does not prove FC5/6 rejection", text)
+        text = scenario("validation-evidence")["steps"][1]["description"]
         self.assertIn("may PASS and auto-complete with no report or a FAIL report", text)
         self.assertIn("Do not accept the exercise banner alone", text)
         text = scenario("hardening-configurations")["steps"][3]["description"]
@@ -107,19 +141,19 @@ class ErrataContracts(unittest.TestCase):
             self.assertNotRegex(text, r"export config\s*>")
             self.assertNotIn("cat /tmp/student-policy.json", text)
             self.assertIn("Copy that JSON to your evidence document", text)
-        text = scenario("firewall-implementation")["description"]
+        text = " ".join(scenario("firewall-implementation")["steps"][1]["description"].split())
         self.assertIn("does not support shell redirection", text)
         self.assertIn("CLI JSON-file edit/import exercise is deferred", text)
-        self.assertIn("rangerdanger@10.30.30.20 hostname", text)
 
-    def test_rejection_and_historical_audit_warnings_survive_ui_injection(self):
+    def test_rejection_and_historical_audit_details_are_in_rendered_steps(self):
         for name in ("hardening-configurations", "vendor-rdp-compromise"):
-            text = scenario(name)["description"]
+            step_index = 4 if name == "hardening-configurations" else 5
+            text = scenario(name)["steps"][step_index]["description"]
             self.assertIn("That label is not a packet verdict", text)
             self.assertIn("then Mark Complete", text)
-        text = scenario("hardening-configurations")["description"]
+        text = scenario("hardening-configurations")["steps"][5]["description"]
         self.assertIn("Record current retest timestamps", text)
-        self.assertIn("Current successful unauthorized writes still fail", text)
+        self.assertIn("Current successful unauthorized writes still fail", " ".join(text.split()))
 
     def test_vnc_auth_and_headless_fallback_are_explicit(self):
         text = scenario("vendor-rdp-compromise")["steps"][1]["description"]
@@ -129,13 +163,13 @@ class ErrataContracts(unittest.TestCase):
         self.assertNotIn("no auth required", text)
 
     def test_errata_has_repo_only_update_and_every_mitigation(self):
-        path = ROOT / "docs/v0.1.36-rc.1-hotfix.md"
+        path = ROOT / "docs/v0.1.36-hotfix.md"
         self.assertTrue(path.exists(), "student/instructor errata is missing")
         text = path.read_text()
-        self.assertIn("git fetch origin tag v0.1.36-rc.1 && git checkout --detach "
-                      "v0.1.36-rc.1 && ./scripts/apply-repo-update.sh", text)
+        self.assertIn("git fetch origin tag v0.1.36-rc.2 && git checkout --detach "
+                      "v0.1.36-rc.2 && ./scripts/apply-repo-update.sh", text)
         for phrase in ("How to update", "PowerShell", "scripts/apply-repo-update.ps1",
-                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.1`",
+                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.2`",
                        "no pull", "no rebuild", "checksum"):
             self.assertIn(phrase, text)
         for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23):
@@ -232,7 +266,9 @@ class ActionContracts(unittest.TestCase):
                 self.assertEqual(steps[0]["action"],
                                  {"type": "check", "expect": {"firewall_config": "improved"}})
                 self.assertEqual(steps[0].get("expected_config"), "hardened")
-                self.assertIn("without replacing it", doc["description"])
+                # Lab 2.2 Phase 3 is replaced by the frozen frontend; use its overview.
+                visible_step = doc["steps"][0] if name == "firewall-implementation" else steps[0]
+                self.assertIn("without replacing it", visible_step["description"])
 
     def test_planning_keeps_decision_ui_and_manual_completion(self):
         doc = scenario("remediation-planning")
@@ -268,7 +304,8 @@ class CommandContracts(unittest.TestCase):
     def test_dnp3poll_flags_precede_endpoint_and_durations_have_units(self):
         for path in sorted(SCENARIOS.glob("*.yml")):
             for number, line in enumerate(path.read_text().splitlines(), 1):
-                for match in re.finditer(r"\bdnp3poll ((?:-|10\.)[^`\n]+)", line):
+                # Parentheses delimit plain-text header examples; backticks delimit Markdown.
+                for match in re.finditer(r"\bdnp3poll ((?:-|10\.)[^`\n)]+)", line):
                     command = match.group(1).strip()
                     with self.subTest(path=path.name, line=number):
                         self.assertRegex(

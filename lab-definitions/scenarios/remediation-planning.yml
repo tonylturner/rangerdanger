@@ -6,14 +6,11 @@ estimated_minutes: 18
 description: >
   Prioritize remediation under a finite labor budget. Assess feasibility and
   residual risk; this release grades the plan separately from reference enforcement.
-  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
-  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
-  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
-  no skipped tests, plus healthy HMI. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the
-  workshop errata.
-  Selections save automatically. Do not use Execute Step for this decision in the
-  v0.1.35 application. Finish selecting a feasible plan, click Mark Complete,
-  then record your reflection.
+  v0.1.36-rc.2 uses the v0.1.35 application images.
+  Keep your plan as a design artifact; apply Hardened reference, not Apply Your Plan.
+  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+  Selections save automatically. Finish a feasible plan, then click Mark Complete, not Execute Step.
+  Record your reflection. See docs/v0.1.36-hotfix.md.
 nodes: []
 tags:
   - planning

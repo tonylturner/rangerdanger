@@ -13,27 +13,15 @@ description: >
   unauthorized cross-zone traffic will be blocked and logged,
   while critical substation operations continue without
   interruption.
-  Generated Phase 5/6 snippets in the v0.1.35 frontend still put dnp3poll flags after
-  the host. Use flags-first, for example `dnp3poll -a 2 -t 3s 10.40.40.21:20000`.
-  Do not change dnp3cmd syntax. Generated field-device Modbus read snippets are stale:
-  use FC1 (`-t 0`), at most four coils for relay/capbank, not FC2 (`-t 1`) or count 5.
-  Illegal function/address is a protocol error, not evidence of a deny.
-  For example, `mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20`.
-  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
-  verifies its label without replacing it. This check is not enforcement proof;
-  run the report/retests.
-  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
-  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
-  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
-  no skipped tests, plus healthy HMI. At containd# run `export config` to print JSON; it does
-  not support shell redirection. Copy that JSON to your evidence document. For this release,
-  author/review using Configuration in the direct http://localhost:9080 UI or use Hardened
-  reference. The CLI JSON-file edit/import exercise is deferred; do not edit a file the CLI
-  never created. Phase 5's generated SSH example uses a nonexistent `eng` account in these
-  images. Use `ssh -o ConnectTimeout=3 rangerdanger@10.30.30.20 hostname`, password
-  `rangerdanger`, from the documented vendor/engineering source; verify host identity before
-  accepting its first lab key. See docs/v0.1.36-rc.1-hotfix.md in this checkout for the workshop
-  errata.
+  v0.1.36-rc.2 uses the v0.1.35 application images.
+  Apply Hardened reference, not Apply Your Plan.
+  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+  Override stale Phase 5/6 snippets with flags-first DNP3
+  (dnp3poll -a 2 -t 3s 10.40.40.21:20000) and FC1 Modbus
+  (mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20); read at most four coils on relay/capbank.
+  At containd#, export config prints JSON; copy it without redirection.
+  For Phase 5 SSH, use rangerdanger@10.30.30.20.
+  See docs/v0.1.36-hotfix.md.
 nodes:
   - fw-1
   - kali-1
@@ -75,8 +63,14 @@ steps:
 
       ### How you'll work
 
+      **Workshop errata:** Keep your plan as a design artifact. Apply **Hardened reference**,
+      not **Apply Your Plan**, in the policy panel. Execute Step verifies its label
+      without replacing it. A green apply/banner is not enforcement evidence; run the
+      report/retests and require authorized 8/8, unauthorized blocked 11/11, zero skipped,
+      plus healthy HMI.
+
       This lab runs **Guided by default**: you apply the policy with the
-      buttons below the step (**Apply Hardened** / **Apply Your Plan**) and
+      **Apply Hardened** button below the step and
       walk containd's UI and CLI to see exactly what landed - no rule syntax
       and no commit step. Prefer to author and commit the rules yourself?
       Switch to the **Advanced** track - recommended only if you're
@@ -94,6 +88,12 @@ steps:
       Confirm you can reach the containd NGFW through either of its
       management interfaces. **Use whichever you prefer in this lab -
       both the Web UI and the CLI expose the same policy.**
+
+      **Workshop errata:** At containd# run `export config` to print JSON; it does not
+      support shell redirection. Copy that JSON to your evidence document.
+      Author/review using **Configuration** in the direct http://localhost:9080 UI
+      or use **Hardened reference**. The CLI JSON-file edit/import exercise is deferred;
+      do not edit a file the CLI never created, even if Phase 3's generated hint says to.
 
       **Option 1: Web UI**
 

@@ -10,18 +10,12 @@ description: >
   under the weak baseline, then apply containd rules that block
   remote-access protocols (RDP/3389, VNC/5900) from enterprise into the
   vendor DMZ - cutting the lateral path before it ever reaches OT.
-  Choose/apply the intended policy explicitly in the policy panel, then Execute Step
-  verifies its label without replacing it. This check is not enforcement proof;
-  run the report/retests.
-  v0.1.36-rc.1 uses the v0.1.35 application images. Keep your plan as a design artifact. For
-  this workshop apply Hardened reference, not Apply Your Plan; a green apply/banner is not
-  enforcement evidence. Require the actual report: authorized 8/8, unauthorized blocked 11/11,
-  no skipped tests, plus healthy HMI. In these images, Execute may report a red failure/BLOCKED
-  when rejecting an unauthorized action, and it will not advance automatically. That label is
-  not a packet verdict. Run the documented real protocol retest, inspect unchanged healthy
-  device/HMI state and firewall evidence, record the result, then Mark Complete. A
-  refused/timeout connection without state/evidence is not enough to claim DPI. See
-  docs/v0.1.36-rc.1-hotfix.md in this checkout for the workshop errata.
+  v0.1.36-rc.2 uses the v0.1.35 application images.
+  Apply Hardened reference, not Apply Your Plan.
+  Require the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+  Treat red Execute/BLOCKED labels as warnings, not packet verdicts.
+  Run the real protocol retest, inspect device/HMI state and firewall evidence, then Mark Complete.
+  See docs/v0.1.36-hotfix.md.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -238,9 +232,13 @@ steps:
   - title: "Apply hardened policy"
     expected_config: hardened
     description: |
+      **Workshop errata:** Keep your plan as a design artifact. Choose/apply
+      **Hardened reference**, not **Apply Your Plan**, explicitly in the policy panel.
+      Execute Step verifies its label without replacing it. This check and a green
+      banner are not enforcement proof; run the report/retests.
+
       Apply the hardened firewall configuration with **Apply Hardened**
-      in the **containd NGFW - policy actions** panel below this step, or
-      **Apply Your Plan** if you built a custom policy in Lab 2.2.
+      in the **containd NGFW - policy actions** panel below this step.
 
       The hardened policy closes both links of the kill chain:
 
@@ -264,9 +262,8 @@ steps:
       plan are `vendor-to-ot` (BLOCK or RESTRICT - closes the
       enterprise → vendor → OT pivot) and `non-rtac-to-field`
       (BLOCK - pins the vendor box out of field even if the perimeter
-      rule misses). If either is uncovered above, the matching
-      re-test in the next step may still succeed under "Apply Your
-      Plan" - re-attempt with **Apply Hardened** to compare.
+      rule misses). If either is uncovered above, record that design gap.
+      Keep **Hardened reference** active for the workshop re-test.
     action:
       type: check
       expect:
