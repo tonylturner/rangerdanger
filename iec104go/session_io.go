@@ -72,6 +72,7 @@ func (s *Session) readLoop() {
 	r := NewAPDUReader(s.conn)
 	for {
 		f, err := r.ReadFrame()
+		leg := s.receivingLeg()
 		at := s.opts.Clock.Now()
 		if err == nil {
 			b, encodeErr := f.MarshalBinary()
@@ -82,7 +83,7 @@ func (s *Session) readLoop() {
 			}
 		}
 		select {
-		case s.in <- incoming{f, err, at}:
+		case s.in <- incoming{f, err, at, leg}:
 		case <-s.ctx.Done():
 			return
 		}
@@ -97,15 +98,18 @@ func (s *Session) writeLoop() {
 		select {
 		case <-s.ctx.Done():
 			return
-		case w := <-s.out:
+		case queued := <-s.out:
+			w := s.claimWire(queued)
 			at := s.opts.Clock.Now()
 			s.tap(Transmit, w.bytes)
+			w.leg.beginWrite()
 			// A short write is terminal; retrying would violate the one-Write tap and
 			// packet-conformance contract and risks sending an ambiguous partial APDU.
 			n, err := s.conn.Write(w.bytes)
 			if err == nil && n != len(w.bytes) {
 				err = io.ErrShortWrite
 			}
+			w.leg.endWrite(err)
 			select {
 			case s.written <- writeResult{err, w.closeAfter, at}:
 			case <-s.ctx.Done():

@@ -76,10 +76,16 @@ type incoming struct {
 	frame Frame
 	err   error
 	at    time.Time
+	leg   *procedureLeg
+}
+type queuedASDU struct {
+	bytes []byte
+	leg   *procedureLeg
 }
 type wireWrite struct {
 	bytes      []byte
 	closeAfter bool
+	leg        *procedureLeg
 }
 type writeResult struct {
 	err        error
@@ -103,14 +109,18 @@ type Session struct {
 	wake                chan struct{}
 	ops                 chan operation
 	in                  chan incoming
-	out                 chan wireWrite
+	out                 chan *wireWrite
 	written             chan writeResult
 	workers             sync.WaitGroup
 	tapMu               sync.Mutex
+	wireMu              sync.Mutex
+	pendingAck          *wireWrite
+	pendingTestCon      *wireWrite
+	received            atomic.Uint32
 	mu                  sync.Mutex
 	accepting, gone     bool
 	reason              error
-	sends               [][]byte
+	sends               []queuedASDU
 	procedure           *transaction
 	procedureUncertain  bool
 	events              eventQueue
@@ -137,7 +147,7 @@ func newSession(ctx context.Context, conn net.Conn, role Role, opts Options, han
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s := &Session{id: id, conn: conn, role: role, opts: opts, ctx: ctx, cancel: cancel, done: make(chan struct{}), transportDone: make(chan struct{}), stop: make(chan struct{}), wake: make(chan struct{}, 1), ops: make(chan operation), in: make(chan incoming, 1), out: make(chan wireWrite, opts.SendQueue+8), written: make(chan writeResult, 1), handler: handler, retired: retired, inspect: make(chan chan sessionView)}
+	s := &Session{id: id, conn: conn, role: role, opts: opts, ctx: ctx, cancel: cancel, done: make(chan struct{}), transportDone: make(chan struct{}), stop: make(chan struct{}), wake: make(chan struct{}, 1), ops: make(chan operation), in: make(chan incoming, 1), out: make(chan *wireWrite, opts.SendQueue+8), written: make(chan writeResult, 1), handler: handler, retired: retired, inspect: make(chan chan sessionView)}
 	s.events.wake = make(chan struct{}, 1)
 	s.queueEvent(Event{Kind: Opened})
 	s.workers.Add(2)
@@ -179,6 +189,9 @@ func (s *Session) Send(m Message) error {
 	return s.admit(b)
 }
 func (s *Session) admit(b []byte) error {
+	return s.admitLeg(b, nil)
+}
+func (s *Session) admitLeg(b []byte, leg *procedureLeg) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.gone {
@@ -190,7 +203,7 @@ func (s *Session) admit(b []byte) error {
 	if len(s.sends) == s.opts.SendQueue {
 		return ErrQueueFull
 	}
-	s.sends = append(s.sends, append([]byte(nil), b...))
+	s.sends = append(s.sends, queuedASDU{append([]byte(nil), b...), leg})
 	signal(s.wake)
 	return nil
 }

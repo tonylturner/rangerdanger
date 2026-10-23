@@ -30,6 +30,7 @@ type transaction struct {
 	wake      chan struct{}
 	err       error
 	limit     int
+	leg       *procedureLeg
 }
 
 func (t *transaction) fail(err error) {
@@ -40,7 +41,7 @@ func (t *transaction) fail(err error) {
 	t.mu.Unlock()
 	signal(t.wake)
 }
-func (s *Session) observe(payload []byte) {
+func (s *Session) observe(payload []byte, leg *procedureLeg) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.procedure
@@ -52,10 +53,11 @@ func (s *Session) observe(payload []byte) {
 		t.fail(err)
 		return
 	}
-	if !t.match(m) {
+	t.mu.Lock()
+	if leg == nil || leg != t.leg || !t.match(m) {
+		t.mu.Unlock()
 		return
 	}
-	t.mu.Lock()
 	if len(t.responses) >= t.limit {
 		t.err = ErrQueueFull
 	} else {
@@ -80,32 +82,39 @@ func (s *Session) begin(match func(Message) bool) (*transaction, error) {
 	s.procedure = t
 	return t, nil
 }
-func (s *Session) end(t *transaction) {
+func (s *Session) complete(t *transaction, err error, admitted bool) ([]Message, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	// Observation and finalization use the same lock order: an overflow recorded
+	// before detach must dominate a buffered success, with no unfenced gap.
+	if t.err != nil {
+		err = t.err
+	}
 	if s.procedure == t {
 		s.procedure = nil
 	}
-	s.mu.Unlock()
-}
-func (t *transaction) snapshot() []Message {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return append([]Message(nil), t.responses...)
+	if admitted && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder)) {
+		s.procedureUncertain = true
+	}
+	return append([]Message(nil), t.responses...), err
 }
 func (t *transaction) next(ctx context.Context) (Message, error) {
 	for {
 		t.mu.Lock()
-		if t.consumed < len(t.responses) {
+		err := t.err
+		if err != nil {
+			t.mu.Unlock()
+			return nil, err
+		}
+		if t.leg != nil && t.leg.written && t.consumed < len(t.responses) {
 			m := t.responses[t.consumed]
 			t.consumed++
 			t.mu.Unlock()
 			return m, nil
 		}
-		err := t.err
 		t.mu.Unlock()
-		if err != nil {
-			return nil, err
-		}
 		select {
 		case <-t.wake:
 		case <-ctx.Done():
@@ -193,19 +202,11 @@ func (c *Client) procedure(ctx context.Context, request ASDU, match func(Message
 	if err != nil {
 		return nil, err
 	}
-	defer c.end(t)
-	if err := c.Send(request); err != nil {
-		return nil, err
+	if err := c.sendProcedure(t, request, match); err != nil {
+		return c.complete(t, err, false)
 	}
 	err = wait(ctx, t)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder) {
-		// Do not choose application disconnect policy, but never let an old
-		// confirmation satisfy a new helper with the same type/address/value.
-		c.mu.Lock()
-		c.procedureUncertain = true
-		c.mu.Unlock()
-	}
-	return t.snapshot(), err
+	return c.complete(t, err, true)
 }
 func request(ca uint16, oa uint8, id TypeID, address uint32, e Element) ASDU {
 	return ASDU{Header: Header{Type: id, Cause: Activation, Originator: oa, CommonAddress: ca}, Objects: []Object{{Address: address, Element: e}}}

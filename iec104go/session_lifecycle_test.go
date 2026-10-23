@@ -82,7 +82,7 @@ func TestSessionSequenceWrap(t *testing.T) {
 	opts.APCI.K = 32767
 	opts.APCI.W = 128
 	opts.EventQueue = 65536
-	s, p, _ := manualSession(t, ServerRole, opts, nil)
+	s, p, clock := manualSession(t, ServerRole, opts, nil)
 	startServerSession(t, s, p)
 	for i := 0; i <= 32768; i++ {
 		if err := s.Send(sampleMessage()); err != nil {
@@ -92,8 +92,23 @@ func TestSessionSequenceWrap(t *testing.T) {
 		if f.Send != uint16(i&32767) {
 			t.Fatalf("send %d=%d", i, f.Send)
 		}
-		writeFrame(t, p, Frame{Kind: SFrame, Receive: uint16((i + 1) & 32767)})
+		if i < 32764 {
+			writeFrame(t, p, Frame{Kind: SFrame, Receive: uint16(i + 1)})
+		}
 	}
+	// Five outstanding frames span 32764..0. N(R)=0 cumulatively acknowledges
+	// four across the wrap and restarts t1 for the one remaining frame.
+	before := view(t, s).t1
+	clock.Advance(10 * time.Second)
+	writeFrame(t, p, Frame{Kind: SFrame, Receive: 0})
+	partial := waitView(t, s, func(v sessionView) bool { return v.acked == 0 })
+	if !partial.t1.Equal(before.Add(10 * time.Second)) {
+		t.Fatalf("wrapped partial ACK did not restart t1: %+v", partial)
+	}
+	clock.Advance(14 * time.Second) // Past the original deadline, before restart.
+	view(t, s)
+	writeFrame(t, p, Frame{Kind: SFrame, Receive: 1})
+	waitView(t, s, func(v sessionView) bool { return v.acked == 1 && v.t1.IsZero() })
 	for i := 0; i <= 32768; i++ {
 		writeFrame(t, p, messageFrame(t, uint16(i&32767), 1))
 		if i%128 == 127 {

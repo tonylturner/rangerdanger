@@ -107,12 +107,17 @@ return closeErr
   admission. Broadcast snapshots started recipients once, sorts by ConnID and
   returns an error per recipient. Admission is not a delivery guarantee after
   transport failure; inspect the final `Closed` reason.
+  A handler sending an image larger than `SendQueue + k` ASDUs can get
+  `ErrQueueFull` (and a smaller burst can too if capacity is already occupied).
+  Pack information objects into ASDUs with `Builder`, or size `SendQueue` for
+  the image; successful nonblocking admission is not unlimited buffering.
 - One dedicated callback goroutine per connection delivers `Opened`, `Started`,
   `ASDUReceived`, `Stopped`, `Closed` in protocol order. Closed occurs exactly
   once and last. Callbacks do not stall APCI reads, writes, ACKs or timers.
   `Event.Session` is already initialized even if Opened runs before the
   constructor returns; use it instead of capturing an unpublished pointer.
-  Use `RequestClose()` inside a handler, not a blocking lifecycle call.
+  Never call `Close` or `Shutdown` from a callback: they wait for that same
+  callback to finish. Use `RequestClose()` there, not a blocking lifecycle call.
 - Queues default to 64 sends and 256 pending callback events. Callback overflow
   closes with `ErrEventQueueFull`; the triggering event and terminal Closed
   have reserved slots and are still delivered. Increase `EventQueue` for larger
@@ -143,6 +148,11 @@ return closeErr
   independently of callbacks. GI/counters and execute require CON then TERM;
   selection/clock/test/reset require CON only; read requires requested data.
   Bitstring commands support direct execute only, because they have no SE bit.
+  Each request leg becomes eligible at the send Tap/single-Write boundary;
+  earlier matching responses are ignored, including for both SBO legs.
+  Responses racing Write completion are buffered, but cannot report success
+  until the complete APDU Write succeeds. Recorded response overflow takes
+  precedence over buffered success, and finalization atomically detaches/fences.
   An abandoned/overflowed/unordered exchange fences later helpers with
   `ErrProcedureUncertain`: reconnect before another helper, since the wire has
   no transaction ID to distinguish late identical echoes. This does not choose
@@ -158,7 +168,7 @@ From this directory (Go downloads the pinned toolchain if necessary):
 gofmt -l .                       # must print nothing
 go vet ./...
 go test -race -count=1 -timeout 300s ./...
-go test -race -count=20 -run 'Session|Client|Server' -timeout 300s ./...
+go test -race -count=20 -run 'Session|Client|Server|Procedure' -timeout 300s ./...
 go test -run='^$' -fuzz=FuzzAPDUReader -fuzztime=20s -parallel=2 -timeout 300s
 go test -run='^$' -fuzz=FuzzDecodeASDU -fuzztime=20s -parallel=2 -timeout 300s
 go build ./...

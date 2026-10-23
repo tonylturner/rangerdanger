@@ -108,11 +108,11 @@ func (c *Client) SelectExecute(ctx context.Context, req ASDU) ([]Message, error)
 	if err != nil {
 		return nil, err
 	}
-	return c.procedure(ctx, selectReq, func(m Message) bool { return echoed(selectReq, m) || echoed(executeReq, m) }, func(ctx context.Context, t *transaction) error {
+	return c.procedure(ctx, selectReq, func(m Message) bool { return echoed(selectReq, m) }, func(ctx context.Context, t *transaction) error {
 		if err := awaitConfirmation(ctx, t, false, selectReq); err != nil {
 			return err
 		}
-		if err := c.Send(executeReq); err != nil {
+		if err := c.sendProcedure(t, executeReq, func(m Message) bool { return echoed(executeReq, m) }); err != nil {
 			return err
 		}
 		return awaitConfirmation(ctx, t, true, executeReq)

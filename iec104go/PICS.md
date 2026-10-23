@@ -169,7 +169,7 @@ These are tested profile decisions, not a certification claim.
 | Bad N(S) | Queue pending S-ACK then close after its single Write, bounded by t1; cannot wait forever for a nonreading peer |
 | t1 | Outstanding I or expected U confirmation; partial ACK restarts remaining-I deadline; independent U deadlines are not postponed by I acknowledgements |
 | t2 | Anchored to first unacknowledged receive; later receives do not restart; S/piggyback ACK clears it |
-| ACK timing | S at w or t2; piggyback whenever an I is transmitted |
+| ACK timing | S at w or t2; one pending cumulative S ACK and one pending TESTFR con coalesce under slow writes; I/S N(R) refreshed at the write boundary to avoid regression behind a coalesced ACK |
 | t3 / TESTFR | Reset on frame send/receive; TESTFR in STOPPED and STARTED; repeated t3 while awaiting con does not retransmit or extend t1 |
 | STARTDT | Act while STARTED returns con with no repeated Started event |
 | STOPDT | Freeze new admission; drain previously admitted sends before local act, and drain admitted/outstanding sends before peer-requested con; t1 bounds draining; flush final receive ACK before entering STOPPED |
@@ -179,7 +179,7 @@ These are tested profile decisions, not a certification claim.
 | Redundancy | Independent connection groups only; shared active/standby groups out of scope |
 | Identity | Process-wide monotonic uint64, never reused; exhaustion fails instead of wrapping; retired Send returns ErrConnectionGone |
 | Callbacks | One serial goroutine per connection; ordered Opened/Started/ASDUReceived/Stopped/Closed; Closed exactly once and last |
-| Send queue | Default 64 pending objects, configurable positive; full returns ErrQueueFull without admission; k gates transmission, never handler progress |
+| Send queue | Default 64 pending ASDUs, configurable positive; full returns ErrQueueFull without admission; k gates transmission, never handler progress |
 | Broadcast | Snapshot started set once, enqueue in ConnID order, return per-recipient errors; no slow-recipient wait |
 | Callback backlog | Default 256 pending events; one reserved overflow-trigger slot plus Closed. Overflow closes explicitly with ErrEventQueueFull without dropping the triggering decoded ASDU |
 | Callback cancellation | Handler receives connection context; Close/Shutdown join it. A handler ignoring cancellation can exceed shutdown ctx; Go cannot forcibly kill application code |
@@ -189,7 +189,7 @@ These are tested profile decisions, not a certification claim.
 | Clock / test / reset | X types103/107/105, CON only; no mandatory ACT-TERM |
 | Direct / select-execute | X single/double/regulating and setpoint commands, including CP56; bitstring direct-only (no SE bit); select waits CON only, execute waits CON then TERM; never retry |
 | Command policy | Station acceptance, SBO owner/expiry, cancellation policy, actual field writes and feedback remain application responsibility |
-| Transactions | One initiating procedure per connection; caller deadline required; responses collected independently of callbacks, with EventQueue response limit and explicit overflow |
+| Transactions | One initiating procedure per connection; caller deadline required; each request/SBO leg matches only after its write boundary and cannot complete until its full Write succeeds; earlier responses ignored; EventQueue response limit; recorded overflow overrides success; atomic detach/fence |
 | Mirror / COT44..47 | X independent copy retaining OA/CA/IOA/type/SQ/test/objects/raw payload; no automatic rejection, application owns precedence |
 | Harness taps | Serialized per connection; Receive after full APDU decode, Transmit immediately before one Write attempt; owned bytes; short Write closes without retry |
 | Close / Shutdown | Context-bounded join of transport and callback workers; RequestClose is the nonblocking handler-safe variant; Done closes after Closed |

@@ -71,7 +71,7 @@ func (s *Session) run() {
 				return
 			}
 			st.activity(in.at)
-			if err := st.receive(in.frame); err != nil {
+			if err := st.receive(in.frame, in.leg); err != nil {
 				failure = err
 				return
 			}
@@ -102,14 +102,11 @@ func (st *sessionState) activity(at time.Time) {
 	}
 }
 func (st *sessionState) emit(f Frame, closeAfter bool) error {
-	b, err := f.MarshalBinary()
-	if err != nil {
+	return st.emitLeg(f, closeAfter, nil)
+}
+func (st *sessionState) emitLeg(f Frame, closeAfter bool, leg *procedureLeg) error {
+	if err := st.s.enqueueWire(f, closeAfter, leg); err != nil {
 		return err
-	}
-	select {
-	case st.s.out <- wireWrite{b, closeAfter}:
-	default:
-		return ErrQueueFull
 	}
 	st.idle = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T3)
 	return nil
@@ -168,10 +165,10 @@ func (st *sessionState) pump() error {
 			break
 		}
 		payload := st.s.sends[0]
-		st.s.sends[0] = nil
+		st.s.sends[0] = queuedASDU{}
 		st.s.sends = st.s.sends[1:]
 		st.s.mu.Unlock()
-		if err := st.emit(Frame{Kind: IFrame, Send: st.sent, Receive: st.received, ASDU: payload}, false); err != nil {
+		if err := st.emitLeg(Frame{Kind: IFrame, Send: st.sent, Receive: st.received, ASDU: payload.bytes}, false, payload.leg); err != nil {
 			return err
 		}
 		if st.outstanding() == 0 {
@@ -241,7 +238,7 @@ func (st *sessionState) operation(op operation) error {
 	}
 	return nil
 }
-func (st *sessionState) receive(f Frame) error {
+func (st *sessionState) receive(f Frame, leg *procedureLeg) error {
 	switch f.Kind {
 	case UFrame:
 		return st.receiveU(f.Function)
@@ -270,13 +267,14 @@ func (st *sessionState) receive(f Frame) error {
 			return err
 		}
 		st.received = (st.received + 1) & 32767
+		st.s.received.Store(uint32(st.received))
 		if st.pending == 0 {
 			st.t2 = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T2)
 		}
 		st.pending++
 		// Procedure observation gets its own copy before application code can mutate
 		// the delivered message, and never runs on the callback goroutine.
-		st.s.observe(f.ASDU)
+		st.s.observe(f.ASDU, leg)
 		if !st.s.queueEvent(Event{Kind: ASDUReceived, ASDU: m}) {
 			return ErrEventQueueFull
 		}
