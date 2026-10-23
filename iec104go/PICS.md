@@ -1,6 +1,6 @@
 # Protocol implementation conformance statement (PICS)
 
-Profile: **iec104go, codec phase 1a**, Apache-2.0. This is an implementation
+Profile: **iec104go, phases 1a/1b**, Apache-2.0. This is an implementation
 interoperability profile, **not** certification or a claim to implement a whole
 station. Selected editions: IEC 60870-5-104:2006+A1:2016, IEC 60870-5-101:2003.
 Test identifiers refer only to the publicly previewed IEC TS 60870-5-604:2016;
@@ -8,8 +8,7 @@ Test identifiers refer only to the publicly previewed IEC TS 60870-5-604:2016;
 in [PROVENANCE.md](PROVENANCE.md). Public-profile interpretations, especially
 type/element associations, were checked against the supplied research errata.
 
-Legend: X implemented; — not implemented/out of scope; **phase 1b** planned,
-not implemented or validated. M = controlled → controlling (monitor direction),
+Legend: X implemented; — not implemented/out of scope. M = controlled → controlling (monitor direction),
 C = controlling → controlled (control direction), with confirmations in reverse.
 The codec can encode and decode either direction; it imposes no station role.
 
@@ -17,7 +16,7 @@ The codec can encode and decode either direction; it imposes no station role.
 
 | Item | Selected codec capability |
 |---|---|
-| TCP port / transport security / live connection establishment | phase 1b; no sockets or TLS in this module yet |
+| TCP port / transport security / connection establishment | X plain TCP; caller supplies host:port (normally 2404); t0 and optional source bind; no TLS |
 | I, S, U frame encoding and parsing | X; 15-bit unshifted sequence API, wire little-endian |
 | U functions | X STARTDT act/con, STOPDT act/con, TESTFR act/con |
 | Length | X control+ASDU 4..253; S/U exactly 4; I must carry payload; ASDU <=249 |
@@ -34,7 +33,7 @@ The codec can encode and decode either direction; it imposes no station role.
 | Unknown, excluded or private type | X RawASDU retains header and payload plus ErrUnsupportedType |
 | COT Test and Negative flags | X independent fields, preserved |
 | Value, quality and qualifier policy | Raw bits preserved; station/application decides acceptable states/qualifiers |
-| Retention / ownership | X all decoded data owned; builder snapshots own slices; no goroutines |
+| Retention / ownership | X all decoded data owned; builder snapshots own slices; session workers joined on closure |
 
 For known types, payload length and SQ overflow are structural malformation,
 not silently converted to opaque data. Unsupported types cannot have their
@@ -151,41 +150,79 @@ nominal usages here are descriptive, not procedure support claims.
 | CP16 | X unsigned elapsed milliseconds, 0..65535, used by types 38–40 |
 | CP24 | — legacy CP24 ASDU types not supported in selected 104 profile |
 
-## Session / timers / procedures: phase 1b
+## Session / timers / procedures
 
-**Every row below is phase 1b, not implemented in phase 1a.** Values record the
-supplied contract so an encoded feature is not mistaken for a working station.
-Timer defaults follow the public Siemens default profile, not its selected t3.
+All rows below are implemented and exercised by deterministic `net.Pipe`/fake-
+clock tests, with loopback TCP reserved for connection establishment/admission.
+The sources are the supplied contract, -604 public-preview research synthesis,
+Siemens default timer profile and the procedure sources in PROVENANCE.md.
+These are tested profile decisions, not a certification claim.
 
-| Item | Planned phase-1b profile |
+| Item | Selected implemented profile |
 |---|---|
-| Roles | Client and server; plain TCP, default port 2404; no internal reconnect |
-| k / w | Defaults 12 / 8; each 1..32767; permit w>k |
-| t0 / t1 / t2 / t3 | Defaults 30 / 15 / 10 / 20 seconds; each >0; permit t2>=t1 |
-| I/S in STOPPED | Close (strict contract decision) |
-| N(S)/N(R) | Modulo 32768 per connection; STOPDT/STARTDT do not reset counters; invalid N(R) closes; bad N(S) sends pending ACK then closes |
-| t1 | Outstanding I/U confirmation deadline; restart on partial ACK; expiry closes |
-| t2 | Starts on first unacknowledged receive; later receives do not restart it |
-| ACK timing | S at w or t2; piggyback whenever an I is sent; either ACK cancels t2 |
-| t3 / TESTFR | Restart on send/receive; TESTFR in STOPPED and STARTED; t1 supervises con |
-| STARTDT | Idempotent act in STARTED; con without duplicate event |
-| STOPDT | ACK receive side, drain sent unacked I frames bounded by t1, then con/STOPPED; local act immediately blocks new Send |
-| Server STARTDT/STOPDT role | Never initiates act; unexpected role-specific act/con is protocol error |
-| Maximum connections | Default 8; extra accepted then immediately closed and logged |
-| Redundancy | One connection per independent group; shared active/standby redundancy groups out of scope |
-| Callback/lifetime | Per-connection ordered events/ASDUs; Closed last once; monotonic ConnID never reused |
-| Queues and concurrency | Nonblocking bounded Send/Broadcast; full is explicit error, no silent drops; no callback can stall APCI |
-| GI, group and counter interrogation | Initiator helpers with deadlines and responses; station/group QOI 20..36 |
-| Read, clock, test, reset | Initiator helpers with deadlines; no automatic station policy |
-| Direct and select/execute commands | Initiator sequences with ACT-CON/ACT-TERM tracking; station owns acceptance/selection policy |
-| Mirror helper / COT44..47 | Preserve OA/CA/IOA/objects; application owns rejection precedence; RawASDU delivered |
-| Harness taps | One write per APDU; ordered, synchronous send/receive taps; no TCP normalization inside codec |
-| Shutdown / blocked calls | Context on blocking calls, no leaked goroutines, close reason observable |
+| Roles | X client/server, explicit STARTDT, plain TCP, optional local source bind; no reconnect |
+| k / w | X defaults 12 / 8, each 1..32767; permit w>k |
+| t0 / t1 / t2 / t3 | X defaults 30 / 15 / 10 / 20 seconds, each >0; permit t2>=t1 |
+| t0 clock | net.Dialer context/timeout for TCP establishment; injected concurrent-safe Clock uses absolute deadlines for t1/t2/t3 to avoid registration/advance races |
+| I/S in STOPPED | Close with ErrProtocol (strict contract choice); in-flight traffic remains legal while STOPDT is draining |
+| N(S)/N(R) | Modulo 32768 per connection; no reset across STOPDT/STARTDT; N(R) outside outstanding interval closes |
+| Bad N(S) | Queue pending S-ACK then close after its single Write, bounded by t1; cannot wait forever for a nonreading peer |
+| t1 | Outstanding I or expected U confirmation; partial ACK restarts remaining-I deadline; independent U deadlines are not postponed by I acknowledgements |
+| t2 | Anchored to first unacknowledged receive; later receives do not restart; S/piggyback ACK clears it |
+| ACK timing | S at w or t2; piggyback whenever an I is transmitted |
+| t3 / TESTFR | Reset on frame send/receive; TESTFR in STOPPED and STARTED; repeated t3 while awaiting con does not retransmit or extend t1 |
+| STARTDT | Act while STARTED returns con with no repeated Started event |
+| STOPDT | Freeze new admission; drain previously admitted sends before local act, and drain admitted/outstanding sends before peer-requested con; t1 bounds draining; flush final receive ACK before entering STOPPED |
+| STOPDT counters | Never reset; reject local STOPDT con before our outstanding I frames are acknowledged |
+| Control roles | Server never sends STARTDT/STOPDT act; unsolicited con and client-received STARTDT/STOPDT act close; TESTFR act is legal in both roles/states |
+| Maximum connections | Default 8, configurable positive; extra TCP connection accepted then immediately closed and logged |
+| Redundancy | Independent connection groups only; shared active/standby groups out of scope |
+| Identity | Process-wide monotonic uint64, never reused; exhaustion fails instead of wrapping; retired Send returns ErrConnectionGone |
+| Callbacks | One serial goroutine per connection; ordered Opened/Started/ASDUReceived/Stopped/Closed; Closed exactly once and last |
+| Send queue | Default 64 pending objects, configurable positive; full returns ErrQueueFull without admission; k gates transmission, never handler progress |
+| Broadcast | Snapshot started set once, enqueue in ConnID order, return per-recipient errors; no slow-recipient wait |
+| Callback backlog | Default 256 pending events; one reserved overflow-trigger slot plus Closed. Overflow closes explicitly with ErrEventQueueFull without dropping the triggering decoded ASDU |
+| Callback cancellation | Handler receives connection context; Close/Shutdown join it. A handler ignoring cancellation can exceed shutdown ctx; Go cannot forcibly kill application code |
+| GI / group interrogation | X QOI20..36, ACT-CON then image then ACT-TERM; preserve OA/CA and exact command echo |
+| Counter interrogation | X type101, raw QCC request/freeze fields, COT37..41 image, CON then TERM |
+| Read | X type102 Request -> requested-address data with Request; no fictitious ACT-CON/ACT-TERM |
+| Clock / test / reset | X types103/107/105, CON only; no mandatory ACT-TERM |
+| Direct / select-execute | X single/double/regulating and setpoint commands, including CP56; bitstring direct-only (no SE bit); select waits CON only, execute waits CON then TERM; never retry |
+| Command policy | Station acceptance, SBO owner/expiry, cancellation policy, actual field writes and feedback remain application responsibility |
+| Transactions | One initiating procedure per connection; caller deadline required; responses collected independently of callbacks, with EventQueue response limit and explicit overflow |
+| Mirror / COT44..47 | X independent copy retaining OA/CA/IOA/type/SQ/test/objects/raw payload; no automatic rejection, application owns precedence |
+| Harness taps | Serialized per connection; Receive after full APDU decode, Transmit immediately before one Write attempt; owned bytes; short Write closes without retry |
+| Close / Shutdown | Context-bounded join of transport and callback workers; RequestClose is the nonblocking handler-safe variant; Done closes after Closed |
 
-Thus all §7 contract decisions are recorded: stopped-state strictness, connection
-limit accept-and-close, STOPDT drain, S versus piggyback timing, and UTC/DOW/SU.
-Only the time encoding decision is implemented now. Protocol violations cannot
-be accepted merely because a future differential reference also accepts them.
+### Strict interpretations and contract corrections
+
+- “Client receiving an act” means STARTDT/STOPDT, **not TESTFR**: the same
+  contract explicitly requires TESTFR replies in both states/roles.
+- The blanket procedure requirement to wait for ACT-CON/ACT-TERM is not valid
+  for read, clock, test, reset, or the select leg of SBO. Those exchanges use
+  the completion conditions above; only GI/counters and execute require TERM.
+  This profile deliberately requires execute termination even for variants
+  whose public vendor profiles make termination optional.
+- The contract does not specify previously admitted, not-yet-transmitted data
+  during STOPDT. Both directions drain that data with a t1 bound, rather than
+  silently discarding successful admissions. STOPDT con before the initiator's
+  outstanding sends are acknowledged is a protocol error.
+- A synchronous tap necessarily participates in wire progress. Taps/loggers must
+  return promptly. User callbacks, unlike taps, are isolated from APCI progress.
+  A blocked callback cannot be forcibly killed: canceled contexts and bounded
+  shutdown errors make this explicit, and tests verify eventual joining.
+- The callback backlog is bounded to avoid unbounded memory on a slow handler.
+  Its triggering event still precedes Closed; subsequent transport input is
+  rejected by closure. Pending accepted events drain in order with canceled ctx.
+- After a timed-out/canceled, overflowed or unordered procedure, later helpers
+  return ErrProcedureUncertain until reconnect: otherwise a late identical echo
+  could falsely confirm a new transaction. Manual sends/callbacks remain usable;
+  the library does not choose the application's disconnect/retry policy.
+
+All §7 decisions are implemented: stopped-state strictness, max-connection
+accept-and-close, STOPDT drain, S versus piggyback timing, UTC/DOW/SU encoding.
+Protocol violations are never allowed merely because a differential peer also
+accepts them.
 
 ## Exclusions and conformance evidence
 
@@ -195,6 +232,6 @@ be accepted merely because a future differential reference also accepts them.
 | CP24 process types, legacy test 104 and delay acquisition 106 | — outside selected 104 profile (opaque RawASDU only) |
 | Security extensions, TLS, shared redundancy groups | — no implementation claim |
 | IEC TS 60870-5-604:2016 5.3.2.10–39 | Public-preview APCI requirements inform synthetic codec tests; not a certification test execution |
-| 5.3.2.50 and procedure test groups listed in preview | phase 1b; full procedures not available from preview |
+| 5.3.2.50 and procedure test groups listed in preview | Deterministic session/procedure tests informed by the public evidence; full normative test procedures not available from preview |
 | Golden evidence | 14 historical first-party APDUs, all exact round-trips; synthetic byte-position tests for all 46 types/SQ modes |
-| Differential/live conformance | Later phases; no peer or Docker run in phase 1a |
+| Differential/live conformance | Later phases; no Docker or reference peer run in phases 1a/1b |

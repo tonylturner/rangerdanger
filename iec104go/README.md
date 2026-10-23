@@ -1,12 +1,13 @@
 # iec104go
 
-Clean-room, Apache-2.0 IEC 60870-5-104 codec, with no dependencies outside
+Clean-room, Apache-2.0 IEC 60870-5-104 stack, with no dependencies outside
 Go's standard library. Module: `github.com/tonylturner/iec104go`.
 
-**Phase 1a:** APCI, exact-boundary stream reading, ASDU envelopes, 46 process,
-system and parameter types, CP56Time2a and CP16Time2a. TCP sessions, timers,
-client/server roles and application procedures are **phase 1b**, not implemented
-here. This is not a claim of independently certified IEC conformance.
+APCI, exact-boundary stream reading, ASDU envelopes, 46 process/system/parameter
+types, CP56Time2a and CP16Time2a, supervised TCP sessions, client/server roles,
+and initiating procedure helpers are implemented (phases 1a/1b). Service ports
+and differential conformance runs remain separate phases. This is not a claim
+of independently certified IEC conformance.
 
 ## API
 
@@ -29,13 +30,13 @@ wire, err := (iec104go.Frame{
     Kind: iec104go.IFrame, Send: 0, Receive: 0, ASDU: payload,
 }).MarshalBinary()
 if err != nil { return err }
-_ = wire // the later session layer owns sequence assignment and transmission
+_ = wire // raw encoding; Session.Send(a) normally owns sequencing/transmission
 ```
 
 - `Frame.MarshalBinary` / `DecodeFrame` operate on one complete APDU.
   `NewAPDUReader(io.Reader).ReadFrame()` handles fragmented and coalesced
   streams without read-ahead. No scanning past malformed data. Caller owns
-  deadlines, cancellation and synchronization; this codec starts no goroutines.
+  deadlines, cancellation and synchronization; raw codec calls start no goroutines.
   I-frame payload structure is checked separately by `DecodeASDU`.
 - `DecodeASDU(bytes, params)` returns `Message`, concretely `*ASDU` or
   `*RawASDU`. Both expose `GetHeader()` and `MarshalBinary(params)`.
@@ -68,6 +69,87 @@ _ = wire // the later session layer owns sequence assignment and transmission
 
 See [PICS.md](PICS.md) for type/COT coverage and profile decisions.
 
+## Sessions, clients and servers
+
+```go
+opts := iec104go.DefaultOptions()
+client, err := iec104go.Dial(ctx, "127.0.0.1:2404", opts,
+    func(callbackCtx context.Context, e iec104go.Event) {
+        // e.ConnID is never reused; e.ASDU may be retained after return.
+        // Honor callbackCtx cancellation if doing blocking application work.
+    })
+if err != nil { return err }
+operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+defer cancel()
+err = client.StartDT(operationCtx)
+var responses []iec104go.Message
+if err == nil {
+    responses, err = client.Interrogate(operationCtx, 1, 0, 20)
+}
+_ = responses
+shutdownCtx, finish := context.WithTimeout(context.Background(), 5*time.Second)
+defer finish()
+closeErr := client.Close(shutdownCtx) // cleanup on failure too, including callbacks
+if err != nil { return err }
+return closeErr
+```
+
+- `Dial` accepts a context, `HOST:PORT`, options and handler. An optional
+  `LocalAddress` binds the source. t0 bounds TCP establishment; STARTDT is
+  explicit. `NewSession(ctx, net.Conn, role, opts, handler)` supports established
+  transports and deterministic `net.Pipe` tests. There is no reconnect loop.
+- `NewServer(opts, handler)` returns a server. `Serve(ctx, listener)` owns the
+  listener on success. Call `Shutdown(ctx)` to close it and join every session.
+  The default ninth simultaneous connection is accepted, closed and logged.
+  `Server.Send(connID, message)` never reroutes a retired identity.
+- `Session.Send` and `Server.Broadcast` never wait for k, the network or a
+  handler. They copy encoded data into bounded queues; `ErrQueueFull` means no
+  admission. Broadcast snapshots started recipients once, sorts by ConnID and
+  returns an error per recipient. Admission is not a delivery guarantee after
+  transport failure; inspect the final `Closed` reason.
+- One dedicated callback goroutine per connection delivers `Opened`, `Started`,
+  `ASDUReceived`, `Stopped`, `Closed` in protocol order. Closed occurs exactly
+  once and last. Callbacks do not stall APCI reads, writes, ACKs or timers.
+  `Event.Session` is already initialized even if Opened runs before the
+  constructor returns; use it instead of capturing an unpublished pointer.
+  Use `RequestClose()` inside a handler, not a blocking lifecycle call.
+- Queues default to 64 sends and 256 pending callback events. Callback overflow
+  closes with `ErrEventQueueFull`; the triggering event and terminal Closed
+  have reserved slots and are still delivered. Increase `EventQueue` for larger
+  images/backlogs. A transaction uses the same response-count bound and reports
+  explicit overflow rather than hiding missing responses.
+- `Close(ctx)`, `Shutdown(ctx)` and `Done()` include callback completion.
+  Context cancellation interrupts transport I/O. Go cannot kill application
+  callbacks: a handler ignoring cancellation can cause Close/Shutdown to return
+  the caller's context error until it returns; after it returns cleanup joins.
+  Taps and custom loggers must also return promptly.
+- `APCI` defaults to k=12/w=8, t0/t1/t2/t3=30/15/10/20 seconds. Only individual
+  ranges are checked. `Clock`/`Timer` use absolute deadlines to avoid races
+  between a fake-clock advance and timer registration;
+  TCP dial t0 uses `net.Dialer`'s context/timeout.
+- `StartDT(ctx)`/`StopDT(ctx)` await t1-supervised confirmations. Stop freezes
+  admission and drains already admitted data before its act/con; no accepted
+  object is silently discarded. Counters survive stop/start. `Err()` reports
+  peer FIN, I/O failure, `ErrT1`, `ErrProtocol` or local `ErrClosed`.
+- `Tap` callbacks are serialized per connection: Receive after complete decode,
+  Transmit immediately before the single Write attempt. Short writes close,
+  never retry. Tap buffers are owned copies; no shared mutable transport buffer.
+- `Mirror(message, cause, negative)` copies typed or opaque data without choosing
+  application rejection policy. No COT 44–47 answer is generated automatically.
+- Client helpers: `Interrogate`, `CounterInterrogate`, `Read`, `SyncClock`,
+  `Test`, `Reset`, `Command`, `SelectExecute`. Each requires a caller deadline,
+  returns observed responses on success/failure, never retries, and allows one
+  transaction per connection (`ErrProcedureBusy` otherwise). They observe copies
+  independently of callbacks. GI/counters and execute require CON then TERM;
+  selection/clock/test/reset require CON only; read requires requested data.
+  Bitstring commands support direct execute only, because they have no SE bit.
+  An abandoned/overflowed/unordered exchange fences later helpers with
+  `ErrProcedureUncertain`: reconnect before another helper, since the wire has
+  no transaction ID to distinguish late identical echoes. This does not choose
+  application disconnect policy or prevent manual Send/callback handling.
+  Station acceptance, SBO ownership/expiry and actual field execution are
+  application policy, not automatically implemented by this library.
+
 ## Validation
 
 From this directory (Go downloads the pinned toolchain if necessary):
@@ -76,6 +158,7 @@ From this directory (Go downloads the pinned toolchain if necessary):
 gofmt -l .                       # must print nothing
 go vet ./...
 go test -race -count=1 -timeout 300s ./...
+go test -race -count=20 -run 'Session|Client|Server' -timeout 300s ./...
 go test -run='^$' -fuzz=FuzzAPDUReader -fuzztime=20s -parallel=2 -timeout 300s
 go test -run='^$' -fuzz=FuzzDecodeASDU -fuzztime=20s -parallel=2 -timeout 300s
 go build ./...
@@ -90,6 +173,6 @@ our Apache-licensed historical packets. No Docker operation is needed.
 No IEC 104 implementation source or our lib60870-shaped C application source
 was consulted. Only public non-code descriptions, the supplied requirements
 reconnaissance, our packets and tshark as a black-box decoder informed this
-codec. [PROVENANCE.md](PROVENANCE.md) records the public sources, their use and
+stack. [PROVENANCE.md](PROVENANCE.md) records the public sources, their use and
 known errata. No paywalled standards text is reproduced. Apache-2.0 terms are
 in [LICENSE](LICENSE).
