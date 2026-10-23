@@ -27,7 +27,7 @@ stream selection and a point-map description for the EU topology.
 | Capture | Contents | Source stream(s) from `check/run.sh` |
 |---|---|---|
 | `startup-gi-monitor.pcap` | Startup handshake/GI; types 3, 13 and 31; spontaneous COT 3; S-frames and TESTFR | Control centre `.20` (startup GI, spontaneous changes and idle TESTFR); `01-gi` `.35` |
-| `sbo-double-command.pcap` | Type 46 select/execute/termination; execute without select; expired select; mismatched execute | `02-sbo-open` `.30`; `03-sbo-close` `.36`; `05-exec-no-select` `.31`; `06-select-expiry` `.32`; `07-value-mismatch` `.33` |
+| `sbo-double-command.pcap` | Type 46 select/execute with activation confirmations and return information (COT 11), no activation termination (COT 10); execute without select; expired select; mismatched execute | `02-sbo-open` `.30`; `03-sbo-close` `.36`; `05-exec-no-select` `.31`; `06-select-expiry` `.32`; `07-value-mismatch` `.33` |
 | `session-management.pcap` | STOPDT/STARTDT; TESTFR; unanswered TESTFR/t1 timeout; link loss, RTU restart, reconnect and GI | Control centre `.20` (idle, pause/restart and reconnect); `08-stopdt-startdt` `.34` |
 | `edge-addressing.pcap` | CA 1 GI returns IOAs 65535, 65536 and 16777215; CA 2 GI returns IOA 4001; unassigned command IOA 0 receives COT 47; GI command IOA 0 | `01-gi` `.35`; `04-gi-ca2` `.37`; `09-ioa-zero-unassigned` `.38` |
 
