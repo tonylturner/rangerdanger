@@ -19,7 +19,7 @@
 # Raised by Codex review on PR #91.
 #
 # Usage: scripts/assert-unreachable-vulns.sh [module-dir ...]
-#        defaults to: backend services dnp3go
+#        defaults to: backend services dnp3go iec104go
 
 set -uo pipefail
 
@@ -33,7 +33,7 @@ GUARDED=(
 
 modules=("$@")
 if [ ${#modules[@]} -eq 0 ]; then
-  modules=(backend services dnp3go)
+  modules=(backend services dnp3go iec104go)
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

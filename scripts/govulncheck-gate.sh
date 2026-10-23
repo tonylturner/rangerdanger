@@ -10,7 +10,7 @@
 # only: JSON findings with a non-empty trace (length > 0).
 #
 # Usage: scripts/govulncheck-gate.sh [module-dir ...]
-#        defaults to: backend services dnp3go
+#        defaults to: backend services dnp3go iec104go
 #        ALLOWED may be overridden via the environment for negative testing.
 
 set -uo pipefail
@@ -19,7 +19,7 @@ ALLOWED="${ALLOWED-GO-2026-4887 GO-2026-4883 GO-2026-5617 GO-2026-5668 GO-2026-5
 
 modules=("$@")
 if [ ${#modules[@]} -eq 0 ]; then
-  modules=(backend services dnp3go)
+  modules=(backend services dnp3go iec104go)
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

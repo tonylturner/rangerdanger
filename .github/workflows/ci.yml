@@ -144,6 +144,31 @@ jobs:
         working-directory: dnp3go
         run: go build ./...
 
+  iec104go:
+    name: iec104go library (Go)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: iec104go/go.mod
+          cache: false
+      - name: gofmt
+        working-directory: iec104go
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
+      - name: go vet
+        working-directory: iec104go
+        run: go vet ./...
+      - name: go test
+        working-directory: iec104go
+        run: go test -race -count=1 -timeout 300s ./...
+      - name: go build
+        working-directory: iec104go
+        run: go build ./...
+
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-24.04
