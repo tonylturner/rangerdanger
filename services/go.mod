@@ -4,6 +4,11 @@ go 1.24.0
 
 toolchain go1.26.9
 
-require github.com/tonylturner/dnp3go v0.0.0
+require (
+	github.com/tonylturner/dnp3go v0.0.0
+	github.com/tonylturner/iec104go v0.0.0
+)
 
 replace github.com/tonylturner/dnp3go => ../dnp3go
+
+replace github.com/tonylturner/iec104go => ../iec104go
