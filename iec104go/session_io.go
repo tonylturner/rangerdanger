@@ -87,6 +87,9 @@ func (s *Session) readLoop() {
 				s.tap(Receive, b)
 			}
 		}
+		if err != nil {
+			s.transportFailed.Store(true)
+		}
 		select {
 		case s.in <- incoming{f, err, at, leg}:
 		case <-s.ctx.Done():
@@ -100,31 +103,57 @@ func (s *Session) readLoop() {
 func (s *Session) writeLoop() {
 	defer s.workers.Done()
 	for {
+		// A local close takes precedence over queued traffic, but never races an
+		// active Write. That Write may already cover the final cumulative ACK.
+		select {
+		case done := <-s.closeFlush:
+			s.writeFinalACK(done)
+			return
+		default:
+		}
 		select {
 		case <-s.ctx.Done():
 			return
+		case done := <-s.closeFlush:
+			s.writeFinalACK(done)
+			return
 		case queued := <-s.out:
-			w := s.claimWire(queued)
-			at := s.opts.Clock.Now()
-			s.tap(Transmit, w.bytes)
-			w.leg.beginWrite()
-			// A short write is terminal; retrying would violate the one-Write tap and
-			// packet-conformance contract and risks sending an ambiguous partial APDU.
-			n, err := s.conn.Write(w.bytes)
-			if err == nil && n != len(w.bytes) {
-				err = io.ErrShortWrite
-			}
-			w.leg.endWrite(err)
 			select {
-			case s.written <- writeResult{err, w.closeAfter, at}:
+			case done := <-s.closeFlush:
+				s.writeFinalACK(done)
+				return
+			default:
+			}
+			w := s.claimWire(queued)
+			result := s.writeAPDU(w)
+			select {
+			case s.written <- result:
 			case <-s.ctx.Done():
 				return
 			}
-			if err != nil {
+			if result.err != nil {
 				return
 			}
 		}
 	}
+}
+func (s *Session) writeAPDU(w wireWrite) writeResult {
+	at := s.opts.Clock.Now()
+	s.tap(Transmit, w.bytes)
+	w.leg.beginWrite()
+	// A short write is terminal; retrying would violate the one-Write tap and
+	// packet-conformance contract and risks sending an ambiguous partial APDU.
+	n, err := s.conn.Write(w.bytes)
+	if err == nil && n != len(w.bytes) {
+		err = io.ErrShortWrite
+	}
+	w.leg.endWrite(err)
+	if err != nil {
+		s.transportFailed.Store(true)
+	} else if w.receiveCount != 0 {
+		s.acknowledged.Store(w.receiveCount)
+	}
+	return writeResult{err, w.closeAfter, at}
 }
 func (s *Session) finish(err error) {
 	s.mu.Lock()

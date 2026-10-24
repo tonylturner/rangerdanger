@@ -55,6 +55,9 @@ func (s *Session) run() {
 			return
 		case <-s.stop:
 			failure = ErrClosed
+			if st.closeAfter == nil {
+				s.flushClose(timer)
+			}
 			return
 		case <-s.wake:
 		case op := <-s.ops:
@@ -268,7 +271,7 @@ func (st *sessionState) receive(f Frame, leg *procedureLeg) error {
 			return err
 		}
 		st.received = (st.received + 1) & 32767
-		st.s.received.Store(uint32(st.received))
+		st.s.received.Add(1)
 		if st.pending == 0 {
 			st.t2 = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T2)
 		}

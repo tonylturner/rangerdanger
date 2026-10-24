@@ -106,3 +106,21 @@ profile and original generation/callback-ownership/admission APIs.
 The positive directory golden/capture now uses COT5; deliberately arbitrary-cause
 preservation is a separate named test. F8's checksum-NACK-only recall policy,
 F14's unsupported services and F15's archive boundary are unchanged.
+
+### Graceful local close acknowledgement (2026-10-24)
+
+First-party black-box evidence: phase-4a `cmd-rtu/comparison/report.json` under
+`build/iec104-differential-go/{all-go,go-clients}/` in the supplied
+`rangerdanger-b07fafb5` worktree. The sealed reference emits a final S frame
+before TCP FIN where the previous Go stream did not (including
+`680401000800` and `680401000a00`). Only the reports were inspected; no
+reference implementation source was read.
+
+The owner requires final cumulative acknowledgement on graceful local close,
+without STOPDT or changes to running acknowledgement cadence. Counting accepted
+receives and successful wire acknowledgements separately prevents queued or
+blocked writes from losing that final ACK, and avoids duplicates when an
+in-flight piggyback/S write completes. A 100 ms cap, limited further by t2 and
+driven by the injected Clock, is an original best-effort shutdown profile
+choice. Peer EOF, observed transport failure, cancellation and protocol errors
+do not initiate this graceful flush. This is not a new normative APCI timer.

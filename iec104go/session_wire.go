@@ -51,7 +51,8 @@ func (s *Session) claimWire(w *wireWrite) wireWrite {
 	// I/S acknowledgement at the write boundary so N(R) never moves backward,
 	// including across wrap; taps observe exactly these final wire bytes.
 	if result.bytes[2]&1 == 0 || result.bytes[2] == 1 {
-		binary.LittleEndian.PutUint16(result.bytes[4:6], uint16(s.received.Load())<<1)
+		result.receiveCount = s.received.Load()
+		binary.LittleEndian.PutUint16(result.bytes[4:6], uint16(result.receiveCount)<<1)
 	}
 	return result
 }

@@ -134,6 +134,11 @@ return closeErr
   images/backlogs. A transaction uses the same response-count bound and reports
   explicit overflow rather than hiding missing responses.
 - `Close(ctx)`, `Shutdown(ctx)` and `Done()` include callback completion.
+  Graceful local closure first flushes one final S acknowledgement if accepted
+  I-frames remain unacknowledged on the wire, then closes without STOPDT.
+  An in-flight I/S write that covers them avoids an extra S frame. This
+  best-effort flush is bounded by `min(100 ms, t2)` using `Clock`; it is skipped
+  after peer EOF or transport failure. Running ACK cadence is unchanged.
   Context cancellation interrupts transport I/O. Go cannot kill application
   callbacks: a handler ignoring cancellation can cause Close/Shutdown to return
   the caller's context error until it returns; after it returns cleanup joins.

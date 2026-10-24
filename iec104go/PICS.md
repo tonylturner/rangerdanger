@@ -193,6 +193,7 @@ These are tested profile decisions, not a certification claim.
 | Mirror / COT44..47 | X independent copy retaining OA/CA/IOA/type/SQ/test/objects/raw payload; no automatic rejection, application owns precedence |
 | Harness taps | Serialized per connection; Receive after full APDU decode, Transmit immediately before one Write attempt; owned bytes; short Write closes without retry |
 | Close / Shutdown | Context-bounded join of transport and callback workers; RequestClose is the nonblocking handler-safe variant; Done closes after Closed |
+| Local close ACK | Before intentional local closure, one final S frame covers all accepted I-frames not yet acknowledged by a successful I/S Write; an in-flight write covering them suppresses the extra S. No STOPDT. Skip after observed transport failure/peer EOF or protocol-error closure. Best-effort flush uses injected Clock, bounded by min(100 ms, t2), then interrupts blocked I/O. The 100 ms cap is an original shutdown profile choice, not a normative timer; running S/piggyback cadence is unchanged. |
 
 ### Strict interpretations and contract corrections
 

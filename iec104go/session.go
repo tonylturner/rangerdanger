@@ -89,6 +89,8 @@ type wireWrite struct {
 	bytes      []byte
 	closeAfter bool
 	leg        *procedureLeg
+	// Nonzero only for I/S frames; counts accepted receives, not modulo N(R).
+	receiveCount uint64
 }
 type writeResult struct {
 	err        error
@@ -116,12 +118,15 @@ type Session struct {
 	in                  chan incoming
 	out                 chan *wireWrite
 	written             chan writeResult
+	closeFlush          chan chan struct{}
 	workers             sync.WaitGroup
 	tapMu               sync.Mutex
 	wireMu              sync.Mutex
 	pendingAck          *wireWrite
 	pendingTestCon      *wireWrite
-	received            atomic.Uint32
+	received            atomic.Uint64
+	acknowledged        atomic.Uint64
+	transportFailed     atomic.Bool
 	mu                  sync.Mutex
 	accepting, gone     bool
 	generation          *transferGeneration
@@ -158,6 +163,7 @@ func newSession(ctx context.Context, conn net.Conn, role Role, opts Options, han
 	s.localAddr = snapshotAddr(conn.LocalAddr())
 	s.remoteAddr = snapshotAddr(conn.RemoteAddr())
 	s.sendReady = make(chan struct{})
+	s.closeFlush = make(chan chan struct{}, 1)
 	s.events.wake = make(chan struct{}, 1)
 	s.queueEvent(Event{Kind: Opened})
 	s.workers.Add(2)
