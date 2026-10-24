@@ -259,7 +259,7 @@ func TestFileProcedureRemoteAbortAndUnexpected(t *testing.T) {
 }
 func TestFileServerTimeoutAndUnsupported(t *testing.T) {
 	opts := fileTestOptions()
-	opts.Files.Timeout = 25 * time.Millisecond
+	opts.Files.Timeout = time.Second
 	fs, _ := NewFileServer(memoryFiles{file: File{[]FileSection{{1, []byte{1}}}}})
 	s, p, clock := manualSession(t, ServerRole, opts, fs.Handler)
 	startServerSession(t, s, p)

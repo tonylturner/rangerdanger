@@ -184,7 +184,8 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
   receives entries through SOF.LFD, across ASDU boundaries.
 - `client.DownloadFile(ctx, FileKey{CommonAddress:1, Originator:0,
   Address:100, Name:9})` selects/calls, receives sections, checks lengths and
-  section/file sums modulo256, and writes the final ACK before success. File-end LSQ1 accepts any NOS; outgoing final ACKs retain the last section number.
+  section/file sums modulo256, and writes the final ACK before success.
+  File-end LSQ1 accepts any NOS; outgoing final ACKs retain the last section number.
   The result is `File`, with ordered `FileSection{Number, Data}` entries in
   `Sections`; on failure any returned content is partial. No filesystem or
   payload-format policy is built into the library. Both calls require a
@@ -192,26 +193,38 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
 - Implement `FileProvider.Directory(ctx, key) ([]FileDirectory,error)` and
   `Open(ctx, key) (File,error)`. Provider results transfer slice ownership;
   honor cancellation and allow different connections to call concurrently.
-  Return `ErrFileNotFound` by convention for missing content; it has no special internal branch beyond the normal provider-error rejection. Then construct
+  Return `ErrFileNotFound` by convention for missing content; it has no special
+  internal branch beyond the normal provider-error rejection. Then construct
   `files, err := NewFileServer(provider)` and pass `files.Handler` to
   `NewServer`/`NewSession`, or compose it with your normal event handler:
   `files.Handler(ctx, e); applicationHandler(ctx, e)`. The optional handler
   isolates provider work in a bounded worker, and Closed cancels/joins it.
-  Never block on Close/Shutdown from either callback/provider. STOPDT cancels file work and resets state without closing TCP; results from a prior transfer generation cannot be admitted after restart.
+  Handler copies each message before returning to the composed application.
+  Never block on Close/Shutdown from either callback/provider. STOPDT cancels
+  file work and resets state without closing TCP; results from a prior transfer
+  generation cannot be admitted after restart.
 - `Options.Files` defaults: application timeout30s, section checksum retries0,
-  max file16777215 bytes, directory4096 entries. Server admission waits on capacity notifications, not a polling interval.
+  max file16777215 bytes, directory4096 entries. Server admission waits on
+  capacity notifications, not a polling interval. Idle supervision uses the
+  injected `Clock`; application context deadlines remain wall-clock bounds.
   `SegmentSize=0` uses the derived maximum (236 data bytes with default Params);
   choose1..maximum for smaller outbound segments. Incoming decoding is unchanged.
   Zero durations/limits select defaults; retries range0..10. These are **profile
   choices**, not104 t1/t2/t3. Only checksum-driven section recalls are retryable
   (configure both peers); control timeouts/whole files never silently retry.
 - Empty directories/zero-content files/sections are rejected, not represented
-  with invented terminators. Delete/select-section/deactivate-section/uploads
+  with invented terminators; zero-length directory metadata entries are allowed.
+  Directory calls accept arbitrary NOF/NOS placeholders with COT5/SCQ0.
+  Unsolicited non-Request126 announcements still reach the application without
+  affecting file procedures. Delete/select-section/deactivate-section/uploads
   are not implemented by the serving helper. QueryLog127's inclusive timestamps
   and zero sentinels are codec-supported, but the transparent handler rejects
   positive log requests with FRQ not-ready. Route127 elsewhere if implementing
   archives; no positive QueryLog service or upload interoperability is claimed.
-- Uncertain failures (timeout/cancellation/order/overflow, or unresolved failures after a call leg was admitted) fence later helpers until reconnect and best-effort send deactivation. Clean correlated negatives and peer file-deactivated LSQ2 do neither. Inspect `FileResponseError`,
+- Uncertain failures (timeout/cancellation/order/overflow, or unresolved failures
+  after a call leg was admitted) fence later helpers until reconnect and
+  best-effort send deactivation. Clean correlated negatives and peer
+  file-deactivated LSQ2 do neither. Inspect `FileResponseError`,
   `ErrFileChecksum`, `ErrFileAborted`, and the existing procedure errors.
   File response buffers drain as consumed; a large file need not fit entirely
   in EventQueue, but bursts/callbacks/worker inboxes are still bounded. Queue

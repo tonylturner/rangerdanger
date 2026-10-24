@@ -93,3 +93,16 @@ tshark4.6.7 was executed only as a black-box decoder. It names all eight IDs
 and parses APCI/ASDU envelopes, but leaves file elements as Raw Data; therefore
 zero malformed frames do **not** independently verify these element layouts,
 qualifiers, checksums, QueryLog times or the application state machine.
+
+### Owner-selected review corrections (2026-10-23)
+
+No additional public protocol source or implementation was consulted. The owner
+selected liberal acceptance for unambiguous single-object SQ (normalized on
+decode), directory placeholders/zero-length metadata and file-end NOS. Encoding
+retains the strict forms. Clean correlated negatives and file deactivation no
+longer impose uncertain-outcome fencing; overflow, ordering failures and unresolved
+called transfers still do. PICS F1–F3/F6/F9–F13/F16–F20 record the revised
+profile and original generation/callback-ownership/admission APIs.
+The positive directory golden/capture now uses COT5; deliberately arbitrary-cause
+preservation is a separate named test. F8's checksum-NACK-only recall policy,
+F14's unsupported services and F15's archive boundary are unchanged.
