@@ -5,6 +5,7 @@ FROM golang:1.27-alpine AS go-deps
 WORKDIR /app
 COPY services/go.mod ./
 COPY dnp3go/go.mod /dnp3go/go.mod
+COPY iec104go/go.mod /iec104go/go.mod
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 

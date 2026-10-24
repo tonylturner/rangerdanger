@@ -18,6 +18,7 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
     common = {
         ("file", "services/go.mod"),
         ("file", "dnp3go/go.mod"),
+        ("file", "iec104go/go.mod"),
         ("glob", "services/shared/*.go"),
         ("file", "scripts/set-gateway.sh"),
         ("file", "scripts/rtac-harden.sh"),
