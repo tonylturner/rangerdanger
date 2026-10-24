@@ -5,6 +5,7 @@ package rtu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -77,6 +78,13 @@ type startedPeer struct {
 	peer string
 }
 
+// stationServer keeps lifecycle ordering injectable without substituting the
+// station's model or production protocol callbacks.
+type stationServer interface {
+	Serve(context.Context, net.Listener) error
+	Shutdown(context.Context) error
+}
+
 type selection struct {
 	active               bool
 	index, value, qu     int
@@ -115,7 +123,7 @@ type Counters struct{ SendFailures, BuildFailures, LogFailures uint64 }
 type RTU struct {
 	pm          *pointmap.Map
 	opts        Options
-	server      *iec.Server
+	server      stationServer
 	mu          sync.Mutex
 	points      []pointState
 	devices     []deviceState
@@ -183,27 +191,41 @@ func (r *RTU) buildError(err error) {
 // Cancellation does not retry or interrupt a possibly applied FC6: that
 // worker completes its bounded transaction before its transport is closed.
 func (r *RTU) Serve(ctx context.Context, listener net.Listener) error {
-	ctx, cancel := context.WithCancel(ctx)
+	// Shutdown can beat the server goroutine to startup. The stack then
+	// rejects Serve without taking the listener, so ownership stays here.
+	defer listener.Close()
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var workers sync.WaitGroup
 	workers.Add(1)
-	go func() { defer workers.Done(); r.opts.Clock.Run(ctx) }()
+	go func() { defer workers.Done(); r.opts.Clock.Run(runCtx) }()
 	for d := range r.pm.Devices {
 		workers.Add(1)
-		go func(d int) { defer workers.Done(); r.deviceWorker(ctx, d) }(d)
+		go func(d int) { defer workers.Done(); r.deviceWorker(runCtx, d) }(d)
 	}
 	served := make(chan error, 1)
-	go func() { served <- r.server.Serve(ctx, listener) }()
+	go func() {
+		err := r.server.Serve(runCtx, listener)
+		// Classify at the failure boundary, before cleanup cancels workers.
+		// Only a caller-requested stop makes local close/cancellation clean;
+		// a failure observed before that stop must survive later teardown.
+		if ctx.Err() != nil && (errors.Is(err, iec.ErrClosed) ||
+			errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			err = nil
+		}
+		served <- err
+	}()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	var result error
+	var serveFinished bool
 selectLoop:
 	for {
 		select {
 		case <-ctx.Done():
 			break selectLoop
 		case result = <-served:
-			served = nil
+			serveFinished = true
 			break selectLoop
 		case <-ticker.C:
 			r.tick()
@@ -217,13 +239,8 @@ selectLoop:
 	if err := r.server.Shutdown(shutdown); err != nil {
 		return fmt.Errorf("IEC shutdown: %w", err)
 	}
-	if served != nil {
-		if err := <-served; err != nil && err != context.Canceled {
-			return err
-		}
-	}
-	if result == context.Canceled {
-		return nil
+	if !serveFinished {
+		result = <-served
 	}
 	return result
 }
