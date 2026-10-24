@@ -131,8 +131,8 @@ func TestFileProcedureProviderNegatives(t *testing.T) {
 			if !errors.Is(err, ErrNegativeResponse) {
 				t.Fatal(err)
 			}
-			if _, err = c.Directory(testContext(t), testFileKey); !errors.Is(err, ErrProcedureUncertain) {
-				t.Fatal("failed exchange not fenced", err)
+			if _, err = c.Directory(testContext(t), testFileKey); !errors.Is(err, ErrNegativeResponse) {
+				t.Fatal("clean negative did not permit another helper", err)
 			}
 		})
 	}

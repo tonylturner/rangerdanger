@@ -71,7 +71,9 @@ type FileProvider interface {
 }
 
 var (
-	// ErrFileNotFound is the provider's unknown-file response.
+	// ErrFileNotFound is a provider convention for unavailable content. It has no
+	// special internal branch: all provider errors reject selection with FRQ0x80
+	// or a directory call with SCQ memory-unavailable.
 	ErrFileNotFound = errors.New("iec104go: file not found")
 	// ErrFileChecksum means received content failed the section or file checksum.
 	ErrFileChecksum = errors.New("iec104go: file checksum failure")

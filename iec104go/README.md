@@ -184,7 +184,7 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
   receives entries through SOF.LFD, across ASDU boundaries.
 - `client.DownloadFile(ctx, FileKey{CommonAddress:1, Originator:0,
   Address:100, Name:9})` selects/calls, receives sections, checks lengths and
-  section/file sums modulo256, and writes the final ACK before success.
+  section/file sums modulo256, and writes the final ACK before success. File-end LSQ1 accepts any NOS; outgoing final ACKs retain the last section number.
   The result is `File`, with ordered `FileSection{Number, Data}` entries in
   `Sections`; on failure any returned content is partial. No filesystem or
   payload-format policy is built into the library. Both calls require a
@@ -192,7 +192,7 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
 - Implement `FileProvider.Directory(ctx, key) ([]FileDirectory,error)` and
   `Open(ctx, key) (File,error)`. Provider results transfer slice ownership;
   honor cancellation and allow different connections to call concurrently.
-  Return `ErrFileNotFound` for missing content. Then construct
+  Return `ErrFileNotFound` by convention for missing content; it has no special internal branch beyond the normal provider-error rejection. Then construct
   `files, err := NewFileServer(provider)` and pass `files.Handler` to
   `NewServer`/`NewSession`, or compose it with your normal event handler:
   `files.Handler(ctx, e); applicationHandler(ctx, e)`. The optional handler
@@ -209,8 +209,7 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
   and zero sentinels are codec-supported, but the transparent handler rejects
   positive log requests with FRQ not-ready. Route127 elsewhere if implementing
   archives; no positive QueryLog service or upload interoperability is claimed.
-- Any admitted file failure fences subsequent helpers until reconnect and
-  best-effort sends deactivation. Inspect `FileResponseError`,
+- Uncertain failures (timeout/cancellation/order/overflow, or unresolved failures after a call leg was admitted) fence later helpers until reconnect and best-effort send deactivation. Clean correlated negatives and peer file-deactivated LSQ2 do neither. Inspect `FileResponseError`,
   `ErrFileChecksum`, `ErrFileAborted`, and the existing procedure errors.
   File response buffers drain as consumed; a large file need not fit entirely
   in EventQueue, but bursts/callbacks/worker inboxes are still bounded. Queue

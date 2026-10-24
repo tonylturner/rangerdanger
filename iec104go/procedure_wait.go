@@ -31,6 +31,7 @@ type transaction struct {
 	err       error
 	limit     int
 	streaming bool
+	file      *fileTransaction
 	leg       *procedureLeg
 }
 
@@ -93,13 +94,15 @@ func (s *Session) complete(t *transaction, err error, admitted bool) ([]Message,
 	if t.err != nil {
 		err = t.err
 	}
-	if t.streaming && err == nil && len(t.responses) != 0 {
-		err = ErrProcedureOrder
+	uncertain := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder)
+	if t.file != nil {
+		err, uncertain = t.fileOutcome(err)
+		t.file.uncertain = admitted && uncertain
 	}
 	if s.procedure == t {
 		s.procedure = nil
 	}
-	if admitted && (t.streaming && err != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder)) {
+	if admitted && uncertain {
 		s.procedureUncertain = true
 	}
 	return append([]Message(nil), t.responses...), err

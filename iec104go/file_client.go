@@ -12,6 +12,7 @@ type fileReceiver struct {
 	t        *transaction
 	key      FileKey
 	admitted bool
+	last     Element
 }
 
 func (c *Client) beginFile(ctx context.Context, k FileKey) (*fileReceiver, error) {
@@ -27,14 +28,15 @@ func (c *Client) beginFile(ctx context.Context, k FileKey) (*fileReceiver, error
 	}
 	t.mu.Lock()
 	t.streaming = true
+	t.file = &fileTransaction{}
 	t.mu.Unlock()
 	return &fileReceiver{c: c, t: t, key: k}, nil
 }
 func (r *fileReceiver) finish(err error) error {
 	_, err = r.c.complete(r.t, err, r.admitted)
-	if err != nil && r.admitted {
-		// A failed file dialogue may leave uncorrelated section data in flight. No
-		// subsequent helper may mistake it for a new file, even after a negative.
+	if r.t.file.uncertain {
+		// Only unresolved dialogues need cleanup. A correlated negative or
+		// file-deactivated indication is already a clean end, not another request.
 		if e := r.c.Send(fileMessage(r.key, FileCall{Name: r.key.Name, Qualifier: DeactivateFile}, FileTransfer)); e != nil {
 			r.c.RequestClose()
 		}
@@ -50,6 +52,12 @@ func (r *fileReceiver) send(ctx context.Context, e Element, cot COT) error {
 		return err
 	}
 	r.admitted = true
+	r.last = e
+	r.t.mu.Lock()
+	if call, ok := e.(FileCall); ok && (call.Qualifier == CallFile || call.Qualifier == CallSection) {
+		r.t.file.called = true
+	}
+	r.t.mu.Unlock()
 	// Every new leg must reach its complete Write before success is possible,
 	// including final ACKs which do not receive another application confirmation.
 	for {
@@ -69,42 +77,6 @@ func (r *fileReceiver) send(ctx context.Context, e Element, cot COT) error {
 			return ctx.Err()
 		}
 	}
-}
-func (r *fileReceiver) next(ctx context.Context) (Element, error) {
-	m, err := r.t.next(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = responseError(m); err != nil {
-		return nil, err
-	}
-	a := m.(*ASDU)
-	if a.Header.Cause != FileTransfer || len(a.Objects) != 1 {
-		return nil, ErrProcedureOrder
-	}
-	e := a.Objects[0].Element
-	name, ok := fileElementName(e)
-	if !ok {
-		return nil, ErrProcedureOrder
-	}
-	if name != r.key.Name {
-		return nil, ErrProcedureOrder
-	}
-	switch v := e.(type) {
-	case FileCall:
-		if v.Qualifier>>4 != 0 {
-			return nil, &FileResponseError{v.Qualifier >> 4, v.Qualifier}
-		}
-	case FileACK:
-		if v.Qualifier&15 == NegativeFileACK || v.Qualifier&15 == NegativeSectionACK {
-			return nil, &FileResponseError{v.Qualifier >> 4, v.Qualifier}
-		}
-	case FileLast:
-		if v.Qualifier == 2 || v.Qualifier == 4 {
-			return nil, ErrFileAborted
-		}
-	}
-	return e, nil
 }
 
 // Directory calls the directory at an explicit CA/OA/IOA. The profile sends a
@@ -127,13 +99,17 @@ func (c *Client) Directory(ctx context.Context, k FileKey) (entries []FileDirect
 			return nil, e
 		}
 		if e = responseError(m); e != nil {
-			return nil, e
+			return nil, r.headerNegative(m, e)
 		}
 		a := m.(*ASDU)
 		if a.Header.Type == F_SC_NA_1 && a.Header.Cause == Request {
 			q := a.Objects[0].Element.(FileCall).Qualifier
 			if q>>4 != 0 {
-				return nil, &FileResponseError{q >> 4, q}
+				call := a.Objects[0].Element.(FileCall)
+				if !r.correlatedNegative(call) {
+					return nil, ErrProcedureOrder
+				}
+				return nil, r.cleanEnd(&FileResponseError{q >> 4, q})
 			}
 		}
 		if a.Header.Type != F_DR_TA_1 || a.Header.Cause != Request {
@@ -156,8 +132,9 @@ func (c *Client) Directory(ctx context.Context, k FileKey) (entries []FileDirect
 }
 
 // DownloadFile selects/calls a transparent file, verifies section and whole-file
-// checksums, and acknowledges its final indication. On failure reconnect before
-// another helper. Memory is capped by Options.Files.MaxFileSize.
+// checksums, and acknowledges its final indication. Uncertain failures require
+// reconnect; clean correlated negatives do not. Memory is capped by
+// Options.Files.MaxFileSize.
 func (c *Client) DownloadFile(ctx context.Context, k FileKey) (file File, err error) {
 	r, err := c.beginFile(ctx, k)
 	if err != nil {
@@ -175,9 +152,6 @@ func (c *Client) DownloadFile(ctx context.Context, k FileKey) (file File, err er
 	if !ok {
 		return file, ErrProcedureOrder
 	}
-	if ready.Qualifier&0x80 != 0 {
-		return file, &FileResponseError{Qualifier: ready.Qualifier}
-	}
 	if ready.Qualifier != 0 || ready.Length == 0 || ready.Length > c.opts.Files.MaxFileSize {
 		return file, ErrProcedureOrder
 	}
@@ -194,9 +168,6 @@ func (c *Client) DownloadFile(ctx context.Context, k FileKey) (file File, err er
 		}
 		switch v := e.(type) {
 		case SectionReady:
-			if v.Qualifier&128 != 0 {
-				return file, &FileResponseError{Qualifier: v.Qualifier}
-			}
 			if v.Qualifier != 0 || v.Section == 0 || seen[v.Section] || v.Length == 0 || uint64(total)+uint64(v.Length) > uint64(ready.Length) {
 				return file, ErrProcedureOrder
 			}
@@ -212,16 +183,17 @@ func (c *Client) DownloadFile(ctx context.Context, k FileKey) (file File, err er
 				return file, err
 			}
 		case FileLast:
-			if v.Qualifier != 1 || len(file.Sections) == 0 || v.Section != file.Sections[len(file.Sections)-1].Number || total != ready.Length {
+			if v.Qualifier != 1 || len(file.Sections) == 0 || total != ready.Length {
 				return file, ErrProcedureOrder
 			}
+			last := file.Sections[len(file.Sections)-1].Number
 			if v.Checksum != sum {
-				if err := r.exchange(ctx, FileACK{k.Name, v.Section, NegativeFileACK | FileChecksumFailure<<4}); err != nil {
+				if err := r.exchange(ctx, FileACK{k.Name, last, NegativeFileACK | FileChecksumFailure<<4}); err != nil {
 					return file, err
 				}
 				return file, ErrFileChecksum
 			}
-			err = r.exchange(ctx, FileACK{k.Name, v.Section, PositiveFileACK})
+			err = r.exchange(ctx, FileACK{k.Name, last, PositiveFileACK})
 			return file, err
 		default:
 			return file, ErrProcedureOrder
@@ -245,36 +217,42 @@ func (r *fileReceiver) section(ctx context.Context, ready SectionReady) ([]byte,
 		if err := r.exchange(ctx, FileCall{r.key.Name, ready.Section, CallSection}); err != nil {
 			return nil, err
 		}
-		var data []byte
-		for {
-			e, err := r.wait(ctx)
-			if err != nil {
-				return nil, err
-			}
-			switch v := e.(type) {
-			case FileSegment:
-				if v.Section != ready.Section || len(v.Data) == 0 || uint64(len(data))+uint64(len(v.Data)) > uint64(ready.Length) {
-					return nil, ErrProcedureOrder
-				}
-				data = append(data, v.Data...)
-			case FileLast:
-				if v.Section != ready.Section || v.Qualifier != 3 || uint32(len(data)) != ready.Length {
-					return nil, ErrProcedureOrder
-				}
-				if FileChecksum(data) == v.Checksum {
-					return data, nil
-				}
-				if err := r.exchange(ctx, FileACK{r.key.Name, ready.Section, NegativeSectionACK | FileChecksumFailure<<4}); err != nil {
-					return nil, err
-				}
-				if attempt >= r.c.opts.Files.SectionRetries {
-					return nil, ErrFileChecksum
-				}
-				goto retry
-			default:
+		data, err := r.sectionContent(ctx, ready)
+		if err != ErrFileChecksum {
+			return data, err
+		}
+		if err := r.exchange(ctx, FileACK{r.key.Name, ready.Section, NegativeSectionACK | FileChecksumFailure<<4}); err != nil {
+			return nil, err
+		}
+		if attempt >= r.c.opts.Files.SectionRetries {
+			return nil, ErrFileChecksum
+		}
+	}
+}
+
+func (r *fileReceiver) sectionContent(ctx context.Context, ready SectionReady) ([]byte, error) {
+	var data []byte
+	for {
+		e, err := r.wait(ctx)
+		if err != nil {
+			return nil, err
+		}
+		switch v := e.(type) {
+		case FileSegment:
+			if v.Section != ready.Section || len(v.Data) == 0 || uint64(len(data))+uint64(len(v.Data)) > uint64(ready.Length) {
 				return nil, ErrProcedureOrder
 			}
+			data = append(data, v.Data...)
+		case FileLast:
+			if v.Section != ready.Section || v.Qualifier != 3 || uint32(len(data)) != ready.Length {
+				return nil, ErrProcedureOrder
+			}
+			if FileChecksum(data) != v.Checksum {
+				return nil, ErrFileChecksum
+			}
+			return data, nil
+		default:
+			return nil, ErrProcedureOrder
 		}
-	retry:
 	}
 }
