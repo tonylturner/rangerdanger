@@ -1,3 +1,4 @@
+ARG GO_IMAGE=golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade
 FROM golang:1.27-alpine AS dnp3-builder
 WORKDIR /src
 COPY dnp3go/ .
@@ -6,16 +7,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o /dnp3poll ./cmd/dnp3poll \
  && CGO_ENABLED=0 go build -o /dnp3cmd ./cmd/dnp3cmd
 
-# ── iec104cmd (GPLv3) ────────────────────────────────────────────────
-FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS iec104cmd-builder
-RUN apk add --no-cache build-base curl linux-headers
-COPY services/iec104/src/ /src/iec104/src/
-COPY services/iec104/LICENSE /src/iec104/LICENSE
-COPY services/iec104/README.md /src/iec104/README.md
-COPY services/iec104/build-iec104cmd.sh /src/iec104/build-iec104cmd.sh
-RUN /src/iec104/build-iec104cmd.sh /src/iec104 /out /tmp/iec104cmd
+# IEC 104 CLI: standalone static Go build, independent of the service image.
+FROM ${GO_IMAGE} AS iec104cmd-builder
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=off
+WORKDIR /src/iec104go
+COPY iec104go/go.mod iec104go/*.go ./
+COPY iec104go/cmd/iec104cmd/ ./cmd/iec104cmd/
+RUN go build -trimpath -o /out/iec104cmd ./cmd/iec104cmd
 
-# webtop ubuntu-mate pinned by digest (A7).
 FROM linuxserver/webtop:ubuntu-mate@sha256:db3e3c309152b4f2d0835ee570c5141d0868097efde235593ffa575055d95a82
 
 # Install OT analysis tools and Modbus testing
@@ -37,13 +36,9 @@ RUN apt-get update && \
 COPY --from=dnp3-builder /dnp3poll /usr/local/bin/dnp3poll
 COPY --from=dnp3-builder /dnp3cmd /usr/local/bin/dnp3cmd
 
-# IEC 104 CLI (GPLv3), static binary plus its corresponding source and licence.
+# IEC 104 CLI (Apache-2.0); unrelated base-image components retain their licences.
 COPY --from=iec104cmd-builder /out/iec104cmd /usr/local/bin/iec104cmd
-COPY --from=iec104cmd-builder /tmp/iec104cmd/lib60870.tar.gz /usr/share/src/iec104/lib60870.tar.gz
-COPY --from=iec104cmd-builder /src/iec104/src/ /usr/share/src/iec104/src/
-COPY --from=iec104cmd-builder /src/iec104/build-iec104cmd.sh /usr/share/src/iec104/build-iec104cmd.sh
-COPY --from=iec104cmd-builder /src/iec104/LICENSE /usr/share/licenses/iec104/LICENSE
-COPY --from=iec104cmd-builder /src/iec104/README.md /usr/share/licenses/iec104/README.md
+COPY iec104go/LICENSE /usr/share/licenses/iec104/LICENSE
 
 # Create MATE desktop shortcuts and a pcaps directory
 RUN mkdir -p /config/Desktop /home/abc/pcaps && \
