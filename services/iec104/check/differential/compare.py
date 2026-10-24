@@ -15,7 +15,9 @@ from apdu import normalize_apdus, session_first_cp56
 from decode import DEFAULT_TSHARK, DecodeError, decode_capture
 
 DIRECTIONS = ("client_to_server", "server_to_client")
-ALLOWLIST_SCOPE_KEYS = {"comparison", "session", "direction", "record_range"}
+ALLOWLIST_SCOPE_KEYS = {
+    "scenarios", "role_set", "comparison", "session", "direction", "record_range",
+}
 ALLOWLIST_KEYS = {
     "id",
     "scope",
@@ -41,6 +43,10 @@ def _read_json(path: Path, description: str) -> Any:
         raise InputError(f"could not read {description} {path}: {error}") from error
     except json.JSONDecodeError as error:
         raise InputError(f"invalid JSON in {description} {path}: {error}") from error
+
+
+def _exact_id(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch("[a-z0-9-]+", value) is not None
 
 
 def load_allowlist(path: Path) -> list[dict[str, Any]]:
@@ -76,9 +82,16 @@ def load_allowlist(path: Path) -> list[dict[str, Any]]:
         scope = entry["scope"]
         if not isinstance(scope, dict) or set(scope) - ALLOWLIST_SCOPE_KEYS:
             raise InputError(f"{where}.scope has unknown keys")
-        if not {"comparison", "session", "direction"}.issubset(scope):
-            raise InputError(f"{where}.scope needs comparison, session, and direction")
-        if scope["comparison"] not in {"A", "B"}:
+        if not (ALLOWLIST_SCOPE_KEYS - {"record_range"}).issubset(scope):
+            raise InputError(f"{where}.scope needs scenarios, role_set, comparison, session, direction")
+        scenarios = scope["scenarios"]
+        if (not isinstance(scenarios, list) or not scenarios
+                or not all(_exact_id(case) for case in scenarios)
+                or len(set(scenarios)) != len(scenarios)):
+            raise InputError(f"{where}.scope.scenarios must be unique, exact scenario IDs")
+        if not _exact_id(scope["role_set"]):
+            raise InputError(f"{where}.scope.role_set must be one exact role-set ID")
+        if not isinstance(scope["comparison"], str) or scope["comparison"] not in {"A", "B"}:
             raise InputError(f"{where}.scope.comparison must be A or B")
         if (
             not isinstance(scope["session"], int)
@@ -86,7 +99,7 @@ def load_allowlist(path: Path) -> list[dict[str, Any]]:
             or scope["session"] < 0
         ):
             raise InputError(f"{where}.scope.session must be a non-negative integer")
-        if scope["direction"] not in {*DIRECTIONS, "session"}:
+        if not isinstance(scope["direction"], str) or scope["direction"] not in {*DIRECTIONS, "session"}:
             raise InputError(f"{where}.scope.direction is not an exact direction")
         if "record_range" in scope:
             record_range = scope["record_range"]
@@ -109,7 +122,10 @@ def load_allowlist(path: Path) -> list[dict[str, Any]]:
         if (
             not isinstance(field, str)
             or not field
-            or any(marker in field for marker in ("*", "?", "[", "]"))
+            or not re.fullmatch(
+                r"[A-Za-z_][A-Za-z_0-9]*(?:\[[0-9]+\]|\.[A-Za-z_][A-Za-z_0-9]*)*",
+                field,
+            )
         ):
             raise InputError(f"{where}.field must be a specific, non-wildcard field")
         for name in ("reason", "approved_by"):
@@ -125,6 +141,19 @@ def load_allowlist(path: Path) -> list[dict[str, Any]]:
             raise InputError(f"{where}.delta must be numeric")
         entries.append(entry)
     return entries
+
+
+def select_allowlist(
+    entries: list[dict[str, Any]], scenario_id: str | None, role_set: str | None,
+) -> list[dict[str, Any]]:
+    """Select before matching: inactive entries cannot suppress or become stale."""
+    for name, value in (("scenario-id", scenario_id), ("role-set", role_set)):
+        if value is not None and not _exact_id(value):
+            raise InputError(f"{name} must be an exact non-wildcard ID")
+    if entries and (scenario_id is None or role_set is None):
+        raise InputError("a nonempty allow-list requires --scenario-id and --role-set")
+    return [entry for entry in entries if scenario_id in entry["scope"]["scenarios"]
+            and role_set == entry["scope"]["role_set"]]
 
 
 def load_session_map(path: Path | None) -> dict[int, int] | None:
@@ -531,8 +560,12 @@ def _run_comparison(
     tshark: str,
     timeout: int,
     cp56_tolerance_ms: int,
+    *,
+    scenario_id: str | None = None,
+    role_set: str | None = None,
 ) -> dict[str, Any]:
-    entries = load_allowlist(allowlist_path)
+    all_entries = load_allowlist(allowlist_path)
+    entries = select_allowlist(all_entries, scenario_id, role_set)
     explicit_pairs = load_session_map(sessions_path)
     baseline = decode_capture(
         baseline_path, tshark, timeout, cp56_tolerance_ms
@@ -750,7 +783,9 @@ def _run_comparison(
         },
         "allowlist": {
             "path": str(allowlist_path),
+            "context": {"scenario_id": scenario_id, "role_set": role_set},
             "entries": entries,
+            "inactive_ids": [entry["id"] for entry in all_entries if entry not in entries],
             "issues": allowlist_issues,
             "status": "pass" if not allowlist_issues else "fail",
         },
@@ -837,6 +872,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--allowlist", type=Path, default=Path(__file__).with_name("allowlist.json"))
+    parser.add_argument("--scenario-id", help="exact scenario ID (required with a nonempty allow-list)")
+    parser.add_argument("--role-set", help="exact role-set ID (required with a nonempty allow-list)")
     parser.add_argument("--sessions", type=Path, help="JSON map of baseline to candidate session indexes")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tshark", default=DEFAULT_TSHARK)
@@ -852,6 +889,8 @@ def main(argv: list[str] | None = None) -> int:
             arguments.tshark,
             arguments.timeout,
             arguments.cp56_tolerance_ms,
+            scenario_id=arguments.scenario_id,
+            role_set=arguments.role_set,
         )
         arguments.out.mkdir(parents=True, exist_ok=True)
         (arguments.out / "report.json").write_text(

@@ -11,7 +11,7 @@ CHECK = HERE.parent
 KINDS = {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"}
 OPS = {
     "start", "gi", "stop", "test", "negative", "sbo",
-    "fixture", "expect", "server-reports", "window",
+    "fixture", "expect", "server-reports", "window", "cycles",
 }
 
 
@@ -47,7 +47,7 @@ def scenario(path):
     for key, upper in (("timeout_s", 600), ("expected_sessions", 10)):
         if type(value[key]) is not int or not 1 <= value[key] <= upper:
             raise ValueError("invalid " + key)
-    if value["point_map"] != "feeder-status-v1":
+    if value["point_map"] not in ("feeder-status-v1", "feeder-analog-v1"):
         raise ValueError("unknown point-map fixture")
     if not isinstance(value["actions"], list) or not value["actions"]:
         raise ValueError("actions must be a nonempty list")
@@ -66,6 +66,10 @@ def scenario(path):
         }
         if action["op"] not in supported[value["kind"]]:
             raise ValueError("action not supported by role configuration")
+        profile_ops = ({"start", "stop", "test", "cycles"}
+                       if value["point_map"] == "feeder-analog-v1" else OPS - {"cycles"})
+        if action["op"] not in profile_ops:
+            raise ValueError("action not supported by point-map fixture")
     return value
 
 
@@ -76,7 +80,8 @@ def validate_args(action):
             "negative": ("type", "cot", "ca", "ioa", "value", "expected_cot"),
             "sbo": ("value",), "fixture": ("query",),
             "expect": ("type", "cot", "ioa", "value"),
-            "server-reports": ("count", "value", "timed_invalid"), "window": ()}
+            "server-reports": ("count", "value", "timed_invalid"), "window": (),
+            "cycles": ("count",)}
     exact(args, keys[op])
     if op == "fixture":
         if not isinstance(args["query"], str) or args["query"] not in {
@@ -92,7 +97,7 @@ def validate_args(action):
                 "count": 32770, "ioa": 16777215, "ca": 65535,
             }.get(key, 255):
                 raise ValueError("invalid " + key)
-        if op == "server-reports" and args["count"] < 1:
+        if op in ("server-reports", "cycles") and args["count"] < 1:
             raise ValueError("report count must be positive")
 
 
@@ -105,17 +110,19 @@ def roles(path):
     return value
 
 
-def point_map(subnet):
+def point_map(subnet, profile="feeder-status-v1"):
     """Small real app profile, not a modified C implementation.
 
-    Status-only inventory has no cyclic analog reporters to disable. Full
-    42-point analog/cyclic acceptance remains in check/run.sh.
+    Analog inventory retains the fixture's constant float registers and real
+    cyclic timers. Full 42-point acceptance remains in check/run.sh.
     """
     data = load(CHECK / "points.test.json")
     prefix = str(ipaddress.ip_network(subnet).network_address).rsplit(".", 1)[0]
     data["devices"] = data["devices"][:1]
     data["devices"][0]["host"] = prefix + ".20"
-    data["points"] = data["points"][:2]
+    if profile not in ("feeder-status-v1", "feeder-analog-v1"):
+        raise ValueError("unknown point-map fixture")
+    data["points"] = data["points"][:4 if profile == "feeder-analog-v1" else 2]
     data["commands"] = data["commands"][:1]
     data["clock"]["url"] = "http://" + prefix + ".20:8080/api/state"
     data["timers"].update(k=12, w=1, t1_s=15, t2_s=1, t3_s=60)

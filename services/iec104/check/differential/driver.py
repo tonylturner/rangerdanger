@@ -119,6 +119,17 @@ class Peer:
             self.u(67, 131)
         elif op == "window":
             self.window()
+        elif op == "cycles":
+            # The existing Modbus fixture supplies constant 28.9 A / 20 kV
+            # registers. A received, acknowledged image is the cycle barrier;
+            # no wall-clock sampling window or sleep defines frame counts.
+            expected = bytes.fromhex("0d0201000100")
+            expected += (2001).to_bytes(3, "little") + struct.pack("<fB", 28.9, 0)
+            expected += (2002).to_bytes(3, "little") + struct.pack("<fB", 20, 0)
+            for cycle in range(args["count"]):
+                data = self.until(lambda frame: not frame[0] & 1)
+                assert data[4:] == expected, data.hex()
+                print(json.dumps({"cycle": cycle + 1, "asdu": data[4:].hex()}), flush=True)
         elif op == "gi":
             first = len(self.records)
             self.asdu(100, 6, 0, b"\x14")

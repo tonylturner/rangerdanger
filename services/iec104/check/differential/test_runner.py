@@ -15,6 +15,7 @@ from driver import Peer
 from runtime import Docker, unused_subnet
 from scenario import HERE, load, point_map, roles, scenario
 from process_utils import run
+import run as runner
 
 
 class ScenarioTests(unittest.TestCase):
@@ -29,7 +30,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_entire_catalog_is_strict_and_covers_four_role_rows(self):
         cases = [scenario(path) for path in (HERE / "scenarios").glob("*.json")]
-        self.assertEqual(len(cases), 9)
+        self.assertEqual(len(cases), 10)
         self.assertEqual({case["kind"] for case in cases},
                          {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"})
         self.assertEqual(len({case["id"] for case in cases}), len(cases))
@@ -75,6 +76,76 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(len(data["commands"]), 1)
         self.assertEqual(data["devices"][0]["host"], "172.29.150.20")
         self.assertIn("172.29.150.20", data["clock"]["url"])
+
+
+class CatalogTests(unittest.TestCase):
+    def test_nonempty_allowlist_without_role_set_fails_before_docker(self):
+        entry = {
+            "id": "test", "scope": {"scenarios": ["startup-session"], "role_set": "all-go",
+                                   "comparison": "A", "session": 0, "direction": "session"},
+            "field": "frame_kind", "baseline": "S", "candidate": None,
+            "reason": "test approval", "approved_by": "test", "max_matches": 1,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowlist.json"
+            path.write_text(json.dumps([entry]))
+            argv = ["run.py", str(HERE / "scenarios/startup-session.json"),
+                    "--baseline", "baseline", "--candidate", "candidate",
+                    "--reference", "reference", "--out", str(Path(directory) / "evidence"),
+                    "--allowlist", str(path)]
+            with patch.object(sys, "argv", argv), patch.object(runner, "roles", return_value={}), \
+                    patch.object(runner, "load", return_value={"image_id": "sha256:test"}), \
+                    patch.object(runner, "Docker") as docker, \
+                    patch.object(runner, "run_cases") as cases:
+                self.assertEqual(runner.main(), 2)
+                docker.assert_not_called()
+                cases.assert_not_called()
+            self.assertFalse((Path(directory) / "evidence").exists())
+
+    def test_catalog_forwards_same_role_and_allowlist_to_each_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(runner, "run_case", return_value=0) as call:
+                status = runner.run_cases(
+                    [Path("one.json"), Path("two.json")], None, {}, {},
+                    Path("reference"), Path(directory), "tshark",
+                    role_set="all-go", allowlist=Path("reviewed.json"))
+            self.assertEqual(status, 0)
+            self.assertEqual(call.call_count, 2)
+            for invocation in call.call_args_list:
+                self.assertEqual(invocation.kwargs,
+                                 {"role_set": "all-go", "allowlist": Path("reviewed.json")})
+
+    def test_comparator_receives_scenario_id_not_filename_and_explicit_role(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            (out / "startup-session").mkdir()
+            path = out / "not-the-scenario-id.json"
+            path.write_text((HERE / "scenarios/startup-session.json").read_text())
+            with patch.object(runner, "Docker"), patch.object(runner, "unused_subnet"), \
+                    patch.object(runner, "side"), patch.object(runner.shutil, "copyfile"), \
+                    patch.object(runner, "run_owned", return_value=subprocess.CompletedProcess(
+                        [], 2, "", "test input failure")) as call:
+                status = runner.run_case(
+                    path, None, {}, {}, Path("reference"), out, "tshark",
+                    role_set="go-rtu", allowlist=Path("reviewed.json"))
+            self.assertEqual(status, 2)
+            command = call.call_args.args[0]
+            self.assertEqual(command[command.index("--scenario-id") + 1], "startup-session")
+            self.assertEqual(command[command.index("--role-set") + 1], "go-rtu")
+            self.assertEqual(command[command.index("--allowlist") + 1], "reviewed.json")
+
+    def test_failed_scenario_keeps_evidence_and_does_not_skip_later_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            with patch.object(runner, "run_case", side_effect=[RuntimeError("failed peer"), 1, 0]) as call:
+                status = runner.run_cases(
+                    [Path("one.json"), Path("two.json"), Path("three.json")],
+                    None, {}, {}, Path("reference"), out, "tshark")
+            self.assertEqual(status, 2)
+            self.assertEqual(call.call_count, 3)
+            results = load(out / "results.json")
+            self.assertEqual([case["exit_code"] for case in results], [2, 1, 0])
+            self.assertEqual(results[0]["error"], "failed peer")
 
 
 class OwnershipTests(unittest.TestCase):

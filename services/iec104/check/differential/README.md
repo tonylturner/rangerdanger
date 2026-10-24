@@ -115,6 +115,8 @@ baseline):
   {
     "id": "approved-change-123",
     "scope": {
+      "scenarios": ["rtu-quality"],
+      "role_set": "go-rtu",
       "comparison": "A",
       "session": 0,
       "direction": "server_to_client",
@@ -130,11 +132,34 @@ baseline):
 ]
 ```
 
-`record_range` is optional and inclusive. Wildcards are rejected. The
-`comparison`, zero-based session, exact direction, and field are required.
-`approved_by` and `reason` must be non-empty. A stale entry or one that matches
-more than `max_matches` fails the run. Allow-list matches are visible in both
-reports; decode-validity and TCP-report-only results cannot be allow-listed.
+`scenarios` is a nonempty list of unique, exact scenario IDs; `role_set` is one
+exact comparison identity chosen by the caller (for example `all-go`, `go-rtu`,
+`go-clients`, or `cc-reference`). Both use lowercase letters, digits and hyphens
+only. The identity describes the whole baseline/candidate role pairing, not an
+individual program or an inferred image name. Wildcards are forbidden in
+scenario IDs, role-set IDs, directions and fields; numeric field indexes are
+literal. Old unscoped entries are rejected.
+
+`record_range` is optional and inclusive. The `comparison`, zero-based session,
+exact direction, and field are required. `approved_by` and `reason` must be
+non-empty. Each entry is selected only when **both** the current scenario ID
+and role-set ID match its scope. Only selected entries can suppress differences,
+become stale (zero matches), overlap, or exceed `max_matches`. Counts reset for
+each comparison: listing two scenarios requires a match in each, independently.
+Entries naming other scenarios or role sets are inactive, not stale.
+
+For a nonempty allow-list, pass `--role-set ID` to `run.py`; it forwards the
+scenario's JSON `id` (not its filename) and that identity to every comparison.
+`--allowlist FILE` selects a reviewed file without editing the shipped empty
+list. Missing/invalid context is rejected before Docker resources are created.
+For standalone `compare.py`, supply both `--scenario-id ID` and `--role-set ID`.
+Context may be omitted only with an empty allow-list, so existing C/C checks
+need no approvals or implicit role identity. Never reuse a role-set identity
+for a different pairing to broaden an approval.
+
+JSON reports record context, selected entries, inactive entry IDs and issues;
+matches remain visible in both reports. Decode-validity and TCP-report-only
+results cannot be allow-listed.
 
 ## Tests
 
@@ -164,6 +189,7 @@ python3 services/iec104/check/differential/run.py --catalog \
   --baseline build/iec104-reference/roles.json \
   --candidate build/iec104-reference/roles.json \
   --reference build/iec104-reference/baseline.json \
+  --role-set cc-reference \
   --out build/iec104-differential
 ```
 
@@ -181,8 +207,13 @@ Scenarios use schema 1: an ID, role kind, deadline, capture-Modbus switch,
 versioned point-map profile, expected session count and ordered
 `{op,args,timeout_s}` actions. Unknown/duplicate keys, nonfinite numbers,
 unsupported actions and role-incompatible operations are rejected. The
-status-only feeder profile deliberately has no analog cyclic points;
-42-point analog/cyclic behavior is still exercised by `check/run.sh`.
+status-only feeder profile deliberately has no analog cyclic points.
+`analog-cyclic` uses a four-point profile with the Modbus fixture's constant
+28.9 A / 20 kV registers and unchanged 2000 ms cyclic timers. Each received,
+acknowledged two-object periodic ASDU is a cycle barrier; after exactly three
+cycles the peer stops data transfer. It checks the complete ASDU bytes,
+including COT, ordering, values and quality, without a sampling sleep.
+Full 42-point analog/cyclic behavior is also exercised by `check/run.sh`.
 STARTDT, GI ACT-TERM, select/execute, fresh Modbus reads, GPS requests and
 scripted-server acknowledgments are barriers, never fixed startup sleeps.
 The scripted server uses exact fixed CP56 IV timestamps; the real RTU uses
@@ -222,3 +253,20 @@ removes the separately built reference tag when finished:
 ```sh
 docker image rm rd-iec104-ref:c1de19412b69
 ```
+
+## Legacy Go candidate gate
+
+`RD_CHECK_IMPL=c|go services/iec104/check/run.sh` selects the base recipe
+(default `c`). The Go path builds `go.Dockerfile --target combined`; only C
+runs the C `model-check` build stage. Go model assertions remain ordinary Go
+tests, not a second Docker build target. The test-tool overlay is shared.
+
+The legacy gate gives every container (including short-lived commands) an
+`rd*` name and unique owner label. Its bounded Docker wrapper refuses prefix
+collisions before installing cleanup, creates internal networks with no host
+ports, and cleans only that run's labels and three preflight-checked image
+tags. C dependency/compiler build output is sealed. Default prefixes are
+unique; `RD_CHECK_PREFIX` can set a fresh explicit prefix.
+The Python fixture image is inspected first and pulled through the bounded
+wrapper (300 s) on a cache miss, including on fresh CI runners. It is a shared
+dependency, not an owned build output: cleanup never removes its tag.
