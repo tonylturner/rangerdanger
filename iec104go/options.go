@@ -139,6 +139,9 @@ func (o Options) normalized() (Options, error) {
 	if err := o.Params.Validate(); err != nil {
 		return o, err
 	}
+	if o.Files.SegmentSize > (FileOptions{}).segmentSize(o.Params) {
+		return o, fmt.Errorf("%w: file segment size exceeds ASDU capacity", ErrMalformed)
+	}
 	if o.SendQueue < 1 || o.EventQueue < 1 || o.MaxConnections < 1 {
 		return o, fmt.Errorf("%w: queue/connection limits", ErrMalformed)
 	}

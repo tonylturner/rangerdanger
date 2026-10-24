@@ -300,7 +300,7 @@ func (w *fileServing) offer(ctx context.Context) error {
 }
 func (w *fileServing) section(ctx context.Context) error {
 	s := w.file.Sections[w.index]
-	limit := MaxASDUSize - w.s.opts.Params.headerSize() - w.s.opts.Params.IOASize - 4
+	limit := w.s.opts.Files.segmentSize(w.s.opts.Params)
 	for off := 0; off < len(s.Data); {
 		end := off + limit
 		if end > len(s.Data) {

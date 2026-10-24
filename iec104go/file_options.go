@@ -20,6 +20,10 @@ type FileOptions struct {
 	MaxFileSize uint32
 	// DirectoryLimit caps directory entries held by a procedure/provider.
 	DirectoryLimit int
+	// SegmentSize limits outbound section data bytes per segment. Zero uses the
+	// maximum derived from Params and the 249-byte ASDU limit; larger values fail
+	// Options validation. It does not restrict decoding incoming segments.
+	SegmentSize int
 }
 
 // DefaultFileOptions returns 30s application timeout, no section retries,
@@ -38,10 +42,17 @@ func (o FileOptions) normalized() (FileOptions, error) {
 	if o.DirectoryLimit == 0 {
 		o.DirectoryLimit = d.DirectoryLimit
 	}
-	if o.Timeout < 0 || o.SectionRetries < 0 || o.SectionRetries > 10 || o.MaxFileSize > 0xffffff || o.DirectoryLimit < 1 {
+	if o.Timeout < 0 || o.SectionRetries < 0 || o.SectionRetries > 10 || o.MaxFileSize > 0xffffff || o.DirectoryLimit < 1 || o.SegmentSize < 0 {
 		return o, fmt.Errorf("%w: file options", ErrMalformed)
 	}
 	return o, nil
+}
+
+func (o FileOptions) segmentSize(p Params) int {
+	if o.SegmentSize != 0 {
+		return o.SegmentSize
+	}
+	return MaxASDUSize - p.headerSize() - p.IOASize - 4
 }
 
 // FileKey supplies explicit addressing; directory requests use Name=0.

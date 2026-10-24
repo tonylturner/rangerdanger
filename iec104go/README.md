@@ -200,6 +200,8 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
   Never block on Close/Shutdown from either callback/provider. STOPDT cancels file work and resets state without closing TCP; results from a prior transfer generation cannot be admitted after restart.
 - `Options.Files` defaults: application timeout30s, section checksum retries0,
   max file16777215 bytes, directory4096 entries. Server admission waits on capacity notifications, not a polling interval.
+  `SegmentSize=0` uses the derived maximum (236 data bytes with default Params);
+  choose1..maximum for smaller outbound segments. Incoming decoding is unchanged.
   Zero durations/limits select defaults; retries range0..10. These are **profile
   choices**, not104 t1/t2/t3. Only checksum-driven section recalls are retryable
   (configure both peers); control timeouts/whole files never silently retry.
