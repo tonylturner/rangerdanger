@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 )
 
 // FileServer is an opt-in controlled-station transparent-file handler. It owns no
@@ -53,18 +52,16 @@ func (f *FileServer) Handler(ctx context.Context, e Event) {
 		<-w.done
 		return
 	}
-	if e.Kind == Stopped || e.Kind == ASDUReceived && isFileType(e.ASDU.GetHeader().Type) {
-		if e.Kind == ASDUReceived {
-			// Composition returns the original to application code immediately;
-			// the asynchronous worker must own its message before that happens.
-			owned, err := cloneMessage(e.ASDU)
-			if err != nil {
-				w.report(err)
-				w.s.RequestClose()
-				return
-			}
-			e.ASDU = owned
+	if e.Kind == ASDUReceived && isFileType(e.ASDU.GetHeader().Type) {
+		// Composition returns the original to application code immediately;
+		// the asynchronous worker must own its message before that happens.
+		owned, err := cloneMessage(e.ASDU)
+		if err != nil {
+			w.report(err)
+			w.s.RequestClose()
+			return
 		}
+		e.ASDU = owned
 		select {
 		case w.in <- e:
 		case <-w.done:
@@ -76,62 +73,72 @@ func (f *FileServer) Handler(ctx context.Context, e Event) {
 }
 
 type fileServing struct {
-	s        *Session
-	provider FileProvider
-	ctx      context.Context
-	cancel   context.CancelFunc
-	in       chan Event
-	done     chan struct{}
-	key      FileKey
-	file     File
-	total    uint32
-	index    int
-	state    uint8
-	retries  int
+	s          *Session
+	provider   FileProvider
+	ctx        context.Context
+	cancel     context.CancelFunc
+	in         chan Event
+	done       chan struct{}
+	key        FileKey
+	file       File
+	total      uint32
+	index      int
+	state      uint8
+	retries    int
+	generation *transferGeneration
 }
 
 // states: 0 idle, 1 selected, 2 section offered, 3 waiting section ACK,
 // 4 waiting file ACK. A checksum NACK returns to 2 for an explicit recall.
 func (w *fileServing) run() {
 	defer close(w.done)
-	timer := time.NewTimer(time.Hour)
-	timer.Stop()
+	timer := w.s.opts.Clock.NewTimer(w.s.opts.Clock.Now().Add(w.s.opts.Files.Timeout))
+	stopTimer(timer)
 	defer timer.Stop()
 	for {
+		var stopped <-chan struct{}
+		if w.generation != nil {
+			stopped = w.generation.ctx.Done()
+		}
+		var err error
 		select {
 		case <-w.ctx.Done():
+			w.reset()
 			return
-		case <-timer.C:
-			ctx, cancel := context.WithTimeout(w.ctx, w.s.opts.Files.Timeout)
-			err := w.abort(ctx)
+		case <-stopped:
+			stopTimer(timer)
+			w.reset()
+			w.generation = nil
+			continue
+		case <-timer.C():
+			ctx, cancel := context.WithTimeout(w.generation.ctx, w.s.opts.Files.Timeout)
+			err = w.abort(ctx)
 			cancel()
-			if err != nil {
-				w.report(err)
-				w.s.RequestClose()
-				return
-			}
 		case e := <-w.in:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			if e.Kind == Stopped {
-				w.reset()
+			stopTimer(timer)
+			if e.transfer == nil || e.transfer.ctx.Err() != nil {
 				continue
 			}
-			ctx, cancel := context.WithTimeout(w.ctx, w.s.opts.Files.Timeout)
-			err := w.handle(ctx, e.ASDU)
+			if w.generation != e.transfer {
+				w.reset()
+				w.generation = e.transfer
+			}
+			ctx, cancel := context.WithTimeout(w.generation.ctx, w.s.opts.Files.Timeout)
+			err = w.handle(ctx, e.ASDU)
 			cancel()
-			if err != nil {
-				w.report(err)
-				w.s.RequestClose()
-				return
+		}
+		if err != nil {
+			if errors.Is(err, ErrNotStarted) || w.generation.ctx.Err() != nil {
+				w.reset()
+				w.generation = nil
+				continue
 			}
-			if w.state != 0 {
-				timer.Reset(w.s.opts.Files.Timeout)
-			}
+			w.report(err)
+			w.s.RequestClose()
+			return
+		}
+		if w.state != 0 {
+			resetTimer(timer, w.s.opts.Clock.Now().Add(w.s.opts.Files.Timeout))
 		}
 	}
 }
@@ -140,7 +147,10 @@ func (w *fileServing) report(err error) {
 }
 func (w *fileServing) reset() { w.file = File{}; w.state = 0; w.index = 0; w.retries = 0; w.total = 0 }
 func (w *fileServing) send(ctx context.Context, k FileKey, e Element, cot COT) error {
-	return fileSend(ctx, w.s, fileMessage(k, e, cot))
+	return w.sendMessage(ctx, fileMessage(k, e, cot))
+}
+func (w *fileServing) sendMessage(ctx context.Context, m Message) error {
+	return fileSend(ctx, w.s, w.generation, m)
 }
 func (w *fileServing) abort(ctx context.Context) error {
 	if w.state == 0 {
@@ -327,7 +337,7 @@ func (w *fileServing) directory(ctx context.Context, k FileKey) error {
 		o := Object{k.Address, d}
 		err = b.Append(o)
 		if errors.Is(err, ErrFull) {
-			if err = fileSend(ctx, w.s, b.ASDU()); err != nil {
+			if err = w.sendMessage(ctx, b.ASDU()); err != nil {
 				return err
 			}
 			b, err = NewBuilder(w.s.opts.Params, h)
@@ -340,5 +350,5 @@ func (w *fileServing) directory(ctx context.Context, k FileKey) error {
 			return err
 		}
 	}
-	return fileSend(ctx, w.s, b.ASDU())
+	return w.sendMessage(ctx, b.ASDU())
 }

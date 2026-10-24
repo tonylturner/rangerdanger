@@ -17,6 +17,11 @@ type eventQueue struct {
 func (s *Session) queueEvent(e Event) bool {
 	e.ConnID = s.id
 	e.Session = s
+	if e.Kind == ASDUReceived {
+		s.mu.Lock()
+		e.transfer = s.generation
+		s.mu.Unlock()
+	}
 	s.events.mu.Lock()
 	defer s.events.mu.Unlock()
 	overflow := len(s.events.pending) >= s.opts.EventQueue
@@ -127,6 +132,10 @@ func (s *Session) finish(err error) {
 	s.accepting = false
 	s.reason = err
 	s.sends = nil
+	if s.generation != nil {
+		s.generation.cancel()
+	}
+	s.notifySendLocked()
 	if s.procedure != nil {
 		s.procedure.fail(err)
 	}

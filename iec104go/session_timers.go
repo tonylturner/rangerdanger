@@ -4,13 +4,16 @@ package iec104go
 
 import "time"
 
-func resetTimer(t Timer, deadline time.Time) {
+func stopTimer(t Timer) {
 	if !t.Stop() {
 		select {
 		case <-t.C():
 		default:
 		}
 	}
+}
+func resetTimer(t Timer, deadline time.Time) {
+	stopTimer(t)
 	t.Reset(deadline)
 }
 func earlier(a, b time.Time) time.Time {

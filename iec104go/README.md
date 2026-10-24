@@ -197,9 +197,9 @@ All reserved fields, unused zero lengths and raw times remain codec-lossless.
   `NewServer`/`NewSession`, or compose it with your normal event handler:
   `files.Handler(ctx, e); applicationHandler(ctx, e)`. The optional handler
   isolates provider work in a bounded worker, and Closed cancels/joins it.
-  Never block on Close/Shutdown from either callback/provider.
+  Never block on Close/Shutdown from either callback/provider. STOPDT cancels file work and resets state without closing TCP; results from a prior transfer generation cannot be admitted after restart.
 - `Options.Files` defaults: application timeout30s, section checksum retries0,
-  local admission polling10ms, max file16777215 bytes, directory4096 entries.
+  max file16777215 bytes, directory4096 entries. Server admission waits on capacity notifications, not a polling interval.
   Zero durations/limits select defaults; retries range0..10. These are **profile
   choices**, not104 t1/t2/t3. Only checksum-driven section recalls are retryable
   (configure both peers); control timeouts/whole files never silently retry.

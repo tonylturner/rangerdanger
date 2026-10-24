@@ -72,7 +72,6 @@ func fileTestOptions() Options {
 	o := DefaultOptions()
 	o.Clock = newFakeClock()
 	o.Logf = func(string, ...any) {}
-	o.Files.QueuePoll = 10 * time.Microsecond
 	return o
 }
 func TestFileProcedureDownloadAndDirectory(t *testing.T) {
@@ -262,10 +261,12 @@ func TestFileServerTimeoutAndUnsupported(t *testing.T) {
 	opts := fileTestOptions()
 	opts.Files.Timeout = 25 * time.Millisecond
 	fs, _ := NewFileServer(memoryFiles{file: File{[]FileSection{{1, []byte{1}}}}})
-	s, p, _ := manualSession(t, ServerRole, opts, fs.Handler)
+	s, p, clock := manualSession(t, ServerRole, opts, fs.Handler)
 	startServerSession(t, s, p)
 	fileRequestPeer(t, p, 0, 0, testFileKey, FileCall{Name: 9, Qualifier: SelectFile}, FileTransfer)
 	filePeerResponse(t, p)
+	fileIdleArmed(t, clock, opts.Files.Timeout)
+	clock.Advance(opts.Files.Timeout)
 	if e := filePeerResponse(t, p).(FileLast); e.Qualifier != 2 {
 		t.Fatal("idle timeout didn't deactivate", e)
 	}
@@ -277,6 +278,8 @@ func TestFileServerTimeoutAndUnsupported(t *testing.T) {
 		if e := filePeerResponse(t, p).(FileCall); e.Qualifier != q|FileUnexpectedService<<4 {
 			t.Fatal(e)
 		}
+		fileIdleArmed(t, clock, opts.Files.Timeout)
+		clock.Advance(opts.Files.Timeout)
 		if e := filePeerResponse(t, p).(FileLast); e.Qualifier != 2 {
 			t.Fatal(e)
 		}
@@ -370,7 +373,7 @@ func TestFileOptions(t *testing.T) {
 	if err != nil || n != d {
 		t.Fatal(n, err)
 	}
-	for _, o := range []FileOptions{{Timeout: -1}, {QueuePoll: -1}, {SectionRetries: -1}, {SectionRetries: 11}, {MaxFileSize: 0x1000000}, {DirectoryLimit: -1}} {
+	for _, o := range []FileOptions{{Timeout: -1}, {SectionRetries: -1}, {SectionRetries: 11}, {MaxFileSize: 0x1000000}, {DirectoryLimit: -1}} {
 		if _, err := o.normalized(); err == nil {
 			t.Fatal(o)
 		}

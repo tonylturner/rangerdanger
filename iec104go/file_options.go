@@ -16,26 +16,21 @@ type FileOptions struct {
 	Timeout time.Duration
 	// SectionRetries bounds checksum-driven section recalls; it never retries timeouts.
 	SectionRetries int
-	// QueuePoll bounds the delay before retrying local queue admission, not wire data.
-	QueuePoll time.Duration
 	// MaxFileSize caps owned content bytes and must fit uint24.
 	MaxFileSize uint32
 	// DirectoryLimit caps directory entries held by a procedure/provider.
 	DirectoryLimit int
 }
 
-// DefaultFileOptions returns 30s application timeout, no section retries, 10ms
-// admission polling, 16777215 file bytes and 4096 directory entries.
+// DefaultFileOptions returns 30s application timeout, no section retries,
+// 16777215 file bytes and 4096 directory entries.
 func DefaultFileOptions() FileOptions {
-	return FileOptions{30 * time.Second, 0, 10 * time.Millisecond, 0xffffff, 4096}
+	return FileOptions{Timeout: 30 * time.Second, MaxFileSize: 0xffffff, DirectoryLimit: 4096}
 }
 func (o FileOptions) normalized() (FileOptions, error) {
 	d := DefaultFileOptions()
 	if o.Timeout == 0 {
 		o.Timeout = d.Timeout
-	}
-	if o.QueuePoll == 0 {
-		o.QueuePoll = d.QueuePoll
 	}
 	if o.MaxFileSize == 0 {
 		o.MaxFileSize = d.MaxFileSize
@@ -43,7 +38,7 @@ func (o FileOptions) normalized() (FileOptions, error) {
 	if o.DirectoryLimit == 0 {
 		o.DirectoryLimit = d.DirectoryLimit
 	}
-	if o.Timeout < 0 || o.QueuePoll < 0 || o.SectionRetries < 0 || o.SectionRetries > 10 || o.MaxFileSize > 0xffffff || o.DirectoryLimit < 1 {
+	if o.Timeout < 0 || o.SectionRetries < 0 || o.SectionRetries > 10 || o.MaxFileSize > 0xffffff || o.DirectoryLimit < 1 {
 		return o, fmt.Errorf("%w: file options", ErrMalformed)
 	}
 	return o, nil
@@ -118,23 +113,30 @@ func fileLength(f File, max uint32) (uint32, error) {
 	}
 	return n, nil
 }
-func fileSend(ctx context.Context, s *Session, m Message) error {
+func fileSend(ctx context.Context, s *Session, generation *transferGeneration, m Message) error {
+	owned, err := cloneMessage(m)
+	if err != nil {
+		return err
+	}
+	b, err := owned.MarshalBinary(s.opts.Params)
+	if err != nil {
+		return err
+	}
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		err := s.Send(m)
+		s.mu.Lock()
+		ready := s.sendReady
+		err := s.admitFileLocked(ctx, generation, b)
+		s.mu.Unlock()
 		if !errors.Is(err, ErrQueueFull) {
 			return err
 		}
-		timer := time.NewTimer(s.opts.Files.QueuePoll)
 		select {
-		case <-timer.C:
+		case <-ready:
+		case <-generation.ctx.Done():
+			return ErrNotStarted
 		case <-ctx.Done():
-			timer.Stop()
 			return ctx.Err()
 		case <-s.transportDone:
-			timer.Stop()
 			return ErrConnectionGone
 		}
 	}

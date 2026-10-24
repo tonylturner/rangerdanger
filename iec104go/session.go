@@ -47,6 +47,9 @@ type Event struct {
 	Session *Session
 	ASDU    Message
 	Err     error
+	// transfer tags receipt, not callback dispatch, so delayed callbacks cannot
+	// revive file work from before a STOPDT/STARTDT boundary.
+	transfer *transferGeneration
 }
 
 // Handler runs serially on one dedicated goroutine per connection, never on
@@ -121,6 +124,8 @@ type Session struct {
 	received            atomic.Uint32
 	mu                  sync.Mutex
 	accepting, gone     bool
+	generation          *transferGeneration
+	sendReady           chan struct{}
 	reason              error
 	sends               []queuedASDU
 	procedure           *transaction
@@ -152,6 +157,7 @@ func newSession(ctx context.Context, conn net.Conn, role Role, opts Options, han
 	s := &Session{id: id, conn: conn, role: role, opts: opts, ctx: ctx, cancel: cancel, done: make(chan struct{}), transportDone: make(chan struct{}), stop: make(chan struct{}), wake: make(chan struct{}, 1), ops: make(chan operation), in: make(chan incoming, 1), out: make(chan *wireWrite, opts.SendQueue+8), written: make(chan writeResult, 1), handler: handler, retired: retired, inspect: make(chan chan sessionView)}
 	s.localAddr = snapshotAddr(conn.LocalAddr())
 	s.remoteAddr = snapshotAddr(conn.RemoteAddr())
+	s.sendReady = make(chan struct{})
 	s.events.wake = make(chan struct{}, 1)
 	s.queueEvent(Event{Kind: Opened})
 	s.workers.Add(2)
@@ -198,6 +204,9 @@ func (s *Session) admit(b []byte) error {
 func (s *Session) admitLeg(b []byte, leg *procedureLeg) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.admitLocked(b, leg)
+}
+func (s *Session) admitLocked(b []byte, leg *procedureLeg) error {
 	if s.gone {
 		return ErrConnectionGone
 	}
@@ -213,8 +222,7 @@ func (s *Session) admitLeg(b []byte, leg *procedureLeg) error {
 }
 
 // IsStarted reports current Send admission, which stops immediately on STOPDT request.
-func (s *Session) IsStarted() bool  { s.mu.Lock(); defer s.mu.Unlock(); return s.accepting && !s.gone }
-func (s *Session) admission(v bool) { s.mu.Lock(); s.accepting = v; s.mu.Unlock() }
+func (s *Session) IsStarted() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.accepting && !s.gone }
 
 // StartDT requests client transfer and waits for confirmation, context cancellation
 // or t1 failure. The protocol exchange continues if only the caller cancels.

@@ -167,6 +167,7 @@ func (st *sessionState) pump() error {
 		payload := st.s.sends[0]
 		st.s.sends[0] = queuedASDU{}
 		st.s.sends = st.s.sends[1:]
+		st.s.notifySendLocked()
 		st.s.mu.Unlock()
 		if err := st.emitLeg(Frame{Kind: IFrame, Send: st.sent, Receive: st.received, ASDU: payload.bytes}, false, payload.leg); err != nil {
 			return err
