@@ -18,7 +18,8 @@
 # the journal.
 #
 # Everything it creates is named $RD_CHECK_PREFIX-* (default
-# rd-iec104-check-<unique>) and removed on exit, including the images. Needs
+# rd-iec104-check-<unique>) and removed on exit, including built images.
+# The shared Python fixture image is pulled if missing and is not removed. Needs
 # Docker and Python 3; the subnets below must not overlap a Docker network.
 #
 # Usage: [RD_CHECK_IMPL=c|go] [RD_CHECK_PREFIX=name] services/iec104/check/run.sh [OUT_DIR]
@@ -106,7 +107,7 @@ build_base() {
 build_base >"$OUT/base-build.log" 2>&1 || exit 1
 docker build -q -f "$HERE/Dockerfile" --build-arg "BASE_IMAGE=$BASEIMG" -t "$IMG" "$HERE" >"$OUT/check-build.log" 2>&1 || exit 1
 docker run --rm --network none -v "$HERE:/check:ro" --entrypoint python3 "$IMG" -I /check/loader_checks.py || exit 1
-docker image inspect "$PY" >/dev/null 2>&1 || { fail "fixture image $PY must already exist"; exit 1; }
+docker image inspect "$PY" >/dev/null 2>&1 || docker pull "$PY" >"$OUT/fixture-pull.log" 2>&1 || { fail "could not pull fixture image $PY (fixture-pull.log)"; exit 1; }
 
 # ---- 0. strict point-map loader (no network needed) -------------------
 log "check 0: strict config loader rejects bad maps"

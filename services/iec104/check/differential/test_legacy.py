@@ -4,6 +4,7 @@
 from pathlib import Path
 import importlib.util
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -52,6 +53,43 @@ class OwnershipTests(unittest.TestCase):
 
 
 class ImplementationTests(unittest.TestCase):
+    def test_fixture_cache_miss_pulls_and_propagates_failure(self):
+        line = next(line for line in (CHECK / "run.sh").read_text().splitlines()
+                    if line.startswith('docker image inspect "$PY"'))
+        for cached, pull_status, expected in ((0, 9, 0), (1, 0, 0), (1, 9, 1)):
+            with self.subTest(cached=cached, pull_status=pull_status):
+                with tempfile.TemporaryDirectory() as directory:
+                    result = subprocess.run(
+                        ["bash", "-c",
+                         'PY=python:3.12-alpine; OUT="$1"; TRACE="$1/trace"\n'
+                         'docker() { echo "$*" >>"$TRACE"; '
+                         f'if [ "$1" = image ]; then return {cached}; fi; '
+                         f'return {pull_status}; }}\n' +
+                         'fail() { echo "$*" >&2; }\n' + line,
+                         "test", directory],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    calls = (Path(directory) / "trace").read_text().splitlines()
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(calls, ["image inspect python:3.12-alpine"] +
+                                 (["pull python:3.12-alpine"] if cached else []))
+
+    def test_pull_is_bounded_and_shared_image_is_not_cleaned(self):
+        with patch.dict(legacy.os.environ, RD_CHECK_PREFIX="rd-test", RD_CHECK_OWNER="a" * 32):
+            with patch.object(legacy.sys, "argv", ["legacy_docker.py", "pull", "python:3.12-alpine"]):
+                for status in (0, 7):
+                    result = subprocess.CompletedProcess([], status, "", "")
+                    with patch.object(legacy, "run", return_value=result) as call:
+                        self.assertEqual(legacy.main(), status)
+                    call.assert_called_once_with(
+                        ["docker", "pull", "python:3.12-alpine"], timeout=300, sealed=False)
+        with patch.object(legacy, "checked", return_value="image-id") as call:
+            legacy.cleanup("rd-test", "owner=unit")
+        removed = [item.args[0][-1] for item in call.call_args_list
+                   if item.args[0][:2] == ["image", "rm"]]
+        self.assertEqual(removed, ["rd-test-" + suffix + ":test"
+                                  for suffix in ("iec104", "iec104-base", "model")])
+
     def build(self, impl):
         text = (CHECK / "run.sh").read_text()
         body = text.split("build_base() {", 1)[1].split("\n}", 1)[0]
