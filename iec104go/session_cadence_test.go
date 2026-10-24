@@ -73,7 +73,25 @@ func TestCadenceServerResponseOrder(t *testing.T) {
 		t.Run(fmt.Sprint(cause), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.APCI.W = 1
-			input := sampleMessage()
+			command := request(1, 0, C_DC_NA_1, 3001, DoubleCommand{Qualifier: 0x81})
+			var input Message = command
+			switch cause {
+			case ActivationCon:
+				input = request(1, 0, C_IC_NA_1, 0, Interrogation{QOI: 20})
+			case UnknownType:
+				h := command.GetHeader()
+				h.Type = 200
+				input = RawASDU{Header: h, Payload: []byte{0xb9, 0x0b, 0, 0x81}}
+			case UnknownCause:
+				command.Header.Cause = 1
+				input = command
+			case UnknownCA:
+				command.Header.CommonAddress = 2
+				input = command
+			case UnknownIOA:
+				command.Objects[0].Address = 0
+				input = command
+			}
 			response, err := Mirror(input, cause, cause != ActivationCon)
 			if err != nil {
 				t.Fatal(err)
@@ -86,7 +104,11 @@ func TestCadenceServerResponseOrder(t *testing.T) {
 				}
 			})
 			startServerSession(t, s, peer)
-			writeFrame(t, peer, messageFrame(t, 0, 0))
+			requestBytes, err := input.MarshalBinary(opts.Params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFrame(t, peer, Frame{Kind: IFrame, ASDU: requestBytes})
 			// negative-addressing C baseline: 44 (frame18) and46 (frame30)
 			// piggyback; 45 (frames23/24),47 (frames35/36) have an S first.
 			if cause != UnknownType && cause != UnknownCA {

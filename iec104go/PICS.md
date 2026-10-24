@@ -257,6 +257,34 @@ invented claim of measured C equivalence. Socket backpressure cannot guarantee
 physical delivery by t2; the state machine makes the acknowledgement eligible
 by that deadline, and close remains bounded as documented above.
 
+#### Strict packet-gate validation
+
+The implementation at `03f89fb` was built as `rd-iec104-go:03f89fb` and run
+against the sealed C reference in two complete sequential matrices. Evidence:
+`build/iec104-ack-validation/final/run{1,2}/<role-set>/<scenario>/`.
+Every cell below is the scenario process exit code for **run1 / run2**.
+All 60 comparisons have A/B/C **pass, zero differences**, with an explicitly
+empty allow-list; TCP comparison D remains report-only.
+
+| Scenario | all-go | go-rtu | go-clients |
+|---|---|---|---|
+| analog-cyclic | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-rtu | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-sequence-wrap | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-timed-invalid | 0 / 0 | 0 / 0 | 0 / 0 |
+| cmd-rtu | 0 / 0 | 0 / 0 | 0 / 0 |
+| flow-window | 0 / 0 | 0 / 0 | 0 / 0 |
+| negative-addressing | 0 / 0 | 0 / 0 | 0 / 0 |
+| raw-sbo | 0 / 0 | 0 / 0 | 0 / 0 |
+| rtu-quality | 0 / 0 | 0 / 0 | 0 / 0 |
+| startup-session | 0 / 0 | 0 / 0 | 0 / 0 |
+
+The runner was unchanged; all 120 side captures record the same harness
+fingerprint map. Owned reference, candidate and capture-helper images,
+containers and networks were removed afterwards. Wire tests use the captured
+GI/negative request shapes, including opaque type200, rather than inferring
+negative-response layout from an implementation.
+
 ## File transfer (phase 1c)
 
 **X encode/decode all eight types.** Source labels N/G/I refer to the

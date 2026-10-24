@@ -155,3 +155,25 @@ receive backpressure and deadline precedence are original implementation
 choices to express these observed rules without scheduler heuristics. PICS
 records the unobserved controlled w>1 and idle-t2 cases explicitly; neither
 their vendor equivalence nor a normative 44/46 exception is claimed.
+
+The two final ten-scenario matrices for each of `all-go`, `go-rtu` and
+`go-clients` are recorded in PICS and under
+`build/iec104-ack-validation/final/`. All 60 A/B/C gates pass with zero
+differences, using the runner unchanged and an explicit `[]` allow-list.
+Its file SHA256 (including the trailing newline) is
+`37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
+All side provenance records have one identical harness fingerprint map.
+
+- Go implementation commit: `03f89fb`, combined image ID
+  `sha256:fd8df84a258b8876e1ee31fd759b83ac2f36c4020a916a34a1adc095590df448`.
+- Sealed C baseline commit: `c1de19412b69ea9f00f68644a584b861b1f6d3f1`,
+  image ID
+  `sha256:8870d4304e8dd1a7b8645ccd0f11ce2934d6615509120b55fbc7529bf944f115`.
+
+These images were local validation artifacts only and were removed afterwards.
+The wire tests' GI and negative-request ASDU shapes come from the cited C
+captures (type100/QOI20, opaque type200, type46 with COT1, CA2 or IOA0).
+Their fresh-session counters are rebased in the test, not copied from an
+implementation. The initial rejected coalescing behavior and clock/admission
+race each have a regression test; no sleeps or scheduling heuristics select
+the acknowledgement policy.
