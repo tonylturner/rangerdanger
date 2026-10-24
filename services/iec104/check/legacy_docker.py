@@ -73,9 +73,9 @@ def cleanup(prefix, label):
                 checked([*remove, identity])
             except (OSError, RuntimeError, subprocess.SubprocessError) as error:
                 errors.append(str(error))
-    # Remove only our three preflight-checked tags, never an image ID shared
+    # Remove only our two preflight-checked tags, never an image ID shared
     # with somebody else's tag.
-    for suffix in ("iec104", "iec104-base", "model"):
+    for suffix in ("iec104", "iec104-base"):
         tag = prefix + "-" + suffix + ":test"
         try:
             if checked(["image", "ls", "-q", "--filter", "reference=" + tag]).strip():
@@ -100,13 +100,9 @@ def main():
         cleanup(prefix, label)
         return 0
     args = prepare(args, prefix, label)
-    sealed = args[0] == "build" and any(arg.endswith("/iec104/Dockerfile") for arg in args)
-    result = run(["docker", *args], timeout=900 if args[0] == "build" else 300, sealed=sealed)
-    if sealed:
-        print("sealed C build " + ("PASS" if result.returncode == 0 else "FAIL"))
-    else:
-        print(result.stdout, end="")
-        print(result.stderr, end="", file=sys.stderr)
+    result = run(["docker", *args], timeout=900 if args[0] == "build" else 300, sealed=False)
+    print(result.stdout, end="")
+    print(result.stderr, end="", file=sys.stderr)
     return result.returncode
 
 
