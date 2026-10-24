@@ -241,6 +241,14 @@ The catalog isolates raw-client→RTU, CLI→RTU, CC→RTU, and raw-server→CC.
 `ninth-connection` holds eight sockets behind individual STARTDT barriers,
 dials nine, observes TCP EOF without sending APCI, then checks all eight
 incumbents with TESTFR and shuts them down with STOPDT barriers.
+The three `zero-*` cases use a raw client for RTU command/GI and a scripted
+server with the **real CC**, not the CLI, for the empty monitor report. Normal
+GI completes behind the CC's actual w=1 S barriers before injecting the monitor;
+there is no assumption about CLI GI acknowledgments. A zero command requires an
+S followed by the exact negative COT47 zero-count mirror; a zero GI requires S
+then EOF with no ASDU; a zero monitor requires S then a TESTFR confirmation to
+prove survival. Only the crafted input and command mirror are declared malformed.
+
 No sleep determines this wire transcript; all nine TCP streams remain
 visible to the unchanged comparator and its independent session-count check.
 It includes session controls, SBO, negative type/COT/CA/IOA responses,

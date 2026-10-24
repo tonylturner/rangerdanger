@@ -12,6 +12,7 @@ import sys
 import time
 
 import compare
+import malformed
 from process_utils import run as run_owned
 from runtime import Docker, unused_subnet
 from scenario import CHECK, HERE, load, point_map, roles, scenario
@@ -191,6 +192,14 @@ def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, o
         "--tshark", tshark, "--timeout", "180",
         "--allowlist", str(allowlist), "--scenario-id", case["id"],
     ]
+    declarations = case.get("malformed", [])
+    if declarations:
+        resolved = malformed.resolve(declarations,
+            load(output / "baseline/peer-result.json")["associations"],
+            load(output / "candidate/peer-result.json")["associations"])
+        declared_path = output / "declared-malformed.json"
+        declared_path.write_text(json.dumps(resolved, indent=2) + "\n")
+        command.extend(["--declared-malformed", str(declared_path)])
     if role_set is not None:
         command.extend(["--role-set", role_set])
     record = {"argv": command, "returncode": None, "timeout_s": 900}

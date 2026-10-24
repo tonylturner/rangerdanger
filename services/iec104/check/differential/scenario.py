@@ -6,13 +6,15 @@ import json
 from pathlib import Path
 import re
 
+import malformed
+
 HERE = Path(__file__).resolve().parent
 CHECK = HERE.parent
 KINDS = {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"}
 OPS = {
     "start", "gi", "stop", "test", "negative", "sbo",
     "fixture", "expect", "server-reports", "window", "cycles",
-    "connection-limit",
+    "connection-limit", "zero-object",
 }
 
 
@@ -37,8 +39,9 @@ def exact(value, keys):
 
 def scenario(path):
     value = load(path)
-    exact(value, ("schema", "id", "kind", "timeout_s", "capture_modbus",
-                  "point_map", "actions", "expected_sessions"))
+    required = ("schema", "id", "kind", "timeout_s", "capture_modbus",
+                "point_map", "actions", "expected_sessions")
+    exact(value, (*required, "malformed") if isinstance(value, dict) and "malformed" in value else required)
     if type(value["schema"]) is not int or value["schema"] != 1:
         raise ValueError("unsupported scenario schema")
     if not isinstance(value["id"], str) or not re.fullmatch("[a-z0-9-]+", value["id"]):
@@ -63,14 +66,26 @@ def scenario(path):
             "raw-rtu": OPS - {"server-reports"},
             "cmd-rtu": {"gi", "sbo"},
             "cc-rtu": {"gi"},
-            "raw-cc": {"server-reports"},
+            "raw-cc": {"server-reports", "zero-object"},
         }
         if action["op"] not in supported[value["kind"]]:
             raise ValueError("action not supported by role configuration")
+        if action["op"] == "zero-object":
+            allowed_types = {3} if value["kind"] == "raw-cc" else {45, 46, 47, 100}
+            if action["args"]["type"] not in allowed_types:
+                raise ValueError("zero-object type not supported by role configuration")
         profile_ops = ({"start", "stop", "test", "cycles"}
                        if value["point_map"] == "feeder-analog-v1" else OPS - {"cycles"})
         if action["op"] not in profile_ops:
             raise ValueError("action not supported by point-map fixture")
+    declarations = value.get("malformed", [])
+    malformed.validate(declarations)
+    for declaration in declarations:
+        step = declaration["step"]
+        if step >= len(value["actions"]) or value["actions"][step]["op"] != "zero-object":
+            raise ValueError("malformed declaration must identify a zero-object action")
+        if declaration["message"] == "reply" and value["actions"][step]["args"]["type"] not in (45, 46, 47):
+            raise ValueError("zero-object action has no direct ASDU reply")
     return value
 
 
@@ -82,7 +97,7 @@ def validate_args(action):
             "sbo": ("value",), "fixture": ("query",),
             "expect": ("type", "cot", "ioa", "value"),
             "server-reports": ("count", "value", "timed_invalid"), "window": (),
-            "cycles": ("count",), "connection-limit": ()}
+            "cycles": ("count",), "connection-limit": (), "zero-object": ("type",)}
     exact(args, keys[op])
     if op == "fixture":
         if not isinstance(args["query"], str) or args["query"] not in {
