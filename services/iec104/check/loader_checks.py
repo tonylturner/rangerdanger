@@ -29,6 +29,7 @@ def run(data, valid=False):
             check=False,
             capture_output=True,
             text=True,
+            timeout=5,
         )
     output = result.stdout + result.stderr
     assert result.returncode == 1, output

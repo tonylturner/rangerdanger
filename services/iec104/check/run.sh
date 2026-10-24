@@ -68,7 +68,12 @@ fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
 # run a short iec104cmd operation from a throwaway client container
 cli() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" "$@" 2>>"$OUT/cli.err"; }
 # breaker/gps control via busybox wget in the iec104 image
-ctl() { docker run --rm --network "$NET" "$IMG" wget -qO- "$1" >/dev/null 2>&1 || true; }
+ctl() {
+  if ! docker run --rm --network "$NET" "$IMG" wget -T 5 -qO- "$1" >>"$OUT/fixture-control.log" 2>&1; then
+    fail "fixture control failed: $1 (fixture-control.log)"
+    exit 1
+  fi
+}
 # Read the fake breaker's HTTP state without opening a Modbus connection.
 brk_stat() {
   docker exec "$BRK" python3 -I -c '
@@ -148,7 +153,7 @@ if grep -q '"ioa":1001,.*"value":"closed","quality":"GOOD"' "$OUT/gi-baseline.js
   && grep -q '"ioa":1002,.*"value":false,"quality":"GOOD"' "$OUT/gi-baseline.jsonl" \
   && grep -Eq '"ioa":2001,.*"value":2[89]\.[0-9]+,"quality":"GOOD"' "$OUT/gi-baseline.jsonl" \
   && grep -q '"ioa":2002,.*"quality":"GOOD"' "$OUT/gi-baseline.jsonl"; then
-  pass "GI returned all four points GOOD with expected values"
+  pass "GI returned the sampled feeder points GOOD with expected values"
 else
   fail "GI baseline values/quality unexpected (see gi-baseline.jsonl)"
 fi

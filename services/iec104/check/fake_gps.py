@@ -5,7 +5,7 @@
 #
 # Serves the subset of gps-sim's /api/state the RTU station clock reads:
 # sync_status and an RFC3339Nano reported_time. A query param flips the
-# status (GET /api/state?status=holdover) so the harness can exercise a
+# status (GET /set?status=holdover) so the harness can exercise a
 # not-locked clock without pausing the container. stdlib only; `python3 -I`.
 import datetime
 import http.server

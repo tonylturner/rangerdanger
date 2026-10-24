@@ -79,7 +79,7 @@ def command_write(point, operation, ip, address, value, **kw):
     return body
 
 
-def raw_select(ioa, type_id, value, qualifier=0):
+def raw_select(ioa, type_id, value, qualifier=0, expected_cot=7):
     """Minimal IEC104 peer for rejection tests; no alternate application API."""
     with socket.create_connection(("172.28.104.10", 2404), timeout=3) as sock:
 
@@ -112,7 +112,7 @@ def raw_select(ioa, type_id, value, qualifier=0):
             sock.sendall(bytes([104, 4, 1, 0]) + (received << 1).to_bytes(2, "little"))
             a = data[4:]
             if a[0] == type_id and int.from_bytes(a[6:9], "little") == ioa:
-                assert a[2] & 64, a  # negative ACT-CON
+                assert a[2] & 64 and a[2] & 63 == expected_cot, a
                 return
 
 
@@ -161,7 +161,7 @@ def main():
     assert pt(s, "f2-current")["value"] > 0
     assert pt(s, "f2-p-mw")["value"] > 0
     command("f2-command", "open", status=400)
-    raw_select(3501, 46, 1)  # unassigned: F2 has no supervisory command IOA
+    raw_select(3501, 46, 1, expected_cot=47)  # unknown IOA: F2 has no command
     assert not fixture(25)["writes"]
     assert pt(s, "oltc-1-tap")["value"] == {"value": 0, "transient": False}
     assert pt(s, "plc-1-setpoint-kv")["value"] == 20.4

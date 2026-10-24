@@ -103,8 +103,8 @@ log "start the control centre"
 ctl "http://$BRK_IP:8081/reset"
 start_cc "$CC" "$CC_IP" "$CC_HTTP_IP" "$RTU_IP:2404"
 
-# ---- CC 1. connect, STARTDT, GI, all four points GOOD -----------------
-log "CC check 1: GI complete, four points GOOD with the device values"
+# ---- CC 1. connect, STARTDT, GI, feeder points GOOD ------------------
+log "CC check 1: GI complete, feeder points GOOD with the device values"
 if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' and s['link']['connection_seq']>=1 \
     and all_good(s) and ${POS}['value']=='closed' and ${TRIP}['value'] is False \
     and abs(pt(s,'feeder-current')['value']-28.9)<0.01 and abs(pt(s,'feeder-voltage')['value']-20.0)<0.01 \
@@ -112,7 +112,7 @@ if probe wait 30 "link(s)=='started' and s['link']['gi']['state']=='complete' an
     and pt(s,'feeder-current')['source_time'] is None and pt(s,'feeder-current')['source_time_invalid'] is None \
     and kinds(j)[:2]==['link_up','gi_started'] and last(j,'gi_complete')['detail']['points_good']==len(s['points'])" \
   >"$OUT/cc-state-baseline.json"; then
-  pass "CC: link started, GI complete, four points GOOD with correct values"
+  pass "CC: link started, GI complete, feeder points GOOD with correct values"
 else
   fail "CC: baseline state not reached (cc-state-baseline.json)"
 fi
@@ -207,7 +207,7 @@ probe wait 10 "all_good(s) and last(j,'point_good')['detail']['point'] in FLOATS
 log "CC check 7: Modbus loss -> device_unreachable with the link started"
 docker pause "$BRK" >/dev/null
 if probe wait 15 "link(s)=='started' and all_stale(s,'device_unreachable')" >"$OUT/cc-state-modbusloss.json"; then
-  pass "CC: four points IV+NT device_unreachable, link started"
+  pass "CC: feeder points IV+NT device_unreachable, link started"
 else
   fail "CC: Modbus-loss state (cc-state-modbusloss.json)"
 fi
@@ -238,7 +238,7 @@ keys = ("value", "received_at", "source_time", "source_time_invalid", "cot")
 pb = {p["id"]: p for p in before["points"]}
 sys.exit(0 if all(all(p[k] == pb[p["id"]][k] for k in keys) for p in after["points"]) else 1)' \
     < <(cat "$OUT/cc-state-before-pause.json" "$OUT/cc-state-linklost.json"); then
-  pass "CC: link down, four points IV+NT link_lost with value and times preserved"
+  pass "CC: link down, points IV+NT link_lost with value and times preserved"
 else
   fail "CC: link-lost cache (cc-state-before-pause.json vs cc-state-linklost.json)"
 fi
@@ -246,7 +246,7 @@ if probe wait 5 "(lambda d: d is not None and d['detail']['reason']=='t1_timeout
      and d['detail']['peer']=='$RTU_IP:2404' and set(d['detail'])=={'peer','connection_seq','reason'} \
      and sorted(e['detail']['point'] for e in j['entries'] if e['kind']=='point_stale' and e['seq']>d['seq'] \
        and e['detail']['stale_reason']=='link_lost')==sorted(p['id'] for p in s['points']))(last(j,'link_down'))" >/dev/null; then
-  pass "CC: journal link_down (t1_timeout) then point_stale link_lost for all four points"
+  pass "CC: journal link_down (t1_timeout) then point_stale link_lost for all configured points"
 else
   fail "CC: link-down journal"
 fi
@@ -277,7 +277,7 @@ if probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' an
      and last(j,'link_up')['detail']['connection_seq']>last(j,'link_down')['detail']['connection_seq'] \
      and last(j,'gi_complete')['detail']['connection_seq']==last(j,'link_up')['detail']['connection_seq'] \
      and s['link']['connection_seq']==last(j,'link_up')['detail']['connection_seq']" >"$OUT/cc-state-recovered.json"; then
-  pass "CC: RTU back -> link_up with a higher connection_seq, GI complete, four points GOOD"
+  pass "CC: RTU back -> link_up with a higher connection_seq, GI complete, feeder points GOOD"
 else
   fail "CC: recovery after the RTU pause (cc-state-recovered.json)"
 fi
@@ -337,7 +337,7 @@ log "CC check 9: RTU stopped -> peer_closed; restarted -> recovery"
 docker stop -t 5 "$RTU" >/dev/null
 if probe wait 20 "link(s)!='started' and all_stale(s,'link_lost') and last(j,'link_down')['detail']['reason']=='peer_closed'" \
   >/dev/null; then
-  pass "CC: RTU stop -> link_down peer_closed, four points link_lost"
+  pass "CC: RTU stop -> link_down peer_closed, feeder points link_lost"
 else
   fail "CC: RTU-stop link loss"
 fi
