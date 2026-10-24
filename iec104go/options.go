@@ -91,6 +91,7 @@ type Tap func(Direction, uint64, time.Time, []byte)
 // selects defaults, but individual zero timers/windows in a custom APCI fail.
 type Options struct {
 	APCI                  APCI
+	ReceiveFilter         ReceiveFilter
 	Files                 FileOptions
 	Params                Params
 	SendQueue, EventQueue int
@@ -128,6 +129,8 @@ func (o Options) normalized() (Options, error) {
 	if o.Logf == nil {
 		o.Logf = log.Printf
 	}
+	o.ReceiveFilter.CommonAddresses = append([]uint16(nil), o.ReceiveFilter.CommonAddresses...)
+	o.ReceiveFilter.ApplicationTypes = append([]TypeID(nil), o.ReceiveFilter.ApplicationTypes...)
 	var fileErr error
 	o.Files, fileErr = o.Files.normalized()
 	if fileErr != nil {

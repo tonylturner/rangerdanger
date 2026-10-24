@@ -2,63 +2,57 @@
 
 package iec104go
 
-import "bytes"
+import (
+	"slices"
+	"time"
+)
 
-// A threshold receive at the controlled station has one causal ACK decision.
-// The first admitted handler response (or callback return without a response)
-// resolves it; t2 can independently resolve it while the handler is blocked.
-// All mutable fields below are guarded by Session.mu, never callback timing
-// guesses, scheduler yields or a wall-clock delay.
-type receiveACK struct {
-	request []byte
-	first   []byte
-	done    bool
+// ReceiveFilter declares a server's static application receive profile. Each
+// empty list accepts every value. Clients ignore the filter. Options takes a
+// copy of both lists; subsequent caller mutations cannot change a live profile.
+// Library file-service types are outside ApplicationTypes; CA filtering still
+// applies to them. U/S control frames are not ASDUs and never enter this filter.
+type ReceiveFilter struct {
+	CommonAddresses  []uint16
+	ApplicationTypes []TypeID
 }
 
-func (s *Session) beginCallbackACK(ticket *receiveACK) {
-	s.mu.Lock()
-	s.callbackACK = ticket
-	s.mu.Unlock()
+func (f ReceiveFilter) reject(h Header) COT {
+	// The sealed reference checks CA before application type (receive-filter).
+	if len(f.CommonAddresses) != 0 && !slices.Contains(f.CommonAddresses, h.CommonAddress) {
+		return UnknownCA
+	}
+	if !isFileType(h.Type) && len(f.ApplicationTypes) != 0 && !slices.Contains(f.ApplicationTypes, h.Type) {
+		return UnknownType
+	}
+	return 0
 }
-func (s *Session) endCallbackACK(ticket *receiveACK) {
-	s.mu.Lock()
-	if ticket != nil {
-		ticket.done = true
+
+func (st *sessionState) sendI(b []byte, leg *procedureLeg) error {
+	if err := st.emitLeg(Frame{Kind: IFrame, Send: st.sent, Receive: st.received, ASDU: b}, false, leg); err != nil {
+		return err
 	}
-	s.callbackACK = nil
-	s.mu.Unlock()
-	signal(s.wake)
+	if st.outstanding() == 0 {
+		st.t1 = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T1)
+	}
+	st.sent = (st.sent + 1) & 32767
+	st.pending = 0
+	st.t2 = time.Time{}
+	return nil
 }
-func (st *sessionState) callbackACKDecision() (ready, piggyback bool) {
-	s := st.s
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ticket := st.ackWait
-	if ticket.first == nil {
-		return ticket.done, false
+
+func (st *sessionState) reject(request []byte, cause COT) error {
+	// Preserve VSQ, OA, Test, CA, IOAs and opaque payload byte for byte. Only
+	// the cause/P-N octet changes. Rejection is not an application Send.
+	mirror := append([]byte(nil), request...)
+	mirror[2] = request[2]&0x80 | 0x40 | byte(cause)
+	if st.outstanding() < st.s.opts.APCI.K {
+		return st.sendI(mirror, nil)
 	}
-	// The callback can advance a test clock before admitting its response,
-	// after the actor's loop-level expiry check. Observe time after that
-	// admission under the same mutex, not only before entering pump.
-	if due(s.opts.Clock.Now(), st.t2) {
-		return true, false
+	// No send-window credit: release the transport ACK now, then retain the
+	// mirror in bounded admission until the peer acknowledges outstanding data.
+	if err := st.ack(false); err != nil {
+		return err
 	}
-	// C/C negative-addressing distinguishes early envelope rejection (44/46)
-	// from callback-level rejection (45/47). The library never creates these
-	// responses: only an explicitly admitted, exact application mirror qualifies.
-	// If k or application admission ordering prevents transmission, w still
-	// wins and requires S. Writer queue occupancy must not choose the policy:
-	// it changes when the writer goroutine is scheduled, not on a protocol input.
-	if st.outstanding() >= s.opts.APCI.K || len(s.sends) == 0 || s.sends[0].ack != ticket {
-		return true, false
-	}
-	b, request := ticket.first, ticket.request
-	if len(b) != len(request) || len(b) < 3 || b[2]&0x40 == 0 {
-		return true, false
-	}
-	cause := COT(b[2] & 63)
-	if cause != UnknownType && cause != UnknownCA {
-		return true, false
-	}
-	return true, bytes.Equal(b[:2], request[:2]) && bytes.Equal(b[3:], request[3:]) && b[2]&0x80 == request[2]&0x80
+	return st.s.admit(mirror)
 }

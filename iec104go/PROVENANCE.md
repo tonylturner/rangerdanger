@@ -140,8 +140,8 @@ research/contract, not an inferred universal vendor algorithm.
   controlling S17/18/19/21 repeat those streams.
 - `negative-addressing`: baseline and candidate both omit an S before exact
   negative COT44 I18 and COT46 I30; COT45 has S23→I24 and COT47 S35→I36.
-  Reproducing this observed early-envelope-rejection distinction does not
-  implement automatic COT44–47 responses or select application acceptance.
+  The receive-filter redesign below represents that receive-path distinction
+  explicitly; response COT alone does not choose cadence.
 - `cmd-rtu`: baseline four-I GI13–16→final S27, and execute I50 piggybacks
   the select-CON48 ACK; final S70 acknowledges all five received I-frames.
   Candidate GI13–16→S27, execute I47 and final S67 corroborate it.
@@ -150,12 +150,29 @@ research/contract, not an inferred universal vendor algorithm.
   `cc-timed-invalid`, `analog-cyclic` and `cc-sequence-wrap` additionally
   corroborate ordering through stop/start, burst, window and wrap traffic.
 
-The causal callback ticket, exact-mirror matching, immutable FIFO ACK snapshots,
-receive backpressure and deadline precedence are original implementation
-choices to express these observed rules without scheduler heuristics. PICS
-records the unobserved controlled w>1 and idle-t2 cases explicitly; neither
-their vendor equivalence nor a normative 44/46 exception is claimed.
+The receive-filter redesign removes callback tickets, response-byte policy and
+I-frame deferral entirely. Static CA/type declarations select inline rejections;
+ordinary threshold S admission precedes callback dispatch. Immutable FIFO ACK
+snapshots, receive backpressure and the bounded close flush remain. This is an
+original implementation of measured behavior, not a claim about sealed internals.
+PICS records unobserved controlled w>1 and idle-t2 cases explicitly.
 
+New first-party black-box runs under
+`build/iec104-ack-validation/redesign/cc-final/receive-filter/` establish CA-before-
+type precedence (type200/CA2 request8 → COT46 I9), and negative COT44 for valid
+read102 (12→14) and clock-sync103 (17→19) requests. COT45 has S24→I25;
+COT47 S31→I32. Both C sides repeat these frames exactly. No C application,
+library source or headers were read; tshark was only a decoder. The draft
+scenario uses public request layouts: no element after read IOA, seven CP56
+bytes after clock-sync IOA.
+
+This C/C run passes A/B with zero differences but fails C: the comparator's
+CP56 layout table omits type103. The redesign's differential matrix has therefore
+not been run. The scenario and proposed peer changes are artifacts under that
+validation root, not a weakened gate or an allow-list change. A separately
+fenced harness correction is needed before promoting the scenario to the catalog.
+
+The following results are historical, for the superseded callback policy only.
 The two final ten-scenario matrices for each of `all-go`, `go-rtu` and
 `go-clients` are recorded in PICS and under
 `build/iec104-ack-validation/final/`. All 60 A/B/C gates pass with zero
@@ -174,6 +191,6 @@ These images were local validation artifacts only and were removed afterwards.
 The wire tests' GI and negative-request ASDU shapes come from the cited C
 captures (type100/QOI20, opaque type200, type46 with COT1, CA2 or IOA0).
 Their fresh-session counters are rebased in the test, not copied from an
-implementation. The initial rejected coalescing behavior and clock/admission
-race each have a regression test; no sleeps or scheduling heuristics select
-the acknowledgement policy.
+implementation. Regression tests retain the capture-derived FIFO snapshots.
+New barriers exercise blocked handlers, independent spontaneous sends, writer dequeue,
+mixed-control backpressure and fake-clock supervision without sleeps.

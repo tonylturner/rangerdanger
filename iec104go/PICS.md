@@ -235,18 +235,32 @@ the observed streams, not a normative requirement to copy every vendor policy.
 | Observed role/profile | Rule and evidence |
 |---|---|
 | Controlling station, w=1 | Emit one S for each accepted I-frame, retaining N(R)=1,2,3,4 even if writes queue. `cc-rtu` frames18,19,21,22 acknowledge server frames13,14,16,17. Candidate frames17,18,19,21 repeat the same stream. TCP aggregation does not merge APDUs. |
-| Controlled station, w=1, ordinary application response | Threshold S precedes the response I-frame: `cc-rtu` frames11→12→13; `negative-addressing` COT45 frames21→23→24 and COT47 frames33→35→36. A handler returning without a response also releases the threshold S. |
-| Controlled station, exact early negative mirror | An admitted negative COT44 or46 mirror carries the ACK in its I-frame, without a preceding S: `negative-addressing` frames16→18 (N(R)=2),28→30 (N(R)=4). Candidate frames16→18 and28→30 repeat it. The library does not manufacture a rejection; only an explicit, exact application mirror qualifies. If k or application admission order prevents transmission, send S (an original bounded fallback, not a measured C blocked-k rule). Writer occupancy does not choose S versus piggyback; retain the pending t2 deadline until there is space to emit the chosen I-frame. |
+| Controlled station, w=1, ordinary application response | Threshold S precedes the response I-frame: `cc-rtu` frames11→12→13; `negative-addressing` COT45 frames21→23→24 and COT47 frames33→35→36. No callback completion is required to release the threshold S. |
+| Controlled station, receive-path rejection | A library-generated rejection piggybacks N(R); the response COT does not select cadence. `negative-addressing` frames16→18 (COT44) and28→30 (COT46) have no S. `Options.ReceiveFilter` statically selects accepted CA/application types; empty lists accept all, clients ignore it. A rejected ASDU is never delivered. The mirror changes only the cause/P-N octet. Full k requires S first and retains the mirror in bounded admission, not a callback ticket. |
 | Controlling CLI (Go default w=8) | A four-I GI image does not cause four S frames. `cmd-rtu` frames13–16 are acknowledged by the final close S at27, N(R)=4 (candidate27). Its execute I at50 piggybacks N(R)=1 for select-CON48, and final S70 covers N(R)=5 (candidate47 and67 respectively). Preserve the existing bounded close flush. The capture establishes the stream, not an advertised C window value. |
-| Window/timer fallback | Keep no more than w accepted I-frames awaiting successful wire acknowledgement. A further I-frame is held until an ACK completes; U/S processing is not held merely by a pending handler decision. At t2, the injected deadline wins over a simultaneously ready callback response. No sleeps or scheduler yields select the wire order. |
+| Window/timer fallback | Keep no more than w accepted I-frames awaiting successful wire acknowledgement. All input backpressures at the receive window or soft writer limit; there is no deferred frame. Callback work never controls ACK eligibility. Writer dequeue signals the actor before a potentially blocking Write. |
 
-The controlled-station threshold decision waits for the first admitted callback
-response or callback return, while APCI timers and TESTFR remain independent.
-This causal boundary replaces scheduling-dependent competition between the
-callback and writer. An already-expired t2 takes precedence. Ordinary sends
-remain bounded/nonblocking; callbacks never execute on the APCI goroutine.
-I/S receive counts are fixed when the actor emits them, not refreshed when the
-writer happens to run.
+The actor emits an ordinary threshold S before dispatch. S/I receive snapshots
+are immutable FIFO entries. Neither response bytes nor callback admission timing
+chooses the ACK policy. Static filter slices are copied at endpoint creation.
+Library file-service types are outside the application-type list; the common
+address list still applies. `Options.Files` configures file limits, not an
+optional provider: `FileServer` is separately composed into a handler.
+
+New black-box evidence: `build/iec104-ack-validation/redesign/cc-final/receive-filter/`
+(both C sides have identical frame numbers):
+
+- Unknown type200 with wrong CA2: request8 → I9, negative COT46. **CA precedes type.**
+- Codec-known, RTU-unhandled read type102: request12 → I14, negative COT44.
+- Codec-known, RTU-unhandled clock-sync type103: request17 → I19, negative COT44;
+  no positive confirmation. Both mirrors piggyback without a preceding S.
+- Application controls: COT45 request22 → S24 → I25; COT47 request29 → S31 → I32.
+
+The two C streams have zero A/B differences. **The C/C gate does not pass:**
+comparison C rejects type103's unmapped CP56 layout. No allow-list or comparator
+normalisation was changed. The catalog scenario and necessary first-party peer
+support are retained as validation artifacts pending a separately fenced harness
+change; the redesigned Go catalog matrix is NOT RUN.
 
 **Evidence limitations:** the controlled-station captures use a w=1 point map;
 the corresponding Go CLI uses w=8 and the C CLI closes without an idle t2 ACK
@@ -257,7 +271,7 @@ invented claim of measured C equivalence. Socket backpressure cannot guarantee
 physical delivery by t2; the state machine makes the acknowledgement eligible
 by that deadline, and close remains bounded as documented above.
 
-#### Strict packet-gate validation
+#### Historical packet-gate validation (before receive-filter redesign)
 
 The implementation at `03f89fb` was built as `rd-iec104-go:03f89fb` and run
 against the sealed C reference in two complete sequential matrices. Evidence:

@@ -23,7 +23,6 @@ type sessionState struct {
 	u                     map[UFunction]time.Time
 	t1, t2, idle, drain   time.Time
 	closeAfter            error
-	ackWait               *receiveACK
 }
 
 func seqDistance(a, b uint16) int         { return int((b - a) & 32767) }
@@ -32,7 +31,6 @@ func (s *Session) run() {
 	st := sessionState{s: s, u: make(map[UFunction]time.Time), idle: s.opts.Clock.Now().Add(s.opts.APCI.T3)}
 	timer := s.opts.Clock.NewTimer(st.idle)
 	var failure error
-	var deferred *incoming
 	defer func() {
 		timer.Stop()
 		if failure == nil {
@@ -46,8 +44,6 @@ func (s *Session) run() {
 		s.finish(failure)
 	}()
 	for {
-		// An already-expired injected deadline wins over a simultaneously ready
-		// callback result. Otherwise a select lottery changes S versus piggyback.
 		if err := st.expire(); err != nil {
 			failure = err
 			return
@@ -56,20 +52,11 @@ func (s *Session) run() {
 			failure = err
 			return
 		}
-		if deferred != nil && s.received.Load()-s.acknowledged.Load() < uint64(s.opts.APCI.W) {
-			in := *deferred
-			deferred = nil
-			if err := st.input(in); err != nil {
-				failure = err
-				return
-			}
-			continue
-		}
 		resetTimer(timer, st.nextDeadline())
 		incoming := s.in
 		// Preserve every threshold S frame rather than coalescing it. Apply
 		// backpressure at the receive window, not by losing cumulative replies.
-		if deferred != nil || len(s.out) >= s.opts.SendQueue {
+		if len(s.out) >= s.opts.SendQueue || s.received.Load()-s.acknowledged.Load() >= uint64(s.opts.APCI.W) {
 			incoming = nil
 		}
 		select {
@@ -89,13 +76,6 @@ func (s *Session) run() {
 				return
 			}
 		case in := <-incoming:
-			if in.err == nil && in.frame.Kind == IFrame && s.received.Load()-s.acknowledged.Load() >= uint64(s.opts.APCI.W) {
-				// Keep U/S processing independent of a blocked callback. Only a
-				// further I-frame needs a window slot. Its arrival must not change
-				// an existing callback decision from piggyback to S by a select race.
-				deferred = &in
-				continue
-			}
 			if err := st.input(in); err != nil {
 				failure = err
 				return
@@ -165,7 +145,6 @@ func (st *sessionState) ack(closeAfter bool) error {
 		return err
 	}
 	st.pending = 0
-	st.ackWait = nil
 	st.t2 = time.Time{}
 	return nil
 }
@@ -188,23 +167,6 @@ func (st *sessionState) pump() error {
 	if st.closeAfter != nil || !st.started {
 		return nil
 	}
-	if st.ackWait != nil {
-		ready, piggyback := st.callbackACKDecision()
-		if !ready {
-			return nil
-		}
-		if piggyback {
-			// Retain t2 until the chosen I-frame is actually emitted. In
-			// particular, writer scheduling cannot turn queue pressure into
-			// an immediate S or silently remove the pending ACK's deadline.
-			if len(st.s.out) >= st.s.opts.SendQueue {
-				return nil
-			}
-			st.ackWait = nil
-		} else if err := st.ack(false); err != nil {
-			return err
-		}
-	}
 	for st.outstanding() < st.s.opts.APCI.K {
 		// A large k is legal even with a tiny admission queue. A slow transport
 		// must leave admitted data queued, not turn internal writer saturation
@@ -222,15 +184,9 @@ func (st *sessionState) pump() error {
 		st.s.sends = st.s.sends[1:]
 		st.s.notifySendLocked()
 		st.s.mu.Unlock()
-		if err := st.emitLeg(Frame{Kind: IFrame, Send: st.sent, Receive: st.received, ASDU: payload.bytes}, false, payload.leg); err != nil {
+		if err := st.sendI(payload.bytes, payload.leg); err != nil {
 			return err
 		}
-		if st.outstanding() == 0 {
-			st.t1 = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T1)
-		}
-		st.sent = (st.sent + 1) & 32767
-		st.pending = 0
-		st.t2 = time.Time{}
 	}
 	st.s.mu.Lock()
 	empty := len(st.s.sends) == 0
@@ -326,19 +282,21 @@ func (st *sessionState) receive(f Frame, leg *procedureLeg) error {
 			st.t2 = st.s.opts.Clock.Now().Add(st.s.opts.APCI.T2)
 		}
 		st.pending++
-		// Procedure observation gets its own copy before application code can mutate
-		// the delivered message, and never runs on the callback goroutine.
+		if st.s.role == ServerRole {
+			if cause := st.s.opts.ReceiveFilter.reject(m.GetHeader()); cause != 0 {
+				return st.reject(f.ASDU, cause)
+			}
+		}
+		// Admission of the threshold S precedes dispatch, regardless of whether
+		// the handler immediately sends, returns, or blocks indefinitely.
+		if st.pending >= st.s.opts.APCI.W {
+			if err := st.ack(false); err != nil {
+				return err
+			}
+		}
 		st.s.observe(f.ASDU, leg)
-		var ticket *receiveACK
-		if st.pending >= st.s.opts.APCI.W && st.s.role == ServerRole && st.s.handler != nil {
-			ticket = &receiveACK{request: append([]byte(nil), f.ASDU...)}
-			st.ackWait = ticket
-		}
-		if !st.s.queueEvent(Event{Kind: ASDUReceived, ASDU: m, ack: ticket}) {
+		if !st.s.queueEvent(Event{Kind: ASDUReceived, ASDU: m}) {
 			return ErrEventQueueFull
-		}
-		if st.pending >= st.s.opts.APCI.W && ticket == nil {
-			return st.ack(false)
 		}
 	}
 	return nil

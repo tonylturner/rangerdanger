@@ -73,6 +73,7 @@ func TestCadenceServerResponseOrder(t *testing.T) {
 		t.Run(fmt.Sprint(cause), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.APCI.W = 1
+			opts.ReceiveFilter = ReceiveFilter{CommonAddresses: []uint16{1}, ApplicationTypes: []TypeID{C_IC_NA_1, C_DC_NA_1}}
 			command := request(1, 0, C_DC_NA_1, 3001, DoubleCommand{Qualifier: 0x81})
 			var input Message = command
 			switch cause {
@@ -98,6 +99,9 @@ func TestCadenceServerResponseOrder(t *testing.T) {
 			}
 			s, peer, _ := manualSession(t, ServerRole, opts, func(_ context.Context, e Event) {
 				if e.Kind == ASDUReceived {
+					if cause == UnknownType || cause == UnknownCA {
+						t.Error("rejected ASDU delivered")
+					}
 					if err := e.Session.Send(response); err != nil {
 						t.Error(err)
 					}
@@ -146,38 +150,13 @@ func TestCadenceQueuedSnapshots(t *testing.T) {
 	}
 }
 
-func TestCadenceBlockedCallbackClock(t *testing.T) {
-	opts := DefaultOptions()
-	opts.APCI.W = 1
-	entered := make(chan struct{})
-	s, peer, clock := manualSession(t, ServerRole, opts, func(ctx context.Context, e Event) {
-		if e.Kind == ASDUReceived {
-			close(entered)
-			<-ctx.Done()
-		}
-	})
-	startServerSession(t, s, peer)
-	writeFrame(t, peer, messageFrame(t, 0, 0))
-	<-entered
-	v := waitView(t, s, func(v sessionView) bool { return v.pending == 1 })
-	writeFrame(t, peer, Frame{Kind: UFrame, Function: TestFRAct})
-	exactAPDU(t, peer, []byte{0x68, 4, 0x83, 0, 0, 0})
-	clock.Advance(v.t2.Sub(clock.Now()))
-	exactAPDU(t, peer, []byte{0x68, 4, 1, 0, 2, 0})
-}
-
 func TestCadenceFullKCannotDeferACK(t *testing.T) {
 	opts := DefaultOptions()
 	opts.APCI.W, opts.APCI.K = 1, 1
+	opts.ReceiveFilter.ApplicationTypes = []TypeID{C_IC_NA_1}
 	s, peer, _ := manualSession(t, ServerRole, opts, func(_ context.Context, e Event) {
 		if e.Kind == ASDUReceived {
-			response, err := Mirror(e.ASDU, UnknownType, true)
-			if err == nil {
-				err = e.Session.Send(response)
-			}
-			if err != nil {
-				t.Error(err)
-			}
+			t.Error("rejected ASDU delivered")
 		}
 	})
 	startServerSession(t, s, peer)
@@ -188,9 +167,19 @@ func TestCadenceFullKCannotDeferACK(t *testing.T) {
 	writeFrame(t, peer, messageFrame(t, 0, 0))
 	exactAPDU(t, peer, []byte{0x68, 4, 1, 0, 2, 0})
 	writeFrame(t, peer, Frame{Kind: SFrame, Receive: 1})
-	if f := readFrame(t, peer); f.Kind != IFrame || f.Send != 1 || f.Receive != 1 {
-		t.Fatal(f)
+	response, err := Mirror(sampleMessage(), UnknownType, true)
+	if err != nil {
+		t.Fatal(err)
 	}
+	payload, err := response.MarshalBinary(opts.Params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := (Frame{Kind: IFrame, Send: 1, Receive: 1, ASDU: payload}).MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exactAPDU(t, peer, want)
 }
 
 func TestCadenceExpiredT2WinsMirror(t *testing.T) {
@@ -231,47 +220,4 @@ func TestCadenceCallbackWithoutReply(t *testing.T) {
 	startServerSession(t, s, peer)
 	writeFrame(t, peer, messageFrame(t, 0, 0))
 	exactAPDU(t, peer, []byte{0x68, 4, 1, 0, 2, 0})
-}
-
-func TestCadenceQueueOccupancyDoesNotChooseReply(t *testing.T) {
-	opts := DefaultOptions()
-	opts.Clock, opts.SendQueue = newFakeClock(), 1
-	input := sampleMessage()
-	response, err := Mirror(input, UnknownType, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := input.MarshalBinary(opts.Params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reply, err := response.MarshalBinary(opts.Params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ticket := &receiveACK{request: request, first: reply}
-	s := &Session{opts: opts, out: make(chan *wireWrite, 9), sendReady: make(chan struct{})}
-	s.received.Store(1)
-	s.sends = []queuedASDU{{bytes: reply, ack: ticket}}
-	st := sessionState{s: s, started: true, received: 1, pending: 1, ackWait: ticket, t2: opts.Clock.Now().Add(opts.APCI.T2)}
-	if err := s.enqueueWire(Frame{Kind: UFrame, Function: TestFRCon}, false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if ready, piggyback := st.callbackACKDecision(); !ready || !piggyback {
-		t.Fatalf("writer queue changed the decision: ready=%v piggyback=%v", ready, piggyback)
-	}
-	if err := st.pump(); err != nil {
-		t.Fatal(err)
-	}
-	if len(s.out) != 1 || st.ackWait != ticket || st.t2.IsZero() {
-		t.Fatal("full writer queue must retain the decision and its t2 bound")
-	}
-	s.claimWire(<-s.out)
-	if err := st.pump(); err != nil {
-		t.Fatal(err)
-	}
-	w := s.claimWire(<-s.out)
-	if w.bytes[2]&1 != 0 || w.bytes[4] != 2 || st.ackWait != nil || st.pending != 0 {
-		t.Fatalf("deferred piggyback=%x", w.bytes)
-	}
 }

@@ -148,11 +148,16 @@ return closeErr
   between a fake-clock advance and timer registration;
   TCP dial t0 uses `net.Dialer`'s context/timeout.
   Threshold S acknowledgements retain FIFO receive snapshots, rather than
-  coalescing or advancing N(R) at write time. On the controlled side, the first
-  admitted handler response (or callback return) resolves threshold ordering:
-  ordinary replies follow S; an exact negative COT44/46 mirror can piggyback
-  instead. t2 and TESTFR progress independently of a blocked handler. See PICS
-  for capture evidence and the limits of the measured profile.
+  coalescing or advancing N(R) at write time. On the controlled side, an
+  ordinary threshold S is emitted before dispatch, never waiting for a handler.
+  `ReceiveFilter` in Options declares accepted common addresses and application
+  types; each empty list accepts all. Server receive-path rejections mirror the
+  request with negative COT46 (CA checked first) or COT44 (type), piggybacking
+  N(R). Full k falls back to S and bounded admission of the mirror. Rejected
+  ASDUs never reach the handler. Client behavior is unchanged. File-service
+  types bypass the application-type list, but not the CA list. All input may
+  be backpressured by a stalled writer/receive window; a pending handler alone
+  never holds transport processing. See PICS for capture evidence and limits.
 - `StartDT(ctx)`/`StopDT(ctx)` await t1-supervised confirmations. Stop freezes
   admission and drains already admitted data before its act/con; no accepted
   object is silently discarded. Counters survive stop/start. `Err()` reports
