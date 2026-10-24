@@ -109,7 +109,10 @@ def load_allowlist(path: Path) -> list[dict[str, Any]]:
         if (
             not isinstance(field, str)
             or not field
-            or any(marker in field for marker in ("*", "?", "[", "]"))
+            or not re.fullmatch(
+                r"[A-Za-z_][A-Za-z_0-9]*(?:\[[0-9]+\]|\.[A-Za-z_][A-Za-z_0-9]*)*",
+                field,
+            )
         ):
             raise InputError(f"{where}.field must be a specific, non-wildcard field")
         for name in ("reason", "approved_by"):

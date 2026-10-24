@@ -455,6 +455,17 @@ class AllowlistTests(unittest.TestCase):
             with self.assertRaises(InputError):
                 load_allowlist(path)
 
+    def test_exact_array_indexes_are_not_wildcards(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowlist.json"
+            for field in ("asdu.quality_bits[0].bits", "apdu[2].byte[4]"):
+                path.write_text(json.dumps([self._entry(field=field)]))
+                self.assertEqual(load_allowlist(path)[0]["field"], field)
+            for field in ("apdu[*].byte[4]", "apdu[0-9]", "apdu[?]", "apdu[]"):
+                path.write_text(json.dumps([self._entry(field=field)]))
+                with self.assertRaises(InputError):
+                    load_allowlist(path)
+
 
 if __name__ == "__main__":
     unittest.main()
