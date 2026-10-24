@@ -78,9 +78,12 @@ opts := iec104go.DefaultOptions()
 client, err := iec104go.Dial(ctx, "127.0.0.1:2404", opts,
     func(callbackCtx context.Context, e iec104go.Event) {
         // e.ConnID is never reused; e.ASDU may be retained after return.
+        // e.Session.RemoteAddr() / LocalAddr() identify this connection.
         // Honor callbackCtx cancellation if doing blocking application work.
     })
 if err != nil { return err }
+peer, local := client.RemoteAddr(), client.LocalAddr()
+_, _ = peer, local // also available through Event.Session on the server
 operationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 defer cancel()
 err = client.StartDT(operationCtx)
@@ -100,6 +103,11 @@ return closeErr
   `LocalAddress` binds the source. t0 bounds TCP establishment; STARTDT is
   explicit. `NewSession(ctx, net.Conn, role, opts, handler)` supports established
   transports and deterministic `net.Pipe` tests. There is no reconnect loop.
+- `Session.RemoteAddr()` / `LocalAddr()` return immutable `net.Addr` snapshots
+  captured before Opened, safe concurrently, in callbacks and after Close.
+  Access them through `Event.Session` on either side, or directly on `Client`.
+  Use `Network()` / `String()`, not concrete transport address type assertions.
+  Nil means the transport supplies no address; `net.Pipe` reports `"pipe"`.
 - `NewServer(opts, handler)` returns a server. `Serve(ctx, listener)` owns the
   listener on success. Call `Shutdown(ctx)` to close it and join every session.
   The default ninth simultaneous connection is accepted, closed and logged.
