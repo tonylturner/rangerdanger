@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Offline ownership checks for the legacy gate."""
+"""Implementation selection stays independent of the legacy live gate."""
 
 from pathlib import Path
 import importlib.util
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -48,6 +49,31 @@ class OwnershipTests(unittest.TestCase):
                 legacy.cleanup("rd-test", "owner=unit")
         self.assertEqual(call.call_count, 5)
         self.assertEqual(call.call_args_list[-1].args[0][-1], "reference=rd-test-model:test")
+
+
+class ImplementationTests(unittest.TestCase):
+    def build(self, impl):
+        text = (CHECK / "run.sh").read_text()
+        body = text.split("build_base() {", 1)[1].split("\n}", 1)[0]
+        return subprocess.run(
+            ["bash", "-c", 'IMPL="$1"; ROOT=root; SVC=svc; BASEIMG=base; OUT=/dev/null\n'
+             'docker() { printf "%s\\n" "$*"; }\n'
+             'build_base() {' + body + '\n}\nbuild_base', "test", impl],
+            capture_output=True, text=True, timeout=5,
+        )
+
+    def test_c_keeps_model_check_and_original_recipe(self):
+        result = self.build("c")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("--target model-check", result.stdout)
+        self.assertIn("-f svc/Dockerfile", result.stdout)
+        self.assertNotIn("go.Dockerfile", result.stdout)
+
+    def test_go_builds_combined_without_c_model_check(self):
+        result = self.build("go")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("-f svc/go.Dockerfile --target combined", result.stdout)
+        self.assertNotIn("model-check", result.stdout)
 
 
 if __name__ == "__main__":

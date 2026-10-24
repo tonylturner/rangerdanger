@@ -21,7 +21,7 @@
 # rd-iec104-check-<unique>) and removed on exit, including the images. Needs
 # Docker and Python 3; the subnets below must not overlap a Docker network.
 #
-# Usage: [RD_CHECK_PREFIX=name] services/iec104/check/run.sh [OUT_DIR]
+# Usage: [RD_CHECK_IMPL=c|go] [RD_CHECK_PREFIX=name] services/iec104/check/run.sh [OUT_DIR]
 #        (default OUT_DIR <repo>/build/$RD_CHECK_PREFIX)
 set -uo pipefail
 
@@ -29,6 +29,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SVC="$(dirname "$HERE")"
 ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
 PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')}"
+IMPL="${RD_CHECK_IMPL:-c}"
+case "$IMPL" in c|go) ;; *) echo "RD_CHECK_IMPL must be c or go" >&2; exit 2 ;; esac
 export RD_CHECK_PREFIX="$PREFIX"
 export RD_CHECK_OWNER="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 docker() { python3 "$HERE/legacy_docker.py" "$@"; }
@@ -93,8 +95,15 @@ trap 'exit 2' INT TERM
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 log "build the iec104 image"
-docker build -f "$SVC/Dockerfile" --target model-check -t "$MODELIMG" "$ROOT" >"$OUT/model-check.log" 2>&1 || exit 1
-docker build -q -f "$SVC/Dockerfile" -t "$BASEIMG" "$ROOT" >"$OUT/base-build.log" 2>&1 || exit 1
+build_base() {
+  if [ "$IMPL" = c ]; then
+    docker build -f "$SVC/Dockerfile" --target model-check -t "$MODELIMG" "$ROOT" || return
+    docker build -q -f "$SVC/Dockerfile" -t "$BASEIMG" "$ROOT"
+  else
+    docker build -q -f "$SVC/go.Dockerfile" --target combined -t "$BASEIMG" "$ROOT"
+  fi
+}
+build_base >"$OUT/base-build.log" 2>&1 || exit 1
 docker build -q -f "$HERE/Dockerfile" --build-arg "BASE_IMAGE=$BASEIMG" -t "$IMG" "$HERE" >"$OUT/check-build.log" 2>&1 || exit 1
 docker run --rm --network none -v "$HERE:/check:ro" --entrypoint python3 "$IMG" -I /check/loader_checks.py || exit 1
 docker image inspect "$PY" >/dev/null 2>&1 || { fail "fixture image $PY must already exist"; exit 1; }

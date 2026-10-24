@@ -31,7 +31,7 @@ def side(case_path, role_images, reference, out, subnet):
     prefix = subnet.rsplit(".", 1)[0]
     shutil.copyfile(case_path, out / "scenario.json")
     shutil.copyfile(reference, out / "baseline.json")
-    (out / "points.json").write_text(json.dumps(point_map(subnet), indent=2) + "\n")
+    (out / "points.json").write_text(json.dumps(point_map(subnet, case["point_map"]), indent=2) + "\n")
     docker = Docker(out)
     capture = None
     logs = {}
@@ -215,6 +215,22 @@ def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, o
     return 0 if report["passed"] else 1
 
 
+def run_cases(paths, candidate_path, baseline_roles, candidate_roles, reference, out, tshark):
+    """Retain each result, including failed peers, without skipping the catalog."""
+    results = []
+    for path in paths:
+        result = {"scenario": path.stem, "exit_code": None}
+        try:
+            result["exit_code"] = run_case(path, candidate_path, baseline_roles,
+                                          candidate_roles, reference, out, tshark)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            result.update(exit_code=2, error=str(error))
+            print(f"{path.stem}: {error}", file=sys.stderr, flush=True)
+        results.append(result)
+        (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+    return max(result["exit_code"] for result in results)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", type=Path, nargs="?")
@@ -240,11 +256,8 @@ def main():
         args.out.mkdir(parents=True, exist_ok=True)
         version = subprocess.run([args.tshark, "--version"], check=True, capture_output=True, text=True, timeout=10)
         (args.out / "tshark-version.txt").write_text(version.stdout)
-        status = 0
-        for path in paths:
-            status = max(status, run_case(path, args.candidate_scenario, baseline_roles,
-                                         candidate_roles, args.reference, args.out, args.tshark))
-        return status
+        return run_cases(paths, args.candidate_scenario, baseline_roles,
+                         candidate_roles, args.reference, args.out, args.tshark)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         print("run.py: " + str(error), file=sys.stderr)
         return 2

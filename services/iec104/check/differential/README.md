@@ -181,8 +181,13 @@ Scenarios use schema 1: an ID, role kind, deadline, capture-Modbus switch,
 versioned point-map profile, expected session count and ordered
 `{op,args,timeout_s}` actions. Unknown/duplicate keys, nonfinite numbers,
 unsupported actions and role-incompatible operations are rejected. The
-status-only feeder profile deliberately has no analog cyclic points;
-42-point analog/cyclic behavior is still exercised by `check/run.sh`.
+status-only feeder profile deliberately has no analog cyclic points.
+`analog-cyclic` uses a four-point profile with the Modbus fixture's constant
+28.9 A / 20 kV registers and unchanged 2000 ms cyclic timers. Each received,
+acknowledged two-object periodic ASDU is a cycle barrier; after exactly three
+cycles the peer stops data transfer. It checks the complete ASDU bytes,
+including COT, ordering, values and quality, without a sampling sleep.
+Full 42-point analog/cyclic behavior is also exercised by `check/run.sh`.
 STARTDT, GI ACT-TERM, select/execute, fresh Modbus reads, GPS requests and
 scripted-server acknowledgments are barriers, never fixed startup sleeps.
 The scripted server uses exact fixed CP56 IV timestamps; the real RTU uses
@@ -222,3 +227,17 @@ removes the separately built reference tag when finished:
 ```sh
 docker image rm rd-iec104-ref:c1de19412b69
 ```
+
+## Legacy Go candidate gate
+
+`RD_CHECK_IMPL=c|go services/iec104/check/run.sh` selects the base recipe
+(default `c`). The Go path builds `go.Dockerfile --target combined`; only C
+runs the C `model-check` build stage. Go model assertions remain ordinary Go
+tests, not a second Docker build target. The test-tool overlay is shared.
+
+The legacy gate gives every container (including short-lived commands) an
+`rd*` name and unique owner label. Its bounded Docker wrapper refuses prefix
+collisions before installing cleanup, creates internal networks with no host
+ports, and cleans only that run's labels and three preflight-checked image
+tags. C dependency/compiler build output is sealed. Default prefixes are
+unique; `RD_CHECK_PREFIX` can set a fresh explicit prefix.
