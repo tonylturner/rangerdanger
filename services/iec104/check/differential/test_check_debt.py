@@ -5,6 +5,7 @@ import ast
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import Mock
@@ -79,6 +80,20 @@ class LoaderDeadlineTests(unittest.TestCase):
 
 
 class NegativeConfirmationTests(unittest.TestCase):
+    def test_overall_deadline_expires_even_if_peer_keeps_sending(self):
+        sock = Mock()
+        sock.__enter__ = Mock(return_value=sock)
+        sock.__exit__ = Mock(return_value=False)
+        sock.recv.return_value = bytes.fromhex("6804")
+        raw_select = helper(
+            "inc4_probe.py", "raw_select",
+            socket=types.SimpleNamespace(create_connection=Mock(return_value=sock)),
+            time=types.SimpleNamespace(monotonic=Mock(side_effect=[0, 1, 11])),
+        )
+        with self.assertRaisesRegex(TimeoutError, "overall"):
+            raw_select(3501, 46, 1, expected_cot=47)
+        self.assertEqual(sock.recv.call_count, 1)
+
     def select(self, cot, expected_cot=7):
         ioa = 3501
         asdu = bytes([46, 1, cot, 0, 1, 0]) + ioa.to_bytes(3, "little") + b"\x81"
@@ -97,6 +112,7 @@ class NegativeConfirmationTests(unittest.TestCase):
         raw_select = helper(
             "inc4_probe.py", "raw_select",
             socket=types.SimpleNamespace(create_connection=Mock(return_value=sock)),
+            time=time,
         )
         raw_select(ioa, 46, 1, expected_cot=expected_cot)
 

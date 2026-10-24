@@ -81,11 +81,16 @@ def command_write(point, operation, ip, address, value, **kw):
 
 def raw_select(ioa, type_id, value, qualifier=0, expected_cot=7):
     """Minimal IEC104 peer for rejection tests; no alternate application API."""
+    deadline = time.monotonic() + 10
     with socket.create_connection(("172.28.104.10", 2404), timeout=3) as sock:
 
         def exact(n):
             data = b""
             while len(data) < n:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("select reply exceeded overall 10-second deadline")
+                sock.settimeout(min(3, remaining))
                 chunk = sock.recv(n - len(data))
                 assert chunk
                 data += chunk
@@ -108,7 +113,7 @@ def raw_select(ioa, type_id, value, qualifier=0, expected_cot=7):
             data = frame()
             if data[0] & 1:
                 continue
-            received = (int.from_bytes(data[:2], "little") >> 1) + 1
+            received = ((int.from_bytes(data[:2], "little") >> 1) + 1) % 32768
             sock.sendall(bytes([104, 4, 1, 0]) + (received << 1).to_bytes(2, "little"))
             a = data[4:]
             if a[0] == type_id and int.from_bytes(a[6:9], "little") == ioa:
