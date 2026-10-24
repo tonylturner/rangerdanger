@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "flow-window",
+  "kind": "raw-rtu",
+  "timeout_s": 30,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "window", "args": {}, "timeout_s": 15}
+  ]
+}

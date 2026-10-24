@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "negative-addressing",
+  "kind": "raw-rtu",
+  "timeout_s": 40,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "gi", "args": {}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 200, "cot": 6, "ca": 1, "ioa": 3001, "value": 129, "expected_cot": 44}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 1, "ca": 1, "ioa": 3001, "value": 129, "expected_cot": 45}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 6, "ca": 2, "ioa": 3001, "value": 129, "expected_cot": 46}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 6, "ca": 1, "ioa": 0, "value": 129, "expected_cot": 47}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 6, "ca": 1, "ioa": 3001, "value": 133, "expected_cot": 7}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 6, "ca": 1, "ioa": 3001, "value": 1, "expected_cot": 7}, "timeout_s": 5}
+  ]
+}

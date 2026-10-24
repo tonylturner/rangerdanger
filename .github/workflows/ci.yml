@@ -25,15 +25,62 @@ jobs:
         run: bash scripts/tests/eu-gate/run.sh
 
   iec104:
-    name: IEC 104 image and protocol checks
+    name: IEC 104 reference and differential conformance
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - name: Build IEC 104 image
-        run: docker build -f services/iec104/Dockerfile -t rdci-g-iec104 .
+        with:
+          fetch-depth: 0 # The sealed baseline is an older first-party revision.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install TShark 4.6 decoder
+        run: |
+          sudo add-apt-repository -y ppa:wireshark-dev/stable
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y tshark
+          # Comparator tests use the same explicit decoder path as macOS.
+          sudo mkdir -p /opt/homebrew/bin
+          sudo ln -s "$(command -v tshark)" /opt/homebrew/bin/tshark
+          python3 - <<'PY'
+          import re, subprocess
+          banner = subprocess.run(["tshark", "--version"], check=True, capture_output=True, text=True, timeout=10).stdout
+          assert re.search(r"TShark .*4\.6\.", banner), banner
+          print(banner.splitlines()[0])
+          PY
+      - name: Test comparator and runner on Python 3.12
+        working-directory: services/iec104/check/differential
+        run: python3 -m unittest -v
+      - name: Build sealed C reference
+        run: python3 services/iec104/check/reference/build.py --out build/iec104-reference
+      - name: Compare complete C/C catalog
+        run: |
+          python3 services/iec104/check/differential/run.py --catalog \
+            --baseline build/iec104-reference/roles.json \
+            --candidate build/iec104-reference/roles.json \
+            --reference build/iec104-reference/baseline.json \
+            --out build/iec104-differential
       - name: Check IEC 104 protocols
         run: RD_CHECK_PREFIX=rdci-g-iec104 services/iec104/check/run.sh "$GITHUB_WORKSPACE/build/iec104-check"
+      - name: Remove local reference tag
+        if: always()
+        run: |
+          if test -f build/iec104-reference/baseline.json; then
+            image="$(python3 -c 'import json; print(json.load(open("build/iec104-reference/baseline.json"))["image"])')"
+            docker image rm "$image"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iec104-conformance-evidence
+          path: |
+            build/iec104-reference
+            build/iec104-differential
+            build/iec104-check
+            !build/iec104-check/*build.log
+            !build/iec104-check/model-check.log
+          retention-days: 7
 
   release-tooling:
     name: Release image planner and input guard

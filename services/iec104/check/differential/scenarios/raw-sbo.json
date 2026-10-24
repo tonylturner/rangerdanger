@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "raw-sbo",
+  "kind": "raw-rtu",
+  "timeout_s": 30,
+  "capture_modbus": true,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "gi", "args": {}, "timeout_s": 5},
+    {"op": "sbo", "args": {"value": 1}, "timeout_s": 10},
+    {"op": "sbo", "args": {"value": 2}, "timeout_s": 10}
+  ]
+}
