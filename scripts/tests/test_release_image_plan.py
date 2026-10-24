@@ -313,26 +313,31 @@ class ReleaseImagePlanTests(PlannerFixture):
                 "changed EU PLC startup\n",
                 {"rangerdanger-openplc-eu"},
             ),
-            (
-                "services/iec104/src/common.c",
-                "changed IEC 104 source\n",
-                {"rangerdanger-kali", "rangerdanger-eng-ws"},
-            ),
-            (
-                "services/iec104/build-iec104cmd.sh",
-                "changed IEC 104 CLI build recipe\n",
-                {"rangerdanger-kali", "rangerdanger-eng-ws"},
-            ),
-            (
-                "services/iec104/LICENSE",
-                "changed IEC 104 license\n",
-                {"rangerdanger-kali", "rangerdanger-eng-ws"},
-            ),
-            (
-                "services/iec104/README.md",
-                "changed IEC 104 readme\n",
-                {"rangerdanger-kali", "rangerdanger-eng-ws"},
-            ),
+            # CLI and root library changes invalidate both shared tool images.
+            ("iec104go/application.go", "changed Go library\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/cmd/iec104cmd/main.go", "changed Go CLI\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/LICENSE", "changed Go licence\n",
+             {"rangerdanger-kali", "rangerdanger-eng-ws"}),
+            ("iec104go/go.mod", "changed Go module\n", {
+                "rangerdanger-kali", "rangerdanger-eng-ws", "rangerdanger-rtac-sim",
+                "rangerdanger-relay-sim", "rangerdanger-recloser-sim",
+                "rangerdanger-regulator-sim", "rangerdanger-capbank-sim",
+                "rangerdanger-historian-sim", "rangerdanger-gps-sim",
+                "rangerdanger-field-device-sim", "rangerdanger-historian-eu",
+            }),
+            ("services/iec104/internal/rtu/model.go", "changed Go RTU\n", set()),
+            ("services/iec104/cmd/iec104-cc/main.go", "changed Go CC\n", set()),
+            ("services/iec104/cmd/iec104-rtu/main.go", "changed Go RTU main\n", set()),
+            # Historical/deleted inputs no longer invalidate production images.
+            # The conservative ALWAYS_BUILD images still build independently.
+            ("services/iec104/src/common.c", "retired C source\n", set()),
+            ("services/iec104/build-iec104cmd.sh", "retired C helper\n", set()),
+            ("services/iec104/LICENSE", "historical licence\n", set()),
+            ("services/iec104/README.md", "component documentation\n", set()),
+            ("services/iec104/check/reference/baseline.json", "reference only\n", set()),
+            ("services/iec104/check/reference/build.py", "reference builder only\n", set()),
             (
                 "services/opendss-sim/eu_app.py",
                 "changed EU solver\n",

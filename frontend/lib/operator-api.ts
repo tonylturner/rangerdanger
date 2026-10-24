@@ -16,9 +16,9 @@ export type GeneralInterrogation = {
 
 export type ControlCentreLink = {
   state: LinkState;
-  // The RTU, "<ip>:<port>". lib60870 cannot report the CC's own end of
-  // the session, so the firewall session list is the only source of the
-  // CC's ephemeral port.
+  // The RTU, "<ip>:<port>". The public schema deliberately omits the CC's
+  // local endpoint for compatibility; use the firewall session list for
+  // its ephemeral port, not a new implementation-specific state field.
   peer: string;
   since: string | null;
   last_rx_at: string | null;
@@ -130,8 +130,8 @@ export async function postOperatorGi() {
   return answer;
 }
 
-// Why the CC journals a link_down. lib60870 reports no close cause, so
-// the CC infers it (services/iec104/README.md).
+// Stable CC link-down reason contract; see services/iec104/README.md and
+// services/iec104/internal/controlcentre/link.go.
 export type LinkDownReason = "t1_timeout" | "peer_closed" | "connect_failed" | "io_error" | "operator_reconnect";
 
 // detail differs per kind (link_up, link_down, gi_started, gi_complete,

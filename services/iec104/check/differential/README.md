@@ -259,19 +259,18 @@ removes the separately built reference tag when finished:
 docker image rm rd-iec104-ref:c1de19412b69
 ```
 
-## Legacy Go candidate gate
+## Legacy Go-only behavioral gate
 
-`RD_CHECK_IMPL=c|go services/iec104/check/run.sh` selects the base recipe
-(default `c`). The Go path builds `go.Dockerfile --target combined`; only C
-runs the C `model-check` build stage. Go model assertions remain ordinary Go
-tests, not a second Docker build target. The test-tool overlay is shared.
+`services/iec104/check/run.sh` builds the canonical production
+`services/iec104/Dockerfile`, with all three binaries and no build target.
+Go model assertions run as ordinary Go tests, not a Docker model-check stage.
+The C implementation is built only by the sealed reference builder.
 
 The legacy gate gives every container (including short-lived commands) an
 `rd*` name and unique owner label. Its bounded Docker wrapper refuses prefix
 collisions before installing cleanup, creates internal networks with no host
-ports, and cleans only that run's labels and three preflight-checked image
-tags. C dependency/compiler build output is sealed. Default prefixes are
-unique; `RD_CHECK_PREFIX` can set a fresh explicit prefix.
+ports, and cleans only that run's labels and two preflight-checked image
+tags. Default prefixes are unique; `RD_CHECK_PREFIX` can set a fresh prefix.
 The Python fixture image is inspected first and pulled through the bounded
 wrapper (300 s) on a cache miss, including on fresh CI runners. It is a shared
 dependency, not an owned build output: cleanup never removes its tag.

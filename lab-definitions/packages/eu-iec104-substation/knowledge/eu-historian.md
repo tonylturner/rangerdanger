@@ -28,4 +28,4 @@ The portal relays `GET /api/historian/points` and `/api/historian/history` throu
 
 This is not an SOE archive. Cadence snapshots can miss intermediate untimed changes; timed snapshots can be lost on queue overflow or failed pushes and are not replayed. Sequence jumps can also reflect other CC state renders, not necessarily lost ingestion. A healthy feed does not certify point quality or source-clock accuracy. Preserve epoch boundaries, nulls, stale flags and gaps in exports; a smoothed line alone cannot establish event ordering, command causality or a complete operational history.
 
-Implementation: `services/historian-eu/store.go`, `schema.go`, `http.go`; `services/iec104/src/cc_historian.c`.
+Implementation: `services/historian-eu/store.go`, `schema.go`, `http.go`; `services/iec104/internal/controlcentre/historian.go`.

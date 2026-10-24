@@ -54,22 +54,46 @@ jobs:
         run: python3 -m unittest -v
       - name: Build sealed C reference
         run: python3 services/iec104/check/reference/build.py --out build/iec104-reference
-      - name: Compare complete C/C catalog
+      - name: Build production Go candidate and role sets
         run: |
-          python3 services/iec104/check/differential/run.py --catalog \
-            --baseline build/iec104-reference/roles.json \
-            --candidate build/iec104-reference/roles.json \
-            --reference build/iec104-reference/baseline.json \
-            --out build/iec104-differential
-      - name: Check IEC 104 protocols
+          docker build -f services/iec104/Dockerfile -t "rdci-iec104-go:$GITHUB_SHA" .
+          python3 - <<'PYROLES'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path("build/iec104-differential")
+          root.mkdir(parents=True, exist_ok=True)
+          baseline = json.loads(pathlib.Path("build/iec104-reference/roles.json").read_text())
+          image = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}",
+                                  "rdci-iec104-go:" + os.environ["GITHUB_SHA"]],
+                                 check=True, capture_output=True, text=True, timeout=15).stdout.strip()
+          for name, roles in (("all-go", ("rtu", "cc", "cmd")),
+                              ("go-rtu", ("rtu",)), ("go-clients", ("cc", "cmd"))):
+              candidate = dict(baseline)
+              candidate.update({role: image for role in roles})
+              (root / (name + "-roles.json")).write_text(json.dumps(candidate, indent=2) + "\n")
+          PYROLES
+      - name: Compare reference against all Go role sets
+        run: |
+          for roles in all-go go-rtu go-clients; do
+            python3 services/iec104/check/differential/run.py --catalog \
+              --baseline build/iec104-reference/roles.json \
+              --candidate "build/iec104-differential/$roles-roles.json" \
+              --reference build/iec104-reference/baseline.json \
+              --role-set "$roles" --out "build/iec104-differential/$roles" || exit $?
+          done
+      - name: Check Go IEC 104 protocols
         run: RD_CHECK_PREFIX=rdci-g-iec104 services/iec104/check/run.sh "$GITHUB_WORKSPACE/build/iec104-check"
-      - name: Remove local reference tag
+      - name: Remove local reference and Go tags
         if: always()
         run: |
+          status=0
           if test -f build/iec104-reference/baseline.json; then
             image="$(python3 -c 'import json; print(json.load(open("build/iec104-reference/baseline.json"))["image"])')"
-            docker image rm "$image"
+            docker image rm "$image" || status=1
           fi
+          if docker image inspect "rdci-iec104-go:$GITHUB_SHA" >/dev/null 2>&1; then
+            docker image rm "rdci-iec104-go:$GITHUB_SHA" || status=1
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -79,7 +103,6 @@ jobs:
             build/iec104-differential
             build/iec104-check
             !build/iec104-check/*build.log
-            !build/iec104-check/model-check.log
           retention-days: 7
 
   release-tooling:

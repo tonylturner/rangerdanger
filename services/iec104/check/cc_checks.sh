@@ -281,9 +281,9 @@ if probe wait 40 "link(s)=='started' and s['link']['gi']['state']=='complete' an
 else
   fail "CC: recovery after the RTU pause (cc-state-recovered.json)"
 fi
-# lib60870's Linux listen backlog is only two. Repeated freezes (not one
-# oversized burst) are needed to exercise more than MAX_CONNECTIONS
-# abandoned sessions and expose both handle reuse and list exhaustion.
+# Repeated freezes exercise abandoned sessions across more than eight
+# admissions and verify recovery without stale recipients. Avoid relying on
+# one oversized burst or an implementation-specific listen backlog.
 for round in 2 3 4 5; do
   cc2 wait 20 "link(s)=='started' and s['link']['gi']['state']=='complete' and all_good(s)" \
     >/dev/null || fail "CC: reconnect driver did not recover before freeze $round"

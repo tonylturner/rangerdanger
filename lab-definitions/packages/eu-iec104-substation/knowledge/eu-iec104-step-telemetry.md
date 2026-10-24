@@ -26,4 +26,4 @@ The [historian](#eu-historian) stores the step object unchanged. Each timed step
 
 Step telemetry is not a mechanical travel recorder, contact-position trace or SOE archive. A transient flag does not establish the health of every component inside a real OLTC. An ambiguous result must not trigger an automatic retry: a repeated relative raise can create an extra tap change if the first already completed. Reconcile fresh state and operating intent before another [SBO attempt](#iec104-sbo-commands).
 
-Implementation: package `protocols/points.json`; `services/iec104/src/rtu.c`, `cc_state.c`, `cc_command.c`; `services/devices/fielddevice/oltc.go`.
+Implementation: package `protocols/points.json`; `services/iec104/internal/rtu/`, `services/iec104/internal/controlcentre/`; `services/devices/fielddevice/oltc.go`.

@@ -19,5 +19,6 @@ portable constant. `roles.json` is input to the differential runner.
 The image retains the existing GPL licenses and corresponding source payload.
 It is local and test-only: never publish it, add it to release inventory,
 Compose, or SSD bundles. The caller owns removing the reference tag after
-testing. At product cutover, archive the first-party reference inputs here
-before removing their production paths; Git remains the present authority.
+testing. The pinned Git revision is the authority, including after the production C
+paths are deleted. Keep that history available (CI uses a full fetch); no
+archive copy or working-tree C implementation is retained.

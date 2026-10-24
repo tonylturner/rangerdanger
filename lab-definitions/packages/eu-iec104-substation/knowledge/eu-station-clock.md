@@ -28,4 +28,4 @@ The [historian](#eu-historian) preserves source-time validity and CC receipt tim
 
 A locked status is a simulator assertion, not cryptographic proof of UTC accuracy. Applying an offset need not remove lock, so plausible-looking time can still be wrong. This is not satellite reception, oscillator accuracy testing, time-distribution hardening or device SOE capture. Do not sort all evidence solely by source time after a clock manipulation. Retain epochs, sequence numbers, receipt times and attempt windows so causal claims remain defensible.
 
-Implementation: package `protocols/points.json`, `compose.source.yml`; `services/iec104/src/stationclock.c`; `services/gps-sim/main.go`.
+Implementation: package `protocols/points.json`, `compose.source.yml`; `services/iec104/internal/stationclock/`; `services/gps-sim/main.go`.

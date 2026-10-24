@@ -41,4 +41,4 @@ GI and floating-point reports are untimed. Spontaneous and command-return status
 
 GI is not an event replay or SOE completeness guarantee. A [historian](#eu-historian) snapshot preserves these quality distinctions but cannot recover events never observed. “No change” may mean a stable value, deadband suppression or lost observation. Only the surrounding quality, timing and protocol evidence can distinguish those explanations.
 
-Implementation: `services/iec104/src/rtu.c`, `cc_state.c`; `services/devices/fielddevice/model.go`; package `protocols/points.json`.
+Implementation: `services/iec104/internal/rtu/`, `services/iec104/internal/controlcentre/state.go`; `services/devices/fielddevice/model.go`; package `protocols/points.json`.

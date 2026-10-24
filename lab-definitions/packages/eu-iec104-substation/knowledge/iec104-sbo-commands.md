@@ -35,4 +35,4 @@ Save the CC journal cursor and starting feedback. Use the **Control Centre** sel
 
 Never automatically retry an ambiguous execute. Another write is another operation, especially for [tap steps](#eu-iec104-step-telemetry). SBO does not stop a compromised trusted CC from issuing correctly sequenced requests, nor does it prove protocol-aware firewall filtering. Field authority and interlocks can refuse requests that passed every network and IEC 104 check.
 
-Implementation: `services/iec104/src/rtu.c`, `cc_command.c`, `cc_state.c`; package `protocols/points.json`.
+Implementation: `services/iec104/internal/rtu/`, `services/iec104/internal/controlcentre/command.go` and `state.go`; package `protocols/points.json`.

@@ -194,7 +194,7 @@ func TestServeSessions(t *testing.T) {
 		}
 		break
 	}
-	if text := log.text(); strings.Contains(text, "rx ASDU type=C_IC_NA_1(100) cot=ACTIVATION(6) neg=0 test=0 oa=17 ca=2") || strings.Contains(text, "(200)") {
+	if text := log.text(); strings.Contains(text, "rx ASDU type=C_IC_NA_1(100) cot=act(6) neg=0 test=0 oa=17 ca=2") || strings.Contains(text, "(200)") {
 		t.Fatalf("rejection reached RTU: %s", text)
 	}
 

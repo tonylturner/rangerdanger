@@ -39,4 +39,4 @@ Network console arrows show the Modbus client that initiates the connection, not
 
 Modbus here provides no cryptographic user identity, and the improved firewall does not distinguish read from write function codes. The console's port-rule warning refers to this limit: command-level filtering would need DPI. RTU-to-PLC reads are same-subnet traffic, not firewall-enforced inter-zone operations; **Infrastructure planes** also explains the same-zone [station-clock path](#eu-station-clock). A permitted trusted source can still misuse writes; [authority checks](#eu-control-authority) and operating controls remain necessary.
 
-Implementation: package `protocols/points.json`; `services/devices/modbus/registers.go`; `services/iec104/src/rtu.c` and `modbus.c`.
+Implementation: package `protocols/points.json`; `services/devices/modbus/registers.go`; `services/iec104/internal/rtu/` and `services/iec104/internal/modbus/`.

@@ -1,3 +1,8 @@
+> **Historical / superseded implementation:** this document records the C-stack
+> design and evidence before the Go cutover. Production now uses `iec104go/`;
+> see `services/iec104/README.md`. Preserve original provenance and decisions.
+> No transport behavior may rely on TCP segment boundaries or whole-APDU writes.
+
 # Plan: selectable range packages and a European IEC104 workshop
 
 Status: **parked 2026-10-18** for the US course hotfix. Increments

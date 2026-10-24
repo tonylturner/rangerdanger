@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Implementation selection stays independent of the legacy live gate."""
+"""The Go-only legacy gate keeps bounded, owned Docker calls."""
 
 from pathlib import Path
 import importlib.util
@@ -35,7 +35,7 @@ class OwnershipTests(unittest.TestCase):
                     legacy.preflight("rd-test")
 
     def test_cleanup_discovers_only_exact_owner(self):
-        with patch.object(legacy, "checked", side_effect=["c", "", "n", "", "", "", ""]) as call:
+        with patch.object(legacy, "checked", side_effect=["c", "", "n", "", "", ""]) as call:
             legacy.cleanup("rd-test", "owner=unit")
         self.assertEqual(call.call_args_list[0].args[0],
                          ["ps", "-aq", "--filter", "label=owner=unit"])
@@ -44,12 +44,12 @@ class OwnershipTests(unittest.TestCase):
 
     def test_cleanup_failure_does_not_skip_other_resource_kinds(self):
         with patch.object(legacy, "checked", side_effect=[
-            RuntimeError("container cleanup failed"), "", "", "", "",
+            RuntimeError("container cleanup failed"), "", "", "",
         ]) as call:
             with self.assertRaisesRegex(RuntimeError, "cleanup failed"):
                 legacy.cleanup("rd-test", "owner=unit")
-        self.assertEqual(call.call_count, 5)
-        self.assertEqual(call.call_args_list[-1].args[0][-1], "reference=rd-test-model:test")
+        self.assertEqual(call.call_count, 4)
+        self.assertEqual(call.call_args_list[-1].args[0][-1], "reference=rd-test-iec104-base:test")
 
 
 class ImplementationTests(unittest.TestCase):
@@ -88,30 +88,33 @@ class ImplementationTests(unittest.TestCase):
         removed = [item.args[0][-1] for item in call.call_args_list
                    if item.args[0][:2] == ["image", "rm"]]
         self.assertEqual(removed, ["rd-test-" + suffix + ":test"
-                                  for suffix in ("iec104", "iec104-base", "model")])
+                                  for suffix in ("iec104", "iec104-base")])
 
-    def build(self, impl):
+    def build(self):
         text = (CHECK / "run.sh").read_text()
         body = text.split("build_base() {", 1)[1].split("\n}", 1)[0]
         return subprocess.run(
-            ["bash", "-c", 'IMPL="$1"; ROOT=root; SVC=svc; BASEIMG=base; OUT=/dev/null\n'
+            ["bash", "-c", 'ROOT=root; SVC=svc; BASEIMG=base; OUT=/dev/null\n'
              'docker() { printf "%s\\n" "$*"; }\n'
-             'build_base() {' + body + '\n}\nbuild_base', "test", impl],
+             'build_base() {' + body + '\n}\nbuild_base', "test"],
             capture_output=True, text=True, timeout=5,
         )
 
-    def test_c_keeps_model_check_and_original_recipe(self):
-        result = self.build("c")
+    def test_go_only_build_uses_canonical_recipe_without_target(self):
+        result = self.build()
         self.assertEqual(result.returncode, 0)
-        self.assertIn("--target model-check", result.stdout)
-        self.assertIn("-f svc/Dockerfile", result.stdout)
-        self.assertNotIn("go.Dockerfile", result.stdout)
+        self.assertEqual(result.stdout.strip(), "build -q -f svc/Dockerfile -t base root")
 
-    def test_go_builds_combined_without_c_model_check(self):
-        result = self.build("go")
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("-f svc/go.Dockerfile --target combined", result.stdout)
-        self.assertNotIn("model-check", result.stdout)
+    def test_canonical_go_build_output_is_not_sealed(self):
+        with patch.dict(legacy.os.environ, RD_CHECK_PREFIX="rd-test", RD_CHECK_OWNER="a" * 32):
+            with patch.object(legacy.sys, "argv", ["legacy_docker.py", "build", "-f",
+                                                   "root/services/iec104/Dockerfile", "-t",
+                                                   "rd-test-iec104-base:test", "."]):
+                result = subprocess.CompletedProcess([], 0, "Go build output", "")
+                with patch.object(legacy, "run", return_value=result) as call:
+                    self.assertEqual(legacy.main(), 0)
+                self.assertFalse(call.call_args.kwargs["sealed"])
+                self.assertEqual(call.call_args.kwargs["timeout"], 900)
 
 
 if __name__ == "__main__":

@@ -25,13 +25,11 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
         ("file", "scripts/rtac-route-monitor.sh"),
     }
     dnp3_sim = common | {("glob", "dnp3go/*.go")}
-    iec104_sources = {
-        ("dir", "services/iec104/src"),
-        ("file", "services/iec104/LICENSE"),
-        ("file", "services/iec104/README.md"),
-    }
-    iec104_cli_sources = iec104_sources | {
-        ("file", "services/iec104/build-iec104cmd.sh"),
+    iec104_cli_sources = {
+        ("file", "iec104go/go.mod"),
+        ("glob", "iec104go/*.go"),
+        ("dir", "iec104go/cmd/iec104cmd"),
+        ("file", "iec104go/LICENSE"),
     }
     return {
         "rangerdanger-backend": {("dir", "backend")},
@@ -94,8 +92,12 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("dir", "services/opendss-sim/dss"),
             ("file", "scripts/set-gateway.sh"),
         },
-        "rangerdanger-iec104": iec104_sources | {
-            ("file", "services/iec104/Dockerfile"),
+        "rangerdanger-iec104": iec104_cli_sources | {
+            ("file", "services/go.mod"),
+            ("file", "dnp3go/go.mod"),
+            ("dir", "services/iec104/internal"),
+            ("dir", "services/iec104/cmd/iec104-rtu"),
+            ("dir", "services/iec104/cmd/iec104-cc"),
             ("file", "services/iec104/entrypoint.sh"),
             ("file", "scripts/set-gateway.sh"),
         },
@@ -162,6 +164,18 @@ class CheckReleaseInputsTests(unittest.TestCase):
         }
         self.assertEqual(set(actual), set(expected))
         self.assertEqual(actual, expected)
+
+    def test_production_iec104_recipes_are_go_only(self) -> None:
+        inventory = json.loads((ROOT / ".github/release-images.json").read_text())
+        for image in inventory["images"]:
+            for entry in image["inputs"]:
+                path = entry["path"]
+                self.assertFalse(path.startswith("services/iec104/src"))
+                self.assertFalse(path.startswith("services/iec104/check/reference"))
+                self.assertNotEqual(path, "services/iec104/build-iec104cmd.sh")
+            if image["image"] == "rangerdanger-iec104":
+                self.assertEqual(image["dockerfile"], "services/iec104/Dockerfile")
+                self.assertEqual(image["target"], "")
 
     def test_eu_release_membership_uses_the_increment_four_images(self) -> None:
         metadata = check_release_inputs.release_compose_metadata(ROOT, "v9.9.9")

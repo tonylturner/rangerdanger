@@ -33,4 +33,4 @@ A CC restart creates a new cache epoch; historian ingestion then starts another 
 
 No single range export is a complete SOE record. Ring truncation, snapshot cadence, failed publication and untimed GI reports limit reconstruction. Missing evidence is not a failed physical operation, and stale is not zero. If a cursor predates retained entries or a collector missed the critical interval, report that limitation instead of silently narrowing the claim to whatever survived. Keep CC observations separate from direct truth even when combining them in one report.
 
-Implementation: `services/iec104/src/cc_state.h` and `cc_state.c`; `services/devices/fielddevice/audit.go`; `services/historian-eu/store.go`; backend `reset.go`.
+Implementation: `services/iec104/internal/controlcentre/state.go`; `services/devices/fielddevice/audit.go`; `services/historian-eu/store.go`; backend `reset.go`.

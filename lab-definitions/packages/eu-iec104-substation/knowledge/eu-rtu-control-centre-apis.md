@@ -37,4 +37,4 @@ Save the CC journal cursor before an attempt, then export after it. The journal 
 
 The range is a local training environment, not an authenticated production control API. Separate authority by purpose even where management reachability is shared. Never use field or solver truth to populate missing CC observations, and never automatically retry an ambiguous command.
 
-Implementation: backend `operator.go`, `field.go`, `historian.go`, `eu_recipe.go`; `services/iec104/src/cc_api.c` and `cc_state.c`.
+Implementation: backend `operator.go`, `field.go`, `historian.go`, `eu_recipe.go`; `services/iec104/internal/controlcentre/api.go` and `state.go`.
