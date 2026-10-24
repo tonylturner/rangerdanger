@@ -7,7 +7,7 @@ import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -129,6 +129,8 @@ class CaptureResult:
     tcp_report: dict[int, dict[str, dict[str, Any]]]
     validity_errors: list[str]
     normalization_audit: list[dict[str, object]]
+
+    frame_diagnostics: dict[int, list[str]] = field(default_factory=dict)
 
     @property
     def session_count(self) -> int:
@@ -485,6 +487,7 @@ def _add_relative_times(
 
 def _expert_errors(packet: ET.Element, frame: int, is_iec_frame: bool) -> list[str]:
     errors = []
+    parents = {child: parent for parent in packet.iter() for child in parent}
     for field in packet.findall(".//field"):
         name = field.get("name", "")
         if name == "_ws.malformed" or name.startswith("_ws.malformed."):
@@ -492,7 +495,10 @@ def _expert_errors(packet: ET.Element, frame: int, is_iec_frame: bool) -> list[s
         elif is_iec_frame and name == "_ws.expert.severity":
             severity = (field.get("show") or field.get("showname") or "").lower()
             if "error" in severity:
-                message = _one(packet, "_ws.expert.message")
+                # Severity belongs to its own expert subtree. Using the first
+                # message in the packet hides different later diagnostics.
+                group = parents.get(field)
+                message = _one(group, "_ws.expert.message") if group is not None else None
                 detail = message.get("show") if message is not None else severity
                 errors.append(f"frame {frame}: expert error: {detail}")
         elif is_iec_frame and name.startswith("iec104."):
@@ -548,6 +554,7 @@ def decode_capture(
 def _decode_pdml(capture, version, pdml, cp56_tolerance_ms):
     stream_first_frame: dict[str, int] = {}
     validity_errors: list[str] = []
+    frame_diagnostics = {}
     for packet in packets(pdml):
         fields = _packet_fields(packet)
         frame = _frame_number(fields)
@@ -560,7 +567,10 @@ def _decode_pdml(capture, version, pdml, cp56_tolerance_ms):
                 and (_first_number(fields, "tcp.len") or 0) > 0
             )
         )
-        validity_errors.extend(_expert_errors(packet, frame, is_iec_frame))
+        diagnostics = _expert_errors(packet, frame, is_iec_frame)
+        if diagnostics:
+            frame_diagnostics[frame] = diagnostics
+        validity_errors.extend(diagnostics)
         stream = _first_number(fields, "tcp.stream")
         if (
             source is not None
@@ -777,6 +787,7 @@ def _decode_pdml(capture, version, pdml, cp56_tolerance_ms):
         tcp_report,
         validity_errors,
         audit,
+        frame_diagnostics,
     )
 
 

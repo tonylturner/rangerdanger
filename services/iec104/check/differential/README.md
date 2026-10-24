@@ -79,6 +79,24 @@ reassembly gaps/conflicts, a TShark/APCI APDU count mismatch, or uncovered
 TCP payload bytes fail this gate. TCP retransmissions are supported and do
 not count as additional APDU bytes.
 
+A scenario may additionally declare deliberate decoder diagnostics with
+`"malformed": [{"step": 1, "message": "input"}, {"step": 1, "message": "reply"}]`.
+Steps are zero-based action indexes; messages are the crafted input or its direct
+reply, never an S acknowledgment or an unrelated subsequent message. The peer
+records each association as a session, direction and direction-local APDU index.
+The runner resolves both sides independently and saves `declared-malformed.json`;
+standalone comparison accepts that file via `--declared-malformed`.
+
+Every declared message must have diagnostics on **both** sides, identical in
+text, order and multiplicity after removing only the capture frame prefix.
+Missing, stale, duplicated, mismatched or ambiguous associations fail gate C.
+Packet-level diagnostics on coalesced messages fail closed rather than excusing
+another message. All original diagnostics and declaration results remain in the
+JSON/Markdown evidence. Undeclared diagnostics still fail; reassembly, coverage,
+APCI/parser and normalization errors can never be declared. Gates A/B compare
+these messages and bytes unchanged. This is not an allow-list exception and the
+shipped allow-list stays empty.
+
 ### D. TCP behavior (report only)
 
 Per-session/direction segment and data-segment counts, captured and unique

@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import malformed
+
 from apdu import normalize_apdus, session_first_cp56
 from decode import DEFAULT_TSHARK, DecodeError, decode_capture
 
@@ -563,6 +565,7 @@ def _run_comparison(
     *,
     scenario_id: str | None = None,
     role_set: str | None = None,
+    declared_malformed: list | None = None,
 ) -> dict[str, Any]:
     all_entries = load_allowlist(allowlist_path)
     entries = select_allowlist(all_entries, scenario_id, role_set)
@@ -661,9 +664,18 @@ def _run_comparison(
     apdu_differences = [
         item for item in protocol_differences if item["comparison"] == "B"
     ]
-    validity_differences = []
+    try:
+        remaining, declaration_issues, declaration_audit = malformed.compare(
+            [] if declared_malformed is None else declared_malformed, baseline, candidate)
+    except (ValueError, TypeError) as error:
+        raise InputError(str(error)) from error
+    validity_differences = [
+        {"comparison": "C", "session": -1, "direction": "session",
+         "field": "decode.declaration", "message": issue}
+        for issue in declaration_issues
+    ]
     for side, capture in (("baseline", baseline), ("candidate", candidate)):
-        for index, error in enumerate(capture.validity_errors):
+        for index, error in enumerate(remaining[side]):
             validity_differences.append(
                 {
                     "comparison": "C",
@@ -772,6 +784,7 @@ def _run_comparison(
                 "status": "pass" if c_pass else "fail",
                 "difference_count": len(validity_differences),
                 "differences": validity_differences,
+                "declared_malformed": declaration_audit,
                 "baseline_errors": baseline.validity_errors,
                 "candidate_errors": candidate.validity_errors,
             },
@@ -842,6 +855,10 @@ def _markdown(report: dict[str, Any]) -> str:
             )
         if len(report["differences"]) > len(shown):
             lines.append(f"- … {len(report['differences']) - len(shown)} more.")
+    declared = comparisons["C_decode_validity"].get("declared_malformed", [])
+    if declared:
+        lines.extend(["", "## Declared malformed messages", "", "```json",
+                      json.dumps(declared, indent=2), "```"])
     if report["allowlist"]["issues"]:
         lines.extend(["", "## Allow-list failures", ""])
         lines.extend(f"- {issue}" for issue in report["allowlist"]["issues"])
@@ -874,6 +891,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allowlist", type=Path, default=Path(__file__).with_name("allowlist.json"))
     parser.add_argument("--scenario-id", help="exact scenario ID (required with a nonempty allow-list)")
     parser.add_argument("--role-set", help="exact role-set ID (required with a nonempty allow-list)")
+    parser.add_argument("--declared-malformed", type=Path, help="resolved scenario step/message declarations")
     parser.add_argument("--sessions", type=Path, help="JSON map of baseline to candidate session indexes")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tshark", default=DEFAULT_TSHARK)
@@ -891,6 +909,8 @@ def main(argv: list[str] | None = None) -> int:
             arguments.cp56_tolerance_ms,
             scenario_id=arguments.scenario_id,
             role_set=arguments.role_set,
+            declared_malformed=(_read_json(arguments.declared_malformed, "malformed declarations")
+                                if arguments.declared_malformed else None),
         )
         arguments.out.mkdir(parents=True, exist_ok=True)
         (arguments.out / "report.json").write_text(
