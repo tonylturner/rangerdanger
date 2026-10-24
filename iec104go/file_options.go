@@ -95,6 +95,11 @@ func fileMessage(k FileKey, e Element, cot COT) ASDU {
 }
 func fileMatch(k FileKey, m Message) bool {
 	h := m.GetHeader()
+	// Directory change announcements are asynchronous station traffic, not a
+	// response to whichever file leg happens to be awaiting confirmation.
+	if h.Type == F_DR_TA_1 && h.Cause != Request {
+		return false
+	}
 	a, ok := m.(*ASDU)
 	return ok && h.CommonAddress == k.CommonAddress && h.Originator == k.Originator && !h.Test && (isFileType(h.Type) || h.Cause >= UnknownType && h.Cause <= UnknownIOA) && len(a.Objects) > 0 && a.Objects[0].Address == k.Address
 }
