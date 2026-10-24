@@ -174,7 +174,8 @@ def side(case_path, role_images, reference, out, subnet):
             raise RuntimeError(message)
 
 
-def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, out, tshark):
+def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, out, tshark,
+             *, role_set=None, allowlist=HERE / "allowlist.json"):
     case = scenario(path)
     # Select once; each side rechecks overlap immediately before creation.
     inspect = Docker(out / case["id"] / "inventory")
@@ -188,7 +189,10 @@ def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, o
         sys.executable, str(HERE / "compare.py"), str(output / "baseline/capture.pcap"),
         str(output / "candidate/capture.pcap"), "--out", str(output / "comparison"),
         "--tshark", tshark, "--timeout", "180",
+        "--allowlist", str(allowlist), "--scenario-id", case["id"],
     ]
+    if role_set is not None:
+        command.extend(["--role-set", role_set])
     record = {"argv": command, "returncode": None, "timeout_s": 900}
     try:
         compared = run_owned(command, timeout=900)
@@ -215,14 +219,16 @@ def run_case(path, candidate_path, baseline_roles, candidate_roles, reference, o
     return 0 if report["passed"] else 1
 
 
-def run_cases(paths, candidate_path, baseline_roles, candidate_roles, reference, out, tshark):
+def run_cases(paths, candidate_path, baseline_roles, candidate_roles, reference, out, tshark,
+              *, role_set=None, allowlist=HERE / "allowlist.json"):
     """Retain each result, including failed peers, without skipping the catalog."""
     results = []
     for path in paths:
-        result = {"scenario": path.stem, "exit_code": None}
+        result = {"scenario": path.stem, "role_set": role_set, "exit_code": None}
         try:
             result["exit_code"] = run_case(path, candidate_path, baseline_roles,
-                                          candidate_roles, reference, out, tshark)
+                                          candidate_roles, reference, out, tshark,
+                                          role_set=role_set, allowlist=allowlist)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             result.update(exit_code=2, error=str(error))
             print(f"{path.stem}: {error}", file=sys.stderr, flush=True)
@@ -239,6 +245,8 @@ def main():
     parser.add_argument("--baseline", type=Path, required=True, help="strict JSON role-image map")
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True, help="materialized baseline manifest")
+    parser.add_argument("--role-set", help="exact comparison identity, e.g. all-go or go-rtu")
+    parser.add_argument("--allowlist", type=Path, default=HERE / "allowlist.json")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tshark", default=shutil.which("tshark") or compare.DEFAULT_TSHARK)
     args = parser.parse_args()
@@ -253,12 +261,18 @@ def main():
         paths = sorted((HERE / "scenarios").glob("*.json")) if args.catalog else [args.scenario]
         if not paths:
             raise ValueError("empty catalog")
+        entries = compare.load_allowlist(args.allowlist)
+        for path in paths:
+            # Reject missing/invalid context before creating any Docker resources.
+            compare.select_allowlist(entries, scenario(path)["id"], args.role_set)
         args.out.mkdir(parents=True, exist_ok=True)
         version = subprocess.run([args.tshark, "--version"], check=True, capture_output=True, text=True, timeout=10)
         (args.out / "tshark-version.txt").write_text(version.stdout)
         return run_cases(paths, args.candidate_scenario, baseline_roles,
-                         candidate_roles, args.reference, args.out, args.tshark)
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+                         candidate_roles, args.reference, args.out, args.tshark,
+                         role_set=args.role_set, allowlist=args.allowlist)
+    except (OSError, ValueError, RuntimeError, compare.InputError,
+            subprocess.SubprocessError, KeyboardInterrupt) as error:
         print("run.py: " + str(error), file=sys.stderr)
         return 2
 

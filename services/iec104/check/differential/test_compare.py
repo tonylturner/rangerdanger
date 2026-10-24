@@ -15,6 +15,7 @@ from compare import (
     _apply_allowlist,
     _run_comparison,
     load_allowlist,
+    select_allowlist,
 )
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -393,6 +394,8 @@ class AllowlistTests(unittest.TestCase):
         entry = {
             "id": "reviewed-change",
             "scope": {
+                "scenarios": ["cc-rtu", "cmd-rtu"],
+                "role_set": "all-go",
                 "comparison": "A",
                 "session": 0,
                 "direction": "client_to_server",
@@ -435,12 +438,110 @@ class AllowlistTests(unittest.TestCase):
         _, over_issues = _apply_allowlist(
             [self._difference(), self._difference(index=3)],
             [self._entry(scope={
+                "scenarios": ["cc-rtu"],
+                "role_set": "all-go",
                 "comparison": "A",
                 "session": 0,
                 "direction": "client_to_server",
             })],
         )
         self.assertTrue(any("over max_matches" in issue for issue in over_issues))
+
+    def test_each_named_scenario_requires_its_own_match(self):
+        entry = self._entry()
+        for case in ("cc-rtu", "cmd-rtu"):
+            with self.subTest(case=case):
+                active = select_allowlist([entry], case, "all-go")
+                matched, issues = _apply_allowlist([self._difference()], active)
+                self.assertTrue(matched[0]["allowed"])
+                self.assertEqual(issues, [])
+                _, issues = _apply_allowlist([], active)
+                self.assertTrue(any("stale" in issue for issue in issues))
+
+    def test_other_scenario_or_role_neither_suppresses_nor_becomes_stale(self):
+        for case, role_set in (("startup-session", "all-go"), ("cc-rtu", "go-rtu")):
+            active = select_allowlist([self._entry()], case, role_set)
+            matched, issues = _apply_allowlist([self._difference()], active)
+            self.assertFalse(matched[0]["allowed"])
+            self.assertEqual(issues, [])
+
+    def test_nonempty_list_requires_explicit_context(self):
+        for case, role_set in ((None, None), ("cc-rtu", None), (None, "all-go")):
+            with self.assertRaises(InputError):
+                select_allowlist([self._entry()], case, role_set)
+        self.assertEqual(select_allowlist([], None, None), [])
+        for case, role_set in (("*", "all-go"), ("cc-rtu", "go-*")):
+            with self.assertRaises(InputError):
+                select_allowlist([], case, role_set)
+
+    def test_scope_requires_exact_unique_scenarios_and_one_role_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowlist.json"
+            scope = self._entry()["scope"]
+            invalid = [
+                {key: value for key, value in scope.items() if key != missing}
+                for missing in ("scenarios", "role_set")
+            ]
+            invalid += [dict(scope, scenarios=value) for value in
+                        ([], "*", ["cc-*"], ["cc-rtu", "cc-rtu"], [None], [{}])]
+            invalid += [dict(scope, role_set=value) for value in
+                        ("*", "go-?", "", ["all-go"], None)]
+            for bad in invalid:
+                with self.subTest(scope=bad):
+                    path.write_text(json.dumps([self._entry(scope=bad)]))
+                    with self.assertRaises(InputError):
+                        load_allowlist(path)
+            path.write_text(json.dumps([self._entry()]))
+            self.assertEqual(load_allowlist(path), [self._entry()])
+
+    def test_comparison_reports_only_active_entries_and_scoped_staleness(self):
+        source = CAPTURE_DIR / "startup-gi-monitor.pcap"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowlist.json"
+            path.write_text(json.dumps([self._entry()]))
+            outside = _run_comparison(
+                source, source, path, None, "/opt/homebrew/bin/tshark", 60, 1000,
+                scenario_id="startup-session", role_set="all-go")
+            self.assertTrue(outside["passed"])
+            self.assertEqual(outside["allowlist"]["entries"], [])
+            self.assertEqual(outside["allowlist"]["inactive_ids"], ["reviewed-change"])
+            active = _run_comparison(
+                source, source, path, None, "/opt/homebrew/bin/tshark", 60, 1000,
+                scenario_id="cc-rtu", role_set="all-go")
+            self.assertFalse(active["passed"])
+            self.assertIn("stale", active["allowlist"]["issues"][0])
+            self.assertEqual(active["allowlist"]["context"],
+                             {"scenario_id": "cc-rtu", "role_set": "all-go"})
+
+    def test_capture_mutation_is_allowed_only_in_approved_scenario_and_role(self):
+        source = CAPTURE_DIR / "startup-gi-monitor.pcap"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowlist.json"
+            mutated = Path(directory) / "cot.pcap"
+            _rewrite(source, mutated, _flip_cot)
+            original = _report_for(source, mutated)
+            entries = []
+            for index, difference in enumerate(original["differences"]):
+                entries.append(self._entry(
+                    id=f"mutation-{index}",
+                    scope={"scenarios": ["startup-session"], "role_set": "all-go",
+                           "comparison": difference["comparison"],
+                           "session": difference["session"], "direction": difference["direction"],
+                           "record_range": [difference["index"], difference["index"]]},
+                    field=difference["field"],
+                    baseline=difference["baseline"], candidate=difference["candidate"]))
+            self.assertTrue(entries)
+            path.write_text(json.dumps(entries))
+            for case, role_set, expected in (
+                    ("startup-session", "all-go", True),
+                    ("cc-rtu", "all-go", False),
+                    ("startup-session", "go-rtu", False)):
+                with self.subTest(case=case, role_set=role_set):
+                    report = _run_comparison(
+                        source, mutated, path, None, "/opt/homebrew/bin/tshark", 60, 1000,
+                        scenario_id=case, role_set=role_set)
+                    self.assertEqual(report["passed"], expected, report["differences"])
+                    self.assertEqual(report["allowlist"]["issues"], [])
 
     def test_approved_by_is_required_and_wildcards_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
