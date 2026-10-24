@@ -55,6 +55,10 @@ func (c *Centre) handle(_ context.Context, e iec.Event) {
 		c.ended()
 	case iec.ASDUReceived:
 		h := e.ASDU.GetHeader()
+		if h.Count == 0 {
+			c.printf("ignored zero-object ASDU type=%d ca=%d", h.Type, h.CommonAddress)
+			return
+		}
 		if int(h.CommonAddress) != c.pm.CA {
 			c.printf("ignored ASDU for ca=%d (configured ca=%d)", h.CommonAddress, c.pm.CA)
 			return

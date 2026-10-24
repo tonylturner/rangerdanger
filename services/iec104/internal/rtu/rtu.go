@@ -71,6 +71,7 @@ type connection interface {
 	RemoteAddr() net.Addr
 	LocalAddr() net.Addr
 	Send(iec.Message) error
+	RequestClose()
 }
 
 type startedPeer struct {

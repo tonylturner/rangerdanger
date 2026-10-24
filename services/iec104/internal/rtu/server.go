@@ -104,6 +104,13 @@ func (r *RTU) receive(conn connection, m iec.Message) {
 	switch h.Type {
 	case iec.C_IC_NA_1:
 		r.logASDU("rx", m)
+		if h.Count == 0 {
+			// The session has accepted the I-frame. RequestClose flushes its
+			// cumulative S ACK before FIN; no ASDU reply is authored for GI.
+			r.printf("closing on zero-object GI")
+			conn.RequestClose()
+			return
+		}
 		if h.Cause == iec.Deactivation {
 			r.reply(conn, m, iec.DeactivationCon, true)
 			return

@@ -13,7 +13,7 @@ import (
 var ErrFull = errors.New("iec104go: ASDU full")
 
 // Builder packs homogeneous objects until the ASDU is full. It is not safe for
-// concurrent mutation. An empty builder is not itself a transmittable ASDU.
+// concurrent mutation. An empty snapshot encodes a zero-object envelope.
 type Builder struct {
 	params Params
 	asdu   ASDU

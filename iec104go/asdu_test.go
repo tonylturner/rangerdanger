@@ -94,7 +94,7 @@ func TestMalformedASDU(t *testing.T) {
 		t.Fatalf("oversize: %v", err)
 	}
 	for _, a := range []ASDU{
-		{Header: Header{Type: M_SP_NA_1}},
+		{Header: Header{Type: M_SP_NA_1}, Objects: make([]Object, 128)},
 		{Header: Header{Type: M_SP_NA_1, Cause: 64}, Objects: []Object{{Element: SinglePoint{}}}},
 		{Header: Header{Type: M_SP_NA_1}, Objects: []Object{{Element: DoublePoint{}}}},
 		{Header: Header{Type: M_SP_NA_1}, Objects: []Object{{Element: nil}}},
@@ -136,9 +136,9 @@ func TestRawASDU(t *testing.T) {
 			t.Fatal("encoder aliases raw")
 		}
 	}
-	raw := RawASDU{Header: Header{Type: 255, Count: 0}}
+	raw := RawASDU{Header: Header{Type: 255, Count: 128}}
 	if _, err := raw.MarshalBinary(DefaultParams()); err == nil {
-		t.Fatal("raw count zero")
+		t.Fatal("raw count exceeds 127")
 	}
 	raw.Header.Count = 1
 	raw.Payload = make([]byte, 244)
@@ -165,8 +165,8 @@ func TestBuilderLimits(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := b.ASDU().MarshalBinary(DefaultParams()); err == nil {
-				t.Fatal("empty builder encoded")
+			if _, err := b.ASDU().MarshalBinary(DefaultParams()); err != nil {
+				t.Fatalf("empty envelope: %v", err)
 			}
 			for i := 0; i < tc.count; i++ {
 				if err := b.Append(Object{Address: uint32(i), Element: tc.element}); err != nil {

@@ -37,8 +37,8 @@ func TestSessionRawAndMalformed(t *testing.T) {
 	if f := readFrame(t, p); f.Kind != SFrame {
 		t.Fatalf("unexpected automatic response %+v", f)
 	}
-	// Header count zero is structural, unlike an unsupported type/cause/CA/IOA.
-	writeFrame(t, p, Frame{Kind: IFrame, Send: 1, ASDU: []byte{1, 0, 3, 0, 1, 0}})
+	// Trailing bytes in a zero-count envelope remain structural errors.
+	writeFrame(t, p, Frame{Kind: IFrame, Send: 1, ASDU: []byte{1, 0, 3, 0, 1, 0, 0}})
 	waitClosed(t, s)
 	if !errors.Is(s.Err(), ErrMalformed) {
 		t.Fatal(s.Err())
