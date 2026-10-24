@@ -158,19 +158,47 @@ original implementation of measured behavior, not a claim about sealed internals
 PICS records unobserved controlled w>1 and idle-t2 cases explicitly.
 
 New first-party black-box runs under
-`build/iec104-ack-validation/redesign/cc-final/receive-filter/` establish CA-before-
+`build/iec104-ack-validation/redesign/acceptance/cc/receive-filter/` establish CA-before-
 type precedence (type200/CA2 request8 → COT46 I9), and negative COT44 for valid
 read102 (12→14) and clock-sync103 (17→19) requests. COT45 has S24→I25;
 COT47 S31→I32. Both C sides repeat these frames exactly. No C application,
-library source or headers were read; tshark was only a decoder. The draft
+library source or headers were read; tshark was only a decoder. The installed
 scenario uses public request layouts: no element after read IOA, seven CP56
 bytes after clock-sync IOA.
 
-This C/C run passes A/B with zero differences but fails C: the comparator's
-CP56 layout table omits type103. The redesign's differential matrix has therefore
-not been run. The scenario and proposed peer changes are artifacts under that
-validation root, not a weakened gate or an allow-list change. A separately
-fenced harness correction is needed before promoting the scenario to the catalog.
+The initial probe failed closed because the comparator omitted type103's CP56
+layout. The owner authorized the harness correction and catalog installation.
+Matoušek's public prose above was read directly again: appendix C.1, printed
+p34, lists type102 with no element and type103 with CP56Time2a; appendix C.3,
+p37, gives its seven-octet size. The retrieved PDF SHA256 is
+`6d10e15c077e207cbe1077e8668a0107a86b6866b11acd658d025d323294fc11`.
+The only comparator change is the layout entry `103: (7, 0)`. Independent
+literal fixtures verify offsets, truncated timestamps, elapsed time, invalid
+calendars and exact IV/SU/weekday/reserved-bit retention. No normalization
+algorithm, tolerance or allow-list entry was changed. The first-party peer
+now sends valid read/clock requests and recognizes a 13-byte read mirror.
+
+The installed receive-filter scenario passes C/C A/B/C with zero differences.
+Then the complete eleven-scenario catalog passed twice for each of `all-go`,
+`go-rtu` and `go-clients`: 66 A/B/C passes, zero differences, with an explicit
+`[]` allow-list. TCP comparison D remains report-only. Evidence root:
+`build/iec104-ack-validation/redesign/acceptance/`; `matrix-commands.json`
+records all six explicit-role commands and observed exits, and `audit.json`
+verifies all 134 side provenance records have one identical harness fingerprint
+map. No Go difference required a code change.
+
+- Go build commit: `4952d1e77d9dbb525a9e22458cda1ca7a0ebff92`,
+  combined image `rd-iec104-go:4952d1e`, ID
+  `sha256:d23b45680bf178df22e4d3c60752840e6ce9abdabdfd5ae5b25c11284468537a`.
+- Sealed C baseline commit: `c1de19412b69ea9f00f68644a584b861b1f6d3f1`,
+  image `rd-iec104-ref:c1de19412b69`, ID
+  `sha256:3e1338c3a93a82d911bfbd62f791a319ee746ac5db71f017e5e8e15b2925e2b4`.
+- Empty allow-list SHA256 (including trailing newline):
+  `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`.
+
+The sealed build hid compiler/dependency output. These local validation images
+and all owned helper images, containers and networks were removed afterwards.
+The subsequent documentation commit changes neither Go nor harness code.
 
 The following results are historical, for the superseded callback policy only.
 The two final ten-scenario matrices for each of `all-go`, `go-rtu` and

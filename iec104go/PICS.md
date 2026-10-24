@@ -247,7 +247,8 @@ Library file-service types are outside the application-type list; the common
 address list still applies. `Options.Files` configures file limits, not an
 optional provider: `FileServer` is separately composed into a handler.
 
-New black-box evidence: `build/iec104-ack-validation/redesign/cc-final/receive-filter/`
+New black-box evidence:
+`build/iec104-ack-validation/redesign/acceptance/cc/receive-filter/`
 (both C sides have identical frame numbers):
 
 - Unknown type200 with wrong CA2: request8 → I9, negative COT46. **CA precedes type.**
@@ -256,11 +257,13 @@ New black-box evidence: `build/iec104-ack-validation/redesign/cc-final/receive-f
   no positive confirmation. Both mirrors piggyback without a preceding S.
 - Application controls: COT45 request22 → S24 → I25; COT47 request29 → S31 → I32.
 
-The two C streams have zero A/B differences. **The C/C gate does not pass:**
-comparison C rejects type103's unmapped CP56 layout. No allow-list or comparator
-normalisation was changed. The catalog scenario and necessary first-party peer
-support are retained as validation artifacts pending a separately fenced harness
-change; the redesigned Go catalog matrix is NOT RUN.
+The two C streams pass A/B/C with zero differences and an empty allow-list.
+The original probe exposed an unmapped type103 CP56 layout and a peer matcher
+that required a nonexistent read payload byte. The corrected harness recognizes
+the public type103 layout (IOA followed immediately by seven CP56 octets),
+sends valid read/clock requests, and accepts the 13-byte read mirror. Independent
+literal fixtures verify timestamp validation and exact status-bit retention.
+No normalization algorithm or allow-list entry was added.
 
 **Evidence limitations:** the controlled-station captures use a w=1 point map;
 the corresponding Go CLI uses w=8 and the C CLI closes without an idle t2 ACK
@@ -270,6 +273,36 @@ retain the public/contract first-pending t2 rule and configurable w, not an
 invented claim of measured C equivalence. Socket backpressure cannot guarantee
 physical delivery by t2; the state machine makes the acknowledgement eligible
 by that deadline, and close remains bounded as documented above.
+
+#### Receive-filter redesign packet-gate validation
+
+Combined image `rd-iec104-go:4952d1e` was built from clean commit `4952d1e`.
+The new receive-filter scenario passed C/C first, then all eleven catalog
+scenarios ran twice against the C baseline for each explicit role set.
+Evidence: `build/iec104-ack-validation/redesign/acceptance/`, including
+`matrix-commands.json`, `run{1,2}/<role-set>/<scenario>/` and `audit.json`.
+Every cell is the observed scenario exit code for **run1 / run2**.
+
+| Scenario | all-go | go-rtu | go-clients |
+|---|---|---|---|
+| analog-cyclic | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-rtu | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-sequence-wrap | 0 / 0 | 0 / 0 | 0 / 0 |
+| cc-timed-invalid | 0 / 0 | 0 / 0 | 0 / 0 |
+| cmd-rtu | 0 / 0 | 0 / 0 | 0 / 0 |
+| flow-window | 0 / 0 | 0 / 0 | 0 / 0 |
+| negative-addressing | 0 / 0 | 0 / 0 | 0 / 0 |
+| raw-sbo | 0 / 0 | 0 / 0 | 0 / 0 |
+| receive-filter | 0 / 0 | 0 / 0 | 0 / 0 |
+| rtu-quality | 0 / 0 | 0 / 0 | 0 / 0 |
+| startup-session | 0 / 0 | 0 / 0 | 0 / 0 |
+
+All 66 comparisons pass A/B/C with zero differences and an explicit `[]`
+allow-list; TCP comparison D remains report-only. All 134 side captures,
+including the C/C prerequisite, record one identical harness fingerprint map.
+No Go discrepancy was observed. Owned containers, networks and images were
+removed after validation; the later documentation commit does not change Go
+or harness code.
 
 #### Historical packet-gate validation (before receive-filter redesign)
 
