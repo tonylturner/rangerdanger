@@ -18,8 +18,8 @@
 # the journal.
 #
 # Everything it creates is named $RD_CHECK_PREFIX-* (default
-# rd-iec104-check) and removed on exit, including the image. Needs docker
-# only; the subnets below must not overlap an existing Docker network.
+# rd-iec104-check-<unique>) and removed on exit, including the images. Needs
+# Docker and Python 3; the subnets below must not overlap a Docker network.
 #
 # Usage: [RD_CHECK_PREFIX=name] services/iec104/check/run.sh [OUT_DIR]
 #        (default OUT_DIR <repo>/build/$RD_CHECK_PREFIX)
@@ -28,11 +28,15 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SVC="$(dirname "$HERE")"
 ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
-PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check}"
+PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')}"
+export RD_CHECK_PREFIX="$PREFIX"
+export RD_CHECK_OWNER="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+docker() { python3 "$HERE/legacy_docker.py" "$@"; }
 OUT="${1:-$ROOT/build/$PREFIX}"
 
 BASEIMG=$PREFIX-iec104-base:test
 IMG=$PREFIX-iec104:test
+MODELIMG=$PREFIX-model:test
 PY=python:3.12-alpine
 # station network: RTU, breaker, GPS and the CC's IEC 104 side (IPs match points.test.json)
 NET=$PREFIX-net
@@ -57,10 +61,8 @@ if [[ ! "$PREFIX" =~ ^rd[a-z0-9-]+$ ]]; then echo "invalid check prefix" >&2; ex
 case "$OUT" in "$ROOT"/build/*) ;; *) echo "output must be under $ROOT/build" >&2; exit 2 ;; esac
 
 cleanup() {
-  docker rm -f "$MON" "$NOACTTERM" "$CC" "$CC2" "$PROBE" "$RTU" "$BRK" "$GPS" "$RMU1" "$RMU2" "$OLTC" "$PLC" "$F2" >/dev/null 2>&1 || true
-  docker network rm "$NET" "$MGMT" >/dev/null 2>&1 || true
+  python3 "$HERE/legacy_docker.py" cleanup
 }
-trap 'cleanup; docker image rm "$IMG" "$BASEIMG" >/dev/null 2>&1 || true' EXIT
 log()  { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$OUT/timeline.log"; }
 pass() { printf 'PASS  %s\n' "$*" | tee -a "$OUT/results.log"; }
 fail() { printf 'FAIL  %s\n' "$*" | tee -a "$OUT/results.log"; FAILED=1; }
@@ -84,14 +86,18 @@ with urllib.request.urlopen("http://127.0.0.1:8081/", timeout=2) as r:
 # a 2s monitor snapshot; its JSONL GI reflects current quality
 snap() { docker run --rm --network "$NET" "$IMG" iec104cmd "$RTU_IP" monitor --json --hold 2 2>/dev/null; }
 
-rm -rf "$OUT"; mkdir -p "$OUT"; cleanup
+# Refuse collisions before installing cleanup; never remove another run.
+python3 "$HERE/legacy_docker.py" preflight || exit 2
+trap 'cleanup || exit 2' EXIT
+trap 'exit 2' INT TERM
+rm -rf "$OUT"; mkdir -p "$OUT"
 
 log "build the iec104 image"
-docker build -f "$SVC/Dockerfile" --target model-check "$ROOT" >"$OUT/model-check.log" 2>&1 || exit 1
+docker build -f "$SVC/Dockerfile" --target model-check -t "$MODELIMG" "$ROOT" >"$OUT/model-check.log" 2>&1 || exit 1
 docker build -q -f "$SVC/Dockerfile" -t "$BASEIMG" "$ROOT" >"$OUT/base-build.log" 2>&1 || exit 1
 docker build -q -f "$HERE/Dockerfile" --build-arg "BASE_IMAGE=$BASEIMG" -t "$IMG" "$HERE" >"$OUT/check-build.log" 2>&1 || exit 1
 docker run --rm --network none -v "$HERE:/check:ro" --entrypoint python3 "$IMG" -I /check/loader_checks.py || exit 1
-docker image inspect "$PY" >/dev/null 2>&1 || docker pull -q "$PY" >/dev/null
+docker image inspect "$PY" >/dev/null 2>&1 || { fail "fixture image $PY must already exist"; exit 1; }
 
 # ---- 0. strict point-map loader (no network needed) -------------------
 log "check 0: strict config loader rejects bad maps"
