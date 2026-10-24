@@ -120,6 +120,9 @@ func (s *Session) writeLoop() {
 			s.writeFinalACK(done)
 			return
 		case queued := <-s.out:
+			// Queue capacity changed before the potentially blocking tap/Write.
+			// Completion of the previous write is not a dequeue notification.
+			signal(s.wake)
 			select {
 			case done := <-s.closeFlush:
 				s.writeFinalACK(done)
