@@ -168,7 +168,11 @@ func FuzzDecodeASDU(f *testing.F) {
 		}
 	}
 	for _, v := range fileGoldens(f) {
-		f.Add(fileGoldenASDU(f, v), uint8(1), uint8(1), uint8(2))
+		b := fileGoldenASDU(f, v)
+		f.Add(b, uint8(1), uint8(1), uint8(2))
+		alternate := append([]byte(nil), b...)
+		alternate[1] ^= 128
+		f.Add(alternate, uint8(1), uint8(1), uint8(2))
 	}
 	// Include every supported type and SQ mode as structured seeds; goldens alone
 	// cover only four IDs and would leave most element decoders unexplored.
@@ -186,7 +190,17 @@ func FuzzDecodeASDU(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(b, encoded) {
+		expected := b
+		// The only accepted wire normalization is the unambiguous SQ bit on a
+		// single-object file ASDU. Every other byte must still be identical.
+		if isFileType(m.GetHeader().Type) && m.GetHeader().Count == 1 {
+			expected = append([]byte(nil), b...)
+			expected[1] = 1
+			if m.GetHeader().Type == F_DR_TA_1 {
+				expected[1] |= 128
+			}
+		}
+		if !bytes.Equal(expected, encoded) {
 			t.Fatalf("ASDU changed bytes: %x -> %x", b, encoded)
 		}
 	})

@@ -171,6 +171,8 @@ func (a RawASDU) MarshalBinary(p Params) ([]byte, error) {
 // DecodeASDU requires an exact ASDU with no trailing bytes. Unsupported types
 // return (*RawASDU,nil); structural errors wrap ErrMalformed. Successful
 // results own their bytes and can be retained across subsequent reader calls.
+// Single-object file ASDUs accept either SQ bit and normalize it to the strict
+// sending profile (directory SQ1, other file types SQ0).
 func DecodeASDU(b []byte, p Params) (Message, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -187,6 +189,9 @@ func DecodeASDU(b []byte, p Params) (Message, error) {
 	payload := b[hs:]
 	if !h.Type.Supported() {
 		return &RawASDU{Header: h, Payload: append([]byte(nil), payload...), DecodeError: fmt.Errorf("%w: %d", ErrUnsupportedType, h.Type)}, nil
+	}
+	if isFileType(h.Type) && h.Count == 1 {
+		h.Sequence = h.Type == F_DR_TA_1
 	}
 	if err := fileStructure(h); err != nil {
 		return nil, err

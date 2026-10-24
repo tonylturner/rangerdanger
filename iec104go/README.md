@@ -176,7 +176,8 @@ Types120–127 have typed values: `FileReady`, `SectionReady`, `FileCall`,
 `FileLast`, `FileACK`, `FileSegment`, `FileDirectory`, `QueryLog`. NOS is
 **one octet**. Type125 is variable-length; `TypeID.Supported()` covers it,
 while `ElementSize()` intentionally reports fixed sizes only. Directory126
-requires SQ1 with a shared IOA; the other seven types require SQ0/count1.
+encodes SQ1 with a shared IOA; the other seven types encode SQ0/count1.
+Decoding accepts both single-object VSQ forms and normalizes SQ for strict sending.
 All reserved fields, unused zero lengths and raw times remain codec-lossless.
 
 - `client.Directory(ctx, FileKey{CommonAddress:1, Originator:0, Address:100})`

@@ -182,6 +182,9 @@ func TestFileCaptureFixture(t *testing.T) {
 				t.Fatal(err)
 			}
 			seen[m.GetHeader().Type] = true
+			if m.GetHeader().Type == F_DR_TA_1 && m.GetHeader().Cause != Request {
+				t.Fatal("positive directory capture must use COT5")
+			}
 		}
 	}
 	if apdus < 8 {

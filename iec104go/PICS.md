@@ -249,6 +249,9 @@ not codec-enforced. The download sends120/121/123/125/126 in monitor direction,
 122 and124 in control direction; replies/errors may reverse those directions.
 The codec preserves every qualifier/reserved octet and zero lengths losslessly;
 procedure policy below is stricter than the codec.
+The SQ/count column describes **encoding**. Decoding accepts either single-object
+VSQ form for120–127 and normalizes SQ to that sending profile; multiple-object
+directory decoding still requires SQ1. All other bytes remain lossless.
 
 ### Decisions requiring peer/profile agreement
 

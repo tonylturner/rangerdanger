@@ -30,16 +30,21 @@ func fileGoldens(t testing.TB) []elementVector {
 }
 func fileGoldenASDU(t testing.TB, v elementVector) []byte {
 	sq := byte(1)
+	cause := byte(FileTransfer)
 	if v.id == F_DR_TA_1 {
 		sq = 0x81
+		cause = byte(Request)
 	}
-	return append([]byte{byte(v.id), sq, 13, 0x42, 0x34, 0x12, 0xff, 0xff, 0xff}, unhex(t, v.hex)...)
+	return append([]byte{byte(v.id), sq, cause, 0x42, 0x34, 0x12, 0xff, 0xff, 0xff}, unhex(t, v.hex)...)
 }
 func TestFileGoldenVectors(t *testing.T) {
 	for _, v := range fileGoldens(t) {
 		t.Run(v.id.String(), func(t *testing.T) {
 			want := fileGoldenASDU(t, v)
 			a := ASDU{Header: Header{Type: v.id, Sequence: v.id == F_DR_TA_1, Cause: FileTransfer, Originator: 0x42, CommonAddress: 0x1234}, Objects: []Object{{0xffffff, v.value}}}
+			if v.id == F_DR_TA_1 {
+				a.Header.Cause = Request
+			}
 			wire, err := a.MarshalBinary(DefaultParams())
 			if err != nil || !bytes.Equal(wire, want) {
 				t.Fatalf("%x want %x: %v", wire, want, err)
@@ -66,13 +71,7 @@ func TestFileGoldenVectors(t *testing.T) {
 			if _, err := DecodeASDU(append(wire, 0), DefaultParams()); !errors.Is(err, ErrMalformed) {
 				t.Fatalf("trailing: %v", err)
 			}
-			for _, badVSQ := range []byte{0, 2, 0x81, 0x82} {
-				if v.id == F_DR_TA_1 && badVSQ == 0x81 {
-					continue
-				}
-				if v.id != F_DR_TA_1 && badVSQ == 1 {
-					continue
-				}
+			for _, badVSQ := range []byte{0, 2, 0x82} {
 				b := append([]byte(nil), wire...)
 				b[1] = badVSQ
 				if _, err := DecodeASDU(b, DefaultParams()); err == nil {
@@ -203,5 +202,58 @@ func TestFileCoverage(t *testing.T) {
 		if !seen[id] {
 			t.Fatal(fmt.Sprint("missing ", id))
 		}
+	}
+}
+
+func TestFileDecodeSingleObjectVSQ(t *testing.T) {
+	for _, v := range fileGoldens(t) {
+		t.Run(v.id.String(), func(t *testing.T) {
+			canonical := fileGoldenASDU(t, v)
+			alternate := append([]byte(nil), canonical...)
+			alternate[1] ^= 0x80
+			m, err := DecodeASDU(alternate, DefaultParams())
+			if err != nil {
+				t.Fatal("unambiguous single-object VSQ rejected", err)
+			}
+			if !reflect.DeepEqual(m.(*ASDU).Objects[0].Element, v.value) {
+				t.Fatal("element changed")
+			}
+			wire, err := m.MarshalBinary(DefaultParams())
+			if err != nil || !bytes.Equal(wire, canonical) {
+				t.Fatalf("did not canonicalize SQ: %x %v", wire, err)
+			}
+			a := *m.(*ASDU)
+			a.Header.Sequence = !a.Header.Sequence
+			if _, err := a.MarshalBinary(DefaultParams()); !errors.Is(err, ErrMalformed) {
+				t.Fatal("noncanonical encode accepted", err)
+			}
+			if _, err := NewBuilder(DefaultParams(), a.Header); !errors.Is(err, ErrMalformed) {
+				t.Fatal("noncanonical builder accepted", err)
+			}
+		})
+	}
+}
+
+func TestFileDirectoryGoldenCause(t *testing.T) {
+	for _, v := range fileGoldens(t) {
+		if v.id == F_DR_TA_1 && fileGoldenASDU(t, v)[2] != byte(Request) {
+			t.Fatal("positive directory golden must use COT5")
+		}
+	}
+}
+
+func TestFileDirectoryArbitraryCausePreservation(t *testing.T) {
+	a := fileMessage(testFileKey, FileDirectory{Name: 9, Status: 32}, FileTransfer)
+	b, err := a.MarshalBinary(DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := DecodeASDU(b, DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := m.MarshalBinary(DefaultParams())
+	if err != nil || !bytes.Equal(round, b) || m.GetHeader().Cause != FileTransfer {
+		t.Fatal("codec lost deliberately non-nominal COT13", err)
 	}
 }
