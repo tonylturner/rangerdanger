@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -86,8 +87,11 @@ func cp56(t iec.CP56Time2a) string {
 	return s
 }
 
-func floatText(f float32) string {
-	return fmt.Sprintf("%.3f", f)
+func floatOutput(v iec.Float) (string, iec.Quality) {
+	if math.IsNaN(float64(v.Value)) || math.IsInf(float64(v.Value), 0) {
+		return "null", v.Quality | iec.Invalid
+	}
+	return fmt.Sprintf("%.3f", v.Value), v.Quality
 }
 
 func describe(typ iec.TypeID, e iec.Element) string {
@@ -113,7 +117,8 @@ func describe(typ iec.TypeID, e iec.Element) string {
 		return fmt.Sprintf("value=%d transient=%d q=%s", v.Value.Position(), bit(v.Value.Transient()), quality(v.Quality))
 	case iec.Float:
 		if timed == nil {
-			text = fmt.Sprintf("value=%s q=%s", floatText(v.Value), quality(v.Quality))
+			value, q := floatOutput(v)
+			text = fmt.Sprintf("value=%s q=%s", value, quality(q))
 		}
 	case iec.SingleCommand:
 		return fmt.Sprintf("scs=%s qu=%d se=%s", onOff(v.Qualifier.State()&1 != 0), v.Qualifier.QU(), selectWord(v.Qualifier))
@@ -179,7 +184,7 @@ func (o *output) asdu(m iec.Message, monitor bool) {
 			value, q = fmt.Sprintf(`{"value":%d,"transient":%t}`, v.Value.Position(), v.Value.Transient()), v.Quality
 		case iec.M_ME_NC_1:
 			v := e.(iec.Float)
-			value, q = floatText(v.Value), v.Quality
+			value, q = floatOutput(v)
 		default:
 			continue
 		}
