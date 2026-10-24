@@ -147,6 +147,12 @@ return closeErr
   ranges are checked. `Clock`/`Timer` use absolute deadlines to avoid races
   between a fake-clock advance and timer registration;
   TCP dial t0 uses `net.Dialer`'s context/timeout.
+  Threshold S acknowledgements retain FIFO receive snapshots, rather than
+  coalescing or advancing N(R) at write time. On the controlled side, the first
+  admitted handler response (or callback return) resolves threshold ordering:
+  ordinary replies follow S; an exact negative COT44/46 mirror can piggyback
+  instead. t2 and TESTFR progress independently of a blocked handler. See PICS
+  for capture evidence and the limits of the measured profile.
 - `StartDT(ctx)`/`StopDT(ctx)` await t1-supervised confirmations. Stop freezes
   admission and drains already admitted data before its act/con; no accepted
   object is silently discarded. Counters survive stop/start. `Err()` reports

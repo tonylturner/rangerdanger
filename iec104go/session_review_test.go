@@ -8,43 +8,22 @@ import (
 	"time"
 )
 
-func TestSessionControlRepliesCoalesce(t *testing.T) {
-	opts := DefaultOptions()
-	opts.SendQueue = 1
-	opts.APCI.W = 1
-	s, p, _ := manualSession(t, ServerRole, opts, nil)
-	startServerSession(t, s, p)
-	if err := s.Send(sampleMessage()); err != nil {
-		t.Fatal(err)
-	}
-	waitView(t, s, func(v sessionView) bool { return v.sent == 1 })
-	// The writer is blocked on our I-frame while inbound I/TESTFR keep arriving.
+func TestSessionOnlyTestRepliesCoalesce(t *testing.T) {
+	s := &Session{out: make(chan *wireWrite, 8)}
 	for i := 0; i < 32; i++ {
-		writeFrame(t, p, messageFrame(t, uint16(i), 0))
-		writeFrame(t, p, Frame{Kind: UFrame, Function: TestFRAct})
-		waitView(t, s, func(v sessionView) bool { return v.received == uint16(i+1) })
+		if err := s.enqueueWire(Frame{Kind: UFrame, Function: TestFRCon}, false, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if f := readFrame(t, p); f.Kind != IFrame {
-		t.Fatalf("blocked write=%+v", f)
-	}
-	if f := readFrame(t, p); f.Kind != SFrame || f.Receive != 32 {
-		t.Fatalf("latest cumulative ACK not coalesced: %+v", f)
-	}
-	if f := readFrame(t, p); f.Kind != UFrame || f.Function != TestFRCon {
-		t.Fatalf("TESTFR con not retained: %+v", f)
-	}
-	if err := s.Send(sampleMessage()); err != nil {
-		t.Fatal(err)
-	}
-	if f := readFrame(t, p); f.Kind != IFrame || f.Receive != 32 {
-		t.Fatalf("duplicate replies or stale piggyback: %+v", f)
+	if len(s.out) != 1 || s.claimWire(<-s.out).bytes[2] != byte(TestFRCon) {
+		t.Fatal("TESTFR con reserve did not coalesce")
 	}
 }
 
-func TestSessionCoalescedAckDoesNotRegressPiggyback(t *testing.T) {
+func TestSessionACKSnapshotsPreservePiggybackOrder(t *testing.T) {
 	opts := DefaultOptions()
-	opts.APCI.W = 1
-	s, p, _ := manualSession(t, ServerRole, opts, nil)
+	opts.APCI.W = 2
+	s, p, clock := manualSession(t, ServerRole, opts, nil)
 	startServerSession(t, s, p)
 	if err := s.Send(sampleMessage()); err != nil {
 		t.Fatal(err)
@@ -58,12 +37,16 @@ func TestSessionCoalescedAckDoesNotRegressPiggyback(t *testing.T) {
 	waitView(t, s, func(v sessionView) bool { return v.sent == 2 })
 	writeFrame(t, p, messageFrame(t, 1, 0))
 	waitView(t, s, func(v sessionView) bool { return v.received == 2 })
-	readFrame(t, p)
-	if f := readFrame(t, p); f.Kind != SFrame || f.Receive != 2 {
-		t.Fatalf("coalesced ACK=%+v", f)
+	if f := readFrame(t, p); f.Kind != IFrame || f.Receive != 0 {
+		t.Fatalf("first I snapshot=%+v", f)
 	}
-	if f := readFrame(t, p); f.Kind != IFrame || f.Receive != 2 {
-		t.Fatalf("piggyback regressed after cumulative S ACK: %+v", f)
+	if f := readFrame(t, p); f.Kind != IFrame || f.Receive != 1 {
+		t.Fatalf("queued I snapshot=%+v", f)
+	}
+	v := waitView(t, s, func(v sessionView) bool { return v.pending == 1 })
+	clock.Advance(v.t2.Sub(clock.Now()))
+	if f := readFrame(t, p); f.Kind != SFrame || f.Receive != 2 {
+		t.Fatalf("t2 S snapshot=%+v", f)
 	}
 }
 

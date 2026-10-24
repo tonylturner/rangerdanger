@@ -124,3 +124,34 @@ in-flight piggyback/S write completes. A 100 ms cap, limited further by t2 and
 driven by the injected Clock, is an original best-effort shutdown profile
 choice. Peer EOF, observed transport failure, cancellation and protocol errors
 do not initiate this graceful flush. This is not a new normative APCI timer.
+
+### Strict acknowledgement cadence (2026-10-24)
+
+Only the sealed C black-box captures under
+`build/iec104-ack-evidence/cc-final/<scenario>/{baseline,candidate}/capture.pcap`
+and their comparator reports informed this change. tshark4.6.7 was invoked
+as a black-box decoder of frame numbers, directions, timestamps and TCP payload.
+No C application, implementation source or headers were consulted. Public
+APCI receive-window/t2 constraints remain those of the previously cited
+research/contract, not an inferred universal vendor algorithm.
+
+- `cc-rtu`: baseline server S12 precedes response I13 after request11;
+  controlling S18/19/21/22 carry N(R)=1/2/3/4. Candidate S12→I13 and
+  controlling S17/18/19/21 repeat those streams.
+- `negative-addressing`: baseline and candidate both omit an S before exact
+  negative COT44 I18 and COT46 I30; COT45 has S23→I24 and COT47 S35→I36.
+  Reproducing this observed early-envelope-rejection distinction does not
+  implement automatic COT44–47 responses or select application acceptance.
+- `cmd-rtu`: baseline four-I GI13–16→final S27, and execute I50 piggybacks
+  the select-CON48 ACK; final S70 acknowledges all five received I-frames.
+  Candidate GI13–16→S27, execute I47 and final S67 corroborate it.
+- All ten supplied C/C comparisons have zero unallowed APDU differences.
+  `startup-session`, `raw-sbo`, `flow-window`, `rtu-quality`,
+  `cc-timed-invalid`, `analog-cyclic` and `cc-sequence-wrap` additionally
+  corroborate ordering through stop/start, burst, window and wrap traffic.
+
+The causal callback ticket, exact-mirror matching, immutable FIFO ACK snapshots,
+receive backpressure and deadline precedence are original implementation
+choices to express these observed rules without scheduler heuristics. PICS
+records the unobserved controlled w>1 and idle-t2 cases explicitly; neither
+their vendor equivalence nor a normative 44/46 exception is claimed.

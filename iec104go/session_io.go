@@ -56,7 +56,9 @@ func (s *Session) dispatch() {
 			}
 			s.events.mu.Unlock()
 			if s.handler != nil {
+				s.beginCallbackACK(e.ack)
 				s.handler(s.ctx, e)
+				s.endCallbackACK(e.ack)
 			}
 			if e.Kind == Closed {
 				return

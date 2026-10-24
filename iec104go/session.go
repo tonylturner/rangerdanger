@@ -50,6 +50,7 @@ type Event struct {
 	// transfer tags receipt, not callback dispatch, so delayed callbacks cannot
 	// revive file work from before a STOPDT/STARTDT boundary.
 	transfer *transferGeneration
+	ack      *receiveACK
 }
 
 // Handler runs serially on one dedicated goroutine per connection, never on
@@ -84,6 +85,7 @@ type incoming struct {
 type queuedASDU struct {
 	bytes []byte
 	leg   *procedureLeg
+	ack   *receiveACK
 }
 type wireWrite struct {
 	bytes      []byte
@@ -122,11 +124,11 @@ type Session struct {
 	workers             sync.WaitGroup
 	tapMu               sync.Mutex
 	wireMu              sync.Mutex
-	pendingAck          *wireWrite
 	pendingTestCon      *wireWrite
 	received            atomic.Uint64
 	acknowledged        atomic.Uint64
 	transportFailed     atomic.Bool
+	callbackACK         *receiveACK // guarded by mu, including the ticket's fields
 	mu                  sync.Mutex
 	accepting, gone     bool
 	generation          *transferGeneration
@@ -222,7 +224,11 @@ func (s *Session) admitLocked(b []byte, leg *procedureLeg) error {
 	if len(s.sends) == s.opts.SendQueue {
 		return ErrQueueFull
 	}
-	s.sends = append(s.sends, queuedASDU{append([]byte(nil), b...), leg})
+	owned := append([]byte(nil), b...)
+	s.sends = append(s.sends, queuedASDU{owned, leg, s.callbackACK})
+	if ticket := s.callbackACK; ticket != nil && ticket.first == nil {
+		ticket.first = owned
+	}
 	signal(s.wake)
 	return nil
 }

@@ -169,7 +169,7 @@ These are tested profile decisions, not a certification claim.
 | Bad N(S) | Queue pending S-ACK then close after its single Write, bounded by t1; cannot wait forever for a nonreading peer |
 | t1 | Outstanding I or expected U confirmation; partial ACK restarts remaining-I deadline; independent U deadlines are not postponed by I acknowledgements |
 | t2 | Anchored to first unacknowledged receive; later receives do not restart; S/piggyback ACK clears it |
-| ACK timing | S at w or t2; one pending cumulative S ACK and one pending TESTFR con coalesce under slow writes; I/S N(R) refreshed at the write boundary to avoid regression behind a coalesced ACK |
+| ACK timing | Individual FIFO S frames at w or t2, with immutable I/S receive snapshots; only unsent TESTFR con coalesces. Receive-window backpressure bounds accepted, not-yet-wire-acknowledged I-frames to w. Controlled-station handler-response ordering is specified below; no scheduler delay chooses S versus piggyback. |
 | t3 / TESTFR | Reset on frame send/receive; TESTFR in STOPPED and STARTED; repeated t3 while awaiting con does not retransmit or extend t1 |
 | STARTDT | Act while STARTED returns con with no repeated Started event |
 | STOPDT | Freeze new admission; drain previously admitted sends before local act, and drain admitted/outstanding sends before peer-requested con; t1 bounds draining; flush final receive ACK before entering STOPPED |
@@ -224,6 +224,38 @@ All §7 decisions are implemented: stopped-state strictness, max-connection
 accept-and-close, STOPDT drain, S versus piggyback timing, UTC/DOW/SU encoding.
 Protocol violations are never allowed merely because a differential peer also
 accepts them.
+
+### Capture-derived acknowledgement cadence (2026-10-24)
+
+Evidence root: `build/iec104-ack-evidence/cc-final/`; frame citations below
+refer to `baseline/capture.pcap` unless stated otherwise. Both C/C sides'
+APDU gates pass for all ten scenarios, including sequence wrap. This establishes
+the observed streams, not a normative requirement to copy every vendor policy.
+
+| Observed role/profile | Rule and evidence |
+|---|---|
+| Controlling station, w=1 | Emit one S for each accepted I-frame, retaining N(R)=1,2,3,4 even if writes queue. `cc-rtu` frames18,19,21,22 acknowledge server frames13,14,16,17. Candidate frames17,18,19,21 repeat the same stream. TCP aggregation does not merge APDUs. |
+| Controlled station, w=1, ordinary application response | Threshold S precedes the response I-frame: `cc-rtu` frames11→12→13; `negative-addressing` COT45 frames21→23→24 and COT47 frames33→35→36. A handler returning without a response also releases the threshold S. |
+| Controlled station, exact early negative mirror | An admitted negative COT44 or46 mirror carries the ACK in its I-frame, without a preceding S: `negative-addressing` frames16→18 (N(R)=2),28→30 (N(R)=4). Candidate frames16→18 and28→30 repeat it. The library does not manufacture a rejection; only an explicit, exact application mirror qualifies. If k or application admission order prevents transmission, send S (an original bounded fallback, not a measured C blocked-k rule). Writer occupancy does not choose S versus piggyback; retain the pending t2 deadline until there is space to emit the chosen I-frame. |
+| Controlling CLI (Go default w=8) | A four-I GI image does not cause four S frames. `cmd-rtu` frames13–16 are acknowledged by the final close S at27, N(R)=4 (candidate27). Its execute I at50 piggybacks N(R)=1 for select-CON48, and final S70 covers N(R)=5 (candidate47 and67 respectively). Preserve the existing bounded close flush. The capture establishes the stream, not an advertised C window value. |
+| Window/timer fallback | Keep no more than w accepted I-frames awaiting successful wire acknowledgement. A further I-frame is held until an ACK completes; U/S processing is not held merely by a pending handler decision. At t2, the injected deadline wins over a simultaneously ready callback response. No sleeps or scheduler yields select the wire order. |
+
+The controlled-station threshold decision waits for the first admitted callback
+response or callback return, while APCI timers and TESTFR remain independent.
+This causal boundary replaces scheduling-dependent competition between the
+callback and writer. An already-expired t2 takes precedence. Ordinary sends
+remain bounded/nonblocking; callbacks never execute on the APCI goroutine.
+I/S receive counts are fixed when the actor emits them, not refreshed when the
+writer happens to run.
+
+**Evidence limitations:** the controlled-station captures use a w=1 point map;
+the corresponding Go CLI uses w=8 and the C CLI closes without an idle t2 ACK
+being observed. These captures do not establish C's idle t2
+expiry algorithm or controlled-station w>1 ordering. For those unobserved cases,
+retain the public/contract first-pending t2 rule and configurable w, not an
+invented claim of measured C equivalence. Socket backpressure cannot guarantee
+physical delivery by t2; the state machine makes the acknowledgement eligible
+by that deadline, and close remains bounded as documented above.
 
 ## File transfer (phase 1c)
 
