@@ -220,6 +220,11 @@ The scripted server uses exact fixed CP56 IV timestamps; the real RTU uses
 a controlled GPS fixture and the comparator's existing CP56 normalization.
 
 The catalog isolates raw-client→RTU, CLI→RTU, CC→RTU, and raw-server→CC.
+`ninth-connection` holds eight sockets behind individual STARTDT barriers,
+dials nine, observes TCP EOF without sending APCI, then checks all eight
+incumbents with TESTFR and shuts them down with STOPDT barriers.
+No sleep determines this wire transcript; all nine TCP streams remain
+visible to the unchanged comparator and its independent session-count check.
 It includes session controls, SBO, negative type/COT/CA/IOA responses,
 spontaneous position/trip values, source IV/NT recovery, fixed CP56 IV reports,
 a full k=12 output window,

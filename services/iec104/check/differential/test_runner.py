@@ -30,7 +30,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_entire_catalog_is_strict_and_covers_four_role_rows(self):
         cases = [scenario(path) for path in (HERE / "scenarios").glob("*.json")]
-        self.assertEqual(len(cases), 11)
+        self.assertEqual(len(cases), 12)
         self.assertEqual({case["kind"] for case in cases},
                          {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"})
         self.assertEqual(len({case["id"] for case in cases}), len(cases))

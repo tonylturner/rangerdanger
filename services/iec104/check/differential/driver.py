@@ -7,6 +7,7 @@ the comparator independently decide conformance.
 
 import argparse
 import ast
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import socket
@@ -108,6 +109,28 @@ class Peer:
                     and (value is None or a[9] == value))
         return self.until(matches)
 
+    def connection_limit(self):
+        """STARTDT barriers hold eight sessions open before dialing nine."""
+        host = self.sock.getpeername()
+        with ExitStack() as stack:
+            held = [self]
+            for _ in range(7):
+                sock = stack.enter_context(socket.create_connection(host, timeout=5))
+                peer = Peer(sock, self.deadline)
+                peer.u(7, 11)
+                held.append(peer)
+            ninth = stack.enter_context(socket.create_connection(host, timeout=5))
+            Peer(ninth, self.deadline).budget()
+            # No send/close race: first measure whether the server closes
+            # an over-limit TCP connection without any APCI stimulus.
+            assert ninth.recv(1) == b"", "over-limit connection sent APCI data"
+            print(json.dumps({"ninth": "tcp-connected-then-eof", "apci": []}), flush=True)
+            # Prove rejection did not displace any of the eight incumbents.
+            for peer in held:
+                peer.u(67, 131)
+            for peer in reversed(held[1:]):
+                peer.u(19, 35)
+
     def action(self, action, fixture):
         self.deadline = time.monotonic() + action["timeout_s"]
         op, args = action["op"], action["args"]
@@ -119,6 +142,8 @@ class Peer:
             self.u(67, 131)
         elif op == "window":
             self.window()
+        elif op == "connection-limit":
+            self.connection_limit()
         elif op == "cycles":
             # The existing Modbus fixture supplies constant 28.9 A / 20 kV
             # registers. A received, acknowledged image is the cycle barrier;

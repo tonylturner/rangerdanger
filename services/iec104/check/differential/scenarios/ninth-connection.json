@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "ninth-connection",
+  "kind": "raw-rtu",
+  "timeout_s": 40,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 9,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "connection-limit", "args": {}, "timeout_s": 20},
+    {"op": "stop", "args": {}, "timeout_s": 5}
+  ]
+}

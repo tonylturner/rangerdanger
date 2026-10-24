@@ -12,6 +12,7 @@ KINDS = {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"}
 OPS = {
     "start", "gi", "stop", "test", "negative", "sbo",
     "fixture", "expect", "server-reports", "window", "cycles",
+    "connection-limit",
 }
 
 
@@ -81,7 +82,7 @@ def validate_args(action):
             "sbo": ("value",), "fixture": ("query",),
             "expect": ("type", "cot", "ioa", "value"),
             "server-reports": ("count", "value", "timed_invalid"), "window": (),
-            "cycles": ("count",)}
+            "cycles": ("count",), "connection-limit": ()}
     exact(args, keys[op])
     if op == "fixture":
         if not isinstance(args["query"], str) or args["query"] not in {
