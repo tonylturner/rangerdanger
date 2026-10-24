@@ -41,8 +41,8 @@ type Header struct {
 	CommonAddress  uint16
 }
 
-// Object associates an IOA with one typed element. SQ=1 still exposes every
-// object's address, making sequence overflow and discontinuities explicit.
+// Object associates an IOA with one typed element. Generic SQ addresses advance;
+// directory entries (type126) instead share the single directory IOA.
 type Object struct {
 	Address uint32
 	Element Element
@@ -123,6 +123,9 @@ func (a ASDU) MarshalBinary(p Params) ([]byte, error) {
 	if len(a.Objects) == 0 || len(a.Objects) > 127 {
 		return nil, fmt.Errorf("%w: ASDU count", ErrMalformed)
 	}
+	if err := fileStructure(a.GetHeader()); err != nil {
+		return nil, err
+	}
 	b, err := encodeHeader(p, a.GetHeader())
 	if err != nil {
 		return nil, err
@@ -131,7 +134,7 @@ func (a ASDU) MarshalBinary(p Params) ([]byte, error) {
 		if o.Address > maxAddress(p.IOASize) {
 			return nil, errFieldRange
 		}
-		if a.Header.Sequence && i > 0 && o.Address != a.Objects[0].Address+uint32(i) {
+		if a.Header.Sequence && i > 0 && o.Address != objectAddress(a.Header.Type, a.Objects[0].Address, i) {
 			return nil, fmt.Errorf("%w: SQ address discontinuity", ErrMalformed)
 		}
 		id, payload, err := encodeElement(o.Element)
@@ -182,30 +185,32 @@ func DecodeASDU(b []byte, p Params) (Message, error) {
 	}
 	h.CommonAddress = uint16(readAddress(b[2+p.COTSize:], p.CASize))
 	payload := b[hs:]
-	size, ok := h.Type.ElementSize()
-	if !ok {
+	if !h.Type.Supported() {
 		return &RawASDU{Header: h, Payload: append([]byte(nil), payload...), DecodeError: fmt.Errorf("%w: %d", ErrUnsupportedType, h.Type)}, nil
 	}
-	expected := int(h.Count) * (p.IOASize + size)
-	if h.Sequence {
-		expected = p.IOASize + int(h.Count)*size
-	}
-	if len(payload) != expected {
-		return nil, fmt.Errorf("%w: ASDU payload length", ErrMalformed)
+	if err := fileStructure(h); err != nil {
+		return nil, err
 	}
 	a := &ASDU{Header: h, Objects: make([]Object, 0, h.Count)}
 	var first uint32
 	for i := 0; i < int(h.Count); i++ {
 		var address uint32
 		if !h.Sequence || i == 0 {
+			if len(payload) < p.IOASize {
+				return nil, fmt.Errorf("%w: missing IOA", ErrMalformed)
+			}
 			address = readAddress(payload, p.IOASize)
 			payload = payload[p.IOASize:]
 			first = address
 		} else {
-			address = first + uint32(i)
+			address = objectAddress(h.Type, first, i)
 		}
 		if address > maxAddress(p.IOASize) {
 			return nil, fmt.Errorf("%w: SQ address overflow", ErrMalformed)
+		}
+		size, err := elementLength(h.Type, payload)
+		if err != nil {
+			return nil, err
 		}
 		e, err := decodeElement(h.Type, payload[:size])
 		if err != nil {
@@ -213,6 +218,9 @@ func DecodeASDU(b []byte, p Params) (Message, error) {
 		}
 		payload = payload[size:]
 		a.Objects = append(a.Objects, Object{Address: address, Element: e})
+	}
+	if len(payload) != 0 {
+		return nil, fmt.Errorf("%w: trailing ASDU bytes", ErrMalformed)
 	}
 	return a, nil
 }

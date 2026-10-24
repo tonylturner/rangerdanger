@@ -120,7 +120,11 @@ func TestEveryType(t *testing.T) {
 			})
 		}
 	}
-	if len(seen) != 46 {
+	// File-specific SQ/count/shared-IOA layouts are checked by TestFileGoldenVectors.
+	for _, v := range fileGoldens(t) {
+		seen[v.id] = true
+	}
+	if len(seen) != 54 {
 		t.Fatalf("coverage: got %d types", len(seen))
 	}
 	for id := range elementSizes {

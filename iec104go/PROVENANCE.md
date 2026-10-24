@@ -1,6 +1,6 @@
 # Clean-room provenance
 
-Written 2026-10-23 for the IEC 104 replacement, phases 1a/1b. No source from
+Written 2026-10-23 for the IEC 104 replacement, phases 1a/1b/1c. No source from
 lib60870, c104, j60870, OpenMUC, any other IEC 104 library, Wireshark's decoder,
 or `services/iec104/src/` was read, fetched or copied. No implementation code
 or paywalled standards text is bundled. Public references below are behavioral
@@ -44,3 +44,52 @@ sources, not normative conformance certification.
   callback cancellation contract and serialized wire taps are original designs.
 - This module is Apache-2.0. Running against a sealed GPL reference peer later
   does not authorize importing that peer's source into this module.
+
+## Phase 1c: file-transfer evidence and decisions
+
+The supplied 2026-10-23 research handoff, `iec104-file-transfer-sources.md`,
+was read in full. The following **public prose**, as established by that
+handoff, is the only new protocol evidence used in phase 1c. No SDK manual,
+implementation, header, code example or implementation-derived API was used.
+The handoff is paraphrased evidence, not independent certification. Its
+qualifications about a third-party transcription and a draft are retained.
+
+| Label / public source | Exact evidence used |
+|---|---|
+| N: Nortegas/COSINOR, *Definición Protocolo CEI-870-5-101*, v3.3 (2013), https://www.nortegas.es/assets/uploads/2018/03/definicion-protocolo.pdf | §§7.2.6.28–38, printed pp30–34: NOF16, NOS8, LOF24, LOS8, qualifiers and content checksum. §§7.3.6.1–7, pp75–81: layouts 120–126. §7.4.11.1, pp102–103: download dialogue. §7.2.6.18, pp27–28: CP56 byte layout. Viewer page = printed page +5. N's contradictory SCQ/AFQ/SOF diagrams are not blindly implemented. |
+| G: GOST R IEC 60870-5-101-2006 public transcription, https://allgosts.ru/33/200/gost_r_mek_60870-5-101-2006 | §§7.2.6.28–38: operation/ack low nibble, error high nibble, LSQ and SOF. §§7.3.6.1–7 (figures83–89): count/SQ/COT, especially directory's shared IOA. §7.4.11.2.6: LFD directory completion. §§7.4.11.2.2–3: FRQ negative selection. §7.4.11.2.7: timeout interruption, deactivation, section/file recalls. Mirror has transcription errors, not treated as infallible. |
+| I: IMANOR PNM IEC 60870-5-104, IC06.4.141 (2022 **draft**), https://www.imanor.gov.ma/wp-content/uploads/2022/04/06.4.141-iec60870-5-104ed2.1fr.pdf | §8.9, pp47–48 figure31: QueryLog127 = NOF + two CP56 times, inclusive bounds and zero sentinels, continuation into preselected file transfer. §7.11: map file services onto TCP, omit 101 polls/link ACKs. P14 figure4: 249-octet ASDU ceiling. Not described as an enacted national standard. |
+
+### Explicit conflicts resolved
+
+- **NOS:** Matoušek appendix C.3 p37 says two octets. N §7.2.6.34 p33
+  and G §7.2.6.34 independently specify **one octet**. Types121–125 use
+  that one-octet field. Matoušek p34 does not establish type127's layout.
+- N's SCQ/AFQ diagram labels conflict with G's numbered bits: use G's
+  low-operation/high-error nibble definitions. G's repeated SRQ “ready”
+  wording is resolved by N's explicit negative flag. G's NOF “UI6” typo
+  is not used in place of the agreed two-octet layout.
+- N's SOF bit6/range prose is not followed: G establishes LFD/FOR/FA
+  and the five-bit STATUS allocation (therefore0–31, not the transcription's32).
+  CP56 reserved fields retain the existing raw codec; do not import G's suspect month-width transcription.
+- The 236-byte default segment limit is **derived**: 249−6−3−2−1−1.
+  It is not a quoted vendor maximum; alternate Params recompute the bound.
+
+### Original profile/API choices, not normative rules
+
+[PICS.md](PICS.md#file-transfer-phase-1c) decisions F1–F20 specify every
+remaining choice: the directory placeholder tuple and negative empty result;
+unused zero lengths; naming/section ordering; unsupported services/QueryLog;
+P/N policy; explicit application timeouts, bounded retries, memory/backlog
+limits; callback isolation and ownership; uncertainty/abort behavior. They
+are conservative implementation choices under the task, not claims derived
+from missing text. In particular no upload or positive QueryLog state machine
+is invented, and no vendor archive packaging is imposed.
+
+The eight synthetic byte-position goldens were authored from N/G/I's layouts,
+not from a reference implementation. The generated pcap combines our Go peers'
+actual APDUs with synthetic TCP envelopes and a separate eight-golden stream.
+tshark4.6.7 was executed only as a black-box decoder. It names all eight IDs
+and parses APCI/ASDU envelopes, but leaves file elements as Raw Data; therefore
+zero malformed frames do **not** independently verify these element layouts,
+qualifiers, checksums, QueryLog times or the application state machine.

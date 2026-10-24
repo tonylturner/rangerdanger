@@ -3,9 +3,9 @@
 Clean-room, Apache-2.0 IEC 60870-5-104 stack, with no dependencies outside
 Go's standard library. Module: `github.com/tonylturner/iec104go`.
 
-APCI, exact-boundary stream reading, ASDU envelopes, 46 process/system/parameter
+APCI, exact-boundary stream reading, ASDU envelopes, 54 process/system/parameter/file
 types, CP56Time2a and CP16Time2a, supervised TCP sessions, client/server roles,
-and initiating procedure helpers are implemented (phases 1a/1b). Service ports
+and initiating procedure helpers are implemented (phases 1a/1b/1c). Service ports
 and differential conformance runs remain separate phases. This is not a claim
 of independently certified IEC conformance.
 
@@ -46,7 +46,8 @@ _ = wire // raw encoding; Session.Send(a) normally owns sequencing/transmission
   The application, not the codec, decides rejection precedence and COT 44–47.
 - `ASDU{Header, Objects}` supports both SQ modes. `Object{Address, Element}`
   exposes every address even with SQ=1. Typed ASDUs derive count from Objects;
-  raw ASDUs use Header.Count. SQ requires contiguous, nonoverflowing addresses.
+  raw ASDUs use Header.Count. Generic SQ requires contiguous, nonoverflowing addresses; directory126
+  instead repeats the shared directory IOA on every Object.
 - Elements are **values**, not pointers: `SinglePoint`, `DoublePoint`,
   `StepPosition`, `Float`, command/setpoint/parameter/system structs and
   `Timed{Value, Time}`. Nil, pointer and nested Timed elements return an error.
@@ -57,7 +58,8 @@ _ = wire // raw encoding; Session.Send(a) normally owns sequencing/transmission
 - `Builder.Append` packs to 249 ASDU bytes or 127 objects. `ErrFull` leaves
   it unchanged: send the snapshot from `ASDU()`, create a fresh builder and
   retry the object. Other append errors also leave it unchanged. Snapshots
-  own their object slices; decoded messages own all bytes. Callers must not
+  own their object slices and segment bytes; Append also copies segment data.
+  Decoded messages own all bytes. Callers must not
   mutate shared messages while another goroutine encodes them.
 - `CP56Time2a` keeps raw fields and flags even for invalid calendars.
   `Time()` interprets the year as 2000–2099 UTC and returns false for invalid
@@ -159,6 +161,54 @@ return closeErr
   application disconnect policy or prevent manual Send/callback handling.
   Station acceptance, SBO ownership/expiry and actual field execution are
   application policy, not automatically implemented by this library.
+
+## Transparent file transfer
+
+Types120–127 have typed values: `FileReady`, `SectionReady`, `FileCall`,
+`FileLast`, `FileACK`, `FileSegment`, `FileDirectory`, `QueryLog`. NOS is
+**one octet**. Type125 is variable-length; `TypeID.Supported()` covers it,
+while `ElementSize()` intentionally reports fixed sizes only. Directory126
+requires SQ1 with a shared IOA; the other seven types require SQ0/count1.
+All reserved fields, unused zero lengths and raw times remain codec-lossless.
+
+- `client.Directory(ctx, FileKey{CommonAddress:1, Originator:0, Address:100})`
+  receives entries through SOF.LFD, across ASDU boundaries.
+- `client.DownloadFile(ctx, FileKey{CommonAddress:1, Originator:0,
+  Address:100, Name:9})` selects/calls, receives sections, checks lengths and
+  section/file sums modulo256, and writes the final ACK before success.
+  The result is `File`, with ordered `FileSection{Number, Data}` entries in
+  `Sections`; on failure any returned content is partial. No filesystem or
+  payload-format policy is built into the library. Both calls require a
+  caller deadline and share the existing one-transaction-per-link exclusion.
+- Implement `FileProvider.Directory(ctx, key) ([]FileDirectory,error)` and
+  `Open(ctx, key) (File,error)`. Provider results transfer slice ownership;
+  honor cancellation and allow different connections to call concurrently.
+  Return `ErrFileNotFound` for missing content. Then construct
+  `files, err := NewFileServer(provider)` and pass `files.Handler` to
+  `NewServer`/`NewSession`, or compose it with your normal event handler:
+  `files.Handler(ctx, e); applicationHandler(ctx, e)`. The optional handler
+  isolates provider work in a bounded worker, and Closed cancels/joins it.
+  Never block on Close/Shutdown from either callback/provider.
+- `Options.Files` defaults: application timeout30s, section checksum retries0,
+  local admission polling10ms, max file16777215 bytes, directory4096 entries.
+  Zero durations/limits select defaults; retries range0..10. These are **profile
+  choices**, not104 t1/t2/t3. Only checksum-driven section recalls are retryable
+  (configure both peers); control timeouts/whole files never silently retry.
+- Empty directories/zero-content files/sections are rejected, not represented
+  with invented terminators. Delete/select-section/deactivate-section/uploads
+  are not implemented by the serving helper. QueryLog127's inclusive timestamps
+  and zero sentinels are codec-supported, but the transparent handler rejects
+  positive log requests with FRQ not-ready. Route127 elsewhere if implementing
+  archives; no positive QueryLog service or upload interoperability is claimed.
+- Any admitted file failure fences subsequent helpers until reconnect and
+  best-effort sends deactivation. Inspect `FileResponseError`,
+  `ErrFileChecksum`, `ErrFileAborted`, and the existing procedure errors.
+  File response buffers drain as consumed; a large file need not fit entirely
+  in EventQueue, but bursts/callbacks/worker inboxes are still bounded. Queue
+  overflow is explicit. `Send` itself remains nonblocking.
+
+[PICS F1–F20](PICS.md#file-transfer-phase-1c) document all conservative choices
+and their evidence boundaries; **peer agreement is required**, not assumed.
 
 ## Validation
 

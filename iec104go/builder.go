@@ -7,7 +7,8 @@ import (
 	"fmt"
 )
 
-// ErrFull means the next object would exceed 249 ASDU bytes or 127 objects.
+// ErrFull means the next object would exceed 249 ASDU bytes or the type count
+// limit (127 generally, one for non-directory file ASDUs).
 // A builder leaves its contents unchanged on this or any other append error.
 var ErrFull = errors.New("iec104go: ASDU full")
 
@@ -27,8 +28,11 @@ func NewBuilder(p Params, h Header) (*Builder, error) {
 	if _, err := encodeHeader(p, h); err != nil {
 		return nil, err
 	}
-	if _, ok := h.Type.ElementSize(); !ok {
+	if !h.Type.Supported() {
 		return nil, ErrUnsupportedType
+	}
+	if err := fileStructure(h); err != nil {
+		return nil, err
 	}
 	h.Count = 0
 	return &Builder{params: p, asdu: ASDU{Header: h}, size: p.headerSize()}, nil
@@ -48,17 +52,17 @@ func (b *Builder) Append(o Object) error {
 		return errFieldRange
 	}
 	count := len(b.asdu.Objects)
-	if b.asdu.Header.Sequence && count > 0 && o.Address != b.asdu.Objects[0].Address+uint32(count) {
+	if b.asdu.Header.Sequence && count > 0 && o.Address != objectAddress(id, b.asdu.Objects[0].Address, count) {
 		return fmt.Errorf("%w: SQ address discontinuity", ErrMalformed)
 	}
 	size := len(payload)
 	if !b.asdu.Header.Sequence || count == 0 {
 		size += b.params.IOASize
 	}
-	if count == 127 || b.size+size > MaxASDUSize {
+	if count == 127 || (isFileType(id) && id != F_DR_TA_1 && count == 1) || b.size+size > MaxASDUSize {
 		return ErrFull
 	}
-	b.asdu.Objects = append(b.asdu.Objects, o)
+	b.asdu.Objects = append(b.asdu.Objects, cloneObject(o))
 	b.size += size
 	return nil
 }
@@ -66,7 +70,7 @@ func (b *Builder) Append(o Object) error {
 // ASDU returns an independently owned snapshot; later appends cannot change it.
 func (b *Builder) ASDU() ASDU {
 	a := b.asdu
-	a.Objects = append([]Object(nil), a.Objects...)
+	a.Objects = cloneObjects(a.Objects)
 	a.Header = a.GetHeader()
 	return a
 }

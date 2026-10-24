@@ -30,6 +30,7 @@ type transaction struct {
 	wake      chan struct{}
 	err       error
 	limit     int
+	streaming bool
 	leg       *procedureLeg
 }
 
@@ -92,10 +93,13 @@ func (s *Session) complete(t *transaction, err error, admitted bool) ([]Message,
 	if t.err != nil {
 		err = t.err
 	}
+	if t.streaming && err == nil && len(t.responses) != 0 {
+		err = ErrProcedureOrder
+	}
 	if s.procedure == t {
 		s.procedure = nil
 	}
-	if admitted && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder)) {
+	if admitted && (t.streaming && err != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueFull) || errors.Is(err, ErrProcedureOrder)) {
 		s.procedureUncertain = true
 	}
 	return append([]Message(nil), t.responses...), err
@@ -110,7 +114,12 @@ func (t *transaction) next(ctx context.Context) (Message, error) {
 		}
 		if t.leg != nil && t.leg.written && t.consumed < len(t.responses) {
 			m := t.responses[t.consumed]
-			t.consumed++
+			if t.streaming {
+				t.responses[0] = nil
+				t.responses = t.responses[1:]
+			} else {
+				t.consumed++
+			}
 			t.mu.Unlock()
 			return m, nil
 		}
