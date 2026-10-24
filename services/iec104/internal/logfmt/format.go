@@ -213,8 +213,11 @@ func ParseInt(s string, low, high int64) (int64, error) {
 }
 
 // ParseEndpoint splits at the last colon, defaults to port 2404, and bounds
-// the host to the reference's 64-byte buffer. It is not an IPv6 URL parser.
-func ParseEndpoint(s string) (string, int, error) {
+// the host like the reference's C buffer of hostBuf bytes (including NUL):
+// the host must be shorter than hostBuf. The reference callers use 64
+// (iec104cmd, CC --http) and 128 (CC --target, historian). It is not an IPv6
+// URL parser.
+func ParseEndpoint(s string, hostBuf int) (string, int, error) {
 	host, port := s, 2404
 	if i := strings.LastIndexByte(s, ':'); i >= 0 {
 		host = s[:i]
@@ -224,7 +227,7 @@ func ParseEndpoint(s string) (string, int, error) {
 		}
 		port = int(n)
 	}
-	if len(host) == 0 || len(host) >= 64 {
+	if len(host) == 0 || len(host) >= hostBuf {
 		return "", 0, fmt.Errorf("invalid host")
 	}
 	return host, port, nil

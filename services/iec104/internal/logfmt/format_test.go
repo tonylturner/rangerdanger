@@ -114,14 +114,22 @@ func TestEndpointAndInteger(t *testing.T) {
 		{"host:+1", "host", 1, true}, {"host: 2404", "host", 2404, true},
 		{"", "", 0, false}, {":2404", "", 0, false}, {"host:0", "", 0, false},
 		{"host:65536", "", 0, false}, {"host:2404x", "", 0, false}, {"host:2404 ", "", 0, false},
+		{strings.Repeat("x", 63), strings.Repeat("x", 63), 2404, true},
 		{strings.Repeat("x", 64), "", 0, false},
 	} {
 		t.Run(tc.s, func(t *testing.T) {
-			h, p, err := ParseEndpoint(tc.s)
+			h, p, err := ParseEndpoint(tc.s, 64)
 			if (err == nil) != tc.good || (tc.good && (h != tc.host || p != tc.port)) {
 				t.Fatal(h, p, err)
 			}
 		})
+	}
+	long := strings.Repeat("h", 127)
+	if h, _, err := ParseEndpoint(long+":2404", 128); err != nil || h != long {
+		t.Fatal(h, err)
+	}
+	if _, _, err := ParseEndpoint(long+"h:2404", 128); err == nil {
+		t.Fatal("accepted a 128-byte host for a 128-byte buffer")
 	}
 	for _, s := range []string{"", "1x", "1 ", "9223372036854775808", "1_0", "0x10"} {
 		if _, err := ParseInt(s, 0, 100); err == nil {
