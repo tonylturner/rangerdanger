@@ -27,11 +27,14 @@ func (testAddr) Network() string  { return "tcp" }
 func (a testAddr) String() string { return string(a) }
 
 type captureConn struct {
-	id       uint64
-	addr     net.Addr
-	messages []iec.Message
-	err      error
+	id             uint64
+	addr           net.Addr
+	messages       []iec.Message
+	err            error
+	closeRequested bool
 }
+
+func (c *captureConn) RequestClose() { c.closeRequested = true }
 
 func (c *captureConn) ID() uint64           { return c.id }
 func (c *captureConn) RemoteAddr() net.Addr { return c.addr }

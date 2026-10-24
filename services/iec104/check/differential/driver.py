@@ -41,11 +41,14 @@ def barrier(url, predicate, deadline):
 
 
 class Peer:
-    def __init__(self, sock, deadline):
+    def __init__(self, sock, deadline, *, server=False):
         self.sock = sock
         self.deadline = deadline
         self.tx = self.rx = 0
         self.records = []
+        self.server = server
+        self.sent_count = self.read_count = 0
+        self.associations = []
 
     def budget(self):
         remaining = self.deadline - time.monotonic()
@@ -56,6 +59,7 @@ class Peer:
     def send(self, frame):
         self.budget()
         self.sock.sendall(frame)
+        self.sent_count += 1
 
     def exact(self, count):
         data = b""
@@ -73,6 +77,7 @@ class Peer:
         assert 4 <= size <= 253
         data = self.exact(size)
         self.records.append(data.hex())
+        self.read_count += 1
         if not data[0] & 1:
             ns = int.from_bytes(data[:2], "little") >> 1
             assert ns == self.rx, (ns, self.rx)
@@ -131,7 +136,32 @@ class Peer:
             for peer in reversed(held[1:]):
                 peer.u(19, 35)
 
-    def action(self, action, fixture):
+    def associate(self, step, message, *, sent):
+        direction = "server_to_client" if self.server == sent else "client_to_server"
+        self.associations.append({"step": step, "message": message, "session": 0,
+                                  "direction": direction,
+                                  "index": (self.sent_count if sent else self.read_count) - 1})
+
+    def zero_object(self, type_id, step):
+        cot = 3 if self.server else 6
+        asdu = bytes([type_id, 0, cot, 0, 1, 0])
+        self.send(bytes([104, 10]) + struct.pack("<HH", self.tx * 2, self.rx * 2) + asdu)
+        self.tx = (self.tx + 1) % 32768
+        self.associate(step, "input", sent=True)
+        # Exact threshold S barrier before any application reply or FIN.
+        assert self.read() == b"\x01\x00" + struct.pack("<H", self.tx * 2)
+        if self.server:
+            self.u(67, 131)  # proves the CC ignored the report and stayed connected
+        elif type_id == 100:
+            self.budget()
+            assert self.sock.recv(1) == b"", "zero-object GI sent an ASDU instead of FIN"
+        else:
+            expected_rx = self.rx
+            reply = self.read()
+            assert reply == struct.pack("<HH", expected_rx * 2, self.tx * 2) + bytes([type_id, 0, 0x6f, 0, 1, 0]), reply.hex()
+            self.associate(step, "reply", sent=False)
+
+    def action(self, action, fixture, step=0):
         self.deadline = time.monotonic() + action["timeout_s"]
         op, args = action["op"], action["args"]
         if op == "start":
@@ -144,6 +174,8 @@ class Peer:
             self.window()
         elif op == "connection-limit":
             self.connection_limit()
+        elif op == "zero-object":
+            self.zero_object(args["type"], step)
         elif op == "cycles":
             # The existing Modbus fixture supplies constant 28.9 A / 20 kV
             # registers. A received, acknowledged image is the cycle barrier;
@@ -227,7 +259,7 @@ def raw_server(case, address, result):
         print("LISTENING", flush=True)
         sock, _ = listener.accept()
     with sock:
-        peer = Peer(sock, deadline)
+        peer = Peer(sock, deadline, server=True)
         assert peer.read() == bytes.fromhex("07000000")
         peer.send(bytes.fromhex("68040b000000"))
         peer.until(lambda data: not data[0] & 1 and data[4] == 100)
@@ -241,9 +273,12 @@ def raw_server(case, address, result):
         acknowledged(3, 20, 1001, b"\x02")
         acknowledged(1, 20, 1002, b"\x00")
         acknowledged(100, 10, 0, b"\x14")
-        for action in case["actions"]:
+        for step, action in enumerate(case["actions"]):
             peer.deadline = min(deadline, time.monotonic() + action["timeout_s"])
             args = action["args"]
+            if action["op"] == "zero-object":
+                peer.zero_object(args["type"], step)
+                continue
             if action["op"] != "server-reports":
                 raise ValueError("unsupported scripted-server action")
             for _ in range(args["count"]):
@@ -252,7 +287,7 @@ def raw_server(case, address, result):
                 if args["timed_invalid"]:
                     payload += bytes.fromhex("0000800c170a1a")
                 acknowledged(31 if args["timed_invalid"] else 3, 3, 1001, payload)
-        result.write_text(json.dumps({"passed": True, "tx": peer.tx, "rx": peer.rx}))
+        result.write_text(json.dumps({"passed": True, "tx": peer.tx, "rx": peer.rx, "associations": peer.associations}))
         print("SCENARIO COMPLETE", flush=True)
         # Runner stops CC after completion. Do not close early and provoke a
         # reconnect whose timing would create a spurious additional session.
@@ -296,9 +331,9 @@ def main():
         else:
             with socket.create_connection((target, 2404), timeout=5) as sock:
                 peer = Peer(sock, time.monotonic() + case["timeout_s"])
-                for action in case["actions"]:
-                    peer.action(action, fixture)
-            result.write_text(json.dumps({"passed": True, "records": peer.records}))
+                for step, action in enumerate(case["actions"]):
+                    peer.action(action, fixture, step)
+            result.write_text(json.dumps({"passed": True, "records": peer.records, "associations": peer.associations}))
     except BaseException as error:
         result.write_text(json.dumps({"passed": False, "error": str(error)}))
         raise

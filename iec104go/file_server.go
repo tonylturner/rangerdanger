@@ -171,7 +171,7 @@ func (w *fileServing) negative(ctx context.Context, k FileKey, call FileCall, co
 }
 func (w *fileServing) handle(ctx context.Context, m Message) error {
 	a, ok := m.(*ASDU)
-	if !ok {
+	if !ok || len(a.Objects) == 0 {
 		return nil
 	}
 	h := a.Header

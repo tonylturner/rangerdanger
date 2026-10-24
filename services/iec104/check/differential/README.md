@@ -79,6 +79,24 @@ reassembly gaps/conflicts, a TShark/APCI APDU count mismatch, or uncovered
 TCP payload bytes fail this gate. TCP retransmissions are supported and do
 not count as additional APDU bytes.
 
+A scenario may additionally declare deliberate decoder diagnostics with
+`"malformed": [{"step": 1, "message": "input"}, {"step": 1, "message": "reply"}]`.
+Steps are zero-based action indexes; messages are the crafted input or its direct
+reply, never an S acknowledgment or an unrelated subsequent message. The peer
+records each association as a session, direction and direction-local APDU index.
+The runner resolves both sides independently and saves `declared-malformed.json`;
+standalone comparison accepts that file via `--declared-malformed`.
+
+Every declared message must have diagnostics on **both** sides, identical in
+text, order and multiplicity after removing only the capture frame prefix.
+Missing, stale, duplicated, mismatched or ambiguous associations fail gate C.
+Packet-level diagnostics on coalesced messages fail closed rather than excusing
+another message. All original diagnostics and declaration results remain in the
+JSON/Markdown evidence. Undeclared diagnostics still fail; reassembly, coverage,
+APCI/parser and normalization errors can never be declared. Gates A/B compare
+these messages and bytes unchanged. This is not an allow-list exception and the
+shipped allow-list stays empty.
+
 ### D. TCP behavior (report only)
 
 Per-session/direction segment and data-segment counts, captured and unique
@@ -223,6 +241,14 @@ The catalog isolates raw-client→RTU, CLI→RTU, CC→RTU, and raw-server→CC.
 `ninth-connection` holds eight sockets behind individual STARTDT barriers,
 dials nine, observes TCP EOF without sending APCI, then checks all eight
 incumbents with TESTFR and shuts them down with STOPDT barriers.
+The three `zero-*` cases use a raw client for RTU command/GI and a scripted
+server with the **real CC**, not the CLI, for the empty monitor report. Normal
+GI completes behind the CC's actual w=1 S barriers before injecting the monitor;
+there is no assumption about CLI GI acknowledgments. A zero command requires an
+S followed by the exact negative COT47 zero-count mirror; a zero GI requires S
+then EOF with no ASDU; a zero monitor requires S then a TESTFR confirmation to
+prove survival. Only the crafted input and command mirror are declared malformed.
+
 No sleep determines this wire transcript; all nine TCP streams remain
 visible to the unchanged comparator and its independent session-count check.
 It includes session controls, SBO, negative type/COT/CA/IOA responses,

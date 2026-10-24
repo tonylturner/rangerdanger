@@ -63,7 +63,7 @@ type ASDU struct {
 }
 
 // GetHeader returns the envelope with the object count derived from Objects.
-// MarshalBinary rejects counts outside 1..127 before they reach the wire.
+// MarshalBinary rejects counts outside 0..127 before they reach the wire.
 func (a ASDU) GetHeader() Header { h := a.Header; h.Count = uint8(len(a.Objects)); return h }
 
 // RawASDU preserves an unsupported type's complete header and owned payload.
@@ -96,7 +96,7 @@ func encodeHeader(p Params, h Header) ([]byte, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
-	if h.Count == 0 || h.Count > 127 || h.Cause > 63 || uint32(h.CommonAddress) > maxAddress(p.CASize) || (p.COTSize == 1 && h.Originator != 0) {
+	if h.Count > 127 || h.Cause > 63 || uint32(h.CommonAddress) > maxAddress(p.CASize) || (p.COTSize == 1 && h.Originator != 0) {
 		return nil, fmt.Errorf("%w: ASDU header", ErrMalformed)
 	}
 	vsq := h.Count
@@ -120,10 +120,10 @@ func encodeHeader(p Params, h Header) ([]byte, error) {
 // MarshalBinary encodes all objects, rejecting mixed types, oversized ASDUs,
 // and SQ=1 discontinuities. It never modifies Objects or their elements.
 func (a ASDU) MarshalBinary(p Params) ([]byte, error) {
-	if len(a.Objects) == 0 || len(a.Objects) > 127 {
+	if len(a.Objects) > 127 {
 		return nil, fmt.Errorf("%w: ASDU count", ErrMalformed)
 	}
-	if err := fileStructure(a.GetHeader()); err != nil {
+	if err := fileStructure(a.GetHeader()); len(a.Objects) != 0 && err != nil {
 		return nil, err
 	}
 	b, err := encodeHeader(p, a.GetHeader())
@@ -158,6 +158,9 @@ func (a ASDU) MarshalBinary(p Params) ([]byte, error) {
 // MarshalBinary re-encodes an opaque payload; it does not try to reinterpret
 // the type, allowing applications to mirror unsupported requests unchanged.
 func (a RawASDU) MarshalBinary(p Params) ([]byte, error) {
+	if a.Header.Count == 0 && len(a.Payload) != 0 {
+		return nil, fmt.Errorf("%w: trailing zero-object ASDU bytes", ErrMalformed)
+	}
 	b, err := encodeHeader(p, a.Header)
 	if err != nil {
 		return nil, err
@@ -171,14 +174,15 @@ func (a RawASDU) MarshalBinary(p Params) ([]byte, error) {
 // DecodeASDU requires an exact ASDU with no trailing bytes. Unsupported types
 // return (*RawASDU,nil); structural errors wrap ErrMalformed. Successful
 // results own their bytes and can be retained across subsequent reader calls.
-// Single-object file ASDUs accept either SQ bit and normalize it to the strict
+// Zero-count envelopes have no payload; their interpretation belongs to the
+// application. Single-object file ASDUs accept either SQ bit and normalize it to the strict
 // sending profile (directory SQ1, other file types SQ0).
 func DecodeASDU(b []byte, p Params) (Message, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
 	hs := p.headerSize()
-	if len(b) < hs || len(b) > MaxASDUSize || b[1]&127 == 0 {
+	if len(b) < hs || len(b) > MaxASDUSize {
 		return nil, fmt.Errorf("%w: ASDU size/count", ErrMalformed)
 	}
 	h := Header{Type: TypeID(b[0]), Sequence: b[1]&128 != 0, Count: b[1] & 127, Cause: COT(b[2] & 63), Negative: b[2]&64 != 0, Test: b[2]&128 != 0}
@@ -187,8 +191,16 @@ func DecodeASDU(b []byte, p Params) (Message, error) {
 	}
 	h.CommonAddress = uint16(readAddress(b[2+p.COTSize:], p.CASize))
 	payload := b[hs:]
+	// A zero-object envelope is structurally complete. Station policy, not
+	// the codec, decides whether to reject, ignore or close for its type.
+	if h.Count == 0 && len(payload) != 0 {
+		return nil, fmt.Errorf("%w: trailing zero-object ASDU bytes", ErrMalformed)
+	}
 	if !h.Type.Supported() {
 		return &RawASDU{Header: h, Payload: append([]byte(nil), payload...), DecodeError: fmt.Errorf("%w: %d", ErrUnsupportedType, h.Type)}, nil
+	}
+	if h.Count == 0 {
+		return &ASDU{Header: h}, nil
 	}
 	if isFileType(h.Type) && h.Count == 1 {
 		h.Sequence = h.Type == F_DR_TA_1
