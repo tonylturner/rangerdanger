@@ -90,7 +90,6 @@ def inventory_inputs() -> dict[str, set[tuple[str, str]]]:
             ("file", "services/opendss-sim/eu_controls.py"),
             ("file", "services/opendss-sim/eu_state.py"),
             ("file", "services/opendss-sim/eu_dynamics.py"),
-            ("file", "services/opendss-sim/eu_protection.py"),
             ("dir", "services/opendss-sim/dss"),
             ("file", "scripts/set-gateway.sh"),
         },
