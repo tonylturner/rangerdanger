@@ -2,7 +2,7 @@
 # RangerDanger IEC 60870-5-104 increment-3 checks: RTU, iec104cmd and the
 # control centre.
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # Headless, rerunnable checks on throwaway Docker networks: a fake Modbus
 # feeder breaker and a fake GPS station clock, the RTU under test,

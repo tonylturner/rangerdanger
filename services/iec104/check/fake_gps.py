@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # RangerDanger IEC 60870-5-104 checks: a minimal fake GPS station clock.
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # Serves the subset of gps-sim's /api/state the RTU station clock reads:
 # sync_status and an RFC3339Nano reported_time. A query param flips the

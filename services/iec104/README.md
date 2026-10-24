@@ -18,10 +18,10 @@ provenance; they do not describe the current production implementation.
 
 ## Licensing
 
-**TODO (owner approval required):** reconcile this directory's `LICENSE`,
-the entrypoint header and the capture licence scope with the Go cutover.
-This section deliberately awaits Tony's licensing decision; it is not a
-blanket relicensing of existing files or historical images.
+This directory is licensed under the Apache License, Version 2.0 (`LICENSE`),
+like `iec104go`. That covers the entrypoint, the check harness and the
+capture data. The sealed historical C reference keeps its original GPL
+licences and source payload in its pinned revision (`check/reference/`).
 
 ## Dependencies and packaging
 
@@ -30,9 +30,7 @@ same digest-pinned Go toolchain in the service, Kali and engineering recipes
 (`CGO_ENABLED=0`, `GOTOOLCHAIN=local`, `GOPROXY=off`). No legacy IEC 104 C
 library or corresponding-source archive is part of these new binaries/images.
 The component licence is installed at `/usr/share/licenses/iec104/LICENSE`.
-Base-image packages retain their own licences; the entrypoint licence issue
-above must be resolved before publishing. The sealed historical reference
-retains its original GPL licences and source payload.
+Base-image packages retain their own licences.
 
 ## Point map (schema 2)
 

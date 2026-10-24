@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # RangerDanger IEC 60870-5-104 checks: a minimal fake feeder-breaker.
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # A stand-in for the real services/devices feeder breaker, implementing just
 # the Modbus TCP register map the RTU reads (contract §4) plus a tiny HTTP

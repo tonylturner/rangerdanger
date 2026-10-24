@@ -1,7 +1,7 @@
 #!/bin/sh
 # RangerDanger IEC 60870-5-104 image entrypoint.
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # Route cross-zone traffic through the containd firewall, then exec the
 # program the compose command selected (iec104-rtu or iec104-cc). set -e so

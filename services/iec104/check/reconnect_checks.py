@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 """Count actual CC receive callbacks, not cache/journal entries (which dedupe)."""
 import datetime
 import re

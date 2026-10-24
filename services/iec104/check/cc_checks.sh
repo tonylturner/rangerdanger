@@ -1,6 +1,6 @@
 # RangerDanger IEC 60870-5-104 checks: the control centre (contract §6).
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # Sourced by check/run.sh once the RTU checks have run and the RTU, fake
 # breaker and fake GPS are up. Starts the real iec104-cc against the RTU

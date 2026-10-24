@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # RangerDanger IEC 60870-5-104 checks: control-centre HTTP API probe.
 # Copyright (C) 2026 The RangerDanger contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 #
 # Runs inside a throwaway python container on the CC's management network
 # (the CC API is not reachable from the host). stdlib only; `python3 -I`.
