@@ -100,7 +100,7 @@ class Peer:
 
     def expect(self, type_id, cot, ioa=None, value=None):
         def matches(data):
-            if data[0] & 1 or len(data) < 14:
+            if data[0] & 1 or len(data) < (14 if value is not None else 13):
                 return False
             a = data[4:]
             return (a[0] == type_id and a[2] == cot
@@ -139,7 +139,11 @@ class Peer:
                   if not bytes.fromhex(record)[0] & 1 and bytes.fromhex(record)[6] == 20]
             assert sorted((a[0], a[1]) for a in gi) == [(1, 1), (3, 1)], gi
         elif op == "negative":
-            self.asdu(args["type"], args["cot"], args["ioa"], bytes([args["value"]]), args["ca"])
+            # Read has no element after IOA; clock sync has a complete CP56.
+            # Fixed, valid public wire layouts, not codec/application support.
+            payload = {102: b"", 103: bytes.fromhex("0000000c170a1a")}.get(
+                args["type"], bytes([args["value"]]))
+            self.asdu(args["type"], args["cot"], args["ioa"], payload, args["ca"])
             self.expect(args["type"], 64 | args["expected_cot"], args["ioa"])
         elif op == "sbo":
             self.asdu(46, 6, 3001, bytes([128 | args["value"]]))

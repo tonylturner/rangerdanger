@@ -30,7 +30,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_entire_catalog_is_strict_and_covers_four_role_rows(self):
         cases = [scenario(path) for path in (HERE / "scenarios").glob("*.json")]
-        self.assertEqual(len(cases), 10)
+        self.assertEqual(len(cases), 11)
         self.assertEqual({case["kind"] for case in cases},
                          {"raw-rtu", "cmd-rtu", "cc-rtu", "raw-cc"})
         self.assertEqual(len({case["id"] for case in cases}), len(cases))
@@ -223,6 +223,27 @@ class OwnershipTests(unittest.TestCase):
 
 
 class PeerTests(unittest.TestCase):
+    def test_unhandled_types_have_valid_request_layouts(self):
+        for type_id, cot, payload in ((102, 5, b""),
+                                      (103, 6, bytes.fromhex("0000000c170a1a"))):
+            with self.subTest(type_id=type_id):
+                peer = Peer(Mock(), time.monotonic() + 1)
+                peer.asdu = Mock()
+                peer.expect = Mock()
+                peer.action({"op": "negative", "timeout_s": 1, "args": {
+                    "type": type_id, "cot": cot, "ca": 1, "ioa": 0,
+                    "value": 0, "expected_cot": 44}}, "unused")
+                peer.asdu.assert_called_once_with(type_id, cot, 0, payload, 1)
+                peer.expect.assert_called_once_with(type_id, 64 | 44, 0)
+
+    def test_read_mirror_needs_no_payload_byte(self):
+        left, right = socket.socketpair()
+        with left, right:
+            peer = Peer(left, time.monotonic() + 1)
+            right.sendall(bytes.fromhex("680d0000020066016c000100000000"))
+            self.assertEqual(len(peer.expect(102, 64 | 44, 0)), 13)
+            self.assertEqual(right.recv(6), bytes.fromhex("680401000200"))
+
     def test_receive_sequence_wrap_and_ack(self):
         left, right = socket.socketpair()
         with left, right:

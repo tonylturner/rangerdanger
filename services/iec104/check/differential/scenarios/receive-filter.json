@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "receive-filter",
+  "kind": "raw-rtu",
+  "timeout_s": 40,
+  "capture_modbus": false,
+  "point_map": "feeder-status-v1",
+  "expected_sessions": 1,
+  "actions": [
+    {"op": "start", "args": {}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 200, "cot": 6, "ca": 2, "ioa": 3001, "value": 129, "expected_cot": 46}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 102, "cot": 5, "ca": 1, "ioa": 0, "value": 0, "expected_cot": 44}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 103, "cot": 6, "ca": 1, "ioa": 0, "value": 0, "expected_cot": 44}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 1, "ca": 1, "ioa": 3001, "value": 129, "expected_cot": 45}, "timeout_s": 5},
+    {"op": "negative", "args": {"type": 46, "cot": 6, "ca": 1, "ioa": 0, "value": 129, "expected_cot": 47}, "timeout_s": 5}
+  ]
+}
