@@ -72,11 +72,22 @@ class MalformedTests(unittest.TestCase):
         import xml.etree.ElementTree as ET
         from decode import _expert_errors
         packet = ET.fromstring('<packet><proto name="iec60870_asdu">' + ''.join(
-            '<field name="_ws.expert"><field name="_ws.expert.severity" show="Error"/>'
+            '<field name="_ws.expert"><field name="_ws.expert.severity" show="8388608" showname="Severity level: Error"/>'
             f'<field name="_ws.expert.message" show="{message}"/></field>'
             for message in ("first", "second")) + '</proto></packet>')
         self.assertEqual(_expert_errors(packet, 8, True),
                          ["frame 8: expert error: first", "frame 8: expert error: second"])
+
+    def test_malformed_protocol_marker_is_diagnostic_even_without_fields(self):
+        import xml.etree.ElementTree as ET
+        from decode import _expert_errors
+        packet = ET.fromstring('<packet><proto name="_ws.malformed" showname="Malformed ASDU"/></packet>')
+        self.assertEqual(_expert_errors(packet, 8, True),
+                         ["frame 8: _ws.malformed: Malformed ASDU"])
+        warning = ET.fromstring('<packet><proto name="iec60870_asdu"><field name="_ws.expert">'
+                               '<field name="_ws.expert.severity" show="6291456" showname="Severity level: Warning"/>'
+                               '<field name="_ws.expert.message" show="warning"/></field></proto></packet>')
+        self.assertEqual(_expert_errors(warning, 8, True), [])
 
     def test_schema_and_resolution(self):
         associations = [{"step": 1, "message": "input", "session": 0, "direction": C2S, "index": 0}]

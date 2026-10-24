@@ -493,7 +493,7 @@ def _expert_errors(packet: ET.Element, frame: int, is_iec_frame: bool) -> list[s
         if name == "_ws.malformed" or name.startswith("_ws.malformed."):
             errors.append(f"frame {frame}: {name}")
         elif is_iec_frame and name == "_ws.expert.severity":
-            severity = (field.get("show") or field.get("showname") or "").lower()
+            severity = " ".join(field.get(key, "") for key in ("show", "showname")).lower()
             if "error" in severity:
                 # Severity belongs to its own expert subtree. Using the first
                 # message in the packet hides different later diagnostics.
@@ -505,6 +505,8 @@ def _expert_errors(packet: ET.Element, frame: int, is_iec_frame: bool) -> list[s
             errors.append(f"frame {frame}: {name}")
     for proto in packet.findall("./proto"):
         name = proto.get("name", "")
+        if name == "_ws.malformed" or name.startswith("_ws.malformed."):
+            errors.append(f"frame {frame}: {name}: {proto.get('showname', '')}")
         if is_iec_frame and name.startswith("iec104."):
             errors.append(f"frame {frame}: {name}")
         if is_iec_frame and name == "iec60870_asdu":
