@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
+from pdml import PDMLError, decode_file, packets
 
 from apdu import (
     APDU,
@@ -527,36 +528,29 @@ def decode_capture(
         raise DecodeError(f"tshark executable not found: {tshark}")
     version = _tshark_version(tshark_path, timeout)
     _validate_fields(tshark_path, timeout)
-    result = _run(
-        [
-            tshark_path,
-            "-n",
-            "-o",
-            "tcp.desegment_tcp_streams:TRUE",
-            "-r",
-            str(capture),
-            "-T",
-            "pdml",
-        ],
-        timeout,
-    )
-    if result.returncode:
-        raise DecodeError(
-            f"tshark decode exited {result.returncode} for {capture}: "
-            f"{result.stderr.strip()}"
-        )
+    command = [
+        tshark_path,
+        "-n",
+        "-o",
+        "tcp.desegment_tcp_streams:TRUE",
+        "-r",
+        str(capture),
+        "-T",
+        "pdml",
+    ]
     try:
-        root = ET.fromstring(result.stdout)
-    except ET.ParseError as error:
-        raise DecodeError(f"could not parse tshark PDML for {capture}: {error}") from error
+        with decode_file(command, timeout) as pdml:
+            return _decode_pdml(capture, version, pdml, cp56_tolerance_ms)
+    except PDMLError as error:
+        raise DecodeError(f"{capture}: {error}") from error
 
+
+def _decode_pdml(capture, version, pdml, cp56_tolerance_ms):
     stream_first_frame: dict[str, int] = {}
-    packet_data: list[tuple[ET.Element, dict[str, list[ET.Element]]]] = []
     validity_errors: list[str] = []
-    for packet in root.findall("packet"):
+    for packet in packets(pdml):
         fields = _packet_fields(packet)
         frame = _frame_number(fields)
-        packet_data.append((packet, fields))
         source = _first_number(fields, "tcp.srcport")
         destination = _first_number(fields, "tcp.dstport")
         is_iec_frame = (
@@ -590,7 +584,8 @@ def decode_capture(
     tcp_report: dict[int, dict[str, dict[str, Any]]] = {}
     ack_timestamps: dict[tuple[int, str], list[Decimal]] = {}
     decoded_counts: dict[tuple[int, str], int] = {}
-    for packet, fields in packet_data:
+    for packet in packets(pdml):
+        fields = _packet_fields(packet)
         frame = _frame_number(fields)
         source = _first_number(fields, "tcp.srcport")
         destination = _first_number(fields, "tcp.dstport")
@@ -678,15 +673,9 @@ def decode_capture(
             )
         )
 
-        iec_protos = packet.findall("./proto[@name='iec60870_104']")
-        asdu_protos = packet.findall("./proto[@name='iec60870_asdu']")
-        if len(asdu_protos) > len(iec_protos):
-            validity_errors.append(
-                f"frame {frame}: tshark produced ASDU without matching IEC APCI"
-            )
-        decoded_counts[key] = decoded_counts.get(key, 0) + len(iec_protos)
-        for index, proto in enumerate(iec_protos):
-            asdu_proto = asdu_protos[index] if index < len(asdu_protos) else None
+        pairs = _apci_pairs(packet, frame, validity_errors)
+        decoded_counts[key] = decoded_counts.get(key, 0) + len(pairs)
+        for proto, asdu_proto in pairs:
             records.setdefault(key, []).append(
                 _semantic_record(frame, session, direction, proto, asdu_proto)
             )
@@ -789,3 +778,18 @@ def decode_capture(
         validity_errors,
         audit,
     )
+
+
+def _apci_pairs(packet, frame, errors):
+    """Bind each sibling ASDU to its preceding I APCI, never an S/U frame."""
+    pairs = []
+    for proto in packet.findall("./proto"):
+        if proto.get("name") == "iec60870_104":
+            pairs.append([proto, None])
+        elif proto.get("name") == "iec60870_asdu":
+            if (not pairs or pairs[-1][1] is not None
+                    or _decoded_frame_kind(pairs[-1][0])[0] != "I"):
+                errors.append(f"frame {frame}: tshark produced ASDU without matching I APCI")
+            else:
+                pairs[-1][1] = proto
+    return pairs
