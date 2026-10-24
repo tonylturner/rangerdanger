@@ -76,6 +76,8 @@ CP56_LAYOUTS = {
     62: (10, 3),
     63: (12, 5),
     64: (12, 5),
+    # C_CS_NA_1: IOA followed by CP56Time2a only, no value/qualifier.
+    103: (7, 0),
 }
 
 
