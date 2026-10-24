@@ -20,7 +20,6 @@ func TestRequestRejections(t *testing.T) {
 		change func(*iec.ASDU)
 		cot    iec.COT
 	}{
-		{"CA", func(a *iec.ASDU) { a.Header.CommonAddress = 2 }, iec.UnknownCA},
 		{"COT", func(a *iec.ASDU) { a.Header.Cause = iec.Spontaneous }, iec.UnknownCause},
 		{"IOA", func(a *iec.ASDU) { a.Objects[0].Address = 999 }, iec.UnknownIOA},
 		{"count", func(a *iec.ASDU) { a.Objects = append(a.Objects, a.Objects[0]) }, iec.UnknownIOA},
@@ -59,12 +58,6 @@ func TestRequestRejections(t *testing.T) {
 	gi.Header.Cause = iec.Deactivation
 	r.receive(c, gi)
 	response(t, c, iec.DeactivationCon, true)
-	gi.Header.CommonAddress = 2
-	r.receive(c, gi)
-	response(t, c, iec.UnknownCA, true)
-	raw := iec.RawASDU{Header: iec.Header{Type: 200, Count: 1, Cause: iec.Activation, CommonAddress: 1, Originator: 17}, Payload: []byte{1, 2, 3, 4}}
-	r.receive(c, raw)
-	response(t, c, iec.UnknownType, true)
 }
 
 type concurrentLog struct {
@@ -158,6 +151,53 @@ func TestServeSessions(t *testing.T) {
 	if cots[0] != iec.ActivationCon || cots[1] != iec.InterrogatedStation || cots[2] != iec.ActivationTerm {
 		t.Fatal(cots)
 	}
+	// The endpoint filter, not receive(), owns envelope/type rejection. A
+	// subsequent GI is a callback barrier for the negative log assertion.
+	for _, wrongCA := range []bool{false, true} {
+		var rejected iec.Message = iec.RawASDU{Header: iec.Header{Type: 200, Count: 1, Cause: iec.Activation, CommonAddress: 1}, Payload: []byte{1, 2, 3, 4}}
+		want := iec.UnknownType
+		if wrongCA {
+			bad := gi
+			bad.Header.CommonAddress = 2
+			rejected = bad
+			want = iec.UnknownCA
+		}
+		if err := client.Send(rejected); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			select {
+			case m := <-frames:
+				if m.GetHeader().Cause == iec.Spontaneous {
+					continue
+				}
+				if m.GetHeader().Cause != want || !m.GetHeader().Negative {
+					t.Fatal(m.GetHeader())
+				}
+			case <-ctx.Done():
+				t.Fatal("filter response timeout")
+			}
+			break
+		}
+	}
+	if err := client.Send(gi); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		select {
+		case m := <-frames:
+			if m.GetHeader().Cause != iec.ActivationTerm {
+				continue
+			}
+		case <-ctx.Done():
+			t.Fatal("callback barrier timeout")
+		}
+		break
+	}
+	if text := log.text(); strings.Contains(text, "rx ASDU type=C_IC_NA_1(100) cot=ACTIVATION(6) neg=0 test=0 oa=17 ca=2") || strings.Contains(text, "(200)") {
+		t.Fatalf("rejection reached RTU: %s", text)
+	}
+
 	local := client.LocalAddr().String()
 	text := log.text()
 	if !strings.Contains(text, "connection request from 127.0.0.1\nconnection opened peer="+local) || !strings.Contains(text, "STARTDT peer="+local) {

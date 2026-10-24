@@ -104,10 +104,6 @@ func (r *RTU) receive(conn connection, m iec.Message) {
 	switch h.Type {
 	case iec.C_IC_NA_1:
 		r.logASDU("rx", m)
-		if int(h.CommonAddress) != r.pm.CA {
-			r.reply(conn, m, iec.UnknownCA, true)
-			return
-		}
 		if h.Cause == iec.Deactivation {
 			r.reply(conn, m, iec.DeactivationCon, true)
 			return
@@ -127,10 +123,6 @@ func (r *RTU) receive(conn connection, m iec.Message) {
 		r.reply(conn, m, iec.ActivationTerm, false)
 	case iec.C_DC_NA_1, iec.C_RC_NA_1, iec.C_SC_NA_1:
 		r.logASDU("rx", m)
-		if int(h.CommonAddress) != r.pm.CA {
-			r.reply(conn, m, iec.UnknownCA, true)
-			return
-		}
 		if h.Cause != iec.Activation && h.Cause != iec.Deactivation {
 			r.reply(conn, m, iec.UnknownCause, true)
 			return
@@ -172,7 +164,5 @@ func (r *RTU) receive(conn connection, m iec.Message) {
 			}
 		}
 		r.handleCommand(conn, m, index, value, int(q.QU()), q.Select())
-	default:
-		r.reply(conn, m, iec.UnknownType, true)
 	}
 }

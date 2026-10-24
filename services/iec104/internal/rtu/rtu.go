@@ -154,6 +154,10 @@ func New(pm *pointmap.Map, opts Options) (*RTU, error) {
 	o := iec.DefaultOptions()
 	t := pm.Timers
 	o.APCI = iec.APCI{K: t.K, W: t.W, T0: seconds(t.T0), T1: seconds(t.T1), T2: seconds(t.T2), T3: seconds(t.T3)}
+	o.ReceiveFilter = iec.ReceiveFilter{
+		CommonAddresses:  []uint16{uint16(pm.CA)},
+		ApplicationTypes: []iec.TypeID{iec.C_IC_NA_1, iec.C_DC_NA_1, iec.C_RC_NA_1, iec.C_SC_NA_1},
+	}
 	o.EventQueue = 1024
 	o.Logf = r.printf
 	server, err := iec.NewServer(o, r.handle)
