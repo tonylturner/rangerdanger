@@ -22,3 +22,18 @@ COPY iec104go/LICENSE /usr/share/licenses/iec104/LICENSE
 EXPOSE 2404
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["iec104-rtu", "--config", "/etc/rangerdanger/points.json"]
+
+FROM rtu-build AS cc-build
+COPY services/iec104/cmd/iec104-cc/ ./iec104/cmd/iec104-cc/
+RUN go build -trimpath -o /out/iec104-cc ./iec104/cmd/iec104-cc
+
+FROM rtu-build AS cmd-build
+WORKDIR /src/iec104go
+COPY iec104go/cmd/iec104cmd/ ./cmd/iec104cmd/
+RUN go build -trimpath -o /out/iec104cmd ./cmd/iec104cmd
+
+FROM rtu AS cc
+COPY --from=cc-build /out/iec104-cc /usr/local/bin/iec104-cc
+
+FROM cc AS combined
+COPY --from=cmd-build /out/iec104cmd /usr/local/bin/iec104cmd
