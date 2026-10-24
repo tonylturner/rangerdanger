@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **IEC 104 services and CLI now use the Go port.** C remains only as a
+  sealed test reference; `iec104cmd` renders non-finite measurements as
+  `null` with invalid quality.
+
 - **EU realism and operator parity (01a14c11, 01a14d90).** Derive
   protection, fault passage and P/Q/PF from solved current/power; grade
   breaker/F2 protection at 400 A / 1 s and 2000 A instantaneous. Put the

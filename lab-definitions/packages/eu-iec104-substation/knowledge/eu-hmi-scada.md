@@ -41,4 +41,4 @@ The historian trend is another distinct view of archived CC observations. The CC
 
 This is a training view of the package's modeled feeder and IEC 104 point map, not a complete production HMI, SCADA suite or DCS. The CC one-line only displays IEC-mapped observations, and the **Physical System** view is deliberately separate from operator knowledge. A stale or missing point is not proof of a device position; a fresh CC point is not a complete view of uninstrumented equipment. Nor does the display replace local protection: the simulated breaker protection path is separate from the CC-to-RTU link ([protection behavior](#eu-feeder-breaker-protection)).
 
-Implementation: `frontend/components/control-centre-view.tsx`, `control-centre-one-line.tsx`, `feeder-one-line.tsx`, `physical-system.tsx`; `services/iec104/src/cc_state.c`; package `protocols/points.json`.
+Implementation: `frontend/components/control-centre-view.tsx`, `control-centre-one-line.tsx`, `feeder-one-line.tsx`, `physical-system.tsx`; `services/iec104/internal/controlcentre/state.go`; package `protocols/points.json`.

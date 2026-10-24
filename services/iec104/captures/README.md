@@ -1,9 +1,8 @@
 # IEC 60870-5-104 reference captures
 
 These packet captures are Apache-2.0 test data; see `LICENSE` and the
-repository-root `LICENSE` for the complete license text. The programs in
-`services/iec104/` remain GPLv3. These files contain only protocol traffic,
-not lib60870 code or binaries.
+repository-root `LICENSE` for the complete license text. These files contain
+only historical protocol traffic, not lib60870 code or binaries.
 
 ## Regenerate (deferred)
 
@@ -51,9 +50,9 @@ stream selection and a point-map description for the EU topology.
 containd tests may fetch these only in an opt-in job, never in default
 unit tests. Do not download or vendor them as part of capture regeneration.
 
-## Stack and configuration
+## Historical stack and configuration (increment 2b)
 
-The endpoint image uses lib60870-C v2.4.1 (source tarball SHA256
+The captured endpoint image used lib60870-C v2.4.1 (source tarball SHA256
 `d5708b9885c2c068ac9d9bae4696a624bd1d1d6645a1b1a9261c00274bc36c3a`) on
 Alpine 3.22 (base image digest
 `sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8`).

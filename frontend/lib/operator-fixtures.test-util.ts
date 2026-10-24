@@ -1,6 +1,6 @@
 // Answers of the EU control-centre, field and firewall-session
 // routes in the shapes the backend and the services really send
-// (services/iec104/src/cc_*.c, services/devices, backend/internal/server),
+// (services/iec104/internal/controlcentre/, services/devices, backend/internal/server),
 // shared by the operator tests.
 
 import type { PackageSummary } from "./api";

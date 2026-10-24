@@ -36,4 +36,4 @@ Configured link parameters are t0 10 seconds, t1 15 seconds, t2 10 seconds, t3 2
 
 This is an implemented subset, not universal IEC 104 interoperability coverage. CLI support for a type is not evidence that the RTU accepts every operation of that type. The station does not offer an authenticated per-user command policy or IEC 62351 security through this map. Floating reports and GI are untimed; timed status means RTU observation time, not device SOE time. A successful decoder is an analysis tool, not proof of firewall DPI enforcement.
 
-Implementation: package `protocols/points.json`; `services/iec104/src/pointmap.c`, `rtu.c` and `client.c`.
+Implementation: package `protocols/points.json`; `services/iec104/internal/pointmap/`, `services/iec104/internal/rtu/` and `iec104go/cmd/iec104cmd/`.

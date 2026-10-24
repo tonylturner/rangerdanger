@@ -1,60 +1,45 @@
-# services/iec104 — IEC 60870-5-104 programs (GPLv3)
+# services/iec104 — Go IEC 60870-5-104 programs
 
-The European IEC 104 workshop's substation programs, built on
-[lib60870-C](https://github.com/mz-automation/lib60870) (MZ Automation).
-One image carries all of them; the compose command (or `docker run`
-argument) selects which to run.
+The European workshop's RTU and control centre use the clean-room
+`iec104go/` stack. One production image carries three static Go binaries:
 
-| Program | Role | IEC 104 station |
+| Program | Role | Source |
 |---|---|---|
-| `iec104-rtu` | substation RTU / gateway | controlled (server) |
-| `iec104-cc` | control-centre SCADA front end | controlling (client) |
-| `iec104cmd` | student / attack CLI | controlling (client) |
+| `iec104-rtu` | controlled station / Modbus gateway | `cmd/iec104-rtu/`, `internal/rtu/` |
+| `iec104-cc` | controlling station / operator HTTP API | `cmd/iec104-cc/`, `internal/controlcentre/` |
+| `iec104cmd` | student CLI / controlling station | `../../iec104go/cmd/iec104cmd/` |
 
-The increment-2b spike that bootstrapped this directory used a fake
-in-process physics model; the spike write-up is in
-`docs/plans/iec104/spike-iec104.md`. Increment 3 replaced that with a real
-RTU: it reads a package point map, polls the feeder breaker over Modbus
-TCP, tags data from the GPS-fed station clock, and executes commands as
-Modbus writes.
+The default command starts the RTU; Compose supplies explicit role commands.
+There are no role-specific image targets or C/Go selectors. The old C stack
+is available only through the sealed, pinned test reference described in
+`check/reference/README.md`; it is never published or included in release
+inventory. Historical packet captures and design reports retain their original
+provenance; they do not describe the current production implementation.
 
-## Licensing — read before you touch this directory
+## Licensing
 
-**This directory is GPLv3. The rest of the RangerDanger repository is
-Apache-2.0.** `LICENSE` here is the GNU GPL v3 text; it governs
-`services/iec104/` only.
+**TODO (owner approval required):** reconcile this directory's `LICENSE`,
+the entrypoint header and the capture licence scope with the Go cutover.
+This section deliberately awaits Tony's licensing decision; it is not a
+blanket relicensing of existing files or historical images.
 
-The reason is lib60870-C: it is dual-licensed GPLv3-or-commercial, so any
-program linked against it is a GPLv3 combined work. These programs link it
-statically, so they are GPLv3 and are built into their own image.
+## Dependencies and packaging
 
-The boundary that keeps the rest of the repo Apache-2.0 is that these
-programs talk to Apache-2.0 components **only over network protocols** (IEC
-104 / TCP 2404 northbound; Modbus TCP and HTTP southbound). No Apache-2.0 Go
-or TypeScript module imports or links this code.
-
-### Dependencies
-
-| Dependency | Version | Licence | How it ships |
-|---|---|---|---|
-| lib60870-C | v2.4.1 (sha256 `d5708b98…c36c3a`) | GPL-3.0-or-later | tarball fetched + checksummed at build; source under `/usr/share/src` |
-| cJSON | v1.7.19 (sha256 `7fa616e3…54562`) | MIT | tarball fetched + checksummed at build; `cJSON.c` compiled into `iec104-rtu` and `iec104-cc`; source + `LICENSE.cJSON` under `/usr/share/{src,licenses}/iec104` |
-
-cJSON (MIT) is GPLv3-compatible and is used by the strict point-map loader
-(RTU and CC) and the control centre's HTTP API. `iec104cmd` parses no JSON,
-so the Kali static build needs only lib60870.
-
-GPL compliance for released images: the image ships the corresponding source
-for every binary — the pinned lib60870 and cJSON tarballs, these sources and
-the `iec104cmd` build script live under `/usr/share/src`, and the licences
-under `/usr/share/licenses/iec104`.
+The binaries use `iec104go` and the Go standard library, built with the
+same digest-pinned Go toolchain in the service, Kali and engineering recipes
+(`CGO_ENABLED=0`, `GOTOOLCHAIN=local`, `GOPROXY=off`). No legacy IEC 104 C
+library or corresponding-source archive is part of these new binaries/images.
+The component licence is installed at `/usr/share/licenses/iec104/LICENSE`.
+Base-image packages retain their own licences; the entrypoint licence issue
+above must be resolved before publishing. The sealed historical reference
+retains its original GPL licences and source payload.
 
 ## Point map (schema 2)
 
 The RTU and control centre are driven by a JSON point map authored per
 package at `lab-definitions/packages/<id>/protocols/points.json` and mounted
 read-only at `/etc/rangerdanger/points.json`. The shared loader
-(`src/pointmap.{c,h}`) is **strict**: an unknown key, a wrong type, or an
+(`internal/pointmap/`) is **strict**: an unknown key, a wrong type, or an
 out-of-range value makes the program exit non-zero with a message naming the
 offending key, rather than booting on a half-understood configuration.
 
@@ -100,7 +85,7 @@ Behaviour:
   Socket connects are capped at 250 ms and reconnects back off up to
   `reconnect_interval_ms`; no device shares a serial polling queue. The main
   command state machine never waits for Modbus or motion. It executes commands as a single-register write (FC6), never
-  retried. The in-tree Modbus master is `src/modbus.{c,h}`.
+  retried. The in-tree Modbus master is `internal/modbus/`.
 - **Quality per point, per cause.** No successful poll within
   `stale_after_ms` → `IV`+`NT` (device unreachable). A `measurement:true`
   point while the device's valid bit is 0 → `IV` (floats only).
@@ -120,8 +105,8 @@ Behaviour:
   `M_ME_NC_1`; status points have no cyclic refresh. Floats due on the same
   tick are packed by type with multiple information objects (SQ=0), splitting
   when an ASDU is full. There is no COT 2 background scan.
-- **Station clock.** A background thread polls gps-sim over HTTP
-  (`src/stationclock.{c,h}`); station time is the last GPS `reported_time`
+- **Station clock.** A background goroutine polls gps-sim over HTTP
+  (`internal/stationclock/`); station time is the last GPS `reported_time`
   advanced monotonically. CP56Time2a carries the invalid (IV) bit whenever
   the clock is not synced (GPS stale, or `sync_status` not in
   `synced_status`).
@@ -169,10 +154,11 @@ fails or an execute ACT-TERM does not arrive, **2** on connect failure, **3**
 on link loss during a monitor hold. The gate uses `monitor` to hold a session
 across a policy apply and a conntrack kill.
 
-`iec104cmd` also ships as a fully static (musl) binary inside Kali and the
-shared engineering-workstation images, built in each Dockerfile's pinned
-stage (not copied from the iec104 image). Both images include the lib60870
-tarball, CLI sources, build script, licence and this README.
+`iec104cmd` also ships as a static Go binary inside Kali and the shared
+engineering-workstation images, built independently in each Dockerfile's
+pinned Go stage, with `iec104go/LICENSE` (not copied from the service image).
+Non-finite measurements render as JSON `null` with invalid quality, never
+non-JSON NaN/Infinity literals. Flags may follow HOST and the operation.
 
 ## iec104-cc
 
@@ -203,7 +189,7 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   it ends. APCI timers (`t0`–`t3`, `k`, `w`) come from the point map.
   `connection_seq` counts TCP connections to the RTU. GI triggers are
   `connect`, `periodic` (every `gi_interval_ms` from the previous GI start)
-  and `operator`. Only the link thread sends GI; its tick (at most 250 ms)
+  and `operator`. Only the link worker sends GI; its tick (at most 250 ms)
   also services the 2·t1 GI timeout and float watchdog, independently of
   the GI interval. At most one GI is running or pending. Negative GI
   confirmation/termination or timeout closes the session (`io_error`).
@@ -249,8 +235,8 @@ API, which the backend proxies verbatim (`/api/operator/*`).
   received COT 3/11 single/double/step value or transient change, never a
   float or quality-only transition; detail is
   `{id, ioa, asdu, cot, value, source_time, source_time_invalid}`.
-  `link_down.reason`: `t1_timeout` (nothing
-  received for t1 before lib60870 dropped the session), `peer_closed` (the
+  `link_down.reason`: `t1_timeout` (an unacknowledged
+  I-frame or TESTFR timed out), `peer_closed` (the
   RTU closed or reset the stream), `io_error` (the CC closed it after a GI
   failure), `operator_reconnect` (an operator requested a fresh session),
   `connect_failed` (TCP or STARTDT failed; journaled once per outage, not per attempt).
@@ -271,7 +257,7 @@ recent GI on this connection; `next_due_at` is null unless the link is started.
 The state schema is 3. The backend relays operator GI at
 `POST /api/operator/gi` and `POST /api/operator/reconnect` and adds package/range identity to state, not field truth.
 
-The HTTP server is in-tree (`src/cc_http.c`): HTTP/1.0 and 1.1, GET and
+The HTTP server is in-tree (`internal/controlcentre/http.go`): HTTP/1.0 and 1.1, GET and
 POST, `Content-Length` bodies only (no chunked), headers ≤ 8 KiB, bodies
 ≤ 4 KiB, one request per connection, 5 s I/O timeouts, at most 32
 concurrent connections. A failed bind of `--http` is fatal. Unknown paths
@@ -322,13 +308,19 @@ Docker networks (`$RD_CHECK_PREFIX-*`, default `rd-iec104-check-*`, subnets
   copy of each spontaneous, feedback and cyclic report at the CC receive
   callback (not the deduplicated cache).
 
-RTU connection lifetime is keyed by `IMasterConnection`, not the peer
-address. In lib60870 v2.4.1, CLOSED is emitted even after a TCP reset, but
-`getPeerAddress` calls `getpeername`, which can then fail. STARTDT records
-the diagnostic peer string; STOPDT/CLOSED remove the handle synchronously
-under the same lock as queued sends, before lib60870 can recycle it.
-The model checks cover lost peer addresses, handle reuse, a concurrent
-sender/close boundary, STOPDT and a logged full-list condition.
+RTU connection lifetime is keyed by the Go session identity, not by a peer
+address string. Connection tests cover session removal, concurrent sends and
+close, STOPDT, maximum connections and recovery without stale recipients.
+Model assertions and strict-loader rejection cases run as ordinary Go tests:
+
+```sh
+go -C services test -race -count=1 -timeout 300s ./iec104/...
+go -C iec104go test -race -count=1 -timeout 300s ./cmd/...
+```
+
+`check/differential/` compares the pinned C reference against all-Go, Go RTU
+and Go clients using decoded ASDUs and normalized reassembled APDU streams.
+The allow-list is empty; TCP segmentation differences are report-only.
 
 Increment 4 adds strict schema/format/block/feedback rejection cases, real
 FC3 PLC reads, RMU and OLTC FC6 writes in the attempt window, moving and
@@ -341,8 +333,12 @@ and a real packet DROP to one device while every healthy peer's actual
 poll gaps remain ≤ `poll_ms + 250 ms`. `check/Dockerfile` adds Python and
 iptables only to the throwaway test image; service images do not gain them.
 
-Everything it creates (containers, networks, images) is removed on exit.
-Needs docker only.
+Owned containers, networks and image tags are removed on exit. The shared
+Python fixture image is retained. Needs Docker and Python 3. The isolated
+harness does not prove production routing or live firewall behavior.
+
+Schedule upgrades between attempts: restarting the CC rotates its cache epoch
+and invalidates prior attempt evidence; export first and begin a fresh attempt.
 
 ## Reference captures
 
@@ -352,28 +348,18 @@ Needs docker only.
 ## Layout
 
 ```
-src/pointmap.{c,h}     strict point-map loader (shared with the CC)
-src/modbus.{c,h}       in-tree Modbus TCP master (FC3/FC4/FC6)
-src/stationclock.{c,h} GPS-fed station clock (HTTP poller)
-src/common.{c,h}       logging, quality/time/ASDU formatting, arg parsing
-src/client.{c,h}       synchronous wrapper over a lib60870 CS104_Connection (iec104cmd)
-src/rtu.c              iec104-rtu: flags, startup, main loop, shutdown
-src/rtu_internal.h     private RTU shared model, locking rules and module interfaces
-src/rtu_server.c       RTU IEC 104 handlers and connection events
-src/rtu_reporting.c    RTU quality, deadbands, limiter, packed GI and cyclic reporting
-src/rtu_poll.c         RTU independent Modbus poll workers and register decoding
-src/rtu_command.c      RTU SBO validation, FC6 execution and fresh-feedback completion
-src/cc.c               iec104-cc: flags, startup, shutdown
-src/cc_state.{c,h}     CC shared model: point cache, link/GI status, journal, renderers
-src/cc_link.{c,h}      CC IEC 104 session: connect, STARTDT, reconnect, sends
-src/cc_gi.c            CC GI scheduling and trigger journal
-src/cc_command.{c,h}   CC select-before-execute state machine
-src/cc_http.{c,h}      CC minimal HTTP/1.1 server
-src/cc_api.{c,h}       CC HTTP routes
-src/cc_historian.{c,h} bounded snapshot publisher
-src/iec104cmd.c        iec104cmd: one-shot ops and the monitor session
-Dockerfile             image carrying all three programs
-entrypoint.sh          set-gateway.sh then exec the selected program
-check/                 the headless RTU, iec104cmd and control-centre checks
-captures/              spike-era Apache-2.0 reference pcaps
+internal/pointmap/       strict schema-2 point-map loader
+internal/modbus/         Modbus TCP master (FC3/FC4/FC6)
+internal/stationclock/   GPS-fed station clock (HTTP poller)
+internal/logfmt/         quality/time/ASDU/log formatting
+internal/rtu/            sessions, reporting, polling and SBO commands
+internal/controlcentre/  cache, journal, HTTP API, link/GI/commands, historian
+cmd/iec104-rtu/          RTU flags, startup and shutdown
+cmd/iec104-cc/           CC flags, startup and shutdown
+../../iec104go/          clean-room protocol stack and cmd/iec104cmd/
+Dockerfile              single production image carrying all three programs
+entrypoint.sh           set-gateway.sh then exec the selected program
+check/                  isolated behavioral and differential checks
+check/reference/        pinned Git-revision C test reference builder
+captures/               historical spike-era reference pcaps
 ```

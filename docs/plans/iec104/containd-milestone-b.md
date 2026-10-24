@@ -1,3 +1,8 @@
+> **Historical / superseded implementation:** this document records the C-stack
+> design and evidence before the Go cutover. Production now uses `iec104go/`;
+> see `services/iec104/README.md`. Preserve original provenance and decisions.
+> No transport behavior may rely on TCP segment boundaries or whole-APDU writes.
+
 # containd milestone B: command-aware IEC 60870-5-104
 
 Handoff spec for the agents that work on the containd `iec104` branch.
