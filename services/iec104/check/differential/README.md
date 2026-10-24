@@ -148,3 +148,77 @@ Tests read the committed captures and write mutations only to temporary
 directories. They cover self-comparison, semantic/APDU mutations, CP56
 normalization and flags, TCP segmentation/coalescing/retransmission, and
 allow-list acceptance and failure rules.
+Large captures use temporary disk-backed PDML and packet-at-a-time parsing,
+not a whole-document XML tree. ASDUs bind to their preceding I-format APCI;
+coalesced S/U frames do not consume an ASDU slot.
+
+## Live differential runner
+
+Docker is authorized only for this isolated test harness, not for starting
+the range/platform stacks. All processes are headless. Build the sealed
+reference from its pinned first-party revision, then compare the catalog:
+
+```sh
+python3 services/iec104/check/reference/build.py --out build/iec104-reference
+python3 services/iec104/check/differential/run.py --catalog \
+  --baseline build/iec104-reference/roles.json \
+  --candidate build/iec104-reference/roles.json \
+  --reference build/iec104-reference/baseline.json \
+  --out build/iec104-differential
+```
+
+For a single case replace `--catalog` with its JSON path. Output directories
+must be fresh: evidence is never overwritten. Both role files are strict
+JSON objects with exactly `rtu`, `cc`, `cmd`, `peer` image names. Phase 3
+can replace each program's image independently; the unchanged first-party
+raw peer uses a Python 3.12 image. Role images must already exist locally.
+The runner resolves and executes immutable image IDs before creating peers,
+so retagging cannot change the implementation after provenance collection.
+No host ports, production entrypoint/gateway setup, or containd images are
+used. The explicit executable/flag contracts remain those of the programs.
+
+Scenarios use schema 1: an ID, role kind, deadline, capture-Modbus switch,
+versioned point-map profile, expected session count and ordered
+`{op,args,timeout_s}` actions. Unknown/duplicate keys, nonfinite numbers,
+unsupported actions and role-incompatible operations are rejected. The
+status-only feeder profile deliberately has no analog cyclic points;
+42-point analog/cyclic behavior is still exercised by `check/run.sh`.
+STARTDT, GI ACT-TERM, select/execute, fresh Modbus reads, GPS requests and
+scripted-server acknowledgments are barriers, never fixed startup sleeps.
+The scripted server uses exact fixed CP56 IV timestamps; the real RTU uses
+a controlled GPS fixture and the comparator's existing CP56 normalization.
+
+The catalog isolates raw-client→RTU, CLI→RTU, CC→RTU, and raw-server→CC.
+It includes session controls, SBO, negative type/COT/CA/IOA responses,
+spontaneous position/trip values, source IV/NT recovery, fixed CP56 IV reports,
+a full k=12 output window,
+and real 15-bit sequence wrap
+through 32770 reports. `w=1` makes the scripted-server ACK barriers explicit.
+All time-tagged scenario types (30/31) already have comparator CP56 layouts.
+
+Each side runs serially on the same unused subnet. Every creation carries
+an unpredictable owner label; cleanup selects only that exact label, even
+after failures. Capture shares the endpoint network namespace, listens on
+`eth0`, uses full snaplen, immediate delivery and packet flushing, and
+confirms readiness before connecting. Empty/dropped captures, missing
+sessions and failed processes fail the run.
+The capture helper reserves a 64 MiB packet ring: full-snaplen immediate
+mode otherwise has too few kernel slots for the sequence-wrap burst.
+
+Evidence includes pcap, tcpdump statistics, command/exit/deadline records,
+image IDs, materialized baseline, scenario/point-map/harness hashes, fixture,
+peer/CLI/CC logs, TShark version and comparator reports. Raw frame bytes stay
+in the original pcap: do not duplicate transport-dependent frame hex in
+semantic diffs. APDU differences and their normalization audits identify
+the relevant protocol bytes.
+
+`--candidate-scenario FILE` supplies a deliberately changed single-case
+negative control; it is incompatible with `--catalog`. It is not an
+allow-list or normalization. Exit codes remain 0 pass, 1 conformance
+differences, 2 input/tool/process/deadline failure. Signals and failures
+trigger owned-resource cleanup without an automatic retry. The caller
+removes the separately built reference tag when finished:
+
+```sh
+docker image rm rd-iec104-ref:c1de19412b69
+```

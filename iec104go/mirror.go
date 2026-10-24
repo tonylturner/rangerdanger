@@ -51,7 +51,22 @@ func cloneASDU(a ASDU) (Message, error) {
 			return nil, err
 		}
 	}
-	a.Objects = append([]Object(nil), a.Objects...)
+	a.Objects = cloneObjects(a.Objects)
 	a.Header = a.GetHeader()
 	return &a, nil
+}
+
+func cloneObject(o Object) Object {
+	if e, ok := o.Element.(FileSegment); ok {
+		e.Data = append([]byte(nil), e.Data...)
+		o.Element = e
+	}
+	return o
+}
+func cloneObjects(in []Object) []Object {
+	out := make([]Object, len(in))
+	for i, o := range in {
+		out[i] = cloneObject(o)
+	}
+	return out
 }

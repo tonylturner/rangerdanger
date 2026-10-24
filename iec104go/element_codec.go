@@ -87,7 +87,7 @@ func encodeElement(v Element) (TypeID, []byte, error) {
 		return 0, nil, err
 	}
 	id := v.elementType()
-	if _, ok := elementSizes[id]; !ok {
+	if !id.Supported() {
 		return 0, nil, fmt.Errorf("%w: element needs time tag", ErrMalformed)
 	}
 	return id, b, nil
@@ -162,11 +162,14 @@ func encodePayload(v Element) ([]byte, error) {
 	case ParameterActivation:
 		return []byte{e.QPA}, nil
 	default:
-		return nil, fmt.Errorf("%w: element must be a supported value type", ErrMalformed)
+		return encodeFileElement(v)
 	}
 }
 
 func decodeElement(id TypeID, b []byte) (Element, error) {
+	if isFileType(id) {
+		return decodeFileElement(id, b)
+	}
 	n, ok := id.ElementSize()
 	if !ok {
 		return nil, ErrUnsupportedType

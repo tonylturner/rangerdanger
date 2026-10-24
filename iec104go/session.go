@@ -99,6 +99,8 @@ type writeResult struct {
 type Session struct {
 	id                  uint64
 	conn                net.Conn
+	localAddr           net.Addr
+	remoteAddr          net.Addr
 	role                Role
 	opts                Options
 	ctx                 context.Context
@@ -148,6 +150,8 @@ func newSession(ctx context.Context, conn net.Conn, role Role, opts Options, han
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{id: id, conn: conn, role: role, opts: opts, ctx: ctx, cancel: cancel, done: make(chan struct{}), transportDone: make(chan struct{}), stop: make(chan struct{}), wake: make(chan struct{}, 1), ops: make(chan operation), in: make(chan incoming, 1), out: make(chan *wireWrite, opts.SendQueue+8), written: make(chan writeResult, 1), handler: handler, retired: retired, inspect: make(chan chan sessionView)}
+	s.localAddr = snapshotAddr(conn.LocalAddr())
+	s.remoteAddr = snapshotAddr(conn.RemoteAddr())
 	s.events.wake = make(chan struct{}, 1)
 	s.queueEvent(Event{Kind: Opened})
 	s.workers.Add(2)

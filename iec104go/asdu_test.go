@@ -110,7 +110,7 @@ func TestMalformedASDU(t *testing.T) {
 }
 
 func TestRawASDU(t *testing.T) {
-	for _, id := range []byte{0, 2, 4, 17, 104, 106, 120, 127, 200, 255} {
+	for _, id := range []byte{0, 2, 4, 17, 104, 106, 200, 255} {
 		wire := []byte{id, 0x81, 0xef, 0x42, 0x34, 0x12, 0xde, 0xad, 0xbe, 0xef}
 		m, err := DecodeASDU(wire, DefaultParams())
 		if err != nil {

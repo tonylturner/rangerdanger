@@ -1,6 +1,6 @@
 # Protocol implementation conformance statement (PICS)
 
-Profile: **iec104go, phases 1a/1b**, Apache-2.0. This is an implementation
+Profile: **iec104go, phases 1a/1b/1c**, Apache-2.0. This is an implementation
 interoperability profile, **not** certification or a claim to implement a whole
 station. Selected editions: IEC 60870-5-104:2006+A1:2016, IEC 60870-5-101:2003.
 Test identifiers refer only to the publicly previewed IEC TS 60870-5-604:2016;
@@ -27,7 +27,7 @@ The codec can encode and decode either direction; it imposes no station role.
 | Information-object address | X selected 3 octets, raw range 0..16777215 |
 | Alternative address widths | X COT 1/2, CA 1/2, IOA 1/2/3; codec convenience, not selected 104 profile |
 | Nonzero OA with one-octet COT | Rejected rather than silently lost |
-| SQ=0 / SQ=1 | X both; all object addresses exposed; SQ=1 must be contiguous and not overflow |
+| SQ=0 / SQ=1 | X both; all object addresses exposed; generic SQ=1 contiguous/nonoverflowing; directory126 shares one IOA |
 | Object count | X 1..127; zero malformed; builder packs until byte/count capacity |
 | Truncation / trailing ASDU bytes | Rejected for supported types; unsupported payload opaque |
 | Unknown, excluded or private type | X RawASDU retains header and payload plus ErrUnsupportedType |
@@ -133,7 +133,7 @@ nominal usages here are descriptive, not procedure support claims.
 | 8, 9 | deact, deactcon | Deactivation / confirmation |
 | 10 | actterm | Activation termination |
 | 11, 12 | retrem, retloc | Remote/local command feedback |
-| 13 | file | File transfer cause retained, procedure unsupported |
+| 13 | file | Transparent-file procedure; see file profile below |
 | 20, 21..36 | inrogen, inro1..16 | Station/group interrogation data |
 | 37, 38..41 | reqcogen, reqco1..4 | Station/group counter data |
 | 44..47 | unknown_type, unknown_cause, unknown_asdu_address, unknown_object_address | Application rejection, never automatically generated |
@@ -224,14 +224,86 @@ accept-and-close, STOPDT drain, S versus piggyback timing, UTC/DOW/SU encoding.
 Protocol violations are never allowed merely because a differential peer also
 accepts them.
 
+## File transfer (phase 1c)
+
+**X encode/decode all eight types.** Source labels N/G/I refer to the
+URLs and exact qualifications in [PROVENANCE.md](PROVENANCE.md). Codec
+structure follows N/G §§7.3.6.1–7; type127 follows I §8.9, figure31.
+Widths/qualifiers follow N/G §§7.2.6.28–38. This is transparent byte transfer,
+not a structured disturbance/event/archive implementation or certification.
+
+| ID / element | Ordered layout after IOA | Bytes | SQ/count | Nominal COT |
+|---|---|---:|---|---|
+| 120 / FileReady | NOF16, LOF24, FRQ8 | 6 | 0/1 | 13 |
+| 121 / SectionReady | NOF16, NOS8, section LOF24, SRQ8 | 7 | 0/1 | 13 |
+| 122 / FileCall | NOF16, NOS8, SCQ8 | 4 | 0/1 | 5 directory; 13 otherwise |
+| 123 / FileLast | NOF16, NOS8, LSQ8, CHS8 | 5 | 0/1 | 13 |
+| 124 / FileACK | NOF16, NOS8, AFQ8 | 4 | 0/1 | 13 |
+| 125 / FileSegment | NOF16, NOS8, LOS8, data[LOS] | 4+LOS | 0/1 | 13 |
+| 126 / FileDirectory | NOF16, LOF24, SOF8, CP56 | 13 per entry | 1/1..127; shared IOA | 3 or 5 |
+| 127 / QueryLog | NOF16, Start CP56, Stop CP56 | 16 | 0/1 | 13 |
+
+Sources G §§7.3.6.1–7 and I §8.9 also list COT44–47 for120–125/127;
+no automatic generic diagnostics are generated. Direction is deliberately
+not codec-enforced. The download sends120/121/123/125/126 in monitor direction,
+122 and124 in control direction; replies/errors may reverse those directions.
+The codec preserves every qualifier/reserved octet and zero lengths losslessly;
+procedure policy below is stricter than the codec.
+
+### Decisions requiring peer/profile agreement
+
+Every **choice** below is an application profile decision, not an assertion
+that the public sources normatively settle it. Explicit sources distinguish
+verified wire meanings from our choices for the research report's §7 gaps.
+
+| ID | Implemented decision and evidence boundary |
+|---|---|
+| F1 | Directory call122 uses COT5, NOF=NOS=SCQ=0 at explicit CA/OA/IOA. This exact tuple is a **choice** because G's directory service does not settle all placeholders. Other tuples receive SCQ unexpected-service error3. |
+| F2 | Directory126 is SQ1 with **the same IOA on every exposed Object**, not incrementing synthetic addresses. Multiple ASDUs complete only on SOF.LFD (0x20), never ACT-TERM; G §7.3.6.7 / §7.4.11.2.6. Provider LFD bits are replaced with one final LFD; extra entries after LFD in one ASDU are rejected. |
+| F3 | Empty/unavailable/over-limit directory and zero-length directory entries receive122/COT5 with SCQ error1 (requested memory unavailable), not a fabricated empty entry or terminator. This pairing is a **choice** using the verified SCQ error table. |
+| F4 | Zero-length files/sections and duplicate/zero section numbers are not served. Selection returns120 FRQ=0x80, no accepted zero-content sequence. Received zero LOF/LOS in an otherwise positive download fails ordering. N/G mark zero lengths unused; rejection choice is conservative. Zero fields in negative confirmations remain encodable. |
+| F5 | NOF is an opaque16-bit application identifier, not forced to G's structured categories1–4 or a vendor running counter. Sections use unique nonzero8-bit numbers in provider order (not necessarily contiguous); calls accept only the currently offered section. Earlier/later/unknown section calls receive SCQ error5. These ordering restrictions are choices. |
+| F6 | Select122/op1 → ready120; call-file122/op2 → ready121; call-section122/op6 → segments125 → last123/LSQ3 → ACK124/AFQ3; next section or file-end123/LSQ1 → ACK124/AFQ1. N §7.4.11.1 mapped to104 by I §7.11; no101 polls, link-layer ACKs or invented ACT-CON/TERM. Final file-end NOS uses/requires the last section number (**choice**, exact tuple not settled by handoff). |
+| F7 | CHS is sum(content) mod256, separate section/file scopes, N/G §7.2.6.37. A bad section gets AFQ0x24; a bad complete file gets AFQ0x22. Accepted sections alone contribute to total length/checksum. The whole advertised length must match, and malformed/duplicate/unordered indications are rejected rather than guessed. |
+| F8 | `Options.Files.SectionRetries` defaults0, range0..10. Only checksum-failed sections can be recalled: AFQ0x24 then122/op6 for that section; server retains it only within its configured retry budget. Both peers must agree. No automatic whole-file, timeout, duplicate-message or uncertain-control retry. G §7.4.11.2.7 permits recalls, but this precise budget/sequence is a **choice**. |
+| F9 | `Options.Files.Timeout` defaults30s (>0), independent of t0–t3. Client bounds each send/wait (directory: whole directory exchange); server bounds provider/admission work and idle selected state. Caller deadline bounds the entire initiating helper. This numeric/default/reset policy is **not** derived from104 timers. Application timers use wall time, not the injected APCI clock. |
+| F10 | `QueuePoll` defaults10ms (>0) and retries only **local unadmitted queue entries**, not wire APDUs. Server worker waits boundedly for Send capacity without blocking the callback or APCI. Client helper admission failure remains explicit ErrQueueFull; it does not silently wait/retry a request. These are choices. |
+| F11 | `MaxFileSize` defaults16777215 bytes, range1..16777215; `DirectoryLimit` defaults4096 entries (>0). Zero options select defaults. Whole snapshots are bounded, not filesystem-backed streams. Provider errors/invalid snapshots reject selection via FRQ0x80; directory failures use F3. Limits are choices; uint24 width is verified. |
+| F12 | Deactivate-file122/op3 for the active identity clears serving state and returns120/FRQ0. Idle/unknown-file calls receive SCQ error4; unknown selection receives120/FRQ0x80 (G §§7.4.11.2.2–3). These exact state/error combinations are conservative choices from verified operations/errors. |
+| F13 | Controlled idle timeout sends123/LSQ2; client failure best-effort admits122/op3. If abort/admission cannot proceed or serving I/O/provider deadline expires, request transport closure rather than leak a worker or pretend success. STOPDT/link loss clears file state. G §7.4.11.2.7 establishes interruption/deactivation in the cited download scope; timing/error-delivery details here are choices. |
+| F14 | Delete, select-section, deactivate-section, unsolicited upload offers/data and unsupported ordered services receive SCQ error3. No upload or deletion engine is fabricated. N §7.4.11.2 documents an upload success path, but task's provider/download boundary and incomplete negative states do not establish an upload receiver. |
+| F15 | QueryLog codec retains inclusive endpoints, all-zero begin/end sentinels and both-zero all-records semantics (I §8.9). The transparent-file handler does **not** accept positive QueryLog or interpret archives. It rejects all queries, including reversed/empty/unsupported/malformed-calendar ranges, with120 FRQ0x80 at the query's NOF. This conservative negative file-request response is a **profile choice**, not a verified normative type127 acceptance/rejection exchange. Applications implementing logs must route127 to their own handler instead. No fabricated archive, date normalization or positive continuation. |
+| F16 | File negative replies use COT5/13 with header P/N=false and qualifiers carrying the error; they retain CA/OA/IOA/NOF, use the requested NOS for SCQ errors and NOS0 for unsupported non-SCQ services (**echo choices**); no automatic COT44–47. The handoff does not settle every P/N case, so this is a choice. Client recognizes peer header negatives/generic diagnostics as ErrNegativeResponse. Test-marked/negative requests are logged without executing providers; application chooses generic diagnostics with Mirror. |
+| F17 | A file failure after admission, including an explicit negative, atomically fences all later helpers with ErrProcedureUncertain; reconnect. Successful final ACK requires full Write, not queue admission. All file legs use the existing reader-tagged write boundary; early confirmations cannot satisfy queued requests. Conservative correlation choice; no transaction ID exists. |
+| F18 | File responses are streamed out of the transaction buffer as consumed, bounded by EventQueue pending responses; ordinary helpers retain their existing bounded history. Recorded overflow dominates success and finalization is atomic. File helpers return bounded content/entries, not an unbounded raw response history. |
+| F19 | Provider snapshots transfer slice ownership, must honor ctx and permit cross-connection calls. One serial worker per connection uses an EventQueue-sized inbox; overflow logs and RequestClose, never silent loss. Closed cancels/joins it. All normal ordered events/ASDUs still reach a composed application handler. Segment decoding, Mirror, Builder admission and snapshots deep-copy data; Session.Send remains nonblocking. These are original API/lifetime choices. |
+| F20 | Segment ceiling defaults236 data bytes, recomputed from249−header−IOA−4 for alternate Params. Raw codec retains invalid calendars/reserved bits; existing UTC/2000–2099 interpretation is unchanged. Directory timestamps and QueryLog sentinels do not add a new calendar policy. No archive/zip/payload structure is imposed. I figure4 + N/G layout give the size arithmetic; remaining choices preserve the established codec. |
+
+### Evidence boundary
+
+Eight independent synthetic wire-position goldens and both fuzz targets cover
+120–127. Go controller/provider peers cover multi-ASDU directories, multi-section
+downloads larger than the response history, checksum errors/recalls, unknown
+file/section, aborts, unsupported requests, timeouts and cancellation/joining.
+The supplied §3a lacks the detailed layouts and state table; choices F1–F20
+make its remaining ambiguities explicit rather than inventing normative rules.
+
+The generated capture is **not** a reference implementation trace: Go-peer
+APDUs plus synthetic TCP envelopes and a separate eight-golden stream.
+tshark4.6.7 parses APCI/ASDU envelopes and names120–127 but leaves their
+information elements as **Raw Data**. It does not verify file fields, qualifiers,
+content checksums, directory/QueryLog times or procedure ordering. A zero
+malformed count proves framing/envelope dissection only; there is no C-reference
+differential or independent positive QueryLog interoperability claim.
+
 ## Exclusions and conformance evidence
 
 | Item | Status |
 |---|---|
-| File transfer 120..127 | — outside scope (opaque RawASDU only) |
+| File transfer 120..127 | X typed codec; transparent download/directory helpers in both station roles; exclusions below |
 | CP24 process types, legacy test 104 and delay acquisition 106 | — outside selected 104 profile (opaque RawASDU only) |
 | Security extensions, TLS, shared redundancy groups | — no implementation claim |
 | IEC TS 60870-5-604:2016 5.3.2.10–39 | Public-preview APCI requirements inform synthetic codec tests; not a certification test execution |
 | 5.3.2.50 and procedure test groups listed in preview | Deterministic session/procedure tests informed by the public evidence; full normative test procedures not available from preview |
-| Golden evidence | 14 historical first-party APDUs, all exact round-trips; synthetic byte-position tests for all 46 types/SQ modes |
-| Differential/live conformance | Later phases; no Docker or reference peer run in phases 1a/1b |
+| Golden evidence | 14 historical first-party APDUs, all exact round-trips; synthetic byte-position tests for all 54 types with their permitted SQ/count layouts |
+| Differential/live conformance | Later phases; no Docker or reference peer run in phases 1a/1b/1c |

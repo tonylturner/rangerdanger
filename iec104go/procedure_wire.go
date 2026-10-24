@@ -53,6 +53,10 @@ func (c *Client) sendProcedure(t *transaction, request ASDU, match func(Message)
 		t.mu.Unlock()
 		return err
 	}
+	if t.streaming && len(t.responses) != 0 {
+		t.mu.Unlock()
+		return ErrProcedureOrder
+	}
 	leg := &procedureLeg{tx: t}
 	t.leg = leg
 	t.match = match

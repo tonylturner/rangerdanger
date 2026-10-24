@@ -91,6 +91,7 @@ type Tap func(Direction, uint64, time.Time, []byte)
 // selects defaults, but individual zero timers/windows in a custom APCI fail.
 type Options struct {
 	APCI                  APCI
+	Files                 FileOptions
 	Params                Params
 	SendQueue, EventQueue int
 	MaxConnections        int
@@ -103,7 +104,7 @@ type Options struct {
 // DefaultOptions selects bounded queues (64 sends, 256 callback events) and
 // eight independent server connections. There is no implicit originator address.
 func DefaultOptions() Options {
-	return Options{APCI: DefaultAPCI(), Params: DefaultParams(), SendQueue: 64, EventQueue: 256, MaxConnections: 8, Clock: wallClock{}, Logf: log.Printf}
+	return Options{Files: DefaultFileOptions(), APCI: DefaultAPCI(), Params: DefaultParams(), SendQueue: 64, EventQueue: 256, MaxConnections: 8, Clock: wallClock{}, Logf: log.Printf}
 }
 func (o Options) normalized() (Options, error) {
 	if o.APCI == (APCI{}) {
@@ -126,6 +127,11 @@ func (o Options) normalized() (Options, error) {
 	}
 	if o.Logf == nil {
 		o.Logf = log.Printf
+	}
+	var fileErr error
+	o.Files, fileErr = o.Files.normalized()
+	if fileErr != nil {
+		return o, fileErr
 	}
 	if err := o.APCI.Validate(); err != nil {
 		return o, err

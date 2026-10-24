@@ -126,6 +126,13 @@ func FuzzAPDUReader(f *testing.F) {
 	for _, g := range loadGoldens(f) {
 		f.Add(unhex(f, g.Hex))
 	}
+	for _, v := range fileGoldens(f) {
+		b, err := (Frame{Kind: IFrame, ASDU: fileGoldenASDU(f, v)}).MarshalBinary()
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(b)
+	}
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, b []byte) {
 		reader := NewAPDUReader(bytes.NewReader(b))
@@ -159,6 +166,9 @@ func FuzzDecodeASDU(f *testing.F) {
 		if frame, err := DecodeFrame(b); err == nil && frame.Kind == IFrame {
 			f.Add(frame.ASDU, uint8(1), uint8(1), uint8(2))
 		}
+	}
+	for _, v := range fileGoldens(f) {
+		f.Add(fileGoldenASDU(f, v), uint8(1), uint8(1), uint8(2))
 	}
 	// Include every supported type and SQ mode as structured seeds; goldens alone
 	// cover only four IDs and would leave most element decoders unexplored.

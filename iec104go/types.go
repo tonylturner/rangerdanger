@@ -149,6 +149,14 @@ var typeNames = map[TypeID]string{
 	P_ME_NB_1: "P_ME_NB_1",
 	P_ME_NC_1: "P_ME_NC_1",
 	P_AC_NA_1: "P_AC_NA_1",
+	F_FR_NA_1: "F_FR_NA_1",
+	F_SR_NA_1: "F_SR_NA_1",
+	F_SC_NA_1: "F_SC_NA_1",
+	F_LS_NA_1: "F_LS_NA_1",
+	F_AF_NA_1: "F_AF_NA_1",
+	F_SG_NA_1: "F_SG_NA_1",
+	F_DR_TA_1: "F_DR_TA_1",
+	F_SC_NB_1: "F_SC_NB_1",
 }
 
 var elementSizes = map[TypeID]int{
@@ -198,6 +206,13 @@ var elementSizes = map[TypeID]int{
 	P_ME_NB_1: 3,
 	P_ME_NC_1: 5,
 	P_AC_NA_1: 1,
+	F_FR_NA_1: 6,
+	F_SR_NA_1: 7,
+	F_SC_NA_1: 4,
+	F_LS_NA_1: 5,
+	F_AF_NA_1: 4,
+	F_DR_TA_1: 13,
+	F_SC_NB_1: 16,
 }
 
 // String returns the standard mnemonic, or the numeric ID if unsupported.
@@ -209,6 +224,7 @@ func (t TypeID) String() string {
 }
 
 // ElementSize reports the supported fixed information-element size, excluding IOA.
+// Variable-length F_SG_NA_1 returns (0, false); Supported also includes it.
 func (t TypeID) ElementSize() (int, bool) { n, ok := elementSizes[t]; return n, ok }
 
 // COT is the six-bit cause; negative confirmation and test are separate flags.
@@ -290,3 +306,6 @@ func (c COT) String() string {
 	}
 	return fmt.Sprintf("COT(%d)", c)
 }
+
+// Supported reports whether typed encoding and decoding are implemented.
+func (t TypeID) Supported() bool { _, ok := elementSizes[t]; return ok || t == F_SG_NA_1 }
