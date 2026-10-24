@@ -141,9 +141,6 @@ func (c *Client) Directory(ctx context.Context, k FileKey) (entries []FileDirect
 		}
 		for i, o := range a.Objects {
 			d := o.Element.(FileDirectory)
-			if d.Length == 0 {
-				return nil, ErrProcedureOrder
-			}
 			entries = append(entries, d)
 			if len(entries) > c.opts.Files.DirectoryLimit {
 				return nil, ErrQueueFull

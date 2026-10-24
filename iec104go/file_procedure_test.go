@@ -116,7 +116,6 @@ func TestFileProcedureProviderNegatives(t *testing.T) {
 		directory bool
 	}{
 		{"empty directory", memoryFiles{}, true},
-		{"directory zero length", memoryFiles{entries: []FileDirectory{{Name: 1}}}, true},
 		{"zero file", memoryFiles{}, false},
 		{"zero section", memoryFiles{file: File{[]FileSection{{1, nil}}}}, false},
 		{"duplicate section", memoryFiles{file: File{[]FileSection{{1, []byte{1}}, {1, []byte{2}}}}}, false},

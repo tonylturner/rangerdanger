@@ -180,7 +180,7 @@ func (w *fileServing) handle(ctx context.Context, m Message) error {
 		call := a.Objects[0].Element.(FileCall)
 		k.Name = call.Name
 		if h.Cause == Request {
-			if w.state != 0 || call != (FileCall{}) {
+			if w.state != 0 || call.Qualifier != 0 {
 				return w.negative(ctx, k, call, FileUnexpectedService, Request)
 			}
 			return w.directory(ctx, k)
@@ -195,6 +195,9 @@ func (w *fileServing) handle(ctx context.Context, m Message) error {
 		}
 		if call.Qualifier == SelectFile && w.state == 0 {
 			return w.selectFile(ctx, k, call)
+		}
+		if call.Qualifier == SelectFile {
+			return w.negative(ctx, k, call, FileUnexpectedService, FileTransfer)
 		}
 		if w.state == 0 || k != w.key {
 			return w.negative(ctx, k, call, FileUnknownName, FileTransfer)
@@ -225,10 +228,10 @@ func (w *fileServing) handle(ctx context.Context, m Message) error {
 		ack := a.Objects[0].Element.(FileACK)
 		k.Name = ack.Name
 		if w.state == 0 || k != w.key {
-			return w.send(ctx, k, FileACK{ack.Name, ack.Section, NegativeFileACK | FileUnknownName<<4}, FileTransfer)
+			return w.negative(ctx, k, FileCall{}, FileUnknownName, FileTransfer)
 		}
 		if ack.Section != w.file.Sections[w.index].Number {
-			return w.send(ctx, k, FileACK{ack.Name, ack.Section, NegativeSectionACK | FileUnknownSection<<4}, FileTransfer)
+			return w.negative(ctx, k, FileCall{}, FileUnknownSection, FileTransfer)
 		}
 		if w.state == 3 && ack.Qualifier == PositiveSectionACK {
 			if w.index+1 < len(w.file.Sections) {
@@ -253,7 +256,10 @@ func (w *fileServing) handle(ctx context.Context, m Message) error {
 			w.state = 2
 			return nil
 		}
-		return w.abort(ctx)
+		if w.state == 3 && ack.Qualifier&15 == NegativeSectionACK || w.state == 4 && ack.Qualifier&15 == NegativeFileACK {
+			return w.abort(ctx)
+		}
+		return w.negative(ctx, k, FileCall{}, FileUnexpectedService, FileTransfer)
 	}
 	// Incoming offers/data constitute unsupported uploads, not download state.
 	// A verified SCQ unexpected-service status rejects these without guessing an
@@ -304,7 +310,7 @@ func (w *fileServing) directory(ctx context.Context, k FileKey) error {
 		return w.negative(ctx, k, FileCall{}, FileMemoryUnavailable, Request)
 	}
 	for _, d := range entries {
-		if d.Length == 0 || d.Length > w.s.opts.Files.MaxFileSize {
+		if d.Length > w.s.opts.Files.MaxFileSize {
 			return w.negative(ctx, k, FileCall{}, FileMemoryUnavailable, Request)
 		}
 	}
