@@ -54,6 +54,17 @@ func (f *FileServer) Handler(ctx context.Context, e Event) {
 		return
 	}
 	if e.Kind == Stopped || e.Kind == ASDUReceived && isFileType(e.ASDU.GetHeader().Type) {
+		if e.Kind == ASDUReceived {
+			// Composition returns the original to application code immediately;
+			// the asynchronous worker must own its message before that happens.
+			owned, err := cloneMessage(e.ASDU)
+			if err != nil {
+				w.report(err)
+				w.s.RequestClose()
+				return
+			}
+			e.ASDU = owned
+		}
 		select {
 		case w.in <- e:
 		case <-w.done:
