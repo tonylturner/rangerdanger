@@ -984,7 +984,7 @@ dpiForbiddenNotice:
 
 # field-intrazone from Weak is omitted: lan2 → lan2 stays on the bridge.
 # pin-rtac-to-field also owns the non-GPS UDP/123 restriction.
-# The logging overlay restores the reference HTTP rule’s empty ICS object.
+# The required HTTP rule preserves the reference policy's empty ICS object.
 # No global management/return ALLOW rules: management comes from the envelope.
 plan:
   rules:
@@ -1204,6 +1204,7 @@ plan:
       protocols:
       - name: tcp
         port: '8080'
+      ics: {}
       action: ALLOW
   - action: pin-rtac-to-field
     selected:
@@ -1312,8 +1313,6 @@ plan:
       - rtac-to-field-http
       - deny-ot-to-field-direct
       - gps-to-field-ntp
-      ics:
-        rtac-to-field-http: {}
   proof:
   - id: A1
     from: rtac-1

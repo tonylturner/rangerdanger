@@ -162,6 +162,40 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 	}
 }
 
+func TestPlanRequiredPredicateIndependentOfLogging(t *testing.T) {
+	pkg := planPackage(t, "us-dnp3-substation")
+	const id = "rtac-to-field-http"
+	for action, detect := range pkg.Curriculum.Plan.Detect {
+		if _, exists := detect.ICS[id]; exists {
+			t.Fatalf("%s owns the required HTTP rule's predicate", action)
+		}
+	}
+	httpRule := func(actions []string) PlanRule {
+		t.Helper()
+		for _, entry := range mustCompilePlan(t, pkg, actions).Rules {
+			if entry.Rule.ID == id {
+				if entry.Origin.Kind != "required" {
+					t.Fatalf("HTTP rule origin = %+v, want required", entry.Origin)
+				}
+				return entry.Rule
+			}
+		}
+		t.Fatal("required HTTP rule missing")
+		return PlanRule{}
+	}
+	base, logged := httpRule(nil), httpRule([]string{"improve-logging"})
+	if !reflect.DeepEqual(base.ICS, &PlanICS{}) {
+		t.Fatalf("required HTTP predicate = %+v, want empty nonnil predicate", base.ICS)
+	}
+	if base.Log || !logged.Log {
+		t.Fatal("logging selection must only enable logging on the required HTTP rule")
+	}
+	logged.Log = false
+	if !reflect.DeepEqual(base, logged) {
+		t.Fatal("logging selection changed the required HTTP rule beyond its log flag")
+	}
+}
+
 func TestPlanDoesNotReadLegacyCompilerFields(t *testing.T) {
 	pkg := planPackage(t, "eu-iec104-substation")
 	want := mustCompilePlan(t, pkg, nil)
