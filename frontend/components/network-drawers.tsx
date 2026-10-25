@@ -415,7 +415,7 @@ export function ViewModeToolbar({
 // in. Two distinct sections so the student can see the teaching point
 // at a glance:
 //
-//   • Intra-zone (firewall-blind): hard-coded peer flows like HMI→RTAC.
+//   • Intra-zone (firewall-blind): peer flows declared by the active package.
 //     Important context that the firewall view is incomplete.
 //
 //   • Cross-zone (firewall-governed): rules from containd, framed as

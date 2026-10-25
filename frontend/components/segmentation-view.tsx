@@ -287,7 +287,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           on the wire so students can watch the policy enforce when
           they fire a probe from a terminal. Empty under the weak
           baseline by design (no rules have log:true). */}
-      <LiveEvents compact={compact} activeConfig={activeConfig} usWording={packagePolicies.usWording} />
+      <LiveEvents compact={compact} activeConfig={activeConfig} activePolicyLabel={activeConfig ? activeMeta.label : "Policy loading…"} usWording={packagePolicies.usWording} />
 
       {/* Dynamic policy evaluation - driven by the dropdown selection.
           Rows that differ from the currently-active policy get a
@@ -436,10 +436,12 @@ function eventEndpoints(e: NetworkEvent): { src: string; dst: string } {
 function LiveEvents({
   compact,
   activeConfig,
+  activePolicyLabel,
   usWording,
 }: {
   compact: boolean;
   activeConfig: string | null;
+  activePolicyLabel: string;
   usWording: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -466,7 +468,7 @@ function LiveEvents({
         className="mb-1.5 flex w-full items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-300"
       >
         <span className="flex items-center gap-2">
-          Live DPI Events
+          Live Firewall Events · {activePolicyLabel}
           {events.length > 0 && (
             <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
               {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {denyCount} deny
@@ -493,7 +495,7 @@ function LiveEvents({
   );
 }
 
-// EmptyEventsHint - policy-aware empty-state message for the Live DPI
+// EmptyEventsHint - policy-aware empty-state message for the Live Firewall
 // Events panel. Under the weak baseline the panel is silent by design
 // (no shipped rule has log:true - mirrors a real misconfigured
 // firewall and is part of the segmentation lesson); under hardened
