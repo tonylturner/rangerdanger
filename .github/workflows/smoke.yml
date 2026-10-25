@@ -239,10 +239,7 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
-      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
-        # The frontend generator is unchanged. Keep its advisory conformance
-        # check on the disposable built-image stack, not on cached old images.
-        continue-on-error: true
+      - name: Compiled full plan must block all 13 unauthorized flows
         run: |
           set -euo pipefail
           API=http://localhost:8088
@@ -259,14 +256,16 @@ jobs:
             exit "$rc"
           }
           trap restore_weak EXIT
-          jq '.config' scripts/tests/fixtures/rd01-full-plan.json >"$receipts/plan.json"
+          cp scripts/tests/fixtures/rd01-full-plan.json "$receipts/plan.json"
           curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
-            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-custom" >"$receipts/apply.json"
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
+          jq -e '.applied == true and .warnings == [] and .plan.label == "hardened"' "$receipts/apply.json"
           sleep 3
           curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+          jq -e '.planProof.applicable and .planProof.pass and .planProof.hashStable and .acceptance.pass' "$receipts/report.json"
           jq -e '.summary | .result == "PASS" and .authorized_pass == 8 and
-            .authorized_total == 8 and .unauthorized_pass == 11 and
-            .unauthorized_total == 11 and .skipped == 0' "$receipts/report.json"
+            .authorized_total == 8 and .unauthorized_pass == 13 and
+            .unauthorized_total == 13 and .skipped == 0' "$receipts/report.json"
 
       - name: Dump container logs on failure
         if: failure()

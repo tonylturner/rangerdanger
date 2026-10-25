@@ -37,6 +37,10 @@ class SmokeLoopTests(unittest.TestCase):
 
 
 class ExtractTests(unittest.TestCase):
+    def test_policy_apply_routes_are_never_executed(self):
+        for endpoint in ("/api/firewall/apply", "/api/firewall/apply-plan"):
+            self.assertTrue(extract.should_skip("curl -X POST " + endpoint))
+
     def test_inventory_is_reviewed_and_pinned(self):
         rows = extract.extract(ROOT)
         data = json.loads(extract.EXPECTATIONS.read_text())
