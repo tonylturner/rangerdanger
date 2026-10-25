@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Scenario } from "../lib/api";
 import { memoryStorage } from "../lib/memory-storage.test-util";
@@ -14,13 +15,14 @@ vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: 
 vi.mock("../lib/operator-queries", () => ({
   useOperatorView: () => ({ status: "loading" }), usePackagePolicies: () => undefined,
 }));
-vi.mock("../lib/live-queries", () => ({
+vi.mock("../lib/live-queries", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../lib/live-queries")>(),
   useActiveFirewall: () => ({}), useSubstationState: () => ({}),
   useSubstationAudit: () => ({}), useRefreshLive: () => vi.fn(),
 }));
 vi.mock("./runner-operator-status", () => ({ RunnerOperatorStatus: () => null }));
 vi.mock("./scenario-description-blocks", () => ({
-  DescriptionSegments: () => null, RemediationPlanSummary: () => null,
+  DescriptionSegments: () => null,
 }));
 vi.mock("./scenario-runner-panels", () => ({
   CommandAuditPanels: () => null, StepNavigator: () => null, TerminalPanel: () => null,
@@ -46,11 +48,13 @@ describe("Reset Progress", () => {
   it.each(["us-dnp3-substation", "eu-iec104-substation"])(
     "returns %s from Summary to the first usable step and preserves other records", (packageId) => {
       scope.packageId = packageId;
-      vi.stubGlobal("window", { localStorage: memoryStorage(), confirm: () => true });
+      vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: memoryStorage(), confirm: () => true }));
+      vi.stubGlobal("document", new EventTarget());
+      const client = new QueryClient();
       saveProgress(scope, scenario.id, { completedStepIds: ["first", "second"], notes: "old", cmdLog: ["old"] });
       saveProgress(scope, "another", { completedStepIds: ["kept"], notes: "keep", cmdLog: [] });
       let tree!: ReactTestRenderer;
-      act(() => { tree = create(<ScenarioRunner scenario={scenario} onExit={() => {}} />); });
+      act(() => { tree = create(<QueryClientProvider client={client}><ScenarioRunner scenario={scenario} onExit={() => {}} /></QueryClientProvider>); });
       const click = (label: string) => act(() => tree.root.findByProps({ "aria-label": label }).props.onClick());
       try {
         click("View Summary");
@@ -66,6 +70,7 @@ describe("Reset Progress", () => {
         expect(JSON.stringify(tree.toJSON())).toContain("Second instruction");
       } finally {
         act(() => tree.unmount());
+        client.clear();
       }
     },
   );

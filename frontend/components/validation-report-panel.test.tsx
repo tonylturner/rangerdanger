@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { type ValidationReport } from "../lib/api";
+import { US_PLANS } from "../lib/plan-fixtures.test-util";
 import { ValidationReportPanel } from "./validation-report-panel";
 
 const report: ValidationReport = {
+  planProof: { applicable: false, pass: false, policyHash: "", hashStable: false, skipped: 0, rows: [] },
+  acceptance: { pass: true, skipped: 0, rows: [], preventionGaps: [] },
   markdown: "Segmentation evidence remains visible.",
   summary: {
     authorized_pass: 2,
@@ -29,7 +32,7 @@ afterEach(() => {
 
 async function generate(answer: ValidationReport) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(answer))));
-  act(() => { panel = create(<ValidationReportPanel />); });
+  act(() => { panel = create(<ValidationReportPanel expectations={US_PLANS[0].expectations} />); });
   await act(async () => { await panel.root.findByType("button").props.onClick(); });
 }
 
@@ -72,9 +75,32 @@ describe("validation proof metadata", () => {
   });
 
   it("preserves a backend failure independently of the stability warning", async () => {
-    await generate({ ...report, summary: { ...report.summary, result: "FAIL" }, policy_stable: false });
+    await generate({ ...report, acceptance: { ...report.acceptance, pass: false }, policy_stable: false });
     expect(text()).toContain("FAIL");
     expect(text()).toContain("text-amber-300");
     expect(text()).toContain(report.markdown);
   });
+  it("separates a passing Weak plan proof from failed Hardened acceptance and lists tuple gaps", async () => {
+    await generate({ ...report,
+      planProof: { applicable: true, pass: true, policyHash: "applied-hash", hashStable: true, skipped: 0, rows: [{ id: "U1", expected: "allow", observed: "allow", pass: true }] },
+      acceptance: { pass: false, skipped: 0, rows: [{ id: "U1", expected: "deny", observed: "allow", pass: false }], preventionGaps: ["U1"] },
+    });
+    const out = text();
+    expect(out).toContain("Applied plan proof: ");
+    expect(out).toContain("applied-hash");
+    expect(out).toContain("Hardened acceptance: ");
+    expect(out).toContain("allow / PASS");
+    expect(out).toContain("deny");
+    expect(out).toContain("Prevention gaps against Hardened");
+    expect(out).toContain("10.10.10.50");
+    expect(out).toContain("10.20.20.10");
+    expect(out).toContain("TCP/3389");
+  });
+  it("shows skipped and unstable proof failures without calling a manual policy a plan", async () => {
+    await generate({ ...report, acceptance: { pass: false, skipped: 1, rows: [{ id: "U1", expected: "deny", observed: "skipped", pass: false }], preventionGaps: [] } });
+    expect(text()).toContain("not applicable (active policy is not a plan)");
+    expect(text()).toContain("skipped");
+    expect(text()).toContain("FAIL");
+  });
+
 });

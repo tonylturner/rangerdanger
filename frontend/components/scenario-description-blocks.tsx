@@ -40,7 +40,7 @@ import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   injectDynamicContent,
 } from "../lib/scenario-runner-logic";
-import { curriculumForPlan, type ActionSummary, type DynamicExercisePlan } from "../lib/remediation-to-rules";
+import type { CompiledPlan, PlanExpectation } from "../lib/api";
 import { ValidationReportPanel } from "./validation-report-panel";
 
 // CommandBlock renders a single command line with copy + (optional)
@@ -392,7 +392,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
                 <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                 <span className="text-slate-300">
                   <span className="font-bold">{c.req.label}</span>
-                  <span className="text-slate-500"> - {c.req.verdict}, fully addressed by your plan</span>
+                  <span className="text-slate-500"> - {c.req.verdict}, planned actions selected (not prevention proof)</span>
                 </span>
               </div>
             );
@@ -423,7 +423,7 @@ export function PlanCoveragePanel({ title }: { title: string }) {
         })}
       </div>
       <div className="mt-2 text-[10px] text-slate-500 italic">
-        Read-only snapshot of your <Link
+        Selection coverage only, not firewall proof. Read-only snapshot of your <Link
           href={`/exercises/${scope.curriculum?.roles.planning}`}
           className="text-cyan-500 hover:text-cyan-300 underline underline-offset-2"
         >Lab 1.4 plan</Link>. Edit selections there to update.
@@ -582,95 +582,6 @@ export function HintBlock({ title, body, runIdPrefix, runningId, onRun, scenario
   );
 }
 
-// Plan summary panel rendered in Exercise 3 Phase 3 - shows selected and
-// unselected remediation actions as styled cards rather than markdown text.
-export function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) {
-  const [showUnselected, setShowUnselected] = useState(false);
-
-  if (!plan.hasRemediationPlan) return null;
-  const binding = curriculumForPlan(plan);
-  const dpiNotice = binding.icsRules === "forbidden" ? binding.dpiForbiddenNotice : binding.dpiNotice;
-
-  return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 p-4">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-3">
-          Your Remediation Plan - {plan.selectedActions.length} actions selected
-        </div>
-        <div className="space-y-2">
-          {plan.selectedSummary.map((a) => (
-            <PlanActionCard key={a.id} action={a} selected />
-          ))}
-        </div>
-        {plan.includeDpi && (
-          <div className="mt-3 rounded-sm border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
-            <span className="font-bold">{dpiNotice.title}</span>{dpiNotice.description}
-          </div>
-        )}
-        {plan.enableLogging && (
-          <div className="mt-2 rounded-sm border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
-            <span className="font-bold">Logging enabled</span> - set <code className="bg-slate-800 px-1 rounded-sm text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
-          </div>
-        )}
-      </div>
-
-      {plan.unselectedSummary.length > 0 && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/30">
-          <button
-            onClick={() => setShowUnselected(!showUnselected)}
-            className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-slate-900/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Not selected - {plan.unselectedSummary.length} actions deferred
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-600">{showUnselected ? "hide" : "show"}</span>
-          </button>
-          {showUnselected && (
-            <div className="border-t border-slate-800 p-4 space-y-2">
-              <div className="text-[10px] text-slate-500 mb-2">
-                These actions were not in your plan. The attack paths they address remain open.
-              </div>
-              {plan.unselectedSummary.map((a) => (
-                <PlanActionCard key={a.id} action={a} selected={false} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PlanActionCard({ action, selected }: { action: ActionSummary; selected: boolean }) {
-  return (
-    <div className={`flex items-start gap-2.5 rounded border px-3 py-2 ${
-      selected
-        ? "border-sky-800/40 bg-sky-950/30"
-        : "border-slate-800/40 bg-slate-950/30 opacity-60"
-    }`}>
-      <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
-        selected ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-500"
-      }`}>
-        {selected ? "✓" : "-"}
-      </div>
-      <div className="min-w-0">
-        <div className={`text-[11px] font-bold ${selected ? "text-sky-300" : "text-slate-500"}`}>
-          {action.title}
-        </div>
-        <div className="text-[10px] text-slate-500 mt-0.5">{action.description}</div>
-        {selected && action.hasRules && (
-          <div className="text-[9px] text-sky-600 mt-0.5">→ produces firewall rules below</div>
-        )}
-        {selected && !action.hasRules && (
-          <div className="text-[9px] text-slate-600 mt-0.5">configuration / process change (no firewall rule)</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function DescriptionSegments({
   scenarioId,
   currentStep,
@@ -678,6 +589,7 @@ export function DescriptionSegments({
   stepId,
   stepDescription,
   dynamicPlan,
+  expectations,
   exerciseNodes,
   firewallTrack,
   autoRunning,
@@ -690,7 +602,8 @@ export function DescriptionSegments({
   stepTitle: string;
   stepId: string;
   stepDescription: string;
-  dynamicPlan: DynamicExercisePlan | null;
+  dynamicPlan: CompiledPlan | null;
+  expectations?: PlanExpectation[];
   exerciseNodes: string[];
   firewallTrack: "guided" | "technical" | null;
   autoRunning: string | null;
@@ -705,8 +618,8 @@ export function DescriptionSegments({
     <>
             {/* Description with inline command blocks and hint panels */}
             {step?.description && (() => {
-              const effectiveDesc = scenario.id === scope.curriculum?.roles.implementation && dynamicPlan
-                ? injectDynamicContent(step.description, stepId, dynamicPlan)
+              const effectiveDesc = scope.curriculum && dynamicPlan
+                ? injectDynamicContent(step.description, stepId, dynamicPlan, scope.curriculum, Object.keys(scope.curriculum.roles).find((role) => scope.curriculum?.roles[role] === scenarioId))
                 : step.description;
               const segments = splitDescription(effectiveDesc);
               let bodyCmdIdx = 0;
@@ -800,7 +713,7 @@ export function DescriptionSegments({
                           key={`${scenario.id}-${currentStep}-${si}`}
                           className="my-3"
                         >
-                          <ValidationReportPanel />
+                          <ValidationReportPanel expectations={expectations} />
                         </div>
                       );
                     }

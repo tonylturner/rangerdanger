@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getSubstationHealth } from "../lib/api";
-import { useWorkshopStatus } from "../lib/live-queries";
+import { useActiveFirewall, useWorkshopStatus } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
@@ -12,6 +12,7 @@ import { WorkshopStatusCard } from "./overview-cards";
 export function UsWorkshopStatus() {
   const { data: ws, error: wsError } = useWorkshopStatus(5000);
   const policies = usePackagePolicies();
+  const active = useActiveFirewall(5000).data;
 
   const { data: health } = useQuery({
     queryKey: ["substation-health"],
@@ -25,8 +26,9 @@ export function UsWorkshopStatus() {
 
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
   const onlineCount = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
-  const firewallPolicy = ws?.firewall_config
-    ? activePolicyWording(ws.firewall_config, policies, US_WORKSHOP_POLICY_WORDING).label
+  const activeConfig = active?.active_config ?? ws?.firewall_config;
+  const firewallPolicy = activeConfig
+    ? activePolicyWording(activeConfig, policies, US_WORKSHOP_POLICY_WORDING, active?.policy_source, active?.plan).label
     : "Weak Baseline";
 
   return (

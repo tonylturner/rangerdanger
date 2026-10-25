@@ -1,0 +1,297 @@
+{
+  "packageId": "eu-iec104-substation",
+  "revision": 2,
+  "label": "weak",
+  "actions": [
+    {
+      "id": "restrict-enterprise-to-vendor",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-enterprise-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-vendor-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-enterprise-to-station",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "restrict-vendor-to-station",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "pin-rtu-to-field",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "tighten-firewall-objects",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "positive-validation",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "ids-deployment",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "ot-asset-inventory",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "vendor-zta-broker",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "modbus-dpi",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "iec104-dpi",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "improve-logging",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "station-architecture-review",
+      "kind": "plan",
+      "chosen": false
+    }
+  ],
+  "rules": [
+    {
+      "rule": {
+        "id": "operational-pin",
+        "description": "Required operational source pin",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "destinations": [
+          "10.40.40.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "remote-access-weak",
+        "description": "Remote access",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "dmz"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "1-65535"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "restrict-enterprise-to-vendor"
+      }
+    },
+    {
+      "rule": {
+        "id": "enterprise-field",
+        "description": "Enterprise field exposure",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-enterprise-to-field"
+      }
+    }
+  ],
+  "expectations": [
+    {
+      "id": "A1",
+      "category": "authorized",
+      "from": "rtu-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "owners": [],
+      "labs": [],
+      "note": "Operational conduit",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U1",
+      "category": "unauthorized",
+      "from": "kali-1",
+      "to": "vendor-jump-1",
+      "network": "vendor_net",
+      "port": 3389,
+      "owners": [
+        "restrict-enterprise-to-vendor"
+      ],
+      "labs": [
+        "implementation",
+        "hardening",
+        "validation"
+      ],
+      "note": "Exposure comparison",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.20.20.10"
+    },
+    {
+      "id": "U2",
+      "category": "unauthorized",
+      "from": "kali-1",
+      "to": "breaker-1",
+      "network": "field_net",
+      "port": 502,
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "labs": [
+        "hardening",
+        "validation"
+      ],
+      "note": "Exposure comparison",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.20"
+    }
+  ],
+  "policyHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "config": {
+    "schema_version": "0.1.0",
+    "interfaces": [
+      {
+        "name": "lan3",
+        "zone": "lan3",
+        "access": {
+          "mgmt": true,
+          "http": true,
+          "https": true,
+          "ssh": true
+        }
+      }
+    ],
+    "firewall": {
+      "defaultAction": "DENY",
+      "rules": [
+        {
+          "id": "operational-pin",
+          "description": "Required operational source pin",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.20/32"
+          ],
+          "destinations": [
+            "10.40.40.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "remote-access-weak",
+          "description": "Remote access",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "dmz"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "1-65535"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "enterprise-field",
+          "description": "Enterprise field exposure",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        }
+      ]
+    }
+  }
+}

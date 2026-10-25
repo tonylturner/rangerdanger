@@ -2,7 +2,7 @@
 
 import { MetricsOverview } from "./metrics-overview";
 import { DashboardStatusCard, QuickLink } from "./overview-cards";
-import { useWorkshopStatus } from "../lib/live-queries";
+import { useActiveFirewall, useWorkshopStatus } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { activePolicyWording, US_WORKSHOP_POLICY_WORDING } from "../lib/policy-wording";
 import { isRangeNotReady } from "../lib/range";
@@ -11,6 +11,7 @@ import { isRangeNotReady } from "../lib/range";
 export function UsDashboard() {
   const { data: ws, error: wsError } = useWorkshopStatus(5000);
   const policies = usePackagePolicies();
+  const active = useActiveFirewall(5000).data;
 
   // While the range is being replaced nothing is offline, it is not
   // there yet; the cards stay neutral and the range banner says why.
@@ -20,8 +21,9 @@ export function UsDashboard() {
   const deviceCount = ws?.device_comms ? Object.keys(ws.device_comms).length : 0;
   const devicesOk = ws?.device_comms ? Object.values(ws.device_comms).filter(Boolean).length : 0;
   const scenarioCount = ws?.scenario_count ?? 0;
-  const firewallPolicy = ws?.firewall_config
-    ? activePolicyWording(ws.firewall_config, policies, US_WORKSHOP_POLICY_WORDING).label
+  const activeConfig = active?.active_config ?? ws?.firewall_config;
+  const firewallPolicy = activeConfig
+    ? activePolicyWording(activeConfig, policies, US_WORKSHOP_POLICY_WORDING, active?.policy_source, active?.plan).label
     : "Weak Baseline";
 
   return (

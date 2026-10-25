@@ -1,6 +1,6 @@
 // Package-owned requirements connect saved design verdicts to planning actions.
 // The binding supplies labels, verdict-to-action mappings and effect semantics;
-// coverage reports full, partial or missing implementation without editing picks.
+// coverage reports full, partial or missing planned selections, not prevention.
 
 import type { CurriculumBinding } from "./api";
 import { decisionName, readCurriculum, type CurriculumScope } from "./curriculum-storage";
@@ -61,12 +61,6 @@ export function computeCoverage(requirements: Requirement[], selected: Set<strin
       return { req, status: "n/a", reason: `no remediation actions map to verdict "${req.verdict}"` };
     }
     const got = expected.filter((a) => selected.has(a));
-    if (curriculum?.icsRules === "forbidden" && got.some((id) => curriculum.groups[id]?.effect === "semantic")) {
-      return { req, status: "n/a", reason: "planned, not enforceable in this range yet" };
-    }
-    if (!curriculum?.legacyEffects && got.some((id) => curriculum?.groups[id]?.effect === "conceptual")) {
-      return { req, status: "n/a", reason: "planning-only (no policy effect)" };
-    }
     if (got.length === expected.length) {
       return { req, status: "covered", selectedActions: got };
     }

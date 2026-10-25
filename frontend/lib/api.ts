@@ -463,19 +463,19 @@ export type PlanProvenance = PlanRequest & { label: PlanLabel; policyHash: strin
 export type PlanAction = { id: string; kind: "enforce" | "detect" | "plan"; chosen: boolean };
 export type PlanRule = {
   id: string;
-  description: string;
+  description?: string;
   sourceZones?: string[];
   destZones?: string[];
   sources?: string[];
   destinations?: string[];
-  protocols?: { name: string; port: string }[];
-  ics?: CurriculumPredicate;
+  protocols?: { name: string; port?: string }[];
+  ics?: PlanICS;
   action: "ALLOW" | "DENY";
   log?: boolean;
 };
 export type PlanExpectation = {
   id: string; from: string; to: string; network: string; port: number;
-  category: "authorized" | "unauthorized"; owners: string[]; labs: string[];
+  category: "authorized" | "unauthorized"; owners: string[]; labs?: string[];
   note: string; planVerdict: "allow" | "deny"; hardenedVerdict: "allow" | "deny";
   bridged: boolean; fromIp: string; toIp: string;
 };
@@ -708,16 +708,14 @@ export type CurriculumBinding = {
   dpiForbiddenNotice: { title: string; description: string };
 };
 
-export type CurriculumPredicate = {
+export type PlanICS = {
   protocol?: string;
-  functionCodes?: number[];
   functionCode?: number[];
-  note?: string;
+  unitId?: number;
+  addresses?: string[];
+  objectClasses?: number[];
   readOnly?: boolean;
-  typeIds?: number[];
-  classes?: string[];
+  writeOnly?: boolean;
   direction?: string;
-  ca?: number;
-  ioa?: { start: number; end: number }[];
   mode?: string;
 };

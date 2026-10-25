@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import type { LabGraph, ZoneRuleSummary } from "../lib/api";
+import type { LabGraph, ZoneRuleSummary, PlanProvenance, PolicySource } from "../lib/api";
 import { nodeZone as flowNodeZone, type FlowContext } from "../lib/observed-flows";
+import { useActiveFirewall } from "../lib/live-queries";
 import { usePackagePolicies } from "../lib/operator-queries";
 import { policyApplyErrorText, useApplyPolicy } from "../lib/policy-apply";
 import {
@@ -85,9 +86,9 @@ const US_BADGE_WORDING: Record<string, PolicyWording> = {
   improved: { label: "Hardened", description: "" },
 };
 
-function policyBadgeText(activeConfig: string | undefined, policies: PackagePolicies): string {
+function policyBadgeText(activeConfig: string | undefined, policies: PackagePolicies, source?: PolicySource, plan?: PlanProvenance): string {
   if (!activeConfig) return "—";
-  return activePolicyWording(activeConfig, policies, US_BADGE_WORDING).label;
+  return activePolicyWording(activeConfig, policies, US_BADGE_WORDING, source, plan).label;
 }
 
 // Policy badge + quick-switch dropdown in the header. Styled as a
@@ -100,6 +101,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
   const apply = useApplyPolicy();
   const applying = apply.isPending;
   const packagePolicies = usePackagePolicies();
+  const active = useActiveFirewall(5000).data;
 
   if (!packagePolicies) return null;
 
@@ -141,7 +143,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="h-4 w-4"
           />
         )}
-        <span>Firewall · {policyBadgeText(activeConfig, packagePolicies)}</span>
+        <span>Firewall · {policyBadgeText(active?.active_config ?? activeConfig, packagePolicies, active?.policy_source, active?.plan)}</span>
         <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 

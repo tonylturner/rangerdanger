@@ -1,9 +1,10 @@
 "use client";
 
 import { Shield, ShieldOff, FileCheck2, FileEdit, AlertTriangle, Loader2 } from "lucide-react";
-import type { PolicySource } from "../lib/api";
+import type { PolicySource, PlanProvenance } from "../lib/api";
 import {
   CUSTOM_POLICY,
+  planLabel,
   HARDENED_ALIAS,
   HARDENED_POLICY,
   isHardened,
@@ -27,8 +28,7 @@ import {
  * Resting states by activeConfig + policy_source:
  *   activeConfig=the hardened policy      -> "Hardened reference" (emerald)
  *   activeConfig=another package policy   -> "Weak baseline" (rose)
- *   activeConfig=custom + plan-custom     -> "Your custom policy
- *                                            (Lab 1.4 plan)" (sky)
+ *   activeConfig=custom + plan            -> "Your plan — Weak/Partial/Hardened" (sky)
  *   activeConfig=custom + manual-custom   -> "Your custom policy
  *                                            (your containd commit)" (sky)
  *   activeConfig=custom + ""              -> "Your custom policy" (sky)
@@ -50,7 +50,7 @@ import {
 type Kind =
   | "weak"
   | "hardened-reference"
-  | "plan-custom"
+  | "plan"
   | "manual-custom"
   | "other-custom"
   | "unknown";
@@ -87,7 +87,7 @@ const STATE_STYLES: Record<Kind, Style> = {
     label: "",
     sub: "",
   },
-  "plan-custom": {
+  "plan": {
     border: "border-sky-800/70",
     bg: "bg-sky-950/40",
     dotBg: "bg-sky-500",
@@ -95,7 +95,7 @@ const STATE_STYLES: Record<Kind, Style> = {
     subColor: "text-sky-300",
     iconColor: "text-sky-300",
     label: "Your custom policy",
-    sub: "Built from your Lab 1.4 plan picks.",
+    sub: "Compiled by the backend from your plan picks.",
   },
   "manual-custom": {
     border: "border-sky-800/70",
@@ -139,7 +139,7 @@ const US_BANNER_WORDING: Record<string, PolicyWording> = {
 function deriveKind(activeConfig: string | null, policySource: PolicySource, policies: PackagePolicies | undefined): Kind {
   if (!activeConfig || !policies) return "unknown";
   if (activeConfig === CUSTOM_POLICY) {
-    if (policySource === "plan-custom") return "plan-custom";
+    if (policySource === "plan") return "plan";
     if (policySource === "manual-custom") return "manual-custom";
     return "other-custom";
   }
@@ -180,7 +180,7 @@ function StateIcon({ kind, className }: { kind: Kind; className?: string }) {
   const cls = className ?? "h-4 w-4";
   if (kind === "weak") return <ShieldOff className={cls} />;
   if (kind === "hardened-reference") return <Shield className={cls} />;
-  if (kind === "plan-custom") return <FileCheck2 className={cls} />;
+  if (kind === "plan") return <FileCheck2 className={cls} />;
   if (kind === "manual-custom" || kind === "other-custom") return <FileEdit className={cls} />;
   return <Loader2 className={cls + " animate-spin"} />;
 }
@@ -190,9 +190,11 @@ export function PolicyStatusBanner({
   policySource,
   expectedConfig,
   policies,
+  plan,
 }: {
   activeConfig: string | null;
   policySource: PolicySource;
+  plan?: PlanProvenance;
   /** From step.expected_config in the lab YAML. Undefined for steps
       that don't pin a policy (planning labs, intros, etc.) */
   expectedConfig?: string;
@@ -200,7 +202,8 @@ export function PolicyStatusBanner({
   policies: PackagePolicies | undefined;
 }) {
   const kind = deriveKind(activeConfig, policySource, policies);
-  const style = bannerStyle(kind, activeConfig, policies);
+  const base = bannerStyle(kind, activeConfig, policies);
+  const style = kind === "plan" && plan ? { ...base, label: `Your plan — ${planLabel(plan.label)}` } : base;
 
   // If the step doesn't pin a policy, or if it does and the current
   // policy satisfies it, show the informational banner.
@@ -247,9 +250,9 @@ export function PolicyStatusBanner({
             <span className={`text-sm font-semibold ${style.labelColor}`}>
               {style.label}
             </span>
-            {(kind === "plan-custom" || kind === "manual-custom") && (
+            {(kind === "plan" || kind === "manual-custom") && (
               <span className={`text-[10px] ${style.subColor}`}>
-                {kind === "plan-custom" ? "(Lab 1.4 plan)" : "(your containd commit)"}
+                {kind === "plan" ? "(Lab 1.4 plan)" : "(your containd commit)"}
               </span>
             )}
           </div>

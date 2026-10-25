@@ -24,13 +24,3 @@ export function loadRemediationPlan(scope: CurriculumScope): RemediationPlan | n
     return null;
   }
 }
-
-
-// Qualify planning claims without changing historical US banner prose.
-export function actionEffectLabel(binding: import("./api").CurriculumBinding, id: string): string {
-  if (binding.legacyEffects) return "";
-  const effect = binding.groups[id]?.effect;
-  if (effect === "semantic" && binding.icsRules === "forbidden") return "planned, not enforceable in this range yet";
-  if (effect === "conceptual" || binding.planningOnly?.includes(id)) return "planning-only";
-  return "";
-}

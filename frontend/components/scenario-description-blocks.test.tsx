@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import type { CurriculumBinding, PackageSummary } from "../lib/api";
 import { CurriculumScopeProvider } from "../lib/curriculum-scope";
 import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
-import { buildDynamicPlan } from "../lib/remediation-to-rules";
-import { PlanCoveragePanel, RemediationPlanSummary } from "./scenario-description-blocks";
+import { US_PLANS, EU_PLANS } from "../lib/plan-fixtures.test-util";
+import { CompiledPlanSummary } from "./compiled-plan-summary";
+import { PlanCoveragePanel } from "./scenario-description-blocks";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { TooltipProvider } from "./ui/tooltip";
@@ -34,22 +35,38 @@ describe("package-bound curriculum presentation", () => {
     expect(html).toContain("Firewall Admin");
     expect(html).toContain("iec104 dpi");
     expect(html).not.toMatch(/DNP3|RTAC/);
-    expect(html).toContain("planned, not enforceable in this range yet");
-    expect(html).toContain("planning-only");
+    expect(html).toContain("planned until applied in your plan");
   });
 
   it("renders nothing for the same planning directives without a binding", () => {
     expect(render()).toBe("");
   });
 
-  it("retains the US DPI notice and generic no-plan catalog link", () => {
+  it("shows compiler action kinds with one wording for both packages", () => {
     expect(render(US_CURRICULUM)).toContain('href="/exercises"');
-    const usPlan = buildDynamicPlan({ exerciseId: US_CURRICULUM.roles.planning, selectedActionIds: ["modbus-dpi"], savedAt: "" }, US_CURRICULUM);
-    const html = renderToStaticMarkup(<RemediationPlanSummary plan={usPlan} />);
-    expect(html).toContain('<span class="font-bold">ICS DPI enabled</span> - containd provides Modbus/DNP3 function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address');
-    const euPlan = buildDynamicPlan({ exerciseId: EU.roles.planning, selectedActionIds: ["iec104-dpi"], savedAt: "" }, EU);
-    const euHtml = renderToStaticMarkup(<RemediationPlanSummary plan={euPlan} />);
-    expect(euHtml).toContain("not enforceable in this range yet");
-    expect(euHtml).not.toContain("ICS DPI enabled");
+    for (const [plans, binding] of [[US_PLANS, US_CURRICULUM], [EU_PLANS, EU]] as const) {
+      for (const plan of plans) {
+        const html = renderToStaticMarkup(<CompiledPlanSummary plan={plan} binding={binding} />);
+        expect(html).toContain("planning only: no firewall change");
+        expect(html).toContain("The L4 source pin enforces; DPI detects and logs");
+        expect(html).toContain("Export compiled config");
+        expect(html).not.toContain("applied in your plan");
+        if (plan.label === "weak") expect(html).toContain("Weak exposures remain open");
+      }
+    }
   });
+  it("exports the exact backend config, not a reconstruction from display rules", () => {
+    const plan = { ...US_PLANS[1], config: { sentinel: { untouched: [1, 2, 3] } } };
+    const html = renderToStaticMarkup(<CompiledPlanSummary plan={plan} binding={US_CURRICULUM} />);
+    const href = html.match(/href="data:application\/json;charset=utf-8,([^"]+)"/)![1];
+    expect(JSON.parse(decodeURIComponent(href))).toEqual(plan.config);
+  });
+  it("calls selected actions planned until their applied provenance exists", () => {
+    const plan = US_PLANS[1];
+    const appliedPlan = { packageId: plan.packageId, revision: plan.revision, actionIds: plan.actions.filter((a) => a.chosen).map((a) => a.id), label: plan.label, policyHash: plan.policyHash, appliedAt: "now" };
+    const html = renderToStaticMarkup(<CompiledPlanSummary plan={plan} binding={US_CURRICULUM} appliedPlan={appliedPlan} />);
+    expect(html).toContain("applied in your plan");
+    expect(html).toContain("Weak exposure open");
+  });
+
 });

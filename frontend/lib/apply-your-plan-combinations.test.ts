@@ -1,127 +1,16 @@
-import { US_CURRICULUM } from "./curriculum-storage.test-util";
-// Contract test: "Apply Your Plan" (Lab 2.2 side panel) builds a containd
-// config from the student's Lab 1.4 remediation picks via
-// buildContaindConfig(). The picks are a free combination of 8 actions,
-// so there are 2^8 = 256 possible plans. Every one must produce a config
-// the backend's POST /api/firewall/apply-custom will accept (it rejects
-// configs missing `interfaces` or `firewall.rules`) and that containd can
-// load (unique rule ids, valid actions, correct ICS schema).
-//
-// This was added after a real bug: the Modbus DPI predicate emitted
-// `functionCodes` (plural) while containd's schema is singular
-// `functionCode`, so the function-code filter was silently dropped.
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { compilePlan, applyPlan } from "./api";
+import { ALL_PLANS } from "./plan-fixtures.test-util";
 
-import { describe, it, expect } from "vitest";
-import { buildDynamicPlan, buildContaindConfig } from "./remediation-to-rules";
-import type { RemediationPlan } from "./remediation-plan";
-
-const ACTIONS = [
-  "block-enterprise-to-field",
-  "block-enterprise-to-ot",
-  "restrict-vendor-to-ot",
-  "block-vendor-to-field",
-  "pin-rtac-to-field",
-  "modbus-dpi",
-  "dnp3-dpi",
-  "improve-logging",
-];
-
-function configFor(ids: string[]): any {
-  const plan: RemediationPlan = {
-    exerciseId: "remediation-planning",
-    selectedActionIds: ids,
-    savedAt: "2026-06-01T00:00:00Z",
-  };
-  return buildContaindConfig(buildDynamicPlan(plan, US_CURRICULUM)) as any;
-}
-
-// Enumerate all 2^8 selection combinations.
-const COMBOS: string[][] = [];
-for (let mask = 0; mask < 1 << ACTIONS.length; mask++) {
-  COMBOS.push(ACTIONS.filter((_, i) => mask & (1 << i)));
-}
-
-describe("Apply Your Plan — every 1.4 combination yields an applicable config", () => {
-  it("enumerates all 256 selection combinations", () => {
-    expect(COMBOS).toHaveLength(256);
+afterEach(() => vi.unstubAllGlobals());
+describe("server-owned plans across packages and selection states", () => {
+  it.each(ALL_PLANS)("round-trips $packageId $label unchanged", async (plan) => {
+    const body = { packageId: plan.packageId, revision: plan.revision, actionIds: plan.actions.filter((a) => a.chosen).map((a) => a.id) };
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(plan)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ applied: true, warnings: ["Budget warning"], plan })));
+    vi.stubGlobal("fetch", fetch);
+    expect(await compilePlan(body)).toEqual(plan);
+    expect(await applyPlan(body)).toEqual({ applied: true, warnings: ["Budget warning"], plan });
+    expect(fetch.mock.calls.map(([, init]) => JSON.parse(init.body))).toEqual([body, body]);
   });
-
-  it("every combination meets the /apply-custom contract + containd basics", () => {
-    for (const ids of COMBOS) {
-      const cfg = configFor(ids);
-      const label = ids.join(",") || "(none)";
-      // backend rejects configs without interfaces or firewall.rules
-      expect(
-        Array.isArray(cfg.interfaces) && cfg.interfaces.length > 0,
-        `interfaces for [${label}]`,
-      ).toBe(true);
-      const rules = cfg.firewall?.rules;
-      expect(
-        Array.isArray(rules) && rules.length > 0,
-        `firewall.rules for [${label}]`,
-      ).toBe(true);
-      expect(cfg.firewall.defaultAction, `defaultAction for [${label}]`).toBe("DENY");
-      // containd keys rules by id — duplicates would clobber
-      const ruleIds = rules.map((r: any) => r.id);
-      expect(new Set(ruleIds).size, `unique rule ids for [${label}]`).toBe(ruleIds.length);
-      for (const r of rules) {
-        expect(["ALLOW", "DENY"], `valid action in [${label}]`).toContain(r.action);
-      }
-      expect(() => JSON.stringify(cfg), `serialisable [${label}]`).not.toThrow();
-    }
-  });
-
-  it("Modbus DPI uses containd's singular `functionCode` field (regression)", () => {
-    const cfg = configFor(["modbus-dpi"]);
-    const mb = cfg.firewall.rules.find(
-      (r: any) => r.ics?.protocol === "modbus",
-    );
-    expect(mb, "a modbus DPI rule is present").toBeTruthy();
-    expect(Array.isArray(mb.ics.functionCode)).toBe(true);
-    expect(mb.ics.functionCode.length).toBeGreaterThan(0);
-    expect(mb.ics.functionCodes, "no plural field that containd ignores").toBeUndefined();
-  });
-
-  it("DNP3 DPI attaches dnp3 ICS to the RTAC DNP3 rule", () => {
-    const cfg = configFor(["dnp3-dpi"]);
-    expect(
-      cfg.firewall.rules.some((r: any) => r.ics?.protocol === "dnp3"),
-    ).toBe(true);
-  });
-
-  it("improve-logging marks DENY rules with log:true (and absent without it)", () => {
-    const withLog = configFor(["block-enterprise-to-field", "improve-logging"]);
-    expect(
-      withLog.firewall.rules.find((r: any) => r.id === "deny-enterprise-to-field")?.log,
-    ).toBe(true);
-    const noLog = configFor(["block-enterprise-to-field"]);
-    expect(
-      noLog.firewall.rules.find((r: any) => r.id === "deny-enterprise-to-field")?.log,
-    ).toBeUndefined();
-  });
-});
-
-// Locks compiler quirks, coverage, historical shared-rule logging mutation and
-// all three rendered phases across every reachable plan. The prose golden
-// includes the US hotfix's supported reads and reference-policy guidance.
-import { createHash } from "node:crypto";
-import { computeCoverage } from "./requirement-coverage";
-import { injectDynamicContent } from "./scenario-runner-logic";
-import { DECISION_DEFAULT_OPTIONS } from "./scenario-description";
-
-it("locks US policy, coverage and corrected guidance across all 256 plans", () => {
-  const verdicts = ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW", ""];
-  expect(verdicts).toEqual([...DECISION_DEFAULT_OPTIONS, ""]);
-  const outputs = COMBOS.map((ids) => {
-    const plan = buildDynamicPlan({ exerciseId: "remediation-planning", selectedActionIds: ids, savedAt: "" }, US_CURRICULUM);
-    return JSON.stringify({
-      plan,
-      config: buildContaindConfig(plan),
-      coverage: verdicts.map((verdict) =>
-        computeCoverage(["enterprise-to-field", "enterprise-to-ot", "vendor-to-ot", "non-rtac-to-field", "unauth-modbus-writes"].map((id) => ({ id, label: id, verdict })), new Set(ids), US_CURRICULUM)),
-      phases: ["phase-3-create-minimal-required-rules", "phase-5-validate-allowed-traffic", "phase-6-validate-blocked-traffic"].map((title) => injectDynamicContent("original", title, plan)),
-    });
-  });
-  expect(outputs).toHaveLength(256);
-  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"07234558f42fd3059127c1530d11c6d77925c3bba802f5245ffe60a784af108d"`);
 });

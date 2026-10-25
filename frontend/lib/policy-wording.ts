@@ -5,14 +5,14 @@
 // has always used for its two policies; that text describes the US
 // files (RTAC, field zones) and must never appear for another package.
 
-import type { PackageSummary } from "./api";
+import type { PackageSummary, PlanLabel, PlanProvenance, PolicySource } from "./api";
 import { US_OPERATOR_VIEW } from "./operator-view";
 
 // The policy a step's expected_config alias "hardened" names, as the
 // backend's labs.HardenedPolicy. A package need not declare it.
 export const HARDENED_POLICY = "improved";
 export const HARDENED_ALIAS = "hardened";
-// active_config after apply-custom or a direct containd commit.
+// active_config after apply-plan or a direct containd commit.
 export const CUSTOM_POLICY = "custom";
 
 export type PackagePolicies = {
@@ -50,7 +50,10 @@ export function activePolicyWording(
   name: string,
   policies: PackagePolicies | undefined,
   usTable: Record<string, PolicyWording>,
+  source?: PolicySource,
+  plan?: PlanProvenance,
 ): PolicyWording {
+  if (source === "plan" && plan) return { label: `Your plan — ${planLabel(plan.label)}`, description: "Applied in your plan" };
   if (name === CUSTOM_POLICY) return { label: "Custom policy", description: "" };
   if (!policies) return { label: name, description: "" };
   return policyWording(name, policies, usTable);
@@ -70,4 +73,8 @@ export function matchesExpected(actual: string, expected: string | undefined): b
     return actual === HARDENED_POLICY || actual === CUSTOM_POLICY;
   }
   return actual === expected;
+}
+
+export function planLabel(label: PlanLabel): string {
+  return { weak: "Weak", partial: "Partial", hardened: "Hardened" }[label];
 }
