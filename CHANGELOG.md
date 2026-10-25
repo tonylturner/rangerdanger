@@ -6,116 +6,99 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [v0.1.36-rc.3] - 2026-10-19
+## [v0.1.36] - 2026-10-25
 
-Repository-only follow-up to rc.2 from a full student walkthrough, still
-on the v0.1.35 images with `VERSION=latest`; this pre-release tag does not
-move `latest`. Update an installed range with
-`git fetch origin tag v0.1.36-rc.3 && git checkout --detach v0.1.36-rc.3 && ./scripts/apply-repo-update.sh`.
-SSD installs follow `REPO-UPDATE-README.md` on the SSD.
-
-### Fixed
-
-- **Lab 2.3 enforcement claims.** On these images the L4 source pin is the
-  control that stops the DNP3 Direct Operate; the DPI layer records an
-  RTAC-origin write but does not stop it. The keyed answer is now
-  `L4_SOURCE_PIN`, the HMI question asks about the Kali re-test, the RTAC
-  write is an optional check with its expected result and restore steps,
-  and the Modbus sidebar no longer credits function-code DPI (RD-02, RD-24).
-  After the optional RTAC write, Validate reports PARTIAL even once restored;
-  the lab says to expect PARTIAL with all device-state rows passing.
-- **Lab 2.4 report scope.** The text says the report is a TCP reachability
-  matrix that sends no control write.
-- **Lab 2.2 commits.** containd web-UI rule Create/Delete only take effect
-  on Commit; Stage 2/3 now say to commit after the last edit, and the
-  Advanced track proves RDP/VNC (3389/5900) is filtered after the commit
-  (RD-25).
-- **Run-button `mbpoll` reads poll once (`-1`)** instead of polling until
-  Ctrl-C, and Lab 2.3 / 2.3-bonus register prose uses mbpoll's 1-based
-  labels. The retired `bounded_poll` oracle exception is removed.
-- **Lab 2.3-bonus attribution.** The recloser records a Modbus write only
-  as `modbus-tcp`; students attribute the live write in containd
-  NETWORK → Sessions (SRC 10.20.20.10 to 10.40.40.21:502; rows expire after
-  about 2 minutes), and the attribution question asks about that row (RD-26).
-- **Network Map links.** The proxy redirects the frozen `/apps/firewall/`
-  and OpenPLC node links to `/containd/` and `/apps/openplc/`, and serves
-  containd's `/icons/*.svg`.
-- **Lab time estimates** match the measured Guided path: 1.2 20, 1.3 10,
-  1.4 12, 2.2 22, 2.3 12, 2.3-bonus 12, 2.4 7 min (core 83 min).
-- Workshop notes no longer mention instructor grading.
-
-## [v0.1.36-rc.2] - 2026-10-19
-
-Repository-only follow-up to rc.1, still on the v0.1.35 images with
-`VERSION=latest`; this pre-release tag does not move `latest`. Update an
-installed range with
-`git fetch origin tag v0.1.36-rc.2 && git checkout --detach v0.1.36-rc.2 && ./scripts/apply-repo-update.sh`.
-SSD installs follow `REPO-UPDATE-README.md` on the SSD. The errata page
-moved to `docs/v0.1.36-hotfix.md`.
+Full image release using `[rebuild-all]`: all 16 first-party images are
+rebuilt and `latest` moves. Use the normal online setup/refresh or SSD
+bundle workflow, not the repository-update helper alone. The supported
+v0.1.35 → v0.1.36 SSD delta is close to a full set. Frontend source is
+unchanged; remaining application limits and lab guidance are documented
+in [the workshop errata](docs/v0.1.36-hotfix.md).
 
 ### Added
 
-- **`stage-ssd-repo-update.sh <out-dir> <tag>`.** Stages a repo-only SSD
-  update from a tag: an archive, a git bundle, `SHA256SUMS` and
-  student steps for archive installs, git clones and Windows. It never
-  touches images.
+- **Workshop errata** at `docs/v0.1.36-hotfix.md`, with reference-policy
+  guidance, device-state enforcement checks and evidence requirements.
+- **Repository-update tools** for content changes that need no new images:
+  `scripts/apply-repo-update.sh` / `.ps1` check cached images and local
+  edits, restart backend/proxy and recreate only `vendor_jump` without
+  downloading or building images. `stage-ssd-repo-update.sh <out-dir> <tag>`
+  stages a tag archive, Git bundle, `SHA256SUMS` and student instructions
+  for archive installs, clones and Windows. These tools remain available
+  but do not install this release's new images.
+- **Embedded UI probes and command oracles.** `scripts/proxy-smoke.sh`
+  checks the containd UI and vendor desktop; the lab command inventory
+  verifies reviewed examples against semantic and device-state oracles.
 
 ### Fixed
 
-- **SSD archive installs could not update.** They have no `.git`, so
-  `apply-repo-update` refused them. Without `.git` it now skips the
-  tracked-file guard and says so; every image and Compose check stays.
-- **Lab errata no longer fill the scenario headers.** Headers are back to
-  their v0.1.35 text, without version references. The Lab 2.2 phase steps
-  are renamed "Stage 1-6", so the v0.1.35 frontend renders their corrected
-  bodies instead of its stale generated ones. The remaining rules are short
-  workshop notes in the step where students act.
-- **rc.1 CI failures.** ShellCheck SC2015 in `apply-repo-update.sh`, and
-  the Lab 2.2 schema example again shows the Modbus rule that the
-  frontend consistency test pins to the hardened reference.
+- **Network Map firewall link** now opens the same-origin `/containd/`
+  route with its assets, rather than the obsolete firewall app path.
+- **Network Map OpenPLC link** now opens `/apps/openplc/` directly instead
+  of a nonexistent workshop lab-instance UI. Both backend link fixes
+  replace the temporary proxy redirects, which have been removed.
+- **Firewall sessions API** now reads containd's `/api/v1/conntrack` bare
+  array and translates its string ports into the existing portal JSON
+  contract, rather than calling a nonexistent sessions endpoint.
+- **Embedded containd UI.** Narrow API-path rewrites preserve containd's
+  runtime API base; PCAP downloads and CLI WebSockets retain their specific
+  rewrites, and root-relative `/icons/*.svg` resolve to containd.
+- **Vendor desktop startup.** The init script is bind-mounted from the
+  checkout and retains nginx's default site so `/apps/vendor-jump/`
+  serves the desktop again.
+- **OpenPLC login redirects** through `/apps/plc/` retain the portal host
+  and port, matching the `/apps/openplc/` route.
+- **Lab 2.2 content.** Stage 1–6 titles keep the unchanged frontend from
+  replacing corrected YAML bodies with stale generated plan steps. The
+  workshop applies Hardened reference; Lab 1.4 remains a design artifact.
+  Scenario headers no longer carry duplicated errata; the Lab 1.4
+  introduction no longer promises plan-driven changes to later exercises.
+  Rule Create/Delete instructions require Commit, and the Advanced track
+  verifies RDP/VNC (3389/5900) after committing. The schema example matches
+  the hardened reference, and export guidance describes copying CLI JSON
+  rather than editing a file the CLI never created.
+- **Lab 2.3 enforcement wording.** The L4 source pin enforces; DPI detects
+  and logs. Keyed answers and the Lab 2.2 DPI link wording distinguish
+  enforcement from visibility. Device-state checks and restore guidance
+  remain explicit; historical training writes can leave Validate at
+  PARTIAL even with every current device-state row passing.
+- **Lab 2.3-bonus attribution.** Use containd NETWORK → Sessions to
+  attribute the vendor connection. Open Sessions before the write, raise
+  the limit above 500 rows and filter `10.20.20.10`; observed rows expire
+  in about 17 seconds, not two minutes. The recloser itself records only
+  `modbus-tcp`, not the peer address.
+- **Lab 2.4 report scope** explicitly describes a TCP reachability matrix,
+  not function-code enforcement proof. Preserve report, PCAP and notes;
+  a green banner alone is not evidence.
+- **Lab commands and baseline evidence.** Corrected `dnp3poll` option
+  ordering, durations and outstation addresses; device-specific `mbpoll`
+  reads; reference-policy checks; and baseline findings. Every required
+  source terminal is available (Lab 2.2 includes RTAC and vendor jump),
+  firewall instructions start at `containd#`, and manual SSH examples use
+  the working account. Run-button `mbpoll` reads poll once (`-1`), register
+  prose uses 1-based labels, and cross-firewall `nmap` examples use `-Pn`
+  so host discovery failures are not mistaken for policy blocks.
+- **SSD archive updates** no longer require `.git`: the repository-update
+  helper explicitly skips only the tracked-file guard for archive installs,
+  retaining image and Compose checks.
+- **Smoke script reliability.** Corrected ShellCheck control-flow notes
+  and trap annotations, removed the retired `bounded_poll` exception,
+  and added a successful proxy-smoke check count.
 
-## [v0.1.36-rc.1] - 2026-10-19
+### Changed
 
-Repository-only workshop hotfix for installed v0.1.35 ranges. No image
-is rebuilt or pulled: students keep `VERSION=latest` and their v0.1.35
-images, and this pre-release tag does not move `latest`. Update an
-installed range with
-`git fetch origin tag v0.1.36-rc.1 && git checkout --detach v0.1.36-rc.1 && ./scripts/apply-repo-update.sh`
-(PowerShell: `scripts/apply-repo-update.ps1`). See
-`docs/v0.1.36-rc.1-hotfix.md` for the errata and the SSD procedure.
-
-### Added
-
-- **`scripts/apply-repo-update.sh` / `.ps1`.** Applies a checked-out
-  repo-only update without pulls or builds: refuses local tracked edits
-  or missing images, restarts backend and proxy, and recreates only
-  `vendor_jump`. `.env`, data and volumes are kept.
-- **Workshop errata page** `docs/v0.1.36-rc.1-hotfix.md` (RD-01..23).
-- **Frozen-image compatibility gates.** `scripts/release-compat-smoke.sh`
-  runs every workshop gate against cached v0.1.35 images, including a
-  running install (`--existing-stack`); `scripts/proxy-smoke.sh` probes
-  the embedded containd UI and the vendor desktop portal; the lab
-  command inventory is pinned with semantic and device-state oracles.
-
-### Fixed
-
-- **Embedded containd UI (RD-04).** The proxy rewrote every `"/api/`
-  string in the containd bundle, which broke its API base. Only the PCAP
-  download and CLI WebSocket paths are rewritten now.
-- **Vendor desktop (RD-09).** The vendor jump host's init script is
-  bind-mounted from the checkout, and it keeps nginx's default site, so
-  `/apps/vendor-jump/` serves the desktop again.
-- **Lab content (WP3-WP7).** Corrected `dnp3poll`/`mbpoll` reads and
-  outstation addresses, policy steps that verify instead of replacing
-  the selected policy, baseline findings that match the reference
-  evidence, every required source terminal (Lab 2.2 adds RTAC and vendor
-  jump) and the firewall terminal's `containd#` start. In-lab notes give
-  the working Phase 5 SSH account and the limits the v0.1.35 images
-  still have.
-- **Cross-firewall `nmap` examples.** Without `-Pn`, host discovery
-  reported "0 hosts up" across the firewall even when the ports were
-  open, and under the hardened policy that looked like a block. Every
-  cross-zone scan now uses `-Pn`.
+- **Release documentation** now covers new images and standard online/SSD
+  update paths. Removed the temporary README workshop notice and stale
+  claims that Lab 1.4 selections rewrite later labs; the workshop overview
+  also describes reference-only enforcement.
+- **Guided lab time estimates** match the measured walkthrough: 1.2 20,
+  1.3 10, 1.4 12, 2.2 22, 2.3 12, 2.3-bonus 12, 2.4 7 minutes (83 core
+  minutes). Workshop notes no longer imply instructor grading.
+- **CI smoke** drops the obsolete cached-old-image job. Built-image smoke
+  retains the advisory generated-full-plan check (8 authorized passes,
+  11 unauthorized blocks, zero skipped), its cleanup and evidence receipts,
+  plus JSON endpoint guards. Hotfix-branch push triggers remain enabled.
+- **Citation metadata** records version `0.1.36`.
 
 ## [v0.1.35] - 2026-10-15
 
@@ -2954,7 +2937,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.35...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.36...HEAD
+[v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
 [v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
 [v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
