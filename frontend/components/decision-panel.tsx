@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Check, AlertCircle, CircleCheck, CircleDashed, ChevronUp, ChevronDown } from "lucide-react";
 import type { DecisionAction, DecisionRole } from "../lib/api";
-import { actionEffectLabel, saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
+import { saveRemediationPlan, loadRemediationPlan } from "../lib/remediation-plan";
 import { useCurriculumScope } from "../lib/curriculum-scope";
 import {
   readRequirements,
@@ -278,7 +278,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                   </div>
                   <div className="mt-1 text-[11px] leading-relaxed text-slate-400 whitespace-pre-line">
                     {a.why}
-                    {actionEffectLabel(binding, a.id) && ` — ${actionEffectLabel(binding, a.id)}`}
+                    {" — planned until applied in your plan"}
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {a.roles.map((role) => (
@@ -400,7 +400,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                         <CircleCheck className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
                         <span className="text-slate-300">
                           <span className="font-bold">{c.req.label}</span>
-                          <span className="text-slate-500"> - {c.req.verdict}, fully addressed</span>
+                          <span className="text-slate-500"> - {c.req.verdict}, planned actions selected (not prevention proof)</span>
                         </span>
                       </div>
                     );

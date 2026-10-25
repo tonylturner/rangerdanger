@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { PackageSummary, WorkshopStatus } from "../lib/api";
-import { WORKSHOP_STATUS_KEY } from "../lib/live-queries";
+import type { PackageSummary, WorkshopStatus, PlanProvenance } from "../lib/api";
+import { FIREWALL_ACTIVE_KEY, WORKSHOP_STATUS_KEY } from "../lib/live-queries";
 import { EU_PACKAGE, US_PACKAGE } from "../lib/operator-fixtures.test-util";
 import { packagePolicies } from "../lib/policy-wording";
 import { EuDashboard } from "./eu-overview";
@@ -16,10 +16,11 @@ function text(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function renderWith(pkg: PackageSummary | undefined, node: ReactNode, status?: WorkshopStatus): string {
+function renderWith(pkg: PackageSummary | undefined, node: ReactNode, status?: WorkshopStatus, plan?: PlanProvenance): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (pkg) client.setQueryData(["packages", "active"], pkg);
   if (status) client.setQueryData(WORKSHOP_STATUS_KEY, status);
+  if (plan) client.setQueryData(FIREWALL_ACTIVE_KEY, { active_config: "custom", policy_source: "plan", plan });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
   client.clear();
   return text(html);
@@ -28,6 +29,15 @@ function renderWith(pkg: PackageSummary | undefined, node: ReactNode, status?: W
 const US_TEXT = /Hardened|Weak [Bb]aseline|RTAC|substation-improved|Lab 1\.4|Apply Hardened|Reset to Weak/;
 
 describe("PolicyStatusBanner", () => {
+  it.each(["weak", "partial", "hardened"] as const)("shows the %s label for a custom plan in both packages", (label) => {
+    for (const pkg of [US_PACKAGE, EU_PACKAGE]) {
+      const plan = { packageId: pkg.id, revision: pkg.revision, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
+      const out = text(renderToStaticMarkup(<PolicyStatusBanner activeConfig="custom" policySource="plan" plan={plan} policies={packagePolicies(pkg)} />));
+      expect(out).toContain(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
+      expect(out).not.toContain("Hardened reference");
+    }
+  });
+
   const banner = (pkg: PackageSummary, activeConfig: string, expectedConfig?: string) =>
     text(
       renderToStaticMarkup(
@@ -75,6 +85,11 @@ describe("PolicyStatusBanner", () => {
 });
 
 describe("PolicyBadge", () => {
+  it("uses the active endpoint's plan label instead of a stale named-policy prop", () => {
+    const plan = { packageId: US_PACKAGE.id, revision: US_PACKAGE.revision, label: "weak" as const, actionIds: [], policyHash: "abc", appliedAt: "now" };
+    expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="improved" />, undefined, plan)).toContain("Your plan — Weak");
+  });
+
   it("keeps the US words and shows another package's active policy by name", () => {
     expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="improved" />)).toBe("Firewall · Hardened");
     expect(renderWith(US_PACKAGE, <PolicyBadge activeConfig="weak" />)).toBe("Firewall · Weak baseline");

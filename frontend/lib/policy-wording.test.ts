@@ -33,6 +33,11 @@ describe("policyWording", () => {
 });
 
 describe("activePolicyWording", () => {
+  it.each(["weak", "partial", "hardened"] as const)("labels an applied %s plan without changing the custom identity", (label) => {
+    const plan = { packageId: US_PACKAGE.id, revision: 2, label, actionIds: [], policyHash: "abc", appliedAt: "now" };
+    expect(activePolicyWording("custom", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING, "plan", plan).label).toBe(`Your plan — ${label[0].toUpperCase() + label.slice(1)}`);
+  });
+
   it("uses exact US wording and consistently labels a custom policy", () => {
     expect(activePolicyWording("weak", packagePolicies(US_PACKAGE), US_WORKSHOP_POLICY_WORDING)).toEqual({
       label: "Weak Baseline",

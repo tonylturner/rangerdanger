@@ -25,8 +25,6 @@ export function fixtureCurriculum(packageDir: string, topologyFile?: string): Cu
     ...load(raw) as CurriculumBinding,
     ...manifest.curriculum,
     icsRules: manifest.ics_rules ?? "allowed",
-    interfaces: [...topology.networks.filter(n => n.zone).map(n => ({ name: n.zone, zone: n.zone, access: {} })), { name: "lan3", zone: "lan3", access: { mgmt: true, http: true, https: true, ssh: true } }],
-    zones: [...topology.networks.filter(n => n.zone).map(n => ({ name: n.zone, description: n.name })), { name: "lan3", description: "RangerDanger management control plane" }],
   };
 }
 export const US_CURRICULUM = fixtureCurriculum("lab-definitions/packages/us-dnp3-substation");

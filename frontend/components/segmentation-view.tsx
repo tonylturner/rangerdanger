@@ -15,6 +15,8 @@ import {
   getActiveFirewallConfig,
   getFirewallComparison,
   type NetworkEvent,
+  type PolicySource,
+  type PlanProvenance,
 } from "../lib/api";
 import { FIREWALL_ACTIVE_KEY, useSubstationNetworkEvents } from "../lib/live-queries";
 import { useOperatorView, usePackagePolicies } from "../lib/operator-queries";
@@ -102,10 +104,12 @@ function activePolicyMeta(
   metas: PolicyMeta[],
   activeConfig: string | null,
   policies: PackagePolicies,
+  source?: PolicySource,
+  plan?: PlanProvenance,
 ): PolicyMeta | undefined {
   const declared = metas.find((p) => p.id === activeConfig);
   if (declared || !activeConfig) return declared ?? metas[0];
-  const wording = activePolicyWording(activeConfig, policies, US_DRAWER_WORDING);
+  const wording = activePolicyWording(activeConfig, policies, US_DRAWER_WORDING, source, plan);
   return { id: activeConfig, ...wording, pill: wording.label, toneActive: "", toneInactive: "" };
 }
 
@@ -174,7 +178,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
   // and tags whether it differs from what's currently active - that
   // tag drives the "would change if applied" highlight.
   const selectedMeta = policies.find((p) => p.id === selectedPolicyId) ?? policies[0];
-  const activeMeta = packagePolicies ? activePolicyMeta(policies, activeConfig, packagePolicies) : undefined;
+  const activeMeta = packagePolicies ? activePolicyMeta(policies, activeConfig, packagePolicies, activeData?.policy_source, activeData?.plan) : undefined;
   const comparison = comparisonQuery.data;
   const selectedFields = selectedMeta ? COMPARISON_FIELDS[selectedMeta.id] : undefined;
   const activeFields = activeMeta ? COMPARISON_FIELDS[activeMeta.id] : undefined;

@@ -6,11 +6,13 @@ import { parseRangeNotReady, reportRangeNotReady, type RangeStatus } from "./ran
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
+  readonly warnings: string[];
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, warnings: string[] = []) {
     super(detail ? `${status} ${detail}` : `Request failed: ${status}`);
     this.status = status;
     this.detail = detail;
+    this.warnings = warnings;
   }
 }
 
@@ -47,7 +49,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       reportRangeNotReady(notReady);
       throw notReady;
     }
-    throw new ApiError(res.status, errorDetail(body));
+    const warnings = (body as { warnings?: unknown } | null)?.warnings;
+    throw new ApiError(res.status, errorDetail(body), Array.isArray(warnings) ? warnings.filter((w): w is string => typeof w === "string") : []);
   }
 
   if (res.status === 204) {
@@ -416,20 +419,15 @@ export async function getFirewallComparison() {
   return request<PolicyComparison>("/firewall/compare");
 }
 
-// PolicySource matches the backend's policySource field on the Server
-// struct. "weak" / "hardened-reference" / "plan-custom" cover Phase A
-// of the dual-track firewall config exploration. "manual-custom" is
-// reserved for Phase B (when a poller observes direct containd commits)
-// and "" is the never-applied initial state.
 export type PolicySource =
   | "weak"
   | "hardened-reference"
-  | "plan-custom"
+  | "plan"
   | "manual-custom"
   | "";
 
 export async function getActiveFirewallConfig() {
-  return request<{ active_config: string; policy_source: PolicySource }>(
+  return request<{ active_config: string; policy_source: PolicySource; plan?: PlanProvenance }>(
     "/firewall/active",
   );
 }
@@ -459,14 +457,48 @@ export async function applyFirewallConfig(config: string) {
   });
 }
 
-export async function applyCustomFirewallConfig(configJson: object) {
-  return request<{ status: string; active_config: string }>("/firewall/apply-custom", {
-    method: "POST",
-    body: JSON.stringify(configJson),
+export type PlanLabel = "weak" | "partial" | "hardened";
+export type PlanRequest = { packageId: string; revision: number; actionIds: string[] };
+export type PlanProvenance = PlanRequest & { label: PlanLabel; policyHash: string; appliedAt: string };
+export type PlanAction = { id: string; kind: "enforce" | "detect" | "plan"; chosen: boolean };
+export type PlanRule = {
+  id: string;
+  description?: string;
+  sourceZones?: string[];
+  destZones?: string[];
+  sources?: string[];
+  destinations?: string[];
+  protocols?: { name: string; port?: string }[];
+  ics?: PlanICS;
+  action: "ALLOW" | "DENY";
+  log?: boolean;
+};
+export type PlanExpectation = {
+  id: string; from: string; to: string; network: string; port: number;
+  category: "authorized" | "unauthorized"; owners: string[]; labs?: string[];
+  note: string; planVerdict: "allow" | "deny"; hardenedVerdict: "allow" | "deny";
+  bridged: boolean; fromIp: string; toIp: string;
+};
+export type CompiledPlan = {
+  packageId: string; revision: number; label: PlanLabel; policyHash: string;
+  actions: PlanAction[];
+  rules: { rule: PlanRule; origin: { kind: "required" | "selected" | "deferred"; action?: string } }[];
+  expectations: PlanExpectation[];
+  config: Record<string, unknown>;
+};
+export async function compilePlan(body: PlanRequest): Promise<CompiledPlan> {
+  return request<CompiledPlan>("/plan/compile", { method: "POST", body: JSON.stringify(body) });
+}
+export async function applyPlan(body: PlanRequest) {
+  return request<{ applied: boolean; warnings: string[]; plan: CompiledPlan }>("/firewall/apply-plan", {
+    method: "POST", body: JSON.stringify(body),
   });
 }
+export type ProofRow = { id: string; expected: "allow" | "deny"; observed: "allow" | "deny" | "skipped"; pass: boolean };
 
 export type ValidationReport = {
+  planProof: { applicable: boolean; pass: boolean; policyHash: string; hashStable: boolean; skipped: number; rows: ProofRow[] };
+  acceptance: { pass: boolean; skipped: number; rows: ProofRow[]; preventionGaps: string[] };
   markdown: string;
   summary: {
     authorized_pass: number;
@@ -657,7 +689,6 @@ export type CurriculumBinding = {
   requirementOrder: string[];
   groupOrder: string[];
   impactOrder: string[];
-  loggingPrefixes: string[];
   requirements: Record<string, { label: string; impl: Record<string, string[]> }>;
   readiness: { id: string; label: string; good: string }[];
   readinessFlags: { actions: string[]; severity: "warn" | "blocked"; source: string; sourceLabel: string; verdict: string; message: string }[];
@@ -665,62 +696,26 @@ export type CurriculumBinding = {
   teams: DecisionRole[];
   catalog: DecisionAction[];
   impact: Record<string, { defends: string[]; note: string }>;
-  baselineRules: FirewallRule[];
-  enterpriseToVendorRule: FirewallRule | null;
-  groups: Record<string, { title: string; description: string; rules: FirewallRule[]; omittedRules?: FirewallRule[]; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
+  groups: Record<string, { title: string; description: string; effect: "closes" | "restricts" | "semantic" | "conceptual" | "logging" }>;
   planningOnly: string[];
-  policy: { rule: CurriculumPolicyRule; when?: string; unless?: string; logging?: boolean; semantic?: string; predicate?: CurriculumPredicate }[];
   phases: Record<string, string>;
   noPlan: string;
-  tests: { kind: "positive" | "negative"; when?: string; text: string }[];
+  tests: { kind: "positive" | "negative"; text: string }[];
   negativeEmpty: string;
-  flags: { logging: string; objects: string; validation: string; dpi: string[] };
   nodeMap: Record<string, { primary: string; others: string[] }>;
   nodeInference: { node: string; ip: string; pattern: string }[];
-  interfaces: { name: string; zone: string; access: Record<string, boolean> }[];
-  zones: { name: string; description: string }[];
   dpiNotice: { title: string; description: string };
   dpiForbiddenNotice: { title: string; description: string };
-  legacyDisplayMutation: boolean;
-  legacyEffects: boolean;
 };
 
-// Display rules are part of the curriculum DTO, not a compiler dependency.
-export type FirewallRule = {
-  id: string;
-  source: string;
-  destination: string;
-  proto: string;
-  port: string;
-  action: "ALLOW" | "DENY";
-  purpose: string;
-  log?: boolean;
-  ics?: CurriculumPredicate;
-};
-
-export type CurriculumPredicate = {
+export type PlanICS = {
   protocol?: string;
-  functionCodes?: number[];
   functionCode?: number[];
-  note?: string;
+  unitId?: number;
+  addresses?: string[];
+  objectClasses?: number[];
   readOnly?: boolean;
-  typeIds?: number[];
-  classes?: string[];
+  writeOnly?: boolean;
   direction?: string;
-  ca?: number;
-  ioa?: { start: number; end: number }[];
   mode?: string;
-};
-export type CurriculumPolicyRule = {
-  id: string;
-  description: string;
-  sourceZones?: string[];
-  destZones?: string[];
-  sources?: string[];
-  destinations?: string[];
-  protocols?: { name: string; port: string }[];
-  state?: string[];
-  ics?: CurriculumPredicate;
-  action: "ALLOW" | "DENY";
-  log?: boolean;
 };

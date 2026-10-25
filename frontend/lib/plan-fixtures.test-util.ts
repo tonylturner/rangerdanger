@@ -1,0 +1,11 @@
+// Representative server DTOs. Compiler correctness belongs to the Go suite.
+import type { CompiledPlan } from "./api";
+import usEmpty from "./testdata/plans/us-empty.json";
+import usPartial from "./testdata/plans/us-partial.json";
+import usFull from "./testdata/plans/us-full.json";
+import euEmpty from "./testdata/plans/eu-empty.json";
+import euPartial from "./testdata/plans/eu-partial.json";
+import euFull from "./testdata/plans/eu-full.json";
+export const US_PLANS = [usEmpty, usPartial, usFull] as CompiledPlan[];
+export const EU_PLANS = [euEmpty, euPartial, euFull] as CompiledPlan[];
+export const ALL_PLANS = [...US_PLANS, ...EU_PLANS];

@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { refreshPolicyQueries } from "../lib/policy-apply";
 import {
   validateScenario,
   applyFirewallConfig,
-  applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
   execOnNode,
@@ -26,11 +27,10 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { DecisionPanel } from "./decision-panel";
 import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { useFirewallTrack } from "../lib/use-firewall-track";
-import {
-  loadDynamicPlan,
-  buildContaindConfig,
-  type DynamicExercisePlan,
-} from "../lib/remediation-to-rules";
+import { useCompiledPlan } from "../lib/use-compiled-plan";
+import { ValidationReportPanel } from "./validation-report-panel";
+import { ApplyPlanButton } from "./apply-plan-button";
+import { CompiledPlanSummary } from "./compiled-plan-summary";
 import {
   clearProgress,
   loadProgress,
@@ -50,7 +50,6 @@ import {
 } from "../lib/scenario-runner-logic";
 import {
   DescriptionSegments,
-  RemediationPlanSummary,
 } from "./scenario-description-blocks";
 import {
   ExerciseSummary,
@@ -67,6 +66,7 @@ type RunnerProps = {
 
 export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const scope = useCurriculumScope();
+  const queryClient = useQueryClient();
   const [saved] = useState(() => loadProgress(scope, scenario));
   const [currentStep, setCurrentStep] = useState(0);
   const [completedStepIds, setCompletedStepIds] = useState<Set<string>>(() => new Set(saved.completedStepIds));
@@ -111,16 +111,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   const exerciseNodes = getExerciseNodes(scenario.id, scenario.nodes, binding);
   // Every activity opting into policy actions loads the saved package plan.
   // Dynamic step text is narrower: only the binding's dynamicSteps are rewritten.
-  const [dynamicPlan, setDynamicPlan] = useState<DynamicExercisePlan | null>(() =>
-    hasPolicyActions ? loadDynamicPlan(scope) : null
-  );
-  useEffect(() => {
-    if (!hasPolicyActions) return;
-    setDynamicPlan(loadDynamicPlan(scope));
-    const onFocus = () => setDynamicPlan(loadDynamicPlan(scope));
-    document.addEventListener("visibilitychange", onFocus);
-    return () => document.removeEventListener("visibilitychange", onFocus);
-  }, [scope, scenario.id, hasPolicyActions]);
+  const appliedPlan = policySource === "plan" ? activeFirewall?.plan : undefined;
+  const appliedOnly = scenario.id !== binding?.roles.implementation;
+  const compiled = useCompiledPlan(scope, hasPolicyActions, appliedPlan, appliedOnly);
+  // A failed refresh must never leave an obsolete export or apply button enabled.
+  const dynamicPlan = hasPolicyActions && !compiled.isError && (!appliedOnly || appliedPlan) ? compiled.data ?? null : null;
+  const draft = useCompiledPlan(scope, hasPolicyActions);
+  const draftPlan = hasPolicyActions && !draft.isError ? draft.data ?? null : null;
   const [showTerminalPanel, setShowTerminalPanel] = useState(false);
   const [activeTerminalNode, setActiveTerminalNode] = useState(exerciseNodes[0] || "");
   const [panelMode, setPanelMode] = useState<"terminal" | "ui">("terminal");
@@ -446,7 +443,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       </div>
 
       {/* ── Remediation Plan Banner (shown on later exercises) ── */}
-      {!showSummary && binding && <RemediationPlanBanner currentExerciseId={scenario.id} />}
+      {!showSummary && binding && <RemediationPlanBanner currentExerciseId={scenario.id} appliedPlan={appliedPlan} />}
 
       {/* ── Summary View ──────────────────────────────────────── */}
       {showSummary && (
@@ -521,6 +518,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             <PolicyStatusBanner
               activeConfig={activeConfig}
               policySource={policySource}
+              plan={appliedPlan}
               expectedConfig={step?.expected_config}
               policies={packagePolicies}
             />
@@ -556,12 +554,13 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               </div>
             )}
             {/* Dynamic plan summary for Exercise 3 Phase 3 */}
-            {scenario.id === binding?.roles.implementation && dynamicPlan?.hasRemediationPlan &&
+            {scenario.id === binding?.roles.implementation && dynamicPlan &&
               step && binding?.dynamicSteps[step.id] === "rules" && (
               <div className="mb-3">
-                <RemediationPlanSummary plan={dynamicPlan} />
+                <CompiledPlanSummary plan={dynamicPlan} binding={binding!} appliedPlan={appliedPlan} />
               </div>
             )}
+            {compiled.error && <p role="alert" className="text-xs text-red-400">{compiled.error.message}</p>}
             {step?.description && (
               <DescriptionSegments
                 scenarioId={scenario.id}
@@ -570,6 +569,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 stepId={step.id}
                 stepDescription={step.description}
                 dynamicPlan={dynamicPlan}
+                expectations={draftPlan?.expectations}
                 exerciseNodes={exerciseNodes}
                 firewallTrack={firewallTrack}
                 autoRunning={autoRunning}
@@ -578,6 +578,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 generatingTraffic={generatingTraffic}
               />
             )}
+
+            {scenario.id === binding?.roles.hardening && <ValidationReportPanel expectations={draftPlan?.expectations} />}
 
             {/* Quick action buttons for traffic/capture steps */}
             {step?.description && (step.description.includes("traffic/generate") || step.description.includes("representative traffic")) && (
@@ -716,44 +718,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         Apply Hardened
                       </button>
                     )}
-                    {/* Apply Your Plan: push the policy built from the
-                        student's Lab 1.4 picks. Disabled-with-tooltip
-                        when no plan exists, rather than silently
-                        hidden - students should see it as an option
-                        and learn what unlocks it. */}
-                    {dynamicPlan?.hasRemediationPlan ? (
-                      <button
-                        onClick={async () => {
-                          const config = buildContaindConfig(dynamicPlan);
-                          await applyCustomFirewallConfig(config);
-                          void refreshLive();
-                          setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
-                        }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded-sm border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
-                            : "rounded-sm border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
-                        }
-                      >
-                        Apply Your Plan
-                      </button>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            disabled
-                            className="cursor-not-allowed rounded-sm border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          >
-                            Apply Your Plan
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Complete Lab 1.4 (Remediation Planning) first.
-                          The system builds this policy from your plan
-                          picks.
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+                    <ApplyPlanButton key={`${scope.packageId}:${scope.revision}`} plan={draftPlan} onApplied={() => { void refreshPolicyQueries(queryClient); }} />
+                    {draft.error && <p role="alert" className="text-xs text-red-400">{draft.error.message}</p>}
                     {/* Reset to Weak: available from any non-weak
                         state so students can re-attempt an exercise
                         from the baseline regardless of how they

@@ -20,9 +20,12 @@ const POLICY_QUERY_KEYS = [["firewall-rules"], WORKSHOP_STATUS_KEY, FIREWALL_ACT
 
 export async function applyPackagePolicy(client: QueryClient, name: string): Promise<void> {
   await applyFirewallConfig(name);
-  for (const queryKey of POLICY_QUERY_KEYS) {
-    void client.invalidateQueries({ queryKey: [...queryKey] });
-  }
+  await refreshPolicyQueries(client);
+}
+
+// Named policies and backend-compiled plans must refresh the same views.
+export async function refreshPolicyQueries(client: QueryClient): Promise<void> {
+  await Promise.all(POLICY_QUERY_KEYS.map((queryKey) => client.invalidateQueries({ queryKey: [...queryKey] })));
 }
 
 // Never retried: a second apply is a second containd commit.
