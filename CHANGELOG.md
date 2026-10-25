@@ -15,8 +15,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and 2.4 judge the applied plan, with Hardened as the comparison: the
   validation report gives plan proof and Hardened acceptance as separate
   results. A new `restrict-enterprise-to-vendor` action owns vendor RDP/VNC
-  access. The browser policy compiler and `POST /api/firewall/apply-custom`
-  are removed.
+  access. Execute Step probes compare each result with the running policy
+  instead of a fixed expected outcome. Lab 2.2 exports the compiled config
+  and a separate plan record (revision, action IDs, policy hash). The
+  browser policy compiler and `POST /api/firewall/apply-custom` are removed.
 
 - **Release image bases are digest-pinned.** Go builders use the same
   1.26.10 toolchain as CI; the portal moves to Node 24 LTS. CI rejects
