@@ -12,6 +12,8 @@ import {
   startPcapCapture,
   startTrafficGeneration,
   stopPcapCapture,
+  stopTrafficGeneration,
+  type TrafficStatus,
   type ZoneRuleSummary,
 } from "../lib/api";
 import { aggregateFlows, nodeZone, nodeIp, type FlowStatus, type FlowContext } from "../lib/observed-flows";
@@ -103,6 +105,7 @@ export function TrafficMatrixView({
   const allRows = useMemo(() => context ? aggregateFlows(context) : [], [context]);
   const rows = useMemo(() => context ? aggregateFlows(context, { zone: filterZone, crossZoneOnly }) : [], [context, filterZone, crossZoneOnly]);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   // Summary chips reflect the unfiltered totals so a student can see
   // what the filter is hiding.
@@ -123,10 +126,21 @@ export function TrafficMatrixView({
   const pcapFiles = pcapStatus?.files ?? [];
   const pcapReady = (pcapStatus?.file_ready ?? false) && !capturing;
 
+  const generateTraffic = async () => {
+    const run = await startTrafficGeneration(captureDuration);
+    // Publish the authoritative run immediately: Stop may be clicked
+    // before the next traffic-status poll observes this start. Discard
+    // older in-flight polls so they cannot overwrite the returned ID.
+    await queryClient.cancelQueries({ queryKey: ["traffic-status"] });
+    queryClient.setQueryData<TrafficStatus>(["traffic-status"], {
+      generating: true, run_id: run.run_id, started_at: run.started_at, flows_generated: 0,
+    });
+  };
+
   const handleGenerate = async () => {
     try {
       setActionError(null);
-      await startTrafficGeneration(captureDuration);
+      await generateTraffic();
       queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Traffic generation failed");
@@ -141,7 +155,7 @@ export function TrafficMatrixView({
     try {
       setActionError(null);
       await Promise.all([
-        ...(canGenerate ? [startTrafficGeneration(captureDuration)] : []),
+        ...(canGenerate ? [generateTraffic()] : []),
         startPcapCapture(captureDuration),
       ]);
       queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
@@ -152,11 +166,30 @@ export function TrafficMatrixView({
   };
 
   const handleStopCapture = async () => {
+    setActionError(null);
+    setStopping(true);
     try {
-      await stopPcapCapture();
+      // Snapshot once before either stop. Never fetch a newer run ID in
+      // the middle of a stop, nor let a delayed request cancel that run.
+      const runID = queryClient.getQueryData<TrafficStatus>(["traffic-status"])?.run_id
+        ?? context?.traffic?.run_id ?? "";
+      const stops = [
+        ...(canGenerate ? [{
+          label: "Traffic",
+          stop: () => stopTrafficGeneration(runID),
+        }] : []),
+        { label: "Capture", stop: stopPcapCapture },
+      ];
+      // Attempt both even if one fails, and wait for both before refreshing.
+      const results = await Promise.allSettled(stops.map(({ stop }) => stop()));
+      const errors = results.flatMap((result, index) => result.status === "rejected"
+        ? [`${stops[index].label}: ${result.reason instanceof Error ? result.reason.message : "Stop failed"}`]
+        : []);
+      if (errors.length) setActionError(errors.join("; "));
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["traffic-status"] });
       queryClient.invalidateQueries({ queryKey: ["pcap-status"] });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Stop capture failed");
+      setStopping(false);
     }
   };
 
@@ -200,7 +233,7 @@ export function TrafficMatrixView({
             <TooltipTrigger asChild>
               <button
                 onClick={handleGenerate}
-                disabled={generating}
+                disabled={generating || stopping}
                 aria-label="Generate Traffic"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-cyan-700/60 bg-cyan-950/30 text-cyan-400 transition-colors hover:border-cyan-600 hover:bg-cyan-900/40 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -228,7 +261,7 @@ export function TrafficMatrixView({
           <select
             value={captureDuration}
             onChange={(e) => setCaptureDuration(Number(e.target.value))}
-            disabled={capturing || generating}
+            disabled={capturing || generating || stopping}
             className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200 disabled:opacity-50"
           >
             <option value={15}>15 sec</option>
@@ -236,10 +269,10 @@ export function TrafficMatrixView({
             <option value={60}>60 sec</option>
             <option value={120}>2 min</option>
           </select>
-          {!capturing ? (
+          {!capturing && !generating ? (
             <button
               onClick={handleGenerateAndCapture}
-              disabled={generating}
+              disabled={stopping}
               className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-700/60 bg-cyan-950/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {canGenerate ? <Zap className="h-3 w-3" fill="currentColor" /> : <Activity className="h-3 w-3" />}
@@ -248,10 +281,11 @@ export function TrafficMatrixView({
           ) : (
             <button
               onClick={handleStopCapture}
-              className="ml-auto inline-flex items-center gap-1 rounded border border-red-700/60 bg-red-950/30 px-2 py-0.5 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-900/40"
+              disabled={stopping}
+              className="ml-auto inline-flex items-center gap-1 rounded border border-red-700/60 bg-red-950/30 px-2 py-0.5 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Square className="h-3 w-3" fill="currentColor" />
-              Stop
+              {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
         </div>
