@@ -57,27 +57,15 @@ type Server struct {
 	// range; activateRange resets it for every new generation.
 	activeConfigMu sync.RWMutex
 	activeConfig   string // "weak", "improved", or "custom"
-	// policySource records how the active policy was applied. Possible
-	// values:
-	//   "weak"              — canned weak baseline (/api/firewall/apply)
-	//   "hardened-reference" — canned hardened policy (/api/firewall/apply)
-	//   "plan-custom"       — student's Lab 1.4 plan, pushed by the
-	//                         frontend "Apply Your Plan" button
-	//                         (/api/firewall/apply-custom)
-	//   "manual-custom"     — observed: a policy the student committed
-	//                         directly in containd's CLI/UI. Set by
-	//                         the background policyObserver goroutine
-	//                         when the running-config hash diverges
-	//                         from the last applied hash for >5s.
-	//   ""                  — never applied / initial state
-	// The frontend uses this to label the status banner accurately
-	// ("Your custom policy (Lab 1.4 plan)" vs "(your containd commit)")
-	// and survives page reloads, which a frontend-only session-state
-	// approach would not.
-	policySource string
+	// policySource is weak, hardened-reference, plan, or manual-custom.
+	// A plan retains its provenance while the running firewall hash matches,
+	// even when its full compilation is identical to the Hardened reference.
+	policySource   string
+	planProvenance *planProvenance
+	appliedPlan    *labs.CompiledPlan
 	// lastAppliedHash is the canonical SHA-256 of the firewall sub-
 	// document at the moment of the last successful backend apply
-	// (weak / improved / plan-custom). The observer compares it to
+	// (weak / improved / plan). The observer compares it to
 	// containd's live running-config hash to spot manual commits.
 	lastAppliedHash string
 	// lastAppliedAt records when lastAppliedHash was set. The
@@ -161,6 +149,7 @@ func (s *Server) registerRoutes() {
 // registerRangeRoutes registers every route that reaches the range: its
 // containers, its firewall, or its services.
 func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
+	rng.POST("/plan/compile", s.handlePlanCompile)
 	firewall := rng.Group("/firewall")
 	{
 		firewall.GET("/health", s.handleGetFirewallHealth)
@@ -169,7 +158,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		firewall.GET("/compare", s.handleFirewallCompare)
 		firewall.GET("/active", s.handleFirewallActive)
 		firewall.POST("/apply", s.handleFirewallApply)
-		firewall.POST("/apply-custom", s.handleFirewallApplyCustom)
+		firewall.POST("/apply-plan", s.handleFirewallApplyPlan)
 		firewall.POST("/validation-report", s.handleValidationReport)
 		firewall.GET("/sessions", s.handleFirewallSessions)
 		firewall.POST("/sessions/kill", s.handleFirewallSessionKill)

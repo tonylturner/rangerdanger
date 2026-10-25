@@ -119,6 +119,7 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	prev := s.activeConfig
 	s.activeConfig = "custom"
 	s.policySource = "manual-custom"
+	s.planProvenance, s.appliedPlan = nil, nil
 	s.lastAppliedHash = hash
 	s.policyEvidenceSince = s.policyObservedAt.UTC()
 	s.policyChangedAt = time.Now().UTC()
@@ -130,7 +131,7 @@ func (s *Server) classifyObservedPolicy(hash string, observedSince time.Time) {
 	log.Printf("policy-observer: detected manual containd commit (was %q, now custom/manual-custom)", prev)
 }
 
-// recordApply is called by the apply handlers (and apply-custom)
+// recordApply is called by the apply handlers (and apply-plan)
 // to seed the observer's baseline. Pass the bytes of the config
 // that was actually committed — the helper hashes its firewall
 // sub-document the same way the observer hashes containd's running

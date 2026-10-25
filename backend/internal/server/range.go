@@ -67,6 +67,7 @@ func (s *Server) activateRange(gen *lifecycle.Generation) {
 	s.activeConfigMu.Lock()
 	s.activeConfig = activeConfig
 	s.policySource = ""
+	s.planProvenance, s.appliedPlan = nil, nil
 	s.lastAppliedHash = ""
 	s.lastAppliedAt = time.Time{}
 	s.policyChangedAt = time.Time{}

@@ -199,7 +199,8 @@ func TestRangeBoundContextEndsWithGeneration(t *testing.T) {
 }
 
 func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
-	s := &Server{activeConfig: "custom", policySource: "manual-custom", lastAppliedHash: "old",
+	s := &Server{activeConfig: "custom", policySource: "plan", lastAppliedHash: "old",
+		planProvenance: &planProvenance{}, appliedPlan: &labs.CompiledPlan{},
 		pcap: pcapState{Capturing: true}, traffic: trafficState{Generating: true}}
 	// The default's name comes from the package's policies by exact path,
 	// whatever the file is called.
@@ -219,6 +220,9 @@ func TestActivateRangeResetsStateAndStartsObserver(t *testing.T) {
 	s.activeConfigMu.RUnlock()
 	if activeConfig != "strict" || source != "" || hash != "" {
 		t.Errorf("policy state = %q %q %q, want the package default and no apply", activeConfig, source, hash)
+	}
+	if s.planProvenance != nil || s.appliedPlan != nil {
+		t.Error("plan survived activation")
 	}
 	if s.pcap.Capturing || s.traffic.Generating {
 		t.Error("capture or traffic state survived the new generation")
