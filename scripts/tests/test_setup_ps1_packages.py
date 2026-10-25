@@ -128,7 +128,7 @@ function Invoke-SetupDocker($DockerArgs, $TimeoutSec) {
         self.assertEqual(set(json.loads(result.stdout)), {8088, 9080, 2222})
 
     def test_health_and_range_requests_are_bounded_and_fail_closed(self):
-        for scenario in ("ready", "default", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout"):
+        for scenario in ("ready", "default", "failed", "preflight-failed", "conflict", "wrong-then-ready", "unknown-then-ready", "timeout", "bad-post", "wrong-post"):
             with self.subTest(scenario=scenario):
                 result = powershell(LOAD_PACKAGE + """
 class RangeConflict : System.Exception {
@@ -149,9 +149,11 @@ function Invoke-WebRequest($Uri, $Method, $ContentType, $Body, [switch]$UseBasic
         if ($Body -ne '{}') { throw 'default package must use recorded/backend choice' }
     } elseif (($Body | ConvertFrom-Json).package -ne 'eu') { throw 'package lost' }
     if ($env:SCENARIO -eq 'conflict') { throw [RangeConflict]::new() }
+    if ($env:SCENARIO -eq 'bad-post') { return [pscustomobject]@{ StatusCode=202; Content='{}' } }
+    if ($env:SCENARIO -eq 'wrong-post') { return [pscustomobject]@{ StatusCode=202; Content='{"target":"eu-other"}' } }
     return [pscustomobject]@{ StatusCode=202; Content='{"target":"eu","phase":"preflight"}' }
 }
-function Get-SetupRangeStatus($Api) {
+function Get-RangeStatus($Api) {
     $script:gets++
     if ($env:SCENARIO -eq 'failed') { return [pscustomobject]@{phase='failed';error='fixture'} }
     if ($env:SCENARIO -eq 'preflight-failed') { return [pscustomobject]@{phase='ready';package='us';error='fixture'} }
@@ -167,7 +169,7 @@ $package = if ($env:SCENARIO -eq 'default') { '' } else { 'eu' }
 $budget = if ($env:SCENARIO -eq 'timeout') { 0 } else { 1 }
 try { $result = Start-SetupRange 'http://fixture' $package $budget }
 catch { $failed = $true }
-$expectedFailure = $env:SCENARIO -in @('failed','preflight-failed','conflict','timeout')
+$expectedFailure = $env:SCENARIO -in @('failed','preflight-failed','conflict','timeout','bad-post','wrong-post')
 if ($failed -ne $expectedFailure) { throw 'incorrect range result' }
 if (-not $failed -and $result -ne 'eu') { throw 'wrong package accepted' }
 if ($env:SCENARIO -eq 'conflict' -and $script:posts -ne 3) { throw 'lost retry' }

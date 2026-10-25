@@ -1,8 +1,5 @@
 # Bounded backend lifecycle requests, shared by Windows setup and tests.
-function Get-SetupRangeStatus([string]$Api) {
-    try { Invoke-RestMethod -Uri "$Api/api/range" -TimeoutSec 10 -ErrorAction Stop }
-    catch { return $null }
-}
+. "$PSScriptRoot/range.ps1"
 
 function Test-SetupRangeSettled($Status) {
     return ($Status -and $Status.phase -in @('none', 'ready', 'failed'))
@@ -23,7 +20,7 @@ function Wait-SetupHealth([string]$Api, [int]$BudgetSec = 120) {
 function Wait-SetupRangeSettled([string]$Api, [int]$BudgetSec) {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while ($clock.Elapsed.TotalSeconds -lt $BudgetSec) {
-        if (Test-SetupRangeSettled (Get-SetupRangeStatus $Api)) { return }
+        if (Test-SetupRangeSettled (Get-RangeStatus $Api)) { return }
         Start-Sleep -Seconds 3
     }
     throw 'A range transition is still running or its status is unreachable.'
@@ -46,16 +43,19 @@ function Start-SetupRange([string]$Api, [string]$Package, [int]$BudgetSec = 600)
     }
     if (-not $response) { throw 'POST /api/range kept returning HTTP 409.' }
     $target = if ($response.target) { $response.target } else { $response.package }
+    if (-not $target -or ($Package -and $target -ne $Package)) {
+        throw 'POST /api/range did not identify the requested range.'
+    }
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $lastPhase = ''
     while ($clock.Elapsed.TotalSeconds -lt $BudgetSec) {
-        $status = Get-SetupRangeStatus $Api
+        $status = Get-RangeStatus $Api
         if ($status.phase -and $status.phase -ne $lastPhase) {
             Write-Host "[+] range phase: $($status.phase)"
             $lastPhase = $status.phase
         }
         if ((Test-SetupRangeSettled $status) -and $status.error) { throw "The range did not start: $($status.error)" }
-        if ($status.phase -eq 'ready' -and (-not $target -or $status.package -eq $target)) {
+        if (Test-RangeReady $status $target) {
             return $status.package
         }
         Start-Sleep -Seconds 3
