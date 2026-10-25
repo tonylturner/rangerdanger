@@ -71,6 +71,14 @@ v0.1.17.
 .PARAMETER OwnerRepo
 GitHub owner/repo of the rangerdanger fork. Default: tonylturner/rangerdanger.
 
+.PARAMETER ProbeImage
+Local firewall image for the kernel probe. Source setup passes its built
+firewall image; release setup uses the published firewall reference.
+
+.PARAMETER Offline
+Do not fall back to a network-dependent probe. Setup requires a bundled
+kernel and checksum when this probe reports a missing kernel feature.
+
 .EXAMPLE
 .\scripts\install-wsl-kernel.ps1 -Test
 .\scripts\install-wsl-kernel.ps1
@@ -106,7 +114,9 @@ param(
     [string]$KernelUrl = "",
     [string]$ExpectedSha256 = "",
     [string]$ReleaseTag = "latest",
-    [string]$OwnerRepo = "tonylturner/rangerdanger"
+    [string]$OwnerRepo = "tonylturner/rangerdanger",
+    [string]$ProbeImage = "ghcr.io/tonylturner/containd:latest",
+    [switch]$Offline
 )
 
 $ErrorActionPreference = "Stop"
@@ -176,7 +186,7 @@ function Test-WindowsWsl2Backend {
 # never reported as Missing.
 
 # Keep in sync with the firewall service image in docker-compose.release.yml.
-$FirewallImage = 'ghcr.io/tonylturner/containd:latest'
+$FirewallImage = $ProbeImage
 # Removed by the uninstallers' base-image option; keep them in sync.
 $AlpineImage   = 'alpine:3.20'
 # The trailing rdprobe-rc marker proves nft itself ran; without it the
@@ -239,11 +249,12 @@ function Test-NftQueueSupported {
     $image = Invoke-DockerBounded @('image', 'inspect', '--format', '{{.Id}}', $FirewallImage) 15
     if ($image -and $image.ExitCode -eq 0) {
         Say "Probing kernel via a one-shot $FirewallImage container (no network needed)..."
-        $run = Invoke-DockerBounded @('run', '--rm', '--network', 'none', '--cap-add', 'NET_ADMIN',
+        $run = Invoke-DockerBounded @('run', '--rm', '--pull', 'never', '--network', 'none', '--cap-add', 'NET_ADMIN',
             '--entrypoint', 'sh', $FirewallImage, '-c', $NftProbeScript) 120
         return ConvertTo-NftProbeResult $run $FirewallImage
     }
 
+    if ($Offline) { return ConvertTo-NftProbeResult $null 'offline (no local firewall image)' }
     Say "Probing kernel via a one-shot $AlpineImage container (needs network for the image and nftables)..."
     $alpineScript = 'apk add --quiet --no-progress nftables >/dev/null 2>&1 || { echo rdprobe-noapk; exit 91; }; ' + $NftProbeScript
     $run = Invoke-DockerBounded @('run', '--rm', '--cap-add', 'NET_ADMIN', $AlpineImage, 'sh', '-c', $alpineScript) 180

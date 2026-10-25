@@ -12,6 +12,9 @@ and confirms enough services report (healthy).
 Leave the lab running after the test finishes. Without -Keep, the
 script runs scripts\dev-down.ps1 on exit.
 
+.PARAMETER ExistingStack
+Check the running US range only. Never start/stop it or clear its database.
+
 .EXAMPLE
 .\scripts\smoke-test.ps1
 .\scripts\smoke-test.ps1 -Keep
@@ -26,12 +29,15 @@ ASCII-only, BOM-free. See setup.ps1 for the encoding rationale.
 #>
 
 [CmdletBinding()]
-param([switch]$Keep)
+param([switch]$Keep, [switch]$ExistingStack)
 
-$ErrorActionPreference = "Continue"   # we want to keep running on errors and aggregate
+$ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $RootDir
+. "$PSScriptRoot/lib/docker-bounded.ps1"
+. "$PSScriptRoot/lib/setup-package.ps1"
+. "$PSScriptRoot/lib/windows-root.ps1"
 
 # Expected lab inventory after the workshop-deck-aligned restructure.
 # Format: order|id (sorted lexicographically -- same order containd
@@ -59,15 +65,21 @@ $WorkDir = Join-Path ([IO.Path]::GetTempPath()) ("rd-smoke-" + [guid]::NewGuid()
 New-Item -ItemType Directory -Path $WorkDir | Out-Null
 
 function Invoke-ComposePs([string]$Format) {
-    Push-Location $WorkDir
+    $savedComposeFile = $env:COMPOSE_FILE
     try {
-        & docker compose -p rangerdanger-platform ps --format $Format
-        & docker compose -p rangerdanger ps --format $Format
-    } finally { Pop-Location }
+        Remove-Item Env:COMPOSE_FILE -ErrorAction SilentlyContinue
+        foreach ($project in 'rangerdanger-platform', 'rangerdanger') {
+            $run = Invoke-DockerBounded @('compose', '-p', $project, 'ps', '--format', $Format) 30 $WorkDir
+            if (-not $run -or $run.TimedOut -or $run.ExitCode -ne 0) { throw "Cannot list $project services." }
+            $run.StdOut -split '\r?\n' | Where-Object { $_ }
+        }
+    } finally { $env:COMPOSE_FILE = $savedComposeFile }
 }
 
 function Invoke-Cleanup {
-    if (-not $Keep) {
+    if ($ExistingStack) {
+        Note "existing stack left running; database preserved"
+    } elseif (-not $Keep) {
         Note "tearing down"
         & { $ErrorActionPreference = 'SilentlyContinue'; & (Join-Path $RootDir "scripts\dev-down.ps1") *>$null }
         if ($LASTEXITCODE -ne 0) { Err "teardown left resources behind (run .\scripts\dev-down.ps1)" }
@@ -93,44 +105,46 @@ try {
         }
     }
     $savedRoot = $env:RANGERDANGER_ROOT
-    $env:RANGERDANGER_ROOT = $RootDir
+    $env:RANGERDANGER_ROOT = ConvertTo-DesktopRoot $RootDir
     try {
         foreach ($c in $configs) {
-            & { $ErrorActionPreference = 'SilentlyContinue'; docker compose -p $c.project --project-directory $RootDir -f (Join-Path $RootDir $c.file) config -q *>$null }
-            if ($LASTEXITCODE -eq 0) { OK $c.file } else { Err $c.file }
+            $run = Invoke-DockerBounded @('compose', '-p', $c.project, '--project-directory', $RootDir,
+                '-f', (Join-Path $RootDir $c.file), 'config', '-q') 30
+            if ($run -and -not $run.TimedOut -and $run.ExitCode -eq 0) { OK $c.file } else { Err $c.file }
         }
     } finally { $env:RANGERDANGER_ROOT = $savedRoot }
 
-    # The backend bind-mounts this database. Stop it before removing the file
-    # so it cannot keep using a stale SQLite handle; the bring-up below starts
-    # it on the clean database and runs migrations.
-    $backend = @(& docker ps -q --filter label=com.docker.compose.project=rangerdanger-platform --filter label=com.docker.compose.service=backend | Where-Object { $_ })
-    if ($backend.Count -gt 0) {
-        & { $ErrorActionPreference = 'SilentlyContinue'; docker stop @backend *>$null }
-        if ($LASTEXITCODE -ne 0) {
-            Err "backend could not be stopped; stale database not cleared"
+    function Initialize-SmokeStack {
+        # The backend bind-mounts this database. Stop it before removing the file
+        # so it cannot keep using a stale SQLite handle; the bring-up below starts
+        # it on the clean database and runs migrations.
+        $backendText = Invoke-SetupDocker @('ps', '-q', '--filter', 'label=com.docker.compose.project=rangerdanger-platform',
+            '--filter', 'label=com.docker.compose.service=backend') 15
+        $backend = @($backendText -split '\r?\n' | Where-Object { $_ })
+        if ($backend.Count -gt 0) {
+            $null = Invoke-SetupDocker (@('stop') + $backend) 60
+        }
+        $StaleDb = Join-Path $RootDir "backend\data\rangerdanger.db"
+        if (Test-Path $StaleDb) {
+            Remove-Item $StaleDb -Force
+            OK "stale database cleared"
+        } else {
+            OK "stale database cleared (none present)"
+        }
+
+        # --- bring up -----------------------------------------------------------
+        # dev-up builds every image, starts the platform, waits for the backend
+        # and for POST /api/range to bring the range to ready.
+        Note "build + up"
+        & { $ErrorActionPreference = 'Stop'; & (Join-Path $RootDir "scripts\dev-up.ps1") -Package us-dnp3-substation *> $UpLog }
+        if ($LASTEXITCODE -eq 0) {
+            OK "build, platform up, range ready"
+        } else {
+            Err "dev-up failed; see $UpLog"
             exit 1
         }
     }
-    $StaleDb = Join-Path $RootDir "backend\data\rangerdanger.db"
-    if (Test-Path $StaleDb) {
-        Remove-Item $StaleDb -Force
-        OK "stale database cleared"
-    } else {
-        OK "stale database cleared (none present)"
-    }
-
-    # --- bring up -----------------------------------------------------------
-    # dev-up builds every image, starts the platform, waits for the backend
-    # and for POST /api/range to bring the range to ready.
-    Note "build + up"
-    & { $ErrorActionPreference = 'SilentlyContinue'; & (Join-Path $RootDir "scripts\dev-up.ps1") *> $UpLog }
-    if ($LASTEXITCODE -eq 0) {
-        OK "build, platform up, range ready"
-    } else {
-        Err "dev-up failed; see $UpLog"
-        exit 1
-    }
+    if (-not $ExistingStack) { Initialize-SmokeStack }
 
     # --- range --------------------------------------------------------------
     # Every assertion below is about the US range.
@@ -224,7 +238,7 @@ try {
     } else {
         Write-Host "  FAILED -- see [x] entries above" -ForegroundColor Red
     }
-}
+} catch { Err "smoke test failed: $_" }
 finally {
     Invoke-Cleanup
     exit $script:fail

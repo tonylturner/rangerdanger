@@ -3,10 +3,10 @@
 RangerDanger dev-up -- Windows sibling of scripts/dev-up.sh.
 
 .DESCRIPTION
-Brings the RangerDanger stack up via the dev compose file (build from
-source, not the release tarball). Any additional args are forwarded to
-docker compose up, so e.g. `.\scripts\dev-up.ps1 backend frontend` will
-only start those two services.
+Windows sibling of dev-up.sh: setup -FromSource -SkipFirewallGate.
+Builds the platform and every package, then starts the range through the
+backend. Named options pass to setup, including -Package. Skips the
+workshop apply/reset gate so dev bring-up preserves policy.
 
 .NOTES
 Keep this file ASCII-only and BOM-free. Windows PowerShell 5.1 reads
@@ -21,18 +21,14 @@ which silently breaks the whole help block for the script.)
 #>
 
 [CmdletBinding()]
-param([Parameter(ValueFromRemainingArguments=$true)][string[]]$ComposeArgs)
+param(
+    [string]$Version,
+    [string]$Package,
+    [switch]$CheckOnly,
+    [switch]$SkipKernelFix
+)
 
 $ErrorActionPreference = "Stop"
 
-$RootDir     = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$ComposeFile = Join-Path $RootDir "docker-compose.yml"
-
-if (-not (Test-Path $ComposeFile)) {
-    Write-Host "[x] $ComposeFile not found -- run from the repo root." -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "[+] Building and starting RangerDanger stack" -ForegroundColor Green
-& docker compose -f $ComposeFile up --build -d @ComposeArgs
+& (Join-Path (Split-Path -Parent $PSScriptRoot) 'setup.ps1') -FromSource -SkipFirewallGate @PSBoundParameters
 exit $LASTEXITCODE
