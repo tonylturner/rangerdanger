@@ -95,7 +95,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # libmodbus runtime package alongside it.
 FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS mbpoll-builder
 RUN apk add --no-cache git cmake make gcc musl-dev libmodbus-dev pkgconfig
-RUN git clone --depth 1 https://github.com/epsilonrt/mbpoll /src
+RUN git init /src \
+ && git -C /src remote add origin https://github.com/epsilonrt/mbpoll \
+ && git -C /src fetch --depth 1 origin d541211d0e2451888de11c82fb1604c3d6285b1a \
+ && git -C /src checkout --detach FETCH_HEAD
 WORKDIR /src
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build
