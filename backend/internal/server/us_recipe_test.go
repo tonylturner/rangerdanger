@@ -53,20 +53,20 @@ func TestUSValidationMatrixResolvesToTheFrozenMatrix(t *testing.T) {
 	}
 }
 
-func TestUSTrafficResolvesToTheFrozenTargets(t *testing.T) {
+func TestUSTrafficResolvesToSupportedProtocolReads(t *testing.T) {
 	want := []resolvedTraffic{
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/state > /dev/null 2>&1 || true", "eng-ws→rtac http"},
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "eng-ws→rtac http health"},
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.30:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
 		{"rangerdanger-eng-ws", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "eng-ws→hmi fuxa"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20 > /dev/null 2>&1 || true", "eng-ws→relay modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21 > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.22 > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23 > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC03 (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.20:20000 -a 1 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.21:20000 -a 2 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.22:20000 -a 3 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
-		{"rangerdanger-eng-ws", "dnp3poll 10.40.40.23:20000 -a 4 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.20 > /dev/null 2>&1 || true", "eng-ws→relay modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.21 > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.22 > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 10.40.40.23 > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC01 (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 1 -t 3s 10.40.40.20:20000 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 2 -t 3s 10.40.40.21:20000 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 3 -t 3s 10.40.40.22:20000 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
+		{"rangerdanger-eng-ws", "dnp3poll -a 4 -t 3s 10.40.40.23:20000 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.10:1881/ > /dev/null 2>&1 || true", "vendor→hmi fuxa"},
 		{"rangerdanger-vendor-jump", "curl -sf http://10.30.30.20:8080/api/health > /dev/null 2>&1 || true", "vendor→rtac http health"},
 	}

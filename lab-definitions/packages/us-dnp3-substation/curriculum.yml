@@ -734,48 +734,47 @@ policy:
       action: ALLOW
 phases:
   rules: |-
-    The six rules below are the contract for what cross-zone
-    traffic the substation must allow. Everything else stays denied.
+    **Workshop note:**
+    - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+    - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
 
-    {{noPlan}}:::guided
-    Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
-    reference, or **Apply Your Plan** to push the policy built from
-    your Lab 1.4 picks. Then walk the rule table below and confirm
-    each row is present in containd's web UI
-    ([http://localhost:9080](http://localhost:9080)) or via
-    `show running-config` in the CLI. Understanding *what* is in
-    the policy matters as much as *how* it gets there.
+    :::guided
+    Click **Apply Hardened** in the **containd NGFW - policy actions** panel.
+    Confirm the reference rules in containd's web UI or with
+    `show running-config` at `containd#`.
     :::
 
     :::technical
-    Author these rules in containd directly - your choice of the web
-    UI or the appliance CLI. The banner above will switch to
-    "Your custom policy" once your commit lands. The JSON schema and
-    CLI walkthrough are in the hints below.
+    **Close the remote-access hole, commit, then prove it.** The weak
+    `enterprise-to-vendor` rule allows RDP 3389 and VNC 5900. Replace it
+    with TCP 22, 80, 443 only. **Create rule** and **Delete** save the
+    running config but do not reload the firewall. After the last edit,
+    run `commit` at `containd#` or **Commit** on the **Configuration** page.
+    Then run `nmap -Pn -p 3389,5900 ${ip:vendor-jump-1}` from Kali.
+    Both ports must be `filtered`; otherwise fix the rule and commit again.
     :::
 
-    ### Firewall Rules to Implement
+    ### Your plan — design review only
 
+    {{noPlan}}
     {{ruleTable}}
 
-    > **Critical:** RTAC rules are source-pinned to `${ip:rtac-1}`. Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly.
+    This table reflects your selections, not the applied reference policy.
+    The L4 source pin enforces; DPI detects and logs.
+    RTAC rules must be source-pinned to `${ip:rtac-1}/32`, never a broad
+    OT Ops subnet. Confirm all six required reference conduits in containd.
 
-    :::hint Creating rules via the containd CLI
-    The granular protocol-port rule schema (with ICS DPI fields) is best edited via JSON in the CLI rather than typed-in argument lists. From the `fw-1` terminal, type `containd cli` to enter the appliance shell, then:
+    :::hint Policy evidence at the containd CLI
+    At `containd#`, `export config` prints JSON; it does not create a file:
 
-        export config > /tmp/policy.json
-        shell                   # drop to bash
-        vi /tmp/policy.json     # edit the firewall.rules array to add each rule above
-        exit                    # back to containd CLI
-        import config /tmp/policy.json
-        show diff               # confirm what will change
-        commit
+        export config
 
-    Each rule object in `firewall.rules` looks like:
+    Copy the output into your evidence. The CLI JSON-file edit/import exercise
+    is deferred; do not use shell redirection or edit an assumed export file.
+    This non-executable schema illustration uses the shipped reference shape:
 
         {
           "id": "rtac-to-field-modbus",
-          "description": "RTAC Modbus polling to field devices",
           "sourceZones": ["${zone:ot_ops_net}"],
           "destZones": ["${zone:field_net}"],
           "sources": ["${ip:rtac-1}/32"],
@@ -784,37 +783,43 @@ phases:
           "action": "ALLOW",
           "log": true
         }
-
-    Tip: `commit confirmed 60` commits with auto-rollback after 60 seconds unless you type `confirm` - useful when pushing rules and you don't want to lock yourself out.
     :::
   positive: |-
-    Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
+    Verify the hardened reference before reviewing your design-plan checks.
+    From the RTAC terminal, these supported reads should return data:
 
-    **Positive validation commands (based on your plan):**
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 ${ip:relay-1}
+        dnp3poll -a 1 -t 3s ${ip:relay-1}:20000
+
+    Check RTAC `device_comms` for healthy field devices and open the HMI.
+    The Lab 2.4 report must show authorized 8/8, unauthorized blocked 11/11,
+    and 0 skipped; its TCP matrix does not prove function-code enforcement.
+
+    ### Supplementary design-plan checks
 
     {{tests}}
-
-    If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
   negative: |-
-    Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
+    **Workshop note:**
+    - In Lab 2.4, preserve the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
 
-    **Negative validation commands (based on your plan):**
+    From Kali and vendor terminals, reference-policy field-device probes
+    should time out. Check that the HMI remains healthy; a banner alone
+    is not enforcement evidence. Run all reference checks regardless of
+    your plan selections. These are supplementary design-plan checks:
 
     {{tests}}
 
-    After each failed attempt, check the containd event log to confirm the deny was logged. From the `fw-1` terminal, type `containd cli`, then:
-
-        show audit
-
-    …and look for the most recent deny entries. If you don't see your test attempts, logging isn't enabled on the deny rules.
-
-    If any test succeeds when it should fail, you have a rule that is too permissive. Review your policy and tighten it.
+    For administrative confirmation run `show audit` at `containd#` and
+    look for recent `config.commit` entries. These establish which policy
+    was committed, not per-flow deny verdicts. Preserve TCP results, HMI
+    observations and timestamps. If a denied probe succeeds, fix the rule,
+    commit again, and repeat the check.
 tests:
   - kind: positive
     text: |-
       **RTAC → field Modbus** (should succeed) — from rtac-1:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 ${ip:relay-1}
+          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 ${ip:relay-1}
 
       Or verify via the RTAC API:
 
@@ -829,31 +834,31 @@ tests:
     text: |-
       **Vendor → OT SSH** (should succeed):
 
-          ssh -o ConnectTimeout=3 eng@${ip:rtac-1} echo ok
+          ssh -o ConnectTimeout=3 rangerdanger@${ip:rtac-1} echo ok
   - kind: negative
     when: block-enterprise-to-field
     text: |-
       **Enterprise → field Modbus** (should be BLOCKED) — from kali-1:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:relay-1}
+          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:relay-1}
   - kind: negative
     when: block-enterprise-to-field
     text: |-
       **Enterprise → field DNP3** (should be BLOCKED) — from kali-1:
 
-          dnp3poll ${ip:relay-1}:20000 -a 1 -t 3
+          dnp3poll -a 1 -t 3s ${ip:relay-1}:20000
   - kind: negative
     when: block-enterprise-to-ot
     text: |-
       **Enterprise → OT Modbus** (should be BLOCKED) — from kali-1:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:rtac-1}
+          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:rtac-1}
   - kind: negative
     when: block-vendor-to-field
     text: |-
       **Vendor → field Modbus** (should be BLOCKED) — from eng-ws-1:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:capbank-1}
+          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:capbank-1}
   - kind: negative
     when: block-vendor-to-field
     text: |-
@@ -865,8 +870,8 @@ tests:
     text: |-
       **Non-RTAC OT host → field** (should be BLOCKED) — from historian-1 or openplc-1:
 
-          mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 -o 3 ${ip:relay-1}
-negativeEmpty: Your plan did not include cross-zone deny rules, so there are no negative tests to run — all cross-zone traffic is still permitted under the weak baseline. Consider whether that residual risk is acceptable.
+          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:relay-1}
+negativeEmpty: No supplementary design-plan checks were selected. Run every reference-policy check above regardless of your plan.
 flags:
   logging: improve-logging
   objects: tighten-firewall-objects

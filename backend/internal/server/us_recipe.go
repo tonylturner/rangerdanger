@@ -75,16 +75,16 @@ var usRecipe = &packageRecipe{
 		{"eng-ws-1", "openplc-1", "ot_ops_net", "curl -sf http://%s:8080/ > /dev/null 2>&1 || true", "eng-ws→openplc http"},
 		{"eng-ws-1", "hmi-1", "ot_ops_net", "curl -sf http://%s:1881/ > /dev/null 2>&1 || true", "eng-ws→hmi fuxa"},
 		// Real ICS protocol traffic to the field devices: the weak baseline
-		// allows it, the hardened policy blocks it. Modbus FC03 reads
-		// (5 holding registers, 1 poll, 1 s timeout), then DNP3 class 0 polls.
-		{"eng-ws-1", "relay-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 %s > /dev/null 2>&1 || true", "eng-ws→relay modbus FC03 (WEAK)"},
-		{"eng-ws-1", "recloser-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 %s > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC03 (WEAK)"},
-		{"eng-ws-1", "regulator-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 %s > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC03 (WEAK)"},
-		{"eng-ws-1", "capbank-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 %s > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC03 (WEAK)"},
-		{"eng-ws-1", "relay-1", "field_net", "dnp3poll %s:20000 -a 1 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
-		{"eng-ws-1", "recloser-1", "field_net", "dnp3poll %s:20000 -a 2 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
-		{"eng-ws-1", "regulator-1", "field_net", "dnp3poll %s:20000 -a 3 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
-		{"eng-ws-1", "capbank-1", "field_net", "dnp3poll %s:20000 -a 4 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
+		// allows it, the hardened policy blocks it. Modbus FC01 reads
+		// (4 coils, 1 poll, 1 s timeout), then DNP3 class 0 polls.
+		{"eng-ws-1", "relay-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 %s > /dev/null 2>&1 || true", "eng-ws→relay modbus FC01 (WEAK)"},
+		{"eng-ws-1", "recloser-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 %s > /dev/null 2>&1 || true", "eng-ws→recloser modbus FC01 (WEAK)"},
+		{"eng-ws-1", "regulator-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 %s > /dev/null 2>&1 || true", "eng-ws→regulator modbus FC01 (WEAK)"},
+		{"eng-ws-1", "capbank-1", "field_net", "mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 1 %s > /dev/null 2>&1 || true", "eng-ws→capbank modbus FC01 (WEAK)"},
+		{"eng-ws-1", "relay-1", "field_net", "dnp3poll -a 1 -t 3s %s:20000 > /dev/null 2>&1 || true", "eng-ws→relay dnp3 poll (WEAK)"},
+		{"eng-ws-1", "recloser-1", "field_net", "dnp3poll -a 2 -t 3s %s:20000 > /dev/null 2>&1 || true", "eng-ws→recloser dnp3 poll (WEAK)"},
+		{"eng-ws-1", "regulator-1", "field_net", "dnp3poll -a 3 -t 3s %s:20000 > /dev/null 2>&1 || true", "eng-ws→regulator dnp3 poll (WEAK)"},
+		{"eng-ws-1", "capbank-1", "field_net", "dnp3poll -a 4 -t 3s %s:20000 > /dev/null 2>&1 || true", "eng-ws→capbank dnp3 poll (WEAK)"},
 		// No HTTP/8080 to field devices: real relays, reclosers, regulators
 		// and cap banks don't run web servers. The sims' HTTP API is a lab
 		// convenience; generating traffic to it would teach the wrong model.

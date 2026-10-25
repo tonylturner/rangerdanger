@@ -133,6 +133,5 @@ steps:
       plan next quarter?
 
       The selections you made in the previous step are saved to your
-      exercise state. Later exercises will read them to reflect the
-      consequences of your plan - if you did not block a path, that
-      attack will remain easier to execute.
+      exercise state for design review. Later exercises use the hardened
+      reference policy; your selections do not establish enforcement.

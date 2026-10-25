@@ -45,7 +45,7 @@ describe("scenario runner logic", () => {
       plan,
     );
 
-    expect(description).toContain("**Positive validation commands (based on your plan):**");
+    expect(description).toContain("### Supplementary design-plan checks");
     expect(description).toContain("**RTAC → field Modbus**");
     expect(description).toContain("mbpoll -m tcp");
   });

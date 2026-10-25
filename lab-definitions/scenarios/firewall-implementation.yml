@@ -337,10 +337,8 @@ steps:
       - **proto** = `tcp`, **port/range** = `502` (or `20000` / `8080`)
       - **action** = `ALLOW`, and tick **Log hits**
       - For the DPI rules: tick **ICS Protocol Filter**, set **ICS
-        Protocol** to Modbus (or DNP3) and the **Function Code(s)**, then
-        set **Rule Mode** to **Enforcement (active)**. It defaults to
-        *Learning (passive)*, which only observes - in Learning mode the
-        function-code filter will **not** block.
+        Protocol** to Modbus (or DNP3) and the **Function Code(s)**.
+        The L4 source pin enforces; DPI detects and logs.
 
       Click **Create rule** and watch the rule list grow. Each rule is
       saved to the running config, but the firewall only loads the saved
