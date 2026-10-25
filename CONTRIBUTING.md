@@ -27,6 +27,16 @@ devices, the webtops) comes from
 backend starts and stops it, through `POST /api/range`, which is also
 what the UI's package toggle sends. One range runs at a time.
 
+Packages are `us-dnp3-substation` (US DNP3, the fresh-install default) and
+`eu-iec104-substation` (EU IEC 104). Each owns its manifest, Compose twins,
+proxy routes and curriculum. Select EU with
+`./setup.sh --from-source --package eu-iec104-substation`, or
+`.\setup.ps1 -FromSource -Package eu-iec104-substation` on Windows.
+Windows setup requires Docker Desktop WSL2 and a physical local-drive
+checkout; UNC/`\\wsl$`, mapped drives, junctions and Hyper-V are rejected.
+See [Windows checks](docs/quickstart.md#windows-docker-desktop-wsl2-only);
+support is not a claim of completed real-hardware acceptance.
+
 Bring it up from source:
 
 ```sh
@@ -60,11 +70,12 @@ Open http://localhost:8088 - the UI is the entry point.
 |------|---------|
 | `backend/` | Go HTTP API (Gin, GORM, SQLite) |
 | `frontend/` | Next.js + TypeScript UI |
-| `services/` | Field device simulators (relay, recloser, regulator, rtac, opendss, capbank, historian, gps) |
+| `services/` | US and EU device simulators, IEC 104 service, and OpenDSS physics |
 | `dnp3go/` | Standalone Go DNP3 library, vendored as its own module |
+| `iec104go/` | Standalone Go IEC 104 library |
 | `lab-definitions/` | YAML lab topologies, exercises, firewall configs |
 | `docs/` | Architecture, API spec, workshop guides, lab-authoring guide |
-| `lab-definitions/packages/` | Range packages: curriculum (`package.yml`), `manifest.json`, the range Compose files and proxy routes |
+| `lab-definitions/packages/` | Range packages: `package.yml`, `curriculum.yml`, `manifest.json`, Compose twins, proxy routes and package-specific content |
 | `scripts/` | Dev helpers (`dev-up.sh`, `dev-down.sh`, `seed-labs.sh`) |
 | `.github/workflows/` | CI |
 

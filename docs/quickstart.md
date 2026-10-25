@@ -1,6 +1,6 @@
 # Quickstart
 
-Full install walkthrough for the package-based v0.2.0 branch (tagged commands
+Full install walkthrough for package-based v0.2.0 (tagged commands
 require published v0.2.0 images). The 5-line version lives
 in the [README](../README.md); this doc covers the offline / SSD
 path, common errors, and what to do when something breaks.
@@ -35,6 +35,25 @@ is the realistic floor.
 
 Linux hosts running Docker Engine need Compose v2 (`docker compose`,
 with a space - not `docker-compose`).
+
+### Windows: Docker Desktop WSL2 only
+
+Run PowerShell setup from a physical local-drive checkout, for example
+`C:\work\rangerdanger`. Setup rejects UNC paths, `\\wsl$` checkouts,
+mapped network drives, junctions/symlinks, remote engines and the Hyper-V
+backend. Keep the checkout on a local drive even though Docker uses WSL2.
+
+Setup derives `RANGERDANGER_ROOT` as
+`/run/desktop/mnt/host/<lowercase drive>/<path>` and, after acquiring images,
+verifies a same-path, read-only bind using a sentinel file before starting
+the platform. `-CheckOnly` does not run that container probe or change the
+WSL2 kernel. During installation, setup checks the kernel's
+`CONFIG_NFT_QUEUE` support for DPI logging and can install the lab kernel;
+offline installation requires the bundled kernel and checksum when the fix
+is needed. The L4 source pin enforces; DPI detects and logs.
+
+These are the supported configuration and installer checks, not a claim
+of completed v0.2.0 acceptance testing on Windows hardware.
 
 ### OpenPLC on ARM64 hosts
 
@@ -76,7 +95,7 @@ cd rangerdanger
 ./setup.sh --version v0.2.0
 ```
 
-Legacy PowerShell form (v0.2.0 package parity and Windows acceptance are pending):
+PowerShell (Docker Desktop WSL2, local-drive checkout):
 
 ```powershell
 git clone https://github.com/tonylturner/rangerdanger
@@ -103,9 +122,18 @@ The lab is two Compose projects: the **platform**
 workstations), which the backend starts and replaces. One range runs
 at a time. The default range package is `us-dnp3-substation`;
 `./setup.sh --package eu-iec104-substation` selects EU IEC 104, and
-students switch packages from the web UI afterwards. A switch, or
+`.\setup.ps1 -Package eu-iec104-substation` does the same on Windows.
+Students switch packages from the web UI afterwards. A switch, or
 re-running setup, restarts the range and resets the firewall policy to
-the package default; browser progress is kept.
+the package default; package-scoped browser progress is kept. Without an
+explicit package, a rerun restarts the recorded package (US is the
+fresh-install default).
+
+Each `lab-definitions/packages/<id>/` directory owns `package.yml`,
+`curriculum.yml`, `manifest.json`, `compose.source.yml`,
+`compose.release.yml` and `nginx.routes.conf`, plus package-specific content.
+The platform uses the root Compose files; do not start a package directly
+with a host-side Compose command.
 
 If an older single-project install is still on the machine (it owned
 `rangerdanger_mgmt_net`), setup takes it down by its Compose label
@@ -161,7 +189,14 @@ separate kernel download.
 tar xzf /Volumes/WORKSHOP_SSD/rangerdanger.tgz -C ~
 cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
-# Windows package installation: pending installer parity and Windows acceptance.
+```
+
+On Windows, extract `rangerdanger.tgz` to a physical local drive, open
+PowerShell in the extracted `rangerdanger` directory, then run:
+
+```powershell
+.\setup.ps1 -FromTarballs D:\WORKSHOP_SSD -Package us-dnp3-substation
+# Or select -Package eu-iec104-substation
 ```
 
 The installer uses the release Compose files (the platform's
@@ -180,12 +215,14 @@ before using them offline.
 
 These tagged examples apply once v0.2.0 is published. On this branch use
 `./setup.sh --from-source` to build its images instead of pulling older ones.
-All 20 first-party images are rebuilt; this is not a repository-only hotfix.
+The release inventory contains 20 first-party images; this is not a
+repository-only hotfix. Release planning decides which images build or promote.
 
 Save captures, reports, notes and desktop work, then back up `.env`, `data/`,
 `backend/data/` and local source edits. This is a workshop reset, not a
 state-preserving mid-exercise update. The range restart removes range anonymous
-volumes; the platform is retained. Browser progress from the single-package
+volumes; platform volumes are kept (platform teardown never uses `-v`).
+Browser progress from the single-package
 release is not migrated into package-scoped progress.
 
 From a clean macOS/Linux checkout:
@@ -209,9 +246,26 @@ staging remains supported between compatible package-aware releases; follow
 its generated `DELTA-README.md`, including backup and rollback. With all images
 rebuilt the delta is close to a full set, not a bandwidth-saving promise.
 
-PowerShell `setup.ps1` still needs package/two-project migration parity; do not
-use its legacy v0.1.x commands as a v0.2.0 upgrade recipe. Windows release
-acceptance is pending. Historical [v0.1.36 errata](v0.1.36-hotfix.md) retains
+PowerShell has the same package/migration setup path; installer parity does
+not establish real-hardware acceptance. From a clean local-drive checkout
+on Docker Desktop WSL2:
+
+```powershell
+git fetch origin tag v0.2.0
+if ($LASTEXITCODE -ne 0) { throw 'Could not fetch v0.2.0' }
+git checkout --detach v0.2.0
+if ($LASTEXITCODE -ne 0) { throw 'Could not check out v0.2.0' }
+.\setup.ps1 -Version v0.2.0 -Package us-dnp3-substation
+# Or select -Package eu-iec104-substation
+```
+
+Use `-FromSource` before release images exist, or `-FromTarballs` with a new
+full SSD bundle for a v0.1.x upgrade. Both installers acquire every image
+before migration teardown. The Windows path additionally verifies the daemon
+root bind before starting the platform. The bounded port probe accepts this
+install's listeners for reruns and rejects foreign or unknown listeners.
+
+Historical [v0.1.36 errata](v0.1.36-hotfix.md) retains
 useful US evidence guidance, but its old installer path is not this upgrade.
 
 ## Once it's up

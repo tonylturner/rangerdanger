@@ -5,9 +5,11 @@ Wi-Fi, and how to push patches between sessions without forcing every
 student to re-import the full 6 GB image bundle.
 
 This is the v0.2.0 package-based operator runbook. Tagged examples require
-published v0.2.0 images. Windows package-install parity is pending; the
-PowerShell stager verifies archives with native tar/JSON, but a staged archive
-does not certify the Windows installer.
+published v0.2.0 images. PowerShell setup supports the same packages on
+Docker Desktop WSL2 with a physical local-drive checkout. It rejects UNC,
+`\\wsl$`, mapped network drives, junctions and Hyper-V; see the
+[Windows requirements](quickstart.md#windows-docker-desktop-wsl2-only).
+Archive verification does not establish real-hardware Windows acceptance.
 
 This is the operator runbook. For the student-facing one-liner see
 [`quickstart.md`](quickstart.md) Path C.
@@ -103,10 +105,12 @@ cd ~/rangerdanger
 ./setup.sh --from-tarballs /Volumes/WORKSHOP_SSD
 ```
 
-Or on Windows:
+Or on Windows, after extracting the repo onto a physical local drive:
 
 ```powershell
 .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD
+# Or select EU instead of the fresh-install US default:
+# .\setup.ps1 -FromTarballs D:\WORKSHOP_SSD -Package eu-iec104-substation
 ```
 
 What `setup.sh --from-tarballs` does, in order:
@@ -141,6 +145,12 @@ What `setup.sh --from-tarballs` does, in order:
    workshop-reset checks are fatal. DPI degradation and a non-running
    OpenPLC only warn, so the final banner can still print when those
    checks fail.
+
+PowerShell follows the same acquisition-before-migration sequence and also
+checks WSL2 kernel features and proves the daemon can read the checkout at
+the mapped root before teardown/platform startup. Both installers keep
+platform volumes; the range restart removes its anonymous desktop volumes.
+Save desktop work and evidence before rerunning setup.
 
 Successful tail looks like:
 
@@ -256,7 +266,7 @@ Later package-aware releases can use:
 ```
 
 This is a future-version example, not a claim those tags already exist.
-v0.2.0 rebuilds every first-party image (`[rebuild-all]`), so a compatible
+If a release rebuilds every first-party image (`[rebuild-all]`), a compatible
 full-rebuild delta is close to a full set. Do not use the retired single-stack
 repository-update helpers for package migration; use setup and full/delta staging.
 

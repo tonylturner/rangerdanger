@@ -302,4 +302,4 @@ step: add the package prefix to `GUARDED` in
 `scripts/assert-unreachable-vulns.sh`. The gate applies the allowlist
 by GOID after selecting called symbol-level findings; the guard checks
 that an exception's package-level unreachability rationale remains
-true. Raised by Codex review on PR #91.
+true. Raised in review on PR #91.
