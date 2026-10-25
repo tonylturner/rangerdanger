@@ -1,8 +1,9 @@
+import { buildContaindConfig } from "./advisory-policy.test-util";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { US_CURRICULUM } from "./curriculum-storage.test-util";
-import { buildContaindConfig, buildDynamicPlan, positiveValidationTests, negativeValidationTests } from "./remediation-to-rules";
+import { buildDynamicPlan, positiveValidationTests, negativeValidationTests } from "./remediation-to-rules";
 import { injectDynamicContent } from "./scenario-runner-logic";
 
 const root = resolve(__dirname, "../..");

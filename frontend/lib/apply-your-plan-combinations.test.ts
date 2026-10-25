@@ -1,18 +1,11 @@
+import { buildContaindConfig } from "./advisory-policy.test-util";
 import { US_CURRICULUM } from "./curriculum-storage.test-util";
-// Contract test: "Apply Your Plan" (Lab 2.2 side panel) builds a containd
-// config from the student's Lab 1.4 remediation picks via
-// buildContaindConfig(). The picks are a free combination of 8 actions,
-// so there are 2^8 = 256 possible plans. Every one must produce a config
-// the backend's POST /api/firewall/apply-custom will accept (it rejects
-// configs missing `interfaces` or `firewall.rules`) and that containd can
-// load (unique rule ids, valid actions, correct ICS schema).
-//
-// This was added after a real bug: the Modbus DPI predicate emitted
-// `functionCodes` (plural) while containd's schema is singular
-// `functionCode`, so the function-code filter was silently dropped.
+// Historical generated-policy compatibility oracle. Application of these
+// advisory Lab 1.4 policies is retired; preserve every existing catalog and
+// guidance assertion without shipping a dead production policy compiler.
 
 import { describe, it, expect } from "vitest";
-import { buildDynamicPlan, buildContaindConfig } from "./remediation-to-rules";
+import { buildDynamicPlan } from "./remediation-to-rules";
 import type { RemediationPlan } from "./remediation-plan";
 
 const ACTIONS = [
@@ -41,7 +34,7 @@ for (let mask = 0; mask < 1 << ACTIONS.length; mask++) {
   COMBOS.push(ACTIONS.filter((_, i) => mask & (1 << i)));
 }
 
-describe("Apply Your Plan — every 1.4 combination yields an applicable config", () => {
+describe("Historical advisory policy — all 1.4 combinations", () => {
   it("enumerates all 256 selection combinations", () => {
     expect(COMBOS).toHaveLength(256);
   });
