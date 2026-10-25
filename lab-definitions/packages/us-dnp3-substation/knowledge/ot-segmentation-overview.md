@@ -26,7 +26,7 @@ Each of these flows is a conduit that must be explicitly defined. Everything els
 
 The lab uses identical network topologies with two different firewall policies. Under the **weak baseline**, the firewall allows broad cross-zone communication, mimicking the flat networks commonly found in real substations. Under the **hardened policy**, only the RTAC can reach field devices, and enterprise-to-OT traffic is heavily restricted.
 
-The containd NGFW provides Deep Packet Inspection (DPI) for ICS protocols. It does not just filter by IP and port. It inspects Modbus function codes and DNP3 application layer content. This allows policies like "allow Modbus reads (FC03) from the HMI to the RTAC but block Modbus writes (FC05/FC06)" or "allow DNP3 reads but block Direct Operate commands from non-RTAC sources." That level of protocol-aware filtering is the gold standard for OT firewalls.
+The containd NGFW decodes Modbus and DNP3 operations for protocol context. **The L4 source pin enforces; DPI detects and logs.** Verify the running policy with connectivity tests and device-state evidence.
 
 ### See Also
 

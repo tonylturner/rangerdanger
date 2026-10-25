@@ -47,7 +47,7 @@ A stateful firewall is the right tool for the **separation + L4 inspection** job
 
 A **next-generation firewall (NGFW)** adds **deep packet inspection**: it reads *inside* the payload and decides based on the application protocol. For OT, **ICS DPI** understands Modbus function codes, DNP3 function codes and object groups, and the like - so a rule can say "allow Modbus reads (FC 1-4) from the HMI, but only the RTAC may write (FC 5/6)" or "allow DNP3 reads but block Direct Operate from anyone but the RTAC."
 
-This is the gold standard for the crossings that matter, and it's what **containd** does in this lab. The trade-off is cost: DPI is slower than an L4 verdict (the packet is parsed in userspace) and the rules are more work to author, so you apply it surgically - on the high-value flows (RTAC -> field) rather than everywhere.
+In this workshop, **the L4 source pin enforces; DPI detects and logs**. Do not confuse general NGFW capabilities with demonstrated lab enforcement. The trade-off is cost: DPI is slower than an L4 verdict (the packet is parsed in userspace) and the rules are more work to author, so you apply it surgically - on the high-value flows (RTAC -> field) rather than everywhere.
 
 ### Unidirectional gateways (data diodes)
 
@@ -72,7 +72,7 @@ No single layer is sufficient, and the strong ones are expensive, so real design
 | Host | Host firewall / microseg | Intra-zone + lateral movement | Limited on embedded field devices |
 | Physical | Data diode / air gap | Hardware-enforced one-way / no path | One-way only / brittle in practice |
 
-The lab's hardened policy is a concrete example of stacking: VLAN-style zones *define* the boundaries, a stateful L4 rule source-pins field access to the RTAC, an L7 ICS-DPI rule restricts DNP3 Direct Operate, and host-level hardening on the multi-homed RTAC keeps it from bypassing the firewall. Each layer alone breaks the canonical attack; together they're defense in depth - which is the whole point, because any one layer can be misconfigured or fail.
+The lab's hardened policy combines source-pinned L4 field access with host routing hardening and protocol observations. Verify the deployed result with the prescribed checks; a planned action or a detection alone does not prove enforcement.
 
 ### See Also
 
