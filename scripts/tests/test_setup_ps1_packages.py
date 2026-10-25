@@ -5,7 +5,7 @@ import socket
 import tempfile
 import unittest
 
-from test_setup_ps1_root import LOAD, ROOT, powershell
+from .test_setup_ps1_root import LOAD, ROOT, powershell
 
 LOAD_PACKAGE = LOAD + """
 . "$env:REPO/scripts/lib/setup-package.ps1"

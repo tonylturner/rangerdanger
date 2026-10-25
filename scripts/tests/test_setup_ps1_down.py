@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from test_setup_ps1_root import LOAD, powershell
+from .test_setup_ps1_root import LOAD, powershell
 
 LOAD_DOWN = LOAD + '. "$env:REPO/scripts/lib/compose-down.ps1"\n'
 

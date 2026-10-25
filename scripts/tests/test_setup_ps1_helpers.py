@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from test_setup_ps1_root import ROOT, powershell
+from .test_setup_ps1_root import ROOT, powershell
 
 
 class WindowsHostHelperTests(unittest.TestCase):
