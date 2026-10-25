@@ -215,8 +215,8 @@ before using them offline.
 
 These tagged examples apply once v0.2.0 is published. On this branch use
 `./setup.sh --from-source` to build its images instead of pulling older ones.
-The release inventory contains 20 first-party images; this is not a
-repository-only hotfix. Release planning decides which images build or promote.
+v0.2.0 rebuilds all 20 first-party images (the tag carries `[rebuild-all]`);
+this is not a repository-only hotfix.
 
 Save captures, reports, notes and desktop work, then back up `.env`, `data/`,
 `backend/data/` and local source edits. This is a workshop reset, not a

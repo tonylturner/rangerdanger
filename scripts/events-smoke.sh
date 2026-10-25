@@ -184,7 +184,7 @@ elapsed=0
 # `-le` so the loop checks at elapsed values 0..EVENT_POLL_BUDGET
 # inclusive. The previous `-lt` exited after the final sleep without
 # rechecking, so an event that surfaced during the last second of the
-# advertised budget was still missed (Codex review on #72).
+# advertised budget was still missed (raised in review on #72).
 while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
   deny_count=$(count_kali_denies)
   if [ "$deny_count" -ge 1 ]; then

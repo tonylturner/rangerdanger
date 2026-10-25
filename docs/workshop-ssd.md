@@ -266,7 +266,7 @@ Later package-aware releases can use:
 ```
 
 This is a future-version example, not a claim those tags already exist.
-If a release rebuilds every first-party image (`[rebuild-all]`), a compatible
+v0.2.0 rebuilds every first-party image (`[rebuild-all]`), so a compatible
 full-rebuild delta is close to a full set. Do not use the retired single-stack
 repository-update helpers for package migration; use setup and full/delta staging.
 

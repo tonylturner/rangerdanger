@@ -125,7 +125,7 @@ Start-Sleep -Seconds 2
 # dropped nc probe and ProbeWaitSec was advertised-but-unused, so
 # slower CI hosts that previously relied on bumping PROBE_WAIT to
 # absorb consumer lag regressed to failing inside EventPollBudget
-# alone (Codex review on #73).
+# alone (raised in review on #73).
 Start-Sleep -Seconds $ProbeWaitSec
 
 # Poll the engine's event store for the DENY event with a budget,

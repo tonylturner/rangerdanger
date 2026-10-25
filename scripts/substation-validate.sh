@@ -375,7 +375,7 @@ echo "================================================================"
 
 ## What is OpenDSS-backed vs derived
 
-Separating real physics from display math (for ChatGPT):
+Separating real physics from display math:
 
 | Telemetry / display value | Source | Notes |
 |---|---|---|
@@ -398,9 +398,9 @@ All 22 supervisory buttons + 2 dispatch-layer negatives exercised:
 - Cap Bank: Switch In, Switch Out, Manual, Auto, Reset Lockout (+ switch-out-when-out NEG, switch-in-when-in idempotent DOC)
 - Dispatch: invalid command (device rejects), unknown device (HTTP 404)
 
-## ChatGPT intent -> how RangerDanger satisfies it
+## Command-path checks -> how RangerDanger satisfies them
 
-| ChatGPT point | Status |
+| Check | Status |
 |---|---|
 | 1. Button sends expected API request | OK -- buttons call sendSubstationCommand -> POST /command/{device}; validated via the same path |
 | 2. Backend route receives | OK -- proxied to RTAC; response carries RTAC process_impact + source_zone |
