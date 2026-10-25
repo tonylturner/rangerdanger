@@ -37,7 +37,7 @@ import {
  *
  * Mismatched (amber): the step's expected_config differs from active.
  *
- * Buttons (Apply Hardened / Reset to Weak) live in
+ * Buttons (Apply Hardened / Apply Your Plan / Reset to Weak) live in
  * the policy-actions panel below the step in scenario-runner.tsx, not
  * here. This component is the announcement; that panel is where the
  * actions are. The
@@ -166,7 +166,7 @@ function mismatchText(expectedConfig: string, usWording: boolean): { need: strin
       : {
           need: "hardened policy (reference or your custom)",
           action:
-            "Click Apply Hardened (canned reference) in the policy-actions panel below, or author and Commit a policy in containd. Lab 1.4 plans are advisory.",
+            "Click Apply Hardened (canned reference) or Apply Your Plan (built from your Lab 1.4 picks) in the policy-actions panel below.",
         };
   }
   const need =
