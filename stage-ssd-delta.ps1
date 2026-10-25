@@ -67,6 +67,7 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
+. "$PSScriptRoot/scripts/lib/release-membership.ps1"
 
 # Binfmt is included in arm64 deltas so students applying deltas without
 # internet still have qemu-x86_64 for the amd64-only OpenPLC image.
@@ -140,12 +141,7 @@ $allImages = @($allImages | Sort-Object -Unique)
 if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 function Get-ImageRepository($reference) {
-    $base = ($reference -split '@', 2)[0]
-    $lastComponent = ($base -split '/')[-1]
-    if ($lastComponent.Contains(':')) {
-        $base = $base.Substring(0, $base.LastIndexOf(':'))
-    }
-    return $base
+    Get-ReleaseRepository $reference
 }
 
 $ownerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
@@ -154,7 +150,6 @@ New-Item -ItemType Directory -Path $membershipDir | Out-Null
 try {
     $sinceRecordPath = Join-Path $membershipDir "since.json"
     $newRecordPath = Join-Path $membershipDir "new.json"
-    $composeImagesPath = Join-Path $membershipDir "compose-images.txt"
     foreach ($release in @(
         @{ Tag = $Since; Path = $sinceRecordPath },
         @{ Tag = $New; Path = $newRecordPath }
@@ -162,27 +157,10 @@ try {
         $recordUrl = "https://github.com/$ownerRepo/releases/download/$([uri]::EscapeDataString($release.Tag))/release-images.json"
         Invoke-WebRequest -Uri $recordUrl -OutFile $release.Path -UseBasicParsing -ErrorAction Stop
     }
-    [System.IO.File]::WriteAllLines($composeImagesPath, $allImages)
-    $membershipArgs = @(
-        "delta-candidates",
-        "--since-record", $sinceRecordPath,
-        "--new-record", $newRecordPath,
-        "--since", $Since,
-        "--new", $New,
-        "--compose-images", $composeImagesPath,
-        "--format", "json"
-    )
-    if ($IncludeUpstream -or $All) { $membershipArgs += "--include-upstream" }
-    $membershipOutput = & python3 (Join-Path $RootDir "scripts/release_image_plan.py") @membershipArgs
-    $membershipStatus = $LASTEXITCODE
-    if ($membershipStatus -ne 0) {
-        Die "Release records and Compose image union disagree or lack package membership."
-    }
-    try {
-        $candidateRows = @(($membershipOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop)
-    } catch {
-        Die "Could not parse validated release membership from release_image_plan.py: $_"
-    }
+    $candidateRows = @(Get-DeltaImageCandidates `
+        -PreviousJson (Get-Content -LiteralPath $sinceRecordPath -Raw -Encoding UTF8) `
+        -NewJson (Get-Content -LiteralPath $newRecordPath -Raw -Encoding UTF8) `
+        -ComposeImages $allImages -SinceTag $Since -NewTag $New -IncludeUpstream:($IncludeUpstream -or $All))
 } catch {
     Die "Could not read old/new release package membership: $_"
 } finally {
