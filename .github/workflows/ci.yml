@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Workflow and shell lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: Install actionlint and ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint workflows (including embedded shell)
+        run: actionlint .github/workflows/*.yml
+      - name: Lint tracked shell scripts
+        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning
+
   eu-gates:
     name: EU gates (offline)
     runs-on: ubuntu-24.04

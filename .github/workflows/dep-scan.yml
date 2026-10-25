@@ -108,16 +108,18 @@ jobs:
           # output a fast 'how bad is it' read.
           if command -v jq >/dev/null && [ -f trivy-${{ matrix.image }}.sarif ]; then
             count=$(jq '[.runs[].results[]] | length' trivy-${{ matrix.image }}.sarif)
-            echo "## ${{ matrix.image }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Findings: **$count** (CRITICAL/HIGH, fixed available)" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$count" -gt 0 ]; then
-              echo '<details><summary>Top 10</summary>' >> "$GITHUB_STEP_SUMMARY"
-              echo '' >> "$GITHUB_STEP_SUMMARY"
-              echo '| Rule | Level | Message |' >> "$GITHUB_STEP_SUMMARY"
-              echo '|------|-------|---------|' >> "$GITHUB_STEP_SUMMARY"
-              jq -r '[.runs[].results[]] | .[:10] | .[] | "| \(.ruleId) | \(.level) | \(.message.text | gsub("\\|"; "\\|") | .[0:120]) |"' trivy-${{ matrix.image }}.sarif >> "$GITHUB_STEP_SUMMARY"
-              echo '' >> "$GITHUB_STEP_SUMMARY"
-              echo '</details>' >> "$GITHUB_STEP_SUMMARY"
-            fi
+            {
+              echo "## ${{ matrix.image }}"
+              echo ""
+              echo "Findings: **$count** (CRITICAL/HIGH, fixed available)"
+              if [ "$count" -gt 0 ]; then
+                echo '<details><summary>Top 10</summary>'
+                echo ''
+                echo '| Rule | Level | Message |'
+                echo '|------|-------|---------|'
+                jq -r '[.runs[].results[]] | .[:10] | .[] | "| \(.ruleId) | \(.level) | \(.message.text | gsub("\\|"; "\\|") | .[0:120]) |"' trivy-${{ matrix.image }}.sarif
+                echo ''
+                echo '</details>'
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
           fi

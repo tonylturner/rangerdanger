@@ -75,10 +75,10 @@ jobs:
           # Comment out any pre-existing assignment for the keys we
           # set in the overlay, so olddefconfig keeps our value rather
           # than prompting / picking the previous one.
-          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+          while IFS= read -r key; do
               sed -i "/^${key}=/d" .config
               sed -i "/^# ${key} is not set/d" .config
-          done
+          done < <(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay)
           # Append the overlay.
           cat ../rangerdanger/wsl-kernel/config-overlay >> .config
           # Resolve dependencies (auto-answer new options with defaults).
@@ -86,9 +86,9 @@ jobs:
           # Surface the resolved values for the keys we care about so
           # the build log proves they ended up enabled.
           echo "--- resolved values ---"
-          for key in $(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay); do
+          while IFS= read -r key; do
               grep -E "^(${key}=|# ${key} is not set)" .config || echo "${key} MISSING"
-          done
+          done < <(awk -F= '/^CONFIG_/{print $1}' ../rangerdanger/wsl-kernel/config-overlay)
 
       - name: Compute SOURCE_DATE_EPOCH (reproducible builds)
         working-directory: kernel
