@@ -2,19 +2,14 @@
 #
 # Guards the "unreachable" govulncheck exceptions.
 #
-# Some GOIDs in the ALLOWED list of scripts/govulncheck-gate.sh are
-# accepted specifically because the vulnerable package is NOT in this
-# project's build graph - not because of any mitigation, and not
-# because upstream shipped a fix. That rationale is written down in
-# docs/security-known-issues.md.
+# When a GOID in the ALLOWED list of scripts/govulncheck-gate.sh is
+# accepted specifically because its vulnerable package is NOT in this
+# project's build graph, register that package and GOID in GUARDED below.
+# This script verifies that documented exception remains true.
 #
-# The gate itself filters findings by GOID alone. So if a future code
-# or dependency change ever pulls one of these packages in, govulncheck
-# would report the same GOID, the GOID would still be allowlisted, and
-# the gate would stay green while the documented justification had
-# quietly become false. This script is the missing half of that
-# control: it fails if a package whose exception rests on
-# unreachability ever appears in the build graph.
+# The gate filters called findings by GOID, not by the package rationale.
+# If a future dependency change makes a guarded package reachable, this
+# script fails instead of silently keeping an unreachability exception.
 #
 # Raised by Codex review on PR #91.
 #
@@ -24,16 +19,14 @@
 set -uo pipefail
 
 # package-prefix : the GOIDs whose exception depends on it staying out
-# Prefix match, so subpackages (openpgp/packet, daemon/logger, ...)
-# count as present too.
-GUARDED=(
-  "golang.org/x/crypto/openpgp:GO-2026-5932"
-  "github.com/docker/docker/daemon:GO-2026-5617, GO-2026-5668, GO-2026-5746"
-)
+# Prefix match, so subpackages count as present too. The current allowlist
+# has no entries that rely on an unreachable-package rationale.
+GUARDED=()
 
-modules=("$@")
-if [ ${#modules[@]} -eq 0 ]; then
+if [ "$#" -eq 0 ]; then
   modules=(backend services dnp3go iec104go)
+else
+  modules=("$@")
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,7 +50,8 @@ for dir in "${modules[@]}"; do
     continue
   fi
 
-  for entry in "${GUARDED[@]}"; do
+  for entry in "${GUARDED[@]-}"; do
+    [ -n "$entry" ] || continue
     pkg="${entry%%:*}"
     goids="${entry#*:}"
     if printf '%s\n' "$deps" | grep -q "^${pkg}\(/\|$\)"; then

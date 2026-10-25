@@ -285,11 +285,10 @@ jobs:
           go-version-file: backend/go.mod
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      # Some ALLOWED entries in scripts/govulncheck-gate.sh are accepted
-      # only because the vulnerable package is absent from the build graph.
-      # The filter in the next step matches on GOID alone, so it cannot notice
-      # that rationale going stale. This asserts the precondition
-      # those exceptions actually rest on.
+      # Exceptions based on an unreachable package must register a package
+      # guard in assert-unreachable-vulns.sh as well as a GOID allowlist entry.
+      # The current allowlist has no such exceptions; keep the check so future
+      # unreachable-package rationales are enforced.
       - name: assert unreachable exceptions still hold
         run: ./scripts/assert-unreachable-vulns.sh
       - name: scan + allowlist filter
