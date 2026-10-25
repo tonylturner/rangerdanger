@@ -369,388 +369,60 @@ impact:
     defends:
       - vendor-rdp-compromise
     note: ZTNA/PAM broker for vendor access - closes more of the Lab 2.3-bonus kill chain than restrict-vendor-to-ot alone (no always-on path, identity-bound sessions, full audit)
-baselineRules:
-  - id: rtac-to-field-modbus
-    source: ${ip:rtac-1}
-    destination: ${subnet:field_net}
-    proto: TCP
-    port: '502'
-    action: ALLOW
-    purpose: RTAC Modbus polling to field devices
-  - id: rtac-to-field-dnp3
-    source: ${ip:rtac-1}
-    destination: ${subnet:field_net}
-    proto: TCP
-    port: '20000'
-    action: ALLOW
-    purpose: RTAC DNP3 polling to field devices
-  - id: rtac-to-field-http
-    source: ${ip:rtac-1}
-    destination: ${subnet:field_net}
-    proto: TCP
-    port: '8080'
-    action: ALLOW
-    purpose: RTAC HTTP API to field devices
-  - id: gps-to-field-ntp
-    source: ${ip:gps-1}
-    destination: ${subnet:field_net}
-    proto: UDP
-    port: '123'
-    action: ALLOW
-    purpose: GPS NTP time sync to field devices
-enterpriseToVendorRule:
-  id: enterprise-to-vendor
-  source: ${subnet:enterprise_net}
-  destination: ${subnet:vendor_net}
-  proto: TCP
-  port: 22, 80, 443
-  action: ALLOW
-  purpose: Enterprise to vendor management (SSH/HTTP/HTTPS)
 groups:
   block-enterprise-to-field:
     title: Block enterprise → field direct access
     description: Remove the paths from the corporate IT zone straight to field relays and reclosers.
-    rules:
-      - id: deny-enterprise-to-field
-        source: ${subnet:enterprise_net}
-        destination: ${subnet:field_net}
-        proto: TCP
-        port: 502, 20000, 8080
-        action: DENY
-        purpose: Block enterprise direct Modbus/DNP3/HTTP to field devices
-        log: true
     effect: closes
   block-enterprise-to-ot:
     title: Block enterprise → OT Operations ICS ports
     description: Remove enterprise access to HMI, RTAC, and OpenPLC on ICS and management ports.
-    rules:
-      - id: deny-enterprise-to-ot
-        source: ${subnet:enterprise_net}
-        destination: ${subnet:ot_ops_net}
-        proto: TCP
-        port: 502, 20000, 8080, 1881
-        action: DENY
-        purpose: Block enterprise ICS/HMI access to OT Operations
-        log: true
     effect: closes
   restrict-vendor-to-ot:
     title: Restrict vendor → OT to SSH/HTTPS only
     description: Vendor remote access limited to encrypted management protocols. No direct Modbus or HMI web.
-    rules:
-      - id: vendor-to-ot-restricted
-        source: ${subnet:vendor_net}
-        destination: ${subnet:ot_ops_net}
-        proto: TCP
-        port: 22, 443
-        action: ALLOW
-        purpose: Vendor management access (SSH/HTTPS only)
     effect: restricts
   block-vendor-to-field:
     title: Block vendor → field devices entirely
     description: No legitimate reason for the vendor DMZ to reach field devices directly.
-    rules:
-      - id: deny-vendor-to-field
-        source: ${subnet:vendor_net}
-        destination: ${subnet:field_net}
-        proto: TCP
-        port: 502, 20000, 8080
-        action: DENY
-        purpose: Block vendor direct access to field devices
-        log: true
     effect: closes
   pin-rtac-to-field:
     title: Pin field-device access to RTAC source IP
     description: Only the RTAC (${ip:rtac-1}) can reach field devices from OT Ops. The RTAC ALLOW rules above this DENY take priority (first-match), so RTAC traffic passes while all other OT Ops hosts are blocked.
-    rules:
-      - id: deny-ot-to-field-non-rtac
-        source: ${subnet:ot_ops_net}
-        destination: ${subnet:field_net}
-        proto: TCP
-        port: 502, 20000, 8080
-        action: DENY
-        purpose: Block non-RTAC OT hosts from field (RTAC ALLOW rules above take priority)
-        log: true
     effect: restricts
   modbus-dpi:
     title: Modbus ICS DPI — function-code visibility
     description: Modbus DPI provides function-code visibility and detects and logs writes. The L4 source pin enforces field access from the RTAC source address.
-    rules:
-      - id: rtac-modbus-dpi
-        source: ${ip:rtac-1}
-        destination: ${subnet:field_net}
-        proto: TCP
-        port: '502'
-        action: ALLOW
-        purpose: 'RTAC Modbus with DPI: FC1-6 (read + write)'
-        ics:
-          protocol: modbus
-          functionCodes:
-            - 1
-            - 2
-            - 3
-            - 4
-            - 5
-            - 6
-          note: Full read/write for supervisory control
     effect: semantic
   dnp3-dpi:
     title: DNP3 ICS DPI — Direct Operate detection
     description: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes. The L4 source pin enforces field access from the RTAC source address.
-    rules:
-      - id: rtac-dnp3-dpi
-        source: ${ip:rtac-1}
-        destination: ${subnet:field_net}
-        proto: TCP
-        port: '20000'
-        action: ALLOW
-        purpose: 'RTAC DNP3 with DPI: all application functions'
-        ics:
-          protocol: dnp3
-          note: Full DNP3 access including Direct Operate (FC05)
     effect: semantic
   improve-logging:
     title: Enable firewall logging and PCAP retention
     description: Enable per-rule logging on all deny actions and critical allow rules. Without this, post-incident review is blind.
-    rules: []
     effect: logging
   tighten-firewall-objects:
     title: Tighten firewall object hygiene
     description: Replace broad /24 matches with /32 host objects for RTAC and GPS. Name and document each rule.
-    rules: []
     effect: restricts
   positive-validation:
     title: Post-change positive/negative validation
     description: Build a test plan that verifies legitimate flows still work and illegitimate flows are blocked.
-    rules: []
     effect: conceptual
   rtac-architecture-review:
     title: Validate and document RTAC hardening
     description: Verify RTAC host-level hardening (ip_forward=0, FORWARD DROP, policy routing). Document as a compensating control.
-    rules: []
     effect: conceptual
-policy:
-  - rule:
-      id: allow-mgmt-ui
-      description: Allow management UI/API access
-      protocols:
-        - name: tcp
-          port: '8080'
-      ics: {}
-      action: ALLOW
-  - rule:
-      id: enterprise-to-vendor
-      description: 'Enterprise to Vendor: SSH, HTTP/S'
-      sourceZones:
-        - ${zone:enterprise_net}
-      destZones:
-        - ${zone:vendor_net}
-      protocols:
-        - name: tcp
-          port: '22'
-        - name: tcp
-          port: '80'
-        - name: tcp
-          port: '443'
-      ics: {}
-      action: ALLOW
-  - rule:
-      id: deny-enterprise-to-ot
-      description: 'BLOCK: Enterprise cannot reach OT Operations'
-      sourceZones:
-        - ${zone:enterprise_net}
-      destZones:
-        - ${zone:ot_ops_net}
-      protocols:
-        - name: tcp
-          port: '8080'
-        - name: tcp
-          port: '1881'
-        - name: tcp
-          port: '502'
-        - name: tcp
-          port: '20000'
-      ics: {}
-      action: DENY
-    when: block-enterprise-to-ot
-    logging: true
-  - rule:
-      id: deny-enterprise-to-field
-      description: 'BLOCK: Enterprise cannot reach Field Devices'
-      sourceZones:
-        - ${zone:enterprise_net}
-      destZones:
-        - ${zone:field_net}
-      protocols:
-        - name: tcp
-          port: '8080'
-        - name: tcp
-          port: '502'
-        - name: tcp
-          port: '20000'
-      ics: {}
-      action: DENY
-    when: block-enterprise-to-field
-    logging: true
-  - rule:
-      id: vendor-to-ot-restricted
-      description: 'Vendor to OT: SSH and HTTPS only'
-      sourceZones:
-        - ${zone:vendor_net}
-      destZones:
-        - ${zone:ot_ops_net}
-      protocols:
-        - name: tcp
-          port: '443'
-        - name: tcp
-          port: '22'
-      ics: {}
-      action: ALLOW
-    when: restrict-vendor-to-ot
-  - rule:
-      id: deny-vendor-to-field
-      description: 'BLOCK: Vendor cannot reach Field Devices'
-      sourceZones:
-        - ${zone:vendor_net}
-      destZones:
-        - ${zone:field_net}
-      protocols:
-        - name: tcp
-          port: '8080'
-        - name: tcp
-          port: '502'
-        - name: tcp
-          port: '20000'
-      ics: {}
-      action: DENY
-    when: block-vendor-to-field
-    logging: true
-  - rule:
-      id: rtac-to-field-modbus
-      description: 'RTAC to Field: Modbus TCP'
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:field_net}
-      sources:
-        - ${ip:rtac-1}/32
-      protocols:
-        - name: tcp
-          port: '502'
-      action: ALLOW
-      ics: {}
-    logging: true
-    semantic: modbus-dpi
-    predicate:
-      protocol: modbus
-      functionCode:
-        - 1
-        - 2
-        - 3
-        - 4
-        - 5
-        - 6
-  - rule:
-      id: rtac-to-field-dnp3
-      description: 'RTAC to Field: DNP3 TCP'
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:field_net}
-      sources:
-        - ${ip:rtac-1}/32
-      protocols:
-        - name: tcp
-          port: '20000'
-      action: ALLOW
-      ics: {}
-    logging: true
-    semantic: dnp3-dpi
-    predicate:
-      protocol: dnp3
-  - rule:
-      id: rtac-to-field-http
-      description: 'RTAC to Field: HTTP API'
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:field_net}
-      sources:
-        - ${ip:rtac-1}/32
-      protocols:
-        - name: tcp
-          port: '8080'
-      ics: {}
-      action: ALLOW
-    logging: true
-  - rule:
-      id: deny-ot-to-field-non-rtac
-      description: 'BLOCK: OT Ops to Field deny-all (RTAC ALLOW rules above take first-match priority)'
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:field_net}
-      protocols:
-        - name: tcp
-          port: '8080'
-        - name: tcp
-          port: '502'
-        - name: tcp
-          port: '20000'
-      ics: {}
-      action: DENY
-    when: pin-rtac-to-field
-    logging: true
-  - rule:
-      id: ot-intrazone
-      description: OT Operations internal traffic
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:ot_ops_net}
-      protocols:
-        - name: tcp
-          port: '8080'
-        - name: tcp
-          port: '1881'
-        - name: tcp
-          port: '502'
-        - name: tcp
-          port: '20000'
-        - name: udp
-          port: '123'
-      ics: {}
-      action: ALLOW
-  - rule:
-      id: gps-to-field-ntp
-      description: 'GPS to Field: NTP time sync'
-      sourceZones:
-        - ${zone:ot_ops_net}
-      destZones:
-        - ${zone:field_net}
-      sources:
-        - ${ip:gps-1}/32
-      protocols:
-        - name: udp
-          port: '123'
-      ics: {}
-      action: ALLOW
-  - rule:
-      id: allow-return-traffic
-      description: Allow established return traffic
-      state:
-        - ESTABLISHED
-        - RELATED
-      ics: {}
-      action: ALLOW
 phases:
   rules: |-
     **Workshop note:**
-    - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
-    - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
+    - **Apply Your Plan** compiles and applies your selected actions. Deferred controls leave their Weak exposures open.
+    - Labs judge an applied plan against its own TCP expectations and show Hardened acceptance separately. A green banner is not enforcement evidence.
 
     :::guided
-    Click **Apply Hardened** in the **containd NGFW - policy actions** panel.
-    Confirm the reference rules in containd's web UI or with
+    Click **Apply Your Plan** in the **containd NGFW - policy actions** panel,
+    or **Apply Hardened** for the full reference. Confirm the compiled rules in containd's web UI or with
     `show running-config` at `containd#`.
     :::
 
@@ -764,12 +436,13 @@ phases:
     Both ports must be `filtered`; otherwise fix the rule and commit again.
     :::
 
-    ### Your plan — design review only
+    ### Your compiled plan
 
     {{noPlan}}
     {{ruleTable}}
 
-    This table reflects your selections, not the applied reference policy.
+    This table and export come from the backend compiler. Applying them records
+    the package revision, selected actions and running firewall hash.
     The L4 source pin enforces; DPI detects and logs.
     RTAC rules must be source-pinned to `${ip:rtac-1}/32`, never a broad
     OT Ops subnet. Confirm all six required reference conduits in containd.
@@ -795,27 +468,29 @@ phases:
         }
     :::
   positive: |-
-    Verify the hardened reference before reviewing your design-plan checks.
+    Verify the applied plan and compare its outcomes with Hardened acceptance.
     From the RTAC terminal, these supported reads should return data:
 
         mbpoll -a 1 -r 1 -c 4 -1 -t 0 ${ip:relay-1}
         dnp3poll -a 1 -t 3s ${ip:relay-1}:20000
 
     Check RTAC `device_comms` for healthy field devices and open the HMI.
-    The Lab 2.4 report must show authorized 8/8, unauthorized blocked 11/11,
-    and 0 skipped; its TCP matrix does not prove function-code enforcement.
+    The Lab 2.4 report checks all 21 TCP tuples with 0 skipped. Plan proof
+    compares observed results with the applied plan; Hardened acceptance requires
+    authorized 8/8 and unauthorized denied 13/13, plus capture and stable hash.
+    A partial plan can pass plan proof while leaving prevention gaps.
 
-    ### Supplementary design-plan checks
+    ### Operational checks
 
     {{tests}}
   negative: |-
     **Workshop note:**
-    - In Lab 2.4, preserve the report: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+    - Preserve both report results, 0 skipped, a stable policy hash, capture evidence and healthy HMI.
 
-    From Kali and vendor terminals, reference-policy field-device probes
-    should time out. Check that the HMI remains healthy; a banner alone
-    is not enforcement evidence. Run all reference checks regardless of
-    your plan selections. These are supplementary design-plan checks:
+    Run the compiled TCP matrix from its named sources. A selected closure
+    should time out; a deferred exposure remains reachable. Compare every
+    observation with both Plan and Hardened verdicts. Check that the HMI
+    remains healthy; a banner alone is not enforcement evidence.
 
     {{tests}}
 
@@ -827,68 +502,10 @@ phases:
 tests:
   - kind: positive
     text: |-
-      **RTAC → field Modbus** (should succeed) — from rtac-1:
-
-          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 ${ip:relay-1}
-
-      Or verify via the RTAC API:
+      Verify current RTAC application/device state (TCP reachability alone is not operational proof):
 
           curl -s http://${ip:rtac-1}:8080/api/state | python3 -m json.tool
-  - kind: positive
-    text: |-
-      **HMI → RTAC** intra-zone (should still work):
-
-          curl -sf http://${ip:hmi-1}:1881 --connect-timeout 3
-  - kind: positive
-    when: restrict-vendor-to-ot
-    text: |-
-      **Vendor → OT SSH** (should succeed):
-
-          ssh -o ConnectTimeout=3 rangerdanger@${ip:rtac-1} echo ok
-  - kind: negative
-    when: block-enterprise-to-field
-    text: |-
-      **Enterprise → field Modbus** (should be BLOCKED) — from kali-1:
-
-          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:relay-1}
-  - kind: negative
-    when: block-enterprise-to-field
-    text: |-
-      **Enterprise → field DNP3** (should be BLOCKED) — from kali-1:
-
-          dnp3poll -a 1 -t 3s ${ip:relay-1}:20000
-  - kind: negative
-    when: block-enterprise-to-ot
-    text: |-
-      **Enterprise → OT Modbus** (should be BLOCKED) — from kali-1:
-
-          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:rtac-1}
-  - kind: negative
-    when: block-vendor-to-field
-    text: |-
-      **Vendor → field Modbus** (should be BLOCKED) — from eng-ws-1:
-
-          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:capbank-1}
-  - kind: negative
-    when: block-vendor-to-field
-    text: |-
-      **Vendor → field HTTP** (should be BLOCKED) — from eng-ws-1:
-
-          curl -sf --connect-timeout 3 http://${ip:regulator-1}:8080/api/state
-  - kind: negative
-    when: pin-rtac-to-field
-    text: |-
-      **Non-RTAC OT host → field** (should be BLOCKED) — from historian-1 or openplc-1:
-
-          mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 -o 3 ${ip:relay-1}
-negativeEmpty: No supplementary design-plan checks were selected. Run every reference-policy check above regardless of your plan.
-flags:
-  logging: improve-logging
-  objects: tighten-firewall-objects
-  validation: positive-validation
-  dpi:
-    - modbus-dpi
-    - dnp3-dpi
+negativeEmpty: Deferred controls leave their Weak exposures open. Run the full compiled proof matrix and retain the Hardened comparison.
 nodeMap:
   baseline-assessment:
     primary: fw-1
@@ -937,8 +554,6 @@ nodeInference:
 noPlan: |+
   You have not completed a remediation plan yet. The rules below are the minimum baseline - RTAC and GPS access to field devices. Consider going back to the [Remediation Planning](/exercises/{{planRole}}) exercise to build a plan that drives additional rules.
 
-legacyDisplayMutation: true
-legacyEffects: true
 planningOnly:
   - ids-deployment
   - ot-asset-inventory
@@ -973,8 +588,6 @@ impactOrder:
   - ids-deployment
   - ot-asset-inventory
   - vendor-zta-broker
-loggingPrefixes:
-  - rtac-
 dpiNotice:
   title: ICS DPI enabled
   description: ' - containd provides Modbus/DNP3 function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address'

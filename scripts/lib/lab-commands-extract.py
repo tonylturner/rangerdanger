@@ -38,7 +38,6 @@ CMD_TOOL_RE = re.compile(
 # leave the stack in a different state than the next step expects).
 SKIP_PATTERNS = [
     re.compile(r'/api/firewall/apply'),     # mutating
-    re.compile(r'/api/firewall/apply-custom'),
     re.compile(r'docker compose '),         # would tear stack down
     re.compile(r'docker run '),
     re.compile(r'docker rm '),

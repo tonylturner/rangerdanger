@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,12 +110,14 @@ func (s *Server) handleFirewallActive(c *gin.Context) {
 	s.activeConfigMu.RLock()
 	active := s.activeConfig
 	source := s.policySource
+	plan := s.planProvenance
 	s.activeConfigMu.RUnlock()
 
-	c.JSON(http.StatusOK, gin.H{
-		"active_config": active,
-		"policy_source": source,
-	})
+	response := gin.H{"active_config": active, "policy_source": source}
+	if source == "plan" {
+		response["plan"] = plan
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // handleFirewallApply applies a named firewall config to the live containd instance.
@@ -190,6 +191,8 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
 func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
+	s.policyApplyMu.Lock()
+	defer s.policyApplyMu.Unlock()
 	configPath, err := s.policyPath(gen.Package, configName)
 	if err != nil {
 		return nil, err
@@ -222,6 +225,7 @@ func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle
 		s.activeConfigMu.Lock()
 		s.activeConfig = configName
 		s.policySource = source
+		s.planProvenance, s.appliedPlan = nil, nil
 		s.recordApplyLocked(data)
 		s.policyEvidenceSince = applyStarted
 		s.activeConfigMu.Unlock()
@@ -244,76 +248,6 @@ func (s *Server) policyPath(pkg labs.Package, name string) (string, error) {
 		return "", fmt.Errorf("config must be one of %s", strings.Join(names, ", "))
 	}
 	return filepath.Join(s.cfg.LabDefinitionsPath, relative), nil
-}
-
-// handleFirewallApplyCustom accepts a raw JSON config and applies it to containd.
-// Used by the dynamic Exercise 3 to apply the student's remediation-plan-derived config.
-func (s *Server) handleFirewallApplyCustom(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512*1024)
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "request body too large or unreadable"})
-		return
-	}
-
-	var config struct {
-		Firewall struct {
-			Rules []json.RawMessage `json:"rules"`
-		} `json:"firewall"`
-		Interfaces []json.RawMessage `json:"interfaces"`
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config JSON: " + err.Error()})
-		return
-	}
-	if len(config.Firewall.Rules) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include firewall.rules"})
-		return
-	}
-	if len(config.Interfaces) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "config must include interfaces"})
-		return
-	}
-	gen := rangeOf(c)
-	if err := labs.LintPolicy("custom policy", data, gen.Package.ICSRules); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	applyStarted := time.Now().UTC()
-	warnings, err := gen.Containd().ImportConfig(c.Request.Context(), data)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to apply config to containd: %v", err)})
-		return
-	}
-
-	// The /apply-custom path is wired to the frontend "Apply Your Plan"
-	// button, which translates the student's Lab 1.4 plan picks into a
-	// containd config and pushes it here. Label the source so the
-	// status banner can distinguish "(Lab 1.4 plan)" from a future
-	// "(your containd commit)" state that Phase B will detect via a
-	// background poller.
-	if !gen.Commit(func() {
-		s.activeConfigMu.Lock()
-		s.activeConfig = "custom"
-		s.policySource = "plan-custom"
-		s.recordApplyLocked(data)
-		s.policyEvidenceSince = applyStarted
-		s.activeConfigMu.Unlock()
-	}) {
-		rangeUnavailable(c)
-		return
-	}
-
-	resp := gin.H{
-		"status":        "applied",
-		"active_config": "custom",
-		"policy_source": "plan-custom",
-	}
-	if len(warnings) > 0 {
-		resp["warnings"] = warnings
-	}
-	c.JSON(http.StatusOK, resp)
 }
 
 type fwConfigFile struct {

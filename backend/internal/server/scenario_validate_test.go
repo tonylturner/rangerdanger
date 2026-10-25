@@ -96,7 +96,7 @@ func findCheckMatching(t *testing.T, checks []ValidationCheck, namePart string) 
 
 func TestValidateHardeningConfigurations_HardenedAndHealthy(t *testing.T) {
 	state := substationState(healthyOpts())
-	checks := validateHardeningConfigurations(state, nil, "improved")
+	checks := validateHardeningConfigurations(state)
 	pass, warn, fail := outcomeCounts(checks)
 	if fail != 0 || warn != 0 {
 		t.Errorf("expected all-pass under hardened+healthy state, got pass=%d warn=%d fail=%d", pass, warn, fail)
@@ -106,20 +106,11 @@ func TestValidateHardeningConfigurations_HardenedAndHealthy(t *testing.T) {
 	}
 }
 
-func TestValidateHardeningConfigurations_WeakBaselineFails(t *testing.T) {
-	state := substationState(healthyOpts())
-	checks := validateHardeningConfigurations(state, nil, "weak")
-	fw := findCheckMatching(t, checks, "Firewall policy")
-	if fw.Status != "fail" {
-		t.Errorf("weak baseline must fail the firewall-policy check, got status=%q detail=%q", fw.Status, fw.Detail)
-	}
-}
-
 func TestValidateHardeningConfigurations_TapManipulationFails(t *testing.T) {
 	o := healthyOpts()
 	o.RegulatorTap = -16 // attacker forced extreme low
 	state := substationState(o)
-	checks := validateHardeningConfigurations(state, nil, "improved")
+	checks := validateHardeningConfigurations(state)
 	tap := findCheckMatching(t, checks, "Regulator tap")
 	if tap.Status != "fail" {
 		t.Errorf("extreme tap must fail, got %q", tap.Status)
@@ -130,27 +121,10 @@ func TestValidateHardeningConfigurations_AutoRecloseDisabledFails(t *testing.T) 
 	o := healthyOpts()
 	o.RecloseEnabled = false // attacker disabled it
 	state := substationState(o)
-	checks := validateHardeningConfigurations(state, nil, "improved")
+	checks := validateHardeningConfigurations(state)
 	rcl := findCheckMatching(t, checks, "Recloser status")
 	if rcl.Status != "fail" {
 		t.Errorf("disabled auto-reclose must fail Recloser-status check, got %q (%q)", rcl.Status, rcl.Detail)
-	}
-}
-
-func TestValidateHardeningConfigurations_AuditWarnsOnEnterpriseAttacks(t *testing.T) {
-	state := substationState(healthyOpts())
-	// Audit entries must carry result="executed" — the matching helpers
-	// only count entries that actually reached the device, not the ones
-	// the firewall blocked. This mirrors what the RTAC writes when an
-	// inbound command is processed.
-	audit := []map[string]any{
-		{"source_zone": "enterprise", "command": "crob_reclose", "result": "executed"},
-		{"source_zone": "enterprise", "command": "disable_reclose", "result": "executed"},
-	}
-	checks := validateHardeningConfigurations(state, audit, "improved")
-	auditCheck := findCheckMatching(t, checks, "Audit:")
-	if auditCheck.Status != "warn" {
-		t.Errorf("enterprise-source audit entries must warn, got %q (%q)", auditCheck.Status, auditCheck.Detail)
 	}
 }
 
@@ -158,7 +132,7 @@ func TestValidateHardeningConfigurations_AuditWarnsOnEnterpriseAttacks(t *testin
 
 func TestValidateVendorRDPCompromise_HardenedAndRestored(t *testing.T) {
 	state := substationState(healthyOpts())
-	checks := validateVendorRDPCompromise(state, nil, "improved")
+	checks := validateVendorRDPCompromise(state)
 	pass, _, fail := outcomeCounts(checks)
 	if fail != 0 {
 		t.Errorf("expected no failures under hardened+restored state, got pass=%d fail=%d", pass, fail)
@@ -169,41 +143,14 @@ func TestValidateVendorRDPCompromise_AutoRecloseDisabledFails(t *testing.T) {
 	o := healthyOpts()
 	o.RecloseEnabled = false
 	state := substationState(o)
-	checks := validateVendorRDPCompromise(state, nil, "improved")
+	checks := validateVendorRDPCompromise(state)
 	rcl := findCheckMatching(t, checks, "Auto-reclose")
 	if rcl.Status != "fail" {
 		t.Errorf("disabled auto-reclose must fail; got %q (%q)", rcl.Status, rcl.Detail)
 	}
 }
 
-func TestValidateVendorRDPCompromise_CustomConfigCountsAsHardened(t *testing.T) {
-	state := substationState(healthyOpts())
-	checks := validateVendorRDPCompromise(state, nil, "custom")
-	fw := findCheckMatching(t, checks, "Firewall policy")
-	if fw.Status != "pass" {
-		t.Errorf("custom config (the student's own policy from Lab 2.2) should count as hardened; got %q", fw.Status)
-	}
-}
-
 // ── Lab 2.4: Validation & Evidence ───────────────────────────────
-
-func TestValidateValidationEvidence_RequiresHardenedConfig(t *testing.T) {
-	state := substationState(healthyOpts())
-	checks := validateValidationEvidence(state, nil, "weak")
-	hard := findCheckMatching(t, checks, "Hardened config")
-	if hard.Status != "fail" {
-		t.Errorf("weak baseline must fail Hardened-config check in Lab 2.4, got %q", hard.Status)
-	}
-}
-
-func TestValidateValidationEvidence_PassesUnderImproved(t *testing.T) {
-	state := substationState(healthyOpts())
-	checks := validateValidationEvidence(state, nil, "improved")
-	hard := findCheckMatching(t, checks, "Hardened config")
-	if hard.Status != "pass" {
-		t.Errorf("improved config must pass Hardened-config check, got %q (%q)", hard.Status, hard.Detail)
-	}
-}
 
 // ── Lab 1.4: Remediation Planning ────────────────────────────────
 

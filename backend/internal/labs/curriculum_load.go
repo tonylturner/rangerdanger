@@ -48,15 +48,7 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 		}
 		facts["subnet:"+n.ID] = subnet
 		facts["zone:"+n.ID] = n.Zone
-		if n.Zone != "" {
-			c.Interfaces = append(c.Interfaces, CurriculumInterface{Name: n.Zone, Zone: n.Zone, Access: CurriculumAccess{}})
-			c.Zones = append(c.Zones, CurriculumZone{Name: n.Zone, Description: n.Name})
-		}
 	}
-	// Management is the platform's out-of-band control plane, not a teaching
-	// network. Neither package topology declares it.
-	c.Interfaces = append(c.Interfaces, CurriculumInterface{Name: "lan3", Zone: "lan3", Access: CurriculumAccess{Mgmt: true, HTTP: true, HTTPS: true, SSH: true}})
-	c.Zones = append(c.Zones, CurriculumZone{Name: "lan3", Description: "RangerDanger management control plane"})
 	var resolve func(*yaml.Node) error
 	resolve = func(n *yaml.Node) error {
 		if n.Kind == yaml.ScalarNode && n.Tag == "!!str" {
@@ -119,7 +111,7 @@ func validateCurriculum(pkg Package) error {
 	}
 	fail := func(format string, args ...any) error { return fmt.Errorf("curriculum: "+format, args...) }
 	// Explicit empty collections keep the wire DTO free of null maps/arrays.
-	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.Groups == nil || c.PlanningOnly == nil || c.Policy == nil || c.Phases == nil || c.Tests == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.LoggingPrefixes == nil || c.Flags.DPI == nil || c.BaselineRules == nil || c.Activities == nil || c.DynamicSteps == nil {
+	if c.Requirements == nil || c.Readiness == nil || c.ReadinessFlags == nil || c.Groups == nil || c.PlanningOnly == nil || c.Phases == nil || c.Tests == nil || c.NodeMap == nil || c.NodeInference == nil || c.RequirementOrder == nil || c.GroupOrder == nil || c.ImpactOrder == nil || c.Impact == nil || c.Activities == nil || c.DynamicSteps == nil {
 		return fail("collections must be explicit mappings or lists, not null or omitted")
 	}
 	if c.BudgetHours <= 0 || len(c.Teams) == 0 || len(c.Catalog) == 0 {
@@ -259,9 +251,6 @@ func validateCurriculum(pkg Package) error {
 			}
 		}
 	}
-	if err := check(append([]string{c.Flags.Logging, c.Flags.Objects, c.Flags.Validation}, c.Flags.DPI...)...); err != nil {
-		return err
-	}
 	if err := check(c.PlanningOnly...); err != nil {
 		return err
 	}
@@ -273,56 +262,6 @@ func validateCurriculum(pkg Package) error {
 		case "closes", "restricts", "semantic", "conceptual", "logging":
 		default:
 			return fail("unknown effect %s", g.Effect)
-		}
-		if (g.Effect == "conceptual" || g.Effect == "logging") && len(g.Rules) > 0 {
-			return fail("%s action %s cannot emit rules", g.Effect, id)
-		}
-		if g.Effect == "semantic" {
-			hasPolicy := false
-			for _, entry := range c.Policy {
-				if entry.Semantic == id && entry.Predicate != nil || entry.When == id && entry.Rule.ICS != nil {
-					hasPolicy = true
-				}
-			}
-			if !hasPolicy {
-				return fail("semantic action %s must declare a policy predicate", id)
-			}
-		}
-		if !c.LegacyEffects && (g.Effect == "closes" || g.Effect == "restricts") {
-			omitted := false
-			for _, entry := range c.Policy {
-				if entry.Unless == id && entry.Rule.Action == "ALLOW" && len(entry.Rule.SourceZones) > 0 && len(entry.Rule.DestZones) > 0 && len(entry.Rule.Protocols) > 0 {
-					omitted = true
-				}
-			}
-			if !omitted || len(g.OmittedRules) == 0 {
-				return fail("%s must declare scoped weak allows when omitted", id)
-			}
-		}
-	}
-	for _, e := range c.Policy {
-		if err := check(e.When, e.Unless, e.Semantic); err != nil {
-			return err
-		}
-		if !c.LegacyEffects && e.When != "" && c.Groups[e.When].Effect == "closes" && e.Rule.Action != "DENY" {
-			return fail("closes action %s cannot emit a selected allow", e.When)
-		}
-		if e.Rule.Action != "ALLOW" && e.Rule.Action != "DENY" {
-			return fail("invalid policy action %s", e.Rule.Action)
-		}
-		if e.When != "" && e.Unless != "" {
-			return fail("policy entry cannot have both when and unless")
-		}
-		if e.Semantic != "" && c.Groups[e.Semantic].Effect != "semantic" {
-			return fail("predicate action %s must be semantic", e.Semantic)
-		}
-		for _, id := range []string{e.When, e.Unless} {
-			if id != "" {
-				g, ok := c.Groups[id]
-				if !ok || g.Effect == "conceptual" || g.Effect == "logging" {
-					return fail("policy entry references non-policy action %s", id)
-				}
-			}
 		}
 	}
 	for _, order := range []struct {
@@ -347,9 +286,6 @@ func validateCurriculum(pkg Package) error {
 		}
 	}
 	for _, t := range c.Tests {
-		if err := check(t.When); err != nil {
-			return err
-		}
 		if t.Kind != "positive" && t.Kind != "negative" {
 			return fail("unknown test kind %s", t.Kind)
 		}
@@ -411,8 +347,7 @@ func curriculumDecisionOptions(scenario ScenarioYAML) map[string]map[string]bool
 
 // Required nested collections follow the same wire contract as the top-level
 // collections. Empty maps/lists are valid; omitted or null values are not.
-// Optional collections (tags, omittedRules and policy/predicate selectors) keep
-// their documented omission semantics.
+// Optional catalog tags retain their omission semantics.
 func validateCurriculumCollections(c *Curriculum) error {
 	missing := func(path string) error {
 		return fmt.Errorf("curriculum: %s must be an explicit mapping or list, not null or omitted", path)
@@ -425,11 +360,6 @@ func validateCurriculumCollections(c *Curriculum) error {
 			if actions == nil {
 				return missing("requirements." + id + ".impl." + verdict)
 			}
-		}
-	}
-	for id, group := range c.Groups {
-		if group.Rules == nil {
-			return missing("groups." + id + ".rules")
 		}
 	}
 	for i, flag := range c.ReadinessFlags {

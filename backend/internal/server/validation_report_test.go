@@ -112,8 +112,7 @@ func TestTallyValidation(t *testing.T) {
 	}
 }
 
-// Hashes captured from the pre-refactor US renderer; only its clock is
-// normalized. All other bytes, including legacy prose, must remain identical.
+// Golden hashes cover the strict TCP report wording; only its clock is normalized.
 func TestUSValidationReportGolden(t *testing.T) {
 	rows := []validationRow{
 		{validationProbe: validationProbe{SrcLabel: "source", Dst: "10.0.0.1", Port: "502", Expected: "allow", Note: "positive", Category: "authorized"}, Actual: "allow", Pass: true, DurationMs: 1},
@@ -126,10 +125,10 @@ func TestUSValidationReportGolden(t *testing.T) {
 		pass    bool
 		hash    string
 	}{
-		{"custom", true, 0, true, "85bf35ba2aaa4fc8b118e9f4bb35c9f7a3cd4d260832536cc677396507e90fa3"},
-		{"improved", false, 0, true, "16fcece93aa91f3c49fda3dc28cb54bb918b7c99a5b708752fb3a9a152805286"},
-		{"weak", true, 0, false, "a2eeadf8569a8b633a4eeea08081998d2c508cb3d9abc626ac664de952889c6d"},
-		{"other", false, 1, false, "9cd1c319c095662334cbd8d68575b50be13164fb5698c0d0f5913961128bfd59"},
+		{"custom", true, 0, true, "8383523c3329c1b0e2e299a28f29e5f85e6f22d3fda0d4196691c54bc0309dbd"},
+		{"improved", false, 0, true, "e2757058350b0f09aa632685b0eedf09209bc1fba2b9b9dc17d79c940d045464"},
+		{"weak", true, 0, false, "81c0c2ee23c8613ed8d4a64877c3077c810f3b6d8c1118d90b7bb1e25b5f8902"},
+		{"other", false, 1, false, "0ac1b5846eb6bb1be090431682f99673ba935d6eea3c6cfa2342e28f0da4cff2"},
 	} {
 		t.Run(tc.active, func(t *testing.T) {
 			md := usRecipe.renderValidationMarkdown(tc.active, "source", "abc", "data/firewall/captures/validation-fixed.pcap", tc.pcap, "capture-sources", rows, 1, 1, 1, 1, tc.skipped, tc.pass)
@@ -143,8 +142,8 @@ func TestUSValidationReportGolden(t *testing.T) {
 
 func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 	for _, pcap := range []bool{true, false} {
-		md := euRecipe.renderValidationMarkdown("custom", "plan-custom", "abc", "path", pcap, "sources", nil, 9, 9, 16, 16, 0, true)
-		for _, required := range []string{"TCP Reachability", "not certification", "PCAP completeness", "No DPI", "optional supporting evidence"} {
+		md := euRecipe.renderValidationMarkdown("custom", "plan", "abc", "path", pcap, "sources", nil, 9, 9, 16, 16, 0, true)
+		for _, required := range []string{"TCP Reachability", "not certification", "PCAP completeness", "No DPI", "Capture availability and stable hash are required by acceptance"} {
 			if !strings.Contains(md, required) {
 				t.Fatalf("missing scope limit %q: %s", required, md)
 			}
@@ -162,19 +161,7 @@ func TestEUReportNarrowClaimsAndToolErrors(t *testing.T) {
 	if !strings.Contains(md, "probe tool") || strings.Contains(md, "Bring the full lab stack up") {
 		t.Fatal(md)
 	}
-	for _, rc := range []int{-1, 2, 126, 127, 137} {
-		if classifyReportProbe(rc, 100) != "deny" {
-			t.Fatalf("legacy US probe classification changed for %d", rc)
-		}
-	}
-	for _, tc := range []struct {
-		rc, ms int
-		want   string
-	}{{0, 1, "allow"}, {1, 10, "allow"}, {1, 600, "deny"}, {124, 3000, "deny"}, {143, 3000, "deny"}} {
-		if got := classifyReportProbe(tc.rc, tc.ms); got != tc.want {
-			t.Fatalf("%+v got %s", tc, got)
-		}
-	}
+
 }
 
 func TestEUReportProbeErrorDetails(t *testing.T) {

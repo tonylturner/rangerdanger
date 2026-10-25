@@ -17,7 +17,6 @@ func TestCurriculumRequiredNestedCollections(t *testing.T) {
 		want string
 	}{
 		{[]any{"requirements", "enterprise-to-field", "impl"}, "requirements.enterprise-to-field.impl"},
-		{[]any{"groups", "modbus-dpi", "rules"}, "groups.modbus-dpi.rules"},
 		{[]any{"readinessFlags", 0, "actions"}, "readinessFlags[0].actions"},
 		{[]any{"impact", "modbus-dpi", "defends"}, "impact.modbus-dpi.defends"},
 		{[]any{"nodeMap", "eu-remediation-planning", "others"}, "nodeMap.eu-remediation-planning.others"},

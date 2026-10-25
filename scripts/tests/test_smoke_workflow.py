@@ -1,4 +1,3 @@
-import hashlib
 import json
 import subprocess
 import tempfile
@@ -124,35 +123,36 @@ class SmokeWorkflowTests(unittest.TestCase):
         self.assertIn('--existing-stack) EXISTING_STACK=1', source)
         self.assertIn("EXISTING_STACK=0", source)
 
-    def test_only_rd01_is_non_blocking(self):
+    def test_compiled_full_plan_is_a_hard_gate(self):
         steps = self.workflow["jobs"]["smoke"]["steps"]
-        waived = [s for s in steps if s.get("continue-on-error")]
-        self.assertEqual(len(waived), 1)
-        self.assertIn("RD-01", waived[0]["name"])
-        check = waived[0]["run"]
-        for expected in ("scripts/tests/fixtures/rd01-full-plan.json", "/api/firewall/apply-custom",
+        self.assertFalse([s for s in steps if s.get("continue-on-error")])
+        gate = next(s for s in steps if s.get("name", "").startswith("Compiled full plan"))
+        check = gate["run"]
+        for expected in ("scripts/tests/fixtures/rd01-full-plan.json", "/api/firewall/apply-plan",
                          "/api/firewall/validation-report", ".authorized_pass == 8",
-                         ".authorized_total == 8", ".unauthorized_pass == 11",
-                         ".unauthorized_total == 11", ".skipped == 0", '.result == "PASS"',
+                         ".authorized_total == 8", ".unauthorized_pass == 13",
+                         ".unauthorized_total == 13", ".skipped == 0", '.result == "PASS"',
+                         ".planProof.applicable", ".planProof.pass", ".planProof.hashStable",
+                         ".acceptance.pass", '.warnings == []',
                          "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}'):
             self.assertIn(expected, check)
-        self.assertNotIn("v0.1.35", str(steps))
+        self.assertNotIn("/apply-custom", check)
         self.assertLess(next(i for i, s in enumerate(steps) if s.get("name") == "Workshop test-suite"),
-                        steps.index(waived[0]))
+                        steps.index(gate))
         artifacts = next(s for s in steps if s.get("name") == "Upload gate evidence")
         self.assertEqual(artifacts["if"], "always()")
         self.assertIn("build/smoke-receipts/", artifacts["with"]["path"])
         self.assertIn("receipts=build/smoke-receipts/rd01", check)
 
-    def test_rd01_fixture_is_attributed_to_current_package_generator(self):
+    def test_full_plan_fixture_selects_the_entire_current_catalog(self):
         data = json.loads((ROOT / "scripts/tests/fixtures/rd01-full-plan.json").read_text())
-        self.assertEqual(data["base"], "a25c2d9")
-        source = (ROOT / data["source"]).read_bytes()
-        self.assertEqual(hashlib.sha256(source).hexdigest(), data["source_sha256"])
-        self.assertEqual(len(data["selectedActionIds"]), 8)
-        # Current generator equality is exercised in frontend/lib/us-hotfix-contracts.test.ts.
-        # Never quietly replace the full-plan fixture with reference JSON.
-        self.assertEqual(data["config"]["firewall"]["rules"][0]["id"], "allow-mgmt-ui")
+        package = ROOT / "lab-definitions/packages/us-dnp3-substation"
+        curriculum = yaml.safe_load((package / "curriculum.yml").read_text())
+        manifest = yaml.safe_load((package / "package.yml").read_text())
+        self.assertEqual(set(data), {"packageId", "revision", "actionIds"})
+        self.assertEqual(data["packageId"], manifest["id"])
+        self.assertEqual(data["revision"], manifest["revision"])
+        self.assertEqual(data["actionIds"], [a["id"] for a in curriculum["catalog"]])
 
     def test_possibly_empty_arrays_expand_safely_on_macos_bash(self):
         # macOS /bin/bash 3.2 aborts on "${empty[@]}" under set -u, and the

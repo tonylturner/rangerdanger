@@ -39,20 +39,6 @@ func TestCurriculumCanonicalValidation(t *testing.T) {
 		{"unknown flag verdict", func(c *Curriculum) { c.ReadinessFlags[0].Verdict = "foreign" }, "verdict \"foreign\" is not a decision option"},
 		{"empty flag verdict", func(c *Curriculum) { c.ReadinessFlags[0].Verdict = "" }, "verdict \"\" is not a decision option"},
 		{"extra phase", func(c *Curriculum) { c.Phases["foreign"] = "unused template" }, "unknown phase template foreign"},
-		{"semantic without policy", func(c *Curriculum) {
-			for i := range c.Policy {
-				if c.Policy[i].Semantic == "modbus-dpi" {
-					c.Policy[i].Semantic = ""
-				}
-			}
-		}, "semantic action modbus-dpi must declare a policy predicate"},
-		{"semantic without predicate", func(c *Curriculum) {
-			for i := range c.Policy {
-				if c.Policy[i].Semantic == "modbus-dpi" {
-					c.Policy[i].Predicate = nil
-				}
-			}
-		}, "semantic action modbus-dpi must declare a policy predicate"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -140,27 +126,5 @@ func TestCurriculumDecisionOptions(t *testing.T) {
 				t.Fatalf("%s missing %q", id, value)
 			}
 		}
-	}
-}
-
-func TestCurriculumSelectedSemanticPolicy(t *testing.T) {
-	pkg, _ := curriculumExample(t)
-	for i := range pkg.Curriculum.Policy {
-		entry := &pkg.Curriculum.Policy[i]
-		if entry.Semantic == "modbus-dpi" {
-			selected := *entry
-			selected.When = entry.Semantic
-			selected.Semantic = ""
-			selected.Rule.ID += "-semantic"
-			selected.Rule.ICS = entry.Predicate
-			selected.Predicate = nil
-			entry.Semantic = ""
-			entry.Predicate = nil
-			pkg.Curriculum.Policy = append(pkg.Curriculum.Policy, selected)
-			break
-		}
-	}
-	if err := validateCurriculum(pkg); err != nil {
-		t.Fatalf("selected semantic policy entry: %v", err)
 	}
 }

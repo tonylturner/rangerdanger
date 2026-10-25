@@ -3,6 +3,9 @@ package server
 import (
 	"strings"
 	"testing"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
+	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
 func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
@@ -30,7 +33,7 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 		{"eu-hardening-configurations", 1},
 		{"eu-vendor-rdp-compromise", 7},
 	} {
-		matrix, err := euResolveMatrix(gen, euRecipe.validation, tc.slot)
+		matrix, err := referenceProof(gen, tc.slot)
 		if err != nil || len(matrix) != tc.count {
 			t.Fatalf("%s: %d rows, %v", tc.slot, len(matrix), err)
 		}
@@ -40,21 +43,20 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 			}
 		}
 	}
-	// Changing the authored source zone (and matching manifest interface)
-	// changes the resolved identity without any hard-coded network override.
+	// Changing the authored primary address (and matching manifest interface)
+	// changes the resolved identity without a hard-coded source override.
 	for i := range gen.Package.Template.Nodes {
 		if gen.Package.Template.Nodes[i].ID == "kali-1" {
-			gen.Package.Template.Nodes[i].Networks = []string{"vendor_net"}
+			gen.Package.Template.Nodes[i].IP = "10.10.10.99"
 		}
 	}
 	for i := range gen.Manifest.Services {
 		if gen.Manifest.Services[i].Node == "kali-1" {
-			gen.Manifest.Services[i].Interfaces[0].Network = "vendor_net"
-			gen.Manifest.Services[i].Interfaces[0].IPv4 = "10.20.20.99"
+			gen.Manifest.Services[i].Interfaces[0].IPv4 = "10.10.10.99"
 		}
 	}
-	matrix, err := euResolveMatrix(gen, euRecipe.validation, "eu-hardening-configurations")
-	if err != nil || len(matrix) != 1 || !strings.Contains(matrix[0].Note, "10.20.20.99 on vendor_net") {
+	matrix, err := referenceProof(gen, "eu-hardening-configurations")
+	if err != nil || len(matrix) != 1 || !strings.Contains(matrix[0].Note, "10.10.10.99 on enterprise_net") {
 		t.Fatalf("source zone not derived: %+v %v", matrix, err)
 	}
 	again, err := euRecipe.resolveValidation(gen)
@@ -69,7 +71,7 @@ func TestEUMatrixOneDefinitionAndSourceIdentity(t *testing.T) {
 }
 
 func TestEUMatrixMissingTopologyIdentityFails(t *testing.T) {
-	for _, mode := range []string{"unknown node", "multiple networks", "missing interface", "no zone", "missing name"} {
+	for _, mode := range []string{"unknown node", "ambiguous primary subnet", "missing interface", "no zone", "missing name"} {
 		t.Run(mode, func(t *testing.T) {
 			gen := euGeneration(t, nil, nil)
 			for i := range gen.Package.Template.Nodes {
@@ -80,8 +82,14 @@ func TestEUMatrixMissingTopologyIdentityFails(t *testing.T) {
 				switch mode {
 				case "unknown node":
 					node.ID = "other"
-				case "multiple networks":
-					node.Networks = append(node.Networks, "station_net")
+				case "ambiguous primary subnet":
+					for _, network := range gen.Package.Template.Networks {
+						if network.ID == "enterprise_net" {
+							network.ID = "overlap"
+							gen.Package.Template.Networks = append(gen.Package.Template.Networks, network)
+							break
+						}
+					}
 				case "missing interface":
 					node.Networks = []string{"station_net"}
 				case "no zone":
@@ -92,9 +100,30 @@ func TestEUMatrixMissingTopologyIdentityFails(t *testing.T) {
 					node.Name = ""
 				}
 			}
-			if _, err := euResolveMatrix(gen, euRecipe.validation, "eu-hardening-configurations"); err == nil {
+			if _, err := referenceProof(gen, "eu-hardening-configurations"); err == nil {
 				t.Fatal("missing/ambiguous source identity accepted")
 			}
 		})
+	}
+}
+
+func referenceProof(gen *lifecycle.Generation, slot string) ([]validationProbe, error) {
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	if err != nil {
+		return nil, err
+	}
+	return resolveProof(gen, compiled.Expectations, slot, false)
+}
+
+func TestEUMatrixPrimaryIPSelectsMultihomedSource(t *testing.T) {
+	gen := euGeneration(t, nil, nil)
+	for i := range gen.Package.Template.Nodes {
+		if gen.Package.Template.Nodes[i].ID == "kali-1" {
+			gen.Package.Template.Nodes[i].Networks = append(gen.Package.Template.Nodes[i].Networks, "station_net")
+		}
+	}
+	matrix, err := referenceProof(gen, "eu-hardening-configurations")
+	if err != nil || len(matrix) != 1 || !strings.Contains(matrix[0].Note, "10.10.10.50 on enterprise_net") {
+		t.Fatalf("multihomed primary identity: %+v %v", matrix, err)
 	}
 }

@@ -322,520 +322,65 @@ impact:
     defends:
     - eu-validation-evidence
     note: Planning-only identity, MFA, approval and recorded-session work; no broker is deployed here.
-baselineRules:
-- id: control-centre-to-rtu-iec104
-  source: ${ip:cc-1}/32
-  destination: ${ip:rtu-1}/32
-  proto: TCP
-  port: '2404'
-  action: ALLOW
-  purpose: Allow the named Control Centre to open IEC104 sessions to the RTU
-- id: rtu-to-feeder-modbus
-  source: ${ip:rtu-1}/32
-  destination: ${ip:breaker-1}/32, ${ip:f2-breaker}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
-  proto: TCP
-  port: '502'
-  action: ALLOW
-  purpose: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
-- id: plc-to-oltc-modbus
-  source: ${ip:plc-1}/32
-  destination: ${ip:oltc-1}/32
-  proto: TCP
-  port: '502'
-  action: ALLOW
-  purpose: Allow only the named PLC to regulate the OLTC over Modbus TCP
-- id: control-centre-to-historian-ingest
-  source: ${ip:cc-1}/32
-  destination: ${ip:historian-1}/32
-  proto: TCP
-  port: '8081'
-  action: ALLOW
-  purpose: Allow only the named CC to push historian snapshots
-- id: enterprise-to-historian-read
-  source: ${subnet:enterprise_net}
-  destination: ${ip:historian-1}/32
-  proto: TCP
-  port: '8080'
-  action: ALLOW
-  purpose: Allow enterprise read-only historian access
-- id: engineering-to-plc-web
-  source: ${ip:eng-ws-1}/32
-  destination: ${ip:plc-1}/32
-  proto: TCP
-  port: '8080'
-  action: ALLOW
-  purpose: Allow engineering maintenance of the OpenPLC web UI
-enterpriseToVendorRule: null
 groups:
   block-enterprise-to-field:
     title: block enterprise to field
     description: Close direct corporate Modbus access to the feeder; an unused path is still exposure.
-    rules:
-    - id: deny-block-enterprise-to-field
-      source: ${zone:enterprise_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: DENY
-      purpose: deny-block-enterprise-to-field
-      log: true
     effect: closes
-    omittedRules:
-    - id: weak-block-enterprise-to-field
-      source: ${zone:enterprise_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: ALLOW
-      purpose: weak-block-enterprise-to-field
   block-enterprise-to-station:
     title: block enterprise to station
     description: Close enterprise IEC 104 access to RTU; only the named CC should initiate telecontrol.
-    rules:
-    - id: deny-block-enterprise-to-station
-      source: ${zone:enterprise_net}
-      destination: ${zone:station_net}
-      proto: TCP
-      port: '2404'
-      action: DENY
-      purpose: deny-block-enterprise-to-station
-      log: true
     effect: closes
-    omittedRules:
-    - id: weak-block-enterprise-to-station
-      source: ${zone:enterprise_net}
-      destination: ${zone:station_net}
-      proto: TCP
-      port: '2404'
-      action: ALLOW
-      purpose: weak-block-enterprise-to-station
   restrict-vendor-to-station:
     title: restrict vendor to station
     description: Replace broad vendor-zone trust with named engineering PLC web access; field control is separate.
-    rules:
-    - id: deny-restrict-vendor-to-station
-      source: ${zone:vendor_net}
-      destination: ${zone:station_net}
-      proto: TCP
-      port: 8080, 2404
-      action: DENY
-      purpose: deny-restrict-vendor-to-station
-      log: true
     effect: restricts
-    omittedRules:
-    - id: weak-restrict-vendor-to-station
-      source: ${zone:vendor_net}
-      destination: ${zone:station_net}
-      proto: TCP
-      port: 8080, 2404
-      action: ALLOW
-      purpose: weak-restrict-vendor-to-station
   block-vendor-to-field:
     title: block vendor to field
     description: Remove direct vendor Modbus access even if a compromised remote-access foothold exists.
-    rules:
-    - id: deny-block-vendor-to-field
-      source: ${zone:vendor_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: DENY
-      purpose: deny-block-vendor-to-field
-      log: true
     effect: closes
-    omittedRules:
-    - id: weak-block-vendor-to-field
-      source: ${zone:vendor_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: ALLOW
-      purpose: weak-block-vendor-to-field
   pin-rtu-to-field:
     title: pin rtu to field
     description: Keep RTU field polling and the explicit PLC→OLTC exception; exclude other station sources.
-    rules:
-    - id: deny-pin-rtu-to-field
-      source: ${zone:station_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: DENY
-      purpose: deny-pin-rtu-to-field
-      log: true
     effect: restricts
-    omittedRules:
-    - id: weak-pin-rtu-to-field
-      source: ${zone:station_net}
-      destination: ${zone:field_net}
-      proto: TCP
-      port: '502'
-      action: ALLOW
-      purpose: weak-pin-rtu-to-field
   modbus-dpi:
     title: modbus dpi
     description: Plan function-code restrictions for southbound Modbus. Planned, not enforceable in this range yet.
-    rules:
-    - id: rtu-to-feeder-modbus
-      source: ${ip:rtu-1}/32
-      destination: ${ip:breaker-1}/32, ${ip:f2-breaker}/32, ${ip:rmu-1}/32, ${ip:rmu-2}/32, ${ip:oltc-1}/32
-      proto: TCP
-      port: '502'
-      action: ALLOW
-      purpose: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
-      ics:
-        protocol: modbus
-        functionCode:
-        - 3
-        - 4
-        - 6
-        - 16
     effect: semantic
   iec104-dpi:
     title: iec104 dpi
     description: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. Planned, not enforceable
       in this range yet.
-    rules:
-    - id: control-centre-to-rtu-iec104
-      source: ${ip:cc-1}/32
-      destination: ${ip:rtu-1}/32
-      proto: TCP
-      port: '2404'
-      action: ALLOW
-      purpose: Allow the named Control Centre to open IEC104 sessions to the RTU
-      ics:
-        protocol: iec104
-        readOnly: true
-        mode: enforce
     effect: semantic
   improve-logging:
     title: improve logging
     description: Retain per-rule evidence and cross-zone PCAP so a policy change can be reviewed.
-    rules: []
     effect: logging
   station-architecture-review:
     title: station architecture review
     description: Planning-only review of RTU/PLC/GPS same-subnet trust and endpoint authority; no policy effect.
-    rules: []
     effect: conceptual
   tighten-firewall-objects:
     title: tighten firewall objects
     description: Pin historian reader/ingest destinations and separate read 8080 from CC ingest 8081.
-    rules:
-    - id: deny-tighten-firewall-objects
-      source: ${zone:enterprise_net}, ${zone:vendor_net}, ${zone:control_centre_net}
-      destination: ${zone:ops_dmz_net}
-      proto: TCP
-      port: 8080, 8081
-      action: DENY
-      purpose: deny-tighten-firewall-objects
-      log: true
     effect: restricts
-    omittedRules:
-    - id: weak-tighten-firewall-objects
-      source: ${zone:enterprise_net}, ${zone:vendor_net}, ${zone:control_centre_net}
-      destination: ${zone:ops_dmz_net}
-      proto: TCP
-      port: 8080, 8081
-      action: ALLOW
-      purpose: weak-tighten-firewall-objects
   positive-validation:
     title: positive validation
     description: 'Planning-only validation work: authorized operations, denied exposures and bounded evidence.'
-    rules: []
     effect: conceptual
   ids-deployment:
     title: ids deployment
     description: 'Planning-only detection work: sensors, rule tuning and response ownership; no sensor is deployed here.'
-    rules: []
     effect: conceptual
   ot-asset-inventory:
     title: ot asset inventory
     description: Planning-only inventory and drift baseline for station and field assets.
-    rules: []
     effect: conceptual
   vendor-zta-broker:
     title: vendor zta broker
     description: Planning-only identity, MFA, approval and recorded-session work; no broker is deployed here.
-    rules: []
     effect: conceptual
 planningOnly: []
-policy:
-- rule:
-    id: control-centre-to-rtu-iec104
-    description: Allow the named Control Centre to open IEC104 sessions to the RTU
-    sourceZones:
-    - ${zone:control_centre_net}
-    destZones:
-    - ${zone:station_net}
-    sources:
-    - ${ip:cc-1}/32
-    destinations:
-    - ${ip:rtu-1}/32
-    protocols:
-    - name: tcp
-      port: '2404'
-    action: ALLOW
-  logging: true
-  semantic: iec104-dpi
-  predicate:
-    protocol: iec104
-    readOnly: true
-    mode: enforce
-- rule:
-    id: rtu-to-feeder-modbus
-    description: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets over Modbus TCP
-    sourceZones:
-    - ${zone:station_net}
-    destZones:
-    - ${zone:field_net}
-    sources:
-    - ${ip:rtu-1}/32
-    destinations:
-    - ${ip:breaker-1}/32
-    - ${ip:f2-breaker}/32
-    - ${ip:rmu-1}/32
-    - ${ip:rmu-2}/32
-    - ${ip:oltc-1}/32
-    protocols:
-    - name: tcp
-      port: '502'
-    action: ALLOW
-  logging: true
-  semantic: modbus-dpi
-  predicate:
-    protocol: modbus
-    functionCode:
-    - 3
-    - 4
-    - 6
-    - 16
-- rule:
-    id: plc-to-oltc-modbus
-    description: Allow only the named PLC to regulate the OLTC over Modbus TCP
-    sourceZones:
-    - ${zone:station_net}
-    destZones:
-    - ${zone:field_net}
-    sources:
-    - ${ip:plc-1}/32
-    destinations:
-    - ${ip:oltc-1}/32
-    protocols:
-    - name: tcp
-      port: '502'
-    action: ALLOW
-  logging: true
-- rule:
-    id: control-centre-to-historian-ingest
-    description: Allow only the named CC to push historian snapshots
-    sourceZones:
-    - ${zone:control_centre_net}
-    destZones:
-    - ${zone:ops_dmz_net}
-    sources:
-    - ${ip:cc-1}/32
-    destinations:
-    - ${ip:historian-1}/32
-    protocols:
-    - name: tcp
-      port: '8081'
-    action: ALLOW
-  logging: true
-- rule:
-    id: enterprise-to-historian-read
-    description: Allow enterprise read-only historian access
-    sourceZones:
-    - ${zone:enterprise_net}
-    destZones:
-    - ${zone:ops_dmz_net}
-    sources:
-    - ${subnet:enterprise_net}
-    destinations:
-    - ${ip:historian-1}/32
-    protocols:
-    - name: tcp
-      port: '8080'
-    action: ALLOW
-  logging: true
-- rule:
-    id: engineering-to-plc-web
-    description: Allow engineering maintenance of the OpenPLC web UI
-    sourceZones:
-    - ${zone:vendor_net}
-    destZones:
-    - ${zone:station_net}
-    sources:
-    - ${ip:eng-ws-1}/32
-    destinations:
-    - ${ip:plc-1}/32
-    protocols:
-    - name: tcp
-      port: '8080'
-    action: ALLOW
-  logging: true
-- rule:
-    id: deny-block-enterprise-to-field
-    description: deny-block-enterprise-to-field
-    sourceZones:
-    - ${zone:enterprise_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: DENY
-    log: true
-  when: block-enterprise-to-field
-- rule:
-    id: weak-block-enterprise-to-field
-    description: weak-block-enterprise-to-field
-    sourceZones:
-    - ${zone:enterprise_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: ALLOW
-  unless: block-enterprise-to-field
-- rule:
-    id: deny-block-enterprise-to-station
-    description: deny-block-enterprise-to-station
-    sourceZones:
-    - ${zone:enterprise_net}
-    destZones:
-    - ${zone:station_net}
-    protocols:
-    - name: tcp
-      port: '2404'
-    action: DENY
-    log: true
-  when: block-enterprise-to-station
-- rule:
-    id: weak-block-enterprise-to-station
-    description: weak-block-enterprise-to-station
-    sourceZones:
-    - ${zone:enterprise_net}
-    destZones:
-    - ${zone:station_net}
-    protocols:
-    - name: tcp
-      port: '2404'
-    action: ALLOW
-  unless: block-enterprise-to-station
-- rule:
-    id: deny-restrict-vendor-to-station
-    description: deny-restrict-vendor-to-station
-    sourceZones:
-    - ${zone:vendor_net}
-    destZones:
-    - ${zone:station_net}
-    protocols:
-    - name: tcp
-      port: '8080'
-    - name: tcp
-      port: '2404'
-    action: DENY
-    log: true
-  when: restrict-vendor-to-station
-- rule:
-    id: weak-restrict-vendor-to-station
-    description: weak-restrict-vendor-to-station
-    sourceZones:
-    - ${zone:vendor_net}
-    destZones:
-    - ${zone:station_net}
-    protocols:
-    - name: tcp
-      port: '8080'
-    - name: tcp
-      port: '2404'
-    action: ALLOW
-  unless: restrict-vendor-to-station
-- rule:
-    id: deny-block-vendor-to-field
-    description: deny-block-vendor-to-field
-    sourceZones:
-    - ${zone:vendor_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: DENY
-    log: true
-  when: block-vendor-to-field
-- rule:
-    id: weak-block-vendor-to-field
-    description: weak-block-vendor-to-field
-    sourceZones:
-    - ${zone:vendor_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: ALLOW
-  unless: block-vendor-to-field
-- rule:
-    id: deny-pin-rtu-to-field
-    description: deny-pin-rtu-to-field
-    sourceZones:
-    - ${zone:station_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: DENY
-    log: true
-  when: pin-rtu-to-field
-- rule:
-    id: weak-pin-rtu-to-field
-    description: weak-pin-rtu-to-field
-    sourceZones:
-    - ${zone:station_net}
-    destZones:
-    - ${zone:field_net}
-    protocols:
-    - name: tcp
-      port: '502'
-    action: ALLOW
-  unless: pin-rtu-to-field
-- rule:
-    id: deny-tighten-firewall-objects
-    description: deny-tighten-firewall-objects
-    sourceZones:
-    - ${zone:enterprise_net}
-    - ${zone:vendor_net}
-    - ${zone:control_centre_net}
-    destZones:
-    - ${zone:ops_dmz_net}
-    protocols:
-    - name: tcp
-      port: '8080'
-    - name: tcp
-      port: '8081'
-    action: DENY
-    log: true
-  when: tighten-firewall-objects
-- rule:
-    id: weak-tighten-firewall-objects
-    description: weak-tighten-firewall-objects
-    sourceZones:
-    - ${zone:enterprise_net}
-    - ${zone:vendor_net}
-    - ${zone:control_centre_net}
-    destZones:
-    - ${zone:ops_dmz_net}
-    protocols:
-    - name: tcp
-      port: '8080'
-    - name: tcp
-      port: '8081'
-    action: ALLOW
-  unless: tighten-firewall-objects
 phases:
   rules: |-
     Implement the six required operational conduits. Default deny after.
@@ -844,14 +389,15 @@ phases:
     :::
     :::technical
     Author source/destination pins in containd, commit and inspect running configuration.
-    Preserve historian read/ingest separation and the PLC→OLTC exception. No ICS keys yet.
+    Preserve historian read/ingest separation and the PLC→OLTC exception. No ICS keys are accepted.
     :::
     {{noPlan}}{{ruleTable}}
   positive: |-
     Verify operations:
     {{tests}}
   negative: |-
-    Verify blocked exposures:
+    Verify the compiled Plan verdicts and compare them with Hardened.
+    Deferred exposures remain reachable; restoration, GI and supply still matter.
     {{tests}}
 noPlan: |
   Build a [plan](/exercises/{{planRole}}).
@@ -875,36 +421,7 @@ tests:
     Two completed lowers from the settled baseline should put the bus below band; do not assume the starting tap was zero. With the profile disabled nominal settles at +2, so two lowers reach zero. Wait for the PLC's configured 30-second demand and 2-second motions to return in band; IOA 2403 is the configured delay, not a countdown. The default Europe/Berlin daily load/source profile composes with instructor controls and keeps running through reset. Verify remote/auto, advancing heartbeat, device audit and fresh CC observations. Never use a final socket alone as loop proof.
 - kind: positive
   text: CC→historian:8081 — advancing ingested observations. Verify fresh application/device evidence, not only a socket.
-- kind: positive
-  text: Kali→historian:8080 — curl -fsS --max-time 3 http://${ip:historian-1}:8080/api/points Verify fresh application/device evidence, not only a socket.
-- kind: positive
-  text: eng-ws→PLC:8080 — curl -fsS --max-time 3 http://${ip:plc-1}:8080/login Verify fresh application/device evidence, not only a socket.
-- kind: negative
-  when: block-enterprise-to-field
-  text: From Kali probe all field TCP/502; expect timeout.
-- kind: negative
-  when: block-enterprise-to-station
-  text: 'From Kali: nmap -p 2404 ${ip:rtu-1} --max-retries 1 -T4; expect filtered/timeout.'
-- kind: negative
-  when: restrict-vendor-to-station
-  text: From vendor-jump probe RTU:2404 and PLC:8080; both must time out. Only eng-ws retains PLC web.
-- kind: negative
-  when: block-vendor-to-field
-  text: From vendor-jump probe all field TCP/502; expect timeout. Also independently probe Kali→vendor 3389/5900.
-- kind: negative
-  when: pin-rtu-to-field
-  text: From eng-ws probe all field TCP/502; expect timeout. Preserve the RTU and PLC→OLTC exceptions.
-- kind: negative
-  when: tighten-firewall-objects
-  text: From vendor-jump probe historian:8081; expect timeout. Verify enterprise reader cannot use ingest.
 negativeEmpty: No selected exposure closures to test yet.
-flags:
-  logging: improve-logging
-  objects: tighten-firewall-objects
-  validation: positive-validation
-  dpi:
-  - modbus-dpi
-  - iec104-dpi
 nodeMap:
   eu-baseline-assessment:
     primary: kali-1
@@ -937,9 +454,6 @@ nodeInference:
 - node: rtu-1
   ip: ${ip:rtu-1}
   pattern: \brtu\b
-legacyDisplayMutation: false
-legacyEffects: false
-loggingPrefixes: []
 groupOrder:
 - block-enterprise-to-field
 - block-enterprise-to-station

@@ -113,6 +113,9 @@ func (s *Server) euRTULog(ctx context.Context, gen *lifecycle.Generation, harden
 }
 
 func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
+	if ev.isPlan && ev.foreignBreakerAllowed {
+		return checkPass("Foreign breaker command exposure", "the applied plan permits Kali → RTU TCP/2404; a foreign breaker command can reach the RTU as the visible consequence. Hardened would deny this connection; restoration, GI and supply checks still apply")
+	}
 	const name = "No foreign breaker operation since hardening (L4 only)"
 	fail := func(reason string) ValidationCheck { return checkFail(name, reason) }
 	if ev.logErr != nil || ev.auditErr != nil || ev.identityErr != nil || ev.ccIP == "" || ev.rtuIP == "" || !insideEvidenceWindow(ev.hardeningSince, ev.start, ev.policyAt) || !insideEvidenceWindow(ev.operationEnd, ev.policyAt, ev.now) {

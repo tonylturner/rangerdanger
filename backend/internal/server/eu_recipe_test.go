@@ -311,7 +311,7 @@ func TestEURecipeEnginesResolveAndReachTheirRoutes(t *testing.T) {
 			t.Fatalf("US row leaked: %+v", row)
 		}
 	}
-	if allows != 10 || denies != 19 {
+	if allows != 10 || denies != 27 {
 		t.Fatalf("matrix=%d allow, %d deny", allows, denies)
 	}
 	hosts, network, err := euRecipe.resolveCapture(gen)

@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,11 +15,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tturner/rangerdanger/backend/internal/config"
 	"github.com/tturner/rangerdanger/backend/internal/containd"
-	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
 // firewall_apply_test exercises the HTTP handlers (handleFirewallApply
-// and handleFirewallApplyCustom) end-to-end against a real
+// and handleFirewallApplyPlan) end-to-end against a real
 // containd.Client wired to an httptest fake. The pure compare logic
 // is covered by firewall_compare_test.go; this file is the integration
 // layer that gates the path Lab 2.2 / 2.4 / firewall-smoke all use.
@@ -221,181 +219,5 @@ func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
 	}
 	if errMsg, ok := body["error"].(string); !ok || errMsg == "" {
 		t.Errorf("expected non-empty error in body, got: %+v", body)
-	}
-}
-
-// ── handleFirewallApplyCustom ───────────────────────────────────────
-
-// minimalValidCustom is the smallest config the handler accepts —
-// non-empty firewall.rules and non-empty interfaces. The contents
-// don't need to be schematically valid; the handler only checks
-// presence + container shape. Containd would reject malformed
-// rules later but this layer's contract is "passes the validation
-// gate and forwards to containd."
-const minimalValidCustom = `{
-  "interfaces": [{"name":"lan3","zone":"lan3"}],
-  "firewall":   {"rules": [{"id":"r1","action":"DENY"}]}
-}`
-
-func TestHandleFirewallApplyCustom_Success(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom",
-		minimalValidCustom)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	if body["active_config"] != "custom" {
-		t.Errorf("active_config = %v, want \"custom\"", body["active_config"])
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 1 {
-		t.Errorf("expected 1 candidate POST, got %d", counters.candidateCount)
-	}
-	s.activeConfigMu.RLock()
-	defer s.activeConfigMu.RUnlock()
-	if s.activeConfig != "custom" {
-		t.Errorf("activeConfig = %q, want \"custom\"", s.activeConfig)
-	}
-	if s.policySource != "plan-custom" {
-		t.Errorf("policySource = %q, want \"plan-custom\" (the Apply Your Plan button path)", s.policySource)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsEmptyRules(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	cfg := `{"interfaces":[{"name":"wan"}],"firewall":{"rules":[]}}`
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for empty rules", rec.Code)
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 0 {
-		t.Errorf("containd must not be called when validation rejects; saw %d", counters.candidateCount)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsEmptyInterfaces(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	cfg := `{"interfaces":[],"firewall":{"rules":[{"id":"r1"}]}}`
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for empty interfaces", rec.Code)
-	}
-	if atomic.LoadInt32(&counters.candidateCount) != 0 {
-		t.Errorf("containd must not be called; saw %d", counters.candidateCount)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsBadJSON(t *testing.T) {
-	fake, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", "not json")
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for invalid JSON", rec.Code)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsOversizedBody(t *testing.T) {
-	fake, _ := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-
-	// Handler caps request body at 512 KiB. Generate a payload that
-	// exceeds that — its actual content doesn't matter because the
-	// MaxBytesReader truncates before unmarshal sees it.
-	big := strings.Repeat("a", 600*1024)
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", big)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400 for oversized body", rec.Code)
-	}
-}
-
-// ── package policies and ics_rules ──────────────────────────────────
-
-// forbidICS makes the serving generation's package forbid ics keys.
-func forbidICS(s *Server) {
-	s.rng.(*fakeRange).gen.Package.ICSRules = labs.ICSRulesForbidden
-}
-
-func TestHandleFirewallApplyCustom_ForbiddenICSNamesPointer(t *testing.T) {
-	for _, ics := range []string{`{"protocol":"iec104"}`, `{}`, `null`} {
-		fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-		s := newTestServer(t, fake.URL)
-		forbidICS(s)
-		cfg := `{"interfaces":[{"name":"lan3","zone":"lan3"}],"firewall":{"rules":[{"id":"r1","action":"DENY"},{"id":"r2","ics":` + ics + `}]}}`
-		rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-
-		want := `custom policy: key "ics" at /firewall/rules/1/ics is forbidden (ics_rules: forbidden)`
-		if rec.Code != http.StatusBadRequest || body["error"] != want {
-			t.Errorf("ics %s: status = %d body = %s; want 400 %q", ics, rec.Code, rec.Body, want)
-		}
-		if n := atomic.LoadInt32(&counters.candidateCount); n != 0 {
-			t.Errorf("ics %s: containd called %d times for a rejected policy", ics, n)
-		}
-	}
-}
-
-func TestHandleFirewallApplyCustom_ForbiddenICSAcceptsCleanPolicy(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-	forbidICS(s)
-	rec, _ := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", minimalValidCustom)
-	if rec.Code != http.StatusOK || atomic.LoadInt32(&counters.candidateCount) != 1 {
-		t.Errorf("status = %d, candidates = %d; want 200 and one import", rec.Code, counters.candidateCount)
-	}
-}
-
-// Named policies are package data: a package without a workshop recipe
-// applies them, and they are linted against the package's ics_rules.
-func TestHandleFirewallApply_UsesPackagePolicies(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-	gen := s.rng.(*fakeRange).gen
-	gen.Package = labs.Package{
-		ID:       "eu-iec104-substation",
-		Policies: map[string]string{"baseline": "firewall/substation-weak.json"},
-		ICSRules: labs.ICSRulesAllowed,
-	}
-
-	rec, body := invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "weak"})
-	if rec.Code != http.StatusBadGateway || body["error"] != "config must be one of 'baseline'" {
-		t.Errorf("apply weak = %d %s, want the package's names only", rec.Code, rec.Body)
-	}
-	rec, _ = invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "baseline"})
-	if rec.Code != http.StatusOK || atomic.LoadInt32(&counters.candidateCount) != 1 {
-		t.Fatalf("apply baseline = %d %s, want 200 and one import", rec.Code, rec.Body)
-	}
-
-	// The US weak policy carries ics blocks.
-	gen.Package.ICSRules = labs.ICSRulesForbidden
-	rec, body = invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "baseline"})
-	errText, _ := body["error"].(string)
-	if rec.Code != http.StatusBadGateway || !strings.HasPrefix(errText, `firewall/substation-weak.json: key "ics" at /firewall/rules/`) {
-		t.Errorf("apply under forbidden = %d %s, want the file and pointer", rec.Code, rec.Body)
-	}
-	if n := atomic.LoadInt32(&counters.candidateCount); n != 1 {
-		t.Errorf("containd imports = %d, want none for the rejected policy", n)
-	}
-}
-
-func TestHandleFirewallApplyCustom_RejectsManagementLockout(t *testing.T) {
-	fake, counters := fakeContaind(t, http.StatusOK, http.StatusOK)
-	s := newTestServer(t, fake.URL)
-	cfg := strings.Replace(minimalValidCustom, `"zone":"lan3"`, `"zone":"lan3","access":{"mgmt":false}`, 1)
-	rec, body := invoke(s, s.handleFirewallApplyCustom, "POST", "/api/firewall/apply-custom", cfg)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(fmt.Sprint(body["error"]), "interfaces/0/access/mgmt") {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
-	}
-	if counters.candidateCount != 0 || counters.commitCount != 0 || counters.importCount != 0 {
-		t.Fatalf("unsafe policy mutated containd: %+v", counters)
 	}
 }
