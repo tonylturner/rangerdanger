@@ -311,15 +311,13 @@ probe_port() {
     esac
 }
 
-# Host ports published by running containers of the installed lab: Compose
-# project "rangerdanger" (docker-compose.release.yml and docker-compose.yml
-# both set `name: rangerdanger`). A busy required port in this set is the
-# student's own running lab, not a conflict.
+# Both projects may publish this install's ports, including a pre-split
+# rangerdanger project. Own listeners permit rerun/migration; foreign ones do not.
 lab_held_ports() {
     local project
     for project in "$RANGE_PROJECT" "$PLATFORM_PROJECT"; do
-    docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
-        | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
+        docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
+            | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
     done
 }
 
@@ -470,13 +468,6 @@ fi
 # fixed container names would collide with them.
 OLD_PLATFORM=$(docker ps -aq --filter "label=com.docker.compose.project=$RANGE_PROJECT" \
     --filter "label=com.docker.compose.service=backend")
-if [ "$MGMT_OWNER" = "$RANGE_PROJECT" ] || [ -n "$OLD_PLATFORM" ]; then
-    banner "Migrating the pre-split stack"
-    say "Stopping Compose project $RANGE_PROJECT (the single-project stack) before the platform starts."
-    "$ROOT_DIR/scripts/dev-down.sh" --range-only \
-        || die "Could not remove the pre-split stack; nothing else was changed. Fix the error above, then re-run."
-fi
-
 # ─── image acquisition ──────────────────────────────────────────────
 case "$MODE" in
     offline)
@@ -514,6 +505,14 @@ case "$MODE" in
         say "Images built"
         ;;
 esac
+
+# No teardown occurs until every platform/package image is available.
+if [ "$MGMT_OWNER" = "$RANGE_PROJECT" ] || [ -n "$OLD_PLATFORM" ]; then
+    banner "Migrating the pre-split stack"
+    say "Stopping Compose project $RANGE_PROJECT (the single-project stack) before the platform starts."
+    "$ROOT_DIR/scripts/dev-down.sh" --range-only \
+        || die "Could not remove the pre-split stack; nothing else was changed. Fix the error above, then re-run."
+fi
 
 # ─── amd64 emulation for OpenPLC on arm64 Linux ─────────────────────
 # OpenPLC is amd64-only (upstream tuttas/openplc_v3). macOS arm64 runs it
