@@ -37,4 +37,4 @@ A real change board would expect more (rollback plan, maintenance window, monito
 
 Most cyber-trained workshop attendees never see a change-board package and have never had to defend a firewall change against operators who would rather not change anything. The lab compresses this experience into a 15-minute exercise on purpose. Walking out of the workshop with one assembled evidence package in your Exercise Notes gives you a tangible template to point at when your real organization asks "what would a good change package look like?"
 
-The `scripts/validation-report.sh` helper produces a markdown deliverable equivalent to the manually-assembled package - operator-facing rather than student-facing, suitable for attaching directly to a change request.
+The `scripts/validation-report.sh` helper requests the backend's markdown report for the policy currently running in the ready range; it does not apply a policy. When an applied plan is active, the report includes its plan proof alongside Hardened acceptance as the comparison. The resulting evidence is operator-facing rather than student-facing and can be attached directly to a change request.
