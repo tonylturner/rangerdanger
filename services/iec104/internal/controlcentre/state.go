@@ -25,6 +25,7 @@ type Logger interface{ Printf(string, ...any) error }
 // Options supplies deterministic time and transport seams. Callbacks must be concurrency safe.
 type Options struct {
 	Now    func() time.Time
+	Clock  iec.Clock // Optional command-wait timer source; pair with Now for deterministic deadlines.
 	Epoch  string
 	Logger Logger
 	Dial   DialFunc

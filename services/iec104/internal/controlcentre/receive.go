@@ -210,7 +210,8 @@ func (c *Centre) commandResponse(h iec.Header, ioa int, qualifier iec.CommandQua
 	if h.Test || h.CommonAddress != uint16(c.pm.CA) || h.Originator != 0 || ioa != cmd.IOA || h.Type.String() != cmd.ASDU {
 		return
 	}
-	if h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm {
+	unknownCause := h.Cause >= iec.UnknownType && h.Cause <= iec.UnknownIOA
+	if h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm && !unknownCause {
 		return
 	}
 	if int(qualifier&0x7f) != t.value || qualifier.Select() != (t.phase == "select") {
@@ -224,7 +225,7 @@ func (c *Centre) commandResponse(h iec.Header, ioa int, qualifier iec.CommandQua
 		}
 	} else {
 		con := 1
-		if h.Negative {
+		if h.Negative || unknownCause {
 			con = -1
 		}
 		if qualifier.Select() && t.phase == "select" && t.selectCon == 0 {

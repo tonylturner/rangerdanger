@@ -65,7 +65,7 @@ func (r *responses) handler(o *output, monitor bool) iec.Handler {
 		case iec.ASDUReceived:
 			o.asdu(e.ASDU, monitor)
 			h := e.ASDU.GetHeader()
-			if h.Test || h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm {
+			if h.Test || h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm && !unknownCause(h.Cause) {
 				return
 			}
 			a, ok := e.ASDU.(*iec.ASDU)
@@ -135,7 +135,11 @@ func (r *responses) wait(ctx context.Context, cursor *uint64, expected iec.ASDU,
 
 func responseMatches(expected iec.ASDU, actual response, cause iec.COT) bool {
 	h, want := actual.header, expected.Header
-	if h.Type != want.Type || h.CommonAddress != want.CommonAddress || h.Originator != want.Originator || h.Test || h.Cause != cause || len(actual.objects) != len(expected.Objects) {
+	causeMatches := h.Cause == cause
+	if cause == iec.ActivationCon && unknownCause(h.Cause) {
+		causeMatches = true
+	}
+	if h.Type != want.Type || h.CommonAddress != want.CommonAddress || h.Originator != want.Originator || h.Test || !causeMatches || len(actual.objects) != len(expected.Objects) {
 		return false
 	}
 	for i, obj := range actual.objects {
@@ -144,4 +148,8 @@ func responseMatches(expected iec.ASDU, actual response, cause iec.COT) bool {
 		}
 	}
 	return true
+}
+
+func unknownCause(cause iec.COT) bool {
+	return cause >= iec.UnknownType && cause <= iec.UnknownIOA
 }

@@ -27,19 +27,29 @@ func (c *Centre) wait(ctx context.Context, deadline time.Time, done func(*tracke
 		}
 		changed := c.changed
 		c.mu.Unlock()
-		timer := time.NewTimer(left)
+		timerC, stopTimer := c.waitTimer(left)
 		select {
 		case <-ctx.Done():
 		case <-changed:
-		case <-timer.C:
+		case <-timerC:
 		}
-		timer.Stop()
+		stopTimer()
 		c.mu.Lock()
 		if ctx.Err() != nil {
 			return "lost"
 		}
 	}
 }
+
+func (c *Centre) waitTimer(after time.Duration) (<-chan time.Time, func()) {
+	if c.opts.Clock != nil {
+		timer := c.opts.Clock.NewTimer(c.opts.Clock.Now().Add(after))
+		return timer.C(), func() { timer.Stop() }
+	}
+	timer := time.NewTimer(after)
+	return timer.C, func() { timer.Stop() }
+}
+
 func (c *Centre) sendCommand(value int, selecting bool) bool {
 	c.mu.Lock()
 	t := c.tracker
@@ -97,7 +107,7 @@ func (c *Centre) phases(ctx context.Context, value int, deadline time.Time) (str
 	}
 	c.mu.Unlock()
 	if !ok {
-		return "rejected", "select rejected (negative ACT-CON)"
+		return "rejected", "select rejected (negative confirmation)"
 	}
 	if !c.sendCommand(value, false) {
 		return "unknown", "link lost before the execute was sent"
@@ -113,7 +123,7 @@ func (c *Centre) phases(ctx context.Context, value int, deadline time.Time) (str
 	ok = c.tracker.executeCon == 1
 	c.mu.Unlock()
 	if !ok {
-		return "rejected", "execute rejected (negative ACT-CON)"
+		return "rejected", "execute rejected (negative confirmation)"
 	}
 	w = c.wait(ctx, deadline, func(t *tracker) bool { return t.terminated })
 	if w == "lost" {

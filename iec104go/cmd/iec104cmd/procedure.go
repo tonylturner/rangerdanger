@@ -65,7 +65,11 @@ func (p *procedure) gi(ctx context.Context, monitor bool) bool {
 	}
 	if !monitor {
 		r, ok := p.wait(ctx, &cursor, request, false)
-		if !ok || r.header.Negative {
+		if !ok {
+			return false
+		}
+		if r.header.Cause != iec.ActivationCon || r.header.Negative {
+			p.o.logf("GI confirmation rejected (cot=%s(%d) negative=%d)", r.header.Cause, r.header.Cause, bit(r.header.Negative))
 			return false
 		}
 	}
@@ -102,12 +106,12 @@ func (p *procedure) command(ctx context.Context, ioa uint32, value int) bool {
 			p.o.logf("no %s confirmation", leg)
 			return false
 		}
-		status := "confirmed"
-		if r.header.Negative {
-			status = "REJECTED (negative)"
+		if r.header.Cause != iec.ActivationCon || r.header.Negative {
+			p.o.logf("%s REJECTED (cot=%s(%d) negative=%d)", leg, r.header.Cause, r.header.Cause, bit(r.header.Negative))
+			return false
 		}
-		p.o.logf("%s %s", leg, status)
-		return !r.header.Negative
+		p.o.logf("%s confirmed", leg)
+		return true
 	}
 	if p.a.sbo {
 		cursor := p.r.cursor()

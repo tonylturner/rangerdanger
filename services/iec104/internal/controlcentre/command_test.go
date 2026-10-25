@@ -25,7 +25,7 @@ func (s *transportStub) Close(context.Context) error   { return nil }
 func (s *transportStub) Done() <-chan struct{}         { return s.done }
 func TestCommandGoldens(t *testing.T) {
 	for _, tc := range []struct{ name, result, reason string }{
-		{"ok", "completed", ""}, {"select-negative", "rejected", "select rejected (negative ACT-CON)"}, {"execute-negative", "rejected", "execute rejected (negative ACT-CON)"}, {"term-negative", "failed", "negative ACT-TERM"}, {"missing-feedback", "unknown", "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM"},
+		{"ok", "completed", ""}, {"select-negative", "rejected", "select rejected (negative confirmation)"}, {"execute-negative", "rejected", "execute rejected (negative confirmation)"}, {"term-negative", "failed", "negative ACT-TERM"}, {"missing-feedback", "unknown", "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM"},
 		{"select-send-error", "unknown", "link lost before the select was sent"}, {"execute-send-error", "unknown", "link lost before the execute was sent"}, {"select-timeout", "unknown", "no select confirmation; execute not sent"}, {"execute-timeout", "unknown", "no execute confirmation within the command budget"}, {"term-timeout", "unknown", "no ACT-TERM within the command budget"}, {"select-lost", "unknown", "link lost before the execute was sent"}, {"execute-lost", "unknown", "link lost after the execute was sent"}, {"term-lost", "unknown", "link lost before ACT-TERM"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -119,6 +119,76 @@ func TestCommandGoldens(t *testing.T) {
 		})
 	}
 }
+
+type immediateCommandClock struct{ now time.Time }
+
+type immediateCommandTimer struct {
+	clock *immediateCommandClock
+	at    time.Time
+	ch    chan time.Time
+	fired bool
+}
+
+func (c *immediateCommandClock) Now() time.Time { return c.now }
+func (c *immediateCommandClock) NewTimer(at time.Time) iec.Timer {
+	return &immediateCommandTimer{clock: c, at: at, ch: make(chan time.Time, 1)}
+}
+func (t *immediateCommandTimer) C() <-chan time.Time {
+	if !t.fired {
+		t.clock.now = t.at
+		t.ch <- t.at
+		t.fired = true
+	}
+	return t.ch
+}
+func (t *immediateCommandTimer) Stop() bool { return !t.fired }
+func (t *immediateCommandTimer) Reset(at time.Time) bool {
+	wasFired := t.fired
+	t.at, t.fired = at, false
+	return wasFired
+}
+
+func TestMirroredUnknownIOARejectsCommandBeforeT1(t *testing.T) {
+	for _, phase := range []string{"select", "execute"} {
+		for _, negative := range []bool{false, true} {
+			name := fmt.Sprintf("%s/PN=%d", phase, map[bool]int{true: 1, false: 0}[negative])
+			t.Run(name, func(t *testing.T) {
+				c, now := model(t)
+				clock := &immediateCommandClock{now: *now}
+				c.opts.Now = clock.Now
+				c.opts.Clock = clock
+				started(c)
+				c.tickGI(clock.Now())
+				completeGI(c)
+				receive(c, 3, 20, 1001, iec.DoublePoint{DIQ: 2})
+				c.session = &transportStub{send: func(m iec.Message) error {
+					a := m.(iec.ASDU)
+					command := a.Objects[0].Element.(iec.DoubleCommand)
+					reply := a.Header
+					reply.Cause = iec.ActivationCon
+					if phase == "select" && command.Qualifier.Select() || phase == "execute" && !command.Qualifier.Select() {
+						reply.Cause = iec.UnknownIOA
+						reply.Negative = negative
+					}
+					c.mu.Lock()
+					c.commandResponse(reply, int(a.Objects[0].Address), command.Qualifier)
+					c.mu.Unlock()
+					return nil
+				}}
+
+				result := c.command(context.Background(), 0, 2, "close")
+				if result.status != 200 || !strings.Contains(string(result.body), `"result":"rejected"`) {
+					t.Fatalf("COT 47 did not reject the command: %s", result.body)
+				}
+				elapsed := clock.Now().Sub(*now)
+				if elapsed >= time.Duration(c.pm.Timers.T1)*time.Second {
+					t.Fatalf("rejection arrived at fake elapsed %s, not before T1", elapsed)
+				}
+			})
+		}
+	}
+}
+
 func TestResponseMatcherAndFeedback(t *testing.T) {
 	c, now := model(t)
 	started(c)
@@ -186,14 +256,6 @@ func TestCommandRepliesRequireExactPhaseAndQualifier(t *testing.T) {
 			{"wrong select bit", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}, 3001, qualifier ^ 0x80},
 			{"deactivation confirmation", iec.Header{Type: iec.C_DC_NA_1, Cause: iec.DeactivationCon, CommonAddress: 1}, 3001, qualifier},
 		}
-		for _, cot := range []iec.COT{44, 45, 46, 47} {
-			cases = append(cases, struct {
-				name string
-				h    iec.Header
-				ioa  int
-				q    iec.CommandQualifier
-			}{fmt.Sprintf("unknown cause %d", cot), iec.Header{Type: iec.C_DC_NA_1, Cause: cot, CommonAddress: 1}, 3001, qualifier})
-		}
 		t.Run(phase, func(t *testing.T) {
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
@@ -251,6 +313,28 @@ func TestCommandRepliesRequireExactPhaseAndQualifier(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestUnknownCauseCommandRepliesAreRejections(t *testing.T) {
+	for _, phase := range []string{"select", "execute"} {
+		for _, cot := range []iec.COT{iec.UnknownType, iec.UnknownCause, iec.UnknownCA, iec.UnknownIOA} {
+			for _, negative := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/cot=%d/PN=%d", phase, cot, map[bool]int{true: 1, false: 0}[negative]), func(t *testing.T) {
+					c, now := model(t)
+					qualifier := iec.CommandQualifier(2)
+					if phase == "select" {
+						qualifier |= 0x80
+					}
+					c.tracker = tracker{active: true, index: 0, value: 2, phase: phase, deadline: now.Add(time.Second)}
+					h := iec.Header{Type: iec.C_DC_NA_1, Cause: cot, CommonAddress: 1, Negative: negative}
+					receiveHeader(c, h, 3001, iec.DoubleCommand{Qualifier: qualifier})
+					if phase == "select" && c.tracker.selectCon != -1 || phase == "execute" && c.tracker.executeCon != -1 {
+						t.Fatalf("COT %d did not reject phase %s (P/N=%t): %+v", cot, phase, negative, c.tracker)
+					}
+				})
+			}
+		}
 	}
 }
 

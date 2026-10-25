@@ -188,8 +188,15 @@ func TestCommandResponseRequiresExactPositiveActivationEcho(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			code := run(ctx, []string{addr, "dc", "3001", "open", "--json"}, out, errout, testRuntime())
-			if code != 1 || out.String() != result("dc", "failed") || !strings.Contains(errout.String(), "no execute confirmation") || strings.Contains(errout.String(), "execute confirmed") {
+			if code != 1 || out.String() != result("dc", "failed") || strings.Contains(errout.String(), "execute confirmed") {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), errout.String())
+			}
+			if strings.HasPrefix(tc.name, "unknown ") {
+				if !strings.Contains(errout.String(), "execute REJECTED (cot=") {
+					t.Fatalf("unknown COT was not a fast rejection: %s", errout.String())
+				}
+			} else if !strings.Contains(errout.String(), "no execute confirmation") {
+				t.Fatalf("unmatched response did not time out: %s", errout.String())
 			}
 		})
 	}
