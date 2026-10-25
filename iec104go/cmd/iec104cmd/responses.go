@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"time"
 
@@ -11,8 +12,8 @@ import (
 )
 
 type response struct {
-	header iec.Header
-	ioa    uint32
+	header  iec.Header
+	objects []iec.Object
 }
 
 // Only response envelopes enter the ring; monitoring bursts cannot evict them.
@@ -37,10 +38,6 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
-}
-
-func confirmation(c iec.COT) bool {
-	return c == iec.ActivationCon || c == iec.DeactivationCon || (c >= iec.UnknownType && c <= iec.UnknownIOA)
 }
 
 func (r *responses) handler(o *output, monitor bool) iec.Handler {
@@ -68,15 +65,15 @@ func (r *responses) handler(o *output, monitor bool) iec.Handler {
 		case iec.ASDUReceived:
 			o.asdu(e.ASDU, monitor)
 			h := e.ASDU.GetHeader()
-			if !confirmation(h.Cause) && h.Cause != iec.ActivationTerm {
+			if h.Test || h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm && !unknownCause(h.Cause) {
 				return
 			}
 			a, ok := e.ASDU.(*iec.ASDU)
-			if !ok || len(a.Objects) == 0 {
+			if !ok {
 				return
 			}
 			r.mu.Lock()
-			r.ring[r.count%32] = response{h, a.Objects[0].Address}
+			r.ring[r.count%32] = response{header: h, objects: append([]iec.Object(nil), a.Objects...)}
 			r.count++
 			r.mu.Unlock()
 			notify(r.changed)
@@ -101,7 +98,7 @@ func (r *responses) suppressCloseLog() {
 	r.quietClose = true
 }
 
-func (r *responses) wait(ctx context.Context, cursor *uint64, typ iec.TypeID, ca uint16, ioa uint32, term bool, timeout time.Duration, clock iec.Clock) (response, bool) {
+func (r *responses) wait(ctx context.Context, cursor *uint64, expected iec.ASDU, term bool, timeout time.Duration, clock iec.Clock) (response, bool) {
 	timer := clock.NewTimer(clock.Now().Add(timeout))
 	defer timer.Stop()
 	for {
@@ -112,11 +109,11 @@ func (r *responses) wait(ctx context.Context, cursor *uint64, typ iec.TypeID, ca
 		for *cursor < r.count {
 			v := r.ring[*cursor%32]
 			*cursor++
-			cotOK := confirmation(v.header.Cause)
+			wantCause := iec.ActivationCon
 			if term {
-				cotOK = v.header.Cause == iec.ActivationTerm
+				wantCause = iec.ActivationTerm
 			}
-			if v.header.Type == typ && v.header.CommonAddress == ca && v.ioa == ioa && cotOK {
+			if responseMatches(expected, v, wantCause) {
 				r.mu.Unlock()
 				return v, true
 			}
@@ -134,4 +131,25 @@ func (r *responses) wait(ctx context.Context, cursor *uint64, typ iec.TypeID, ca
 		case <-r.changed:
 		}
 	}
+}
+
+func responseMatches(expected iec.ASDU, actual response, cause iec.COT) bool {
+	h, want := actual.header, expected.Header
+	causeMatches := h.Cause == cause
+	if cause == iec.ActivationCon && unknownCause(h.Cause) {
+		causeMatches = true
+	}
+	if h.Type != want.Type || h.CommonAddress != want.CommonAddress || h.Originator != want.Originator || h.Test || !causeMatches || len(actual.objects) != len(expected.Objects) {
+		return false
+	}
+	for i, obj := range actual.objects {
+		if obj.Address != expected.Objects[i].Address || !reflect.DeepEqual(obj.Element, expected.Objects[i].Element) {
+			return false
+		}
+	}
+	return true
+}
+
+func unknownCause(cause iec.COT) bool {
+	return cause >= iec.UnknownType && cause <= iec.UnknownIOA
 }

@@ -109,13 +109,19 @@ func parseHead(head string) (request, int, response) {
 }
 func (c *Centre) serveConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+	requestDeadline := time.Now().Add(ioTimeout)
+	conn.SetReadDeadline(requestDeadline)
 	defer func() {
 		if tcp, ok := conn.(*net.TCPConn); ok {
 			tcp.CloseWrite()
 			sink := make([]byte, 4096)
 			total := 0
+			drainDeadline := time.Now().Add(time.Second)
+			if requestDeadline.Before(drainDeadline) {
+				drainDeadline = requestDeadline
+			}
+			conn.SetReadDeadline(drainDeadline)
 			for total < 64*1024 {
-				conn.SetReadDeadline(time.Now().Add(time.Second))
 				n, err := conn.Read(sink)
 				total += n
 				if err != nil {
@@ -131,7 +137,6 @@ func (c *Centre) serveConn(ctx context.Context, conn net.Conn) {
 			writeResponse(conn, failure(431, "request header too large"))
 			return
 		}
-		conn.SetReadDeadline(time.Now().Add(ioTimeout))
 		n, err := conn.Read(buf[used:])
 		used += n
 		text := buf[:used]
@@ -158,7 +163,6 @@ func (c *Centre) serveConn(ctx context.Context, conn net.Conn) {
 	r.body = make([]byte, want)
 	got := copy(r.body, buf[end+4:used])
 	for got < want {
-		conn.SetReadDeadline(time.Now().Add(ioTimeout))
 		n, err := conn.Read(r.body[got:])
 		got += n
 		if got == want {

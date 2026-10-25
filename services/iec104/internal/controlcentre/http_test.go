@@ -3,6 +3,7 @@
 package controlcentre
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -180,5 +181,75 @@ func TestHTTPConnectionCapAndShutdown(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("shutdown leaked HTTP connections")
+	}
+}
+
+func TestHTTPRequestDeadlineExpiresSlowHeaders(t *testing.T) {
+	c, _ := model(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.serveHTTP(ctx, l) }()
+	var slow []net.Conn
+	defer func() {
+		for _, conn := range slow {
+			conn.Close()
+		}
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("HTTP listener did not stop")
+		}
+	}()
+
+	for i := 0; i < maxConnections; i++ {
+		conn, err := net.DialTimeout("tcp4", l.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		slow = append(slow, conn)
+		if _, err := conn.Write([]byte("G")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	health := func() string {
+		t.Helper()
+		conn, err := net.DialTimeout("tcp4", l.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := io.WriteString(conn, "GET /api/health HTTP/1.1\r\nHost: cc\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		line, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			t.Fatal(err)
+		}
+		return line
+	}
+	if got := health(); !strings.HasPrefix(got, "HTTP/1.1 503 ") {
+		t.Fatalf("slow readers did not occupy all slots: %q", got)
+	}
+
+	time.Sleep(3500 * time.Millisecond)
+	for _, conn := range slow {
+		if _, err := conn.Write([]byte("E")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(2250 * time.Millisecond)
+	if got := health(); !strings.HasPrefix(got, "HTTP/1.1 200 ") {
+		t.Fatalf("absolute request timeout did not recover slots: %q", got)
 	}
 }

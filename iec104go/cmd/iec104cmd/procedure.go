@@ -42,41 +42,46 @@ func (p *procedure) transfer(ctx context.Context, start bool) bool {
 	}
 }
 
-func (p *procedure) send(typ iec.TypeID, ioa uint32, element iec.Element) bool {
-	err := p.c.Send(&iec.ASDU{
-		Header:  iec.Header{Type: typ, Cause: iec.Activation, Originator: uint8(p.a.oa), CommonAddress: uint16(p.a.ca)},
-		Objects: []iec.Object{{Address: ioa, Element: element}},
-	})
+func (p *procedure) send(request iec.ASDU) bool {
+	err := p.c.Send(&request)
 	if err != nil {
 		p.o.logf("send failed: %v", err)
 	}
 	return err == nil
 }
 
-func (p *procedure) wait(ctx context.Context, cursor *uint64, typ iec.TypeID, ioa uint32, term bool) (response, bool) {
-	return p.r.wait(ctx, cursor, typ, uint16(p.a.ca), ioa, term, p.timeout, p.clock)
+func (p *procedure) wait(ctx context.Context, cursor *uint64, expected iec.ASDU, term bool) (response, bool) {
+	return p.r.wait(ctx, cursor, expected, term, p.timeout, p.clock)
 }
 
 func (p *procedure) gi(ctx context.Context, monitor bool) bool {
+	request := iec.ASDU{
+		Header:  iec.Header{Type: iec.C_IC_NA_1, Cause: iec.Activation, Originator: uint8(p.a.oa), CommonAddress: uint16(p.a.ca)},
+		Objects: []iec.Object{{Address: 0, Element: iec.Interrogation{QOI: 20}}},
+	}
 	cursor := p.r.cursor()
-	if !p.send(iec.C_IC_NA_1, 0, iec.Interrogation{QOI: 20}) {
+	if !p.send(request) {
 		return false
 	}
 	if !monitor {
-		r, ok := p.wait(ctx, &cursor, iec.C_IC_NA_1, 0, false)
-		if !ok || r.header.Negative {
+		r, ok := p.wait(ctx, &cursor, request, false)
+		if !ok {
+			return false
+		}
+		if r.header.Cause != iec.ActivationCon || r.header.Negative {
+			p.o.logf("GI confirmation rejected (cot=%s(%d) negative=%d)", r.header.Cause, r.header.Cause, bit(r.header.Negative))
 			return false
 		}
 	}
 	// The legacy CLI checks the presence of GI ACT-TERM, not its PN flag.
 	// Monitor also deliberately does not require ACT-CON.
-	_, ok := p.wait(ctx, &cursor, iec.C_IC_NA_1, 0, true)
+	_, ok := p.wait(ctx, &cursor, request, true)
 	return ok
 }
 
 func (p *procedure) command(ctx context.Context, ioa uint32, value int) bool {
 	typ := map[string]iec.TypeID{"dc": iec.C_DC_NA_1, "rc": iec.C_RC_NA_1, "sc": iec.C_SC_NA_1}[p.a.words[0]]
-	send := func(value int, selectCommand bool) bool {
+	request := func(value int, selectCommand bool) iec.ASDU {
 		q := iec.CommandQualifier(value)
 		if selectCommand {
 			q |= 128
@@ -90,25 +95,29 @@ func (p *procedure) command(ctx context.Context, ioa uint32, value int) bool {
 		case iec.C_SC_NA_1:
 			e = iec.SingleCommand{Qualifier: q}
 		}
-		return p.send(typ, ioa, e)
+		return iec.ASDU{
+			Header:  iec.Header{Type: typ, Cause: iec.Activation, Originator: uint8(p.a.oa), CommonAddress: uint16(p.a.ca)},
+			Objects: []iec.Object{{Address: ioa, Element: e}},
+		}
 	}
-	confirm := func(cursor *uint64, leg string) bool {
-		r, ok := p.wait(ctx, cursor, typ, ioa, false)
+	confirm := func(cursor *uint64, expected iec.ASDU, leg string) bool {
+		r, ok := p.wait(ctx, cursor, expected, false)
 		if !ok {
 			p.o.logf("no %s confirmation", leg)
 			return false
 		}
-		status := "confirmed"
-		if r.header.Negative {
-			status = "REJECTED (negative)"
+		if r.header.Cause != iec.ActivationCon || r.header.Negative {
+			p.o.logf("%s REJECTED (cot=%s(%d) negative=%d)", leg, r.header.Cause, r.header.Cause, bit(r.header.Negative))
+			return false
 		}
-		p.o.logf("%s %s", leg, status)
-		return !r.header.Negative
+		p.o.logf("%s confirmed", leg)
+		return true
 	}
 	if p.a.sbo {
 		cursor := p.r.cursor()
+		selected := request(value, true)
 		p.o.logf("SELECT ioa=%d val=%d", ioa, value)
-		if !send(value, true) || !confirm(&cursor, "select") {
+		if !p.send(selected) || !confirm(&cursor, selected, "select") {
 			return false
 		}
 	}
@@ -126,11 +135,12 @@ func (p *procedure) command(ctx context.Context, ioa uint32, value int) bool {
 		}
 	}
 	cursor := p.r.cursor()
+	executed := request(value, false)
 	p.o.logf("EXECUTE ioa=%d val=%d", ioa, value)
-	if !send(value, false) || !confirm(&cursor, "execute") {
+	if !p.send(executed) || !confirm(&cursor, executed, "execute") {
 		return false
 	}
-	r, ok := p.wait(ctx, &cursor, typ, ioa, true)
+	r, ok := p.wait(ctx, &cursor, executed, true)
 	if !ok {
 		p.o.logf("no execute termination (ACT-TERM)")
 		return false
