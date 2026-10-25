@@ -196,20 +196,14 @@ func TestPlanRequiredPredicateIndependentOfLogging(t *testing.T) {
 	}
 }
 
-func TestPlanDoesNotReadLegacyCompilerFields(t *testing.T) {
+func TestPlanDoesNotReadDisplayFields(t *testing.T) {
 	pkg := planPackage(t, "eu-iec104-substation")
 	want := mustCompilePlan(t, pkg, nil)
-	pkg.Curriculum.Policy = nil
 	pkg.Curriculum.Groups = nil
 	pkg.Curriculum.PlanningOnly = nil
-	pkg.Curriculum.BaselineRules = nil
-	pkg.Curriculum.EnterpriseToVendorRule = nil
-	pkg.Curriculum.Flags = CurriculumFlags{}
 	pkg.Curriculum.Tests = nil
-	pkg.Curriculum.Interfaces = nil
-	pkg.Curriculum.Zones = nil
 	if got := mustCompilePlan(t, pkg, nil); !reflect.DeepEqual(got, want) {
-		t.Fatal("legacy fields influence shared plan compilation")
+		t.Fatal("display fields influence shared plan compilation")
 	}
 }
 

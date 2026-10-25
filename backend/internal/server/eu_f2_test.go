@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
@@ -85,31 +84,18 @@ func TestEUF2IndicationContract(t *testing.T) {
 
 func TestEUF2CurriculumDestinationInventory(t *testing.T) {
 	c := euGeneration(t, nil, nil).Package.Curriculum
-	destinations := map[string][]string{}
-	for _, rule := range c.BaselineRules {
-		if rule.ID == "rtu-to-feeder-modbus" {
-			destinations["baseline"] = strings.Split(rule.Destination, ", ")
+	var got []string
+	for _, slot := range c.Plan.Rules {
+		if slot.Required != nil && slot.Required.ID == "rtu-to-feeder-modbus" {
+			got = slot.Required.Destinations
 		}
 	}
-	for _, rule := range c.Groups["modbus-dpi"].Rules {
-		if rule.ID == "rtu-to-feeder-modbus" {
-			destinations["semantic display"] = strings.Split(rule.Destination, ", ")
-		}
+	if len(got) != 5 {
+		t.Fatalf("field destinations %v; want all five", got)
 	}
-	for _, entry := range c.Policy {
-		if entry.Rule.ID == "rtu-to-feeder-modbus" {
-			destinations["policy"] = entry.Rule.Destinations
-		}
-	}
-	for _, surface := range []string{"baseline", "semantic display", "policy"} {
-		got := destinations[surface]
-		if len(got) != 5 {
-			t.Fatalf("%s field destinations = %v; want all five", surface, got)
-		}
-		for _, host := range []string{"20", "21", "22", "23", "24"} {
-			if !slices.Contains(got, "10.40.40."+host+"/32") {
-				t.Fatalf("%s missing field endpoint .%s: %v", surface, host, got)
-			}
+	for _, host := range []string{"20", "21", "22", "23", "24"} {
+		if !slices.Contains(got, "10.40.40."+host+"/32") {
+			t.Fatalf("missing field endpoint .%s: %v", host, got)
 		}
 	}
 }

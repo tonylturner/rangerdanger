@@ -44,11 +44,8 @@ func TestCurriculumEUExample(t *testing.T) {
 	if c.ICSRules != ICSRulesForbidden || len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Readiness) != 4 || c.BudgetHours != 500 {
 		t.Fatalf("incomplete EU model: %#v", c)
 	}
-	if len(c.BaselineRules) != 6 {
-		t.Fatalf("required conduits = %d", len(c.BaselineRules))
-	}
-	if c.Policy[0].Rule.Sources[0] != "10.60.60.20/32" || c.Policy[2].Rule.Sources[0] != "10.30.30.30/32" {
-		t.Fatal("CC / PLC source pins not derived from topology")
+	if c.Plan.Rules[0].Required.Sources[0] != "10.60.60.20/32" {
+		t.Fatal("CC source pin not derived from topology")
 	}
 	// Changing the topology changes the policy and prose; no network fact is
 	// copied into a second curriculum authority.
@@ -68,7 +65,7 @@ func TestCurriculumEUExample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Policy[0].Rule.Sources[0] != "192.0.2.20/32" {
+	if next.Plan.Rules[0].Required.Sources[0] != "192.0.2.20/32" {
 		t.Fatal("stale CC source")
 	}
 }
@@ -85,29 +82,17 @@ func TestCurriculumEUFieldDestinationInventory(t *testing.T) {
 		t.Fatal("no field devices in topology")
 	}
 	slices.Sort(want)
-	surfaces := map[string][]string{}
-	for _, rule := range pkg.Curriculum.BaselineRules {
-		if rule.ID == "rtu-to-feeder-modbus" {
-			surfaces["baseline"] = strings.Split(rule.Destination, ", ")
+	for _, slot := range pkg.Curriculum.Plan.Rules {
+		if slot.Required != nil && slot.Required.ID == "rtu-to-feeder-modbus" {
+			got := slices.Clone(slot.Required.Destinations)
+			slices.Sort(got)
+			if !slices.Equal(got, want) {
+				t.Fatalf("field destinations %v want %v", got, want)
+			}
+			return
 		}
 	}
-	for _, rule := range pkg.Curriculum.Groups["modbus-dpi"].Rules {
-		if rule.ID == "rtu-to-feeder-modbus" {
-			surfaces["semantic display"] = strings.Split(rule.Destination, ", ")
-		}
-	}
-	for _, entry := range pkg.Curriculum.Policy {
-		if entry.Rule.ID == "rtu-to-feeder-modbus" {
-			surfaces["policy"] = entry.Rule.Destinations
-		}
-	}
-	for _, surface := range []string{"baseline", "semantic display", "policy"} {
-		got := surfaces[surface]
-		slices.Sort(got)
-		if !slices.Equal(got, want) {
-			t.Errorf("%s field destinations = %v; want topology inventory %v", surface, got, want)
-		}
-	}
+	t.Fatal("missing required RTU field rule")
 }
 
 func TestCurriculumStrictDecode(t *testing.T) {
@@ -127,6 +112,9 @@ func TestCurriculumStrictDecode(t *testing.T) {
 		{"malformed topology reference", strings.ReplaceAll(string(raw), "${ip:cc-1}", "${ips:cc-1}"), "invalid topology reference"},
 		{"reserved interpolation in prose", strings.Replace(string(raw), "noPlan: |+", "noPlan: |+\n  Literal ${ prose", 1), "invalid topology reference"},
 		{"unsupported schema", strings.Replace(string(raw), "schema: 1", "schema: 2", 1), "schema must be 1"},
+	}
+	for _, field := range []string{"policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyDisplayMutation", "legacyEffects"} {
+		cases = append(cases, struct{ name, data, want string }{"retired " + field, string(raw) + "\n" + field + ": []\n", "field " + field})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,22 +147,8 @@ func TestCurriculumReferences(t *testing.T) {
 		{"catalog", func(c *Curriculum) { c.Catalog[0].ID = "foreign" }, "unknown action"},
 		{"coverage action", func(c *Curriculum) { r := c.Requirements["enterprise-to-field"]; r.Impl["BLOCK"] = []string{"foreign"} }, "unknown action"},
 		{"impact scenario", func(c *Curriculum) { c.Impact["modbus-dpi"] = CurriculumImpact{Defends: []string{"foreign"}} }, "unknown scenario"},
-		{"policy action", func(c *Curriculum) { c.Policy[0].When = "foreign" }, "unknown action"},
+		{"plan action", func(c *Curriculum) { c.Plan.Rules[6].Action = "foreign" }, "unknown action"},
 		{"effect", func(c *Curriculum) { g := c.Groups["modbus-dpi"]; g.Effect = "magic"; c.Groups["modbus-dpi"] = g }, "unknown effect"},
-		{"deferred closure", func(c *Curriculum) {
-			for i := range c.Policy {
-				if c.Policy[i].Unless == "block-enterprise-to-field" {
-					c.Policy[i].Unless = ""
-				}
-			}
-		}, "scoped weak allows"},
-		{"closure allow", func(c *Curriculum) {
-			for i := range c.Policy {
-				if c.Policy[i].When == "block-enterprise-to-field" {
-					c.Policy[i].Rule.Action = "ALLOW"
-				}
-			}
-		}, "cannot emit a selected allow"},
 		{"node", func(c *Curriculum) { c.NodeInference[0].Node = "rtac-1" }, "unknown inference node"},
 		{"ordering", func(c *Curriculum) { c.GroupOrder = c.GroupOrder[:1] }, "groupOrder"},
 	}
@@ -219,16 +193,21 @@ func TestCurriculumUSExtraction(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := pkg.Curriculum
-	if !c.LegacyEffects || !c.LegacyDisplayMutation || len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Policy) != 13 {
+	if len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Plan.Proof) != 21 {
 		t.Fatal("US extraction changed")
 	}
 	wire, err := json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"planning":"remediation-planning"`, `"icsRules":"allowed"`, `"source":"10.30.30.20"`, `"phase-3-create-minimal-required-rules":"rules"`, `"access":{"mgmt":true,"http":true,"https":true,"ssh":true}`} {
+	for _, want := range []string{`"planning":"remediation-planning"`, `"icsRules":"allowed"`, `"phase-3-create-minimal-required-rules":"rules"`} {
 		if !strings.Contains(string(wire), want) {
 			t.Fatalf("wire DTO missing %s", want)
+		}
+	}
+	for _, retired := range []string{"policy", "baselineRules", "enterpriseToVendorRule", "flags", "loggingPrefixes", "legacyEffects", "legacyDisplayMutation", "interfaces", "zones", "plan"} {
+		if strings.Contains(string(wire), `"`+retired+`":`) {
+			t.Fatalf("retired field %s served", retired)
 		}
 	}
 	if strings.Contains(string(wire), "${") {
