@@ -18,7 +18,7 @@ EU has no detection-only action. `modbus-dpi`, `iec104-dpi`, `improve-logging` a
 
 An empty, planning-only or partial plan is valid. Budget overrun is a warning only. Deferring an enforceable action retains its Weak exposure; required operational flows cannot be deferred.
 
-Apply Your Plan sends package ID, revision and action IDs to the backend. One compiled result supplies the configuration, ordered rule table and expected TCP matrix. The implementation templates retain CR-22 and the operational checks; the fresh-session reconnect remains in Phase 4. Keep the package revision, action IDs and policy hash beside the exported config. The JSON config alone does not embed provenance. Named-policy applies and running-hash divergence clear applied-plan provenance.
+Apply Your Plan sends package ID, revision and action IDs to the backend. One compiled result supplies the configuration, ordered rule table and expected TCP matrix. The implementation templates retain CR-22 and the operational checks; the fresh-session reconnect remains in Phase 4. Save **Export plan record** beside **Export compiled config**; the record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named-policy applies and running-hash divergence clear applied-plan provenance.
 
 ### Follow the applied target in later labs
 

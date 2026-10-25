@@ -12,7 +12,7 @@ An empty, planning-only or partial plan is valid. Budget overrun is a warning on
 
 `:::decision` records an answer. `:::findings-panel` displays earlier answers. `:::plan-coverage` compares selections with requirements; it does not probe the firewall. The implementation rule table and tests come from the backend compiler, not the coverage panel.
 
-Apply Your Plan imports the compiled configuration and records package revision, action IDs and policy hash. Keep that provenance beside the compiled config export; the JSON config alone does not embed it. A named-policy apply or running-hash change clears plan provenance. Manual and named policies are judged against Hardened.
+Apply Your Plan imports the compiled configuration and records package revision, action IDs and policy hash. Download **Export compiled config** and its companion **Export plan record**, which contains the package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. A named-policy apply or running-hash change clears plan provenance. Manual and named policies are judged against Hardened.
 
 Lab 2.3 uses the applied plan's expected results. Deferring `block-enterprise-to-field` leaves the Kali command path open. In the bonus lab, `restrict-enterprise-to-vendor` owns RDP/VNC and `block-vendor-to-field` owns the field hop. Test each link independently, then restore normal operations for every plan.
 

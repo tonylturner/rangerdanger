@@ -12,7 +12,7 @@ The [change-resource plan](#eu-change-resource-plan) should already define the e
 
 The EU report has 37 TCP tuples. **Plan proof** checks this applied plan, zero skipped and a stable recorded plan hash. **Hardened acceptance** requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI and fresh CC observations separately. A partial plan can pass plan proof and retain prevention gaps; list them by tuple ID and owning action. Do not erase deferred allow results or treat them as skipped.
 
-Keep package revision and action IDs beside the compiled config export; the JSON config alone does not embed provenance. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; planning selections emit no inspection or later enforcement promise.
+Save **Export plan record** alongside **Export compiled config**. The record contains package ID, revision, label, action IDs and policy hash. Check `GET /api/firewall/active` to confirm what is running. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; planning selections emit no inspection or later enforcement promise.
 
 ### Assemble a paired test record
 
