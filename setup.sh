@@ -714,9 +714,9 @@ except Exception: sys.stdout.write("0")' 2>/dev/null)
     fi
     if [ "$dpi_degraded" = "1" ]; then
         warn "------------------------------------------------------------"
-        warn "Hardened policy applied WITH WARNINGS — ICS DPI / segmentation"
-        warn "is NOT enforcing. Labs 2.3 / 2.3-bonus and the hardened L4 rules"
-        warn "will silently fail to block the attacks they teach."
+        warn "Hardened policy applied WITH WARNINGS — inspect the active rules."
+        warn "The L4 source pin enforces; DPI detects and logs."
+        warn "A rejected atomic ruleset can leave the previous policy active."
         warn "Cause: the host kernel rejected the DPI 'queue num' ruleset"
         warn "(nfnetlink_queue / CONFIG_NFT_QUEUE missing). On Linux native:"
         warn "    sudo modprobe nfnetlink_queue   # then re-run ./setup.sh"

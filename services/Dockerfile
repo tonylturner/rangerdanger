@@ -108,13 +108,10 @@ FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
 # bash:     student-facing terminal consistency (~2MB per image)
-# nmap:     Lab 2.4 validation report runs reachability probes from
-#           lan1-only OT hosts (historian-sim) to confirm the
-#           firewall enforces non-RTAC → field denies. Without nmap
-#           in sim-base, the only lan1-only-with-probes host would
-#           be openplc — which is multi-homed and bypasses the
-#           firewall, so a probe from there proves nothing about
-#           segmentation enforcement.
+# nmap:     The US Lab 2.4 validation report probes from historian-sim
+#           (OT Ops only) to check non-RTAC → field denies. OpenPLC
+#           attaches to OT Ops/station and management, not field, in
+#           either package.
 RUN apk add --no-cache iproute2 iptables bash nmap
 COPY scripts/set-gateway.sh /usr/local/bin/set-gateway.sh
 COPY scripts/rtac-harden.sh /usr/local/bin/rtac-harden.sh
