@@ -33,11 +33,11 @@ export default function ExerciseDetailPage({ params }: { params: Promise<Params>
         <div className="rounded-xl border border-amber-800 bg-amber-950/30 p-5">
           <h2 className="text-sm font-bold text-amber-300">Exercise not found</h2>
           <p className="mt-2 text-xs text-amber-400">
-            No exercise with id <code className="rounded bg-slate-900 px-1 py-0.5">{id}</code> exists.
+            No exercise with id <code className="rounded-sm bg-slate-900 px-1 py-0.5">{id}</code> exists.
           </p>
           <button
             onClick={handleExit}
-            className="mt-3 rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-300 hover:text-slate-100"
+            className="mt-3 rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-300 hover:text-slate-100"
           >
             Back to exercise list
           </button>

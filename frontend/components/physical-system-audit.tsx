@@ -60,7 +60,7 @@ export function PhysicalAudit() {
     <h3 className="text-sm font-semibold text-slate-200">Device audit</h3>
     <p className="text-xs text-slate-400">Accepted and rejected actions with their source, newest first. Control authority is separate from command acceptance.</p>
     <label className="flex flex-wrap items-center gap-2 text-sm text-slate-300">Audit device
-      <select aria-label="Audit device" className="max-w-full rounded border border-slate-600 bg-slate-900 p-2" value={device} onChange={(e) => setDevice(e.target.value as FieldDeviceKey)}>
+      <select aria-label="Audit device" className="max-w-full rounded-sm border border-slate-600 bg-slate-900 p-2" value={device} onChange={(e) => setDevice(e.target.value as FieldDeviceKey)}>
         {(["breaker-1", "f2-breaker", "oltc-1", "rmu-1", "rmu-2"] as const).map((id) => <option key={id}>{id}</option>)}
       </select>
     </label>

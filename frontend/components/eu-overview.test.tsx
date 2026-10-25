@@ -26,7 +26,7 @@ describe("EU overview and workshop comms", () => {
     expect(html).toContain("w-full min-w-0 max-w-6xl");
     expect(html).toContain('aria-label="Historian trend" class="min-w-0');
     expect(html).toContain('<dl class="flex flex-wrap gap-x-6 gap-y-2 text-sm">');
-    expect(html).toContain('class="min-w-0 max-w-full break-words"');
+    expect(html).toContain('class="min-w-0 max-w-full wrap-break-word"');
     expect(html).toContain('aria-label="Latest snapshots"');
   });
   it.each([false, true])("shows source-device comms in workshop=%s", (workshop) => {

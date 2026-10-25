@@ -55,11 +55,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-sky-100",
     iconBg: "bg-sky-500/25",
     iconText: "text-sky-200",
-    cardBg: "bg-gradient-to-br from-sky-950/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-sky-950/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-sky-800/60",
     leftBar: "border-l-sky-500",
     topBar: "bg-sky-500",
-    headerWash: "bg-gradient-to-b from-sky-950/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-sky-950/40 to-transparent",
   },
   emerald: {
     ring: "hover:border-emerald-500",
@@ -67,11 +67,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-emerald-100",
     iconBg: "bg-emerald-500/25",
     iconText: "text-emerald-200",
-    cardBg: "bg-gradient-to-br from-emerald-950/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-emerald-950/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-emerald-800/60",
     leftBar: "border-l-emerald-500",
     topBar: "bg-emerald-500",
-    headerWash: "bg-gradient-to-b from-emerald-950/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-emerald-950/40 to-transparent",
   },
   violet: {
     ring: "hover:border-violet-500",
@@ -79,11 +79,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-violet-100",
     iconBg: "bg-violet-500/25",
     iconText: "text-violet-200",
-    cardBg: "bg-gradient-to-br from-violet-950/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-violet-950/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-violet-800/60",
     leftBar: "border-l-violet-500",
     topBar: "bg-violet-500",
-    headerWash: "bg-gradient-to-b from-violet-950/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-violet-950/40 to-transparent",
   },
   amber: {
     ring: "hover:border-amber-500",
@@ -91,11 +91,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-amber-100",
     iconBg: "bg-amber-500/25",
     iconText: "text-amber-200",
-    cardBg: "bg-gradient-to-br from-amber-950/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-amber-950/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-amber-800/60",
     leftBar: "border-l-amber-500",
     topBar: "bg-amber-500",
-    headerWash: "bg-gradient-to-b from-amber-950/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-amber-950/40 to-transparent",
   },
   slate: {
     ring: "hover:border-slate-500",
@@ -103,11 +103,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-slate-100",
     iconBg: "bg-slate-500/25",
     iconText: "text-slate-200",
-    cardBg: "bg-gradient-to-br from-slate-800/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-slate-800/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-slate-700/60",
     leftBar: "border-l-slate-400",
     topBar: "bg-slate-400",
-    headerWash: "bg-gradient-to-b from-slate-800/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-slate-800/40 to-transparent",
   },
   rose: {
     ring: "hover:border-rose-500",
@@ -115,11 +115,11 @@ const ACCENT_CLASSES: Record<
     chipText: "text-rose-100",
     iconBg: "bg-rose-500/25",
     iconText: "text-rose-200",
-    cardBg: "bg-gradient-to-br from-rose-950/60 via-slate-900/80 to-slate-900/60",
+    cardBg: "bg-linear-to-br/srgb from-rose-950/60 via-slate-900/80 to-slate-900/60",
     cardBorder: "border-rose-800/60",
     leftBar: "border-l-rose-500",
     topBar: "bg-rose-500",
-    headerWash: "bg-gradient-to-b from-rose-950/40 to-transparent",
+    headerWash: "bg-linear-to-b/srgb from-rose-950/40 to-transparent",
   },
 };
 
@@ -372,12 +372,12 @@ export function KnowledgeReader({ sections }: { sections: Section[] }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search across all articles (titles and bodies)…"
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-600 focus:outline-none focus:ring-1 focus:ring-sky-600"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 py-2 pl-10 pr-4 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-600 focus:outline-hidden focus:ring-1 focus:ring-sky-600"
           />
           {isSearching && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-slate-500 hover:text-slate-300"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm px-2 py-0.5 text-xs text-slate-500 hover:text-slate-300"
               aria-label="Clear search"
             >
               clear

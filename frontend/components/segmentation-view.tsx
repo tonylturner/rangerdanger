@@ -242,7 +242,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
               setSelectedPolicyId(e.target.value);
               setUserPickedPolicy(true);
             }}
-            className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-none"
+            className="flex-1 rounded-sm border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-200 focus:border-slate-500 focus:outline-hidden"
           >
             {policies.map((p) => (
               <option key={p.id} value={p.id}>
@@ -254,7 +254,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
           <button
             onClick={() => handleApply(selectedMeta.id)}
             disabled={applying || isSelectedActive}
-            className="rounded border border-sky-700 bg-sky-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-sm border border-sky-700 bg-sky-950/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-300 transition-colors hover:bg-sky-900/60 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {applying ? "Applying…" : isSelectedActive ? "Active" : "Apply"}
           </button>
@@ -323,7 +323,7 @@ export function SegmentationView({ compact = false }: { compact?: boolean }) {
                   Preview · {selectedMeta.label}
                 </div>
                 {activeFields && !isSelectedActive && (
-                  <span className="rounded bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
+                  <span className="rounded-sm bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-400">
                     {changeCount} change{changeCount === 1 ? "" : "s"} vs active
                   </span>
                 )}
@@ -372,7 +372,7 @@ function ActionChip({ action }: { action: string; label?: string }) {
       ? "text-red-400 border-red-800/40"
       : "text-yellow-400 border-yellow-800/40";
   return (
-    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>
+    <span className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>
       {action}
     </span>
   );
@@ -470,7 +470,7 @@ function LiveEvents({
         <span className="flex items-center gap-2">
           Live Firewall Events · {activePolicyLabel}
           {events.length > 0 && (
-            <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
+            <span className="rounded-sm bg-slate-800/60 px-1.5 py-0.5 text-slate-400 normal-case tracking-normal">
               {ruleCount} rule · {dpiCount} dpi · {idsCount} ids · {denyCount} deny
             </span>
           )}
@@ -479,7 +479,7 @@ function LiveEvents({
       </button>
 
       {expanded && (
-        <div className={`space-y-1 overflow-y-auto rounded border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
+        <div className={`space-y-1 overflow-y-auto rounded-sm border border-slate-800/60 bg-slate-900/30 p-1.5 ${compact ? "max-h-32" : "max-h-56"}`}>
           {unavailable ? (
             <div className="py-2 text-center text-[10px] text-slate-600">
               containd unreachable
@@ -569,7 +569,7 @@ function LiveEventRow({ e }: { e: NetworkEvent }) {
     : "--";
 
   return (
-    <div className={`rounded border p-1.5 text-[10px] ${rowTone}`}>
+    <div className={`rounded-sm border p-1.5 text-[10px] ${rowTone}`}>
       <div className="flex items-center gap-1.5">
         <span className="w-14 shrink-0 text-[9px] text-slate-600">{ts}</span>
         {/* For firewall.rule.hit rows show the ALLOW/DENY action chip;
@@ -605,7 +605,7 @@ function KindChip({ category }: { category: EventCategory }) {
       : { label: "EVT", cls: "text-slate-400 border-slate-700/40" };
   return (
     <span
-      className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${meta.cls}`}
+      className={`rounded-sm border px-1.5 py-0.5 text-[9px] font-bold ${meta.cls}`}
     >
       {meta.label}
     </span>

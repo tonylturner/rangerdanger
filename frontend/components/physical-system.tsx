@@ -53,7 +53,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
       <section aria-label="Physical abnormalities" className={`${PANEL} border-slate-700 text-xs`}>
         {(field.process.truth_stale || unavailable) && <p className="mb-2 text-amber-300">⚠ Retained simulation observations · not current conditions</p>}
         {abnormalities.length ? <ul className="flex flex-wrap gap-x-4 gap-y-2">{abnormalities.map((a) => <li key={a.id} className={a.tone === "fault" ? "text-red-300" : a.tone === "warning" ? "text-amber-300" : "text-slate-300"}>
-          {a.device ? <button type="button" className="rounded text-left hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => showDevice(a.device!)}>{a.tone === "info" ? "ⓘ" : "⚠"} {a.text}</button> : <>{a.tone === "info" ? "ⓘ" : "⚠"} {a.text}</>}
+          {a.device ? <button type="button" className="rounded-sm text-left hover:underline focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => showDevice(a.device!)}>{a.tone === "info" ? "ⓘ" : "⚠"} {a.text}</button> : <>{a.tone === "info" ? "ⓘ" : "⚠"} {a.text}</>}
         </li>)}</ul> : <p className="text-slate-400">No active physical abnormalities</p>}
       </section>
       <PhysicalOverview field={field} operator={operator} unavailable={operatorUnavailable} fieldUnavailable={unavailable} counts={comparisonCounts(rows)} onDevice={showDevice} onSwitching={() => { showDevice("RMU1"); setExpanded((old) => ({ ...old, RMU2: true })); }} onComparison={() => {
@@ -66,7 +66,7 @@ export function PhysicalSystemScreen({ field, stateError, operator, operatorUnav
         <FeederOneLine read={read} physical selected={selected} onSelect={showDevice} />
         <div className="mt-3 grid min-w-0 gap-3 text-xs sm:grid-cols-3">{(["S1", "S2", "S3"] as SectionId[]).map((id) => {
           const live = read(`${id.toLowerCase()}-live`), path = sectionSupplyPath(read, id);
-          return <div key={id} className="min-w-0 text-slate-300 [overflow-wrap:anywhere]">
+          return <div key={id} className="min-w-0 text-slate-300 wrap-anywhere">
             <h3 className="font-semibold">{id} · physical energization</h3>
             <p className="font-mono">{live.condition === "good" ? live.value ? "ENERGIZED" : "NOT ENERGIZED" : "UNKNOWN"} · solver bus live</p>
             <p className="font-mono">Measured kV: {read(SECTION_VOLTAGE[id]).shortText}</p>

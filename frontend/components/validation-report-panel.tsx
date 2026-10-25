@@ -47,7 +47,7 @@ export function ValidationReportPanel() {
         <button
           onClick={generate}
           disabled={loading}
-          className="shrink-0 rounded border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
+          className="shrink-0 rounded-sm border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
         >
           {loading
             ? "Running tests…"
@@ -104,7 +104,7 @@ export function ValidationReportPanel() {
               Policy stable during proof: {report.policy_stable ? "yes" : "no"}
             </div>
           </div>
-          <div className="max-h-[28rem] overflow-auto rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+          <div className="max-h-112 overflow-auto rounded-lg border border-slate-800 bg-slate-950/60 p-4">
             <MarkdownProse>{report.markdown}</MarkdownProse>
           </div>
         </div>

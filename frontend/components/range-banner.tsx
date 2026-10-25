@@ -55,7 +55,7 @@ export function RangeBannerView({
         <span className="font-semibold text-rose-100">
           {packageTitle(packages, status.package)} did not start
         </span>
-        {status.error && <span className="block break-words font-mono text-xs text-rose-300">{status.error}</span>}
+        {status.error && <span className="block wrap-break-word font-mono text-xs text-rose-300">{status.error}</span>}
         <span className="block text-xs text-slate-400">
           Retry it, or choose another package, from the Range control in the sidebar.
         </span>

@@ -211,7 +211,7 @@ export function PolicyStatusBanner({
     const { need: needLabel, action: promptedAction } = mismatchText(expectedConfig, policies.usWording);
 
     return (
-      <div className="sticky top-0 z-10 -mx-4 mb-3 border-b border-amber-700/60 bg-amber-950/60 px-4 py-2.5 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 -mx-4 mb-3 border-b border-amber-700/60 bg-amber-950/60 px-4 py-2.5 backdrop-blur-xs">
         <div className="flex items-start gap-2.5">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300 mt-0.5" />
           <div className="min-w-0 flex-1">
@@ -233,7 +233,7 @@ export function PolicyStatusBanner({
   // Matched / informational variant.
   return (
     <div
-      className={`sticky top-0 z-10 -mx-4 mb-3 border-b ${style.border} ${style.bg} px-4 py-2.5 backdrop-blur-sm`}
+      className={`sticky top-0 z-10 -mx-4 mb-3 border-b ${style.border} ${style.bg} px-4 py-2.5 backdrop-blur-xs`}
     >
       <div className="flex items-center gap-2.5">
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${style.bg} ${style.iconColor}`}>

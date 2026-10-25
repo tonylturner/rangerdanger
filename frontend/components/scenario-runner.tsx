@@ -366,7 +366,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 <button
                   onClick={() => setShowSummary(!showSummary)}
                   aria-label={showSummary ? "Back to Exercise" : "View Summary"}
-                  className="inline-flex items-center justify-center rounded border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
+                  className="inline-flex items-center justify-center rounded-sm border border-sky-700 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-400 hover:bg-sky-900/50"
                 >
                   {showSummary ? <ArrowLeft className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
                 </button>
@@ -398,7 +398,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 onClick={handleLabReset}
                 disabled={resettingLab}
                 aria-label="Reset Lab"
-                className="inline-flex items-center justify-center rounded border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
+                className="inline-flex items-center justify-center rounded-sm border border-amber-800/50 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-500 hover:bg-amber-900/40 disabled:opacity-50"
               >
                 <RotateCcw className={`h-4 w-4 ${resettingLab ? "animate-spin" : ""}`} />
               </button>
@@ -410,7 +410,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               <button
                 onClick={resetProgress}
                 aria-label="Reset Progress"
-                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
+                className="inline-flex items-center justify-center rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-500 hover:text-red-400"
               >
                 <Eraser className="h-4 w-4" />
               </button>
@@ -422,7 +422,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
               <button
                 onClick={onExit}
                 aria-label="Exit Exercise"
-                className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                className="inline-flex items-center justify-center rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -481,7 +481,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                   <button
                     onClick={() => handleExecuteStep(currentStep)}
                     disabled={executing}
-                    className="rounded border border-amber-700 bg-amber-950/40 px-3 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                    className="rounded-sm border border-amber-700 bg-amber-950/40 px-3 py-1 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
                   >
                     {executing ? "Executing..." : "Execute Step"}
                   </button>
@@ -500,8 +500,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                       title={trackGate ? "Pick a track above to continue." : undefined}
                       className={
                         trackGate
-                          ? "cursor-not-allowed rounded border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          : "rounded border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
+                          ? "cursor-not-allowed rounded-sm border border-slate-700 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                          : "rounded-sm border border-green-800 bg-green-950/40 px-2 py-1 text-[10px] font-medium text-green-400 hover:bg-green-900/50"
                       }
                     >
                       Mark Complete
@@ -585,7 +585,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 <button
                   onClick={() => handleGenerateTraffic(45)}
                   disabled={generatingTraffic}
-                  className="rounded border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
+                  className="rounded-sm border border-sky-800/60 bg-sky-950/40 px-3 py-1.5 text-[10px] font-medium text-sky-400 hover:bg-sky-900/50 disabled:opacity-50"
                 >
                   {generatingTraffic ? "Generating Traffic..." : "Generate Traffic (45s)"}
                 </button>
@@ -596,7 +596,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 <button
                   onClick={() => handleStartCapture(60, "baseline")}
                   disabled={capturing}
-                  className="rounded border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
+                  className="rounded-sm border border-amber-800/60 bg-amber-950/40 px-3 py-1.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/50 disabled:opacity-50"
                 >
                   {capturing ? "Capturing..." : "Start 60s Capture"}
                 </button>
@@ -626,7 +626,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Document your findings, observations, or answers here. Notes persist across all steps."
-                className="w-full rounded border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-none resize-y min-h-[60px]"
+                className="w-full rounded-sm border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300 placeholder-slate-700 focus:border-sky-700 focus:outline-hidden resize-y min-h-[60px]"
                 rows={3}
               />
             </div>
@@ -709,8 +709,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         onClick={async () => { await applyFirewallConfig("improved"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
-                            ? "rounded border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
-                            : "rounded border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
+                            ? "rounded-sm border border-emerald-900/40 bg-emerald-950/20 px-1.5 py-0.5 text-[9px] text-emerald-400/70 hover:bg-emerald-900/40"
+                            : "rounded-sm border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-900/50"
                         }
                       >
                         Apply Hardened
@@ -731,8 +731,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         }}
                         className={
                           firewallTrack === "technical"
-                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
-                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
+                            ? "rounded-sm border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
+                            : "rounded-sm border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
                         }
                       >
                         Apply Your Plan
@@ -742,7 +742,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         <TooltipTrigger asChild>
                           <button
                             disabled
-                            className="cursor-not-allowed rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
+                            className="cursor-not-allowed rounded-sm border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
                           >
                             Apply Your Plan
                           </button>
@@ -763,8 +763,8 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         onClick={async () => { await applyFirewallConfig("weak"); void refreshLive(); }}
                         className={
                           firewallTrack === "technical"
-                            ? "rounded border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
-                            : "rounded border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
+                            ? "rounded-sm border border-rose-900/40 bg-rose-950/20 px-1.5 py-0.5 text-[9px] text-rose-400/70 hover:bg-rose-900/40"
+                            : "rounded-sm border border-rose-800 bg-rose-950/40 px-2 py-1 text-[10px] font-medium text-rose-300 hover:bg-rose-900/50"
                         }
                       >
                         Reset to Weak
@@ -836,7 +836,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
             <button
               onClick={handleValidate}
               disabled={validating}
-              className="rounded border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
+              className="rounded-sm border border-sky-700 bg-sky-950/40 px-4 py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-sky-900/50 disabled:opacity-50"
             >
               {validating ? "Validating..." : "Validate Exercise"}
             </button>

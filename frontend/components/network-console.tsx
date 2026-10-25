@@ -245,7 +245,7 @@ export function NetworkConsole() {
   }, [graphIsError, graphError]);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col space-y-4">
+    <div className="flex h-[calc(100vh-3rem)] flex-col stack-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {/* Rook - operator/control symbol. Sits next to the title
@@ -368,7 +368,7 @@ export function NetworkConsole() {
             />
           )}
           <Controls
-            className="!bg-slate-800 !border-slate-700"
+            className="bg-slate-800! border-slate-700!"
             position="top-right"
             showInteractive={false}
           >
@@ -413,7 +413,7 @@ export function NetworkConsole() {
       </div>
 
       {inspectorNode && (
-        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur">
+        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div>
               <p

@@ -78,7 +78,7 @@ export function CommandAuditView({ entries, networkEvents }: { entries: AuditEnt
               const harmful = e.process_impact?.includes("de-energized") || e.process_impact?.includes("DISABLED") || e.process_impact?.includes("OPENED") || e.process_impact?.includes("LOCKED");
 
               return (
-                <div key={`a-${e.timestamp}-${e.command}-${i}`} className={`rounded border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
+                <div key={`a-${e.timestamp}-${e.command}-${i}`} className={`rounded-sm border-l-2 border border-slate-800/60 bg-slate-900/40 p-2 text-xs ${zoneBorder[zone] || "border-l-slate-500"}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                       {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}
@@ -120,7 +120,7 @@ export function CommandAuditView({ entries, networkEvents }: { entries: AuditEnt
             })}
 
         {showDPI && networkEvents.map((e, i) => (
-          <div key={`n-${e.id ?? i}`} className="rounded border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
+          <div key={`n-${e.id ?? i}`} className="rounded-sm border border-purple-900/30 bg-purple-950/10 p-2 text-xs">
             <div className="flex items-center gap-2">
               <span className="text-slate-600 w-14 shrink-0 text-[10px]">
                 {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}

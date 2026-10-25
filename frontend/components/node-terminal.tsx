@@ -22,7 +22,7 @@ export function NodeTerminal({ nodeId, onClose, expanded = false, hideHeader = f
   return (
     <div className="flex h-full flex-col overflow-hidden" style={{ minHeight: 0 }}>
       {!hideHeader && (
-        <div className="flex-shrink-0 flex items-center justify-between border-b border-slate-800 px-3 py-2">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-800 px-3 py-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-slate-400">Terminal</span>
           </div>

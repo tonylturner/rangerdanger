@@ -252,7 +252,7 @@ export function TrafficMatrixView({
       <p className="text-xs text-slate-300">Topology is declared; liveness is observed, not authorization. Select a flow for its purpose and evidence.</p>
 
       {/* ── Capture & Generate controls ─────────────────────────── */}
-      <div className="space-y-1.5 rounded border border-slate-800 bg-slate-900/40 p-2">
+      <div className="space-y-1.5 rounded-sm border border-slate-800 bg-slate-900/40 p-2">
         <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
           {canGenerate ? "Generate & Capture" : "Capture PCAP"}
         </div>
@@ -262,7 +262,7 @@ export function TrafficMatrixView({
             value={captureDuration}
             onChange={(e) => setCaptureDuration(Number(e.target.value))}
             disabled={capturing || generating || stopping}
-            className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200 disabled:opacity-50"
+            className="rounded-sm border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200 disabled:opacity-50"
           >
             <option value={15}>15 sec</option>
             <option value={30}>30 sec</option>
@@ -273,7 +273,7 @@ export function TrafficMatrixView({
             <button
               onClick={handleGenerateAndCapture}
               disabled={stopping}
-              className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-700/60 bg-cyan-950/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ml-auto inline-flex items-center gap-1 rounded-sm border border-cyan-700/60 bg-cyan-950/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 transition-colors hover:bg-cyan-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {canGenerate ? <Zap className="h-3 w-3" fill="currentColor" /> : <Activity className="h-3 w-3" />}
               {canGenerate ? "Generate + PCAP" : "Capture PCAP"}
@@ -282,7 +282,7 @@ export function TrafficMatrixView({
             <button
               onClick={handleStopCapture}
               disabled={stopping}
-              className="ml-auto inline-flex items-center gap-1 rounded border border-red-700/60 bg-red-950/30 px-2 py-0.5 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ml-auto inline-flex items-center gap-1 rounded-sm border border-red-700/60 bg-red-950/30 px-2 py-0.5 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Square className="h-3 w-3" fill="currentColor" />
               {stopping ? "Stopping…" : "Stop"}
@@ -322,7 +322,7 @@ export function TrafficMatrixView({
                   key={filename}
                   href={getPcapDownloadUrl(filename)}
                   download
-                  className="inline-flex items-center gap-1 rounded border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
+                  className="inline-flex items-center gap-1 rounded-sm border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
                 >
                   <Download className="h-2.5 w-2.5" />
                   {filename}
@@ -335,7 +335,7 @@ export function TrafficMatrixView({
           <a
             href={getPcapDownloadUrl()}
             download
-            className="inline-flex items-center gap-1 rounded border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
+            className="inline-flex items-center gap-1 rounded-sm border border-green-700/60 bg-green-950/30 px-1.5 py-0.5 text-[9px] font-semibold text-green-300 transition-colors hover:bg-green-900/40"
           >
             <Download className="h-2.5 w-2.5" />
             Download PCAP
@@ -350,7 +350,7 @@ export function TrafficMatrixView({
         <select
           value={filterZone}
           onChange={(e) => setFilterZone(e.target.value)}
-          className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200"
+          className="rounded-sm border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-200"
         >
           <option value="all">All zones</option>
           {context?.graph.networks.map((n) => <option key={n.id} value={n.id}>{usPresentation ? (n.id === "field_net" ? "Field" : humanZoneName(n.id)) : n.name}</option>)}
@@ -425,7 +425,7 @@ export function TrafficMatrixView({
             >
               <button
                 type="button"
-                className="w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                className="w-full rounded-sm text-left focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-sky-400"
                 aria-label={`Inspect flow ${r.source} to ${r.target}`}
                 aria-expanded={isSelected}
                 onClick={toggleSelection}
@@ -464,7 +464,7 @@ export function TrafficMatrixView({
                   {r.crossZone && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <span className="inline-flex items-center gap-0.5 rounded border border-amber-700/60 bg-amber-950/30 px-1 py-0 text-[9px] font-bold uppercase text-amber-300">
+                        <span className="inline-flex items-center gap-0.5 rounded-sm border border-amber-700/60 bg-amber-950/30 px-1 py-0 text-[9px] font-bold uppercase text-amber-300">
                           <Router className="h-2.5 w-2.5" />
                           L3
                         </span>
@@ -497,7 +497,7 @@ export function TrafficMatrixView({
                 {r.protocols.map((f, i) => (
                   <span
                     key={i}
-                    className={`rounded border px-1 py-0 text-[9px] ${protoBadgeClass(f.protocol)}`}
+                    className={`rounded-sm border px-1 py-0 text-[9px] ${protoBadgeClass(f.protocol)}`}
                   >
                     {f.protocol} :{f.port}
                   </span>

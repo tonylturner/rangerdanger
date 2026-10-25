@@ -106,7 +106,7 @@ function ExerciseCard({
     <article className={`rounded-lg border p-4 ${isBonus ? "border-purple-800/30 bg-purple-950/10" : "border-slate-800 bg-slate-900/70"}`}>
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="min-w-0 flex items-start gap-3">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 flex-col items-center justify-center rounded" style={{
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 flex-col items-center justify-center rounded-sm" style={{
             background: pct === 100
               ? "rgba(34,197,94,0.15)"
               : pct > 0
@@ -170,7 +170,7 @@ function ExerciseCard({
                 <button
                   onClick={handleExportPDF}
                   aria-label="Export exercise as PDF"
-                  className="inline-flex items-center justify-center rounded border border-slate-700 bg-slate-800/50 px-2 py-1.5 text-slate-400 transition-colors hover:text-sky-400 hover:border-slate-600"
+                  className="inline-flex items-center justify-center rounded-sm border border-slate-700 bg-slate-800/50 px-2 py-1.5 text-slate-400 transition-colors hover:text-sky-400 hover:border-slate-600"
                 >
                   <FileText className="h-4 w-4" />
                 </button>

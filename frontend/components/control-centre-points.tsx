@@ -25,20 +25,20 @@ export const STALE_HATCH =
 export function ConditionBadge({ condition }: { condition: PointCondition }) {
   if (condition === "stale") {
     return (
-      <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded border border-dashed border-amber-500 bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">
+      <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-dashed border-amber-500 bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">
         <span aria-hidden>⚠</span>STALE
       </span>
     );
   }
   if (condition === "never") {
     return (
-      <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded border border-dashed border-slate-600 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-400">
+      <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-dashed border-slate-600 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-400">
         <span aria-hidden>∅</span>NO DATA
       </span>
     );
   }
   return (
-    <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded border border-slate-600 bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-200">
+    <span title={qualityDefinition(condition)} tabIndex={0} className="inline-flex items-center gap-1 rounded-sm border border-slate-600 bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-slate-200">
       <span aria-hidden>✓</span>GOOD
     </span>
   );
