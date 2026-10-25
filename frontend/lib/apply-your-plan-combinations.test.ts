@@ -101,16 +101,15 @@ describe("Apply Your Plan — every 1.4 combination yields an applicable config"
   });
 });
 
-// Captured before package binding: includes the historical shared-rule logging
-// mutation, compiler quirks, coverage and all three rendered dynamic phases.
-// Authorized dead-data cutover: remove only unselectable LOG-verdict rows.
-// Every new row was byte-compared with the old golden minus those rows.
+// Locks compiler quirks, coverage, historical shared-rule logging mutation and
+// all three rendered phases across every reachable plan. The prose golden
+// includes the US hotfix's supported reads and reference-policy guidance.
 import { createHash } from "node:crypto";
 import { computeCoverage } from "./requirement-coverage";
 import { injectDynamicContent } from "./scenario-runner-logic";
 import { DECISION_DEFAULT_OPTIONS } from "./scenario-description";
 
-it("preserves the reachable pre-binding US golden across all 256 plans", () => {
+it("locks US policy, coverage and corrected guidance across all 256 plans", () => {
   const verdicts = ["BLOCK", "BLOCK and LOG", "RESTRICT", "ALLOW", ""];
   expect(verdicts).toEqual([...DECISION_DEFAULT_OPTIONS, ""]);
   const outputs = COMBOS.map((ids) => {
@@ -124,5 +123,5 @@ it("preserves the reachable pre-binding US golden across all 256 plans", () => {
     });
   });
   expect(outputs).toHaveLength(256);
-  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"d498587803c3d307dbb27f2699d18c02d6b5f6255a868877d2db2686607200ec"`);
+  expect(createHash("sha256").update(outputs.join("\n")).digest("hex")).toMatchInlineSnapshot(`"640fa5e9de88550bebea8d84e48eb39adec7babd78adbf51a688f99be75c777f"`);
 });

@@ -473,6 +473,17 @@ func TestEUWorkshopStepParity(t *testing.T) {
 					}
 					continue
 				}
+				// US hotfix steps verify a reference already applied by the student;
+				// EU still applies its package policy. Pin both complete actions,
+				// rather than requiring unrelated packages to mutate identically.
+				if before.ID == "phase-3-create-minimal-required-rules" || before.ID == "apply-the-hardened-policy" || before.ID == "apply-hardened-policy" {
+					wantUS := &labs.StepAction{Type: "check", Expect: map[string]any{"firewall_config": "improved"}}
+					wantEU := &labs.StepAction{Type: "firewall", Config: "improved"}
+					if !reflect.DeepEqual(before.Action, wantUS) || !reflect.DeepEqual(after.Action, wantEU) {
+						t.Errorf("%s policy actions = US %#v / EU %#v, want non-mutating US check / EU apply", after.ID, before.Action, after.Action)
+					}
+					continue
+				}
 				if (before.Action == nil) != (after.Action == nil) || before.Action != nil && before.Action.Type != after.Action.Type {
 					t.Errorf("%s changed activity type", after.ID)
 				}
