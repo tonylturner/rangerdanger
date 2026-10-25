@@ -18,7 +18,6 @@ steps:
     node: cc-1
     action:
       type: probe
-      outcome: reachable
       targets:
         - host: 10.30.30.20
           port: 2404

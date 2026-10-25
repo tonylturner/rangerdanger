@@ -94,7 +94,7 @@ func TestProbeSuccessFollowsRunningPolicy(t *testing.T) {
 			name:   "Hardened",
 			policy: hardened.Config,
 			source: "kali-1", host: "10.40.40.20", port: 502, rc: 124,
-			wantDetail: "expected blocked by running policy, observed blocked",
+			wantDetail: "expected blocked by running policy, observed blocked (timeout 3 s)",
 		},
 		{
 			name:   "bridged route bypasses firewall evaluation",

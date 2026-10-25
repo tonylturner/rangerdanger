@@ -87,14 +87,14 @@ func TestEvaluateTestStep(t *testing.T) {
 		},
 		{
 			name:         "probe all targets pass",
-			action:       &labs.StepAction{Type: "probe", Outcome: "blocked"},
+			action:       &labs.StepAction{Type: "probe"},
 			probeResults: []StepActionResult{{Success: true}, {Success: true}},
 			wantPassed:   true,
 			wantDetail:   "2 probes, all pass: true",
 		},
 		{
 			name:         "probe one target fails",
-			action:       &labs.StepAction{Type: "probe", Outcome: "blocked"},
+			action:       &labs.StepAction{Type: "probe"},
 			probeResults: []StepActionResult{{Success: true}, {Success: false}},
 			wantDetail:   "2 probes, all pass: false",
 		},
