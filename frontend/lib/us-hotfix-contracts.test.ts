@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { US_CURRICULUM } from "./curriculum-storage.test-util";
 import { US_PLANS } from "./plan-fixtures.test-util";
 import { renderRuleTable, renderPlanTests } from "./plan-presentation";
@@ -31,12 +33,17 @@ describe("US compiled-plan presentation", () => {
     expect(text).not.toContain("vi /tmp/");
   });
   it("retains supported supplemental reads without using them as policy expectations", () => {
-    const text = US_CURRICULUM.tests.map((t) => t.text).join("\n");
+    const text = US_CURRICULUM.phases.positive;
     expect(text).toContain("-c 4 -1 -t 0");
     expect(text).toContain("dnp3poll -a 1 -t 3s 10.40.40.20:20000");
-    expect(text).toContain("rangerdanger@");
-    expect(text).not.toContain(" eng@");
     expect(text).not.toContain("-t 1");
     expect(text).not.toContain("${ip:");
+    const supplemental = US_CURRICULUM.tests.map((t) => t.text).join("\n");
+    expect(supplemental).toContain("curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool");
+    expect(supplemental).toContain("TCP reachability alone is not operational proof");
+    // SSH evidence lives in the validation scenario, not the compiled matrix.
+    const validation = readFileSync(resolve(__dirname, "../../lab-definitions/scenarios/validation-evidence.yml"), "utf8");
+    expect(validation).toContain("rangerdanger@10.30.30.20");
+    expect(validation).not.toContain(" eng@");
   });
 });
