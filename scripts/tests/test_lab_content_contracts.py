@@ -364,6 +364,31 @@ class ErrataContracts(unittest.TestCase):
 class EnforcementContracts(unittest.TestCase):
     """Lab 2.3 states what the frozen images do: the L4 source pin blocks, DPI records."""
 
+    def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
+        curriculum = yaml.safe_load(
+            (ROOT / "lab-definitions/packages/us-dnp3-substation/curriculum.yml").read_text()
+        )
+
+        def string_values(value):
+            if isinstance(value, dict):
+                for child in value.values():
+                    yield from string_values(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from string_values(child)
+            elif isinstance(value, str):
+                yield value
+
+        overclaim = re.compile(
+            r"(?i)\bDPI\b.{0,100}\b(?:blocks?|filters?|prevents?)\b"
+            r".{0,100}\b(?:writes?|Direct Operate)\b"
+            r"|\b(?:writes?|Direct Operate)\b.{0,100}"
+            r"\b(?:blocked|filtered|prevented)\b.{0,100}\bDPI\b"
+        )
+        for text in string_values(curriculum):
+            with self.subTest(text=text):
+                self.assertNotRegex(text, overclaim)
+
     OVERCLAIMS = (
         "blocks Direct Operate even from the RTAC",
         "would catch it even if L4 were loosened",
