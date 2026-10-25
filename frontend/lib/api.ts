@@ -134,7 +134,6 @@ export type StepAction = {
   flow?: string;
   config?: string;
   expect?: Record<string, unknown>;
-  outcome?: "reachable" | "blocked";
   targets?: { from?: string; host: string; port: number; note?: string }[];
   commands?: { device: string; command: string; source?: string; value?: number }[];
 };

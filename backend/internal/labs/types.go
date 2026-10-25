@@ -78,7 +78,6 @@ type StepAction struct {
 	Flow     string          `yaml:"flow,omitempty" json:"flow,omitempty"`         // for type=session-cut
 	Config   string          `yaml:"config,omitempty" json:"config,omitempty"`     // for type=firewall
 	Expect   map[string]any  `yaml:"expect,omitempty" json:"expect,omitempty"`     // for type=check
-	Outcome  string          `yaml:"outcome,omitempty" json:"outcome,omitempty"`   // for type=probe
 	Targets  []ProbeTarget   `yaml:"targets,omitempty" json:"targets,omitempty"`   // for type=probe
 	Commands []StepActionCmd `yaml:"commands,omitempty" json:"commands,omitempty"` // for type=sequence
 }

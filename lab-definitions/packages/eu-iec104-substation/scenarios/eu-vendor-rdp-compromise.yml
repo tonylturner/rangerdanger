@@ -38,7 +38,6 @@ steps:
     :::
   action:
     type: probe
-    outcome: reachable
     targets:
     - host: 10.20.20.10
       port: 3389

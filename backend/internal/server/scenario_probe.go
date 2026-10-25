@@ -16,6 +16,18 @@ const probeCommand = `if command -v bash >/dev/null 2>&1; then timeout 3 bash -c
 // order even though blocked targets run concurrently.
 func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep) []StepActionResult {
 	results := make([]StepActionResult, len(step.Action.Targets))
+	client := gen.Containd()
+	if client == nil {
+		return probePolicyFailures(step, "running policy unavailable: firewall client is not configured")
+	}
+	data, err := client.GetConfigDocument(ctx)
+	if err != nil {
+		return probePolicyFailures(step, "running policy unavailable: "+err.Error())
+	}
+	policy, err := readEvaluatedFirewall(data)
+	if err != nil {
+		return probePolicyFailures(step, "running policy cannot be evaluated: "+err.Error())
+	}
 	var workers sync.WaitGroup
 	limit := make(chan struct{}, 5)
 	for i, target := range step.Action.Targets {
@@ -24,14 +36,33 @@ func (s *Server) executeProbe(ctx context.Context, gen *lifecycle.Generation, st
 		go func() {
 			defer workers.Done()
 			defer func() { <-limit }()
-			results[i] = s.probeTarget(ctx, gen, step, target)
+			results[i] = s.probeTarget(ctx, gen, step, target, policy)
 		}()
 	}
 	workers.Wait()
 	return results
 }
 
-func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget) StepActionResult {
+func probePolicyFailures(step labs.ScenarioStep, detail string) []StepActionResult {
+	results := make([]StepActionResult, len(step.Action.Targets))
+	for i, target := range step.Action.Targets {
+		source := target.From
+		if source == "" {
+			source = step.Node
+		}
+		prefix := ""
+		if target.Note != "" {
+			prefix = target.Note + ": "
+		}
+		results[i] = StepActionResult{
+			Action: fmt.Sprintf("probe %s → %s:%d", source, target.Host, target.Port),
+			Detail: prefix + detail,
+		}
+	}
+	return results
+}
+
+func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, step labs.ScenarioStep, target labs.ProbeTarget, policy evaluatedFirewall) StepActionResult {
 	source := target.From
 	if source == "" {
 		source = step.Node
@@ -46,6 +77,11 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 		row.Detail = prefix + err.Error()
 		return row
 	}
+	route, err := labs.ResolveProbeTuple(gen.Package.Template, source, target.Host, target.Port)
+	if err != nil {
+		row.Detail = prefix + "probe target cannot resolve policy tuple: " + err.Error()
+		return row
+	}
 	container := svc.Container
 	cmd := []string{"/bin/sh", "-c", probeCommand, "_", target.Host, fmt.Sprint(target.Port)}
 	stdout, stderr, rc, err := s.execInContainer(ctx, container, cmd, 4)
@@ -54,8 +90,16 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 		row.Detail = prefix + detail
 		return row
 	}
-	row.Detail = prefix + verdict + detail
-	row.Success = verdict == step.Action.Outcome
+	expectedVerdict := labs.VerdictAllow
+	if !route.Bridged {
+		expectedVerdict = labs.Evaluate(policy.Rules, policy.DefaultAction, route.Tuple)
+	}
+	expected := "blocked"
+	if expectedVerdict == labs.VerdictAllow {
+		expected = "reachable"
+	}
+	row.Detail = prefix + fmt.Sprintf("expected %s by running policy, observed %s%s", expected, verdict, detail)
+	row.Success = verdict == expected
 	return row
 }
 
