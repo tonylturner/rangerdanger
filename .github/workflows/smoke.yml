@@ -239,11 +239,13 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
-      - name: Compiled full plan must block all 13 unauthorized flows
+      - name: Compiled full plan must meet hardened acceptance
         run: |
           set -euo pipefail
           API=http://localhost:8088
           receipts=build/smoke-receipts/rd01
+          golden=frontend/lib/testdata/plans/us-full.json
+          oracle=scripts/tests/fixtures
           mkdir -p "$receipts"
           restore_weak() {
             local rc=$?
@@ -256,16 +258,44 @@ jobs:
             exit "$rc"
           }
           trap restore_weak EXIT
-          cp scripts/tests/fixtures/rd01-full-plan.json "$receipts/plan.json"
+          jq -L "$oracle" 'include "plan-gate"; plan_request' "$golden" >"$receipts/plan.json"
           curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
             --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
-          jq -e '.applied == true and .warnings == [] and .plan.label == "hardened"' "$receipts/apply.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
           sleep 3
           curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
-          jq -e '.planProof.applicable and .planProof.pass and .planProof.hashStable and .acceptance.pass' "$receipts/report.json"
-          jq -e '.summary | .result == "PASS" and .authorized_pass == 8 and
-            .authorized_total == 8 and .unauthorized_pass == 13 and
-            .unauthorized_total == 13 and .skipped == 0' "$receipts/report.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
+
+      - name: Compiled partial plan must prove its remaining prevention gaps
+        run: |
+          set -euo pipefail
+          API=http://localhost:8088
+          receipts=build/smoke-receipts/rd01-partial
+          golden=frontend/lib/testdata/plans/us-partial.json
+          oracle=scripts/tests/fixtures
+          mkdir -p "$receipts"
+          restore_weak() {
+            local rc=$?
+            trap - EXIT
+            if ! curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+                -d '{"config":"weak"}' "$API/api/firewall/apply" >"$receipts/restore.json"; then
+              echo "partial-plan cleanup failed" >&2
+              rc=1
+            fi
+            exit "$rc"
+          }
+          trap restore_weak EXIT
+          jq -L "$oracle" 'include "plan-gate"; plan_request' "$golden" >"$receipts/plan.json"
+          curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-plan" >"$receipts/apply.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_applied($golden[0])' "$receipts/apply.json"
+          sleep 3
+          curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+          jq -e -L "$oracle" --slurpfile golden "$golden" \
+            'include "plan-gate"; plan_report($golden[0])' "$receipts/report.json"
 
       - name: Dump container logs on failure
         if: failure()
