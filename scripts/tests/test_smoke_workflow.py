@@ -144,12 +144,13 @@ class SmokeWorkflowTests(unittest.TestCase):
         self.assertIn("build/smoke-receipts/", artifacts["with"]["path"])
         self.assertIn("receipts=build/smoke-receipts/rd01", check)
 
-    def test_rd01_fixture_is_attributed_to_frozen_generator(self):
+    def test_rd01_fixture_is_attributed_to_current_package_generator(self):
         data = json.loads((ROOT / "scripts/tests/fixtures/rd01-full-plan.json").read_text())
-        self.assertEqual(data["base"], "5805c11")
+        self.assertEqual(data["base"], "a25c2d9")
         source = (ROOT / data["source"]).read_bytes()
         self.assertEqual(hashlib.sha256(source).hexdigest(), data["source_sha256"])
         self.assertEqual(len(data["selectedActionIds"]), 8)
+        # Current generator equality is exercised in frontend/lib/us-hotfix-contracts.test.ts.
         # Never quietly replace the full-plan fixture with reference JSON.
         self.assertEqual(data["config"]["firewall"]["rules"][0]["id"], "allow-mgmt-ui")
 

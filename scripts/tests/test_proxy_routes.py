@@ -11,7 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 NGINX_CONFIG = ROOT / "proxy/nginx.conf"
-CONTAIND_UPSTREAM = "http://firewall_ui/"
+CONTAIND_UPSTREAM = "http://firewall:8080/"
 
 
 def tokenize(text):
@@ -92,22 +92,39 @@ class Location:
         rewrite = self.directive("rewrite")
         if rewrite:
             regex, replacement, flag = rewrite
-            if flag != "redirect":
+            rewritten = re.sub(regex, replacement.replace("$1", r"\1"), path)
+            if flag == "redirect":
+                return "redirect", rewritten + (f"?{args}" if args else "")
+            if flag != "break":
                 raise ValueError(f"unexpected rewrite flag {flag} in {self.pattern}")
-            target = re.sub(regex, replacement.replace("$1", r"\1"), path)
-            return "redirect", target + (f"?{args}" if args else "")
+            path = rewritten
         returned = self.directive("return")
         if returned and returned[0] == "302":
             target = returned[1].replace("$is_args$args", f"?{args}" if args else "")
             return "redirect", target
         upstream = self.directive("proxy_pass")[0]
+        if upstream == "$u":
+            variable, upstream = self.directive("set")
+            if variable != "$u":
+                raise ValueError("unknown proxy variable")
+            return "proxy", upstream + path
         suffix = path[len(self.pattern):] if upstream.endswith("/") else path
         return "proxy", upstream + suffix
 
 
-def load_server():
+def load_server(package="us-dnp3-substation"):
     http = find(parse(tokenize(NGINX_CONFIG.read_text())), "http")[0][2]
-    return find(http, "server")[0][2]
+    server = find(http, "server")[0][2]
+    expanded = []
+    for directive in server:
+        if directive[0] == "include":
+            if directive[1] != ["/etc/nginx/rd-routes/*.conf"]:
+                raise ValueError("unexpected package include")
+            if package:
+                expanded.extend(parse(tokenize((ROOT / "lab-definitions/packages" / package / "nginx.routes.conf").read_text())))
+        else:
+            expanded.append(directive)
+    return expanded
 
 
 def select(locations, path):
@@ -126,9 +143,11 @@ def select(locations, path):
 
 
 class ProxyRoutesTests(unittest.TestCase):
+    package = "us-dnp3-substation"
+    plc = "openplc:8080"
     @classmethod
     def setUpClass(cls):
-        cls.server = load_server()
+        cls.server = load_server(cls.package)
         cls.locations = [Location(args, children) for _, args, children in find(cls.server, "location")]
 
     def route(self, path, args=""):
@@ -154,8 +173,8 @@ class ProxyRoutesTests(unittest.TestCase):
         for suffix in ("", "login", "static/style.css"):
             with self.subTest(suffix=suffix):
                 self.assertEqual(self.route("/apps/openplc/" + suffix),
-                                 ("proxy", "http://openplc/" + suffix))
-        # Instance UI proxies remain API routes, without workshop-only rewrites.
+                                 ("proxy", f"http://{self.plc}/" + suffix))
+        # Removed instance paths still pass to the API, never a compatibility UI route.
         for path in (
             "/api/labs/instances/other/nodes/openplc-1/ui/",
             "/api/labs/instances/workshop/nodes/openplc-1/ui/",
@@ -191,6 +210,19 @@ class ProxyRoutesTests(unittest.TestCase):
         for loc in self.locations:
             self.assertFalse(loc.pattern.startswith("/apps/firewall"))
             self.assertFalse(loc.pattern.startswith("/api/labs/instances/workshop/"))
+
+
+class EUProxyRoutesTests(ProxyRoutesTests):
+    package = "eu-iec104-substation"
+    plc = "openplc_eu:8080"
+
+
+class PlatformRoutesTests(unittest.TestCase):
+    def test_no_package_means_no_range_ui_routes(self):
+        server = load_server(None)
+        locations = [Location(args, children) for _, args, children in find(server, "location")]
+        for path in ("/icons/docker.svg", "/containd/login", "/apps/openplc/"):
+            self.assertEqual(select(locations, path).resolve(path), ("proxy", "http://frontend" + path))
 
 
 class ParserTests(unittest.TestCase):

@@ -38,7 +38,7 @@ func getNodeUIConfig(nodeType string) (uiPath, externalURL string) {
 	case "containd_ngfw":
 		// Same-origin paths only: hardcoding localhost:9080 here would
 		// break any deployment that isn't bound to loopback.
-		return "/apps/firewall/", "/containd/"
+		return "/containd/", "/containd/"
 	case "fuxa_hmi":
 		return "/apps/fuxa-hmi/", ""
 	case "openplc":

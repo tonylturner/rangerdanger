@@ -11,7 +11,7 @@ import (
 
 func TestNodeUIConfig(t *testing.T) {
 	for _, tc := range []struct{ nodeType, uiPath, externalURL string }{
-		{"containd_ngfw", "/apps/firewall/", "/containd/"},
+		{"containd_ngfw", "/containd/", "/containd/"},
 		// The package's proxy route, not a backend UI proxy.
 		{"openplc", "/apps/openplc/", ""},
 		{"fuxa_hmi", "/apps/fuxa-hmi/", ""},
