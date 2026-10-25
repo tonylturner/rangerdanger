@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Release image bases are digest-pinned.** Go builders use the same
+  1.26.10 toolchain as CI; the portal moves to Node 24 LTS. CI rejects
+  unpinned Dockerfile bases and Dependabot refreshes nested image pins.
+
 - **IEC 104 services and CLI now use the Go port.** C remains only as a
   sealed test reference; `iec104cmd` renders non-finite measurements as
   `null` with invalid quality.

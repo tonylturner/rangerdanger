@@ -38,7 +38,7 @@ OUT="${1:-$ROOT/build/$PREFIX}"
 
 BASEIMG=$PREFIX-iec104-base:test
 IMG=$PREFIX-iec104:test
-PY=python:3.12-alpine
+PY=python:3.12-alpine@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d
 # station network: RTU, breaker, GPS and the CC's IEC 104 side (IPs match points.test.json)
 NET=$PREFIX-net
 SUBNET=172.28.104.0/24

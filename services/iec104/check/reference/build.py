@@ -73,7 +73,7 @@ def materialize(metadata, tag, out):
     out.mkdir(parents=True, exist_ok=True)
     (out / "baseline.json").write_text(json.dumps(metadata, indent=2) + "\n")
     (out / "roles.json").write_text(json.dumps(
-        {"rtu": tag, "cc": tag, "cmd": tag, "peer": "python:3.12-alpine"},
+        {"rtu": tag, "cc": tag, "cmd": tag, "peer": "python:3.12-alpine@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d"},
         indent=2,
     ) + "\n")
     print("Reference build PASS:", tag, metadata["image_id"])

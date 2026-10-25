@@ -1,7 +1,8 @@
 # Multi-stage Dockerfile for all substation simulator services.
 # Usage: docker build --target <service-name> -t <tag> .
 
-FROM golang:1.27-alpine AS go-deps
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS go-deps
+ENV GOTOOLCHAIN=local
 WORKDIR /app
 COPY services/go.mod ./
 COPY dnp3go/go.mod /dnp3go/go.mod
@@ -75,7 +76,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # them as student-runnable diagnostic tools. The eng-ws Dockerfile
 # uses the same dnp3go module via its own builder stage; keeping a
 # parallel build here avoids cross-Dockerfile coupling.
-FROM golang:1.27-alpine AS dnp3-builder
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS dnp3-builder
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY dnp3go/go.mod ./go.mod
 COPY dnp3go/*.go ./
@@ -91,14 +93,14 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # source against alpine's libmodbus. Resulting binary links against
 # libmodbus.so dynamically, so the final rtac-sim stage installs the
 # libmodbus runtime package alongside it.
-FROM alpine:3.21 AS mbpoll-builder
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS mbpoll-builder
 RUN apk add --no-cache git cmake make gcc musl-dev libmodbus-dev pkgconfig
 RUN git clone --depth 1 https://github.com/epsilonrt/mbpoll /src
 WORKDIR /src
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
  && cmake --build build
 
-FROM alpine:3.21 AS sim-base
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS sim-base
 
 # iproute2: ip(8) for route manipulation in harden scripts
 # iptables: FORWARD DROP policy and per-interface INPUT filtering in rtac-harden.sh
