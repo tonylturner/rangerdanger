@@ -3,11 +3,14 @@
 set -euo pipefail
 API="${RANGERDANGER_API:-http://localhost:8088}"
 fail=0
+checks=0
 logs="${PROXY_LOG_DIR:-build/proxy-smoke}"
 mkdir -p "$logs"
 if ! python3 scripts/lib/containd-ui-probe.py "$API" >"$logs/containd.log" 2>&1; then
   cat "$logs/containd.log"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 
 # A portal 200 alone misses RD-09: it can replace webtop's nginx site.
@@ -32,24 +35,32 @@ done
 if [ "$ready" -ne 1 ]; then
   echo "FAIL vendor webtop :3000"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 if ! curl -fsS --max-time 10 -w '\n%{http_code}\n' \
     "$API/apps/vendor-jump/" >"$logs/desktop.html" ||
     ! is_desktop_shell "$logs/desktop.html"; then
   echo "FAIL proxied vendor desktop"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 if ! docker exec rangerdanger-vendor-jump readlink /etc/nginx/sites-enabled/default \
     >"$logs/vendor-default.txt" ||
     ! grep -qx '/etc/nginx/sites-available/default' "$logs/vendor-default.txt"; then
   echo "FAIL vendor default nginx site replaced"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 if ! docker exec rangerdanger-kali curl -fsS --max-time 10 http://10.20.20.10:80/ \
     >"$logs/portal.html" ||
     ! grep -q 'Vendor Remote Access Portal' "$logs/portal.html"; then
   echo "FAIL vendor portal :80"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 
 # RFB auth-type only: no GUI and no VNC password implementation/dependency.
@@ -90,6 +101,8 @@ RFB_PY
 then
   cat "$logs/rfb.log"
   fail=1
+else
+  checks=$((checks + 1))
 fi
 
 # RD-22 is not reproducible; Programs remains explicitly non-blocking.
@@ -114,5 +127,10 @@ with opener.open(base + "programs", timeout=8) as response:
 OPENPLC_PY
 then
   echo "WARN OpenPLC Programs unavailable (RD-22, non-blocking); see $logs/openplc.log"
+else
+  checks=$((checks + 1))
+fi
+if [ "$fail" -eq 0 ]; then
+  echo "PASS proxy-smoke: $checks checks"
 fi
 exit "$fail"
