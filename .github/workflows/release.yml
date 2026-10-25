@@ -824,7 +824,7 @@ jobs:
           body=$(printf '%s\n' \
             "The Release workflow for \`${TAG}\` did not complete: ${RUN_URL}" \
             "" \
-            "Likely effects: if image jobs started, one or more GHCR images may be missing or partial. An existing published release is never re-drafted; otherwise, incomplete runs keep the release as a draft and do not publish it without all 16 verified image results and its release-images.json asset." \
+            "Likely effects: if image jobs started, one or more GHCR images may be missing or partial. An existing published release is never re-drafted; otherwise, incomplete runs keep the release as a draft and do not publish it until every image in the release inventory has a verified result and the release-images.json asset is attached." \
             "" \
             "Recover: fix the failing job above. If the existing-published-release guard failed, delete or unpublish that release first. Then re-run via Actions -> Release -> \"Run workflow\" -> tag \`${TAG}\`. Manual runs build all images; set rebuild_all to refresh moving upstream bases and packages." \
             "" \
