@@ -138,6 +138,23 @@ range_compose() { # <package id> <compose args...>
         -f "$PACKAGES_DIR/$id/$RANGE_FILE_NAME" "$@"
 }
 
+# Readiness queries must not hang when Docker Desktop stops responding.
+# macOS has no timeout(1). Kill only the CLI child owned by this call;
+# image acquisition and the backend's lifecycle are not cancelled here.
+docker_bounded() { # <seconds> <docker args...>
+    local limit="$1" child watchdog rc=0
+    shift
+    docker "$@" &
+    child=$!
+    ( sleep "$limit"; kill -KILL "$child" 2>/dev/null ) &
+    watchdog=$!
+    wait "$child" 2>/dev/null || rc=$?
+    kill "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
+    [ "$rc" -ne 137 ] || rc=124
+    return "$rc"
+}
+
 # GHCR occasionally returns transient 5xx during layer fetches — retry
 # each pull up to 3 times with backoff before giving up.
 with_pull_retry() {
@@ -159,6 +176,7 @@ with_pull_retry() {
 # range_field and range_status: GET /api/range parsing shared with the
 # host scripts.
 # shellcheck source=scripts/lib/range.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
 . "$ROOT_DIR/scripts/lib/range.sh"
 
 # ─── pre-flight checks ──────────────────────────────────────────────
@@ -547,7 +565,7 @@ fi
 
 # ─── start the platform ─────────────────────────────────────────────
 banner "Starting the platform"
-UP_FLAGS=(up -d --wait)
+UP_FLAGS=(up -d --wait --wait-timeout 120)
 [ "$MODE" = offline ] && UP_FLAGS+=(--pull never)
 platform_compose "${UP_FLAGS[@]}"
 say "Platform started (backend, frontend, proxy)"
@@ -556,19 +574,21 @@ say "Platform started (backend, frontend, proxy)"
 banner "Health check"
 say "Waiting for the backend to come up (up to 120 s)..."
 HEALTH_URL="$API/api/health"
-# ~2 s per iteration; 60 iterations = ~120 s. A cold start after a fresh
+# A cold start after a fresh
 # image pull can take 60-90 s. The platform services have no
 # healthchecks, so `up --wait` returns before the backend answers; the
 # range request below needs it. Mirrors setup.ps1.
-ATTEMPTS=60
-for i in $(seq 1 $ATTEMPTS); do
-    if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+HEALTH_OK=0
+DEADLINE=$((SECONDS + 120))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    if curl -fsS --connect-timeout 2 --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
         say "Backend reports healthy at $HEALTH_URL"
+        HEALTH_OK=1
         break
     fi
-    [ "$i" -eq $ATTEMPTS ] && die "Backend didn't report healthy in 120 s. Check 'docker logs rangerdanger-backend'."
     sleep 2
 done
+[ "$HEALTH_OK" = 1 ] || die "Backend didn't report healthy in 120 s. Check 'docker logs rangerdanger-backend'."
 
 # ─── start the range ────────────────────────────────────────────────
 # The backend owns the range lifecycle: the same request the UI toggle
@@ -579,12 +599,13 @@ RANGE_BODY='{}'
 [ -n "$PACKAGE" ] && RANGE_BODY="{\"package\":\"$PACKAGE\"}"
 range_settled() { # <status json>: no transition in flight
     case "$(range_field "$1" phase)" in
-        preflight|stopping|starting|configuring) return 1 ;;
+        none|ready|failed) return 0 ;;
+        *) return 1 ;;
     esac
 }
 RANGE_RESP=""
 for attempt in 1 2 3; do
-    POST_OUT=$(curl -sS -X POST -H 'Content-Type: application/json' -d "$RANGE_BODY" \
+    POST_OUT=$(curl -sS --connect-timeout 3 --max-time 30 -X POST -H 'Content-Type: application/json' -d "$RANGE_BODY" \
         -w '\n%{http_code}' "$API/api/range") || die "POST $API/api/range failed."
     POST_CODE=${POST_OUT##*$'\n'}
     RANGE_RESP=${POST_OUT%$'\n'*}
@@ -594,8 +615,10 @@ for attempt in 1 2 3; do
             # Another transition holds the range (a UI switch). Let it
             # finish, then ask again.
             say "A range transition is already running; waiting for it to finish..."
-            for _ in $(seq 1 200); do
-                range_settled "$(curl -fsS "$API/api/range" 2>/dev/null)" && break
+            DEADLINE=$((SECONDS + 600))
+            while [ "$SECONDS" -lt "$DEADLINE" ]; do
+                RANGE_STATUS=$(curl -fsS --connect-timeout 3 --max-time 10 "$API/api/range" 2>/dev/null) || RANGE_STATUS=""
+                range_settled "$RANGE_STATUS" && break
                 sleep 3
             done
             RANGE_RESP=""
@@ -615,8 +638,9 @@ say "Range requested: ${RANGE_TARGET:-<backend default>}"
 say "Waiting for the range to report ready (up to 600 s)..."
 LAST_PHASE=""
 RANGE_OK=0
-for i in $(seq 1 200); do
-    RANGE_STATUS=$(curl -fsS "$API/api/range" 2>/dev/null) || RANGE_STATUS=""
+DEADLINE=$((SECONDS + 600))
+while [ "$SECONDS" -lt "$DEADLINE" ]; do
+    RANGE_STATUS=$(curl -fsS --connect-timeout 3 --max-time 10 "$API/api/range" 2>/dev/null) || RANGE_STATUS=""
     PHASE=$(range_field "$RANGE_STATUS" phase)
     RANGE_PACKAGE=$(range_field "$RANGE_STATUS" package)
     RANGE_ERROR=$(range_field "$RANGE_STATUS" error)
@@ -652,7 +676,7 @@ if [ "$SKIP_FW_GATE" -eq 1 ]; then
 else
     say "Workshop-readiness gate: firewall health + apply + reset..."
     fw_fail=0
-    if ! curl -fsS http://localhost:8088/api/firewall/health >/dev/null 2>&1; then
+    if ! curl -fsS --connect-timeout 3 --max-time 10 http://localhost:8088/api/firewall/health >/dev/null 2>&1; then
         warn "  /api/firewall/health failed — containd management interface is down"
         fw_fail=1
     fi
@@ -664,7 +688,7 @@ else
         # returns 200 — so a gate that pipes to /dev/null passes green while
         # segmentation silently does NOT enforce (the DPI "queue num" rules need
         # nfnetlink_queue / CONFIG_NFT_QUEUE in the host kernel). Mirrors setup.ps1.
-        apply_resp=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+        apply_resp=$(curl -fsS --connect-timeout 3 --max-time 30 -X POST -H 'Content-Type: application/json' \
                 -d "{\"config\":\"$cfg\"}" \
                 http://localhost:8088/api/firewall/apply 2>/dev/null) || apply_resp=""
         if [ -z "$apply_resp" ]; then
@@ -674,7 +698,7 @@ else
             dpi_degraded=1
         fi
     done
-    reset_resp=$(curl -fsS -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
+    reset_resp=$(curl -fsS --connect-timeout 3 --max-time 60 -X POST http://localhost:8088/api/workshop/reset 2>/dev/null) || reset_resp=""
     # Read the TOP-LEVEL "success", not a substring: the response embeds a
     # per-action array whose entries each carry their own "success":true, so a
     # naive grep false-passes even when the overall reset failed. Parse with
@@ -718,8 +742,8 @@ fi
 # depends on it), so warn loudly with the fix instead of blocking install.
 say "Workshop-readiness: OpenPLC (protection-logic lab)..."
 openplc_ok=0
-for i in $(seq 1 8); do
-    if [ "$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null)" = "running" ]; then
+for _ in $(seq 1 8); do
+    if [ "$(docker_bounded 5 inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null)" = "running" ]; then
         openplc_ok=1; break
     fi
     sleep 2
@@ -729,12 +753,12 @@ if [ "$openplc_ok" = "1" ]; then
 else
     # `|| true`: under `set -euo pipefail`, docker inspect failing on a
     # missing container would otherwise abort setup at this assignment.
-    op_state=$(docker inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    op_state=$(docker_bounded 5 inspect -f '{{.State.Status}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
     [ -n "$op_state" ] || op_state=missing
-    op_rc=$(docker inspect -f '{{.RestartCount}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
+    op_rc=$(docker_bounded 5 inspect -f '{{.RestartCount}}' rangerdanger-openplc 2>/dev/null | tr -d '[:space:]' || true)
     [ -n "$op_rc" ] || op_rc="?"
     warn "OpenPLC is not running (state=$op_state, restarts=$op_rc) — the protection-logic lab won't work."
-    if docker logs rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
+    if docker_bounded 5 logs --tail 200 rangerdanger-openplc 2>&1 | grep -qi 'exec format error'; then
         warn "  Cause: 'exec format error' — amd64 emulation is missing on this arm64 host."
         warn "  Fix:   docker run --privileged --rm $BINFMT_REF --install amd64"
         warn "         then re-run ./setup.sh (it restarts the range)"
