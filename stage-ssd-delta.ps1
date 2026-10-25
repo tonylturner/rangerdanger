@@ -65,6 +65,8 @@ function Banner($m) {
 
 $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
+. "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/windows-root.ps1"
 
 # Binfmt is included in arm64 deltas so students applying deltas without
 # internet still have qemu-x86_64 for the amd64-only OpenPLC image.
@@ -112,12 +114,13 @@ $allImages = New-Object System.Collections.Generic.List[string]
 $composeStatus = 0
 try {
     $env:VERSION = $New
-    $env:RANGERDANGER_ROOT = $RootDir
+    $env:RANGERDANGER_ROOT = ConvertTo-DesktopRoot $RootDir
     foreach ($releaseFile in $releaseFiles) {
-        $imagesForFile = & docker compose --project-directory $RootDir `
-            -f $releaseFile config --images 2>$null
-        $composeStatus = $LASTEXITCODE
+        $run = Invoke-DockerBounded @('compose', '--project-directory', $RootDir,
+            '-f', $releaseFile, 'config', '--images') 30
+        $composeStatus = if (-not $run -or $run.TimedOut) { 1 } else { $run.ExitCode }
         if ($composeStatus -ne 0) { break }
+        $imagesForFile = $run.StdOut -split '\r?\n' | Where-Object { $_ }
         foreach ($image in $imagesForFile) { $allImages.Add([string]$image) }
     }
 } finally {

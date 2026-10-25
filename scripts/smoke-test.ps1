@@ -38,6 +38,8 @@ Set-Location $RootDir
 . "$PSScriptRoot/lib/docker-bounded.ps1"
 . "$PSScriptRoot/lib/setup-package.ps1"
 . "$PSScriptRoot/lib/windows-root.ps1"
+. "$PSScriptRoot/lib/containd-ui-probe.ps1"
+. "$PSScriptRoot/substation-smoke.ps1"
 
 # Expected lab inventory after the workshop-deck-aligned restructure.
 # Format: order|id (sorted lexicographically -- same order containd
@@ -173,6 +175,12 @@ try {
         if ($build) { OK "/api/build JSON" } else { Err "/api/build (empty)" }
     } catch { Err "/api/build: $_" }
 
+    Note "probe embedded containd UI and session"
+    try {
+        Invoke-ContaindUiProbe 'http://localhost:8088'
+        OK "/containd/ bundle and authenticated API session"
+    } catch { Err "/containd/ bundle or authenticated API session: $_" }
+
     # --- lab inventory ------------------------------------------------------
     Note "validate lab inventory"
     try {
@@ -217,6 +225,13 @@ try {
             Err "$($entry.id): $count steps (expected >=3)"
         }
     }
+
+    # --- substation physics -------------------------------------------------
+    Note "substation: capacitor bank physics"
+    try {
+        Invoke-SubstationSmoke 'http://localhost:8088'
+        OK "substation physics (capbank -> OpenDSS)"
+    } catch { Err "substation physics: $_" }
 
     # --- service health -----------------------------------------------------
     # Platform + range: the same services the single project used to list.

@@ -54,6 +54,8 @@ function Banner($m) {
 
 $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
+. "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
+. "$PSScriptRoot/scripts/lib/windows-root.ps1"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 # tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
@@ -85,12 +87,13 @@ $composeOutput = @()
 $composeStatus = 0
 try {
     $env:VERSION = $Version
-    $env:RANGERDANGER_ROOT = $RootDir
+    $env:RANGERDANGER_ROOT = ConvertTo-DesktopRoot $RootDir
     foreach ($releaseFile in $releaseFiles) {
-        $imagesForFile = & docker compose --project-directory $RootDir `
-            -f $releaseFile config --images 2>$null
-        $composeStatus = $LASTEXITCODE
+        $run = Invoke-DockerBounded @('compose', '--project-directory', $RootDir,
+            '-f', $releaseFile, 'config', '--images') 30
+        $composeStatus = if (-not $run -or $run.TimedOut) { 1 } else { $run.ExitCode }
         if ($composeStatus -ne 0) { break }
+        $imagesForFile = $run.StdOut -split '\r?\n' | Where-Object { $_ }
         $composeOutput += $imagesForFile
     }
 } finally {
