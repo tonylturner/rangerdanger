@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { US_PLANS, EU_PLANS } from "./plan-fixtures.test-util";
-import { US_CURRICULUM } from "./curriculum-storage.test-util";
+import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
 import { renderPlanTests, renderRuleTable } from "./plan-presentation";
 
 const binding = US_CURRICULUM;
+const eu = fixtureCurriculum("lab-definitions/packages/eu-iec104-substation");
 describe("compiled tables", () => {
   it("includes global proof rows and filters restricted rows by lab role and category", () => {
-    expect(renderPlanTests(US_PLANS[0], binding, "implementation", "negative")).toContain("U1:");
-    expect(renderPlanTests(US_PLANS[0], binding, "implementation", "negative")).not.toContain("U2:");
-    expect(renderPlanTests(US_PLANS[0], binding, "hardening", "negative")).toContain("U2:");
+    // All US proof rows are global; EU has both global and role-scoped rows.
+    for (const role of ["implementation", "hardening", "baseline"]) {
+      const table = renderPlanTests(US_PLANS[0], binding, role, "negative");
+      expect(table.match(/\| U\d+:/g)).toHaveLength(13);
+      expect(table).toContain("U2:");
+      expect(table).not.toContain("A1:");
+    }
+    expect(renderPlanTests(EU_PLANS[0], eu, "implementation", "negative")).toContain("U2:");
+    expect(renderPlanTests(EU_PLANS[0], eu, "hardening", "negative")).not.toContain("U2:");
+    expect(renderPlanTests(EU_PLANS[0], eu, "hardening", "negative")).toContain("U1:");
+    expect(renderPlanTests(EU_PLANS[0], eu, "baseline", "negative")).toContain("U20:");
+    expect(renderPlanTests(EU_PLANS[0], eu, "baseline", "negative")).not.toContain("U1:");
     expect(renderPlanTests(US_PLANS[0], binding, "baseline", "positive")).toContain("A1:");
     expect(renderPlanTests(US_PLANS[0], binding, "baseline", "negative")).not.toContain("A1:");
   });
@@ -16,14 +26,13 @@ describe("compiled tables", () => {
     const empty = renderRuleTable(US_PLANS[0], binding);
     expect(empty).toContain("deferred");
     expect(empty).toContain("Weak exposure open");
-    const full = structuredClone(US_PLANS[2]);
-    full.rules[0].rule.ics = { protocol: "modbus", functionCode: [3, 4] };
-    full.rules[0].rule.log = true;
+    const full = US_PLANS[2];
     const before = JSON.stringify(full);
     const text = renderRuleTable(full, binding);
     expect(text).toContain("selected");
     expect(text).toContain("required");
-    expect(text).toContain('"functionCode":[3,4]');
+    expect(text).toContain('"protocol":"modbus","functionCode":[1,2,3,4,5,6]');
+    expect(text).toContain('"protocol":"dnp3","functionCode":[1]');
     expect(text).toContain("yes");
     expect(JSON.stringify(full)).toBe(before);
   });
@@ -38,15 +47,14 @@ describe("compiled tables", () => {
   });
   it("trusts detect-only verdicts and renders bridged rows as invariant", () => {
     const plan = structuredClone(US_PLANS[0]);
-    plan.label = "partial";
     plan.actions.find((a) => a.id === "modbus-dpi")!.chosen = true;
-    plan.expectations[0].bridged = true;
+    expect(plan.actions.find((a) => a.id === "modbus-dpi")).toMatchObject({ kind: "detect", chosen: true });
     expect(renderPlanTests(plan, binding, "hardening", "negative")).toContain("allow | deny");
-    expect(renderPlanTests(plan, binding, "hardening", "positive")).toContain("invariant | bridged");
+    expect(renderPlanTests(plan, binding, "hardening", "positive")).toContain("A4: rtac-1 (10.30.30.20) → openplc-1 (10.30.30.30) TCP/8080 | allow | allow | invariant | bridged");
   });
   it.each(EU_PLANS)("never synthesizes US addresses or ICS for EU $label", (plan) => {
     const before = JSON.stringify(plan);
-    expect(renderRuleTable(plan, binding)).not.toContain("20000");
+    expect(renderRuleTable(plan, eu)).not.toContain("20000");
     expect(JSON.stringify(plan)).toBe(before);
   });
 });

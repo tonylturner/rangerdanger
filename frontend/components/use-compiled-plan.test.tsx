@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlanProvenance } from "../lib/api";
 import { useCompiledPlan } from "../lib/use-compiled-plan";
 import { US_PLANS, EU_PLANS } from "../lib/plan-fixtures.test-util";
-import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
+import { fixtureCurriculum, US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import type { CurriculumScope } from "../lib/curriculum-storage";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { saveRemediationPlan } from "../lib/remediation-plan";
@@ -17,7 +17,7 @@ function View({ scope, applied }: { scope: CurriculumScope; applied?: PlanProven
   const query = useCompiledPlan(scope, true, applied, !!applied);
   return <div>{query.error?.message ?? query.data?.policyHash ?? "loading"}</div>;
 }
-const scope: CurriculumScope = { packageId: US_PLANS[0].packageId, revision: 2, curriculum: US_CURRICULUM };
+const scope: CurriculumScope = { packageId: US_PLANS[0].packageId, revision: US_PLANS[0].revision, curriculum: US_CURRICULUM };
 async function mount(applied?: PlanProvenance) {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: memoryStorage() }));
@@ -58,7 +58,7 @@ describe("compiled plan reads", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(EU_PLANS[0])));
     vi.stubGlobal("fetch", fetch);
     await mount();
-    const euScope = { ...scope, packageId: EU_PLANS[0].packageId };
+    const euScope = { packageId: EU_PLANS[0].packageId, revision: EU_PLANS[0].revision, curriculum: fixtureCurriculum("lab-definitions/packages/eu-iec104-substation") };
     saveRemediationPlan(euScope, { exerciseId: "draft", selectedActionIds: ["iec104-dpi"], savedAt: "now" });
     await act(async () => { panel.update(<QueryClientProvider client={client}><View scope={euScope} /></QueryClientProvider>); });
     expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ packageId: euScope.packageId, revision: euScope.revision, actionIds: ["iec104-dpi"] });
