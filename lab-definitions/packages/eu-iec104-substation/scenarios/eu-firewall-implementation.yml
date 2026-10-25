@@ -77,7 +77,6 @@ steps:
     :::
   action:
     type: probe
-    outcome: reachable
     targets:
     - host: 10.30.30.20
       port: 2404
@@ -203,7 +202,6 @@ steps:
     rows are endpoint evidence, not proof of a routed firewall rule.
   action:
     type: probe
-    outcome: reachable
     targets:
     - host: 10.30.30.20
       port: 2404
@@ -260,12 +258,9 @@ steps:
     container errors are skipped evidence and fail proof. Keep deferred allow
     results as prevention gaps against Hardened, not as skipped steps.
 
-    Execute Step currently uses its fixed blocked outcome. Its failure on an
-    expected deferred allow is not a failed plan proof. Keep the observation
-    and compare the validator/report result with the compiled plan.
+    Execute Step compares the observation with the running firewall policy.
   action:
     type: probe
-    outcome: blocked
     targets:
     - host: 10.30.30.20
       port: 2404

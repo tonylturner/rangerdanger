@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"sort"
 	"strings"
 )
@@ -210,6 +211,20 @@ func ValidateLab(def *LabYAML, scenarios []ScenarioYAML, capabilities []string, 
 			}
 			if step.Action != nil {
 				validateAction(*step.Action, step.Node, nodeIDs, vocabulary, names, stepAdd)
+				if step.Action.Type == "probe" {
+					for targetIndex, target := range step.Action.Targets {
+						source := target.From
+						if source == "" {
+							source = step.Node
+						}
+						if source == "" || !nodeIDs[source] || net.ParseIP(target.Host) == nil || net.ParseIP(target.Host).To4() == nil {
+							continue
+						}
+						if _, err := ResolveProbeTuple(*def, source, target.Host, target.Port); err != nil {
+							stepAdd(fmt.Sprintf("targets[%d] cannot resolve policy tuple: %v", targetIndex, err))
+						}
+					}
+				}
 				if step.Action.Type == "session-cut" {
 					if !declared[CapabilityPolicyContaind] {
 						stepAdd("session-cut requires policy.containd")
@@ -298,9 +313,6 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 			}
 		}
 	case "probe":
-		if action.Outcome != "reachable" && action.Outcome != "blocked" {
-			add("probe outcome must be reachable or blocked")
-		}
 		if len(action.Expect) != 0 {
 			add("probe expect must be empty")
 		}
@@ -326,6 +338,45 @@ func validateAction(action StepAction, stepNode string, nodeIDs map[string]bool,
 			}
 		}
 	}
+}
+
+// ResolveProbeTuple maps an authored probe host to its topology node and
+// destination network, then applies the same route rules as plan proofs.
+func ResolveProbeTuple(template LabYAML, source, host string, port int) (PlanRoute, error) {
+	address, err := netip.ParseAddr(host)
+	if err != nil || !address.Is4() {
+		return PlanRoute{}, fmt.Errorf("host %q is not a valid IPv4 address", host)
+	}
+	var targets []NodeYAML
+	for _, node := range template.Nodes {
+		nodeIP, err := netip.ParseAddr(node.IP)
+		if err == nil && nodeIP == address {
+			targets = append(targets, node)
+		}
+	}
+	if len(targets) != 1 {
+		return PlanRoute{}, fmt.Errorf("host %s must match exactly one topology node primary IP, got %d", host, len(targets))
+	}
+	var destinations []NetworkYAML
+	for _, network := range template.Networks {
+		subnet := network.Subnet
+		if subnet == "" {
+			subnet = network.CIDR
+		}
+		prefix, err := netip.ParsePrefix(subnet)
+		if err != nil {
+			return PlanRoute{}, fmt.Errorf("network %s: invalid subnet", network.ID)
+		}
+		if prefix.Contains(address) {
+			destinations = append(destinations, network)
+		}
+	}
+	if len(destinations) != 1 {
+		return PlanRoute{}, fmt.Errorf("host %s must resolve to exactly one topology network, got %d", host, len(destinations))
+	}
+	return ResolvePlanTuple(Package{Template: template}, PlanProof{
+		ID: "probe", From: source, To: targets[0].ID, Network: destinations[0].ID, Port: port,
+	})
 }
 
 // ValidateTruthCommand checks the process.truth command wire, including values.

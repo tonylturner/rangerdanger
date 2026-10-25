@@ -18,8 +18,16 @@ var usPolicies = map[string]string{"weak": "firewall/weak.json", "improved": "fi
 
 func validatorFixture() (*LabYAML, ScenarioYAML) {
 	def := &LabYAML{
-		ID:    "substation",
-		Nodes: []NodeYAML{{ID: "rtac-1"}, {ID: "fw-1"}},
+		ID: "substation",
+		Networks: []NetworkYAML{
+			{ID: "ot-ops", CIDR: "10.30.30.0/24", Zone: "lan1"},
+			{ID: "field", CIDR: "10.40.40.0/24", Zone: "lan2"},
+		},
+		Nodes: []NodeYAML{
+			{ID: "rtac-1", IP: "10.30.30.20", Networks: []string{"ot-ops"}},
+			{ID: "fw-1", IP: "10.30.30.2", Networks: []string{"ot-ops"}},
+			{ID: "relay-1", IP: "10.40.40.20", Networks: []string{"field"}},
+		},
 	}
 	scenario := ScenarioYAML{
 		ID: "baseline", Name: "Baseline", Order: "1.1",
@@ -293,7 +301,7 @@ func TestValidateProbe(t *testing.T) {
 	valid := func() (*LabYAML, ScenarioYAML) {
 		def, scenario := validatorFixture()
 		scenario.Steps[0].Node = "rtac-1"
-		scenario.Steps[0].Action = &StepAction{Type: "probe", Outcome: "reachable", Targets: []ProbeTarget{{Host: "10.40.40.20", Port: 502}}}
+		scenario.Steps[0].Action = &StepAction{Type: "probe", Targets: []ProbeTarget{{Host: "10.40.40.20", Port: 502}}}
 		return def, scenario
 	}
 	tests := []struct {
@@ -301,11 +309,11 @@ func TestValidateProbe(t *testing.T) {
 		mutate  func(*ScenarioStep)
 		problem string
 	}{
-		{"invalid outcome", func(s *ScenarioStep) { s.Action.Outcome = "allow" }, "probe outcome must be reachable or blocked"},
 		{"check expect on probe", func(s *ScenarioStep) { s.Action.Expect = map[string]any{"breaker_closed": true} }, "probe expect must be empty"},
 		{"no targets", func(s *ScenarioStep) { s.Action.Targets = nil }, "probe must contain at least one target"},
 		{"bad host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "example.com" }, "host must be a valid IPv4"},
 		{"IPv6 host", func(s *ScenarioStep) { s.Action.Targets[0].Host = "::1" }, "host must be a valid IPv4"},
+		{"unknown target", func(s *ScenarioStep) { s.Action.Targets[0].Host = "10.40.40.99" }, "cannot resolve policy tuple"},
 		{"zero port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 0 }, "port must be 1-65535"},
 		{"large port", func(s *ScenarioStep) { s.Action.Targets[0].Port = 65536 }, "port must be 1-65535"},
 		{"missing source", func(s *ScenarioStep) { s.Node = "" }, "must have a source"},

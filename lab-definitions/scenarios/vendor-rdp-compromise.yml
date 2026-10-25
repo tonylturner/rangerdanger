@@ -47,7 +47,6 @@ steps:
       host on RDP.
     action:
       type: probe
-      outcome: reachable
       targets:
         - { host: 10.20.20.10, port: 3389, note: "RDP to vendor jump" }
         - { host: 10.20.20.10, port: 5900, note: "VNC to vendor jump" }
