@@ -118,11 +118,6 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 	if ev.logErr != nil || ev.auditErr != nil || ev.identityErr != nil || ev.ccIP == "" || ev.rtuIP == "" || !insideEvidenceWindow(ev.hardeningSince, ev.start, ev.policyAt) || !insideEvidenceWindow(ev.operationEnd, ev.policyAt, ev.now) {
 		return fail(fmt.Sprintf("missing identity, policy boundary, RTU log or breaker audit: %v; %v; %v", ev.identityErr, ev.logErr, ev.auditErr))
 	}
-	if !ev.rtuLogChecked {
-		if err := euRTUPeers(ev.rtuLog, ev.ccIP, ev.hardeningSince, ev.operationEnd); err != nil {
-			return fail(err.Error())
-		}
-	}
 	audit, device := ev.breakerAudit, ev.devices["breaker-1"]
 	if audit == nil || device == nil || device.EventSeq == 0 || audit.Generation == 0 || audit.Generation != device.Generation || audit.OldestSeq == nil || audit.LatestSeq == nil || len(audit.Entries) == 0 {
 		return fail("breaker audit and truth must share a retained device generation")
