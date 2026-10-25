@@ -14,6 +14,39 @@
   <a href="https://github.com/tonylturner/containd"><img src="https://img.shields.io/badge/containd-NGFW-f97316" alt="containd"></a>
 </p>
 
+> [!IMPORTANT]
+> **Workshop update: v0.1.35 → v0.1.36-rc.3**
+>
+> rc.3 corrects lab content, proxy routes and scripts only. It uses your v0.1.35 images: nothing downloads or rebuilds, and your `.env` and saved work stay.
+>
+> **Already installed** (v0.1.35, rc.1 or rc.2), from your `rangerdanger` folder. macOS / Linux:
+>
+> ```bash
+> git fetch origin tag v0.1.36-rc.3 &&
+> git checkout --detach v0.1.36-rc.3 &&
+> ./scripts/apply-repo-update.sh
+> ```
+>
+> Windows PowerShell:
+>
+> ```powershell
+> git fetch origin tag v0.1.36-rc.3
+> if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.3 }
+> if ($LASTEXITCODE -eq 0) { .\scripts\apply-repo-update.ps1 }
+> ```
+>
+> **Installed from the workshop SSD:** follow `REPO-UPDATE-README.md` on the SSD.
+>
+> **New install:** clone the rc.3 tag, then run setup as usual (`.\setup.ps1` on Windows). Git's "not a commit" and "detached HEAD" messages are expected:
+>
+> ```bash
+> git clone --branch v0.1.36-rc.3 https://github.com/tonylturner/rangerdanger
+> cd rangerdanger
+> ./setup.sh
+> ```
+>
+> Do not run `./setup.sh --version v0.1.36-rc.3`. Details and lab notes: [v0.1.36 workshop errata](https://github.com/tonylturner/rangerdanger/blob/v0.1.36-rc.3/docs/v0.1.36-hotfix.md).
+
 RangerDanger teaches network segmentation by putting students inside a working electric distribution substation. The whole experience runs in a single web portal: an interactive topology map shows the zones and devices, clicking a node opens its container terminal in the browser, structured exercises walk through each lab step-by-step with live validation, and a process view shows how cyber actions actually change voltages, breaker states, and load energization in real time. The firewall at the center is [containd](https://github.com/tonylturner/containd), a purpose-built NGFW with ICS deep-packet inspection, so students see and control Modbus function codes, DNP3 Direct Operate commands, and per-zone policy decisions the way modern OT-aware firewalls actually surface them.
 
 7 labs aligned to the DefendICS OT Network Segmentation workshop deck: identify required flows, design segmentation, plan under a labor budget, build the policy, stress-test it against a DNP3 Direct Operate injection (with optional Modbus sidebar attacks), validate with PCAP evidence.
@@ -28,7 +61,7 @@ RangerDanger teaches network segmentation by putting students inside a working e
 - **Process view** at `/substation`. Live feeder state from the RTAC via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB attacks measurably change breaker positions, regulator taps, voltages, and load energization within ~3 seconds. Customer-service tile shows how many customers and how much critical load (hospital, fire station) is currently energized.
 - **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
 - **Knowledge wiki** at `/knowledge`. Curated reference for substation equipment, ICS protocols, segmentation patterns, and the lab's specific architecture. Searchable, markdown-rendered, useful both during exercises and afterward.
-- **Modbus and DNP3 simulators**. Every field device (relay, recloser, regulator, capacitor bank, RTAC) speaks Modbus TCP, DNP3 TCP, and HTTP simultaneously against shared state. Attacks work via any of the three protocols.
+- **Modbus and DNP3 simulators**. Every field device (relay, recloser, regulator, capacitor bank, RTAC) speaks Modbus TCP, DNP3 TCP, and HTTP simultaneously against shared state. Field-device controls work via any of the three protocols; the RTAC's Modbus and DNP3 outstations are read-only.
 - **PCAP capture and change-board evidence**. Capture cross-zone traffic at the firewall during attack and validation runs. `scripts/validation-report.sh` assembles a ready-to-review evidence package (probe matrix, policy fingerprint, PCAP source analysis) from a clean run.
 - **Validation-driven exercises**. Per-lab Go validators read live simulator state, electrical readings, audit log entries, and active firewall config. Green/red feedback is per-checkpoint, no instructor-side grading required.
 
@@ -48,7 +81,7 @@ Each lab builds on the previous. Selections in early labs flow into later ones; 
 
 ## Quick start
 
-**Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. These are recommendations: `setup.sh` only warns on disk and Docker VM memory, and never checks host RAM. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
+**Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. These are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
 
 **macOS / Linux:**
 
@@ -99,11 +132,11 @@ Screenshots in student-journey order. Click any image to view full size.
 <table>
 <tr>
 <td width="340" valign="middle"><a href="docs/images/screenshot-network-map.png"><img src="docs/images/screenshot-network-map.png" alt="Substation Network Map" width="320"></a></td>
-<td valign="middle"><b>Interactive topology console</b> at <code>/console</code>. IEC 62443 zone bands with a live policy overlay. The containd NGFW sits at the conduit; hardened-policy mode marks blocked enterprise-to-field paths with red ✗. Click any node to inspect or open a terminal.</td>
+<td valign="middle"><b>Interactive topology console</b> at <code>/console</code>. IEC 62443 zone bands with a live policy overlay. The containd NGFW sits at the conduit; hardened-policy mode marks blocked flows with red ✗. Click any node to inspect or open a terminal.</td>
 </tr>
 <tr>
 <td width="340" valign="middle"><a href="docs/images/screenshot-exercises.png"><img src="docs/images/screenshot-exercises.png" alt="Exercises dashboard" width="320"></a></td>
-<td valign="middle"><b>Exercise dashboard</b> at <code>/exercises</code>. 7 labs aligned to the DefendICS deck (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4). Per-lab progress, time budgets, tag-based filtering, bonus-lab styling.</td>
+<td valign="middle"><b>Exercise dashboard</b> at <code>/exercises</code>. 7 labs aligned to the DefendICS deck (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.3-bonus / 2.4). Per-lab progress, time budgets, tags, and a bonus-lab toggle.</td>
 </tr>
 <tr>
 <td width="340" valign="middle"><a href="docs/images/screenshot-lab-runner.png"><img src="docs/images/screenshot-lab-runner.png" alt="Lab runner" width="320"></a></td>
