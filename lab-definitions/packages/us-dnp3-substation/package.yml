@@ -5,7 +5,7 @@ id: us-dnp3-substation
 title: "US distribution substation (DNP3)"
 # Curriculum revision: bump when step IDs or validator meaning change.
 # Browser progress is keyed by it.
-revision: 2
+revision: 3
 topology: ../../substation-segmentation.yml
 knowledge: knowledge/index.yml
 scenarios: ../../scenarios

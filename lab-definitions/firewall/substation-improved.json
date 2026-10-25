@@ -204,6 +204,37 @@
         "log": true
       },
       {
+        "id": "deny-vendor-to-ot",
+        "description": "BLOCK: Vendor cannot reach OT Operations on Modbus, DNP3, or HMI control ports",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "1881"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "DENY",
+        "log": true
+      },
+      {
         "id": "deny-vendor-to-field",
         "description": "BLOCK: Vendor cannot reach Field Devices directly (no Modbus, no DNP3, no HTTP)",
         "sourceZones": [

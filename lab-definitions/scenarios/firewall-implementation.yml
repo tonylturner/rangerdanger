@@ -266,6 +266,13 @@ steps:
       changes no TCP verdict. Do not add flags by hand and still call the result
       an unchanged applied plan; a running-hash change clears plan provenance.
 
+      With `restrict-vendor-to-ot` selected, `deny-vendor-to-ot` explicitly
+      denies Vendor DMZ → OT Operations on TCP 8080, 1881, 502 and 20000.
+      `improve-logging` enables its log flag, alongside the HTTPS/443 and
+      SSH/22 allow rule and the selected vendor → field deny. Hardened logs
+      these rules too. If the restriction is deferred, its Weak exposure
+      stays open; selecting logging alone does not close or log that exposure.
+
       The L4 source pin enforces; DPI detects and logs. Explicit logged rules
       can provide tuple evidence. Default DENY is a silent backstop. A missing
       event does not prove that no attempt occurred.

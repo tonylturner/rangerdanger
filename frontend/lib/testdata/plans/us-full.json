@@ -124,6 +124,37 @@
           "log": true
         },
         {
+          "id": "deny-vendor-to-ot",
+          "description": "BLOCK: Vendor cannot reach OT Operations on Modbus, DNP3, or HMI control ports",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "1881"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "DENY",
+          "log": true
+        },
+        {
           "id": "deny-vendor-to-field",
           "description": "BLOCK: Vendor cannot reach Field Devices directly (no Modbus, no DNP3, no HTTP)",
           "sourceZones": [
@@ -576,6 +607,43 @@
     },
     {
       "rule": {
+        "id": "deny-vendor-to-ot",
+        "description": "BLOCK: Vendor cannot reach OT Operations on Modbus, DNP3, or HMI control ports",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "1881"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "DENY",
+        "log": true
+      },
+      "origin": {
+        "kind": "selected",
+        "action": "restrict-vendor-to-ot"
+      }
+    },
+    {
+      "rule": {
         "id": "deny-vendor-to-field",
         "description": "BLOCK: Vendor cannot reach Field Devices directly (no Modbus, no DNP3, no HTTP)",
         "sourceZones": [
@@ -882,8 +950,8 @@
   ],
   "label": "hardened",
   "packageId": "us-dnp3-substation",
-  "revision": 2,
-  "policyHash": "cd1400ec8d2a14caef7a08576b0e1e24dc51cd384f118afeb1020dae648d26b9",
+  "revision": 3,
+  "policyHash": "bd2f637dcdac1dbd5bbcdb7c4c556da9220a4f0199a57e00d139f4270a3d62a5",
   "expectations": [
     {
       "id": "A1",

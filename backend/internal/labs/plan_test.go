@@ -137,8 +137,14 @@ func TestCompilePlanSelectionsAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	all.Rules[0].Rule.Protocols[0].Port = "9999"
-	all.Rules[5].Rule.Sources[0] = "192.0.2.2/32"
-	all.Rules[5].Rule.ICS.FunctionCode[0] = 255
+	rtac := slices.IndexFunc(all.Rules, func(entry CompiledPlanRule) bool {
+		return entry.Rule.ID == "rtac-to-field-modbus"
+	})
+	if rtac < 0 {
+		t.Fatal("required RTAC Modbus rule missing")
+	}
+	all.Rules[rtac].Rule.Sources[0] = "192.0.2.2/32"
+	all.Rules[rtac].Rule.ICS.FunctionCode[0] = 255
 	all.Expectations[8].Owners[0] = "changed"
 	all.Config[0] = '!'
 	fresh, err := json.Marshal(mustCompilePlan(t, pkg, ids))
