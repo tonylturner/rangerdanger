@@ -46,7 +46,7 @@ describe("package-bound curriculum presentation", () => {
     expect(render(US_CURRICULUM)).toContain('href="/exercises"');
     const usPlan = buildDynamicPlan({ exerciseId: US_CURRICULUM.roles.planning, selectedActionIds: ["modbus-dpi"], savedAt: "" }, US_CURRICULUM);
     const html = renderToStaticMarkup(<RemediationPlanSummary plan={usPlan} />);
-    expect(html).toContain('<span class="font-bold">ICS DPI enabled</span> - containd will filter by Modbus/DNP3 function code, not just port number');
+    expect(html).toContain('<span class="font-bold">ICS DPI enabled</span> - containd provides Modbus/DNP3 function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address');
     const euPlan = buildDynamicPlan({ exerciseId: EU.roles.planning, selectedActionIds: ["iec104-dpi"], savedAt: "" }, EU);
     const euHtml = renderToStaticMarkup(<RemediationPlanSummary plan={euPlan} />);
     expect(euHtml).toContain("not enforceable in this range yet");
