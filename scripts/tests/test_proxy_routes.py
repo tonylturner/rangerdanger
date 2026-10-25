@@ -1,9 +1,7 @@
-"""Offline guards for the proxy routes that repair links baked into the v0.1.35 images.
+"""Offline guards for the shipped same-origin UI routes and containd icons.
 
-proxy/nginx.conf is bind-mounted and restarted by apply-repo-update, so it is the
-only fix path for the Network Map's firewall and OpenPLC links and for containd's
-root-relative icons. No nginx binary is assumed: the config is tokenised here and
-nginx's location selection (exact, longest prefix, first regex) is modelled.
+No nginx binary is assumed: the config is tokenised here and nginx location
+selection (exact, longest prefix, first regex) is modelled.
 """
 
 from pathlib import Path
@@ -14,7 +12,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 NGINX_CONFIG = ROOT / "proxy/nginx.conf"
 CONTAIND_UPSTREAM = "http://firewall_ui/"
-OPENPLC_LEGACY = "/api/labs/instances/workshop/nodes/openplc-1/ui/"
 
 
 def tokenize(text):
@@ -141,26 +138,28 @@ class ProxyRoutesTests(unittest.TestCase):
         self.assertIn(("absolute_redirect", ["off"], None), self.server)
         self.assertEqual(find(self.server, "listen")[0][1], ["8080"])
 
-    def test_legacy_firewall_path_redirects_into_containd_with_subpath_and_query(self):
-        self.assertEqual(self.route("/apps/firewall/"), ("redirect", "/containd/"))
-        self.assertEqual(self.route("/apps/firewall"), ("redirect", "/containd/"))
-        self.assertEqual(self.route("/apps/firewall/login", "next=%2Fvpn"), ("redirect", "/containd/login?next=%2Fvpn"))
-        self.assertEqual(
-            self.route("/apps/firewall/_next/static/chunks/main-app.js"),
-            ("redirect", "/containd/_next/static/chunks/main-app.js"),
-        )
-        self.assertEqual(self.route("/containd/login")[0], "proxy")
+    def test_firewall_map_link_uses_the_shipped_containd_route(self):
+        topology = (ROOT / "backend/internal/server/topology.go").read_text()
+        case = topology.split('case "containd_ngfw":', 1)[1].split('case ', 1)[0]
+        self.assertIn('return "/containd/", "/containd/"', case)
+        self.assertEqual(self.route("/containd/login"), ("proxy", CONTAIND_UPSTREAM + "login"))
+        self.assertEqual(self.route("/containd/_next/static/chunks/main-app.js"),
+                         ("proxy", CONTAIND_UPSTREAM + "_next/static/chunks/main-app.js"))
 
-    def test_legacy_workshop_openplc_ui_path_wins_over_api_and_redirects_to_openplc(self):
-        self.assertEqual(self.route(OPENPLC_LEGACY), ("redirect", "/apps/openplc/"))
-        self.assertEqual(self.route(OPENPLC_LEGACY + "login", "x=1"), ("redirect", "/apps/openplc/login?x=1"))
-        self.assertEqual(self.route(OPENPLC_LEGACY + "static/style.css"), ("redirect", "/apps/openplc/static/style.css"))
-        self.assertEqual(self.route("/apps/openplc/login"), ("proxy", "http://openplc/login"))
-        # Real legacy instances and everything else under /api/ still reach the backend.
+    def test_openplc_map_link_uses_the_shipped_openplc_route(self):
+        topology = (ROOT / "backend/internal/server/topology.go").read_text()
+        case = topology.split('case "openplc":', 1)[1].split('case ', 1)[0]
+        self.assertIn('return "/apps/openplc/", ""', case)
+        self.assertNotIn("/api/labs/", case)
+        for suffix in ("", "login", "static/style.css"):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(self.route("/apps/openplc/" + suffix),
+                                 ("proxy", "http://openplc/" + suffix))
+        # Instance UI proxies remain API routes, without workshop-only rewrites.
         for path in (
             "/api/labs/instances/other/nodes/openplc-1/ui/",
+            "/api/labs/instances/workshop/nodes/openplc-1/ui/",
             "/api/labs/instances/workshop/nodes/ews-1/ui/",
-            "/api/labs/instances/workshop/nodes/openplc-1/ui",
             "/api/workshop/graph",
         ):
             with self.subTest(path=path):
@@ -188,12 +187,10 @@ class ProxyRoutesTests(unittest.TestCase):
         self.assertIn("/containd/", hint)
         self.assertNotIn("/apps/firewall/", hint)
 
-    def test_no_location_proxies_the_legacy_firewall_path(self):
-        legacy = [loc for loc in self.locations if loc.pattern.startswith("/apps/firewall")]
-        self.assertEqual(len(legacy), 2)
-        for loc in legacy:
-            with self.subTest(pattern=loc.pattern):
-                self.assertIsNone(loc.directive("proxy_pass"))
+    def test_backend_link_stopgaps_are_removed(self):
+        for loc in self.locations:
+            self.assertFalse(loc.pattern.startswith("/apps/firewall"))
+            self.assertFalse(loc.pattern.startswith("/api/labs/instances/workshop/"))
 
 
 class ParserTests(unittest.TestCase):

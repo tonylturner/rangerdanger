@@ -235,11 +235,11 @@ func TestGetEventsNoSince(t *testing.T) {
 func TestGetSessionsSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertAuthHeader(t, r)
-		json.NewEncoder(w).Encode(map[string]any{
-			"sessions": []Session{
-				{ID: "sess-1", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "tcp", DstPort: 502, Bytes: 1024},
-			},
-		})
+		if r.Method != http.MethodGet || r.URL.RequestURI() != "/api/v1/conntrack" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.RequestURI())
+		}
+		w.Write([]byte(`[{"proto":"tcp","src":"10.20.20.10","dst":"10.30.30.20",
+			"sport":"45000","dport":"502","state":"ESTABLISHED","timeoutSecs":117}]`))
 	}))
 	defer srv.Close()
 
@@ -251,8 +251,13 @@ func TestGetSessionsSuccess(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
-	if sessions[0].DstPort != 502 {
-		t.Errorf("expected dst port 502, got %d", sessions[0].DstPort)
+	want := Session{
+		ID:     "tcp:10.20.20.10:45000:10.30.30.20:502",
+		Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "tcp",
+		SrcPort: 45000, DstPort: 502,
+	}
+	if sessions[0] != want {
+		t.Errorf("session = %+v, want %+v", sessions[0], want)
 	}
 }
 

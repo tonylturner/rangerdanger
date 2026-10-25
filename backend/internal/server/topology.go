@@ -237,7 +237,7 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 		// Same-origin paths only — frontend can prepend window.location
 		// if it ever needs an absolute URL. Hardcoding localhost:9080
 		// here breaks any deployment that isn't bound to loopback.
-		return "/apps/firewall/", "/containd/"
+		return "/containd/", "/containd/"
 	case "hmi_view":
 		return "/apps/hmi-view/", ""
 	case "hmi_control":
@@ -246,7 +246,9 @@ func getNodeUIConfig(nodeType, container, labID, nodeID string) (uiPath, externa
 		return "/apps/fuxa/", ""
 	case "fuxa_hmi":
 		return "/apps/fuxa-hmi/", ""
-	case "plc_trainer", "sis_plc", "openplc":
+	case "openplc":
+		return "/apps/openplc/", ""
+	case "plc_trainer", "sis_plc":
 		if container != "" {
 			return fmt.Sprintf("/api/labs/instances/%s/nodes/%s/ui/", labID, nodeID), ""
 		}
