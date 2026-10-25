@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -17,5 +17,16 @@ describe("US knowledge guidance", () => {
   it("keeps plan coverage advisory rather than a claim about running state", () => {
     expect(article("plan-coverage-pipeline")).toContain("The plan is advisory");
     expect(article("plan-coverage-pipeline")).toContain("does not apply a firewall policy or rewrite later labs");
+  });
+
+  it("uses flag-first polling and same-origin app links", () => {
+    expect(article("tool-dnp3")).toContain("dnp3poll -a 1 -t 3s 10.40.40.20:20000");
+    expect(article("hmi-scada-fuxa")).toContain("[Feeder HMI](/substation)");
+    expect(article("hmi-scada-fuxa")).toContain("[FUXA UI](/apps/fuxa-hmi/)");
+    expect(article("plc-ladder-openplc")).toContain("[OpenPLC UI](/apps/openplc/)");
+    const dir = resolve(__dirname, "../../lab-definitions/packages/us-dnp3-substation/knowledge");
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(".md"))) {
+      expect(readFileSync(resolve(dir, file), "utf8")).not.toMatch(/localhost:8088|frangoteam\.com|openplcproject\.com/);
+    }
   });
 });
