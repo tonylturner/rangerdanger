@@ -1,4 +1,3 @@
-import { buildContaindConfig } from "./advisory-policy.test-util";
 import { describe, expect, it } from "vitest";
 import { NODE_LABELS } from "./exercise-nodes";
 import { humanZoneName, humanizeSummary, zones } from "./network-console-data";
@@ -42,7 +41,7 @@ describe("EU presentation vocabulary", () => {
 });
 
 import { fixtureCurriculum, US_CURRICULUM } from "./curriculum-storage.test-util";
-import { buildDynamicPlan, loadDynamicPlan } from "./remediation-to-rules";
+import { buildContaindConfig, buildDynamicPlan, loadDynamicPlan } from "./remediation-to-rules";
 import { actionEffectLabel } from "./remediation-plan";
 import { computeCoverage } from "./requirement-coverage";
 import { injectDynamicContent, showsValidateButton } from "./scenario-runner-logic";
