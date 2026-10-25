@@ -384,7 +384,7 @@ function ActionChip({ action }: { action: string; label?: string }) {
 // them inflates the deny counter + paints amber-categorized rows red.
 // Operators read "N deny" as "the firewall actually stopped N packets";
 // anomalies belong in the separate `ids` count alongside the amber
-// row tone. (Codex review on PR #47 caught the original conflation.)
+// row tone. (Review on PR #47 caught the original conflation.)
 //
 function eventVerdict(e: NetworkEvent): "ALLOW" | "DENY" {
   if (e.attributes?.action === "DENY") return "DENY";

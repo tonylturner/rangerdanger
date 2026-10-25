@@ -11,7 +11,7 @@
 # If a future dependency change makes a guarded package reachable, this
 # script fails instead of silently keeping an unreachability exception.
 #
-# Raised by Codex review on PR #91.
+# Raised in review on PR #91.
 #
 # Usage: scripts/assert-unreachable-vulns.sh [module-dir ...]
 #        defaults to: backend services dnp3go iec104go

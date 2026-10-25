@@ -839,7 +839,7 @@ enforces. No lab, exercise, or runtime behaviour changes.
   `docker/docker/daemon` ever enters the build graph. The allowlist
   filter matches on GOID alone, so without this the four exceptions
   above would have kept passing even after the "not in the build
-  graph" rationale stopped being true. Raised by Codex review on #91.
+  graph" rationale stopped being true. Raised in review on #91.
 
 ### Changed
 
@@ -856,7 +856,7 @@ enforces. No lab, exercise, or runtime behaviour changes.
   pull progress output (#82).
 - Bumped the `events-smoke` gate-1 event-poll budget 20s -> 45s so it
   stops flaking on loaded CI runners (#80).
-- Codex PR #78 follow-ups: DNP3 DPI consistency + smoke cleanup, plus
+- PR #78 review follow-ups: DNP3 DPI consistency + smoke cleanup, plus
   a docs audit pass (#79).
 
 ### Documentation
@@ -1376,7 +1376,7 @@ preserved.
   event store + REST endpoint on CI runner load — the gate sometimes
   declared "nflog consumer regressed" on what was actually just
   propagation latency. Now polls within an `EVENT_POLL_BUDGET`
-  budget (default 20s, inclusive of the upper bound after Codex
+  budget (default 20s, inclusive of the upper bound after
   review on PR #72 caught the off-by-one), once per second, with
   a fail-loud at the budget edge. PowerShell sibling rewritten to
   use the same polling loop so the two scripts stay in lockstep
@@ -1705,7 +1705,7 @@ content, schema, or API changes — drop-in upgrade from v0.1.15.
 
 ## [v0.1.15] - 2026-05-14
 
-Lab text accuracy pass plus the deferred Codex P2 fix on the v0.1.13
+Lab text accuracy pass plus the deferred P2 review fix on the v0.1.13
 event-schema migration. No backend changes; safe drop-in for anyone
 already on v0.1.14.
 
@@ -1745,7 +1745,7 @@ already on v0.1.14.
 ### Fixed
 
 - **IDS rows in the Live DPI Events strip now render amber, not
-  red** (Codex P2 review on #47). `eventVerdict` no longer maps
+  red** (P2 review on #47). `eventVerdict` no longer maps
   `kind: "anomaly"` to `DENY` before the `category === "ids"`
   rowTone branch can match, so anomaly rows keep their distinct
   amber tone and pure firewall denies stay red.
@@ -2356,7 +2356,7 @@ trade-off transparently in its Secure-by-Design pledge.
 
 ## [v0.1.5] - 2026-05-08
 
-Audit-pass-3 closeout. Codex surfaced two reproducible workshop
+Audit-pass-3 closeout. Review surfaced two reproducible workshop
 blockers and twelve smaller findings on top of v0.1.4. Validated
 against three back-to-back clean rebuilds (each producing a different
 docker `ethN` ordering on the firewall - confirming the determinism
@@ -2422,7 +2422,7 @@ fix holds): all three iterations passed `firewall-smoke 52/52`,
   complete or absent.
 - **`docker-compose.release.yml`** restored
   `CONTAIND_AUTO_LAN3_SUBNET=10.99.99.0/24` (lockstep drift
-  codex caught - release-image users would have hit 502 on
+  caught in review - release-image users would have hit 502 on
   apply when the mgmt subnet fell outside containd's input
   chain). `CONTAIND_CAPTURE_IFACES` removed from both compose
   files since the static `ethN,...` pin was non-deterministic
@@ -2471,7 +2471,7 @@ fix holds): all three iterations passed `firewall-smoke 52/52`,
   + capbank handler coverage from "Still open" to shipped
   (landed in v0.1.4 - was stale carry-over). Added the
   audit-pass-3 P0/P1/P2 items + an "Open questions" section
-  parking codex P0-001 (firewall apply 502/403 - not
+  parking review finding P0-001 (firewall apply 502/403 - not
   reproduced) and the upstream containd PCAP zone-name
   issue.
 
@@ -2826,7 +2826,7 @@ directly in the containd CLI. Major doc + setup polish.
   when a node references an unknown network zone, instead of silently
   no-op'ing and letting the container land on Docker's default
   bridge. Pinned with `backend/internal/orchestrator/orchestrator_test.go`.
-  Surfaced by Codex review on PR #26.
+  Surfaced in review on PR #26.
 
 - Backend dispatch in `handleValidateScenario` cleaned up: removed
   case arms for the deleted exercise IDs, added a case +
@@ -2968,14 +2968,14 @@ ergonomics).
   operator HMI is FUXA at `/apps/fuxa-hmi/` (proxy route, not a
   Next.js route).
 - README's Documentation section now lists ROADMAP/SUPPORT/SECURITY/
-  CONTRIBUTING/CHANGELOG; outdated `CLAUDE.md` link replaced with
+  CONTRIBUTING/CHANGELOG; outdated local-only context link replaced with
   the workshop-overview and security-known-issues pointers.
-- `dnp3go/README.md` - dropped the dangling "see CLAUDE.md" pointer.
+- `dnp3go/README.md` - dropped the dangling local-only context pointer.
 
 ### Repo hygiene
 
-- `CLAUDE.md` untracked (added to `.gitignore`). Local-only AI agent
-  context; not useful to public visitors.
+- Local-only development context untracked (added to `.gitignore`);
+  not useful to public visitors.
 - Dead code removed: `Dockerfile.labtools`, `scripts/tools-entrypoint.sh`,
   `scripts/scenarios/` (6 pre-YAML attack scripts), `scripts/seed-fuxa.sh`,
   `scripts/smoke-test-opendss.sh`, `scripts/configure-fuxa.py`,
