@@ -17,8 +17,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   results. A new `restrict-enterprise-to-vendor` action owns vendor RDP/VNC
   access. Execute Step probes compare each result with the running policy
   instead of a fixed expected outcome. Lab 2.2 exports the compiled config
-  and a separate plan record (revision, action IDs, policy hash). The
-  browser policy compiler and `POST /api/firewall/apply-custom` are removed.
+  and a separate plan record (revision, action IDs, policy hash). In US,
+  Hardened and a plan that restricts vendor access deny and log Vendor DMZ
+  → OT Operations on TCP 8080, 1881, 502 and 20000 (US revision 3).
+  `scripts/validation-report.sh` and `.ps1` now request the backend report
+  for any ready package without changing the running policy; the exit
+  status follows plan proof for an applied plan and Hardened acceptance
+  otherwise. The browser policy compiler and
+  `POST /api/firewall/apply-custom` are removed.
 
 - **Release image bases are digest-pinned.** Go builders use the same
   1.26.10 toolchain as CI; the portal moves to Node 24 LTS. CI rejects
