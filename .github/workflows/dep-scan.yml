@@ -17,7 +17,7 @@ name: Dependency scan
 #   - manual via workflow_dispatch
 #
 # Per-image matrix mirrors release.yml. Scan results upload to the
-# GitHub Security tab via SARIF for a unified view across the 14
+# GitHub Security tab via SARIF for a unified view across the 20
 # images.
 
 on:
@@ -66,6 +66,10 @@ jobs:
           - rangerdanger-historian-sim
           - rangerdanger-gps-sim
           - rangerdanger-opendss-sim
+          - rangerdanger-iec104
+          - rangerdanger-field-device-sim
+          - rangerdanger-historian-eu
+          - rangerdanger-openplc-eu
 
     steps:
       - name: Resolve tag
