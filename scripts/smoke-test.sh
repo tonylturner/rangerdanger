@@ -86,9 +86,10 @@ ok "stale database cleared"
 
 # --- bring up ---------------------------------------------------------------
 # dev-up builds every image, starts the platform, waits for the backend and
-# for POST /api/range to bring the range to ready.
+# for POST /api/range to bring the range to ready. Name the US package:
+# without it the backend restarts the package it ran last.
 note "build + up"
-if ./scripts/dev-up.sh >/tmp/smoke-up.log 2>&1; then
+if ./scripts/dev-up.sh --package us-dnp3-substation >/tmp/smoke-up.log 2>&1; then
   ok "build, platform up, range ready"
 else
   err "dev-up failed; see /tmp/smoke-up.log"
