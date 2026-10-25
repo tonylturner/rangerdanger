@@ -15,7 +15,7 @@ import {
 // across the firewall implementation labs (2.2 / 2.3 / 2.3-bonus / 2.4).
 //
 // guided   — DEFAULT. Student applies policies via side-panel buttons
-//            (Apply Hardened, Apply Your Plan). Still walks the containd
+//            (Apply Hardened). Still walks the containd
 //            interface for understanding, just doesn't author rules
 //            themselves. This is the default workshop path so most
 //            students never touch containd's commit flow.

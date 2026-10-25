@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   validateScenario,
   applyFirewallConfig,
-  applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
   execOnNode,
@@ -28,7 +27,6 @@ import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { useFirewallTrack } from "../lib/use-firewall-track";
 import {
   loadDynamicPlan,
-  buildContaindConfig,
   type DynamicExercisePlan,
 } from "../lib/remediation-to-rules";
 import {
@@ -716,44 +714,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         Apply Hardened
                       </button>
                     )}
-                    {/* Apply Your Plan: push the policy built from the
-                        student's Lab 1.4 picks. Disabled-with-tooltip
-                        when no plan exists, rather than silently
-                        hidden - students should see it as an option
-                        and learn what unlocks it. */}
-                    {dynamicPlan?.hasRemediationPlan ? (
-                      <button
-                        onClick={async () => {
-                          const config = buildContaindConfig(dynamicPlan);
-                          await applyCustomFirewallConfig(config);
-                          void refreshLive();
-                          setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
-                        }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
-                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
-                        }
-                      >
-                        Apply Your Plan
-                      </button>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            disabled
-                            className="cursor-not-allowed rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          >
-                            Apply Your Plan
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Complete Lab 1.4 (Remediation Planning) first.
-                          The system builds this policy from your plan
-                          picks.
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+                    <p className="basis-full text-[10px] text-slate-400">
+                      Lab 1.4 plans are advisory. Use the hardened reference or author and Commit a policy in containd.
+                    </p>
                     {/* Reset to Weak: available from any non-weak
                         state so students can re-attempt an exercise
                         from the baseline regardless of how they

@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactNode } from "react";
 import type { Scenario } from "../lib/api";
+import type { CurriculumScope } from "../lib/curriculum-storage";
+import { US_CURRICULUM } from "../lib/curriculum-storage.test-util";
 import { memoryStorage } from "../lib/memory-storage.test-util";
 import { loadProgress, saveProgress } from "../lib/scenario-runner-storage";
 import { ScenarioRunner } from "./scenario-runner";
 
 const { scope } = vi.hoisted(() => ({
-  scope: { packageId: "us-dnp3-substation", revision: 1 },
+  scope: { packageId: "us-dnp3-substation", revision: 1 } as CurriculumScope,
 }));
 vi.mock("../lib/curriculum-scope", () => ({ useCurriculumScope: () => scope }));
 vi.mock("../lib/use-firewall-track", () => ({ useFirewallTrack: () => ({ track: "guided", setTrack: vi.fn() }) }));
@@ -40,7 +42,10 @@ const scenario: Scenario = {
   ],
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  scope.curriculum = undefined;
+  vi.unstubAllGlobals();
+});
 
 describe("Reset Progress", () => {
   it.each(["us-dnp3-substation", "eu-iec104-substation"])(
@@ -69,4 +74,20 @@ describe("Reset Progress", () => {
       }
     },
   );
+});
+
+it("offers the reference and manual commit workflow, never the advisory generated plan", () => {
+  scope.curriculum = US_CURRICULUM;
+  vi.stubGlobal("window", { localStorage: memoryStorage() });
+  vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  let tree!: ReactTestRenderer;
+  act(() => { tree = create(<ScenarioRunner scenario={{ ...scenario, id: US_CURRICULUM.roles.implementation }} onExit={() => {}} />); });
+  try {
+    const text = JSON.stringify(tree.toJSON());
+    expect(text).toContain("Apply Hardened");
+    expect(text).toContain("Lab 1.4 plans are advisory");
+    expect(text).not.toContain("Apply Your Plan");
+  } finally {
+    act(() => tree.unmount());
+  }
 });
