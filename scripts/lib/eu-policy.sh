@@ -126,7 +126,7 @@ eu_check_policy_and_nft() {
   eu_check_nft_chain "$label"
 }
 eu_apply_named() {
-  local name="$1" response active
+  local name="$1" response active source
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
   if ! eu_api_post "/api/firewall/apply" "{\"config\":\"$name\"}"; then
@@ -147,8 +147,11 @@ eu_apply_named() {
     return 1
   fi
   active="$API_BODY"
-  if ! printf '%s' "$active" | jq -e --arg name "$name" '.active_config == $name' >/dev/null 2>&1; then
-    fail "active policy readback is not $name: $active"
+  source="$name"
+  [ "$name" != improved ] || source=hardened-reference
+  if ! printf '%s' "$active" | jq -e --arg name "$name" --arg source "$source" \
+    '.active_config == $name and .policy_source == $source and (has("plan") | not)' >/dev/null 2>&1; then
+    fail "active policy readback is not $name/$source without plan provenance: $active"
     return 1
   fi
   pass "$name applied with zero warnings and exact active-policy readback"

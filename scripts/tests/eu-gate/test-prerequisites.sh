@@ -73,4 +73,27 @@ t_expect_fails 1 "G9 fails without the verified G7 disconnect"
 t_expect_out "without the verified G7 CC disconnect" "the G9 failure names the unmet G7 prerequisite"
 t_expect_no_out "waited for operator" "G9 does not wait for a recovery that cannot be attributed"
 
+# Exercise the real named apply readback after the gate-level stubs above.
+# shellcheck source-path=SCRIPTDIR source=../../lib/eu-policy.sh
+. "$T_REPO/scripts/lib/eu-policy.sh"
+eu_api_post() {
+  HTTP_STATUS=200
+  API_BODY='{"status":"applied"}'
+}
+eu_api_get() {
+  API_BODY="$ACTIVE_READBACK"
+}
+ACTIVE_READBACK='{"active_config":"improved","policy_source":"manual-custom"}'
+t_run eu_apply_named improved
+t_expect_fails 1 "named restore rejects retained manual commit attribution"
+ACTIVE_READBACK='{"active_config":"improved","policy_source":"hardened-reference","plan":{}}'
+t_run eu_apply_named improved
+t_expect_fails 1 "named restore rejects retained plan provenance"
+ACTIVE_READBACK='{"active_config":"improved","policy_source":"hardened-reference"}'
+t_run eu_apply_named improved
+t_expect_fails 0 "named restore confirms hardened reference attribution with no plan"
+ACTIVE_READBACK='{"active_config":"weak","policy_source":"weak"}'
+t_run eu_apply_named weak
+t_expect_fails 0 "weak restore confirms weak attribution with no plan"
+
 t_finish
