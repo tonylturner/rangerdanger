@@ -52,7 +52,6 @@ type euWorkshopEvidence struct {
 	conduits                                           conduitEvidence
 	breakerAudit                                       *euWorkshopBreakerAudit
 	auditErr                                           error
-	rtuLog                                             string
 	logErr                                             error
 	ccIP, rtuIP                                        string
 }
@@ -143,7 +142,7 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 		} else {
 			ev.breakerAudit, ev.auditErr = fetchJSON[euWorkshopBreakerAudit](ctx, simService, endpoint+"/api/audit?after=0")
 		}
-		ev.rtuLog, ev.logErr = s.euRTULog(ctx, gen)
+		ev.logErr = s.euRTULog(ctx, gen, ev.hardeningSince, ev.operationEnd, ev.ccIP)
 	}
 	finalHash, finalErr := gen.Containd().GetFirewallHash(ctx)
 	if ev.policyErr == nil && (finalErr != nil || finalHash != hash) {

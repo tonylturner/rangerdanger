@@ -1,77 +1,11 @@
 package server
 
 import (
-	"context"
 	"fmt"
-	"time"
 
-	"github.com/tturner/rangerdanger/backend/internal/containd"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
-
-// Telecontrol outage and protection evidence collection. Every
-// address and URL comes from the generation's manifest; every source is
-// read once and keeps its own error.
-
-func (s *Server) collectTelecontrolEvidence(ctx context.Context, gen *lifecycle.Generation, activePolicy string) telecontrolEvidence {
-	ev := telecontrolEvidence{activePolicy: activePolicy, rangeStart: gen.StartedAt}
-	ev.policyErr = s.runningPolicyIs(ctx, gen, telecontrolPolicy)
-
-	var rtuErr, ccErr error
-	ev.rtuIP, rtuErr = roleTeachingIP(gen, manifest.RoleRTU)
-	ev.ccIP, ccErr = roleTeachingIP(gen, manifest.RoleControlCentre)
-	switch {
-	case rtuErr != nil:
-		ev.eventsErr = rtuErr
-	case ccErr != nil:
-		ev.eventsErr = ccErr
-	default:
-		ev.events, ev.eventsErr = gen.Containd().GetEvents(ctx, containd.MaxEventLimit, gen.StartedAt)
-	}
-
-	if cc, ok := controlCentreURL(gen); ok {
-		ev.ccState, ev.ccStateErr = fetchJSON[ccState](ctx, controlCentreService, cc+"/api/state")
-		ev.journal, ev.journalErr = fetchJSON[ccJournal](ctx, controlCentreService, cc+"/api/journal?after=0")
-	} else {
-		ev.ccStateErr = fmt.Errorf("package %s has no control centre", gen.Package.ID)
-		ev.journalErr = ev.ccStateErr
-	}
-	if device, ok := nodeSimURL(gen, "breaker-1"); ok {
-		ev.audit, ev.auditErr = fetchJSON[deviceAudit](ctx, simService, device+"/api/audit?after=0")
-		ev.device, ev.deviceErr = fetchJSON[deviceTruth](ctx, simService, device+"/api/state")
-	} else {
-		ev.deviceErr = fmt.Errorf("package %s has no sim device", gen.Package.ID)
-		ev.auditErr = ev.deviceErr
-	}
-	ev.collectedAt = time.Now().UTC()
-	return ev
-}
-
-// runningPolicyIs reports, as an error, whether containd's running firewall
-// differs from the named policy file.
-func (s *Server) runningPolicyIs(ctx context.Context, gen *lifecycle.Generation, name string) error {
-	path, err := s.policyPath(gen.Package, name)
-	if err != nil {
-		return err
-	}
-	data, err := readPolicyJSONWithRetry(path)
-	if err != nil {
-		return err
-	}
-	want, err := containd.FirewallHashFromBytes(data)
-	if err != nil {
-		return err
-	}
-	got, err := gen.Containd().GetFirewallHash(ctx)
-	if err != nil {
-		return err
-	}
-	if got != want {
-		return fmt.Errorf("running firewall hash %s, policy file hash %s", got, want)
-	}
-	return nil
-}
 
 // roleTeachingIP is the address of the role's service on its one teaching
 // network (a manifest network with a zone).

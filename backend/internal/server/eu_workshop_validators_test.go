@@ -1,12 +1,63 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
+
+func decodeFixture[T any](t *testing.T, data string) *T {
+	t.Helper()
+	var out T
+	if err := json.Unmarshal([]byte(data), &out); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	return &out
+}
+
+func at(clock string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, "2026-10-09T"+clock+"Z")
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
+func TestBadQuality(t *testing.T) {
+	overflow := true
+	stale := "link_lost"
+	invalid := ccPoint{}
+	invalid.Quality.IV, invalid.Quality.NT = true, true
+	invalid.StaleReason = &stale
+	withOverflow := ccPoint{}
+	withOverflow.Quality.OV = &overflow
+	for _, tc := range []struct {
+		name  string
+		point ccPoint
+		want  string
+	}{
+		{name: "good"},
+		{
+			name:  "invalid and stale",
+			point: invalid,
+			want:  "IV, NT, stale_reason link_lost",
+		},
+		{
+			name:  "overflow",
+			point: withOverflow,
+			want:  "OV",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := badQuality(tc.point); got != tc.want {
+				t.Fatalf("badQuality() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 var euWorkshopSlots = []string{"eu-baseline-assessment", "eu-firewall-implementation", "eu-hardening-configurations", "eu-vendor-rdp-compromise", "eu-validation-evidence"}
 
@@ -20,7 +71,9 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 		devices: map[string]*euWorkshopDevice{}, deviceErrors: map[string]error{},
 		process: decodeFixture[euWorkshopProcess](t, `{"schema":3,"truth_stale":false,"solved_at":"2026-10-09T12:04:59Z","buses":{"bus20":{"live":true,"kv":20},"s1":{"live":true,"kv":20},"s2":{"live":true,"kv":20},"s3":{"live":true,"kv":20}},"devices":{"f2-breaker":{"delivered":true,"revision":1,"solved_revision":1},"feeder-breaker":{"delivered":true,"revision":1,"solved_revision":1},"rmu-1":{"delivered":true,"revision":1,"solved_revision":1},"rmu-2":{"delivered":true,"revision":1,"solved_revision":1},"oltc-1":{"delivered":true,"revision":1,"solved_revision":1}}}`),
 		ccIP:    "10.60.60.20", rtuIP: "10.30.30.20",
-		rtuLog:       fmt.Sprintf("set-gateway: default gateway set to 10.30.30.2\n2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404 ca=1 points=%d devices=6 select-timeout=5000ms\n", len(conduit.stationPoints)),
+		logErr: euRTUPeers("set-gateway: default gateway set to 10.30.30.2\n"+
+			"2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404\n",
+			"10.60.60.20", at("12:00:30"), at("12:05:00")),
 		breakerAudit: decodeFixture[euWorkshopBreakerAudit](t, `{"generation":42,"oldest_seq":1,"latest_seq":2,"entries":[{"seq":1,"at":"2026-10-09T12:00:00Z","operation":"reset","result":"accepted","context":{"protocol":"lab"}},{"seq":2,"at":"2026-10-09T12:02:00Z","operation":"first_solve","result":"accepted"}]}`),
 	}
 	for i := range ev.cc.Points {
@@ -147,11 +200,15 @@ func TestEUWorkshopFailures(t *testing.T) {
 			ev.negative[0].Pass = false
 		}},
 		{"matrix identity unavailable", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.negativeErr = errors.New("no source network") }},
-		{"foreign command", euWorkshopSlots[2], func(ev *euWorkshopEvidence) {
-			ev.rtuLog += "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:5000 phase=execute result=accepted dcs=1\n"
+		{"foreign accepted execute", euWorkshopSlots[2], func(ev *euWorkshopEvidence) {
+			ev.logErr = euRTUPeers("2026-10-09T12:00:00Z rtu listening 0.0.0.0:2404\n"+
+				"2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:5000 phase=execute result=accepted dcs=1\n",
+				ev.ccIP, ev.hardeningSince, ev.operationEnd)
 		}},
 		{"log unavailable", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.logErr = errors.New("down") }},
-		{"log truncated", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.rtuLog = "" }},
+		{"log truncated", euWorkshopSlots[2], func(ev *euWorkshopEvidence) {
+			ev.logErr = euRTUPeers("", ev.ccIP, ev.hardeningSince, ev.operationEnd)
+		}},
 		{"audit truncated", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.breakerAudit.Entries = ev.breakerAudit.Entries[1:] }},
 		{"audit generation", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.breakerAudit.Generation++ }},
 		{"audit gap", euWorkshopSlots[2], func(ev *euWorkshopEvidence) { ev.breakerAudit.Entries[1].Seq = 4 }},
@@ -188,7 +245,9 @@ func TestEURTUPeerEvidence(t *testing.T) {
 		{"no commands", "", true},
 		{"authorized CC", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted", true},
 		{"foreign before hardening", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:02Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", true},
+		{"foreign command straddles hardening", "2026-10-09T12:00:29Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:31Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
 		{"foreign completion across boundary", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
+		{"foreign accepted execute", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted", false},
 		{"ambiguous foreign operation", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=unknown", false},
 		{"pending foreign across boundary", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted", false},
 		{"CC feedback timeout", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted\n2026-10-09T12:03:05Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=failed reason=feedback-timeout", true},

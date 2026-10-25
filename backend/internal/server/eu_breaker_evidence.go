@@ -1,7 +1,7 @@
 package server
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -21,42 +22,94 @@ type euWorkshopBreakerAudit struct {
 	LatestSeq *uint64 `json:"latest_seq"`
 }
 
-// Field audit peers identify the RTU, not its IEC 104 master. Only the RTU
-// log carries that original peer. Read the complete retained stream, including
-// its listening marker; absence from a truncated stream is not proof.
-func (s *Server) euRTULog(ctx context.Context, gen *lifecycle.Generation) (string, error) {
+type euRTUContainerIdentity struct {
+	id           string
+	startedAt    time.Time
+	restartCount int
+}
+
+func euRTUIdentityFromInspect(info dockertypes.ContainerJSON, hardeningSince time.Time) (euRTUContainerIdentity, error) {
+	if info.ContainerJSONBase == nil || info.ID == "" || info.State == nil || !info.State.Running || info.State.Restarting {
+		return euRTUContainerIdentity{}, fmt.Errorf("RTU container is not running with a stable identity")
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, info.State.StartedAt)
+	if err != nil || startedAt.IsZero() || startedAt.After(hardeningSince) {
+		return euRTUContainerIdentity{}, fmt.Errorf("RTU container start does not precede hardening")
+	}
+	if info.RestartCount != 0 {
+		return euRTUContainerIdentity{}, fmt.Errorf("RTU container restarted; log incarnation is ambiguous")
+	}
+	return euRTUContainerIdentity{id: info.ID, startedAt: startedAt, restartCount: info.RestartCount}, nil
+}
+
+// euRTULog streams one container incarnation from its start, retaining only
+// parser state. The range's hardening boundary determines which operations
+// count; older lines are needed only to establish the listener and any
+// command that straddles that boundary.
+func (s *Server) euRTULog(ctx context.Context, gen *lifecycle.Generation, hardeningSince, operationEnd time.Time, ccIP string) error {
 	if s.orchestrator == nil || s.orchestrator.DockerClient() == nil {
-		return "", fmt.Errorf("RTU log requires Docker read access")
+		return fmt.Errorf("RTU log requires Docker read access")
 	}
 	rtu, err := nodeService(gen, "rtu-1")
 	if err != nil {
-		return "", err
+		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	stream, err := s.orchestrator.DockerClient().ContainerLogs(ctx, rtu.Container, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+	if hardeningSince.IsZero() || operationEnd.IsZero() || operationEnd.Before(hardeningSince) || ccIP == "" {
+		return fmt.Errorf("invalid RTU evidence window or control-centre identity")
+	}
+	cli := s.orchestrator.DockerClient()
+	before, err := cli.ContainerInspect(ctx, rtu.Container)
 	if err != nil {
-		return "", err
+		return err
+	}
+	identity, err := euRTUIdentityFromInspect(before, hardeningSince)
+	if err != nil {
+		return err
+	}
+	stream, err := cli.ContainerLogs(ctx, identity.id, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Since:      identity.startedAt.UTC().Format(time.RFC3339Nano),
+		Until:      operationEnd.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return err
 	}
 	defer stream.Close()
 	stop := context.AfterFunc(ctx, func() { _ = stream.Close() })
 	defer stop()
-	const limit = 8 << 20
-	raw, err := io.ReadAll(io.LimitReader(stream, limit+1))
-	if err != nil {
-		return "", err
+
+	reader, writer := io.Pipe()
+	copyDone := make(chan error, 1)
+	go func() {
+		_, copyErr := stdcopy.StdCopy(writer, writer, stream)
+		_ = writer.CloseWithError(copyErr)
+		copyDone <- copyErr
+	}()
+	parseErr := euRTUPeersReader(reader, ccIP, identity.startedAt, gen.StartedAt, hardeningSince, operationEnd)
+	_ = reader.Close()
+	copyErr := <-copyDone
+	if parseErr != nil {
+		return parseErr
+	}
+	if copyErr != nil {
+		return copyErr
 	}
 	if ctx.Err() != nil {
-		return "", ctx.Err()
+		return ctx.Err()
 	}
-	if len(raw) > limit {
-		return "", fmt.Errorf("retained RTU log exceeds 8 MiB evidence limit")
+	after, err := cli.ContainerInspect(ctx, rtu.Container)
+	if err != nil {
+		return err
 	}
-	var out bytes.Buffer
-	if _, err := stdcopy.StdCopy(&out, &out, bytes.NewReader(raw)); err != nil {
-		return "", err
+	afterIdentity, err := euRTUIdentityFromInspect(after, hardeningSince)
+	if err != nil {
+		return err
 	}
-	return out.String(), nil
+	if afterIdentity != identity {
+		return fmt.Errorf("RTU container incarnation changed during log collection")
+	}
+	return nil
 }
 
 func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
@@ -64,9 +117,6 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 	fail := func(reason string) ValidationCheck { return checkFail(name, reason) }
 	if ev.logErr != nil || ev.auditErr != nil || ev.identityErr != nil || ev.ccIP == "" || ev.rtuIP == "" || !insideEvidenceWindow(ev.hardeningSince, ev.start, ev.policyAt) || !insideEvidenceWindow(ev.operationEnd, ev.policyAt, ev.now) {
 		return fail(fmt.Sprintf("missing identity, policy boundary, RTU log or breaker audit: %v; %v; %v", ev.identityErr, ev.logErr, ev.auditErr))
-	}
-	if err := euRTUPeers(ev.rtuLog, ev.ccIP, ev.hardeningSince, ev.operationEnd); err != nil {
-		return fail(err.Error())
 	}
 	audit, device := ev.breakerAudit, ev.devices["breaker-1"]
 	if audit == nil || device == nil || device.EventSeq == 0 || audit.Generation == 0 || audit.Generation != device.Generation || audit.OldestSeq == nil || audit.LatestSeq == nil || len(audit.Entries) == 0 {
@@ -97,13 +147,24 @@ func euNoForeignBreaker(ev euWorkshopEvidence) ValidationCheck {
 			return fail("accepted breaker Modbus operation from a non-RTU peer after hardening")
 		}
 	}
-	return checkPass(name, fmt.Sprintf("complete retained RTU stream contains no accepted non-CC breaker execute since hardening through %s; continuous current-generation breaker audit contains no accepted foreign Modbus open/close through that cutoff. No DPI or denied-command decoding certified", ev.operationEnd.Format(time.RFC3339Nano)))
+	return checkPass(name, fmt.Sprintf("continuous current-container RTU log evidence contains no accepted non-CC breaker execute since hardening through %s; continuous current-generation breaker audit contains no accepted foreign Modbus open/close through that cutoff. No DPI or denied-command decoding certified", ev.operationEnd.Format(time.RFC3339Nano)))
 }
 
 func euRTUPeers(log, ccIP string, start, end time.Time) error {
+	return euRTUPeersReader(strings.NewReader(log), ccIP, time.Time{}, time.Time{}, start, end)
+}
+
+func euRTUPeersReader(reader io.Reader, ccIP string, incarnationStart, rangeStart, start, end time.Time) error {
+	if start.IsZero() || end.IsZero() || end.Before(start) || ccIP == "" {
+		return fmt.Errorf("invalid RTU evidence window or control-centre identity")
+	}
 	listening := false
 	pendingForeign := ""
-	for _, line := range strings.Split(log, "\n") {
+	var previousAt time.Time
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 4096), 64<<10)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "set-gateway:") {
 			continue
 		}
@@ -115,6 +176,13 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 		if err != nil {
 			return fmt.Errorf("RTU log record has no timestamp")
 		}
+		if !previousAt.IsZero() && at.Before(previousAt) {
+			return fmt.Errorf("RTU log timestamps are discontinuous")
+		}
+		previousAt = at
+		if !incarnationStart.IsZero() && at.Before(incarnationStart) {
+			continue
+		}
 		if fields[1] != "rtu" || at.After(end) {
 			continue
 		}
@@ -123,11 +191,21 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 				return fmt.Errorf("RTU restarted after hardening")
 			}
 			listening, pendingForeign = true, ""
+			continue
+		}
+		if fields[2] == "stopping" {
+			if insideEvidenceWindow(at, start, end) {
+				return fmt.Errorf("RTU stopped after hardening")
+			}
+			if at.Before(start) {
+				listening, pendingForeign = false, ""
+			}
+			continue
+		}
+		if !rangeStart.IsZero() && at.Before(rangeStart) {
+			continue
 		}
 		inWindow := insideEvidenceWindow(at, start, end)
-		if inWindow && fields[2] == "stopping" {
-			return fmt.Errorf("RTU stopped after hardening")
-		}
 		if fields[2] != "command" {
 			continue
 		}
@@ -168,6 +246,9 @@ func euRTUPeers(log, ccIP string, start, end time.Time) error {
 		default:
 			return fmt.Errorf("unknown RTU breaker execute result %q", result)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read RTU log window: %w", err)
 	}
 	if !listening {
 		return fmt.Errorf("RTU listening marker not retained before hardening; cannot prove absence")
