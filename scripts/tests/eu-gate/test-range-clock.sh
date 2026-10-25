@@ -103,7 +103,7 @@ eu_apply_named() { :; }
 eu_wait_for_baseline() { :; }
 eu_make_custom_policy() { :; }
 eu_policy_has_no_ephemeral_allow() { return 0; }
-eu_apply_custom() { :; }
+eu_commit_manual_policy() { :; }
 eu_check_nft_chain() { :; }
 # shellcheck disable=SC2034 # consumed by G11 in eu-gates-resilience.sh
 eu_read_sessions() { SESSION_BODY='{}'; }

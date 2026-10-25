@@ -33,7 +33,7 @@ eu_wait_for_baseline() {
   pass "$1 (stub)"
 }
 # The held G7/G11 readback comparison fails as it did in run 1.
-eu_apply_custom() {
+eu_commit_manual_policy() {
   fail "containd effective firewall rules differ from custom $2 before session kill"
   return 1
 }
@@ -95,5 +95,155 @@ t_expect_fails 0 "named restore confirms hardened reference attribution with no 
 ACTIVE_READBACK='{"active_config":"weak","policy_source":"weak"}'
 t_run eu_apply_named weak
 t_expect_fails 0 "weak restore confirms weak attribution with no plan"
+
+# The real manual helper must never call a backend mutation or flush sessions.
+MANUAL_INPUT="$TMP_DIR/manual-input.json"
+STAGED_INPUT="$TMP_DIR/staged-input.json"
+EFFECTIVE_INPUT="$TMP_DIR/effective-input.json"
+manual_fixture_reset() {
+  printf '%s\n' '{"dataplane":{"enforcement":false,"dpiEnabled":false},
+    "firewall":{"rules":[{"id":"retained-rule","action":"ALLOW"}]}}' >"$MANUAL_INPUT"
+  cp "$MANUAL_INPUT" "$EFFECTIVE_INPUT"
+  : >"$DOCKER_LOG"
+  FW_TOKEN=fixture-admin
+  CANDIDATE_STATUS=201
+  COMMIT_STATUS=204
+  CANDIDATE_RC=0
+  COMMIT_RC=0
+  COMMIT_HEADERS=$'HTTP/1.1 204 No Content\r\nX-Containd-Warnings: \t\r\n\r\n'
+  ACTIVE_CALLS=0
+  ACTIVE_AFTER=11
+  SLEEPS=0
+  GET_RC=0
+  INITIAL_READBACK='{"active_config":"custom","policy_source":"plan","plan":{}}'
+  FINAL_READBACK='{"active_config":"custom","policy_source":"manual-custom"}'
+}
+docker() {
+  printf '%s\n' "$*" >>"$TMP_DIR/manual-docker-args"
+  case "$*" in
+    "exec -i $FW curl "*"/api/v1/config/candidate")
+      printf 'candidate\n' >>"$DOCKER_LOG"
+      cat >"$STAGED_INPUT"
+      printf '{"status":"staged"}\n%s' "$CANDIDATE_STATUS"
+      return "$CANDIDATE_RC" ;;
+    "exec $FW curl "*"/api/v1/config/commit")
+      printf 'commit\n' >>"$DOCKER_LOG"
+      printf '%s' "$COMMIT_HEADERS" >&2
+      printf '{"status":"committed"}\n%s' "$COMMIT_STATUS"
+      return "$COMMIT_RC" ;;
+    "exec $FW curl "*"/api/v1/config")
+      printf 'readback\n' >>"$DOCKER_LOG"
+      cat "$EFFECTIVE_INPUT"
+      printf '\n200' ;;
+    *) return 99 ;;
+  esac
+}
+eu_api_post() {
+  fail "manual commit unexpectedly called backend mutation $1"
+  return 1
+}
+eu_api_get() {
+  [ "$1" = /api/firewall/active ] || return 1
+  ACTIVE_CALLS=$((ACTIVE_CALLS + 1))
+  if [ "$ACTIVE_CALLS" -gt "$ACTIVE_AFTER" ]; then
+    API_BODY="$FINAL_READBACK"
+  else
+    API_BODY="$INITIAL_READBACK"
+  fi
+  return "$GET_RC"
+}
+sleep() {
+  [ "$1" = 1 ] || return 1
+  SLEEPS=$((SLEEPS + 1))
+}
+manual_fixture_reset
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 0 "manual commit converges after grace plus tick"
+t_expect_fails 0 "manual commit has no warning, backend mutation or session flush"
+t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'candidate\ncommit\nreadback')" \
+  "manual commit stages, commits and reads effective rules in order"
+t_expect_eq "$ACTIVE_CALLS" 12 "custom with plan source cannot satisfy manual observation"
+t_expect_eq "$SLEEPS" 11 "observer convergence may exceed the ten-second grace plus tick"
+t_run jq -e --slurpfile original "$MANUAL_INPUT" \
+  '.dataplane.enforcement == true and .dataplane.dpiEnabled == false
+   and .firewall == $original[0].firewall' "$STAGED_INPUT"
+t_expect_eq "$T_STATUS" 0 "staging enables enforcement without changing rules or other dataplane fields"
+t_run grep -F -- '-H Authorization: Bearer fixture-admin -H Content-Type: application/json' \
+  "$TMP_DIR/manual-docker-args"
+t_expect_eq "$T_STATUS" 0 "containd requests use the admin JWT and JSON content type"
+
+for mutation in 'del(.dataplane)' '.dataplane = null' '.dataplane = "invalid"' \
+  '.dataplane.enforcement = true'; do
+  manual_fixture_reset
+  jq "$mutation" "$MANUAL_INPUT" >"$TMP_DIR/mutated-policy.json"
+  ACTIVE_AFTER=0
+  t_run eu_commit_manual_policy "$TMP_DIR/mutated-policy.json" fixture
+  t_expect_eq "$T_STATUS" 0 "manual commit handles enforcement injection: $mutation"
+  t_run jq -e '.dataplane.enforcement == true' "$STAGED_INPUT"
+  t_expect_eq "$T_STATUS" 0 "staged enforcement is enabled: $mutation"
+done
+
+for stage_status in 200 204; do
+  manual_fixture_reset
+  CANDIDATE_STATUS="$stage_status"
+  COMMIT_STATUS=200
+  ACTIVE_AFTER=0
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 0 "backend-supported candidate $stage_status and commit 200 succeed"
+done
+
+for warning_headers in \
+  $'X-Containd-Warnings: nft apply failed\r\nX-Containd-Warnings: route apply failed\r\n' \
+  $'x-containd-warnings: \t\r\nx-CoNtAiNd-WaRnInGs:routing failed\r\n'; do
+  manual_fixture_reset
+  COMMIT_HEADERS="$warning_headers"
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 1 "commit rejects repeated or mixed-case nonempty warning headers"
+  t_expect_out "reported policy import warnings" "commit warning failure is explicit"
+  t_expect_eq "$ACTIVE_CALLS" 0 "warnings prevent claiming observed success"
+done
+
+manual_fixture_reset
+CANDIDATE_STATUS=422
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "rejected candidate fails"
+t_expect_eq "$(cat "$DOCKER_LOG")" candidate "rejected candidate is never committed"
+manual_fixture_reset
+COMMIT_STATUS=500
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "rejected commit fails"
+t_expect_eq "$ACTIVE_CALLS" 0 "rejected commit cannot poll toward success"
+for transport in candidate commit; do
+  manual_fixture_reset
+  if [ "$transport" = candidate ]; then CANDIDATE_RC=7; else COMMIT_RC=7; fi
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 1 "$transport transport failure propagates"
+done
+manual_fixture_reset
+GET_RC=1
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "active-policy read failure propagates"
+manual_fixture_reset
+ACTIVE_AFTER=99
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "observer non-convergence fails"
+t_expect_eq "$SLEEPS" 15 "observer wait has a fifteen-second sleep budget"
+t_expect_eq "$ACTIVE_CALLS" 16 "observer polling is bounded including its initial read"
+manual_fixture_reset
+ACTIVE_AFTER=0
+FINAL_READBACK='{"active_config":"improved","policy_source":"manual-custom"}'
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "manual source alone cannot satisfy custom active configuration"
+manual_fixture_reset
+ACTIVE_AFTER=0
+FINAL_READBACK='{"active_config":"custom","policy_source":"manual-custom","plan":{}}'
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "manual observation must clear plan provenance"
+manual_fixture_reset
+ACTIVE_AFTER=0
+jq '.firewall.rules[0].id = "unexpected-rule"' "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "exact effective-rule mismatch still fails before tuple kills"
+t_expect_out "before session kill" "effective readback failure retains its ordering diagnostic"
 
 t_finish
