@@ -2,7 +2,7 @@ id: validation-evidence
 order: "2.4"
 name: "Testing & Validation"
 summary: "Generate a change-board validation report (authorized/unauthorized tests + PCAP) against the policy you have active, then reflect on residual risk."
-estimated_minutes: 6
+estimated_minutes: 7
 validator: us-validation-evidence
 description: >
   After applying the hardened firewall configuration in Lab 2.2 and
@@ -16,6 +16,10 @@ description: >
 nodes:
   - kali-1
   - vendor-jump-1
+  - eng-ws-1
+  - rtac-1
+  - fw-1
+  - historian-1
 tags:
   - validation
   - testing
@@ -38,16 +42,14 @@ steps:
       :::
 
       **Start with the policy banner above this step.** If it shows
-      green ("Hardened reference" or "Your custom policy"), the
-      hardened policy you built earlier is still loaded and you're
-      ready to validate. If it shows amber ("Policy mismatch"),
-      re-apply it via the policy-action buttons below the step -
-      **Apply Hardened** for the reference policy, or **Apply Your
-      Plan** to reload the one you built in Lab 2.2 - before
-      continuing. (You're validating an existing policy here, not
-      authoring a new one.) The validation in the next step runs
-      against whatever policy is active, so make sure it's the one
-      you intend to certify.
+      green **Hardened reference**, you're ready to validate.
+      Otherwise click **Apply Hardened** below the step before continuing.
+
+      **Workshop note:**
+      - Keep your plan as a design artifact. Use **Hardened reference**, not **Apply Your Plan**, for workshop enforcement.
+
+      The validation in the next step runs against whatever policy is active,
+      so confirm the reference policy is selected.
 
       :::hint Optional: cross-check the running policy in containd
       Once the banner is green, you can confirm the running policy from
@@ -56,7 +58,7 @@ steps:
       - **Web UI:** [http://localhost:9080](http://localhost:9080),
         Policy & Rules → Firewall Rules (or Configuration → Running).
         Log in with `containd` / `containd` if the session has expired.
-      - **CLI:** from the `fw-1` terminal, `containd cli` then:
+      - **CLI:** the `fw-1` terminal opens at `containd#`; run:
 
             show running-config
 
@@ -65,7 +67,7 @@ steps:
       removed, default deny on cross-zone.
       :::
 
-      **Time budget:** ~6 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
+      **Time budget:** ~7 minutes (Guided path - one-click report plus reflection. The by-hand Advanced verification hints are optional).
     action:
       type: check
       expect:
@@ -75,6 +77,11 @@ steps:
     title: "Generate the validation report"
     expected_config: hardened
     description: |
+      **Workshop note:**
+      - The report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI. Save the report, PCAP and notes.
+      - Validate Exercise checks operational state only; it may PASS and auto-complete with no report or a FAIL report. Trust the report, not the banner.
+      - The report is a TCP reachability matrix: its DNP3 row is an FC1 read and no row sends a control write, so a PASS or the dnp3-dpi selection does not prove FC5/6 rejection. Protocol-level enforcement evidence is Lab 2.3's re-test: auto-reclose still enabled after the Kali Direct Operate.
+
       A segmentation change ships with *evidence*: proof that authorized
       flows still work, proof that unauthorized flows are blocked, and a
       capture showing only the RTAC reaching field devices. Rather than run
@@ -88,7 +95,8 @@ steps:
       captures PCAP at the firewall, and analyzes which sources reached the
       field zone - the same work an operator does after a change, assembled
       into a change-board-ready document. A green **PASS** means every
-      authorized flow works and every unauthorized flow is blocked.
+      authorized flow connected and every unauthorized flow was blocked at
+      the TCP level; it says nothing about function codes.
 
       **Read the report, not just the verdict:**
 
@@ -98,10 +106,7 @@ steps:
       - The **PCAP source analysis** should show only `10.30.30.20` (the
         RTAC) and `10.30.30.50` (GPS/NTP) reaching the field zone. Any other
         source IP is a leak.
-      - This grades the policy you *actually* have active - if you applied
-        your own plan in Lab 2.2, it certifies *your* policy, not the
-        reference. A FAIL here is the lab telling you your plan left a gap;
-        go back, tighten the rule, and re-run.
+      - A FAIL means enforcement is not demonstrated yet: check Hardened reference is active, fix the ✗ rows, and re-run.
 
       ### Confirm operations at the HMI
 
@@ -126,10 +131,10 @@ steps:
       The report automates this, but the manual method is what you'd do on a
       real appliance. From the **RTAC** terminal, confirm authorized flows:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-          dnp3poll 10.40.40.20:20000 -a 1
-          dnp3poll 10.40.40.21:20000 -a 2
-          dnp3poll 10.40.40.22:20000 -a 3
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
+          dnp3poll -a 3 -t 3s 10.40.40.22:20000
 
       All should return data. Then intra-zone HMI → RTAC, and the RTAC's
       aggregated field-comms view:
@@ -149,22 +154,26 @@ steps:
       :::
 
       :::hint Advanced: run the negative tests by hand
+      Use `-Pn` to skip host discovery across the firewall. A filtered TCP
+      port (with an open-port control under Weak baseline) proves denial;
+      "host seems down" or "0 hosts up" does not.
+
       From **Kali** (`10.10.10.50`, enterprise) - lead with DNP3, the primary
       attack vector from Lab 2.3:
 
-          nmap -p 20000 10.40.40.20 --max-retries 1 -T4
-          dnp3poll 10.40.40.20:20000 -a 1
+          nmap -Pn -p 20000 10.40.40.20 --max-retries 1 -T4
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       From **vendor-jump** (`10.20.20.10`) - the vendor-pivot path (Lab
       2.3-bonus):
 
-          nmap -p 20000 10.40.40.21 --max-retries 1 -T4
-          dnp3poll 10.40.40.21:20000 -a 2
+          nmap -Pn -p 20000 10.40.40.21 --max-retries 1 -T4
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       From **historian** (a single-homed non-RTAC OT host) - the source-pin
       test: only the RTAC may reach field, even from inside OT Ops:
 
-          nmap -p 20000 10.40.40.22 --max-retries 1 -T4
+          nmap -Pn -p 20000 10.40.40.22 --max-retries 1 -T4
 
       All should be filtered / time out. The same L4 source-pin closes Modbus
       too - repeat with port 502 and `mbpoll` for a two-protocol package.
@@ -176,6 +185,8 @@ steps:
       The report captures this automatically; the manual form, from the
       `fw-1` terminal, uses `-i any` + a BPF subnet filter (Docker's `ethN`
       ordering drifts between hosts):
+
+      At `containd#`, type `shell` before these Linux commands.
 
           tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap
 
@@ -192,8 +203,14 @@ steps:
       Beyond the test results + PCAP, a change board wants the policy itself
       and proof it's the one running. From the `fw-1` terminal:
 
-          export config > /data/student-policy.json
+      If still in bash after the capture, type `containd cli` to return
+      to `containd#` before these appliance commands.
+
+          export config
           show audit
+
+      Copy that JSON to your evidence document; the appliance CLI prints JSON
+      only and does not create a file through redirection.
 
       `export config` is the change-board-ready record of the running rule
       set; the recent `config.commit` entries in `show audit` prove the

@@ -32,10 +32,13 @@ steps:
       vendor DMZ on remote-access protocols. This is the lateral
       path the attacker will exploit.
 
-      From Kali (10.10.10.50), scan for remote-access services on
-      the vendor jump box (10.20.20.10):
+      Scan for remote-access services at 10.20.20.10.
+      From **Kali** (10.10.10.50):
 
-          nmap -p 3389,5900 10.20.20.10
+          nmap -Pn -p 3389,5900 10.20.20.10
+
+      `-Pn` skips host discovery across the firewall so you test TCP ports,
+      not whether discovery probes receive a response.
 
       You should see at least one of `3389/tcp` (RDP) or
       `5900/tcp` (VNC) open. The RangerDanger lab's vendor-jump is
@@ -63,11 +66,15 @@ steps:
 
           xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger +clipboard /cert:ignore
 
-      **Option B - VNC** (fallback, no auth required in this lab):
+      **Option B - VNC** (fallback; password `rangerdanger`):
 
           xtightvncviewer 10.20.20.10:5900
 
-      You now have an interactive desktop on the vendor jump host.
+      Native RDP/VNC viewers require a GUI/DISPLAY. From terminal-only Kali use the existing SSH fallback;
+      the browser desktop is available after the vendor startup fix.
+      Do not install a GUI during class.
+
+      With a GUI client, you now have an interactive desktop on the vendor jump host.
       From the vendor's perspective, the connection looks
       legitimate - credentials valid, source IP not yet anomalous,
       and the firewall allows enterprise → vendor on remote-access
@@ -114,23 +121,25 @@ steps:
       then read the RTAC's Modbus tags to confirm the kinetic
       outcome (the RTAC aggregates field-device state and
       OpenDSS electrical results into Modbus registers a vendor
-      host can read):
+      host can read). `-r 1` starts at Modbus reference 1, so mbpoll
+      labels the values from `[1]` (reference = 0-based register
+      address + 1). `-1` polls once and exits.
 
-          mbpoll -a 1 -t 4 -r 1 -c 5 10.30.30.20
+          mbpoll -a 1 -t 4 -r 1 -c 5 -1 10.30.30.20
 
-      Holding register 1 (`recloser_closed`) is now `0` (the fault
-      tripped the recloser), register 2 (`reclose_enabled`) is `0`
-      (your earlier Modbus FC5 write disabled auto-reclose), and
-      register 5 (`recloser_shot_count`) is `1` (the fault was
-      counted as the first shot - but with reclose disabled there
-      will be no shots 2 or 3 to recover from).
+      `[2]` (`recloser_closed`) is now `0` (the fault
+      tripped the recloser) and `[3]` (`reclose_enabled`) is `0`
+      (your earlier Modbus FC5 write disabled auto-reclose). Re-run
+      with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`:
+      the fault was counted as the first shot, but with reclose
+      disabled there will be no shots 2 or 3 to recover from.
 
-          mbpoll -a 1 -t 3 -r 1 -c 6 10.30.30.20
+          mbpoll -a 1 -t 3 -r 1 -c 6 -1 10.30.30.20
 
-      Input register 1 (`downstream_voltage_v × 10`) and register
-      3 (`feeder_current_a × 10`) both read `0` - the loads
+      `[2]` (`downstream_voltage_v × 10`) and `[4]`
+      (`feeder_current_a × 10`) both read `0` - the loads
       downstream of the recloser are unenergized. The substation
-      bus (input register 0) stays energized at the source.
+      bus (`[1]`) stays energized at the source.
 
       :::hint Cyber → state → physics has a ~2-3s lag
       The Modbus writes mutate recloser-sim state immediately,
@@ -170,20 +179,43 @@ steps:
       - *"Hospital and fire station without power"* under critical load
       - **Customer-service tile:** "ALL CUSTOMERS WITHOUT POWER"
 
-      Notice that the **Last command from:** field on the recloser
-      shows the vendor jump host address (`10.20.20.10`) - not the
-      attacker IP (`10.10.10.50`). From the field device's
-      perspective, the command came from a trusted source. This is
-      why perimeter rules at the *RDP* hop matter: by the time the
-      Modbus packet reaches the recloser, it looks legitimate.
+      ### Who sent the write?
+
+      The recloser cannot tell you. Open the **Electrical Detail** tab →
+      **Protection & Device Status** → **Mid-Feeder Recloser (79)**: its
+      **Last Command** row reads `modbus-tcp` - the protocol, not an
+      address. A field device sees a valid Modbus request on TCP 502 and
+      executes it; it records no peer address, so it cannot tell a
+      vendor session from the RTAC. (The One-Line's **Last command
+      from:** line belongs to the feeder breaker, not the recloser.)
+
+      The firewall saw the connection. **Right after the attack**, open
+      the [containd firewall](/containd/) (log in as `containd` /
+      `containd`) and go to **NETWORK → Sessions**. Find the rows with
+      **DST `10.40.40.21`** and **DPORT `502`** - one per `mbpoll` write.
+      Their **SRC** is `10.20.20.10`, the vendor jump host:
+
+          tcp   TIME_WAIT   10.20.20.10   41368   10.40.40.21   502   ...   118s
+
+      There is no `10.10.10.50` row for this write. The attack was
+      laundered through the trusted vendor host, and the firewall
+      attributes it to the vendor zone. This is why perimeter rules at
+      the *RDP* hop matter: by the time the Modbus packet reaches the
+      recloser, it looks legitimate.
+
+      Open **Sessions** before running the write, set the list limit above
+      500 rows, and filter on `10.20.20.10` so the vendor row is visible.
+      These rows expire in about 17 seconds. If they are gone, re-run the
+      first `mbpoll` write above and refresh Sessions.
 
       :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**
       :::
 
       :::decision id=vendor-source-attribution options=ATTACKER_IP,VENDOR_JUMP_IP,RTAC_IP correct=VENDOR_JUMP_IP
-      **What IP shows as the recloser's last-command source?** The
-      attack laundered through the vendor session.
+      **In containd Sessions, which SRC address do the rows to
+      `10.40.40.21:502` show?** The attack laundered through the vendor
+      session.
       :::
     action:
       type: sequence
@@ -220,10 +252,14 @@ steps:
 
   - id: apply-hardened-policy
     title: "Apply hardened policy"
+    expected_config: hardened
     description: |
+      **Workshop note:**
+      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
+
       Apply the hardened firewall configuration with **Apply Hardened**
-      in the **containd NGFW - policy actions** panel below this step, or
-      **Apply Your Plan** if you built a custom policy in Lab 2.2.
+      in the **containd NGFW - policy actions** panel below this step.
 
       The hardened policy closes both links of the kill chain:
 
@@ -247,21 +283,25 @@ steps:
       plan are `vendor-to-ot` (BLOCK or RESTRICT - closes the
       enterprise → vendor → OT pivot) and `non-rtac-to-field`
       (BLOCK - pins the vendor box out of field even if the perimeter
-      rule misses). If either is uncovered above, the matching
-      re-test in the next step may still succeed under "Apply Your
-      Plan" - re-attempt with **Apply Hardened** to compare.
+      rule misses). If either is uncovered above, record that design gap.
+      Keep **Hardened reference** active for the workshop re-test.
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
   - id: re-attempt-the-pivot
     title: "Re-attempt the pivot"
     expected_config: hardened
     node: kali-1
     description: |
+      **Workshop note:**
+      - Execute may show red failure/BLOCKED without advancing. That label is not a packet verdict; it can reject before sending a packet. Run the real protocol retest, inspect healthy device/HMI state and firewall evidence, record the result, then Mark Complete.
+      - A refused/timeout connection without state/evidence is not enough to claim DPI.
+
       From Kali, re-scan and re-attempt the connection:
 
-          nmap -p 3389,5900 10.20.20.10
+          nmap -Pn -p 3389,5900 10.20.20.10
           xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger /cert:ignore
           xtightvncviewer 10.20.20.10:5900
 

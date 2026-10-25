@@ -63,6 +63,7 @@ wait_for_physics_healthy() {
   return 1
 }
 
+# shellcheck disable=SC2329 # Invoked by the EXIT trap; ShellCheck cannot follow the trap string.
 cleanup_physics() {
   local was_paused="$physics_paused"
   unpause_physics
@@ -86,7 +87,11 @@ fi
 # 1. State endpoint exposes the full field-device set.
 state=$(get) || { echo "  cannot reach $sub/state"; exit 1; }
 for d in relay recloser regulator capbank; do
-  echo "$state" | jq -e ".devices.$d" >/dev/null 2>&1 && ok "devices.$d present" || err "devices.$d missing"
+  if echo "$state" | jq -e ".devices.$d" >/dev/null 2>&1; then
+    ok "devices.$d present"
+  else
+    err "devices.$d missing"
+  fi
 done
 
 # Reset the feeder to a clean energized baseline first. Earlier smoke steps
@@ -102,10 +107,16 @@ cmd regulator set_auto
 cmd capbank reset_lockout
 sleep 5  # let the RTAC poll + OpenDSS re-solve the energized state
 state=$(get) || { err "cannot refresh $sub/state after baseline reset"; state='{}'; }
-echo "$state" | jq -e '.physics.stale == false' >/dev/null 2>&1 \
-  && ok "physics is fresh" || err "physics is stale after baseline reset"
-echo "$state" | jq -e '.electrical.converged == true' >/dev/null 2>&1 \
-  && ok "electrical solve converged" || err "electrical solve is not converged"
+if echo "$state" | jq -e '.physics.stale == false' >/dev/null 2>&1; then
+  ok "physics is fresh"
+else
+  err "physics is stale after baseline reset"
+fi
+if echo "$state" | jq -e '.electrical.converged == true' >/dev/null 2>&1; then
+  ok "electrical solve converged"
+else
+  err "electrical solve is not converged"
+fi
 if echo "$state" | jq -e '
   (.electrical.solved_at | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) as $solved_at
   | (now - $solved_at) as $age
@@ -127,8 +138,16 @@ pf_in=$(echo "$s"   | jq -r '.electrical.power_factor')
 cap_in=$(echo "$s"  | jq -r '.devices.capbank.switched_in')
 echo_in=$(echo "$s" | jq -r '.electrical.capbank_switched_in')
 
-[ "$cap_out" = "false" ]                          && ok "manual switch_out holds cap out"          || err "cap stayed in after manual switch_out (cap_out=$cap_out)"
-[ "$cap_in" = "true" ] && [ "$echo_in" = "true" ] && ok "manual switch_in echoes through OpenDSS"  || err "switch_in not reflected (cap_in=$cap_in echo=$echo_in)"
+if [ "$cap_out" = "false" ]; then
+  ok "manual switch_out holds cap out"
+else
+  err "cap stayed in after manual switch_out (cap_out=$cap_out)"
+fi
+if [ "$cap_in" = "true" ] && [ "$echo_in" = "true" ]; then
+  ok "manual switch_in echoes through OpenDSS"
+else
+  err "switch_in not reflected (cap_in=$cap_in echo=$echo_in)"
+fi
 if [ -n "$pf_out" ] && [ -n "$pf_in" ] && awk "BEGIN{exit !($pf_in > $pf_out)}"; then
   ok "switch-in raises power factor ($pf_out -> $pf_in)"
 else

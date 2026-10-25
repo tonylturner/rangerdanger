@@ -113,6 +113,7 @@ services:
     cap_add:
       - NET_ADMIN
     volumes:
+      - ./scripts/vendor-jump-services.sh:/custom-cont-init.d/01-vendor-services.sh:ro
       - ./scripts/set-gateway.sh:/custom-cont-init.d/10-set-gateway.sh:ro
     networks:
       vendor_net:

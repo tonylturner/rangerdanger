@@ -2,7 +2,7 @@ id: segmentation-requirements
 order: "1.3"
 name: "Segmentation Requirements & Policy Design"
 summary: "Define zone-pair communication requirements and compare your design to the hardened configuration."
-estimated_minutes: 12
+estimated_minutes: 10
 validator: us-segmentation-requirements
 description: >
   Using the baseline assessment findings, define what
@@ -21,7 +21,7 @@ steps:
     title: "Translate findings into design requirements"
     expected_config: weak
     description: |
-      **Time budget:** ~12 minutes (Guided path). This is a design and
+      **Time budget:** ~10 minutes (Guided path). This is a design and
       decision lab - no commands to run.
 
       ### Look at the policy that's running today
@@ -67,7 +67,7 @@ steps:
       fraction of zone-pair rows showed "-> would change"?**
       :::
 
-      :::hint Optional: see the Security Level the firewall is being graded against
+      :::hint Optional: see the Security Level target for the firewall
       With the **Purdue Model view** toggled on in [/console](/console),
       hover the **firewall node** - the tooltip shows a `Target SL-3 ·
       MET` (green) or `Target SL-3 · GAP` (red) badge derived from
@@ -199,6 +199,6 @@ steps:
          *Test:* SMB, RDP, and SSH from `10.10.10.0/24` to `10.30.30.0/24` or `10.40.40.0/24` should be denied.
 
       5. **Operations are not broken by the segmentation change.**
-         *Test:* after applying rules, all five critical conduits from Lab 1.2 continue to work.
+         *Test:* A/E autonomous and F/G intra-zone operational dependencies continue; B/C/D insecure maintenance tuples fail under reference in this version. Verify the actual authorized/unauthorized matrix and healthy HMI.
 
-      > **Operational continuity is a hard constraint.** If your segmentation blocks any of the critical conduits you identified earlier, you will break operations.
+      > **Operational continuity is a hard constraint.** Preserve A/E and F/G from Lab 1.2. In this version the hardened reference blocks B/C HTTP8080 and D FUXA1881; engineering/vendor access after hardening uses RTAC SSH/HTTPS management, not encrypted replacements for those editors.

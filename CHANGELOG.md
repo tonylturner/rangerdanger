@@ -12,7 +12,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sealed test reference; `iec104cmd` renders non-finite measurements as
   `null` with invalid quality.
 
-- **EU realism and operator parity (01a14c11, 01a14d90).** Derive
+- **EU realism and operator parity.** Derive
   protection, fault passage and P/Q/PF from solved current/power; grade
   breaker/F2 protection at 400 A / 1 s and 2000 A instantaneous. Put the
   OLTC on the 110 kV winding, regulate to 20.4 kV ±1% with a 30 s delay,
@@ -173,6 +173,164 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read event fields containd never sends, so every row showed a blank
   "→". They now show source and destination address and port, plus the
   protocol, function code and rule.
+
+## [v0.1.36] - 2026-10-25
+
+Full image release using `[rebuild-all]`: all 16 first-party images are
+rebuilt and `latest` moves. Use the normal online setup/refresh or SSD
+bundle workflow, not the repository-update helper alone. The supported
+v0.1.35 → v0.1.36 SSD delta is close to a full set. Frontend source is
+unchanged; remaining application limits and lab guidance are documented
+in [the workshop errata](docs/v0.1.36-hotfix.md).
+
+### Added
+
+- **Workshop errata** at `docs/v0.1.36-hotfix.md`, with reference-policy
+  guidance, device-state enforcement checks and evidence requirements.
+- **Repository-update tools** for content changes that need no new images:
+  `scripts/apply-repo-update.sh` / `.ps1` check cached images and local
+  edits, restart backend/proxy and recreate only `vendor_jump` without
+  downloading or building images. `stage-ssd-repo-update.sh <out-dir> <tag>`
+  stages a tag archive, Git bundle, `SHA256SUMS` and student instructions
+  for archive installs, clones and Windows. These tools remain available
+  but do not install this release's new images.
+- **Embedded UI probes and command oracles.** `scripts/proxy-smoke.sh`
+  checks the containd UI and vendor desktop; the lab command inventory
+  verifies reviewed examples against semantic and device-state oracles.
+
+### Fixed
+
+- **Network Map firewall link** now opens the same-origin `/containd/`
+  route with its assets, rather than the obsolete firewall app path.
+- **Network Map OpenPLC link** now opens `/apps/openplc/` directly instead
+  of a nonexistent workshop lab-instance UI. Both backend link fixes
+  replace the temporary proxy redirects, which have been removed.
+- **Firewall sessions API** now reads containd's `/api/v1/conntrack` bare
+  array and translates its string ports into the existing portal JSON
+  contract, rather than calling a nonexistent sessions endpoint.
+- **Embedded containd UI.** Narrow API-path rewrites preserve containd's
+  runtime API base; PCAP downloads and CLI WebSockets retain their specific
+  rewrites, and root-relative `/icons/*.svg` resolve to containd.
+- **Vendor desktop startup.** The init script is bind-mounted from the
+  checkout and retains nginx's default site so `/apps/vendor-jump/`
+  serves the desktop again.
+- **OpenPLC login redirects** through `/apps/plc/` retain the portal host
+  and port, matching the `/apps/openplc/` route.
+- **Lab 2.2 content.** Stage 1–6 titles keep the unchanged frontend from
+  replacing corrected YAML bodies with stale generated plan steps. The
+  workshop applies Hardened reference; Lab 1.4 remains a design artifact.
+  Scenario headers no longer carry duplicated errata; the Lab 1.4
+  introduction no longer promises plan-driven changes to later exercises.
+  Rule Create/Delete instructions require Commit, and the Advanced track
+  verifies RDP/VNC (3389/5900) after committing. The schema example matches
+  the hardened reference, and export guidance describes copying CLI JSON
+  rather than editing a file the CLI never created.
+- **Lab 2.3 enforcement wording.** The L4 source pin enforces; DPI detects
+  and logs. Keyed answers and the Lab 2.2 DPI link wording distinguish
+  enforcement from visibility. Device-state checks and restore guidance
+  remain explicit; historical training writes can leave Validate at
+  PARTIAL even with every current device-state row passing.
+- **Lab 2.3-bonus attribution.** Use containd NETWORK → Sessions to
+  attribute the vendor connection. Open Sessions before the write, raise
+  the limit above 500 rows and filter `10.20.20.10`; observed rows expire
+  in about 17 seconds, not two minutes. The recloser itself records only
+  `modbus-tcp`, not the peer address.
+- **Lab 2.4 report scope** explicitly describes a TCP reachability matrix,
+  not function-code enforcement proof. Preserve report, PCAP and notes;
+  a green banner alone is not evidence.
+- **Lab commands and baseline evidence.** Corrected `dnp3poll` option
+  ordering, durations and outstation addresses; device-specific `mbpoll`
+  reads; reference-policy checks; and baseline findings. Every required
+  source terminal is available (Lab 2.2 includes RTAC and vendor jump),
+  firewall instructions start at `containd#`, and manual SSH examples use
+  the working account. Run-button `mbpoll` reads poll once (`-1`), register
+  prose uses 1-based labels, and cross-firewall `nmap` examples use `-Pn`
+  so host discovery failures are not mistaken for policy blocks.
+- **SSD archive updates** no longer require `.git`: the repository-update
+  helper explicitly skips only the tracked-file guard for archive installs,
+  retaining image and Compose checks.
+- **Smoke script reliability.** Corrected ShellCheck control-flow notes
+  and trap annotations, removed the retired `bounded_poll` exception,
+  and added a successful proxy-smoke check count.
+
+### Changed
+
+- **Release documentation** now covers new images and standard online/SSD
+  update paths. Removed the temporary README workshop notice and stale
+  claims that Lab 1.4 selections rewrite later labs; the workshop overview
+  also describes reference-only enforcement.
+- **Guided lab time estimates** match the measured walkthrough: 1.2 20,
+  1.3 10, 1.4 12, 2.2 22, 2.3 12, 2.3-bonus 12, 2.4 7 minutes (83 core
+  minutes). Workshop notes no longer imply instructor grading.
+- **CI smoke** drops the obsolete cached-old-image job. Built-image smoke
+  retains the advisory generated-full-plan check (8 authorized passes,
+  11 unauthorized blocks, zero skipped), its cleanup and evidence receipts,
+  plus JSON endpoint guards. Hotfix-branch push triggers remain enabled.
+- **Citation metadata** records version `0.1.36`.
+
+## [v0.1.35] - 2026-10-15
+
+Host-side setup script fixes plus four frontend dependency bumps. The
+frontend image is rebuilt for the new dependencies, and the backend is
+rebuilt from unchanged source because every release does that (its
+version, commit and date are linked into the binary); the other 14
+images are promoted unchanged from v0.1.34. No lab, exercise, topology,
+or firewall policy changes, so a lab installed from v0.1.34 and one
+installed from v0.1.35 behave the same.
+
+### Changed
+
+- **Frontend dependencies.** `marked` 18.0.14 -> 18.1.0 (used only by
+  the exercise PDF export; on-screen lab text renders through
+  `marked-react`'s own `marked` 17.0.6, unchanged), `@radix-ui/react-tooltip`
+  1.2.16 -> 1.4.0, `@radix-ui/react-slot` 1.3.3 -> 1.5.0, and the
+  build-time `postcss` 8.5.28 -> 8.5.29. All 135 markdown blocks in the
+  lab YAMLs lex and render identically under the old and new `marked`.
+
+### Fixed
+
+- **The night-before preflight passes on a laptop that already runs the
+  lab.** `./setup.sh --check-only` and `.\setup.ps1 -CheckOnly` failed
+  on the student's own running lab, because it holds ports 8088, 9080,
+  9443 and 2222. When running containers of the `rangerdanger` Compose
+  project publish all four, the check now passes with "RangerDanger is
+  already installed and running". A lab holding only some of them (for
+  example the firewall is up but the portal on 8088 is not) is reported
+  as partly running, naming the ports held and missing, and fails with
+  the commands to stop the lab and re-run setup. An install on a laptop
+  with the lab up stops and prints the same commands. A port held by
+  anything else still fails both.
+- **`setup.sh` no longer reports ports free when `lsof` is missing.**
+  The port check now connects to each loopback port with bash's
+  `/dev/tcp`, so it needs no extra tool on macOS or Linux; `lsof`, when
+  present, only names the process holding a port. If the probe cannot
+  run, the preflight fails instead of passing.
+- **Offline Windows installs can probe the WSL2 kernel.** The
+  `CONFIG_NFT_QUEUE` probe fell back to an Alpine container that
+  installs nftables from the network, and `setup.ps1` ran it before
+  pulling or loading any image, so an offline laptop reported the
+  kernel as missing when the probe simply could not run. `setup.ps1`
+  now pulls or loads the images first, then probes in a no-network
+  container from the local containd firewall image, installs the lab
+  kernel if needed, and only then starts the stack. Alpine is used only
+  when that image is absent. When no probe can run, the result is
+  "unknown" (`install-wsl-kernel.ps1 -Test` exit 13), never "missing":
+  `-CheckOnly` warns that setup probes after it pulls or loads the
+  images, and an install stops, because with the images present that
+  means Docker itself failed. An SSD staged without the kernel now
+  downloads it for the SSD's `.version`, not for `latest`. `setup.ps1
+  -FromTarballs` also stops when `docker load` fails.
+- **`stage-ssd.ps1` no longer needs Python.** It verified each saved
+  image archive by passing an inline script to `python3 -c`, which
+  failed on Windows twice over: `python3` is usually the Microsoft
+  Store stub, and Windows PowerShell 5.1 strips the double quotes
+  embedded in native-command arguments, so even a real Python got a
+  mangled script. It now reads each archive's `manifest.json` with the
+  `tar.exe` built into Windows 10 and 11 and checks the same things
+  natively: every expected tag present, every first-party tag at the
+  bundle's `.version`.
+- **`setup.ps1` runs under PowerShell 7.** It called `Get-WmiObject`,
+  which PowerShell 7 removed, and stopped before any check ran.
 - **Windows setup and uninstall no longer hang after the WSL2 kernel
   restart.** After `wsl --shutdown`, Docker Desktop (seen on 4.34.3) can
   fail to restart its VM (`running wsl-bootstrap: exit status 1`) and
@@ -187,6 +345,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   re-running setup while that dialog is open fails fast with the same
   guidance. Docker Desktop 4.94 recovers from the restart without the
   dialog; the quickstart troubleshooting list now covers it.
+- **CI image builds no longer fail on Docker Hub's anonymous pull
+  limit.** Smoke and Release build from Docker Hub base images, and
+  anonymous pulls from shared GitHub runners hit `429 Too Many
+  Requests`. Both workflows now log in to Docker Hub when the
+  repository has `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets;
+  forks without them still pull anonymously.
 
 ## [v0.1.34] - 2026-10-08
 
@@ -2941,7 +3105,9 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.34...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.36...HEAD
+[v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
+[v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
 [v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
 [v0.1.32]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.32

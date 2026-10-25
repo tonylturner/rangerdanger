@@ -100,6 +100,22 @@ Test-Path .env                                 # expect: False
   `uninstall-rangerdanger.ps1` reverts the kernel (it restores
   `.wslconfig.bak` / removes our `kernel=` line, then `wsl --shutdown`).
 - Loopback ports `8088 / 9080 / 9443 / 2222` free before setup.
+- Test fresh vendor startup separately on **Docker Desktop NTFS** and
+  **WSL ext4**; neither is covered by static tests. Prefer a WSL
+  Linux-filesystem checkout (`~/rangerdanger`, not `/mnt/c/...`).
+  Both mounted init scripts, `scripts/vendor-jump-services.sh` and
+  `scripts/set-gateway.sh`, need LF endings and executable visibility.
+  In WSL run `file` and `git ls-files --eol` on both (expect no CRLF and
+  `w/lf`), then `chmod +x scripts/vendor-jump-services.sh scripts/set-gateway.sh`
+  and `test -x` on each. `git ls-files -s` should show 100755 for both;
+  `git config --get core.fileMode` is diagnostic only, not a permission fix.
+  See [quickstart troubleshooting](quickstart.md#the-vendor-desktop-returns-502--vendor-services-are-missing)
+  for the in-container LF/executable check. Verify init logs show 01 and
+  10 ran, desktop :3000 and portal :80 work, SSH/RDP/VNC still work,
+  and a second restart is green. A skipped non-executable mount hides
+  the image script and can disable all vendor service setup. If NTFS
+  fails, record that result and require a verified WSL ext4 checkout;
+  do not change global Git settings or claim NTFS support without testing.
 
 ## What still needs real hardware
 

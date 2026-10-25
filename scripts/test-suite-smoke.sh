@@ -37,62 +37,6 @@ if ! response=$(curl -fsS --max-time 900 -X POST "$API/api/workshop/test-suite")
   exit 1
 fi
 
-if ! jq -e '
-  (.total_tests | type == "number") and
-  (.passed | type == "number") and
-  (.failed | type == "number") and
-  (.auto_passed | type == "number") and
-  (.reset_failures | type == "number") and
-  (.scenarios | type == "array") and
-  ([.scenarios[] | (.passed | type == "boolean") and
-                    (.reset_ok | type == "boolean") and
-                    (.steps | type == "array")] | all)
-' <<<"$response" >/dev/null; then
-  err "workshop test-suite returned an invalid response"
-  exit 1
-fi
-
-total=$(jq -r '.total_tests' <<<"$response")
-passed=$(jq -r '.passed' <<<"$response")
-failed=$(jq -r '.failed' <<<"$response")
-auto_passed=$(jq -r '.auto_passed' <<<"$response")
-reset_failures=$(jq -r '.reset_failures' <<<"$response")
-
-if [ "$auto_passed" -ne 18 ]; then
-  err "expected 18 auto-passed steps, got $auto_passed"
-  exit 1
-fi
-if ! jq -e '[.scenarios[] | select(.scenario_id == "firewall-implementation") |
-  [.steps[] | select(.auto_pass != true)] | length] == [5]' <<<"$response" >/dev/null; then
-  err "firewall-implementation must execute exactly 5 steps"
-  exit 1
-fi
-
-while IFS= read -r scenario; do
-  order=$(jq -r '.order // "-"' <<<"$scenario")
-  id=$(jq -r '.scenario_id // "-"' <<<"$scenario")
-  step_count=$(jq -r '.steps | length' <<<"$scenario")
-  executed=$(jq -r '[.steps[] | select(.auto_pass != true)] | length' <<<"$scenario")
-  reset_ok=$(jq -r '.reset_ok' <<<"$scenario")
-  reset_detail=$(jq -r '(.reset_detail // "") | gsub("[\\r\\n]+"; " ")' <<<"$scenario")
-  reset_suffix="${reset_detail:+ $reset_detail}"
-  if [ "$(jq -r '.passed' <<<"$scenario")" = "true" ]; then
-    mark="✓"
-  else
-    mark="✗"
-  fi
-  printf '  %s %s %s: %s steps, %s executed, reset_ok=%s%s\n' \
-    "$mark" "$order" "$id" "$step_count" "$executed" "$reset_ok" "$reset_suffix"
-
-  jq -r '.steps[] | select(.passed == false) |
-    ((.step_title // "(untitled)") | gsub("[\\r\\n]+"; " ")) as $title |
-    ((.detail // "(no detail)") | gsub("[\\r\\n]+"; " ")) as $detail |
-    "  ✗ \($title): \($detail)"' \
-    <<<"$scenario"
-done < <(jq -c '.scenarios[]' <<<"$response")
-
-note "summary"
-echo "  passed: $passed / $total ($auto_passed auto-passed), reset failures: $reset_failures"
-if [ "$failed" -gt 0 ] || [ "$reset_failures" -gt 0 ]; then
-  exit 1
-fi
+# Independently reconcile every row and all totals against the mounted YAML.
+# Manual and decision steps are reported separately, never called execution.
+python3 scripts/lib/suite-accounting.py <<<"$response"

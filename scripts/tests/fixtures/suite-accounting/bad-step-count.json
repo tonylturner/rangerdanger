@@ -1,0 +1,28 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "example",
+      "passed": true,
+      "reset_ok": true,
+      "steps": [
+        {
+          "step_index": 0,
+          "step_title": "Execute a check",
+          "passed": true,
+          "auto_pass": false
+        },
+        {
+          "step_index": 1,
+          "step_title": "Record evidence",
+          "passed": true,
+          "auto_pass": true
+        }
+      ]
+    }
+  ],
+  "total_tests": 3,
+  "passed": 3,
+  "failed": 0,
+  "auto_passed": 2,
+  "reset_failures": 0
+}

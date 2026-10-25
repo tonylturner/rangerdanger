@@ -9,14 +9,22 @@
 #
 # Usage:
 #   ./scripts/smoke-test.sh           # full: build, up, test, tear down
-#   ./scripts/smoke-test.sh --keep    # leave the lab running afterwards
+#   ./scripts/smoke-test.sh --keep    # leave the stack running afterwards
+#   ./scripts/smoke-test.sh --existing-stack # checks only; no lifecycle/DB changes
 #
 # Exit 0 = pass, non-zero = fail. Prints what failed.
 
 set -uo pipefail
 
 KEEP=0
-[ "${1:-}" = "--keep" ] && KEEP=1
+EXISTING_STACK=0
+for arg in "$@"; do
+  case "$arg" in
+    --keep) KEEP=1 ;;
+    --existing-stack) EXISTING_STACK=1 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 cd "$ROOT_DIR" || exit 1
@@ -46,7 +54,9 @@ err()  { printf '  ✗ %s\n' "$1"; fail=1; }
 WORKDIR=$(mktemp -d)
 
 cleanup() {
-  if [ "$KEEP" = "0" ]; then
+  if [ "$EXISTING_STACK" = "1" ]; then
+    note "existing stack left running; database preserved"
+  elif [ "$KEEP" = "0" ]; then
     note "tearing down"
     ./scripts/dev-down.sh >/dev/null 2>&1 || err "teardown left resources behind (run ./scripts/dev-down.sh)"
   else
@@ -72,6 +82,8 @@ for f in lab-definitions/packages/*/compose.source.yml lab-definitions/packages/
   if compose_config rangerdanger "$f"; then ok "$f"; else err "$f"; fi
 done
 
+prepare_stack() {
+  [ "$EXISTING_STACK" = "1" ] && return 0
 # The backend bind-mounts this database. Stop it before unlinking the file so
 # it cannot keep using a stale SQLite handle; the bring-up below starts it on
 # the clean database and runs migrations.
@@ -95,6 +107,8 @@ else
   err "dev-up failed; see /tmp/smoke-up.log"
   exit 1
 fi
+}
+prepare_stack
 
 # --- range -----------------------------------------------------------------
 # Every assertion below is about the US range.

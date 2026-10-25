@@ -2,16 +2,13 @@ id: remediation-planning
 order: "1.4"
 name: "Remediation Planning Under Constraint"
 summary: "Choose what to fix first. A finite labor budget forces tradeoffs between firewall changes, protocol controls, and architecture work."
-estimated_minutes: 18
+estimated_minutes: 12
 validator: us-remediation-planning
 description: >
-  You have findings from the baseline assessment but not unlimited time,
-  people, or political capital. Pick which remediations to execute this
-  quarter - knowing some attack paths stay open because you can't fix
-  everything at once. Your choices carry forward: skip vendor-access
-  restriction and the later vendor-compromise attack stays easier; skip
-  protocol-aware filtering and the Modbus/DNP3 abuse labs stay easier.
-  Your plan has consequences.
+  You have findings from the baseline assessment but not unlimited time, people,
+  or political capital. Pick which remediations to execute this quarter - knowing
+  some attack paths stay open because you can't fix everything at once.
+  Your plan guides design review; workshop enforcement uses the reference policy.
 nodes: []
 tags:
   - planning
@@ -46,7 +43,7 @@ steps:
 
       Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
 
-      **Time budget:** ~18 minutes (Guided path).
+      **Time budget:** ~12 minutes (Guided path).
 
   - id: understand-the-team-budget
     title: "Understand the team budget"
@@ -81,7 +78,7 @@ steps:
 
   - id: choose-your-remediation-plan
     title: "Choose your remediation plan"
-    description: >
+    description: |
       Select the actions you will execute this quarter. The
       total effort must fit inside 500 hours AND each role's
       individual capacity. You will not be able to select
@@ -99,6 +96,10 @@ steps:
       When you are done, review the Remaining hours and
       per-role utilization. If any role is red, remove an
       action or choose a lighter one.
+
+      **Workshop note:**
+      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when your plan is feasible, then record your reflection.
+      - Keep your plan as a design artifact; the later enforcement labs use the reference policy.
     action:
       type: decision
 

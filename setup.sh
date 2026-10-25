@@ -280,45 +280,96 @@ else
     warn "Could not determine memory — verify manually with 'free -g' or Docker Desktop → Resources."
 fi
 
-# Required host ports — show what's holding any conflict so the user
-# doesn't have to dig with lsof themselves. A port published by this
-# install's own containers (a re-run, or the pre-split stack that the
-# migration below replaces) is not a conflict.
-port_held_by_rangerdanger() { # <port>
+# ─── required host ports ────────────────────────────────────────────
+# Probe each port by connecting to it with bash's /dev/tcp (no lsof, nc or
+# ss needed; works in macOS bash 3.2 and Linux bash). Sets PORT_STATE to
+# free (connection refused), busy (the connect succeeded, or a listener that
+# is not accepting let it time out or reset it), or unknown (the probe itself
+# could not run, e.g. a bash built without /dev/tcp; PORT_ERR has bash's
+# message). LC_ALL=C keeps those messages unlocalized.
+probe_port() {
+    local out receipt probe watchdog rc=0
+    PORT_ERR=""
+    receipt=$(mktemp)
+    LC_ALL=C bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1"' probe "$1" 2>"$receipt" &
+    probe=$!
+    ( sleep 3; kill "$probe" 2>/dev/null ) &
+    watchdog=$!
+    wait "$probe" 2>/dev/null || rc=$?
+    kill "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
+    out=$(cat "$receipt")
+    rm -f "$receipt"
+    if [ "$rc" -eq 0 ] || [ "$rc" -eq 143 ]; then
+        PORT_STATE=busy
+        return
+    fi
+    case "$out" in
+        *"Connection refused"*) PORT_STATE=free ;;
+        *"timed out"*|*"Connection reset"*) PORT_STATE=busy ;;
+        *) PORT_STATE=unknown; PORT_ERR=${out##*: } ;;
+    esac
+}
+
+# Host ports published by running containers of the installed lab: Compose
+# project "rangerdanger" (docker-compose.release.yml and docker-compose.yml
+# both set `name: rangerdanger`). A busy required port in this set is the
+# student's own running lab, not a conflict.
+lab_held_ports() {
     local project
     for project in "$RANGE_PROJECT" "$PLATFORM_PROJECT"; do
-        if [ -n "$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "publish=$1")" ]; then
-            return 0
-        fi
+    docker ps --filter "label=com.docker.compose.project=$project" --format '{{.Ports}}' 2>/dev/null \
+        | tr ',' '\n' | sed -n 's/.*:\([0-9][0-9]*\)->.*/\1/p' | sort -u | tr '\n' ' '
     done
-    return 1
 }
+
+# An existing or partly running install may migrate/restart. Only foreign
+# listeners or an unknown probe fail preflight; lsof is diagnostic only.
 PORTS_REQUIRED="8088 9080 9443 2222"
-PORTS_BUSY=""
-PORTS_OURS=""
+PORTS_FREE=""
+PORTS_LAB=""
+PORTS_FOREIGN=""
+PORTS_UNKNOWN=""
 PORT_DETAILS=""
+LAB_HELD=" $(lab_held_ports) " || LAB_HELD=" "
 for port in $PORTS_REQUIRED; do
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-        if port_held_by_rangerdanger "$port"; then
-            PORTS_OURS="$PORTS_OURS $port"
-            continue
-        fi
-        PORTS_BUSY="$PORTS_BUSY $port"
-        # Pull the first matching process line for the diagnostic message.
-        proc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, "pid="$2}')
-        PORT_DETAILS="$PORT_DETAILS\n    $port: $proc"
-    fi
+    probe_port "$port"
+    case "$PORT_STATE" in
+        free) PORTS_FREE="$PORTS_FREE $port" ;;
+        unknown) PORTS_UNKNOWN="$PORTS_UNKNOWN $port" ;;
+        busy)
+            case "$LAB_HELD" in
+                *" $port "*) PORTS_LAB="$PORTS_LAB $port" ;;
+                *)
+                    PORTS_FOREIGN="$PORTS_FOREIGN $port"
+                    proc=""
+                    if command -v lsof >/dev/null 2>&1; then
+                        proc=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, "pid="$2}') || proc=""
+                    fi
+                    PORT_DETAILS="$PORT_DETAILS
+    $port: ${proc:-held by a process this check cannot name}"
+                    ;;
+            esac
+            ;;
+    esac
 done
-if [ -n "$PORTS_BUSY" ]; then
-    die "Required loopback ports already in use:$PORTS_BUSY$(printf '%b' "$PORT_DETAILS")
+if [ -n "$PORTS_FOREIGN" ]; then
+    lab_note=""
+    [ -z "$PORTS_LAB" ] || lab_note="
+  (Ports$PORTS_LAB are held by your running RangerDanger lab; that is fine.)"
+    die "Required loopback ports already in use:$PORTS_FOREIGN$PORT_DETAILS$lab_note
   Stop whatever is bound to them, then re-run. (kill the PID above, or
   bring down a competing dev stack.)"
 fi
-if [ -n "$PORTS_OURS" ]; then
-    say "Loopback ports 8088, 9080, 9443, 2222 are free or held by this RangerDanger install:$PORTS_OURS"
-else
-    say "Loopback ports 8088, 9080, 9443, 2222 are free"
+if [ -n "$PORTS_UNKNOWN" ]; then
+    die "Could not test loopback ports:$PORTS_UNKNOWN (bash /dev/tcp connect failed: $PORT_ERR).
+  This check never reports a port free without a working probe. Check by
+  hand what listens on them, e.g. 'lsof -nP -iTCP -sTCP:LISTEN' or 'ss -ltn'."
 fi
+if [ -n "$PORTS_LAB" ]; then
+    say "Ports held by this RangerDanger install:$PORTS_LAB (rerun will restart the range)"
+fi
+[ -z "$PORTS_FREE" ] || say "Free loopback ports:$PORTS_FREE"
 
 # ─── check-only short-circuit ───────────────────────────────────────
 if [ "$CHECK_ONLY" -eq 1 ]; then

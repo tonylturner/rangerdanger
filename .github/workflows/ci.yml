@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, iec104]
+    branches: [main, iec104, hotfix/v0.1.36-rc.1]
   pull_request:
     branches: [main, iec104]
 
@@ -115,6 +115,8 @@ jobs:
           python-version: "3.12"
       - name: Check release image input coverage
         run: python3 scripts/check_release_inputs.py
+      - name: Install YAML test dependency
+        run: python3 -m pip install pyyaml
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -t .
 

@@ -8,12 +8,13 @@ abstract: >-
   electric distribution substation — multi-zone networks, field
   devices speaking Modbus and DNP3, a multi-homed supervisory
   controller, and a real DPI-capable firewall (containd) at the
-  edge. Students work through nine guided exercises covering
+  edge. Students work through seven guided labs covering
   baseline traffic analysis, segmentation requirements, remediation
-  planning under labor budget, hands-on firewall implementation,
-  three live attacks against a weak baseline, a bonus
-  capacitor-bank-switching attack, and post-change validation
-  with PCAP evidence collection.
+  planning under a labor budget, hands-on firewall implementation,
+  validation of the hardened reference, and post-change validation
+  with PCAP evidence collection. The optional 2.3-bonus lab demonstrates
+  an enterprise-to-vendor-to-field pivot using RDP/VNC, showing both
+  the perimeter rule and defense-in-depth.
 type: software
 authors:
   - family-names: Turner
@@ -40,6 +41,6 @@ preferred-citation:
     - family-names: Turner
       given-names: Tony
       affiliation: DefendICS
-  version: "0.1.0"
+  version: "0.1.36"
   year: 2026
   url: "https://github.com/tonylturner/rangerdanger"
