@@ -31,7 +31,8 @@ SVC="$(dirname "$HERE")"
 ROOT="$(git -C "$SVC" rev-parse --show-toplevel)"
 PREFIX="${RD_CHECK_PREFIX:-rd-iec104-check-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')}"
 export RD_CHECK_PREFIX="$PREFIX"
-export RD_CHECK_OWNER="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+RD_CHECK_OWNER="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+export RD_CHECK_OWNER
 docker() { python3 "$HERE/legacy_docker.py" "$@"; }
 OUT="${1:-$ROOT/build/$PREFIX}"
 
