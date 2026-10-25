@@ -1,15 +1,25 @@
-Labs 1.3 and 1.4 record your design verdicts and remediation plan for later reflection. **The plan is advisory: it does not apply a firewall policy or rewrite later labs from your selections.** Lab 2.2 uses fixed hardened-reference guidance, and Lab 2.4 compares your recorded intent with collected evidence.
+Labs 1.3 and 1.4 record design verdicts and action selections. **Apply Your Plan** sends those action IDs, the package ID and revision to the backend. The backend compiles one policy, rule table and expected TCP matrix. A saved selection alone is not running state.
 
-### Recorded Intent Is Not Running State
+### Action kinds and deferred exposure
 
-`:::decision` records an answer in browser storage. `:::findings-panel` displays earlier answers. `:::plan-coverage` compares selected actions with requirements; it is a design-review aid, not a measurement of the running firewall.
+Enforceable actions change L4 reachability. These are `restrict-enterprise-to-vendor`, `block-enterprise-to-ot`, `block-enterprise-to-field`, `restrict-vendor-to-ot`, `block-vendor-to-field` and `pin-rtac-to-field`.
 
-A selected action does not establish that a defense is active. **The L4 source pin enforces; DPI detects and logs.** Use the lab's positive and negative checks and device-state evidence to verify the deployed result.
+Detection-only actions are `modbus-dpi`, `dnp3-dpi` and `improve-logging`. They change no TCP verdict. **The L4 source pin enforces; DPI detects and logs.** All other actions are planning-only. They emit no firewall change and deploy no sensor or broker.
 
-### Applying a Policy
+An empty, planning-only or partial plan is valid. Budget overrun is a warning only. A deferred enforceable action retains its Weak exposure. Required RTAC, HMI and NTP operations remain in every plan. The full enforceable and detection selection equals Hardened.
 
-Use **Apply Hardened** on the Guided track. On the Advanced track, author and **Commit** a policy in containd and verify the running rules. Do not apply a generated Lab 1.4 plan as the workshop reference.
+### From selections to running state
 
-### Resetting State
+`:::decision` records an answer. `:::findings-panel` displays earlier answers. `:::plan-coverage` compares selections with requirements; it does not probe the firewall. The implementation rule table and tests come from the backend compiler, not the coverage panel.
 
-Student records are scoped to the package and curriculum revision in browser storage. **Reset Progress** clears the current exercise's completed steps, notes and command log. It does not erase other exercises' decisions or the saved remediation plan. Resetting the lab environment restores simulator and firewall state, not browser-side student records.
+Apply Your Plan imports the compiled configuration and records package revision, action IDs and policy hash. Keep that provenance beside the compiled config export; the JSON config alone does not embed it. A named-policy apply or running-hash change clears plan provenance. Manual and named policies are judged against Hardened.
+
+Lab 2.3 uses the applied plan's expected results. Deferring `block-enterprise-to-field` leaves the Kali command path open. In the bonus lab, `restrict-enterprise-to-vendor` owns RDP/VNC and `block-vendor-to-field` owns the field hop. Test each link independently, then restore normal operations for every plan.
+
+### Two report results
+
+Lab 2.4 tests all 21 TCP tuples. Plan proof checks this plan with 0 skipped and a stable plan hash. Hardened acceptance requires authorized 8/8 and unauthorized denied 13/13, 0 skipped, capture and stable hash. Confirm a healthy HMI separately. A partial plan can pass plan proof while showing prevention gaps against Hardened. Neither result proves command authorization on an allowed session.
+
+### Reset boundaries
+
+Student records are scoped to package and revision. Reset Progress clears the current exercise's completed steps, notes and command log, not other exercises' decisions or the saved plan. Reset Lab restores simulator and Weak firewall state, not browser records. Reapply the intended plan and collect a new evidence window after reset.

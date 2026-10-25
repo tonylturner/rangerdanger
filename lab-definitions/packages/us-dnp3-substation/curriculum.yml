@@ -37,14 +37,16 @@ requirements:
         - pin-rtac-to-field
         - improve-logging
   unauth-modbus-writes:
-    label: Unauthorized Modbus writes / DNP3 Direct Operate
+    label: Foreign-source Modbus writes / DNP3 Direct Operate
     impl:
       BLOCK:
-        - modbus-dpi
-        - dnp3-dpi
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - pin-rtac-to-field
       BLOCK and LOG:
-        - modbus-dpi
-        - dnp3-dpi
+        - block-enterprise-to-field
+        - block-vendor-to-field
+        - pin-rtac-to-field
         - improve-logging
 readiness:
   - id: ot-eng-availability
@@ -356,19 +358,19 @@ impact:
   positive-validation:
     defends:
       - validation-evidence
-    note: Pre-planned validation testing - produces the evidence package for Lab 2.4
+    note: Planning-only test preparation. Run Lab 2.4 to collect the evidence package.
   ids-deployment:
     defends:
       - validation-evidence
-    note: IDS sensors with ICS rule packs - adds detection alongside the firewall's prevent layer; the alert chain becomes part of the Lab 2.4 evidence package
+    note: Planning-only sensor work. Selecting it deploys no IDS and changes no firewall verdict.
   ot-asset-inventory:
     defends:
       - validation-evidence
-    note: OT asset inventory + baseline - anchors the Lab 2.4 change-board package on a known-good device list; without it, post-change drift goes undetected
+    note: Planning-only inventory work. Selecting it creates no inventory and changes no firewall verdict.
   vendor-zta-broker:
     defends:
       - vendor-rdp-compromise
-    note: ZTNA/PAM broker for vendor access - closes more of the Lab 2.3-bonus kill chain than restrict-vendor-to-ot alone (no always-on path, identity-bound sessions, full audit)
+    note: Planning-only ZTNA/PAM review. Selecting it deploys no broker and changes no pivot result.
 groups:
   block-enterprise-to-field:
     title: Block enterprise → field direct access
@@ -404,7 +406,7 @@ groups:
     effect: logging
   tighten-firewall-objects:
     title: Tighten firewall object hygiene
-    description: Replace broad /24 matches with /32 host objects for RTAC and GPS. Name and document each rule.
+    description: Planning-only object review. Required RTAC and GPS pins already exist; this action changes no rule.
     effect: restricts
   positive-validation:
     title: Post-change positive/negative validation
@@ -416,89 +418,130 @@ groups:
     effect: conceptual
 phases:
   rules: |-
-    **Workshop note:**
-    - **Apply Your Plan** compiles and applies your selected actions. Deferred controls leave their Weak exposures open.
-    - Labs judge an applied plan against its own TCP expectations and show Hardened acceptance separately. A green banner is not enforcement evidence.
+    Review the compiled rules for this plan. Required rules stay in every plan.
+    Selected enforceable actions narrow their paths. Deferred rules retain the
+    same Weak exposures. Detection-only actions change no TCP verdict.
+    The L4 source pin enforces; DPI detects and logs.
 
     :::guided
-    Click **Apply Your Plan** in the **containd NGFW - policy actions** panel,
-    or **Apply Hardened** for the full reference. Confirm the compiled rules in containd's web UI or with
-    `show running-config` at `containd#`.
+    Click **Apply Your Plan**, or **Apply Hardened** for the reference.
+    An empty or planning-only plan is valid. It leaves Weak exposures open.
+    Inspect the running rules, not just the policy banner. Execute Step checks
+    the active policy without replacing it.
     :::
 
     :::technical
-    **Close the remote-access hole, commit, then prove it.** The weak
-    `enterprise-to-vendor` rule allows RDP 3389 and VNC 5900. Replace it
-    with TCP 22, 80, 443 only. **Create rule** and **Delete** save the
-    running config but do not reload the firewall. After the last edit,
-    run `commit` at `containd#` or **Commit** on the **Configuration** page.
-    Then run `nmap -Pn -p 3389,5900 ${ip:vendor-jump-1}` from Kali.
-    Both ports must be `filtered`; otherwise fix the rule and commit again.
+    For a plan, use the compiled rule order without adding broad allows.
+    For manual work, use Hardened as the judging target. With
+    `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+    access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
+    remain reachable. **Create rule** and **Delete** do not reload the firewall.
+    Run `commit` at `containd#` or **Commit** on the **Configuration** page.
+    After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
+    For the manual Hardened target, both ports must be `filtered`; if not,
+    fix the rule and commit again. A plan uses its compiled verdict instead.
     :::
 
-    ### Your compiled plan
-
-    {{noPlan}}
-    {{ruleTable}}
-
-    This table and export come from the backend compiler. Applying them records
-    the package revision, selected actions and running firewall hash.
-    The L4 source pin enforces; DPI detects and logs.
-    RTAC rules must be source-pinned to `${ip:rtac-1}/32`, never a broad
-    OT Ops subnet. Confirm all six required reference conduits in containd.
+    Keep the RTAC source `10.30.30.20/32` on its required field rules:
+    TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123
+    and HMI operations. These operational paths cannot be deferred.
 
     :::hint Policy evidence at the containd CLI
     At `containd#`, `export config` prints JSON; it does not create a file:
 
         export config
 
-    Copy the output into your evidence. The CLI JSON-file edit/import exercise
-    is deferred; do not use shell redirection or edit an assumed export file.
-    This non-executable schema illustration uses the shipped reference shape:
+    Copy the output into your evidence. Do not use shell redirection.
+    This reference example includes detection; it is not the whole policy:
 
         {
           "id": "rtac-to-field-modbus",
-          "sourceZones": ["${zone:ot_ops_net}"],
-          "destZones": ["${zone:field_net}"],
-          "sources": ["${ip:rtac-1}/32"],
+          "sourceZones": ["lan1"],
+          "destZones": ["lan2"],
+          "sources": ["10.30.30.20/32"],
           "protocols": [{"name": "tcp", "port": "502"}],
           "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
           "action": "ALLOW",
           "log": true
         }
     :::
+
+    Keep the package revision, action IDs and policy hash with the compiled
+    export. The config JSON alone does not carry that provenance.
+
+    ### Compiled rules
+
+    {{noPlan}}
+    {{ruleTable}}
   positive: |-
-    Verify the applied plan and compare its outcomes with Hardened acceptance.
-    From the RTAC terminal, these supported reads should return data:
+    Verify operations for every plan. From the RTAC terminal, run:
 
-        mbpoll -a 1 -r 1 -c 4 -1 -t 0 ${ip:relay-1}
-        dnp3poll -a 1 -t 3s ${ip:relay-1}:20000
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
-    Check RTAC `device_comms` for healthy field devices and open the HMI.
-    The Lab 2.4 report checks all 21 TCP tuples with 0 skipped. Plan proof
-    compares observed results with the applied plan; Hardened acceptance requires
-    authorized 8/8 and unauthorized denied 13/13, plus capture and stable hash.
-    A partial plan can pass plan proof while leaving prevention gaps.
+    Both should return data. Check field `device_comms` with:
 
-    ### Operational checks
+        curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
+
+    Open the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose
+    on and energized loads. Check GPS NTP separately; the proof matrix is TCP.
+    All eight authorized TCP rows must remain reachable for every plan.
+    Bridged rows do not cross the firewall and do not prove a firewall rule.
+    Lab 2.4 separates plan proof from Hardened acceptance: 8/8 authorized and
+    13/13 unauthorized denied, 0 skipped, stable hash, capture and healthy HMI.
+
+    From an OT Ops terminal, check the intra-zone HMI service:
+
+        curl -sf http://10.30.30.10:1881 --connect-timeout 3
+
+    This check must work for every plan. It is not routed firewall proof.
+
+    ### Compiled expectations
 
     {{tests}}
   negative: |-
-    **Workshop note:**
-    - Preserve both report results, 0 skipped, a stable policy hash, capture evidence and healthy HMI.
+    Test the expected outcomes for the applied plan, not its label.
+    Run all 13 unauthorized TCP rows from their named sources in Lab 2.4.
+    A deny verdict requires a connection timeout. Connection refused means
+    reached (allow). Tool or container errors are skipped evidence and fail proof.
 
-    Run the compiled TCP matrix from its named sources. A selected closure
-    should time out; a deferred exposure remains reachable. Compare every
-    observation with both Plan and Hardened verdicts. Check that the HMI
-    remains healthy; a banner alone is not enforcement evidence.
+    | Path | Owning action | Selected / deferred |
+    |---|---|---|
+    | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+    | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
+    | Enterprise→field | `block-enterprise-to-field` | deny / allow |
+    | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
+    | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
+    | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
+
+    A deferred exposure is a prevention gap against Hardened, not a failed
+    plan proof if it matches this plan. Do not change policy just to hide the gap.
+    Preserve timestamps and the running hash. `show audit` lists `config.commit` evidence,
+    not a per-flow verdict. Keep capture and HMI evidence with both results.
+
+    :::hint Run the sampled protocol checks from their real sources
+    From Kali, test the enterprise-to-field action:
+
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
+
+    From eng-ws, test the vendor-to-field action:
+
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23
+
+    From vendor-jump, test that same action independently:
+
+        dnp3poll -a 1 -t 3s 10.40.40.20:20000
+        mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
+
+    Selected means timeout; deferred means reachable. These sampled commands
+    do not replace the full report matrix. Execute Step checks the running
+    policy. Preserve the observation and the report verdict.
+    :::
+
+    ### Compiled expectations
 
     {{tests}}
-
-    For administrative confirmation run `show audit` at `containd#` and
-    look for recent `config.commit` entries. These establish which policy
-    was committed, not per-flow deny verdicts. Preserve TCP results, HMI
-    observations and timestamps. If a denied probe succeeds, fix the rule,
-    commit again, and repeat the check.
 tests:
   - kind: positive
     text: |-
