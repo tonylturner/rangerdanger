@@ -127,6 +127,9 @@ function Remove-ImageList($list) {
 }
 
 $RootDir       = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+. "$RootDir/scripts/lib/windows-root.ps1"
+try { $DaemonRoot = ConvertTo-DesktopRoot $RootDir }
+catch { Warn $_; exit 3 }
 $EnvFile       = Join-Path $RootDir ".env"
 $KernelScript  = Join-Path $RootDir "scripts\install-wsl-kernel.ps1"
 $DevDown       = Join-Path $RootDir "scripts\dev-down.ps1"
@@ -173,7 +176,7 @@ foreach ($f in Get-ChildItem -Path (Join-Path $RootDir 'lab-definitions\packages
 }
 $composeImages = @()
 $savedRoot = $env:RANGERDANGER_ROOT
-$env:RANGERDANGER_ROOT = $RootDir
+$env:RANGERDANGER_ROOT = $DaemonRoot
 try {
     foreach ($m in $sourceModels) {
         $composeImages += @(& {
