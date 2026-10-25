@@ -32,6 +32,10 @@ jobs:
         run: actionlint .github/workflows/*.yml
       - name: Lint tracked shell scripts
         run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning
+      - name: Check base image pins
+        run: |
+          bash scripts/check-image-pins.sh
+          python3 -m unittest scripts.tests.test_check_image_pins
 
   eu-gates:
     name: EU gates (offline)
