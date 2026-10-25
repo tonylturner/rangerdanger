@@ -174,6 +174,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "→". They now show source and destination address and port, plus the
   protocol, function code and rule.
 
+### Security
+
+- **Frontend toolchain advisories cleared.** Vite and Vitest move to
+  patched releases and Tailwind CSS moves from 3 to 4, which removes the
+  vulnerable build-time dependency chain; `npm audit` now reports zero
+  findings. Direct dependencies are pinned to exact versions. None of
+  the advisories reached the production bundle, and the UI looks the
+  same.
+
 ## [v0.1.36] - 2026-10-25
 
 Full image release using `[rebuild-all]`: all 16 first-party images are
