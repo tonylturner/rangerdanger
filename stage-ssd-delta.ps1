@@ -67,6 +67,8 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
+. "$PSScriptRoot/scripts/lib/release-membership.ps1"
+. "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
 
 # Binfmt is included in arm64 deltas so students applying deltas without
 # internet still have qemu-x86_64 for the amd64-only OpenPLC image.
@@ -114,7 +116,12 @@ $allImages = New-Object System.Collections.Generic.List[string]
 $composeStatus = 0
 try {
     $env:VERSION = $New
-    $env:RANGERDANGER_ROOT = ConvertTo-DesktopRoot $RootDir
+    # Unlike setup.ps1, staging also runs under pwsh on macOS/Linux.
+    # Use the same Windows host discriminator as Assert-DesktopWsl2,
+    # without requiring a daemon probe just to interpolate Compose.
+    $env:RANGERDANGER_ROOT = if ($env:OS -eq 'Windows_NT') {
+        ConvertTo-DesktopRoot $RootDir
+    } else { $RootDir }
     foreach ($releaseFile in $releaseFiles) {
         $run = Invoke-DockerBounded @('compose', '--project-directory', $RootDir,
             '-f', $releaseFile, 'config', '--images') 30
@@ -140,12 +147,7 @@ $allImages = @($allImages | Sort-Object -Unique)
 if (-not $allImages) { Die "Could not enumerate images from the release models" }
 
 function Get-ImageRepository($reference) {
-    $base = ($reference -split '@', 2)[0]
-    $lastComponent = ($base -split '/')[-1]
-    if ($lastComponent.Contains(':')) {
-        $base = $base.Substring(0, $base.LastIndexOf(':'))
-    }
-    return $base
+    Get-ReleaseRepository $reference
 }
 
 $ownerRepo = if ($env:GH_OWNER_REPO) { $env:GH_OWNER_REPO } else { "tonylturner/rangerdanger" }
@@ -154,35 +156,17 @@ New-Item -ItemType Directory -Path $membershipDir | Out-Null
 try {
     $sinceRecordPath = Join-Path $membershipDir "since.json"
     $newRecordPath = Join-Path $membershipDir "new.json"
-    $composeImagesPath = Join-Path $membershipDir "compose-images.txt"
     foreach ($release in @(
         @{ Tag = $Since; Path = $sinceRecordPath },
         @{ Tag = $New; Path = $newRecordPath }
     )) {
         $recordUrl = "https://github.com/$ownerRepo/releases/download/$([uri]::EscapeDataString($release.Tag))/release-images.json"
-        Invoke-WebRequest -Uri $recordUrl -OutFile $release.Path -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri $recordUrl -OutFile $release.Path -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
     }
-    [System.IO.File]::WriteAllLines($composeImagesPath, $allImages)
-    $membershipArgs = @(
-        "delta-candidates",
-        "--since-record", $sinceRecordPath,
-        "--new-record", $newRecordPath,
-        "--since", $Since,
-        "--new", $New,
-        "--compose-images", $composeImagesPath,
-        "--format", "json"
-    )
-    if ($IncludeUpstream -or $All) { $membershipArgs += "--include-upstream" }
-    $membershipOutput = & python3 (Join-Path $RootDir "scripts/release_image_plan.py") @membershipArgs
-    $membershipStatus = $LASTEXITCODE
-    if ($membershipStatus -ne 0) {
-        Die "Release records and Compose image union disagree or lack package membership."
-    }
-    try {
-        $candidateRows = @(($membershipOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop)
-    } catch {
-        Die "Could not parse validated release membership from release_image_plan.py: $_"
-    }
+    $candidateRows = @(Get-DeltaImageCandidates `
+        -PreviousJson (Get-Content -LiteralPath $sinceRecordPath -Raw -Encoding UTF8) `
+        -NewJson (Get-Content -LiteralPath $newRecordPath -Raw -Encoding UTF8) `
+        -ComposeImages $allImages -SinceTag $Since -NewTag $New -IncludeUpstream:($IncludeUpstream -or $All))
 } catch {
     Die "Could not read old/new release package membership: $_"
 } finally {
@@ -237,21 +221,14 @@ function Stop-PlatformManifest($img, $details, [switch]$Optional, [switch]$NewVe
 }
 
 function Get-PlatformManifest($img, [switch]$Optional, [switch]$NewVersion) {
-    $errorFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $inspectionOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
-        }
-        $inspectStatus = $LASTEXITCODE
-        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
-    } finally {
-        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    $inspectionRun = Invoke-DockerBounded @('buildx', 'imagetools', 'inspect', $img, '--format', '{{json .}}') 120
+    if (-not $inspectionRun -or $inspectionRun.TimedOut) {
+        return (Stop-PlatformManifest $img 'docker unavailable or registry inspection timed out after 120s' -Optional:$Optional -NewVersion:$NewVersion)
     }
-    if ($inspectStatus -ne 0) {
-        return (Stop-PlatformManifest $img $inspectError -Optional:$Optional -NewVersion:$NewVersion)
+    if ($inspectionRun.ExitCode -ne 0) {
+        return (Stop-PlatformManifest $img $inspectionRun.StdErr -Optional:$Optional -NewVersion:$NewVersion)
     }
-    $json = ($inspectionOutput -join "`n").Trim()
+    $json = $inspectionRun.StdOut.Trim()
     if (-not $json) {
         return (Stop-PlatformManifest $img "inspection returned no manifest JSON" -Optional:$Optional -NewVersion:$NewVersion)
     }
@@ -469,12 +446,10 @@ function Invoke-StageArch($arch) {
         } elseif ($img -match 'rangerdanger-openplc') {
             Say "    large image (~1 GB) -- give it a minute"
         }
-        & docker pull $ref
-        if ($LASTEXITCODE -ne 0) { Die "pull failed for $ref on $arch - re-run after fixing the upstream issue." }
+        $null = Invoke-StageDocker @('pull', $ref) 3600 -StreamOutput
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
-            & docker tag $ref $targetTag
-            if ($LASTEXITCODE -ne 0) { Die "docker tag $ref -> $targetTag failed" }
+            $null = Invoke-StageDocker @('tag', $ref, $targetTag) 60
         }
         $pulledTags += $targetTag
     }
@@ -483,8 +458,8 @@ function Invoke-StageArch($arch) {
         return
     }
     Say "save $arch -> $tarball"
-    & docker save -o $tarball @pulledTags
-    if ($LASTEXITCODE -ne 0) { Die "docker save failed for $arch" }
+    try { $null = Invoke-StageDocker (@('save', '-o', $tarball) + $pulledTags) 7200 -StreamOutput }
+    catch { Remove-StagePartial $tarball; throw }
     $sizeMB = [math]::Round((Get-Item $tarball).Length / 1MB)
     Say "wrote $tarball (${sizeMB} MB)"
 }
@@ -504,8 +479,8 @@ $tgzPath = Join-Path $OutDir "rangerdanger.tgz"
 # --prefix=rangerdanger/ so extraction creates a self-contained
 # rangerdanger/ folder (see stage-ssd.ps1). The delta apply extracts
 # over the student's existing ~/rangerdanger in place.
-& git -C $RootDir archive --prefix=rangerdanger/ --format=tar.gz -o $tgzPath HEAD
-if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
+try { $null = Invoke-StageNative 'git' @('-C', $RootDir, 'archive', '--prefix=rangerdanger/', '--format=tar.gz', '-o', $tgzPath, 'HEAD') 600 }
+catch { Remove-StagePartial $tgzPath; throw }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
 
@@ -538,7 +513,7 @@ if ($kernelPublished) {
     try {
         Say "Downloading $kernelUrl"
         try {
-            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop
         } catch {
             Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
             Die "WSL2 kernel download failed; refusing to stage an unverifiable kernel. Re-run stage-ssd-delta.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand. $_"
@@ -548,7 +523,7 @@ if ($kernelPublished) {
         $shaError = ""
         foreach ($attempt in 1, 2) {
             try {
-                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
                 $shaError = ""
                 break
             } catch {

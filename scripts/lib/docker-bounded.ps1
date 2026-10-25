@@ -25,31 +25,61 @@ function Join-NativeArguments([string[]]$ArgList) {
     }) -join ' '
 }
 
-# Returns $null when the docker CLI is not on PATH; otherwise ExitCode,
-# StdOut, StdErr and TimedOut (ExitCode -1 when the call was killed).
-function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec, [string]$WorkingDirectory = '') {
-    $dockerCmd = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $dockerCmd) { return $null }
+# Returns $null when the executable is absent; otherwise ExitCode, StdOut,
+# StdErr and TimedOut. StreamOutput preserves native layer progress without
+# buffering multi-minute transfers. Captured calls share one process/drain
+# budget: descendants holding inherited pipes cannot make .Result hang.
+function Invoke-NativeBounded(
+    [string]$Executable, [string[]]$ArgList, [ValidateRange(1, 86400)][int]$TimeoutSec,
+    [string]$WorkingDirectory = '', [switch]$StreamOutput
+) {
+    $nativeCmd = Get-Command $Executable -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $nativeCmd) { return $null }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $dockerCmd.Source
-    $psi.Arguments = Join-NativeArguments $DockerArgs
+    $psi.FileName = $nativeCmd.Source
+    $psi.Arguments = Join-NativeArguments $ArgList
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardOutput = -not $StreamOutput
+    $psi.RedirectStandardError = -not $StreamOutput
     $psi.CreateNoWindow = $true
     # PowerShell's location can differ from the process-global native cwd.
     # Relative CLI inputs (e.g. an SSD tarball) must follow the caller's
     # filesystem location; label-only Compose calls supply an empty dir.
     $psi.WorkingDirectory = if ($WorkingDirectory) { $WorkingDirectory }
         else { $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
     $p = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $p.StandardOutput.ReadToEndAsync()
-    $stderr = $p.StandardError.ReadToEndAsync()
-    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-        try { $p.Kill() } catch { }
-        return [pscustomobject]@{ ExitCode=-1; StdOut=''; StdErr=''; TimedOut=$true }
+    try {
+        if (-not $StreamOutput) {
+            $stdout = $p.StandardOutput.ReadToEndAsync()
+            $stderr = $p.StandardError.ReadToEndAsync()
+        }
+        $remaining = [Math]::Max(0, $TimeoutSec * 1000 - [int]$clock.ElapsedMilliseconds)
+        $finished = $p.WaitForExit($remaining)
+        if ($finished -and -not $StreamOutput) {
+            $remaining = [Math]::Max(0, $TimeoutSec * 1000 - [int]$clock.ElapsedMilliseconds)
+            $finished = [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), $remaining)
+        }
+        if (-not $finished) {
+            # Give the killed CLI up to one second to release output files
+            # before staging removes a partial archive.
+            if (-not $p.HasExited) {
+                try { $p.Kill(); $null = $p.WaitForExit(1000) } catch { }
+            }
+            return [pscustomobject]@{ ExitCode=-1; StdOut=''; StdErr=''; TimedOut=$true }
+        }
+        $outText = ''; $errText = ''
+        if (-not $StreamOutput) { $outText = $stdout.Result; $errText = $stderr.Result }
+        return [pscustomobject]@{ ExitCode=$p.ExitCode; StdOut=$outText; StdErr=$errText; TimedOut=$false }
+    } finally {
+        $p.Dispose()
     }
-    [pscustomobject]@{ ExitCode=$p.ExitCode; StdOut=$stdout.Result; StdErr=$stderr.Result; TimedOut=$false }
+}
+
+function Invoke-DockerBounded(
+    [string[]]$DockerArgs, [int]$TimeoutSec, [string]$WorkingDirectory = '', [switch]$StreamOutput
+) {
+    Invoke-NativeBounded 'docker' $DockerArgs $TimeoutSec $WorkingDirectory -StreamOutput:$StreamOutput
 }
 
 # Trimmed `docker info --format` output, or $null on timeout / non-zero

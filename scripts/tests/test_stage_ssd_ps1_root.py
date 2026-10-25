@@ -26,7 +26,7 @@ function Invoke-DockerBounded($DockerArgs, $TimeoutSec) {
         $DockerArgs[4] -cne $releaseFiles[$script:calls] -or
         $DockerArgs[5] -ne 'config' -or $DockerArgs[6] -ne '--images') { throw 'enumeration CLI changed' }
     $script:calls++
-    if ($env:RANGERDANGER_ROOT -cne '/run/desktop/mnt/host/c/Users/A B/rd' -or
+    if ($env:RANGERDANGER_ROOT -cne $env:EXPECTED_ROOT -or
         $env:VERSION -cne 'v-test') { throw 'daemon root/version not converted' }
     if ($env:MODE -eq 'throw') { throw 'fixture launch error' }
     if ($env:MODE -eq 'missing') { return $null }
@@ -66,5 +66,7 @@ class StageSsdRootTests(unittest.TestCase):
                         result = powershell(
                             LOAD + ENUMERATE, STAGER=stager, MODE=mode, PREEXIST=preexisting,
                             SAMPLE=r"\\server\share\rd" if mode == "badpath" else r"C:\Users\A B\rd",
+                            # Simulate Windows explicitly, even when pwsh runs on a POSIX host.
+                            OS="Windows_NT", EXPECTED_ROOT="/run/desktop/mnt/host/c/Users/A B/rd",
                         )
                         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
