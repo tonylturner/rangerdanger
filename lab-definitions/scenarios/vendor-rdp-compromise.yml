@@ -199,9 +199,10 @@ steps:
       the *RDP* hop matter: by the time the Modbus packet reaches the
       recloser, it looks legitimate.
 
-      **These rows expire after about 2 minutes** (the TTL column counts
-      down from ~120 s). If they are gone, re-run the first `mbpoll`
-      write above and refresh Sessions.
+      Open **Sessions** before running the write, set the list limit above
+      500 rows, and filter on `10.20.20.10` so the vendor row is visible.
+      These rows expire in about 17 seconds. If they are gone, re-run the
+      first `mbpoll` write above and refresh Sessions.
 
       :::decision id=vendor-attack-hmi-impact options=DOWNSTREAM_OUTAGE,FEEDER_OUTAGE,LOW_VOLTAGE_ALARM,NO_ALARM correct=DOWNSTREAM_OUTAGE
       **What alarm did the Feeder One-Line tab show after this attack?**

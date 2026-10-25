@@ -399,7 +399,7 @@ class EnforcementContracts(unittest.TestCase):
         # Frozen images: recloser-sim records every Modbus write as "modbus-tcp"
         # (no peer address) and the mbpoll path adds no Command Audit row, so the
         # only surface attributing the live write is containd NETWORK -> Sessions
-        # (conntrack, ~120 s TTL). Flows/Events/Live DPI Events are empty under weak.
+        # (conntrack, ~17 s TTL). Flows/Events/Live DPI Events are empty under weak.
         raw = scenario("vendor-rdp-compromise")["steps"][2]["description"]
         text = self.flat(raw)
         self.assertIn("**Mid-Feeder Recloser (79)**: its **Last Command** row reads `modbus-tcp`", text)
@@ -410,7 +410,10 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("**DST `10.40.40.21`** and **DPORT `502`**", text)
         self.assertIn("Their **SRC** is `10.20.20.10`, the vendor jump host", text)
         self.assertIn("There is no `10.10.10.50` row for this write", text)
-        self.assertIn("**These rows expire after about 2 minutes**", text)
+        self.assertIn("Open **Sessions** before running the write", text)
+        self.assertIn("set the list limit above 500 rows", text)
+        self.assertIn("filter on `10.20.20.10`", text)
+        self.assertIn("These rows expire in about 17 seconds", text)
         self.assertIn("re-run the first `mbpoll` write above and refresh Sessions", text)
         for surface in ("Flows", "Events", "Live DPI", "Traffic Matrix", "Command Audit"):
             self.assertNotIn(surface, raw)

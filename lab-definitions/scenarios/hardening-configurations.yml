@@ -101,9 +101,9 @@ steps:
       > covers why Direct Operate (FC05) is the function code that
       > matters for write restrictions, and why every modern
       > recloser controller (G&W, S&C, NOJA, Cooper, ABB) exposes a
-      > DNP3 outstation like this one. The defense-in-depth pattern
-      > the next steps demonstrate is covered in
-      > [What is ICS DPI?](/knowledge#ics-dpi).
+      > DNP3 outstation like this one. The next steps demonstrate the
+      > distinction: the L4 source pin enforces, while ICS DPI detects
+      > and logs.
 
       Wait ~3 seconds for the RTAC's 2-second poll → OpenDSS push to
       land, then confirm the downstream de-energization from the
