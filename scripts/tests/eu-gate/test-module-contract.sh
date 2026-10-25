@@ -23,14 +23,14 @@ source_definitions() (
   sleep() { unexpected_command sleep; }
   # shellcheck source-path=SCRIPTDIR source=../../eu-iec104-smoke.sh
   . "$T_REPO/scripts/eu-iec104-smoke.sh"
-  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G14 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27; do
+  for gate in G0 G1 G2 G3 G4 G5 G6 G7 G8 G9 G10 G11 G12 G13 G14 G15 G16 G17 G18 G19 G20 G21 G22 G23 G24 G25 G26 G27 G28; do
     declare -F "eu_gate_$gate" >/dev/null || return 1
   done
   if [ "$#" -gt 0 ]; then eu_gate_main "$@"; fi
 )
 
 t_run source_definitions
-t_expect_eq "$T_STATUS" 0 "sourcing defines all twenty-eight gates without dispatch"
+t_expect_eq "$T_STATUS" 0 "sourcing defines all twenty-nine gates without dispatch"
 t_expect_eq "$T_OUT" "" "sourcing has no output"
 t_expect_eq "$(cat "$SOURCE_CALLS")" "" "sourcing never calls range or capture tools"
 t_run source_definitions --list
@@ -45,6 +45,7 @@ t_expect_out "G24 eu-vendor-rdp-compromise validator" "--list includes the vendo
 t_expect_out "G25 eu-validation-evidence validator" "--list includes the validation evidence walk"
 t_expect_out "G26 eu-segmentation-requirements" "--list includes the requirements planning slot"
 t_expect_out "G27 eu-remediation-planning" "--list includes the remediation planning slot"
+t_expect_out "G28 Full and partial compiled plans" "--list includes the golden-backed plan proof gate"
 t_run source_definitions --dry-run
 t_expect_eq "$T_STATUS" 0 "--dry-run exits successfully without preflight"
 t_expect_eq "$T_OUT" "$PLAN" "--dry-run and --list are identical"
@@ -58,5 +59,5 @@ run_order() (
 )
 t_run run_order
 t_expect_eq "$T_STATUS" 0 "stubbed full dispatch completes"
-t_expect_out "G19 G20 G21 G22 G23 G24 G25 G26 G27 G14" "lab gates preserve G23 and run before final reset"
+t_expect_out "G19 G20 G21 G22 G23 G24 G25 G26 G27 G28 G14" "existing gates retain order and plan proof runs before final reset"
 t_finish

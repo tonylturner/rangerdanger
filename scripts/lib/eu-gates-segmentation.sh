@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Firewall denial, exact-session cuts and CC cache isolation/recovery (G4-G10).
+# Firewall denial, exact-session cuts, CC recovery and plan proof (G4-G10, G28).
 # Loaded by eu-iec104-smoke.sh; sourcing only defines helpers/gates.
 
 # Inventory identity, not a hard-coded point count or a vacuous all([]).
@@ -7,6 +7,42 @@ eu_station_shape() {
   local ioas
   ioas=$(jq -ce '[.points[].ioa] | sort | if length > 0 and length == (unique | length) then . else error("invalid station inventory") end' "$PACKAGE/protocols/points.json") || return
   printf '([.points[].ioa] | sort) == %s' "$ioas"
+}
+
+# Prove the selected plan independently of hardened acceptance. Every request
+# and expected row/count/label/gap comes from the backend-generated goldens.
+eu_plan_case() {
+  local selection="$1" request
+  local golden="$ROOT/frontend/lib/testdata/plans/eu-$selection.json"
+  local oracle="$ROOT/scripts/tests/fixtures"
+  request=$(jq -ce -L "$oracle" 'include "plan-gate"; plan_request' "$golden") || return 1
+  printf '%s\n' "$request" >"$TMP_DIR/G28-$selection-request.json" || return 1
+  # shellcheck disable=SC2034 # consumed by eu-cleanup.sh
+  state_touched=1
+  eu_api_post /api/firewall/apply-plan "$request" 60 || return 1
+  [ "$HTTP_STATUS" = 200 ] || return 1
+  printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; plan_applied($golden[0])' || return 1
+  sleep 3
+  eu_api_post /api/firewall/validation-report '{}' 90 || return 1
+  [ "$HTTP_STATUS" = 200 ] || return 1
+  printf '%s' "$API_BODY" | jq -e -L "$oracle" --slurpfile golden "$golden" \
+    'include "plan-gate"; plan_report($golden[0])' || return 1
+  pass "G28 $selection plan: faithful proof, golden hardened acceptance and exact prevention gaps; no skipped tuples"
+}
+
+eu_gate_G28() {
+  local selection result=0
+  for selection in full partial; do
+    if ! eu_plan_case "$selection"; then
+      fail "G28 $selection plan apply/report did not match its golden: HTTP ${HTTP_STATUS:-none} ${API_BODY:-}"
+      result=1
+      break
+    fi
+  done
+  # Named apply also asserts the plan provenance has cleared, even on failure.
+  eu_apply_named weak || result=1
+  return "$result"
 }
 
 # Silent conntrack deletion is detected by TESTFR idle + response timeout.
