@@ -27,7 +27,7 @@ function Join-NativeArguments([string[]]$ArgList) {
 
 # Returns $null when the docker CLI is not on PATH; otherwise ExitCode,
 # StdOut, StdErr and TimedOut (ExitCode -1 when the call was killed).
-function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec) {
+function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec, [string]$WorkingDirectory = '') {
     $dockerCmd = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $dockerCmd) { return $null }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -37,6 +37,7 @@ function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec) {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
     $p = [System.Diagnostics.Process]::Start($psi)
     $stdout = $p.StandardOutput.ReadToEndAsync()
     $stderr = $p.StandardError.ReadToEndAsync()
