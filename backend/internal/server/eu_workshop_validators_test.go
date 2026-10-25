@@ -1,12 +1,63 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
+
+func decodeFixture[T any](t *testing.T, data string) *T {
+	t.Helper()
+	var out T
+	if err := json.Unmarshal([]byte(data), &out); err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	return &out
+}
+
+func at(clock string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, "2026-10-09T"+clock+"Z")
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
+func TestBadQuality(t *testing.T) {
+	overflow := true
+	stale := "link_lost"
+	invalid := ccPoint{}
+	invalid.Quality.IV, invalid.Quality.NT = true, true
+	invalid.StaleReason = &stale
+	withOverflow := ccPoint{}
+	withOverflow.Quality.OV = &overflow
+	for _, tc := range []struct {
+		name  string
+		point ccPoint
+		want  string
+	}{
+		{name: "good"},
+		{
+			name:  "invalid and stale",
+			point: invalid,
+			want:  "IV, NT, stale_reason link_lost",
+		},
+		{
+			name:  "overflow",
+			point: withOverflow,
+			want:  "OV",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := badQuality(tc.point); got != tc.want {
+				t.Fatalf("badQuality() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 var euWorkshopSlots = []string{"eu-baseline-assessment", "eu-firewall-implementation", "eu-hardening-configurations", "eu-vendor-rdp-compromise", "eu-validation-evidence"}
 
