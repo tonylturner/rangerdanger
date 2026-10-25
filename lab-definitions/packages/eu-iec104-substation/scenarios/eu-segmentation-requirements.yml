@@ -52,15 +52,17 @@ steps:
     :::
 
     :::decision id=non-rtu-to-field
-    Non-RTU hosts → field (except PLC→OLTC) — choose your requirement.
+    Non-RTU station sources → field (except PLC→OLTC) — choose your requirement.
     :::
 
     :::decision id=unauth-control options="BLOCK,BLOCK and LOG,RESTRICT,ALLOW,LOG"
-    Unauthorized IEC 104 commands / Modbus writes — choose your requirement.
+    Cross-zone foreign-source IEC 104 / Modbus attempts — choose your requirement.
+    This does not cover command authorization within an allowed CC session
+    or station same-subnet traffic.
     :::
 
     :::hint Expected requirements, not proof of enforcement
-    Block enterprise/vendor field access and enterprise RTU access. Restrict vendor engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Pin field access to RTU, with the PLC→OLTC exception. Unauthorized commands need semantic inspection as well as source restrictions. IEC 104 and Modbus DPI are planned, not enforceable in this range yet; a selected catalog item does not make them live. No allowed port establishes user identity.
+    Block enterprise/vendor field access and enterprise RTU access. Restrict vendor engineering access to the named eng-ws→PLC web conduit, not the whole vendor zone. Pin field access to RTU, with the PLC→OLTC exception. Cross-zone foreign-source prevention needs the enterprise, vendor and non-RTU field closures plus the enterprise/vendor station restrictions. Required diagnostic denies always log. DPI and logging selections are planning-only and emit nothing. No action in this package authorizes commands within an allowed CC session. A LOG-only verdict has no selectable live implementation; retain its monitoring requirement in Notes. No allowed port establishes user identity.
     :::
 
     | Required conduit | Pin | Port |

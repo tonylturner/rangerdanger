@@ -108,6 +108,16 @@ steps:
     :::hint Check the compiled policy
     The six operational conduits must survive. A deferred vendor field closure can leave hop two open in a generated plan even though the reference closes it. Organizational broker work is planning-only, not a deployed login control.
     :::
+
+    | Chain link | Owning action | Selected / deferred |
+    |---|---|---|
+    | Enterprise→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+    | Vendor→field Modbus/502 | `block-vendor-to-field` | deny / allow |
+    | Vendor→RTU/PLC engineering paths | `restrict-vendor-to-station` | narrowed / Weak scope |
+
+    Test the first two independently. `pin-rtu-to-field` owns station-source
+    field attempts, not the vendor hop. Detection and planning selections do
+    not change either hop. A saved plan is not active until applied.
   action:
     type: firewall
     config: improved
@@ -120,19 +130,25 @@ steps:
 
         nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
 
-    Both ports should time out / be filtered. No graphical client is required.
+    With `restrict-enterprise-to-vendor` selected, both ports time out or show
+    filtered. Deferred means reachable. No graphical client is required.
 
     From the still-available **vendor-jump-1 terminal tab**, repeat the identical field write:
 
         mbpoll -m tcp -a 1 -t 4 -0 -r 0 -1 10.40.40.21 1
 
-    It should time out independently of hop one. Confirm RMU1 remains closed, RMU2 open and supply unchanged; record both source tuples and results.
+    With `block-vendor-to-field` selected, expect a timeout and unchanged RMU1.
+    Deferred means the write still opens RMU1 and removes section supply, even
+    when hop one is denied. Record device audit, source tuples and results.
+    Restore RMU1 closed, RMU2 open and normal supply before Validate for every
+    plan. Preserve evidence before restoration; Reset Lab would reapply Weak.
 
-    :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK" correct=NORMAL_OPS
+    :::decision id=vendor-retest-hmi-state options="NORMAL_OPS,SECTION_OUTAGE,UNCHANGED_FROM_ATTACK"
     What did the feeder show after retest?
     :::
-    :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER" correct=EITHER_LAYER
-    Which layer can independently break this chain?
+    :::decision id=vendor-retest-defense-layer options="ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER"
+    Which selected layer breaks this chain? If neither was selected, record
+    that both links remain open in Notes.
     :::
 
     :::hint Attribution survives the story
@@ -148,9 +164,10 @@ steps:
   title: Validate
   expected_config: hardened
   description: |
-    Run Validate with hardened active, both hops denied and RMU/OLTC state restored. The strict active matrix must prove each hop; a screenshot of a rule is not enough. Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
+    Run Validate with the intended plan active and RMU/OLTC state restored.
+    The strict active matrix must match each hop's plan verdict; a screenshot of a rule is not enough. Keep policy identity, UTC bounds and device source attribution for Lab 2.4.
 
-    PASS certifies only the current sampled negative paths (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
+    PASS checks only the current sampled plan verdicts (both hops), RMU baseline positions and OLTC remote/auto mode. It does not certify a completed interactive login/pivot or earlier successful FC6 attack, absence of all foreign operations, fresh CC visibility, feeder supply or DPI enforcement; preserve those separately. Step-level continuity checks are not all part of this bonus completion validator.
 
     :::hint Residual risk
     Neither L4 boundary proves vendor identity security. Record MFA, just-in-time approval and session recording as organizational follow-up, not as infrastructure deployed by this exercise.

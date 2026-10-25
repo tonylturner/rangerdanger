@@ -27,7 +27,9 @@ steps:
   title: Confirm hardened config is active
   expected_config: hardened
   description: |
-    Confirm a green hardened/custom policy banner; reapply the intended policy if mismatched. You are validating an existing change, not authoring a new one.
+    Confirm the intended applied plan, package revision, action IDs and running hash.
+    Do not replace a partial plan with Hardened just to obtain a green result.
+    Named and manual policies use Hardened expectations; their plan proof is not applicable. You are validating an existing change, not authoring a new one.
 
     :::findings-panel from=eu-segmentation-requirements title="Your committed design"
     enterprise-to-field: Enterprise/vendor → field on Modbus/502
@@ -53,19 +55,33 @@ steps:
     :::validation-report
     :::
 
-    Completion requires the backend-retained **PASS** report, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart; export the markdown/PCAP before reset or shutdown. A local screenshot or old browser report cannot substitute for the retained proof.
+    Keep two independent results from the full **37-row TCP matrix**.
+
+    - **Plan proof** checks this applied plan. It requires 0 skipped and a stable
+      recorded plan hash before and after probing.
+    - **Hardened acceptance** requires authorized **10/10** and unauthorized
+      denied **27/27**, 0 skipped, capture and a stable running hash. Confirm a
+      healthy HMI and fresh CC observations separately.
+
+    A partial plan can pass plan proof while leaving Hardened prevention gaps.
+    Keep each gap by row ID. Deferred exposures stay reachable; they are not
+    skipped steps. Named and manual policies have no applicable plan proof.
+
+    Completion uses the backend-retained result for the judging target, full running firewall hash and probe UTC window from this range and latest policy commit. The running policy is read before and after probing; a change or unreadable hash fails the report. Reapplying even the same policy invalidates the previous commit window: generate again. The backend retains the latest generated report until range/backend restart; export the markdown/PCAP before reset or shutdown. A local screenshot or old browser report cannot substitute for the retained proof.
 
     Read every row: a failed positive blocks operations; a failed negative leaves exposure. The package-derived matrix rows cover all six required intents and all five field devices including F2. Retain every inventory point after a fresh GI; F2 has four indications, no command. If you performed Lab 2.2's instructor-supervised F2 visibility check, retain its last-value IV/NT loss, healthy-peer and restored-GI evidence with the report. Negatives actively probe Kali→RTU, foreign→field, enterprise→PLC and Kali→vendor RDP/VNC. Only connect timeout is denied; connection refused is reached, tool/container errors fail honestly. Default-deny drops need not emit logs.
 
     Inspect PCAP source analysis: RTU **and PLC→OLTC** are legitimate field sources. RTU↔PLC/GPS stays invisible at the firewall. A SYN captured on ingress does not prove a completed control operation.
 
-    In [/substation](/substation), confirm breaker closed, normal RMUs, OLTC auto, supply present and fresh GOOD CC observations. Report PASS plus operational continuity is the two-sided change-board case.
+    In [/substation](/substation), confirm breaker closed, normal RMUs, OLTC auto, supply present and fresh GOOD CC observations. Plan proof plus operational continuity shows that this plan works as
+    compiled. Hardened acceptance separately shows whether all sampled
+    prevention gaps are closed. Keep both results.
 
     :::decision id=pos-test-ops-intact options="NORMAL_OPS,DEGRADED,ALARMS_PRESENT" correct=NORMAL_OPS
     Are operations intact after validation?
     :::
-    :::decision id=neg-test-no-impact options="UNCHANGED,DEGRADED,UNCLEAR" correct=UNCHANGED
-    Were unauthorized flows denied without changing service?
+    :::decision id=neg-test-no-impact options="UNCHANGED,DEGRADED,UNCLEAR"
+    Were operations unchanged? Record deferred reachable paths in Notes.
     :::
 
     :::hint Advanced: verify by hand
@@ -75,6 +91,11 @@ steps:
     :::hint Optional historian-gap evidence
     [Historian uncertainty](/knowledge#eu-historian) explains link-loss stale samples and archive gaps. This sidebar is optional, not a mandatory outage exercise or report prerequisite.
     :::
+
+    Keep the package revision and selected action IDs with the policy hash,
+    report and PCAP. The config JSON alone does not embed that provenance.
+    The L4 source pin enforces; DPI detects and logs. EU DPI is disabled;
+    neither TCP proof nor a logged deny proves command-aware filtering.
   action:
     type: check
     expect:
@@ -113,5 +134,5 @@ steps:
     In Notes answer: which findings did your plan close, which remain deferred and why, which role constrained it, and what would you fund next quarter? Map every residual to operational consequence, owner, acceptance authority and retest. What endpoint or station architecture control addresses same-subnet blind spots?
 
     :::hint Honest handover
-    DPI remains planned, not enforceable in this range yet. In the planned design breaker switching is local-only; that reduces remote restoration flexibility. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.
+    DPI selections are planning-only and emit nothing. They promise no command restriction or later enforcement. Breaker control on an allowed CC session remains a residual risk. L4 is live but cannot distinguish commands on an allowed CC session. Keep this residual explicit alongside IEC 62443 design and NIS2/BDEW change accountability. Retain policy, report and PCAP before reset.
     :::

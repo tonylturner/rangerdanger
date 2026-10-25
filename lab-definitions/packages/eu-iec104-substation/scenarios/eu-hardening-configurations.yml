@@ -85,13 +85,18 @@ steps:
     Recommit your Lab 2.2 named-source policy. Only CC 10.60.60.20 may initiate RTU TCP/2404. Preserve six operational intents, deny new foreign sources and inspect the running rules. A plan that defers enterprise-to-station closure may still expose this attack.
     :::
 
-    L4 source pinning is the **live** layer. Planned IEC 104 DPI will deny breaker IOA 3001 even on the CC session, while allowing monitoring/system reads, RMU IOAs 3101/3201 and OLTC IOAs 3301/3302 plus confirmations. Breaker switching becomes local-only: a deliberate operational cost. That second layer is **not enforced until Phase 4**; do not claim the current CC breaker command is denied.
+    `block-enterprise-to-station` owns the Kali→RTU TCP/2404 path. If selected,
+    expect denial. If deferred, the Weak exposure stays open and the breaker
+    command can still land. EU DPI and logging actions are planning-only.
+    They change no verdict and promise no later semantic enforcement.
+    The L4 source pin enforces; DPI detects and logs. EU DPI is disabled.
 
     :::plan-coverage title="Your plan vs the attack"
     :::
 
-    :::hint Two independent layers, one live today
-    Closing foreign reachability stops Kali now. Semantic inspection would still constrain breaker control if an allowed session were misused. Selecting DPI in the planner does not enable it.
+    :::hint Live boundary and residual risk
+    L4 restricts foreign sources. It does not authorize commands on an allowed
+    CC session. Keep trusted-controller and same-subnet risks explicit.
     :::
   action:
     type: firewall
@@ -105,17 +110,29 @@ steps:
 
         iec104cmd 10.30.30.20 dc 3001 open -sbo --json
 
-    Expect connection timeout at the L4 source pin; breaker stays closed and supply remains present. Confirm physical truth and fresh CC observation rather than interpreting CLI failure alone as no actuation.
+    With `block-enterprise-to-station` selected, expect a connection timeout;
+    the breaker stays closed and supply remains. With it deferred, the command
+    still opens the breaker and removes supply. Record physical truth and fresh
+    CC feedback. The deferred result can pass plan proof but leaves a Hardened
+    prevention gap. An acknowledgement alone is not the physical outcome.
 
-    :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK" correct=NORMAL_OPS
-    What did the feeder show after retest?
+    :::decision id=retest-hmi-state options="NORMAL_OPS,LOSS_OF_SUPPLY,UNCHANGED_FROM_ATTACK"
+    What did the feeder show for this applied plan?
     :::
-    :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=EITHER_LAYER
-    In the completed two-layer design, which layer could independently stop this attack?
+    :::decision id=retest-defense-in-depth options="L4_SOURCE_PIN,IEC104_DPI,EITHER_LAYER" correct=L4_SOURCE_PIN
+    When the foreign path is denied, which layer enforces it?
     :::
 
-    :::hint Planned Phase 4 proof, NOT a live test yet
-    After DPI is verified, the authorized-CC breaker OPEN test must show no actuation, session reset and GI recovery; a permitted RMU or OLTC command must still work. Until then only L4 is demonstrated here. Do not run the CC breaker denial test and pretend it is enforced.
+    Restore the breaker and supply before Validate for every plan. Preserve
+    wire/audit/solve evidence first. Use the prescribed breaker restoration,
+    not Reset Lab to improve a verdict. Reset Lab reapplies Weak; if recovery
+    needs it, reapply the intended plan and collect a new evidence window.
+    Required CC/RTU, HMI, GI and supply checks do not depend on the selected plan.
+
+    :::hint Preserve both claims
+    A deferred command can match plan proof while failing Hardened acceptance.
+    Neither TCP reachability nor a logged event establishes command authorization
+    on an allowed CC session. Restore supply and fresh observations in all cases.
     :::
 - id: validate
   title: Validate
@@ -123,10 +140,12 @@ steps:
   description: |
     Before Validate, force a fresh CC connection with `POST /api/operator/reconnect` (no body; see [operator API](/knowledge#eu-rtu-control-centre-apis)). Wait for `link.since` strictly later than the policy commit, matched GI completion on that connection and every inventory point non-null and GOOD received since GI start. Interrogate station on an old established session is not post-commit proof. If the link stays down, compare Network Map and the logged CC→RTU TCP/2404 deny in Live DPI Events; restore the missing CC allow, not the breaker.
 
-    Run Validate with hardened active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and no foreign breaker operation in the bounded hardening audit window. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
+    Run Validate with the intended applied plan or reference active. It also requires restored breaker and fresh section supply, active strict foreign-source negative probes and absence of foreign breaker operations only when this plan denies
+    the Kali→RTU path. When it allows that path, retain the visible command
+    consequence instead. Missing evidence is not a pass. A physically supplied feeder with stale CC points fails visibility, not supply.
 
     :::hint What this certifies
-    PASS certifies the current sampled source boundary, restored breaker/supply, bounded absence of foreign breaker operations, and post-commit CC visibility. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. DPI remains planned, not enforced. Keep the operational cost and semantic residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
+    PASS checks the current sampled plan verdicts, restored breaker/supply and post-commit CC visibility. Bounded absence of foreign breaker operations is required only for a plan that denies that source. It does not certify that you performed the earlier attack/restoration sequence, command-aware filtering on an allowed session, all possible paths or regulatory compliance. DPI selections emit nothing. Keep the trusted-controller residual risk in your handover to [Lab 2.4](/exercises/eu-validation-evidence).
     :::
   action:
     type: check

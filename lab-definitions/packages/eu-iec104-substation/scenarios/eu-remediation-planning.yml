@@ -5,7 +5,7 @@ summary: Choose EU remediation within 500 hours and the unchanged four-role capa
 estimated_minutes: 18
 description: Fund a defensible subset of the station design. Balance the shared labor budget against specialist
   capacity, readiness and operational risk. Selected closures affect the generated policy; semantic controls remain
-  planned until available, and organizational controls are planning-only.
+  planning-only and emit no rules, as do organizational controls.
 nodes:
 - kali-1
 - eng-ws-1
@@ -70,9 +70,18 @@ steps:
 - id: choose-your-remediation-plan
   title: Choose your remediation plan
   description: |
-    Select actions in the planner below, staying inside both total labor and role caps. The package curriculum is the only catalog authority.
+    Select actions in the planner below. Total labor and role caps guide the tradeoff.
+    Budget overrun is a warning only. Empty, partial and over-budget plans are valid. The package curriculum is the only catalog authority.
 
-    Selected closure actions remove their scoped weak exposure; deferred ones leave it open in the generated policy. Restrictions keep the named operational allows. The six required conduits always remain. **IEC 104 and Modbus DPI are planned, not enforceable in this range yet**; IDS, inventory, broker and architecture review are planning-only. Logging affects visibility, not reachability.
+    Selected enforceable actions remove their Weak exposure. Deferred actions leave it open. Required operational conduits stay in every plan.
+
+    | Kind | Actions | Effect when applied |
+    |---|---|---|
+    | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-field`, `block-enterprise-to-station`, `restrict-vendor-to-station`, `block-vendor-to-field`, `pin-rtu-to-field`, `tighten-firewall-objects` | Change L4 reachability |
+    | Detection-only | None | EU emits no ICS inspection |
+    | Planning-only | `modbus-dpi`, `iec104-dpi`, `improve-logging`, `station-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+
+    Required diagnostic denies always log. The logging selection changes no rule. The L4 source pin enforces; DPI detects and logs. In EU, DPI is disabled; a selected DPI action does not enable it. Empty and planning-only plans leave Weak exposures open.
 
     :::plan-coverage title="Coverage of your design"
     :::
@@ -88,5 +97,5 @@ steps:
     In Notes, name the finding each funded action closes and the consequence of every deferral. Which role bound first? Did readiness, hours or risk acceptance drive the compromise? Who owns each residual risk, and what test will establish completion next quarter?
 
     :::hint Defensible deferral
-    A DPI selection is a roadmap commitment, not a live control while ICS rules are forbidden. A broker or IDS selection does not deploy infrastructure. Explain the operational cost of local-only breaker switching in the planned design. Continue to [implementation](/exercises/eu-firewall-implementation) with a saved plan.
+    A DPI selection is planning-only, not a live control or a promise of future enforcement. A broker or IDS selection deploys no infrastructure. Commands on allowed CC sessions and same-subnet paths remain residual risks. Continue to [implementation](/exercises/eu-firewall-implementation) with a saved plan.
     :::
