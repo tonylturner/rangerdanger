@@ -405,7 +405,7 @@ eu_lab_bad_change() {
   shape=$(eu_station_shape) || return
   if ! eu_reset_all || ! eu_apply_named improved || ! eu_lab_reconnect_cc \
     || ! eu_make_custom_policy "$PACKAGE/firewall/improved.json" "$CC_IP" "$RTU_IP" 2404 "$policy" \
-    || ! eu_apply_custom "$policy" "lesson missing CC conduit" \
+    || ! eu_commit_manual_policy "$policy" "lesson missing CC conduit" \
     || ! eu_api_post /api/operator/reconnect '' || [ "$HTTP_STATUS" != 202 ] \
     || ! eu_wait_for_operator "($shape) and .link.state != \"started\" and all(.points[]; .quality.iv and .quality.nt and .stale_reason == \"link_lost\")" 15 "bad change loses CC observations" \
     || ! eu_validate_scenario FAIL "$scenario" || ! eu_lab_visibility_failed \

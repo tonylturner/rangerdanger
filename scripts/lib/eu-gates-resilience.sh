@@ -17,7 +17,7 @@ eu_gate_G11() {
   else
     fail "G11 custom policy has an ICS key, unbounded TCP allow, or ephemeral-port allow"
   fi
-  eu_apply_custom "$g11_policy" "G11 improved minus RTU-to-breaker allow" || return
+  eu_commit_manual_policy "$g11_policy" "G11 improved minus RTU-to-breaker allow" || return
   eu_check_nft_chain G11-custom || true
   eu_get_operator || fail "G11 cannot snapshot operator points before Modbus loss"
   if ! eu_read_sessions 502 "$RTU_IP" \

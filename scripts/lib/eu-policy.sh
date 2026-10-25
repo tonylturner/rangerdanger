@@ -126,7 +126,7 @@ eu_check_policy_and_nft() {
   eu_check_nft_chain "$label"
 }
 eu_apply_named() {
-  local name="$1" response active
+  local name="$1" response active source
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
   if ! eu_api_post "/api/firewall/apply" "{\"config\":\"$name\"}"; then
@@ -147,37 +147,82 @@ eu_apply_named() {
     return 1
   fi
   active="$API_BODY"
-  if ! printf '%s' "$active" | jq -e --arg name "$name" '.active_config == $name' >/dev/null 2>&1; then
-    fail "active policy readback is not $name: $active"
+  source="$name"
+  [ "$name" != improved ] || source=hardened-reference
+  if ! printf '%s' "$active" | jq -e --arg name "$name" --arg source "$source" \
+    '.active_config == $name and .policy_source == $source and (has("plan") | not)' >/dev/null 2>&1; then
+    fail "active policy readback is not $name/$source without plan provenance: $active"
     return 1
   fi
   pass "$name applied with zero warnings and exact active-policy readback"
   return 0
 }
-eu_apply_custom() {
-  local policy="$1" label="$2" response active effective expected_file actual_file
+eu_commit_manual_policy() {
+  local policy="$1" label="$2" response status warnings active effective expected_file actual_file i
+  local candidate_file="$TMP_DIR/manual-candidate.json" headers_file="$TMP_DIR/manual-commit.headers"
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
-  if ! eu_api_post "/api/firewall/apply-custom" "$(cat "$policy")"; then
-    fail "apply custom $label failed"
+  # Match containd.ensureEnforcementOn in backend/internal/containd/import.go:
+  # without this flag, a committed config need not update the effective nft rules.
+  jq '.dataplane |= (if type == "object" then . else {} end)
+      | .dataplane.enforcement = true' "$policy" >"$candidate_file" || {
+    fail "cannot enable dataplane enforcement for manual policy $label"
+    return 1
+  }
+  response=$(docker exec -i "$FW" curl -sS --max-time 15 -w '\n%{http_code}' \
+    -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
+    --data-binary @- http://127.0.0.1:8080/api/v1/config/candidate \
+    <"$candidate_file" 2>"$TMP_DIR/manual-candidate.err") || {
+    fail "stage manual policy $label failed: $(cat "$TMP_DIR/manual-candidate.err")"
+    return 1
+  }
+  status="${response##*$'\n'}"
+  response="${response%$'\n'*}"
+  if [ "$status" != 200 ] && [ "$status" != 201 ] && [ "$status" != 204 ]; then
+    fail "stage manual policy $label returned HTTP $status: $response"
     return 1
   fi
-  response="$API_BODY"
-  if [ "$HTTP_STATUS" != "200" ]; then
-    fail "apply custom $label returned HTTP $HTTP_STATUS: $response"
+  # Headers go through the container's stderr, not a host path inside it.
+  response=$(docker exec "$FW" curl -sS --max-time 15 -w '\n%{http_code}' -D /dev/stderr \
+    -X POST -H "Authorization: Bearer $FW_TOKEN" -H 'Content-Type: application/json' \
+    http://127.0.0.1:8080/api/v1/config/commit 2>"$headers_file") || {
+    fail "commit manual policy $label failed: $(cat "$headers_file")"
+    return 1
+  }
+  status="${response##*$'\n'}"
+  response="${response%$'\n'*}"
+  if [ "$status" != 200 ] && [ "$status" != 204 ]; then
+    fail "commit manual policy $label returned HTTP $status: $response"
     return 1
   fi
-  if ! printf '%s' "$response" | jq -e '(.warnings // []) == []' >/dev/null 2>&1; then
-    fail "apply custom $label reported policy import warnings: $response"
+  warnings=$(awk 'tolower($0) ~ /^x-containd-warnings:/ {
+    sub(/^[^:]*:[[:space:]]*/, ""); sub(/[[:space:]]*$/, "");
+    if (length) print
+  }' "$headers_file") || {
+    fail "cannot read commit warnings for manual policy $label"
+    return 1
+  }
+  if [ -n "$warnings" ]; then
+    fail "commit manual policy $label reported policy import warnings: $warnings"
     return 1
   fi
-  if ! eu_api_get "/api/firewall/active"; then
-    fail "cannot read active custom policy $label"
-    return 1
-  fi
-  active="$API_BODY"
-  if ! printf '%s' "$active" | jq -e '.active_config == "custom"' >/dev/null 2>&1; then
-    fail "active policy readback is not custom after $label: $active"
+  # policy_observer.go: observerGracePeriod=5s, observerInterval=5s.
+  # Fifteen one-second waits cover grace + tick with five seconds of margin.
+  for ((i = 0; i <= 15; i++)); do
+    if ! eu_api_get "/api/firewall/active"; then
+      fail "cannot read active manual policy $label"
+      return 1
+    fi
+    active="$API_BODY"
+    if printf '%s' "$active" | jq -e \
+      '.active_config == "custom" and .policy_source == "manual-custom" and (has("plan") | not)' \
+      >/dev/null 2>&1; then
+      break
+    fi
+    [ "$i" -eq 15 ] || sleep 1
+  done
+  if [ "$i" -gt 15 ]; then
+    fail "active policy did not converge to custom/manual-custom after $label: $active"
     return 1
   fi
   effective=$(eu_firewall_config) || {
@@ -198,7 +243,7 @@ eu_apply_custom() {
     fail "containd effective firewall rules differ from custom $label before session kill"
     return 1
   fi
-  pass "$label custom policy applied without warnings and effective rules read back exactly"
+  pass "$label manually committed without warnings, observed as manual-custom and effective rules read back exactly"
   return 0
 }
 eu_make_custom_policy() {

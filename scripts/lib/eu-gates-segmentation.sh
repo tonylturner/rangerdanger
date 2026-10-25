@@ -140,7 +140,7 @@ eu_gate_G7() {
   else
     fail "G7 custom policy has an ICS key, unbounded TCP allow, or ephemeral-port allow"
   fi
-  eu_apply_custom "$g7_policy" "G7 improved minus CC allow" || return
+  eu_commit_manual_policy "$g7_policy" "G7 improved minus CC allow" || return
   eu_check_nft_chain G7-custom || true
   if ! eu_read_sessions 2404 "$CC_IP" \
     || ! eu_session_tuple "$SESSION_BODY" "$CC_IP" "$RTU_IP" 2404; then

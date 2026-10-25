@@ -4,7 +4,7 @@ Base URL: `/api` (when accessed through the nginx proxy at `http://localhost:808
 
 All endpoints return JSON unless otherwise noted. Most request and response bodies use `snake_case` field names. Exceptions include `GET /pcap/list`, which returns `sizeBytes` and `createdAt`, and PCAP downloads, which return binary data.
 
-**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*`, `/historian/*` and `/containd/*`; `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
+**Range-bound routes.** Routes that reach the range (its containers, its firewall or its services) are served only while a range generation serves: phase `ready`, or `preflight` while the previous range is still untouched (see [Range](#range)). Otherwise they answer `503 {"error":"range not ready","phase":"<phase>"}`. When a switch starts stopping the range, in-flight range-bound requests, terminal sessions and SSE streams are cancelled and the switch waits up to 15 s for them to return; a request that loses its range mid-flight may answer `503 {"error":"range is stopping"}`. The range-bound routes are: all of `/firewall/*`, `/substation/*`, `/pcap/*`, `/traffic/*`, `/workshop/*`, `/operator/*`, `/field/*`, `/historian/*` and `/containd/*`; `POST /plan/compile`, `GET /scenarios/:id/validate` and `POST /scenarios/:id/steps/:stepIdx/execute`. Everything else is served whatever the range is doing.
 
 **Identities.** Range-bound routes take every container, address and endpoint of the range from the serving package's manifest: nodes (`:nodeId`, probe sources) resolve by topology node, the firewall and RTAC by role and named endpoint. A node the manifest does not know answers `404`. The canned policies (`/firewall/apply`, `/firewall/compare`), workshop reset, test suite, validation report and traffic generation follow the package's workshop recipe. `us-dnp3-substation` and `eu-iec104-substation` have one; other packages answer `404 {"error":"package <id> has no workshop recipe"}`. A recipe that lacks an operation answers `404 {"error":"not supported by this package"}`.
 
@@ -310,11 +310,37 @@ Direct operations against the containd NGFW.
 | `GET` | `/firewall/health` | containd management health, as containd sends it: `{"status":"ok","component","build","time"}`. |
 | `GET` | `/firewall/rules` | Currently-loaded rules |
 | `GET` | `/firewall/flows` | containd engine flow table (proxied from containd `GET /api/v1/flows`). Optional `?limit=` 1..5000, default 200; anything else is `400`. Returns `{"flows":[{"flowId","firstSeen","lastSeen","srcIp","dstIp","srcPort","dstPort","transport","application","eventCount","avDetected","avBlocked"}]}`; containd omits empty `srcIp`/`dstIp`/ports/`transport`/`application` and false `av*` fields. `503` with `{"flows":[],"error":"..."}` when containd is unreachable or errors. |
-| `GET` | `/firewall/active` | Which named configuration is currently applied. Returns `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan-custom"\|"manual-custom"\|""}`. `policy_source` distinguishes a button-applied policy (`"plan-custom"` = "Apply Your Plan" from Lab 1.4 picks) from a manually-committed one (`"manual-custom"` is set by the backend's policy observer, which runs with each range generation, when it detects a policy committed directly in containd). A new range starts with `active_config` from the package's default policy and an empty `policy_source`. |
+| `GET` | `/firewall/active` | Active policy identity: `{"active_config":"weak"\|"improved"\|"custom", "policy_source":"weak"\|"hardened-reference"\|"plan"\|"manual-custom"}` for the workshop policies. When the source is `plan`, also returns `plan: {label, actionIds, packageId, revision, policyHash, appliedAt}`; otherwise `plan` is omitted. `manual-custom` means the range's policy observer detected a divergent containd commit outside the backend. A new range starts on its package's default policy, with source `weak` or `hardened-reference` for those named defaults (empty for other default names). |
 | `GET` | `/firewall/compare` | Diff between weak and improved configs |
 | `POST` | `/firewall/apply` | Apply a named configuration. Body: `{"config": "improved"}` (or `"weak"`). Returns `{"status":"applied","active_config":"weak"\|"improved"}` and includes `"warnings": [...]` when containd returned any. Sets server-side `policy_source` to `"weak"` (for weak) or `"hardened-reference"` (for improved). |
-| `POST` | `/firewall/apply-custom` | Apply a raw JSON config produced by the student during Lab 1.4 (Remediation Planning) or Lab 2.2 (Firewall Implementation). Body is the full containd policy JSON (max 512 KB). The backend validates structure, posts to containd's `candidate → commit` flow, and on success returns `{"status":"applied","active_config":"custom","policy_source":"plan-custom"}` plus `"warnings": [...]` when containd returned any. The `policy_source` tag lets the UI label the active policy as derived from the student's Lab 1.4 plan rather than a manual containd commit. |
-| `POST` | `/firewall/validation-report` | No request body. Runs the segmentation validation matrix against the currently active policy and captures a short PCAP without applying a policy. Returns the Markdown report and summary (`authorized_pass`, `authorized_total`, `unauthorized_pass`, `unauthorized_total`, `skipped`, `result`), plus `active_config`, `policy_source`, and `pcap_path`. |
+| `POST` | `/plan/compile` | Compile selected catalog actions without applying them. Body: `{"packageId":string,"revision":int,"actionIds":string[]}` (max 64 KiB; unknown fields rejected). Returns `{packageId, revision, label, actions, rules, expectations, policyHash, config}`; see below. `409` for a package/revision mismatch with the active range; `400` for malformed requests or unknown action IDs. |
+| `POST` | `/firewall/apply-plan` | Same request as compile. Compiles, lints, checks management safety, imports into containd and verifies the running firewall hash. Returns `200 {"applied":true,"warnings":string[],"plan":<compile response>}` and records `active_config=custom`, `policy_source=plan` and provenance. `409`/`400` as for compile; `422 {"error":string,"warnings":string[]}` for compilation, lint, safety, import or running-hash verification failures. Warnings are returned even on success. |
+| `POST` | `/firewall/validation-report` | No request body. Runs the segmentation validation matrix against the currently active policy and captures a short PCAP without applying a policy. Returns `markdown`, `summary` (`authorized_pass`, `authorized_total`, `unauthorized_pass`, `unauthorized_total`, `skipped`, `result`), `planProof`, `acceptance`, `active_config`, `policy_source`, `pcap_path`, `policy_hash`, `window_start`, `window_end` and `policy_stable`. `summary.result` follows Hardened acceptance, not plan proof. |
+
+The compile response's `label` is `weak`, `partial` or `hardened`.
+`actions` lists `{id, kind, chosen}` in catalog order (`kind` is `enforce`,
+`detect` or `plan`). Each `rules` entry pairs a `rule` with its `origin`.
+`expectations` includes plan and Hardened verdicts and resolved `fromIp`/`toIp`
+addresses. `config` is the full containd configuration for export, not
+client-authored input; `policyHash` hashes its firewall section.
+Provenance retains chosen `actionIds` in catalog order and is cleared by a
+named-policy apply, observer divergence or range activation.
+
+Validation returns two independent judgments:
+
+- `planProof: {applicable, pass, policyHash, hashStable, skipped, rows}` checks
+  observations against the applied plan. It is applicable only with source
+  `plan` and retained provenance; otherwise `rows` is empty and `pass` is false.
+- `acceptance: {pass, skipped, rows, preventionGaps}` checks observations
+  against Hardened. `preventionGaps` lists IDs expected to be denied by
+  Hardened but observed allowed. A faithful partial plan can pass proof
+  while failing acceptance.
+
+Each judgment row is `{id, expected, observed, pass}`. The strict TCP
+classifier counts a successful connection or explicit refusal as `allow`,
+a connect timeout as `deny`, and other failures as `skipped`; skipped rows
+fail the judgment. Both judgments require a stable policy identity;
+acceptance additionally requires successful PCAP capture startup.
 
 ## Traffic generation
 

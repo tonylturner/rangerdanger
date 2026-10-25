@@ -167,22 +167,32 @@ steps:
 
 ### `expected_config` values
 
-The loader accepts only `weak` and `hardened` (or no value). The
-runtime semantics are:
+The loader accepts a declared package policy name (such as `weak` or
+`improved`), or no value. It also accepts `hardened` as an alias only
+when the package declares `improved`. The runtime semantics are:
 
-- The backend's `/api/firewall/apply` only accepts the literal
-  strings `weak` or `improved`. Applying the canned hardened
-  policy via the "Apply Hardened" button sends `improved`; applying
-  a student's own policy (Lab 1.4 / 2.2) sends a custom JSON to
-  `/api/firewall/apply-custom`, which leaves the backend's
-  `activeConfig` reading `custom`.
-- For step-level `expected_config: hardened`, the frontend
-  validator treats `hardened` as a UI alias matching either
-  `improved` or `custom`. (Heads-up: the backend's same-named
-  check in `scenario_execute.go` does **not** carry this alias —
-  the alias logic lives in `frontend/components/policy-status-banner.tsx`.
-  Authors who add a new step with `expected_config: hardened` should
-  rely on the frontend check, not on the backend's reply.)
+- `/api/firewall/apply` accepts a declared package policy name.
+  "Apply Hardened" sends `{"config":"improved"}`. "Apply Your Plan"
+  instead sends `{packageId, revision, actionIds}` to
+  `/api/firewall/apply-plan`; the backend compiles the policy and records
+  `active_config: custom`, `policy_source: plan` and plan provenance.
+  A divergent policy committed directly in containd is identified by the
+  observer as `custom` / `manual-custom`, without plan provenance.
+- The frontend policy banner imports `matchesExpected` from
+  `frontend/lib/policy-wording.ts`: both `hardened` and `improved`
+  match either `improved` or `custom`. Other names require an exact
+  match. This is a display/precondition check, not proof that an arbitrary
+  custom policy meets Hardened acceptance.
+- The backend test runner also treats `expected_config: hardened` as
+  satisfied by `improved` or `custom`; otherwise it applies `improved`
+  before running that step. This is separate from action-level checks:
+  in `scenario_execute.go`, a US `check` action with
+  `expect.firewall_config: improved` evaluates the running L4 rules
+  against the applied plan (when its provenance holds), or Hardened
+  otherwise. Other `expect.firewall_config` strings are compared
+  literally with the active configuration; `hardened` is not an alias
+  in that action-level field. Use validators and the validation report
+  for policy evidence, not the banner's name match.
 
 ## Validators
 

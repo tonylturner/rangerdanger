@@ -184,7 +184,6 @@ CMD_TOOL_RE = re.compile(
 
 SKIP_PATTERNS = [
     re.compile(r'/api/firewall/apply'),
-    re.compile(r'/api/firewall/apply-custom'),
     re.compile(r'docker compose '),
     re.compile(r'docker run '),
     re.compile(r'docker rm '),
