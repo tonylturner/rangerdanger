@@ -158,6 +158,7 @@ def _control_selectors(
         ("file", ".dockerignore"),
         ("file", ".gitattributes"),
         ("file", ".github/workflows/release.yml"),
+        ("file", ".github/workflows/release-record.yml"),
         ("file", inventory_path),
         ("file", "scripts/release_image_plan.py"),
         ("file", "scripts/check_release_inputs.py"),

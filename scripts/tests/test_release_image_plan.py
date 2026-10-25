@@ -38,6 +38,7 @@ class PlannerFixture(unittest.TestCase):
         self._write(".dockerignore", "ignore\n")
         self._write(".gitattributes", "*.txt text\n")
         self._write(".github/workflows/release.yml", "release policy\n")
+        self._write(".github/workflows/release-record.yml", "release record policy\n")
         self._write("scripts/release_image_plan.py", "planner\n")
         self._write("scripts/check_release_inputs.py", "checker\n")
         self._write("docker-compose.release.yml", "services: {}\n")
@@ -379,6 +380,26 @@ class ReleaseImagePlanTests(PlannerFixture):
         decisions = self._decisions(self._plan())
         self.assertEqual(len(decisions), count)
         self.assertEqual(set(decisions.values()), {"build"})
+
+    def test_release_workflow_changes_invalidate_the_same_image_decisions(self) -> None:
+        decisions_by_path = {}
+        for path in (
+            ".github/workflows/release.yml",
+            ".github/workflows/release-record.yml",
+        ):
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                commit = self._change_commit(path, "changed release workflow\n")
+                decisions = self._decisions(self._plan(commit=commit))
+                self.assertEqual(len(decisions), len(self.inventory["images"]))
+                self.assertEqual(set(decisions.values()), {"build"})
+                decisions_by_path[path] = decisions
+
+        self.assertEqual(
+            decisions_by_path[".github/workflows/release-record.yml"],
+            decisions_by_path[".github/workflows/release.yml"],
+        )
 
     def test_missing_record_stale_policy_and_dispatch_never_inspect_registry(self) -> None:
         no_record_inspect = Mock(side_effect=AssertionError("registry must not be inspected"))
