@@ -164,62 +164,53 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
-## Repo-only v0.1.36 update (existing v0.1.35 images)
+## Updating to v0.1.36
 
-From a **clean Git checkout** of the existing installation, macOS/Linux:
+v0.1.36 is a **full image release**: all 16 first-party images are rebuilt
+and `latest` moves. New installs use [Path A](#path-a---online-default)
+or the normal [SSD bundle](#path-c---offline--ssd-workshops). To pin the
+release, check out tag `v0.1.36` and run `./setup.sh --version v0.1.36`
+(PowerShell: `.\setup.ps1 -Version v0.1.36`).
+
+For an existing online installation, use setup's normal **stop, then
+refresh** path. Save captures, exported reports, notes and desktop work,
+and back up `.env`, `data/`, `backend/data/` and any local source edits
+first. Setup runs a workshop reset as part of readiness checks; this is
+not a state-preserving mid-exercise patch. Do not use `down -v`.
+
+From the existing clean Git checkout, macOS/Linux:
 
 ```bash
-git fetch origin tag v0.1.36 && git checkout --detach v0.1.36 && ./scripts/apply-repo-update.sh
+git fetch origin tag v0.1.36 &&
+git checkout --detach v0.1.36 &&
+docker compose -f docker-compose.release.yml down &&
+./setup.sh --version v0.1.36
 ```
 
-Windows PowerShell 5.1+ (does not use PowerShell 7's `&&`):
+Windows PowerShell 5.1+ (stop on any error):
 
 ```powershell
-git fetch origin tag v0.1.36; if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36; if ($LASTEXITCODE -eq 0) { & .\scripts\apply-repo-update.ps1 } }
+git fetch origin tag v0.1.36
+if ($LASTEXITCODE -ne 0) { throw "Fetch failed; stop here" }
+git checkout --detach v0.1.36
+if ($LASTEXITCODE -ne 0) { throw "Checkout failed; stop here" }
+docker compose -f docker-compose.release.yml down
+if ($LASTEXITCODE -ne 0) { throw "Stop failed; stop here" }
+.\setup.ps1 -Version v0.1.36
 ```
 
-For **SSD installs**, obtain the instructor's four-file repo-only update
-(`rangerdanger-v0.1.36.tgz`, `rangerdanger-v0.1.36.bundle`, `SHA256SUMS`, and
-`REPO-UPDATE-README.md`). Follow its checksum verification first; stop on
-failure. For an **archive install (no `.git`)**, back up source edits and
-extract over the existing `~/rangerdanger` before running the new helper:
+Setup pulls the selected release images and starts the complete release
+stack. No source build is needed. Do not use `scripts/apply-repo-update.*`
+for this release: it does not install the new images.
 
-```sh
-SSD=/Volumes/WORKSHOP_SSD
-tar xzf "$SSD/rangerdanger-v0.1.36.tgz" -C ~ &&
-cd ~/rangerdanger &&
-./scripts/apply-repo-update.sh --from-tarballs "$SSD"
-```
-
-For an **offline Git clone**, never extract the archive over it; from the
-clean existing checkout:
-
-```sh
-git fetch "$SSD/rangerdanger-v0.1.36.bundle" tag v0.1.36 && git checkout --detach v0.1.36 && ./scripts/apply-repo-update.sh --from-tarballs "$SSD"
-```
-
-On Windows use `Get-FileHash`, `tar.exe -xzf` for archive installs, and
-`.\scripts\apply-repo-update.ps1 -FromTarballs $SSD`; see the
-[complete archive/clone PowerShell steps](v0.1.36-hotfix.md#ssd--offline-update).
-As in setup, the SSD parameter selects `docker-compose.offline.yml`; this
-helper does not load tarballs or read `.version`. Setup records no persistent
-offline-mode marker, so the parameter is required for SSD installs. Archive
-installs print that the Git guard was skipped; a `.git` directory or file
-retains the normal checkout and tracked-edit checks.
-
-The helper names and refuses tracked local edits (back them up first),
-checks that **every release image is already local**, validates Compose,
-restarts backend and proxy, then recreates only vendor_jump without
-dependencies, builds or image downloads. It keeps `.env` (including
-`VERSION`), data and the vendor's anonymous `/config` volume. The recreate
-ends any open vendor desktop session; allow about 20 seconds, then open
-http://localhost:8088/apps/vendor-jump/.
-
-Compose must support `up --pull never` (present in v2.8.0); setup's
-Compose-subcommand check alone does not guarantee this. The helper
-refuses unsupported CLIs before restarting anything. Do not rerun setup
-with the rc version or use a plain source-stack `docker compose up` as a
-substitute: those paths can download/build images.
+For an existing **offline / SSD** installation, follow the generated
+`DELTA-README.md` from an instructor-staged
+[`stage-ssd-delta.sh`](workshop-ssd.md#delta-staging) bundle. The
+v0.1.35 → v0.1.36 delta is close to a full set because all images are
+rebuilt. Its version precondition, backup, image loading, complete-stack
+restart and rollback instructions are part of the normal delta workflow.
+For a fresh offline installation, use the full bundle and Path C instead.
+See the [workshop errata](v0.1.36-hotfix.md) for remaining lab guidance.
 
 ## Common errors
 

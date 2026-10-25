@@ -14,40 +14,7 @@
   <a href="https://github.com/tonylturner/containd"><img src="https://img.shields.io/badge/containd-NGFW-f97316" alt="containd"></a>
 </p>
 
-> [!IMPORTANT]
-> **Workshop update: v0.1.35 → v0.1.36-rc.3**
->
-> rc.3 corrects lab content, proxy routes and scripts only. It uses your v0.1.35 images: nothing downloads or rebuilds, and your `.env` and saved work stay.
->
-> **Already installed** (v0.1.35, rc.1 or rc.2), from your `rangerdanger` folder. macOS / Linux:
->
-> ```bash
-> git fetch origin tag v0.1.36-rc.3 &&
-> git checkout --detach v0.1.36-rc.3 &&
-> ./scripts/apply-repo-update.sh
-> ```
->
-> Windows PowerShell:
->
-> ```powershell
-> git fetch origin tag v0.1.36-rc.3
-> if ($LASTEXITCODE -eq 0) { git checkout --detach v0.1.36-rc.3 }
-> if ($LASTEXITCODE -eq 0) { .\scripts\apply-repo-update.ps1 }
-> ```
->
-> **Installed from the workshop SSD:** follow `REPO-UPDATE-README.md` on the SSD.
->
-> **New install:** clone the rc.3 tag, then run setup as usual (`.\setup.ps1` on Windows). Git's "not a commit" and "detached HEAD" messages are expected:
->
-> ```bash
-> git clone --branch v0.1.36-rc.3 https://github.com/tonylturner/rangerdanger
-> cd rangerdanger
-> ./setup.sh
-> ```
->
-> Do not run `./setup.sh --version v0.1.36-rc.3`. Details and lab notes: [v0.1.36 workshop errata](https://github.com/tonylturner/rangerdanger/blob/v0.1.36-rc.3/docs/v0.1.36-hotfix.md).
-
-RangerDanger teaches network segmentation by putting students inside a working electric distribution substation. The whole experience runs in a single web portal: an interactive topology map shows the zones and devices, clicking a node opens its container terminal in the browser, structured exercises walk through each lab step-by-step with live validation, and a process view shows how cyber actions actually change voltages, breaker states, and load energization in real time. The firewall at the center is [containd](https://github.com/tonylturner/containd), a purpose-built NGFW with ICS deep-packet inspection, so students see and control Modbus function codes, DNP3 Direct Operate commands, and per-zone policy decisions the way modern OT-aware firewalls actually surface them.
+RangerDanger teaches network segmentation by putting students inside a working electric distribution substation. The whole experience runs in a single web portal: an interactive topology map shows the zones and devices, clicking a node opens its container terminal in the browser, structured exercises walk through each lab step-by-step with live validation, and a process view shows how cyber actions actually change voltages, breaker states, and load energization in real time. The firewall at the center is [containd](https://github.com/tonylturner/containd), a purpose-built NGFW with ICS deep-packet inspection, so students inspect Modbus and DNP3 events alongside per-zone policy decisions. The L4 source pin enforces; DPI detects and logs.
 
 7 labs aligned to the DefendICS OT Network Segmentation workshop deck: identify required flows, design segmentation, plan under a labor budget, build the policy, stress-test it against a DNP3 Direct Operate injection (with optional Modbus sidebar attacks), validate with PCAP evidence.
 
@@ -57,7 +24,7 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 - **Interactive topology map** at `/console`. IEC 62443 zone bands (Enterprise SL-1, DMZ SL-2, Supervisory SL-3, Field SL-2) with a live policy overlay that shows which conduits are allowed or blocked under the active firewall config. Click any node to inspect device state, open its web UI, or drop into a terminal. Drawers surface protocol details and live traffic context per node.
 - **Embedded container terminals**. xterm.js plus WebSocket exec into every lab container. No SSH client, no port forwards. Terminal state persists across navigation via a shared React context, and PTY size propagates so `stty` queries return the right values.
-- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. Selections in earlier labs rewrite the steps you see in later ones.
+- **Exercise runner** at `/exercises/[id]`. Each lab is a step-by-step walk-through with inline command blocks (one-click run), persistent per-exercise notes, and live state-reading validators that show green/red chips as students hit checkpoints. The Lab 1.4 plan is a design artifact; Lab 2.2 applies the hardened reference ([workshop errata, RD-01](docs/v0.1.36-hotfix.md#your-enforcement-self-check)).
 - **Process view** at `/substation`. Live feeder state from the RTAC via the OpenDSS power-flow solver. Modbus FC5/FC6 writes and DNP3 CROB attacks measurably change breaker positions, regulator taps, voltages, and load energization within ~3 seconds. Customer-service tile shows how many customers and how much critical load (hospital, fire station) is currently energized.
 - **containd NGFW integration**. ICS-aware NGFW at the conduit. Modbus function-code filtering, DNP3 protocol awareness, IT-side DPI for TLS/SNI, HTTP, RDP. Students apply policy from the lab UI; containd's full web console is iframed at `/containd/` for direct inspection of rules, audit log, and session state.
 - **Knowledge wiki** at `/knowledge`. Curated reference for substation equipment, ICS protocols, segmentation patterns, and the lab's specific architecture. Searchable, markdown-rendered, useful both during exercises and afterward.
@@ -67,14 +34,14 @@ RangerDanger teaches network segmentation by putting students inside a working e
 
 ## Student journey
 
-Each lab builds on the previous. Selections in early labs flow into later ones; your Lab 1.4 remediation plan rewrites the steps you see in Labs 2.2, 2.3, 2.3-bonus, and 2.4. ≈73 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
+Each lab builds on the previous. Your Lab 1.4 remediation plan guides design review; Lab 2.2 applies the hardened reference, not a generated plan ([RD-01](docs/v0.1.36-hotfix.md#your-enforcement-self-check)). ≈83 minutes (Guided path) for the six core labs (1.2 / 1.3 / 1.4 / 2.2 / 2.3 / 2.4), plus ~12 minutes for the optional 2.3-bonus.
 
 | Step | Lab | What you do |
 |---|---|---|
 | 1 | **1.2 Baseline** | Capture cross-zone traffic at the firewall. Build a flow inventory. Probe for latent exposure that passive monitoring missed. |
 | 2 | **1.3 Requirements** | Translate findings into a zone-pair rule grid. Pick BLOCK / RESTRICT / ALLOW per direction. Anchor the design to operational requirements. |
 | 3 | **1.4 Plan** | Choose which findings to fix first under a finite labor budget. Per-role utilization updates in real time as you pick actions. |
-| 4 | **2.2 Implement** | Build a least-privilege containd policy from your plan. CLI and web UI walkthroughs both supported; the lab adapts to which actions you selected in 1.4. |
+| 4 | **2.2 Implement** | Apply and verify the hardened reference policy. Review its rules in containd; keep your Lab 1.4 plan as a design artifact. |
 | 5 | **2.3 Harden** | Stress-test against a DNP3 Direct Operate injection that disables auto-reclose and trips the recloser — the canonical distribution-substation attack vector. Watch the process view as voltages drop, breakers open, downstream loads de-energize. Re-test under the hardened policy. Optional Modbus FC5/FC6 sidebars cover the same defense pattern. |
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
@@ -112,6 +79,8 @@ docker compose up -d --build
 ```
 
 Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
+
+For an existing install, follow the [release update procedure](docs/quickstart.md#updating-to-v0136). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
 
 Once the stack is up:
 

@@ -15,12 +15,36 @@ workshop has not started 90 minutes in". The SSD path moves the
 network round-trip to the instructor's machine the night before:
 stage once, students load from USB.
 
-Two staging flows:
+Staging tools:
 
 - `stage-ssd.sh` - full bundle. First-time SSD, or when a student is
   joining late and needs everything from scratch.
 - `stage-ssd-delta.sh` - patch bundle. After a fix lands and you
   need to push it without re-shipping the unchanged 6 GB.
+- `stage-ssd-repo-update.sh <out-dir> <tag>` - repository-only artifacts
+  for changes that need no new images. Writes a tag archive, Git bundle,
+  `SHA256SUMS` and `REPO-UPDATE-README.md`. Students follow that generated
+  guide and use `scripts/apply-repo-update.sh` or `.ps1`; these helpers
+  never install images. This tool is not the v0.1.36 release update path.
+
+### v0.1.36 distribution
+
+Use the normal full bundle for new installs. Once the release is published,
+from a clean checkout of tag `v0.1.36`:
+
+```sh
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.36
+```
+
+For an existing v0.1.35 install, the normal delta path is supported:
+
+```sh
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.36 v0.1.35 v0.1.36
+```
+
+All 16 first-party images rebuild for this release (`[rebuild-all]`), so
+this delta is close to a full set, not a small content patch. Follow the
+[normal delta apply and rollback workflow](#student-side-delta-apply).
 
 ## What's on the SSD
 
@@ -163,70 +187,10 @@ into an image at build time:
 - Setup script changes
 - containd policy JSONs (`lab-definitions/firewall/*.json`)
 
-For the **v0.1.36 repo-only hotfix**, keep the installed v0.1.35
-images and `VERSION=latest`: no pull, no rebuild. Do not use
-`stage-ssd-delta.sh`; its digest comparison selects rc images, not this
-repo-only path. Do not run setup again or stop the full stack.
-
-Maintainers on macOS/Linux stage from the **release tag**, not HEAD or
-uncommitted files (the tag must already exist locally):
-
-```sh
-./stage-ssd-repo-update.sh /Volumes/WORKSHOP_SSD/repo-update v0.1.36
-```
-
-This Git-only tool never calls Docker. Use a fresh output directory; it
-refuses existing artifact files. It writes exactly:
-
-- `rangerdanger-v0.1.36.tgz` (tag archive, top directory `rangerdanger/`)
-- `rangerdanger-v0.1.36.bundle` (complete tag history for offline clones)
-- `SHA256SUMS` (both artifacts)
-- `REPO-UPDATE-README.md` (macOS/Linux and Windows student steps)
-
-Distribute all four together. The stager is a Bash maintainer tool; Windows
-students use the existing PowerShell update helper, not the stager.
-
-Students save desktop work and back up local source edits first. Set `SSD`
-to the directory containing the four update files and **stop if checksum
-verification fails**:
-
-```sh
-SSD=/Volumes/WORKSHOP_SSD/repo-update
-(cd "$SSD" && shasum -a 256 -c SHA256SUMS)
-```
-
-For the standard SSD **archive install (no `.git`)**, overwrite only the
-tracked repo files in the existing `~/rangerdanger`; `.env`, data and
-captures remain:
-
-```sh
-tar xzf "$SSD/rangerdanger-v0.1.36.tgz" -C ~ &&
-cd ~/rangerdanger &&
-./scripts/apply-repo-update.sh --from-tarballs "$SSD"
-```
-
-For an **offline Git clone**, never extract over the clone. From its clean
-checkout:
-
-```sh
-cd ~/rangerdanger &&
-git fetch "$SSD/rangerdanger-v0.1.36.bundle" tag v0.1.36 &&
-git checkout --detach v0.1.36 &&
-./scripts/apply-repo-update.sh --from-tarballs "$SSD"
-```
-
-Archive installs print that the Git guard was skipped; clones retain the
-tracked-edit refusal. Both still validate cached images and Compose before
-restarting backend/proxy and recreating only vendor_jump. The SSD flag is
-required to add the offline overlay; it does not reload any image archives.
-Allow about 20 seconds for the vendor desktop.
-
-**Windows:** follow `REPO-UPDATE-README.md` or the
-[hotfix SSD steps](v0.1.36-hotfix.md#ssd--offline-update): verify with
-`Get-FileHash`, extract with `tar.exe -xzf` (archive installs only), then
-run `.\scripts\apply-repo-update.ps1 -FromTarballs $SSD`. Offline clones
-fetch the bundle and detach the tag instead of extracting. Stop if any
-checksum, extraction or Git command fails.
+Use `stage-ssd-repo-update.sh` and follow its generated checksum and
+archive/clone instructions. It stages only the tagged repository files;
+`apply-repo-update.sh` / `.ps1` require the matching images to be cached
+already. Use Pattern 2 whenever new application images are needed.
 
 ### Pattern 2: image rebuild change (Dockerfile / Go / TS / sim code)
 
@@ -317,9 +281,9 @@ than writing a delta that could install an unverified kernel. Re-run the delta
 helper, or place both kernel files in the output directory by hand.
 
 Size depends entirely on how many image digests differ between the two
-releases, and that example is the best case. A tagged release rebuilds
-every first-party image, so every digest changes and a plain
-release-to-release delta is close to a full bundle:
+releases, and that example is the best case. A release tagged with
+`[rebuild-all]` rebuilds every first-party image, so its release-to-release delta is close to a full
+bundle (normal releases may promote unchanged images):
 `v0.1.31 -> v0.1.32` reported 15 changed, 0 unchanged, and wrote 8.1 GB.
 `--include <image>` is additive: it force-adds a named image whose digest
 compared as unchanged. It does not exclude changed images or make a delta

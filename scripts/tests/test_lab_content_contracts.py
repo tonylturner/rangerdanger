@@ -1,4 +1,4 @@
-"""Offline contracts for content consumed by the frozen v0.1.35 images."""
+"""Offline contracts for workshop content and release guidance."""
 
 from pathlib import Path
 import importlib.util
@@ -300,16 +300,17 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("not in labs", text)
         self.assertNotRegex(text, r"[Pp]hases? [1-6]")
 
-    def test_errata_has_repo_only_update_and_every_mitigation(self):
+    def test_errata_has_full_release_paths_and_every_mitigation(self):
         path = ROOT / "docs/v0.1.36-hotfix.md"
         self.assertTrue(path.exists(), "student/instructor errata is missing")
         text = path.read_text()
-        self.assertIn("git fetch origin tag v0.1.36 && git checkout --detach "
-                      "v0.1.36 && ./scripts/apply-repo-update.sh", text)
-        for phrase in ("How to update", "PowerShell", "scripts/apply-repo-update.ps1",
-                       "SSD", "Do not run `./setup.sh --version v0.1.36`",
-                       "no pull", "no rebuild", "checksum"):
+        for phrase in ("How to update", "PowerShell", "full image release",
+                       "All 16 first-party images", "`latest` moves", "SSD",
+                       "quickstart.md#updating-to-v0136", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
+        for stale in ("existing v0.1.35 images", "no pull, no rebuild",
+                      "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
+            self.assertNotIn(stale, text)
         for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23, 24, 25, 26):
             self.assertIn(f"RD-{number:02}", text)
         self.assertIn("**RD-26:** On these images the recloser records a Modbus write only as\n"
@@ -324,6 +325,28 @@ class ErrataContracts(unittest.TestCase):
                 doc = (ROOT / path).read_text()
                 self.assertNotRegex(doc, r"rc\.[123]\b")
                 self.assertNotRegex(doc, r"v0\.1\.36-rc\.[123]\b")
+
+    def test_release_update_uses_standard_setup_and_delta_paths(self):
+        quickstart = (ROOT / "docs/quickstart.md").read_text()
+        for phrase in ("git fetch origin tag v0.1.36", "git checkout --detach v0.1.36",
+                       "docker compose -f docker-compose.release.yml down &&",
+                       "./setup.sh --version v0.1.36", ".\\setup.ps1 -Version v0.1.36",
+                       "workshop reset", "DELTA-README.md", "close to a full set"):
+            self.assertIn(phrase, quickstart)
+        ssd = (ROOT / "docs/workshop-ssd.md").read_text()
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.36",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.36 v0.1.35 v0.1.36",
+                       "stage-ssd-repo-update.sh <out-dir> <tag>", "scripts/apply-repo-update.sh",
+                       "close to a full set", "[rebuild-all]"):
+            self.assertIn(phrase, ssd)
+        readme = (ROOT / "README.md").read_text()
+        self.assertNotIn("> [!IMPORTANT]", readme)
+        self.assertNotIn("v0.1.36-rc.", readme)
+        for stale in ("Selections in earlier labs rewrite", "plan rewrites the steps",
+                      "lab adapts to which actions"):
+            self.assertNotIn(stale, readme)
+        self.assertIn("Lab 1.4 plan is a design artifact", readme)
+        self.assertIn("Lab 2.2 applies the hardened reference", readme)
 
 
 class EnforcementContracts(unittest.TestCase):
@@ -439,7 +462,8 @@ class EnforcementContracts(unittest.TestCase):
         errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**RD-24:**", errata)
         self.assertIn("L4 source pin is the control that enforces", errata)
-        self.assertIn("returns `Result: SUCCESS` and auto-reclose turns off", errata)
+        self.assertIn("DPI detects\nand logs", errata)
+        self.assertNotIn("dnp3cmd ", errata)
         self.assertIn("(RD-24)", errata)
 
 
