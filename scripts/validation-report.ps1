@@ -15,9 +15,10 @@ Write the report markdown to this file. Default: stdout.
 .\scripts\validation-report.ps1 -Out report.md
 
 .NOTES
-summary.result determines the exit code and reflects Hardened acceptance,
-not plan proof. Exit 0 means PASS; non-zero means the report failed or could
-not be retrieved. ASCII-only, BOM-free. See setup.ps1 for the encoding rationale.
+Plan proof determines the exit code when applicable; otherwise Hardened
+acceptance does. Exit 0 means PASS; non-zero means the selected judgment failed
+or the report could not be retrieved. ASCII-only, BOM-free. See setup.ps1 for
+the encoding rationale.
 #>
 
 [CmdletBinding()]
@@ -57,13 +58,22 @@ try {
 if (-not $report -or
     $report.markdown -isnot [string] -or
     [string]::IsNullOrEmpty($report.markdown) -or
-    $report.summary.result -notin @('PASS', 'FAIL')) {
-    Write-Status "invalid validation-report response: expected summary.result PASS/FAIL and non-empty markdown"
+    $report.planProof.applicable -isnot [bool] -or
+    $report.planProof.pass -isnot [bool] -or
+    $report.acceptance.pass -isnot [bool]) {
+    Write-Status "invalid validation-report response: expected boolean planProof.applicable, planProof.pass, acceptance.pass, and non-empty markdown"
     exit 1
 }
 
 $markdown = [string]$report.markdown
-$result = [string]$report.summary.result
+if ($report.planProof.applicable) {
+    $judgment = 'plan proof'
+    $passed = [bool]$report.planProof.pass
+} else {
+    $judgment = 'Hardened acceptance'
+    $passed = [bool]$report.acceptance.pass
+}
+$result = if ($passed) { 'PASS' } else { 'FAIL' }
 if ($Out) {
     try {
         [System.IO.File]::WriteAllText(
@@ -77,8 +87,8 @@ if ($Out) {
     [Console]::Out.Write($markdown)
 }
 
+Write-Status ("{0}: {1}" -f $judgment, $result)
 if ($result -ne 'PASS') {
-    Write-Status "backend report result: $result"
     exit 1
 }
 exit 0

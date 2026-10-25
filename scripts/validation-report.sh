@@ -7,8 +7,8 @@
 #   ./scripts/validation-report.sh
 #   ./scripts/validation-report.sh --out report.md
 #
-# The backend report judges the live policy, not a policy applied by this
-# script. Its summary.result reflects Hardened acceptance (not plan proof).
+# For an applied plan, the exit verdict follows plan proof; without plan
+# proof, it follows Hardened acceptance. Hardened remains the comparison.
 
 set -uo pipefail
 
@@ -69,30 +69,42 @@ if ! response=$(curl -fsS --max-time 180 -X POST \
   exit 1
 fi
 
-# summary.result is the backend's overall hardened-acceptance verdict; a
-# planProof failure is independent and is described separately in the report.
-if ! result=$(printf '%s' "$response" | python3 -c '
+# Plan proof and Hardened acceptance are independent judgments. For a plan,
+# proof decides whether the running policy passes; otherwise use acceptance.
+if ! decision=$(printf '%s' "$response" | python3 -c '
 import json
 import sys
 
 try:
     report = json.load(sys.stdin)
-    result = report["summary"]["result"]
+    proof = report["planProof"]
+    applicable = proof["applicable"]
+    proof_pass = proof["pass"]
+    acceptance_pass = report["acceptance"]["pass"]
     markdown = report["markdown"]
 except (KeyError, TypeError, ValueError) as exc:
     print(f"invalid validation-report response: {exc}", file=sys.stderr)
     sys.exit(1)
 
-if result not in ("PASS", "FAIL") or not isinstance(markdown, str) or not markdown:
-    print("invalid validation-report response: expected summary.result PASS/FAIL and non-empty markdown",
+if (not isinstance(applicable, bool) or not isinstance(proof_pass, bool)
+        or not isinstance(acceptance_pass, bool)
+        or not isinstance(markdown, str) or not markdown):
+    print("invalid validation-report response: expected boolean planProof.applicable, "
+          "planProof.pass, acceptance.pass, and non-empty markdown",
           file=sys.stderr)
     sys.exit(1)
 
-print(result)
+if applicable:
+    print(("PASS" if proof_pass else "FAIL") + "\nplan proof")
+else:
+    print(("PASS" if acceptance_pass else "FAIL") + "\nHardened acceptance")
 '); then
   err "could not read a valid validation report"
   exit 1
 fi
+
+result="${decision%%$'\n'*}"
+judgment="${decision#*$'\n'}"
 
 write_markdown() {
   printf '%s' "$response" | python3 -c '
@@ -116,7 +128,7 @@ else
   fi
 fi
 
+err "$judgment: $result"
 if [[ "$result" != "PASS" ]]; then
-  err "backend report result: $result"
   exit 1
 fi

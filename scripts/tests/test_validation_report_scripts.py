@@ -20,14 +20,24 @@ MARKDOWN = "# Stub validation report\n"
 
 
 @contextmanager
-def report_api(result):
+def report_api(scenario):
     """Serve a ready EU range and one backend report response."""
+    scenarios = {
+        "proof_pass_acceptance_fail": (True, True, False),
+        "proof_fail_acceptance_pass": (True, False, True),
+        "no_plan_acceptance_pass": (False, False, True),
+        "no_plan_acceptance_fail": (False, False, False),
+    }
+    if scenario == "HTTP_ERROR":
+        applicable, proof_pass, acceptance_pass = False, False, False
+    else:
+        applicable, proof_pass, acceptance_pass = scenarios[scenario]
     outcome = {
         "markdown": MARKDOWN,
         # Plan proof is independent of Hardened acceptance.
-        "planProof": {"applicable": True, "pass": result != "PASS"},
-        "acceptance": {"pass": result == "PASS"},
-        "summary": {"result": result},
+        "planProof": {"applicable": applicable, "pass": proof_pass},
+        "acceptance": {"pass": acceptance_pass},
+        "summary": {"result": "PASS" if acceptance_pass else "FAIL"},
     }
 
     class Handler(BaseHTTPRequestHandler):
@@ -58,7 +68,7 @@ def report_api(result):
             if self.path != "/api/firewall/validation-report" or body:
                 self._respond(404, {"error": "unexpected request"})
                 return
-            if result == "HTTP_ERROR":
+            if scenario == "HTTP_ERROR":
                 self._respond(500, {"error": "stub failure"})
                 return
             self._respond(200, outcome)
@@ -103,21 +113,29 @@ class ValidationReportScriptTests(unittest.TestCase):
         )
 
     def test_pass_fail_and_http_error(self):
+        cases = (
+            ("proof_pass_acceptance_fail", 0, "plan proof: PASS"),
+            ("proof_fail_acceptance_pass", 1, "plan proof: FAIL"),
+            ("no_plan_acceptance_pass", 0, "Hardened acceptance: PASS"),
+            ("no_plan_acceptance_fail", 1, "Hardened acceptance: FAIL"),
+            ("HTTP_ERROR", 1, None),
+        )
         for client in self.clients:
-            for result, expected_code in (("PASS", 0), ("FAIL", 1), ("HTTP_ERROR", 1)):
-                with self.subTest(client=client, result=result), report_api(result) as (api, requests):
+            for scenario, expected_code, expected_judgment in cases:
+                with self.subTest(client=client, scenario=scenario), report_api(scenario) as (api, requests):
                     completed = run_script(client, api)
                     self.assertEqual(completed.returncode, expected_code,
                                      completed.stdout + completed.stderr)
-                    if result == "HTTP_ERROR":
+                    if scenario == "HTTP_ERROR":
                         self.assertEqual(completed.stdout, "")
                     else:
                         self.assertEqual(completed.stdout, MARKDOWN)
+                        self.assertIn(f"validation-report: {expected_judgment}", completed.stderr)
                     self.assert_requests(requests)
 
     def test_out_file_receives_markdown_without_stdout(self):
         for client in self.clients:
-            with self.subTest(client=client), report_api("PASS") as (api, requests):
+            with self.subTest(client=client), report_api("no_plan_acceptance_pass") as (api, requests):
                 with tempfile.TemporaryDirectory() as directory:
                     out_path = Path(directory) / "validation.md"
                     completed = run_script(client, api, out_path)
