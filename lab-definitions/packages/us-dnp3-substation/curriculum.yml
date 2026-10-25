@@ -767,6 +767,23 @@ plan:
         port: '22'
       ics: {}
       action: ALLOW
+    - id: deny-vendor-to-ot
+      description: 'BLOCK: Vendor cannot reach OT Operations on Modbus, DNP3, or HMI control ports'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '1881'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: DENY
     deferred:
     - id: vendor-to-ot-weak
       description: 'WEAK: Vendor broad access to OT Operations including Modbus/DNP3 (should be narrowed)'
@@ -964,6 +981,7 @@ plan:
       - deny-enterprise-to-ot
       - deny-enterprise-to-field
       - vendor-to-ot-restricted
+      - deny-vendor-to-ot
       - deny-vendor-to-field
       - rtac-to-field-modbus
       - rtac-to-field-dnp3

@@ -38,9 +38,9 @@ describe("US Apply Your Plan content", () => {
     }
   });
 
-  it("pins revision two's 8+13 proof universe and partial-plan gaps", () => {
+  it("pins revision three's 8+13 proof universe and partial-plan gaps", () => {
     for (const plan of US_PLANS) {
-      expect(plan.revision).toBe(2);
+      expect(plan.revision).toBe(3);
       expect(plan.expectations.filter((r) => r.category === "authorized")).toHaveLength(8);
       expect(plan.expectations.filter((r) => r.category === "unauthorized")).toHaveLength(13);
     }
@@ -69,6 +69,34 @@ describe("US Apply Your Plan content", () => {
     const closures = ["block-enterprise-to-field", "block-vendor-to-field", "pin-rtac-to-field"];
     expect(binding.requirements["unauth-modbus-writes"].impl.BLOCK).toEqual(closures);
     expect(binding.requirements["unauth-modbus-writes"].impl["BLOCK and LOG"]).toEqual([...closures, "improve-logging"]);
+  });
+
+  it("shows the selected vendor OT deny as logged without changing proof verdicts", () => {
+    for (const plan of US_PLANS.slice(0, 2)) {
+      expect(plan.rules.some((r) => r.rule.id === "deny-vendor-to-ot")).toBe(false);
+    }
+    const full = US_PLANS[2];
+    const index = full.rules.findIndex((r) => r.rule.id === "deny-vendor-to-ot");
+    expect(index).toBeGreaterThan(0);
+    expect(full.rules[index - 1].rule.id).toBe("vendor-to-ot-restricted");
+    expect(full.rules[index]).toMatchObject({
+      rule: {
+        action: "DENY", log: true, sourceZones: ["dmz"], destZones: ["lan1"],
+        protocols: ["8080", "1881", "502", "20000"].map((port) => ({ name: "tcp", port })),
+      },
+      origin: { kind: "selected", action: "restrict-vendor-to-ot" },
+    });
+    const text = scenario("firewall-implementation").steps.find((s) => s.id === "phase-4-enable-logging-and-visibility")!.description;
+    for (const phrase of ["`deny-vendor-to-ot`", "`improve-logging` enables its log flag", "TCP 8080, 1881, 502 and 20000", "Default DENY is a silent backstop"]) {
+      expect(text).toContain(phrase);
+    }
+    for (const [i, plan] of US_PLANS.entries()) {
+      for (const row of plan.expectations) {
+        expect(row.hardenedVerdict).toBe(row.category === "authorized" ? "allow" : "deny");
+        const denied = row.category === "unauthorized" && (i === 2 || (i === 1 && ["U12", "U13"].includes(row.id)));
+        expect(row.planVerdict).toBe(denied ? "deny" : "allow");
+      }
+    }
   });
 
   it("labels every catalog action by its compiled kind", () => {

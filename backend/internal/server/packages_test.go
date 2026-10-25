@@ -215,7 +215,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 
 	info, ok := catalog.Info(config.DefaultPackage)
 	wantInfo := labs.PackageInfo{
-		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 2,
+		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 3,
 		Capabilities: []string{"process.electrical", "policy.containd", "audit.device-control", "capture.firewall"},
 		OperatorView: "us-dnp3-substation",
 	}

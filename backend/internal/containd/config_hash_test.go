@@ -17,7 +17,7 @@ func TestFirewallHashFromBytesIgnoresEmptyICSInLabPolicies(t *testing.T) {
 		emptyICSCount int
 	}{
 		{filename: "substation-weak.json", emptyICSCount: 9},
-		{filename: "substation-improved.json", emptyICSCount: 9},
+		{filename: "substation-improved.json", emptyICSCount: 10},
 	}
 	for _, tt := range tests {
 		t.Run(tt.filename, func(t *testing.T) {

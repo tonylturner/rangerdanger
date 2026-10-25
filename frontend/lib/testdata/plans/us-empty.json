@@ -920,7 +920,7 @@
   ],
   "label": "weak",
   "packageId": "us-dnp3-substation",
-  "revision": 2,
+  "revision": 3,
   "policyHash": "ca50c3c6dc3e9e1def42efc86674dfa1e258f939380f45358136b1b4d3783daa",
   "expectations": [
     {
