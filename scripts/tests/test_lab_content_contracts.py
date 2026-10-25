@@ -600,7 +600,7 @@ class AdvancedTrackContracts(unittest.TestCase):
 
 
 class TimingContracts(unittest.TestCase):
-    # Guided golden-path estimates from the v0.1.36 student walkthrough QA.
+    # Guided golden-path estimates from the rc.3 student walkthrough QA.
     MINUTES = {
         "baseline-assessment": 20,
         "segmentation-requirements": 10,
