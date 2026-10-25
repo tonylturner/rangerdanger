@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
@@ -48,36 +48,51 @@ func (s *Server) probeTarget(ctx context.Context, gen *lifecycle.Generation, ste
 	}
 	container := svc.Container
 	cmd := []string{"/bin/sh", "-c", probeCommand, "_", target.Host, fmt.Sprint(target.Port)}
-	start := time.Now()
-	_, _, rc, err := s.execInContainer(ctx, container, cmd, 4)
-	ms := time.Since(start).Milliseconds()
-	if err != nil {
-		row.Detail = prefix + "probe failed: " + err.Error()
+	stdout, stderr, rc, err := s.execInContainer(ctx, container, cmd, 4)
+	verdict, detail := classifyScenarioProbe(stdout, stderr, rc, err)
+	if verdict == "" {
+		row.Detail = prefix + detail
 		return row
 	}
-	var verdict, suffix string
-	switch rc {
-	case 0:
-		verdict = "reachable"
-		suffix = fmt.Sprintf(" in %d ms", ms)
-	case 124, 143:
-		verdict = "blocked"
-		suffix = " (timeout 3 s)"
-	case 1:
-		if ms < 500 {
-			verdict = "reachable"
-			suffix = fmt.Sprintf(" in %d ms (connection refused)", ms)
-		} else {
-			verdict = "blocked"
-			suffix = fmt.Sprintf(" (%d ms, connection refused or timeout)", ms)
-		}
-	default:
-		// Anything else (127 missing tool, 137 killed, -1 inspect failure)
-		// says nothing about the firewall; never let it certify "blocked".
-		row.Detail = fmt.Sprintf("%sprobe error: unexpected exit status %d after %d ms", prefix, rc, ms)
-		return row
-	}
-	row.Detail = prefix + verdict + suffix
+	row.Detail = prefix + verdict + detail
 	row.Success = verdict == step.Action.Outcome
 	return row
+}
+
+func classifyScenarioProbe(stdout, stderr string, rc int, err error) (string, string) {
+	if err != nil {
+		return "", "probe failed: " + err.Error()
+	}
+	diagnostic := strings.ToLower(strings.TrimSpace(stdout + "\n" + stderr))
+	refused := strings.Contains(diagnostic, "connection refused")
+	timedOut := strings.Contains(diagnostic, "timed out")
+	if refused && timedOut {
+		return "", "probe error: conflicting refusal and timeout diagnostics"
+	}
+	switch rc {
+	case 0:
+		if refused || timedOut {
+			return "", "probe error: successful exit conflicts with connection diagnostics"
+		}
+		return "reachable", ""
+	case 124, 143:
+		if refused {
+			return "", "probe error: timeout exit conflicts with refusal diagnostic"
+		}
+		return "blocked", " (timeout 3 s)"
+	case 1:
+		switch {
+		case refused:
+			return "reachable", " (connection refused)"
+		case timedOut:
+			return "blocked", " (connection timed out)"
+		default:
+			return "", fmt.Sprintf("probe error: exit status 1 without refusal or timeout diagnostics: %s", diagnostic)
+		}
+	default:
+		if diagnostic == "" {
+			return "", fmt.Sprintf("probe error: unexpected exit status %d", rc)
+		}
+		return "", fmt.Sprintf("probe error: unexpected exit status %d: %s", rc, diagnostic)
+	}
 }
