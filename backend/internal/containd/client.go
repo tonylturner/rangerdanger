@@ -280,28 +280,6 @@ func (c *Client) GetEvents(since string, limit int) ([]Event, error) {
 	return events, nil
 }
 
-// GetSessions returns active sessions through the firewall.
-func (c *Client) GetSessions() ([]Session, error) {
-	resp, err := c.doRequest("GET", c.BaseURL+"/api/v1/sessions")
-	if err != nil {
-		return nil, fmt.Errorf("get sessions failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get sessions returned %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Sessions []Session `json:"sessions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode sessions: %w", err)
-	}
-
-	return result.Sessions, nil
-}
-
 // IsAvailable checks if containd is reachable.
 func (c *Client) IsAvailable() bool {
 	status, err := c.GetHealth()

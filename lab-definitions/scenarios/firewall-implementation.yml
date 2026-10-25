@@ -2,7 +2,7 @@ id: firewall-implementation
 order: "2.2"
 name: "Firewall Policy Implementation"
 summary: "Apply a least-privilege segmentation policy on the containd NGFW, replacing the weak baseline with enforceable rules, then validate it holds."
-estimated_minutes: 12
+estimated_minutes: 22
 description: >
   You have identified the required flows, designed your
   requirements, and planned which remediations to execute.
@@ -17,6 +17,8 @@ nodes:
   - fw-1
   - kali-1
   - eng-ws-1
+  - rtac-1
+  - vendor-jump-1
 tags:
   - segmentation
   - firewall
@@ -28,7 +30,7 @@ steps:
     description: |
       In the Baseline Traffic Analysis, Segmentation Requirements, and Remediation Planning exercises you captured baseline traffic, designed zone-pair requirements, and selected which remediations to execute under labor budget. This exercise is where those design decisions become real firewall policy.
 
-      Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Phase 3.
+      Your prior work is summarised below - your design verdicts and findings drive the rule set you'll build in Stage 3.
 
       :::findings-panel from=segmentation-requirements title="Your design verdicts (Lab 1.3)"
       enterprise-to-field: Enterprise → Field on Modbus/DNP3
@@ -48,12 +50,12 @@ steps:
       delivers NTP, the HMI reads state) and **unauthorized traffic fails**
       (an enterprise Modbus write or a vendor DNP3 command is denied and
       logged). That's what you'll put in place here, then validate in
-      Phases 5-6.
+      Stages 5-6.
 
       ### How you'll work
 
       This lab runs **Guided by default**: you apply the policy with the
-      buttons below the step (**Apply Hardened** / **Apply Your Plan**) and
+      **Apply Hardened** button below the step and
       walk containd's UI and CLI to see exactly what landed - no rule syntax
       and no commit step. Prefer to author and commit the rules yourself?
       Switch to the **Advanced** track - recommended only if you're
@@ -63,7 +65,7 @@ steps:
       :::track-picker
       :::
 
-      **Time budget:** ~12 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
+      **Time budget:** ~22 minutes on the Guided path (longer if you author rules yourself on Advanced). The containd firewall supports both a web UI and a CLI - use whichever you prefer.
 
   - title: "Verify access to containd"
     expected_config: weak
@@ -111,7 +113,7 @@ steps:
       run the containd daemon binary. Only `containd cli` enters the
       appliance shell.)
 
-  - title: "Phase 1 - Verify current access under the weak baseline"
+  - title: "Stage 1 - Check weak-baseline access"
     expected_config: weak
     node: kali-1
     description: |
@@ -121,29 +123,29 @@ steps:
 
       Test Modbus read from enterprise to field relay:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
       Test DNP3 poll from enterprise to field relay:
 
-          dnp3poll 10.40.40.20:20000 -a 1
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Test DNP3 poll from enterprise to field recloser:
 
-          dnp3poll 10.40.40.21:20000 -a 2
+          dnp3poll -a 2 -t 3s 10.40.40.21:20000
 
       Test Modbus read from enterprise to field recloser:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.21
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.21
 
       **From the eng-ws terminal** (`eng-ws-1` on the [Network Map](/console)):
 
-      Test Modbus read from vendor to field regulator:
+      From the eng-ws terminal, test Modbus read to field regulator:
 
           mbpoll -a 1 -r 1 -c 2 -1 -t 4 10.40.40.22
 
-      Test Modbus to field capbank:
+      From the eng-ws terminal, test Modbus to field capbank:
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.23
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.23
 
       All of these should return data. That is the problem. Kali (an attacker box in the enterprise zone) can speak Modbus and DNP3 directly to field protection relays. The engineering workstation can bypass the RTAC entirely. This is what you are about to fix.
     action:
@@ -157,7 +159,7 @@ steps:
         - { from: eng-ws-1, host: 10.40.40.22, port: 502, note: "Modbus to regulator" }
         - { from: eng-ws-1, host: 10.40.40.23, port: 502, note: "Modbus to capbank" }
 
-  - title: "Phase 2 - Remove broad trust and establish default-deny"
+  - title: "Stage 2 - Remove broad trust and establish default-deny"
     expected_config: weak
     description: |
       Move from a permissive posture to default-deny for all
@@ -185,7 +187,7 @@ steps:
       deny rule - that's the vendor-mechanism difference.
 
       One nuance for later: default-deny *blocks* silently - it emits
-      no per-flow log. Phase 4 adds explicit logged DENY rules for the
+      no per-flow log. Stage 4 adds explicit logged DENY rules for the
       cross-zone pairs you most want visibility on, with the silent
       default-deny as the backstop for everything else.
       :::
@@ -210,11 +212,11 @@ steps:
 
       :::guided
       **On the Guided track you don't delete these by hand.** In the next
-      phase, **Apply Hardened** (or **Apply Your Plan**) replaces the weak
+      stage, **Apply Hardened** replaces the weak
       baseline wholesale - it removes the five broad allows above *and*
       adds the minimal rules in a single commit. Read the list above so
       you understand what's being removed and why, then move on - you'll
-      confirm default-deny holds in Phase 5/6. The manual Web UI / CLI
+      confirm default-deny holds in Stages 5-6. The manual Web UI / CLI
       steps below are the Advanced-track way to do the same removal.
       :::
 
@@ -230,10 +232,12 @@ steps:
       `vendor-to-field-weak`, and `ot-to-field-broad`. You do *not* need a
       separate "default action" switch - the policy default is already
       DENY and takes over once the broad allows are gone. Per-rule deletes
-      apply immediately. Keep the intra-zone rules `ot-intrazone` and
+      save the running config; the firewall reloads it when you commit
+      (`commit` at `containd#`, or **Commit** on the **Configuration**
+      page). Keep the intra-zone rules `ot-intrazone` and
       `field-intrazone`.
 
-      **CLI path.** From the `fw-1` terminal, type `containd cli`, then:
+      **CLI path.** The `fw-1` terminal opens at `containd#`; run:
 
           delete firewall rule enterprise-to-ot-weak
           delete firewall rule enterprise-to-field-weak
@@ -247,22 +251,26 @@ steps:
 
       **Verify default-deny.** From kali, this should now time out:
 
-          mbpoll -a 1 -r 1 -c 1 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
 
       If it still returns register data, the default-deny isn't active -
       re-check your rule list and whether you committed.
       :::
 
-  - title: "Phase 3 - Create minimal required rules"
+  - title: "Stage 3 - Apply the reference rules"
+    expected_config: hardened
     description: |
+      **Workshop note:**
+      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
+      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
+
       The six rules below are the contract for what cross-zone
       traffic the substation must allow. Everything else stays
       denied.
 
       :::guided
       Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
-      reference policy, or **Apply Your Plan** to push the policy
-      built from your Lab 1.4 picks. Then walk the rule table below
+      reference policy. Then walk the rule table below
       and confirm each row is present in containd's web UI
       ([http://localhost:9080](http://localhost:9080)) or via
       `show running-config` in the CLI. Understanding *what* is in
@@ -274,6 +282,23 @@ steps:
       web UI or the appliance CLI. The banner above will switch to
       "Your custom policy" once your commit lands. The exact JSON
       schema and CLI commands are in the hints below.
+
+      **Close the remote-access hole, commit, then prove it.** The weak
+      `enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900, and
+      it is not one of the five broad allows you deleted in Stage 2.
+      Replace it with rule 6 (TCP 22, 80, 443 only) and **commit**: the
+      firewall keeps enforcing the last committed rules until you do, so
+      a test before the commit only describes the old policy. In the web
+      UI, **Create rule** and **Delete** save the running config but do
+      not reload the firewall either - run `commit` at `containd#` (or
+      **Commit** on the **Configuration** page) after your last edit.
+      Then confirm from Kali that enterprise → vendor remote access is
+      blocked: run `nmap -Pn -p 3389,5900 10.20.20.10` in the Kali
+      terminal. Both ports must be `filtered`. If either is `open`, your
+      enterprise → vendor rule is broader than rule 6 or the weak rule
+      survived - fix the rule and commit again. The commit succeeds and
+      the banner turns green either way; nothing else warns you about
+      this gap.
       :::
 
       ### Required Rules
@@ -311,33 +336,26 @@ steps:
         *Learning (passive)*, which only observes - in Learning mode the
         function-code filter will **not** block.
 
-      Click **Create rule**. Each rule takes effect *immediately* - there
-      is no separate commit for individual rules, so just watch the rule
-      list grow. (Only *bulk* edits to the candidate JSON on the
-      **Configuration** page need a commit: an amber "candidate differs
-      from running" banner then appears at the top of every page - click
-      **Commit** on it, or **Review Candidate Diff** to inspect first.)
+      Click **Create rule** and watch the rule list grow. Each rule is
+      saved to the running config, but the firewall only loads the saved
+      rules when you commit - so after your last rule run `commit` at
+      `containd#`, or click **Commit** on the **Configuration** page.
+      (Bulk edits to the candidate JSON on the **Configuration** page show
+      an amber "candidate differs from running" banner first - click
+      **Commit** on it, or **Review Candidate Diff** to inspect.)
       :::
 
-      :::hint Creating rules via the containd CLI
-      The granular protocol-port rule schema (with ICS DPI fields) is
-      best edited via JSON in the CLI rather than typed-in argument
-      lists. From the `fw-1` terminal (or SSH), type `containd cli`
-      to enter the appliance CLI, then:
+      :::hint Policy evidence at the containd CLI
+      At containd# run `export config` to print the running policy for review:
 
-          export config > /tmp/policy.json
-          shell                   # drop to bash
-          vi /tmp/policy.json     # edit the firewall.rules array
-          exit                    # back to containd CLI
-          import config /tmp/policy.json
-          show diff               # confirm what will change
-          commit
+          export config
 
-      Each rule object in `firewall.rules` looks like:
+      The rule JSON below is a non-executable schema illustration, not a
+      CLI file-edit/import recipe. Review the shipped reference configuration
+      for the complete rules and global DPI settings:
 
           {
             "id": "rtac-to-field-modbus",
-            "description": "RTAC Modbus polling to field devices",
             "sourceZones": ["lan1"],
             "sources": ["10.30.30.20/32"],
             "destZones": ["lan2"],
@@ -346,29 +364,13 @@ steps:
             "action": "ALLOW",
             "log": true
           }
-
-      The `sources` field is the source-pin that makes Rules 1-3 "RTAC
-      only" - a zone-only rule (`lan1` -> `lan2`) would allow *all* of
-      OT Ops to field, exactly the broad-subnet mistake the table warns
-      against. The `ics` block is the protocol-aware DPI layer (here,
-      Modbus function codes); use `{"protocol": "dnp3"}` for the DNP3
-      rule and `{}` for the plain HTTP rule.
-
-      The simpler `set firewall rule <id> <action> <src> <dst>` CLI
-      command works for plain zone-pair rules but doesn't carry
-      protocol/port/DPI fields, which is why the JSON path is the
-      right one for substation rule writing.
-
-      Tip: `commit confirmed 60` commits with auto-rollback after
-      60 seconds unless you type `confirm` - useful when you're
-      pushing rules to a remote firewall and don't want to lock
-      yourself out.
       :::
     action:
-      type: firewall
-      config: improved
+      type: check
+      expect:
+        firewall_config: improved
 
-  - title: "Phase 4 - Enable logging and visibility"
+  - title: "Stage 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
       A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
@@ -386,19 +388,15 @@ steps:
 
       :::hint Enabling logging on a rule
       The `firewall.rules` JSON schema has a `log: true` field. Add
-      it to the rule object alongside `action`, then `import config`
-      + `commit` as you did in Phase 3, or toggle the **Log matches**
-      checkbox in the Web UI's rule editor.
+      it to the rule object alongside `action` in Configuration at
+      http://localhost:9080, or toggle the **Log matches** checkbox in the
+      Web UI's rule editor.
       :::
 
       ### Verify your configuration committed
 
-      Open a terminal on `fw-1` (below, or on the [Network Map](/console))
-      and inspect the audit log:
-
-          containd cli
-
-      …then at the `containd#` prompt:
+      Open a terminal on `fw-1` (below, or on the [Network Map](/console)).
+      It opens at `containd#`; inspect the audit log there:
 
           show audit
 
@@ -437,7 +435,7 @@ steps:
       blocked (TCP timeout + no kinetic change).
       :::
 
-  - title: "Phase 5 - Validate allowed traffic"
+  - title: "Stage 5 - Check authorized flows"
     expected_config: hardened
     node: rtac-1
     description: |
@@ -447,8 +445,8 @@ steps:
 
       From the RTAC terminal (`rtac-1` on the [Network Map](/console)):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
-          dnp3poll 10.40.40.20:20000 -a 1
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Both should return data. This confirms the RTAC-to-field ALLOW rules are working for Modbus and DNP3.
 
@@ -486,37 +484,40 @@ steps:
         - { host: 10.40.40.20, port: 20000, note: "RTAC DNP3 to relay" }
         - { host: 10.30.30.10, port: 1881, note: "OT ops to FUXA HMI" }
 
-  - title: "Phase 6 - Validate blocked traffic"
+  - title: "Stage 6 - Check denied flows"
     expected_config: hardened
     node: kali-1
     description: |
+      **Workshop note:**
+      - In Lab 2.4, the report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+
       Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
 
       **From kali** (`kali-1` on the [Network Map](/console)):
 
       Modbus to field relay (enterprise to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
       DNP3 to field relay (enterprise to field, should be blocked):
 
-          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       **From eng-ws** (`eng-ws-1` on the [Network Map](/console)):
 
       Modbus to field capbank (vendor/DMZ to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.23
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23
 
       **From vendor-jump** (`vendor-jump-1` on the [Network Map](/console)):
 
       DNP3 to field relay (vendor/DMZ to field, should be blocked):
 
-          dnp3poll 10.40.40.20:20000 -a 1 -t 3
+          dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
       Modbus to field relay (vendor/DMZ to field, should be blocked):
 
-          mbpoll -a 1 -r 1 -c 5 -1 -t 1 -o 3 10.40.40.20
+          mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
       After each failed attempt, the connection should time out and
       the substation HMI should remain unchanged. The combination is
@@ -528,7 +529,7 @@ steps:
       2.3 step 1 baseline.
 
       **Administrative confirmation:** from the `fw-1` terminal,
-      `containd cli` then `show audit` - your recent `config.commit`
+      run `show audit` at `containd#` - your recent `config.commit`
       entries should appear, proving the rule set you're testing
       against is the rule set that's loaded.
 
@@ -564,21 +565,21 @@ steps:
       This step matters regardless of which path you chose at the
       top of the lab. If you applied the canned hardened reference,
       exporting gives you the starting point for your own future
-      edits. If you applied your Lab 1.4 plan, the export captures
-      what the planner produced from your picks. If you authored
-      the policy in containd, the export is the artifact you hand
+      edits. If you authored the policy in containd, the export is the artifact you hand
       to change management.
 
       **Web UI:** go to **Configuration** in the left nav and click
       **Download full** to save the running config as JSON (**Download
       redacted** strips secrets if you're sharing it).
 
-      **CLI:** from the `fw-1` terminal, run `containd cli`, then:
+      **CLI:** the `fw-1` terminal opens at `containd#`; run:
 
-          export config > student-policy.json
-          shell                       # drop to bash
-          cat /tmp/student-policy.json | python3 -m json.tool
-          exit
+          export config
+
+      **Workshop note:**
+      - Copy that JSON to your evidence document; the appliance CLI does not support shell redirection. Validate the saved copy on your workstation with `python3 -m json.tool`.
+      - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
+      - Browser export is optional; the copied CLI JSON is your evidence.
 
       Your policy should contain:
 

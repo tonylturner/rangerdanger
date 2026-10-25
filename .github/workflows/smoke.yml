@@ -7,7 +7,7 @@ name: Smoke
 #   2. lab inventory matches the workshop deck         (content gate)
 #   3. sim healthchecks pass                           (init gate)
 #   4. firewall enforces the traffic matrix correctly  (dataplane gate)
-#   5. every documented lab command runs cleanly       (lab-doc gate)
+#   5. reviewed YAML/CLI command examples satisfy semantic oracles
 #   6. the workshop test-suite reports no step/reset failures
 #
 # Runs on every push to main + PR. Catches startup regressions and
@@ -21,7 +21,7 @@ name: Smoke
 
 on:
   push:
-    branches: [main]
+    branches: [main, hotfix/v0.1.36-rc.1]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -84,8 +84,31 @@ jobs:
 
       - name: Probe API endpoints
         run: |
-          curl -fsS http://localhost:8088/api/health | tee /tmp/health.json
-          curl -fsS http://localhost:8088/api/build  | tee /tmp/build.json
+          set -euo pipefail
+          curl -fsS --max-time 10 http://localhost:8088/api/health | tee /tmp/health.json
+          curl -fsS --max-time 10 http://localhost:8088/api/build  | tee /tmp/build.json
+          jq -e . /tmp/health.json
+          jq -e . /tmp/build.json
+
+      - name: Archive environment receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p build/smoke-receipts
+          docker compose config > build/smoke-receipts/compose.resolved.yml
+          docker compose images --format json > build/smoke-receipts/compose-images.json
+          ids=$(docker compose images -q)
+          image_list=()
+          while IFS= read -r image; do
+            [ -n "$image" ] && image_list+=("$image")
+          done <<<"$ids"
+          docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
+          docker image inspect ghcr.io/tonylturner/containd:latest > build/smoke-receipts/containd.json
+          curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
+          curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
+
+      - name: Embedded UI and desktop probes
+        run: ./scripts/proxy-smoke.sh
 
       - name: Validate lab inventory
         # 6 workshop labs + 1 bonus, deck-aligned ordering. The list
@@ -158,11 +181,9 @@ jobs:
           ./scripts/firewall-smoke.sh
 
       - name: Lab commands smoke
-        # scripts/lab-commands-smoke.sh extracts every documented
-        # command from the lab YAMLs and runs them via docker exec
-        # from the right container under the right policy. Catches
-        # lab-doc rot - typo'd IPs, missing tools, wrong source
-        # containers, broken policies - before a student does.
+        # Reviewed YAML examples, including hints and appliance commands.
+        # This does not execute the old frontend's generated replacements;
+        # the inventory explicitly reports unautomated manual mutations.
         # PyYAML is needed by the script's parser; install once
         # alongside any other ad-hoc deps.
         run: |
@@ -202,6 +223,35 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
+      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
+        # The frontend generator is unchanged. Keep its advisory conformance
+        # check on the disposable built-image stack, not on cached old images.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          API=http://localhost:8088
+          receipts=build/smoke-receipts/rd01
+          mkdir -p "$receipts"
+          restore_weak() {
+            local rc=$?
+            trap - EXIT
+            if ! curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+                -d '{"config":"weak"}' "$API/api/firewall/apply" >"$receipts/restore.json"; then
+              echo "RD-01 cleanup failed" >&2
+              rc=1
+            fi
+            exit "$rc"
+          }
+          trap restore_weak EXIT
+          jq '.config' scripts/tests/fixtures/rd01-full-plan.json >"$receipts/plan.json"
+          curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-custom" >"$receipts/apply.json"
+          sleep 3
+          curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+          jq -e '.summary | .result == "PASS" and .authorized_pass == 8 and
+            .authorized_total == 8 and .unauthorized_pass == 11 and
+            .unauthorized_total == 11 and .skipped == 0' "$receipts/report.json"
+
       - name: Dump compose logs on failure
         if: failure()
         run: |
@@ -216,6 +266,17 @@ jobs:
         with:
           name: compose-logs
           path: /tmp/logs/
+          retention-days: 7
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-smoke-evidence
+          path: |
+            build/smoke-receipts/
+            build/lab-commands/
+            build/proxy-smoke/
           retention-days: 7
 
       - name: Tear down

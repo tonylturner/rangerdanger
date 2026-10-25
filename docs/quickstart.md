@@ -164,6 +164,54 @@ before using them offline.
 Open [http://localhost:8088/exercises](http://localhost:8088/exercises)
 and start with **Lab 1.2** (Baseline Traffic Analysis).
 
+## Updating to v0.1.36
+
+v0.1.36 is a **full image release**: all 16 first-party images are rebuilt
+and `latest` moves. New installs use [Path A](#path-a---online-default)
+or the normal [SSD bundle](#path-c---offline--ssd-workshops). To pin the
+release, check out tag `v0.1.36` and run `./setup.sh --version v0.1.36`
+(PowerShell: `.\setup.ps1 -Version v0.1.36`).
+
+For an existing online installation, use setup's normal **stop, then
+refresh** path. Save captures, exported reports, notes and desktop work,
+and back up `.env`, `data/`, `backend/data/` and any local source edits
+first. Setup runs a workshop reset as part of readiness checks; this is
+not a state-preserving mid-exercise patch. Do not use `down -v`.
+
+From the existing clean Git checkout, macOS/Linux:
+
+```bash
+git fetch origin tag v0.1.36 &&
+git checkout --detach v0.1.36 &&
+docker compose -f docker-compose.release.yml down &&
+./setup.sh --version v0.1.36
+```
+
+Windows PowerShell 5.1+ (stop on any error):
+
+```powershell
+git fetch origin tag v0.1.36
+if ($LASTEXITCODE -ne 0) { throw "Fetch failed; stop here" }
+git checkout --detach v0.1.36
+if ($LASTEXITCODE -ne 0) { throw "Checkout failed; stop here" }
+docker compose -f docker-compose.release.yml down
+if ($LASTEXITCODE -ne 0) { throw "Stop failed; stop here" }
+.\setup.ps1 -Version v0.1.36
+```
+
+Setup pulls the selected release images and starts the complete release
+stack. No source build is needed. Do not use `scripts/apply-repo-update.*`
+for this release: it does not install the new images.
+
+For an existing **offline / SSD** installation, follow the generated
+`DELTA-README.md` from an instructor-staged
+[`stage-ssd-delta.sh`](workshop-ssd.md#delta-staging) bundle. The
+v0.1.35 → v0.1.36 delta is close to a full set because all images are
+rebuilt. Its version precondition, backup, image loading, complete-stack
+restart and rollback instructions are part of the normal delta workflow.
+For a fresh offline installation, use the full bundle and Path C instead.
+See the [workshop errata](v0.1.36-hotfix.md) for remaining lab guidance.
+
 ## Common errors
 
 Compose commands below use the release and offline files explicitly, so
@@ -201,6 +249,44 @@ Most "doesn't start" issues fall into one of these:
    4.34) do not recover from that by themselves. Click **Restart** in
    the dialog; setup continues on its own. Updating Docker Desktop
    avoids it (4.94 recovers without the dialog).
+
+### "the vendor desktop returns 502 / vendor services are missing"
+
+Both mounted init scripts must have **LF** line endings and be executable:
+`scripts/vendor-jump-services.sh` and `scripts/set-gateway.sh`. The vendor
+mount overrides the image's copy; s6 skips a non-executable script, so a
+missing executable bit can disable portal, SSH, RDP and VNC setup too.
+
+In a Linux/macOS shell (or WSL), check and repair permissions:
+
+```bash
+file scripts/vendor-jump-services.sh scripts/set-gateway.sh  # must not report CRLF
+test -x scripts/vendor-jump-services.sh && test -x scripts/set-gateway.sh
+chmod +x scripts/vendor-jump-services.sh scripts/set-gateway.sh
+git ls-files --eol scripts/vendor-jump-services.sh scripts/set-gateway.sh  # w/lf
+git ls-files -s scripts/vendor-jump-services.sh scripts/set-gateway.sh     # 100755
+git config --get core.fileMode  # diagnostic only; false does not grant executable bits
+```
+
+Restore LF endings if the checks report CRLF; the repository already
+specifies LF for shell scripts in `.gitattributes`. Do not change global
+Git settings. On WSL prefer a **Linux-filesystem checkout** (for example
+`~/rangerdanger`, not `/mnt/c/...`) and run `chmod +x` there.
+
+After recreating vendor_jump, verify Docker's view, not just the Git index:
+
+```bash
+docker compose -f docker-compose.release.yml exec vendor_jump bash -ec \
+  'for f in /custom-cont-init.d/01-vendor-services.sh /custom-cont-init.d/10-set-gateway.sh; do test -x "$f"; if LC_ALL=C grep -q $'"'"'\r'"'"' "$f"; then exit 1; fi; done'
+docker compose -f docker-compose.release.yml logs vendor_jump
+```
+
+For SSD installs add `-f docker-compose.offline.yml`. Logs must show both
+01 and 10 executing without skipped/nonzero init. Native Docker Desktop
+NTFS and WSL ext4 fresh-start checks are release signoff requirements,
+not yet verified. If the host share cannot expose executable LF scripts,
+stop and use a verified WSL Linux-filesystem checkout; do not assume the
+image's build-time chmod can repair a read-only mount.
 
 ### "the firewall (`fw-1`) terminal says command not found"
 

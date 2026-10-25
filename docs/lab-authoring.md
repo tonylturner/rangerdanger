@@ -26,7 +26,8 @@ order: "1.5"                 # required, string. Sorts in the inventory; matches
 name: "Human-readable name"  # required
 summary: "One-line summary." # shown in the lab list
 description: |               # multi-paragraph. Shown above the steps.
-  Longer prose that introduces the lab. Markdown allowed.
+  Plain prose that introduces the lab. Rendered as one plain-text
+  paragraph: no Markdown, no line breaks. Use step bodies for Markdown.
 nodes:                       # optional. Hint to the UI which containers
   - fw-1                     # are involved (drives the in-app terminal
   - kali-1                   # tabs and node UI shortcuts).
@@ -96,7 +97,7 @@ Continuation lines with trailing backslash get joined automatically.
 description: |
   Run a Modbus poll to confirm the path:
 
-      mbpoll -m tcp -a 1 -r 1 -c 5 -1 -t 1 10.40.40.20
+      mbpoll -m tcp -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
 
   And check the API:
 
@@ -112,6 +113,14 @@ above each command - the runner picks the nearest one walking up.
 The lab-commands smoke test (`./scripts/lab-commands-smoke.sh`)
 extracts these the same way and runs each. If a command in your
 lab YAML doesn't run cleanly, CI fails.
+
+The gate keeps `pipefail`, but drains terminal `| head -N` pipelines with
+`sed -n '1,Np'`: visible lines are unchanged and an early closed pipe cannot
+masquerade as a reader failure. Missing/corrupt PCAPs and late reader failures
+still fail. A reviewed passive filter may return no matches only after a
+successful read; absence is `NOT_OBSERVED`, not enforcement proof.
+Every Run-button `mbpoll` read must terminate on its own (`-1`); the gate
+accepts only a zero exit with valid samples and no protocol/read errors.
 
 ### Hints - `:::hint`
 

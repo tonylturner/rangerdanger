@@ -6,6 +6,109 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [v0.1.36] - 2026-10-25
+
+Full image release using `[rebuild-all]`: all 16 first-party images are
+rebuilt and `latest` moves. Use the normal online setup/refresh or SSD
+bundle workflow, not the repository-update helper alone. The supported
+v0.1.35 → v0.1.36 SSD delta is close to a full set. Frontend source is
+unchanged; remaining application limits and lab guidance are documented
+in [the workshop errata](docs/v0.1.36-hotfix.md).
+
+### Added
+
+- **Workshop errata** at `docs/v0.1.36-hotfix.md`, with reference-policy
+  guidance, device-state enforcement checks and evidence requirements.
+- **Repository-update tools** for content changes that need no new images:
+  `scripts/apply-repo-update.sh` / `.ps1` check cached images and local
+  edits, restart backend/proxy and recreate only `vendor_jump` without
+  downloading or building images. `stage-ssd-repo-update.sh <out-dir> <tag>`
+  stages a tag archive, Git bundle, `SHA256SUMS` and student instructions
+  for archive installs, clones and Windows. These tools remain available
+  but do not install this release's new images.
+- **Embedded UI probes and command oracles.** `scripts/proxy-smoke.sh`
+  checks the containd UI and vendor desktop; the lab command inventory
+  verifies reviewed examples against semantic and device-state oracles.
+
+### Fixed
+
+- **Network Map firewall link** now opens the same-origin `/containd/`
+  route with its assets, rather than the obsolete firewall app path.
+- **Network Map OpenPLC link** now opens `/apps/openplc/` directly instead
+  of a nonexistent workshop lab-instance UI. Both backend link fixes
+  replace the temporary proxy redirects, which have been removed.
+- **Firewall sessions API** now reads containd's `/api/v1/conntrack` bare
+  array and translates its string ports into the existing portal JSON
+  contract, rather than calling a nonexistent sessions endpoint.
+- **Embedded containd UI.** Narrow API-path rewrites preserve containd's
+  runtime API base; PCAP downloads and CLI WebSockets retain their specific
+  rewrites, and root-relative `/icons/*.svg` resolve to containd.
+- **Vendor desktop startup.** The init script is bind-mounted from the
+  checkout and retains nginx's default site so `/apps/vendor-jump/`
+  serves the desktop again.
+- **OpenPLC login redirects** through `/apps/plc/` retain the portal host
+  and port, matching the `/apps/openplc/` route.
+- **Lab 2.2 content.** Stage 1–6 titles keep the unchanged frontend from
+  replacing corrected YAML bodies with stale generated plan steps. The
+  workshop applies Hardened reference; Lab 1.4 remains a design artifact.
+  Scenario headers no longer carry duplicated errata; the Lab 1.4
+  introduction no longer promises plan-driven changes to later exercises.
+  Rule Create/Delete instructions require Commit, and the Advanced track
+  verifies RDP/VNC (3389/5900) after committing. The schema example matches
+  the hardened reference, and export guidance describes copying CLI JSON
+  rather than editing a file the CLI never created.
+- **Lab 2.3 enforcement wording.** The L4 source pin enforces; DPI detects
+  and logs. Keyed answers and the Lab 2.2 DPI link wording distinguish
+  enforcement from visibility. Device-state checks and restore guidance
+  remain explicit; historical training writes can leave Validate at
+  PARTIAL even with every current device-state row passing.
+- **Lab 2.3-bonus attribution.** Use containd NETWORK → Sessions to
+  attribute the vendor connection. Open Sessions before the write, raise
+  the limit above 500 rows and filter `10.20.20.10`; observed rows expire
+  in about 17 seconds, not two minutes. The recloser itself records only
+  `modbus-tcp`, not the peer address.
+- **Lab 2.4 report scope** explicitly describes a TCP reachability matrix,
+  not function-code enforcement proof. Preserve report, PCAP and notes;
+  a green banner alone is not evidence.
+- **Lab commands and baseline evidence.** Corrected `dnp3poll` option
+  ordering, durations and outstation addresses; device-specific `mbpoll`
+  reads; reference-policy checks; and baseline findings. Every required
+  source terminal is available (Lab 2.2 includes RTAC and vendor jump),
+  firewall instructions start at `containd#`, and manual SSH examples use
+  the working account. Run-button `mbpoll` reads poll once (`-1`), register
+  prose uses 1-based labels, and cross-firewall `nmap` examples use `-Pn`
+  so host discovery failures are not mistaken for policy blocks.
+- **SSD archive updates** no longer require `.git`: the repository-update
+  helper explicitly skips only the tracked-file guard for archive installs,
+  retaining image and Compose checks.
+- **Smoke script reliability.** Corrected ShellCheck control-flow notes
+  and trap annotations, removed the retired `bounded_poll` exception,
+  and added a successful proxy-smoke check count.
+
+### Changed
+
+- **Release documentation** now covers new images and standard online/SSD
+  update paths. Removed the temporary README workshop notice and stale
+  claims that Lab 1.4 selections rewrite later labs; the workshop overview
+  also describes reference-only enforcement.
+- **Guided lab time estimates** match the measured walkthrough: 1.2 20,
+  1.3 10, 1.4 12, 2.2 22, 2.3 12, 2.3-bonus 12, 2.4 7 minutes (83 core
+  minutes). Workshop notes no longer imply instructor grading.
+- **CI smoke** drops the obsolete cached-old-image job. Built-image smoke
+  retains the advisory generated-full-plan check (8 authorized passes,
+  11 unauthorized blocks, zero skipped), its cleanup and evidence receipts,
+  plus JSON endpoint guards. Hotfix-branch push triggers remain enabled.
+- **Citation metadata** records version `0.1.36`.
+
+### Security
+
+- **Go toolchain 1.26.9 -> 1.26.10.** Clears `GO-2026-6809`
+  (`crypto/x509` now distrusts compromised intermediate certificates),
+  a standard-library finding published during the release candidates
+  that had the `govulncheck` gate red in `backend`, `services` and
+  `dnp3go`. Images build from the `golang:1.27` base, which the full
+  rebuild refreshes.
+
 ## [v0.1.35] - 2026-10-15
 
 Host-side setup script fixes plus four frontend dependency bumps. The
@@ -2843,7 +2946,8 @@ Docker Compose stack with a 9-exercise substation segmentation lab.
   that every tool the scenario YAMLs auto-run stays in the
   allowlist.
 
-[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.35...HEAD
+[Unreleased]: https://github.com/tonylturner/rangerdanger/compare/v0.1.36...HEAD
+[v0.1.36]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.36
 [v0.1.35]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.35
 [v0.1.34]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.34
 [v0.1.33]: https://github.com/tonylturner/rangerdanger/releases/tag/v0.1.33
