@@ -14,7 +14,7 @@ FROM linuxserver/webtop:ubuntu-xfce@sha256:7c96ba2aa2771b14453fc0e6974aa76f0a135
 #
 # - mbpoll/python3/pymodbus/nmap/etc. — what a vendor laptop would
 #   typically have for substation commissioning and diagnostics.
-# - xrdp + tigervnc + openssh-server + nginx — the SSH/HTTP/HTTPS/
+# - xrdp + x11vnc + openssh-server + nginx — the SSH/HTTP/HTTPS/
 #   RDP/VNC stack that the workshop's segmentation policies test
 #   against. Under the weak baseline these are reachable from the
 #   enterprise zone and demonstrate the lateral paths described in

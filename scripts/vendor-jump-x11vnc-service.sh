@@ -20,14 +20,14 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 
-# Wait for the kasm Xvfb display to come up.
+# Wait for the webtop Xvfb display to come up.
 for _ in $(seq 1 60); do
     [ -S /tmp/.X11-unix/X1 ] && break
     sleep 1
 done
 
 if [ ! -S /tmp/.X11-unix/X1 ]; then
-    echo "[x11vnc-service] kasm display :1 never came up; sleeping 60s and exiting (s6 will restart)" >&2
+    echo "[x11vnc-service] webtop display :1 never came up; sleeping 60s and exiting (s6 will restart)" >&2
     sleep 60
     exit 1
 fi
