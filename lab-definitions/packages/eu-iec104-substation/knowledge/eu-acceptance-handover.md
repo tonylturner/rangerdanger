@@ -2,17 +2,23 @@ A handover should let the next operator explain what changed, what was proven an
 
 ### Identify the tested configuration
 
-Record the package/revision, active policy identity, communications matrix and configuration diff. State the exercise window, operating conditions and people responsible for application, observation and acceptance.
+Record the package/revision, active policy identity, selected action IDs, policy hash, communications matrix and configuration diff. State the exercise window, operating conditions and people responsible for application, observation and acceptance.
 
 Include CC cache identity, journal bounds and device generations/revisions where relevant. If a service restarted or a reset occurred, mark that boundary in the timeline. Evidence from different epochs must not be silently presented as one continuous observation.
 
 The [change-resource plan](#eu-change-resource-plan) should already define the expected outcome and rollback criteria. Handover records what actually happened against that plan.
 
+### Keep both report results
+
+The EU report has 37 TCP tuples. **Plan proof** checks this applied plan, zero skipped and a stable recorded plan hash. **Hardened acceptance** requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI and fresh CC observations separately. A partial plan can pass plan proof and retain prevention gaps; list them by tuple ID and owning action. Do not erase deferred allow results or treat them as skipped.
+
+Keep package revision and action IDs beside the compiled config export; the JSON config alone does not embed provenance. Named and manual policies have no applicable plan proof and are judged against Hardened. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; planning selections emit no inspection or later enforcement promise.
+
 ### Assemble a paired test record
 
 | Claim | Evidence to retain |
 |---|---|
-| Unauthorized master excluded | New Kali attempt, active improved policy and matching network evidence |
+| Unauthorized master excluded | New source attempt, expected deny from its owning action and matching network evidence |
 | Authorized observation preserved | Fresh CC points, working GI/link and healthy-peer freshness |
 | Switching path works | Attempt-window select/execute result, fresh feedback and device consequence |
 | Automatic regulation preserved | PLC heartbeat/input validity, request outcome, settled tap and bus response |
@@ -47,6 +53,6 @@ The final verdict should be narrow enough to defend: “These new unauthorized f
 
 Lab 2.2 requires a fresh post-commit CC session, current-connection GI, every inventory point non-null/GOOD since GI start, the operational conduit proofs, independent breaker/RMU baseline positions and fresh section supply, plus active negative probes. A bad segmentation change fails visibility even when physical supply survives.
 
-Lab 2.3 requires that same fresh CC visibility, restored breaker/fresh supply, active negative probes and bounded absence of foreign breaker operations since hardening. PASS does not certify that the earlier attack/restoration was performed, future DPI or regulatory compliance. The bonus certifies its sampled negative paths and restored RMU/OLTC state, not attack completion, supply or fresh CC observations.
+Lab 2.3 requires that same fresh CC visibility, restored breaker/fresh supply, active probes against the plan, and bounded absence of foreign breaker operations only when the plan denies the Kali→RTU path. A deferred path instead retains the visible command consequence; restore breaker and supply before completion. PASS does not certify that the earlier attack/restoration was performed, command-aware filtering or regulatory compliance. The bonus certifies its sampled plan verdicts and restored RMU/OLTC state, not attack completion, supply or fresh CC observations.
 
-Lab 2.4 additionally requires a backend-retained PASS report for this range, full running firewall hash and latest commit window. Hash reads bracket the probe run. Recommit/reapply or range/backend restart requires a new report; export it for durable handover. Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.
+Lab 2.4 additionally requires a backend-retained passing result for the judging target for this range, full running firewall hash and latest commit window. Hash reads bracket the probe run. Recommit/reapply or range/backend restart requires a new report; export it for durable handover. Current CC integrity, all field revisions delivered and fresh supply remain separate completion checks.

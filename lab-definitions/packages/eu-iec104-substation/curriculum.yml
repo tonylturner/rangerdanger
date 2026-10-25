@@ -9,7 +9,6 @@ requirements:
       BLOCK and LOG:
       - block-enterprise-to-field
       - block-vendor-to-field
-      - improve-logging
   enterprise-to-station:
     label: Enterprise → station RTU on IEC 104/2404
     impl:
@@ -17,7 +16,6 @@ requirements:
       - block-enterprise-to-station
       BLOCK and LOG:
       - block-enterprise-to-station
-      - improve-logging
   vendor-to-station:
     label: Vendor DMZ → station (engineering access)
     impl:
@@ -25,29 +23,30 @@ requirements:
       - restrict-vendor-to-station
       BLOCK and LOG:
       - restrict-vendor-to-station
-      - improve-logging
       RESTRICT:
       - restrict-vendor-to-station
   non-rtu-to-field:
-    label: Hosts other than RTU (and PLC→OLTC) → five field devices
+    label: Non-RTU station sources → field (except PLC→OLTC)
     impl:
       BLOCK:
       - pin-rtu-to-field
       BLOCK and LOG:
       - pin-rtu-to-field
-      - improve-logging
   unauth-control:
-    label: Unauthorized IEC 104 commands / Modbus writes
+    label: Cross-zone foreign-source IEC 104 / Modbus attempts
     impl:
       BLOCK:
-      - modbus-dpi
-      - iec104-dpi
+      - block-enterprise-to-station
+      - restrict-vendor-to-station
+      - block-enterprise-to-field
+      - block-vendor-to-field
+      - pin-rtu-to-field
       BLOCK and LOG:
-      - modbus-dpi
-      - iec104-dpi
-      - improve-logging
-      LOG:
-      - improve-logging
+      - block-enterprise-to-station
+      - restrict-vendor-to-station
+      - block-enterprise-to-field
+      - block-vendor-to-field
+      - pin-rtu-to-field
 requirementOrder:
 - enterprise-to-field
 - enterprise-to-station
@@ -288,16 +287,15 @@ impact:
   modbus-dpi:
     defends:
     - eu-hardening-configurations
-    note: Plan function-code restrictions for southbound Modbus. Planned, not enforceable in this range yet.
+    note: Planning-only protocol review. No Modbus inspection or verdict change is emitted.
   iec104-dpi:
     defends:
     - eu-hardening-configurations
-    note: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. Planned, not enforceable in this
-      range yet.
+    note: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
   improve-logging:
     defends:
     - eu-hardening-configurations
-    note: Retain per-rule evidence and cross-zone PCAP so a policy change can be reviewed.
+    note: Planning-only evidence review. Required diagnostic denies always log; this action changes no rule.
   station-architecture-review:
     defends:
     - eu-validation-evidence
@@ -345,16 +343,15 @@ groups:
     effect: restricts
   modbus-dpi:
     title: modbus dpi
-    description: Plan function-code restrictions for southbound Modbus. Planned, not enforceable in this range yet.
+    description: Planning-only protocol review. No Modbus inspection or verdict change is emitted.
     effect: semantic
   iec104-dpi:
     title: iec104 dpi
-    description: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. Planned, not enforceable
-      in this range yet.
+    description: Planning-only protocol review. No IEC 104 inspection or command restriction is emitted.
     effect: semantic
   improve-logging:
     title: improve logging
-    description: Retain per-rule evidence and cross-zone PCAP so a policy change can be reviewed.
+    description: Planning-only evidence review. Required diagnostic denies always log; this action changes no rule.
     effect: logging
   station-architecture-review:
     title: station architecture review
@@ -383,21 +380,114 @@ groups:
 planningOnly: []
 phases:
   rules: |-
-    Implement the six required operational conduits. Default deny after.
+    **Prepared change request CR-22 (review before approval):** replace broad trust with default deny; retain RTU→field, PLC→OLTC, CC→historian ingest, enterprise→historian read and engineering→PLC web. The request accidentally omits CC→RTU TCP/2404. Identify the operator impact, correct that gap before commit and retain a known-good export plus rollback trigger/owner. Rejecting/correcting the request passes; causing an outage is never required. If you choose to test the incomplete request, remove only `control-centre-to-rtu-iec104` from a copy of improved, keep its logged deny rules and management access, and have rollback ready.
+
+    Compare the request against the complete minimal operational rules:
+
+    | Required conduit | Pin | Port |
+    |---|---|---|
+    | CC→RTU | 10.60.60.20→10.30.30.20 | TCP/2404 |
+    | RTU→field | 10.30.30.20→10.40.40.20…24 | TCP/502 |
+    | PLC→OLTC | 10.30.30.30→10.40.40.23 | TCP/502 |
+    | CC→historian ingest | 10.60.60.20→10.70.70.40 | TCP/8081 |
+    | Enterprise→historian read | 10.10.10.0/24→10.70.70.40 | TCP/8080 |
+    | Engineering→PLC web | 10.20.20.20→10.30.30.30 | TCP/8080 |
+
     :::guided
-    Apply Hardened for the reference or Apply Your Plan for your funded controls.
+    Apply Hardened to load the reference, or Apply Your Plan to exercise funded controls and discover residual gaps. Review the generated table, not just a green banner.
     :::
+
     :::technical
-    Author source/destination pins in containd, commit and inspect running configuration.
-    Preserve historian read/ingest separation and the PLC→OLTC exception. No ICS keys are accepted.
+    Author these six intents with source and destination pins in containd. Keep historian read 8080 separate from CC ingest 8081. Engineering PLC web is 10.20.20.20 only. Do not grant the vendor zone field control or enterprise access to RTU. Commit, then read back running configuration.
     :::
-    {{noPlan}}{{ruleTable}}
+
+    :::hint No semantic enforcement claim
+    Keep ICS rules absent. EU DPI actions are planning-only and emit no rules. No IEC 104 command restriction is enforced or promised. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; required diagnostic denies still log.
+    :::
+
+    The compiler retains the six required allows and four logged diagnostic denies.
+    EU selected slots emit no extra per-action rule. Selecting a closure removes
+    its deferred Weak allow; it does not remove the required operational rules.
+    An empty or planning-only plan is valid and keeps those exposures open.
+    Keep package revision, action IDs and policy hash with the compiled export.
+    The config JSON alone does not embed that provenance.
+
+    ### Compiled rules
+
+    {{noPlan}}
+    {{ruleTable}}
   positive: |-
-    Verify operations:
+    Prove all six required operational intents, not merely open sockets. In the Control Centre require a completed current-connection GI and every inventory point non-null and GOOD, received at or after that attempt’s GI start. Quiet status does not need advancing receipt times; float quality includes the reporting watchdog. Include F2 position, protection trip, current and MW (indication only, no command). Confirm RTU field telemetry and a healthy PLC heartbeat; observe an actual PLC request and its motion after the policy change. Check CC historian ingest and advancing archive samples separately from reader access.
+
+    :::hint Use your live operator connection
+    The validator anchors the proof on a retained matched GI start/completion on the current connection within ten minutes and after the attempt boundary. The CC `link.since` must be strictly later than the policy commit; use **POST /api/operator/reconnect** first, then wait for its connect GI. Interrogate station on the old connection does not test the new policy. If only GI evidence is missing or outside the window on an already post-commit connection, press **Interrogate station** and validate again. Establish this GI boundary before collecting the PLC and historian proof; later periodic GIs do not restart an already valid attempt. Routine GI runs on connect and every 15 minutes, not every second.
+    :::
+
+    **Package test instructions — controlled regulation loop.** First wait for a settled tap and the 20.196–20.604 kV band (20.4 kV ±1%). Reset starts at zero but the profile-disabled nominal equilibrium is +2, about 20.429 kV; the daily profile normally keeps running. When regulation is quiescent the PLC sends no tap request, so perturb regulation and let automatic control correct it, producing the PLC-originated request the proof requires. Use the **Control Centre** selected-device faceplate or the [operator API](/knowledge#eu-rtu-control-centre-apis); read tap, auto and voltage from `GET /api/operator/state` and wait for completed feedback before each command — an in-flight step returns 409:
+
+    1. Select **manual**: command `oltc-1-mode` → `manual`. Verify the auto feedback (IOA 1303) clears before continuing.
+    2. Request **two lower steps**: `oltc-1-step` → `lower`, waiting for completed feedback after each. Watch IOA 1301 go transient, then settle at each adjacent tap. One step can remain inside the band and would not prove automatic correction. See [step telemetry](/knowledge#eu-iec104-step-telemetry).
+    3. Return to **auto**: `oltc-1-mode` → `auto`. Wait for the configured 30 s sustained demand, then the 2 s motion for each correction; IOA 2403 reports configured delay, not its countdown. Automatic control now issues PLC-originated Modbus requests toward the operating band, not necessarily the exact starting tap under the daily profile. Confirm that PLC request, its motion completion and the solved revision, and that the historian ingests the advancing tap.
+
+    From **Kali**, read the historian; from **eng-ws**, retrieve the PLC login page:
+
+        curl -fsS --max-time 3 http://10.70.70.40:8080/api/points
+
+        curl -fsS --max-time 3 http://10.30.30.30:8080/login
+
+    :::hint Continuity is a hard constraint
+    Both breakers closed, RMU1 closed/RMU2 open and a fresh (≤3 s) bus20/S1/S2/S3 supply solve are independently checked from field/process truth. OLTC remote/auto, PLC motion and fresh operator observations must survive. The validator collects operational evidence, including same-subnet endpoint checks; same-subnet success is not firewall enforcement.
+    :::
+
+    :::hint Instructor-supervised F2 visibility check
+    Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and GOOD received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
+    :::
+
+    All ten authorized TCP rows must remain reachable for every plan. The report
+    has 37 rows in total. Plan proof checks this plan; Hardened acceptance requires
+    10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable
+    hash. Confirm a healthy HMI and fresh CC observations separately. Bridged
+    rows are endpoint evidence, not proof of a routed firewall rule.
+
+    ### Compiled expectations
+
     {{tests}}
   negative: |-
-    Verify the compiled Plan verdicts and compare them with Hardened.
-    Deferred exposures remain reachable; restoration, GI and supply still matter.
+    Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Each should time out under Hardened. For an applied plan, compare with
+    its compiled verdict: a deferred exposure stays reachable. The report runs
+    all 27 unauthorized rows; role-specific validators use their declared rows.
+
+    From **Kali**:
+
+        nmap -p 2404 10.30.30.20 --max-retries 1 -T4
+        nmap -p 502 10.40.40.20 --max-retries 1 -T4
+        nmap -p 3389,5900 10.20.20.10 --max-retries 1 -T4
+
+    :::hint Diagnose a gap honestly
+    A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.
+    :::
+
+    | Path | Owning action | Selected / deferred |
+    |---|---|---|
+    | Kali→vendor TCP/3389 and TCP/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+    | Enterprise→RTU TCP/2404 | `block-enterprise-to-station` | deny / allow |
+    | Vendor→RTU TCP/2404 and PLC web | `restrict-vendor-to-station` | deny / allow |
+    | Enterprise→field TCP/502 | `block-enterprise-to-field` | deny / allow |
+    | Vendor and eng-ws→field TCP/502 | `block-vendor-to-field` | deny / allow |
+    | Non-RTU station sources→field except PLC→OLTC | `pin-rtu-to-field` | deny / allow |
+    | CC endpoint scope and historian reader/ingest scope | `tighten-firewall-objects` | narrowed / Weak scope |
+
+    Invariant negatives still deny, even for an empty plan. Connection refused
+    means reached (allow); only connect timeout means deny. Missing tools or
+    container errors are skipped evidence and fail proof. Keep deferred allow
+    results as prevention gaps against Hardened, not as skipped steps.
+
+    Execute Step currently uses its fixed blocked outcome. Its failure on an
+    expected deferred allow is not a failed plan proof. Keep the observation
+    and compare the validator/report result with the compiled plan.
+
+    ### Compiled expectations
+
     {{tests}}
 noPlan: |
   Build a [plan](/exercises/{{planRole}}).
@@ -421,7 +511,7 @@ tests:
     Two completed lowers from the settled baseline should put the bus below band; do not assume the starting tap was zero. With the profile disabled nominal settles at +2, so two lowers reach zero. Wait for the PLC's configured 30-second demand and 2-second motions to return in band; IOA 2403 is the configured delay, not a countdown. The default Europe/Berlin daily load/source profile composes with instructor controls and keeps running through reset. Verify remote/auto, advancing heartbeat, device audit and fresh CC observations. Never use a final socket alone as loop proof.
 - kind: positive
   text: CC→historian:8081 — advancing ingested observations. Verify fresh application/device evidence, not only a socket.
-negativeEmpty: No selected exposure closures to test yet.
+negativeEmpty: Deferred controls leave their Weak exposures open. Test them against this plan and retain the Hardened comparison.
 nodeMap:
   eu-baseline-assessment:
     primary: kali-1

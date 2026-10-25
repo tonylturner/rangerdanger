@@ -10,19 +10,27 @@ Lab 1.3, `eu-segmentation-requirements`, displays those values in read-only find
 
 `package.yml` binds the baseline, requirements, planning, implementation, hardening, vendor and validation roles to their EU scenario IDs. Lab 1.4, `eu-remediation-planning`, reads the Lab 1.3 verdicts and the four readiness answers (`ot-eng-availability`, `fw-admin-skills`, `vendor-change-window` and `risk-acceptance-authority`). Its catalog and mappings come from this package's `curriculum.yml`.
 
-The catalog distinguishes changes to the reference boundary—such as `block-enterprise-to-field`, `block-enterprise-to-station`, `restrict-vendor-to-station` and `pin-rtu-to-field`—from logging, conceptual reviews and future work. The [change plan](#eu-change-resource-plan) is the companion for roles, rollback and acceptance; a funded action or green coverage summary is not acceptance evidence.
+### Compile and apply one plan
 
-The catalog also names `modbus-dpi` and `iec104-dpi` for planning. They are not live controls: the EU package sets `ics_rules: forbidden`, the improved reference policy has `dpiEnabled: false`, and the planner labels semantic actions “planned, not enforceable in this range yet.” The current boundary is L4 source/port filtering; it does not inspect Modbus function codes or IEC 104 commands, ASDUs or IOAs. Do not interpret a selected semantic action as enabled inspection.
+Enforceable actions are `restrict-enterprise-to-vendor`, `block-enterprise-to-field`, `block-enterprise-to-station`, `restrict-vendor-to-station`, `block-vendor-to-field`, `pin-rtu-to-field` and `tighten-firewall-objects`. Each removes its deferred Weak allow when selected. EU selected slots emit no extra rule. Six required allows and four logged diagnostic denies remain in every plan.
 
-### See intent in later labs
+EU has no detection-only action. `modbus-dpi`, `iec104-dpi`, `improve-logging` and all organizational actions are planning-only: they emit no firewall change. Required denies always log. The EU policy forbids ICS keys and disables DPI. **The L4 source pin enforces; DPI detects and logs.** EU does not demonstrate or promise semantic enforcement.
 
-The implementation lab, `eu-firewall-implementation`, shows the baseline findings and design verdicts side by side. Its package binding maps the `implement-rules`, `test-positive` and `test-negative` steps to plan-aware content. The plan may shape eligible source/port rules and the validation instructions, but the applied policy and the actual positive and negative tests remain separate evidence.
+An empty, planning-only or partial plan is valid. Budget overrun is a warning only. Deferring an enforceable action retains its Weak exposure; required operational flows cannot be deferred.
 
-`:::plan-coverage` panels in planning, hardening (`eu-hardening-configurations`) and validation (`eu-validation-evidence`) compare saved actions with the saved design verdicts. The renderer reports mapped work as covered, partial, a gap or not applicable. “Not applicable” can mean no verdict, an `ALLOW` design choice, or a selected semantic action that this range cannot enforce. A panel describes the authored mapping and learner selections; it does not probe the firewall or certify the running configuration. For proof and retention boundaries, use the [evidence lifecycle](#eu-evidence-lifecycle) and [reset acceptance](#eu-reset-acceptance) guidance.
+Apply Your Plan sends package ID, revision and action IDs to the backend. One compiled result supplies the configuration, ordered rule table and expected TCP matrix. The implementation templates retain CR-22 and the operational checks; the fresh-session reconnect remains in Phase 4. Keep the package revision, action IDs and policy hash beside the exported config. The JSON config alone does not embed provenance. Named-policy applies and running-hash divergence clear applied-plan provenance.
+
+### Follow the applied target in later labs
+
+Lab 2.3 judges an applied plan against its expected results, with Hardened as the comparison. Deferring `block-enterprise-to-station` leaves Kali→RTU open; the breaker command still lands. In the bonus lab, `restrict-enterprise-to-vendor` owns RDP/VNC and `block-vendor-to-field` owns the field hop. Test both independently. Restore normal device state, GI, supply and operator visibility for every plan.
+
+Coverage panels compare saved selections with design requirements. They do not probe the running firewall. Prevention mappings use enforceable actions only; required logged denies need no logging selection. A LOG-only requirement has no selectable live implementation. Commands on an allowed CC session and same-subnet paths remain residual risks.
+
+Lab 2.4 has two results across 37 TCP tuples. Plan proof checks this plan with zero skipped and a stable recorded plan hash. Hardened acceptance requires 10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable hash. Confirm a healthy HMI separately. A partial plan can pass plan proof and show prevention gaps against Hardened. Manual and named policies have no applicable plan proof and use Hardened expectations. See [evidence lifecycle](#eu-evidence-lifecycle) and [acceptance handover](#eu-acceptance-handover).
 
 ### Persistence and reset boundaries
 
-Curriculum state is stored in the student's browser under `rd:<package-id>:<revision>:<name>`. For the checked-in EU package, the current revision is 3. A decision is keyed by scenario and decision ID; the remediation plan is stored separately from each lab's completed steps, notes and command log. A later package revision uses a different storage scope, so old answers are not silently treated as answers to the new curriculum.
+Curriculum state is stored in the student's browser under `rd:<package-id>:<revision>:<name>`. Use the active package revision rather than a copied version number. A decision is keyed by scenario and decision ID; the remediation plan is stored separately from each lab's completed steps, notes and command log. A later package revision uses a different storage scope, so old answers are not silently treated as answers to the new curriculum.
 
 Reset Lab changes simulator state and restores the package firewall baseline; it does not clear browser-saved decisions or the remediation plan. Reset Progress clears only the current lab's completed steps, notes and command log. Neither should be mistaken for a curriculum-wide reset. Browser storage may also be unavailable, in which case answers may not persist across views or reloads.
 

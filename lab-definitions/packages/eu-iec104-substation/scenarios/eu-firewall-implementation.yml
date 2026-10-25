@@ -29,7 +29,7 @@ steps:
     This lab turns your design and funded plan into an enforceable boundary. Work in order: prove weak access, remove broad trust, preserve six minimal conduits, enable visibility, test both directions and export. Keep rollback available.
 
     :::hint Two tracks, one acceptance bar
-    Guided uses policy buttons. Advanced authors the policy. Both must preserve operations and close the sampled attack paths; a custom policy is accepted by outcome, not its name.
+    Guided uses policy buttons. Advanced authors the policy. Both preserve operations. An applied plan uses its own expected TCP outcomes, with Hardened as the comparison. Named and manual policies are judged against Hardened. A custom label proves nothing.
     :::
 
     :::track-picker
@@ -133,8 +133,15 @@ steps:
     :::
 
     :::hint No semantic enforcement claim
-    Keep ICS rules absent. IEC 104 DPI is the planned second layer: deny breaker IOA 3001 even from CC, allow monitoring/system reads and RMU/OLTC commands. It is not enforced in this phase.
+    Keep ICS rules absent. EU DPI actions are planning-only and emit no rules. No IEC 104 command restriction is enforced or promised. The L4 source pin enforces; DPI detects and logs. EU DPI is disabled; required diagnostic denies still log.
     :::
+
+    The compiler retains the six required allows and four logged diagnostic denies.
+    EU selected slots emit no extra per-action rule. Selecting a closure removes
+    its deferred Weak allow; it does not remove the required operational rules.
+    An empty or planning-only plan is valid and keeps those exposures open.
+    Keep package revision, action IDs and policy hash with the compiled export.
+    The config JSON alone does not embed that provenance.
   action:
     type: firewall
     config: improved
@@ -188,6 +195,12 @@ steps:
     :::hint Instructor-supervised F2 visibility check
     Save the policy and UTC window before temporarily over-restricting RTU→F2 Modbus. Removing an allow alone does not revoke an established L4 session; the instructor must cut the affected session to test reconnect denial. F2's four last values must remain visible with IV/NT and device_unreachable while other devices stay GOOD and the IEC 104 link stays started. This is observation loss, not proof that F2 opened. Restore the named F2 destination, request a new GI and retain all inventory points non-null and GOOD received since that GI start. Keep the loss, healthy-peer and recovery evidence for Lab 2.4. Do not issue an F2 supervisory command or reset its protection to repair communications.
     :::
+
+    All ten authorized TCP rows must remain reachable for every plan. The report
+    has 37 rows in total. Plan proof checks this plan; Hardened acceptance requires
+    10/10 authorized and 27/27 unauthorized denied, zero skipped, capture and stable
+    hash. Confirm a healthy HMI and fresh CC observations separately. Bridged
+    rows are endpoint evidence, not proof of a routed firewall rule.
   action:
     type: probe
     outcome: reachable
@@ -218,7 +231,9 @@ steps:
   expected_config: hardened
   node: kali-1
   description: |
-    Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Each should time out under the reference. The validator uses the same negative matrix as the report.
+    Test new unauthorized connections from each real source terminal: Kali→RTU:2404, Kali→all field:502, vendor→all field:502, eng-ws→all field:502, enterprise→PLC:8080 and Kali→vendor:3389/5900. Each should time out under Hardened. For an applied plan, compare with
+    its compiled verdict: a deferred exposure stays reachable. The report runs
+    all 27 unauthorized rows; role-specific validators use their declared rows.
 
     From **Kali**:
 
@@ -229,6 +244,25 @@ steps:
     :::hint Diagnose a gap honestly
     A deferred plan can leave a sampled path open. Correct the plan/rules or record the gap; do not label it passed because the policy is called custom or improved. Connection refused is reached, not denied.
     :::
+
+    | Path | Owning action | Selected / deferred |
+    |---|---|---|
+    | Kali→vendor TCP/3389 and TCP/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+    | Enterprise→RTU TCP/2404 | `block-enterprise-to-station` | deny / allow |
+    | Vendor→RTU TCP/2404 and PLC web | `restrict-vendor-to-station` | deny / allow |
+    | Enterprise→field TCP/502 | `block-enterprise-to-field` | deny / allow |
+    | Vendor and eng-ws→field TCP/502 | `block-vendor-to-field` | deny / allow |
+    | Non-RTU station sources→field except PLC→OLTC | `pin-rtu-to-field` | deny / allow |
+    | CC endpoint scope and historian reader/ingest scope | `tighten-firewall-objects` | narrowed / Weak scope |
+
+    Invariant negatives still deny, even for an empty plan. Connection refused
+    means reached (allow); only connect timeout means deny. Missing tools or
+    container errors are skipped evidence and fail proof. Keep deferred allow
+    results as prevention gaps against Hardened, not as skipped steps.
+
+    Execute Step currently uses its fixed blocked outcome. Its failure on an
+    expected deferred allow is not a failed plan proof. Keep the observation
+    and compare the validator/report result with the compiled plan.
   action:
     type: probe
     outcome: blocked
@@ -256,8 +290,14 @@ steps:
     Export the running configuration from containd's configuration UI, or in **fw-1**'s `containd cli` use `export config`. Retain policy identity, UTC bounds, positive/negative results and PCAP. Run Validate while your evidence is fresh.
 
     :::hint Next break point
-    Keep the hardened policy and rollback. Lab 2.3 will restore weak deliberately to demonstrate unauthorized wire control, then restore service and repeat under hardened. A policy file alone is not acceptance evidence.
+    Keep the intended policy and rollback. Lab 2.3 will restore weak deliberately to demonstrate unauthorized wire control, then restore service and repeat under the applied plan or Hardened reference. A policy file alone is not acceptance evidence.
     :::
+
+    Keep the package revision, selected action IDs and policy hash beside the
+    compiled config export. The config JSON alone does not embed provenance.
+    Retain the `plan` fields from `GET /api/firewall/active` with the export.
+    Compare the running hash before and after probing. Keep both plan proof and
+    Hardened acceptance; a faithful partial plan can still have prevention gaps.
   action:
     type: check
     expect:
