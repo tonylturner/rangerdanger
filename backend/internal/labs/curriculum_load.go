@@ -31,6 +31,11 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	if err := decodeStrict(data, &document); err != nil {
 		return nil, err
 	}
+	if pkg.ICSRules == ICSRulesForbidden {
+		if err := rejectForbiddenPlanICS(&document); err != nil {
+			return nil, err
+		}
+	}
 	facts := map[string]string{}
 	for _, n := range pkg.Template.Nodes {
 		facts["ip:"+n.ID] = n.IP
@@ -94,6 +99,12 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 	c.ICSRules = pkg.ICSRules
 	if c.Schema != 1 {
 		return nil, fmt.Errorf("curriculum.schema must be 1")
+	}
+	if err := validateCurriculumCollections(c); err != nil {
+		return nil, err
+	}
+	if _, err := validatePlan(pkg, c); err != nil {
+		return nil, err
 	}
 	return c, nil
 }
@@ -335,19 +346,6 @@ func validateCurriculum(pkg Package) error {
 			return fail("%s must list every entry exactly once", order.name)
 		}
 	}
-	for id := range actions {
-		if _, ok := c.Groups[id]; !ok {
-			found := false
-			for _, other := range c.PlanningOnly {
-				if other == id {
-					found = true
-				}
-			}
-			if !found {
-				return fail("action %s has no effect", id)
-			}
-		}
-	}
 	for _, t := range c.Tests {
 		if err := check(t.When); err != nil {
 			return err
@@ -375,7 +373,8 @@ func validateCurriculum(pkg Package) error {
 			}
 		}
 	}
-	return nil
+	_, err := validatePlan(pkg, c)
+	return err
 }
 
 // Match the renderer's decision attributes, including quoted values and its

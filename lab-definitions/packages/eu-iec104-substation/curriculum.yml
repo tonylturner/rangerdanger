@@ -169,6 +169,16 @@ teams:
 - name: Security Analyst
   capacity_hours: 120
 catalog:
+- id: restrict-enterprise-to-vendor
+  title: Restrict enterprise → vendor remote access
+  why: Remove direct enterprise RDP/VNC access to the vendor jump box; retain only the package’s named operational
+    exceptions.
+  effort_hours: 30
+  roles:
+  - Firewall Admin
+  - Network Engineer
+  tags:
+  - enterprise-vendor
 - id: block-enterprise-to-field
   title: Block enterprise to field
   why: Close direct corporate Modbus access to the feeder; an unused path is still exposure.
@@ -226,7 +236,7 @@ catalog:
   tags: []
 - id: tighten-firewall-objects
   title: Tighten firewall objects
-  why: Pin historian reader/ingest destinations and separate read 8080 from CC ingest 8081.
+  why: Pin CC telecontrol to the RTU endpoint, pin historian reader/ingest destinations and separate read 8080 from CC ingest 8081.
   effort_hours: 40
   roles: [Firewall Admin, Network Engineer]
   tags: []
@@ -966,3 +976,716 @@ dpiNotice:
 dpiForbiddenNotice:
   title: ICS DPI planned
   description: ', not enforceable in this range yet'
+
+# Required operational allows precede deferred Weak exposures and logged diagnostic denies.
+# Empty selected lists close through those denies or default DENY, without extra rules.
+# Historian read (8080) and CC-only ingest (8081) preserve separate Weak scopes.
+plan:
+  rules:
+  - required:
+      id: control-centre-to-rtu-iec104
+      description: Allow the named Control Centre to open IEC104 sessions to the RTU
+      sourceZones:
+      - ${zone:control_centre_net}
+      destZones:
+      - ${zone:station_net}
+      sources:
+      - ${ip:cc-1}/32
+      destinations:
+      - ${ip:rtu-1}/32
+      protocols:
+      - name: tcp
+        port: '2404'
+      action: ALLOW
+  - required:
+      id: rtu-to-feeder-modbus
+      description: Allow the named RTU to poll both breakers, RMUs and OLTC and control the existing command targets
+        over Modbus TCP
+      sourceZones:
+      - ${zone:station_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:rtu-1}/32
+      destinations:
+      - ${ip:breaker-1}/32
+      - ${ip:rmu-1}/32
+      - ${ip:rmu-2}/32
+      - ${ip:oltc-1}/32
+      - ${ip:f2-breaker}/32
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - required:
+      id: plc-to-oltc-modbus
+      description: Allow only the named PLC to regulate the OLTC over Modbus TCP
+      sourceZones:
+      - ${zone:station_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:plc-1}/32
+      destinations:
+      - ${ip:oltc-1}/32
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - required:
+      id: control-centre-to-historian-ingest
+      description: Allow only the named CC to push historian snapshots
+      sourceZones:
+      - ${zone:control_centre_net}
+      destZones:
+      - ${zone:ops_dmz_net}
+      sources:
+      - ${ip:cc-1}/32
+      destinations:
+      - ${ip:historian-1}/32
+      protocols:
+      - name: tcp
+        port: '8081'
+      action: ALLOW
+  - required:
+      id: enterprise-to-historian-read
+      description: Allow enterprise read-only historian access
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:ops_dmz_net}
+      sources:
+      - ${subnet:enterprise_net}
+      destinations:
+      - ${ip:historian-1}/32
+      protocols:
+      - name: tcp
+        port: '8080'
+      action: ALLOW
+  - required:
+      id: engineering-to-plc-web
+      description: Allow engineering maintenance of the OpenPLC web UI
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:station_net}
+      sources:
+      - ${ip:eng-ws-1}/32
+      destinations:
+      - ${ip:plc-1}/32
+      protocols:
+      - name: tcp
+        port: '8080'
+      action: ALLOW
+  - action: restrict-enterprise-to-vendor
+    selected: []
+    deferred:
+    - id: weak-enterprise-vendor-remote
+      description: Workshop weak exposure
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:vendor_net}
+      protocols:
+      - name: tcp
+        port: '3389'
+      - name: tcp
+        port: '5900'
+      action: ALLOW
+      log: true
+      destinations:
+      - ${ip:vendor-jump-1}/32
+  - action: block-enterprise-to-field
+    selected: []
+    deferred:
+    - id: weak-foreign-field-modbus-enterprise
+      description: 'WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should
+        be blocked)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - action: block-enterprise-to-station
+    selected: []
+    deferred:
+    - id: weak-iec104-exposure-enterprise
+      description: 'WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:station_net}
+      protocols:
+      - name: tcp
+        port: '2404'
+      action: ALLOW
+  - action: restrict-vendor-to-station
+    selected: []
+    deferred:
+    - id: weak-iec104-exposure-vendor
+      description: 'WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:station_net}
+      protocols:
+      - name: tcp
+        port: '2404'
+      action: ALLOW
+    - id: weak-vendor-station-web
+      description: Workshop weak exposure
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:station_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      action: ALLOW
+      log: true
+  - action: block-vendor-to-field
+    selected: []
+    deferred:
+    - id: weak-foreign-field-modbus-vendor
+      description: 'WEAK teaching exposure: enterprise and vendor direct Modbus access to field devices (should
+        be blocked)'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - action: pin-rtu-to-field
+    selected: []
+    deferred:
+    - id: weak-rtu-modbus
+      description: 'WEAK: all station-zone nodes can reach every field device over Modbus TCP'
+      sourceZones:
+      - ${zone:station_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - action: tighten-firewall-objects
+    selected: []
+    deferred:
+    - id: weak-iec104-exposure-control-centre
+      description: 'WEAK: enterprise, vendor, and control centre can open IEC104 sessions to the RTU'
+      sourceZones:
+      - ${zone:control_centre_net}
+      destZones:
+      - ${zone:station_net}
+      protocols:
+      - name: tcp
+        port: '2404'
+      action: ALLOW
+    - id: weak-historian-read
+      description: 'WEAK: enterprise, vendor and control centre can read the historian'
+      sourceZones:
+      - ${zone:enterprise_net}
+      - ${zone:vendor_net}
+      - ${zone:control_centre_net}
+      destZones:
+      - ${zone:ops_dmz_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      action: ALLOW
+    - id: weak-historian-ingest
+      description: 'WEAK: any control-centre-zone source can push historian snapshots'
+      sourceZones:
+      - ${zone:control_centre_net}
+      destZones:
+      - ${zone:ops_dmz_net}
+      protocols:
+      - name: tcp
+        port: '8081'
+      action: ALLOW
+  - required:
+      id: deny-unauthorized-historian-ingest
+      description: Deny and log other sources attempting historian snapshot ingest on TCP/8081
+      sourceZones:
+      - ${zone:enterprise_net}
+      - ${zone:vendor_net}
+      - ${zone:station_net}
+      - ${zone:field_net}
+      - lan3
+      - ${zone:control_centre_net}
+      - ${zone:ops_dmz_net}
+      destZones:
+      - ${zone:ops_dmz_net}
+      destinations:
+      - ${ip:historian-1}/32
+      protocols:
+      - name: tcp
+        port: '8081'
+      action: DENY
+      log: true
+  - required:
+      id: deny-unauthorized-plc-web
+      description: Deny and log other sources attempting OpenPLC web maintenance on TCP/8080
+      sourceZones:
+      - ${zone:enterprise_net}
+      - ${zone:vendor_net}
+      - ${zone:station_net}
+      - ${zone:field_net}
+      - lan3
+      - ${zone:control_centre_net}
+      - ${zone:ops_dmz_net}
+      destZones:
+      - ${zone:station_net}
+      destinations:
+      - ${ip:plc-1}/32
+      protocols:
+      - name: tcp
+        port: '8080'
+      action: DENY
+      log: true
+  - required:
+      id: deny-unauthorized-iec104
+      description: Deny and log other sources attempting to reach IEC104 on TCP/2404
+      sourceZones:
+      - ${zone:enterprise_net}
+      - ${zone:vendor_net}
+      - ${zone:station_net}
+      - ${zone:field_net}
+      - lan3
+      - ${zone:control_centre_net}
+      - ${zone:ops_dmz_net}
+      destZones:
+      - ${zone:station_net}
+      protocols:
+      - name: tcp
+        port: '2404'
+      action: DENY
+      log: true
+  - required:
+      id: deny-unauthorized-modbus
+      description: Deny and log other sources attempting to reach Modbus on TCP/502
+      sourceZones:
+      - ${zone:enterprise_net}
+      - ${zone:vendor_net}
+      - ${zone:station_net}
+      - ${zone:field_net}
+      - lan3
+      - ${zone:control_centre_net}
+      - ${zone:ops_dmz_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '502'
+      action: DENY
+      log: true
+  detect: {}
+  proof:
+  - id: A1
+    from: cc-1
+    to: rtu-1
+    network: station_net
+    port: 2404
+    category: authorized
+    expect: allow
+    owners: []
+    note: CC IEC 104 to RTU
+  - id: A2
+    from: plc-1
+    to: oltc-1
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: PLC to OLTC (pinned station-to-field conduit)
+  - id: A3
+    from: cc-1
+    to: historian-1
+    network: ops_dmz_net
+    port: 8081
+    category: authorized
+    expect: allow
+    owners: []
+    note: CC historian ingest
+  - id: A4
+    from: kali-1
+    to: historian-1
+    network: ops_dmz_net
+    port: 8080
+    category: authorized
+    expect: allow
+    owners: []
+    note: Enterprise historian read
+  - id: A5
+    from: eng-ws-1
+    to: plc-1
+    network: station_net
+    port: 8080
+    category: authorized
+    expect: allow
+    owners: []
+    note: Named engineering PLC maintenance
+  - id: U1
+    from: kali-1
+    to: rtu-1
+    network: station_net
+    port: 2404
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-station
+    labs:
+    - implementation
+    - hardening
+    note: Foreign IEC 104 connect
+  - id: U2
+    from: kali-1
+    to: plc-1
+    network: station_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners: []
+    labs:
+    - implementation
+    note: Enterprise PLC web
+  - id: U3
+    from: kali-1
+    to: vendor-jump-1
+    network: vendor_net
+    port: 3389
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-enterprise-to-vendor
+    labs:
+    - implementation
+    - vendor
+    note: Enterprise vendor RDP
+  - id: U4
+    from: kali-1
+    to: vendor-jump-1
+    network: vendor_net
+    port: 5900
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-enterprise-to-vendor
+    labs:
+    - implementation
+    - vendor
+    note: Enterprise vendor VNC
+  - id: A6
+    from: rtu-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTU field Modbus
+  - id: U5
+    from: kali-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U6
+    from: vendor-jump-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    - vendor
+    note: Foreign field Modbus connect
+  - id: U7
+    from: eng-ws-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: A7
+    from: rtu-1
+    to: f2-breaker
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTU field Modbus
+  - id: U8
+    from: kali-1
+    to: f2-breaker
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U9
+    from: vendor-jump-1
+    to: f2-breaker
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    - vendor
+    note: Foreign field Modbus connect
+  - id: U10
+    from: eng-ws-1
+    to: f2-breaker
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: A8
+    from: rtu-1
+    to: rmu-1
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTU field Modbus
+  - id: U11
+    from: kali-1
+    to: rmu-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U12
+    from: vendor-jump-1
+    to: rmu-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    - vendor
+    note: Foreign field Modbus connect
+  - id: U13
+    from: eng-ws-1
+    to: rmu-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: A9
+    from: rtu-1
+    to: rmu-2
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTU field Modbus
+  - id: U14
+    from: kali-1
+    to: rmu-2
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U15
+    from: vendor-jump-1
+    to: rmu-2
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    - vendor
+    note: Foreign field Modbus connect
+  - id: U16
+    from: eng-ws-1
+    to: rmu-2
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: A10
+    from: rtu-1
+    to: oltc-1
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTU field Modbus
+  - id: U17
+    from: kali-1
+    to: oltc-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U18
+    from: vendor-jump-1
+    to: oltc-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    - vendor
+    note: Foreign field Modbus connect
+  - id: U19
+    from: eng-ws-1
+    to: oltc-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    labs:
+    - implementation
+    note: Foreign field Modbus connect
+  - id: U20
+    from: vendor-jump-1
+    to: rtu-1
+    network: station_net
+    port: 2404
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-vendor-to-station
+    note: Vendor IEC 104 connect
+  - id: U21
+    from: vendor-jump-1
+    to: plc-1
+    network: station_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-vendor-to-station
+    note: Vendor PLC web
+  - id: U22
+    from: plc-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - pin-rtu-to-field
+    note: Non-RTU station PLC to breaker
+  - id: U23
+    from: gps-1
+    to: breaker-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - pin-rtu-to-field
+    note: Non-RTU station GPS to breaker
+  - id: U24
+    from: vendor-jump-1
+    to: historian-1
+    network: ops_dmz_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners:
+    - tighten-firewall-objects
+    note: Vendor historian read
+  - id: U25
+    from: cc-1
+    to: gps-1
+    network: station_net
+    port: 2404
+    category: unauthorized
+    expect: deny
+    owners:
+    - tighten-firewall-objects
+    note: CC to non-RTU station endpoint
+  - id: U26
+    from: kali-1
+    to: historian-1
+    network: ops_dmz_net
+    port: 8081
+    category: unauthorized
+    expect: deny
+    owners: []
+    note: Enterprise cannot ingest even under Weak
+  - id: U27
+    from: vendor-jump-1
+    to: historian-1
+    network: ops_dmz_net
+    port: 8081
+    category: unauthorized
+    expect: deny
+    owners: []
+    note: Vendor cannot ingest even under Weak

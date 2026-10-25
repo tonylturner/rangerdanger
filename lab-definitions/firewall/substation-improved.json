@@ -264,7 +264,7 @@
       },
       {
         "id": "rtac-to-field-dnp3",
-        "description": "RTAC to Field Devices: DNP3 TCP - Read/integrity poll only (FC1). Direct Operate (FC5) and No-Ack (FC6) are blocked at the DPI layer even from the RTAC source.",
+        "description": "RTAC to Field Devices: DNP3 TCP - the L4 source pin enforces RTAC field access; DPI detects and logs function codes, including Direct Operate (FC5) and No-Ack (FC6).",
         "sourceZones": [
           "lan1"
         ],

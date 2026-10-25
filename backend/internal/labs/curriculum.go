@@ -18,6 +18,7 @@ type CurriculumActivity struct {
 
 // Curriculum is a strictly decoded, topology-resolved package planning model.
 type Curriculum struct {
+	Plan                   *CurriculumPlan  `yaml:"plan" json:"plan"`
 	DPINotice              CurriculumNotice `yaml:"dpiNotice" json:"dpiNotice"`
 	DPIForbiddenNotice     CurriculumNotice `yaml:"dpiForbiddenNotice" json:"dpiForbiddenNotice"`
 	RequirementOrder       []string         `yaml:"requirementOrder" json:"requirementOrder"`
