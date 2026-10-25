@@ -116,7 +116,12 @@ $allImages = New-Object System.Collections.Generic.List[string]
 $composeStatus = 0
 try {
     $env:VERSION = $New
-    $env:RANGERDANGER_ROOT = ConvertTo-DesktopRoot $RootDir
+    # Unlike setup.ps1, staging also runs under pwsh on macOS/Linux.
+    # Use the same Windows host discriminator as Assert-DesktopWsl2,
+    # without requiring a daemon probe just to interpolate Compose.
+    $env:RANGERDANGER_ROOT = if ($env:OS -eq 'Windows_NT') {
+        ConvertTo-DesktopRoot $RootDir
+    } else { $RootDir }
     foreach ($releaseFile in $releaseFiles) {
         $run = Invoke-DockerBounded @('compose', '--project-directory', $RootDir,
             '-f', $releaseFile, 'config', '--images') 30
