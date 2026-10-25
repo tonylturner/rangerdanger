@@ -368,7 +368,7 @@ export function NetworkConsole() {
             />
           )}
           <Controls
-            className="!bg-slate-800 !border-slate-700"
+            className="bg-slate-800! border-slate-700!"
             position="top-right"
             showInteractive={false}
           >
@@ -413,7 +413,7 @@ export function NetworkConsole() {
       </div>
 
       {inspectorNode && (
-        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur">
+        <aside className="fixed right-0 top-0 z-40 h-full w-full max-w-md border-l border-slate-800 bg-slate-900/95 px-5 py-6 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div>
               <p

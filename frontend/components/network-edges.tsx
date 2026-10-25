@@ -26,7 +26,7 @@ function MapTooltip({
   if (!mounted || !visible) return null;
   return createPortal(
     <div
-      className="pointer-events-none fixed z-[60] rounded-lg border border-slate-700 px-3 py-2 text-[11px] text-slate-100 shadow-2xl"
+      className="pointer-events-none fixed z-60 rounded-lg border border-slate-700 px-3 py-2 text-[11px] text-slate-100 shadow-2xl"
       style={{
         left: x + 14,
         top: y + 14,
@@ -439,7 +439,7 @@ function TrafficEdge({
           {data?.tooltipLines?.[0] || ''}
         </div>
         {data?.blockReason && (
-          <div className="mt-1 rounded border border-red-800/40 bg-red-950/20 px-2 py-1 text-[10px] leading-snug text-red-300">
+          <div className="mt-1 rounded-sm border border-red-800/40 bg-red-950/20 px-2 py-1 text-[10px] leading-snug text-red-300">
             {data.blockReason}
           </div>
         )}

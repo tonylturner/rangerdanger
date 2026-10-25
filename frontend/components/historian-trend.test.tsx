@@ -10,7 +10,7 @@ describe("historian trend", () => {
     const svg = html.match(/<svg[\s\S]*?<\/svg>/)?.[0];
     expect(svg).toBeDefined();
     expect(svg).toContain('viewBox="0 0 840 150" preserveAspectRatio="none"');
-    expect(svg).toContain('class="aspect-[840/150] h-auto min-h-[150px] w-full overflow-visible"');
+    expect(svg).toContain('class="aspect-840/150 h-auto min-h-[150px] w-full overflow-visible"');
     expect(svg).not.toContain("<text");
     expect(html).toContain("pt-6 text-xs text-slate-300");
     expect(html).toContain('top-[10%] -translate-y-1/2">20.20</span>');
@@ -40,8 +40,8 @@ describe("historian trend", () => {
     };
     const html = renderToStaticMarkup(<HistoryPlot history={history} />);
     expect(html).toContain('role="region" aria-label="Latest snapshots" tabindex="0" class="max-w-full overflow-x-auto"');
-    expect(html).toContain('min-w-[48rem]');
-    expect(html).toContain('[overflow-wrap:anywhere]');
+    expect(html).toContain('min-w-3xl');
+    expect(html).toContain('wrap-anywhere');
     expect(html).not.toMatch(/max-h-|overflow-auto|overflow-y-/);
     expect(html.match(/<tbody>[\s\S]*?<\/tbody>/)?.[0].match(/<tr /g)).toHaveLength(30);
     const rows = text(html).slice(text(html).indexOf("CC epoch / seq"));

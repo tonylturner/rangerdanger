@@ -86,7 +86,7 @@ export default function ExercisesPage() {
               onClick={handleExportWorkbook}
               disabled={workbookExporting}
               aria-label="Export full workbook as PDF"
-              className="inline-flex shrink-0 items-center gap-2 rounded border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-900/40 hover:border-amber-600 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-2 rounded-sm border border-amber-700/60 bg-amber-950/30 px-3 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-900/40 hover:border-amber-600 disabled:opacity-50"
             >
               <BookOpen className={`h-4 w-4 ${workbookExporting ? "animate-pulse" : ""}`} />
               <span>{workbookExporting ? "Generating…" : "Workbook PDF"}</span>

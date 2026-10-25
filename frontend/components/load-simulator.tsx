@@ -280,14 +280,14 @@ export function LoadSimulator() {
           <button
             onClick={() => setModal(true)}
             disabled={resetting}
-            className="rounded border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:bg-slate-800/50"
+            className="rounded-sm border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:bg-slate-800/50"
           >
             Reset lab
           </button>
           <button
             onClick={toggleExpand}
             aria-label={expanded ? "Collapse" : "Expand"}
-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400 transition-colors hover:bg-slate-800/50"
+            className="rounded-sm border border-slate-700 px-2 py-1 text-[11px] text-slate-400 transition-colors hover:bg-slate-800/50"
           >
             {expanded ? "▴" : "▾"}
           </button>
@@ -363,12 +363,12 @@ export function LoadSimulator() {
             <div className="mt-2 text-[11px] text-slate-500">Current exercise progress is preserved.</div>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setModal(false)}
-                className="rounded border border-slate-700 px-3 py-1.5 text-[12px] text-slate-400 transition-colors hover:bg-slate-800/50">
+                className="rounded-sm border border-slate-700 px-3 py-1.5 text-[12px] text-slate-400 transition-colors hover:bg-slate-800/50">
                 Cancel
               </button>
               <button onClick={doReset}
                 disabled={resetting}
-                className="rounded border border-[#c6f24e] bg-[#c6f24e] px-3 py-1.5 text-[12px] font-medium text-slate-900">
+                className="rounded-sm border border-[#c6f24e] bg-[#c6f24e] px-3 py-1.5 text-[12px] font-medium text-slate-900">
                 {resetting ? "Resetting…" : "Reset"}
               </button>
             </div>
@@ -404,7 +404,7 @@ function SliderRow({
         onKeyUp={(e) => {
           if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) commit();
         }}
-        className="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:flex-1" style={{ accentColor: LIME }}
+        className="order-3 w-full min-w-0 sm:order-0 sm:w-auto sm:flex-1" style={{ accentColor: LIME }}
       />
       <span className="ml-auto shrink-0 text-right font-mono text-xs font-bold text-slate-200 sm:ml-0" style={{ width: 90 }}>{readout}</span>
     </div>

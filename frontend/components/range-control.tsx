@@ -182,7 +182,7 @@ function RangeBody({
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[summary.dot]}`} />
         <span className="min-w-0 flex-1">
-          <span className="block break-words text-[12px] font-medium leading-snug text-slate-200">
+          <span className="block wrap-break-word text-[12px] font-medium leading-snug text-slate-200">
             {packageTitle(packages, currentId) || "No package"}
           </span>
           <span className="block text-[10px] text-slate-500">{summary.label}</span>
@@ -200,7 +200,7 @@ function RangeBody({
 
       {status.phase === "failed" && (
         <div className="space-y-2 rounded-md border border-rose-900/70 bg-rose-950/30 px-2.5 py-2">
-          <p className="break-words text-[11px] leading-snug text-rose-200">{status.error || "The range did not start."}</p>
+          <p className="wrap-break-word text-[11px] leading-snug text-rose-200">{status.error || "The range did not start."}</p>
           <ActionButton label={REQUEST_LABELS.retry} pending={pending} onClick={() => onSelect(status.package)} />
         </div>
       )}

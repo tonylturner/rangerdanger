@@ -20,10 +20,10 @@ export function PhysicalOverview({ field, operator, unavailable, fieldUnavailabl
   return <section aria-label="System overview" className="space-y-2">
     <h2 className="text-sm font-semibold text-slate-200">System overview</h2>
     <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-      {tiles.map((tile) => <button type="button" key={tile.label} className={`${ACTION} min-w-0 space-y-1 bg-slate-950 text-left [overflow-wrap:anywhere]`} onClick={tile.action}>
+      {tiles.map((tile) => <button type="button" key={tile.label} className={`${ACTION} min-w-0 space-y-1 bg-slate-950 text-left wrap-anywhere`} onClick={tile.action}>
         <h3 className="text-xs text-slate-400">{tile.label}</h3><p className="font-mono text-sm text-slate-100">{tile.value}</p><p className="text-xs text-slate-300">{tile.detail}</p>
       </button>)}
-      <button type="button" className={`${ACTION} min-w-0 space-y-1 bg-slate-950 text-left [overflow-wrap:anywhere]`} onClick={onComparison}>
+      <button type="button" className={`${ACTION} min-w-0 space-y-1 bg-slate-950 text-left wrap-anywhere`} onClick={onComparison}>
         <h3 className="text-xs text-slate-400">SCADA agreement</h3>
         <p className="font-mono text-xs text-slate-300">SCADA data quality: {scadaQualityText(operator, unavailable)}</p>
         <p className={`font-mono text-xs ${counts.MISMATCH ? "text-red-300" : "text-slate-300"}`}>Physical agreement: {agreementText(counts)}</p>

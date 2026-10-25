@@ -145,7 +145,7 @@ export function ElectricalDetailView({
               <>
                 Electrical Snapshot
                 {physics?.stale && (
-                  <span className="rounded border border-amber-800/60 bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-amber-400">
+                  <span className="rounded-sm border border-amber-800/60 bg-amber-950/30 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-amber-400">
                     Physics stale
                   </span>
                 )}
@@ -318,7 +318,7 @@ export function ElectricalDetailView({
                     </span>
                   </div>
                   {(!recloseEnabled || rclLockout) && (
-                    <div className="mt-1 rounded border border-red-900/40 bg-red-950/20 px-2 py-1.5 text-[10px] text-red-300">
+                    <div className="mt-1 rounded-sm border border-red-900/40 bg-red-950/20 px-2 py-1.5 text-[10px] text-red-300">
                       {!recloseEnabled
                         ? "Reclose was disabled - this removes automatic fault recovery capability. If a fault clears, the recloser cannot restore service without manual close command."
                         : "Recloser has locked out after exhausting all reclose attempts. Manual intervention required to restore service."
@@ -330,7 +330,7 @@ export function ElectricalDetailView({
             ) : (
               <div className="space-y-2">
                 <div className="text-[11px] text-slate-400">No active faults on the feeder.</div>
-                <div className="rounded border border-slate-800/60 bg-slate-900/30 p-2.5 text-[10px] text-slate-500 space-y-1">
+                <div className="rounded-sm border border-slate-800/60 bg-slate-900/30 p-2.5 text-[10px] text-slate-500 space-y-1">
                   <div className="text-slate-400 font-medium mb-1">Protection Coordination Hierarchy</div>
                   <div>1. <span className="text-green-400">Recloser (79)</span> clears downstream faults first (up to 3 shots)</div>
                   <div>2. <span className="text-sky-400">Feeder Breaker (52)</span> is upstream backup if recloser fails to clear</div>
@@ -412,7 +412,7 @@ function MetricCell({
   warn?: boolean;
 }) {
   return (
-    <div className="rounded border border-slate-800/60 bg-slate-950/50 px-2 py-1.5">
+    <div className="rounded-sm border border-slate-800/60 bg-slate-950/50 px-2 py-1.5">
       <div className="text-[9px] text-slate-500 font-medium">{label}</div>
       <div className={`text-sm font-bold font-mono ${
         ok === false ? "text-red-400" : warn ? "text-yellow-400" : ok ? "text-slate-200" : "text-slate-400"
@@ -437,13 +437,13 @@ function VoltageProfileBar({ label, pu, active, highlight }: { label: string; pu
   return (
     <div className="flex items-center gap-2 text-[11px]">
       <span className={`w-44 shrink-0 truncate ${highlight ? "text-amber-400 font-medium" : "text-slate-400"}`}>{label}</span>
-      <div className="flex-1 h-3 bg-slate-900 rounded-sm border border-slate-800/60 relative overflow-hidden">
+      <div className="flex-1 h-3 bg-slate-900 rounded-xs border border-slate-800/60 relative overflow-hidden">
         {/* ANSI C84.1 band indicator */}
         <div className="absolute inset-0 flex">
           <div style={{ width: "25%" }} />
           <div style={{ width: "50%" }} className="bg-green-900/15 border-x border-green-800/20" />
         </div>
-        <div className={`h-full rounded-sm ${barColor} transition-all duration-300`} style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-xs ${barColor} transition-all duration-300`} style={{ width: `${pct}%` }} />
       </div>
       <span className={`w-16 text-right font-mono font-bold ${
         !active || pu === 0 ? "text-slate-600" : inBand ? "text-green-400" : "text-red-400"
@@ -463,8 +463,8 @@ function PowerBar({ kw, maxKw, color }: { kw: number; maxKw: number; color: stri
     red: "bg-red-500/40",
   };
   return (
-    <div className="flex-1 h-2.5 bg-slate-900 rounded-sm border border-slate-800/60 overflow-hidden">
-      <div className={`h-full rounded-sm ${colorMap[color] || colorMap.sky} transition-all duration-300`} style={{ width: `${pct}%` }} />
+    <div className="flex-1 h-2.5 bg-slate-900 rounded-xs border border-slate-800/60 overflow-hidden">
+      <div className={`h-full rounded-xs ${colorMap[color] || colorMap.sky} transition-all duration-300`} style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -479,9 +479,9 @@ type DeviceField = {
 
 function DeviceDetail({ ansi, name, ip, fields }: { ansi: string; name: string; ip: string; fields: DeviceField[] }) {
   return (
-    <div className="rounded border border-slate-800/60 bg-slate-950/40 p-2.5">
+    <div className="rounded-sm border border-slate-800/60 bg-slate-950/40 p-2.5">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{ansi}</span>
+        <span className="rounded-sm border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">{ansi}</span>
         <span className="text-xs font-medium text-slate-300">{name}</span>
         <span className="text-[9px] text-slate-600 font-mono">{ip}</span>
       </div>

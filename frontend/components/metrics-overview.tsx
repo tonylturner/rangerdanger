@@ -129,10 +129,10 @@ export function MetricsOverview() {
           </span>
           <div className="flex items-center gap-3 text-[9px] text-slate-600">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-1.5 w-3 rounded-sm bg-sky-500" /> Feeder
+              <span className="inline-block h-1.5 w-3 rounded-xs bg-sky-500" /> Feeder
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block h-1.5 w-3 rounded-sm bg-green-500" /> Critical Load
+              <span className="inline-block h-1.5 w-3 rounded-xs bg-green-500" /> Critical Load
             </span>
             <span>Normal: 114–126V</span>
           </div>

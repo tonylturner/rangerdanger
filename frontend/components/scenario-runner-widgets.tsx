@@ -70,7 +70,7 @@ function QCmd({ label, onClick, variant }: { label: string; onClick: () => void;
   };
   const cls = variant ? colors[variant] : "border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700/50";
   return (
-    <button onClick={onClick} className={`rounded border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
+    <button onClick={onClick} className={`rounded-sm border px-2 py-1 text-[10px] font-medium transition-colors ${cls}`}>
       {label}
     </button>
   );
@@ -128,7 +128,7 @@ export function ExerciseSummary({
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigator.clipboard?.writeText(summaryText)}
-              className="rounded border border-slate-700 bg-slate-800/50 px-3 py-1 text-[10px] text-slate-400 hover:text-slate-200"
+              className="rounded-sm border border-slate-700 bg-slate-800/50 px-3 py-1 text-[10px] text-slate-400 hover:text-slate-200"
             >
               Copy to Clipboard
             </button>
@@ -136,19 +136,19 @@ export function ExerciseSummary({
         </div>
 
         <div className="grid gap-3 md:grid-cols-3 mb-4">
-          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+          <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Completion</div>
             <div className={`text-lg font-bold ${completionPct === 100 ? "text-green-400" : "text-sky-400"}`}>
               {completionPct}%
             </div>
           </div>
-          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+          <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Firewall Config</div>
             <div className={`text-lg font-bold ${activeConfig === "improved" ? "text-green-400" : "text-red-400"}`}>
               {activeConfig || "-"}
             </div>
           </div>
-          <div className="rounded border border-slate-800 bg-slate-950 p-3">
+          <div className="rounded-sm border border-slate-800 bg-slate-950 p-3">
             <div className="text-[9px] uppercase tracking-wider text-slate-600">Notes</div>
             <div className="text-lg font-bold text-slate-300">
               {notes ? `${notes.split("\n").length} lines` : "-"}
@@ -160,7 +160,7 @@ export function ExerciseSummary({
           {scenario.steps.map((s, i) => {
             const done = completedStepIds.has(s.id);
             return (
-              <div key={i} className={`rounded border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
+              <div key={i} className={`rounded-sm border p-3 ${done ? "border-green-800/50 bg-green-950/10" : "border-slate-800 bg-slate-950/50"}`}>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-bold ${done ? "text-green-400" : "text-slate-600"}`}>
                     {done ? "\u2713" : "\u2022"}
@@ -173,7 +173,7 @@ export function ExerciseSummary({
             );
           })}
           {notes && (
-            <div className="rounded border border-slate-800 bg-slate-950/50 p-3 mt-2">
+            <div className="rounded-sm border border-slate-800 bg-slate-950/50 p-3 mt-2">
               <div className="text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Exercise Notes</div>
               <div className="text-xs text-slate-400 whitespace-pre-line">{notes}</div>
             </div>

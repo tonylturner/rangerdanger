@@ -38,7 +38,7 @@ export function Toast({
       <div
         role="status"
         aria-live="polite"
-        className={`pointer-events-auto flex min-w-[280px] max-w-md items-start gap-3 rounded-lg border ${style.border} ${style.bg} px-4 py-3 shadow-xl backdrop-blur-sm`}
+        className={`pointer-events-auto flex min-w-[280px] max-w-md items-start gap-3 rounded-lg border ${style.border} ${style.bg} px-4 py-3 shadow-xl backdrop-blur-xs`}
       >
         <div className={`mt-0.5 shrink-0 ${style.icon}`}>
           {toast.kind === "loading" && <Loader2 className="h-5 w-5 animate-spin" />}
@@ -65,7 +65,7 @@ export function Toast({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-white">{toast.title}</div>
           {toast.detail && (
-            <div className="mt-0.5 break-words text-xs text-slate-300">{toast.detail}</div>
+            <div className="mt-0.5 wrap-break-word text-xs text-slate-300">{toast.detail}</div>
           )}
         </div>
         {toast.kind !== "loading" && (

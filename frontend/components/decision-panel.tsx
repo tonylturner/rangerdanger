@@ -205,7 +205,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
             const pct = Math.min(100, Math.round((used / role.capacity_hours) * 100));
             const over = used > role.capacity_hours;
             return (
-              <div key={role.name} className="rounded border border-slate-800 bg-slate-900/60 p-2">
+              <div key={role.name} className="rounded-sm border border-slate-800 bg-slate-900/60 p-2">
                 <div className="text-[9px] uppercase tracking-wider text-slate-500 truncate" title={role.name}>
                   {role.name}
                 </div>
@@ -227,7 +227,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
         </div>
 
         {(overBudget || overRoles.length > 0) && (
-          <div className="mt-3 rounded border border-red-800/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
+          <div className="mt-3 rounded-sm border border-red-800/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300">
             {overBudget && <div>Over total budget by {totalHours - budgetHours} hours.</div>}
             {overRoles.length > 0 && (
               <div>
@@ -284,7 +284,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                     {a.roles.map((role) => (
                       <span
                         key={role}
-                        className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400"
+                        className="rounded-sm bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-400"
                       >
                         {role}
                       </span>
@@ -292,7 +292,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                     {implements_.length > 0 && implements_.map((req) => (
                       <span
                         key={`req-${req.id}`}
-                        className="rounded border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
+                        className="rounded-sm border border-cyan-800/60 bg-cyan-950/40 px-1.5 py-0.5 text-[9px] text-cyan-300"
                         title={`This action implements your Lab 1.3 verdict: ${req.label} = ${req.verdict}`}
                       >
                         ↳ {req.label.split(" on ")[0].split(" → ").join("→")}: {req.verdict}
@@ -300,7 +300,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
                     ))}
                     {implements_.length === 0 && hasAnyVerdict && (
                       <span
-                        className="rounded border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
+                        className="rounded-sm border border-slate-700/60 bg-slate-800/40 px-1.5 py-0.5 text-[9px] text-slate-500 italic"
                         title="Operational hygiene / process - not tied to a specific 1.3 design verdict"
                       >
                         operational hygiene
@@ -343,7 +343,7 @@ export function DecisionPanel({ exerciseId }: DecisionPanelProps) {
           the bar room so it doesn't overlap the footer text. */}
       {hasAnyVerdict && (
         <div className="sticky bottom-2 z-10 -mx-3">
-          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur shadow-lg shadow-slate-950/50">
+          <div className="mx-3 rounded-lg border border-slate-700 bg-slate-950/95 backdrop-blur-sm shadow-lg shadow-slate-950/50">
             <button
               onClick={() => setCoverageOpen(!coverageOpen)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-900/60 transition-colors rounded-lg"

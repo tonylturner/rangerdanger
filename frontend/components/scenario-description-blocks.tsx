@@ -63,14 +63,14 @@ type CommandBlockProps = {
 export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: CommandBlockProps) {
   const runnable = cli || copyOnly ? null : onRun;
   return (
-    <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
+    <div className="group relative rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
       <span className="block whitespace-pre-wrap break-all pb-7 sm:pb-0 sm:pr-28">
         {cli && <span className="select-none text-sky-700">containd# </span>}
         {cmd}
       </span>
       <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5 sm:bottom-auto sm:top-1.5">
         {cli && (
-          <span className="select-none rounded border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
+          <span className="select-none rounded-sm border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
             containd cli
           </span>
         )}
@@ -78,7 +78,7 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
           <button
             onClick={() => runnable(cmd, runId)}
             disabled={runningId !== null}
-            className="rounded border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
+            className="rounded-sm border border-green-800/60 bg-green-950/40 px-2 py-0.5 text-[9px] font-bold text-green-400 hover:bg-green-900/50 disabled:opacity-40 transition-colors"
           >
             {runningId === runId ? "Running..." : "Run"}
           </button>
@@ -189,7 +189,7 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
                 id={`decision-${decisionId}`}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                className={`appearance-none rounded border bg-slate-950 px-2 py-1 pr-7 text-[11px] font-mono cursor-pointer focus:outline-none focus:ring-1 focus:ring-cyan-700 ${
+                className={`appearance-none rounded border bg-slate-950 px-2 py-1 pr-7 text-[11px] font-mono cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-cyan-700 ${
                   answered
                     ? "border-sky-700 text-sky-300"
                     : "border-slate-700 text-slate-400 hover:border-slate-600"
@@ -212,14 +212,14 @@ export function DecisionBlock({ scenarioId, decisionId, options, body, defaultFr
             {answered && correct && (
               value === correct ? (
                 <span
-                  className="rounded border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
+                  className="rounded-sm border border-emerald-700/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300"
                   title="Your finding matches what the baseline traffic actually shows."
                 >
                   ✓ correct
                 </span>
               ) : (
                 <span
-                  className="rounded border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
+                  className="rounded-sm border border-red-800/60 bg-red-950/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-300"
                   title={`The baseline capture shows this category as ${correct}. Re-check your analysis.`}
                 >
                   ✗ doesn&apos;t match capture
@@ -473,7 +473,7 @@ export function IconStamp({ name, color, label }: { name: string; color: string;
   const Icon = ICON_MAP[name] ?? Shield;
   const c = ICON_COLORS[color] ?? ICON_COLORS.amber;
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 align-middle ${c.border} ${c.bg}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 align-middle ${c.border} ${c.bg}`}>
       <Icon className={`h-3.5 w-3.5 ${c.text}`} />
       {label && <span className={`text-[11px] font-medium ${c.text}`}>{label}</span>}
     </span>
@@ -603,13 +603,13 @@ export function RemediationPlanSummary({ plan }: { plan: DynamicExercisePlan }) 
           ))}
         </div>
         {plan.includeDpi && (
-          <div className="mt-3 rounded border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
+          <div className="mt-3 rounded-sm border border-purple-800/40 bg-purple-950/20 px-3 py-2 text-[11px] text-purple-300">
             <span className="font-bold">{dpiNotice.title}</span>{dpiNotice.description}
           </div>
         )}
         {plan.enableLogging && (
-          <div className="mt-2 rounded border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
-            <span className="font-bold">Logging enabled</span> - set <code className="bg-slate-800 px-1 rounded text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
+          <div className="mt-2 rounded-sm border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-300">
+            <span className="font-bold">Logging enabled</span> - set <code className="bg-slate-800 px-1 rounded-sm text-[10px]">&quot;log&quot;: true</code> on DENY rules and critical ALLOW rules
           </div>
         )}
       </div>
@@ -787,7 +787,7 @@ export function DescriptionSegments({
                           <button
                             onClick={() => handleGenerateTraffic(45)}
                             disabled={generatingTraffic}
-                            className="rounded border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
+                            className="rounded-sm border border-sky-700 bg-sky-950/50 px-4 py-2 text-xs font-medium text-sky-300 hover:bg-sky-900/60 disabled:opacity-50"
                           >
                             {generatingTraffic ? "Generating Traffic…" : "Generate Traffic (45s)"}
                           </button>

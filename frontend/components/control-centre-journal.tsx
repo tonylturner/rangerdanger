@@ -40,7 +40,7 @@ export function ControlCentreJournal({ journal }: { journal: OperatorJournal | u
                 >
                   {entry.kind}
                 </span>
-                <span className="min-w-0 basis-full break-words text-slate-300 sm:basis-auto sm:flex-1">{journalSummary(entry.kind, entry.detail)}</span>
+                <span className="min-w-0 basis-full wrap-break-word text-slate-300 sm:basis-auto sm:flex-1">{journalSummary(entry.kind, entry.detail)}</span>
               </li>
             );
           })}

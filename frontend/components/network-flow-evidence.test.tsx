@@ -83,7 +83,7 @@ describe("EU flow meaning", () => {
     try {
       expect(row().props["aria-expanded"]).toBe(false);
       expect(row().type).toBe("button");
-      expect(row().props.className).toContain("focus-visible:outline");
+      expect(row().props.className).toContain("focus-visible:outline-solid");
       act(() => row().props.onClick());
       expect(row().props["aria-expanded"]).toBe(true);
       expect(tree.root.findAllByProps({ "aria-label": "Flow evidence cc-1 to rtu-1" })).toHaveLength(1);

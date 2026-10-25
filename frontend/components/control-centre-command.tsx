@@ -20,12 +20,12 @@ export type CommandPanelState =
   | { phase: "result"; operation: CommandOperation; result: CommandResult }
   | { phase: "error"; operation: CommandOperation; message: string };
 
-const BUTTON = "rounded border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+const BUTTON = "rounded-sm border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-100 hover:bg-slate-800 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
 
 export function CommandResultView({ result }: { result: CommandResult }) {
   const outcome = commandOutcome(result);
   const feedbackPoint = CONTROL_PANELS.find((panel) => panel.point === result.point)?.feedback ?? "";
-  return <div role="status" className={`rounded border p-3 text-xs ${outcome.tone === "ok" ? "border-green-800 text-green-300" : outcome.tone === "warn" ? "border-amber-700 text-amber-300" : "border-red-800 text-red-300"}`}>
+  return <div role="status" className={`rounded-sm border p-3 text-xs ${outcome.tone === "ok" ? "border-green-800 text-green-300" : outcome.tone === "warn" ? "border-amber-700 text-amber-300" : "border-red-800 text-red-300"}`}>
     <p className="font-bold">{result.operation.toUpperCase()} {outcome.title}</p>
     {result.reason !== null && <p>{result.reason}</p>}
     {result.result === "unknown" && <p>It is not retried. Observe fresh feedback before deciding what to do next.</p>}
@@ -58,7 +58,7 @@ export function CommandPanelView({ linkState, position, state, onArm, onExecute,
     <h3 className="text-sm font-bold text-slate-200">{panel.label}</h3>
     <p className="text-xs text-slate-400">{panel.wire} · select-before-operate via RTU</p>
     <p className="text-xs text-slate-300">Reported: {position ? formatPointValue(position.id, position.value) : "unknown"} · <span title={qualityDefinition(condition)} tabIndex={0}>{condition === "good" ? "GOOD" : condition === "stale" ? "STALE" : "UNKNOWN"}</span></p>
-    {state.phase === "armed" ? <div className="space-y-2 rounded border border-sky-800 bg-sky-950/30 p-2">
+    {state.phase === "armed" ? <div className="space-y-2 rounded-sm border border-sky-800 bg-sky-950/30 p-2">
       <p className="text-xs text-sky-200">Local confirmation: {state.operation.toUpperCase()} on {panel.label}? No RTU reservation has been made.</p>
       <p className="text-xs text-sky-200">Received control authority: {authority}. This attempt is still subject to device interlocks.</p>
       <div className="flex flex-wrap gap-2">
@@ -100,7 +100,7 @@ export function SupervisoryControls({ link, points, unavailable, selected }: { l
     onExecute={(operation) => execute(panel, operation)} onCancel={() => setState({ phase: "idle" })}
   />)}
     {state.phase === "pending" && <p role="status" className="text-xs text-slate-300">In flight: {active} · {state.operation}</p>}
-    {(state.phase === "result" || state.phase === "error") && <section aria-label="Last command outcome" className="space-y-2 break-words">
+    {(state.phase === "result" || state.phase === "error") && <section aria-label="Last command outcome" className="space-y-2 wrap-break-word">
       <h3 className="text-xs text-slate-300">Command outcome · {CONTROL_PANELS.find((p) => p.point === active)?.label}</h3>
       {state.phase === "result" ? <CommandResultView result={state.result} /> : <p role="alert" className="text-xs text-amber-300">{state.message}</p>}
     </section>}

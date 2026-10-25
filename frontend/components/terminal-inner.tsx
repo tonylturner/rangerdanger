@@ -171,7 +171,7 @@ export default function TerminalInner({ nodeId, expanded = false }: TerminalInne
         {(status === "disconnected" || status === "error") && (
           <button
             onClick={reconnect}
-            className="rounded border border-amber-700 bg-amber-950/80 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/80 transition-colors"
+            className="rounded-sm border border-amber-700 bg-amber-950/80 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:bg-amber-900/80 transition-colors"
           >
             Reconnect
           </button>

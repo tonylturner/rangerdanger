@@ -161,7 +161,7 @@ export function PolicyBadge({ activeConfig }: { activeConfig?: string }) {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur">
+          <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-slate-700 bg-slate-900/95 py-1 shadow-2xl backdrop-blur-sm">
             <div className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
               Select Policy
             </div>
@@ -285,7 +285,7 @@ export function LeftDrawerMenu({
   return (
     <>
       {/* Always-visible icon strip on the left edge */}
-      <div className="absolute left-0 top-0 z-30 flex h-full w-9 flex-col items-center gap-1 border-r border-slate-700 bg-slate-900/95 py-3 backdrop-blur">
+      <div className="absolute left-0 top-0 z-30 flex h-full w-9 flex-col items-center gap-1 border-r border-slate-700 bg-slate-900/95 py-3 backdrop-blur-sm">
         {DRAWER_ORDER.map((id) => {
           const { label, Icon, iconColor } = DRAWER_META[id];
           const isActive = active === id;
@@ -314,7 +314,7 @@ export function LeftDrawerMenu({
           the strip. Same dimensions and chrome regardless of which
           drawer is active. */}
       {activeMeta && (
-        <aside className="absolute left-9 top-0 z-30 flex h-full w-[calc(100%_-_2.25rem)] max-w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur">
+        <aside className="absolute left-9 top-0 z-30 flex h-full w-[calc(100%-2.25rem)] max-w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur-sm">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <activeMeta.Icon className={`h-4 w-4 ${activeMeta.iconColor}`} />
@@ -325,7 +325,7 @@ export function LeftDrawerMenu({
             <button
               onClick={() => onChange(null)}
               title="Minimize"
-              className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+              className="rounded-sm p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -385,7 +385,7 @@ export function ViewModeToolbar({
   );
 
   return (
-    <div className="absolute left-14 top-3 z-20 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/85 px-2.5 py-1.5 backdrop-blur">
+    <div className="absolute left-14 top-3 z-20 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/85 px-2.5 py-1.5 backdrop-blur-sm">
       <span className="pl-0.5 pr-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         View
       </span>
@@ -511,7 +511,7 @@ export function ActiveFlowsPanel({
       </div>
 
       {multiHomedZones.length > 0 && (
-        <div className="mb-2 rounded border border-amber-700/40 bg-amber-950/20 px-2 py-1.5">
+        <div className="mb-2 rounded-sm border border-amber-700/40 bg-amber-950/20 px-2 py-1.5">
           <div className="text-[9px] font-bold uppercase tracking-wider text-amber-400">
             Multi-homed
           </div>

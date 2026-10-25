@@ -13,13 +13,13 @@ import { ControlCentreOneLine } from "./control-centre-one-line";
 import { PhysicalSystem, PHYSICAL_DESCRIPTION } from "./physical-system";
 import { ControlCentrePane, type PaneTab } from "./control-centre-pane";
 
-const BUTTON = "rounded border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
+const BUTTON = "rounded-sm border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
 export type WorkstationView = "control-centre" | "physical-system";
 export function viewFromSearch(search: string): WorkstationView {
   return new URLSearchParams(search).get("view") === "physical-system" ? "physical-system" : "control-centre";
 }
 function Cell({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="min-w-0"><dt className="text-xs text-slate-400">{label}</dt><dd className="break-words font-mono text-xs text-slate-100">{children}</dd></div>;
+  return <div className="min-w-0"><dt className="text-xs text-slate-400">{label}</dt><dd className="wrap-break-word font-mono text-xs text-slate-100">{children}</dd></div>;
 }
 export function LinkDetails({ link, now }: { link: ControlCentreLink; now: number }) {
   const integrity = hasCurrentConnectionGi(link);

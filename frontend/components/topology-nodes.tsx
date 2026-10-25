@@ -258,7 +258,7 @@ export const HostNode = memo(({ data, selected }: NodeProps<HostNodeData>) => {
             interfaces in more than one zone. */}
         {multiHomed && (
           <div
-            className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-[1px] text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow"
+            className="absolute -top-2 -left-2 z-10 rounded-full border border-slate-900 bg-amber-500 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow-sm"
             title={`Multi-homed: also has an interface in ${data.multiHomedZones!.join(", ")}. Cross-zone traffic still traverses the firewall - see inspector.`}
           >
             MULTI
@@ -536,7 +536,7 @@ export const SwitchNode = memo(({ data, selected }: NodeProps<{ label: string; z
       <Handle type="source" position={Position.Right} style={HIDDEN_HANDLE} />
 
       <div
-        className="flex h-8 w-16 items-center justify-center rounded border"
+        className="flex h-8 w-16 items-center justify-center rounded-sm border"
         style={{
           borderColor: colors.border,
           backgroundColor: colors.bg,

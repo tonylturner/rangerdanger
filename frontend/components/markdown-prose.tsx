@@ -78,7 +78,7 @@ const renderer = {
     return (
       <code
         key={`cs-${Math.random()}`}
-        className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-amber-300"
+        className="rounded-sm bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-amber-300"
       >
         {code}
       </code>
@@ -94,7 +94,7 @@ const renderer = {
     return (
       <pre
         key={`code-${Math.random()}`}
-        className="my-2 overflow-x-auto rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-300"
+        className="my-2 overflow-x-auto rounded-sm border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-300"
       >
         <code>{code}</code>
       </pre>

@@ -31,7 +31,7 @@ export function FeederOneLine({ read, physical = false, unavailable = false, sel
     role: "button", tabIndex: 0, "aria-pressed": selected === device,
     onClick: () => onSelect(device), onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(device); }
-    }, className: "cursor-pointer outline-none focus-visible:[outline:2px_solid_#38bdf8]",
+    }, className: "cursor-pointer outline-hidden focus-visible:[outline:2px_solid_#38bdf8]",
   });
   const measure = (x: number, y: number, id: string) => <g aria-label={`${pointLabel(id)}: ${read(id).text}`}>
     <text x={x} y={y} textAnchor="middle" fill="#cbd5e1" fontSize="12">{pointLabel(id)}</text>
