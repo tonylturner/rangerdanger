@@ -188,6 +188,7 @@ func TestEURTUPeerEvidence(t *testing.T) {
 		{"no commands", "", true},
 		{"authorized CC", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.60.60.20:1234 phase=execute result=accepted", true},
 		{"foreign before hardening", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:02Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", true},
+		{"foreign command straddles hardening", "2026-10-09T12:00:29Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted\n2026-10-09T12:00:31Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
 		{"foreign completion across boundary", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=completed", false},
 		{"ambiguous foreign operation", "2026-10-09T12:03:00Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=unknown", false},
 		{"pending foreign across boundary", "2026-10-09T12:00:01Z rtu command ioa=3001 peer=10.10.10.10:1234 phase=execute result=accepted", false},

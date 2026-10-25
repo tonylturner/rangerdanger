@@ -54,6 +54,7 @@ type euWorkshopEvidence struct {
 	auditErr                                           error
 	rtuLog                                             string
 	logErr                                             error
+	rtuLogChecked                                      bool
 	ccIP, rtuIP                                        string
 }
 
@@ -143,7 +144,8 @@ func (s *Server) collectEUWorkshop(ctx context.Context, gen *lifecycle.Generatio
 		} else {
 			ev.breakerAudit, ev.auditErr = fetchJSON[euWorkshopBreakerAudit](ctx, simService, endpoint+"/api/audit?after=0")
 		}
-		ev.rtuLog, ev.logErr = s.euRTULog(ctx, gen)
+		ev.rtuLogChecked = true
+		ev.logErr = s.euRTULog(ctx, gen, ev.hardeningSince, ev.operationEnd, ev.ccIP)
 	}
 	finalHash, finalErr := gen.Containd().GetFirewallHash(ctx)
 	if ev.policyErr == nil && (finalErr != nil || finalHash != hash) {
