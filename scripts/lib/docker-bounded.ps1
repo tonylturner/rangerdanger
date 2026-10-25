@@ -37,7 +37,11 @@ function Invoke-DockerBounded([string[]]$DockerArgs, [int]$TimeoutSec, [string]$
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
-    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
+    # PowerShell's location can differ from the process-global native cwd.
+    # Relative CLI inputs (e.g. an SSD tarball) must follow the caller's
+    # filesystem location; label-only Compose calls supply an empty dir.
+    $psi.WorkingDirectory = if ($WorkingDirectory) { $WorkingDirectory }
+        else { $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath }
     $p = [System.Diagnostics.Process]::Start($psi)
     $stdout = $p.StandardOutput.ReadToEndAsync()
     $stderr = $p.StandardError.ReadToEndAsync()

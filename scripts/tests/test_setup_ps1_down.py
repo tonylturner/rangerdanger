@@ -100,6 +100,9 @@ if ($left.Count -ne 1 -or $left[0] -ne 'volume') { throw 'leak hidden' }
 function Get-Command { [pscustomobject]@{ Source='/bin/pwd' } }
 $run = Invoke-DockerBounded @() 2 $env:WORKDIR
 if ($run.ExitCode -ne 0 -or $run.StdOut.Trim() -ne $env:WORKDIR) { throw 'native cwd ignored' }
+Push-Location $env:WORKDIR
+try { $run = Invoke-DockerBounded @() 2 } finally { Pop-Location }
+if ($run.ExitCode -ne 0 -or $run.StdOut.Trim() -ne $env:WORKDIR) { throw 'caller filesystem cwd ignored' }
 function Get-Command { [pscustomobject]@{ Source='/bin/sleep' } }
 $run = Invoke-DockerBounded @('20') 1
 if (-not $run.TimedOut -or $run.ExitCode -ne -1) { throw 'native timeout ignored' }
