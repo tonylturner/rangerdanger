@@ -263,7 +263,7 @@ func TestOneShotGoldens(t *testing.T) {
 					want += logs(fmt.Sprintf("SELECT ioa=%d val=%d", ioa, initial))
 					want += rx("actcon(7)", goldenFlag(tt.mode == "reject"), tt.object+" se=SELECT")
 					if tt.mode == "reject" {
-						want += logs("select REJECTED (cot=actcon(7) negative=1)")
+						want += logs("select REJECTED (negative)")
 					} else {
 						want += logs("select confirmed")
 					}
@@ -283,7 +283,7 @@ func TestOneShotGoldens(t *testing.T) {
 						neg := tt.mode == "reject" || tt.mode == "mismatch"
 						want += rx("actcon(7)", goldenFlag(neg), obj+" se=EXECUTE")
 						if neg {
-							want += logs("execute REJECTED (cot=actcon(7) negative=1)")
+							want += logs("execute REJECTED (negative)")
 						} else {
 							want += logs("execute confirmed")
 							if tt.mode == "missing-term" {

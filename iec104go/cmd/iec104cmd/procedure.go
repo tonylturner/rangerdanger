@@ -106,7 +106,12 @@ func (p *procedure) command(ctx context.Context, ioa uint32, value int) bool {
 			p.o.logf("no %s confirmation", leg)
 			return false
 		}
-		if r.header.Cause != iec.ActivationCon || r.header.Negative {
+		if r.header.Cause == iec.ActivationCon && r.header.Negative {
+			// Legacy CLI wording; services/iec104/check/run.sh matches it.
+			p.o.logf("%s REJECTED (negative)", leg)
+			return false
+		}
+		if r.header.Cause != iec.ActivationCon {
 			p.o.logf("%s REJECTED (cot=%s(%d) negative=%d)", leg, r.header.Cause, r.header.Cause, bit(r.header.Negative))
 			return false
 		}
