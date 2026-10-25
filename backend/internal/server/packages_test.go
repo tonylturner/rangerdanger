@@ -215,7 +215,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 
 	info, ok := catalog.Info(config.DefaultPackage)
 	wantInfo := labs.PackageInfo{
-		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 1,
+		ID: "us-dnp3-substation", Title: "US distribution substation (DNP3)", Revision: 2,
 		Capabilities: []string{"process.electrical", "policy.containd", "audit.device-control", "capture.firewall"},
 		OperatorView: "us-dnp3-substation",
 	}
@@ -226,7 +226,7 @@ func TestShippedPackagesLoad(t *testing.T) {
 	for _, pkg := range catalog.Packages {
 		if pkg.ID == euPackageID {
 			euListed = true
-			if pkg.Revision != 4 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
+			if pkg.Revision != 5 || pkg.Curriculum == nil || len(pkg.Curriculum.Roles) != 7 {
 				t.Fatal("EU revision / curriculum binding missing")
 			}
 			for role, id := range pkg.Curriculum.Roles {
