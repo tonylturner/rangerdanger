@@ -10,6 +10,27 @@ export function actionEffectLabel(kind: PlanAction["kind"]): string {
   return "L4 enforcement";
 }
 
+export function planExportFilename(plan: CompiledPlan, kind: "config" | "plan"): string {
+  const hash = plan.policyHash.slice(0, 12);
+  return `${plan.packageId}-r${plan.revision}-${hash}-${kind}.json`;
+}
+
+export function planExportRecord(plan: CompiledPlan): {
+  packageId: string;
+  revision: number;
+  label: CompiledPlan["label"];
+  actionIds: string[];
+  policyHash: string;
+} {
+  return {
+    packageId: plan.packageId,
+    revision: plan.revision,
+    label: plan.label,
+    actionIds: plan.actions.filter((action) => action.chosen).map((action) => action.id),
+    policyHash: plan.policyHash,
+  };
+}
+
 // Keep package-authored pipes and newlines inside their markdown cells.
 function cell(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
