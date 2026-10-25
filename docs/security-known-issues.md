@@ -1,10 +1,12 @@
 # Security: known issues
 
-Findings from `govulncheck` that the project is aware of but has not
-acted on, with rationale. These entries document exceptions for the
-`govulncheck` hard-gate job in `.github/workflows/ci.yml`. Accepting a
-new finding requires a triage entry here and adding its GOID to the
-`ALLOWED` list in `scripts/govulncheck-gate.sh`.
+Called symbol-level findings from `govulncheck` that the project is
+aware of but has not acted on, with rationale. These entries document
+exceptions for the `govulncheck` hard-gate job in
+`.github/workflows/ci.yml`; module- and package-level findings without a
+function trace are not counted. Accepting a new finding requires a triage
+entry here and adding its GOID to the `ALLOWED` list in
+`scripts/govulncheck-gate.sh`.
 
 The triage cadence is per-release. If you tag a new version, sweep
 this file against `gh run view <latest-ci-run> --log-failed` and
@@ -12,61 +14,27 @@ either remove resolved entries or add new ones.
 
 ## Open
 
-### docker/docker - `GO-2026-4887`, `GO-2026-4883`, `GO-2026-5617`, `GO-2026-5668`, `GO-2026-5746`
+### docker/docker - `GO-2026-4887`, `GO-2026-4883`
 
 - **Module**: `github.com/docker/docker@v27.5.1+incompatible`
 - **Affects**: backend Docker SDK calls (container exec, lifecycle,
   image inspection)
-- **Upstream fix**: `Fixed in: N/A` for all five. The `docker/docker`
+- **Upstream fix**: `Fixed in: N/A` for both. The `docker/docker`
   module path has **no** patched release. Upstream's fix for the
   2026-08 advisories landed on the renamed `github.com/moby/moby/v2`
   module (`v2.0.0-beta.14+`), which is a different module path and a
   beta line - not a bump we can take from `docker/docker`.
-- **Not reachable**: the vulnerable symbols live in
-  `github.com/docker/docker/daemon` (e.g. `GO-2026-5746` is
-  `Daemon.containerExtractToDir`). That package is **not in this
-  project's build graph** - verified with
-  `go list -deps ./... | grep docker/docker/daemon` (no match). The
-  backend imports only `api/types/*` and `client`. govulncheck still
-  reports these because the traces resolve to package `init`
-  functions of `api/types/*`, not to any called vulnerable code.
+- **Reachability**: `govulncheck` reports symbol-level call traces for
+  both findings in the backend. These are not accepted on an
+  unreachable-package rationale.
 - **Mitigation**: lab-only deployment is loopback-bound (A3); the
   Docker socket mount is in the always-trusted backend container; no
-  untrusted input reaches the affected SDK paths
-- **Enforced by**: `scripts/assert-unreachable-vulns.sh`, run as a step
-  of the `govulncheck` job. The allowlist filter matches on GOID alone,
-  so it cannot tell that "not in the build graph" has stopped being
-  true. The script fails the gate if `docker/docker/daemon` ever enters
-  the graph, which is the precondition this exception rests on.
+  untrusted input reaches the affected SDK paths.
 - **Action**: monitor https://github.com/moby/moby for a `docker/docker`
   release containing the fix, or for the `moby/moby/v2` module to reach
   a stable release worth migrating to. Until then, the `docker/docker`
   direct dependency in `backend/go.mod` stays pinned at the current
   version.
-
-### x/crypto openpgp - `GO-2026-5932`
-
-- **Module**: `golang.org/x/crypto@v0.56.0`
-- **Upstream fix**: `Fixed in: N/A`, and there will never be one. This
-  advisory says `golang.org/x/crypto/openpgp` is unmaintained and
-  unsafe by design; upstream's guidance is to migrate to
-  `github.com/ProtonMail/go-crypto/openpgp`, not to await a patch.
-- **Not reachable**: rangerdanger does not import `openpgp` at all -
-  verified with `go list -deps ./... | grep openpgp` (no match). The
-  only reason `x/crypto` is in the graph is `gin` ->
-  `go-playground/validator/v10` -> `x/crypto/sha3`. There is nothing
-  to migrate; the vulnerable packages are never compiled in.
-- **Mitigation**: n/a - no OpenPGP code path exists in the project.
-- **Enforced by**: `scripts/assert-unreachable-vulns.sh`, run as a step
-  of the `govulncheck` job. "Re-check if a dependency ever starts
-  pulling in `x/crypto/openpgp`" is not something a human will reliably
-  remember, so the gate now checks it: the script fails the build if
-  `x/crypto/openpgp` (or any subpackage) enters the build graph.
-- **Action**: none while the guard passes. If it ever fires, drop
-  `GO-2026-5932` from `ALLOWED` in `scripts/govulncheck-gate.sh` and
-  re-triage on the real merits -
-  most likely by migrating the offending import to
-  `github.com/ProtonMail/go-crypto/openpgp`.
 
 ## Resolved by direct dependency bumps (2026-09-12)
 
@@ -85,8 +53,9 @@ by 2026-09-12 two more had joined it. All three are fixed in
   CVE-2026-78662) - Fixed in v0.56.0
 
 Practical exposure: same as the 2026-05-22 batch - the backend does
-not terminate SSH. All three are module-level findings (govulncheck
-reports no called symbol), which the gate's filter counts anyway.
+not terminate SSH. All three were module-level findings (govulncheck
+reported no called symbol); the previous gate overcounted them, and the
+symbol-level gate now excludes them.
 
 **`go` directive moved.** `x/crypto` v0.56.0 declares `go 1.26.0`, so
 `backend/go.mod` had to follow (1.25.0 -> 1.26.0). This is the first
@@ -120,9 +89,7 @@ CVE-2026-33997, CVE-2026-41567, CVE-2026-41568, CVE-2026-42306) against
 v27.5.1. Those are the same daemon-side family as the govulncheck
 entries in **Open** above - the fixes that exist are on v28/v29
 (major bumps Dependabot is configured to suppress) or `moby/moby/v2`,
-and the affected code is not in our build graph. No action; the
-existing triage entry and `assert-unreachable-vulns.sh` guard cover
-them.
+and the affected daemon code is not in our build graph. No action.
 
 No allowlist changes this round.
 
@@ -227,6 +194,15 @@ and resolved by `go get`:
 - **`GO-2025-4134`, `GO-2025-4135`** - `golang.org/x/crypto`
   v0.44.0 → v0.50.0.
 
+## Resolved by Go toolchain bump (2026-10-25)
+
+**`1.26.9 -> 1.26.10`** clears `GO-2026-6809` in the standard-library
+`crypto/x509` package (fixed in Go 1.26.10 / 1.27.3). All four Go modules
+now pin `toolchain go1.26.10`; the IEC 104 service, Kali, and engineering
+workstation builders use the digest-locked `golang:1.26.10-alpine` image.
+The 1.26.10 Alpine multi-platform index digest is
+`sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba`.
+
 ## Resolved by Go toolchain bump (2026-08-22)
 
 **`1.25.10 -> 1.26.7`** cleared 3 stdlib findings that were failing the
@@ -323,8 +299,7 @@ changelog note travel together so the acceptance is reviewable.
 **If the exception rests on the vulnerable package being unreachable**
 (rather than on a mitigation or an accepted risk), there is a fourth
 step: add the package prefix to `GUARDED` in
-`scripts/assert-unreachable-vulns.sh`. The allowlist filter matches on
-GOID alone and will keep passing the finding even if the package later
-enters the build graph, so an unreachability claim that isn't wired
-into that script is a claim nothing is checking. Raised by Codex review
-on PR #91.
+`scripts/assert-unreachable-vulns.sh`. The gate applies the allowlist
+by GOID after selecting called symbol-level findings; the guard checks
+that an exception's package-level unreachability rationale remains
+true. Raised by Codex review on PR #91.
