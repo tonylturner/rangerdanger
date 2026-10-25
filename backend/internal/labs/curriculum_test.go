@@ -41,7 +41,7 @@ func TestCurriculumEUExample(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := pkg.Curriculum
-	if c.ICSRules != ICSRulesForbidden || len(c.Catalog) != 14 || len(c.Requirements) != 5 || len(c.Readiness) != 4 || c.BudgetHours != 500 {
+	if c.ICSRules != ICSRulesForbidden || len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Readiness) != 4 || c.BudgetHours != 500 {
 		t.Fatalf("incomplete EU model: %#v", c)
 	}
 	if len(c.BaselineRules) != 6 {
@@ -56,6 +56,11 @@ func TestCurriculumEUExample(t *testing.T) {
 	for i := range pkg.Template.Nodes {
 		if pkg.Template.Nodes[i].ID == "cc-1" {
 			pkg.Template.Nodes[i].IP = "192.0.2.20"
+		}
+	}
+	for i := range pkg.Template.Networks {
+		if pkg.Template.Networks[i].ID == "control_centre_net" {
+			pkg.Template.Networks[i].Subnet = "192.0.2.0/24"
 		}
 	}
 	binding := c.CurriculumBinding
@@ -214,7 +219,7 @@ func TestCurriculumUSExtraction(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := pkg.Curriculum
-	if !c.LegacyEffects || !c.LegacyDisplayMutation || len(c.Catalog) != 14 || len(c.Requirements) != 5 || len(c.Policy) != 13 {
+	if !c.LegacyEffects || !c.LegacyDisplayMutation || len(c.Catalog) != 15 || len(c.Requirements) != 5 || len(c.Policy) != 13 {
 		t.Fatal("US extraction changed")
 	}
 	wire, err := json.Marshal(c)

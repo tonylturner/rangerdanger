@@ -2,6 +2,7 @@ package labs
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -88,6 +89,9 @@ type PackageYAML struct {
 // Package is one fully parsed and validated curriculum package.
 type Package struct {
 	Curriculum *Curriculum
+	// Captured at definition load so compilation needs no filesystem access
+	// and retains the package's exact non-rule policy envelope.
+	planEnvelope json.RawMessage
 	// StationPoints is the IEC 104 identity inventory from protocols/points.json.
 	// It is required for packages declaring protocol.iec104.
 	StationPoints []IEC104Point
@@ -287,6 +291,16 @@ func readDefinition(definitionsDir, manifestPath string) (Package, string, error
 		Policies:           policies,
 		OperatorView:       manifest.OperatorView,
 		ICSRules:           icsRules,
+	}
+	if manifest.Curriculum != nil {
+		improved, exists := policies["improved"]
+		if !exists {
+			return Package{}, "", fmt.Errorf("curriculum requires an improved policy envelope")
+		}
+		pkg.planEnvelope, err = os.ReadFile(filepath.Join(definitionsDir, improved))
+		if err != nil {
+			return Package{}, "", fmt.Errorf("improved policy envelope: %w", err)
+		}
 	}
 	if slices.Contains(pkg.Capabilities, CapabilityProtocolIEC104) {
 		if pkg.StationPoints, err = loadIEC104Points(packageDir); err != nil {

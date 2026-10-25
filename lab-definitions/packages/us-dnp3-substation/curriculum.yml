@@ -161,6 +161,16 @@ teams:
   - name: Security Analyst
     capacity_hours: 120
 catalog:
+  - id: restrict-enterprise-to-vendor
+    title: Restrict enterprise → vendor remote access
+    why: Remove direct enterprise RDP/VNC access to the vendor jump box; retain only the package’s named operational
+      exceptions.
+    effort_hours: 30
+    roles:
+    - Firewall Admin
+    - Network Engineer
+    tags:
+    - enterprise-vendor
   - id: block-enterprise-to-field
     title: Block enterprise → field direct access
     why: |
@@ -971,3 +981,538 @@ dpiNotice:
 dpiForbiddenNotice:
   title: ICS DPI planned
   description: ', not enforceable in this range yet'
+
+# field-intrazone from Weak is omitted: lan2 → lan2 stays on the bridge.
+# pin-rtac-to-field also owns the non-GPS UDP/123 restriction.
+# The required HTTP rule preserves the reference policy's empty ICS object.
+# No global management/return ALLOW rules: management comes from the envelope.
+plan:
+  rules:
+  - action: restrict-enterprise-to-vendor
+    selected:
+    - id: enterprise-to-vendor-only
+      description: 'Enterprise to Vendor: SSH, HTTP/S only (no direct OT access)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:vendor_net}
+      protocols:
+      - name: tcp
+        port: '22'
+      - name: tcp
+        port: '80'
+      - name: tcp
+        port: '443'
+      ics: {}
+      action: ALLOW
+    deferred:
+    - id: enterprise-to-vendor
+      description: 'Enterprise to Vendor: SSH, HTTP/S, RDP, VNC'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:vendor_net}
+      protocols:
+      - name: tcp
+        port: '22'
+      - name: tcp
+        port: '80'
+      - name: tcp
+        port: '443'
+      - name: tcp
+        port: '3389'
+      - name: tcp
+        port: '5900'
+      ics: {}
+      action: ALLOW
+  - action: block-enterprise-to-ot
+    selected:
+    - id: deny-enterprise-to-ot
+      description: 'BLOCK: Enterprise cannot reach OT Operations (Modbus, DNP3, HTTP, HMI)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '1881'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: DENY
+    deferred:
+    - id: enterprise-to-ot-weak
+      description: 'WEAK: Enterprise direct access to OT Operations (should be blocked)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '1881'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: ALLOW
+  - action: block-enterprise-to-field
+    selected:
+    - id: deny-enterprise-to-field
+      description: 'BLOCK: Enterprise cannot reach Field Devices (Modbus, DNP3, or HTTP)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: DENY
+    deferred:
+    - id: enterprise-to-field-weak
+      description: 'WEAK: Enterprise direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)'
+      sourceZones:
+      - ${zone:enterprise_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: ALLOW
+  - action: restrict-vendor-to-ot
+    selected:
+    - id: vendor-to-ot-restricted
+      description: 'Vendor to OT: HTTPS and SSH only for monitoring (no Modbus, no HMI control)'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '443'
+      - name: tcp
+        port: '22'
+      ics: {}
+      action: ALLOW
+    deferred:
+    - id: vendor-to-ot-weak
+      description: 'WEAK: Vendor broad access to OT Operations including Modbus/DNP3 (should be narrowed)'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '1881'
+      - name: tcp
+        port: '22'
+      - name: tcp
+        port: '443'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: ALLOW
+  - action: block-vendor-to-field
+    selected:
+    - id: deny-vendor-to-field
+      description: 'BLOCK: Vendor cannot reach Field Devices directly (no Modbus, no DNP3, no HTTP)'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: DENY
+    deferred:
+    - id: vendor-to-field-weak
+      description: 'WEAK: Vendor direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)'
+      sourceZones:
+      - ${zone:vendor_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: ALLOW
+  - required:
+      id: rtac-to-field-modbus
+      description: 'RTAC to Field Devices: Modbus TCP read/write (supervisory control only)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:rtac-1}/32
+      protocols:
+      - name: tcp
+        port: '502'
+      action: ALLOW
+  - required:
+      id: rtac-to-field-dnp3
+      description: 'RTAC to Field Devices: DNP3 TCP - the L4 source pin enforces RTAC field access; DPI detects
+        and logs function codes, including Direct Operate (FC5) and No-Ack (FC6).'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:rtac-1}/32
+      protocols:
+      - name: tcp
+        port: '20000'
+      action: ALLOW
+  - required:
+      id: rtac-to-field-http
+      description: 'RTAC to Field Devices: HTTP API (supervisory management)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:rtac-1}/32
+      protocols:
+      - name: tcp
+        port: '8080'
+      ics: {}
+      action: ALLOW
+  - action: pin-rtac-to-field
+    selected:
+    - id: deny-ot-to-field-direct
+      description: 'BLOCK: Other OT nodes cannot Modbus/DNP3/HTTP to Field Devices (prevents lateral movement)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: DENY
+    deferred:
+    - id: ot-to-field-broad
+      description: 'WEAK: All OT Operations nodes can Modbus/DNP3/HTTP to all Field Devices (should be RTAC only)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      ics: {}
+      action: ALLOW
+    - id: ntp-ot-to-field
+      description: 'WEAK: NTP time sync from OT ops to field (no source restriction)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      protocols:
+      - name: udp
+        port: '123'
+      ics: {}
+      action: ALLOW
+  - required:
+      id: ot-intrazone-ops
+      description: 'OT Operations internal: HMI↔RTAC Modbus, DNP3, HTTP, FUXA, NTP'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:ot_ops_net}
+      protocols:
+      - name: tcp
+        port: '8080'
+      - name: tcp
+        port: '1881'
+      - name: tcp
+        port: '502'
+      - name: tcp
+        port: '20000'
+      - name: udp
+        port: '123'
+      ics: {}
+      action: ALLOW
+  - required:
+      id: gps-to-field-ntp
+      description: 'GPS Time Server to Field Devices: NTP only (time sync for SOE)'
+      sourceZones:
+      - ${zone:ot_ops_net}
+      destZones:
+      - ${zone:field_net}
+      sources:
+      - ${ip:gps-1}/32
+      protocols:
+      - name: udp
+        port: '123'
+      ics: {}
+      action: ALLOW
+  detect:
+    modbus-dpi:
+      ics:
+        rtac-to-field-modbus:
+          protocol: modbus
+          functionCode:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+    dnp3-dpi:
+      ics:
+        rtac-to-field-dnp3:
+          protocol: dnp3
+          functionCode:
+          - 1
+    improve-logging:
+      log:
+      - deny-enterprise-to-ot
+      - deny-enterprise-to-field
+      - vendor-to-ot-restricted
+      - deny-vendor-to-field
+      - rtac-to-field-modbus
+      - rtac-to-field-dnp3
+      - rtac-to-field-http
+      - deny-ot-to-field-direct
+      - gps-to-field-ntp
+  proof:
+  - id: A1
+    from: rtac-1
+    to: relay-1
+    network: field_net
+    port: 502
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTAC Modbus poll to relay
+  - id: A2
+    from: rtac-1
+    to: recloser-1
+    network: field_net
+    port: 20000
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTAC DNP3 poll to recloser
+  - id: A3
+    from: rtac-1
+    to: regulator-1
+    network: field_net
+    port: 20000
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTAC DNP3 poll to regulator
+  - id: A4
+    from: rtac-1
+    to: openplc-1
+    network: ot_ops_net
+    port: 8080
+    category: authorized
+    expect: allow
+    owners: []
+    note: RTAC HTTP API to OpenPLC (intra-zone)
+  - id: A5
+    from: hmi-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 8080
+    category: authorized
+    expect: allow
+    owners: []
+    note: HMI to RTAC HTTP intra-zone
+  - id: A6
+    from: historian-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 8080
+    category: authorized
+    expect: allow
+    owners: []
+    note: Historian to RTAC intra-zone
+  - id: A7
+    from: vendor-jump-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 22
+    category: authorized
+    expect: allow
+    owners: []
+    note: Vendor SSH mgmt to RTAC
+  - id: A8
+    from: vendor-jump-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 443
+    category: authorized
+    expect: allow
+    owners: []
+    note: Vendor HTTPS mgmt to RTAC
+  - id: U1
+    from: kali-1
+    to: relay-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    note: Enterprise Modbus to field relay
+  - id: U2
+    from: kali-1
+    to: relay-1
+    network: field_net
+    port: 20000
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-field
+    note: Enterprise DNP3 to field relay
+  - id: U3
+    from: kali-1
+    to: openplc-1
+    network: ot_ops_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-ot
+    note: Enterprise HTTP to OpenPLC
+  - id: U4
+    from: kali-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-ot
+    note: Enterprise HTTP to RTAC
+  - id: U5
+    from: kali-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-enterprise-to-ot
+    note: Enterprise Modbus to RTAC
+  - id: U6
+    from: eng-ws-1
+    to: recloser-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    note: Vendor Modbus to field recloser
+  - id: U7
+    from: eng-ws-1
+    to: recloser-1
+    network: field_net
+    port: 20000
+    category: unauthorized
+    expect: deny
+    owners:
+    - block-vendor-to-field
+    note: Vendor DNP3 to field recloser
+  - id: U8
+    from: eng-ws-1
+    to: openplc-1
+    network: ot_ops_net
+    port: 8080
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-vendor-to-ot
+    note: Vendor HTTP to OpenPLC (only 443/22 allowed)
+  - id: U9
+    from: vendor-jump-1
+    to: rtac-1
+    network: ot_ops_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-vendor-to-ot
+    note: Vendor Modbus to RTAC (improved blocks non-mgmt)
+  - id: U10
+    from: historian-1
+    to: regulator-1
+    network: field_net
+    port: 502
+    category: unauthorized
+    expect: deny
+    owners:
+    - pin-rtac-to-field
+    note: Non-RTAC OT (historian) to field regulator (Modbus)
+  - id: U11
+    from: historian-1
+    to: regulator-1
+    network: field_net
+    port: 20000
+    category: unauthorized
+    expect: deny
+    owners:
+    - pin-rtac-to-field
+    note: Non-RTAC OT (historian) to field regulator (DNP3)
+  - id: U12
+    from: kali-1
+    to: vendor-jump-1
+    network: vendor_net
+    port: 3389
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-enterprise-to-vendor
+    note: Enterprise vendor RDP
+  - id: U13
+    from: kali-1
+    to: vendor-jump-1
+    network: vendor_net
+    port: 5900
+    category: unauthorized
+    expect: deny
+    owners:
+    - restrict-enterprise-to-vendor
+    note: Enterprise vendor VNC
