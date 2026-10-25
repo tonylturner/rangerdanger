@@ -4,6 +4,11 @@ How to get RangerDanger onto N student laptops in a room with bad
 Wi-Fi, and how to push patches between sessions without forcing every
 student to re-import the full 6 GB image bundle.
 
+This is the v0.2.0 package-based operator runbook. Tagged examples require
+published v0.2.0 images. Windows package-install parity is pending; the
+PowerShell stager verifies archives with native tar/JSON, but a staged archive
+does not certify the Windows installer.
+
 This is the operator runbook. For the student-facing one-liner see
 [`quickstart.md`](quickstart.md) Path C.
 
@@ -58,7 +63,7 @@ archive.
 On a machine with internet, from the repo root:
 
 ```sh
-./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.17
+./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0
 ```
 
 The positional version selects the first-party image tags through Compose
@@ -116,13 +121,12 @@ What `setup.sh --from-tarballs` does, in order:
    `--check-only` runs just this stage and exits.
 2. **`.env`** - writes `VERSION` (from the SSD's `.version`) and
    `RANGERDANGER_ROOT` (the install directory) to `.env`.
-3. **Migration** - an older single-project install (Compose project
-   `rangerdanger` owning `rangerdanger_mgmt_net`) is taken down by its
-   Compose label first. A `rangerdanger_mgmt_net` owned by anything
-   else stops setup with an error.
-4. **`docker load`** the matching `images-<arch>.tar` every time.
-   Docker deduplicates existing layers by content hash. The archive
-   carries the images of the platform and of every range package.
+3. **`docker load`** the matching `images-<arch>.tar` every time, before
+   any destructive teardown. Docker deduplicates existing layers by content
+   hash. The archive carries the platform and every range package's images.
+4. **Migration** - after images are available, an older single-project
+   install (`rangerdanger` owning `rangerdanger_mgmt_net`) is taken down by
+   Compose label. Foreign management/delivery network ownership is rejected.
 5. **Platform** - `docker compose -p rangerdanger-platform ... -f
    docker-compose.release.yml up -d --wait --pull never` starts the
    backend, frontend and proxy. `--pull never` overrides the release
@@ -207,7 +211,7 @@ containd has drifted since that stage. To include the current `latest` image
 in a delta, force it with:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17 \
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1 \
   --include-upstream --include containd
 ```
 
@@ -243,16 +247,23 @@ the helper does not pin containd's mutable tag to a prior-stage digest.
   that snapshot and reuses the retained old image tags. The recipe needs
   `curl` and `python3` on the student's machine.
 
-Example:
+The source release must carry the platform/package Compose metadata. A
+v0.1.x SSD baseline lacks it: stage a full v0.2.0 bundle for that migration.
+Later package-aware releases can use:
 
 ```sh
-./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.17 v0.1.16 v0.1.17
+./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1
 ```
+
+This is a future-version example, not a claim those tags already exist.
+v0.2.0 rebuilds every first-party image (`[rebuild-all]`), so a compatible
+full-rebuild delta is close to a full set. Do not use the retired single-stack
+repository-update helpers for package migration; use setup and full/delta staging.
 
 Typical output (from the script's run summary):
 
 ```
-Comparing v0.1.16 -> v0.1.17 across N candidate image(s)
+Comparing <since> -> <new> across N candidate image(s)
   changed: backend, frontend
   unchanged: kali, vendor-jump, eng-ws, openplc, rtac-sim,
              relay-sim, recloser-sim, regulator-sim,

@@ -52,8 +52,8 @@ Before tagging:
    ```
 
 The `release.yml` workflow takes over from there. It triggers on any
-`v*` tag push and first creates one plan for all 16 first-party images.
-Fifteen images use the generated publish matrix; `rangerdanger-frontend`
+`v*` tag push and first creates one plan for all 20 first-party images.
+Nineteen images use the generated publish matrix; `rangerdanger-frontend`
 uses its dedicated native `linux/amd64` and `linux/arm64` jobs
 (`rangerdanger-openplc` is amd64-only because its upstream base,
 `tuttas/openplc_v3`, is amd64-only). Each image is either built or
@@ -166,13 +166,16 @@ its release twin; the package lint checks that the two agree.
 ## containd image policy
 
 RangerDanger and [containd](https://github.com/tonylturner/containd)
-are co-developed by the same maintainer. Both of the US package's range
-Compose files reference `ghcr.io/tonylturner/containd:latest` rather
+are co-developed by the same maintainer. Release package Compose files reference `ghcr.io/tonylturner/containd:latest` rather
 than a per-release pinned tag. The contract is **"fix containd, not the
 pin"** - if a containd release breaks RangerDanger behavior, the fix
 lands in containd, and RangerDanger picks it up on the next `./setup.sh`
 (which pulls). This keeps both repos honest about regressions instead of accumulating workarounds
 in the lab.
+
+Source-mode package builds use the containd `iec104` Git context (or an
+explicit `CONTAIND_SOURCE` override), not the published image. Source-mode
+success does not certify the release's containd digest.
 
 The trade-off is workshop-day determinism. `:latest` resolves at pull
 time, so a containd push between your pre-flight check and the morning

@@ -46,6 +46,28 @@ Each lab builds on the previous. Your Lab 1.4 remediation plan guides design rev
 | 5b | **2.3-bonus** | Optional kill-chain exercise: vendor RDP/VNC pivot from enterprise to vendor to field. Demonstrates both the perimeter rule and defense-in-depth. |
 | 6 | **2.4 Validate** | Capture PCAP under the hardened policy. Assemble change-board evidence. Confirm attacks fail and authorized flows still work. |
 
+## v0.2.0 environments
+
+This branch prepares v0.2.0; tagged commands below require its published images.
+Choose **US distribution substation (DNP3)** (`us-dnp3-substation`) or
+**EU telecontrol substation (IEC 104)** (`eu-iec104-substation`). The portal's
+Range selector switches the active environment; only one range runs at a time.
+The L4 source pin enforces; DPI detects and logs.
+
+The persistent platform is `rangerdanger-platform` (root Compose files).
+Each replaceable `rangerdanger` range owns its models, manifest, routes and
+curriculum under `lab-definitions/packages/<id>/`. US source exercises remain
+in `lab-definitions/scenarios/`; generated US guidance is package-owned.
+
+macOS/Linux setup defaults to US. Select EU with
+`./setup.sh --package eu-iec104-substation`; add `--from-source` for a local
+build before release images exist. Re-running setup acquires all images before
+migration teardown, then restarts the range and resets policy. Save evidence,
+desktop work and local changes first; old browser progress is not migrated.
+See [upgrading](docs/quickstart.md#upgrading-to-v020) and
+[offline distribution](docs/workshop-ssd.md). Windows package-install parity
+is pending; the current PowerShell installer is not v0.2.0 acceptance evidence.
+
 ## Quick start
 
 **Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. These are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
@@ -58,7 +80,7 @@ cd rangerdanger
 ./setup.sh
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell, legacy US installer; v0.2.0 package parity pending):**
 
 ```powershell
 git clone https://github.com/tonylturner/rangerdanger
@@ -80,7 +102,7 @@ cd rangerdanger
 
 Use `./stage-ssd.sh /Volumes/WORKSHOP_SSD vX.Y.Z` to populate the SSD. The version argument selects the image tags whatever the repo's `.env` says, and the helper verifies both archives against it before reporting success. GitHub releases carry the WSL2 kernel asset, not image tarballs, so students install from an instructor-staged bundle. Full install walkthrough including the offline path and common errors: [`docs/quickstart.md`](docs/quickstart.md). Workshop operators running multi-laptop classroom deployments: [`docs/workshop-ssd.md`](docs/workshop-ssd.md) covers initial staging, mid-workshop delta patches, and recovery.
 
-For an existing install, follow the [release update procedure](docs/quickstart.md#updating-to-v0136). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
+For an existing install, follow the [release update procedure](docs/quickstart.md#upgrading-to-v020). See the [v0.1.36 workshop errata](docs/v0.1.36-hotfix.md) for remaining application limits.
 
 Once the stack is up:
 

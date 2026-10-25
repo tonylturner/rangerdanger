@@ -171,17 +171,20 @@ class ErrataContracts(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertNotRegex(path.read_text(), r"(?i)\bv\d+\.\d+(?:\.\d+)?|\brc\.\d+")
 
-    def test_lab22_titles_cannot_trigger_frozen_body_replacement(self):
-        # Frozen frontend/lib/scenario-runner-logic.ts:9-11; copy, do not import.
-        fragments = ("create minimal", "phase 3", "validate allowed", "phase 5",
-                     "validate blocked", "phase 6")
+    def test_lab22_generation_is_bound_by_stable_ids_not_frozen_title_workarounds(self):
+        package = yaml.safe_load((ROOT / "lab-definitions/packages/us-dnp3-substation/package.yml").read_text())
+        binding = package["curriculum"]["dynamicSteps"]
         steps = scenario("firewall-implementation")["steps"]
-        for step in steps:
-            with self.subTest(title=step["title"]):
-                self.assertFalse(any(f in step["title"].lower() for f in fragments))
-        for number, step in enumerate(steps[2:8], 1):
-            self.assertTrue(step["title"].startswith(f"Stage {number} - "))
-        self.assertNotRegex(" ".join(s["description"] for s in steps), r"[Pp]hases? [1-6]")
+        self.assertEqual({s["id"] for s in steps} & set(binding), set(binding))
+        curriculum = yaml.safe_load((ROOT / "lab-definitions/packages/us-dnp3-substation/curriculum.yml").read_text())
+        for step_id, phase in binding.items():
+            self.assertIn(phase, curriculum["phases"])
+            self.assertTrue(next(s for s in steps if s["id"] == step_id)["title"].startswith("Phase "))
+        rules = curriculum["phases"]["rules"]
+        for phrase in ("Hardened reference", "design review only", "export config", "**Commit**"):
+            self.assertIn(phrase, rules)
+        self.assertNotIn("export config >", rules)
+        self.assertIn("config.commit", curriculum["phases"]["negative"])
 
     def test_workshop_notes_are_short_and_at_the_action(self):
         expected = {
@@ -269,7 +272,6 @@ class ErrataContracts(unittest.TestCase):
             ROOT / "docs/v0.1.36-hotfix.md",
             ROOT / "docs/quickstart.md",
             ROOT / "docs/workshop-ssd.md",
-            ROOT / "stage-ssd-repo-update.sh",
         ]
         grading = re.compile(
             r"\binstructor\s+(?:review\w*|verif\w*|sign[- ]off)"
@@ -292,13 +294,19 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("terminal-only Kali use the existing SSH fallback", text)
         self.assertNotIn("no auth required", text)
 
-    def test_instructor_reference_matches_new_lab22_navigation(self):
+    def test_historical_errata_identifies_current_package_generation(self):
         text = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
-        for step in scenario("firewall-implementation")["steps"][2:8]:
-            self.assertIn(step["title"], text)
-        self.assertIn("no longer see the plan-driven rule table", text)
+        for title in ("Stage 1 - Check weak-baseline access",
+                      "Stage 2 - Remove broad trust and establish default-deny",
+                      "Stage 3 - Apply the reference rules",
+                      "Stage 4 - Enable logging and visibility",
+                      "Stage 5 - Check authorized flows", "Stage 6 - Check denied flows"):
+            self.assertIn(title, text)
+        self.assertIn("Historical release guidance", text)
+        self.assertIn("stable IDs, not Stage titles", text)
+        self.assertIn("both source YAML and generated steps", text)
+        self.assertIn("not the applied policy", text)
         self.assertIn("not in labs", text)
-        self.assertNotRegex(text, r"[Pp]hases? [1-6]")
 
     def test_errata_has_full_release_paths_and_every_mitigation(self):
         path = ROOT / "docs/v0.1.36-hotfix.md"
@@ -306,7 +314,7 @@ class ErrataContracts(unittest.TestCase):
         text = path.read_text()
         for phrase in ("How to update", "PowerShell", "full image release",
                        "All 16 first-party images", "`latest` moves", "SSD",
-                       "quickstart.md#updating-to-v0136", "workshop-ssd.md#delta-staging"):
+                       "quickstart.md#upgrading-to-v020", "workshop-ssd.md#delta-staging"):
             self.assertIn(phrase, text)
         for stale in ("existing v0.1.35 images", "no pull, no rebuild",
                       "Do not run `./setup.sh --version v0.1.36`", "./scripts/apply-repo-update.sh"):
@@ -328,15 +336,15 @@ class ErrataContracts(unittest.TestCase):
 
     def test_release_update_uses_standard_setup_and_delta_paths(self):
         quickstart = (ROOT / "docs/quickstart.md").read_text()
-        for phrase in ("git fetch origin tag v0.1.36", "git checkout --detach v0.1.36",
-                       "docker compose -f docker-compose.release.yml down &&",
-                       "./setup.sh --version v0.1.36", ".\\setup.ps1 -Version v0.1.36",
+        for phrase in ("git fetch origin tag v0.2.0", "git checkout --detach v0.2.0",
+                       "./setup.sh --version v0.2.0 --package us-dnp3-substation",
+                       "eu-iec104-substation", "PowerShell", "parity",
                        "workshop reset", "DELTA-README.md", "close to a full set"):
             self.assertIn(phrase, quickstart)
         ssd = (ROOT / "docs/workshop-ssd.md").read_text()
-        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.1.36",
-                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.1.36 v0.1.35 v0.1.36",
-                       "stage-ssd-repo-update.sh <out-dir> <tag>", "scripts/apply-repo-update.sh",
+        for phrase in ("./stage-ssd.sh /Volumes/WORKSHOP_SSD v0.2.0",
+                       "./stage-ssd-delta.sh /Volumes/WORKSHOP_SSD/delta-v0.2.1 v0.2.0 v0.2.1",
+                       "v0.1.x SSD baseline lacks it", "package Compose metadata",
                        "close to a full set", "[rebuild-all]"):
             self.assertIn(phrase, ssd)
         readme = (ROOT / "README.md").read_text()
@@ -347,6 +355,10 @@ class ErrataContracts(unittest.TestCase):
             self.assertNotIn(stale, readme)
         self.assertIn("Lab 1.4 plan is a design artifact", readme)
         self.assertIn("Lab 2.2 applies the hardened reference", readme)
+        self.assertNotIn("#updating-to-v0136", readme)
+        self.assertNotIn("docker compose -f docker-compose.release.yml down &&", quickstart)
+        self.assertNotIn("stage-ssd-repo-update.sh", ssd)
+        self.assertNotIn("scripts/apply-repo-update.sh", ssd)
 
 
 class EnforcementContracts(unittest.TestCase):
@@ -458,7 +470,7 @@ class EnforcementContracts(unittest.TestCase):
         self.assertIn("blocked at the TCP level; it says nothing about function codes", text)
         overview = (ROOT / "docs/workshop-overview.md").read_text()
         self.assertIn("The report is a TCP reachability matrix", overview)
-        self.assertIn("the L4 source pin is the control that enforces", overview)
+        self.assertIn("The L4 source pin enforces; DPI detects and logs.", overview)
         errata = (ROOT / "docs/v0.1.36-hotfix.md").read_text()
         self.assertIn("**RD-24:**", errata)
         self.assertIn("L4 source pin is the control that enforces", errata)
@@ -551,7 +563,7 @@ class ActionContracts(unittest.TestCase):
                      "vendor-rdp-compromise"):
             doc = scenario(name)
             steps = [s for s in doc["steps"] if
-                     s["title"].startswith(("Stage 3", "Apply hardened", "Apply the hardened"))]
+                     s["id"] in ("phase-3-create-minimal-required-rules", "apply-hardened-policy", "apply-the-hardened-policy")]
             self.assertEqual(len(steps), 1)
             with self.subTest(scenario=name):
                 self.assertEqual(steps[0]["action"],
