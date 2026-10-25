@@ -86,99 +86,18 @@ class ProxyProbeTests(unittest.TestCase):
                 self.assertNotEqual(self.desktop_verdict(body, code), 0)
 
 
-class CompatTests(unittest.TestCase):
+class SmokeWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "scripts/release-compat-smoke.sh").read_text()
         cls.workflow = yaml.safe_load((ROOT / ".github/workflows/smoke.yml").read_text())
 
-    def test_collision_guard_without_running_any_smoke_or_docker(self):
-        # Evaluate ONLY the pure guard, supplying a shell function instead of
-        # Docker. Never execute a smoke script, even with mocked executables.
-        guard = self.source.split("# Guard BEFORE", 1)[1]
-        guard = guard[guard.index("running="):guard.index('mkdir -p "$receipts"')]
-        for running, replace, existing, expected in (
-                ("foreign-container", 0, 0, 1),
-                ("foreign-container", 1, 0, 0), ("", 0, 0, 0),
-                ("compat-container", 0, 1, 0), ("", 0, 1, 1),
-                ("compat-container", 1, 1, 2)):
-            with self.subTest(running=running, replace=replace, existing=existing):
-                result = subprocess.run(
-                    ["bash", "-c", "docker_bounded() { printf '%s' \"$1\"; }\n"
-                     .replace('"$1"', json.dumps(running))
-                     + f"\nreplace={replace}\nexisting={existing}\n" + guard],
-                    capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, expected, result.stderr)
-                if expected and not existing:
-                    self.assertIn("REFUSED", result.stderr)
-
-    def test_existing_stack_inspects_running_images_not_forced_tag(self):
-        # Students keep VERSION=latest: their :latest tags carry the v0.1.35
-        # digests, so --existing-stack must inspect what the containers run.
-        block = self.source[self.source.index('if [ "$existing" -eq 1 ]; then\n  # A running'):
-                            self.source.index('if [ -n "$running" ] && [ "$existing" -ne 1 ]')]
-        stub = ("docker_bounded() { case \"$1\" in\n"
-                "  ps) printf 'img:latest\\nimg:latest\\nother:latest\\n' ;;\n"
-                "  image) shift 2; printf '%s\\n' \"$@\" ;;\n"
-                "  *) return 9 ;; esac; }\n"
-                "compose() { printf 'img:v0.1.35\\n'; }\n")
-        for existing, expected in ((1, "img:latest\nother:latest\n"), (0, "img:v0.1.35\n")):
-            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as directory:
-                script = (f"set -e\nexisting={existing}\nreceipts={json.dumps(directory)}\n"
-                          + stub + block)
-                result = subprocess.run(["bash", "-c", script],
-                                        capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(Path(directory, "images.json").read_text(), expected)
-
-    def test_possibly_empty_arrays_expand_safely_on_macos_bash(self):
-        # macOS /bin/bash 3.2 aborts on "${empty[@]}" under set -u, and the
-        # EXIT trap then sees $?=0: a silent green. Arrays that may stay empty
-        # (assigned "=()", no "-gt 0" guard) must use ${x[@]+"${x[@]}"}.
-        import re
-        for script in sorted((ROOT / "scripts").glob("*.sh")):
-            source = script.read_text()
-            for name in set(re.findall(r"^\s*(\w+)=\(\)", source, re.M)):
-                if re.search(r"\$\{#" + name + r"\[@\]\}\"? -gt 0", source):
-                    continue  # guarded non-empty before any expansion
-                bare = re.compile(r'(?<!\+)"\$\{' + name + r'\[@\]\}"')
-                with self.subTest(script=script.name, array=name):
-                    self.assertIsNone(bare.search(source), f"use ${{{name}[@]+...}}")
-
-    def test_build_version_is_exact(self):
-        function = self.source.split("assert_version() {", 1)[1].split("\n}", 1)[0]
-        for version, expected in (("v0.1.35", 0), ("v0.1.36-rc.1", 1), ("latest", 1)):
-            with tempfile.TemporaryDirectory() as directory:
-                script = ("set -e\nAPI=unused\nreceipts=" + json.dumps(directory)
-                          + "\ncurl() { printf '%s' "
-                          + "'" + json.dumps({"version": version}) + "'; }\n" + function)
-                result = subprocess.run(["bash", "-c", script],
-                                        capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode, expected, result.stderr)
-
-    def test_no_build_or_pull_in_local_twin(self):
-        self.assertIn("export VERSION=v0.1.35", self.source)
-        self.assertIn("compose up -d --no-build --pull never", self.source)
-        self.assertNotIn("compose build", self.source)
-        self.assertNotIn("compose pull", self.source)
-        self.assertIn("image inspect", self.source)
-        self.assertLess(self.source.index("running=$("), self.source.index("compose down"))
-        self.assertNotIn("sixth original smoke gate NOT RUN", self.source)
-        self.assertIn('exit "$failed"', self.source)
-        self.assertIn("if [ \"$existing\" -ne 1 ]; then\n  started=1", self.source)
-        self.assertIn('[ "$started" -eq 1 ] && [ "$keep" -ne 1 ]', self.source)
-
     def test_all_six_original_gates_and_auxiliary_proxy_run(self):
-        gates = self.source.split("for gate in ", 1)[1].split("; do", 1)[0].split()
-        self.assertEqual(set(gates), {
-            "smoke-test", "proxy-smoke", "firewall-smoke", "lab-commands-smoke",
-            "events-smoke", "substation-smoke", "test-suite-smoke"})
-        self.assertEqual(len(gates), 7)
-        self.assertIn('if [ "$gate" = smoke-test ]; then args=(--existing-stack); fi',
-                      self.source)
+        gates = ("smoke-test", "proxy-smoke", "firewall-smoke", "lab-commands-smoke",
+                 "events-smoke", "substation-smoke", "test-suite-smoke")
         self.assertNotIn("release-compat", self.workflow["jobs"])
         steps = self.workflow["jobs"]["smoke"]["steps"]
         commands = "\n".join(s.get("run", "") for s in steps)
+        self.assertNotIn("release-compat-smoke.sh", commands)
         for gate in gates:
             if gate != "smoke-test":  # boot/API/inventory are inline in the built job
                 self.assertIn(f"./scripts/{gate}.sh", commands)
@@ -217,7 +136,6 @@ class CompatTests(unittest.TestCase):
                          ".unauthorized_total == 11", ".skipped == 0", '.result == "PASS"',
                          "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}'):
             self.assertIn(expected, check)
-        self.assertNotIn("release-compat-smoke.sh", check)
         self.assertNotIn("v0.1.35", str(steps))
         self.assertLess(next(i for i, s in enumerate(steps) if s.get("name") == "Workshop test-suite"),
                         steps.index(waived[0]))
@@ -234,6 +152,20 @@ class CompatTests(unittest.TestCase):
         self.assertEqual(len(data["selectedActionIds"]), 8)
         # Never quietly replace the full-plan fixture with reference JSON.
         self.assertEqual(data["config"]["firewall"]["rules"][0]["id"], "allow-mgmt-ui")
+
+    def test_possibly_empty_arrays_expand_safely_on_macos_bash(self):
+        # macOS /bin/bash 3.2 aborts on "${empty[@]}" under set -u, and the
+        # EXIT trap then sees $?=0: a silent green. Arrays that may stay empty
+        # (assigned "=()", no "-gt 0" guard) must use ${x[@]+"${x[@]}"}.
+        import re
+        for script in sorted((ROOT / "scripts").glob("*.sh")):
+            source = script.read_text()
+            for name in set(re.findall(r"^\s*(\w+)=\(\)", source, re.M)):
+                if re.search(r"\$\{#" + name + r"\[@\]\}\"? -gt 0", source):
+                    continue  # guarded non-empty before any expansion
+                bare = re.compile(r'(?<!\+)"\$\{' + name + r'\[@\]\}"')
+                with self.subTest(script=script.name, array=name):
+                    self.assertIsNone(bare.search(source), f"use ${{{name}[@]+...}}")
 
 
 if __name__ == "__main__":
