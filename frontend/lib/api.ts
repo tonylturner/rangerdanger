@@ -566,12 +566,20 @@ export type TrafficStatus = {
   generating: boolean;
   started_at: string;
   flows_generated: number;
+  run_id: string;
 };
 
 export async function startTrafficGeneration(durationSec?: number) {
-  return request<{ status: string; duration_sec: number }>("/traffic/generate", {
+  return request<{ status: string; duration_sec: number; run_id: string; started_at: string }>("/traffic/generate", {
     method: "POST",
     body: JSON.stringify({ duration_sec: durationSec || 30 }),
+  });
+}
+
+export async function stopTrafficGeneration(runID: string) {
+  return request<{ status: "stopping" | "stopped" }>("/traffic/stop", {
+    method: "POST",
+    body: JSON.stringify({ run_id: runID }),
   });
 }
 

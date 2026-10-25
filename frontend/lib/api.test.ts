@@ -1,7 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { runValidationReport, type ValidationReport } from "./api";
+import { runValidationReport, stopTrafficGeneration, type ValidationReport } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("names the observed run in an additive traffic stop request", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response('{"status":"stopping"}'));
+  vi.stubGlobal("fetch", fetch);
+  await expect(stopTrafficGeneration("run-to-stop")).resolves.toEqual({ status: "stopping" });
+  expect(fetch).toHaveBeenCalledWith("/api/traffic/stop", expect.objectContaining({
+    method: "POST", body: '{"run_id":"run-to-stop"}',
+  }));
+});
 
 it.each([
   ["EU", "sha256:" + "a".repeat(64), true],
