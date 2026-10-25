@@ -56,6 +56,7 @@ $RootDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ComposeFile = Join-Path $RootDir "docker-compose.release.yml"
 . "$PSScriptRoot/scripts/lib/docker-bounded.ps1"
 . "$PSScriptRoot/scripts/lib/windows-root.ps1"
+. "$PSScriptRoot/scripts/lib/stage-bounded.ps1"
 
 if (-not (Test-Path $ComposeFile)) { Die "$ComposeFile not found -- run from repo root." }
 # tar.exe (bsdtar) ships with Windows 10 1803+ and Windows 11. It reads the
@@ -166,20 +167,13 @@ function Stop-ManifestInspection($img, $details) {
 }
 
 function Get-PlatformRefs($img) {
-    $errorFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $inspectionOutput = & {
-            $ErrorActionPreference = 'SilentlyContinue'
-            & docker buildx imagetools inspect $img --format '{{json .}}' 2> $errorFile
-        }
-        $inspectStatus = $LASTEXITCODE
-        $inspectError = Get-Content -Path $errorFile -Raw -ErrorAction SilentlyContinue
-    } finally {
-        Remove-Item -Path $errorFile -Force -ErrorAction SilentlyContinue
+    $inspectionRun = Invoke-DockerBounded @('buildx', 'imagetools', 'inspect', $img, '--format', '{{json .}}') 120
+    if (-not $inspectionRun -or $inspectionRun.TimedOut) {
+        Stop-ManifestInspection $img 'docker unavailable or registry inspection timed out after 120s'
     }
-    if ($inspectStatus -ne 0) { Stop-ManifestInspection $img $inspectError }
+    if ($inspectionRun.ExitCode -ne 0) { Stop-ManifestInspection $img $inspectionRun.StdErr }
 
-    $json = ($inspectionOutput -join "`n").Trim()
+    $json = $inspectionRun.StdOut.Trim()
     if (-not $json) { Stop-ManifestInspection $img "inspection returned no manifest JSON" }
     try {
         $inspection = ConvertFrom-Json -InputObject $json -ErrorAction Stop
@@ -290,23 +284,19 @@ function Invoke-StageArch($arch) {
         } elseif ($img -match 'rangerdanger-openplc') {
             Say "    large image (~1 GB) -- give it a minute"
         }
-        & docker pull $ref
-        if ($LASTEXITCODE -ne 0) {
-            Die "pull failed for $ref on $arch -- refusing to write a partial bundle. Fix the upstream issue (auth, network, image name), then re-run."
-        }
+        $null = Invoke-StageDocker @('pull', $ref) 3600 -StreamOutput
 
         # Re-tag locally so the saved tarball carries the friendly tag.
         $targetTag = $img -replace '@.*$',''
         if ($ref -ne $targetTag) {
-            & docker tag $ref $targetTag
-            if ($LASTEXITCODE -ne 0) { Die "docker tag $ref -> $targetTag failed" }
+            $null = Invoke-StageDocker @('tag', $ref, $targetTag) 60
         }
         $pulledTags += $targetTag
     }
 
     Say "save $arch -> $tarball"
-    & docker save -o $tarball @pulledTags
-    if ($LASTEXITCODE -ne 0) { Die "docker save failed for $arch" }
+    try { $null = Invoke-StageDocker (@('save', '-o', $tarball) + $pulledTags) 7200 -StreamOutput }
+    catch { Remove-StagePartial $tarball; throw }
     if ($arch -eq 'amd64') {
         $script:AMD64_TAGS = @($pulledTags)
     } else {
@@ -338,8 +328,8 @@ $tgzPath = Join-Path $OutDir "rangerdanger.tgz"
 # instead of scattering repo files into the extract target (which made
 # the generated README's `cd ~/rangerdanger` fail). All extract docs
 # assume this prefix.
-& git -C $RootDir archive --prefix=rangerdanger/ --format=tar.gz -o $tgzPath HEAD
-if ($LASTEXITCODE -ne 0) { Die "git archive failed" }
+try { $null = Invoke-StageNative 'git' @('-C', $RootDir, 'archive', '--prefix=rangerdanger/', '--format=tar.gz', '-o', $tgzPath, 'HEAD') 600 }
+catch { Remove-StagePartial $tgzPath; throw }
 $tgzSizeMB = [math]::Round((Get-Item $tgzPath).Length / 1MB, 2)
 Say "wrote $tgzPath (${tgzSizeMB} MB)"
 
@@ -364,9 +354,9 @@ function Verify-Archive($arch, $expectedTags) {
     $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("rd-verify-" + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $extractDir | Out-Null
     try {
-        & { $ErrorActionPreference = 'SilentlyContinue'; & $TarExe -xf $archivePath -C $extractDir manifest.json *>$null }
+        $null = Invoke-StageNative $TarExe @('-xf', $archivePath, '-C', $extractDir, 'manifest.json') 1800
         $manifestPath = Join-Path $extractDir "manifest.json"
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $manifestPath)) {
+        if (-not (Test-Path $manifestPath)) {
             Die "cannot verify ${archivePath}: no manifest.json (not a Docker save archive?)"
         }
         try {
@@ -429,7 +419,7 @@ if ($kernelPublished) {
     try {
         Say "Downloading $kernelUrl"
         try {
-            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $kernelUrl -OutFile $kernelPath -UseBasicParsing -TimeoutSec 600 -ErrorAction Stop
         } catch {
             Remove-Item -Path $kernelPath, $shaPath -Force -ErrorAction SilentlyContinue
             Die "WSL2 kernel download failed; refusing to stage an unverifiable kernel. Re-run stage-ssd.ps1, or place both rangerdanger-wsl2-kernel and rangerdanger-wsl2-kernel.sha256 in $OutDir by hand. $_"
@@ -439,7 +429,7 @@ if ($kernelPublished) {
         $shaError = ""
         foreach ($attempt in 1, 2) {
             try {
-                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $kernelShaUrl -OutFile $shaPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
                 $shaError = ""
                 break
             } catch {
@@ -490,8 +480,8 @@ if ($kernelPublished) {
 }
 
 Banner "Write README"
-$shortSha = & git -C $RootDir rev-parse --short HEAD
-$lastSubject = & git -C $RootDir log -1 --format=%s
+$shortSha = (Invoke-StageNative 'git' @('-C', $RootDir, 'rev-parse', '--short', 'HEAD') 30).Trim()
+$lastSubject = (Invoke-StageNative 'git' @('-C', $RootDir, 'log', '-1', '--format=%s') 30).TrimEnd([char[]]"`r`n")
 $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $readme = @"
 # RangerDanger -- offline / SSD install
