@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   validateScenario,
   applyFirewallConfig,
-  applyCustomFirewallConfig,
   sendSubstationCommand,
   executeScenarioStep,
   execOnNode,
@@ -28,7 +27,6 @@ import { RemediationPlanBanner } from "./remediation-plan-banner";
 import { useFirewallTrack } from "../lib/use-firewall-track";
 import {
   loadDynamicPlan,
-  buildContaindConfig,
   type DynamicExercisePlan,
 } from "../lib/remediation-to-rules";
 import {
@@ -160,6 +158,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setCompletedStepIds(new Set());
     setNotes("");
     setCurrentStep(0);
+    setShowSummary(false);
     setCmdLog([]);
     setValidation(null);
     setStepResult(null);
@@ -350,15 +349,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
             Lab {scenario.order}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {completedStepIds.size > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -458,7 +457,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       )}
 
       {/* ── Exercise View ─────────────────────────────────────── */}
-      {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {!showSummary && <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <StepNavigator
           scenario={scenario}
           completedStepIds={completedStepIds}
@@ -468,10 +467,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         />
 
         {/* Right: Step detail + controls */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Step instructions */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-white">
                 Step {currentStep + 1}: {step?.title}
               </h3>
@@ -715,44 +714,9 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
                         Apply Hardened
                       </button>
                     )}
-                    {/* Apply Your Plan: push the policy built from the
-                        student's Lab 1.4 picks. Disabled-with-tooltip
-                        when no plan exists, rather than silently
-                        hidden - students should see it as an option
-                        and learn what unlocks it. */}
-                    {dynamicPlan?.hasRemediationPlan ? (
-                      <button
-                        onClick={async () => {
-                          const config = buildContaindConfig(dynamicPlan);
-                          await applyCustomFirewallConfig(config);
-                          void refreshLive();
-                          setCmdLog((prev) => [`[APPLIED] Your remediation plan config pushed to containd`, ...prev].slice(0, 100));
-                        }}
-                        className={
-                          firewallTrack === "technical"
-                            ? "rounded border border-sky-900/40 bg-sky-950/20 px-1.5 py-0.5 text-[9px] text-sky-400/70 hover:bg-sky-900/40"
-                            : "rounded border border-sky-700 bg-sky-950/40 px-2 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-900/50"
-                        }
-                      >
-                        Apply Your Plan
-                      </button>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            disabled
-                            className="cursor-not-allowed rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1 text-[10px] font-medium text-slate-500"
-                          >
-                            Apply Your Plan
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Complete Lab 1.4 (Remediation Planning) first.
-                          The system builds this policy from your plan
-                          picks.
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+                    <p className="basis-full text-[10px] text-slate-400">
+                      Lab 1.4 plans are advisory. Use the hardened reference or author and Commit a policy in containd.
+                    </p>
                     {/* Reset to Weak: available from any non-weak
                         state so students can re-attempt an exercise
                         from the baseline regardless of how they

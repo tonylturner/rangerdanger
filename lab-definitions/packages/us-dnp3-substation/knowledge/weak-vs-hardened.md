@@ -17,11 +17,13 @@ The hardened policy represents the target state after a segmentation improvement
 
 - Enterprise zone **cannot reach** the field device zone at all
 - Vendor zone has limited access to OT operations for engineering purposes, but **no direct field device access**
-- Only the RTAC (10.30.30.20) can send Modbus write commands (FC05, FC06) to field devices
-- Only the RTAC can send DNP3 Direct Operate commands to field devices
-- Other OT hosts (HMI, PLC) can read from field devices but cannot write
+- Only the RTAC (10.30.30.20) can reach field devices on Modbus TCP
+- Only the RTAC can reach field devices on DNP3 TCP
+- Other OT hosts use the RTAC monitoring path rather than direct field access
 
 Even if an attacker compromises the HMI or an enterprise host, they cannot directly manipulate field devices.
+
+**The L4 source pin enforces; DPI detects and logs.**
 
 ### The Progressive Learning Model
 

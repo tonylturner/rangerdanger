@@ -48,9 +48,11 @@ describe("PolicyStatusBanner", () => {
     expect(banner(US_PACKAGE, "improved", "weak")).toBe(
       "Policy mismatch This step expects the weak baseline , but the firewall is currently running Hardened reference . Click Reset to Weak in the policy-actions panel below to restore the baseline.",
     );
-    expect(banner(US_PACKAGE, "weak", "hardened")).toMatch(
-      /expects the hardened policy \(reference or your custom\) .* Click Apply Hardened \(canned reference\) or Apply Your Plan/,
-    );
+    const mismatch = banner(US_PACKAGE, "weak", "hardened");
+    expect(mismatch).toMatch(/expects the hardened policy \(reference or your custom\) .* Click Apply Hardened \(canned reference\)/);
+    expect(mismatch).toContain("author and Commit a policy in containd");
+    expect(mismatch).toContain("Lab 1.4 plans are advisory");
+    expect(mismatch).not.toContain("Apply Your Plan");
   });
 
   it("names another package's policies by their declared names, without US text", () => {

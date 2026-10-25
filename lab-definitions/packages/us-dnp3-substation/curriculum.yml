@@ -214,9 +214,9 @@ catalog:
     tags:
       - ot-lateral
   - id: modbus-dpi
-    title: Apply Modbus ICS DPI - limit function codes
+    title: Apply Modbus ICS DPI - provide function-code visibility
     why: |
-      Configure containd to filter Modbus by function code. Allow reads (FC1–4) broadly; restrict writes (FC5/6) to the RTAC only. Turns the firewall from an L4 port filter into a protocol-aware control. Blocks unauthorized writes even from otherwise- allowed sources.
+      Modbus DPI provides function-code visibility and detects and logs writes. The L4 source pin enforces field access from the RTAC source address.
     effort_hours: 70
     roles:
       - Firewall Admin
@@ -226,9 +226,9 @@ catalog:
       - dpi
       - modbus
   - id: dnp3-dpi
-    title: Apply DNP3 ICS DPI - restrict Direct Operate
+    title: Apply DNP3 ICS DPI - detect and log Direct Operate writes
     why: |
-      Configure containd to recognize DNP3 and block Direct Operate (FC05 and the No-Ack variant FC06) at the protocol layer - the RTAC's master only ever sends read/integrity polls (FC01), so a DNP3 control write is illegitimate from any source. Reads stay available for monitoring. Closes the DNP3 command injection attack path.
+      DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes (FC05 and No-Ack FC06). The L4 source pin enforces field access from the RTAC source address.
     effort_hours: 80
     roles:
       - Firewall Admin
@@ -338,11 +338,11 @@ impact:
   modbus-dpi:
     defends:
       - hardening-configurations
-    note: Protocol-aware Modbus filter — blocks unauthorized writes at the function-code level (Lab 2.3 DPI lesson)
+    note: Modbus DPI provides function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address (Lab 2.3 DPI lesson)
   dnp3-dpi:
     defends:
       - hardening-configurations
-    note: Protocol-aware DNP3 filter — blocks Direct Operate from non-RTAC sources (Lab 2.3 DPI lesson)
+    note: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes; the L4 source pin enforces field access from the RTAC source address (Lab 2.3 DPI lesson)
   positive-validation:
     defends:
       - validation-evidence
@@ -462,8 +462,8 @@ groups:
         log: true
     effect: restricts
   modbus-dpi:
-    title: Modbus ICS DPI — limit function codes
-    description: Configure containd to filter Modbus by function code. Allow reads (FC1–4) broadly; restrict writes (FC5/6) to the RTAC only.
+    title: Modbus ICS DPI — function-code visibility
+    description: Modbus DPI provides function-code visibility and detects and logs writes. The L4 source pin enforces field access from the RTAC source address.
     rules:
       - id: rtac-modbus-dpi
         source: ${ip:rtac-1}
@@ -484,8 +484,8 @@ groups:
           note: Full read/write for supervisory control
     effect: semantic
   dnp3-dpi:
-    title: DNP3 ICS DPI — restrict Direct Operate
-    description: Configure containd to recognize DNP3 and block Direct Operate from non-RTAC sources. Reads and integrity polls stay available.
+    title: DNP3 ICS DPI — Direct Operate detection
+    description: DNP3 DPI provides function-code visibility and detects and logs Direct Operate writes. The L4 source pin enforces field access from the RTAC source address.
     rules:
       - id: rtac-dnp3-dpi
         source: ${ip:rtac-1}
@@ -967,7 +967,7 @@ loggingPrefixes:
   - rtac-
 dpiNotice:
   title: ICS DPI enabled
-  description: ' - containd will filter by Modbus/DNP3 function code, not just port number'
+  description: ' - containd provides Modbus/DNP3 function-code visibility and detects and logs writes; the L4 source pin enforces field access from the RTAC source address'
 dpiForbiddenNotice:
   title: ICS DPI planned
   description: ', not enforceable in this range yet'

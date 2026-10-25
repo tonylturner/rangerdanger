@@ -5,12 +5,12 @@ The Kali box includes command-line tools for interacting with DNP3 outstations. 
 To poll the relay outstation for its current data (a Class 0 integrity poll, FC01):
 
 ```bash
-dnp3poll 10.40.40.20:20000 -a 1
+dnp3poll -a 1 -t 3s 10.40.40.20:20000
 ```
 
 Flag breakdown:
 
-- First argument: target `IP:port`
+- Put flags before the final target `IP:port` argument
 - `-a 1` : outstation address (the device's DNP3 address)
 - `-m 100` : master address, optional (defaults to 100, the Kali box)
 - `-t 3s` : connection timeout, optional
@@ -58,7 +58,7 @@ dnp3cmd 10.40.40.20:20000 -a 1 -no-ack crob 0 trip    # Direct Operate No Ack (F
 ```
 
 - **Direct Operate** (FC05): single message, the outstation acts immediately and returns a status response.
-- **Direct Operate No Ack** (FC06): same single-message control write, but the outstation sends no response. Quieter for an attacker, and an evasion path against a filter that only lists FC05 - a correct DPI rule covers both.
+- **Direct Operate No Ack** (FC06): same single-message control write, but the outstation sends no response. Use the lab instructions to observe the resulting device state.
 - **Select-Before-Operate** (FC03/FC04): two steps. The master selects the control point, the outstation confirms, then the master issues operate. Safer for critical operations.
 
 The lab simulators accept all three modes. Direct Operate is the more dangerous (and more commonly exploited) one. A real substation should use SBO for safety-critical controls, but many do not.

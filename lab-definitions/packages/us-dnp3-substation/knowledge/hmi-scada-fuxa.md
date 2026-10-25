@@ -5,7 +5,7 @@
 **DCS** (Distributed Control System) is the related architecture for plant-wide automation (refineries, chemical plants) where the control logic itself is distributed among many controllers. In substations the architecture is usually called SCADA rather than DCS, but the device-and-protocol surface looks similar.
 
 :::tip The lab's primary HMI is at /substation
-Throughout the workshop, every reference to "the Feeder HMI" or "the operational consequence at the HMI" means the **`/substation` panel** built into the RangerDanger web app - not FUXA. Open it at <http://localhost:8088/substation>. The Lab 2.3 alarm chain ("RECLOSER OPEN - downstream loads lost") and the customer-service tile both live there.
+Throughout the workshop, every reference to "the Feeder HMI" or "the operational consequence at the HMI" means the **`/substation` panel** built into the RangerDanger web app - not FUXA. Open it at [Feeder HMI](/substation). The Lab 2.3 alarm chain ("RECLOSER OPEN - downstream loads lost") and the customer-service tile both live there.
 :::
 
 ### What a Real Substation HMI Looks Like
@@ -34,7 +34,7 @@ Two tabs to know:
 
 ### The FUXA Sidecar (Context, Not Load-Bearing)
 
-The lab also runs [FUXA](https://www.frangoteam.com) - an open-source HMI/SCADA platform - at <http://localhost:8088/apps/fuxa-hmi/>. FUXA is wired up: it has a "Substation One-Line Diagram" view configured, polls the RTAC over Modbus, and has the `hmi_poller` sidecar generating its baseline traffic. It is the closest thing in the lab to "the HMI you'd encounter at a small utility or in a vendor demo."
+The lab also runs [FUXA](https://github.com/frangoteam/FUXA) - an open-source HMI/SCADA platform - at [FUXA UI](/apps/fuxa-hmi/). The checkout does not ship a FUXA project seed, so a fresh FUXA UI may be empty. The separate `hmi_poller` generates baseline traffic; that does not configure a FUXA display. It is the closest thing in the lab to "the HMI you'd encounter at a small utility or in a vendor demo."
 
 :::note FUXA is contextual, not part of the exercises
 None of the exercises depend on FUXA being open or correctly configured. The lab's alarm chain, decision questions, and validation chips all read from the `/substation` panel. FUXA is included so students who want to see what the open-source HMI ecosystem looks like - and how a traditional Modbus-polled HMI compares to the lab's purpose-built React panel - can spend a few minutes poking around. If FUXA looks empty or misbehaves, ignore it and use `/substation`.

@@ -43,12 +43,12 @@
       {
         "id": "hmi-scada-fuxa",
         "title": "HMI, SCADA, and the Lab's Substation Panel",
-        "sha256": "88725ed82db525693c3734bf3136acb411dd4019bc37b015c5bba27cadcf7129"
+        "sha256": "077ad9c2fcea7a3db458b05ef6357693cdd463c1fbb40911591fa7807eeebb5b"
       },
       {
         "id": "plc-ladder-openplc",
         "title": "PLCs, Ladder Logic, and What OpenPLC Does",
-        "sha256": "86eab0ad58d19451cd6f7343c4f19c5a412fedf8a0aa3b4eeebc9b42c5bc9712"
+        "sha256": "7d2d62e7e0dcf7dbffb491c734c28fa66bc07539656b4fad467c1f418ef60829"
       },
       {
         "id": "power-factor-reactive-power",
@@ -67,12 +67,12 @@
       {
         "id": "ot-segmentation-overview",
         "title": "OT Network Segmentation Overview",
-        "sha256": "9451c6d98c77c3089af788f7582458e2cb798b5d5e5838fbc19adb3cc18eef0d"
+        "sha256": "468f43021387953be0562879d5d1ef0c5851852ad4ba96f9a50612340b3e56ea"
       },
       {
         "id": "segmentation-approaches",
         "title": "Segmentation Approaches and Technologies",
-        "sha256": "bae06f40a845bdbe8adc85febbba499b6bd82dc27fd2c6c7bf70cf00b43e65a0"
+        "sha256": "50b3b1bebb91054bbec8baea92eab76d08b6494923512bc5cde035e8e0e3d9b3"
       },
       {
         "id": "purdue-model",
@@ -102,7 +102,7 @@
       {
         "id": "ics-dpi",
         "title": "What is ICS DPI? (and how containd does it)",
-        "sha256": "aa45fb82d698df8b6fab005858d1d626d1991429e4d696c3d1a56c78c065e44d"
+        "sha256": "33093fa48484743ea54cd82036044273662bbba949198d128c665f4b87bac238"
       },
       {
         "id": "default-deny",
@@ -126,12 +126,12 @@
       {
         "id": "modbus-tcp",
         "title": "Modbus TCP in Substations",
-        "sha256": "6d5a61cd4388b57a28e51041a7794dbd0fb22351ff433796a5dda393932cc22c"
+        "sha256": "beb97a04b3c906a1d5f390f8f11ba129315bbec7277c4db5e44395ed7edf7844"
       },
       {
         "id": "dnp3",
         "title": "DNP3 in Substations",
-        "sha256": "ec250370d09bcba8680fbd846c7189a1face6d6c196e0831eec4735e7ac6cf85"
+        "sha256": "8b8ece99d1d2370dc1a42446a69d4b67372e0999513275e84346ef77ba848e69"
       },
       {
         "id": "ntp-ot",
@@ -165,7 +165,7 @@
       {
         "id": "tool-dnp3",
         "title": "dnp3poll & dnp3cmd - DNP3 Tools",
-        "sha256": "6dcd6233e5408e9cb35259a2476d7f6273f98f74caa1031c8fce893934de2cb3"
+        "sha256": "e9963e576e17fd3cba5376f79e1a31332a56f0b57dafd518a32f661eb4b0e30f"
       },
       {
         "id": "tool-tshark",
@@ -204,7 +204,7 @@
       {
         "id": "weak-vs-hardened",
         "title": "Weak vs Hardened Firewall Policy",
-        "sha256": "64ed27bee78d4ba253ecc9a805bd5a78d5002e7788934c06929eb1a006b13886"
+        "sha256": "d11f0b7e941d151fdb7c32cfbd6b96a50d6fa55276cc81047c35a94d8d256f7d"
       },
       {
         "id": "traffic-matrix",
@@ -214,17 +214,17 @@
       {
         "id": "plan-coverage-pipeline",
         "title": "The Plan Coverage Pipeline (1.3 → 1.4 → 2.2 → 2.3 → 2.4)",
-        "sha256": "7e3e8d02e6d6e2bb13250a73cdcfb853382cdb35ee79d04082d89e064bd7f099"
+        "sha256": "ced0050e793384b0dac1dd28a51483b7b60bfa5b4bdf79d6bd2d4818020173ed"
       },
       {
         "id": "live-dpi-events-strip",
         "title": "Reading the Live DPI Events Strip",
-        "sha256": "ae9409503c52491fa35114647b9e5429fea442eddf0cc4dacfdf2089da098efb"
+        "sha256": "1b79b6138903f9e6594d301b299fadf8c22576c9e9ae897038395c51e7ddfc8d"
       },
       {
         "id": "how-containd-enforces-policy",
         "title": "How containd Enforces Policy (Kernel-Level View)",
-        "sha256": "33ca310fbc8329c19fe729b761f0d8ce0462937baee8cb071ae24700677121f9"
+        "sha256": "b6c630d396cfc653ea3280f4da16072f320e2428642889c397cf71e588590fae"
       }
     ],
     "id": "internals"
@@ -238,7 +238,7 @@
       {
         "id": "ot-kill-chain",
         "title": "The OT Kill Chain (Mitre ATT&CK for ICS + Real Incidents)",
-        "sha256": "eb4e72e7ea834058446facd3e4f751051fe44cccad0aecc8d4c1bf161733a67e"
+        "sha256": "df3d50f7503ba71f0e4e7ba000eb390a5a3e427f37f55bf7381a1a5b547ecfbf"
       },
       {
         "id": "living-off-the-land-ot",

@@ -1,3 +1,4 @@
+import { buildContaindConfig } from "./advisory-policy.test-util";
 import { US_CURRICULUM } from "./curriculum-storage.test-util";
 import { describe, it, expect } from "vitest";
 import {
@@ -5,7 +6,6 @@ import {
   renderRuleTable,
   positiveValidationTests,
   negativeValidationTests,
-  buildContaindConfig,
 } from "./remediation-to-rules";
 import type { RemediationPlan } from "./remediation-plan";
 import { splitDescription } from "./scenario-description";

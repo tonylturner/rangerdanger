@@ -25,7 +25,7 @@ Read operations retrieve data. Write operations change device state. In a substa
 
 ### The Compensating Control: Segmentation + DPI
 
-The primary defense for Modbus TCP is network segmentation with protocol-aware firewalling. The containd NGFW inspects Modbus traffic at the application layer and filters by function code. The hardened policy allows FC03 (read holding registers) from the HMI to field devices but blocks FC05 and FC06 (write operations) from any source except the RTAC. This is the best available protection for a protocol with no native security.
+The hardened reference restricts field access to the RTAC source address at L4. **The L4 source pin enforces; DPI detects and logs.** Use connectivity and device-state evidence to establish the result; function-code observations alone do not prove a write was prevented.
 
 ### Lab Implementation
 
@@ -39,6 +39,6 @@ You use `mbpoll` on the Kali box to read and write these registers. The differen
 
 ### See Also
 
-- [What is ICS DPI?](#ics-dpi) - function-code filtering is the DPI lesson the lab teaches against Modbus
+- [What is ICS DPI?](#ics-dpi) - protocol detection versus L4 enforcement
 - [`mbpoll` - Modbus TCP Command-Line Tool](#tool-mbpoll) - the CLI used in the labs
 - [DNP3 in Substations](#dnp3) - the protocol DNP3 plays to Modbus's role in distribution

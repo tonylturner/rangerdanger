@@ -41,6 +41,8 @@ export function LoadSimulator() {
   const [lastChange, setLastChange] = useState<{ label: string; ts: number } | null>(null);
   const [now, setNow] = useState(0);
   const [modal, setModal] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Refs mirror the animated slider values so ramps read live values (no stale
   // closures when one ramp chains into the next).
@@ -54,8 +56,8 @@ export function LoadSimulator() {
   const animRef = useRef<number | null>(null);
   const dropTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushRef = useRef<{ t: number; timer: ReturnType<typeof setTimeout> | null }>({ t: 0, timer: null });
-  const initedRef = useRef(false);
-  const engagedRef = useRef(false);
+  const writesRef = useRef<Promise<void>>(Promise.resolve());
+  const mountedRef = useRef(true);
 
   // session-persistent expand/collapse
   useEffect(() => {
@@ -74,14 +76,15 @@ export function LoadSimulator() {
     ? { totalKw: (elec.general_load_kw ?? 0) + (elec.critical_load_kw ?? 0), pf: elec.power_factor ?? 0 }
     : null;
 
-  // seed sliders from the live (default) load once, before engaging
+  // While idle, follow telemetry rather than keeping the last override's
+  // setpoints. In particular, a reset must also work when React Query
+  // retains the same electrical object between polls.
   useEffect(() => {
-    if (!elec || initedRef.current || engagedRef.current) return;
-    initedRef.current = true;
+    if (!elec || engaged) return;
     setGenV(Math.round(((elec.general_load_kw ?? 0) / GEN_MAX_KW) * 100));
     setCritV(Math.round(((elec.critical_load_kw ?? 0) / CRIT_MAX_KW) * 100));
     setPfV(clampPf(Math.round((elec.power_factor ?? 1) * 100)));
-  }, [elec, setGenV, setCritV, setPfV]);
+  }, [elec, engaged, setGenV, setCritV, setPfV]);
 
   // tick for the "Xs ago" audit line
   useEffect(() => {
@@ -91,10 +94,15 @@ export function LoadSimulator() {
 
   // cancel any in-flight ramp / deferred timers on unmount (avoids state
   // updates and stray lab-control POSTs after the component is gone)
-  useEffect(() => () => {
-    if (animRef.current) cancelAnimationFrame(animRef.current);
-    if (dropTimerRef.current) clearTimeout(dropTimerRef.current);
-    if (pushRef.current.timer) clearTimeout(pushRef.current.timer);
+  useEffect(() => {
+    mountedRef.current = true;
+    const push = pushRef.current;
+    return () => {
+      mountedRef.current = false;
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+      if (dropTimerRef.current) clearTimeout(dropTimerRef.current);
+      if (push.timer) clearTimeout(push.timer);
+    };
   }, []);
 
   // Esc closes the reset modal
@@ -105,23 +113,32 @@ export function LoadSimulator() {
     return () => window.removeEventListener("keydown", onKey);
   }, [modal]);
 
-  const engage = () => { engagedRef.current = true; setEngaged(true); };
+  const engage = () => setEngaged(true);
+
+  // Preserve request order: an older override must never arrive after reset.
+  const enqueue = useCallback((body: Parameters<typeof sendLabControl>[0]) => {
+    writesRef.current = writesRef.current
+      .then(async () => { if (mountedRef.current) await sendLabControl(body); })
+      .catch((err: unknown) => {
+        if (mountedRef.current) setActionError(err instanceof Error ? err.message : "Load control failed");
+      });
+  }, []);
 
   // throttled override push (active=true) so the 2s OpenDSS solve follows ramps
   const pushOverride = useCallback((g: number, c: number, p: number, force = false) => {
     const send = () => {
       pushRef.current.t = Date.now();
-      sendLabControl({ active: true, general_load_pct: g, critical_load_pct: c, power_factor: p / 100 }).catch(() => {});
+      enqueue({ active: true, general_load_pct: g, critical_load_pct: c, power_factor: p / 100 });
     };
     if (pushRef.current.timer) { clearTimeout(pushRef.current.timer); pushRef.current.timer = null; }
     const dt = Date.now() - pushRef.current.t;
     if (force || dt > 120) send();
     else pushRef.current.timer = setTimeout(send, 120 - dt);
-  }, []);
+  }, [enqueue]);
 
   const audit = useCallback((command: string, target: string, detail: string) => {
-    sendLabControl({ audit_command: command, audit_target: target, audit_detail: detail, source: "lab-control" }).catch(() => {});
-  }, []);
+    enqueue({ audit_command: command, audit_target: target, audit_detail: detail, source: "lab-control" });
+  }, [enqueue]);
 
   const cancelAnim = () => {
     if (animRef.current) cancelAnimationFrame(animRef.current);
@@ -205,21 +222,32 @@ export function LoadSimulator() {
   };
 
   // ── reset (load simulator only) ────────────────────────────────
-  const doReset = () => {
+  const doReset = async () => {
     cancelAnim();
-    setActivePreset(null);
-    engagedRef.current = false;
-    setEngaged(false);
-    initedRef.current = false; // re-seed sliders from default telemetry next poll
-    sendLabControl({
-      active: false,
-      source: "lab-control",
-      audit_command: "reset_lab",
-      audit_target: "baseline_restored",
-      audit_detail: "load returned to default feeder",
-    }).catch(() => {});
-    setLastChange({ label: "Reset to baseline", ts: Date.now() });
-    setModal(false);
+    if (pushRef.current.timer) clearTimeout(pushRef.current.timer);
+    pushRef.current.timer = null;
+    setResetting(true);
+    setActionError(null);
+    try {
+      await writesRef.current;
+      if (!mountedRef.current) return;
+      await sendLabControl({
+        active: false,
+        source: "lab-control",
+        audit_command: "reset_lab",
+        audit_target: "baseline_restored",
+        audit_detail: "load returned to default feeder",
+      });
+      if (!mountedRef.current) return;
+      setActivePreset(null);
+      setEngaged(false);
+      setLastChange({ label: "Reset to baseline", ts: Date.now() });
+      setModal(false);
+    } catch (err) {
+      if (mountedRef.current) setActionError(err instanceof Error ? err.message : "Load reset failed");
+    } finally {
+      if (mountedRef.current) setResetting(false);
+    }
   };
 
   // ── derived display ────────────────────────────────────────────
@@ -241,16 +269,17 @@ export function LoadSimulator() {
       style={{ borderTop: "2px dashed #334155" }}
     >
       {/* Collapsed row - always visible */}
-      <div className="flex items-center gap-3 px-4" style={{ minHeight: 50 }}>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2" style={{ minHeight: 50 }}>
         <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-[#c6f24e]">
           Load Simulator
         </span>
-        <span className="truncate font-mono text-xs text-slate-400">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-400">
           {stateName} &middot; {statusKw} kW &middot; PF {statusPf}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <button
             onClick={() => setModal(true)}
+            disabled={resetting}
             className="rounded border border-slate-700 px-2.5 py-1 text-[11px] text-slate-300 transition-colors hover:bg-slate-800/50"
           >
             Reset lab
@@ -264,6 +293,8 @@ export function LoadSimulator() {
           </button>
         </div>
       </div>
+
+      {actionError && <p role="alert" className="px-4 py-2 text-xs text-red-300">{actionError}</p>}
 
       {/* Expanded body */}
       {expanded && (
@@ -280,6 +311,7 @@ export function LoadSimulator() {
                 <button
                   key={p.id}
                   onClick={() => clickPreset(p)}
+                  disabled={resetting}
                   title={p.event ? "Simulates NERC Level 3 Alert scenario - sudden customer-initiated load reduction (May 2026)." : undefined}
                   className={`rounded-md border px-3 py-2 text-[12px] transition-colors ${presetClass(p, active)}`}
                 >
@@ -295,11 +327,11 @@ export function LoadSimulator() {
           {/* FINE TUNE */}
           <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-slate-500">Fine Tune</div>
           <div className="space-y-2">
-            <SliderRow label="GENERAL LOAD" value={gen} readout={`${genKw} kW (${Math.round(gen)}%)`}
+            <SliderRow disabled={resetting} label="GENERAL LOAD" value={gen} readout={`${genKw} kW (${Math.round(gen)}%)`}
               onInput={(v) => onSlider("gen", v)} onCommit={() => onSliderCommit("gen")} />
-            <SliderRow label="CRITICAL LOAD" value={crit} readout={`${critKw} kW (${Math.round(crit)}%)`}
+            <SliderRow disabled={resetting} label="CRITICAL LOAD" value={crit} readout={`${critKw} kW (${Math.round(crit)}%)`}
               onInput={(v) => onSlider("crit", v)} onCommit={() => onSliderCommit("crit")} />
-            <SliderRow label="POWER FACTOR" value={pf} min={80} max={100} readout={(pf / 100).toFixed(2)}
+            <SliderRow disabled={resetting} label="POWER FACTOR" value={pf} min={80} max={100} readout={(pf / 100).toFixed(2)}
               onInput={(v) => onSlider("pf", v)} onCommit={() => onSliderCommit("pf")} />
           </div>
 
@@ -335,8 +367,9 @@ export function LoadSimulator() {
                 Cancel
               </button>
               <button onClick={doReset}
+                disabled={resetting}
                 className="rounded border border-[#c6f24e] bg-[#c6f24e] px-3 py-1.5 text-[12px] font-medium text-slate-900">
-                Reset
+                {resetting ? "Resetting…" : "Reset"}
               </button>
             </div>
           </div>
@@ -347,22 +380,33 @@ export function LoadSimulator() {
 }
 
 function SliderRow({
-  label, value, readout, onInput, onCommit, min = 0, max = 100,
+  label, value, readout, onInput, onCommit, min = 0, max = 100, disabled = false,
 }: {
   label: string; value: number; readout: string;
   onInput: (v: number) => void; onCommit: () => void; min?: number; max?: number;
+  disabled?: boolean;
 }) {
+  const dirty = useRef(false);
+  const commit = () => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    onCommit();
+  };
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
       <span className="shrink-0 text-[11px] tracking-[0.04em] text-slate-400" style={{ width: 110 }}>{label}</span>
       <input
         type="range" min={min} max={max} step={1} value={Math.round(value)}
         aria-label={label} aria-valuetext={readout}
-        onChange={(e) => onInput(Number(e.target.value))}
-        onMouseUp={onCommit} onTouchEnd={onCommit}
-        className="flex-1" style={{ accentColor: LIME }}
+        disabled={disabled}
+        onChange={(e) => { dirty.current = true; onInput(Number(e.target.value)); }}
+        onMouseUp={commit} onTouchEnd={commit} onBlur={commit}
+        onKeyUp={(e) => {
+          if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) commit();
+        }}
+        className="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:flex-1" style={{ accentColor: LIME }}
       />
-      <span className="shrink-0 text-right font-mono text-xs font-bold text-slate-200" style={{ width: 90 }}>{readout}</span>
+      <span className="ml-auto shrink-0 text-right font-mono text-xs font-bold text-slate-200 sm:ml-0" style={{ width: 90 }}>{readout}</span>
     </div>
   );
 }

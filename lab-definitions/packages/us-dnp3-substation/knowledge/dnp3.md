@@ -6,7 +6,7 @@ DNP3 uses a master-outstation model. The master (RTAC or SCADA system) initiates
 
 - **Read** (FC01): retrieve data objects from the outstation
 - **Direct Operate** (FC05): command an action (open breaker, change setpoint) in a single message, with the outstation returning a status response
-- **Direct Operate No Ack** (FC06): the same single-message control write, but the outstation sends **no response**. Attackers favor it because it is quieter (no reply packet to notice) and because a naive function-code filter that only lists FC05 will miss it - which is exactly why a correct DPI rule must cover both FC05 and FC06
+- **Direct Operate No Ack** (FC06): the same single-message control write, but the outstation sends **no response**.
 - **Select-Before-Operate** (FC03/FC04): two-step confirmation for safety-critical operations. The master selects the control point, the outstation confirms readiness, then the master issues the operate. SBO is recommended for critical controls but not universally deployed. The lab's `dnp3cmd` supports all three control modes (`-sbo` for Select-Before-Operate, `-no-ack` for FC06, and Direct Operate by default).
 
 ### Security (or Lack Thereof)
@@ -21,7 +21,7 @@ DNP3 is more complex than Modbus, with three layers:
 2. **Transport layer**: message reassembly for large data
 3. **Application layer**: SCADA data objects organized by group and variation
 
-This complexity makes DPI harder than Modbus, but the containd NGFW implements application-layer inspection to filter by function code.
+This complexity makes DPI harder than Modbus, but the containd NGFW decodes application-layer operations for detection and logging. **The L4 source pin enforces; DPI detects and logs.**
 
 ### Lab Implementation
 
@@ -38,7 +38,7 @@ You can use DNP3 tools on the Kali box to send Direct Operate commands, tripping
 
 ### See Also
 
-- [What is ICS DPI?](#ics-dpi) - the DNP3 Direct Operate restriction (FC05 and FC06 No Ack) is what containd's DPI rule for DNP3 enforces
+- [What is ICS DPI?](#ics-dpi) - protocol detection versus L4 enforcement
 - [`dnp3poll` & `dnp3cmd` - DNP3 Tools](#tool-dnp3) - the CLI tools used in the labs
 - [IEC 61850 and GOOSE](#iec-61850-goose) - the modern standard sometimes deployed alongside or instead of DNP3
 - [The OT Kill Chain](#ot-kill-chain) - the Industroyer historical example mirrors the Lab 2.3 DNP3 attack

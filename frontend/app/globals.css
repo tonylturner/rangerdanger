@@ -104,6 +104,10 @@ body {
 }
 
 /* Knowledge article markdown styling */
+.knowledge-article { min-width: 0; overflow-wrap: anywhere; }
+.knowledge-article pre, .knowledge-article table {
+  display: block; max-width: 100%; overflow-x: auto;
+}
 .knowledge-article p { margin-bottom: 0.75rem; }
 .knowledge-article p:last-child { margin-bottom: 0; }
 .knowledge-article h1, .knowledge-article h2, .knowledge-article h3 {

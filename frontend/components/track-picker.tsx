@@ -9,9 +9,7 @@ import { Wrench, Hand, Check } from "lucide-react";
 // "apply policy" / "interact with containd" sections, plus the
 // side-panel buttons in scenario-runner.tsx.
 //
-// Force-pick is enforced separately in scenario-runner.tsx by
-// gating the Next button on track !== null in the implementation-role
-// scenario at step index 0.
+// Guided is selected by default; choosing a track never gates progress.
 
 type Card = {
   value: Exclude<FirewallTrack, null>;
@@ -31,7 +29,7 @@ const CARDS: Card[] = [
     title: "Guided (default)",
     oneLiner: "Click to apply, explore the interfaces",
     detail:
-      "You apply policies with the buttons below the step (Apply Hardened, Apply Your Plan) and walk containd's web UI / CLI to understand what landed. No rule authoring and no commit step. This is the default workshop path - recommended for everyone focusing on the segmentation lesson rather than firewall policy syntax.",
+      "You apply policies with the buttons below the step (Apply Hardened) and walk containd's web UI / CLI to understand what landed. No rule authoring and no commit step. This is the default workshop path - recommended for everyone focusing on the segmentation lesson rather than firewall policy syntax.",
     accent: "text-emerald-300",
     borderActive: "border-emerald-500",
     borderIdle: "border-slate-700",

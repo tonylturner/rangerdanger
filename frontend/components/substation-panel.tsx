@@ -52,7 +52,7 @@ export function SubstationPanel() {
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950">
-      <div className="flex border-b border-slate-800">
+      <div className="flex flex-wrap border-b border-slate-800">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -75,7 +75,11 @@ export function SubstationPanel() {
           </div>
         )}
         {tab === "diagram" && !waiting && (
-          <OneLine elec={elec} relay={relay} recloser={recloser} regulator={regulator} capbank={capbank} />
+          <div className="overflow-x-auto" role="region" aria-label="Feeder one-line diagram" tabIndex={0}>
+            <div className="min-w-[540px]">
+              <OneLine elec={elec} relay={relay} recloser={recloser} regulator={regulator} capbank={capbank} />
+            </div>
+          </div>
         )}
         {tab === "commands" && (
           <CommandPanel

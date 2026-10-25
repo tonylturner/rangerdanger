@@ -459,13 +459,6 @@ export async function applyFirewallConfig(config: string) {
   });
 }
 
-export async function applyCustomFirewallConfig(configJson: object) {
-  return request<{ status: string; active_config: string }>("/firewall/apply-custom", {
-    method: "POST",
-    body: JSON.stringify(configJson),
-  });
-}
-
 export type ValidationReport = {
   markdown: string;
   summary: {

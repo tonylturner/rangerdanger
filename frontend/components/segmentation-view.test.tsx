@@ -24,7 +24,7 @@ const comparison: PolicyComparison = {
 
 function render(
   pkg: typeof EU_PACKAGE | typeof US_PACKAGE,
-  activeConfig: string,
+  activeConfig: string | null,
   withComparison = true,
 ): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -42,6 +42,17 @@ function render(
 }
 
 describe("SegmentationView", () => {
+  it.each([EU_PACKAGE, US_PACKAGE])("labels the mixed event stream by $id's active policy, without implying DPI is enabled", (pkg) => {
+    for (const policy of ["weak", "improved", "custom"]) {
+      const html = render(pkg, policy);
+      const label = policy === "custom" ? "Custom policy"
+        : pkg === US_PACKAGE ? (policy === "weak" ? "Weak Baseline" : "Hardened Segmentation") : policy;
+      expect(html).toContain(`Live Firewall Events · ${label}`);
+      expect(html).not.toContain("Live DPI Events");
+    }
+    expect(render(pkg, null)).toContain("Live Firewall Events · Policy loading…");
+  });
+
   it("uses EU-specific named policy descriptions", () => {
     const weak = render(EU_PACKAGE, "weak");
     expect(weak).toContain(

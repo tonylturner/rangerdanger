@@ -6,6 +6,27 @@ import {
 } from "./exercise-pdf-text";
 
 describe("splitDescription", () => {
+  it.each(["BLOCK", '"BLOCK and LOG"'])("prints questions and choices, never the answer-key attribute %s", (correct) => {
+    const segments = splitDescription(
+      `Before\n:::decision id=us options="ALLOW,BLOCK,BLOCK and LOG" correct=${correct}\nShould this flow be allowed?\n:::\nAfter`,
+    );
+    expect(segments).toEqual([
+      { type: "prose", value: "Before" },
+      { type: "prose", value: "Should this flow be allowed?" },
+      { type: "prose", value: "Choices: ALLOW / BLOCK / BLOCK and LOG\n\nYour answer: __________" },
+      { type: "prose", value: "After" },
+    ]);
+    expect(JSON.stringify(segments)).not.toMatch(/correct=|:::|id=us/);
+  });
+
+  it("omits metadata for EU decisions, incomplete decisions and interactive widgets", () => {
+    const segments = splitDescription(
+      ':::track-picker\n:::\n:::decision id=eu correct="secret-answer"\nWhich port?\n',
+    );
+    expect(JSON.stringify(segments)).toContain("Which port?");
+    expect(JSON.stringify(segments)).not.toMatch(/secret-answer|correct=|:::/);
+  });
+
   it("keeps prose around a titled hint fence in order", () => {
     const segments = splitDescription(
       "Intro prose.\n:::hint Check the result\nUse this output.\n:::\nClosing prose.",

@@ -38,5 +38,5 @@ When you walk a workshop attendee through Lab 2.3 and they ask "is this a real t
 
 - [Living off the Land in OT](#living-off-the-land-ot) - Volt Typhoon's signature pattern explained
 - [Vendor Remote Access Patterns](#vendor-remote-access) - the entry vector for several real incidents
-- [What is ICS DPI?](#ics-dpi) - the defensive control that closes the unauthorized-command-message attack
+- [What is ICS DPI?](#ics-dpi) - protocol detection context; the L4 source pin enforces; DPI detects and logs
 - [Change Management for Substation Firewall Rules](#change-management-firewall-rules) - how the defensive change actually gets approved at a utility
