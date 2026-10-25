@@ -409,8 +409,9 @@ phases:
     EU selected slots emit no extra per-action rule. Selecting a closure removes
     its deferred Weak allow; it does not remove the required operational rules.
     An empty or planning-only plan is valid and keeps those exposures open.
-    Keep package revision, action IDs and policy hash with the compiled export.
-    The config JSON alone does not embed that provenance.
+    Export the compiled config and the companion **Export plan record**.
+    The record contains package ID, revision, label, action IDs and policy
+    hash. Use `GET /api/firewall/active` to check what is running.
 
     ### Compiled rules
 

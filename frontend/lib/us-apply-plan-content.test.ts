@@ -25,7 +25,7 @@ describe("US Apply Your Plan content", () => {
         expect(text).not.toMatch(/fixed blocked outcome|not \*\*Apply Your Plan/);
         if (phase === "rules") {
           expect(text).toContain("Origin");
-          expect(text).toContain("package revision, action IDs and policy hash");
+          expect(text).toContain("**Export plan record**");
           for (const row of plan.rules) expect(text).toContain(row.rule.id);
         } else {
           expect(text).toContain("Plan verdict");

@@ -466,8 +466,9 @@ phases:
         }
     :::
 
-    Keep the package revision, action IDs and policy hash with the compiled
-    export. The config JSON alone does not carry that provenance.
+    Export the compiled config and the companion **Export plan record**.
+    The record contains the package ID, revision, label, action IDs and policy
+    hash. Use `GET /api/firewall/active` to check what is running.
 
     ### Compiled rules
 

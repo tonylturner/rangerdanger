@@ -92,8 +92,9 @@ steps:
     [Historian uncertainty](/knowledge#eu-historian) explains link-loss stale samples and archive gaps. This sidebar is optional, not a mandatory outage exercise or report prerequisite.
     :::
 
-    Keep the package revision and selected action IDs with the policy hash,
-    report and PCAP. The config JSON alone does not embed that provenance.
+    Save **Export plan record** beside **Export compiled config**, the report
+    and PCAP. The record contains package ID, revision, label, action IDs and
+    policy hash. Use `GET /api/firewall/active` to check what is running.
     The L4 source pin enforces; DPI detects and logs. EU DPI is disabled;
     neither TCP proof nor a logged deny proves command-aware filtering.
   action:

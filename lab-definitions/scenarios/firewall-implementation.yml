@@ -249,8 +249,9 @@ steps:
           }
       :::
 
-      Keep the package revision, action IDs and policy hash with the compiled
-      export. The config JSON alone does not carry that provenance.
+      Export the compiled config and the companion **Export plan record**.
+      The record contains the package ID, revision, label, action IDs and
+      policy hash. Use `GET /api/firewall/active` to check what is running.
     action:
       type: check
       expect:
@@ -390,10 +391,10 @@ steps:
       - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
       - Browser export is optional; the copied CLI JSON is your evidence.
 
-      Retain the package revision, selected action IDs and policy hash beside
-      this running-config export. The compiled config JSON does not embed those
-      fields. Retain the `plan` fields from `GET /api/firewall/active` with the export.
-      Compare the running hash with that plan's hash before and after probing.
+      Use **Export plan record** as the companion to **Export compiled config**.
+      The record contains package ID, revision, label, action IDs and policy
+      hash. Check `GET /api/firewall/active` to confirm the current plan and
+      running hash before and after probing.
 
       A partial plan is not equivalent to Hardened. List its deferred exposures
       and preserve both plan proof and Hardened acceptance results. Named and

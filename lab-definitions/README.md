@@ -227,8 +227,9 @@ which is what makes most attack exercises possible.
 
 `firewall/substation-improved.json` is the **target hardened state**
 - only RTAC→field is allowed for the controlled flows, and Modbus
-write function codes are denied from any source other than the
-RTAC. Exercises validate against this when checking remediation.
+field access is allowed only from the RTAC's pinned L4 source address.
+That source pin enforces the boundary; DPI detects and logs function
+codes. Exercises validate against this when checking remediation.
 
 Both files use the [containd](https://github.com/tonylturner/containd)
 schema. Tested by `backend/internal/containd/firewall_config_test.go`.

@@ -139,8 +139,9 @@ steps:
     EU selected slots emit no extra per-action rule. Selecting a closure removes
     its deferred Weak allow; it does not remove the required operational rules.
     An empty or planning-only plan is valid and keeps those exposures open.
-    Keep package revision, action IDs and policy hash with the compiled export.
-    The config JSON alone does not embed that provenance.
+    Export the compiled config and the companion **Export plan record**.
+    The record contains package ID, revision, label, action IDs and policy
+    hash. Use `GET /api/firewall/active` to check what is running.
   action:
     type: firewall
     config: improved
@@ -288,10 +289,10 @@ steps:
     Keep the intended policy and rollback. Lab 2.3 will restore weak deliberately to demonstrate unauthorized wire control, then restore service and repeat under the applied plan or Hardened reference. A policy file alone is not acceptance evidence.
     :::
 
-    Keep the package revision, selected action IDs and policy hash beside the
-    compiled config export. The config JSON alone does not embed provenance.
-    Retain the `plan` fields from `GET /api/firewall/active` with the export.
-    Compare the running hash before and after probing. Keep both plan proof and
+    Use **Export plan record** as the companion to **Export compiled config**.
+    The record contains package ID, revision, label, action IDs and policy
+    hash. Check `GET /api/firewall/active` to confirm the current plan and
+    running hash before and after probing. Keep both plan proof and
     Hardened acceptance; a faithful partial plan can still have prevention gaps.
   action:
     type: check
