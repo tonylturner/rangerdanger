@@ -1,7 +1,830 @@
 {
-  "packageId": "us-dnp3-substation",
-  "revision": 2,
-  "label": "partial",
+  "config": {
+    "dataplane": {
+      "dpiMode": "enforce",
+      "nflogGroup": 100,
+      "nfqueueGroup": 101,
+      "dpiEnabled": true,
+      "dpiIcsProtocols": {
+        "modbus": true,
+        "dnp3": true
+      }
+    },
+    "firewall": {
+      "defaultAction": "DENY",
+      "nat": {
+        "enabled": false
+      },
+      "rules": [
+        {
+          "id": "enterprise-to-vendor-only",
+          "description": "Enterprise to Vendor: SSH, HTTP/S only (no direct OT access)",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "dmz"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "22"
+            },
+            {
+              "name": "tcp",
+              "port": "80"
+            },
+            {
+              "name": "tcp",
+              "port": "443"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "enterprise-to-ot-weak",
+          "description": "WEAK: Enterprise direct access to OT Operations (should be blocked)",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "1881"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "enterprise-to-field-weak",
+          "description": "WEAK: Enterprise direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
+          "sourceZones": [
+            "wan"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "vendor-to-ot-weak",
+          "description": "WEAK: Vendor broad access to OT Operations including Modbus/DNP3 (should be narrowed)",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "1881"
+            },
+            {
+              "name": "tcp",
+              "port": "22"
+            },
+            {
+              "name": "tcp",
+              "port": "443"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "vendor-to-field-weak",
+          "description": "WEAK: Vendor direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
+          "sourceZones": [
+            "dmz"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "rtac-to-field-modbus",
+          "description": "RTAC to Field Devices: Modbus TCP read/write (supervisory control only)",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "502"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "rtac-to-field-dnp3",
+          "description": "RTAC to Field Devices: DNP3 TCP - the L4 source pin enforces RTAC field access; DPI detects and logs function codes, including Direct Operate (FC5) and No-Ack (FC6).",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "action": "ALLOW"
+        },
+        {
+          "id": "rtac-to-field-http",
+          "description": "RTAC to Field Devices: HTTP API (supervisory management)",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.20/32"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "ot-to-field-broad",
+          "description": "WEAK: All OT Operations nodes can Modbus/DNP3/HTTP to all Field Devices (should be RTAC only)",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "ntp-ot-to-field",
+          "description": "WEAK: NTP time sync from OT ops to field (no source restriction)",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "protocols": [
+            {
+              "name": "udp",
+              "port": "123"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "ot-intrazone-ops",
+          "description": "OT Operations internal: HMI↔RTAC Modbus, DNP3, HTTP, FUXA, NTP",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan1"
+          ],
+          "protocols": [
+            {
+              "name": "tcp",
+              "port": "8080"
+            },
+            {
+              "name": "tcp",
+              "port": "1881"
+            },
+            {
+              "name": "tcp",
+              "port": "502"
+            },
+            {
+              "name": "tcp",
+              "port": "20000"
+            },
+            {
+              "name": "udp",
+              "port": "123"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        },
+        {
+          "id": "gps-to-field-ntp",
+          "description": "GPS Time Server to Field Devices: NTP only (time sync for SOE)",
+          "sourceZones": [
+            "lan1"
+          ],
+          "destZones": [
+            "lan2"
+          ],
+          "sources": [
+            "10.30.30.50/32"
+          ],
+          "protocols": [
+            {
+              "name": "udp",
+              "port": "123"
+            }
+          ],
+          "ics": {},
+          "action": "ALLOW"
+        }
+      ]
+    },
+    "ids": {
+      "enabled": false
+    },
+    "interfaces": [
+      {
+        "name": "wan",
+        "zone": "wan",
+        "access": {
+          "mgmt": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "dmz",
+        "zone": "dmz",
+        "access": {
+          "mgmt": true,
+          "ssh": true
+        }
+      },
+      {
+        "name": "lan1",
+        "zone": "lan1",
+        "access": {
+          "mgmt": true,
+          "ssh": true
+        }
+      },
+      {
+        "name": "lan2",
+        "zone": "lan2",
+        "access": {
+          "mgmt": false,
+          "ssh": false
+        }
+      },
+      {
+        "name": "lan3",
+        "zone": "lan3",
+        "access": {
+          "mgmt": true,
+          "http": true,
+          "https": true,
+          "ssh": true
+        }
+      }
+    ],
+    "pcap": {
+      "filter": {}
+    },
+    "routing": {},
+    "schema_version": "0.1.0",
+    "services": {
+      "syslog": {
+        "forwarders": [],
+        "format": "rfc5424",
+        "batchSize": 500,
+        "flushEvery": 2
+      },
+      "dns": {
+        "enabled": false
+      },
+      "ntp": {
+        "enabled": false
+      },
+      "proxy": {
+        "forward": {
+          "enabled": false
+        },
+        "reverse": {
+          "enabled": false
+        }
+      },
+      "dhcp": {
+        "enabled": false
+      },
+      "vpn": {
+        "wireguard": {
+          "enabled": false
+        },
+        "openvpn": {
+          "enabled": false
+        }
+      },
+      "av": {
+        "enabled": false,
+        "icap": {},
+        "clamav": {}
+      }
+    },
+    "system": {
+      "hostname": "containd",
+      "mgmt": {
+        "listenAddr": ":8080",
+        "enableHTTP": true,
+        "enableHTTPS": true,
+        "httpListenAddr": ":8080",
+        "httpsListenAddr": ":8443",
+        "tlsCertFile": "/data/tls/server.crt",
+        "tlsKeyFile": "/data/tls/server.key"
+      },
+      "ssh": {}
+    },
+    "zones": [
+      {
+        "name": "wan",
+        "description": "Enterprise Zone - Corporate IT environment"
+      },
+      {
+        "name": "dmz",
+        "description": "Vendor / Engineering Zone - Remote support and maintenance"
+      },
+      {
+        "name": "lan1",
+        "description": "OT Operations Zone - HMI, RTAC, supervisory control"
+      },
+      {
+        "name": "lan2",
+        "description": "Field Device Zone - Relay, recloser, regulator, capbank"
+      },
+      {
+        "name": "lan3",
+        "description": "RangerDanger control plane - backend API access (not student-visible)"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "rule": {
+        "id": "enterprise-to-vendor-only",
+        "description": "Enterprise to Vendor: SSH, HTTP/S only (no direct OT access)",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "dmz"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "22"
+          },
+          {
+            "name": "tcp",
+            "port": "80"
+          },
+          {
+            "name": "tcp",
+            "port": "443"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "selected",
+        "action": "restrict-enterprise-to-vendor"
+      }
+    },
+    {
+      "rule": {
+        "id": "enterprise-to-ot-weak",
+        "description": "WEAK: Enterprise direct access to OT Operations (should be blocked)",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "1881"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-enterprise-to-ot"
+      }
+    },
+    {
+      "rule": {
+        "id": "enterprise-to-field-weak",
+        "description": "WEAK: Enterprise direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
+        "sourceZones": [
+          "wan"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-enterprise-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "vendor-to-ot-weak",
+        "description": "WEAK: Vendor broad access to OT Operations including Modbus/DNP3 (should be narrowed)",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "1881"
+          },
+          {
+            "name": "tcp",
+            "port": "22"
+          },
+          {
+            "name": "tcp",
+            "port": "443"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "restrict-vendor-to-ot"
+      }
+    },
+    {
+      "rule": {
+        "id": "vendor-to-field-weak",
+        "description": "WEAK: Vendor direct Modbus/DNP3/HTTP access to Field Devices (should be blocked)",
+        "sourceZones": [
+          "dmz"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "block-vendor-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "rtac-to-field-modbus",
+        "description": "RTAC to Field Devices: Modbus TCP read/write (supervisory control only)",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "502"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "rtac-to-field-dnp3",
+        "description": "RTAC to Field Devices: DNP3 TCP - the L4 source pin enforces RTAC field access; DPI detects and logs function codes, including Direct Operate (FC5) and No-Ack (FC6).",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "rtac-to-field-http",
+        "description": "RTAC to Field Devices: HTTP API (supervisory management)",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.20/32"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "ot-to-field-broad",
+        "description": "WEAK: All OT Operations nodes can Modbus/DNP3/HTTP to all Field Devices (should be RTAC only)",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "pin-rtac-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "ntp-ot-to-field",
+        "description": "WEAK: NTP time sync from OT ops to field (no source restriction)",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "protocols": [
+          {
+            "name": "udp",
+            "port": "123"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "deferred",
+        "action": "pin-rtac-to-field"
+      }
+    },
+    {
+      "rule": {
+        "id": "ot-intrazone-ops",
+        "description": "OT Operations internal: HMI↔RTAC Modbus, DNP3, HTTP, FUXA, NTP",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan1"
+        ],
+        "protocols": [
+          {
+            "name": "tcp",
+            "port": "8080"
+          },
+          {
+            "name": "tcp",
+            "port": "1881"
+          },
+          {
+            "name": "tcp",
+            "port": "502"
+          },
+          {
+            "name": "tcp",
+            "port": "20000"
+          },
+          {
+            "name": "udp",
+            "port": "123"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    },
+    {
+      "rule": {
+        "id": "gps-to-field-ntp",
+        "description": "GPS Time Server to Field Devices: NTP only (time sync for SOE)",
+        "sourceZones": [
+          "lan1"
+        ],
+        "destZones": [
+          "lan2"
+        ],
+        "sources": [
+          "10.30.30.50/32"
+        ],
+        "protocols": [
+          {
+            "name": "udp",
+            "port": "123"
+          }
+        ],
+        "ics": {},
+        "action": "ALLOW"
+      },
+      "origin": {
+        "kind": "required"
+      }
+    }
+  ],
   "actions": [
     {
       "id": "restrict-enterprise-to-vendor",
@@ -14,17 +837,17 @@
       "chosen": false
     },
     {
-      "id": "block-vendor-to-field",
-      "kind": "enforce",
-      "chosen": false
-    },
-    {
       "id": "block-enterprise-to-ot",
       "kind": "enforce",
       "chosen": false
     },
     {
       "id": "restrict-vendor-to-ot",
+      "kind": "enforce",
+      "chosen": false
+    },
+    {
+      "id": "block-vendor-to-field",
       "kind": "enforce",
       "chosen": false
     },
@@ -49,6 +872,16 @@
       "chosen": false
     },
     {
+      "id": "rtac-architecture-review",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
+      "id": "tighten-firewall-objects",
+      "kind": "plan",
+      "chosen": false
+    },
+    {
       "id": "positive-validation",
       "kind": "plan",
       "chosen": false
@@ -67,113 +900,22 @@
       "id": "vendor-zta-broker",
       "kind": "plan",
       "chosen": false
-    },
-    {
-      "id": "tighten-firewall-objects",
-      "kind": "plan",
-      "chosen": false
-    },
-    {
-      "id": "rtac-architecture-review",
-      "kind": "plan",
-      "chosen": false
     }
   ],
-  "rules": [
-    {
-      "rule": {
-        "id": "operational-pin",
-        "description": "Required operational source pin",
-        "sourceZones": [
-          "lan1"
-        ],
-        "destZones": [
-          "lan2"
-        ],
-        "sources": [
-          "10.30.30.20/32"
-        ],
-        "destinations": [
-          "10.40.40.20/32"
-        ],
-        "protocols": [
-          {
-            "name": "tcp",
-            "port": "502"
-          }
-        ],
-        "action": "ALLOW"
-      },
-      "origin": {
-        "kind": "required"
-      }
-    },
-    {
-      "rule": {
-        "id": "remote-access-selected",
-        "description": "Remote access",
-        "sourceZones": [
-          "wan"
-        ],
-        "destZones": [
-          "dmz"
-        ],
-        "protocols": [
-          {
-            "name": "tcp",
-            "port": "22"
-          },
-          {
-            "name": "tcp",
-            "port": "80"
-          },
-          {
-            "name": "tcp",
-            "port": "443"
-          }
-        ],
-        "action": "ALLOW"
-      },
-      "origin": {
-        "kind": "selected",
-        "action": "restrict-enterprise-to-vendor"
-      }
-    },
-    {
-      "rule": {
-        "id": "enterprise-field",
-        "description": "Enterprise field exposure",
-        "sourceZones": [
-          "wan"
-        ],
-        "destZones": [
-          "lan2"
-        ],
-        "protocols": [
-          {
-            "name": "tcp",
-            "port": "502"
-          }
-        ],
-        "action": "ALLOW"
-      },
-      "origin": {
-        "kind": "deferred",
-        "action": "block-enterprise-to-field"
-      }
-    }
-  ],
+  "label": "partial",
+  "packageId": "us-dnp3-substation",
+  "revision": 2,
+  "policyHash": "1fe1ec9766bb4b92dfde560f659588932601d3175fbfb8dae66a973b19f27388",
   "expectations": [
     {
       "id": "A1",
-      "category": "authorized",
       "from": "rtac-1",
-      "to": "breaker-1",
+      "to": "relay-1",
       "network": "field_net",
       "port": 502,
+      "category": "authorized",
       "owners": [],
-      "labs": [],
-      "note": "Operational conduit",
+      "note": "RTAC Modbus poll to relay",
       "planVerdict": "allow",
       "hardenedVerdict": "allow",
       "bridged": false,
@@ -181,21 +923,308 @@
       "toIp": "10.40.40.20"
     },
     {
+      "id": "A2",
+      "from": "rtac-1",
+      "to": "recloser-1",
+      "network": "field_net",
+      "port": 20000,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTAC DNP3 poll to recloser",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "A3",
+      "from": "rtac-1",
+      "to": "regulator-1",
+      "network": "field_net",
+      "port": 20000,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTAC DNP3 poll to regulator",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "A4",
+      "from": "rtac-1",
+      "to": "openplc-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "authorized",
+      "owners": [],
+      "note": "RTAC HTTP API to OpenPLC (intra-zone)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": true,
+      "fromIp": "10.30.30.20",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "A5",
+      "from": "hmi-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "authorized",
+      "owners": [],
+      "note": "HMI to RTAC HTTP intra-zone",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": true,
+      "fromIp": "10.30.30.10",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "A6",
+      "from": "historian-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "authorized",
+      "owners": [],
+      "note": "Historian to RTAC intra-zone",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": true,
+      "fromIp": "10.30.30.40",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "A7",
+      "from": "vendor-jump-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 22,
+      "category": "authorized",
+      "owners": [],
+      "note": "Vendor SSH mgmt to RTAC",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "A8",
+      "from": "vendor-jump-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 443,
+      "category": "authorized",
+      "owners": [],
+      "note": "Vendor HTTPS mgmt to RTAC",
+      "planVerdict": "allow",
+      "hardenedVerdict": "allow",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.30.30.20"
+    },
+    {
       "id": "U1",
+      "from": "kali-1",
+      "to": "relay-1",
+      "network": "field_net",
+      "port": 502,
       "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "note": "Enterprise Modbus to field relay",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U2",
+      "from": "kali-1",
+      "to": "relay-1",
+      "network": "field_net",
+      "port": 20000,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-field"
+      ],
+      "note": "Enterprise DNP3 to field relay",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.40.40.20"
+    },
+    {
+      "id": "U3",
+      "from": "kali-1",
+      "to": "openplc-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-ot"
+      ],
+      "note": "Enterprise HTTP to OpenPLC",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "U4",
+      "from": "kali-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-ot"
+      ],
+      "note": "Enterprise HTTP to RTAC",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "U5",
+      "from": "kali-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-enterprise-to-ot"
+      ],
+      "note": "Enterprise Modbus to RTAC",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.10.10.50",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "U6",
+      "from": "eng-ws-1",
+      "to": "recloser-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "note": "Vendor Modbus to field recloser",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "U7",
+      "from": "eng-ws-1",
+      "to": "recloser-1",
+      "network": "field_net",
+      "port": 20000,
+      "category": "unauthorized",
+      "owners": [
+        "block-vendor-to-field"
+      ],
+      "note": "Vendor DNP3 to field recloser",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.40.40.21"
+    },
+    {
+      "id": "U8",
+      "from": "eng-ws-1",
+      "to": "openplc-1",
+      "network": "ot_ops_net",
+      "port": 8080,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-vendor-to-ot"
+      ],
+      "note": "Vendor HTTP to OpenPLC (only 443/22 allowed)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.20",
+      "toIp": "10.30.30.30"
+    },
+    {
+      "id": "U9",
+      "from": "vendor-jump-1",
+      "to": "rtac-1",
+      "network": "ot_ops_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "restrict-vendor-to-ot"
+      ],
+      "note": "Vendor Modbus to RTAC (improved blocks non-mgmt)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.20.20.10",
+      "toIp": "10.30.30.20"
+    },
+    {
+      "id": "U10",
+      "from": "historian-1",
+      "to": "regulator-1",
+      "network": "field_net",
+      "port": 502,
+      "category": "unauthorized",
+      "owners": [
+        "pin-rtac-to-field"
+      ],
+      "note": "Non-RTAC OT (historian) to field regulator (Modbus)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.30.30.40",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "U11",
+      "from": "historian-1",
+      "to": "regulator-1",
+      "network": "field_net",
+      "port": 20000,
+      "category": "unauthorized",
+      "owners": [
+        "pin-rtac-to-field"
+      ],
+      "note": "Non-RTAC OT (historian) to field regulator (DNP3)",
+      "planVerdict": "allow",
+      "hardenedVerdict": "deny",
+      "bridged": false,
+      "fromIp": "10.30.30.40",
+      "toIp": "10.40.40.22"
+    },
+    {
+      "id": "U12",
       "from": "kali-1",
       "to": "vendor-jump-1",
       "network": "vendor_net",
       "port": 3389,
+      "category": "unauthorized",
       "owners": [
         "restrict-enterprise-to-vendor"
       ],
-      "labs": [
-        "implementation",
-        "hardening",
-        "validation"
-      ],
-      "note": "Exposure comparison",
+      "note": "Enterprise vendor RDP",
       "planVerdict": "deny",
       "hardenedVerdict": "deny",
       "bridged": false,
@@ -203,111 +1232,21 @@
       "toIp": "10.20.20.10"
     },
     {
-      "id": "U2",
-      "category": "unauthorized",
+      "id": "U13",
       "from": "kali-1",
-      "to": "breaker-1",
-      "network": "field_net",
-      "port": 502,
+      "to": "vendor-jump-1",
+      "network": "vendor_net",
+      "port": 5900,
+      "category": "unauthorized",
       "owners": [
-        "block-enterprise-to-field"
+        "restrict-enterprise-to-vendor"
       ],
-      "labs": [
-        "hardening",
-        "validation"
-      ],
-      "note": "Exposure comparison",
-      "planVerdict": "allow",
+      "note": "Enterprise vendor VNC",
+      "planVerdict": "deny",
       "hardenedVerdict": "deny",
       "bridged": false,
       "fromIp": "10.10.10.50",
-      "toIp": "10.40.40.20"
+      "toIp": "10.20.20.10"
     }
-  ],
-  "policyHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "config": {
-    "schema_version": "0.1.0",
-    "interfaces": [
-      {
-        "name": "lan3",
-        "zone": "lan3",
-        "access": {
-          "mgmt": true,
-          "http": true,
-          "https": true,
-          "ssh": true
-        }
-      }
-    ],
-    "firewall": {
-      "defaultAction": "DENY",
-      "rules": [
-        {
-          "id": "operational-pin",
-          "description": "Required operational source pin",
-          "sourceZones": [
-            "lan1"
-          ],
-          "destZones": [
-            "lan2"
-          ],
-          "sources": [
-            "10.30.30.20/32"
-          ],
-          "destinations": [
-            "10.40.40.20/32"
-          ],
-          "protocols": [
-            {
-              "name": "tcp",
-              "port": "502"
-            }
-          ],
-          "action": "ALLOW"
-        },
-        {
-          "id": "remote-access-selected",
-          "description": "Remote access",
-          "sourceZones": [
-            "wan"
-          ],
-          "destZones": [
-            "dmz"
-          ],
-          "protocols": [
-            {
-              "name": "tcp",
-              "port": "22"
-            },
-            {
-              "name": "tcp",
-              "port": "80"
-            },
-            {
-              "name": "tcp",
-              "port": "443"
-            }
-          ],
-          "action": "ALLOW"
-        },
-        {
-          "id": "enterprise-field",
-          "description": "Enterprise field exposure",
-          "sourceZones": [
-            "wan"
-          ],
-          "destZones": [
-            "lan2"
-          ],
-          "protocols": [
-            {
-              "name": "tcp",
-              "port": "502"
-            }
-          ],
-          "action": "ALLOW"
-        }
-      ]
-    }
-  }
+  ]
 }

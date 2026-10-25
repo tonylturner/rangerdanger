@@ -53,20 +53,26 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
     expect(EU.budgetHours).toBe(500);
     expect(EU.teams).toEqual(US_CURRICULUM.teams);
   });
-  it("preserves the existing catalog actions and effort estimates while allowing the new remote-access action", () => {
-    expect(EU.catalog.map((a) => [a.id, a.effort_hours])).toEqual(expect.arrayContaining([
+  it("keeps the frozen catalog including remote access and its effort estimates", () => {
+    expect(EU.catalog.map((a) => [a.id, a.effort_hours])).toEqual([
+      ["restrict-enterprise-to-vendor", 30],
       ["block-enterprise-to-field", 40], ["block-enterprise-to-station", 30],
       ["restrict-vendor-to-station", 50], ["block-vendor-to-field", 30],
       ["pin-rtu-to-field", 40], ["modbus-dpi", 70], ["iec104-dpi", 80],
       ["improve-logging", 50], ["station-architecture-review", 30],
       ["tighten-firewall-objects", 40], ["positive-validation", 60],
       ["ids-deployment", 80], ["ot-asset-inventory", 100], ["vendor-zta-broker", 150],
-    ]));
+    ]);
   });
   it.each(EU_PLANS)("renders server-owned $label rules without introducing ICS predicates", (plan) => {
     expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);
-    expect(renderRuleTable(plan, EU)).toContain("operational-pin");
-    expect(renderPlanTests(plan, EU, "hardening", "negative")).toContain("TCP/3389");
+    const rules = renderRuleTable(plan, EU);
+    expect(rules).toContain("control-centre-to-rtu-iec104");
+    expect(rules).toContain("rtu-to-feeder-modbus");
+    expect(rules).toContain("plc-to-oltc-modbus");
+    expect(renderPlanTests(plan, EU, "implementation", "negative")).toContain("TCP/3389");
+    expect(renderPlanTests(plan, EU, "hardening", "negative")).not.toContain("TCP/3389");
+    expect(renderPlanTests(plan, EU, "hardening", "negative")).toContain("TCP/2404");
     expect(actionEffectLabel(plan.actions.find((a) => a.id === "iec104-dpi")!.kind)).toBe("planning only: no firewall change");
   });
 

@@ -82,8 +82,8 @@ describe("validation proof metadata", () => {
   });
   it("separates a passing Weak plan proof from failed Hardened acceptance and lists tuple gaps", async () => {
     await generate({ ...report,
-      planProof: { applicable: true, pass: true, policyHash: "applied-hash", hashStable: true, skipped: 0, rows: [{ id: "U1", expected: "allow", observed: "allow", pass: true }] },
-      acceptance: { pass: false, skipped: 0, rows: [{ id: "U1", expected: "deny", observed: "allow", pass: false }], preventionGaps: ["U1"] },
+      planProof: { applicable: true, pass: true, policyHash: "applied-hash", hashStable: true, skipped: 0, rows: [{ id: "U12", expected: "allow", observed: "allow", pass: true }] },
+      acceptance: { pass: false, skipped: 0, rows: [{ id: "U12", expected: "deny", observed: "allow", pass: false }], preventionGaps: ["U12"] },
     });
     const out = text();
     expect(out).toContain("Applied plan proof: ");
@@ -92,6 +92,7 @@ describe("validation proof metadata", () => {
     expect(out).toContain("allow / PASS");
     expect(out).toContain("deny");
     expect(out).toContain("Prevention gaps against Hardened");
+    expect(out).toContain("U12: kali-1");
     expect(out).toContain("10.10.10.50");
     expect(out).toContain("10.20.20.10");
     expect(out).toContain("TCP/3389");
