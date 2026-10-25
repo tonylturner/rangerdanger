@@ -1,4 +1,4 @@
-import { CMD_TOOL_RE } from "./scenario-description";
+import { splitDescription as parseDescription } from "./scenario-description";
 
 // ── Text sanitization ──────────────────────────────────────────────
 //
@@ -51,59 +51,30 @@ export function softWrapCode(s: string, maxLen = 78): string {
   return s.split("\n").map(wrap).join("\n");
 }
 
-// ── Segment splitter (same logic as scenario-runner) ────────────────
-
-const HINT_OPEN_RE = /^:::hint(?:\s+(.+))?$/;
-const HINT_CLOSE_RE = /^:::$/;
-
+// Use the runner grammar so answer-key attributes never become PDF prose.
 export type Segment =
   | { type: "prose"; value: string }
   | { type: "cmd"; value: string }
   | { type: "hint"; title: string; value: string };
 
 export function splitDescription(text: string): Segment[] {
-  const result: Segment[] = [];
-  const lines = text.split("\n");
-  let prose: string[] = [];
-  let i = 0;
-
-  const flushProse = () => {
-    if (prose.length > 0) {
-      result.push({ type: "prose", value: prose.join("\n") });
-      prose = [];
+  return parseDescription(text).flatMap((segment): Segment[] => {
+    switch (segment.type) {
+      case "prose":
+      case "cmd":
+      case "hint":
+        return [segment];
+      case "decision":
+        return [
+          ...splitDescription(segment.body),
+          { type: "prose", value: `Choices: ${segment.options.join(" / ")}\n\nYour answer: __________` },
+        ];
+      case "trackOnly":
+        return splitDescription(segment.body);
+      // Interactive widgets have no printable answer or state. Never print
+      // their directive attributes as a substitute.
+      default:
+        return [];
     }
-  };
-
-  while (i < lines.length) {
-    const trimmed = lines[i].trim();
-    const hintOpen = HINT_OPEN_RE.exec(trimmed);
-    if (hintOpen) {
-      flushProse();
-      const title = hintOpen[1]?.trim() || "Reveal answer";
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !HINT_CLOSE_RE.test(lines[i].trim())) {
-        body.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length) i++;
-      result.push({ type: "hint", title, value: body.join("\n") });
-      continue;
-    }
-    const isIndented = /^\s+\S/.test(lines[i]);
-    if (isIndented && CMD_TOOL_RE.test(trimmed)) {
-      flushProse();
-      let cmd = trimmed;
-      while (cmd.endsWith("\\") && i + 1 < lines.length) {
-        i++;
-        cmd += "\n  " + lines[i].trim();
-      }
-      result.push({ type: "cmd", value: cmd });
-    } else {
-      prose.push(lines[i]);
-    }
-    i++;
-  }
-  flushProse();
-  return result;
+  });
 }
