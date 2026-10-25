@@ -33,9 +33,11 @@ type pcapState struct {
 // trafficState tracks an active traffic generation session.
 type trafficState struct {
 	Generating     bool   `json:"generating"`
+	RunID          string `json:"run_id"`
 	DurationSec    int    `json:"duration_sec"`
 	StartedAt      string `json:"started_at,omitempty"`
 	FlowsGenerated int    `json:"flows_generated"`
+	run            *trafficRun
 }
 
 // Server wraps the Gin router and dependencies.
@@ -229,6 +231,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 
 	// Traffic generation for Scenario 0
 	rng.POST("/traffic/generate", s.handleTrafficGenerate)
+	rng.POST("/traffic/stop", s.handleTrafficStop)
 	rng.GET("/traffic/status", s.handleTrafficStatus)
 
 	rng.GET("/scenarios/:id/validate", s.handleValidateScenario)
