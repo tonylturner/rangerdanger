@@ -304,10 +304,10 @@ class ErrataContracts(unittest.TestCase):
         path = ROOT / "docs/v0.1.36-hotfix.md"
         self.assertTrue(path.exists(), "student/instructor errata is missing")
         text = path.read_text()
-        self.assertIn("git fetch origin tag v0.1.36-rc.3 && git checkout --detach "
-                      "v0.1.36-rc.3 && ./scripts/apply-repo-update.sh", text)
+        self.assertIn("git fetch origin tag v0.1.36 && git checkout --detach "
+                      "v0.1.36 && ./scripts/apply-repo-update.sh", text)
         for phrase in ("How to update", "PowerShell", "scripts/apply-repo-update.ps1",
-                       "SSD", "Do not run `./setup.sh --version v0.1.36-rc.3`",
+                       "SSD", "Do not run `./setup.sh --version v0.1.36`",
                        "no pull", "no rebuild", "checksum"):
             self.assertIn(phrase, text)
         for number in (1, 2, 3, 5, 6, 8, 12, 15, 18, 19, 23, 24, 25, 26):
@@ -318,10 +318,12 @@ class ErrataContracts(unittest.TestCase):
         self.assertIn("**RD-25:** containd web-UI rule **Create** and **Delete** save the running\n"
                       "config but do not enforce it until **Commit**", text)
         self.assertIn("(RD-25) | Lab 2.2, Stage 2 and Stage 3", text)
-        self.assertTrue(text.startswith("# v0.1.36-rc.3 workshop errata\n"))
+        self.assertTrue(text.startswith("# v0.1.36 workshop errata\n"))
         for path in ("docs/quickstart.md", "docs/workshop-ssd.md", "docs/v0.1.36-hotfix.md"):
             with self.subTest(path=path):
-                self.assertNotRegex((ROOT / path).read_text(), r"rc\.[12]\b")
+                doc = (ROOT / path).read_text()
+                self.assertNotRegex(doc, r"rc\.[123]\b")
+                self.assertNotRegex(doc, r"v0\.1\.36-rc\.[123]\b")
 
 
 class EnforcementContracts(unittest.TestCase):
@@ -598,7 +600,7 @@ class AdvancedTrackContracts(unittest.TestCase):
 
 
 class TimingContracts(unittest.TestCase):
-    # Guided golden-path estimates from the rc.3 student walkthrough QA.
+    # Guided golden-path estimates from the v0.1.36 student walkthrough QA.
     MINUTES = {
         "baseline-assessment": 20,
         "segmentation-requirements": 10,
