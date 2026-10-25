@@ -8,6 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Apply Your Plan works in US and EU.** The backend compiles the selected
+  remediation actions into one policy, applies it and records the package
+  revision, action IDs and policy hash. A deferred control leaves its Weak
+  exposure open; an empty or planning-only plan applies as Weak. Labs 2.3
+  and 2.4 judge the applied plan, with Hardened as the comparison: the
+  validation report gives plan proof and Hardened acceptance as separate
+  results. A new `restrict-enterprise-to-vendor` action owns vendor RDP/VNC
+  access. The browser policy compiler and `POST /api/firewall/apply-custom`
+  are removed.
+
 - **Release image bases are digest-pinned.** Go builders use the same
   1.26.10 toolchain as CI; the portal moves to Node 24 LTS. CI rejects
   unpinned Dockerfile bases and Dependabot refreshes nested image pins.
