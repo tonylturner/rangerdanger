@@ -14,9 +14,13 @@ describe("US knowledge guidance", () => {
     },
   );
 
-  it("keeps plan coverage advisory rather than a claim about running state", () => {
-    expect(article("plan-coverage-pipeline")).toContain("The plan is advisory");
-    expect(article("plan-coverage-pipeline")).toContain("does not apply a firewall policy or rewrite later labs");
+  it("separates saved selections, applied provenance and the two proof results", () => {
+    const text = article("plan-coverage-pipeline");
+    for (const required of ["Apply Your Plan", "A saved selection alone is not running state",
+      "Plan proof", "Hardened acceptance", "13/13", "Budget overrun is a warning only"]) {
+      expect(text).toContain(required);
+    }
+    expect(text).not.toContain("The plan is advisory");
   });
 
   it("uses flag-first polling and same-origin app links", () => {

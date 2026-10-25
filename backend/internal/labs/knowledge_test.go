@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/tturner/rangerdanger/backend/internal/models"
 )
+
+// Refresh body hashes after reviewed edits; keep migration metadata/order pinned.
+var updateKnowledgeUS = flag.Bool("update-knowledge-us", false, "regenerate US knowledge body hashes")
 
 func TestKnowledgeUSMigration(t *testing.T) {
 	sections, err := loadKnowledge("../../../lab-definitions/packages/us-dnp3-substation", "knowledge/index.yml", "../../scenarios")
@@ -41,7 +45,12 @@ func TestKnowledgeUSMigration(t *testing.T) {
 		}
 		for j, a := range s.Articles {
 			hash := sha256.Sum256([]byte(a.Body))
-			if a.ID != w.Articles[j].ID || a.Title != w.Articles[j].Title || hex.EncodeToString(hash[:]) != w.Articles[j].SHA256 {
+			digest := hex.EncodeToString(hash[:])
+			if *updateKnowledgeUS {
+				data = []byte(strings.Replace(string(data), w.Articles[j].SHA256, digest, 1))
+				w.Articles[j].SHA256 = digest
+			}
+			if a.ID != w.Articles[j].ID || a.Title != w.Articles[j].Title || digest != w.Articles[j].SHA256 {
 				t.Fatalf("article %d/%d not byte-exact", i, j)
 			}
 			count++
@@ -49,6 +58,11 @@ func TestKnowledgeUSMigration(t *testing.T) {
 	}
 	if count != 41 {
 		t.Fatalf("articles = %d", count)
+	}
+	if *updateKnowledgeUS {
+		if err := os.WriteFile("testdata/knowledge-us.json", data, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

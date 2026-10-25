@@ -8,7 +8,7 @@ containd compiles the active firewall policy into kernel nftables rules. Those r
 
 ### Policy Changes
 
-The Guided track uses **Apply Hardened** to load the reference policy. On the Advanced track, author and **Commit** a policy in containd, then verify the running policy. A saved candidate alone is not evidence that the running rules changed.
+The Guided track uses **Apply Your Plan** to compile and apply selected actions, or **Apply Hardened** for the reference. Deferred enforceable actions retain their Weak exposures. Detection-only actions change no TCP verdict. On the Advanced track, author and **Commit** a policy in containd, then verify the running policy. A saved candidate alone is not evidence that the running rules changed.
 
 ### Events and Evidence
 

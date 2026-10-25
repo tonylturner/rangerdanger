@@ -10,8 +10,8 @@ description: >
   Now you implement. You will replace the permissive weak
   baseline on the containd NGFW with a least-privilege policy -
   applying it with one click on the Guided track, or authoring
-  the rules yourself on the Advanced track. By the end,
-  unauthorized cross-zone traffic will be blocked and logged,
+  the rules yourself on the Advanced track. The applied plan defines which
+  unauthorized cross-zone paths close or remain open,
   while critical substation operations continue without
   interruption.
 nodes:
@@ -49,15 +49,14 @@ steps:
       A diagram or a requirements doc isn't segmentation. It becomes real
       only when the firewall enforces it and you can prove two things:
       **authorized traffic still works** (RTAC polls field devices, GPS
-      delivers NTP, the HMI reads state) and **unauthorized traffic fails**
-      (an enterprise Modbus write or a vendor DNP3 command is denied and
-      logged). That's what you'll put in place here, then validate in
+      delivers NTP, the HMI reads state) and **each tested path matches its expected verdict**.
+      Selected closures deny traffic; deferred exposures stay reachable. That's what you'll put in place here, then validate in
       Stages 5-6.
 
       ### How you'll work
 
       This lab runs **Guided by default**: you apply the policy with the
-      **Apply Hardened** button below the step and
+      **Apply Your Plan** button below the step and
       walk containd's UI and CLI to see exactly what landed - no rule syntax
       and no commit step. Prefer to author and commit the rules yourself?
       Switch to the **Advanced** track - recommended only if you're
@@ -121,7 +120,7 @@ steps:
     expected_config: weak
     node: kali-1
     description: |
-      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed right now, and should fail after you finish building your policy.
+      Before you change anything, run the commands that confirmed your latent exposure in Lab 1.2 step 7 - this time with intent. Document what the weak baseline allows. This is your "before" picture; every test below should succeed now. After apply, each result follows its owning action.
 
       **From the kali terminal** (`kali-1` on the [Network Map](/console)):
 
@@ -166,82 +165,22 @@ steps:
     title: "Phase 2 - Remove broad trust and establish default-deny"
     expected_config: weak
     description: |
-      Move from a permissive posture to default-deny for all
-      cross-zone traffic. Don't create allow rules yet - get to a
-      clean deny-all baseline first.
-
-      Default-deny ("anything not explicitly allowed is dropped") is the
-      bedrock of segmentation, but *how* a firewall provides it differs by
-      vendor - some append the deny for you (implicit), others make you
-      write it (explicit). Getting that wrong silently leaves a substation
-      wide open. See **[Default-Deny: Implicit vs Explicit Across Firewalls](/knowledge#default-deny)**
-      for the per-vendor breakdown; the lab-specific part is below.
-
-      :::hint About containd specifically
-      containd's policy has a top-level `defaultAction` field that
-      is already set to **DENY**, even under the weak baseline.
-      The weak posture is permissive only because broad ALLOW
-      rules sit on top of it. There is no separate "set default
-      to drop" switch to flip in this lab - deleting the broad
-      allow rules is what exposes the existing default DENY. You
-      can confirm with `show running-config | grep defaultAction`
-      from `containd cli`. On a firewall with explicit
-      default-deny (raw iptables, OVS, etc.) this same step would
-      *also* require setting the chain policy or adding a final
-      deny rule - that's the vendor-mechanism difference.
-
-      One nuance for later: default-deny *blocks* silently - it emits
-      no per-flow log. Stage 4 adds explicit logged DENY rules for the
-      cross-zone pairs you most want visibility on, with the silent
-      default-deny as the backstop for everything else.
-      :::
-
-      ### What to do
-
-      1. **Review existing rules.** Identify the rules that allow
-         broad cross-zone access:
-         - Enterprise (`wan`) to any zone on ICS ports (502, 20000)
-         - Any zone to Field (`lan2`) without source pinning
-         - Vendor (`dmz`) to Field (`lan2`) on any port
-         - "Any-any" rules that permit all traffic between zones
-
-      2. **Delete those broad-allow rules.** Once they are gone,
-         the policy's `defaultAction: DENY` catches all cross-zone
-         traffic the rules were permitting.
-
-      3. **Do NOT remove intra-zone rules.** Traffic within OT Ops
-         (`10.30.30.0/24`) needs to keep flowing - HMI to RTAC,
-         historian to RTAC, and internal NTP. These are intra-zone
-         and should not be affected by cross-zone deny rules.
+      Review broad Weak allows before applying the plan in Phase 3.
+      A selected enforceable action closes its exposure. A deferred action keeps
+      that Weak path open. Default DENY is the backstop, not proof that a deferred
+      path closed. Preserve management and required operational allows.
 
       :::guided
-      **On the Guided track you don't delete these by hand.** In the next
-      stage, **Apply Hardened** replaces the weak
-      baseline wholesale - it removes the five broad allows above *and*
-      adds the minimal rules in a single commit. Read the list above so
-      you understand what's being removed and why, then move on - you'll
-      confirm default-deny holds in Stages 5-6. The manual Web UI / CLI
-      steps below are the Advanced-track way to do the same removal.
+      Apply Your Plan in the next step. Use Apply Hardened only for the reference.
       :::
 
       :::technical
-      Delete the five broad allows yourself, via the Web UI or the CLI.
-      (The **Apply Hardened** button below the step stays available as a
-      fallback.)
-
-      **Web UI path.** Go to **Policy & Rules → Firewall Rules** at
-      [http://localhost:9080](http://localhost:9080) and delete the five
-      broad cross-zone allows - `enterprise-to-ot-weak`,
-      `enterprise-to-field-weak`, `vendor-to-ot-weak`,
-      `vendor-to-field-weak`, and `ot-to-field-broad`. You do *not* need a
-      separate "default action" switch - the policy default is already
-      DENY and takes over once the broad allows are gone. Per-rule deletes
-      save the running config; the firewall reloads it when you commit
-      (`commit` at `containd#`, or **Commit** on the **Configuration**
-      page). Keep the intra-zone rules `ot-intrazone` and
-      `field-intrazone`.
-
-      **CLI path.** The `fw-1` terminal opens at `containd#`; run:
+      Export a known-good rollback before edits. Preserve the compiled rule order.
+      Manual policies are judged against Hardened, not saved browser selections.
+      For the Hardened manual target, remove the five broad Weak allows in
+      containd. Do not run these deletes to implement a partial plan: its deferred
+      allows must stay. Keep management and required operational rules intact.
+      From the fw-1 CLI:
 
           delete firewall rule enterprise-to-ot-weak
           delete firewall rule enterprise-to-field-weak
@@ -251,123 +190,67 @@ steps:
           show diff
           commit
 
-      `show diff` before `commit` shows exactly what's being removed.
-
-      **Verify default-deny.** From kali, this should now time out:
+      Verify that reference closure from Kali:
 
           mbpoll -a 1 -r 1 -c 1 -1 -t 0 -o 3 10.40.40.20
 
-      If it still returns register data, the default-deny isn't active -
-      re-check your rule list and whether you committed.
+      This manual reference test should time out. For a compiled plan, the
+      enterprise-to-field verdict instead follows its owning action.
       :::
-
   - id: phase-3-create-minimal-required-rules
     title: "Phase 3 - Create minimal required rules"
     expected_config: hardened
     description: |
-      **Workshop note:**
-      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
-      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
-
-      The six rules below are the contract for what cross-zone
-      traffic the substation must allow. Everything else stays
-      denied.
+      Review the compiled rules for this plan. Required rules stay in every plan.
+      Selected enforceable actions narrow their paths. Deferred rules retain the
+      same Weak exposures. Detection-only actions change no TCP verdict.
+      The L4 source pin enforces; DPI detects and logs.
 
       :::guided
-      Click **Apply Hardened** in the **containd NGFW - policy actions** panel below this step to push the canned
-      reference policy. Then walk the rule table below
-      and confirm each row is present in containd's web UI
-      ([http://localhost:9080](http://localhost:9080)) or via
-      `show running-config` in the CLI. Understanding *what* is in
-      the policy matters as much as *how* it gets there.
+      Click **Apply Your Plan**, or **Apply Hardened** for the reference.
+      An empty or planning-only plan is valid. It leaves Weak exposures open.
+      Inspect the running rules, not just the policy banner. Execute Step checks
+      the active policy without replacing it.
       :::
 
       :::technical
-      Author these rules in containd directly - your choice of the
-      web UI or the appliance CLI. The banner above will switch to
-      "Your custom policy" once your commit lands. The exact JSON
-      schema and CLI commands are in the hints below.
-
-      **Close the remote-access hole, commit, then prove it.** The weak
-      `enterprise-to-vendor` rule also allows RDP 3389 and VNC 5900, and
-      it is not one of the five broad allows you deleted in Stage 2.
-      Replace it with rule 6 (TCP 22, 80, 443 only) and **commit**: the
-      firewall keeps enforcing the last committed rules until you do, so
-      a test before the commit only describes the old policy. In the web
-      UI, **Create rule** and **Delete** save the running config but do
-      not reload the firewall either - run `commit` at `containd#` (or
-      **Commit** on the **Configuration** page) after your last edit.
-      Then confirm from Kali that enterprise → vendor remote access is
-      blocked: run `nmap -Pn -p 3389,5900 10.20.20.10` in the Kali
-      terminal. Both ports must be `filtered`. If either is `open`, your
-      enterprise → vendor rule is broader than rule 6 or the weak rule
-      survived - fix the rule and commit again. The commit succeeds and
-      the banner turns green either way; nothing else warns you about
-      this gap.
+      For a plan, use the compiled rule order without adding broad allows.
+      For manual work, use Hardened as the judging target. With
+      `restrict-enterprise-to-vendor` selected, replace broad enterprise→vendor
+      access with TCP 22, 80 and 443. With it deferred, RDP/3389 and VNC/5900
+      remain reachable. **Create rule** and **Delete** do not reload the firewall.
+      Run `commit` at `containd#` or **Commit** on the **Configuration** page.
+      After commit, run `nmap -Pn -p 3389,5900 10.20.20.10` from Kali.
+      For the manual Hardened target, both ports must be `filtered`; if not,
+      fix the rule and commit again. A plan uses its compiled verdict instead.
       :::
 
-      ### Required Rules
-
-      | # | Source | Destination | Proto | Port(s) | Action | Purpose |
-      |---|--------|-------------|-------|---------|--------|---------|
-      | 1 | `10.30.30.20` | `10.40.40.0/24` | TCP | 502 | ALLOW | RTAC Modbus polling to field devices |
-      | 2 | `10.30.30.20` | `10.40.40.0/24` | TCP | 20000 | ALLOW | RTAC DNP3 polling to field devices |
-      | 3 | `10.30.30.20` | `10.40.40.0/24` | TCP | 8080 | ALLOW | RTAC HTTP API to field devices |
-      | 4 | `10.30.30.50` | `10.40.40.0/24` | UDP | 123 | ALLOW | GPS NTP time sync to field devices |
-      | 5 | `10.20.20.0/24` | `10.30.30.0/24` | TCP | 22, 443 | ALLOW | Vendor management access (SSH/HTTPS only) |
-      | 6 | `10.10.10.0/24` | `10.20.20.0/24` | TCP | 22, 80, 443 | ALLOW | Enterprise to vendor management |
-
-      > **Critical:** Rules 1-3 are source-pinned to `10.30.30.20` (the RTAC). Do **not** use a broad OT Ops subnet rule. If the HMI or OpenPLC is compromised, it must not reach field devices directly. The RTAC is the single authorized cross-zone controller.
-
-      Create these six rules in the containd firewall. Use whichever
-      path you prefer.
-
-      :::hint Creating rules via the Web UI
-      Open [http://localhost:9080](http://localhost:9080) and go to
-      **Policy & Rules → Firewall Rules** in the left nav. Scroll to the
-      **Create rule** form at the bottom. For each row in the table
-      above, fill in:
-
-      - **id** (e.g. `rtac-to-field-modbus`) and a description
-      - **Source zone** = `lan1` (OT Ops), **Dest zone** = `lan2` (Field)
-      - **sources CIDR (csv)** = `10.30.30.20/32` - this is the RTAC
-        host-pin; a zone-only `lan1 -> lan2` rule would allow *all* of
-        OT Ops to field, the broad mistake the table warns against
-      - **proto** = `tcp`, **port/range** = `502` (or `20000` / `8080`)
-      - **action** = `ALLOW`, and tick **Log hits**
-      - For the DPI rules: tick **ICS Protocol Filter**, set **ICS
-        Protocol** to Modbus (or DNP3) and the **Function Code(s)**.
-        The L4 source pin enforces; DPI detects and logs.
-
-      Click **Create rule** and watch the rule list grow. Each rule is
-      saved to the running config, but the firewall only loads the saved
-      rules when you commit - so after your last rule run `commit` at
-      `containd#`, or click **Commit** on the **Configuration** page.
-      (Bulk edits to the candidate JSON on the **Configuration** page show
-      an amber "candidate differs from running" banner first - click
-      **Commit** on it, or **Review Candidate Diff** to inspect.)
-      :::
+      Keep the RTAC source `10.30.30.20/32` on its required field rules:
+      TCP/502, TCP/20000 and TCP/8080. Preserve GPS `10.30.30.50/32` NTP/123
+      and HMI operations. These operational paths cannot be deferred.
 
       :::hint Policy evidence at the containd CLI
-      At containd# run `export config` to print the running policy for review:
+      At `containd#`, `export config` prints JSON; it does not create a file:
 
           export config
 
-      The rule JSON below is a non-executable schema illustration, not a
-      CLI file-edit/import recipe. Review the shipped reference configuration
-      for the complete rules and global DPI settings:
+      Copy the output into your evidence. Do not use shell redirection.
+      This reference example includes detection; it is not the whole policy:
 
           {
             "id": "rtac-to-field-modbus",
             "sourceZones": ["lan1"],
-            "sources": ["10.30.30.20/32"],
             "destZones": ["lan2"],
+            "sources": ["10.30.30.20/32"],
             "protocols": [{"name": "tcp", "port": "502"}],
             "ics": {"protocol": "modbus", "functionCode": [1, 2, 3, 4, 5, 6]},
             "action": "ALLOW",
             "log": true
           }
       :::
+
+      Keep the package revision, action IDs and policy hash with the compiled
+      export. The config JSON alone does not carry that provenance.
     action:
       type: check
       expect:
@@ -377,110 +260,49 @@ steps:
     title: "Phase 4 - Enable logging and visibility"
     expected_config: hardened
     description: |
-      A firewall rule without logging is invisible. You need to see both what is allowed and what is denied - and you need a place to look.
+      Inspect the log flags in the compiled rule table. `improve-logging`,
+      `modbus-dpi` and `dnp3-dpi` add visibility, not prevention. Deferring them
+      changes no TCP verdict. Do not add flags by hand and still call the result
+      an unchanged applied plan; a running-hash change clears plan provenance.
 
-      ### Configure logging on the right rules
+      The L4 source pin enforces; DPI detects and logs. Explicit logged rules
+      can provide tuple evidence. Default DENY is a silent backstop. A missing
+      event does not prove that no attempt occurred.
 
-      In your rule JSON, add `"log": true` to each rule that
-      matters operationally:
-
-      1. **All DENY actions.** Every blocked cross-zone connection attempt should produce a log entry. This is your primary detection mechanism for unauthorized access attempts.
-
-      2. **ALLOW actions on critical rules.** Log the RTAC-to-field rules (Rules 1-3) so you have an audit trail of legitimate control traffic. This is useful for forensics and for validating that operations are running normally.
-
-      3. **Enterprise/Vendor to Field attempts.** The silent default-deny *blocks* these but produces no per-flow log. To get an audit trail, the hardened reference policy adds **explicit DENY rules with `log: true`** for these high-value cross-zone pairs (`deny-enterprise-to-ot`, `deny-enterprise-to-field`, `deny-vendor-to-field`, `deny-ot-to-field-direct`). The default-deny stays as the silent backstop for everything else.
-
-      :::hint Enabling logging on a rule
-      The `firewall.rules` JSON schema has a `log: true` field. Add
-      it to the rule object alongside `action` in Configuration at
-      http://localhost:9080, or toggle the **Log matches** checkbox in the
-      Web UI's rule editor.
-      :::
-
-      ### Verify your configuration committed
-
-      Open a terminal on `fw-1` (below, or on the [Network Map](/console)).
-      It opens at `containd#`; inspect the audit log there:
+      At `containd#`, inspect administrative evidence:
 
           show audit
 
-      You should see recent `config.save_candidate` and `config.commit`
-      entries corresponding to the policy changes you just pushed.
-      The audit log is containd's record of *administrative* actions
-      against the firewall (config commits, login events, service
-      changes) - confirmation that your rules are loaded and active.
-
-      ### Where to look for traffic-level events
-
-      Per-flow firewall events (a kali probe being denied, an RTAC
-      Modbus write being allowed) are surfaced in two places today:
-
-      - **Feeder HMI → Command Audit tab** at [/substation](/substation):
-        scenario-driven actions (RTAC commands, attack writes) are
-        captured here with their source zone and outcome. This is
-        what you'll watch during Lab 2.3 and 2.4 when you fire
-        attacks under your policy and want to see whether they
-        landed or were blocked.
-      - **Network Map → Segmentation drawer** at [/console](/console):
-        the **Live DPI Events** strip shows containd's per-packet
-        deny/allow stream as it happens.
-
-      :::hint Note on the Live DPI Events strip
-      Under the current containd build, traffic-level deny events
-      from L4 firewall rules (Modbus/DNP3 timeouts at the perimeter)
-      are not yet emitted to the events stream - this is tracked in
-      [rangerdanger #34](https://github.com/tonylturner/rangerdanger/issues/34)
-      and [containd #19](https://github.com/tonylturner/containd/issues/19).
-      The strip is live and forward-compatible: when containd lands
-      the emission fix, deny events will flow into it automatically.
-      Until then, use Command Audit at /substation and `show audit`
-      on `fw-1` as your primary verification surfaces, and rely on
-      the *operational* outcome at the HMI to confirm a probe was
-      blocked (TCP timeout + no kinetic change).
-      :::
-
+      Recent `config.commit` entries establish the policy change, not per-flow
+      verdicts. Compare real TCP results and device/HMI state with the active
+      plan. Retain timestamps and capture. The Network Map event strip can add
+      rule or protocol context; a detection alone is not proof of prevention.
   - id: phase-5-validate-allowed-traffic
     title: "Phase 5 - Validate allowed traffic"
     expected_config: hardened
     node: rtac-1
     description: |
-      Your rules are in place. Now verify that operations still work. If any of these tests fail, you have a rule that is too restrictive or missing.
-
-      **RTAC to field devices (protocol test):**
-
-      From the RTAC terminal (`rtac-1` on the [Network Map](/console)):
+      Verify operations for every plan. From the RTAC terminal, run:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 10.40.40.20
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
-      Both should return data. This confirms the RTAC-to-field ALLOW rules are working for Modbus and DNP3.
-
-      For a single-pane view of the RTAC's view of the field, use
-      the lab's RTAC status API (lab convenience - real RTACs don't
-      expose a JSON `/api/state`; their status comes from the SCADA
-      system):
+      Both should return data. Check field `device_comms` with:
 
           curl -s http://10.30.30.20:8080/api/state | python3 -m json.tool
 
-      The `device_comms` section should show all field devices with
-      `comms_ok: true` and recent timestamps.
+      Open the HMI. Confirm no alarms, closed breaker and recloser, auto-reclose
+      on and energized loads. Check GPS NTP separately; the proof matrix is TCP.
+      All eight authorized TCP rows must remain reachable for every plan.
+      Bridged rows do not cross the firewall and do not prove a firewall rule.
+      Lab 2.4 separates plan proof from Hardened acceptance: 8/8 authorized and
+      13/13 unauthorized denied, 0 skipped, stable hash, capture and healthy HMI.
 
-      **HMI to RTAC (intra-zone, should still work):**
-
-      In a real environment you'd verify this by opening the HMI
-      and confirming live data updates. As a smoke test from any
-      OT Ops node:
+      From an OT Ops terminal, check the intra-zone HMI service:
 
           curl -sf http://10.30.30.10:1881 --connect-timeout 3
 
-      The FUXA HMI should respond. This is intra-zone traffic and
-      should not be affected by your cross-zone rules.
-
-      **GPS NTP to field devices:**
-
-      From the GPS terminal or by checking a field device's NTP status. The NTP flow is UDP/123 from `10.30.30.50` to field devices.
-
-      If any test fails, check your rules. The most common mistake is forgetting to allow a required flow, or pinning the source too narrowly on the GPS rule.
+      This check must work for every plan. It is not routed firewall proof.
     action:
       type: probe
       targets:
@@ -493,61 +315,43 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      **Workshop note:**
-      - In Lab 2.4, the report is your proof: authorized 8/8, unauthorized blocked 11/11, 0 skipped, plus healthy HMI.
+      Test the expected outcomes for the applied plan, not its label.
+      Run all 13 unauthorized TCP rows from their named sources in Lab 2.4.
+      A deny verdict requires a connection timeout. Connection refused means
+      reached (allow). Tool or container errors are skipped evidence and fail proof.
 
-      Now verify that unauthorized traffic is denied. Every test below should fail with a timeout or connection refused.
+      | Path | Owning action | Selected / deferred |
+      |---|---|---|
+      | Kali→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+      | Enterprise→OT ICS and web | `block-enterprise-to-ot` | deny / allow |
+      | Enterprise→field | `block-enterprise-to-field` | deny / allow |
+      | Vendor→OT Modbus and web | `restrict-vendor-to-ot` | deny / allow |
+      | Vendor and eng-ws→field | `block-vendor-to-field` | deny / allow |
+      | Non-RTAC OT hosts→field | `pin-rtac-to-field` | deny / allow |
 
-      **From kali** (`kali-1` on the [Network Map](/console)):
+      A deferred exposure is a prevention gap against Hardened, not a failed
+      plan proof if it matches this plan. Do not change policy just to hide the gap.
+      Preserve timestamps and the running hash. `show audit` lists `config.commit` evidence,
+      not a per-flow verdict. Keep capture and HMI evidence with both results.
 
-      Modbus to field relay (enterprise to field, should be blocked):
+      :::hint Run the sampled protocol checks from their real sources
+      From Kali, test the enterprise-to-field action:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
-
-      DNP3 to field relay (enterprise to field, should be blocked):
-
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
 
-      **From eng-ws** (`eng-ws-1` on the [Network Map](/console)):
-
-      Modbus to field capbank (vendor/DMZ to field, should be blocked):
+      From eng-ws, test the vendor-to-field action:
 
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.23
 
-      **From vendor-jump** (`vendor-jump-1` on the [Network Map](/console)):
-
-      DNP3 to field relay (vendor/DMZ to field, should be blocked):
+      From vendor-jump, test that same action independently:
 
           dnp3poll -a 1 -t 3s 10.40.40.20:20000
-
-      Modbus to field relay (vendor/DMZ to field, should be blocked):
-
           mbpoll -a 1 -r 1 -c 4 -1 -t 0 -o 3 10.40.40.20
 
-      After each failed attempt, the connection should time out and
-      the substation HMI should remain unchanged. The combination is
-      what tells you the policy is enforcing.
-
-      **HMI confirmation:** open the [Feeder HMI](/substation) →
-      **Feeder One-Line** tab. No alarms, breaker closed, customers
-      served. Compare against the deliberate-failure state from Lab
-      2.3 step 1 baseline.
-
-      **Administrative confirmation:** from the `fw-1` terminal,
-      run `show audit` at `containd#` - your recent `config.commit`
-      entries should appear, proving the rule set you're testing
-      against is the rule set that's loaded.
-
-      If any test succeeds when it should fail, you have a rule that
-      is too permissive. Review your policy and tighten it.
-
-      :::hint Live per-flow deny visibility - coming soon
-      Live DPI deny events for these blocked probes will appear in the
-      Segmentation drawer's **Live DPI Events** strip on `/console`
-      once containd ships the L4 event emission fix
-      ([containd #19](https://github.com/tonylturner/containd/issues/19)).
-      For this release, "TCP timeout + HMI unchanged" is the working
-      evidence pattern.
+      Selected means timeout; deferred means reachable. These sampled commands
+      do not replace the full report matrix. Execute Step checks the running
+      policy. Preserve the observation and the report verdict.
       :::
     action:
       type: probe
@@ -562,7 +366,7 @@ steps:
     title: "Export your policy"
     expected_config: hardened
     description: |
-      You have a working least-privilege firewall policy active.
+      You have applied a plan or the Hardened reference.
       Export it so you have a record of what is running - most
       change boards want the policy as a versioned artifact, not
       just "rules live in the firewall."
@@ -586,33 +390,14 @@ steps:
       - The CLI JSON-file edit/import exercise is deferred. Author/review in **Configuration** at http://localhost:9080; do not edit a file the CLI never created.
       - Browser export is optional; the copied CLI JSON is your evidence.
 
-      Your policy should contain:
+      Retain the package revision, selected action IDs and policy hash beside
+      this running-config export. The compiled config JSON does not embed those
+      fields. Retain the `plan` fields from `GET /api/firewall/active` with the export.
+      Compare the running hash with that plan's hash before and after probing.
 
-      - Default-deny for all cross-zone traffic
-      - RTAC (`10.30.30.20`) allowed to field on Modbus/502, DNP3/20000, HTTP/8080
-      - GPS (`10.30.30.50`) allowed to field on NTP/123
-      - Vendor/DMZ allowed to OT Ops on SSH/22 and HTTPS/443 only
-      - Enterprise allowed to Vendor/DMZ on SSH/22, HTTP/80, HTTPS/443 only
-      - Logging enabled on deny actions and critical allow rules
-
-      Compare your policy against the provided hardened configuration in the RangerDanger Feeder HMI segmentation tab. The two should be functionally equivalent. Any differences are worth discussing with your instructor: did you allow something the reference policy blocks, or did you block something the reference allows?
-
-      :::hint Expected final state summary
-      **Allowed (6 rules):**
-
-      | # | Source | Destination | Protocol/Port | Purpose |
-      |---|--------|-------------|---------------|---------|
-      | 1 | `10.30.30.20` | `10.40.40.0/24` | TCP/502 | RTAC Modbus to field |
-      | 2 | `10.30.30.20` | `10.40.40.0/24` | TCP/20000 | RTAC DNP3 to field |
-      | 3 | `10.30.30.20` | `10.40.40.0/24` | TCP/8080 | RTAC HTTP to field |
-      | 4 | `10.30.30.50` | `10.40.40.0/24` | UDP/123 | GPS NTP to field |
-      | 5 | `10.20.20.0/24` | `10.30.30.0/24` | TCP/22,443 | Vendor management to OT Ops |
-      | 6 | `10.10.10.0/24` | `10.20.20.0/24` | TCP/22,80,443 | Enterprise management to Vendor |
-
-      **Denied (default):**
-
-      Everything else. Enterprise to OT Ops, enterprise to field, vendor to field, non-RTAC OT Ops to field, and any protocol not explicitly listed above.
-      :::
+      A partial plan is not equivalent to Hardened. List its deferred exposures
+      and preserve both plan proof and Hardened acceptance results. Named and
+      manual policies are judged against Hardened; they have no plan proof.
     action:
       type: check
       expect:

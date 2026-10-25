@@ -10,7 +10,7 @@ description: >
   then pivot east-west to OT field devices. You'll walk the kill chain
   under the weak baseline, then apply containd rules that block
   remote-access protocols (RDP/3389, VNC/5900) from enterprise into the
-  vendor DMZ - cutting the lateral path before it ever reaches OT.
+  vendor DMZ. In an applied plan, each link follows its owning action.
 nodes:
   - kali-1
   - vendor-jump-1
@@ -87,8 +87,9 @@ steps:
 
           sshpass -p rangerdanger ssh -o StrictHostKeyChecking=no rangerdanger@10.20.20.10
 
-      The lesson is the same: an enterprise host should not have
-      open remote-access into the vendor DMZ.
+      SSH tests the vendor network position, not the RDP/VNC closure.
+      The Hardened reference and `restrict-enterprise-to-vendor` keep TCP/22
+      available. Do not use an SSH session as proof that RDP/VNC is open.
       :::
 
   - id: use-the-vendor-foothold-to-attack-field-devices
@@ -253,37 +254,22 @@ steps:
     title: "Apply hardened policy"
     expected_config: hardened
     description: |
-      **Workshop note:**
-      - Keep your plan as a design artifact. Apply **Hardened reference**, not **Apply Your Plan**.
-      - Execute Step verifies its label without replacing it; a green banner is not enforcement evidence.
+      Apply Your Plan, or Apply Hardened for the full reference. Execute Step
+      checks the active policy without replacing it. Verify its action IDs and running hash.
 
-      Apply the hardened firewall configuration with **Apply Hardened**
-      in the **containd NGFW - policy actions** panel below this step.
+      | Chain link | Owning action | Selected / deferred |
+      |---|---|---|
+      | Enterprise→vendor RDP/3389 and VNC/5900 | `restrict-enterprise-to-vendor` | deny / allow |
+      | Vendor→field Modbus/502 and DNP3/20000 | `block-vendor-to-field` | deny / allow |
+      | Vendor→OT Modbus and HMI web | `restrict-vendor-to-ot` | deny / allow |
 
-      The hardened policy closes both links of the kill chain:
+      Either of the first two closures breaks this two-hop chain. Test each
+      independently. `pin-rtac-to-field` owns OT-source attempts, not the vendor
+      hop. A ZTNA broker selection is planning-only; it deploys no login control.
+      The L4 source pin enforces; DPI detects and logs.
 
-      - **Enterprise → vendor**: RDP (3389) and VNC (5900) blocked.
-        The attacker cannot establish the foothold from Kali in the
-        first place.
-      - **Vendor → field**: Modbus (502) and DNP3 (20000) blocked.
-        Even if the attacker did get a vendor session by some other
-        means, the second hop to field devices is denied.
-
-      Either control alone breaks the kill chain. Both are
-      defense in depth - the deck case study (Slide 55) made this
-      design choice after a ransomware incident specifically because
-      either layer can fail or be misconfigured, and the second
-      stops the attack regardless.
-
-      :::plan-coverage title="Your plan vs the kill chain"
+      :::plan-coverage title="Your plan vs the vendor chain"
       :::
-
-      The two requirements that close this kill chain in your Lab 1.4
-      plan are `vendor-to-ot` (BLOCK or RESTRICT - closes the
-      enterprise → vendor → OT pivot) and `non-rtac-to-field`
-      (BLOCK - pins the vendor box out of field even if the perimeter
-      rule misses). If either is uncovered above, record that design gap.
-      Keep **Hardened reference** active for the workshop re-test.
     action:
       type: check
       expect:
@@ -294,54 +280,35 @@ steps:
     expected_config: hardened
     node: kali-1
     description: |
-      **Workshop note:**
-      - Execute may show red failure/BLOCKED without advancing. That label is not a packet verdict; it can reject before sending a packet. Run the real protocol retest, inspect healthy device/HMI state and firewall evidence, record the result, then Mark Complete.
-      - A refused/timeout connection without state/evidence is not enough to claim DPI.
-
-      From Kali, re-scan and re-attempt the connection:
+      Retest hop one from Kali:
 
           nmap -Pn -p 3389,5900 10.20.20.10
-          xfreerdp /v:10.20.20.10:3389 /u:rangerdanger /p:rangerdanger /cert:ignore
-          xtightvncviewer 10.20.20.10:5900
 
-      Both ports should be filtered; both clients should fail to
-      connect. The enterprise → vendor lateral path is closed at
-      the perimeter.
+      `restrict-enterprise-to-vendor` selected means both ports time out or show
+      filtered. Deferred means reachable. A refused connection counts as reached,
+      not denied. Record the result, not an assumed successful login.
 
-      As a defense-in-depth check, even if the perimeter rule were
-      missing, the vendor → field rule would still block the second
-      hop. From the vendor-jump terminal tab below (which still
-      represents the vendor zone), retry the Modbus attack:
+      Retest hop two independently from the vendor-jump terminal:
 
           mbpoll -a 1 -t 0 -r 2 10.40.40.21 0
 
-      Should also time out. The kill chain is broken at two points.
+      `block-vendor-to-field` selected means timeout. Deferred means the write
+      still disables auto-reclose. The app terminal represents an existing vendor
+      foothold even when hop one is denied; it does not prove a new login.
+      Read `[3]` from the RTAC terminal, not vendor-jump: `restrict-vendor-to-ot`
+      can deny the vendor Modbus read. Record the HMI auto-reclose badge too.
 
-      ### Operational consequence at the HMI
-
-      Switch to the [Feeder HMI](/substation) → **Feeder One-Line**
-      tab. The alarm chain you saw in step 3 is absent:
-
-      - **No alarm banner**
-      - **Recloser (79)** closed, **Auto-reclose ON** green badge
-      - **General + Critical Load** energized (green kW values)
-      - **Customer-service tile:** "N kW serving ~M customers"
-
-      The enterprise → vendor perimeter rule stopped the foothold
-      before it formed. Even if a future misconfiguration re-opens
-      that rule, the vendor → field rule still pins lateral movement
-      out of the field zone. Either layer alone closes this kill
-      chain - having both is defense in depth.
-
-      :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK correct=NORMAL_OPS
-      **What did the Feeder One-Line tab show after the re-test?**
+      :::decision id=vendor-retest-hmi-state options=NORMAL_OPS,AUTO_RECLOSE_DISABLED,DOWNSTREAM_OUTAGE,UNCHANGED_FROM_ATTACK
+      What did the HMI show? Record auto-reclose and the owning action in Notes.
       :::
 
-      :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER correct=EITHER_LAYER
-      **Which firewall layer broke the kill chain?** Both layers
-      are present in the hardened policy - but only one had to be in
-      place to stop this specific attempt.
+      :::decision id=vendor-retest-defense-layer options=ENTERPRISE_TO_VENDOR,VENDOR_TO_FIELD,EITHER_LAYER
+      Which selected layer closed this chain? If neither was selected, record
+      that both links remain open in Notes.
       :::
+
+      Restore auto-reclose and normal feeder state before Validate for every plan.
+      A partial plan can match plan proof while retaining either prevention gap.
     action:
       type: check
       expect:
@@ -353,9 +320,11 @@ steps:
     title: "Validate"
     expected_config: hardened
     description: |
-      Confirm the feeder is operating normally with the hardened
-      policy in place and the vendor remote-access lateral path is
-      closed.
+      Keep the applied plan active. Record each link's observation against that
+      plan and against Hardened. Named or manual policies use Hardened expectations.
+      Restore auto-reclose, closed breaker/recloser and energized loads for every
+      plan. Validate checks restored operation; retain the actual TCP and device
+      results separately. A green banner does not prove either link was denied.
     action:
       type: check
       expect:

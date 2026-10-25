@@ -31,8 +31,12 @@ The exercises follow a deliberate sequence:
 
 1. Run attacks against the **weak baseline** and successfully compromise field devices from the enterprise zone
 2. Observe the impact on the simulated power system via the HMI
-3. Switch to the **hardened policy**
-4. Attempt the same attacks again and watch them fail
+3. Apply Your Plan or the **hardened policy**
+4. Repeat the same tests. Selected closures deny; deferred paths remain reachable
 5. Inspect the firewall logs to see the blocked connection attempts
 
 This direct comparison builds intuition for why segmentation matters and exactly which rules provide the protection.
+
+### Partial plans
+
+Apply Your Plan compiles selected actions. Deferring an enforceable action retains its Weak exposure. An empty or planning-only plan is valid and leaves Weak exposures open; budget overrun is a warning only. Required operational flows remain. Plan proof checks that plan, while Hardened acceptance requires 8/8 authorized and 13/13 unauthorized denied, zero skipped, stable hash, capture and healthy HMI. Keep both results and the package revision, action IDs and policy hash.

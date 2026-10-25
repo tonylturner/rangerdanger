@@ -8,7 +8,7 @@ description: >
   You have findings from the baseline assessment but not unlimited time, people,
   or political capital. Pick which remediations to execute this quarter - knowing
   some attack paths stay open because you can't fix everything at once.
-  Your plan guides design review; workshop enforcement uses the reference policy.
+  Apply Your Plan compiles your selections. Deferred controls leave their Weak exposures open.
 nodes: []
 tags:
   - planning
@@ -38,7 +38,7 @@ steps:
 
       Things a thorough reviewer would also note from Lab 1.2, even though they're not in the formal findings list:
 
-      - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus function codes or DNP3 object groups. Reads and writes look identical at L4. This is the gap the *modbus-dpi* and *dnp3-dpi* actions close.
+      - **No protocol-aware constraints on ICS ports.** The capture shows traffic on TCP/502 and TCP/20000, but the firewall has no visibility into Modbus function codes or DNP3 object groups. Reads and writes look identical at L4. The *modbus-dpi* and *dnp3-dpi* actions add detection, not prevention. The L4 source pin enforces; DPI detects and logs.
       - **Firewall visibility has a blind spot at the RTAC.** The RTAC is multi-homed across OT Ops and Field for realism, but its application traffic to field devices is forced through containd by host-level hardening. The hardening is in place - but it's a compensating control, not a network-layer enforcement, and it can drift if not periodically validated. This is the gap the *rtac-architecture-review* action closes.
 
       Whether you consider these as additional findings depends on how deep your assessment scope ran. They map to remediation actions just like the formal findings.
@@ -74,15 +74,15 @@ steps:
       total 500-hour budget still has room.
 
       Watch the role utilization bars as you select actions
-      in the next step. A role in red cannot absorb more work.
+      in the next step. A role in red is over capacity. This is a warning, not an apply limit.
 
   - id: choose-your-remediation-plan
     title: "Choose your remediation plan"
     description: |
       Select the actions you will execute this quarter. The
-      total effort must fit inside 500 hours AND each role's
-      individual capacity. You will not be able to select
-      every action - that is the point.
+      500-hour budget and each role capacity guide your tradeoff.
+      Budget overrun is a warning only. You can apply an empty, partial
+      or over-budget plan.
 
       Cost model: each action lists a total effort in hours
       and the roles that must collaborate on it. The effort
@@ -94,12 +94,21 @@ steps:
       which finding it addresses.
 
       When you are done, review the Remaining hours and
-      per-role utilization. If any role is red, remove an
-      action or choose a lighter one.
+      per-role utilization. If any role is red, record the
+      capacity gap and who must approve the work.
 
       **Workshop note:**
-      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when your plan is feasible, then record your reflection.
-      - Keep your plan as a design artifact; the later enforcement labs use the reference policy.
+      - Selections save automatically. Do not use Execute Step for this decision; click Mark Complete when you have recorded the tradeoff, then record your reflection.
+      - Apply Your Plan in Lab 2.2 to test your choices. Selecting an action alone does not apply it.
+
+      | Kind | Actions | Effect when applied |
+      |---|---|---|
+      | Enforceable | `restrict-enterprise-to-vendor`, `block-enterprise-to-ot`, `block-enterprise-to-field`, `restrict-vendor-to-ot`, `block-vendor-to-field`, `pin-rtac-to-field` | Change L4 reachability |
+      | Detection-only | `modbus-dpi`, `dnp3-dpi`, `improve-logging` | Add visibility; change no allow/block verdict |
+      | Planning-only | `tighten-firewall-objects`, `rtac-architecture-review`, `positive-validation`, `ids-deployment`, `ot-asset-inventory`, `vendor-zta-broker` | Emit no firewall change |
+
+      An empty or planning-only plan is valid and compiles to Weak exposures.
+      Required RTAC, HMI and NTP operations remain in every plan.
     action:
       type: decision
 
@@ -133,5 +142,6 @@ steps:
       plan next quarter?
 
       The selections you made in the previous step are saved to your
-      exercise state for design review. Later exercises use the hardened
-      reference policy; your selections do not establish enforcement.
+      exercise state. Labs 2.3 and 2.4 judge the applied plan against
+      its expected results, with Hardened as the comparison. A saved selection
+      is not running-state evidence. Test after applying it.
