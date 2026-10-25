@@ -176,10 +176,16 @@ class CompatTests(unittest.TestCase):
         self.assertEqual(len(gates), 7)
         self.assertIn('if [ "$gate" = smoke-test ]; then args=(--existing-stack); fi',
                       self.source)
-        hard = next(s for s in self.workflow["jobs"]["release-compat"]["steps"]
-                    if s.get("id") == "hard-gates")
-        self.assertIn("up -d --no-build --pull never", hard["run"])
-        self.assertIn("release-compat-smoke.sh --existing-stack", hard["run"])
+        self.assertNotIn("release-compat", self.workflow["jobs"])
+        steps = self.workflow["jobs"]["smoke"]["steps"]
+        commands = "\n".join(s.get("run", "") for s in steps)
+        for gate in gates:
+            if gate != "smoke-test":  # boot/API/inventory are inline in the built job
+                self.assertIn(f"./scripts/{gate}.sh", commands)
+        probe = next(s for s in steps if s.get("name") == "Probe API endpoints")["run"]
+        self.assertIn("set -euo pipefail", probe)
+        self.assertIn("jq -e . /tmp/health.json", probe)
+        self.assertIn("jq -e . /tmp/build.json", probe)
 
     def test_existing_boot_mode_skips_all_lifecycle_and_database_operations(self):
         source = (ROOT / "scripts/smoke-test.sh").read_text()
@@ -200,18 +206,25 @@ class CompatTests(unittest.TestCase):
         self.assertIn("EXISTING_STACK=0", source)
 
     def test_only_rd01_is_non_blocking(self):
-        steps = self.workflow["jobs"]["release-compat"]["steps"]
+        steps = self.workflow["jobs"]["smoke"]["steps"]
         waived = [s for s in steps if s.get("continue-on-error")]
         self.assertEqual(len(waived), 1)
         self.assertIn("RD-01", waived[0]["name"])
-        self.assertIn("--known-defects --replace", waived[0]["run"])
-        hard = next(s for s in steps if s.get("id") == "hard-gates")
-        self.assertNotIn("continue-on-error", hard)
-        artifacts = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact"))
+        check = waived[0]["run"]
+        for expected in ("scripts/tests/fixtures/rd01-full-plan.json", "/api/firewall/apply-custom",
+                         "/api/firewall/validation-report", ".authorized_pass == 8",
+                         ".authorized_total == 8", ".unauthorized_pass == 11",
+                         ".unauthorized_total == 11", ".skipped == 0", '.result == "PASS"',
+                         "trap restore_weak EXIT", "trap - EXIT", '{"config":"weak"}'):
+            self.assertIn(expected, check)
+        self.assertNotIn("release-compat-smoke.sh", check)
+        self.assertNotIn("v0.1.35", str(steps))
+        self.assertLess(next(i for i, s in enumerate(steps) if s.get("name") == "Workshop test-suite"),
+                        steps.index(waived[0]))
+        artifacts = next(s for s in steps if s.get("name") == "Upload gate evidence")
         self.assertEqual(artifacts["if"], "always()")
-        self.assertIn("build/release-compat/", artifacts["with"]["path"])
-        self.assertIn("21 GB", str(steps))
-        self.assertIn("containd:latest", self.source)
+        self.assertIn("build/smoke-receipts/", artifacts["with"]["path"])
+        self.assertIn("receipts=build/smoke-receipts/rd01", check)
 
     def test_rd01_fixture_is_attributed_to_frozen_generator(self):
         data = json.loads((ROOT / "scripts/tests/fixtures/rd01-full-plan.json").read_text())

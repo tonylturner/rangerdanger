@@ -84,8 +84,11 @@ jobs:
 
       - name: Probe API endpoints
         run: |
-          curl -fsS http://localhost:8088/api/health | tee /tmp/health.json
-          curl -fsS http://localhost:8088/api/build  | tee /tmp/build.json
+          set -euo pipefail
+          curl -fsS --max-time 10 http://localhost:8088/api/health | tee /tmp/health.json
+          curl -fsS --max-time 10 http://localhost:8088/api/build  | tee /tmp/build.json
+          jq -e . /tmp/health.json
+          jq -e . /tmp/build.json
 
       - name: Archive environment receipts
         if: always()
@@ -220,6 +223,35 @@ jobs:
           set -euo pipefail
           ./scripts/test-suite-smoke.sh
 
+      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
+        # The frontend generator is unchanged. Keep its advisory conformance
+        # check on the disposable built-image stack, not on cached old images.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          API=http://localhost:8088
+          receipts=build/smoke-receipts/rd01
+          mkdir -p "$receipts"
+          restore_weak() {
+            local rc=$?
+            trap - EXIT
+            if ! curl -fsS --max-time 30 -X POST -H 'Content-Type: application/json' \
+                -d '{"config":"weak"}' "$API/api/firewall/apply" >"$receipts/restore.json"; then
+              echo "RD-01 cleanup failed" >&2
+              rc=1
+            fi
+            exit "$rc"
+          }
+          trap restore_weak EXIT
+          jq '.config' scripts/tests/fixtures/rd01-full-plan.json >"$receipts/plan.json"
+          curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' \
+            --data-binary @"$receipts/plan.json" "$API/api/firewall/apply-custom" >"$receipts/apply.json"
+          sleep 3
+          curl -fsS --max-time 90 -X POST "$API/api/firewall/validation-report" >"$receipts/report.json"
+          jq -e '.summary | .result == "PASS" and .authorized_pass == 8 and
+            .authorized_total == 8 and .unauthorized_pass == 11 and
+            .unauthorized_total == 11 and .skipped == 0' "$receipts/report.json"
+
       - name: Dump compose logs on failure
         if: failure()
         run: |
@@ -250,58 +282,3 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
-
-  release-compat:
-    name: RC checkout with cached v0.1.35 images (no build)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      VERSION: v0.1.35
-      COMPOSE_FILE: docker-compose.release.yml
-      COMPOSE_PROJECT_NAME: rangerdanger
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - name: Install YAML dependency
-        run: python3 -m pip install pyyaml
-      - name: Make room for approximately 21 GB of expanded images
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
-          python3 - <<'PY'
-          import shutil
-          if shutil.disk_usage(".").free < 21 * 1024**3:
-              raise SystemExit("Need ~21 GiB before pulling v0.1.35 images; use a larger runner")
-          PY
-      - name: Cache published v0.1.35 images (including containd latest)
-        # This is CI-only cache population. The local twin NEVER pulls.
-        run: docker compose -f docker-compose.release.yml pull
-      - name: Repo-only hard gates
-        id: hard-gates
-        run: |
-          docker compose -f docker-compose.release.yml up -d --no-build --pull never
-          ./scripts/release-compat-smoke.sh --existing-stack
-      - name: Known defects RD-01 - generated full plan must block all 11 unauthorized flows
-        if: ${{ !cancelled() && steps.hard-gates.outcome != 'skipped' }}
-        continue-on-error: true
-        run: ./scripts/release-compat-smoke.sh --known-defects --replace
-      - name: Capture final compat logs
-        if: always()
-        run: |
-          mkdir -p build/release-compat
-          docker compose -f docker-compose.release.yml logs --no-color > build/release-compat/compose.final.log 2>&1
-      - name: Upload compat receipts and command output
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-compat-v0.1.35
-          path: |
-            build/release-compat/
-            build/lab-commands/
-            build/proxy-smoke/
-          retention-days: 14
-      - name: Tear down disposable CI stack
-        if: always()
-        run: docker compose -f docker-compose.release.yml down -v --remove-orphans
