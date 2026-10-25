@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestCommandGoldens(t *testing.T) {
 			c, now := model(t)
 			started(c)
 			c.tickGI(*now)
-			c.giResponse(10, false)
+			completeGI(c)
 			receive(c, 3, 20, 1001, iec.DoublePoint{DIQ: 2})
 			c.session = &transportStub{send: func(m iec.Message) error {
 				a := m.(iec.ASDU)
@@ -58,7 +59,7 @@ func TestCommandGoldens(t *testing.T) {
 				h.Cause = 7
 				h.Negative = tc.name == phase+"-negative"
 				c.mu.Lock()
-				c.commandResponse(h, 3001, sel)
+				c.commandResponse(h, 3001, v.Qualifier)
 				c.mu.Unlock()
 				if sel || h.Negative {
 					return nil
@@ -79,7 +80,7 @@ func TestCommandGoldens(t *testing.T) {
 				h.Cause = 10
 				h.Negative = tc.name == "term-negative"
 				c.mu.Lock()
-				c.commandResponse(h, 3001, false)
+				c.commandResponse(h, 3001, v.Qualifier)
 				c.mu.Unlock()
 				return nil
 			}}
@@ -122,14 +123,14 @@ func TestResponseMatcherAndFeedback(t *testing.T) {
 	c, now := model(t)
 	started(c)
 	receive(c, 3, 20, 1001, iec.DoublePoint{DIQ: 2})
-	c.tracker = tracker{active: true, index: 0, seq: 1, phase: "execute", expected: 2, deadline: now.Add(time.Second)}
+	c.tracker = tracker{active: true, index: 0, seq: 1, phase: "execute", expected: 2, value: 2, deadline: now.Add(time.Second)}
 	for _, h := range []iec.Header{{Type: iec.C_SC_NA_1, Cause: 7, CommonAddress: 1}, {Type: iec.C_DC_NA_1, Cause: 3, CommonAddress: 1}, {Type: iec.C_DC_NA_1, Cause: 7, CommonAddress: 2}} {
 		c.handle(context.Background(), iec.Event{Kind: iec.ASDUReceived, ASDU: iec.ASDU{Header: h, Objects: []iec.Object{{Address: 3001, Element: iec.DoubleCommand{Qualifier: 2}}}}})
 	}
 	if c.tracker.executeCon != 0 {
 		t.Fatal("mismatched confirmation")
 	}
-	c.commandResponse(iec.Header{Type: 46, Cause: 7}, 9999, false)
+	c.commandResponse(iec.Header{Type: 46, Cause: 7, CommonAddress: 1}, 9999, 2)
 	if c.tracker.executeCon != 0 {
 		t.Fatal("IOA matcher")
 	}
@@ -137,7 +138,7 @@ func TestResponseMatcherAndFeedback(t *testing.T) {
 	if c.tracker.feedback {
 		t.Fatal("feedback before execute con")
 	}
-	c.commandResponse(iec.Header{Type: 46, Cause: 7}, 3001, false)
+	c.commandResponse(iec.Header{Type: 46, Cause: 7, CommonAddress: 1}, 3001, 2)
 	for _, r := range []struct {
 		cot iec.COT
 		ioa int
@@ -159,28 +160,238 @@ func TestResponseMatcherAndFeedback(t *testing.T) {
 		t.Fatal("deadline accepted")
 	}
 }
-func TestTypedCommandsAndOverlap(t *testing.T) {
+
+func TestCommandRepliesRequireExactPhaseAndQualifier(t *testing.T) {
+	for _, term := range []bool{false, true} {
+		phase := "select"
+		cause := iec.ActivationCon
+		qualifier := iec.CommandQualifier(0x82)
+		if term {
+			phase = "execute"
+			cause = iec.ActivationTerm
+			qualifier = 2
+		}
+		cases := []struct {
+			name string
+			h    iec.Header
+			ioa  int
+			q    iec.CommandQualifier
+		}{
+			{"wrong type", iec.Header{Type: iec.C_SC_NA_1, Cause: cause, CommonAddress: 1}, 3001, qualifier},
+			{"wrong CA", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 2}, 3001, qualifier},
+			{"wrong OA", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1, Originator: 1}, 3001, qualifier},
+			{"wrong IOA", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}, 3999, qualifier},
+			{"wrong command value", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}, 3001, iec.CommandQualifier(uint8(qualifier) ^ 1)},
+			{"wrong QU", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}, 3001, qualifier | 4},
+			{"wrong select bit", iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}, 3001, qualifier ^ 0x80},
+			{"deactivation confirmation", iec.Header{Type: iec.C_DC_NA_1, Cause: iec.DeactivationCon, CommonAddress: 1}, 3001, qualifier},
+		}
+		for _, cot := range []iec.COT{44, 45, 46, 47} {
+			cases = append(cases, struct {
+				name string
+				h    iec.Header
+				ioa  int
+				q    iec.CommandQualifier
+			}{fmt.Sprintf("unknown cause %d", cot), iec.Header{Type: iec.C_DC_NA_1, Cause: cot, CommonAddress: 1}, 3001, qualifier})
+		}
+		t.Run(phase, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					c, now := model(t)
+					executeCon := 0
+					if term && tc.h.Cause == iec.ActivationTerm {
+						executeCon = 1
+					}
+					c.tracker = tracker{active: true, index: 0, value: 2, phase: phase, executeCon: executeCon, deadline: now.Add(time.Second)}
+					receiveHeader(c, tc.h, tc.ioa, iec.DoubleCommand{Qualifier: tc.q})
+					if c.tracker.selectCon != 0 || c.tracker.executeCon != executeCon || c.tracker.terminated {
+						t.Fatalf("mismatched reply accepted: %+v", c.tracker)
+					}
+				})
+			}
+			t.Run("test-marked", func(t *testing.T) {
+				c, now := model(t)
+				executeCon := 0
+				if term {
+					executeCon = 1
+				}
+				c.tracker = tracker{active: true, index: 0, value: 2, phase: phase, executeCon: executeCon, deadline: now.Add(time.Second)}
+				h := iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1, Test: true}
+				receiveHeader(c, h, 3001, iec.DoubleCommand{Qualifier: qualifier})
+				if c.tracker.selectCon != 0 || c.tracker.executeCon != executeCon || c.tracker.terminated {
+					t.Fatalf("test reply accepted: %+v", c.tracker)
+				}
+			})
+			t.Run("matching positive", func(t *testing.T) {
+				c, now := model(t)
+				executeCon := 0
+				if term {
+					executeCon = 1
+				}
+				c.tracker = tracker{active: true, index: 0, value: 2, phase: phase, executeCon: executeCon, deadline: now.Add(time.Second)}
+				h := iec.Header{Type: iec.C_DC_NA_1, Cause: cause, CommonAddress: 1}
+				receiveHeader(c, h, 3001, iec.DoubleCommand{Qualifier: qualifier})
+				if term {
+					if !c.tracker.terminated || c.tracker.negative {
+						t.Fatalf("matching ACT-TERM not recorded: %+v", c.tracker)
+					}
+				} else if c.tracker.selectCon != 1 {
+					t.Fatalf("matching ACT-CON not recorded: %+v", c.tracker)
+				}
+			})
+			if !term {
+				t.Run("negative ACT-CON", func(t *testing.T) {
+					c, now := model(t)
+					c.tracker = tracker{active: true, index: 0, value: 2, phase: phase, deadline: now.Add(time.Second)}
+					h := iec.Header{Type: iec.C_DC_NA_1, Cause: iec.ActivationCon, CommonAddress: 1, Negative: true}
+					receiveHeader(c, h, 3001, iec.DoubleCommand{Qualifier: qualifier})
+					if c.tracker.selectCon != -1 {
+						t.Fatalf("negative ACT-CON not recorded as rejection: %+v", c.tracker)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestTestAndNegativeReportsCannotPromoteGoodFeedback(t *testing.T) {
+	c, now := model(t)
+	receive(c, iec.M_DP_NA_1, iec.InterrogatedStation, 1001, iec.DoublePoint{DIQ: 2})
+	c.tracker = tracker{active: true, index: 0, phase: "execute", executeCon: 1, expected: 1, deadline: now.Add(time.Second)}
+	for _, h := range []iec.Header{
+		{Type: iec.M_DP_NA_1, Cause: iec.Spontaneous, CommonAddress: 1, Test: true},
+		{Type: iec.M_DP_NA_1, Cause: iec.Spontaneous, CommonAddress: 1, Negative: true},
+		{Type: iec.M_DP_NA_1, Cause: iec.ReturnRemote, CommonAddress: 1, Test: true},
+	} {
+		receiveHeader(c, h, 1001, iec.DoublePoint{DIQ: 1})
+		if c.tracker.feedback {
+			t.Fatalf("test report satisfied feedback: %+v", c.tracker)
+		}
+		p := c.points[0]
+		if p.value != "closed" || p.q != 0 || p.stale != "" {
+			t.Fatalf("invalid report changed process image: %+v", p)
+		}
+	}
+}
+
+func TestNonFiniteMeasurementsAreInvalid(t *testing.T) {
 	for _, tc := range []struct {
-		index int
-		op    string
-		value int
-		typ   iec.TypeID
-		ioa   int
-		e     iec.Element
-	}{{0, "open", 1, 3, 1001, iec.DoublePoint{DIQ: 1}}, {3, "raise", 2, 5, 1301, iec.StepPosition{Value: 4}}, {4, "auto", 1, 1, 1303, iec.SinglePoint{SIQ: 1}}} {
+		name  string
+		value float32
+	}{{"NaN", float32(math.NaN())}, {"positive infinity", float32(math.Inf(1))}, {"negative infinity", float32(math.Inf(-1))}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := model(t)
+			receive(c, iec.M_ME_NC_1, iec.Spontaneous, 2001, iec.Float{Value: tc.value})
+			p := c.points[2]
+			if p.value != nil || p.q&iec.Invalid == 0 || p.stale != "measurement_invalid" {
+				t.Fatalf("non-finite value quality: %+v", p)
+			}
+		})
+	}
+}
+
+func TestGICompletionRequiresPositiveMatchingStationActivation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		qoi  uint8
+	}{{"no confirmation", 20}, {"wrong group without confirmation", 21}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, now := model(t)
+			started(c)
+			c.tickGI(*now)
+			receiveHeader(c, iec.Header{Type: iec.C_IC_NA_1, Cause: iec.ActivationTerm, CommonAddress: 1}, 0, iec.Interrogation{QOI: tc.qoi})
+			if c.link.gi == "complete" || c.link.completed != "" {
+				t.Fatalf("GI completed without matching ACT-CON: %+v", c.link)
+			}
+		})
+	}
+	t.Run("valid station sequence", func(t *testing.T) {
 		c, now := model(t)
 		started(c)
 		c.tickGI(*now)
-		c.giResponse(10, false)
-		receive(c, tc.typ, 20, tc.ioa, tc.e)
+		receiveHeader(c, iec.Header{Type: iec.C_IC_NA_1, Cause: iec.ActivationCon, CommonAddress: 1}, 0, iec.Interrogation{QOI: 20})
+		receiveHeader(c, iec.Header{Type: iec.C_IC_NA_1, Cause: iec.ActivationTerm, CommonAddress: 1}, 0, iec.Interrogation{QOI: 20})
+		if c.link.gi != "complete" || c.link.completed == "" {
+			t.Fatalf("valid GI sequence not completed: %+v", c.link)
+		}
+	})
+}
+
+func TestTypedCommandsAndOverlap(t *testing.T) {
+	for _, tc := range []struct {
+		index        int
+		op           string
+		value        int
+		commandType  iec.TypeID
+		commandIOA   int
+		feedbackType iec.TypeID
+		feedbackIOA  int
+		initial      iec.Element
+	}{{0, "close", 2, iec.C_DC_NA_1, 3001, iec.M_DP_NA_1, 1001, iec.DoublePoint{DIQ: 1}}, {3, "raise", 2, iec.C_RC_NA_1, 3301, iec.M_ST_NA_1, 1301, iec.StepPosition{Value: 4}}, {4, "auto", 1, iec.C_SC_NA_1, 3302, iec.M_SP_NA_1, 1303, iec.SinglePoint{SIQ: 0}}} {
+		c, now := model(t)
+		started(c)
+		c.tickGI(*now)
+		completeGI(c)
+		receive(c, tc.feedbackType, iec.InterrogatedStation, tc.feedbackIOA, tc.initial)
+		var sent []iec.ASDU
 		c.session = &transportStub{send: func(m iec.Message) error {
+			a := m.(iec.ASDU)
+			sent = append(sent, a)
+			if a.Header.Type != tc.commandType || a.Header.Cause != iec.Activation || a.Header.Originator != 0 || a.Header.CommonAddress != 1 || len(a.Objects) != 1 || int(a.Objects[0].Address) != tc.commandIOA {
+				t.Fatalf("wrong typed command envelope: %+v", a)
+			}
+			selecting := len(sent) == 1
+			want := iec.CommandQualifier(tc.value)
+			if selecting {
+				want |= 0x80
+			}
+			got := commandQualifier(t, a.Objects[0].Element)
+			if got != want {
+				t.Fatalf("command qualifier=%d want=%d", got, want)
+			}
 			if r := c.command(context.Background(), tc.index, tc.value, tc.op); r.status != 409 || string(r.body) != `{"error":"a command is in flight"}` {
 				t.Fatal("overlap")
 			}
-			return errors.New("sent once")
+			h := a.Header
+			h.Cause = iec.ActivationCon
+			receiveHeader(c, h, tc.commandIOA, a.Objects[0].Element)
+			if !selecting {
+				c.mu.Lock()
+				expected := c.tracker.expected
+				c.mu.Unlock()
+				var feedback iec.Element
+				switch tc.feedbackType {
+				case iec.M_DP_NA_1:
+					feedback = iec.DoublePoint{DIQ: iec.DIQ(expected)}
+				case iec.M_ST_NA_1:
+					feedback = iec.StepPosition{Value: iec.VTI(expected)}
+				case iec.M_SP_NA_1:
+					feedback = iec.SinglePoint{SIQ: iec.SIQ(expected)}
+				}
+				receive(c, tc.feedbackType, iec.ReturnRemote, tc.feedbackIOA, feedback)
+				h.Cause = iec.ActivationTerm
+				receiveHeader(c, h, tc.commandIOA, a.Objects[0].Element)
+			}
+			return nil
 		}}
-		if r := c.command(context.Background(), tc.index, tc.value, tc.op); r.status != 200 {
-			t.Fatal("typed admission")
+		r := c.command(context.Background(), tc.index, tc.value, tc.op)
+		if r.status != 200 || !strings.Contains(string(r.body), `"result":"completed"`) || !strings.Contains(string(r.body), `"feedback":{`) || len(sent) != 2 {
+			t.Fatalf("typed command not completed: %s sends=%d", r.body, len(sent))
 		}
+	}
+}
+
+func commandQualifier(t *testing.T, e iec.Element) iec.CommandQualifier {
+	t.Helper()
+	switch v := e.(type) {
+	case iec.DoubleCommand:
+		return v.Qualifier
+	case iec.RegulatingCommand:
+		return v.Qualifier
+	case iec.SingleCommand:
+		return v.Qualifier
+	default:
+		t.Fatalf("not a command element: %T", e)
+		return 0
 	}
 }

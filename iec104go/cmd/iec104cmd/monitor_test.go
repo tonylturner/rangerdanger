@@ -156,6 +156,45 @@ func TestResponseEnvelopeMatching(t *testing.T) {
 	}
 }
 
+func TestCommandResponseRequiresExactPositiveActivationEcho(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*iec.ASDU)
+	}{
+		{"deactivation confirmation", func(a *iec.ASDU) { a.Header.Cause = iec.DeactivationCon }},
+		{"unknown type", func(a *iec.ASDU) { a.Header.Cause = iec.UnknownType }},
+		{"unknown cause", func(a *iec.ASDU) { a.Header.Cause = 45 }},
+		{"unknown common address", func(a *iec.ASDU) { a.Header.Cause = iec.UnknownCA }},
+		{"unknown IOA", func(a *iec.ASDU) { a.Header.Cause = iec.UnknownIOA }},
+		{"wrong originator", func(a *iec.ASDU) { a.Header.Originator++ }},
+		{"test marked", func(a *iec.ASDU) { a.Header.Test = true }},
+		{"wrong command value", func(a *iec.ASDU) { a.Objects[0].Element = iec.DoubleCommand{Qualifier: 2} }},
+		{"wrong command qualifier", func(a *iec.ASDU) { a.Objects[0].Element = iec.DoubleCommand{Qualifier: 5} }},
+		{"wrong select bit", func(a *iec.ASDU) { a.Objects[0].Element = iec.DoubleCommand{Qualifier: 0x81} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, errout := newCapture(), newCapture()
+			addr := peer(t, func(_ context.Context, e iec.Event) {
+				if e.Kind != iec.ASDUReceived {
+					return
+				}
+				request := e.ASDU.(*iec.ASDU)
+				bad := echo(request, iec.ActivationCon, false)
+				tc.mutate(bad)
+				send(t, e.Session, bad)
+				send(t, e.Session, echo(request, iec.ActivationTerm, false))
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			code := run(ctx, []string{addr, "dc", "3001", "open", "--json"}, out, errout, testRuntime())
+			if code != 1 || out.String() != result("dc", "failed") || !strings.Contains(errout.String(), "no execute confirmation") || strings.Contains(errout.String(), "execute confirmed") {
+				t.Fatalf("exit=%d stdout=%q stderr=%q", code, out.String(), errout.String())
+			}
+		})
+	}
+}
+
 func TestMonitoringBurst(t *testing.T) {
 	out, errout := newCapture(), newCapture()
 	addr := peer(t, func(ctx context.Context, e iec.Event) {

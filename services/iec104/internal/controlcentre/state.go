@@ -47,6 +47,7 @@ type link struct {
 	seq                                              int
 	gi, started, completed, trigger, pending, nextAt string
 	start, next                                      time.Time
+	giCon                                            bool
 	failed, reconnect, down, shutdown                bool
 	reason                                           string
 }
@@ -57,7 +58,7 @@ type entry struct {
 }
 type tracker struct {
 	active                                    bool
-	index, expected, seq                      int
+	index, expected, value, seq               int
 	phase                                     string
 	deadline                                  time.Time
 	selectCon, executeCon                     int
@@ -264,6 +265,7 @@ func (c *Centre) ended() {
 	c.link.state = "disconnected"
 	c.link.since = c.stamp()
 	c.link.gi = "none"
+	c.link.giCon = false
 	c.link.started = ""
 	c.link.completed = ""
 	c.link.trigger = ""
@@ -285,6 +287,7 @@ func (c *Centre) tickGI(now time.Time) string {
 	}
 	c.link.pending = ""
 	c.link.gi = "running"
+	c.link.giCon = false
 	c.link.failed = false
 	c.link.trigger = trigger
 	c.link.start = now
@@ -308,11 +311,16 @@ func (c *Centre) watchdog(now time.Time) {
 		}
 	}
 }
-func (c *Centre) giResponse(cot iec.COT, negative bool) {
-	if c.link.gi != "running" {
+func (c *Centre) giResponse(cot iec.COT, negative bool, qoi uint8) {
+	if c.link.gi != "running" || c.link.failed {
 		return
 	}
-	if cot == 10 && !negative {
+	if qoi != 20 {
+		return
+	}
+	if cot == iec.ActivationCon && !negative {
+		c.link.giCon = true
+	} else if cot == iec.ActivationTerm && !negative && c.link.giCon {
 		c.link.gi = "complete"
 		c.link.completed = c.stamp()
 		n := 0
@@ -322,7 +330,7 @@ func (c *Centre) giResponse(cot iec.COT, negative bool) {
 			}
 		}
 		c.add("gi_complete", ordered("connection_seq", c.link.seq, "points_good", n, "trigger", c.link.trigger))
-	} else if cot != 7 || negative {
+	} else if cot == iec.ActivationCon || cot == iec.ActivationTerm || cot >= iec.UnknownType && cot <= iec.UnknownIOA {
 		c.link.failed = true
 	}
 	c.notify()

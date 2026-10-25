@@ -38,7 +38,14 @@ func equal(t *testing.T, got []byte, want string) {
 	}
 }
 func receive(c *Centre, typ iec.TypeID, cot iec.COT, ioa int, e iec.Element) {
-	c.handle(context.Background(), iec.Event{Kind: iec.ASDUReceived, ASDU: iec.ASDU{Header: iec.Header{Type: typ, Cause: cot, CommonAddress: 1}, Objects: []iec.Object{{Address: uint32(ioa), Element: e}}}})
+	receiveHeader(c, iec.Header{Type: typ, Cause: cot, CommonAddress: 1}, ioa, e)
+}
+func receiveHeader(c *Centre, header iec.Header, ioa int, e iec.Element) {
+	c.handle(context.Background(), iec.Event{Kind: iec.ASDUReceived, ASDU: iec.ASDU{Header: header, Objects: []iec.Object{{Address: uint32(ioa), Element: e}}}})
+}
+func completeGI(c *Centre) {
+	c.giResponse(iec.ActivationCon, false, 20)
+	c.giResponse(iec.ActivationTerm, false, 20)
 }
 func started(c *Centre) {
 	c.handle(context.Background(), iec.Event{Kind: iec.Opened})
@@ -146,7 +153,7 @@ func TestModelAssertions(t *testing.T) {
 	if c.tickGI(start) != "connect" || c.tickGI(start.Add(time.Minute)) != "" {
 		t.Fatal("connect reservation")
 	}
-	c.giResponse(10, false)
+	completeGI(c)
 	complete := c.link.completed
 	receive(c, 3, 20, 1001, iec.DoublePoint{DIQ: 2})
 	receive(c, 13, 20, 2001, iec.Float{Value: 28.9})
@@ -185,7 +192,7 @@ func TestModelAssertions(t *testing.T) {
 	if c.command(context.Background(), 0, 2, "close").status != 200 || post("/api/gi").status != 409 {
 		t.Fatal("GI running admission")
 	}
-	c.giResponse(10, false)
+	completeGI(c)
 	results := make(chan response, 2)
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -205,7 +212,7 @@ func TestModelAssertions(t *testing.T) {
 		t.Fatal("operator interval")
 	}
 	c.points[0].q = iec.Substituted
-	c.giResponse(10, false)
+	completeGI(c)
 	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":1,"points_good":0,"trigger":"operator"}`)
 	c.points[0].q = 0
 	c.tracker.active = true
@@ -257,7 +264,7 @@ func TestAll42PointsQualityAndRecovery(t *testing.T) {
 		typ, e := element(p)
 		receive(c, typ, 20, p.IOA, e)
 	}
-	c.giResponse(10, false)
+	completeGI(c)
 	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":1,"points_good":42,"trigger":"connect"}`)
 	if c.journal[0].kind != "link_up" || c.journal[1].kind != "gi_started" {
 		t.Fatal("startup ordering")
@@ -330,7 +337,7 @@ func TestAll42PointsQualityAndRecovery(t *testing.T) {
 		typ, e := element(p)
 		receive(c, typ, 20, p.IOA, e)
 	}
-	c.giResponse(10, false)
+	completeGI(c)
 	equal(t, c.journal[len(c.journal)-1].detail, `{"connection_seq":2,"points_good":42,"trigger":"connect"}`)
 	equal(t, c.api(context.Background(), request{method: "POST", path: "/api/gi"}).body, `{"trigger":"operator","requested_at":"2026-10-15T12:34:57.789Z"}`)
 }

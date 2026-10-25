@@ -63,6 +63,10 @@ func (c *Centre) handle(_ context.Context, e iec.Event) {
 			c.printf("ignored ASDU for ca=%d (configured ca=%d)", h.CommonAddress, c.pm.CA)
 			return
 		}
+		if h.Test {
+			c.printf("ignored test ASDU type=%d ca=%d", h.Type, h.CommonAddress)
+			return
+		}
 		a, ok := e.ASDU.(*iec.ASDU)
 		if !ok {
 			if v, yes := e.ASDU.(iec.ASDU); yes {
@@ -72,20 +76,26 @@ func (c *Centre) handle(_ context.Context, e iec.Event) {
 			}
 		}
 		if h.Type == iec.C_IC_NA_1 {
-			if len(a.Objects) > 0 && a.Objects[0].Address == 0 && (h.Cause == 7 || h.Cause == 10 || h.Cause >= 44 && h.Cause <= 47) {
-				c.giResponse(h.Cause, h.Negative)
+			if len(a.Objects) == 1 && a.Objects[0].Address == 0 {
+				if qoi, ok := a.Objects[0].Element.(iec.Interrogation); ok {
+					c.giResponse(h.Cause, h.Negative, qoi.QOI)
+				}
 			}
 			return
 		}
 		for _, o := range a.Objects {
 			switch v := o.Element.(type) {
 			case iec.DoubleCommand:
-				c.commandResponse(h, int(o.Address), v.Qualifier.Select())
+				c.commandResponse(h, int(o.Address), v.Qualifier)
 			case iec.SingleCommand:
-				c.commandResponse(h, int(o.Address), v.Qualifier.Select())
+				c.commandResponse(h, int(o.Address), v.Qualifier)
 			case iec.RegulatingCommand:
-				c.commandResponse(h, int(o.Address), v.Qualifier.Select())
+				c.commandResponse(h, int(o.Address), v.Qualifier)
 			default:
+				if h.Negative {
+					c.printf("ignored negative report type=%d ioa=%d", h.Type, o.Address)
+					continue
+				}
 				c.report(h, o)
 			}
 		}
@@ -151,6 +161,9 @@ func (c *Centre) report(h iec.Header, o iec.Object) {
 		}
 		value = floatValue(v.Value)
 		q = v.Quality
+		if value == nil {
+			q |= iec.Invalid
+		}
 	default:
 		return
 	}
@@ -188,32 +201,35 @@ func (c *Centre) report(h iec.Header, o iec.Object) {
 	}
 	c.notify()
 }
-func (c *Centre) commandResponse(h iec.Header, ioa int, selecting bool) {
+func (c *Centre) commandResponse(h iec.Header, ioa int, qualifier iec.CommandQualifier) {
 	t := &c.tracker
 	if !t.active || !c.opts.Now().Before(t.deadline) {
 		return
 	}
 	cmd := c.pm.Commands[t.index]
-	if ioa != cmd.IOA || h.Type.String() != cmd.ASDU {
+	if h.Test || h.CommonAddress != uint16(c.pm.CA) || h.Originator != 0 || ioa != cmd.IOA || h.Type.String() != cmd.ASDU {
 		return
 	}
-	if h.Cause != 7 && h.Cause != 10 && (h.Cause < 44 || h.Cause > 47) {
+	if h.Cause != iec.ActivationCon && h.Cause != iec.ActivationTerm {
 		return
 	}
-	if h.Cause == 10 {
-		if !selecting && t.phase == "execute" && t.executeCon == 1 && !t.terminated {
+	if int(qualifier&0x7f) != t.value || qualifier.Select() != (t.phase == "select") {
+		return
+	}
+	if h.Cause == iec.ActivationTerm {
+		if !qualifier.Select() && t.phase == "execute" && t.executeCon == 1 && !t.terminated {
 			t.terminated = true
 			t.negative = h.Negative
 			t.term = c.stamp()
 		}
 	} else {
 		con := 1
-		if h.Negative || h.Cause != 7 {
+		if h.Negative {
 			con = -1
 		}
-		if selecting && t.phase == "select" && t.selectCon == 0 {
+		if qualifier.Select() && t.phase == "select" && t.selectCon == 0 {
 			t.selectCon = con
-		} else if !selecting && t.phase == "execute" && t.executeCon == 0 {
+		} else if !qualifier.Select() && t.phase == "execute" && t.executeCon == 0 {
 			t.executeCon = con
 			t.con = c.stamp()
 		}

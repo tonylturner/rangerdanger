@@ -24,6 +24,35 @@ func procedureResponse(t *testing.T, m Message, cot COT) []byte {
 	return b
 }
 
+type procedureProgress struct {
+	tx        *transaction
+	responses int
+	consumed  int
+	written   bool
+}
+
+func currentProcedureProgress(s *Session) procedureProgress {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := procedureProgress{tx: s.procedure}
+	if p.tx != nil {
+		p.tx.mu.Lock()
+		p.responses = len(p.tx.responses)
+		p.consumed = p.tx.consumed
+		p.written = p.tx.leg != nil && p.tx.leg.written
+		p.tx.mu.Unlock()
+	}
+	return p
+}
+
+func requireSameProcedureProgress(t *testing.T, s *Session, want procedureProgress) {
+	t.Helper()
+	got := currentProcedureProgress(s)
+	if got.tx != want.tx || got.responses != want.responses || got.consumed != want.consumed || got.written != want.written {
+		t.Fatalf("procedure advanced on ineligible response: got=%+v want=%+v", got, want)
+	}
+}
+
 func TestProcedureQueuedRequestCannotComplete(t *testing.T) {
 	tag := CP56FromTime(time.Now(), false)
 	for _, name := range []string{"command", "GI", "counter", "read", "clock", "test", "reset"} {
@@ -84,10 +113,14 @@ func TestProcedureQueuedRequestCannotComplete(t *testing.T) {
 				waitView(t, s, func(v sessionView) bool { return v.received == ns })
 			}
 			reply(0)
+			pending := currentProcedureProgress(s)
+			if pending.tx == nil || pending.responses != 0 || pending.consumed != 0 || pending.written {
+				t.Fatalf("stale response advanced an unwritten request: %+v", pending)
+			}
 			select {
 			case err := <-done:
 				t.Fatalf("queued %s completed on stale response: %v", name, err)
-			case <-time.After(20 * time.Millisecond):
+			default:
 			}
 			writeFrame(t, p, Frame{Kind: SFrame, Receive: 1})
 			if f := readFrame(t, p); f.Kind != IFrame || f.Send != 1 {
@@ -158,7 +191,10 @@ func TestProcedureSBOEachLegWaitsForWrite(t *testing.T) {
 	writeFrame(t, p, Frame{Kind: IFrame, ASDU: procedureResponse(t, selected, ActivationCon)})
 	waitView(t, s, func(v sessionView) bool { return v.received == 1 })
 	// A stale select CON must not advance to execute while select is unsent.
-	time.Sleep(20 * time.Millisecond)
+	pending := currentProcedureProgress(s)
+	if pending.tx == nil || pending.responses != 0 || pending.consumed != 0 || pending.written {
+		t.Fatalf("response advanced an unwritten select leg: %+v", pending)
+	}
 	s.mu.Lock()
 	queued := len(s.sends)
 	s.mu.Unlock()
@@ -168,15 +204,23 @@ func TestProcedureSBOEachLegWaitsForWrite(t *testing.T) {
 	writeFrame(t, p, Frame{Kind: SFrame, Receive: 1})
 	readFrame(t, p)
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 1, Receive: 1, ASDU: procedureResponse(t, selected, ActivationCon)})
-	eventually(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.sends) == 1 })
+	var before procedureProgress
+	eventually(t, func() bool {
+		s.mu.Lock()
+		queued := len(s.sends)
+		s.mu.Unlock()
+		before = currentProcedureProgress(s)
+		return queued == 1 && before.tx != nil && before.consumed == 1
+	})
 	// k is still occupied by select. The execute leg must be armed separately.
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 2, Receive: 1, ASDU: procedureResponse(t, req, ActivationCon)})
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 3, Receive: 1, ASDU: procedureResponse(t, req, ActivationTerm)})
 	waitView(t, s, func(v sessionView) bool { return v.received == 4 })
+	requireSameProcedureProgress(t, s, before)
 	select {
 	case err := <-done:
 		t.Fatalf("unsent execute completed: %v", err)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	writeFrame(t, p, Frame{Kind: SFrame, Receive: 2})
 	readFrame(t, p)
@@ -224,10 +268,14 @@ func TestProcedureWaitsForCompleteWrite(t *testing.T) {
 	writeFrame(t, p, Frame{Kind: IFrame, Receive: 1, ASDU: procedureResponse(t, req, ActivationCon)})
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 1, Receive: 1, ASDU: procedureResponse(t, req, ActivationTerm)})
 	waitView(t, s, func(v sessionView) bool { return v.received == 2 })
+	progress := currentProcedureProgress(s)
+	if progress.tx == nil || progress.responses != 2 || progress.consumed != 0 || progress.written {
+		t.Fatalf("responses advanced before Write returned: %+v", progress)
+	}
 	select {
 	case err := <-done:
 		t.Fatalf("helper completed before Write returned: %v", err)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	gate.unblock()
 	if err := <-done; err != nil {
@@ -252,14 +300,22 @@ func TestProcedureSBOExecuteQueuedRequestCannotComplete(t *testing.T) {
 	}
 	// Positive select CON without acknowledging the select I-frame holds k.
 	writeFrame(t, p, Frame{Kind: IFrame, ASDU: procedureResponse(t, selected, ActivationCon)})
-	eventually(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.sends) == 1 })
+	var before procedureProgress
+	eventually(t, func() bool {
+		s.mu.Lock()
+		queued := len(s.sends)
+		s.mu.Unlock()
+		before = currentProcedureProgress(s)
+		return queued == 1 && before.tx != nil && before.consumed == 1
+	})
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 1, ASDU: procedureResponse(t, req, ActivationCon)})
 	writeFrame(t, p, Frame{Kind: IFrame, Send: 2, ASDU: procedureResponse(t, req, ActivationTerm)})
 	waitView(t, s, func(v sessionView) bool { return v.received == 3 })
+	requireSameProcedureProgress(t, s, before)
 	select {
 	case err := <-done:
 		t.Fatalf("queued execute completed on stale responses: %v", err)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	writeFrame(t, p, Frame{Kind: SFrame, Receive: 1})
 	readFrame(t, p)

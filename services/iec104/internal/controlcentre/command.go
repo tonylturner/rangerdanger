@@ -161,7 +161,7 @@ func (c *Centre) command(ctx context.Context, index, value int, operation string
 		}
 	}
 	deadline := c.opts.Now().Add(10 * time.Second)
-	c.tracker = tracker{active: true, index: index, seq: c.link.seq, phase: "select", deadline: deadline, expected: expected, selected: c.stamp()}
+	c.tracker = tracker{active: true, index: index, seq: c.link.seq, phase: "select", deadline: deadline, expected: expected, value: value, selected: c.stamp()}
 	c.commandSeq++
 	id := fmt.Sprintf("cmd-%d", c.commandSeq)
 	c.mu.Unlock()
