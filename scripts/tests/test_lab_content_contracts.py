@@ -206,7 +206,7 @@ class ErrataContracts(unittest.TestCase):
             self.assertTrue(next(s for s in steps if s["id"] == step_id)["title"].startswith("Phase "))
         rules = curriculum["phases"]["rules"]
         for phrase in ("**Apply Your Plan**", "Deferred rules retain", "export config", "**Commit**",
-                       "package revision, action IDs and policy hash", "{{ruleTable}}"):
+                       "**Export plan record**", "{{ruleTable}}"):
             self.assertIn(phrase, rules)
         self.assertNotIn("export config >", rules)
         self.assertIn("config.commit", curriculum["phases"]["negative"])
@@ -371,8 +371,8 @@ class ErrataContracts(unittest.TestCase):
         for stale in ("Selections in earlier labs rewrite", "plan rewrites the steps",
                       "lab adapts to which actions"):
             self.assertNotIn(stale, readme)
-        self.assertIn("Lab 1.4 plan is a design artifact", readme)
-        self.assertIn("Lab 2.2 applies the hardened reference", readme)
+        self.assertIn("Lab 1.4 remediation plan is compiled and applied in Lab 2.2", readme)
+        self.assertIn("verify the running policy against your plan", readme)
         self.assertNotIn("#updating-to-v0136", readme)
         self.assertNotIn("docker compose -f docker-compose.release.yml down &&", quickstart)
         self.assertNotIn("stage-ssd-repo-update.sh", ssd)
