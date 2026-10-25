@@ -9,6 +9,7 @@ import argparse
 import ast
 from contextlib import ExitStack
 import json
+import os
 from pathlib import Path
 import socket
 import select
@@ -25,6 +26,13 @@ def http(url, deadline):
         raise TimeoutError("HTTP action deadline")
     with urllib.request.urlopen(url, timeout=min(2, remaining)) as response:
         return response.read().decode()
+
+
+def publish(path, value):
+    """Write JSON so the host poller never reads a partial file."""
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(value))
+    os.replace(temporary, path)
 
 
 def barrier(url, predicate, deadline):
@@ -287,7 +295,7 @@ def raw_server(case, address, result):
                 if args["timed_invalid"]:
                     payload += bytes.fromhex("0000800c170a1a")
                 acknowledged(31 if args["timed_invalid"] else 3, 3, 1001, payload)
-        result.write_text(json.dumps({"passed": True, "tx": peer.tx, "rx": peer.rx, "associations": peer.associations}))
+        publish(result, {"passed": True, "tx": peer.tx, "rx": peer.rx, "associations": peer.associations})
         print("SCENARIO COMPLETE", flush=True)
         # Runner stops CC after completion. Do not close early and provoke a
         # reconnect whose timing would create a spurious additional session.
@@ -333,9 +341,9 @@ def main():
                 peer = Peer(sock, time.monotonic() + case["timeout_s"])
                 for step, action in enumerate(case["actions"]):
                     peer.action(action, fixture, step)
-            result.write_text(json.dumps({"passed": True, "records": peer.records, "associations": peer.associations}))
+            publish(result, {"passed": True, "records": peer.records, "associations": peer.associations})
     except BaseException as error:
-        result.write_text(json.dumps({"passed": False, "error": str(error)}))
+        publish(result, {"passed": False, "error": str(error)})
         raise
 
 
