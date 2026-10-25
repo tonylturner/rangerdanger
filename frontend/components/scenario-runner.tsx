@@ -160,6 +160,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
     setCompletedStepIds(new Set());
     setNotes("");
     setCurrentStep(0);
+    setShowSummary(false);
     setCmdLog([]);
     setValidation(null);
     setStepResult(null);
