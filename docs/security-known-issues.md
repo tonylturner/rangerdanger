@@ -227,6 +227,15 @@ and resolved by `go get`:
 - **`GO-2025-4134`, `GO-2025-4135`** - `golang.org/x/crypto`
   v0.44.0 → v0.50.0.
 
+## Resolved by Go toolchain bump (2026-10-25)
+
+**`1.26.9 -> 1.26.10`** clears `GO-2026-6809` in the standard-library
+`crypto/x509` package (fixed in Go 1.26.10 / 1.27.3). All four Go modules
+now pin `toolchain go1.26.10`; the IEC 104 service, Kali, and engineering
+workstation builders use the digest-locked `golang:1.26.10-alpine` image.
+The 1.26.10 Alpine multi-platform index digest is
+`sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba`.
+
 ## Resolved by Go toolchain bump (2026-08-22)
 
 **`1.25.10 -> 1.26.7`** cleared 3 stdlib findings that were failing the
