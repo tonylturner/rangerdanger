@@ -99,7 +99,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 	if slot == euWorkshopSlots[0] || slot == euWorkshopSlots[4] {
 		filter = euWorkshopSlots[1]
 	}
-	matrix, err := euResolveMatrix(euGeneration(t, nil, nil), euRecipe.validation, filter)
+	matrix, err := referenceProof(euGeneration(t, nil, nil), filter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func passingEUWorkshop(t *testing.T, slot string) euWorkshopEvidence {
 
 	ev.cc.Link.Since = at("12:00:59")
 	ev.policyHash = "full-running-hash"
-	ev.report = &euRetainedReport{Hash: ev.policyHash, Markdown: "retained report", RangeStart: ev.start, PolicyAt: ev.policyAt, StartedAt: at("12:02:00"), FinishedAt: at("12:03:00"), Pass: true}
+	ev.report = &retainedValidationReport{Hash: ev.policyHash, Markdown: "retained report", RangeStart: ev.start, PolicyAt: ev.policyAt, StartedAt: at("12:02:00"), FinishedAt: at("12:03:00"), Acceptance: acceptanceResult{Pass: true}}
 	return ev
 }
 
@@ -335,7 +335,7 @@ func TestEURetainedReportAcceptance(t *testing.T) {
 		mutate func(*euWorkshopEvidence)
 	}{
 		{"missing", func(ev *euWorkshopEvidence) { ev.report = nil }},
-		{"failed", func(ev *euWorkshopEvidence) { ev.report.Pass = false }},
+		{"failed", func(ev *euWorkshopEvidence) { ev.report.Acceptance.Pass = false }},
 		{"hash mismatch", func(ev *euWorkshopEvidence) { ev.report.Hash = "other" }},
 		{"reapplied same hash", func(ev *euWorkshopEvidence) { ev.policyAt = at("12:03:30") }},
 		{"old range", func(ev *euWorkshopEvidence) { ev.report.RangeStart = ev.start.Add(-time.Hour) }},

@@ -6,20 +6,19 @@ type reportSpec struct {
 	title, passText, captureIntro, captureLimits, limits string
 	skippedText, methodology, unauthorizedIntro          string
 	captureDir, hostCaptureDir                           string
-	strictProbes                                         bool
 }
 
 var usReport = reportSpec{
-	unauthorizedIntro: "Flows the policy must deny. Each blocked attempt is positive evidence the segmentation is enforcing.",
-	methodology: "- **allow** = the source container's TCP SYN reached the destination (connect succeeded, or a fast RST came back). **deny** = the SYN was dropped (timeout at the probe budget).\n" +
-		"- Probes ran from inside each source container via `/dev/tcp` (or `nc` on busybox-only hosts) - the same primitive as `scripts/firewall-smoke.sh`.\n" +
+	unauthorizedIntro: "Hardened expects these TCP connects to time out. Refusal is reached (allow); tool and exec errors are untested. A timeout does not identify its cause.",
+	methodology: "- **allow** = TCP connect or explicit refusal (reached). **deny** = only a connect timeout; tool, signal and exec errors are untested, never denied.\n" +
+		"- Strict connect-only probes use Bash `/dev/tcp` or BusyBox `nc -e /bin/true`; no command payload is sent.\n" +
 		"- This report validates the **currently active** policy; it does not apply or change any policy.\n",
 
 	skippedText:   "**Result: FAIL** - %d probe(s) could not run (source container missing, renamed, or stopped - shown as ⊘ below), so the validation matrix did not fully execute. A report cannot claim PASS unless every probe ran. Bring the full lab stack up and re-run. Inspect any ✗ rows for genuine policy mismatches as well.",
 	title:         "Substation Segmentation - Validation Report",
-	passText:      "**Result: PASS** - every authorized flow works and every unauthorized flow is blocked. The active policy is enforcing what the design specified.",
+	passText:      "**Result: PASS** - every listed TCP tuple matches Hardened, with stable policy identity and capture evidence. Reachability is not application health or firewall-causation proof.",
 	captureIntro:  "Sources whose traffic the firewall forwarded toward the field zone (`10.40.40.0/24`) during the capture window:",
-	captureLimits: "Under a hardened policy only the RTAC (`10.30.30.20`) and the GPS/NTP server (`10.30.30.50`) should appear. Any other source IP indicates a missing rule or a leaky deny.",
+	captureLimits: "Hardened permits the RTAC (`10.30.30.20`) and GPS/NTP server (`10.30.30.50`). A partial plan may retain other sources. Absence here is not proof of denial; inspect the raw capture separately.",
 	captureDir:    "/data/captures", hostCaptureDir: "data/firewall/captures",
 }
 
@@ -32,10 +31,9 @@ var euReport = reportSpec{
 
 	skippedText:   "**Result: FAIL** - %d probe(s) were untested (⊘): a source container, probe tool or evidence collection failed. Inspect the probe errors and container/tool availability, then re-run. Untested rows are not denied and cannot certify PASS.",
 	title:         "European Feeder Segmentation - TCP Reachability Report",
-	passText:      "**Result: PASS** - every listed TCP reachability probe matched its expected verdict. This is not certification of protocol operations, command authorization, process continuity, PCAP completeness or the whole policy.",
+	passText:      "**Result: PASS** - every listed TCP reachability probe matched its expected verdict. Acceptance also requires capture availability and stable policy identity. This is not certification of protocol operations, command authorization, process continuity, PCAP completeness or the whole policy.",
 	captureIntro:  "Sources observed forwarded toward EU field devices during the capture window (best-effort tcpdump summary):",
 	captureLimits: "Expected operational sources include the RTU and PLC; the pinned PLC-to-OLTC conduit crosses the firewall from station to field. Absence here is not proof of denial. Retain and inspect the raw PCAP separately.",
-	limits:        "- PASS covers only this TCP matrix. A refused connection proves reachability, not a functioning application, and fails an unauthorized row. A timeout does not identify a decoded command or prove the firewall caused the loss. Missing tools are untested, not denied. PCAP is optional supporting evidence, not part of PASS; continuity and fresh observations require the scenario validator. No DPI or regulatory conformance is certified.\n",
+	limits:        "- PASS covers only this TCP matrix. A refused connection proves reachability, not a functioning application, and fails an unauthorized row. A timeout does not identify a decoded command or prove the firewall caused the loss. Missing tools are untested, not denied. Capture availability and stable hash are required by acceptance; PCAP completeness is not certified. Continuity and fresh observations require the scenario validator. No DPI or regulatory conformance is certified.\n",
 	captureDir:    "/data/captures", hostCaptureDir: "data/firewall/captures",
-	strictProbes: true,
 }

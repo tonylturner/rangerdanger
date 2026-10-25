@@ -37,7 +37,7 @@ type planResponse struct {
 	Expectations []planExpectation `json:"expectations"`
 }
 
-func (s *Server) compilePlanRequest(c *gin.Context) (*planResponse, bool) {
+func (s *Server) compilePlanRequest(c *gin.Context, failureStatus int) (*planResponse, bool) {
 	var req struct {
 		PackageID string   `json:"packageId"`
 		Revision  int      `json:"revision"`
@@ -59,9 +59,21 @@ func (s *Server) compilePlanRequest(c *gin.Context) (*planResponse, bool) {
 		c.JSON(http.StatusConflict, gin.H{"error": "plan package or revision differs from the active range"})
 		return nil, false
 	}
+	known := map[string]bool{}
+	if pkg.Curriculum != nil {
+		for _, action := range pkg.Curriculum.Catalog {
+			known[action.ID] = true
+		}
+	}
+	for _, id := range req.ActionIDs {
+		if !known[id] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unknown plan action " + id})
+			return nil, false
+		}
+	}
 	compiled, err := labs.CompilePlan(pkg, pkg.Curriculum, req.ActionIDs)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(failureStatus, gin.H{"error": err.Error(), "warnings": []string{}})
 		return nil, false
 	}
 	hash, err := containd.FirewallHashFromBytes(compiled.Config)
@@ -88,13 +100,13 @@ func (s *Server) compilePlanRequest(c *gin.Context) (*planResponse, bool) {
 }
 
 func (s *Server) handlePlanCompile(c *gin.Context) {
-	if plan, ok := s.compilePlanRequest(c); ok {
+	if plan, ok := s.compilePlanRequest(c, http.StatusInternalServerError); ok {
 		c.JSON(http.StatusOK, plan)
 	}
 }
 
 func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
-	plan, ok := s.compilePlanRequest(c)
+	plan, ok := s.compilePlanRequest(c, http.StatusUnprocessableEntity)
 	if !ok {
 		return
 	}
@@ -111,6 +123,8 @@ func (s *Server) handleFirewallApplyPlan(c *gin.Context) {
 		fail(err)
 		return
 	}
+	s.policyApplyMu.Lock()
+	defer s.policyApplyMu.Unlock()
 	started := time.Now().UTC()
 	importedWarnings, err := gen.Containd().ImportConfig(c.Request.Context(), plan.Config)
 	warnings = append(warnings, importedWarnings...)

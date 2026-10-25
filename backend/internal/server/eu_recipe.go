@@ -14,7 +14,6 @@ var euRecipe = &packageRecipe{
 	resetTruth:        resetEUTruth,
 	check:             (*Server).executeEUCheck,
 	report:            euReport,
-	validation:        euValidationMatrix(),
 	validationCapture: captureSpec{nodes: []string{"breaker-1", "f2-breaker", "rmu-1", "rmu-2", "oltc-1"}, network: "field_net"},
 	traffic: []trafficTarget{
 		{"eng-ws-1", "plc-1", "station_net", "curl -sf --max-time 3 http://%s:8080/login > /dev/null", "eng-ws→PLC maintenance GET"},

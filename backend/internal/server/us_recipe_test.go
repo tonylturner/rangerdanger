@@ -13,43 +13,20 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/manifest"
 )
 
-// The US recipe used to hard-code containers and addresses. Resolved
-// against the real US manifest it must produce exactly those values: the
-// migration to the manifest changes no US behaviour.
-
-func TestUSValidationMatrixResolvesToTheFrozenMatrix(t *testing.T) {
-	want := []validationProbe{
-		{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.20", "502", "allow", "RTAC Modbus poll to relay", "authorized"},
-		{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.21", "20000", "allow", "RTAC DNP3 poll to recloser", "authorized"},
-		{"rangerdanger-rtac-sim", "rtac-sim", "10.40.40.22", "20000", "allow", "RTAC DNP3 poll to regulator", "authorized"},
-		{"rangerdanger-rtac-sim", "rtac-sim", "10.30.30.30", "8080", "allow", "RTAC HTTP API to OpenPLC (intra-zone)", "authorized"},
-		{"rangerdanger-fuxa-hmi", "fuxa-hmi", "10.30.30.20", "8080", "allow", "HMI to RTAC HTTP intra-zone", "authorized"},
-		{"rangerdanger-historian-sim", "historian-sim", "10.30.30.20", "8080", "allow", "Historian to RTAC intra-zone", "authorized"},
-		{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "22", "allow", "Vendor SSH mgmt to RTAC", "authorized"},
-		{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "443", "allow", "Vendor HTTPS mgmt to RTAC", "authorized"},
-		{"rangerdanger-kali", "kali", "10.40.40.20", "502", "deny", "Enterprise Modbus to field relay", "unauthorized"},
-		{"rangerdanger-kali", "kali", "10.40.40.20", "20000", "deny", "Enterprise DNP3 to field relay", "unauthorized"},
-		{"rangerdanger-kali", "kali", "10.30.30.30", "8080", "deny", "Enterprise HTTP to OpenPLC", "unauthorized"},
-		{"rangerdanger-kali", "kali", "10.30.30.20", "8080", "deny", "Enterprise HTTP to RTAC", "unauthorized"},
-		{"rangerdanger-kali", "kali", "10.30.30.20", "502", "deny", "Enterprise Modbus to RTAC", "unauthorized"},
-		{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "502", "deny", "Vendor Modbus to field recloser", "unauthorized"},
-		{"rangerdanger-eng-ws", "eng-ws", "10.40.40.21", "20000", "deny", "Vendor DNP3 to field recloser", "unauthorized"},
-		{"rangerdanger-eng-ws", "eng-ws", "10.30.30.30", "8080", "deny", "Vendor HTTP to OpenPLC (only 443/22 allowed)", "unauthorized"},
-		{"rangerdanger-vendor-jump", "vendor-jump", "10.30.30.20", "502", "deny", "Vendor Modbus to RTAC (improved blocks non-mgmt)", "unauthorized"},
-		{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "502", "deny", "Non-RTAC OT (historian) to field regulator (Modbus)", "unauthorized"},
-		{"rangerdanger-historian-sim", "historian-sim", "10.40.40.22", "20000", "deny", "Non-RTAC OT (historian) to field regulator (DNP3)", "unauthorized"},
+func TestUSValidationMatrixUsesPlanProof(t *testing.T) {
+	gen := usGeneration(nil)
+	got, err := usRecipe.resolveValidation(gen)
+	if err != nil || len(got) != 21 {
+		t.Fatalf("matrix: %d %v", len(got), err)
 	}
-	got, err := usRecipe.resolveValidation(usGeneration(nil))
-	if err != nil {
-		t.Fatal(err)
+	for i, proof := range gen.Package.Curriculum.Plan.Proof {
+		if got[i].ID != proof.ID || got[i].Expected != string(proof.Expect) {
+			t.Fatalf("row %d: %+v", i, got[i])
+		}
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("resolved matrix differs from the frozen US matrix:\n got %v\nwant %v", got, want)
-	}
-
-	hosts, network, err := usRecipe.resolveCapture(usGeneration(nil))
+	hosts, network, err := usRecipe.resolveCapture(gen)
 	if err != nil || strings.Join(hosts, " ") != "10.40.40.20 10.40.40.21 10.40.40.22 10.40.40.23" || strings.Join(network, ".") != "10.40.40" {
-		t.Errorf("capture = %q %q %v", hosts, network, err)
+		t.Fatalf("capture %q %q %v", hosts, network, err)
 	}
 }
 

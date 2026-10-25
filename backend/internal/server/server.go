@@ -55,6 +55,7 @@ type Server struct {
 	rng rangeLifecycle
 	// The policy, capture and traffic state below describe the serving
 	// range; activateRange resets it for every new generation.
+	policyApplyMu  sync.Mutex // serializes backend imports and provenance publication
 	activeConfigMu sync.RWMutex
 	activeConfig   string // "weak", "improved", or "custom"
 	// policySource is weak, hardened-reference, plan, or manual-custom.
@@ -81,7 +82,7 @@ type Server struct {
 	// proofs use the lower bound, negative tests the upper bound.
 	policyEvidenceSince  time.Time
 	policyObservedAt     time.Time
-	lastValidationReport *euRetainedReport // immutable, guarded by activeConfigMu
+	lastValidationReport *retainedValidationReport // immutable, guarded by activeConfigMu
 	pcapMu               sync.Mutex
 	pcap                 pcapState
 	trafficMu            sync.Mutex

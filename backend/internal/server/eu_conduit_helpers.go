@@ -29,6 +29,15 @@ func (s *Server) collectConduits(ctx context.Context, gen *lifecycle.Generation)
 	ev.readEnd = time.Now().UTC()
 	ev.plcIP, ev.identityErr = nodeIP(gen, "plc-1", "station_net")
 	ev.denies, ev.identityErr = conduitDenyMatrix(gen, ev.identityErr)
+	s.activeConfigMu.RLock()
+	plan := s.appliedPlan
+	if s.policySource != "plan" {
+		plan = nil
+	}
+	s.activeConfigMu.RUnlock()
+	if ev.identityErr == nil {
+		ev.denies, ev.identityErr = planDenyFilter(ev.denies, plan, gen.Package)
+	}
 	ev.events, ev.eventsErr = gen.Containd().GetEvents(ctx, containd.MaxEventLimit, gen.StartedAt)
 	if endpoint, ok := nodeSimURL(gen, "oltc-1"); ok {
 		ev.audit, ev.auditErr = fetchJSON[conduitAudit](ctx, simService, endpoint+"/api/audit?after=0")

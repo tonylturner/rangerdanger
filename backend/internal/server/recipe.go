@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/tturner/rangerdanger/backend/internal/labs"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,9 +41,6 @@ type packageRecipe struct {
 	// captureFilter is the tcpdump filter of /api/pcap/start; empty
 	// captures everything.
 	captureFilter string
-	// validation is the validation report's probe matrix; nil when the
-	// package has no report.
-	validation []validationProbeSpec
 	// validationCapture names the devices the validation report's PCAP
 	// watches, and the network they sit on.
 	validationCapture captureSpec
@@ -74,14 +75,6 @@ type canaryProbe struct {
 	toNode, network       string
 	port                  int
 	allowUnder, denyUnder string
-}
-
-// validationProbeSpec is one row of the validation matrix before the
-// manifest resolves it.
-type validationProbeSpec struct {
-	fromNode, label          string
-	toNode, network, port    string
-	expected, note, category string
 }
 
 type captureSpec struct {
@@ -159,27 +152,61 @@ func defaultPolicy(gen *lifecycle.Generation) (string, error) {
 	return name, nil
 }
 
-// resolveValidation turns the recipe's matrix into probes against the
-// generation's containers and addresses.
+// resolveValidation reads the package's single proof universe against Hardened.
 func (r *packageRecipe) resolveValidation(gen *lifecycle.Generation) ([]validationProbe, error) {
-	if r.report.strictProbes {
-		return euResolveMatrix(gen, r.validation, "")
+	compiled, err := labs.CompilePlan(gen.Package, gen.Package.Curriculum, nil)
+	if err != nil {
+		return nil, err
 	}
+	return resolveProof(gen, compiled.Expectations, "", false)
+}
 
-	probes := make([]validationProbe, 0, len(r.validation))
-	for _, spec := range r.validation {
-		from, err := nodeService(gen, spec.fromNode)
+// resolveProof uses authored lab roles rather than a second Go tuple filter.
+func resolveProof(gen *lifecycle.Generation, expectations []labs.PlanExpectation, slot string, againstPlan bool) ([]validationProbe, error) {
+	probes := []validationProbe{}
+	role := ""
+	if slot != "" {
+		for candidate, id := range gen.Package.Curriculum.Roles {
+			if id == slot {
+				role = candidate
+			}
+		}
+		if role == "" {
+			return nil, fmt.Errorf("unknown lab slot %s", slot)
+		}
+	}
+	for _, expectation := range expectations {
+		if role != "" && !slices.Contains(expectation.Labs, role) {
+			continue
+		}
+		from, err := nodeService(gen, expectation.From)
 		if err != nil {
 			return nil, err
 		}
-		dst, err := nodeIP(gen, spec.toNode, spec.network)
+		route, err := labs.ResolvePlanTuple(gen.Package, labs.PlanProof{ID: expectation.ID, From: expectation.From, To: expectation.To, Network: expectation.Network, Port: expectation.Port})
 		if err != nil {
 			return nil, err
 		}
-		probes = append(probes, validationProbe{
-			Src: from.Container, SrcLabel: spec.label, Dst: dst, Port: spec.port,
-			Expected: spec.expected, Note: spec.note, Category: spec.category,
-		})
+		label := ""
+		for _, node := range gen.Package.Template.Nodes {
+			if node.ID == expectation.From {
+				label = node.Name
+			}
+		}
+		if label == "" {
+			return nil, fmt.Errorf("source %s has no display name", expectation.From)
+		}
+		dst, err := nodeIP(gen, expectation.To, expectation.Network)
+		if err != nil {
+			return nil, err
+		}
+		expected := expectation.HardenedVerdict
+		if againstPlan {
+			expected = expectation.PlanVerdict
+		}
+		note := fmt.Sprintf("%s (topology source %s on %s)", expectation.Note, route.Tuple.SrcIP, route.SourceNetwork)
+		probes = append(probes, validationProbe{Src: from.Container, SrcLabel: label, Dst: dst, Port: strconv.Itoa(expectation.Port), Expected: string(expected), Note: note, Category: expectation.Category,
+			ID: expectation.ID, PlanExpected: string(expectation.PlanVerdict), HardenedExpected: string(expectation.HardenedVerdict)})
 	}
 	return probes, nil
 }

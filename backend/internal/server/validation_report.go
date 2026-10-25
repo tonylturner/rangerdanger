@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -26,13 +25,16 @@ import (
 // validationProbe is one row of the segmentation validation matrix,
 // resolved against the range (packageRecipe.resolveValidation).
 type validationProbe struct {
-	Src      string // container name
-	SrcLabel string // friendly source name for the report
-	Dst      string
-	Port     string
-	Expected string // "allow" | "deny"
-	Note     string
-	Category string // "authorized" | "unauthorized"
+	Src              string // container name
+	SrcLabel         string // friendly source name for the report
+	Dst              string
+	Port             string
+	Expected         string // "allow" | "deny"
+	Note             string
+	Category         string // "authorized" | "unauthorized"
+	ID               string
+	PlanExpected     string
+	HardenedExpected string
 }
 
 type validationRow struct {
@@ -91,7 +93,7 @@ const validationPcapDurationSec = 8
 // handleValidationReport runs the probe matrix against the active policy,
 // captures PCAP, and returns the markdown report + a structured summary.
 func (s *Server) handleValidationReport(c *gin.Context) {
-	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return r.validation != nil })
+	recipe, ok := supportedRecipe(c, func(r *packageRecipe) bool { return len(r.validationCapture.nodes) > 0 })
 	if !ok {
 		return
 	}
@@ -102,7 +104,18 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	gen := rangeOf(c)
-	matrix, err := recipe.resolveValidation(gen)
+	s.activeConfigMu.RLock()
+	active, source := s.activeConfig, s.policySource
+	policyAt, wantHash := s.policyChangedAt, s.lastAppliedHash
+	provenance := s.planProvenance
+	s.activeConfigMu.RUnlock()
+
+	expectations, err := s.judgingExpectations(gen)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	matrix, err := resolveProof(gen, expectations, "", false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -117,11 +130,6 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	s.activeConfigMu.RLock()
-	active, source := s.activeConfig, s.policySource
-	policyAt, wantHash := s.policyChangedAt, s.lastAppliedHash
-	s.activeConfigMu.RUnlock()
 
 	reportStart := time.Now().UTC()
 	fullHash, hashErr := gen.Containd().GetFirewallHash(ctx)
@@ -145,36 +153,9 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	// Run the probe matrix concurrently (independent containers; the PCAP
 	// is supporting evidence). The bounded EU matrix may outlast the short
 	// capture window; PCAP completeness is not part of its verdict.
-	rows := make([]validationRow, len(matrix))
-	if recipe.report.strictProbes {
-		rows = runEUProbeMatrix(ctx, matrix, func(ctx context.Context, p validationProbe) validationRow {
-			return s.strictTCPProbe(ctx, cli, p)
-		})
-	} else {
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, 8) // cap concurrent docker execs to limit contention
-		for i, p := range matrix {
-			wg.Add(1)
-			go func(i int, p validationProbe) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				verdict, ms := s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
-				// Authorized flows can momentarily lose a race to container /
-				// routing warmup; retry once so a transient hiccup doesn't read
-				// as a policy failure. Never retry unauthorized - a real leak
-				// must surface, not be masked by a lucky second attempt.
-				if p.Category == "authorized" && verdict != p.Expected {
-					verdict, ms = s.probeTCP(ctx, cli, p.Src, p.Dst, p.Port, validationProbeTimeoutSec)
-				}
-				rows[i] = validationRow{
-					validationProbe: p, Actual: verdict, DurationMs: ms,
-					Pass: verdict == p.Expected,
-				}
-			}(i, p)
-		}
-		wg.Wait()
-	}
+	rows := runEUProbeMatrix(ctx, matrix, func(ctx context.Context, p validationProbe) validationRow {
+		return s.strictTCPProbe(ctx, cli, p)
+	})
 
 	tally := tallyValidation(rows)
 
@@ -193,27 +174,33 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 	stable := hashErr == nil && finalHashErr == nil && fullHash != "" && fullHash == finalHash &&
 		fullHash == wantHash && s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt)
 	s.activeConfigMu.RUnlock()
-	if recipe.report.strictProbes && !stable {
+	if !stable || !pcapOK {
 		tally.pass = false
 	}
 
+	planProof, acceptance := judgeValidation(rows, source == "plan" && provenance != nil, fullHash, stable, pcapOK)
+	if provenance != nil && provenance.PolicyHash != fullHash {
+		planProof.Pass = false
+		planProof.HashStable = false
+	}
 	authPass, authTotal := tally.authPass, tally.authTotal
 	unauthPass, unauthTotal := tally.unauthPass, tally.unauthTotal
-	skipped, result := tally.skipped, tally.pass
+	skipped, result := tally.skipped, acceptance.Pass
 	md := recipe.renderValidationMarkdown(active, source, hash, pcapHostPath, pcapOK, pcapSummary,
 		rows, authPass, authTotal, unauthPass, unauthTotal, skipped, result)
 
-	if recipe.report.strictProbes {
-		md += fmt.Sprintf("\nPolicy proof window: %s — %s; full firewall hash `%s`; stable: %t.\n", reportStart.Format(time.RFC3339Nano), reportEnd.Format(time.RFC3339Nano), fullHash, stable)
-		s.activeConfigMu.Lock()
-		if s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt) {
-			s.lastValidationReport = &euRetainedReport{Hash: fullHash, Markdown: md, RangeStart: gen.StartedAt, PolicyAt: policyAt, StartedAt: reportStart, FinishedAt: reportEnd, Pass: result && stable}
-		}
-		s.activeConfigMu.Unlock()
+	md += fmt.Sprintf("\nPolicy proof window: %s — %s; full firewall hash `%s`; stable: %t.\n", reportStart.Format(time.RFC3339Nano), reportEnd.Format(time.RFC3339Nano), fullHash, stable)
+	md += fmt.Sprintf("\nPlan proof: applicable %t; PASS %t. Hardened acceptance: PASS %t; prevention gaps: %v.\n", planProof.Applicable, planProof.Pass, acceptance.Pass, acceptance.PreventionGaps)
+	s.activeConfigMu.Lock()
+	if s.lastAppliedHash == wantHash && s.policyChangedAt.Equal(policyAt) {
+		s.lastValidationReport = &retainedValidationReport{Hash: fullHash, Markdown: md, RangeStart: gen.StartedAt, PolicyAt: policyAt, StartedAt: reportStart, FinishedAt: reportEnd, PlanProof: planProof, Acceptance: acceptance}
 	}
+	s.activeConfigMu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{
-		"markdown": md,
+		"markdown":   md,
+		"planProof":  planProof,
+		"acceptance": acceptance,
 		"summary": gin.H{
 			"authorized_pass":    authPass,
 			"authorized_total":   authTotal,
@@ -230,38 +217,6 @@ func (s *Server) handleValidationReport(c *gin.Context) {
 		"policy_source": source,
 		"pcap_path":     pcapHostPath,
 	})
-}
-
-// probeTCP opens a TCP connection from src to dst:port and classifies the
-// result as allow (reached) / deny (dropped) by exit code + duration -
-// same heuristic as scripts/firewall-smoke.sh and validation-report.sh.
-func (s *Server) probeTCP(ctx context.Context, cli *client.Client, src, dst, port string, timeoutSec int) (string, int) {
-	cmd := []string{"sh", "-c", fmt.Sprintf(
-		`if command -v bash >/dev/null 2>&1; then timeout %d bash -c "exec 3<>/dev/tcp/%s/%s"; else timeout %d nc -w %d %s %s </dev/null; fi`,
-		timeoutSec, dst, port, timeoutSec, timeoutSec, dst, port)}
-	start := time.Now()
-	_, rc, err := s.execCapture(ctx, cli, src, cmd)
-	ms := int(time.Since(start).Milliseconds())
-	if err != nil {
-		return "skipped", ms
-	}
-	return classifyReportProbe(rc, ms), ms
-}
-
-func classifyReportProbe(rc, ms int) string {
-	switch {
-	case rc == 0:
-		return "allow"
-	case rc == 124 || rc == 143:
-		return "deny"
-	case rc == 1:
-		if ms < 500 {
-			return "allow"
-		}
-		return "deny"
-	default:
-		return "deny"
-	}
 }
 
 // analyzePcapSources reads the capture on the firewall and aggregates the
@@ -369,7 +324,7 @@ func (recipe *packageRecipe) renderValidationMarkdown(active, source, hash, pcap
 				mark = "✗"
 			}
 			note := r.Note
-			if recipe.report.strictProbes && r.ProbeError != "" {
+			if r.ProbeError != "" {
 				note += " — Untested: " + strings.NewReplacer("\n", " ", "|", "/").Replace(r.ProbeError)
 			}
 			fmt.Fprintf(&b, "| %d | %s %s | `%s` | %s | %s | %s | %dms | %s |\n",

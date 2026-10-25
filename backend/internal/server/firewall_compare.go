@@ -191,6 +191,8 @@ func readPolicyJSONWithRetry(path string) ([]byte, error) {
 // causes: nft apply hit "operation not permitted", interface reconfigure
 // partial, pcap config invalid. Empty warnings + nil error = clean apply.
 func (s *Server) applyFirewallConfigInternal(ctx context.Context, gen *lifecycle.Generation, configName string) ([]string, error) {
+	s.policyApplyMu.Lock()
+	defer s.policyApplyMu.Unlock()
 	configPath, err := s.policyPath(gen.Package, configName)
 	if err != nil {
 		return nil, err

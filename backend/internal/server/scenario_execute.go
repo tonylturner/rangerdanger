@@ -138,26 +138,15 @@ func (s *Server) handleExecuteStep(c *gin.Context) {
 	})
 }
 
-// executeRTACCommand sends a command to a US field device via RTAC.
-// When the improved firewall config is active, it enforces source authorization:
-// only the RTAC and operator sources can reach field devices.
+// executeRTACCommand evaluates the actual running L4 policy before simulating
+// a source's command through the RTAC transport. A missing identity is untested.
 func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generation, _ *packageRecipe, device, command, source string, value *float64) StepActionResult {
-	// Check if the source is authorized under the current firewall policy.
-	// In "improved" mode, only RTAC (10.30.30.20) and "operator" can send
-	// commands to field devices — all other sources are blocked by containd.
-	s.activeConfigMu.RLock()
-	activeConfig := s.activeConfig
-	s.activeConfigMu.RUnlock()
-
-	if activeConfig == "improved" && !isAuthorizedSource(source) {
-		zone := sourceZoneLabel(source)
-		return StepActionResult{
-			Action:  fmt.Sprintf("%s/%s from %s", device, command, source),
-			Success: false,
-			Blocked: true,
-			Detail:  fmt.Sprintf("BLOCKED by containd — %s not authorized to reach field devices", source),
-			Impact:  fmt.Sprintf("containd NGFW blocked %s→%s traffic [%s zone denied]", source, device, zone),
-		}
+	verdict, err := s.commandVerdict(ctx, gen, device, command, source)
+	if err != nil {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Detail: "Cannot evaluate running policy: " + err.Error()}
+	}
+	if verdict == labs.VerdictDeny {
+		return StepActionResult{Action: fmt.Sprintf("%s/%s from %s", device, command, source), Blocked: true, Detail: "BLOCKED by running L4 policy for this source → device tuple"}
 	}
 
 	payload := map[string]any{
@@ -198,38 +187,6 @@ func (s *Server) executeRTACCommand(ctx context.Context, gen *lifecycle.Generati
 		Success: succeeded,
 		Detail:  detail,
 		Impact:  impact,
-	}
-}
-
-// isAuthorizedSource returns true if the source is allowed to command field
-// devices under the hardened ("improved") firewall policy.
-//
-// After the RTAC harden fix, all RTAC -> field traffic is routed through the
-// OT Ops firewall and the wire-visible source IP is 10.30.30.20. The RTAC's
-// field_net interface (10.40.40.10) still exists for realism but is no
-// longer used as an active source for any routed traffic.
-func isAuthorizedSource(source string) bool {
-	switch source {
-	case "operator", "rtac", "rtac-sim",
-		"10.30.30.20": // RTAC on ot_ops_net (the only routed source)
-		return true
-	}
-	return false
-}
-
-// sourceZoneLabel returns a human-readable zone label for a source IP.
-func sourceZoneLabel(source string) string {
-	switch {
-	case strings.HasPrefix(source, "10.10.10."):
-		return "enterprise"
-	case strings.HasPrefix(source, "10.20.20."):
-		return "vendor"
-	case strings.HasPrefix(source, "10.30.30."):
-		return "ot_ops"
-	case strings.HasPrefix(source, "10.40.40."):
-		return "field"
-	default:
-		return "unknown"
 	}
 }
 
@@ -346,16 +303,15 @@ func (s *Server) executeUSCheck(ctx context.Context, gen *lifecycle.Generation, 
 			}
 
 		case "firewall_config":
-			s.activeConfigMu.RLock()
-			actual := s.activeConfig
-			s.activeConfigMu.RUnlock()
 			expected, _ := expectedVal.(string)
-			// "improved" expectation also accepts "custom" (student's own policy from Exercise 3)
-			match := actual == expected || (expected == "improved" && actual == "custom")
-			if match {
-				results = append(results, StepActionResult{Action: "Firewall policy", Success: true, Detail: "Active config: " + actual})
+			if expected == "improved" {
+				judgment := s.usPolicyJudgment(ctx, gen)
+				results = append(results, StepActionResult{Action: judgment.Name, Success: judgment.Status == "pass", Detail: judgment.Detail})
 			} else {
-				results = append(results, StepActionResult{Action: "Firewall policy", Success: false, Detail: fmt.Sprintf("Expected %s but got %s", expected, actual)})
+				s.activeConfigMu.RLock()
+				actual := s.activeConfig
+				s.activeConfigMu.RUnlock()
+				results = append(results, StepActionResult{Action: "Firewall policy", Success: actual == expected, Detail: "Active config: " + actual})
 			}
 		}
 	}
