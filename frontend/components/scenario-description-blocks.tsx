@@ -715,13 +715,13 @@ export function DescriptionSegments({
                 ? (cmd: string, runId: string) => handleAutoRun(cmd, runId, step.description)
                 : null;
               return (
-                <div className="space-y-2">
+                <div className="stack-y-2">
                   {segments.map((seg, si) => {
                     if (seg.type === "prose") {
                       const trimmed = seg.value.replace(/^\n+|\n+$/g, "");
                       if (!trimmed) return null;
                       return (
-                        <div key={si} className="space-y-2">
+                        <div key={si} className="stack-y-2">
                           <MarkdownProse>{trimmed}</MarkdownProse>
                         </div>
                       );
@@ -833,7 +833,7 @@ export function DescriptionSegments({
                             seg.track === "guided"
                               ? "border-emerald-700/60"
                               : "border-sky-700/60"
-                          } space-y-2`}
+                          } stack-y-2`}
                         >
                           <div
                             className={`text-[10px] font-bold uppercase tracking-wider ${

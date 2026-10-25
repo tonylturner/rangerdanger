@@ -126,6 +126,29 @@
   --color-rose-950: #4c0519;
   --default-ring-width: 3px;
   --default-ring-color: rgb(59 130 246 / 0.5);
+  /* V3 used fixed line heights: smaller descendants must not shrink them. */
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+}
+
+/* Preserve the transparent v3 outline and its keyboard-focus offset. */
+@utility outline-hidden {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+/* Preserve v3 sibling margins for authored blocks and out-of-flow drawers. */
+@utility stack-y-* {
+  & > :not([hidden]) ~ :not([hidden]) {
+    margin-top: --spacing(--value(number));
+    margin-bottom: 0;
+  }
 }
 
 /*
@@ -155,6 +178,12 @@
   textarea::placeholder {
     color: var(--color-gray-400);
     opacity: 1;
+  }
+
+  /* V4's universal padding reset also clears the browser's table-cell inset. */
+  th,
+  td {
+    padding: 1px;
   }
 }
 

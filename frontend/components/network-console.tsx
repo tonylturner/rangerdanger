@@ -245,7 +245,7 @@ export function NetworkConsole() {
   }, [graphIsError, graphError]);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col space-y-4">
+    <div className="flex h-[calc(100vh-3rem)] flex-col stack-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {/* Rook - operator/control symbol. Sits next to the title
