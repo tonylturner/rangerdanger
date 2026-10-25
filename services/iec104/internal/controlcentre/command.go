@@ -101,13 +101,14 @@ func (c *Centre) phases(ctx context.Context, value int, deadline time.Time) (str
 	}
 	c.mu.Lock()
 	ok := c.tracker.selectCon == 1
+	cause := c.tracker.selectCause
 	if ok {
 		c.tracker.phase = "execute"
 		c.tracker.executed = c.stamp()
 	}
 	c.mu.Unlock()
 	if !ok {
-		return "rejected", "select rejected (negative confirmation)"
+		return "rejected", rejectionReason("select", cause)
 	}
 	if !c.sendCommand(value, false) {
 		return "unknown", "link lost before the execute was sent"
@@ -121,9 +122,10 @@ func (c *Centre) phases(ctx context.Context, value int, deadline time.Time) (str
 	}
 	c.mu.Lock()
 	ok = c.tracker.executeCon == 1
+	cause = c.tracker.executeCause
 	c.mu.Unlock()
 	if !ok {
-		return "rejected", "execute rejected (negative confirmation)"
+		return "rejected", rejectionReason("execute", cause)
 	}
 	w = c.wait(ctx, deadline, func(t *tracker) bool { return t.terminated })
 	if w == "lost" {
@@ -143,6 +145,23 @@ func (c *Centre) phases(ctx context.Context, value int, deadline time.Time) (str
 	}
 	return "completed", ""
 }
+
+func rejectionReason(phase string, cause iec.COT) string {
+	if cause == iec.ActivationCon {
+		return phase + " rejected (negative ACT-CON)"
+	}
+	name := map[iec.COT]string{
+		iec.UnknownType:  "unknown type",
+		iec.UnknownCause: "unknown cause",
+		iec.UnknownCA:    "unknown common address",
+		iec.UnknownIOA:   "unknown IOA",
+	}[cause]
+	if name == "" {
+		return fmt.Sprintf("%s rejected (COT %d)", phase, cause)
+	}
+	return fmt.Sprintf("%s rejected (%s, COT %d)", phase, name, cause)
+}
+
 func (c *Centre) command(ctx context.Context, index, value int, operation string) response {
 	c.mu.Lock()
 	cmd := c.pm.Commands[index]

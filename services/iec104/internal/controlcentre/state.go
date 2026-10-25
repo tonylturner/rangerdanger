@@ -63,6 +63,7 @@ type tracker struct {
 	phase                                     string
 	deadline                                  time.Time
 	selectCon, executeCon                     int
+	selectCause, executeCause                 iec.COT
 	selected, executed, con, term, feedbackAt string
 	terminated, negative, feedback            bool
 	feedbackValue                             any

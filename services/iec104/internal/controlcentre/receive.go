@@ -230,8 +230,10 @@ func (c *Centre) commandResponse(h iec.Header, ioa int, qualifier iec.CommandQua
 		}
 		if qualifier.Select() && t.phase == "select" && t.selectCon == 0 {
 			t.selectCon = con
+			t.selectCause = h.Cause
 		} else if !qualifier.Select() && t.phase == "execute" && t.executeCon == 0 {
 			t.executeCon = con
+			t.executeCause = h.Cause
 			t.con = c.stamp()
 		}
 	}

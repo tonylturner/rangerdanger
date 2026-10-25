@@ -25,7 +25,7 @@ func (s *transportStub) Close(context.Context) error   { return nil }
 func (s *transportStub) Done() <-chan struct{}         { return s.done }
 func TestCommandGoldens(t *testing.T) {
 	for _, tc := range []struct{ name, result, reason string }{
-		{"ok", "completed", ""}, {"select-negative", "rejected", "select rejected (negative confirmation)"}, {"execute-negative", "rejected", "execute rejected (negative confirmation)"}, {"term-negative", "failed", "negative ACT-TERM"}, {"missing-feedback", "unknown", "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM"},
+		{"ok", "completed", ""}, {"select-negative", "rejected", "select rejected (negative ACT-CON)"}, {"execute-negative", "rejected", "execute rejected (negative ACT-CON)"}, {"term-negative", "failed", "negative ACT-TERM"}, {"missing-feedback", "unknown", "no good matching COT 11 feedback for feeder-breaker-position before ACT-TERM"},
 		{"select-send-error", "unknown", "link lost before the select was sent"}, {"execute-send-error", "unknown", "link lost before the execute was sent"}, {"select-timeout", "unknown", "no select confirmation; execute not sent"}, {"execute-timeout", "unknown", "no execute confirmation within the command budget"}, {"term-timeout", "unknown", "no ACT-TERM within the command budget"}, {"select-lost", "unknown", "link lost before the execute was sent"}, {"execute-lost", "unknown", "link lost after the execute was sent"}, {"term-lost", "unknown", "link lost before ACT-TERM"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,8 +150,25 @@ func (t *immediateCommandTimer) Reset(at time.Time) bool {
 
 func TestMirroredUnknownIOARejectsCommandBeforeT1(t *testing.T) {
 	for _, phase := range []string{"select", "execute"} {
-		for _, negative := range []bool{false, true} {
-			name := fmt.Sprintf("%s/PN=%d", phase, map[bool]int{true: 1, false: 0}[negative])
+		cases := []struct {
+			cause    iec.COT
+			negative bool
+			reason   string
+		}{{iec.ActivationCon, true, phase + " rejected (negative ACT-CON)"}}
+		for _, unknown := range []struct {
+			cause iec.COT
+			name  string
+		}{{iec.UnknownType, "unknown type"}, {iec.UnknownCause, "unknown cause"}, {iec.UnknownCA, "unknown common address"}, {iec.UnknownIOA, "unknown IOA"}} {
+			for _, negative := range []bool{false, true} {
+				cases = append(cases, struct {
+					cause    iec.COT
+					negative bool
+					reason   string
+				}{unknown.cause, negative, fmt.Sprintf("%s rejected (%s, COT %d)", phase, unknown.name, unknown.cause)})
+			}
+		}
+		for _, tc := range cases {
+			name := fmt.Sprintf("%s/COT=%d/PN=%d", phase, tc.cause, map[bool]int{true: 1, false: 0}[tc.negative])
 			t.Run(name, func(t *testing.T) {
 				c, now := model(t)
 				clock := &immediateCommandClock{now: *now}
@@ -165,10 +182,11 @@ func TestMirroredUnknownIOARejectsCommandBeforeT1(t *testing.T) {
 					a := m.(iec.ASDU)
 					command := a.Objects[0].Element.(iec.DoubleCommand)
 					reply := a.Header
-					reply.Cause = iec.ActivationCon
 					if phase == "select" && command.Qualifier.Select() || phase == "execute" && !command.Qualifier.Select() {
-						reply.Cause = iec.UnknownIOA
-						reply.Negative = negative
+						reply.Cause = tc.cause
+						reply.Negative = tc.negative
+					} else {
+						reply.Cause = iec.ActivationCon
 					}
 					c.mu.Lock()
 					c.commandResponse(reply, int(a.Objects[0].Address), command.Qualifier)
@@ -177,8 +195,8 @@ func TestMirroredUnknownIOARejectsCommandBeforeT1(t *testing.T) {
 				}}
 
 				result := c.command(context.Background(), 0, 2, "close")
-				if result.status != 200 || !strings.Contains(string(result.body), `"result":"rejected"`) {
-					t.Fatalf("COT 47 did not reject the command: %s", result.body)
+				if result.status != 200 || !strings.Contains(string(result.body), `"result":"rejected"`) || !strings.Contains(string(result.body), `"reason":"`+tc.reason+`"`) {
+					t.Fatalf("COT %d reason mismatch: %s", tc.cause, result.body)
 				}
 				elapsed := clock.Now().Sub(*now)
 				if elapsed >= time.Duration(c.pm.Timers.T1)*time.Second {
