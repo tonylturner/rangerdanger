@@ -12,10 +12,11 @@ class CILintTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         job = workflow["jobs"]["lint"]
         self.assertFalse(job.get("continue-on-error", False))
+        self.assertEqual(job["env"]["SHELLCHECK_OPTS"], "-x")
         commands = "\n".join(step.get("run", "") for step in job["steps"])
         self.assertIn("go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12", commands)
         self.assertIn("apt-get install -y shellcheck", commands)
         self.assertIn("actionlint .github/workflows/*.yml", commands)
-        self.assertIn("git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning", commands)
+        self.assertIn("git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning", commands)
         for step in job["steps"]:
             self.assertFalse(step.get("continue-on-error", False))

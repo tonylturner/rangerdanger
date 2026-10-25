@@ -14,6 +14,9 @@ jobs:
     name: Workflow and shell lint
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # Also applies to ShellCheck subprocesses launched by actionlint.
+      SHELLCHECK_OPTS: -x
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -28,7 +31,7 @@ jobs:
       - name: Lint workflows (including embedded shell)
         run: actionlint .github/workflows/*.yml
       - name: Lint tracked shell scripts
-        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -S warning
+        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck -x -S warning
 
   eu-gates:
     name: EU gates (offline)
