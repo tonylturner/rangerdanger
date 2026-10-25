@@ -104,7 +104,7 @@ function ExerciseCard({
 
   return (
     <article className={`rounded-lg border p-4 ${isBonus ? "border-purple-800/30 bg-purple-950/10" : "border-slate-800 bg-slate-900/70"}`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div className="min-w-0 flex items-start gap-3">
           <div className="mt-0.5 flex h-8 w-8 shrink-0 flex-col items-center justify-center rounded" style={{
             background: pct === 100
@@ -129,7 +129,7 @@ function ExerciseCard({
             </span>
           </div>
 
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm font-bold text-white">
               Exercise {exercise.order}: {exercise.name}
             </h2>

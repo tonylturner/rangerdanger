@@ -269,11 +269,11 @@ export function LoadSimulator() {
       style={{ borderTop: "2px dashed #334155" }}
     >
       {/* Collapsed row - always visible */}
-      <div className="flex items-center gap-3 px-4" style={{ minHeight: 50 }}>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-2" style={{ minHeight: 50 }}>
         <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-[#c6f24e]">
           Load Simulator
         </span>
-        <span className="truncate font-mono text-xs text-slate-400">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-400">
           {stateName} &middot; {statusKw} kW &middot; PF {statusPf}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -393,7 +393,7 @@ function SliderRow({
     onCommit();
   };
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
       <span className="shrink-0 text-[11px] tracking-[0.04em] text-slate-400" style={{ width: 110 }}>{label}</span>
       <input
         type="range" min={min} max={max} step={1} value={Math.round(value)}
@@ -404,9 +404,9 @@ function SliderRow({
         onKeyUp={(e) => {
           if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) commit();
         }}
-        className="flex-1" style={{ accentColor: LIME }}
+        className="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:flex-1" style={{ accentColor: LIME }}
       />
-      <span className="shrink-0 text-right font-mono text-xs font-bold text-slate-200" style={{ width: 90 }}>{readout}</span>
+      <span className="ml-auto shrink-0 text-right font-mono text-xs font-bold text-slate-200 sm:ml-0" style={{ width: 90 }}>{readout}</span>
     </div>
   );
 }

@@ -331,7 +331,7 @@ export function KnowledgeReader({ sections }: { sections: Section[] }) {
   return (
     <main className="flex h-[calc(100vh-0px)] flex-col overflow-hidden bg-slate-950">
       {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-950/80 px-6 py-4">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/80 px-6 py-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/rook-quarter-turn-wink-transparent-web.png"
@@ -620,7 +620,7 @@ export function KnowledgeReader({ sections }: { sections: Section[] }) {
                   <div
                     className={`${accentOf(view.section).headerWash} px-4 pb-5 pt-4`}
                   >
-                    <div className="mb-3 flex items-center gap-2">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full ${accentOf(view.section).chip} px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${accentOf(view.section).chipText}`}
                       >

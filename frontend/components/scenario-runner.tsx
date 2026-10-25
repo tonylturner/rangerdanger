@@ -349,15 +349,15 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-600">
             Lab {scenario.order}
           </p>
           <h2 className="text-lg font-bold text-white">{scenario.name}</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-2xl">{scenario.description}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {completedStepIds.size > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -457,7 +457,7 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
       )}
 
       {/* ── Exercise View ─────────────────────────────────────── */}
-      {!showSummary && <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {!showSummary && <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <StepNavigator
           scenario={scenario}
           completedStepIds={completedStepIds}
@@ -467,10 +467,10 @@ export function ScenarioRunner({ scenario, onExit }: RunnerProps) {
         />
 
         {/* Right: Step detail + controls */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Step instructions */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-white">
                 Step {currentStep + 1}: {step?.title}
               </h3>

@@ -64,11 +64,11 @@ export function CommandBlock({ cmd, runId, runningId, onRun, cli, copyOnly }: Co
   const runnable = cli || copyOnly ? null : onRun;
   return (
     <div className="group relative rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-[11px] text-amber-400">
-      <span className="pr-28 whitespace-pre-wrap">
+      <span className="block whitespace-pre-wrap break-all pb-7 sm:pb-0 sm:pr-28">
         {cli && <span className="select-none text-sky-700">containd# </span>}
         {cmd}
       </span>
-      <div className="absolute right-2 top-1.5 flex items-center gap-1.5">
+      <div className="absolute bottom-1.5 right-2 flex items-center gap-1.5 sm:bottom-auto sm:top-1.5">
         {cli && (
           <span className="select-none rounded border border-sky-800/60 bg-sky-950/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-sky-400">
             containd cli

@@ -314,7 +314,7 @@ export function LeftDrawerMenu({
           the strip. Same dimensions and chrome regardless of which
           drawer is active. */}
       {activeMeta && (
-        <aside className="absolute left-9 top-0 z-30 flex h-full w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur">
+        <aside className="absolute left-9 top-0 z-30 flex h-full w-[calc(100%_-_2.25rem)] max-w-[420px] flex-col border-r border-slate-700 bg-slate-950/95 shadow-2xl backdrop-blur">
           <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <activeMeta.Icon className={`h-4 w-4 ${activeMeta.iconColor}`} />
