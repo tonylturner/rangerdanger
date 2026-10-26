@@ -64,7 +64,7 @@ eu_gate_G5() {
     fail "G5 cannot test improved-policy denial"
     return
   fi
-  event_started=$(eu_utc +%s%N) || event_started=""
+  event_started=$(eu_epoch_ns) || event_started=""
   if [ -z "$event_started" ]; then
     fail "G5 cannot establish a precise event timestamp cursor"
   else
@@ -145,7 +145,7 @@ eu_g6_cut_monitor_session() {
     fail "G6 established monitor received no new ASDUs during the 10s observation"
   fi
   kill_started_ms=$(eu_now_ms) || kill_started_ms=""
-  kill_epoch=$(eu_utc +%s%N) || kill_epoch=""
+  kill_epoch=$(eu_epoch_ns) || kill_epoch=""
   if ! [[ "$kill_started_ms" =~ ^[0-9]+$ ]] || [ -z "$kill_epoch" ]; then
     fail "G6 could not timestamp conntrack kill"
     return 1

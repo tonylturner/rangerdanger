@@ -550,7 +550,9 @@ eu_command() {
 # truth/policy, not container lifecycle. Docker exec bypasses those network cuts.
 # One exec per boundary; no cached offset or host fallback. Packet windows use
 # epoch seconds; G5/G6 use integer epoch nanoseconds; otherwise use parsed UTC.
-eu_utc() { docker exec "$FW" date -u "${1:-+%Y-%m-%dT%H:%M:%S.%NZ}"; }
+eu_utc() { docker exec "$FW" date -u +%Y-%m-%dT%H:%M:%S.%NZ; }
+eu_epoch_seconds() { docker exec "$FW" date -u +%s.%N; }
+eu_epoch_ns() { docker exec "$FW" date -u +%s%N; }
 eu_wait_valid_device() {
   local node="$1" start now
   start=$(eu_now_ms)

@@ -28,14 +28,16 @@ t_expect_eq "$T_STATUS" 0 "range clock read succeeds"
 t_expect_eq "$T_OUT" 2026-10-15T12:00:00.123456789Z "UTC preserves GNU date nanoseconds"
 t_expect_eq "$(cat "$CLOCK_LOG")" "exec $FW date -u +%Y-%m-%dT%H:%M:%S.%NZ" \
   "one Docker exec reads firewall time, independent of range networking"
-t_run eu_utc +%s.%N
+t_run eu_epoch_seconds
 t_expect_eq "$T_OUT" 1760529600.123456789 "packet windows use range epoch seconds"
-t_run eu_utc +%s%N
+t_run eu_epoch_ns
 t_expect_eq "$T_OUT" 1760529600123456789 "event cutoffs retain integer nanoseconds"
 CLOCK_RC=17
-t_run eu_utc
-t_expect_eq "$T_STATUS" 17 "clock failure propagates without host fallback"
-t_expect_eq "$T_OUT" "" "failed clock never manufactures a host boundary"
+for clock in eu_utc eu_epoch_seconds eu_epoch_ns; do
+  t_run "$clock"
+  t_expect_eq "$T_STATUS" 17 "$clock failure propagates without host fallback"
+  t_expect_eq "$T_OUT" "" "$clock never manufactures a host boundary"
+done
 
 # A clock failure cannot execute a command or validate it with an empty window.
 eu_wait_valid_device() { :; }

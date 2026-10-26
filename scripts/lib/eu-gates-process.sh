@@ -320,14 +320,14 @@ eu_gate_G17() {
     docker logs "$PLC_SCAN_HELPER" >"$TMP_DIR/G17-scan.log" 2>&1
     fail "G17 scan freeze unavailable: $(cat "$TMP_DIR/G17-scan.log")"; return 1
   fi
-  frozen_at=$(eu_utc +%s.%N) || return
+  frozen_at=$(eu_epoch_seconds) || return
   if eu_wait_for_operator '.link.state == "started"
     and ([.points[] | select(.id | startswith("plc-1-"))] | length == 5
       and all(.[]; .quality.iv and .stale_reason == "heartbeat"))
     and all(.points[] | select(.id | startswith("plc-1-") | not); good)' 5 "G17 responsive PLC heartbeat staleness"; then
     pass "G17 all five PLC points IV heartbeat while every healthy peer remains GOOD"
   fi
-  until=$(eu_utc +%s.%N) || return
+  until=$(eu_epoch_seconds) || return
   eu_window_finish G17 || return
   eu_stop_plc_scan || return
   if tshark -r "$TMP_DIR/G17.pcap" -Y 'ip.src == 10.30.30.30 && tcp.srcport == 502 && modbus.func_code == 3 && modbus.byte_cnt == 12' \

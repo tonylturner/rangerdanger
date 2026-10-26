@@ -12,13 +12,10 @@ T_REPO="$(cd "$T_DIR/../../.." && pwd)"
 . "$T_REPO/scripts/eu-iec104-smoke.sh"
 # Evidence time is deterministic/offline, like the API stubs. Clock-specific
 # tests reload eu-range.sh and stub docker to exercise the real implementation.
-eu_utc() {
-  case "${1:-}" in
-    +%s.%N) printf '1760529600.500000000\n' ;;
-    +%s%N) printf '1760529600500000000\n' ;;
-    *) printf '2026-10-15T12:00:00.500000000Z\n' ;;
-  esac
-}
+eu_utc() { printf '2026-10-15T12:00:00.500000000Z\n'; }
+eu_epoch_seconds() { printf '1760529600.500000000\n'; }
+eu_epoch_ns() { printf '1760529600500000000\n'; }
+
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eu-gate-test.XXXXXX") || exit 1
 T_CHECKS=0
 T_ERRORS=0
