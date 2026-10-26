@@ -144,16 +144,25 @@ note "gate 1: L4 firewall.rule.hit event flow"
 
 apply_policy improved || exit 1
 
+# Use the range kernel clock, just like eu_epoch_ns in lib/eu-range.sh.
+# That library also initializes EU-only point metadata, so do not source it
+# in this US gate. Never substitute the host clock (Docker Desktop can drift).
+probe_boundary=$(docker exec rangerdanger-firewall date -u +%s%N) || {
+  err "cannot capture range-clock event boundary"; exit 1;
+}
+if ! [[ "$probe_boundary" =~ ^[0-9]{19}$ ]]; then
+  err "invalid range-clock event boundary: $probe_boundary"; exit 1
+fi
+
 # Kali probe — port 502 to a field device should hit deny-enterprise-to-field
 # (an L4 log+drop rule, not an ICS-eligible one). nc -w 3 bounds it,
 # because the SYN drops and nc would otherwise wait forever.
 docker exec rangerdanger-kali sh -c "nc -nv -w 3 10.40.40.20 502 < /dev/null" >/dev/null 2>&1 || true
 sleep "$PROBE_WAIT"
 
-# Query the engine's full event store directly (not the substation
-# endpoint, which limits to 50 most recent and gets drowned out by RTAC's
-# continuous allow-traffic). limit=500 gives plenty of room for kali
-# drops to appear (~6 events/s under improved).
+# Query the engine directly. Both listings prioritize retained DENYs, not
+# globally newest events; no age expiry means an old probe can still appear.
+# The timestamp boundary below prevents that historical evidence passing.
 engine_events() {
   docker exec rangerdanger-firewall sh -c \
     "curl -s 'http://127.0.0.1:8081/internal/events?limit=500'" 2>/dev/null
@@ -161,16 +170,27 @@ engine_events() {
 
 count_kali_denies() {
   engine_events | python3 -c '
-import json, sys
+import calendar, datetime, json, re, sys
+def epoch_ns(value):
+    match = re.fullmatch(r"(.*T\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)", value or "")
+    if not match:
+        raise ValueError("event timestamp is not RFC3339Nano")
+    parsed = datetime.datetime.fromisoformat(match[1] + match[3].replace("Z", "+00:00"))
+    seconds = calendar.timegm(parsed.astimezone(datetime.timezone.utc).utctimetuple())
+    return seconds * 1_000_000_000 + int((match[2] or "").ljust(9, "0"))
+boundary = int(sys.argv[1])
 events = json.load(sys.stdin) or []
 denies = [e for e in events
           if e.get("kind") == "firewall.rule.hit"
           and e.get("attributes",{}).get("action") == "DENY"
-          and e.get("srcIp","").startswith("10.10.10.")
-          and e.get("dstIp","").startswith("10.40.40.")
-          and e.get("dstPort") == 502]
+          and e.get("attributes",{}).get("ruleId") == "deny-enterprise-to-field"
+          and e.get("srcIp") == "10.10.10.50"
+          and e.get("dstIp") == "10.40.40.20"
+          and e.get("dstPort") == 502
+          and e.get("transport") == "tcp"
+          and epoch_ns(e.get("timestamp")) > boundary]
 print(len(denies))
-' 2>/dev/null || echo 0
+' "$probe_boundary"
 }
 
 # Poll for the DENY event. The nflog consumer + engine event store + REST
@@ -186,7 +206,9 @@ elapsed=0
 # rechecking, so an event that surfaced during the last second of the
 # advertised budget was still missed (raised in review on #72).
 while [ "$elapsed" -le "$EVENT_POLL_BUDGET" ]; do
-  deny_count=$(count_kali_denies)
+  deny_count=$(count_kali_denies) || {
+    err "cannot read or parse engine events"; exit 1;
+  }
   if [ "$deny_count" -ge 1 ]; then
     break
   fi
@@ -227,7 +249,7 @@ fi
 
 # Also verify the backend's substation surface returns SOME events at all
 # (catches a broken backend Event JSON schema mapping; the kali DENY
-# specifically may not be in the 50-most-recent window if RTAC is busy).
+# specifically may not be in that retained-evidence page).
 sub_total=$(curl -fsS "$API/api/substation/network-events" 2>/dev/null \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len((d or {}).get("events") or []))' \
   2>/dev/null || echo 0)

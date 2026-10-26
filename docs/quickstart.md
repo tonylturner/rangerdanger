@@ -218,12 +218,38 @@ These tagged examples apply once v0.2.0 is published. On this branch use
 v0.2.0 rebuilds all 20 first-party images (the tag carries `[rebuild-all]`);
 this is not a repository-only hotfix.
 
+**v0.2.0 requires containd 0.1.33 or later** for online, offline and source
+installs. Check the actual containd build, not just the mutable `latest` tag.
+RangerDanger owns its client fixes for the 0.1.33 contract; older containd
+builds are not a compatibility option.
+
 Save captures, reports, notes and desktop work, then back up `.env`, `data/`,
 `backend/data/` and local source edits. This is a workshop reset, not a
 state-preserving mid-exercise update. The range restart removes range anonymous
 volumes; platform volumes are kept (platform teardown never uses `-v`).
 Browser progress from the single-package
 release is not migrated into package-scoped progress.
+
+### Firewall storage backup and rollback
+
+Before the first containd 0.1.33 start, stop the lab using its normal
+teardown procedure and back up the complete firewall `/data` while it is
+quiescent. Relative to `RANGERDANGER_ROOT`, this is `data/firewall/` for US
+(also the old single-project install), and
+`data/eu-iec104-substation/firewall/` for EU. Preserve both if both packages
+have been installed. Keep every file, including databases, journals, users
+and captures, together with the old repo, `.env` and exact firewall image.
+A config export or a copy of `config.db` alone is not a full backup.
+
+The stored schema migrates one-way to **0.1.7**, which containd 0.1.32 cannot
+read. For binary/schema rollback, stop the lab, replace the migrated
+directories with their complete pre-upgrade backups (do not merge database
+files), restore the matching older release and image, then restart and
+verify operations. **An older tag alone is not enough.** containd 0.1.32
+requires the older RangerDanger release too; v0.2.0 requires 0.1.33 or later.
+A policy import stages candidate configuration, not a binary/schema rollback.
+
+### Installing the upgrade
 
 From a clean macOS/Linux checkout:
 
@@ -370,7 +396,10 @@ admin on next boot.
 The first source build (`./setup.sh --from-source`) pulls + compiles
 a lot. Subsequent builds reuse the layer cache. To force a clean re-pull
 of just the firewall image when containd publishes a security fix, pull
-it and restart the range on it:
+it and restart the range on it (release mode only; source mode must rebuild
+from its containd source context). Confirm the image meets the 0.1.33 minimum
+and, before its first start, follow the [firewall backup procedure](#firewall-storage-backup-and-rollback)
+above. A pull/restart is not a rollback procedure:
 
 ```bash
 docker pull ghcr.io/tonylturner/containd:latest

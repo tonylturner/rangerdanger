@@ -214,6 +214,11 @@ Use [`stage-ssd-delta.sh`](#delta-staging) below.
 
 ### Pattern 3: containd update
 
+RangerDanger v0.2.0 requires containd 0.1.33 or later, including offline
+bundles. RangerDanger owns its client fixes for that contract; using an older
+containd image is not a compatibility path. Verify the staged build as well
+as its digest.
+
 containd intentionally floats on its own mutable `latest` tag; its release
 version is independent of RangerDanger's. The delta helper does not record
 the digest included by a previous full stage, so it cannot detect whether
@@ -231,6 +236,13 @@ After staging, compare it with
 `docker image inspect ghcr.io/tonylturner/containd:latest --format '{{json .RepoDigests}}'`.
 If the approved digest is not present locally, do not distribute the delta;
 the helper does not pin containd's mutable tag to a prior-stage digest.
+
+Before the first 0.1.33 start on each installed machine, stop the lab and
+back up the complete firewall `/data` while quiescent. In the repo root
+(`RANGERDANGER_ROOT`), preserve `data/firewall/` for US and
+`data/eu-iec104-substation/firewall/` for EU, including both if installed.
+Keep all databases, journals, users and captures, not just a config export.
+The stored schema migrates one-way to 0.1.7, which 0.1.32 cannot read.
 
 ## Delta staging
 
@@ -361,6 +373,15 @@ or second bundle. Docker images are not in the repo snapshot, so keep the
 snapshot and old image tags until the rollback window closes. Images behind
 mutable tags overwritten by the delta are parked as `:before-<new version>`;
 deleting those parked tags forfeits rollback for those images.
+
+The complete repo backup must include both package firewall directories
+listed above. After the containd schema 0.1.7 migration, binary rollback
+requires that matching pre-upgrade data **and** the old image; an older tag
+alone is not enough. Stop the lab and replace the migrated directories,
+never merge old database files into migrated storage. Restore the older
+RangerDanger release too if returning to containd 0.1.32, then restart and
+verify operations. Importing a prior policy stages configuration and does
+not undo the binary/schema upgrade.
 
 ## Recovery scenarios
 
