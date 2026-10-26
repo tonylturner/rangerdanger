@@ -58,10 +58,8 @@ func TestEUStrictTCPClassification(t *testing.T) {
 	}
 }
 
-func TestEUStrictTCPCommand(t *testing.T) {
-	// Run the actual command text with isolated tools. The timeout stub checks
-	// the single budget and simulates both userlands' timeout exit statuses.
-	// The probe stub records arguments so nc cannot regain an independent -w.
+func TestEUStrictTCPCommandBash(t *testing.T) {
+	// Isolated tools exercise the actual script and both timeout userlands.
 	const timeoutTool = `#!/bin/sh
 [ "$1" = 3 ] || exit 2
 shift
@@ -73,76 +71,146 @@ printf '%s\n' "$@"
 printf '%s' "$PROBE_STDERR" >&2
 exit "$PROBE_RC"
 `
-	for _, bash := range []bool{true, false} {
-		t.Run(fmt.Sprintf("bash=%t", bash), func(t *testing.T) {
-			for _, tc := range []struct {
-				name, timeoutRC, stderr, want string
-				rc                            int
-				missingTimeout                bool
-			}{
-				{name: "connected", want: "allow"},
-				{name: "refused", rc: 1, stderr: "Connection refused", want: "allow"},
-				{name: "GNU timeout", timeoutRC: "124", want: "deny"},
-				{name: "BusyBox timeout", timeoutRC: "143", want: "deny"},
-				{name: "silent exit one", rc: 1, want: "skipped"},
-				{name: "bad arguments", rc: 2, want: "skipped"},
-				{name: "not executable", rc: 126, want: "skipped"},
-				{name: "missing probe tool", rc: 127, want: "skipped"},
-				{name: "killed", timeoutRC: "137", want: "skipped"},
-				{name: "missing timeout", missingTimeout: true, want: "skipped"},
-			} {
-				t.Run(tc.name, func(t *testing.T) {
-					dir := t.TempDir()
-					writeTool := func(name, text string) {
-						t.Helper()
-						if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0700); err != nil {
-							t.Fatal(err)
-						}
-					}
-					if !tc.missingTimeout {
-						writeTool("timeout", timeoutTool)
-					}
-					tool := "busybox"
-					wantArgs := "nc\n10.255.255.1\n65000\n-e\n/bin/true\n"
-					if bash {
-						tool = "bash"
-						wantArgs = "-c\nexec 3<>/dev/tcp/$1/$2\nprobe\n10.255.255.1\n65000\n"
-					}
-					writeTool(tool, probeTool)
-					ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-					defer cancel()
-					cmd := exec.CommandContext(ctx, "/bin/sh", "-c", euTCPCommand, "probe", "10.255.255.1", "65000")
-					cmd.Env = []string{"PATH=" + dir, "PROBE_RC=" + strconv.Itoa(tc.rc), "PROBE_TIMEOUT_RC=" + tc.timeoutRC, "PROBE_STDERR=" + tc.stderr}
-					var stdout, stderr strings.Builder
-					cmd.Stdout, cmd.Stderr = &stdout, &stderr
-					err := cmd.Run()
-					rc := 0
-					if err != nil {
-						var exitErr *exec.ExitError
-						if !errors.As(err, &exitErr) {
-							t.Fatal(err)
-						}
-						rc = exitErr.ExitCode()
-					}
-					wantRC := tc.rc
-					switch {
-					case tc.missingTimeout:
-						wantRC = 127
-					case tc.timeoutRC == "124" || tc.timeoutRC == "143":
-						wantRC = 124
-					case tc.timeoutRC == "137":
-						wantRC = 137
-					}
-					got, detail := classifyStrictTCP(stdout.String(), stderr.String(), rc, nil)
-					if rc != wantRC || got != tc.want || (detail != "") != (got == "skipped") {
-						t.Fatalf("rc=%d want=%d classification=%s want=%s detail=%s", rc, wantRC, got, tc.want, detail)
-					}
-					if tc.timeoutRC == "" && !tc.missingTimeout && stdout.String() != wantArgs {
-						t.Fatalf("probe args=%q want=%q", stdout.String(), wantArgs)
-					}
-				})
+	for _, tc := range []struct {
+		name, timeoutRC, stderr, want string
+		rc                            int
+		missingTimeout                bool
+	}{
+		{name: "connected", want: "allow"},
+		{name: "refused", rc: 1, stderr: "Connection refused", want: "allow"},
+		{name: "GNU timeout", timeoutRC: "124", want: "deny"},
+		{name: "BusyBox timeout", timeoutRC: "143", want: "deny"},
+		{name: "silent exit one", rc: 1, want: "skipped"},
+		{name: "bad arguments", rc: 2, want: "skipped"},
+		{name: "not executable", rc: 126, want: "skipped"},
+		{name: "missing probe tool", rc: 127, want: "skipped"},
+		{name: "killed", timeoutRC: "137", want: "skipped"},
+		{name: "missing timeout", missingTimeout: true, want: "skipped"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if !tc.missingTimeout {
+				writeTCPProbeTool(t, dir, "timeout", timeoutTool)
+			}
+			writeTCPProbeTool(t, dir, "bash", probeTool)
+			stdout, stderr, rc := runTCPProbeCommand(t, dir, "PROBE_RC="+strconv.Itoa(tc.rc), "PROBE_TIMEOUT_RC="+tc.timeoutRC, "PROBE_STDERR="+tc.stderr)
+			wantRC := tc.rc
+			switch {
+			case tc.missingTimeout:
+				wantRC = 127
+			case tc.timeoutRC == "124" || tc.timeoutRC == "143":
+				wantRC = 124
+			case tc.timeoutRC == "137":
+				wantRC = 137
+			}
+			assertTCPProbeResult(t, stdout, stderr, rc, wantRC, tc.want)
+			wantArgs := "-c\nexec 3<>/dev/tcp/$1/$2\nprobe\n10.255.255.1\n65000\n"
+			if tc.timeoutRC == "" && !tc.missingTimeout && stdout != wantArgs {
+				t.Fatalf("probe args=%q want=%q", stdout, wantArgs)
 			}
 		})
+	}
+}
+
+func TestEUStrictTCPCommandBusyBox(t *testing.T) {
+	const probeTool = `#!/bin/sh
+printf '%s\n' "$@" > "$PROBE_ARGS"
+printf '%s' "$PROBE_STDOUT"
+printf '%s' "$PROBE_STDERR" >&2
+exit "$PROBE_RC"
+`
+	const header = "Scanning 10.255.255.1 ports 65000 to 65000\n Port\tProto\tState\tService\n"
+	for _, tc := range []struct {
+		name, stdout, stderr, want string
+		rc, wantRC                 int
+		missingTool                bool
+	}{
+		{name: "open", stdout: header + "65000\ttcp\topen\tunknown\n0 closed, 1 open, 0 timed out (or blocked) ports\n", want: "allow"},
+		{name: "closed", stdout: header + "65000\ttcp\tclosed\tunknown\n1 closed, 0 open, 0 timed out (or blocked) ports\n", wantRC: 1, want: "allow"},
+		{name: "blocked", stdout: header + "65000\ttcp\tblocked\tunknown\n0 closed, 0 open, 1 timed out (or blocked) ports\n", wantRC: 124, want: "deny"},
+		{name: "whitespace", stdout: " 65000  tcp  open  unknown", want: "allow"},
+		{name: "empty output", wantRC: 2, want: "skipped"},
+		{name: "unknown state", stdout: "65000\ttcp\tunknown\tunknown", wantRC: 2, want: "skipped"},
+		{name: "wrong port", stdout: "65001\ttcp\topen\tunknown", wantRC: 2, want: "skipped"},
+		{name: "wrong protocol", stdout: "65000\tudp\topen\tunknown", wantRC: 2, want: "skipped"},
+		{name: "missing state", stdout: "65000 tcp", wantRC: 2, want: "skipped"},
+		{name: "duplicate rows", stdout: "65000 tcp open unknown\n65000 tcp blocked unknown", wantRC: 2, want: "skipped"},
+		{name: "malformed duplicate row", stdout: "65000 tcp\n65000 tcp open unknown", wantRC: 2, want: "skipped"},
+		{name: "silent exit one", rc: 1, wantRC: 2, want: "skipped"},
+		{name: "missing applet", rc: 1, stderr: "pscan: applet not found", wantRC: 2, want: "skipped"},
+		{name: "bad arguments", rc: 2, stderr: "pscan: invalid option", wantRC: 2, want: "skipped"},
+		{name: "mixed diagnostics", rc: 2, stdout: "scan failed\n", stderr: "pscan: invalid option", wantRC: 2, want: "skipped"},
+		{name: "failed scan with row", rc: 1, stdout: "65000 tcp open unknown", wantRC: 2, want: "skipped"},
+		{name: "failed scan with refusal", rc: 1, stderr: "Connection refused", wantRC: 2, want: "skipped"},
+		{name: "failed scan with timeout text", rc: 1, stderr: "timed out", wantRC: 2, want: "skipped"},
+		{name: "unexplained timeout exit", rc: 124, wantRC: 2, want: "skipped"},
+		{name: "terminated", rc: 143, wantRC: 2, want: "skipped"},
+		{name: "missing busybox", missingTool: true, wantRC: 2, want: "skipped"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if !tc.missingTool {
+				writeTCPProbeTool(t, dir, "busybox", probeTool)
+			}
+			argsPath := filepath.Join(dir, "args")
+			stdout, stderr, rc := runTCPProbeCommand(t, dir, "PROBE_RC="+strconv.Itoa(tc.rc), "PROBE_STDOUT="+tc.stdout, "PROBE_STDERR="+tc.stderr, "PROBE_ARGS="+argsPath)
+			assertTCPProbeResult(t, stdout, stderr, rc, tc.wantRC, tc.want)
+			if tc.want == "skipped" && (!strings.Contains(stderr, tc.stdout) || !strings.Contains(stderr, tc.stderr)) {
+				t.Fatalf("lost tool output: stdout=%q stderr=%q", stdout, stderr)
+			}
+			if tc.missingTool {
+				if !strings.Contains(stderr, "busybox") {
+					t.Fatalf("lost missing tool error: %q", stderr)
+				}
+				return
+			}
+			args, err := os.ReadFile(argsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantArgs := "pscan\n-cb\n-p\n65000\n-P\n65000\n-t\n3000\n10.255.255.1\n"
+			if string(args) != wantArgs {
+				t.Fatalf("probe args=%q want=%q", args, wantArgs)
+			}
+		})
+	}
+}
+
+func writeTCPProbeTool(t *testing.T, dir, name, text string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0700); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runTCPProbeCommand(t *testing.T, dir string, env ...string) (string, string, int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", euTCPCommand, "probe", "10.255.255.1", "65000")
+	cmd.Env = append([]string{"PATH=" + dir}, env...)
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	rc := 0
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Fatal(err)
+		}
+		rc = exitErr.ExitCode()
+	}
+	if ctx.Err() != nil {
+		t.Fatal(ctx.Err())
+	}
+	return stdout.String(), stderr.String(), rc
+}
+
+func assertTCPProbeResult(t *testing.T, stdout, stderr string, rc, wantRC int, want string) {
+	t.Helper()
+	got, detail := classifyStrictTCP(stdout, stderr, rc, nil)
+	if rc != wantRC || got != want || (detail != "") != (got == "skipped") {
+		t.Fatalf("rc=%d want=%d classification=%s want=%s detail=%s", rc, wantRC, got, want, detail)
 	}
 }
 
