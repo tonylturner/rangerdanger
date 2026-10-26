@@ -67,18 +67,23 @@ func TestConduitsEvidence(t *testing.T) {
 		failing []int
 	}{
 		{"complete proof", func(*conduitEvidence) {}, nil},
-		{"schema one", func(ev *conduitEvidence) { ev.state.Schema = 1 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"epoch mismatch", func(ev *conduitEvidence) { ev.state.CacheEpoch = "other" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"CC disconnected", func(ev *conduitEvidence) { ev.state.Link.State = "disconnected" }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"CC unavailable", func(ev *conduitEvidence) { ev.state = nil; ev.stateErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"journal unavailable", func(ev *conduitEvidence) { ev.journal = nil; ev.journalErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"start evicted", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"no GI", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[:1] }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"old connection GI", func(ev *conduitEvidence) { n := uint64(1); ev.journal.Entries[1].Detail.ConnectionSeq = &n }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"pre-generation connection", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:30") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"expired attempt", func(ev *conduitEvidence) { ev.collectedAt = at("12:12:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"future GI", func(ev *conduitEvidence) { ev.journal.Entries[1].At = at("12:06:00") }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
-		{"zero connection seq", func(ev *conduitEvidence) { ev.state.Link.ConnectionSeq = 0 }, []int{0, 1, 2, 3, 4, 5, 6, 7}},
+		{"no retired clock or logged-deny proof", func(ev *conduitEvidence) {
+			ev.clock = checkFail("RTU station-clock HTTP operation", "unavailable")
+			ev.events, ev.denies = nil, nil
+			ev.eventsErr = errors.New("unavailable")
+		}, nil},
+		{"schema one", func(ev *conduitEvidence) { ev.state.Schema = 1 }, []int{0, 1, 2, 3, 4, 5}},
+		{"epoch mismatch", func(ev *conduitEvidence) { ev.state.CacheEpoch = "other" }, []int{0, 1, 2, 3, 4, 5}},
+		{"CC disconnected", func(ev *conduitEvidence) { ev.state.Link.State = "disconnected" }, []int{0, 1, 2, 3, 4, 5}},
+		{"CC unavailable", func(ev *conduitEvidence) { ev.state = nil; ev.stateErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5}},
+		{"journal unavailable", func(ev *conduitEvidence) { ev.journal = nil; ev.journalErr = errors.New("unavailable") }, []int{0, 1, 2, 3, 4, 5}},
+		{"start evicted", func(ev *conduitEvidence) { ev.journal.OldestSeq = 2 }, []int{0, 1, 2, 3, 4, 5}},
+		{"no GI", func(ev *conduitEvidence) { ev.journal.Entries = ev.journal.Entries[:1] }, []int{0, 1, 2, 3, 4, 5}},
+		{"old connection GI", func(ev *conduitEvidence) { n := uint64(1); ev.journal.Entries[1].Detail.ConnectionSeq = &n }, []int{0, 1, 2, 3, 4, 5}},
+		{"pre-generation connection", func(ev *conduitEvidence) { ev.rangeStart = at("12:01:30") }, []int{0, 1, 2, 3, 4, 5}},
+		{"expired attempt", func(ev *conduitEvidence) { ev.collectedAt = at("12:12:00") }, []int{0, 1, 2, 3, 4, 5}},
+		{"future GI", func(ev *conduitEvidence) { ev.journal.Entries[1].At = at("12:06:00") }, []int{0, 1, 2, 3, 4, 5}},
+		{"zero connection seq", func(ev *conduitEvidence) { ev.state.Link.ConnectionSeq = 0 }, []int{0, 1, 2, 3, 4, 5}},
 		{"missing point", func(ev *conduitEvidence) { ev.state.Points = ev.state.Points[1:] }, []int{1}},
 		{"missing inventory", func(ev *conduitEvidence) { ev.stationPoints = nil }, []int{1}},
 		{"missing C4 point", func(ev *conduitEvidence) {
@@ -136,35 +141,31 @@ func TestConduitsEvidence(t *testing.T) {
 		{"history stalled snapshot", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].SnapshotSeq = 100 }, []int{3}},
 		{"history old ingest", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].IngestedAt = at("12:04:56") }, []int{3}},
 		{"history future ingest", func(ev *conduitEvidence) { ev.history.Segments[0].Samples[1].IngestedAt = at("12:05:01") }, []int{3}},
-		{"clock unavailable", func(ev *conduitEvidence) {
-			ev.clock = checkFail("RTU station-clock HTTP operation", "missing evidence: unavailable")
-		}, []int{4}},
-		{"events unavailable", func(ev *conduitEvidence) { ev.eventsErr = errors.New("unavailable") }, []int{5}},
-		{"missing one deny", func(ev *conduitEvidence) { ev.events = ev.events[1:] }, []int{5}},
-		{"old deny", func(ev *conduitEvidence) { ev.events[0].Timestamp = at("12:00:59") }, []int{5}},
-		{"future deny", func(ev *conduitEvidence) { ev.events[0].Timestamp = at("12:05:01") }, []int{5}},
-		{"allow is not deny", func(ev *conduitEvidence) { ev.events[0].Attributes["action"] = "ALLOW" }, []int{5}},
-		{"UDP not TCP", func(ev *conduitEvidence) { ev.events[0].Transport = "udp" }, []int{5}},
-		{"source identity missing", func(ev *conduitEvidence) { ev.identityErr = errors.New("missing PLC") }, []int{2, 5}},
-		{"GET before reconnect", func(ev *conduitEvidence) { ev.readStart = at("12:00:59") }, []int{4, 6, 7}},
+		{"source identity missing", func(ev *conduitEvidence) { ev.identityErr = errors.New("missing PLC") }, []int{2}},
+		{"GET before reconnect", func(ev *conduitEvidence) { ev.readStart = at("12:00:59") }, []int{4, 5}},
+		{"GET after collection", func(ev *conduitEvidence) { ev.readEnd = at("12:05:01") }, []int{4, 5}},
+		{"GET completion before start", func(ev *conduitEvidence) { ev.readEnd = ev.readStart.Add(-time.Second) }, []int{4, 5}},
+		{"historian GET failed", func(ev *conduitEvidence) { ev.reads[0] = checkFail(ev.reads[0].Name, "missing evidence: unavailable") }, []int{4}},
+		{"PLC GET failed", func(ev *conduitEvidence) { ev.reads[1] = checkFail(ev.reads[1].Name, "missing evidence: unavailable") }, []int{5}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ev := passingConduits(t)
-			tt.mutate(&ev)
-			checks := evaluateConduits(ev)
-			if len(checks) != 8 {
+			ev := passingEUWorkshop(t, euWorkshopSlots[1])
+			tt.mutate(&ev.conduits)
+			checks := evaluateEUWorkshop(euWorkshopSlots[1], ev)
+			if len(checks) != 11 {
 				t.Fatalf("checks=%d", len(checks))
 			}
 			want := map[int]bool{}
 			for _, i := range tt.failing {
 				want[i] = true
 			}
-			for i, check := range checks {
+			// The live workshop places its six positive conduit checks after policy.
+			for i, check := range checks[1:7] {
 				if (check.Status != "pass") != want[i] {
 					t.Errorf("check %d %s = %s: %s", i, check.Name, check.Status, check.Detail)
 				}
-				if check.Status != "pass" && !strings.HasPrefix(check.Detail, "missing evidence: ") {
+				if i < 4 && check.Status != "pass" && !strings.HasPrefix(check.Detail, "missing evidence: ") {
 					t.Errorf("missing evidence not explicit: %+v", check)
 				}
 			}
@@ -204,7 +205,9 @@ func TestConduitsSurvivesLinkUpEviction(t *testing.T) {
 	}
 	ev.journal.Entries = retained
 
-	for _, check := range evaluateConduits(ev) {
+	workshop := passingEUWorkshop(t, euWorkshopSlots[1])
+	workshop.conduits = ev
+	for _, check := range evaluateEUWorkshop(euWorkshopSlots[1], workshop) {
 		if check.Status != "pass" {
 			t.Errorf("proof failed without retained link_up: %+v", check)
 		}
@@ -237,7 +240,9 @@ func TestConduitsPeriodicGIDoesNotRestartAttempt(t *testing.T) {
 	started.Seq, complete.Seq = 5, 6
 	started.At, complete.At = ev.collectedAt.Add(-2*time.Second), ev.collectedAt.Add(-time.Second)
 	ev.journal.Entries = append(ev.journal.Entries, started, complete)
-	for _, check := range evaluateConduits(ev) {
+	workshop := passingEUWorkshop(t, euWorkshopSlots[1])
+	workshop.conduits = ev
+	for _, check := range evaluateEUWorkshop(euWorkshopSlots[1], workshop) {
 		if check.Status != "pass" {
 			t.Errorf("periodic GI invalidated proof: %+v", check)
 		}
