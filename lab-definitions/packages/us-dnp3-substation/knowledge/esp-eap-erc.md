@@ -10,7 +10,7 @@ In this lab, the `field_net` (10.40.40.0/24) and `ot_ops_net` (10.30.30.0/24) to
 
 An EAP is any device or interface that controls traffic crossing the ESP boundary. In practice, these are firewall interfaces, router ACLs, or managed switches with access control. Each EAP must enforce an explicit policy permitting only documented, necessary communication.
 
-In this lab, the containd NGFW interfaces on `ot_ops_net` (lan1, 10.30.30.0/24) and `field_net` (lan2, 10.40.40.0/24) are the EAPs. containd binds each logical name to whichever `ethN` device holds that subnet, and the `ethN` order differs between hosts. The firewall rules on these interfaces determine what enters or leaves the ESP.
+In this lab, the containd NGFW interfaces on `ot_ops_net` (lan1, 10.30.30.0/24) and `field_net` (lan2, 10.40.40.0/24) are the EAPs. The firewall's network interfaces carry the same names, so `tcpdump -i lan2` watches the field-side EAP. The firewall rules on these interfaces determine what enters or leaves the ESP.
 
 ### ERC (External Routable Connectivity)
 

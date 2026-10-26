@@ -974,7 +974,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap|1": {
+    "validation-evidence|2|tcpdump -i lan2 -nn 'tcp port 502 or tcp port 20000' -w /data/captures/validation.pcap|1": {
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "shell",
@@ -986,7 +986,7 @@
       },
       "reason": null
     },
-    "validation-evidence|2|tcpdump -r /data/captures/validation.pcap -nn | awk '{print $3, $5}' | sort | uniq -c | sort -rn|1": {
+    "validation-evidence|2|tcpdump -r /data/captures/validation.pcap -nn | awk '{ s = $3; d = $5; sub(/\\.[0-9]+$/, \"\", s); sub(/\\.[0-9]+:$/, \"\", d); print s, \"->\", d }' | sort | uniq -c | sort -rn|1": {
       "container": "rangerdanger-firewall",
       "policy": "hardened",
       "prompt": "shell",

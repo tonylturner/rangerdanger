@@ -174,21 +174,21 @@ steps:
 
       :::hint Advanced: capture PCAP by hand
       The report captures this automatically; the manual form, from the
-      `fw-1` terminal, uses `-i any` + a BPF subnet filter (the firewall's
-      `ethN` order differs between hosts):
+      `fw-1` terminal, captures on `lan2`, the firewall's field-zone
+      interface:
 
       At `containd#`, type `shell` before these Linux commands.
 
-          tcpdump -i any -nn 'net 10.40.40.0/24 and (tcp port 502 or tcp port 20000)' -w /data/captures/validation.pcap
+          tcpdump -i lan2 -nn 'tcp port 502 or tcp port 20000' -w /data/captures/validation.pcap
 
       Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
       wire:
 
-          tcpdump -r /data/captures/validation.pcap -nn | awk '$3 == "Out" { s = $5; d = $7; sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:$/, "", d); print s, "->", d }' | sort | uniq -c | sort -rn
+          tcpdump -r /data/captures/validation.pcap -nn | awk '{ s = $3; d = $5; sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:$/, "", d); print s, "->", d }' | sort | uniq -c | sort -rn
 
-      `-i any` records a forwarded packet twice, `In` on one interface and
-      `Out` on the other. The `awk` keeps only the `Out` copy and strips
-      the ports, so each line counts packets from one host to another.
+      `lan2` records each packet once, as it enters or leaves the field
+      zone. The `awk` strips the ports, so each line counts packets from
+      one host to another.
 
       Under Hardened, the only Modbus/DNP3 source reaching field should be
       `10.30.30.20` (the RTAC). For a partial plan, compare additional

@@ -97,7 +97,7 @@
       {
         "id": "esp-eap-erc",
         "title": "ESP, EAP, and ERC Explained",
-        "sha256": "5c9cf7b101c2f1f2f2240753deb4a2f98c522bce211efc6e40b459c39383d615"
+        "sha256": "469fce5083b34b5a6e41e427e29924a81678d69361424e89ddb43f65596eccde"
       },
       {
         "id": "ics-dpi",
@@ -175,7 +175,7 @@
       {
         "id": "tool-tcpdump",
         "title": "tcpdump - Packet Capture",
-        "sha256": "7252c7b90a08257210f23a9b051553b60eed7d7020685e458360ee11de09d4e9"
+        "sha256": "85b434daf5f5e1f674443bfe166fa1879095db63874e9e85f4118d03493a1d66"
       },
       {
         "id": "tool-curl",

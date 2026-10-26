@@ -8,6 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Firewall interfaces are named after their zones, and Docker Desktop
+  4.42 or later is required.** Both packages pin each firewall NIC with
+  Compose `interface_name` (`wan`, `dmz`, `lan1`, `lan2`, `lan3`; EU adds
+  `lan4` and `lan5`), so `tcpdump -i lan2` captures the field zone on
+  every host instead of an `ethN` whose order differs between hosts. The
+  US tcpdump and ESP articles and the Lab 2.4 manual capture use the
+  names; package lint rejects a missing, duplicate or mismatched name.
+  The key needs Compose 2.36.0 or later on Engine 28.1 (API 1.49) or
+  later: `setup.sh` refuses older Docker with one message.
+  `setup.ps1` does not check the versions yet.
 - Package curricula now use strict, single-purpose `curriculum/` sections; EU DPI catalog text states planning-only review with no emitted protocol rule.
 - **containd 0.1.33 or later is required.** The backend rejects older
   firewall builds at range start and when it adopts a running range.

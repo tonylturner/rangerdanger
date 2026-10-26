@@ -13,7 +13,7 @@ This range models a CIGRE-derived 20 kV teaching feeder, not a complete utility 
 | Control Centre | 10.60.60.0/24 / lan4 | CC .20 |
 | Operations DMZ | 10.70.70.0/24 / lan5 | historian .40 |
 
-The vendor zone named `dmz` and the historian's Operations DMZ named `lan5` are different networks. Confusing the two can turn an archive rule into a maintenance-access rule.
+The firewall's network interfaces carry these zone names on every host, so `tcpdump -i lan4` in the firewall shell captures Control Centre traffic. The vendor zone named `dmz` and the historian's Operations DMZ named `lan5` are different networks. Confusing the two can turn an archive rule into a maintenance-access rule.
 
 Management, 10.99.99.0/24 (`lan3`), carries the portal's upstream API access. The separate 10.50.50.0/24 process network carries simulated physics. Neither is a student control conduit. Document these as range infrastructure rather than drawing them as invisible exceptions.
 

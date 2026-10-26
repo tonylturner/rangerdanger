@@ -207,11 +207,12 @@ flowchart LR
 ```
 
 **`firewall` is multi-homed across all four ICS zones plus mgmt** -
-five Docker network attachments total. Containd autobinds the policy's
-logical interface names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) to whatever
-`ethN` Docker assigns at boot via `CONTAIND_AUTO_*_SUBNET`, so the
-ethN ordering, which differs across hosts, doesn't shift the policy.
-Never rely on a fixed ethN; find a zone's device from its subnet.
+five Docker network attachments total. Each attachment pins its kernel
+interface name to the policy's logical interface name with Compose
+`interface_name` (`wan`/`dmz`/`lan1`/`lan2`/`lan3`), and containd binds
+each zone by subnet via `CONTAIND_AUTO_*_SUBNET`. Docker's own `ethN`
+order differs between hosts; the pinned names do not, so `tcpdump -i
+lan2` on the firewall is the field zone everywhere.
 
 **`rtac_sim` is multi-homed across `ot_ops_net` + `field_net` +
 `physics_net` + `mgmt_net`** but `scripts/rtac-harden.sh` replaces the directly-

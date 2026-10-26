@@ -190,7 +190,7 @@ steps:
       ### Good segmentation for this substation means
 
       1. **Enterprise cannot directly reach Field devices.**
-         *Test:* `tcpdump` on the firewall's field interface should show zero packets originating from `10.10.10.0/24`.
+         *Test:* `tcpdump -i lan2` on the firewall (its field interface) should show zero packets originating from `10.10.10.0/24`.
 
       2. **Vendor access to OT Ops is constrained and brokered.**
          *Test:* vendor DMZ can reach the RTAC/HMI only on approved management ports, not on raw Modbus/DNP3.
