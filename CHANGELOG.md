@@ -348,6 +348,15 @@ in [the workshop errata](docs/v0.1.36-hotfix.md).
   plus JSON endpoint guards. Hotfix-branch push triggers remain enabled.
 - **Citation metadata** records version `0.1.36`.
 
+### Security
+
+- **Go toolchain 1.26.9 -> 1.26.10.** Clears `GO-2026-6809`
+  (`crypto/x509` now distrusts compromised intermediate certificates),
+  a standard-library finding published during the release candidates
+  that had the `govulncheck` gate red in `backend`, `services` and
+  `dnp3go`. Images build from the `golang:1.27` base, which the full
+  rebuild refreshes.
+
 ## [v0.1.35] - 2026-10-15
 
 Host-side setup script fixes plus four frontend dependency bumps. The
