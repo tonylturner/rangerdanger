@@ -78,54 +78,27 @@ type Flow struct {
 	AvBlocked   bool      `json:"avBlocked,omitempty"`
 }
 
-// MaxEventLimit is the largest limit containd's GET /api/v1/events honours;
-// it silently uses its default (500) for anything larger.
+// MaxEventLimit is the largest supported event page size. Filtered queries
+// reject out-of-range limits rather than silently returning a default page.
 const MaxEventLimit = 5000
 
-// GetEvents returns up to limit of containd's most recent events, keeping
-// only those at or after since (zero keeps all). containd has no time
-// filter of its own, so the filter runs here on each event's timestamp.
-func (c *Client) GetEvents(ctx context.Context, limit int, since time.Time) ([]Event, error) {
-	url := fmt.Sprintf("%s/api/v1/events?limit=%d", c.BaseURL, limit)
-
-	resp, err := c.doRequest(ctx, "GET", url)
+// GetEvents reads the evidence-prioritized bare array for a limit-only listing.
+// Time/tuple evidence readers must use QueryEvents and retain its metadata.
+func (c *Client) GetEvents(ctx context.Context, limit int) ([]Event, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("%s/api/v1/events?limit=%d", c.BaseURL, limit))
 	if err != nil {
-		return nil, fmt.Errorf("get events failed: %w", err)
+		return nil, fmt.Errorf("get events: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("get events returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("get events returned %d: %s", resp.StatusCode, body)
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read events body: %w", err)
-	}
-
-	// containd may return events as a raw array or as {"events": [...]}
 	var events []Event
-	if err := json.Unmarshal(body, &events); err != nil {
-		// Try wrapped format
-		var result struct {
-			Events []Event `json:"events"`
-		}
-		if err2 := json.Unmarshal(body, &result); err2 != nil {
-			return nil, fmt.Errorf("decode events: %w (also tried array: %w)", err2, err)
-		}
-		events = result.Events
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, fmt.Errorf("decode events array: %w", err)
 	}
-	if since.IsZero() {
-		return events, nil
-	}
-	kept := events[:0]
-	for _, event := range events {
-		if !event.Timestamp.Before(since) {
-			kept = append(kept, event)
-		}
-	}
-	return kept, nil
+	return events, nil
 }
 
 // containd's GET /api/v1/flows bounds: it accepts a limit in

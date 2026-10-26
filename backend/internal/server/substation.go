@@ -118,7 +118,17 @@ func (s *Server) forwardRTAC(c *gin.Context, method, path string, body io.Reader
 
 // handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
 func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
-	events, err := rangeOf(c).Containd().GetEvents(c.Request.Context(), 50, time.Time{})
+	gen := rangeOf(c)
+	since := time.Now().UTC().Add(-5 * time.Minute)
+	if gen.StartedAt.After(since) {
+		since = gen.StartedAt
+	}
+	s.activeConfigMu.RLock()
+	if s.policyChangedAt.After(since) {
+		since = s.policyChangedAt
+	}
+	s.activeConfigMu.RUnlock()
+	page, err := gen.Containd().QueryEvents(c.Request.Context(), containd.EventQuery{Limit: containd.MaxEventLimit, Since: since})
 	if err != nil {
 		// Return empty with source info rather than error
 		c.JSON(http.StatusOK, gin.H{
@@ -132,16 +142,22 @@ func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
 	// Keep traffic that touches a teaching zone (enterprise, vendor, OT ops
 	// and field for the US package): the manifest's zone networks.
 	zones := zoneSubnets(rangeOf(c))
-	var filtered []containd.Event
-	for _, e := range events {
+	filtered := []containd.Event{}
+	for _, e := range page.Events {
 		if inAnySubnet(zones, e.Source) || inAnySubnet(zones, e.Dest) {
 			filtered = append(filtered, e)
+			if len(filtered) == 50 {
+				break
+			}
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"events": filtered,
-		"source": "containd",
+		"events":           filtered,
+		"source":           "containd",
+		"since":            since,
+		"historyTruncated": page.HistoryTruncated,
+		"engineError":      page.EngineError,
 	})
 }
 

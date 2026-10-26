@@ -108,7 +108,7 @@ func TestConduitsCollector(t *testing.T) {
 	for _, missing := range []string{"", "/cc/api/state", "/cc/api/journal", "/oltc/api/audit", "/oltc/api/state", "/hist/api/history", "/api/v1/events", "exec"} {
 		t.Run("missing="+missing, func(t *testing.T) {
 			ev := currentConduits(t)
-			paths := map[string]any{"/cc/api/state": ev.state, "/cc/api/journal": ev.journal, "/oltc/api/state": ev.device, "/oltc/api/audit": ev.audit, "/hist/api/history": ev.history, "/api/v1/events": ev.events}
+			paths := map[string]any{"/cc/api/state": ev.state, "/cc/api/journal": ev.journal, "/oltc/api/state": ev.device, "/oltc/api/audit": ev.audit, "/hist/api/history": ev.history, "/api/v1/events": containd.EventPage{Events: ev.events}}
 			seen := map[string]int{}
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				seen[r.URL.Path]++
@@ -118,6 +118,12 @@ func TestConduitsCollector(t *testing.T) {
 				if r.URL.Path == missing {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
+				}
+				if r.URL.Path == "/api/v1/events" {
+					q := r.URL.Query()
+					if q.Get("since") == "" || q.Get("kind") != "firewall.rule.hit" || q.Get("verdict") != "DENY" {
+						t.Errorf("unfiltered evidence query: %s", r.URL)
+					}
 				}
 				if r.URL.Path == "/hist/api/history" {
 					q := r.URL.Query()

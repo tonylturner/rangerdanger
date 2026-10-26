@@ -21,17 +21,15 @@ func TestGetEventsSuccess(t *testing.T) {
 		if r.URL.Query().Get("limit") != "10" {
 			t.Errorf("expected limit=10, got %s", r.URL.Query().Get("limit"))
 		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"events": []Event{
-				{ID: "evt-6", Kind: "request", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"function_code": 3}},
-				{ID: "evt-7", Kind: "anomaly", Source: "10.10.10.50", Dest: "10.40.40.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"severity": "critical"}},
-			},
+		json.NewEncoder(w).Encode([]Event{
+			{ID: "evt-6", Kind: "request", Source: "10.20.20.10", Dest: "10.30.30.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"function_code": 3}},
+			{ID: "evt-7", Kind: "anomaly", Source: "10.10.10.50", Dest: "10.40.40.20", Protocol: "modbus", Transport: "tcp", DstPort: 502, Attributes: map[string]any{"severity": "critical"}},
 		})
 	}))
 	defer srv.Close()
 
 	client := newTestClient(srv.URL)
-	events, err := client.GetEvents(context.Background(), 10, time.Time{})
+	events, err := client.GetEvents(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,31 +41,6 @@ func TestGetEventsSuccess(t *testing.T) {
 	}
 	if events[1].Attributes["severity"] != "critical" {
 		t.Errorf("expected critical severity attribute, got %v", events[1].Attributes["severity"])
-	}
-}
-
-// TestGetEventsFiltersByTimestamp verifies that since is applied to each
-// event's timestamp here and never sent to containd, which ignores it.
-func TestGetEventsFiltersByTimestamp(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Has("since") {
-			t.Error("since must not be sent to containd")
-		}
-		io.WriteString(w, `[
-			{"id":3,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:02Z"},
-			{"id":2,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:01Z"},
-			{"id":1,"kind":"firewall.rule.hit","timestamp":"2026-10-09T12:00:00.999Z"}
-		]`)
-	}))
-	defer srv.Close()
-
-	since := time.Date(2026, 10, 9, 12, 0, 1, 0, time.UTC)
-	events, err := newTestClient(srv.URL).GetEvents(context.Background(), 5, since)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(events) != 2 || events[0].ID != "3" || events[1].ID != "2" {
-		t.Errorf("events = %+v, want ids 3 and 2 (at or after since)", events)
 	}
 }
 

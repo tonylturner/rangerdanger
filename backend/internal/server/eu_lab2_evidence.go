@@ -86,6 +86,7 @@ type conduitEvidence struct {
 	historyErr              error
 	events                  []containd.Event
 	eventsErr               error
+	eventsHistoryTruncated  bool
 	plcIP                   string
 	denies                  []conduitDeny
 	identityErr             error
@@ -262,9 +263,9 @@ func conduitDenies(ev conduitEvidence, start time.Time) ValidationCheck {
 	}
 	if len(missing) != 0 {
 		sort.Strings(missing)
-		return checkFail(name, fmt.Sprintf("missing evidence: no in-window logged TCP DENY for %v", missing))
+		return checkFail(name, fmt.Sprintf("missing evidence: no in-window logged TCP DENY for %v (retained history truncated: %t)", missing, ev.eventsHistoryTruncated))
 	}
-	return checkPass(name, fmt.Sprintf("all %d named foreign-source protocol attempts denied inside the current connection attempt", len(ev.denies)))
+	return checkPass(name, fmt.Sprintf("all %d named foreign-source protocol attempts denied inside the current connection attempt (retained history truncated: %t)", len(ev.denies), ev.eventsHistoryTruncated))
 }
 
 func evaluateConduits(ev conduitEvidence) []ValidationCheck {

@@ -95,7 +95,7 @@ func TestGetEventsDecodesContaindProto(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	events, err := newTestClient(srv.URL).GetEvents(context.Background(), 2, time.Time{})
+	events, err := newTestClient(srv.URL).GetEvents(context.Background(), 2)
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}
