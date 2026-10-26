@@ -213,6 +213,14 @@ them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
 - containd zone names `wan` / `dmz` / `lan1` / `lan2` / `lan3` and the
   canned policies in `lab-definitions/firewall/` are what the
   validators and firewall smoke gate assert against.
+- `scripts/tests/test_network_invariants.py` (CI's Python job) freezes every
+  network value of the platform and package compose files in
+  `scripts/tests/fixtures/network-invariants.json`: networks and subnets,
+  static IPs and interface names, `GATEWAY`, host ports, sysctls and
+  containd's management and auto-bind env. It also rejects `gw_priority` and
+  `priority` on any attachment, any host port off 127.0.0.1, and any
+  difference between a stack's source and release files. Update the fixture
+  only as part of a requested network change, after `scripts/firewall-smoke.sh both`.
 
 This covers the compose files (the platform files and every package's
 range files), network settings, port bindings,
