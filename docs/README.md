@@ -26,6 +26,8 @@ the labs.
 - [`quickstart.md`](quickstart.md) - Install path, common errors,
   what to do when something does not come up.
 
+- [Secure remote access workshop proposal](sra/README.md) — Four-hour curriculum, architecture, integration work, and release acceptance gates. Proposed; not yet runnable.
+
 ## Instructor / workshop operator
 
 Use these if you are running a workshop, staging an SSD, or supporting
