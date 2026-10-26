@@ -302,11 +302,35 @@ ACTIVE_AFTER=0
 FINAL_READBACK='{"active_config":"custom","policy_source":"manual-custom","plan":{}}'
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "manual observation must clear plan provenance"
+
 manual_fixture_reset
 ACTIVE_AFTER=0
-jq '.firewall.rules[0].id = "unexpected-rule"' "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+jq '.firewall.rules[].ics = {}' "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
-t_expect_eq "$T_STATUS" 1 "exact effective-rule mismatch still fails before tuple kills"
+t_expect_eq "$T_STATUS" 0 "empty ICS readback equals absent policy ICS"
+t_expect_fails 0 "empty ICS readback does not report a gate failure"
+manual_fixture_reset
+ACTIVE_AFTER=0
+jq '.firewall.rules[].ics = {}' "$EFFECTIVE_INPUT" >"$MANUAL_INPUT"
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 0 "empty policy ICS equals absent readback ICS"
+
+for ics_value in '{"enabled":true}' null '[]' false; do
+  manual_fixture_reset
+  ACTIVE_AFTER=0
+  jq --argjson ics "$ics_value" '.firewall.rules[].ics = $ics' \
+    "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 1 "readback ICS other than an empty object still differs: $ics_value"
+  t_expect_out "before session kill" "ICS mismatch fails before tuple kills: $ics_value"
+done
+
+manual_fixture_reset
+ACTIVE_AFTER=0
+jq '.firewall.rules[0] |= (.ics = {} | .id = "unexpected-rule")' \
+  "$MANUAL_INPUT" >"$EFFECTIVE_INPUT"
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_eq "$T_STATUS" 1 "changed rule field still fails despite empty ICS normalization"
 t_expect_out "before session kill" "effective readback failure retains its ordering diagnostic"
 
 t_finish

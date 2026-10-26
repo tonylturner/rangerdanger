@@ -36,8 +36,10 @@ class Scripts(HTMLParser):
             self.sources.extend(value for key, value in attrs if key == "src" and value)
 
 
+# Match direct pathname detection or the optional-path fallback in 0.1.33.
+# The fallback must test and return the same identifier, not an unrelated value.
 AUTODETECT = re.compile(
-    r"""window\.location\.pathname\.startsWith\(\s*["']/containd/["']\s*\)\s*\?\s*["']/containd["']"""
+    r"""(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["']/containd/["']\s*\)\s*\?\s*["']/containd["']"""
 )
 PREFIXED_API = re.compile(r"""(["'])(/containd/api/[^"']*)\1""")
 

@@ -157,6 +157,10 @@ eu_apply_named() {
   pass "$name applied with zero warnings and exact active-policy readback"
   return 0
 }
+eu_normalize_firewall_rules() {
+  # containd serializes absent ICS settings as {}; retain every other value.
+  jq -S '.firewall.rules | map(if .ics == {} then del(.ics) else . end)' "$@"
+}
 eu_commit_manual_policy() {
   local policy="$1" label="$2" response status warnings active running effective expected_file actual_file i
   local candidate_file="$TMP_DIR/manual-candidate.json" headers_file="$TMP_DIR/manual-commit.headers"
@@ -252,11 +256,11 @@ eu_commit_manual_policy() {
   }
   expected_file="$TMP_DIR/expected-rules.json"
   actual_file="$TMP_DIR/actual-rules.json"
-  jq -S '.firewall.rules' "$policy" >"$expected_file" || {
+  eu_normalize_firewall_rules "$policy" >"$expected_file" || {
     fail "cannot parse expected rules for $label"
     return 1
   }
-  printf '%s' "$effective" | jq -S '.firewall.rules' >"$actual_file" || {
+  printf '%s' "$effective" | eu_normalize_firewall_rules >"$actual_file" || {
     fail "containd readback rules are unparsable after $label"
     return 1
   }

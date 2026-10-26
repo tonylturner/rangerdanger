@@ -1,7 +1,9 @@
 """Embedded containd assertions; native HTTP is mocked, never Docker/curl."""
 import json
+import re
 import unittest
 
+from .test_containd_ui_prefix import AUTODETECT_CASES, ROOT, probe
 from .test_setup_ps1_root import powershell
 
 
@@ -61,6 +63,23 @@ def fixture():
 class ContaindProbeTests(unittest.TestCase):
     def run_probe(self, data, origin="http://localhost:8088/"):
         return powershell(PROBE, FIXTURE=json.dumps(data), ORIGIN=origin)
+
+    def test_autodetect_regex_is_identical_to_python(self):
+        text = (ROOT / "scripts/lib/containd-ui-probe.ps1").read_text()
+        match = re.search(
+            r"if \(\$body -cmatch '((?:''|[^'])*)'\) \{ \$autodetect = \$true \}", text,
+        )
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1).replace("''", "'"), probe.AUTODETECT.pattern)
+
+    def test_pathname_autodetect_shapes_match_python(self):
+        for body, accepted in AUTODETECT_CASES:
+            with self.subTest(body=body):
+                data = fixture()
+                data["/containd/_next/static/main.js"]["body"] = body + ';U("/api/v1/auth/me");'
+                result = self.run_probe(data)
+                self.assertEqual(result.returncode, 0 if accepted else 1, result.stdout + result.stderr)
+                self.assertIn("1 chunks" if accepted else "runtime API-base autodetect", result.stdout)
 
     def test_pass_session_bounds_mime_parameters_and_unique_chunks(self):
         data = fixture()

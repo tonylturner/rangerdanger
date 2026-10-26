@@ -82,7 +82,9 @@ function Invoke-ContaindUiProbe([string]$Origin = 'http://127.0.0.1:8088') {
                 throw "${path}: runtime-based API literal was rewritten: $literal"
             }
         }
-        if ($body -cmatch 'window\.location\.pathname\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']') { $autodetect = $true }
+        # Direct pathname detection or the optional-path fallback in 0.1.33.
+        # The backreference requires the fallback to test and return the same identifier.
+        if ($body -cmatch '(?:window\.location\.pathname|\(\s*null\s*!=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\?\s*\1\s*:\s*window\.location\.pathname\s*\))\.startsWith\(\s*["'']/containd/["'']\s*\)\s*\?\s*["'']/containd["'']') { $autodetect = $true }
         if ($body -cmatch '["'']/api/v1/auth/me["'']') { $authMe = $true }
     }
     if (-not $autodetect) { throw 'Chunks do not contain the /containd/ runtime API-base autodetect' }
