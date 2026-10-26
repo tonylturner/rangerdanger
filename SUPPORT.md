@@ -46,7 +46,8 @@ work. Realistic expectations:
 
 Most "the lab won't start" issues fall into one of these:
 
-1. **Docker isn't running** or **Compose v2 isn't installed.** Run
+1. **Docker isn't running**, **Compose v2 isn't installed**, or **Docker
+   is older than Desktop 4.42** (Engine 28.1 with Compose 2.36). Run
    `./setup.sh --check-only` (or `setup.ps1 -CheckOnly` on Windows).
 2. **Ports already in use** (`8088`, `9080`, `9443`, `2222`). Same
    pre-flight catches this. Existing RangerDanger listeners are accepted on
