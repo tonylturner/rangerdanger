@@ -11,6 +11,33 @@ import (
 func readyAuto(t *testing.T, m *Model)   { t.Helper(); write(t, m, 1, 0); measure(t, m, nil) }
 func readyManual(t *testing.T, m *Model) { t.Helper(); write(t, m, 2, 1); measure(t, m, nil) }
 
+func TestPLCArmingAuditWithActor(t *testing.T) {
+	m, _ := newTestModel(t, OLTC)
+	actor := AuditContext{Peer: "10.30.30.30:43001", Protocol: "modbus", Zone: "station"}
+	before := m.Snapshot()
+	result := m.WriteHolding(context.Background(), 1, 0, actor)
+	entries, _, _ := m.AuditAfter(0)
+	if !result.Accepted || !result.Changed || len(entries) != 1 {
+		t.Fatalf("arming result=%+v entries=%+v", result, entries)
+	}
+	entry := entries[0]
+	if entry.Operation != "plc_arm" || entry.Result != "accepted" || entry.Context != actor ||
+		entry.Before.Armed || !entry.After.Armed || entry.Before.Revision != before.Revision ||
+		entry.After.Revision != before.Revision+1 || entry.After.Moving {
+		t.Fatalf("arming audit=%+v", entry)
+	}
+	for range 100 {
+		result = m.WriteHolding(context.Background(), 1, 0, actor)
+		if !result.Accepted || result.Changed {
+			t.Fatalf("cyclic zero result=%+v", result)
+		}
+	}
+	entries, _, _ = m.AuditAfter(0)
+	if len(entries) != 1 || m.Truth().Revision != entry.After.Revision {
+		t.Fatal("cyclic zeros changed truth or flooded audit")
+	}
+}
+
 func TestPLCRequestClassificationsAndAuditDedup(t *testing.T) {
 	tests := []struct {
 		name  string

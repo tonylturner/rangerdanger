@@ -72,6 +72,8 @@ func (m *Model) plcRequestLocked(value uint16, actor AuditContext, before Snapsh
 		if m.truth.RemoteEnabled && m.truth.Auto && !m.truth.Armed {
 			m.truth.Armed = true
 			m.changedLocked()
+			// Arming is not a tap request; consumers count plc_request as motion.
+			m.recordLocked("plc_arm", "accepted", "", before, actor)
 		}
 		return CommandResult{Accepted: true, Changed: m.truth.Revision != before.Revision}
 	}
