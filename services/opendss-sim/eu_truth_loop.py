@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from eu_circuit import EUFeederSolver
 from eu_controls import ProcessControls
+from eu_models import DeviceSnapshot, ElectricalSnapshot
 from eu_profile import EUProfile
 from eu_state import EUProcessState
 from eu_wire import TruthClient, acknowledgement, validate_truth
@@ -43,7 +44,7 @@ class TruthSolveLoop:
             except TimeoutError:
                 pass
 
-    async def action(self, body: object) -> dict:
+    async def action(self, body: object) -> ElectricalSnapshot:
         async with self._lock:
             self.controls.action(body)
             self.state.controls_changed(self.controls)
@@ -99,7 +100,7 @@ class TruthSolveLoop:
                 asyncio.to_thread(self.client.post_measurements, d, payloads[d.id])
                 for d in self.profile.devices
             ), return_exceptions=True)
-            delivery = {}
+            delivery: dict[str, DeviceSnapshot] = {}
             changed = False
             for device, response in zip(self.profile.devices, responses):
                 revision = truths[device.id]["revision"]
@@ -109,12 +110,15 @@ class TruthSolveLoop:
                 else:
                     status, body = response
                 record, retry = acknowledgement(status, body, revision)
-                record.update({k: payloads[device.id][k] for k in ("current_a", "p_mw", "q_mvar")})
-                delivery[device.id] = record
+                delivery[device.id] = {
+                    **record, "current_a": payloads[device.id]["current_a"],
+                    "p_mw": payloads[device.id]["p_mw"],
+                    "q_mvar": payloads[device.id]["q_mvar"],
+                }
                 changed |= retry
                 if not record["delivered"]:
                     logger.warning("EU feedback rejected for %s: HTTP %s", device.id, status)
-            snapshot = {
+            snapshot: ElectricalSnapshot = {
                 "schema": 3, "profile_id": self.profile.id,
                 "solver_epoch": self.solver_epoch, "solve_seq": self.solve_seq,
                 "solved_at": result["solved_at"], "truth_stale": False,

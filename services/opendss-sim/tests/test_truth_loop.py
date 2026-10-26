@@ -8,9 +8,12 @@ import pytest
 from eu_app import create_eu_app
 from eu_circuit import EUFeederSolver
 from eu_controls import ProcessControls
+from eu_models import ElectricalSnapshot, HealthSnapshot
 from eu_profile import load_profile
+from eu_state import EUProcessState
 from eu_support import MemoryClient, profile, profile_file
 from eu_truth_loop import TruthSolveLoop
+from pydantic import TypeAdapter
 
 
 def make_loop(tmp_path, config=None, **kwargs):
@@ -327,6 +330,7 @@ def test_process_reset_does_not_assume_a_field_tap_reset(tmp_path):
 
 
 def assert_schema3(state):
+    TypeAdapter(ElectricalSnapshot).validate_python(state, strict=True)
     assert set(state) == {
         'schema', 'profile_id', 'solver_epoch', 'solve_seq', 'solved_at', 'truth_stale',
         'fault_section', 'f2_tripped', 'load_multiplier', 'source_pu', 'tap', 'buses',
@@ -337,24 +341,105 @@ def assert_schema3(state):
     for record in state['devices'].values():
         assert set(record) == {
             'delivered', 'solved_revision', 'revision', 'current_a', 'p_mw', 'q_mvar'}
+    assert set(state['buses']) == {'bus20', 's1', 's2', 's3'}
+    assert all(set(bus) == {'kv', 'live'} for bus in state['buses'].values())
+
+
+def assert_health(app, state, status, converged, failures):
+    code, health = asyncio.run(invoke(app, 'GET', '/api/health'))
+    assert code == 200
+    TypeAdapter(HealthSnapshot).validate_python(health, strict=True)
+    assert health == {
+        'status': status, 'service': 'opendss-sim', 'engine': 'opendssdirect.py',
+        'last_solved_at': state['solved_at'], 'last_converged': converged,
+        'consecutive_failures': failures, 'truth_stale': state['truth_stale'],
+    }
+
+
+def test_snapshot_before_solver_epoch_is_known(tmp_path):
+    state = EUProcessState(profile(tmp_path))
+    initial = state.electrical()
+    assert_schema3(initial)
+    assert initial['solver_epoch'] is None
+    assert state.health()['last_converged'] is None
 
 
 def test_electrical_exact_keys_initial_and_solved_values_match_last_post(tmp_path):
     app = app_with_memory(tmp_path)
-    _, initial = asyncio.run(invoke(app, 'GET', '/api/electrical'))
+    status, initial = asyncio.run(invoke(app, 'GET', '/api/electrical'))
+    assert status == 200
     assert_schema3(initial)
+    assert initial['solve_seq'] == 0
+    assert initial['solved_at'] is None and initial['tap'] is None
+    assert initial['truth_stale'] is True
+    assert initial['solver_epoch'] == app.state.eu_loop.solver_epoch
+    assert all(bus == dict(kv=None, live=None) for bus in initial['buses'].values())
     assert initial['profile']['enabled'] is False
     assert initial['profile']['source_pu'] is None
     assert all(n is None for n in initial['profile']['load_factors'].values())
     assert initial['f2_tripped'] is None
-    assert all(record[k] is None for record in initial['devices'].values()
-               for k in ('current_a', 'p_mw', 'q_mvar'))
+    assert all(record == dict(delivered=False, solved_revision=None, revision=None,
+                              current_a=None, p_mw=None, q_mvar=None)
+               for record in initial['devices'].values())
+    assert_health(app, initial, 'degraded', None, 0)
     tick(app.state.eu_loop)
-    _, solved = asyncio.run(invoke(app, 'GET', '/api/electrical'))
+    status, solved = asyncio.run(invoke(app, 'GET', '/api/electrical'))
+    assert status == 200
     assert_schema3(solved)
+    assert solved['solve_seq'] == 1 and solved['solved_at'] is not None
+    assert solved['tap'] == 0 and solved['f2_tripped'] is False
+    assert solved['truth_stale'] is False
+    assert all(bus['kv'] > 0 and bus['live'] for bus in solved['buses'].values())
     for payload in app.state.eu_loop.client.posts:
+        record = solved['devices'][payload['device_id']]
+        assert record['delivered'] is True
+        assert record['revision'] == record['solved_revision'] == payload['revision']
         for key in ('current_a', 'p_mw', 'q_mvar'):
-            assert solved['devices'][payload['device_id']][key] == payload[key]
+            assert record[key] == payload[key]
+    assert_health(app, solved, 'ok', True, 0)
+
+
+@pytest.mark.parametrize('failure', ['transport', 'stale_truth'])
+def test_partial_delivery_api_preserves_measurements_and_unknown_revision(tmp_path, failure):
+    app = app_with_memory(tmp_path)
+    client = app.state.eu_loop.client
+    if failure == 'transport':
+        client.fail_posts.add('rmu-2')
+    else:
+        client.responses['rmu-2'] = [
+            (409, dict(accepted=False, reason='stale_truth'))] * 2
+    tick(app.state.eu_loop)
+    status, state = asyncio.run(invoke(app, 'GET', '/api/electrical'))
+    assert status == 200
+    assert_schema3(state)
+    assert state['truth_stale'] is False
+    passes = 1 if failure == 'transport' else 2
+    assert state['solve_seq'] == passes
+    for payload in client.posts[-5:]:
+        record = state['devices'][payload['device_id']]
+        assert record['delivered'] is (payload['device_id'] != 'rmu-2')
+        assert record['solved_revision'] == payload['revision']
+        expected_revision = (None if failure == 'stale_truth'
+                             and payload['device_id'] == 'rmu-2' else payload['revision'])
+        assert record['revision'] == expected_revision
+        for key in ('current_a', 'p_mw', 'q_mvar'):
+            assert record[key] == payload[key]
+    assert_health(app, state, 'degraded', True, passes)
+
+
+def test_response_schemas_require_nullable_unknown_keys(tmp_path):
+    schemas = app_with_memory(tmp_path).openapi()['components']['schemas']
+    for name, keys in {
+        'ElectricalSnapshot': ('solver_epoch', 'solved_at', 'tap', 'f2_tripped'),
+        'HealthSnapshot': ('last_solved_at', 'last_converged'),
+        'DeviceSnapshot': ('revision', 'solved_revision', 'current_a', 'p_mw', 'q_mvar'),
+        'BusSnapshot': ('kv', 'live'),
+        'ProfileSnapshot': ('source_pu',),
+    }.items():
+        schema = schemas[name]
+        assert set(schema['required']) == set(schema['properties'])
+        for key in keys:
+            assert {'type': 'null'} in schema['properties'][key]['anyOf']
 
 
 def test_profile_action_disable_and_reset_preserve_deterministic_mode(tmp_path):

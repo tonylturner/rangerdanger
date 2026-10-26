@@ -24,8 +24,7 @@ func TestConduitsRegistration(t *testing.T) {
 	}
 }
 
-// Canonical content now mirrors the workshop. Evidence primitives below keep
-// their original strict collection and rejection tests independently of slots.
+// Canonical content mirrors the workshop and its live evidence collection.
 func TestConduitsShippedCurriculum(t *testing.T) {
 	catalog, err := labs.NewLoader(filepath.Join(repoRoot(), "lab-definitions"), ValidatorRequirements()).Load()
 	if err != nil {
@@ -75,7 +74,7 @@ func TestConduitsShippedCurriculum(t *testing.T) {
 // Refresh fixed fixtures to now, without relying on the real range or Docker.
 func currentConduits(t *testing.T) conduitEvidence {
 	t.Helper()
-	ev := passingConduits(t)
+	ev := passingEUWorkshop(t, euWorkshopSlots[1]).conduits
 	delta := time.Now().UTC().Sub(ev.collectedAt)
 	shift := func(stamp *time.Time) { *stamp = stamp.Add(delta) }
 	shift(&ev.collectedAt)
@@ -105,10 +104,10 @@ func currentConduits(t *testing.T) conduitEvidence {
 }
 
 func TestConduitsCollector(t *testing.T) {
-	for _, missing := range []string{"", "/cc/api/state", "/cc/api/journal", "/oltc/api/audit", "/oltc/api/state", "/hist/api/history", "/api/v1/events", "exec"} {
+	for _, missing := range []string{"", "/cc/api/state", "/cc/api/journal", "/oltc/api/audit", "/oltc/api/state", "/hist/api/history", "exec"} {
 		t.Run("missing="+missing, func(t *testing.T) {
 			ev := currentConduits(t)
-			paths := map[string]any{"/cc/api/state": ev.state, "/cc/api/journal": ev.journal, "/oltc/api/state": ev.device, "/oltc/api/audit": ev.audit, "/hist/api/history": ev.history, "/api/v1/events": containd.EventPage{Events: ev.events}}
+			paths := map[string]any{"/cc/api/state": ev.state, "/cc/api/journal": ev.journal, "/oltc/api/state": ev.device, "/oltc/api/audit": ev.audit, "/hist/api/history": ev.history}
 			seen := map[string]int{}
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				seen[r.URL.Path]++
@@ -118,12 +117,6 @@ func TestConduitsCollector(t *testing.T) {
 				if r.URL.Path == missing {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
-				}
-				if r.URL.Path == "/api/v1/events" {
-					q := r.URL.Query()
-					if q.Get("since") == "" || q.Get("kind") != "firewall.rule.hit" || q.Get("verdict") != "DENY" {
-						t.Errorf("unfiltered evidence query: %s", r.URL)
-					}
 				}
 				if r.URL.Path == "/hist/api/history" {
 					q := r.URL.Query()
@@ -147,22 +140,6 @@ func TestConduitsCollector(t *testing.T) {
 			s := rangeServer(gen, "custom") // Alternative reviewed policy designs are allowed.
 			sources := map[string]bool{}
 			s.execInContainer = func(_ context.Context, container string, cmd []string, budget int) (string, string, int, error) {
-				if len(cmd) == 4 && cmd[2] == isolationHTTP {
-					if missing == "exec" {
-						return "", "", -1, errors.New("exec unavailable")
-					}
-					return passingIsolation(t, cmd, container), "", 0, nil
-				}
-				if container == "rangerdanger-iec104-rtu" {
-					if len(cmd) != 7 || cmd[0] != "wget" || cmd[6] != "http://10.30.30.50:8080/api/state" {
-						t.Fatalf("clock command=%q", cmd)
-					}
-					if missing == "exec" {
-						return "", "", -1, errors.New("exec unavailable")
-					}
-					data, _ := json.Marshal(map[string]any{"sync_status": "locked", "reported_time": time.Now().UTC().Format(time.RFC3339Nano)})
-					return string(data), "", 0, nil
-				}
 				if len(cmd) != 7 || cmd[0] != "python3" || cmd[2] != conduitHTTPGet || budget != 5 {
 					t.Fatalf("exec command=%q budget=%d", cmd, budget)
 				}
@@ -189,7 +166,9 @@ func TestConduitsCollector(t *testing.T) {
 				data, _ := json.Marshal(map[string]any{"status": 200, "body": body})
 				return string(data), "", 0, nil
 			}
-			checks := evaluateConduits(s.collectConduits(t.Context(), gen))
+			workshop := passingEUWorkshop(t, euWorkshopSlots[1])
+			workshop.conduits = s.collectEUWorkshopConduits(t.Context(), gen)
+			checks := evaluateEUWorkshop(euWorkshopSlots[1], workshop)[1:7]
 			failed := false
 			for _, check := range checks {
 				if check.Status != "pass" {
@@ -203,8 +182,12 @@ func TestConduitsCollector(t *testing.T) {
 				t.Fatal("missing evidence passed")
 			}
 			for path := range paths {
-				if seen[path] != 1 {
-					t.Errorf("%s read %d times, want1", path, seen[path])
+				want := 1
+				if missing == "/cc/api/journal" && path == "/cc/api/state" {
+					want = 0 // The live CC reader stops on a failed journal read.
+				}
+				if seen[path] != want {
+					t.Errorf("%s read %d times, want %d", path, seen[path], want)
 				}
 			}
 			if len(sources) != 2 {
