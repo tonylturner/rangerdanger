@@ -17,17 +17,23 @@ A complete substation-firewall change package usually includes:
 1. **Statement of intent.** What problem is this change solving? What is the operational or security gap? Why now?
 2. **Configuration diff.** The current policy, the proposed policy, and the line-by-line difference. For a containd policy, this is the JSON diff plus the human-readable summary of "rule X added, rule Y removed, rule Z modified."
 3. **Test evidence.** Proof that the proposed policy was tested before being proposed for production. For each new or modified rule: a positive test (the legitimate traffic still works) and a negative test (the previously-allowed bad traffic is now blocked). The evidence is typically a combination of PCAP captures, firewall logs, and screenshots of the test result.
-4. **Rollback plan.** If the change goes badly in production, how do you revert? For a containd change, this is "restore the prior policy file, run `containd cli> import config`, verify the active policy hash matches the previous version."
+4. **Rollback plan.** If the change goes badly in production, how do you revert? For a containd configuration rollback: import the old config → review the candidate diff → commit → verify the running hash and operations. Import (`containd cli> import config` or `POST /api/v1/config/import`) only stages the shared candidate; it does not change running. Review `GET /api/v1/config/diff`, preserving the management reservation and interface device bindings, then run `commit` (or `POST /api/v1/config/commit`). Verify the running hash matches the saved prior version and check both required connectivity and device operations.
 5. **Maintenance window.** When will the change be applied? What other activities are scheduled in the same window? What is the impact on operations during the change itself (does the firewall need to be restarted)?
 6. **Post-change monitoring plan.** What will you watch for in the hours after the change to confirm operations are healthy? Which dashboards, which alarms, which log queries?
+
+A configuration rollback is not a binary or stored-schema rollback. Importing
+an old policy does not undo containd's one-way stored schema 0.1.7 migration.
+A binary downgrade needs the complete matching pre-upgrade firewall `/data`
+backup and older image/release, as described in the operator upgrade guide;
+an older image alone cannot read migrated storage.
 
 ### How the Lab Maps to This
 
 Lab 2.4's evidence-assembly step produces almost exactly this package:
 
 - **Statement of intent** - Lab 1.3's design verdicts and Lab 1.4's plan together are the *intent* document. The student wrote them.
-- **Configuration diff** - `containd cli> export config > student-policy.json` is the proposed policy. The weak baseline is the current. The diff is `diff substation-weak.json student-policy.json`.
-- **Test evidence** - Lab 2.4's positive-tests step is the legitimate-traffic-works half. The negative-tests step is the bad-traffic-blocked half. Both produce log entries on the Live DPI Events strip that constitute the firewall-log evidence.
+- **Configuration diff** - `containd cli> export config` reads running, not the candidate. Save that output as `student-policy.json` after committing and testing the policy. It is the committed, tested policy submitted to the board, not an uncommitted proposal. Compare it with the saved weak baseline using `diff substation-weak.json student-policy.json`; that baseline is the pre-change reference, not necessarily what is running now. Before commit, review the proposed policy through the candidate and `GET /api/v1/config/diff`, not export.
+- **Test evidence** - Lab 2.4's positive-tests step is the legitimate-traffic-works half. The negative-tests step is the bad-traffic-blocked half. Correlate fresh timestamped log entries on the Live DPI Events strip with each probe; a retained old DENY is not evidence of this attempt. The L4 source pin enforces; DPI detects and logs.
 - **PCAP** - Lab 2.4's PCAP-capture step writes `/data/captures/validation.pcap` showing only RTAC sources reaching field on Modbus/DNP3 after the policy is applied. This is direct network-level evidence.
 - **Audit log** - `containd cli> show audit` snapshots the `config.commit` entries that prove the policy was actually applied.
 

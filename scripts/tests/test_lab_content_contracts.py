@@ -762,5 +762,25 @@ class CommandContracts(unittest.TestCase):
         self.assertIn("Re-run with `-c 6` to also see `[6]` (`recloser_shot_count`) at `1`", text)
 
 
+class ChangeManagementContracts(unittest.TestCase):
+    def test_configuration_rollback_requires_candidate_review_commit_and_verification(self):
+        text = (ROOT / "lab-definitions/packages/us-dnp3-substation/knowledge/"
+                       "change-management-firewall-rules.md").read_text()
+        rollback = text.split("4. **Rollback plan.**", 1)[1].split("5. **Maintenance window.**", 1)[0]
+        sequence = ("import the old config", "review the candidate diff",
+                    "commit", "verify the running hash and operations")
+        positions = [rollback.index(step) for step in sequence]
+        self.assertEqual(positions, sorted(positions))
+        for phrase in ("only stages the shared candidate", "/api/v1/config/diff",
+                       "/api/v1/config/commit", "management reservation",
+                       "interface device bindings", "required connectivity and device operations"):
+            self.assertIn(phrase, rollback)
+        for phrase in ("reads running, not the candidate", "committed, tested policy",
+                       "not an uncommitted proposal", "not a binary or stored-schema rollback",
+                       "pre-upgrade firewall `/data`"):
+            self.assertIn(phrase, text)
+        self.assertNotIn("is the proposed policy", text)
+
+
 if __name__ == "__main__":
     unittest.main()
