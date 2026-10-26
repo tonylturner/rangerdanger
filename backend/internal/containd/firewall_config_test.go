@@ -47,30 +47,6 @@ func findRuleByID(rules []FirewallRule, id string) *FirewallRule {
 	return nil
 }
 
-func findRulesByZonePair(rules []FirewallRule, srcZone, dstZone string) []FirewallRule {
-	var matched []FirewallRule
-	for _, r := range rules {
-		srcMatch := len(r.SourceZones) == 0
-		for _, sz := range r.SourceZones {
-			if sz == srcZone {
-				srcMatch = true
-				break
-			}
-		}
-		dstMatch := len(r.DestZones) == 0
-		for _, dz := range r.DestZones {
-			if dz == dstZone {
-				dstMatch = true
-				break
-			}
-		}
-		if srcMatch && dstMatch {
-			matched = append(matched, r)
-		}
-	}
-	return matched
-}
-
 // --- Shared structure tests ---
 
 // Both substation policy files declare five zones / interfaces:

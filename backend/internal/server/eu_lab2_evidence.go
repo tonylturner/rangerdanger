@@ -86,7 +86,6 @@ type conduitEvidence struct {
 	historyErr              error
 	events                  []containd.Event
 	eventsErr               error
-	eventsHistoryTruncated  bool
 	plcIP                   string
 	denies                  []conduitDeny
 	identityErr             error
