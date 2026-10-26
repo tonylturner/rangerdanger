@@ -115,9 +115,10 @@ Or on Windows, after extracting the repo onto a physical local drive:
 
 What `setup.sh --from-tarballs` does, in order:
 
-1. **Pre-flight checks** - Docker reachable, Compose v2, arch
-   recognized, and ports `8088 / 9080 / 9443 / 2222` free (or held by
-   this install's own containers, on a re-run). Disk and
+1. **Pre-flight checks** - Docker reachable, Compose 2.36.0+ on
+   Engine API 1.49+ (Docker Desktop 4.42+), arch recognized, and ports
+   `8088 / 9080 / 9443 / 2222` free (or held by this install's own
+   containers, on a re-run). Disk and
    memory readings are advisory: setup warns below 30 GB free on the
    checkout filesystem and below 7 whole GiB of reported memory (8 GB
    recommended). Linux-native Docker can fall back to host RAM. It does

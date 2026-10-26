@@ -111,3 +111,54 @@ curl() {
                 self.assertEqual(result.returncode, expected, result.stderr)
                 if scenario == "conflict":
                     self.assertEqual(calls.read_text().splitlines(), ["POST"] * 3)
+
+    def test_docker_floor_compares_compose_and_engine_api(self):
+        cases = (
+            ("2.36.0", "1.49", 0), ("v2.36.0", "1.49", 0),
+            ("2.36.0-desktop.1", "1.49", 0), ("5.5.1", "1.56", 0),
+            ("2.35.1", "1.49", 1), ("2.36.0", "1.48", 1), ("2.40.0", "1.9", 1),
+            ("", "1.49", 1), ("2.36.0", "", 1), ("abc", "1.49", 1),
+        )
+        for compose, api, expected in cases:
+            with self.subTest(compose=compose, api=api):
+                result = run_bash(
+                    '. "$ROOT/scripts/lib/docker-floor.sh"\n'
+                    'docker_floor_check "$COMPOSE" "$API"',
+                    ROOT=str(ROOT), COMPOSE=compose, API=api,
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected:
+                    self.assertIn("Docker Desktop >= 4.42", result.stdout)
+                    self.assertIn("Engine >= 28.1 (API >= 1.49)", result.stdout)
+                    self.assertIn("Compose >= 2.36.0", result.stdout)
+                else:
+                    self.assertEqual(result.stdout, "")
+
+    def test_preflight_refuses_docker_below_the_interface_name_floor(self):
+        bounded = SOURCE[SOURCE.index("docker_bounded() {"):]
+        bounded = bounded[:bounded.index("\n}\n") + 3]
+        start = SOURCE.index("# Compose v2")
+        end = SOURCE.index("# Architecture", start)
+        self.assertIn('. "$ROOT_DIR/scripts/lib/docker-floor.sh"', SOURCE[:start])
+        script = bounded + """
+say() { echo "$*"; }; die() { echo "$*" >&2; exit 1; }
+docker() {
+    case "$*" in
+        "compose version") return 0 ;;
+        "compose version --short") echo "$COMPOSE" ;;
+        "version --format {{.Server.APIVersion}}") echo "$API" ;;
+        *) exit 99 ;;
+    esac
+}
+. "$ROOT/scripts/lib/docker-floor.sh"
+""" + SOURCE[start:end]
+        for compose, api, expected in (("2.36.0", "1.49", 0), ("2.35.0", "1.51", 1),
+                                       ("2.38.2", "1.48", 1)):
+            with self.subTest(compose=compose, api=api):
+                result = run_bash(script, ROOT=str(ROOT), COMPOSE=compose, API=api)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected:
+                    self.assertIn(f"found Compose {compose} on Engine API {api}", result.stderr)
+                    self.assertIn("Docker Desktop >= 4.42", result.stderr)
+                else:
+                    self.assertIn(f"Compose {compose} on Engine API {api}", result.stdout)

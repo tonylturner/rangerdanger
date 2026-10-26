@@ -77,6 +77,11 @@ jobs:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Install the Docker Engine the range needs
+        # The runner image's Engine 28.0.4 cannot create the firewall's
+        # pinned interface names (Compose interface_name needs 28.1+).
+        run: ./scripts/ci-docker-engine.sh
+
       - name: Build and bring up the platform and the US range
         # setup.sh --from-source: build every platform and package image,
         # start the platform, wait for /api/health, POST /api/range and
@@ -362,6 +367,11 @@ jobs:
 
       - name: Prepare evidence directory
         run: mkdir -p "$EU_GATE_EVIDENCE_DIR"
+
+      - name: Install the Docker Engine the range needs
+        # The runner image's Engine 28.0.4 cannot create the firewall's
+        # pinned interface names (Compose interface_name needs 28.1+).
+        run: ./scripts/ci-docker-engine.sh
 
       - name: Build and bring up the platform and EU range
         run: ./scripts/dev-up.sh --package eu-iec104-substation

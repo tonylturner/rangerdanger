@@ -9,7 +9,7 @@ path, common errors, and what to do when something breaks.
 
 | | Workshop recommendation | More headroom |
 |---|---|---|
-| Docker | Docker Desktop or Engine + Compose v2 | latest |
+| Docker | Docker Desktop 4.42+, or Engine 28.1+ with Compose 2.36+ | latest |
 | Host RAM | 16 GB | 32 GB |
 | Docker VM RAM allocation | 8 GB | 12 GB |
 | Disk | 30 GB free | 50 GB free |
@@ -33,8 +33,15 @@ itself plus the student's browser plus any IDE - 8 GB host is too
 tight in practice and will swap-thrash through the workshop. 16 GB
 is the realistic floor.
 
-Linux hosts running Docker Engine need Compose v2 (`docker compose`,
-with a space - not `docker-compose`).
+Linux hosts running Docker Engine need Engine 28.1 or later (API 1.49)
+and the Compose v2 plugin 2.36.0 or later (`docker compose`, with a
+space - not `docker-compose`). The range pins each firewall NIC to its
+zone name with Compose `interface_name` (`lan2` is the field zone on
+every host); older Compose rejects the range file and older Engines
+cannot create the pinned interfaces. Docker Desktop 4.42 is the first
+Desktop release that meets both. `setup.ps1` does not check these
+versions yet; on an older Docker Desktop the range fails to start with
+a Compose error.
 
 ### Windows: Docker Desktop WSL2 only
 
@@ -104,7 +111,8 @@ cd rangerdanger
 .\setup.ps1 -Version v0.2.0
 ```
 
-`setup.sh` checks Docker, Compose v2, architecture, and loopback ports.
+`setup.sh` checks Docker, the Compose (2.36.0+) and Engine API (1.49+)
+versions, architecture, and loopback ports; it refuses older Docker.
 Its disk and memory checks only warn: disk is measured on the checkout
 filesystem (not Docker's storage volume), and low memory is reported
 when Docker reports less than 7 whole GiB. On Linux-native Docker, the
@@ -345,9 +353,11 @@ Most "doesn't start" issues fall into one of these:
 
 1. **Docker isn't running** - start Docker Desktop, or
    `sudo systemctl start docker` on Linux.
-2. **Compose v2 isn't installed** - Compose v1 (`docker-compose`,
-   with a hyphen) is end-of-life. Install Compose v2 via Docker
-   Desktop or `apt install docker-compose-plugin`.
+2. **Compose v2 isn't installed, or Docker is too old** - Compose v1
+   (`docker-compose`, with a hyphen) is end-of-life. The range needs
+   Compose 2.36.0+ on Engine 28.1+: update to Docker Desktop 4.42 or
+   later, or on Linux install current `docker-ce` and
+   `docker-compose-plugin` from Docker's apt repository.
 3. **Ports already in use** (`8088`, `9080`, `9443`, `2222`).
    `./setup.sh --check-only` will tell you which.
 4. **Out of disk** during a 6+ GB image pull. Leave at least 30 GB

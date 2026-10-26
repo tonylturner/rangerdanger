@@ -75,7 +75,7 @@ to be verified.
 
 ## Quick start
 
-**Recommended capacity:** Docker Desktop or Docker Engine + Compose v2 · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. These are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
+**Recommended capacity:** Docker Desktop 4.42+ or Docker Engine 28.1+ with Compose 2.36+ · 16 GB host RAM (32 recommended) with at least 8 GB allocated to the Docker VM · 30 GB free disk · Apple Silicon or x86_64 · loopback ports `8088 / 9080 / 9443 / 2222` free. The Docker versions are a hard floor that `setup.sh` checks; the rest are recommendations: `setup.sh` only warns on disk and Docker memory; it reads host RAM only on native Linux Docker. See [the quickstart](docs/quickstart.md#prerequisites) for what the preflight measures.
 
 **macOS / Linux:**
 

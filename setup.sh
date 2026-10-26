@@ -180,6 +180,10 @@ with_pull_retry() {
 # shellcheck source=scripts/lib/range.sh
 # shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
 . "$ROOT_DIR/scripts/lib/range.sh"
+# docker_floor_check: the Compose and Engine versions interface_name needs.
+# shellcheck source=scripts/lib/docker-floor.sh
+# shellcheck disable=SC1091 # Default ShellCheck does not follow external sources; -x checks this helper.
+. "$ROOT_DIR/scripts/lib/docker-floor.sh"
 
 # ─── pre-flight checks ──────────────────────────────────────────────
 banner "Pre-flight checks"
@@ -214,7 +218,12 @@ say "Docker reachable"
 if ! docker compose version >/dev/null 2>&1; then
     die "Docker Compose v2 not found (this script requires the 'docker compose' subcommand, not 'docker-compose')."
 fi
-say "Compose v2 present ($(docker compose version --short 2>/dev/null || echo 'unknown'))"
+# The range Compose files pin firewall NIC names (interface_name), which
+# older Compose rejects and older Engines cannot create.
+COMPOSE_VERSION=$(docker_bounded 20 compose version --short 2>/dev/null || true)
+ENGINE_API=$(docker_bounded 20 version --format '{{.Server.APIVersion}}' 2>/dev/null || true)
+FLOOR_PROBLEM=$(docker_floor_check "$COMPOSE_VERSION" "$ENGINE_API") || die "$FLOOR_PROBLEM"
+say "Compose $COMPOSE_VERSION on Engine API $ENGINE_API"
 
 # Architecture
 ARCH_RAW=$(uname -m)

@@ -8,8 +8,10 @@ at https://github.com/tonylturner/rangerdanger.
 
 You will need:
 
-- **Docker Desktop** ≥ 4.30 (or equivalent) with **≥ 8 GB RAM** and
-  **≥ 30 GB free disk** allocated. The compose stack pulls roughly
+- **Docker Desktop** ≥ 4.42 (or Docker Engine ≥ 28.1 with Compose ≥
+  2.36.0; the range Compose files pin firewall NIC names with
+  `interface_name`) with **≥ 8 GB RAM** and **≥ 30 GB free disk**
+  allocated. The compose stack pulls roughly
   6–8 GB on a first run.
 - **Go 1.26+** for the backend (`backend/go.mod` declares `go 1.26.0`
   and pins `toolchain go1.26.10`, which `go` downloads automatically);
