@@ -22,17 +22,37 @@ const (
 )
 
 // Bash provides a connect-only primitive on the workstations and PLC. The
-// Alpine RTU/CC images instead ship BusyBox nc: -e true exits immediately
-// AFTER connect, rather than waiting on an established protocol session and
-// mistaking that idle session for a connect timeout. Neither sends a payload.
-// Only timeout owns the budget: nc -w can fail silently on BusyBox. GNU timeout
-// returns 124; BusyBox returns 143 after SIGTERM. Normalise that here, not in
-// the classifier, where an unexplained signal must remain untested.
+// Alpine RTU/CC images instead use BusyBox pscan's connect-only state report:
+// nc can fail silently on both refusal and timeout. Neither sends a payload.
+// Only a recognized pscan state is measurable. Bash's GNU/BusyBox timeout
+// statuses are normalised here, not in the strict classifier.
 const euTCPCommand = `export LC_ALL=C
 if command -v bash >/dev/null 2>&1; then
   timeout 3 bash -c 'exec 3<>/dev/tcp/$1/$2' probe "$1" "$2"
 else
-  timeout 3 busybox nc "$1" "$2" -e /bin/true
+  output=$(busybox pscan -cb -p "$2" -P "$2" -t 3000 "$1" 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    state=
+    while read -r port protocol result rest; do
+      if [ "$port" = "$2" ] && [ "$protocol" = tcp ]; then
+        if [ -n "$state" ]; then
+          state=invalid
+          break
+        fi
+        state=${result:-invalid}
+      fi
+    done <<EOF
+$output
+EOF
+    case "$state" in
+      open) exit 0 ;;
+      closed) printf '%s\n' 'Connection refused' >&2; exit 1 ;;
+      blocked) exit 124 ;;
+    esac
+  fi
+  printf '%s\n' "$output" >&2
+  exit 2
 fi
 rc=$?
 case "$rc" in
