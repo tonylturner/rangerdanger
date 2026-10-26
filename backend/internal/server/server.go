@@ -28,6 +28,10 @@ type pcapState struct {
 	FilePrefix  string   `json:"file_prefix,omitempty"` // prefix used in containd config
 	Files       []string `json:"files,omitempty"`       // resulting PCAP filenames from containd
 	Fallback    bool     `json:"fallback"`              // true for package-specific tcpdump capture
+
+	// Native completion has one owner, independent of public readiness.
+	stopping       bool
+	cancelDuration context.CancelFunc
 }
 
 // trafficState tracks an active traffic generation session.

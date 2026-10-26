@@ -69,30 +69,47 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		Filter:        containd.PcapFilter{Proto: "any"},
 	}
 
+	// Serialize native starts and stops: a duration worker must not stop a
+	// replacement capture after the user has stopped the previous one.
+	s.pcapMu.Lock()
+	if s.pcap.Capturing {
+		s.pcapMu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "capture already in progress"})
+		return
+	}
 	// Start-only overrides are ephemeral: never stage or commit capture settings.
 	status, err := gen.Containd().StartPcap(c.Request.Context(), &cfg)
 	if err != nil {
+		s.pcapMu.Unlock()
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
-	if !status.Running {
+	if len(status.Interfaces) == 0 {
+		s.pcapMu.Unlock()
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "containd capture did not start", "capture": status})
 		return
 	}
-	s.pcapMu.Lock()
+	// containd's start acknowledgement can precede Running and StartedAt.
+	// Use our acceptance time to identify this session, even with a reused prefix.
+	startedAt := time.Now().UTC()
+	durationCtx, cancelDuration := context.WithCancel(gen.Context())
 	s.pcap = pcapState{
-		Capturing:   true,
-		DurationSec: req.DurationSec,
-		StartedAt:   status.StartedAt,
-		FileReady:   false,
-		FilePrefix:  prefix,
+		Capturing:      true,
+		DurationSec:    req.DurationSec,
+		StartedAt:      startedAt.Format(time.RFC3339Nano),
+		FileReady:      false,
+		FilePrefix:     prefix,
+		cancelDuration: cancelDuration,
 	}
+	capture := s.pcap
 	s.pcapMu.Unlock()
 
-	// Poll containd until capture stops
-	if !gen.Go("pcap-poll", func(ctx context.Context) {
-		s.pollPcapCompletion(ctx, gen, prefix, req.DurationSec)
+	// Rotation is not a duration limit, especially on idle interfaces.
+	if !gen.Go("pcap-poll", func(context.Context) {
+		defer cancelDuration()
+		s.pollPcapCompletion(durationCtx, gen, capture, startedAt.Add(time.Duration(req.DurationSec)*time.Second))
 	}) {
+		s.abandonNativePcap(capture)
 		rangeUnavailable(c)
 		return
 	}
@@ -120,83 +137,156 @@ func captureZones(gen *lifecycle.Generation) []string {
 	return zones
 }
 
-// pollPcapCompletion polls containd /pcap/status until running==false,
-// then queries /pcap/list to find files matching our prefix. It is a
-// generation worker; a result after the range stopped is dropped.
-func (s *Server) pollPcapCompletion(ctx context.Context, gen *lifecycle.Generation, prefix string, durationSec int) {
-	deadline := time.Now().Add(time.Duration(durationSec+15) * time.Second)
-	for time.Now().Before(deadline) {
-		if !sleepCtx(ctx, 2*time.Second) {
-			return
+// pollPcapCompletion owns the native capture duration. A user stop makes this
+// worker inert; a result after the range stopped is dropped.
+func (s *Server) pollPcapCompletion(ctx context.Context, gen *lifecycle.Generation, capture pcapState, deadline time.Time) {
+	if !sleepCtx(ctx, time.Until(deadline)) {
+		if gen.Context().Err() != nil {
+			s.abandonNativePcap(capture)
 		}
-		status, err := gen.Containd().GetPcapStatus(ctx)
-		if err != nil {
-			continue
+		return
+	}
+	s.pcapMu.Lock()
+	if !s.pcap.Capturing || s.pcap.stopping || !samePcapCapture(s.pcap, capture) {
+		s.pcapMu.Unlock()
+		return
+	}
+	s.claimNativePcapStop()
+	s.pcapMu.Unlock()
+	// Claiming the stop cancels only the duration timer, not the finish.
+	status, err := gen.Containd().StopPcap(gen.Context())
+	if err != nil {
+		log.Printf("[pcap] duration stop failed (prefix=%s): %v", capture.FilePrefix, err)
+		s.abandonNativePcap(capture)
+		return
+	}
+	s.finishNativePcap(gen.Context(), gen, capture, status)
+}
+
+// claimNativePcapStop requires pcapMu. Capturing remains true until files
+// are published; stopping grants exactly one caller ownership of completion.
+func (s *Server) claimNativePcapStop() {
+	s.pcap.stopping = true
+	if s.pcap.cancelDuration != nil {
+		s.pcap.cancelDuration()
+		s.pcap.cancelDuration = nil
+	}
+}
+
+// Failed or cancelled sessions publish no files, even when Commit is no
+// longer allowed. Never clear a replacement session or a published result.
+func (s *Server) abandonNativePcap(capture pcapState) {
+	s.pcapMu.Lock()
+	defer s.pcapMu.Unlock()
+	if samePcapCapture(s.pcap, capture) && s.pcap.Capturing {
+		if s.pcap.cancelDuration != nil {
+			s.pcap.cancelDuration()
 		}
-		if !status.Running {
+		s.pcap.cancelDuration = nil
+		s.pcap.stopping = false
+		s.pcap.Capturing = false
+		s.pcap.Files = nil
+		s.pcap.FileReady = false
+	}
+}
+
+func samePcapCapture(a, b pcapState) bool {
+	return !a.Fallback && a.FilePrefix == b.FilePrefix && a.StartedAt == b.StartedAt
+}
+
+// finishNativePcap bounds engine shutdown independently of the requested
+// duration, then publishes whatever files are available, even on timeout.
+func (s *Server) finishNativePcap(ctx context.Context, gen *lifecycle.Generation, capture pcapState, status *containd.PcapStatus) []string {
+	published := false
+	defer func() {
+		if !published {
+			s.abandonNativePcap(capture)
+		}
+	}()
+	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	for status == nil || status.Running {
+		var err error
+		status, err = gen.Containd().GetPcapStatus(waitCtx)
+		if err == nil && !status.Running {
+			break
+		}
+		if !sleepCtx(waitCtx, 2*time.Second) {
+			if ctx.Err() != nil {
+				return nil
+			}
+			log.Printf("[pcap] shutdown not confirmed within 15s (prefix=%s)", capture.FilePrefix)
 			break
 		}
 	}
-
-	// Capture done — list files matching our prefix
+	if ctx.Err() != nil {
+		return nil
+	}
+	// Use the generation/request context, not the expired shutdown wait.
 	files, err := gen.Containd().ListPcapFiles(ctx)
 	var matchedNames []string
 	if err == nil {
 		for _, f := range files {
-			if strings.HasPrefix(f.Name, prefix) {
+			if strings.HasPrefix(f.Name, capture.FilePrefix) {
 				matchedNames = append(matchedNames, f.Name)
 			}
 		}
+	} else {
+		log.Printf("[pcap] list files failed (prefix=%s): %v", capture.FilePrefix, err)
 	}
 
 	if !gen.Commit(func() {
 		s.pcapMu.Lock()
-		s.pcap.Capturing = false
-		s.pcap.FileReady = len(matchedNames) > 0
-		s.pcap.Files = matchedNames
+		if samePcapCapture(s.pcap, capture) {
+			s.pcap.Capturing = false
+			s.pcap.stopping = false
+			s.pcap.cancelDuration = nil
+			s.pcap.FileReady = len(matchedNames) > 0
+			s.pcap.Files = matchedNames
+			published = true
+		}
 		s.pcapMu.Unlock()
 	}) {
-		return
+		return nil
 	}
 
 	if len(matchedNames) > 0 {
-		log.Printf("[pcap] containd capture complete: %d files (prefix=%s)", len(matchedNames), prefix)
+		log.Printf("[pcap] containd capture complete: %d files (prefix=%s)", len(matchedNames), capture.FilePrefix)
 	} else {
-		log.Printf("[pcap] containd capture complete but no files found for prefix=%s", prefix)
+		log.Printf("[pcap] containd capture complete but no files found for prefix=%s", capture.FilePrefix)
 	}
+	return matchedNames
 }
 
 func (s *Server) handlePcapStop(c *gin.Context) {
 	s.pcapMu.Lock()
-	isFallback := s.pcap.Fallback
-	prefix := s.pcap.FilePrefix
-	s.pcapMu.Unlock()
+	capture := s.pcap
 
-	if isFallback {
+	if capture.Fallback {
+		s.pcapMu.Unlock()
 		s.stopTcpdumpFallback(c)
 		return
 	}
 
+	if capture.stopping {
+		s.pcapMu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "capture stop already in progress"})
+		return
+	}
+	if !capture.Capturing {
+		s.pcapMu.Unlock()
+		c.JSON(http.StatusOK, gin.H{"status": "stopped", "files": capture.Files})
+		return
+	}
+	s.claimNativePcapStop()
+	s.pcapMu.Unlock()
 	status, err := rangeOf(c).Containd().StopPcap(c.Request.Context())
 	if err != nil {
+		s.abandonNativePcap(capture)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("stop pcap: %v", err)})
 		return
 	}
-
-	// Collect files matching our prefix
-	files, _ := rangeOf(c).Containd().ListPcapFiles(c.Request.Context())
-	var matchedNames []string
-	for _, f := range files {
-		if strings.HasPrefix(f.Name, prefix) {
-			matchedNames = append(matchedNames, f.Name)
-		}
-	}
-
-	s.pcapMu.Lock()
-	s.pcap.Capturing = status.Running
-	s.pcap.FileReady = len(matchedNames) > 0
-	s.pcap.Files = matchedNames
-	s.pcapMu.Unlock()
+	matchedNames := s.finishNativePcap(c.Request.Context(), rangeOf(c), capture, status)
 
 	c.JSON(http.StatusOK, gin.H{"status": "stopped", "files": matchedNames})
 }
@@ -206,12 +296,13 @@ func (s *Server) handlePcapStatus(c *gin.Context) {
 	state := s.pcap
 	s.pcapMu.Unlock()
 
-	// If using containd, get fresh status
+	// containd supplies metadata, but our worker owns the capture lifecycle:
+	// a stale Running bit must not undo an accepted start or a bounded finish.
 	if !state.Fallback && state.FilePrefix != "" {
 		status, err := rangeOf(c).Containd().GetPcapStatus(c.Request.Context())
 		if err == nil {
 			c.JSON(http.StatusOK, gin.H{
-				"capturing":    status.Running,
+				"capturing":    state.Capturing,
 				"duration_sec": state.DurationSec,
 				"started_at":   status.StartedAt,
 				"file_ready":   state.FileReady,
