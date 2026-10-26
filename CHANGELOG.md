@@ -171,6 +171,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **TCP validation probes on BusyBox images.** A dropped connection on
+  a BusyBox-only or BusyBox-`timeout` image, and a refused connection
+  on a BusyBox-only image, were reported as `skipped`. Each now
+  classifies as `deny` or `allow`.
+- **OLTC audit and EU outage-recovery evidence.** Arming the OLTC from
+  the PLC now writes an audit entry with its actor. EU gate G13 now
+  requires every device revision from its baseline through a settled
+  final field snapshot to be audited and solved, so autonomous OLTC
+  control during the outage no longer fails the gate.
+- **Range start after ad-hoc containers of range images.** Compose labels
+  the images it builds with the range project. A plain `docker run` of one
+  of those images made range teardown count it as a leftover, and the
+  range failed to start. Only containers Compose created now count.
+
 - **Network Map OpenPLC button.** It opened a lab-instance path that
   always answered 404; it now opens `/apps/openplc/`.
 
