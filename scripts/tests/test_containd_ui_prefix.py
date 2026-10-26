@@ -26,8 +26,24 @@ API_FILTERS = {
     '"/api/v1/cli/ws': '"/containd/api/v1/cli/ws',
 }
 RUNTIME = (
-    'window.location.pathname.startsWith("/containd/")?"/containd":"";'
+    'function a(e){return(null!=e?e:window.location.pathname).startsWith("/containd/")?"/containd":""};'
     'U("/api/v1/auth/me");'
+)
+# Shared with the native PowerShell probe tests to pin both accepted shapes
+# and reject detections that do not derive the base from the pathname.
+AUTODETECT_CASES = (
+    ('window.location.pathname.startsWith("/containd/")?"/containd":""', True),
+    (RUNTIME, True),
+    ("( null != path_1$ ? path_1$ : window.location.pathname ).startsWith( '/containd/' ) ? '/containd' : ''", True),
+    ('location.pathname.startsWith("/containd/")?"/containd":""', False),
+    ('window.location.search.startsWith("/containd/")?"/containd":""', False),
+    ('(null!=e?e:window.location.search).startsWith("/containd/")?"/containd":""', False),
+    ('(null!=e?other:window.location.pathname).startsWith("/containd/")?"/containd":""', False),
+    ('window.location.pathname; other.startsWith("/containd/")?"/containd":""', False),
+    ('window.location.pathname.includes("/containd/")?"/containd":""', False),
+    ('window.location.pathname.startsWith("/containd")?"/containd":""', False),
+    ('(null!=e?e:window.location.pathname).startsWith("/containd/")?"/other":""', False),
+    ('"/containd"; fetch("/api/v1/auth/me");', False),
 )
 BYPASSES = (
     'function q(e){return"/api/v1/pcap/download/".concat(e)};'
@@ -78,6 +94,16 @@ class RoutesTests(unittest.TestCase):
 
 
 class ChunkTests(unittest.TestCase):
+    def test_pathname_autodetect_shapes(self):
+        for body, accepted in AUTODETECT_CASES:
+            with self.subTest(body=body):
+                chunks = {"shared.js": body + ';U("/api/v1/auth/me");'}
+                if accepted:
+                    probe.check_chunks(chunks)
+                else:
+                    with self.assertRaisesRegex(probe.ProbeError, "runtime API-base autodetect"):
+                        probe.check_chunks(chunks)
+
     def test_unmodified_runtime_calls_and_narrow_rewrites_pass(self):
         probe.check_chunks({
             "shared.js": RUNTIME,
