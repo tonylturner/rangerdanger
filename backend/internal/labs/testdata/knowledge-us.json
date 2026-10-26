@@ -219,7 +219,7 @@
       {
         "id": "live-dpi-events-strip",
         "title": "Reading the Live DPI Events Strip",
-        "sha256": "01364d3953c6556a005170259da63da136165e19eb2c8ae9a5e73d9152df0f12"
+        "sha256": "70a6bd66d9d7a2a5c94e7bd221c48adf7276bacdc4192d381b3d9bdccd27bcd5"
       },
       {
         "id": "how-containd-enforces-policy",

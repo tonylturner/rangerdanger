@@ -15,6 +15,8 @@ import (
 // ImportConfig sends a full JSON config to containd using the candidate/commit flow.
 // Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
 // Both endpoints must succeed; a staged candidate is not an applied policy.
+// Before staging, appliance-owned NIC device bindings are copied from the
+// running configuration by logical interface name. No legacy import is tried.
 //
 // The lab assumes dataplane enforcement is on — without it, containd commits the
 // config to the running store but engine.ApplyRules silently no-ops (compiler is

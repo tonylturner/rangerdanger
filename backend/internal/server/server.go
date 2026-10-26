@@ -27,7 +27,7 @@ type pcapState struct {
 	FileReady   bool     `json:"file_ready"`
 	FilePrefix  string   `json:"file_prefix,omitempty"` // prefix used in containd config
 	Files       []string `json:"files,omitempty"`       // resulting PCAP filenames from containd
-	Fallback    bool     `json:"fallback"`              // true when using tcpdump fallback
+	Fallback    bool     `json:"fallback"`              // true for package-specific tcpdump capture
 }
 
 // trafficState tracks an active traffic generation session.
@@ -208,7 +208,7 @@ func (s *Server) registerRangeRoutes(rng *gin.RouterGroup) {
 		historian.GET("/history", s.handleHistorianHistory)
 	}
 
-	// PCAP capture endpoints (containd API with tcpdump fallback)
+	// PCAP capture endpoints (native containd for US; package-specific tcpdump for EU)
 	pcap := rng.Group("/pcap")
 	{
 		pcap.POST("/start", s.handlePcapStart)

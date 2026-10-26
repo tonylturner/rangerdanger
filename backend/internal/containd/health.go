@@ -10,7 +10,8 @@ import (
 
 // HealthStatus mirrors containd's GET /api/v1/health body. The endpoint
 // is a liveness probe of the management plane: it always answers
-// status "ok" while the API is up; operational diagnostics are separate.
+// status "ok" while the API is up, even when forwarding or binding
+// diagnostics in the same body report degraded operation.
 type HealthStatus struct {
 	Status            string                   `json:"status"`    // "ok"
 	Component         string                   `json:"component"` // "mgmt"

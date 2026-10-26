@@ -20,9 +20,9 @@ services:
       - CONTAIND_ENGINE_URL=http://127.0.0.1:8081
       - CONTAIND_ENGINE_ADDR=127.0.0.1:8081
       - CONTAIND_CONFIG_DB=/data/config.db
-      # CONTAIND_CAPTURE_IFACES intentionally unset; see
-      # docker-compose.yml for rationale (containd's PCAP path doesn't
-      # autobind zone names, backend uses `tcpdump -i any` fallback).
+      # CONTAIND_CAPTURE_IFACES intentionally unset. The backend selects
+      # native capture zones from the authored topology via containd's API,
+      # not Docker-assigned ethN names. US startup errors do not select tcpdump.
       - CONTAIND_ENFORCE_ENABLED=1
       - CONTAIND_AUTO_WAN_SUBNET=10.10.10.0/24
       - CONTAIND_AUTO_DMZ_SUBNET=10.20.20.0/24

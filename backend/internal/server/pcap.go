@@ -342,7 +342,7 @@ func (s *Server) handlePcapList(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"files": entries})
 }
 
-// ---------- Fallback: Docker exec tcpdump ----------
+// ---------- Package-specific capture: Docker exec tcpdump (EU) ----------
 
 func (s *Server) startTcpdumpFallback(c *gin.Context, durationSec int, interfaces []string, filter string) {
 	firewall, err := firewallContainer(rangeOf(c))
