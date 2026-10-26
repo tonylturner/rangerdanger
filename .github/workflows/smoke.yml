@@ -117,7 +117,8 @@ jobs:
             [ -n "$image" ] && image_list+=("$image")
           done <<<"$ids"
           docker image inspect "${image_list[@]}" > build/smoke-receipts/images.json
-          docker image inspect ghcr.io/tonylturner/containd:latest > build/smoke-receipts/containd.json
+          # Source mode builds the firewall locally; record the image it runs.
+          docker image inspect "$(docker inspect --format '{{.Image}}' rangerdanger-firewall)" > build/smoke-receipts/containd.json
           curl -fsS --max-time 10 http://localhost:8088/api/build > build/smoke-receipts/api-build.json
           curl -fsS --max-time 10 http://localhost:8088/api/firewall/active > build/smoke-receipts/firewall-active.json
 
