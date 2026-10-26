@@ -100,12 +100,23 @@ t_expect_fails 0 "weak restore confirms weak attribution with no plan"
 MANUAL_INPUT="$TMP_DIR/manual-input.json"
 STAGED_INPUT="$TMP_DIR/staged-input.json"
 EFFECTIVE_INPUT="$TMP_DIR/effective-input.json"
+RUNNING_INPUT="$TMP_DIR/running-input.json"
 manual_fixture_reset() {
   printf '%s\n' '{"dataplane":{"enforcement":false,"dpiEnabled":false},
+    "interfaces":[{"name":"mgmt","device":"policy-mgmt","zone":"management"},
+      {"name":"field","device":"policy-field"},{"name":"unbound","device":"policy-unbound"},
+      {"name":"empty","device":"policy-empty"},{"name":"logical","zone":"logical"}],
     "firewall":{"rules":[{"id":"retained-rule","action":"ALLOW"}]}}' >"$MANUAL_INPUT"
+  printf '%s\n' '{"interfaces":[{"name":"field","device":"eth2"},
+      {"name":"mgmt","device":"eth0"},{"name":"empty","device":""},
+      {"name":"appliance-only","device":"eth9"}],
+    "firewall":{"rules":[]}}' >"$RUNNING_INPUT"
   cp "$MANUAL_INPUT" "$EFFECTIVE_INPUT"
   : >"$DOCKER_LOG"
+  rm -f "$STAGED_INPUT"
   FW_TOKEN=fixture-admin
+  RUNNING_STATUS=200
+  RUNNING_RC=0
   CANDIDATE_STATUS=201
   COMMIT_STATUS=204
   CANDIDATE_RC=0
@@ -132,9 +143,16 @@ docker() {
       printf '{"status":"committed"}\n%s' "$COMMIT_STATUS"
       return "$COMMIT_RC" ;;
     "exec $FW curl "*"/api/v1/config")
-      printf 'readback\n' >>"$DOCKER_LOG"
-      cat "$EFFECTIVE_INPUT"
-      printf '\n200' ;;
+      if grep -qx commit "$DOCKER_LOG"; then
+        printf 'readback\n' >>"$DOCKER_LOG"
+        cat "$EFFECTIVE_INPUT"
+        printf '\n200'
+      else
+        printf 'bindings\n' >>"$DOCKER_LOG"
+        cat "$RUNNING_INPUT"
+        printf '\n%s' "$RUNNING_STATUS"
+        return "$RUNNING_RC"
+      fi ;;
     *) return 99 ;;
   esac
 }
@@ -160,17 +178,61 @@ manual_fixture_reset
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 0 "manual commit converges after grace plus tick"
 t_expect_fails 0 "manual commit has no warning, backend mutation or session flush"
-t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'candidate\ncommit\nreadback')" \
-  "manual commit stages, commits and reads effective rules in order"
+t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'bindings\ncandidate\ncommit\nreadback')" \
+  "manual commit reads bindings before staging, committing and reading effective rules"
 t_expect_eq "$ACTIVE_CALLS" 12 "custom with plan source cannot satisfy manual observation"
 t_expect_eq "$SLEEPS" 11 "observer convergence may exceed the ten-second grace plus tick"
 t_run jq -e --slurpfile original "$MANUAL_INPUT" \
   '.dataplane.enforcement == true and .dataplane.dpiEnabled == false
    and .firewall == $original[0].firewall' "$STAGED_INPUT"
 t_expect_eq "$T_STATUS" 0 "staging enables enforcement without changing rules or other dataplane fields"
+t_run jq -e '.interfaces == [
+  {"name":"mgmt","device":"eth0","zone":"management"},
+  {"name":"field","device":"eth2"},{"name":"unbound"},{"name":"empty"},
+  {"name":"logical","zone":"logical"}]' "$STAGED_INPUT"
+t_expect_eq "$T_STATUS" 0 \
+  "staging matches running devices by name, strips document devices and adds no interfaces"
 t_run grep -F -- '-H Authorization: Bearer fixture-admin -H Content-Type: application/json' \
   "$TMP_DIR/manual-docker-args"
 t_expect_eq "$T_STATUS" 0 "containd requests use the admin JWT and JSON content type"
+
+for running_failure in transport http malformed null interfaces false-interfaces device; do
+  manual_fixture_reset
+  case "$running_failure" in
+    transport) RUNNING_RC=7 ;;
+    http) RUNNING_STATUS=500 ;;
+    malformed) printf '{' >"$RUNNING_INPUT" ;;
+    null) printf 'null' >"$RUNNING_INPUT" ;;
+    interfaces) printf '{"interfaces":{},"firewall":{"rules":[]}}' >"$RUNNING_INPUT" ;;
+    false-interfaces) printf '{"interfaces":false,"firewall":{"rules":[]}}' >"$RUNNING_INPUT" ;;
+    device) printf '{"interfaces":[{"name":"mgmt","device":42}],"firewall":{"rules":[]}}' >"$RUNNING_INPUT" ;;
+  esac
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 1 "running binding read/decode failure stops manual commit: $running_failure"
+  t_expect_fails 1 "running binding failure reports a gate failure: $running_failure"
+  t_expect_eq "$(cat "$DOCKER_LOG")" bindings \
+    "running binding failure stops before staging or commit: $running_failure"
+  t_expect_eq "$ACTIVE_CALLS" 0 "running binding failure cannot observe success: $running_failure"
+  t_run test ! -e "$STAGED_INPUT"
+  t_expect_eq "$T_STATUS" 0 "running binding failure sends no candidate body: $running_failure"
+done
+manual_fixture_reset
+RUNNING_STATUS=503
+t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+t_expect_out "cannot read appliance bindings before staging manual policy fixture" \
+  "running-config read failure explains why manual staging stopped"
+
+for interfaces_patch in 'del(.interfaces)' '.interfaces = null' \
+  '.interfaces += [{"name":"mgmt","device":""}]'; do
+  manual_fixture_reset
+  jq "$interfaces_patch" "$RUNNING_INPUT" >"$TMP_DIR/running-mutated.json"
+  cp "$TMP_DIR/running-mutated.json" "$RUNNING_INPUT"
+  ACTIVE_AFTER=0
+  t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
+  t_expect_eq "$T_STATUS" 0 "running bindings follow backend decoding: $interfaces_patch"
+  t_run jq -e '.interfaces[0] | has("device") | not' "$STAGED_INPUT"
+  t_expect_eq "$T_STATUS" 0 "missing or last-empty binding removes document device: $interfaces_patch"
+done
 
 for mutation in 'del(.dataplane)' '.dataplane = null' '.dataplane = "invalid"' \
   '.dataplane.enforcement = true'; do
@@ -207,7 +269,8 @@ manual_fixture_reset
 CANDIDATE_STATUS=422
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture
 t_expect_eq "$T_STATUS" 1 "rejected candidate fails"
-t_expect_eq "$(cat "$DOCKER_LOG")" candidate "rejected candidate is never committed"
+t_expect_eq "$(cat "$DOCKER_LOG")" "$(printf 'bindings\ncandidate')" \
+  "rejected candidate is never committed"
 manual_fixture_reset
 COMMIT_STATUS=500
 t_run eu_commit_manual_policy "$MANUAL_INPUT" fixture

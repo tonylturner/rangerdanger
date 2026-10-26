@@ -158,15 +158,36 @@ eu_apply_named() {
   return 0
 }
 eu_commit_manual_policy() {
-  local policy="$1" label="$2" response status warnings active effective expected_file actual_file i
+  local policy="$1" label="$2" response status warnings active running effective expected_file actual_file i
   local candidate_file="$TMP_DIR/manual-candidate.json" headers_file="$TMP_DIR/manual-commit.headers"
   # shellcheck disable=SC2034 # ownership is read by eu-cleanup.sh
   state_touched=1
-  # Match containd.ensureEnforcementOn in backend/internal/containd/import.go:
-  # without this flag, a committed config need not update the effective nft rules.
-  jq '.dataplane |= (if type == "object" then . else {} end)
+  # Match containd.Client.ImportConfig: preserve appliance-owned devices by
+  # logical name, then enable enforcement so the commit updates effective nft rules.
+  running=$(eu_firewall_config) || {
+    fail "cannot read appliance bindings before staging manual policy $label"
+    return 1
+  }
+  jq --argjson running "$running" '
+      def string_or_null: type == "string" or type == "null";
+      (if $running.interfaces == null then [] else $running.interfaces end) as $interfaces
+      | if ($interfaces | type) != "array" then
+          error("running interfaces must be an array")
+        elif any($interfaces[];
+          (type != "object" and type != "null")
+          or (.name | string_or_null | not)
+          or (.device | string_or_null | not)) then
+          error("cannot decode running interface bindings")
+        else . end
+      | (reduce $interfaces[] as $iface
+          ({}; .[$iface.name // ""] = ($iface.device // ""))) as $devices
+      | .interfaces |= map(
+          del(.device)
+          | ($devices[.name] // "") as $device
+          | if $device != "" then .device = $device else . end)
+      | .dataplane |= (if type == "object" then . else {} end)
       | .dataplane.enforcement = true' "$policy" >"$candidate_file" || {
-    fail "cannot enable dataplane enforcement for manual policy $label"
+    fail "cannot merge appliance bindings and enable dataplane enforcement for manual policy $label"
     return 1
   }
   response=$(docker exec -i "$FW" curl -sS --max-time 15 -w '\n%{http_code}' \
