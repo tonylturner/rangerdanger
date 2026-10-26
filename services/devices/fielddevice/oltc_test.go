@@ -11,6 +11,33 @@ import (
 func readyAuto(t *testing.T, m *Model)   { t.Helper(); write(t, m, 1, 0); measure(t, m, nil) }
 func readyManual(t *testing.T, m *Model) { t.Helper(); write(t, m, 2, 1); measure(t, m, nil) }
 
+func TestPLCArmingAudit(t *testing.T) {
+	m, _ := newTestModel(t, OLTC)
+	actor := AuditContext{Peer: "10.30.30.30:43001", Protocol: "modbus", Zone: "station"}
+	before := m.Truth()
+	result := m.WriteHolding(context.Background(), 1, 0, actor)
+	after := m.Truth()
+	if !result.Accepted || !result.Changed || before.Armed || !after.Armed || after.Revision != before.Revision+1 {
+		t.Fatalf("arming result=%+v before=%+v after=%+v", result, before, after)
+	}
+	entries, latest, _ := m.AuditAfter(0)
+	if len(entries) != 1 || latest == nil {
+		t.Fatalf("arming audit=%+v latest=%v", entries, latest)
+	}
+	entry := entries[0]
+	if entry.Operation != "plc_arm" || entry.Result != "accepted" || entry.Context != actor ||
+		entry.Before.Truth != before || entry.After.Truth != after {
+		t.Fatalf("arming audit lost operation, outcome, actor or truth transition: %+v", entry)
+	}
+	result = m.WriteHolding(context.Background(), 1, 0, actor)
+	if !result.Accepted || result.Changed || m.Truth() != after {
+		t.Fatalf("already-armed zero changed truth: result=%+v truth=%+v", result, m.Truth())
+	}
+	if entries, _, _ := m.AuditAfter(*latest); len(entries) != 0 {
+		t.Fatalf("already-armed zero added audit entries: %+v", entries)
+	}
+}
+
 func TestPLCRequestClassificationsAndAuditDedup(t *testing.T) {
 	tests := []struct {
 		name  string
