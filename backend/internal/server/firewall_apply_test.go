@@ -38,7 +38,7 @@ import (
 type fakeContaindCounters struct {
 	candidateCount int32
 	commitCount    int32
-	importCount    int32 // legacy fallback path
+	importCount    int32 // forbidden legacy import requests
 	lastCandidate  []byte
 }
 

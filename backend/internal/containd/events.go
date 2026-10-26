@@ -28,7 +28,7 @@ func (e *EventID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Event represents a containd DPI/IDS event.
+// Event represents a containd rule, protocol-decoder or IDS event.
 type Event struct {
 	ID         EventID        `json:"id"`
 	Timestamp  time.Time      `json:"timestamp"`

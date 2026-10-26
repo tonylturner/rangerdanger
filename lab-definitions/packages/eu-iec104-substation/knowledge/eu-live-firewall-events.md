@@ -1,8 +1,14 @@
-The segmentation drawer's shared “Live DPI Events” panel is useful as a narrow view of logged firewall-rule evidence in the EU range. Its title and generic category counters do not mean this package inspects IEC 104 or Modbus commands: the EU reference policy disables DPI and enforces its network boundary at L4. DPI being off is an intentional design choice, not a gap in the evidence.
+The segmentation drawer's shared “Live Firewall Events” panel is useful as a narrow view of logged firewall-rule evidence in the EU range. Its title and generic category counters do not mean this package inspects IEC 104 or Modbus commands: the EU reference policy disables DPI and enforces its network boundary at L4. DPI being off is an intentional design choice, not a gap in the evidence.
 
 ### Where the events come from
 
-The panel polls `/api/substation/network-events` every 2.5 seconds. The backend asks containd for up to 50 recent events, then keeps events whose source or destination belongs to a teaching-zone subnet. This is a refreshed, bounded event view, not a continuous packet capture or a complete record of every packet.
+The panel polls `/api/substation/network-events` every 2.5 seconds. The backend requests events since the latest of five minutes ago, the current range generation's start and the last policy change. It follows filtered pages of up to 5,000 events, keeps events whose source or destination belongs to a teaching-zone subnet and returns at most 50 rows. This is a refreshed, time-bounded view, not a continuous packet capture or a complete record of every packet.
+
+containd retains DENY rule events in a count-bounded bank with no age expiry.
+They survive policy commits, but not process restarts; later DENYs can evict
+older ones. That retention does not widen the strip's window: rows before its
+`since` boundary are excluded. A retained row inside the window can still
+predate your latest probe, so match its timestamp and tuple to your test.
 
 The EU reference policies use rule logging selectively. When a matching rule has logging enabled, containd can report a firewall rule hit with its action and rule identity. For example, the improved policy logs explicit unauthorized IEC 104 and Modbus denies. Other allowed or denied traffic may have no corresponding row if its matching rule is not logged. See [the policy comparison](#eu-policy-comparison) for the exact boundaries and logging examples.
 
@@ -19,6 +25,11 @@ When events are present, the badge summarizes counts for `rule`, `dpi`, and `ids
 The row's `DENY` reports a firewall action for that logged rule hit. It does not show whether an already established connection stopped carrying traffic, whether the application command completed, or what the equipment did. An allowed TCP/2404 connection is not proof of read-only IEC 104 access, and TCP/502 is not function-code filtering. Keep reachability separate from command authority, as described in [the L4 boundary article](#eu-port-source-boundary).
 
 ### Empty and unavailable states
+
+The API returns `since`, `historyTruncated` and `engineError`, but the drawer
+does not display that metadata. Incomplete history or an engine read error
+can leave partial or empty results without an on-screen warning; preserve
+the API response when assessing completeness.
 
 If containd cannot be reached, the panel says `containd unreachable`. If the endpoint returns no recent events, the EU view shows a generic prompt to run a probe from a terminal. Neither state proves that no traffic occurred: the endpoint is bounded to recent events, only logged matches can appear, and the panel may not yet have refreshed after a probe. Check the selected policy and exact source, destination, service and test time; use a packet capture or other protocol evidence when the question requires more than a logged rule verdict.
 

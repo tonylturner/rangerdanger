@@ -222,6 +222,15 @@ this is not a repository-only hotfix.
 installs. Check the actual containd build, not just the mutable `latest` tag.
 RangerDanger owns its client fixes for the 0.1.33 contract; older containd
 builds are not a compatibility option.
+The backend checks the version before seeding and before adopting a running
+range after a backend restart; a 0.1.33 prerelease is too old.
+
+`/api/firewall/health` includes `ipv4Forwarding`, `managementBinding` and
+authenticated `managementReservation` diagnostics (or
+`managementReservationError` if that read fails). HTTP 200/status `ok` is
+management liveness, not proof of forwarding readiness. US captures use native
+containd zone selection from the authored topology; startup errors are returned,
+not retried with tcpdump. EU uses tcpdump for its four-port OR filter.
 
 Save captures, reports, notes and desktop work, then back up `.env`, `data/`,
 `backend/data/` and local source edits. This is a workshop reset, not a
@@ -247,7 +256,8 @@ directories with their complete pre-upgrade backups (do not merge database
 files), restore the matching older release and image, then restart and
 verify operations. **An older tag alone is not enough.** containd 0.1.32
 requires the older RangerDanger release too; v0.2.0 requires 0.1.33 or later.
-A policy import stages candidate configuration, not a binary/schema rollback.
+A policy import uses candidate+commit only, preserving running NIC `device`
+bindings before staging. It is not a binary/schema rollback.
 
 ### Installing the upgrade
 

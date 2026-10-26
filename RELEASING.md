@@ -178,6 +178,8 @@ below the supported minimum.
 Source-mode package builds use the containd `iec104` Git context (or an
 explicit `CONTAIND_SOURCE` override), not the published image. Source-mode
 success does not certify the release's containd digest.
+The backend checks the minimum version before seeding and before adopting a
+running range after a backend restart; a 0.1.33 prerelease does not qualify.
 
 ### Back up before the first 0.1.33 start
 
@@ -198,8 +200,9 @@ directories with their complete matching pre-upgrade backups (do not merge
 old and new database files), restore the old release and image, then restart
 and verify operations. **An older tag or digest alone is not a rollback.**
 Returning to containd 0.1.32 also requires the older RangerDanger release;
-v0.2.0 does not support it. Importing an old policy only stages a configuration
-change; it does not undo a stored-schema migration.
+v0.2.0 does not support it. Policy import uses candidate+commit only, copying
+running NIC `device` bindings before staging; it does not undo a stored-schema
+migration.
 
 The trade-off is workshop-day determinism. `:latest` resolves at pull
 time, so a containd push between your pre-flight check and the morning
@@ -223,6 +226,10 @@ of class can shift behavior under you. **Mitigations for instructors:**
    improved + reset) fails loudly if containd drifted, so you find
    out at setup-time rather than student-time. `--skip-firewall-gate`
    bypasses for diagnosis.
+   Health status `ok` is management liveness, not forwarding readiness.
+   Inspect `ipv4Forwarding`, `managementBinding` and authenticated
+   `managementReservation` (or `managementReservationError`) in that response;
+   degraded diagnostics do not change liveness to an outage.
 
 3. **Stage to SSD** for an offline class. `stage-ssd.sh` snapshots
    whatever is currently `:latest` and produces a tarball that

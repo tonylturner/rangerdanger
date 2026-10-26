@@ -116,7 +116,9 @@ func (s *Server) forwardRTAC(c *gin.Context, method, path string, body io.Reader
 	c.Data(resp.StatusCode, "application/json", respBody)
 }
 
-// handleSubstationNetworkEvents returns containd DPI events filtered to substation-relevant traffic.
+// handleSubstationNetworkEvents returns at most 50 teaching-zone events since
+// the latest of five minutes ago, generation start and last policy change.
+// Filtered pages are combined with truncation and engine-error metadata.
 func (s *Server) handleSubstationNetworkEvents(c *gin.Context) {
 	gen := rangeOf(c)
 	since := time.Now().UTC().Add(-5 * time.Minute)
