@@ -141,7 +141,7 @@
       {
         "id": "iec-61850-goose",
         "title": "IEC 61850 and GOOSE (Why the Lab Doesn't Simulate Them)",
-        "sha256": "3005a20f0ab7e7194858849f724c4527a0dd17fd878935da1218e431615de618"
+        "sha256": "ae7de6aed1c53e8b8cb7b3daa1314ac10253ad80dcbb331953b52a59fda17e59"
       },
       {
         "id": "opc-ua",
@@ -243,7 +243,7 @@
       {
         "id": "living-off-the-land-ot",
         "title": "Living off the Land in OT",
-        "sha256": "a50a14228e334ace20ae23d7c85fd3ca4d9c960555544f2e621b52f7378e5213"
+        "sha256": "478a19b312918a8df0cc5aae6250e561021291576209a41d773a9413472a260a"
       },
       {
         "id": "change-management-firewall-rules",
