@@ -14,6 +14,7 @@ func TestCurriculumDirectoryLayout(t *testing.T) {
 		want  string
 	}{
 		{"empty", map[string]string{}, "must not be empty"},
+		{"retired notices section", map[string]string{"catalog.yml": "schema: 1\n", "notices.yml": "retired: true\n"}, `unknown curriculum file "notices.yml"`},
 		{"unknown file", map[string]string{"notes.yml": "schema: 1\n"}, "unknown curriculum file"},
 		{"backup", map[string]string{"catalog.yml~": "schema: 1\n"}, "unknown curriculum file"},
 		{"nested directory", map[string]string{"plan.yml/nested.yml": "schema: 1\n"}, "unknown curriculum file"},

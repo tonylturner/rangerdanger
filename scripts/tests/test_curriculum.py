@@ -27,6 +27,7 @@ class CurriculumReaderTests(unittest.TestCase):
     def test_rejects_invalid_sections(self):
         for files in (
             {}, {"notes.yml": "schema: 1\n"},
+            {"catalog.yml": "schema: 1\n", "notices.yml": "retired: true\n"},
             {"catalog.yml": "schema: 1\n", "plan.yml": "schema: 1\n"},
             {"catalog.yml": "schema: 1\nschema: 1\n"},
             {"catalog.yml": "schema: 1\n---\nschema: 1\n"},

@@ -8,7 +8,7 @@ import type { CurriculumBinding } from "./api";
 const { load } = createRequire(import.meta.url)("js-yaml") as { load: (text: string) => unknown };
 const sectionFiles = new Set([
   "catalog.yml", "requirements.yml", "readiness.yml", "coverage.yml",
-  "implementation.yml", "nodes.yml", "notices.yml", "plan.yml",
+  "implementation.yml", "nodes.yml", "plan.yml",
 ]);
 
 export function readCurriculumSections(packageDir: string, directory: string): Record<string, unknown> {

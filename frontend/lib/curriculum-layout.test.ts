@@ -22,6 +22,7 @@ describe("curriculum section reader", () => {
   it.each([
     [{}, /Empty/],
     [{ "notes.yml": "schema: 1\n" }, /Unknown/],
+    [{ "catalog.yml": "schema: 1\n", "notices.yml": "retired: true\n" }, /Unknown/],
     [{ "catalog.yml": "schema: 1\n", "plan.yml": "schema: 1\n" }, /Duplicate/],
     [{ "catalog.yml": "schema: 1\nschema: 1\n" }, /duplicated/],
     [{ "catalog.yml": "schema: 1\n---\nschema: 1\n" }, /single document/],

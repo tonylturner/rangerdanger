@@ -99,7 +99,7 @@ func loadCurriculum(dir string, binding *CurriculumBinding, pkg Package) (*Curri
 var curriculumSections = map[string]bool{
 	"catalog.yml": true, "requirements.yml": true, "readiness.yml": true,
 	"coverage.yml": true, "implementation.yml": true, "nodes.yml": true,
-	"notices.yml": true, "plan.yml": true,
+	"plan.yml": true,
 }
 
 func readCurriculumDocument(dir string, binding *CurriculumBinding) (*yaml.Node, error) {

@@ -56,7 +56,7 @@ Both packages use `curriculum: {dir: curriculum}` in `package.yml`.
 The directory must be an immediate sibling with a lowercase hyphenated name;
 the former `file:` binding is not accepted. Keep exercise `roles`, `activities`
 and `dynamicSteps` in the package binding. Author the remaining top-level keys
-once each, in these single-purpose section files (each under 1000 lines):
+once each, in these seven single-purpose section files (each under 1000 lines):
 
 | File | Content |
 | --- | --- |
@@ -66,7 +66,6 @@ once each, in these single-purpose section files (each under 1000 lines):
 | `coverage.yml` | Impacts, groups, planning-only IDs and display orders |
 | `implementation.yml` | Phase templates, test text and empty-plan guidance |
 | `nodes.yml` | Exercise node mappings and inference |
-| `notices.yml` | DPI explanatory notices |
 | `plan.yml` | Policy compiler and proof model |
 
 The loader merges disjoint top-level keys, then resolves topology references in

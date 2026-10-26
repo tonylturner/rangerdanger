@@ -677,7 +677,7 @@ export async function resetWorkshop() {
   return request<ResetResult>("/workshop/reset", { method: "POST" });
 }
 
-// The backend strictly decodes the package sibling file and resolves topology
+// The backend strictly merges the package sibling directory and resolves topology
 // references before publishing this model. Missing binding means no planner.
 export type CurriculumBinding = {
   schema: 1;
@@ -703,8 +703,6 @@ export type CurriculumBinding = {
   negativeEmpty: string;
   nodeMap: Record<string, { primary: string; others: string[] }>;
   nodeInference: { node: string; ip: string; pattern: string }[];
-  dpiNotice: { title: string; description: string };
-  dpiForbiddenNotice: { title: string; description: string };
 };
 
 export type PlanICS = {

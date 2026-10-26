@@ -72,15 +72,6 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
     expect(EU.catalog.find((action) => action.id === "iec104-dpi")?.why).toBe(
       `Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. ${suffix}`,
     );
-    for (const binding of [EU, fixtureCurriculum("backend/internal/labs/testdata/curriculum-eu")]) {
-      const notice = binding.dpiForbiddenNotice;
-      expect(notice.description).toBe(
-        " — this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.",
-      );
-      expect(notice.title + notice.description).toBe(
-        "ICS DPI planned — this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.",
-      );
-    }
   });
   it.each(EU_PLANS)("renders server-owned $label rules without introducing ICS predicates", (plan) => {
     expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);

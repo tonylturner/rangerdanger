@@ -8,7 +8,7 @@ import yaml
 
 SECTION_FILES = {
     "catalog.yml", "requirements.yml", "readiness.yml", "coverage.yml",
-    "implementation.yml", "nodes.yml", "notices.yml", "plan.yml",
+    "implementation.yml", "nodes.yml", "plan.yml",
 }
 
 

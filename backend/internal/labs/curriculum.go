@@ -18,30 +18,28 @@ type CurriculumActivity struct {
 
 // Curriculum is a strictly decoded, topology-resolved package planning model.
 type Curriculum struct {
-	Plan               *CurriculumPlan  `yaml:"plan" json:"-"`
-	DPINotice          CurriculumNotice `yaml:"dpiNotice" json:"dpiNotice"`
-	DPIForbiddenNotice CurriculumNotice `yaml:"dpiForbiddenNotice" json:"dpiForbiddenNotice"`
-	RequirementOrder   []string         `yaml:"requirementOrder" json:"requirementOrder"`
-	GroupOrder         []string         `yaml:"groupOrder" json:"groupOrder"`
-	ImpactOrder        []string         `yaml:"impactOrder" json:"impactOrder"`
-	CurriculumBinding  `yaml:"-"`
-	Schema             int                              `yaml:"schema" json:"schema"`
-	ICSRules           string                           `yaml:"-" json:"icsRules"`
-	Requirements       map[string]CurriculumRequirement `yaml:"requirements" json:"requirements"`
-	Readiness          []CurriculumReadiness            `yaml:"readiness" json:"readiness"`
-	ReadinessFlags     []CurriculumReadinessFlag        `yaml:"readinessFlags" json:"readinessFlags"`
-	BudgetHours        int                              `yaml:"budgetHours" json:"budgetHours"`
-	Teams              []DecisionRole                   `yaml:"teams" json:"teams"`
-	Catalog            []DecisionAction                 `yaml:"catalog" json:"catalog"`
-	Impact             map[string]CurriculumImpact      `yaml:"impact" json:"impact"`
-	Groups             map[string]CurriculumGroup       `yaml:"groups" json:"groups"`
-	PlanningOnly       []string                         `yaml:"planningOnly" json:"planningOnly"`
-	Phases             map[string]string                `yaml:"phases" json:"phases"`
-	NoPlan             string                           `yaml:"noPlan" json:"noPlan"`
-	Tests              []CurriculumTest                 `yaml:"tests" json:"tests"`
-	NegativeEmpty      string                           `yaml:"negativeEmpty" json:"negativeEmpty"`
-	NodeMap            map[string]CurriculumNodes       `yaml:"nodeMap" json:"nodeMap"`
-	NodeInference      []CurriculumNodeInference        `yaml:"nodeInference" json:"nodeInference"`
+	Plan              *CurriculumPlan `yaml:"plan" json:"-"`
+	RequirementOrder  []string        `yaml:"requirementOrder" json:"requirementOrder"`
+	GroupOrder        []string        `yaml:"groupOrder" json:"groupOrder"`
+	ImpactOrder       []string        `yaml:"impactOrder" json:"impactOrder"`
+	CurriculumBinding `yaml:"-"`
+	Schema            int                              `yaml:"schema" json:"schema"`
+	ICSRules          string                           `yaml:"-" json:"icsRules"`
+	Requirements      map[string]CurriculumRequirement `yaml:"requirements" json:"requirements"`
+	Readiness         []CurriculumReadiness            `yaml:"readiness" json:"readiness"`
+	ReadinessFlags    []CurriculumReadinessFlag        `yaml:"readinessFlags" json:"readinessFlags"`
+	BudgetHours       int                              `yaml:"budgetHours" json:"budgetHours"`
+	Teams             []DecisionRole                   `yaml:"teams" json:"teams"`
+	Catalog           []DecisionAction                 `yaml:"catalog" json:"catalog"`
+	Impact            map[string]CurriculumImpact      `yaml:"impact" json:"impact"`
+	Groups            map[string]CurriculumGroup       `yaml:"groups" json:"groups"`
+	PlanningOnly      []string                         `yaml:"planningOnly" json:"planningOnly"`
+	Phases            map[string]string                `yaml:"phases" json:"phases"`
+	NoPlan            string                           `yaml:"noPlan" json:"noPlan"`
+	Tests             []CurriculumTest                 `yaml:"tests" json:"tests"`
+	NegativeEmpty     string                           `yaml:"negativeEmpty" json:"negativeEmpty"`
+	NodeMap           map[string]CurriculumNodes       `yaml:"nodeMap" json:"nodeMap"`
+	NodeInference     []CurriculumNodeInference        `yaml:"nodeInference" json:"nodeInference"`
 }
 
 type CurriculumRequirement struct {
@@ -82,10 +80,4 @@ type CurriculumNodeInference struct {
 	Node    string `yaml:"node" json:"node"`
 	IP      string `yaml:"ip" json:"ip"`
 	Pattern string `yaml:"pattern" json:"pattern"`
-}
-
-// CurriculumNotice is package-authored explanatory UI text.
-type CurriculumNotice struct {
-	Title       string `yaml:"title" json:"title"`
-	Description string `yaml:"description" json:"description"`
 }
