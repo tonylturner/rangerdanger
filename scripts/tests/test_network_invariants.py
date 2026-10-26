@@ -127,6 +127,69 @@ def differences(expected: dict, actual: dict, name: str) -> list[str]:
     return problems
 
 
+def upstreams(text: str) -> list[tuple[str, int]]:
+    """Read service endpoints, resolving proxy_pass names through upstream groups."""
+    text = re.sub(r"#[^\n]*", "", text)
+    endpoint = r"([A-Za-z0-9_.-]+):(\d+)"
+    found = set()
+    groups = {}
+    for group, body in re.findall(r"\bupstream\s+(\S+)\s*\{([^{}]*)\}", text):
+        servers = {(host, int(port) if port else 80) for host, port in
+                   re.findall(r"\bserver\s+([A-Za-z0-9_.-]+)(?::(\d+))?(?=[;\s])", body)}
+        groups[group] = servers
+        found.update(servers)
+    for host, port in re.findall(r"\bset\s+\$u\s+http://" + endpoint + r"\b", text):
+        found.add((host, int(port)))
+    for host, port in re.findall(
+            r"\bproxy_pass\s+http://([A-Za-z0-9_.-]+)(?::(\d+))?(?=[/;\s])", text):
+        if host in groups and not port:
+            found.update(groups[host])
+        else:
+            found.add((host, int(port) if port else 80))
+    return sorted(found)
+
+
+def resolved_attachments(doc: dict, service: dict) -> dict:
+    """Use Engine network names, not stack-local attachment keys."""
+    out = {}
+    for key, attachment in attachments(service).items():
+        network = doc["networks"][key] or {}
+        name = network.get("name")
+        if name is None:
+            name = key if network.get("external") else f"{doc['name']}_{key}"
+        out[name] = attachment
+    return out
+
+
+def proxy_contract(doc: dict, platform: dict, endpoints: list[tuple[str, int]],
+                   name: str) -> tuple[dict, list[str]]:
+    """Snapshot each upstream's sole shared interface; cardinality is a hard rule."""
+    out = {}
+    if "name" not in doc or "name" not in platform:
+        return out, [f"{name}: compose files must set a top-level name; Engine network "
+                     "names would otherwise depend on the checkout directory"]
+    problems = []
+    proxy = resolved_attachments(platform, platform["services"]["proxy"])
+    for host, port in endpoints:
+        where = f"{name}: proxy upstream {host}:{port}"
+        if host not in doc["services"]:
+            problems.append(f"{where} missing service services/{host}")
+            continue
+        networks = resolved_attachments(doc, doc["services"][host])
+        shared = sorted(proxy.keys() & networks.keys())
+        if len(shared) != 1:
+            problems.append(f"{where} must share exactly one network with proxy; "
+                            f"found {len(shared)}: {shared!r}")
+            continue
+        network = shared[0]
+        ip = networks[network].get("ipv4_address")
+        if not ip:
+            problems.append(f"{where} has no static ipv4_address on {network}")
+        out[f"{host}:{port}/network"] = network
+        out[f"{host}:{port}/ipv4_address"] = ip
+    return out, problems
+
+
 def report(problems: list[str]) -> str:
     return "\n".join([*problems, FROZEN])
 
@@ -134,7 +197,9 @@ def report(problems: list[str]) -> str:
 class NetworkInvariants(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.fixture = json.loads(FIXTURE.read_text())["stacks"]
+        fixture = json.loads(FIXTURE.read_text())
+        cls.fixture = fixture["stacks"]
+        cls.proxy_fixture = fixture["proxy_upstreams"]
         cls.stacks = stacks()
         cls.docs = {name: load(name) for pair in cls.stacks.values() for name in pair}
 
@@ -165,6 +230,25 @@ class NetworkInvariants(unittest.TestCase):
                 problems = rule_violations(doc, name)
                 if problems:
                     self.fail(report(problems))
+
+    def test_proxy_upstream_interfaces(self) -> None:
+        self.assertEqual(sorted(self.proxy_fixture), sorted(self.stacks), report([
+            "the proxy fixture's stacks differ from the platform plus packages"]))
+        for stack, pair in self.stacks.items():
+            routes = (ROOT / "proxy/nginx.conf" if stack == "platform" else
+                      PACKAGES / stack / "nginx.routes.conf")
+            endpoints = upstreams(routes.read_text())
+            self.assertTrue(endpoints, report([f"{routes}: no upstreams found"]))
+            # Both platform variants must deliver each package through the same interface.
+            for name in pair:
+                for platform in self.stacks["platform"]:
+                    with self.subTest(compose=name, platform=platform):
+                        actual, problems = proxy_contract(
+                            self.docs[name], self.docs[platform], endpoints, name)
+                        problems += differences(self.proxy_fixture.get(stack, {}),
+                                                actual, f"{name}: proxy upstream")
+                        if problems:
+                            self.fail(report(problems))
 
 
 MODEL = """
@@ -278,6 +362,101 @@ class NegativeChecks(unittest.TestCase):
     def test_report_names_the_rule(self) -> None:
         self.assertTrue(report(["x"]).endswith(FROZEN))
         self.assertIn("scripts/firewall-smoke.sh both", FROZEN)
+
+
+class ProxyChecks(unittest.TestCase):
+    """Each change to a proxy upstream's interface, made in memory, must be reported."""
+
+    NAME = "lab-definitions/packages/us-dnp3-substation/compose.source.yml"
+
+    def setUp(self) -> None:
+        self.platform = load("docker-compose.yml")
+        self.changed = load(self.NAME)
+        self.endpoints = upstreams(
+            (ROOT / self.NAME).with_name("nginx.routes.conf").read_text())
+        self.frozen = json.loads(FIXTURE.read_text())["proxy_upstreams"]["us-dnp3-substation"]
+
+    def problems(self) -> list[str]:
+        actual, problems = proxy_contract(self.changed, self.platform, self.endpoints, self.NAME)
+        return problems + differences(self.frozen, actual, f"{self.NAME}: proxy upstream")
+
+    def assert_reported(self, fragment: str) -> None:
+        self.assertIn(fragment, report(self.problems()))
+
+    def test_unchanged_model_passes(self) -> None:
+        self.assertEqual(self.problems(), [])
+
+    def test_second_shared_network(self) -> None:
+        self.changed["services"]["firewall"]["networks"]["desk_corp_net"] = {
+            "ipv4_address": "10.98.1.4"}
+        self.assert_reported("proxy upstream firewall:8080 must share exactly one network "
+                             "with proxy; found 2: "
+                             "['rangerdanger_desk_corp', 'rangerdanger_mgmt_net']")
+
+    def test_moved_ip(self) -> None:
+        frozen = self.frozen["firewall:8080/ipv4_address"]
+        prefix, last = frozen.rsplit(".", 1)
+        moved = f"{prefix}.{int(last) % 250 + 1}"
+        self.changed["services"]["firewall"]["networks"]["mgmt_net"]["ipv4_address"] = moved
+        self.assert_reported("proxy upstream: firewall:8080/ipv4_address changed "
+                             f"from {frozen!r} to {moved!r}")
+
+    def test_missing_static_ip(self) -> None:
+        del self.changed["services"]["firewall"]["networks"]["mgmt_net"]["ipv4_address"]
+        self.assert_reported("proxy upstream firewall:8080 has no static ipv4_address "
+                             "on rangerdanger_mgmt_net")
+
+    def test_renamed_service(self) -> None:
+        services = self.changed["services"]
+        services["renamed_firewall"] = services.pop("firewall")
+        self.assert_reported("proxy upstream firewall:8080 missing service services/firewall")
+
+    def test_missing_service(self) -> None:
+        del self.changed["services"]["firewall"]
+        self.assert_reported("proxy upstream firewall:8080 missing service services/firewall")
+
+    def test_renamed_route_host(self) -> None:
+        self.endpoints = [("renamed_firewall", port) if host == "firewall" else (host, port)
+                          for host, port in self.endpoints]
+        self.assert_reported("proxy upstream renamed_firewall:8080 missing service "
+                             "services/renamed_firewall")
+
+    def test_no_shared_network(self) -> None:
+        del self.changed["services"]["firewall"]["networks"]["mgmt_net"]
+        self.assert_reported("proxy upstream firewall:8080 must share exactly one network "
+                             "with proxy; found 0: []")
+
+    def test_missing_project_name(self) -> None:
+        del self.changed["name"]
+        self.assert_reported("compose files must set a top-level name")
+
+    def test_network_keys_differ_but_names_match(self) -> None:
+        self.changed["networks"]["management_alias"] = self.changed["networks"].pop("mgmt_net")
+        for service in self.changed["services"].values():
+            networks = service.get("networks", {})
+            if "mgmt_net" in networks:
+                networks["management_alias"] = networks.pop("mgmt_net")
+        self.assertEqual(self.problems(), [])
+
+    def test_same_key_different_name_is_not_shared(self) -> None:
+        self.changed["networks"]["mgmt_net"]["name"] = "different_management"
+        self.assert_reported("proxy upstream firewall:8080 must share exactly one network "
+                             "with proxy; found 0: []")
+
+    def test_upstream_parser(self) -> None:
+        self.assertEqual(upstreams("""
+            # set $u http://ignored:1234;
+            upstream api { server backend:8080; server backend_replica:8081; }
+            upstream ui { server frontend:3000; }
+            upstream default_upstream { server implicit_port; }
+            location /api/ { proxy_pass http://api; }
+            location / { proxy_pass http://ui; }
+            location /direct/ { proxy_pass http://direct:8082/path; }
+            location /default/ { proxy_pass http://default_port; }
+            location /plc/ { set $u http://openplc:8080; proxy_pass $u; }
+            location /again/ { set $u http://openplc:8080; proxy_pass $u; }
+        """), [("backend", 8080), ("backend_replica", 8081), ("default_port", 80),
+               ("direct", 8082), ("frontend", 3000), ("implicit_port", 80), ("openplc", 8080)])
 
 
 if __name__ == "__main__":
