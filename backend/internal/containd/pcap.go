@@ -10,17 +10,19 @@ import (
 )
 
 // PcapFilter defines the structured filter for containd captures.
-// containd does NOT accept BPF strings — only structured src/dst/proto.
+// containd accepts structured src/dst/proto/port, not BPF expressions.
 type PcapFilter struct {
 	Src   string `json:"src,omitempty"`   // source CIDR or IP
 	Dst   string `json:"dst,omitempty"`   // destination CIDR or IP
 	Proto string `json:"proto,omitempty"` // "tcp", "udp", "icmp", "any"
+	Port  string `json:"port,omitempty"`  // single TCP/UDP port or inclusive range
 }
 
 // PcapConfig is the body for POST /api/v1/pcap/config and /api/v1/pcap/start.
 type PcapConfig struct {
 	Enabled       bool       `json:"enabled,omitempty"`
 	Interfaces    []string   `json:"interfaces,omitempty"`
+	Zones         []string   `json:"zones,omitempty"`
 	Snaplen       int        `json:"snaplen,omitempty"`   // default 262144
 	MaxSizeMB     int        `json:"maxSizeMB,omitempty"` // default 64
 	MaxFiles      int        `json:"maxFiles,omitempty"`  // default 8
@@ -49,25 +51,6 @@ type PcapFileInfo struct {
 	CreatedAt string   `json:"createdAt"`
 	Tags      []string `json:"tags,omitempty"`
 	Status    string   `json:"status,omitempty"` // "ready", "capturing"
-}
-
-// SetPcapConfig updates the PCAP configuration on containd.
-func (c *Client) SetPcapConfig(ctx context.Context, cfg PcapConfig) error {
-	body, err := json.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/pcap/config", body)
-	if err != nil {
-		return fmt.Errorf("set pcap config: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("set pcap config returned %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
 }
 
 // StartPcap starts packet capture. Accepts an optional PcapConfig override.

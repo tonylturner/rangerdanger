@@ -261,7 +261,7 @@ func TestWorkshopStatusUSUnchanged(t *testing.T) {
 }
 
 // TestEUPcapUsesTheCaptureFilter skips containd's capture API, whose
-// structured filter cannot name ports, and goes to tcpdump.
+// structured filter cannot express this OR of four ports, and goes to tcpdump.
 func TestEUPcapUsesTheCaptureFilter(t *testing.T) {
 	if euRecipe.captureFilter != "tcp port 2404 or tcp port 502 or tcp port 8080 or tcp port 8081" {
 		t.Fatalf("EU capture must cover IEC 104, Modbus, HTTP reads/maintenance and historian ingest: %q", euRecipe.captureFilter)

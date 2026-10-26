@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/lifecycle"
 )
 
-// ---------- PCAP capture (via containd /api/v1/pcap/*, fallback to Docker exec) ----------
+// ---------- PCAP capture (containd API, or package-specific tcpdump) ----------
 
 func (s *Server) handlePcapStart(c *gin.Context) {
 	var req struct {
@@ -39,28 +40,24 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		prefix = fmt.Sprintf("rangerdanger-%s", time.Now().UTC().Format("20060102-150405"))
 	}
 
-	// A package's capture filter names ports, which containd's structured
-	// filter cannot express; tcpdump captures it directly.
+	// EU needs an OR of disjoint ports, not the single port/range supported
+	// by containd's structured filter. Preserve its tcpdump capture.
 	gen := rangeOf(c)
 	if recipe, err := recipeFor(gen); err == nil && recipe.captureFilter != "" {
 		s.startTcpdumpFallback(c, req.DurationSec, nil, recipe.captureFilter)
 		return
 	}
 
-	// containd's /api/v1/pcap/start resolves Interfaces[] entries
-	// via netlink as literal kernel interface names — it does NOT
-	// autobind zone names the way policy interfaces do (commit
-	// 5f31128). And docker's ethN ordering is non-deterministic
-	// across hosts (alphabetical network name, not compose order),
-	// so any ethN pin shuffles on the wrong host and the field
-	// zone silently drops out of the capture set. We leave Interfaces
-	// empty here — containd will reject the call with
-	// "config validation failed: pcap.enabled requires at least one
-	// interface", and the backend falls through to its `tcpdump -i any`
-	// path which is fully drift-proof. Once containd's PCAP API
-	// accepts zone names, the right pin is `[wan,dmz,lan1,lan2,lan3]`.
+	// The authored topology carries containd zone names. Manifest zone
+	// labels identify teaching networks, not necessarily appliance zones.
+	zones := captureZones(gen)
+	if len(zones) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "package has no capture zones"})
+		return
+	}
 	cfg := containd.PcapConfig{
 		Enabled:       true,
+		Zones:         zones,
 		Snaplen:       262144,
 		MaxSizeMB:     64,
 		MaxFiles:      10,
@@ -72,38 +69,55 @@ func (s *Server) handlePcapStart(c *gin.Context) {
 		Filter:        containd.PcapFilter{Proto: "any"},
 	}
 
-	// Try containd PCAP API: start with config inline
+	// Start-only overrides are ephemeral: never stage or commit capture settings.
 	status, err := gen.Containd().StartPcap(c.Request.Context(), &cfg)
-	if err == nil {
-		s.pcapMu.Lock()
-		s.pcap = pcapState{
-			Capturing:   true,
-			DurationSec: req.DurationSec,
-			StartedAt:   status.StartedAt,
-			FileReady:   false,
-			FilePrefix:  prefix,
-		}
-		s.pcapMu.Unlock()
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	if !status.Running {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "containd capture did not start", "capture": status})
+		return
+	}
+	s.pcapMu.Lock()
+	s.pcap = pcapState{
+		Capturing:   true,
+		DurationSec: req.DurationSec,
+		StartedAt:   status.StartedAt,
+		FileReady:   false,
+		FilePrefix:  prefix,
+	}
+	s.pcapMu.Unlock()
 
-		// Poll containd until capture stops
-		if !gen.Go("pcap-poll", func(ctx context.Context) {
-			s.pollPcapCompletion(ctx, gen, prefix, req.DurationSec)
-		}) {
-			rangeUnavailable(c)
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status":       "capturing",
-			"duration_sec": req.DurationSec,
-			"file_prefix":  prefix,
-		})
+	// Poll containd until capture stops
+	if !gen.Go("pcap-poll", func(ctx context.Context) {
+		s.pollPcapCompletion(ctx, gen, prefix, req.DurationSec)
+	}) {
+		rangeUnavailable(c)
 		return
 	}
 
-	// Fallback: Docker exec tcpdump on firewall container
-	log.Printf("[pcap] containd PCAP API not available (%v), using tcpdump fallback", err)
-	s.startTcpdumpFallback(c, req.DurationSec, nil, "")
+	c.JSON(http.StatusOK, gin.H{
+		"status":       "capturing",
+		"duration_sec": req.DurationSec,
+		"file_prefix":  prefix,
+		"interfaces":   status.Interfaces,
+	})
+}
+
+func captureZones(gen *lifecycle.Generation) []string {
+	seen := map[string]bool{}
+	for _, network := range gen.Package.Template.Networks {
+		if network.Zone != "" {
+			seen[network.Zone] = true
+		}
+	}
+	zones := make([]string, 0, len(seen))
+	for zone := range seen {
+		zones = append(zones, zone)
+	}
+	sort.Strings(zones)
+	return zones
 }
 
 // pollPcapCompletion polls containd /pcap/status until running==false,

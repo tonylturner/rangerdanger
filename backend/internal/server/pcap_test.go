@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/tturner/rangerdanger/backend/internal/containd"
 )
 
 func invokePcapDownloadFile(s *Server, name string) *httptest.ResponseRecorder {
@@ -112,14 +115,17 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/pcap/start":
 			atomic.AddInt32(&startRequests, 1)
-			var cfg struct {
-				FilePrefix string `json:"filePrefix"`
-			}
+			var cfg containd.PcapConfig
 			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 				t.Errorf("decode start request: %v", err)
 			}
+			if !reflect.DeepEqual(cfg.Zones, []string{"dmz", "lan1", "lan2", "wan"}) || len(cfg.Interfaces) != 0 {
+				t.Errorf("wrong selection: %+v", cfg)
+				http.Error(w, "invalid capture selection", 400)
+				return
+			}
 			prefixes <- cfg.FilePrefix
-			_, _ = io.WriteString(w, `{"running":true,"startedAt":"2026-09-28T12:00:00Z"}`)
+			_, _ = io.WriteString(w, `{"running":true,"interfaces":["eth2","eth7"],"startedAt":"2026-09-28T12:00:00Z"}`)
 		case "/api/v1/pcap/status":
 			_, _ = io.WriteString(w, `{"running":false}`)
 		case "/api/v1/pcap/list":
@@ -166,6 +172,12 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+	var response struct {
+		Interfaces []string `json:"interfaces"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || !reflect.DeepEqual(response.Interfaces, []string{"eth2", "eth7"}) {
+		t.Fatalf("resolved devices lost: %s", rec.Body)
+	}
 	select {
 	case got := <-prefixes:
 		if got != validPrefix {
@@ -181,5 +193,42 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 	case <-pollDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("capture poll did not complete")
+	}
+}
+
+func TestPcapStartDoesNotHideSelectorOrEngineFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, body         string
+		upstream, expected int
+	}{
+		{"unbound member", `{"error":"zone lan2 has no bound devices"}`, 400, 502},
+		{"missing interface", `{"error":"interface lan1 resolves to missing device"}`, 400, 502},
+		{"no engine", `{"status":"pcap start queued"}`, 200, 503},
+		{"engine failure", `{"running":false,"lastError":"capture unavailable"}`, 200, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/pcap/start" {
+					t.Errorf("unexpected config mutation: %s", r.URL)
+				}
+				w.WriteHeader(tc.upstream)
+				io.WriteString(w, tc.body)
+			}))
+			defer upstream.Close()
+			s := newTestServer(t, upstream.URL)
+			rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", `{"duration_sec":1}`)
+			if rec.Code != tc.expected || s.pcap.Capturing {
+				t.Fatalf("false capture success: %d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+func TestPcapStartRejectsPackageWithoutZones(t *testing.T) {
+	s := newTestServer(t, "http://127.0.0.1:1")
+	s.rng.(*fakeRange).gen.Package.Template.Networks = nil
+	rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", `{}`)
+	if rec.Code != 422 || s.pcap.Capturing {
+		t.Fatalf("empty selection accepted: %d %s", rec.Code, rec.Body)
 	}
 }
