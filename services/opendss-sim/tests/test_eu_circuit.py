@@ -1,11 +1,68 @@
 import importlib.util
 import json
+import math
+from copy import deepcopy
 from dataclasses import replace
 
 import pytest
 from eu_circuit import EUFeederSolver
 from eu_controls import ProcessControls
 from eu_support import PROCESS_DIR, profile, truths
+
+
+# The feeder's 1e-8 iteration convergence criterion is not an absolute error
+# bound across native solver builds (its ideal switches have 1e-9 ohm R/X).
+# Identical dependencies on Linux arm64/x86_64 differ by up to 0.0000248 kV.
+# Allow 0.1 V, over 2000 times smaller than the 204 V deadband half-width.
+# Only solved voltages get this budget; configuration and decisions stay exact.
+REFERENCE_VOLTAGE_ABS_KV = 1e-4
+SOLVED_VOLTAGES = {'bus20_kv', 'feeder_voltage_kv', 's1_kv'}
+
+
+def assert_reference_cases(actual, expected, path=()):
+    assert type(actual) is type(expected), path
+    if isinstance(expected, dict):
+        assert actual.keys() == expected.keys(), path
+        for key in expected:
+            assert_reference_cases(actual[key], expected[key], (*path, key))
+    elif isinstance(expected, list):
+        assert len(actual) == len(expected), path
+        for index, (value, reference) in enumerate(zip(actual, expected)):
+            assert_reference_cases(value, reference, (*path, index))
+    elif type(expected) is float and path[-1] in SOLVED_VOLTAGES:
+        assert math.isfinite(actual), path
+        assert actual == pytest.approx(expected, rel=0, abs=REFERENCE_VOLTAGE_ABS_KV), path
+    else:
+        assert actual == expected, path
+
+
+def test_reference_contract_accepts_only_subvolt_solver_roundoff():
+    expected = json.loads((PROCESS_DIR / 'reference-cases.json').read_text())
+    actual = deepcopy(expected)
+    actual['nominal']['bus20_kv'] += REFERENCE_VOLTAGE_ABS_KV / 2
+    assert_reference_cases(actual, expected)
+
+
+@pytest.mark.parametrize('mutation', [
+    lambda value: value['nominal'].update(
+        bus20_kv=value['nominal']['bus20_kv'] + 2 * REFERENCE_VOLTAGE_ABS_KV),
+    lambda value: value['nominal'].update(bus20_kv=float('nan')),
+    lambda value: value['nominal'].update(bus20_kv=float('inf')),
+    lambda value: value['nominal'].update(tap=value['nominal']['tap'] + 1),
+    lambda value: value['nominal'].update(in_band=not value['nominal']['in_band']),
+    lambda value: value.update(profile_enabled=int(value['profile_enabled'])),
+    lambda value: value['nominal'].update(extra=0),
+    lambda value: value['nominal'].pop('s1_kv'),
+    lambda value: value['triple_load'].reverse(),
+    lambda value: value['triple_load'].pop(),
+    lambda value: value.update(setpoint_kv=value['setpoint_kv'] + REFERENCE_VOLTAGE_ABS_KV / 2),
+])
+def test_reference_contract_rejects_structural_decision_and_physical_changes(mutation):
+    expected = json.loads((PROCESS_DIR / 'reference-cases.json').read_text())
+    actual = deepcopy(expected)
+    mutation(actual)
+    with pytest.raises(AssertionError):
+        assert_reference_cases(actual, expected)
 
 
 @pytest.fixture
@@ -20,7 +77,7 @@ def test_reference_cases_match_active_circuit_and_schema3_requirements(solver):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     cases = module.reference_cases()
-    assert cases == json.loads((PROCESS_DIR / 'reference-cases.json').read_text())
+    assert_reference_cases(cases, json.loads((PROCESS_DIR / 'reference-cases.json').read_text()))
     assert cases['status'] == 'passed'
     assert all(cases['checks'].values())
     assert cases['nominal']['feeder_voltage_kv'] > cases['nominal']['s1_kv']
