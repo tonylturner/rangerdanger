@@ -133,7 +133,7 @@ try:
         dockerfile(path)
     peers = {
         "services/iec104/check/run.sh": r"^PY=(\S+)$",
-        "services/iec104/check/reference/build.py": r'"peer":\s*"([^"]+)"',
+        "services/iec104/check/reference/build.py": r'^PEER_IMAGE = "([^"]+)"$',
     }
     for path, pattern in peers.items():
         if path not in tracked:

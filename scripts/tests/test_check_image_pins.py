@@ -107,7 +107,7 @@ class ImagePinTests(unittest.TestCase):
         peers = {
             "Dockerfile": f"FROM {IMAGE}\n",
             "services/iec104/check/run.sh": f"PY={IMAGE}\n",
-            "services/iec104/check/reference/build.py": f'roles = {{"peer": "{IMAGE}"}}\n',
+            "services/iec104/check/reference/build.py": f'PEER_IMAGE = "{IMAGE}"\n',
         }
         self.check(peers)
         for name in list(peers)[1:]:
