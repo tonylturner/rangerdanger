@@ -224,6 +224,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read event fields containd never sends, so every row showed a blank
   "→". They now show source and destination address and port, plus the
   protocol, function code and rule.
+- **Firewall capture instructions no longer assume fixed `ethN` names.**
+  The US tcpdump and ESP/EAP articles named `eth0`-`eth3` per zone, but
+  the firewall's interface order differs between hosts. They now look
+  the interface up from the zone subnet on the firewall, or use `-i any`
+  with a subnet filter, and map each zone to its subnet and containd
+  interface name (`wan`, `dmz`, `lan1`, `lan2`, `lan3`).
 
 ### Security
 

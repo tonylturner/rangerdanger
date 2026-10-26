@@ -210,7 +210,8 @@ flowchart LR
 five Docker network attachments total. Containd autobinds the policy's
 logical interface names (`wan`/`dmz`/`lan1`/`lan2`/`lan3`) to whatever
 `ethN` Docker assigns at boot via `CONTAIND_AUTO_*_SUBNET`, so the
-non-deterministic ethN ordering across hosts doesn't shift the policy.
+ethN ordering, which differs across hosts, doesn't shift the policy.
+Never rely on a fixed ethN; find a zone's device from its subnet.
 
 **`rtac_sim` is multi-homed across `ot_ops_net` + `field_net` +
 `physics_net` + `mgmt_net`** but `scripts/rtac-harden.sh` replaces the directly-

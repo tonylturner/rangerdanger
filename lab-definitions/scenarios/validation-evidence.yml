@@ -174,8 +174,8 @@ steps:
 
       :::hint Advanced: capture PCAP by hand
       The report captures this automatically; the manual form, from the
-      `fw-1` terminal, uses `-i any` + a BPF subnet filter (Docker's `ethN`
-      ordering drifts between hosts):
+      `fw-1` terminal, uses `-i any` + a BPF subnet filter (the firewall's
+      `ethN` order differs between hosts):
 
       At `containd#`, type `shell` before these Linux commands.
 
