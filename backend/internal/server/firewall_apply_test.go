@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -221,5 +222,18 @@ func TestHandleFirewallApply_PropagatesContaindFailure(t *testing.T) {
 	}
 	if errMsg, ok := body["error"].(string); !ok || errMsg == "" {
 		t.Errorf("expected non-empty error in body, got: %+v", body)
+	}
+}
+
+func TestHandleFirewallApplyMissingCandidateDoesNotPublish(t *testing.T) {
+	for _, code := range []int{404, 405} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			fake, counts := fakeContaind(t, code, 200)
+			s := newTestServer(t, fake.URL)
+			rec, _ := invoke(s, s.handleFirewallApply, "POST", "/api/firewall/apply", map[string]string{"config": "improved"})
+			if rec.Code != 502 || s.activeConfig != "weak" || s.policySource != "" || counts.commitCount != 0 || counts.importCount != 0 {
+				t.Fatalf("published failed apply: %d %s", rec.Code, rec.Body)
+			}
+		})
 	}
 }

@@ -248,8 +248,9 @@ func (c *fakeCompose) Down(context.Context) error {
 
 // fakeFirewall is a containd API that is ready and accepts imports.
 type fakeFirewall struct {
-	server  *httptest.Server
-	imports atomic.Int32
+	server          *httptest.Server
+	imports         atomic.Int32
+	candidateStatus int
 }
 
 func newFakeFirewall(t *testing.T) *fakeFirewall {
@@ -263,6 +264,9 @@ func newFakeFirewall(t *testing.T) *fakeFirewall {
 			_ = json.NewEncoder(w).Encode(map[string]any{"interfaces": []any{map[string]string{"name": "lan3", "device": "eth8"}}})
 		case "/api/v1/config/candidate":
 			fw.imports.Add(1)
+			if fw.candidateStatus != 0 {
+				w.WriteHeader(fw.candidateStatus)
+			}
 		case "/api/v1/config/commit":
 		default:
 			http.NotFound(w, r)

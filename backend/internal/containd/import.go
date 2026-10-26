@@ -3,7 +3,6 @@ package containd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,11 +12,9 @@ import (
 	"github.com/tturner/rangerdanger/backend/internal/labs"
 )
 
-var errCandidateEndpointMissing = errors.New("candidate endpoint missing")
-
 // ImportConfig sends a full JSON config to containd using the candidate/commit flow.
 // Flow: POST /api/v1/config/candidate → POST /api/v1/config/commit
-// Falls back to legacy /api/v1/config/import if candidate endpoint is unavailable.
+// Both endpoints must succeed; a staged candidate is not an applied policy.
 //
 // The lab assumes dataplane enforcement is on — without it, containd commits the
 // config to the running store but engine.ApplyRules silently no-ops (compiler is
@@ -51,16 +48,7 @@ func (c *Client) ImportConfig(ctx context.Context, configJSON []byte) ([]string,
 		return nil, fmt.Errorf("ensure enforcement on: %w", err)
 	}
 
-	// Try the preferred candidate/commit flow first
-	if warnings, err := c.importViaCandidate(ctx, patched); err == nil {
-		return warnings, nil
-	} else {
-		if !errors.Is(err, errCandidateEndpointMissing) {
-			return nil, err
-		}
-		log.Printf("containd: candidate/commit flow failed (%v), falling back to /config/import", err)
-		return c.importLegacy(ctx, patched)
-	}
+	return c.importViaCandidate(ctx, patched)
 }
 
 // ensureEnforcementOn parses a containd policy JSON and returns a copy with
@@ -115,9 +103,6 @@ func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]s
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-		return nil, fmt.Errorf("%w (%d)", errCandidateEndpointMissing, resp.StatusCode)
-	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("post candidate returned %d: %s", resp.StatusCode, string(body))
@@ -136,24 +121,6 @@ func (c *Client) importViaCandidate(ctx context.Context, configJSON []byte) ([]s
 	}
 
 	return collectWarnings(resp2.Header.Values("X-Containd-Warnings")), nil
-}
-
-// importLegacy uses the older /api/v1/config/import endpoint.
-// The legacy endpoint doesn't run applyRunningConfig and therefore can't
-// produce warnings — always returns nil for the warnings slice.
-func (c *Client) importLegacy(ctx context.Context, configJSON []byte) ([]string, error) {
-	resp, err := c.doRequestWithBody(ctx, "POST", c.BaseURL+"/api/v1/config/import", configJSON)
-	if err != nil {
-		return nil, fmt.Errorf("import config request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("import config returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil, nil
 }
 
 // collectWarnings flattens repeated X-Containd-Warnings header values

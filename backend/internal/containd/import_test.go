@@ -197,34 +197,6 @@ func TestEnsureEnforcementOn_EmptyInput(t *testing.T) {
 	}
 }
 
-// TestImportConfigLegacyFallback verifies the client falls back to
-// /api/v1/config/import when the candidate endpoint returns 404.
-func TestImportConfigLegacyFallback(t *testing.T) {
-	var sawImport bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/config":
-			io.WriteString(w, `{}`)
-		case "/api/v1/config/candidate":
-			w.WriteHeader(http.StatusNotFound)
-		case "/api/v1/config/import":
-			sawImport = true
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-	}))
-	defer srv.Close()
-
-	client := newTestClient(srv.URL)
-	if _, err := client.ImportConfig(context.Background(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`)); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !sawImport {
-		t.Error("expected fallback to /api/v1/config/import")
-	}
-}
-
 // TestImportConfigFailure verifies error handling on import failure.
 func TestImportConfigFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +246,7 @@ func TestImportRejectsUnsafeBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-func TestImportFallbackOnlyMissingCandidate(t *testing.T) {
+func TestImportRequiresCandidateAndCommit(t *testing.T) {
 	for _, phase := range []string{"candidate", "commit"} {
 		for _, code := range []int{400, 401, 403, 404, 405, 409, 422, 500, 503} {
 			t.Run(fmt.Sprintf("%s/%d", phase, code), func(t *testing.T) {
@@ -294,8 +266,7 @@ func TestImportFallbackOnlyMissingCandidate(t *testing.T) {
 				}))
 				defer srv.Close()
 				_, err := newTestClient(srv.URL).ImportConfig(t.Context(), []byte(`{"interfaces":[{"name":"lan3","zone":"lan3"}]}`))
-				fallback := phase == "candidate" && (code == 404 || code == 405)
-				if (err == nil) != fallback || (legacy.Load() == 1) != fallback {
+				if err == nil || legacy.Load() != 0 {
 					t.Fatalf("err=%v, legacy=%d", err, legacy.Load())
 				}
 			})

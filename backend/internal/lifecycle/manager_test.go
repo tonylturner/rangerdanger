@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -560,5 +561,21 @@ func TestUnsafeDefaultPolicyKeepsOldRangeServing(t *testing.T) {
 		if strings.HasPrefix(call, "down") || strings.HasPrefix(call, "up") {
 			t.Fatalf("unsafe policy tore down range: %v", h.compose.callLog())
 		}
+	}
+}
+
+func TestMissingCandidateCannotActivateRange(t *testing.T) {
+	for _, code := range []int{404, 405} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			h := newHarness(t)
+			h.firewall.candidateStatus = code
+			m := h.manager(h.options())
+			if st := h.switchTo(m, "pkg-a"); st.Phase != PhaseFailed || !strings.Contains(st.Error, fmt.Sprint(code)) {
+				t.Fatalf("status = %+v", st)
+			}
+			if len(h.activated) != 0 {
+				t.Fatal("failed import activated generation")
+			}
+		})
 	}
 }
