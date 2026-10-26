@@ -8,6 +8,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **containd 0.1.33 or later is required.** The backend rejects older
+  firewall builds at range start and when it adopts a running range.
+  Policy applies keep the firewall's NIC bindings, so segmentation holds
+  with the reserved management path; both packages reserve containd
+  management for the backend and proxy. Policy applies use candidate and
+  commit only. `/api/firewall/health` adds forwarding, management binding
+  and reservation diagnostics. Event queries read time-filtered pages, and
+  US packet capture uses containd zone selection. Event smoke checks need a
+  fresh matching DENY. containd 0.1.33 migrates its stored schema to 0.1.7
+  one way: back up the complete firewall data before the first start (see
+  RELEASING.md).
+
 - **Apply Your Plan works in US and EU.** The backend compiles the selected
   remediation actions into one policy, applies it and records the package
   revision, action IDs and policy hash. A deferred control leaves its Weak
