@@ -17,7 +17,7 @@ FIXTURE = ROOT / "scripts/tests/fixtures/network-invariants.json"
 PACKAGES = ROOT / "lab-definitions/packages"
 FROZEN = (
     "Networking is frozen: change scripts/tests/fixtures/network-invariants.json only "
-    "when Tony asked for this exact change, and run `scripts/firewall-smoke.sh both` "
+    "when the maintainer asked for this exact change, and run `scripts/firewall-smoke.sh both` "
     "against a live range."
 )
 # Service keys whose whole value is network behaviour; anything else is out of scope.

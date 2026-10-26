@@ -210,8 +210,9 @@ them needs to say so explicitly and must pass `scripts/firewall-smoke.sh`.
   use baked-in lab credentials
   ([`docs/lab-credentials.md`](docs/lab-credentials.md)).
   [`SECURITY.md`](SECURITY.md) explains why.
-- containd zone names `wan` / `dmz` / `lan1` / `lan2` / `lan3` and the
-  canned policies in `lab-definitions/firewall/` are what the
+- containd interface names `wan` / `dmz` / `lan1` / `lan2` / `lan3` (the EU
+  package adds `lan4` / `lan5`), pinned per network with compose
+  `interface_name`, and the canned policies in `lab-definitions/firewall/` are what the
   validators and firewall smoke gate assert against.
 - `scripts/tests/test_network_invariants.py` (CI's Python job) freezes every
   network value of the platform and package compose files in

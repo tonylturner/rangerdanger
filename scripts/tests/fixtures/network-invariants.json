@@ -1,5 +1,5 @@
 {
-  "about": "Frozen network values of every platform and package compose file, checked by scripts/tests/test_network_invariants.py. Networking is frozen: edit this file only when Tony asked for this exact change, and run scripts/firewall-smoke.sh both against a live range.",
+  "about": "Frozen network values of every platform and package compose file, checked by scripts/tests/test_network_invariants.py. Networking is frozen: edit this file only when the maintainer asked for this exact change, and run scripts/firewall-smoke.sh both against a live range.",
   "stacks": {
     "eu-iec104-substation": {
       "networks/control_centre_net/driver": "bridge",
