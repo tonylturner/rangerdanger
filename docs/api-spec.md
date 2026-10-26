@@ -376,10 +376,16 @@ Used by Lab 1.2 (Baseline Traffic Analysis) to produce representative substation
 
 Unified PCAP API. US uses native containd capture with explicit zones from
 the authored topology. Start-only overrides are ephemeral, not staged policy.
-Missing capture zones return `422`, native start errors (including selector
-failures) return `502`, and a non-running capture returns `503`; US capture
-startup never falls back to tcpdump. EU deliberately uses `tcpdump` for its
-four-port OR filter, which containd's single port/range filter cannot express.
+An already active backend capture returns `409`. Missing capture zones return
+`422`, native start errors (including selector failures) return `502`, and a start
+acknowledgement without resolved interfaces (including a queued start) returns
+`503`. A `200`/`201` with resolved interfaces
+counts as started even if `running` is still false. The backend explicitly stops
+native capture at `duration_sec` (or on user stop), waits at most 15 seconds for
+shutdown confirmation, then lists files matching the capture prefix. If shutdown
+is not confirmed, it logs the timeout and reports completion with available files.
+US capture startup never falls back to tcpdump. EU deliberately uses `tcpdump`
+for its four-port OR filter, which containd's single port/range filter cannot express.
 
 | Method | Path | Description |
 |--------|------|-------------|

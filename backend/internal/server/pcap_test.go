@@ -107,6 +107,7 @@ func TestHandlePcapDownloadSkipsInvalidListedName(t *testing.T) {
 func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 	var requests int32
 	var startRequests int32
+	var stopRequests int32
 	prefixes := make(chan string, 1)
 	pollDone := make(chan struct{}, 1)
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -125,11 +126,14 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 				return
 			}
 			prefixes <- cfg.FilePrefix
-			_, _ = io.WriteString(w, `{"running":true,"interfaces":["eth2","eth7"],"startedAt":"2026-09-28T12:00:00Z"}`)
+			_, _ = io.WriteString(w, `{"running":false,"interfaces":["eth2","eth7"]}`)
+		case "/api/v1/pcap/stop":
+			atomic.AddInt32(&stopRequests, 1)
+			_, _ = io.WriteString(w, `{"running":false}`)
 		case "/api/v1/pcap/status":
 			_, _ = io.WriteString(w, `{"running":false}`)
 		case "/api/v1/pcap/list":
-			_, _ = io.WriteString(w, `[]`)
+			_, _ = io.WriteString(w, `[{"name":"other_eth0.pcap"},{"name":"scenario-baseline_2.v1_eth2.pcap"}]`)
 			pollDone <- struct{}{}
 		default:
 			t.Errorf("unexpected containd path: %s", r.URL.Path)
@@ -165,6 +169,7 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 	}
 
 	const validPrefix = "scenario-baseline_2.v1"
+	started := time.Now()
 	rec, _ := invoke(s, s.handlePcapStart, http.MethodPost, "/api/v1/pcap/start", map[string]any{
 		"name":         validPrefix,
 		"duration_sec": 1,
@@ -189,10 +194,26 @@ func TestHandlePcapStartValidatesAndForwardsPrefix(t *testing.T) {
 	if got := atomic.LoadInt32(&startRequests); got != 1 {
 		t.Fatalf("containd received %d start requests, want 1", got)
 	}
+	_, state := invoke(s, s.handlePcapStatus, "GET", "/pcap/status", nil)
+	if state["capturing"] != true {
+		t.Fatalf("stale engine status overrode accepted start: %v", state)
+	}
 	select {
 	case <-pollDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("capture poll did not complete")
+	}
+	waitPcapReady(t, s, 2*time.Second)
+	if elapsed := time.Since(started); elapsed < time.Second {
+		t.Fatalf("capture stopped before requested duration: %s", elapsed)
+	}
+	if got := atomic.LoadInt32(&stopRequests); got != 1 {
+		t.Fatalf("stop requests = %d, want 1", got)
+	}
+	s.pcapMu.Lock()
+	defer s.pcapMu.Unlock()
+	if s.pcap.Capturing || !reflect.DeepEqual(s.pcap.Files, []string{validPrefix + "_eth2.pcap"}) {
+		t.Fatalf("unexpected completed capture: %+v", s.pcap)
 	}
 }
 
@@ -205,6 +226,9 @@ func TestPcapStartDoesNotHideSelectorOrEngineFailure(t *testing.T) {
 		{"missing interface", `{"error":"interface lan1 resolves to missing device"}`, 400, 502},
 		{"no engine", `{"status":"pcap start queued"}`, 200, 503},
 		{"engine failure", `{"running":false,"lastError":"capture unavailable"}`, 200, 503},
+		{"running without interfaces", `{"running":true}`, 200, 503},
+		{"empty interfaces", `{"running":false,"interfaces":[]}`, 201, 503},
+		{"malformed acknowledgement", `{`, 200, 502},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +245,180 @@ func TestPcapStartDoesNotHideSelectorOrEngineFailure(t *testing.T) {
 				t.Fatalf("false capture success: %d %s", rec.Code, rec.Body)
 			}
 		})
+	}
+}
+
+func waitPcapReady(t *testing.T, s *Server, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		s.pcapMu.Lock()
+		ready := s.pcap.FileReady && !s.pcap.Capturing
+		s.pcapMu.Unlock()
+		if ready {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("capture did not finish with files")
+}
+
+func TestPcapDurationBoundsShutdownWait(t *testing.T) {
+	var stops, lists int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/pcap/start":
+			w.WriteHeader(http.StatusCreated)
+			io.WriteString(w, `{"running":false,"interfaces":["eth0"]}`)
+		case "/api/v1/pcap/stop":
+			atomic.AddInt32(&stops, 1)
+			io.WriteString(w, `{"running":true}`)
+		case "/api/v1/pcap/status":
+			io.WriteString(w, `{"running":true}`)
+		case "/api/v1/pcap/list":
+			atomic.AddInt32(&lists, 1)
+			io.WriteString(w, `[{"name":"bounded_eth0.pcap"},{"name":"unrelated_eth0.pcap"}]`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	s := newTestServer(t, upstream.URL)
+	started := time.Now()
+	rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", `{"duration_sec":1,"name":"bounded"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body)
+	}
+	waitPcapReady(t, s, 20*time.Second)
+	if elapsed := time.Since(started); elapsed < 16*time.Second {
+		t.Fatalf("shutdown wait ended early: %s", elapsed)
+	}
+	if atomic.LoadInt32(&stops) != 1 || atomic.LoadInt32(&lists) != 1 {
+		t.Fatalf("stop/list calls = %d/%d, want 1/1", stops, lists)
+	}
+	_, state := invoke(s, s.handlePcapStatus, "GET", "/pcap/status", nil)
+	if state["capturing"] != false || state["file_ready"] != true {
+		t.Fatalf("stale engine status overrode completion: %v", state)
+	}
+	s.pcapMu.Lock()
+	defer s.pcapMu.Unlock()
+	if !reflect.DeepEqual(s.pcap.Files, []string{"bounded_eth0.pcap"}) {
+		t.Fatalf("files = %v", s.pcap.Files)
+	}
+}
+
+func TestPcapUserStopDoesNotStopReplacement(t *testing.T) {
+	var stops int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/pcap/start":
+			io.WriteString(w, `{"running":false,"interfaces":["eth0"]}`)
+		case "/api/v1/pcap/stop":
+			atomic.AddInt32(&stops, 1)
+			io.WriteString(w, `{"running":false}`)
+		case "/api/v1/pcap/list":
+			io.WriteString(w, `[{"name":"reused_eth0.pcap"}]`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	s := newTestServer(t, upstream.URL)
+	t.Cleanup(func() {
+		if err := s.rng.(*fakeRange).gen.Stop(time.Second); err != nil {
+			t.Error(err)
+		}
+	})
+	for i, duration := range []int{1, 60} {
+		rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", map[string]any{"duration_sec": duration, "name": "reused"})
+		if rec.Code != 200 {
+			t.Fatalf("start: %d %s", rec.Code, rec.Body)
+		}
+		if i == 0 {
+			rec, _ = invoke(s, s.handlePcapStop, "POST", "/pcap/stop", nil)
+			if rec.Code != 200 {
+				t.Fatalf("stop: %d %s", rec.Code, rec.Body)
+			}
+			waitPcapReady(t, s, time.Second)
+		}
+	}
+	// Let the old duration worker wake while the replacement is active.
+	time.Sleep(1200 * time.Millisecond)
+	s.pcapMu.Lock()
+	capturing, ready := s.pcap.Capturing, s.pcap.FileReady
+	s.pcapMu.Unlock()
+	if !capturing || ready || atomic.LoadInt32(&stops) != 1 {
+		t.Fatalf("old worker affected replacement: capturing=%v ready=%v stops=%d", capturing, ready, stops)
+	}
+	rec, _ := invoke(s, s.handlePcapStop, "POST", "/pcap/stop", nil)
+	if rec.Code != 200 || atomic.LoadInt32(&stops) != 2 {
+		t.Fatalf("replacement stop: %d %s, stops=%d", rec.Code, rec.Body, stops)
+	}
+}
+
+func TestPcapStopWaitsForShutdown(t *testing.T) {
+	var stops, statuses int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/pcap/start":
+			io.WriteString(w, `{"running":false,"interfaces":["eth0"]}`)
+		case "/api/v1/pcap/stop":
+			atomic.AddInt32(&stops, 1)
+			io.WriteString(w, `{"running":true}`)
+		case "/api/v1/pcap/status":
+			running := atomic.AddInt32(&statuses, 1) == 1
+			json.NewEncoder(w).Encode(containd.PcapStatus{Running: running})
+		case "/api/v1/pcap/list":
+			if atomic.LoadInt32(&statuses) != 2 {
+				t.Error("listed files before shutdown confirmation")
+			}
+			io.WriteString(w, `[{"name":"delayed_eth0.pcap"}]`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	s := newTestServer(t, upstream.URL)
+	t.Cleanup(func() {
+		if err := s.rng.(*fakeRange).gen.Stop(time.Second); err != nil {
+			t.Error(err)
+		}
+	})
+	rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", `{"duration_sec":60,"name":"delayed"}`)
+	if rec.Code != 200 {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body)
+	}
+	rec, _ = invoke(s, s.handlePcapStop, "POST", "/pcap/stop", nil)
+	if rec.Code != 200 || atomic.LoadInt32(&stops) != 1 {
+		t.Fatalf("stop: %d %s", rec.Code, rec.Body)
+	}
+	waitPcapReady(t, s, time.Second)
+}
+
+func TestPcapDurationWorkerCancelsWithGeneration(t *testing.T) {
+	var stops int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/pcap/start" {
+			io.WriteString(w, `{"running":false,"interfaces":["eth0"]}`)
+			return
+		}
+		atomic.AddInt32(&stops, 1)
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	s := newTestServer(t, upstream.URL)
+	rec, _ := invoke(s, s.handlePcapStart, "POST", "/pcap/start", `{"duration_sec":60}`)
+	if rec.Code != 200 {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body)
+	}
+	if err := s.rng.(*fakeRange).gen.Stop(time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if atomic.LoadInt32(&stops) != 0 {
+		t.Fatal("cancelled duration worker contacted containd")
 	}
 }
 

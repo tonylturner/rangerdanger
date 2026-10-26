@@ -54,7 +54,8 @@ type PcapFileInfo struct {
 }
 
 // StartPcap starts packet capture. Accepts an optional PcapConfig override.
-// Returns the capture status.
+// Returns the start acknowledgement. Running may still be false while the
+// engine starts; resolved interfaces distinguish a start from a queued request.
 func (c *Client) StartPcap(ctx context.Context, cfg *PcapConfig) (*PcapStatus, error) {
 	var body []byte
 	if cfg != nil {
@@ -75,6 +76,9 @@ func (c *Client) StartPcap(ctx context.Context, cfg *PcapConfig) (*PcapStatus, e
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(b), "pcap capture already running") {
+			return nil, fmt.Errorf("capture already in progress")
+		}
 		return nil, fmt.Errorf("start pcap returned %d: %s", resp.StatusCode, string(b))
 	}
 
