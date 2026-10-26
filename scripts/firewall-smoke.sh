@@ -114,31 +114,10 @@ probe_tcp() {
   printf '%s %s\n' "$verdict" "$dur"
 }
 
-# probe_udp uses the firewall's nft drop counter snapshot. Rough but
-# sufficient for the one UDP rule we currently care about (NTP). When
-# the matrix grows we'll switch to a per-rule counter.
-probe_udp() {
-  local src="$1" dst="$2" port="$3"
-  local before after
-  before=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
-           | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
-  docker exec "$src" sh -c "echo probe | timeout $PROBE_TIMEOUT nc -u -w1 $dst $port" >/dev/null 2>&1 || true
-  sleep 0.5
-  after=$(docker exec rangerdanger-firewall nft list table inet containd 2>/dev/null \
-          | awk '/policy drop/{getline; print}' | grep -oE 'packets [0-9]+' | head -1 | awk '{print $2}')
-  before=${before:-0}; after=${after:-0}
-  if [ "$after" -gt "$before" ]; then
-    printf 'deny 0\n'
-  else
-    printf 'allow 0\n'
-  fi
-}
-
 probe() {
   local proto="$1"; shift
   case "$proto" in
     tcp) probe_tcp "$@" ;;
-    udp) probe_udp "$@" ;;
     *)   echo "deny:bad-proto" ;;
   esac
 }
