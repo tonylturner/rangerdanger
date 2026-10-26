@@ -151,13 +151,22 @@ eu_gate_G12() {
 }
 
 eu_gate_G13() {
-  local connection_seq generation baseline cursor revisions="[]" active revision audit loss_budget
+  local connection_seq generation baseline cursor revisions revision audit loss_budget node step field evidence target expected
+  local nodes='["breaker-1","f2-breaker","rmu-1","rmu-2","oltc-1"]' solved
+  # Name every physical device explicitly: a missing device cannot pass all().
+  # shellcheck disable=SC2016 # jq variables, not shell expansions
+  solved=' .process.truth_stale == false and (. as $field | all('
+  solved+="$nodes"
+  # shellcheck disable=SC2016
+  solved+='[]; . as $node | $field.devices[$node] as $device
+    | $device.device_id == (if $node == "breaker-1" then "feeder-breaker" else $node end)
+    and ($device.generation | type == "number") and ($device.revision | type == "number")
+    and $device.moving != true and $device.measurements.valid == true
+    and $field.process.devices[$device.device_id].delivered == true
+    and $field.process.devices[$device.device_id].solved_revision == $device.revision))'
   loss_budget=$(jq -er '.timers | .t3_s + .t1_s + 10' "$PACKAGE/protocols/points.json") || return
-  # Own the initial truth even if a previous gate aborted while tripped or
-  # restrictive. The next direct fault action must change the device revision.
   eu_apply_named improved || return
   eu_reset_all || return
-  # Settle the CC and the reset revision before taking the audit cursor.
   if ! eu_wait_for_operator '.link.state == "started" and .link.gi.state == "complete" and station_good and f2_good' \
     30 "G13 CC baseline before the RTU outage"; then
     return
@@ -166,20 +175,27 @@ eu_gate_G13() {
     fail "G13 CC connection_seq is missing or not a number: $WAIT_BODY"
     return
   }
-  eu_wait_for_field '.devices["breaker-1"].position == "closed" and .devices["breaker-1"].protection_tripped == false
-    and .process.devices["feeder-breaker"].delivered == true and .process.devices["feeder-breaker"].solved_revision == .devices["breaker-1"].revision
-    and .process.truth_stale == false' 10 "G13 solver agrees with the device" || return
-  generation=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].generation | numbers') || generation=""
-  baseline=$(printf '%s' "$WAIT_BODY" | jq -er '.devices["breaker-1"].revision | numbers') || baseline=""
-  if ! eu_api_get "/api/field/audit?after=0"; then
-    fail "G13 device audit cursor unavailable or unparsable"
-    return
-  fi
-  cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || cursor=""
-  if [ -z "$generation" ] || [ -z "$baseline" ] || [ -z "$cursor" ]; then
-    fail "G13 device generation, revision or audit cursor is not a number"
-    return
-  fi
+  eu_wait_for_field "$solved and .devices[\"breaker-1\"].position == \"closed\"
+    and .devices[\"breaker-1\"].protection_tripped == false" 10 "G13 solver agrees with all five devices" || return
+  field="$WAIT_BODY"
+  # Independent generations, revisions and cursors; sequence numbers are local
+  # to a device's audit ring and must never be shared across devices.
+  evidence='{}'
+  for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
+    generation=$(printf '%s' "$field" | jq -er --arg node "$node" '.devices[$node].generation | numbers') || return
+    baseline=$(printf '%s' "$field" | jq -er --arg node "$node" '.devices[$node].revision | numbers') || return
+    if ! eu_api_get "/api/field/audit?device=$node&after=0"; then
+      fail "G13 $node audit cursor unavailable or unparsable"
+      return
+    fi
+    cursor=$(printf '%s' "$API_BODY" | jq -er '.latest_seq | numbers') || {
+      fail "G13 $node audit cursor is not a number"
+      return
+    }
+    evidence=$(printf '%s' "$evidence" | jq -c --arg node "$node" --argjson generation "$generation" \
+      --argjson baseline "$baseline" --argjson cursor "$cursor" \
+      '.[$node] = {generation:$generation, baseline:$baseline, cursor:$cursor, revisions:[]}') || return
+  done
   rtu_paused=1
   if ! docker pause "$RTU" >/dev/null 2>"$TMP_DIR/pause-rtu.err"; then
     fail "G13 could not pause RTU: $(cat "$TMP_DIR/pause-rtu.err")"
@@ -187,43 +203,79 @@ eu_gate_G13() {
     return
   fi
   pass "G13 RTU container paused"
-  # Each truth change must be solved before the next one replaces it: the solver
-  # polls current truth and cannot solve a superseded revision.
-  for active in true false; do
-    if [ "$active" = true ]; then
-      eu_action_step process fault_s1 "G13 fault active=$active while RTU paused" || break
-    else
-      eu_action_step process clear_fault "G13 clear process fault" || break
-      eu_action_step breaker-1 reset "G13 fault active=$active while RTU paused" || break
-    fi
-    revision=$(printf '%s' "$API_BODY" | jq -er '.revision | numbers') || {
-      fail "G13 fault active=$active answered no numeric revision"
-      break
-    }
-    revisions=$(printf '%s' "$revisions" | jq -c --argjson revision "$revision" '. + [$revision]')
-    eu_wait_for_state "/api/field/audit?after=$cursor" \
-      ".generation == $generation and any(.entries[]; .operation == \"first_solve\" and .detail.revision == $revision)" \
-      10 "G13 solver first_solve of device revision $revision while RTU paused" || break
+  # Retain the physical fault/trip/reset sequence. Then exercise peers that
+  # need not change during an S1 fault. OLTC block/unblock avoids resetting
+  # its PLC arming handshake and restores the pre-outage control state.
+  for step in fault clear rmu-1 rmu-2 f2-breaker block unblock; do
+    target="$step"
+    expected="$solved"
+    case "$step" in
+      fault)
+        target=breaker-1
+        eu_action_step process fault_s1 "G13 fault while RTU paused" || break
+        eu_wait_for_field '.devices["breaker-1"].protection_tripped == true' \
+          10 "G13 physical protection trips during the fault" || break ;;
+      clear)
+        target=breaker-1
+        eu_action_step process clear_fault "G13 clear process fault" || break
+        eu_action_step breaker-1 reset "G13 breaker reset while RTU paused" || break
+        expected+=' and .devices["breaker-1"].position == "closed"
+          and .devices["breaker-1"].protection_tripped == false' ;;
+      block|unblock)
+        target=oltc-1
+        eu_action oltc-1 "$step" || break ;;
+      *) eu_action "$step" reset || break ;;
+    esac
+    # Do not supersede any observed revision before the solver has delivered
+    # it. Collect changes from the whole station, including local protection.
+    eu_wait_for_field "$expected" 10 "G13 all devices solved after $step while RTU paused" || break
+    field="$WAIT_BODY"
+    for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
+      generation=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].generation')
+      baseline=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].revisions[-1] // .[$node].baseline')
+      cursor=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].cursor')
+      revision=$(printf '%s' "$field" | jq -er --arg node "$node" --argjson generation "$generation" \
+        --argjson baseline "$baseline" '.devices[$node] | select(.generation == $generation)
+          | .revision | numbers | select(. >= $baseline)') || {
+        fail "G13 $node generation changed or revision regressed after $step"
+        break 2
+      }
+      if [ "$revision" = "$baseline" ]; then
+        if [ "$node" = "$target" ]; then
+          fail "G13 $node $step did not advance its revision"
+          break 2
+        fi
+        continue
+      fi
+      evidence=$(printf '%s' "$evidence" | jq -c --arg node "$node" --argjson revision "$revision" \
+        '.[$node].revisions += [$revision]') || break 2
+      eu_wait_for_state "/api/field/audit?device=$node&after=$cursor" \
+        ".generation == $generation and any(.entries[]; .operation == \"first_solve\" and .detail.revision == $revision)" \
+        10 "G13 $node solver first_solve of revision $revision while RTU paused" || break 2
+    done
   done
-  # G13: t3 (20 s) + t1 (15 s) + 10 s scheduling margin.
   # Recovery must be a new connection after the CC drops the paused RTU.
   if eu_wait_for_operator '.link.state != "started"' "$loss_budget" "G13 CC link loss while RTU paused"; then
     pass "G13 CC lost the IEC104 link to the paused RTU"
   fi
   eu_unpause_owned "$RTU" rtu "$rtu_paused" || return
   if eu_wait_for_operator ".link.state == \"started\" and .link.connection_seq > $connection_seq
-    and .link.gi.state == \"complete\" and all_good" 30 "G13 CC recovery by a new connection and GI"; then
-    pass "G13 CC recovered through a new IEC104 connection (connection_seq > $connection_seq) and a completed GI"
+    and .link.gi.state == \"complete\" and station_good and f2_good" 30 "G13 CC recovery by a new connection and GI"; then
+    pass "G13 CC recovered all station observations through a new IEC104 connection and completed GI"
   fi
-  if ! eu_api_get "/api/field/audit?after=$cursor"; then
-    fail "G13 post-fault device audit response is unavailable or unparsable"
-    return
-  fi
-  audit="$API_BODY"
-  if [ "$revisions" = "[]" ]; then
-    fail "G13 recorded no device revision from the fault sequence"
-  fi
-  eu_check_g13_audit "$audit" "$generation" "$baseline" "$cursor" "$revisions" || true
+  for node in breaker-1 f2-breaker rmu-1 rmu-2 oltc-1; do
+    generation=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].generation')
+    baseline=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].baseline')
+    cursor=$(printf '%s' "$evidence" | jq -r --arg node "$node" '.[$node].cursor')
+    revisions=$(printf '%s' "$evidence" | jq -c --arg node "$node" '.[$node].revisions')
+    if ! eu_api_get "/api/field/audit?device=$node&after=$cursor"; then
+      fail "G13 $node post-outage audit response is unavailable or unparsable"
+      continue
+    fi
+    audit="$API_BODY"
+    if [ "$revisions" = "[]" ]; then fail "G13 $node recorded no device revision during the outage"; fi
+    eu_check_g13_audit "$audit" "$generation" "$baseline" "$cursor" "$revisions" "$node" || true
+  done
 }
 
 eu_gate_G14() {

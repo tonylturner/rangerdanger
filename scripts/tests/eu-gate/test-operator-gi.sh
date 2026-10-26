@@ -41,7 +41,7 @@ t_run eu_interrogate_since 2026-10-09T21:02:00Z 1 fixture
 t_expect_fails 1 "GI acceptance before settling fails"
 for flag in iv nt sb bl ov; do
   body=$(printf '%s' "$OPERATOR" | jq -c --arg flag "$flag" '.points[0].quality[$flag] = true')
-  t_run jq -e "$EU_JQ_DEFS all_good" <<<"$body"
+  t_run jq -e "$EU_JQ_DEFS station_good" <<<"$body"
   t_expect_eq "$T_STATUS" 1 "GOOD rejects $flag"
 done
 # Exercise the real settle predicate without polling a live range.

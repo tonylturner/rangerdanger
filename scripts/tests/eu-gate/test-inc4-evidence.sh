@@ -14,8 +14,8 @@ for expression in '.schema = 1' '.schema = 2' 'del(.points[0].device)' 'del(.poi
   t_run eu_assert_operator_shape "$(edit "$expression")" fixture
   t_expect_fails 1 "invalid shape fails: $expression"
 done
-t_run jq -e "$EU_JQ_DEFS four_points and all_good" <<<"$OPERATOR"
-t_expect_eq "$T_STATUS" 0 "lab-1 subset survives adding the other 38 points"
+t_run jq -e "$EU_JQ_DEFS four_points and station_good" <<<"$OPERATOR"
+t_expect_eq "$T_STATUS" 0 "all 42 station points satisfy inventory identity and quality"
 stale=$(edit '(.points[] | select(.ioa == 1001 or .ioa == 1002 or .ioa == 2001 or .ioa == 2002)) |= (.quality.iv = true | .quality.nt = true | .stale_reason = "device_unreachable")')
 t_run jq -e "$EU_JQ_DEFS all_stale(\"device_unreachable\")" <<<"$stale"
 t_expect_eq "$T_STATUS" 0 "one lost breaker conduit does not require stale healthy peers"
@@ -27,7 +27,15 @@ t_expect_eq "$T_STATUS" 1 "an incomplete station cannot pass full recovery"
 t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit '.points += [.points[0]]')"
 t_expect_eq "$T_STATUS" 1 "an oversized station cannot pass full recovery"
 
-# Reload definitions in isolation to prove the count follows the selected
+for expression in '.points[0].id = "unknown"' '.points[0].ioa = -1' \
+  '.points[0].device = "unknown"' '.points[0] = .points[1]'; do
+  t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit "$expression")"
+  t_expect_eq "$T_STATUS" 1 "a same-count inventory substitution fails: $expression"
+done
+t_run jq -e "$EU_JQ_DEFS station_good" <<<"$(edit '.points |= reverse')"
+t_expect_eq "$T_STATUS" 0 "inventory identity is independent of response order"
+
+# Reload definitions in isolation to prove identities follow the selected
 # inventory, not the fixture size or an extra jq argument supplied by callers.
 inventory_defs() {
   bash -c 'PACKAGE="$1"; . "$2" || exit 1; printf "%s" "$EU_JQ_DEFS"' \
@@ -38,9 +46,18 @@ mkdir -p "$inventory_package/protocols"
 jq 'del(.points[-1])' "$PACKAGE/protocols/points.json" >"$inventory_package/protocols/points.json"
 short_defs=$(inventory_defs "$inventory_package")
 t_run jq -e "$short_defs station_good" <<<"$(edit 'del(.points[-1])')"
-t_expect_eq "$T_STATUS" 0 "full recovery derives its count from a different package inventory"
+t_expect_eq "$T_STATUS" 0 "full recovery derives its identities from a different package inventory"
 t_run jq -e "$short_defs station_good" <<<"$OPERATOR"
 t_expect_eq "$T_STATUS" 1 "the old point count does not pass a changed inventory"
+jq '.points[0].id = "renamed"' "$PACKAGE/protocols/points.json" >"$inventory_package/protocols/points.json"
+renamed_defs=$(inventory_defs "$inventory_package")
+t_run jq -e "$renamed_defs station_good" <<<"$OPERATOR"
+t_expect_eq "$T_STATUS" 1 "the old identities cannot pass a same-size changed inventory"
+t_run jq -e "$renamed_defs station_good" <<<"$(edit '.points[0].id = "renamed"')"
+t_expect_eq "$T_STATUS" 0 "recovery uses the selected inventory identities"
+jq '.points[0] = .points[1]' "$PACKAGE/protocols/points.json" >"$inventory_package/protocols/points.json"
+t_run inventory_defs "$inventory_package"
+t_expect_eq "$T_STATUS" 1 "a duplicate inventory identity fails closed"
 printf '{"points":[]}\n' >"$inventory_package/protocols/points.json"
 t_run inventory_defs "$inventory_package"
 t_expect_eq "$T_STATUS" 1 "an empty inventory cannot define full-station recovery"
