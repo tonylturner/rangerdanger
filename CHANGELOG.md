@@ -229,7 +229,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the firewall's interface order differs between hosts. They now look
   the interface up from the zone subnet on the firewall, or use `-i any`
   with a subnet filter, and map each zone to its subnet and containd
-  interface name (`wan`, `dmz`, `lan1`, `lan2`, `lan3`).
+  interface name (`wan`, `dmz`, `lan1`, `lan2`, `lan3`). Lab 2.4's manual
+  PCAP summary counted every packet twice and grouped by direction and
+  ephemeral port; it now counts each forwarded packet once per source and
+  destination host. The tshark article no longer says tshark runs on the
+  firewall.
 
 ### Security
 

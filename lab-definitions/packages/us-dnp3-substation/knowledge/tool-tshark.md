@@ -1,4 +1,4 @@
-`tshark` is the command-line version of Wireshark. In the lab, you use it to analyze network traffic and verify what protocols are flowing between zones. It is available on the Kali box and (depending on configuration) on the firewall itself.
+`tshark` is the command-line version of Wireshark. In the lab, you use it to analyze network traffic and verify what protocols are flowing between zones. It is available on the Kali box.
 
 ### Protocol Volume Summary (io,stat)
 

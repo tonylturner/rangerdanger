@@ -170,7 +170,7 @@
       {
         "id": "tool-tshark",
         "title": "tshark - Network Protocol Analysis",
-        "sha256": "41f9dd317a9c2ce1405f6d8bacf4b285f38824551d8b89caf10b425a039eb7ab"
+        "sha256": "832d6425b91c42d855c338f0bf9050ad6bab35e983c82591b0e2124eb01033ca"
       },
       {
         "id": "tool-tcpdump",

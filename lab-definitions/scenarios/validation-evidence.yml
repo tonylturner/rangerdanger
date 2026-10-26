@@ -184,7 +184,11 @@ steps:
       Let it run ~30s while the RTAC polls, Ctrl-C, then see who's on the
       wire:
 
-          tcpdump -r /data/captures/validation.pcap -nn | awk '{print $3, $5}' | sort | uniq -c | sort -rn
+          tcpdump -r /data/captures/validation.pcap -nn | awk '$3 == "Out" { s = $5; d = $7; sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:$/, "", d); print s, "->", d }' | sort | uniq -c | sort -rn
+
+      `-i any` records a forwarded packet twice, `In` on one interface and
+      `Out` on the other. The `awk` keeps only the `Out` copy and strips
+      the ports, so each line counts packets from one host to another.
 
       Under Hardened, the only Modbus/DNP3 source reaching field should be
       `10.30.30.20` (the RTAC). For a partial plan, compare additional
