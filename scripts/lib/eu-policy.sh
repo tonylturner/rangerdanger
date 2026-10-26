@@ -103,7 +103,9 @@ for line in rules:
 }
 eu_check_nft_chain() {
   local label="$1" nft_dump
-  nft_dump=$(docker exec "$FW" nft list chain inet containd forward 2>"$TMP_DIR/nft.err") || {
+  # containd 0.1.35 keeps every grant in containd_policy. The pre-filter
+  # table's accepts are not final across base chains; only its drops act.
+  nft_dump=$(docker exec "$FW" nft list chain inet containd_policy forward 2>"$TMP_DIR/nft.err") || {
     fail "$label effective nft forward chain unavailable: $(cat "$TMP_DIR/nft.err")"
     return 1
   }
