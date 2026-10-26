@@ -52,14 +52,15 @@ catalog:
   tags: []
 - id: modbus-dpi
   title: Modbus dpi
-  why: Plan function-code restrictions for southbound Modbus. Planned, not enforceable in this range yet.
+  why: Plan function-code restrictions for southbound Modbus. Planning-only protocol review; this range emits no protocol rule.
+    The L4 source pin enforces; DPI detects and logs.
   effort_hours: 70
   roles: [Firewall Admin, OT Engineer, Security Analyst]
   tags: []
 - id: iec104-dpi
   title: Iec104 dpi
-  why: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. Planned, not enforceable in this range
-    yet.
+  why: Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands.
+    Planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.
   effort_hours: 80
   roles: [Firewall Admin, OT Engineer, Security Analyst]
   tags: []

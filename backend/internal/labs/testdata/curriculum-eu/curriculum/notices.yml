@@ -3,4 +3,4 @@ dpiNotice:
   description: ' — protocol predicates are included in the generated policy'
 dpiForbiddenNotice:
   title: ICS DPI planned
-  description: ', not enforceable in this range yet'
+  description: ', planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.'

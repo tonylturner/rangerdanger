@@ -384,6 +384,17 @@ class ErrataContracts(unittest.TestCase):
 class EnforcementContracts(unittest.TestCase):
     """Lab 2.3 states what the frozen images do: the L4 source pin blocks, DPI records."""
 
+    def test_eu_protocol_catalog_promises_no_future_enforcement(self):
+        curriculum = read_curriculum(ROOT / "lab-definitions/packages/eu-iec104-substation")
+        suffix = ("Planning-only protocol review; this range emits no protocol rule. "
+                  "The L4 source pin enforces; DPI detects and logs.")
+        actions = {action["id"]: action for action in curriculum["catalog"]}
+        for action_id in ("modbus-dpi", "iec104-dpi"):
+            self.assertTrue(actions[action_id]["why"].endswith(suffix))
+            self.assertNotRegex(actions[action_id]["why"], r"(?i)\b(yet|future|soon)\b")
+        self.assertEqual(curriculum["dpiForbiddenNotice"]["description"],
+                         ", " + suffix[0].lower() + suffix[1:])
+
     def test_us_curriculum_dpi_does_not_claim_to_block_or_filter_writes(self):
         curriculum = read_curriculum(ROOT / "lab-definitions/packages/us-dnp3-substation")
 

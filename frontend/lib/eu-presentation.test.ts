@@ -64,6 +64,18 @@ describe("EU curriculum example — shared machinery, EU facts", () => {
       ["ids-deployment", 80], ["ot-asset-inventory", 100], ["vendor-zta-broker", 150],
     ]);
   });
+  it("describes protocol reviews as planning-only, not future enforcement", () => {
+    const suffix = "Planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.";
+    expect(EU.catalog.find((action) => action.id === "modbus-dpi")?.why).toBe(
+      `Plan function-code restrictions for southbound Modbus. ${suffix}`,
+    );
+    expect(EU.catalog.find((action) => action.id === "iec104-dpi")?.why).toBe(
+      `Plan breaker IOA 3001 denial, even from CC; preserve monitoring, system reads and RMU/OLTC commands. ${suffix}`,
+    );
+    expect(EU.dpiForbiddenNotice.description).toBe(
+      ", planning-only protocol review; this range emits no protocol rule. The L4 source pin enforces; DPI detects and logs.",
+    );
+  });
   it.each(EU_PLANS)("renders server-owned $label rules without introducing ICS predicates", (plan) => {
     expect(JSON.stringify(plan.config)).not.toMatch(/"ics"\s*:/);
     const rules = renderRuleTable(plan, EU);
