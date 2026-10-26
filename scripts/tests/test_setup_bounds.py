@@ -33,6 +33,19 @@ class SetupBoundsTests(unittest.TestCase):
                 self.assertEqual(result.returncode, expected, result.stderr)
                 self.assertEqual(result.stdout, output)
 
+    def test_docker_watchdog_releases_command_substitution(self):
+        function = SOURCE[SOURCE.index("docker_bounded() {"):]
+        function = function[:function.index("\n}\n") + 3]
+        # run_bash allows 10 s; a watchdog sleep holding the pipe would
+        # keep $(...) open for the whole 30 s limit.
+        result = run_bash(
+            function + "\ndocker() { printf 2.36.0; }\n"
+            'value=$(docker_bounded 30 compose version --short)\n'
+            'printf %s "$value"'
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "2.36.0")
+
     def test_health_fails_closed_and_uses_elapsed_time_budget(self):
         start = SOURCE.index('HEALTH_OK=0')
         end = SOURCE.index('# ─── start the range', start)

@@ -146,7 +146,9 @@ docker_bounded() { # <seconds> <docker args...>
     shift
     docker "$@" &
     child=$!
-    ( sleep "$limit"; kill -KILL "$child" 2>/dev/null ) &
+    # The watchdog's sleep outlives the kill below; without the redirect it
+    # holds a caller's $(...) pipe open for the whole limit.
+    ( sleep "$limit"; kill -KILL "$child" 2>/dev/null ) >/dev/null 2>&1 &
     watchdog=$!
     wait "$child" 2>/dev/null || rc=$?
     kill "$watchdog" 2>/dev/null || true
