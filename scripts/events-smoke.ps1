@@ -49,6 +49,37 @@ function OK($msg)   { Write-Host "  [+] $msg" -ForegroundColor Green; $script:pa
 function Err($msg)  { Write-Host "  [x] $msg" -ForegroundColor Red;   $script:fail = 1; $script:total++ }
 function Skip($what, $why) { Write-Host "  [-] $what (skipped: $why)" -ForegroundColor DarkGray }
 
+function ConvertTo-EventEpochNs($Timestamp) {
+    # ConvertFrom-Json can materialize whole-second / tick-precision values
+    # as dates. Serialize those invariantly, not using the host locale.
+    if ($Timestamp -is [DateTime] -or $Timestamp -is [DateTimeOffset]) {
+        $Timestamp = $Timestamp.ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+    }
+    # DateTimeOffset alone discards sub-tick precision. Preserve all nine
+    # RFC3339Nano fractional digits for the range-clock comparison.
+    if ($Timestamp -notmatch '^(.*T\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)$') {
+        throw "event timestamp is not RFC3339Nano: $Timestamp"
+    }
+    $seconds = [DateTimeOffset]::Parse(
+        $Matches[1] + $Matches[3], [Globalization.CultureInfo]::InvariantCulture
+    ).ToUnixTimeSeconds()
+    $fraction = ([string]$Matches[2]).PadRight(9, '0')
+    return [decimal]$seconds * 1000000000 + [decimal]$fraction
+}
+
+function Get-FreshKaliDenyCount($Events, [decimal]$Boundary) {
+    return @($Events | Where-Object {
+        $_.kind -ceq 'firewall.rule.hit' -and
+        $_.attributes.action -ceq 'DENY' -and
+        $_.attributes.ruleId -ceq 'deny-enterprise-to-field' -and
+        $_.srcIp -ceq '10.10.10.50' -and
+        $_.dstIp -ceq '10.40.40.20' -and
+        $_.dstPort -eq 502 -and
+        $_.transport -ceq 'tcp' -and
+        (ConvertTo-EventEpochNs $_.timestamp) -gt $Boundary
+    }).Count
+}
+
 function ConvertTo-Base64Url([byte[]]$bytes) {
     ([Convert]::ToBase64String($bytes)).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
@@ -110,6 +141,15 @@ try {
 }
 Start-Sleep -Seconds 2
 
+# Match eu_epoch_ns: use the firewall/range clock, never the Windows host
+# clock. Retained DENYs survive commits and have no age expiry.
+$boundaryRaw = docker exec rangerdanger-firewall date -u +%s%N
+if ($LASTEXITCODE -ne 0 -or "$boundaryRaw" -notmatch '^\d{19}$') {
+    Err "cannot capture range-clock event boundary"
+    exit 1
+}
+$probeBoundary = [decimal]$boundaryRaw
+
 # Kali Modbus probe -- SYN to 10.40.40.20:502 should hit
 # deny-enterprise-to-field (L4 log+drop). Use timeout inside container
 # because SYN is dropped.
@@ -146,15 +186,12 @@ while ($elapsed -le $EventPollBudget) {
         try {
             $events = $rawEvents | ConvertFrom-Json -ErrorAction Stop
             if ($events) {
-                $denyCount = (@($events) | Where-Object {
-                    $_.kind -eq 'firewall.rule.hit' -and
-                    $_.attributes.action -eq 'DENY' -and
-                    $_.srcIp -like '10.10.10.*' -and
-                    $_.dstIp -like '10.40.40.*' -and
-                    $_.dstPort -eq 502
-                }).Count
+                $denyCount = Get-FreshKaliDenyCount $events $probeBoundary
             }
-        } catch { }
+        } catch {
+            Err "cannot parse engine events: $_"
+            exit 1
+        }
     }
     if ($denyCount -ge 1) { break }
     if ($elapsed -eq $EventPollBudget) { break }
