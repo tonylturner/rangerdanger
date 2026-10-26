@@ -148,6 +148,31 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(results[0]["error"], "failed peer")
 
 
+class ImageResolutionTests(unittest.TestCase):
+    def test_missing_local_role_or_changed_seal_fails_without_pulling(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                reference = root / "reference.json"
+                reference.write_text(json.dumps({
+                    "image": "reference:local", "image_id": "sha256:sealed"}))
+                docker = Mock()
+                docker.call.side_effect = RuntimeError("missing image") if missing else None
+                docker.call.return_value = "sha256:changed"
+                with patch.object(runner, "Docker", return_value=docker):
+                    with self.assertRaisesRegex(
+                            RuntimeError if missing else ValueError,
+                            "missing image" if missing else "no longer matches its sealed ID"):
+                        runner.side(HERE / "scenarios/startup-session.json",
+                                    dict.fromkeys(("rtu", "cc", "cmd", "peer"), "reference:local"),
+                                    reference, root / "side", "172.29.110.0/24")
+                self.assertTrue(all(call.args[:2] == ("image", "inspect")
+                                    for call in docker.call.call_args_list))
+                docker.network.assert_not_called()
+                docker.cleanup.assert_called_once_with()
+                self.assertTrue((root / "side/error.json").exists())
+
+
 class OwnershipTests(unittest.TestCase):
     def test_failed_process_keeps_observed_exit_code_in_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

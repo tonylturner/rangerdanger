@@ -23,6 +23,19 @@ ROOT = HERE.parents[3]
 INPUTS = ["services/iec104/Dockerfile", "services/iec104/src",
           "services/iec104/LICENSE", "services/iec104/README.md",
           "services/iec104/entrypoint.sh", "scripts/set-gateway.sh"]
+PEER_IMAGE = "python:3.12-alpine@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d"
+
+
+def ensure_peer():
+    """Materialize the pinned shared fixture before publishing local role maps."""
+    cached = subprocess.run(
+        ["docker", "image", "inspect", PEER_IMAGE],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15,
+    )
+    if cached.returncode:
+        subprocess.run(["docker", "pull", PEER_IMAGE], check=True,
+                       capture_output=True, timeout=300)
+    return PEER_IMAGE
 
 
 def build(out):
@@ -49,6 +62,7 @@ def build(out):
 
 
 def materialize(metadata, tag, out):
+    peer = ensure_peer()
     revision = metadata["commit"]
     with tempfile.TemporaryDirectory(prefix="rd-iec104-reference-") as directory:
         archive = subprocess.run(
@@ -73,7 +87,7 @@ def materialize(metadata, tag, out):
     out.mkdir(parents=True, exist_ok=True)
     (out / "baseline.json").write_text(json.dumps(metadata, indent=2) + "\n")
     (out / "roles.json").write_text(json.dumps(
-        {"rtu": tag, "cc": tag, "cmd": tag, "peer": "python:3.12-alpine@sha256:b658b05ce9c4eb97ec6fc19424818a1f31993659c2b505a532f470e83807815d"},
+        {"rtu": tag, "cc": tag, "cmd": tag, "peer": peer},
         indent=2,
     ) + "\n")
     print("Reference build PASS:", tag, metadata["image_id"])
